@@ -1,0 +1,21 @@
+{
+  "name": "taverntable",
+  "version": "1.0.0",
+  "description": "An isometric grid-based tabletop game interface",
+  "main": "index.html",
+  "scripts": {
+    "lint": "eslint ../src/**/*.js && stylelint ../src/**/*.css",
+    "lint:js": "eslint ../src/**/*.js",
+    "lint:css": "stylelint ../src/**/*.css",
+    "lint:fix": "eslint ../src/**/*.js --fix && stylelint ../src/**/*.css --fix",
+    "serve": "cd .. && python -m http.server 3000"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "stylelint": "^16.2.1",
+    "stylelint-config-standard": "^36.0.0"
+  },
+  "keywords": ["game", "tabletop", "isometric", "pixi.js"],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,4 +1,4 @@
-// js/creatures/index.js - Global creature creation functions
+// src/entities/creatures/index.js - Global creature creation functions
 
 import CreatureFactory from './CreatureFactory.js';
 

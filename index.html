@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TavernTable - Isometric Grid</title>
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="src/ui/styles.css">
 </head>
 <body>
   <div id="game-container"></div>
@@ -72,21 +72,21 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 
   <!-- Game Modules -->
-  <script src="./js/config/GameConfig.js"></script>
-  <script src="./js/SpriteManager.js"></script>
-  <script src="./js/GameManager.js"></script>
-  <script src="./js/DragController.js"></script>
+  <script src="./src/config/GameConfig.js"></script>
+  <script type="module" src="./src/core/SpriteManager.js"></script>
+  <script type="module" src="./src/core/GameManager.js"></script>
+  <script src="./src/systems/DragController.js"></script>
   
   <!-- Creature System -->
-  <script src="./js/creatures/CreatureToken.js"></script>
-  <script src="./js/creatures/CreatureFactory.js"></script>
-  <script src="./js/creatures/index.js"></script>
+  <script type="module" src="./src/entities/creatures/CreatureToken.js"></script>
+  <script type="module" src="./src/entities/creatures/CreatureFactory.js"></script>
+  <script type="module" src="./src/entities/creatures/index.js"></script>
   
   <!-- Dice System -->
-  <script src="./js/diceLog.js"></script>
-  <script src="./js/dice3d.js"></script>
+  <script type="module" src="./src/systems/dice/dice.js"></script>
+  <script src="./src/systems/dice/diceLog.js"></script>
   
   <!-- UI Controller -->
-  <script src="./js/UIController.js"></script>
+  <script type="module" src="./src/ui/UIController.js"></script>
 </body>
 </html>

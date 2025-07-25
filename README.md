@@ -1,126 +1,262 @@
 # TavernTable
 
-A web-based isometric grid D&D tabletop game for managing creature tokens and dice rolling.
+A modern web-based D&D tabletop simulator featuring an isometric grid system, creature token management, and interactive dice rolling.
 
-## Features
+![TavernTable Screenshot](https://via.placeholder.com/800x400/2a2a2a/ffffff?text=TavernTable+Isometric+Grid)
 
-- **Isometric Grid System**: Beautiful diamond-shaped grid for tactical gameplay
-- **Creature Token Management**: Place, move, and remove 9 different creature types
-- **Sprite System**: High-quality PNG sprites with color-coded fallback graphics
-- **3D Dice Rolling**: Interactive dice rolling with 3D visualization
-- **Token Interactions**: 
-  - Click to place tokens
-  - Drag to move tokens
-  - Remove tokens with remove mode
-  - Adjustable facing direction
-- **Responsive Design**: Works on different screen sizes
+## 🎯 Overview
 
-## Creature Types
+TavernTable brings the tactical combat experience of tabletop RPGs to your browser. Perfect for dungeon masters and players who want a clean, intuitive digital battlemap.
 
-- Dragon 🐉
-- Skeleton 💀  
-- Goblin 🧌
-- Beholder 👁️
-- Mind Flayer 🐙
-- Minotaur 🐂
-- Orc 🧟
-- Owlbear 🐻
-- Troll 🧟‍♂️
+**Key Highlights:**
+- Zero installation required - runs in any modern browser
+- High-quality creature sprites with intelligent fallbacks
+- Modular architecture built with modern JavaScript
 
-## Getting Started
+## ✨ Features
 
-1. Clone this repository
-2. Start a local HTTP server in the project directory:
-   ```bash
-   python -m http.server 8000
-   ```
-3. Open `http://localhost:8000` in your browser
-4. Start placing tokens and rolling dice!
+### 🗺️ Tactical Grid System
+- **Isometric View**: Beautiful diamond-shaped grid for tactical positioning
+- **Zoom & Pan**: Mouse wheel zoom and click-drag navigation
+- **Dynamic Sizing**: Adjustable grid dimensions
+- **Visual Feedback**: Clear grid intersections and snap-to-grid placement
 
-## Project Structure
+### 🐉 Creature Management
+- **9 Creature Types**: Dragons, skeletons, goblins, beholders, and more
+- **Smart Placement**: Click grid intersections to place tokens
+- **Drag & Drop**: Intuitive token movement with automatic grid snapping
+- **Facing Control**: Toggle creature direction before placement
+- **Easy Removal**: Dedicated remove mode for cleanup
 
-```
-├── index.html              # Main application
-├── assets/                 # Sprites and resources
-│   └── sprites/           # Creature PNG files
-├── css/                   # Stylesheets  
-├── js/                    # Core JavaScript files
-│   ├── config/           # Game configuration
-│   ├── creatures/        # Creature token system
-│   ├── GameManager.js    # Main game logic
-│   ├── SpriteManager.js  # Sprite loading/management
-│   ├── DragController.js # Token dragging
-│   └── dice*.js         # Dice rolling system
-└── archive/              # Development files (optional)
-```
+### 🎲 Dice System
+- **Complete RPG Set**: D4, D6, D8, D10, D12, D20, D100
+- **Multiple Dice**: Roll up to 10 dice of the same type
+- **Color Coding**: Green for max rolls, red for minimum, white for normal
+- **Roll History**: Persistent log of all dice results with timestamps
 
-## Technologies Used
+### 🎨 Visual Excellence
+- **High-Quality Sprites**: PNG artwork for each creature type
+- **Fallback Graphics**: Colored shapes when sprites unavailable
+- **Responsive Design**: Works on desktop, tablet, and mobile
+- **Clean Interface**: Uncluttered sidebar with organized controls
 
-- **PIXI.js**: 2D graphics rendering and sprite management
-- **Three.js**: 3D dice visualization
-- **Vanilla JavaScript**: No frameworks, pure ES6+
-- **HTML5 Canvas**: For rendering the game grid and tokens
-
-## Development
-
-This project uses a clean modular architecture:
-
-- `GameManager`: Handles game initialization, grid setup, and token placement
-- `SpriteManager`: Loads and manages PNG sprites with fallback support  
-- `CreatureToken`: Unified class for all creature types
-- `CreatureFactory`: Factory pattern for creating creatures
-- `DragController`: Handles token dragging interactions
-
-## Development & Code Quality
+## 🚀 Quick Start
 
 ### Prerequisites
-- Modern web browser with ES6 module support
-- Node.js (optional, for development tools)
+- Modern web browser (Chrome 88+, Firefox 78+, Safari 14+)
+- Local HTTP server (required for ES6 module loading)
 
-### Development Tools
-```bash
-# Install development dependencies
-npm install
+### Setup
 
-# Run code quality checks
-npm run lint          # Run both JavaScript and CSS linting
-npm run lint:js       # JavaScript linting only
-npm run lint:css      # CSS linting only
-npm run lint:fix      # Auto-fix linting issues where possible
+1. **Download/Clone the project**
+   ```bash
+   git clone <your-repo-url>
+   cd TavernTable
+   ```
 
-# Start local development server
-npm run serve         # Start Python HTTP server on port 3000
-```
+2. **Start a local server**
+   ```bash
+   # Python 3
+   python -m http.server 8000
+   
+   # Node.js (with http-server)
+   npx http-server -p 8000
+   
+   # PHP
+   php -S localhost:8000
+   ```
 
-### Code Standards
-- **ESLint**: Enforces JavaScript code quality and ES6 best practices
-- **Stylelint**: Ensures CSS follows modern standards
-- **JSDoc**: Comprehensive documentation for all functions and classes
-- **ES6 Modules**: Clean import/export structure throughout codebase
-- **Zero Linting Errors**: All code passes strict linting requirements
+3. **Open in browser**
+   Navigate to `http://localhost:8000`
+
+### First Steps
+1. **Place Tokens**: Select a creature from the sidebar → click grid intersections
+2. **Move Tokens**: Click "Move Tokens" button → drag creatures to new positions  
+3. **Roll Dice**: Choose die type → set quantity → click to roll
+4. **Explore**: Try zooming, panning, and resizing the grid
+
+## 🎭 Available Creatures
+
+| Creature | Size | Role | Special Notes |
+|----------|------|------|---------------|
+| 🐉 **Dragon** | Large (2x2) | Boss Enemy | Powerful winged beast |
+| 💀 **Skeleton** | Medium | Undead | Classic undead warrior |
+| 🧌 **Goblin** | Small | Minion | Agile and numerous |
+| 👁️ **Beholder** | Large | Aberration | Multi-eyed floating terror |
+| 🐙 **Mind Flayer** | Medium | Psionic | Tentacled brain eater |
+| 🐂 **Minotaur** | Large | Brute | Bull-headed labyrinth guardian |
+| 🧟 **Orc** | Medium | Warrior | Brutal tribal fighter |
+| 🐻 **Owlbear** | Large | Beast | Ferocious owl-bear hybrid |
+| 🧟‍♂️ **Troll** | Large | Giant | Regenerating mountain dweller |
+
+## 📱 How to Use
+
+### Token Operations
+- **Placing**: Select creature type → click any grid intersection
+- **Moving**: Switch to "Move Tokens" mode → drag tokens anywhere
+- **Removing**: Use "Remove Tokens" mode → click tokens to delete
+- **Facing**: Toggle facing direction before placing new tokens
+
+### Dice Rolling
+- **Single Die**: Select type (D4-D100) → click to roll
+- **Multiple Dice**: Adjust count slider → roll multiple dice at once
+- **Reading Results**: 
+  - Individual rolls shown in brackets: `[3, 5, 1] = 9`
+  - Color coding helps identify critical successes/failures
+  - All results logged with timestamps
+
+### Grid Controls
+- **Zoom**: Mouse wheel or +/- buttons
+- **Pan**: Click and drag empty grid space
+- **Resize**: Use width/height controls in sidebar
+- **Reset**: "Reset Zoom" button returns to default view
+
+## 🏗️ Technical Architecture
 
 ### Project Structure
 ```
-js/
-├── GameManager.js      # Core game logic and PIXI.js management
-├── UIController.js     # User interface interactions (extracted from inline)
-├── SpriteManager.js    # Centralized sprite and asset management  
-├── DragController.js   # Token dragging functionality
-├── dice.js            # Dice rolling system with animations
-└── creatures/         # Creature system with factory pattern
-    ├── CreatureFactory.js
-    ├── CreatureToken.js
-    └── index.js
+TavernTable/
+├── index.html                    # Application entry point
+├── README.md                     # This file
+├── assets/                       # Game resources
+│   └── sprites/                  # Creature PNG files
+├── src/                         # Source code (ES6 modules)
+│   ├── config/
+│   │   └── GameConfig.js        # Game settings and configurations
+│   ├── core/
+│   │   ├── GameManager.js       # Main game controller and state
+│   │   └── SpriteManager.js     # Asset loading and management
+│   ├── entities/
+│   │   └── creatures/           # Creature token system
+│   │       ├── CreatureFactory.js  # Factory pattern for creation
+│   │       ├── CreatureToken.js     # Base token class
+│   │       └── index.js             # Global creation functions
+│   ├── systems/
+│   │   ├── DragController.js    # Token drag-and-drop system
+│   │   └── dice/                # Dice rolling mechanics
+│   │       ├── dice.js              # Main rolling logic
+│   │       └── diceLog.js           # Roll history management
+│   └── ui/
+│       ├── UIController.js      # Interface management
+│       └── style.css            # Application styling
+├── tools/                       # Development configurations
+└── archive/                     # Legacy files and tests
 ```
 
-## Contributing
+### Design Patterns
+- **ES6 Modules**: Clean import/export structure for maintainability
+- **Factory Pattern**: Consistent creature creation via `CreatureFactory`
+- **Singleton Pattern**: Global managers for game state and assets
+- **Observer Pattern**: Event-driven communication between systems
+- **Component Architecture**: Modular systems with clear responsibilities
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+### Key Technologies
+- **PIXI.js**: Hardware-accelerated 2D rendering engine
+- **Vanilla JavaScript**: Pure ES6+ without external frameworks
+- **CSS3**: Modern styling with flexbox and grid layouts
+- **HTML5**: Semantic markup and canvas integration
 
-## License
+## 🛠️ Development
 
-This project is open source and available under the MIT License.
+### Code Quality
+- **ESLint**: Automated code style enforcement
+- **JSDoc**: Comprehensive inline documentation
+- **Modular Design**: Clear separation of concerns
+- **Error Handling**: Graceful fallbacks for missing assets
+
+### Adding New Features
+
+#### New Creatures
+1. Add sprite image to `assets/sprites/` (e.g., `phoenix-sprite.png`)
+2. Update `src/config/GameConfig.js` with sprite mapping
+3. Add creation function in `src/entities/creatures/index.js`
+4. Add UI button in `index.html`
+5. Test with both sprite and fallback graphics
+
+#### New Game Systems
+1. Create module in appropriate `src/systems/` subdirectory
+2. Import and integrate in `GameManager.js`
+3. Expose necessary functions globally if needed by HTML
+4. Update documentation and README
+
+### Browser Compatibility
+- **Recommended**: Chrome 90+, Firefox 88+, Safari 14+
+- **Required Features**: ES6 modules, PIXI.js support, modern CSS
+- **Known Issues**: Touch devices have basic support (mouse-optimized)
+
+## 🔧 Configuration
+
+### Game Settings
+Edit `src/config/GameConfig.js` to customize:
+- Creature sprite paths and scaling
+- Grid appearance and behavior
+- Default game parameters
+- Asset loading preferences
+
+### Visual Customization
+Modify `src/ui/style.css` for:
+- Color schemes and themes
+- Layout and spacing
+- Control panel appearance
+- Animation timing
+
+## ❓ Troubleshooting
+
+### Common Issues
+
+**"Module not found" errors**
+- Ensure you're using an HTTP server, not opening `file://` directly
+- Check that all file paths use forward slashes
+- Verify ES6 module support in your browser
+
+**Sprites not loading**
+- Check that PNG files exist in `assets/sprites/`
+- Verify file names match `GameConfig.js` entries
+- Fallback colored shapes should appear if sprites fail
+
+**Performance issues**
+- Try reducing grid size for better performance
+- Close other browser tabs using significant resources
+- Update to a modern browser version
+
+### Debug Mode
+Open browser console to see:
+- Sprite loading status
+- Token placement coordinates
+- Error messages and warnings
+- Performance timing information
+
+## 🤝 Contributing
+
+We welcome contributions! Please:
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Follow** existing code style and patterns
+4. **Test** across different browsers and screen sizes
+5. **Document** any new features or changes
+6. **Submit** a pull request with clear description
+
+### Development Setup
+```bash
+git clone <your-fork>
+cd TavernTable
+python -m http.server 8000
+# Open http://localhost:8000 and start developing
+```
+
+## 📝 License
+
+This project is released under the MIT License. See LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- **PIXI.js** team for the excellent 2D rendering library
+- **D&D Community** for inspiration and feedback
+- **Contributors** who help improve the project
+
+---
+
+**TavernTable** - Making digital D&D as engaging as the tabletop experience.
+
+*Built with ❤️ for the tabletop gaming community*

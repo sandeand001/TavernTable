@@ -4,10 +4,10 @@
   "description": "An isometric grid-based tabletop game interface",
   "main": "index.html",
   "scripts": {
-    "lint": "eslint js/**/*.js && stylelint css/**/*.css",
-    "lint:js": "eslint js/**/*.js",
-    "lint:css": "stylelint css/**/*.css",
-    "lint:fix": "eslint js/**/*.js --fix && stylelint css/**/*.css --fix",
+    "lint": "eslint -c tools/.eslintrc.json src/**/*.js && stylelint -c tools/.stylelintrc.json src/**/*.css",
+    "lint:js": "eslint -c tools/.eslintrc.json src/**/*.js",
+    "lint:css": "stylelint -c tools/.stylelintrc.json src/**/*.css",
+    "lint:fix": "eslint -c tools/.eslintrc.json src/**/*.js --fix && stylelint -c tools/.stylelintrc.json src/**/*.css --fix",
     "serve": "python -m http.server 3000"
   },
   "devDependencies": {

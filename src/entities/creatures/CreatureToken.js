@@ -1,4 +1,4 @@
-// js/creatures/CreatureToken.js - Base class for all creature tokens
+// src/entities/creatures/CreatureToken.js - Base class for all creature tokens
 
 class CreatureToken {
   constructor(type, x = 0, y = 0, facingRight = true) {

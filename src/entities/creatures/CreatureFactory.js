@@ -1,4 +1,4 @@
-// js/creatures/CreatureFactory.js - Factory for creating creature tokens
+// src/entities/creatures/CreatureFactory.js - Factory for creating creature tokens
 
 import CreatureToken from './CreatureToken.js';
 
