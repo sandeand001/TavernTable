@@ -71,6 +71,48 @@ This project uses a clean modular architecture:
 - `CreatureFactory`: Factory pattern for creating creatures
 - `DragController`: Handles token dragging interactions
 
+## Development & Code Quality
+
+### Prerequisites
+- Modern web browser with ES6 module support
+- Node.js (optional, for development tools)
+
+### Development Tools
+```bash
+# Install development dependencies
+npm install
+
+# Run code quality checks
+npm run lint          # Run both JavaScript and CSS linting
+npm run lint:js       # JavaScript linting only
+npm run lint:css      # CSS linting only
+npm run lint:fix      # Auto-fix linting issues where possible
+
+# Start local development server
+npm run serve         # Start Python HTTP server on port 3000
+```
+
+### Code Standards
+- **ESLint**: Enforces JavaScript code quality and ES6 best practices
+- **Stylelint**: Ensures CSS follows modern standards
+- **JSDoc**: Comprehensive documentation for all functions and classes
+- **ES6 Modules**: Clean import/export structure throughout codebase
+- **Zero Linting Errors**: All code passes strict linting requirements
+
+### Project Structure
+```
+js/
+├── GameManager.js      # Core game logic and PIXI.js management
+├── UIController.js     # User interface interactions (extracted from inline)
+├── SpriteManager.js    # Centralized sprite and asset management  
+├── DragController.js   # Token dragging functionality
+├── dice.js            # Dice rolling system with animations
+└── creatures/         # Creature system with factory pattern
+    ├── CreatureFactory.js
+    ├── CreatureToken.js
+    └── index.js
+```
+
 ## Contributing
 
 1. Fork the repository

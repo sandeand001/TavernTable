@@ -15,6 +15,29 @@ import {
 
 /**
  * TavernTable Game Manager
+ * 
+ * This is the main controller for the TavernTable isometric grid game.
+ * It manages the PIXI.js application, grid rendering, token placement,
+ * user interactions, and coordinate transformations.
+ * 
+ * Key Responsibilities:
+ * - Initialize and manage the PIXI.js application
+ * - Render the isometric grid with proper tile placement
+ * - Handle token creation, placement, and removal
+ * - Manage grid panning, zooming, and resizing
+ * - Convert between screen coordinates and grid coordinates
+ * - Provide error handling and user feedback
+ * 
+ * Architecture:
+ * - Uses ES6 modules for clean imports/exports
+ * - Follows object-oriented design patterns
+ * - Implements event-driven user interactions
+ * - Integrates with SpriteManager for asset loading
+ * - Coordinates with UIController for interface management
+ */
+
+/**
+ * TavernTable Game Manager
  * Handles the main game logic, grid rendering, and token management
  */
 class GameManager {
@@ -103,11 +126,19 @@ class GameManager {
     }
   }
 
+  /**
+   * Display an error message to the user
+   * @param {string} message - The error message to display
+   */
   showErrorMessage(message) {
     // Simple error notification - could be enhanced with a proper notification system
     alert(message);
   }
 
+  /**
+   * Fix any existing tokens that might be in the wrong container
+   * Ensures all placed tokens are properly positioned in the grid
+   */
   fixExistingTokens() {
     this.placedTokens.forEach(tokenData => {
       if (tokenData.creature && tokenData.creature.sprite) {
@@ -178,6 +209,9 @@ class GameManager {
     }
   }
 
+  /**
+   * Clear all grid tiles from the display while preserving tokens
+   */
   clearGridTiles() {
     // Remove all grid tiles (but keep tokens)
     const tilesToRemove = [];
@@ -193,6 +227,10 @@ class GameManager {
     });
   }
 
+  /**
+   * Validate and remove tokens that are outside grid boundaries
+   * Called after grid resize to ensure all tokens remain within valid positions
+   */
   validateTokenPositions() {
     // Remove tokens that are outside the new grid bounds
     const tokensToRemove = [];

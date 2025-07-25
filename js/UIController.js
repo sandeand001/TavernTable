@@ -1,12 +1,24 @@
 /**
  * UIController.js
  * Handles UI interactions and initialization for TavernTable
+ * 
+ * This module manages all user interface interactions that were previously
+ * defined inline in the HTML. It provides clean separation between the
+ * game logic and UI control, making the code more maintainable and testable.
+ * 
+ * Key Features:
+ * - Collapsible panel management
+ * - Grid resizing controls  
+ * - Zoom reset functionality
+ * - Game initialization coordination
+ * - Global function exposure for HTML compatibility
  */
 
 import GameManager from './GameManager.js';
 
 /**
- * Simple toggle function for creature tokens panel
+ * Toggle the visibility of the creature tokens panel
+ * Manages the collapsible state and arrow indicator
  */
 function toggleCreatureTokens() {
   const content = document.getElementById('creature-content');
@@ -24,7 +36,8 @@ function toggleCreatureTokens() {
 }
 
 /**
- * Grid resize function - handles resizing the game grid
+ * Resize the game grid based on user input
+ * Validates input values and delegates to GameManager for actual resizing
  */
 function resizeGrid() {
   const widthInput = document.getElementById('grid-width');
@@ -59,7 +72,8 @@ function resizeGrid() {
 }
 
 /**
- * Zoom reset function - resets the grid zoom to default
+ * Reset the grid zoom to default scale and center the view
+ * Provides user-friendly zoom reset functionality
  */
 function resetZoom() {
   if (window.gameManager && window.gameManager.resetZoom) {
