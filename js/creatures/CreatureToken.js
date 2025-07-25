@@ -180,3 +180,5 @@ class CreatureToken {
     }
   }
 }
+
+export default CreatureToken;

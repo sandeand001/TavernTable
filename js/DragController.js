@@ -28,7 +28,7 @@ function onDragEnd(event) {
   }
 }
 
-function onDragMove(event) {
+function onDragMove() {
   if (this.dragging) {
     const newPosition = this.data.getLocalPosition(this.parent);
     this.x = newPosition.x;

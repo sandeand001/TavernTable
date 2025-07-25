@@ -3,6 +3,8 @@
  * Handles UI interactions and initialization for TavernTable
  */
 
+import GameManager from './GameManager.js';
+
 /**
  * Simple toggle function for creature tokens panel
  */
@@ -44,7 +46,6 @@ function resizeGrid() {
     const newHeight = parseInt(heightInput.value);
     
     if (newWidth >= 5 && newWidth <= 50 && newHeight >= 5 && newHeight <= 50) {
-      console.log(`Resizing grid to ${newWidth}x${newHeight}`);
       try {
         window.gameManager.resizeGrid(newWidth, newHeight);
       } catch (error) {
@@ -72,8 +73,6 @@ function resetZoom() {
  * Initialize the application when the page loads
  */
 async function initializeApplication() {
-  console.log('Starting game initialization...');
-  
   // Ensure gameManager exists
   if (!window.gameManager) {
     console.error('GameManager not found');
@@ -82,16 +81,13 @@ async function initializeApplication() {
   
   try {
     await window.gameManager.initialize();
-    console.log('Game initialization complete, starting dice...');
     
     // Check if initDice3D function exists before calling it
-    if (typeof initDice3D === 'function') {
-      initDice3D();
+    if (typeof window.initDice3D === 'function') {
+      window.initDice3D();
     } else {
       console.warn('initDice3D function not found');
     }
-    
-    console.log('All initialization complete');
   } catch (error) {
     console.error('Error during initialization:', error);
   }
@@ -100,6 +96,11 @@ async function initializeApplication() {
 // Initialize the game manager and set up event listeners
 const gameManager = new GameManager();
 window.gameManager = gameManager;
+
+// Make functions available globally for HTML onclick handlers
+window.toggleCreatureTokens = toggleCreatureTokens;
+window.resizeGrid = resizeGrid;
+window.resetZoom = resetZoom;
 
 // Start the application when the page loads
 window.addEventListener('load', initializeApplication);

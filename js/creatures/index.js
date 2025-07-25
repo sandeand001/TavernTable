@@ -1,5 +1,7 @@
 // js/creatures/index.js - Global creature creation functions
 
+import CreatureFactory from './CreatureFactory.js';
+
 // Global functions for creating creatures (used by HTML buttons)
 function createDragon(x, y) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
@@ -45,3 +47,16 @@ function createTroll(x, y) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('troll', x, y, facingRight);
 }
+
+// Export all creature creation functions
+export { 
+  createGoblin, 
+  createOrc, 
+  createSkeleton, 
+  createDragon, 
+  createBeholder, 
+  createTroll, 
+  createOwlbear, 
+  createMinotaur, 
+  createMindFlayer 
+};

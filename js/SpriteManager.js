@@ -1,5 +1,7 @@
 // js/SpriteManager.js - Centralized sprite management
 
+import CreatureFactory from './creatures/CreatureFactory.js';
+
 class SpriteManager {
   constructor() {
     this.sprites = new Map();
@@ -233,31 +235,31 @@ window.debugSpriteCreation = function(creatureType) {
   // 1. Check GameConfig availability
   console.log(`1. GameConfig available: ${!!window.GameConfig}`);
   if (window.GameConfig) {
-    console.log(`   - Sprites config:`, window.GameConfig.sprites);
-    console.log(`   - Files count:`, Object.keys(window.GameConfig.sprites.files).length);
+    console.log('   - Sprites config:', window.GameConfig.sprites);
+    console.log('   - Files count:', Object.keys(window.GameConfig.sprites.files).length);
     console.log(`   - Contains ${creatureType}-sprite:`, !!window.GameConfig.sprites.files[`${creatureType}-sprite`]);
   }
   
   // 2. Check SpriteManager state
   console.log(`2. SpriteManager loaded: ${window.spriteManager.isLoaded()}`);
-  console.log(`   - Registered sprites:`, window.spriteManager.registeredSprites);
-  console.log(`   - Stored sprites:`, Array.from(window.spriteManager.sprites.keys()));
+  console.log('   - Registered sprites:', window.spriteManager.registeredSprites);
+  console.log('   - Stored sprites:', Array.from(window.spriteManager.sprites.keys()));
   
   // 3. Check specific sprite
   const spriteKey = `${creatureType}-sprite`;
   console.log(`3. Sprite key: "${spriteKey}"`);
-  console.log(`   - Has sprite loaded:`, window.spriteManager.hasSpriteLoaded(spriteKey));
-  console.log(`   - Can get sprite:`, !!window.spriteManager.getSprite(spriteKey));
+  console.log('   - Has sprite loaded:', window.spriteManager.hasSpriteLoaded(spriteKey));
+  console.log('   - Can get sprite:', !!window.spriteManager.getSprite(spriteKey));
   
   // 4. Test creation
   try {
-    console.log(`4. Testing creature creation...`);
+    console.log('4. Testing creature creation...');
     const creature = CreatureFactory.createCreature(creatureType, 100, 100);
-    console.log(`   - Creature created:`, !!creature);
-    console.log(`   - Sprite type:`, creature.sprite.constructor.name);
-    console.log(`   - Is PNG sprite:`, creature.sprite instanceof PIXI.Sprite);
+    console.log('   - Creature created:', !!creature);
+    console.log('   - Sprite type:', creature.sprite.constructor.name);
+    console.log('   - Is PNG sprite:', creature.sprite instanceof PIXI.Sprite);
   } catch (error) {
-    console.error(`   - Creation failed:`, error);
+    console.error('   - Creation failed:', error);
   }
   
   console.log(`🔍 === END DEBUG FOR: ${creatureType} ===`);
@@ -265,14 +267,14 @@ window.debugSpriteCreation = function(creatureType) {
 
 // Global function to inspect PIXI Assets
 window.inspectPixiAssets = function() {
-  console.log(`🔍 === PIXI ASSETS INSPECTION ===`);
+  console.log('🔍 === PIXI ASSETS INSPECTION ===');
   
   try {
     // Check PIXI.Assets cache
     if (PIXI.Assets.cache && PIXI.Assets.cache.data) {
-      console.log(`PIXI.Assets.cache.data:`, PIXI.Assets.cache.data);
+      console.log('PIXI.Assets.cache.data:', PIXI.Assets.cache.data);
       const cacheKeys = Object.keys(PIXI.Assets.cache.data);
-      console.log(`Cache keys:`, cacheKeys);
+      console.log('Cache keys:', cacheKeys);
       
       cacheKeys.forEach(key => {
         const asset = PIXI.Assets.cache.data[key];
@@ -282,7 +284,7 @@ window.inspectPixiAssets = function() {
     
     // Check resolver
     if (PIXI.Assets._resolver && PIXI.Assets._resolver._assetMap) {
-      console.log(`PIXI.Assets._resolver._assetMap:`);
+      console.log('PIXI.Assets._resolver._assetMap:');
       for (const [key, value] of PIXI.Assets._resolver._assetMap) {
         console.log(`  ${key} -> ${value.src}`);
       }
@@ -300,8 +302,8 @@ window.inspectPixiAssets = function() {
     });
     
   } catch (error) {
-    console.error(`Error inspecting PIXI Assets:`, error);
+    console.error('Error inspecting PIXI Assets:', error);
   }
   
-  console.log(`🔍 === END PIXI INSPECTION ===`);
+  console.log('🔍 === END PIXI INSPECTION ===');
 };

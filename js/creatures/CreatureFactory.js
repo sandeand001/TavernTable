@@ -1,5 +1,7 @@
 // js/creatures/CreatureFactory.js - Factory for creating creature tokens
 
+import CreatureToken from './CreatureToken.js';
+
 class CreatureFactory {
   static createCreature(type, x = 0, y = 0, facingRight = true) {
     // Validate creature type
@@ -16,3 +18,5 @@ class CreatureFactory {
     return new CreatureToken(type, x, y, facingRight);
   }
 }
+
+export default CreatureFactory;

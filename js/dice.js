@@ -10,7 +10,7 @@ export function rollDice(sides) {
   const resultEl = document.getElementById('dice-result');
   
   if (!resultEl) {
-    console.warn("dice-result element not found.");
+    console.warn('dice-result element not found.');
     return;
   }
 
