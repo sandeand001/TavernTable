@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sprite Loading Test</title>
+    <script src="https://pixijs.download/release/pixi.min.js"></script>
+</head>
+<body>
+    <div id="test-container"></div>
+    <div>
+        <button onclick="testSprite('goblin-sprite')">Test Goblin</button>
+        <button onclick="testSprite('dragon-sprite')">Test Dragon</button>
+        <button onclick="testSprite('beholder-sprite')">Test Beholder</button>
+        <button onclick="listAssets()">List Assets</button>
+    </div>
+    
+    <script>
+        let app;
+        
+        async function init() {
+            // Create PIXI app
+            app = new PIXI.Application({
+                width: 400,
+                height: 300,
+                backgroundColor: 0x2c2c2c
+            });
+            document.getElementById('test-container').appendChild(app.view);
+            
+            // Register sprites
+            const sprites = {
+                'goblin-sprite': 'assets/sprites/goblin-sprite.png',
+                'dragon-sprite': 'assets/sprites/dragon-sprite.png',
+                'beholder-sprite': 'assets/sprites/beholder-sprite.png'
+            };
+            
+            for (const [name, path] of Object.entries(sprites)) {
+                console.log(`Adding sprite: ${name} -> ${path}`);
+                PIXI.Assets.add(name, path);
+            }
+            
+            // Load all sprites
+            console.log('Loading sprites...');
+            try {
+                await PIXI.Assets.load(['goblin-sprite', 'dragon-sprite', 'beholder-sprite']);
+                console.log('All sprites loaded successfully');
+            } catch (error) {
+                console.error('Error loading sprites:', error);
+            }
+        }
+        
+        function testSprite(spriteName) {
+            console.log(`Testing sprite: ${spriteName}`);
+            try {
+                const texture = PIXI.Assets.get(spriteName);
+                if (texture) {
+                    console.log(`✓ Got texture for ${spriteName}:`, texture.width, 'x', texture.height);
+                    
+                    // Clear stage
+                    app.stage.removeChildren();
+                    
+                    // Create sprite
+                    const sprite = new PIXI.Sprite(texture);
+                    sprite.anchor.set(0.5, 0.5);
+                    sprite.scale.set(0.1, 0.1);
+                    sprite.x = 200;
+                    sprite.y = 150;
+                    app.stage.addChild(sprite);
+                    
+                    console.log(`✓ Added ${spriteName} to stage`);
+                } else {
+                    console.error(`✗ No texture found for ${spriteName}`);
+                }
+            } catch (error) {
+                console.error(`Error testing ${spriteName}:`, error);
+            }
+        }
+        
+        function listAssets() {
+            console.log('Listing all available assets:');
+            if (PIXI.Assets._resolver && PIXI.Assets._resolver._assetMap) {
+                for (const [key, value] of PIXI.Assets._resolver._assetMap) {
+                    console.log(`  ${key} -> ${value.src}`);
+                }
+            }
+        }
+        
+        // Initialize when page loads
+        init();
+    </script>
+</body>
+</html>

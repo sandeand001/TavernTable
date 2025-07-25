@@ -1,0 +1,173 @@
+/* css/styles.css - Main stylesheet for TavernTable */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: #1e1e1e;
+  overflow: hidden;
+}
+
+#game-container {
+  width: 100vw;
+  height: 100vh;
+}
+
+#dice-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  border-radius: 8px;
+  color: white;
+  font-family: sans-serif;
+}
+
+#dice-panel button {
+  margin: 2px;
+  padding: 6px 10px;
+  background-color: #444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#dice-panel button:hover {
+  background-color: #666;
+}
+
+#dice-result {
+  margin-top: 8px;
+  font-weight: bold;
+}
+
+#token-panel {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  border-radius: 8px;
+  color: white;
+  font-family: sans-serif;
+}
+
+#token-panel button {
+  margin: 2px;
+  padding: 8px 12px;
+  background-color: #444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+
+#token-panel button:hover {
+  background-color: #666;
+}
+
+#token-panel button.selected {
+  background-color: #0066cc;
+  border: 2px solid #4da6ff;
+}
+
+.facing-button {
+  margin: 2px;
+  padding: 6px 10px !important;
+  background-color: #555 !important;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-block !important;
+  width: auto !important;
+  font-size: 14px;
+}
+
+.facing-button:hover {
+  background-color: #777 !important;
+}
+
+.facing-button.selected {
+  background-color: #228B22 !important;
+  border: 2px solid #32CD32 !important;
+}
+
+/* Special styling for action buttons (move/remove) */
+#token-move.facing-button {
+  background-color: #4169E1 !important;
+  width: 48% !important;
+  margin-right: 2% !important;
+}
+
+#token-move.facing-button:hover {
+  background-color: #5B7EFB !important;
+}
+
+#token-move.facing-button.selected {
+  background-color: #1E90FF !important;
+  border: 2px solid #87CEEB !important;
+}
+
+#token-remove.facing-button {
+  background-color: #DC143C !important;
+  width: 48% !important;
+}
+
+#token-remove.facing-button:hover {
+  background-color: #F54C6B !important;
+}
+
+#token-remove.facing-button.selected {
+  background-color: #FF4500 !important;
+  border: 2px solid #FF6347 !important;
+}
+
+#token-info {
+  margin-top: 8px;
+  font-size: 12px;
+  font-style: italic;
+}
+
+#dice-3d-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  height: 200px;
+  pointer-events: none;
+  z-index: 1000;
+  display: none;
+}
+
+/* Collapsible menu styles */
+.collapsible-header {
+  cursor: pointer;
+  padding: 5px 0;
+  font-weight: bold;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.collapsible-header:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+.collapsible-content {
+  display: block;
+  transition: all 0.3s ease;
+}
+
+#creature-toggle {
+  font-size: 14px;
+  margin-left: auto;
+}

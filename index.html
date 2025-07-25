@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TavernTable - Isometric Grid</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="game-container"></div>
+  <div id="dice-3d-container"></div>
+  
+  <div id="dice-panel">
+    <div>🎲 Roll Dice:</div>
+    <div style="margin: 5px 0;">
+      <label for="dice-count" style="font-size: 12px;">Count:</label>
+      <input type="number" id="dice-count" min="1" max="10" value="1" style="width: 40px; margin: 0 5px; padding: 2px; background: #333; color: white; border: 1px solid #666;">
+    </div>
+    <button onclick="rollDice(4)">d4</button>
+    <button onclick="rollDice(6)">d6</button>
+    <button onclick="rollDice(8)">d8</button>
+    <button onclick="rollDice(10)">d10</button>
+    <button onclick="rollDice(12)">d12</button>
+    <button onclick="rollDice(20)">d20</button>
+    <div id="dice-result">Result: -</div>
+  </div>
+  
+  <div id="token-panel">
+    <div>🗡️ Creature Tokens:</div>
+    <button id="token-beholder" onclick="selectToken('beholder')">👁️ Beholder</button>
+    <button id="token-dragon" onclick="selectToken('dragon')">🐉 Dragon</button>
+    <button id="token-goblin" onclick="selectToken('goblin')" class="selected">🧌 Goblin</button>
+    <button id="token-mindflayer" onclick="selectToken('mindflayer')">🐙 Mind Flayer</button>
+    <button id="token-minotaur" onclick="selectToken('minotaur')">🐂 Minotaur</button>
+    <button id="token-orc" onclick="selectToken('orc')">🧟 Orc</button>
+    <button id="token-owlbear" onclick="selectToken('owlbear')">🐻 Owlbear</button>
+    <button id="token-skeleton" onclick="selectToken('skeleton')">💀 Skeleton</button>
+    <button id="token-troll" onclick="selectToken('troll')">🧟‍♂️ Troll</button>
+    
+    <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 8px;">
+      <div>⚙️ Token Actions:</div>
+      <button id="token-move" onclick="selectToken('move')" class="facing-button">🔄 Move</button>
+      <button id="token-remove" onclick="selectToken('remove')" class="facing-button">🚫 Remove</button>
+    </div>
+    
+    <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 8px;">
+      <div>🔄 Facing Direction:</div>
+      <button id="facing-right" onclick="toggleFacing()" class="facing-button selected">➡️ Right</button>
+    </div>
+    <div id="token-info">Click on grid to place selected token</div>
+  </div>
+
+  <!-- External Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+
+  <!-- Game Modules -->
+  <script src="./js/config/GameConfig.js"></script>
+  <script src="./js/SpriteManager.js"></script>
+  <script src="./js/GameManager.js"></script>
+  <script src="./js/DragController.js"></script>
+  
+  <!-- Creature System -->
+  <script src="./js/creatures/CreatureToken.js"></script>
+  <script src="./js/creatures/CreatureFactory.js"></script>
+  <script src="./js/creatures/index.js"></script>
+  
+  <!-- Dice System -->
+  <script src="./js/diceLog.js"></script>
+  <script src="./js/dice3d.js"></script>
+
+  <!-- Application Initialization -->
+  <script>
+    // Initialize the application
+    const gameManager = new GameManager();
+    
+    window.addEventListener('load', async () => {
+      console.log('Starting game initialization...');
+      await gameManager.initialize();
+      console.log('Game initialization complete, starting dice...');
+      initDice3D();
+      console.log('All initialization complete');
+    });
+  </script>
+</body>
+</html>

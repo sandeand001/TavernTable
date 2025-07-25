@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GameConfig Loading Test</title>
+</head>
+<body>
+    <h1>GameConfig Loading Test</h1>
+    <div id="results"></div>
+
+    <script>
+        function logResult(message) {
+            document.getElementById('results').innerHTML += '<p>' + message + '</p>';
+            console.log(message);
+        }
+        
+        logResult('Starting GameConfig test...');
+        logResult('GameConfig before loading: ' + (typeof window.GameConfig));
+    </script>
+
+    <!-- Load GameConfig -->
+    <script src="./js/config/GameConfig.js"></script>
+    
+    <script>
+        logResult('GameConfig after loading: ' + (typeof window.GameConfig));
+        if (window.GameConfig) {
+            logResult('GameConfig sprites: ' + JSON.stringify(window.GameConfig.sprites, null, 2));
+            logResult('Sprite files count: ' + Object.keys(window.GameConfig.sprites.files).length);
+        }
+    </script>
+
+    <!-- Load SpriteManager -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+    <script src="./js/SpriteManager.js"></script>
+    
+    <script>
+        logResult('After SpriteManager loading:');
+        logResult('SpriteManager exists: ' + !!window.spriteManager);
+        
+        // Test what getSpriteFiles returns
+        if (window.spriteManager) {
+            const files = window.spriteManager.getSpriteFiles();
+            logResult('getSpriteFiles() returned: ' + JSON.stringify(files, null, 2));
+            logResult('Files count from SpriteManager: ' + Object.keys(files).length);
+        }
+    </script>
+</body>
+</html>
