@@ -12,9 +12,9 @@
   
   <div id="dice-panel">
     <div>🎲 Roll Dice:</div>
-    <div style="margin: 5px 0;">
-      <label for="dice-count" style="font-size: 12px;">Count:</label>
-      <input type="number" id="dice-count" min="1" max="10" value="1" style="width: 40px; margin: 0 5px; padding: 2px; background: #333; color: white; border: 1px solid #666;">
+    <div class="dice-count-container">
+      <label for="dice-count" class="dice-count-label">Count:</label>
+      <input type="number" id="dice-count" min="1" max="10" value="1">
     </div>
     <button onclick="rollDice(4)">d4</button>
     <button onclick="rollDice(6)">d6</button>
@@ -26,7 +26,7 @@
   </div>
   
   <div id="token-panel">
-    <div id="creature-header" onclick="toggleCreatureTokens();" style="cursor: pointer;">
+    <div id="creature-header" onclick="toggleCreatureTokens();">
       🗡️ Creature Tokens: <span id="creature-arrow">▼</span>
     </div>
     <div id="creature-content">
@@ -41,27 +41,27 @@
       <button id="token-troll" onclick="selectToken('troll')">🧟‍♂️ Troll</button>
     </div>
     
-    <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 8px;">
+    <div class="token-section">
       <div>⚙️ Token Actions:</div>
       <button id="token-move" onclick="selectToken('move')" class="facing-button">🔄 Move</button>
       <button id="token-remove" onclick="selectToken('remove')" class="facing-button">🚫 Remove</button>
     </div>
     
-    <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 8px;">
+    <div class="token-section">
       <div>🔄 Facing Direction:</div>
       <button id="facing-right" onclick="toggleFacing()" class="facing-button selected">➡️ Right</button>
     </div>
     
-    <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 8px;">
+    <div class="token-section">
       <div>📐 Grid Size:</div>
-      <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-        <label style="font-size: 12px;">Width:</label>
-        <input type="number" id="grid-width" min="5" max="50" value="10" style="width: 50px; padding: 2px; background: #333; color: white; border: 1px solid #666; border-radius: 3px;">
-        <label style="font-size: 12px;">Height:</label>
-        <input type="number" id="grid-height" min="5" max="50" value="10" style="width: 50px; padding: 2px; background: #333; color: white; border: 1px solid #666; border-radius: 3px;">
+      <div class="grid-controls-row">
+        <label class="grid-label">Width:</label>
+        <input type="number" id="grid-width" min="5" max="50" value="10" class="grid-input">
+        <label class="grid-label">Height:</label>
+        <input type="number" id="grid-height" min="5" max="50" value="10" class="grid-input">
       </div>
-      <button onclick="resizeGrid()" style="margin-top: 5px; width: 100%; padding: 5px; background: #444; color: white; border: 1px solid #666; border-radius: 3px; cursor: pointer;">🔄 Resize Grid</button>
-      <button onclick="resetZoom()" style="margin-top: 5px; width: 100%; padding: 5px; background: #444; color: white; border: 1px solid #666; border-radius: 3px; cursor: pointer;">🔍 Reset Zoom</button>
+      <button onclick="resizeGrid()" class="grid-button">🔄 Resize Grid</button>
+      <button onclick="resetZoom()" class="grid-button">🔍 Reset Zoom</button>
     </div>
     
     <div id="token-info">Click on grid to place selected token</div>
@@ -74,7 +74,7 @@
   <!-- Game Modules -->
   <script src="./js/config/GameConfig.js"></script>
   <script src="./js/SpriteManager.js"></script>
-  <script src="./js/GameManager.js?v=6"></script>
+  <script src="./js/GameManager.js"></script>
   <script src="./js/DragController.js"></script>
   
   <!-- Creature System -->
@@ -85,78 +85,8 @@
   <!-- Dice System -->
   <script src="./js/diceLog.js"></script>
   <script src="./js/dice3d.js"></script>
-
-  <!-- Application Initialization -->
-  <script>
-    // Simple toggle function for creature tokens
-    function toggleCreatureTokens() {
-      const content = document.getElementById('creature-content');
-      const arrow = document.getElementById('creature-arrow');
-      
-      if (content) {
-        if (content.style.display === 'none') {
-          content.style.display = 'block';
-          if (arrow) arrow.textContent = '▼';
-        } else {
-          content.style.display = 'none';
-          if (arrow) arrow.textContent = '▶';
-        }
-      }
-    }
-    
-    // Grid resize function
-    function resizeGrid() {
-      const widthInput = document.getElementById('grid-width');
-      const heightInput = document.getElementById('grid-height');
-      
-      if (!window.gameManager) {
-        alert('Game is still loading. Please wait a moment and try again.');
-        return;
-      }
-      
-      if (!window.gameManager.resizeGrid) {
-        console.error('resizeGrid method not found on gameManager');
-        alert('Grid resize feature is not available.');
-        return;
-      }
-      
-      if (widthInput && heightInput) {
-        const newWidth = parseInt(widthInput.value);
-        const newHeight = parseInt(heightInput.value);
-        
-        if (newWidth >= 5 && newWidth <= 50 && newHeight >= 5 && newHeight <= 50) {
-          console.log(`Resizing grid to ${newWidth}x${newHeight}`);
-          try {
-            window.gameManager.resizeGrid(newWidth, newHeight);
-          } catch (error) {
-            console.error('Error resizing grid:', error);
-            alert('Error resizing grid. Check console for details.');
-          }
-        } else {
-          alert('Grid size must be between 5x5 and 50x50');
-        }
-      }
-    }
-    
-    // Zoom reset function
-    function resetZoom() {
-      if (window.gameManager && window.gameManager.resetZoom) {
-        window.gameManager.resetZoom();
-      } else {
-        console.warn('Game not ready or zoom reset not available');
-      }
-    }
-    
-    // Initialize the application
-    const gameManager = new GameManager();
-    
-    window.addEventListener('load', async () => {
-      console.log('Starting game initialization...');
-      await gameManager.initialize();
-      console.log('Game initialization complete, starting dice...');
-      initDice3D();
-      console.log('All initialization complete');
-    });
-  </script>
+  
+  <!-- UI Controller -->
+  <script src="./js/UIController.js"></script>
 </body>
 </html>
