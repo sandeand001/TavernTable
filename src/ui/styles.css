@@ -133,25 +133,10 @@ html, body {
   border: 2px solid #32CD32 !important;
 }
 
-/* Special styling for action buttons (move/remove) */
-#token-move.facing-button {
-  background-color: #4169E1 !important;
-  width: 48% !important;
-  margin-right: 2% !important;
-}
-
-#token-move.facing-button:hover {
-  background-color: #5B7EFB !important;
-}
-
-#token-move.facing-button.selected {
-  background-color: #1E90FF !important;
-  border: 2px solid #87CEEB !important;
-}
-
+/* Special styling for action buttons (remove) */
 #token-remove.facing-button {
   background-color: #DC143C !important;
-  width: 48% !important;
+  width: 100% !important;
 }
 
 #token-remove.facing-button:hover {
@@ -167,6 +152,22 @@ html, body {
   margin-top: 8px;
   font-size: 12px;
   font-style: italic;
+}
+
+.help-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #444;
+  font-size: 11px;
+}
+
+.help-text {
+  margin: 2px 0;
+  color: #ccc;
+}
+
+.help-text strong {
+  color: #fff;
 }
 
 #dice-3d-container {

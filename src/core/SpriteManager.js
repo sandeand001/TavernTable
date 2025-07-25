@@ -1,7 +1,5 @@
 // src/core/SpriteManager.js - Centralized sprite management
 
-import CreatureFactory from '../entities/creatures/CreatureFactory.js';
-
 class SpriteManager {
   constructor() {
     this.sprites = new Map();

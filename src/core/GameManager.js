@@ -22,7 +22,50 @@ import {
  * 
  * Key Responsibilities:
  * - Initialize and manage the PIXI.js application
- * - Render the isometric grid with proper tile placement
+ * - Render the is           /      /      // Ha      sprite.on('pointerupoutside', function() {
+        if (this.isRightDragging) {
+          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
+          
+          this.isRightDragging = false;
+          this.alpha = 1.0;
+          this.dragData = null;
+          
+          // Snap to grid
+          if (window.snapToGrid) {
+            window.snapToGrid(this);
+          }
+        }
+      });ving the canvas area
+      sprite.on('pointerupoutside', function() {
+        if (this.isRightDragging) {
+          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
+          
+          this.isRightDragging = false;
+          this.alpha = 1.0;
+          this.dragData = null;
+          
+          // Snap to grid
+          if (window.snapToGrid) {use leaving the canvas area
+      sprite.on('pointerupoutside', function() {
+        if (this.isRightDragging) {
+          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
+          
+          this.isRightDragging = false;
+          this.alpha = 1.0;
+          this.dragData = null; mouse leaving the canvas area
+      sprite.on('pointerupoutside', function() {
+        if (this.isRightDragging) {
+          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
+          
+          this.isRightDragging = false;
+          this.alpha = 1.0;
+          this.dragData = null;on('pointerupoutside', function(event) {
+        if (this.isRightDragging) {
+          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
+          
+          this.isRightDragging = false;
+          this.alpha = 1.0;
+          this.dragData = null; grid with proper tile placement
  * - Handle token creation, placement, and removal
  * - Manage grid panning, zooming, and resizing
  * - Convert between screen coordinates and grid coordinates
@@ -64,6 +107,7 @@ class GameManager {
     this.dragStartY = 0;
     this.gridStartX = 0;
     this.gridStartY = 0;
+    this.isSpacePressed = false; // Track space bar state for panning
     
     // Grid zoom variables
     this.gridScale = 1.0;
@@ -339,6 +383,7 @@ class GameManager {
   setupGridInteraction() {
     this.setupContextMenu();
     this.setupMouseInteractions();
+    this.setupKeyboardInteractions();
     this.setupZoomInteraction();
   }
 
@@ -359,11 +404,16 @@ class GameManager {
   setupMouseDown() {
     // Single mousedown handler for all interactions
     this.app.view.addEventListener('mousedown', (event) => {
-      if (event.button === 2) { // Right mouse button - grid dragging
-        this.startGridDragging(event);
-      } else if (event.button === 0) { // Left mouse button - token placement
-        this.handleLeftClick(event);
+      if (event.button === 0) { // Left mouse button
+        if (this.isSpacePressed) {
+          // Space + left click = panning
+          this.startGridDragging(event);
+        } else {
+          // Regular left click = token placement
+          this.handleLeftClick(event);
+        }
       }
+      // Note: Right-click is now handled directly by individual sprites
     });
   }
 
@@ -379,7 +429,7 @@ class GameManager {
   setupMouseUp() {
     // Mouse up handler
     this.app.view.addEventListener('mouseup', (event) => {
-      if (this.isDragging && event.button === 2) {
+      if (this.isDragging && event.button === 0) {
         this.stopGridDragging();
       }
     });
@@ -390,6 +440,30 @@ class GameManager {
     this.app.view.addEventListener('mouseleave', () => {
       if (this.isDragging) {
         this.stopGridDragging();
+      }
+    });
+  }
+
+  setupKeyboardInteractions() {
+    // Space bar for panning
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Space' && !event.repeat) {
+        this.isSpacePressed = true;
+        // Change cursor to indicate panning mode when space is held
+        if (!this.isDragging) {
+          this.app.view.style.cursor = 'grab';
+        }
+        event.preventDefault(); // Prevent page scrolling
+      }
+    });
+
+    document.addEventListener('keyup', (event) => {
+      if (event.code === 'Space') {
+        this.isSpacePressed = false;
+        // Reset cursor when space is released
+        if (!this.isDragging) {
+          this.app.view.style.cursor = 'default';
+        }
       }
     });
   }
@@ -414,7 +488,8 @@ class GameManager {
 
   stopGridDragging() {
     this.isDragging = false;
-    this.app.view.style.cursor = 'default';
+    // Set cursor based on whether space is still pressed
+    this.app.view.style.cursor = this.isSpacePressed ? 'grab' : 'default';
   }
 
   setupZoomInteraction() {
@@ -469,11 +544,6 @@ class GameManager {
     if (!gridCoords) return;
     
     const { gridX, gridY } = gridCoords;
-    
-    // Skip grid placement when in move mode
-    if (this.selectedTokenType === 'move') {
-      return;
-    }
     
     this.handleTokenInteraction(gridX, gridY);
   }
@@ -587,21 +657,79 @@ class GameManager {
     };
     this.placedTokens.push(newTokenData);
     
-    // If we're in move mode, make this token draggable immediately
-    if (window.selectedTokenType === 'move' && creature && creature.sprite) {
+    // Set up right-click drag system for all tokens
+    if (creature && creature.sprite) {
       const sprite = creature.sprite;
       sprite.interactive = true;
       sprite.buttonMode = true;
-      sprite.on('pointerdown', window.onDragStart);
-      sprite.on('pointerup', window.onDragEnd);
-      sprite.on('pointerupoutside', window.onDragEnd);
-      sprite.on('pointermove', window.onDragMove);
-      console.log(`Made new ${newTokenData.type} token draggable`);
-    }
-    
-    // Check if we need to enable dragging for all tokens
-    if (window.selectedTokenType === 'move') {
-      this.enableTokenDragging();
+      
+      // Store references for event handling
+      sprite.tokenData = newTokenData;
+      sprite.gameManager = this;
+      sprite.isRightDragging = false;
+      
+      console.log(`Created ${newTokenData.type} token - right-click and drag to move`);
+      
+      // Right mouse button down - start dragging immediately
+      sprite.on('pointerdown', function(event) {
+        if (event.data.originalEvent.button === 2) { // Right click
+          console.log(`🟡 Right-drag started on ${this.tokenData.type}`);
+          
+          this.isRightDragging = true;
+          this.alpha = 0.7; // Visual feedback - make semi-transparent
+          this.dragData = event.data;
+          
+          // Store initial position for potential cancellation
+          this.dragStartX = this.x;
+          this.dragStartY = this.y;
+          
+          event.stopPropagation();
+          event.preventDefault();
+        }
+      });
+      
+      // Mouse move - update token position if right-dragging
+      sprite.on('pointermove', function() {
+        if (this.isRightDragging && this.dragData) {
+          const newPosition = this.dragData.getLocalPosition(this.parent);
+          this.x = newPosition.x;
+          this.y = newPosition.y;
+        }
+      });
+      
+      // Right mouse button up - end dragging and snap to grid
+      sprite.on('pointerup', function(event) {
+        if (this.isRightDragging && event.data.originalEvent.button === 2) {
+          console.log(`🟢 Right-drag ended on ${this.tokenData.type} - snapping to grid`);
+          
+          this.isRightDragging = false;
+          this.alpha = 1.0; // Restore full opacity
+          this.dragData = null;
+          
+          // Snap to grid using the game manager's snap function
+          if (window.snapToGrid) {
+            window.snapToGrid(this);
+          }
+          
+          event.stopPropagation();
+        }
+      });
+      
+      // Handle mouse leaving the canvas area
+      sprite.on('pointerupoutside', function() {
+        if (this.isRightDragging) {
+          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
+          
+          this.isRightDragging = false;
+          this.alpha = 1.0;
+          this.dragData = null;
+          
+          // Snap to grid
+          if (window.snapToGrid) {
+            window.snapToGrid(this);
+          }
+        }
+      });
     }
     
     window.placedTokens = this.placedTokens;
@@ -645,19 +773,10 @@ class GameManager {
     this.selectedTokenType = tokenType;
     window.selectedTokenType = tokenType;
     
-    // Handle move mode - enable/disable dragging for all tokens
-    if (tokenType === 'move') {
-      this.enableTokenDragging();
-    } else {
-      this.disableTokenDragging();
-    }
-    
     // Update info text
     const infoEl = document.getElementById('token-info');
     if (tokenType === 'remove') {
       infoEl.textContent = 'Click on tokens to remove them';
-    } else if (tokenType === 'move') {
-      infoEl.textContent = 'Drag tokens to move them around';
     } else {
       infoEl.textContent = `Click on grid to place ${tokenType}`;
     }
@@ -672,52 +791,6 @@ class GameManager {
     if (facingBtn) {
       facingBtn.innerHTML = this.tokenFacingRight ? '➡️ Right' : '⬅️ Left';
     }
-  }
-
-  enableTokenDragging() {
-    console.log('Enabling token dragging for all placed tokens');
-    
-    // Enable interactivity for all placed tokens
-    this.placedTokens.forEach(tokenData => {
-      if (tokenData.creature && tokenData.creature.sprite) {
-        const sprite = tokenData.creature.sprite;
-        
-        // Make sprite interactive
-        sprite.interactive = true;
-        sprite.buttonMode = true;
-        
-        // Attach drag event handlers from DragController
-        sprite.on('pointerdown', window.onDragStart);
-        sprite.on('pointerup', window.onDragEnd);
-        sprite.on('pointerupoutside', window.onDragEnd);
-        sprite.on('pointermove', window.onDragMove);
-        
-        console.log(`Enabled dragging for ${tokenData.type} token`);
-      }
-    });
-  }
-
-  disableTokenDragging() {
-    console.log('Disabling token dragging for all placed tokens');
-    
-    // Disable interactivity for all placed tokens
-    this.placedTokens.forEach(tokenData => {
-      if (tokenData.creature && tokenData.creature.sprite) {
-        const sprite = tokenData.creature.sprite;
-        
-        // Remove interactivity
-        sprite.interactive = false;
-        sprite.buttonMode = false;
-        
-        // Remove drag event handlers
-        sprite.off('pointerdown', window.onDragStart);
-        sprite.off('pointerup', window.onDragEnd);
-        sprite.off('pointerupoutside', window.onDragEnd);
-        sprite.off('pointermove', window.onDragMove);
-        
-        console.log(`Disabled dragging for ${tokenData.type} token`);
-      }
-    });
   }
 
   createCreatureByType(type) {
