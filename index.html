@@ -51,6 +51,19 @@
       <div>🔄 Facing Direction:</div>
       <button id="facing-right" onclick="toggleFacing()" class="facing-button selected">➡️ Right</button>
     </div>
+    
+    <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 8px;">
+      <div>📐 Grid Size:</div>
+      <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+        <label style="font-size: 12px;">Width:</label>
+        <input type="number" id="grid-width" min="5" max="50" value="10" style="width: 50px; padding: 2px; background: #333; color: white; border: 1px solid #666; border-radius: 3px;">
+        <label style="font-size: 12px;">Height:</label>
+        <input type="number" id="grid-height" min="5" max="50" value="10" style="width: 50px; padding: 2px; background: #333; color: white; border: 1px solid #666; border-radius: 3px;">
+      </div>
+      <button onclick="resizeGrid()" style="margin-top: 5px; width: 100%; padding: 5px; background: #444; color: white; border: 1px solid #666; border-radius: 3px; cursor: pointer;">🔄 Resize Grid</button>
+      <button onclick="resetZoom()" style="margin-top: 5px; width: 100%; padding: 5px; background: #444; color: white; border: 1px solid #666; border-radius: 3px; cursor: pointer;">🔍 Reset Zoom</button>
+    </div>
+    
     <div id="token-info">Click on grid to place selected token</div>
   </div>
 
@@ -61,7 +74,7 @@
   <!-- Game Modules -->
   <script src="./js/config/GameConfig.js"></script>
   <script src="./js/SpriteManager.js"></script>
-  <script src="./js/GameManager.js"></script>
+  <script src="./js/GameManager.js?v=6"></script>
   <script src="./js/DragController.js"></script>
   
   <!-- Creature System -->
@@ -88,6 +101,49 @@
           content.style.display = 'none';
           if (arrow) arrow.textContent = '▶';
         }
+      }
+    }
+    
+    // Grid resize function
+    function resizeGrid() {
+      const widthInput = document.getElementById('grid-width');
+      const heightInput = document.getElementById('grid-height');
+      
+      if (!window.gameManager) {
+        alert('Game is still loading. Please wait a moment and try again.');
+        return;
+      }
+      
+      if (!window.gameManager.resizeGrid) {
+        console.error('resizeGrid method not found on gameManager');
+        alert('Grid resize feature is not available.');
+        return;
+      }
+      
+      if (widthInput && heightInput) {
+        const newWidth = parseInt(widthInput.value);
+        const newHeight = parseInt(heightInput.value);
+        
+        if (newWidth >= 5 && newWidth <= 50 && newHeight >= 5 && newHeight <= 50) {
+          console.log(`Resizing grid to ${newWidth}x${newHeight}`);
+          try {
+            window.gameManager.resizeGrid(newWidth, newHeight);
+          } catch (error) {
+            console.error('Error resizing grid:', error);
+            alert('Error resizing grid. Check console for details.');
+          }
+        } else {
+          alert('Grid size must be between 5x5 and 50x50');
+        }
+      }
+    }
+    
+    // Zoom reset function
+    function resetZoom() {
+      if (window.gameManager && window.gameManager.resetZoom) {
+        window.gameManager.resetZoom();
+      } else {
+        console.warn('Game not ready or zoom reset not available');
       }
     }
     

@@ -14,6 +14,19 @@ class GameManager {
     this.tileHeight = 32;
     this.rows = 10;
     this.cols = 10;
+    
+    // Grid panning variables
+    this.isDragging = false;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
+    this.gridStartX = 0;
+    this.gridStartY = 0;
+    
+    // Grid zoom variables
+    this.gridScale = 1.0;
+    this.minScale = 0.3;
+    this.maxScale = 3.0;
+    this.zoomSpeed = 0.1;
   }
 
   async initialize() {
@@ -27,16 +40,141 @@ class GameManager {
     });
     document.getElementById('game-container').appendChild(this.app.view);
     
+    // Disable PIXI interaction system more safely
+    this.app.stage.interactive = false;
+    this.app.stage.interactiveChildren = false;
+    
     // Make app globally available
     window.app = this.app;
     
     this.setupGrid();
     this.setupGlobalVariables();
+    this.setupGridInteraction();
     
     // Initialize sprites
     await this.initializeSprites();
     
     console.log('Game initialization complete');
+    
+    // Fix any existing tokens that might be in wrong container
+    this.fixExistingTokens();
+  }
+
+  fixExistingTokens() {
+    console.log('Fixing existing tokens...');
+    this.placedTokens.forEach(tokenData => {
+      if (tokenData.creature && tokenData.creature.sprite) {
+        const sprite = tokenData.creature.sprite;
+        
+        // Remove from current parent
+        if (sprite.parent) {
+          sprite.parent.removeChild(sprite);
+        }
+        
+        // Add to grid container
+        this.gridContainer.addChild(sprite);
+        
+        // Recalculate position relative to grid
+        const isoX = (tokenData.gridX - tokenData.gridY) * (this.tileWidth / 2);
+        const isoY = (tokenData.gridX + tokenData.gridY) * (this.tileHeight / 2);
+        sprite.x = isoX;
+        sprite.y = isoY;
+        
+        console.log(`Fixed token at grid (${tokenData.gridX}, ${tokenData.gridY}) -> iso (${isoX}, ${isoY})`);
+      }
+    });
+  }
+
+  resizeGrid(newCols, newRows) {
+    console.log(`Resizing grid from ${this.cols}x${this.rows} to ${newCols}x${newRows}`);
+    
+    // Store old dimensions
+    const oldCols = this.cols;
+    const oldRows = this.rows;
+    
+    // Update grid dimensions
+    this.cols = newCols;
+    this.rows = newRows;
+    
+    // Update global variables
+    window.cols = this.cols;
+    window.rows = this.rows;
+    
+    // Clear existing grid tiles
+    this.clearGridTiles();
+    
+    // Redraw grid with new dimensions
+    for (let y = 0; y < this.rows; y++) {
+      for (let x = 0; x < this.cols; x++) {
+        this.drawIsometricTile(x, y);
+      }
+    }
+    
+    // Check if any tokens are now outside the new grid bounds
+    this.validateTokenPositions();
+    
+    // Recenter the grid
+    this.centerGrid();
+    
+    console.log(`Grid resized successfully to ${this.cols}x${this.rows}`);
+  }
+
+  clearGridTiles() {
+    // Remove all grid tiles (but keep tokens)
+    const tilesToRemove = [];
+    this.gridContainer.children.forEach(child => {
+      // Only remove grid tiles, not creature sprites
+      if (child.isGridTile) {
+        tilesToRemove.push(child);
+      }
+    });
+    
+    tilesToRemove.forEach(tile => {
+      this.gridContainer.removeChild(tile);
+    });
+  }
+
+  validateTokenPositions() {
+    // Remove tokens that are outside the new grid bounds
+    const tokensToRemove = [];
+    
+    this.placedTokens.forEach(tokenData => {
+      if (tokenData.gridX >= this.cols || tokenData.gridY >= this.rows) {
+        console.log(`Removing token at (${tokenData.gridX}, ${tokenData.gridY}) - outside new grid bounds`);
+        if (tokenData.creature) {
+          tokenData.creature.removeFromStage();
+        }
+        tokensToRemove.push(tokenData);
+      }
+    });
+    
+    // Remove invalid tokens from the array
+    tokensToRemove.forEach(tokenData => {
+      const index = this.placedTokens.indexOf(tokenData);
+      if (index > -1) {
+        this.placedTokens.splice(index, 1);
+      }
+    });
+    
+    // Update global token array
+    window.placedTokens = this.placedTokens;
+    
+    if (tokensToRemove.length > 0) {
+      console.log(`Removed ${tokensToRemove.length} tokens that were outside new grid bounds`);
+    }
+  }
+
+  centerGrid() {
+    // Recenter the grid based on new dimensions and current zoom
+    this.gridContainer.x = this.app.screen.width / 2 - (this.cols * this.tileWidth / 4) * this.gridScale;
+    this.gridContainer.y = 100;
+  }
+
+  resetZoom() {
+    console.log('Resetting zoom to 100%');
+    this.gridScale = 1.0;
+    this.gridContainer.scale.set(this.gridScale);
+    this.centerGrid();
   }
 
   setupGrid() {
@@ -68,10 +206,12 @@ class GameManager {
     tile.x = (x - y) * (this.tileWidth / 2);
     tile.y = (x + y) * (this.tileHeight / 2);
     
-    // Make tiles interactive for token placement
-    tile.interactive = true;
-    tile.cursor = 'pointer';
-    tile.on('pointerdown', (event) => this.onGridClick(event));
+    // Mark this as a grid tile (not a creature token)
+    tile.isGridTile = true;
+    
+    // Store grid coordinates on the tile
+    tile.gridX = x;
+    tile.gridY = y;
     
     this.gridContainer.addChild(tile);
   }
@@ -87,6 +227,174 @@ class GameManager {
     window.tokenFacingRight = this.tokenFacingRight;
     window.placedTokens = this.placedTokens;
     window.gameManager = this;
+  }
+
+  setupGridInteraction() {
+    // Disable context menu
+    this.app.view.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+    
+    // Single mousedown handler for all interactions
+    this.app.view.addEventListener('mousedown', (event) => {
+      if (event.button === 2) { // Right mouse button - grid dragging
+        this.isDragging = true;
+        this.dragStartX = event.clientX;
+        this.dragStartY = event.clientY;
+        this.gridStartX = this.gridContainer.x;
+        this.gridStartY = this.gridContainer.y;
+        this.app.view.style.cursor = 'grabbing';
+        event.preventDefault();
+        event.stopPropagation();
+        
+      } else if (event.button === 0) { // Left mouse button - token placement
+        this.handleLeftClick(event);
+      }
+    });
+    
+    // Mouse move handler
+    this.app.view.addEventListener('mousemove', (event) => {
+      if (this.isDragging) {
+        const deltaX = event.clientX - this.dragStartX;
+        const deltaY = event.clientY - this.dragStartY;
+        this.gridContainer.x = this.gridStartX + deltaX;
+        this.gridContainer.y = this.gridStartY + deltaY;
+      }
+    });
+    
+    // Mouse up handler
+    this.app.view.addEventListener('mouseup', (event) => {
+      if (this.isDragging && event.button === 2) {
+        this.isDragging = false;
+        this.app.view.style.cursor = 'default';
+      }
+    });
+    
+    // Mouse leave handler
+    this.app.view.addEventListener('mouseleave', () => {
+      if (this.isDragging) {
+        this.isDragging = false;
+        this.app.view.style.cursor = 'default';
+      }
+    });
+    
+    // Scroll wheel zoom handler
+    this.app.view.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      
+      // Get mouse position relative to canvas
+      const rect = this.app.view.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+      
+      // Calculate zoom factor
+      const zoomDirection = event.deltaY > 0 ? -1 : 1;
+      const zoomFactor = 1 + (this.zoomSpeed * zoomDirection);
+      const newScale = this.gridScale * zoomFactor;
+      
+      // Clamp zoom level
+      if (newScale < this.minScale || newScale > this.maxScale) {
+        return;
+      }
+      
+      // Calculate position before zoom
+      const localX = (mouseX - this.gridContainer.x) / this.gridScale;
+      const localY = (mouseY - this.gridContainer.y) / this.gridScale;
+      
+      // Apply zoom
+      this.gridScale = newScale;
+      this.gridContainer.scale.set(this.gridScale);
+      
+      // Adjust position to zoom towards mouse cursor
+      this.gridContainer.x = mouseX - localX * this.gridScale;
+      this.gridContainer.y = mouseY - localY * this.gridScale;
+      
+      console.log(`Zoom: ${(this.gridScale * 100).toFixed(0)}%`);
+    });
+  }
+
+  handleLeftClick(event) {
+    // ONLY handle left clicks (button 0)
+    if (event.button !== 0) {
+      return;
+    }
+    
+    // Get mouse position relative to the canvas
+    const rect = this.app.view.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    
+    // Convert to grid container coordinates, accounting for zoom
+    // First get position relative to grid container origin
+    const gridRelativeX = mouseX - this.gridContainer.x;
+    const gridRelativeY = mouseY - this.gridContainer.y;
+    
+    // Then divide by scale to get local coordinates
+    const localX = gridRelativeX / this.gridScale;
+    const localY = gridRelativeY / this.gridScale;
+    
+    // Convert to grid coordinates - find the closest intersection
+    const rawGridX = (localX / (this.tileWidth / 2) + localY / (this.tileHeight / 2)) / 2;
+    const rawGridY = (localY / (this.tileHeight / 2) - localX / (this.tileWidth / 2)) / 2;
+    
+    const gridX = Math.round(rawGridX);
+    const gridY = Math.round(rawGridY);
+    
+    // Check bounds
+    if (gridX < 0 || gridX >= this.cols || gridY < 0 || gridY >= this.rows) {
+      return;
+    }
+    
+    // Skip grid placement when in move mode
+    if (this.selectedTokenType === 'move') {
+      return;
+    }
+    
+    // Check if there's already a token at this position
+    const existingToken = this.placedTokens.find(token => {
+      const diffX = Math.abs(token.gridX - gridX);
+      const diffY = Math.abs(token.gridY - gridY);
+      return diffX <= 1 && diffY <= 1 && (diffX + diffY) <= 1;
+    });
+    
+    if (existingToken) {
+      existingToken.creature.removeFromStage();
+      this.placedTokens = this.placedTokens.filter(t => t !== existingToken);
+      window.placedTokens = this.placedTokens;
+    }
+    
+    // If remove mode is selected, only remove tokens
+    if (this.selectedTokenType === 'remove') {
+      return;
+    }
+    
+    // Create new token
+    const creature = this.createCreatureByType(this.selectedTokenType);
+    if (!creature) return;
+
+    // Add to grid container FIRST
+    creature.addToStage(this.gridContainer);
+    
+    // THEN set position relative to grid container
+    const isoX = (gridX - gridY) * (this.tileWidth / 2);
+    const isoY = (gridX + gridY) * (this.tileHeight / 2);
+    creature.setPosition(isoX, isoY);
+    
+    // Store token info
+    const newTokenData = {
+      creature: creature,
+      gridX: gridX,
+      gridY: gridY,
+      type: this.selectedTokenType
+    };
+    this.placedTokens.push(newTokenData);
+    
+    // Check if we need to enable dragging (if currently in move mode after placing)
+    if (window.selectedTokenType === 'move') {
+      this.enableTokenDragging();
+    }
+    
+    window.placedTokens = this.placedTokens;
   }
 
   async initializeSprites() {
@@ -157,113 +465,14 @@ class GameManager {
   }
 
   enableTokenDragging() {
-    console.log('Enabling token dragging for', this.placedTokens.length, 'tokens');
-    this.placedTokens.forEach(tokenData => {
-      if (tokenData.creature && tokenData.creature.sprite) {
-        const sprite = tokenData.creature.sprite;
-        sprite.interactive = true;
-        sprite.cursor = 'grab';
-        sprite.on('pointerdown', window.onDragStart);
-        sprite.on('pointerup', window.onDragEnd);
-        sprite.on('pointerupoutside', window.onDragEnd);
-        sprite.on('pointermove', window.onDragMove);
-      }
-    });
+    console.log('Token dragging disabled - PIXI interaction system removed');
+    // Token dragging is disabled since we removed PIXI interaction system
+    // This prevents conflicts with grid dragging
   }
 
   disableTokenDragging() {
-    console.log('Disabling token dragging');
-    this.placedTokens.forEach(tokenData => {
-      if (tokenData.creature && tokenData.creature.sprite) {
-        const sprite = tokenData.creature.sprite;
-        sprite.interactive = false;
-        sprite.cursor = 'default';
-        sprite.off('pointerdown', window.onDragStart);
-        sprite.off('pointerup', window.onDragEnd);
-        sprite.off('pointerupoutside', window.onDragEnd);
-        sprite.off('pointermove', window.onDragMove);
-        // Reset any drag state
-        sprite.dragging = false;
-        sprite.alpha = 1.0;
-      }
-    });
-  }
-
-  onGridClick(event) {
-    console.log('Grid clicked, selectedTokenType:', this.selectedTokenType);
-    
-    // Skip grid placement when in move mode
-    if (this.selectedTokenType === 'move') {
-      console.log('Move mode active, skipping grid placement');
-      return;
-    }
-    
-    // Get click position relative to grid container
-    const localPos = event.data.getLocalPosition(this.gridContainer);
-    
-    // Convert to grid coordinates - find the closest intersection
-    const rawGridX = (localPos.x / (this.tileWidth / 2) + localPos.y / (this.tileHeight / 2)) / 2;
-    const rawGridY = (localPos.y / (this.tileHeight / 2) - localPos.x / (this.tileWidth / 2)) / 2;
-    
-    const gridX = Math.round(rawGridX);
-    const gridY = Math.round(rawGridY);
-    
-    // Check bounds
-    if (gridX < 0 || gridX >= this.cols || gridY < 0 || gridY >= this.rows) {
-      console.log('Click outside grid bounds');
-      return;
-    }
-    
-    // Check if there's already a token at this position
-    const existingToken = this.placedTokens.find(token => {
-      const diffX = Math.abs(token.gridX - gridX);
-      const diffY = Math.abs(token.gridY - gridY);
-      return diffX <= 1 && diffY <= 1 && (diffX + diffY) <= 1;
-    });
-    
-    if (existingToken) {
-      console.log('Found existing token at position, removing it');
-      existingToken.creature.removeFromStage();
-      this.placedTokens = this.placedTokens.filter(t => t !== existingToken);
-      window.placedTokens = this.placedTokens;
-    }
-    
-    // If remove mode is selected, only remove tokens
-    if (this.selectedTokenType === 'remove') {
-      return;
-    }
-    
-    // Create new token
-    const creature = this.createCreatureByType(this.selectedTokenType);
-    if (!creature) return;
-
-    // Position the creature at the intersection point
-    const isoX = (gridX - gridY) * (this.tileWidth / 2);
-    const isoY = (gridX + gridY) * (this.tileHeight / 2);
-    
-    const intersectionX = this.gridContainer.x + isoX;
-    const intersectionY = this.gridContainer.y + isoY;
-    
-    creature.setPosition(intersectionX, intersectionY);
-    creature.addToStage(this.app.stage);
-    
-    // Store token info
-    const newTokenData = {
-      creature: creature,
-      gridX: gridX,
-      gridY: gridY,
-      type: this.selectedTokenType
-    };
-    this.placedTokens.push(newTokenData);
-    
-    // Check if we need to enable dragging (if currently in move mode after placing)
-    // This handles the case where user places token then switches to move mode
-    if (window.selectedTokenType === 'move') {
-      this.enableTokenDragging();
-    }
-    
-    window.placedTokens = this.placedTokens;
-    console.log('Token placed. Total tokens now:', this.placedTokens.length);
+    console.log('Token dragging already disabled');
+    // Nothing to do since PIXI interaction is disabled
   }
 
   createCreatureByType(type) {
