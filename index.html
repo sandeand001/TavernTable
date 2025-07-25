@@ -26,16 +26,20 @@
   </div>
   
   <div id="token-panel">
-    <div>🗡️ Creature Tokens:</div>
-    <button id="token-beholder" onclick="selectToken('beholder')">👁️ Beholder</button>
-    <button id="token-dragon" onclick="selectToken('dragon')">🐉 Dragon</button>
-    <button id="token-goblin" onclick="selectToken('goblin')" class="selected">🧌 Goblin</button>
-    <button id="token-mindflayer" onclick="selectToken('mindflayer')">🐙 Mind Flayer</button>
-    <button id="token-minotaur" onclick="selectToken('minotaur')">🐂 Minotaur</button>
-    <button id="token-orc" onclick="selectToken('orc')">🧟 Orc</button>
-    <button id="token-owlbear" onclick="selectToken('owlbear')">🐻 Owlbear</button>
-    <button id="token-skeleton" onclick="selectToken('skeleton')">💀 Skeleton</button>
-    <button id="token-troll" onclick="selectToken('troll')">🧟‍♂️ Troll</button>
+    <div id="creature-header" onclick="toggleCreatureTokens();" style="cursor: pointer;">
+      🗡️ Creature Tokens: <span id="creature-arrow">▼</span>
+    </div>
+    <div id="creature-content">
+      <button id="token-beholder" onclick="selectToken('beholder')">👁️ Beholder</button>
+      <button id="token-dragon" onclick="selectToken('dragon')">🐉 Dragon</button>
+      <button id="token-goblin" onclick="selectToken('goblin')" class="selected">🧌 Goblin</button>
+      <button id="token-mindflayer" onclick="selectToken('mindflayer')">🐙 Mind Flayer</button>
+      <button id="token-minotaur" onclick="selectToken('minotaur')">🐂 Minotaur</button>
+      <button id="token-orc" onclick="selectToken('orc')">🧟 Orc</button>
+      <button id="token-owlbear" onclick="selectToken('owlbear')">🐻 Owlbear</button>
+      <button id="token-skeleton" onclick="selectToken('skeleton')">💀 Skeleton</button>
+      <button id="token-troll" onclick="selectToken('troll')">🧟‍♂️ Troll</button>
+    </div>
     
     <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 8px;">
       <div>⚙️ Token Actions:</div>
@@ -71,6 +75,22 @@
 
   <!-- Application Initialization -->
   <script>
+    // Simple toggle function for creature tokens
+    function toggleCreatureTokens() {
+      const content = document.getElementById('creature-content');
+      const arrow = document.getElementById('creature-arrow');
+      
+      if (content) {
+        if (content.style.display === 'none') {
+          content.style.display = 'block';
+          if (arrow) arrow.textContent = '▼';
+        } else {
+          content.style.display = 'none';
+          if (arrow) arrow.textContent = '▶';
+        }
+      }
+    }
+    
     // Initialize the application
     const gameManager = new GameManager();
     

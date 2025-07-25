@@ -53,6 +53,43 @@ html, body {
   font-family: sans-serif;
 }
 
+#creature-header {
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 8px;
+  font-weight: bold;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#creature-header:hover {
+  color: #4da6ff;
+}
+
+#creature-arrow {
+  transition: transform 0.3s ease;
+  font-size: 12px;
+}
+
+#creature-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+#creature-content {
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  overflow: hidden;
+  max-height: 1000px !important;
+  opacity: 1 !important;
+}
+
+#creature-content.collapsed {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 #token-panel button {
   margin: 2px;
   padding: 8px 12px;
