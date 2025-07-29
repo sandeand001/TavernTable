@@ -245,9 +245,6 @@ python -m http.server 8000
 # Open http://localhost:8000 and start developing
 ```
 
-## 📝 License
-
-This project is released under the MIT License. See LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
