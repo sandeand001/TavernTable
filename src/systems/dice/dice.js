@@ -9,12 +9,12 @@
  * Features:
  * - Animated rolling effect with random number display
  * - Color-coded results (green for max, red for min, white for normal)
- * - Automatic logging integration with diceLogger
+ * - Automatic logging integration with sidebar dice log
  * - Support for multiple dice of the same type
  * - Prevention of concurrent rolls during animation
  * - Comprehensive error handling and input validation
  * 
- * Integration: Automatically integrates with diceLogger when available
+ * Integration: Automatically integrates with sidebarController when available
  * 
  * @module DiceSystem
  * @author TavernTable
@@ -137,9 +137,12 @@ export function rollDice(sides) {
         resultEl.style.color = resultColor;
         resultEl.style.textShadow = `0 0 5px ${resultColor}`;
         
-        // Log the result if dice logger is available
-        if (window.diceLogger) {
-          window.diceLogger.addEntry(sides, diceCount, results, total);
+        // Log to sidebar dice log
+        if (window.sidebarController) {
+          const logMessage = diceCount === 1 
+            ? `Rolled d${sides}: ${results[0]}`
+            : `Rolled ${diceCount}d${sides}: [${results.join(', ')}] = ${total}`;
+          window.sidebarController.addDiceLogEntry(logMessage, 'roll');
         }
         
         setTimeout(() => {
@@ -166,20 +169,3 @@ export function rollDice(sides) {
 
 // Make rollDice available globally for HTML onclick handlers
 window.rollDice = rollDice;
-
-// Initialize dice logger when this module loads
-document.addEventListener('DOMContentLoaded', function() {
-  if (window.diceLogger) {
-    window.diceLogger.init();
-  }
-});
-
-// If DOM is already loaded, initialize immediately
-if (document.readyState === 'loading') {
-  // Do nothing, DOMContentLoaded will fire
-} else {
-  // DOM already loaded
-  if (window.diceLogger) {
-    window.diceLogger.init();
-  }
-}

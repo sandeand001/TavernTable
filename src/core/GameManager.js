@@ -212,9 +212,10 @@ class GameManager {
    * Resize the game grid to new dimensions
    * @param {number} newCols - Number of columns
    * @param {number} newRows - Number of rows
+   * @param {boolean} centerAfterResize - Whether to center the grid after resizing (default: false)
    * @throws {Error} When dimensions are invalid or out of range
    */
-  resizeGrid(newCols, newRows) {
+  resizeGrid(newCols, newRows, centerAfterResize = false) {
     try {
       // Sanitize and validate input parameters
       const sanitizedCols = Sanitizers.integer(newCols, GRID_CONFIG.DEFAULT_COLS, {
@@ -248,8 +249,11 @@ class GameManager {
       // Check if any tokens are now outside the new grid bounds
       this.validateTokenPositions();
       
-      // Recenter the grid
-      this.centerGrid();
+      // Only recenter the grid if explicitly requested
+      // Don't auto-center during user-initiated resize to preserve user's view position
+      if (centerAfterResize) {
+        this.centerGrid();
+      }
       
       console.log(`Grid resized to ${sanitizedCols}x${sanitizedRows}`);
     } catch (error) {
@@ -331,9 +335,18 @@ class GameManager {
    * Center the grid on the screen
    */
   centerGrid() {
-    // Recenter the grid based on new dimensions and current zoom
-    this.gridContainer.x = this.app.screen.width / 2 - (this.cols * this.tileWidth / 4) * this.gridScale;
-    this.gridContainer.y = 100;
+    // Calculate the actual grid size in pixels
+    const gridWidthPixels = (this.cols * this.tileWidth / 2) * this.gridScale;
+    const gridHeightPixels = (this.rows * this.tileHeight / 2) * this.gridScale;
+    
+    // Center the grid based on current screen size and grid dimensions
+    this.gridContainer.x = (this.app.screen.width / 2) - (gridWidthPixels / 2);
+    this.gridContainer.y = (this.app.screen.height / 2) - (gridHeightPixels / 2);
+    
+    // Ensure minimum margins from screen edges
+    const minMargin = 50;
+    this.gridContainer.x = Math.max(minMargin - gridWidthPixels / 2, this.gridContainer.x);
+    this.gridContainer.y = Math.max(minMargin, this.gridContainer.y);
   }
 
   /**
@@ -359,8 +372,6 @@ class GameManager {
       
       // Create main grid container
       this.gridContainer = new PIXI.Container();
-      this.gridContainer.x = this.app.screen.width / 2 - (this.cols * this.tileWidth / 4);
-      this.gridContainer.y = GRID_CONFIG.INITIAL_Y_OFFSET;
       this.app.stage.addChild(this.gridContainer);
       
       // Draw grid tiles
@@ -369,6 +380,9 @@ class GameManager {
           this.drawIsometricTile(x, y);
         }
       }
+      
+      // Center the grid after initial setup
+      this.centerGrid();
       
       console.log(`Grid setup completed: ${this.cols}x${this.rows} tiles`);
     } catch (error) {
@@ -926,20 +940,27 @@ class GameManager {
         }
       }
       
-      // Update UI selection - look for buttons in both creature tokens and action sections
-      document.querySelectorAll('#token-panel button[id^="token-"]').forEach(btn => {
+      // Update UI selection - look for buttons in creature content and action sections
+      document.querySelectorAll('#creature-content button[id^="token-"], #token-remove').forEach(btn => {
         btn.classList.remove('selected');
+        btn.setAttribute('aria-pressed', 'false');
       });
       
       const tokenButton = document.getElementById(`token-${tokenType}`);
       if (tokenButton) {
         tokenButton.classList.add('selected');
+        tokenButton.setAttribute('aria-pressed', 'true');
       } else {
         console.warn(`Button not found for token type: ${tokenType}`);
       }
       
       this.selectedTokenType = tokenType;
       window.selectedTokenType = tokenType;
+      
+      // Update sidebar if available
+      if (window.sidebarController) {
+        window.sidebarController.updateTokenSelection(tokenType);
+      }
       
       // Update info text
       const infoEl = document.getElementById('token-info');

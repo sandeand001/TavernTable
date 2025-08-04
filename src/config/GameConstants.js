@@ -10,8 +10,8 @@ export const GRID_CONFIG = {
   TILE_HEIGHT: 32,
   
   // Default grid size
-  DEFAULT_ROWS: 10,
-  DEFAULT_COLS: 10,
+  DEFAULT_ROWS: 25,
+  DEFAULT_COLS: 25,
   
   // Grid size limits
   MIN_SIZE: 5,
