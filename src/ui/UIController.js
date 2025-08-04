@@ -177,6 +177,11 @@ window.toggleCreatureTokens = toggleCreatureTokens;
 window.resizeGrid = resizeGrid;
 window.resetZoom = resetZoom;
 
+// Signal that UI modules are loaded (for debugging module loading issues)
+window.moduleLoadStatus = window.moduleLoadStatus || {};
+window.moduleLoadStatus.loaded = true;
+console.log('UIController loaded - global functions available');
+
 // Start the application when the page loads
 window.addEventListener('load', initializeApplication);
 

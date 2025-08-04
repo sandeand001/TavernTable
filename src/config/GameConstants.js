@@ -16,6 +16,10 @@ export const GRID_CONFIG = {
   // Grid size limits
   MIN_SIZE: 5,
   MAX_SIZE: 50,
+  MIN_COLS: 5,
+  MAX_COLS: 50,
+  MIN_ROWS: 5,
+  MAX_ROWS: 50,
   MIN_CELL_SIZE: 16,
   MAX_CELL_SIZE: 128,
   

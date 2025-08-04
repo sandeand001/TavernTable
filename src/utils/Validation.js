@@ -157,20 +157,30 @@ export const GameValidators = {
   pixiApp(app) {
     const result = { isValid: true, errors: [] };
     
-    if (!TypeValidators.isObject(app, ['stage', 'renderer', 'view'])) {
+    // Check if app is an object
+    if (!app || typeof app !== 'object') {
       result.isValid = false;
-      result.errors.push('Invalid PIXI application: missing required properties.');
+      result.errors.push('Invalid PIXI application: not an object.');
       return result;
     }
     
+    // Check for stage property and functionality
     if (!app.stage || typeof app.stage.addChild !== 'function') {
       result.isValid = false;
       result.errors.push('Invalid PIXI application: stage is not properly initialized.');
     }
     
+    // Check for renderer property and functionality
     if (!app.renderer || typeof app.renderer.render !== 'function') {
       result.isValid = false;
       result.errors.push('Invalid PIXI application: renderer is not properly initialized.');
+    }
+    
+    // Check for canvas OR view (PIXI 7 compatibility)
+    const canvas = app.canvas || app.view;
+    if (!canvas) {
+      result.isValid = false;
+      result.errors.push('Invalid PIXI application: neither canvas nor view property available.');
     }
     
     return result;

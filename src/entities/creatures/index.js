@@ -3,47 +3,47 @@
 import CreatureFactory from './CreatureFactory.js';
 
 // Global functions for creating creatures (used by HTML buttons)
-function createDragon(x, y) {
+function createDragon(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('dragon', x, y, facingRight);
 }
 
-function createSkeleton(x, y) {
+function createSkeleton(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('skeleton', x, y, facingRight);
 }
 
-function createBeholder(x, y) {
+function createBeholder(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('beholder', x, y, facingRight);
 }
 
-function createGoblin(x, y) {
+function createGoblin(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('goblin', x, y, facingRight);
 }
 
-function createMindFlayer(x, y) {
+function createMindFlayer(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('mindflayer', x, y, facingRight);
 }
 
-function createMinotaur(x, y) {
-  const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
-  return CreatureFactory.createCreature('minotaur', x, y, facingRight);
-}
-
-function createOrc(x, y) {
+function createOrc(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('orc', x, y, facingRight);
 }
 
-function createOwlbear(x, y) {
+function createMinotaur(x = 0, y = 0) {
+  const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
+  return CreatureFactory.createCreature('minotaur', x, y, facingRight);
+}
+
+function createOwlbear(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('owlbear', x, y, facingRight);
 }
 
-function createTroll(x, y) {
+function createTroll(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
   return CreatureFactory.createCreature('troll', x, y, facingRight);
 }

@@ -91,7 +91,7 @@ class SidebarController {
    */
   showTab(tabId) {
     // Validate tab ID
-    const validTabs = ['dice-log', 'creatures', 'terrain', 'testing', 'settings'];
+    const validTabs = ['dice-log', 'creatures', 'terrain', 'settings'];
     if (!validTabs.includes(tabId)) {
       console.warn(`Invalid tab ID: ${tabId}`);
       return;
@@ -134,9 +134,6 @@ class SidebarController {
         break;
       case 'terrain':
         // Future: Initialize terrain tools
-        break;
-      case 'testing':
-        // Testing tab is ready - no special initialization needed
         break;
       case 'settings':
         // Future: Load current game settings
@@ -215,8 +212,13 @@ class SidebarController {
    * Should be called whenever a token is selected to update the UI
    */
   refreshCreatureSelection() {
-    // Get the currently selected token from the global state
-    const selectedToken = window.selectedTokenType;
+    // Get the currently selected token from GameManager or fallback to window
+    let selectedToken;
+    if (window.gameManager && window.gameManager.selectedTokenType !== undefined) {
+      selectedToken = window.gameManager.selectedTokenType;
+    } else {
+      selectedToken = window.selectedTokenType;
+    }
     
     if (!selectedToken) return;
     
@@ -240,7 +242,13 @@ class SidebarController {
    * @param {string} tokenType - The type of token that was selected
    */
   updateTokenSelection(tokenType) {
-    window.selectedTokenType = tokenType;
+    // Use proper GameManager setter instead of direct window manipulation
+    if (window.gameManager && window.gameManager.selectedTokenType !== undefined) {
+      window.gameManager.selectedTokenType = tokenType;
+    } else {
+      // Fallback for backward compatibility
+      window.selectedTokenType = tokenType;
+    }
     this.refreshCreatureSelection();
   }
 

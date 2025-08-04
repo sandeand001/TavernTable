@@ -43,7 +43,6 @@
       <button class="tab-button active" data-tab="dice-log" role="tab" aria-selected="true" aria-controls="dice-log-panel">🎲 Dice Log</button>
       <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false" aria-controls="creatures-panel">🗡️ Creatures</button>
       <button class="tab-button" data-tab="terrain" role="tab" aria-selected="false" aria-controls="terrain-panel">🏔️ Terrain</button>
-      <button class="tab-button" data-tab="testing" role="tab" aria-selected="false" aria-controls="testing-panel">🧪 Testing</button>
       <button class="tab-button" data-tab="settings" role="tab" aria-selected="false" aria-controls="settings-panel">⚙️ Settings</button>
     </div>
 
@@ -122,35 +121,6 @@
         </div>
       </div>
 
-      <!-- Testing Panel -->
-      <div id="testing-panel" class="tab-panel" role="tabpanel" aria-labelledby="testing-tab">
-        <div class="panel-header">🧪 Positioning Testing</div>
-        
-        <!-- Testing Mode Controls -->
-        <div class="section">
-          <div class="section-title">Testing Mode</div>
-          <button id="testing-log-sprite" onclick="toggleSpriteLogging()" class="action-button" aria-pressed="false" aria-label="Toggle sprite position logging mode">📍 Log Sprite</button>
-          <button id="testing-log-center" onclick="toggleCenterLogging()" class="action-button" aria-pressed="false" aria-label="Toggle tile center logging mode">🎯 Log Center</button>
-        </div>
-        
-        <!-- Instructions -->
-        <div class="section">
-          <div class="section-title">Instructions</div>
-          <div class="help-text"><strong>Log Sprite:</strong> Click where you see the placed sprite</div>
-          <div class="help-text"><strong>Log Center:</strong> Click where the sprite should be centered</div>
-          <div class="help-text">Check browser console for logged coordinates</div>
-        </div>
-        
-        <!-- Testing Log -->
-        <div class="section">
-          <div class="section-title">Recent Tests</div>
-          <div id="testing-log-content" class="testing-log">
-            <div class="testing-log-entry">No tests performed yet</div>
-          </div>
-          <button onclick="clearTestingLog()" class="clear-button">Clear Log</button>
-        </div>
-      </div>
-
       <!-- Settings Panel -->
       <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
         <div class="panel-header">⚙️ Game Settings</div>
@@ -192,10 +162,45 @@
   <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 
+  <!-- Global Function Safety Stubs - Prevent timing errors during module loading -->
+  <script>
+    // Create safety stub functions for HTML onclick handlers
+    // These will be replaced by the actual implementations once modules load
+    window.rollDice = function(sides) { 
+      console.warn('Dice system not yet loaded, sides:', sides); 
+      return null;
+    };
+    window.selectToken = function(tokenType) { 
+      console.warn('Token system not yet loaded, tokenType:', tokenType); 
+    };
+    window.resizeGrid = function() { 
+      console.warn('Grid system not yet loaded'); 
+    };
+    window.toggleCreatureTokens = function() {
+      console.warn('UI system not yet loaded');
+    };
+    window.resetZoom = function() {
+      console.warn('Zoom system not yet loaded');
+    };
+    
+    // Track module loading progress
+    window.moduleLoadStatus = {
+      loaded: false,
+      errors: []
+    };
+  </script>
+
   <!-- Core Configuration and Utilities (ES6) -->
   <script type="module" src="./src/config/GameConstants.js"></script>
   <script type="module" src="./src/utils/ErrorHandler.js"></script>
   <script type="module" src="./src/utils/Validation.js"></script>
+  <script type="module" src="./src/utils/Logger.js"></script>
+  <script type="module" src="./src/utils/CoordinateUtils.js"></script>
+
+  <!-- Manager Classes (ES6) -->
+  <script type="module" src="./src/managers/TokenManager.js"></script>
+  <script type="module" src="./src/managers/InteractionManager.js"></script>
+  <script type="module" src="./src/managers/GridRenderer.js"></script>
 
   <!-- Core Game Modules (ES6) -->
   <script type="module" src="./src/core/SpriteManager.js"></script>

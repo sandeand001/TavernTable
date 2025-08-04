@@ -1,103 +1,194 @@
 # TavernTable
+### 🎲 Modern Web-Based D&D Tactical Combat Simulator
 
-A modern web-based D&D tabletop simulator featuring an isometric grid system, creature token management, and interactive dice rolling.
+A sophisticated browser-based tactical combat grid for tabletop RPGs, featuring an advanced isometric battlefield with interactive creature tokens, animated dice rolling system, and comprehensive game management tools.
 
-![TavernTable Screenshot](https://via.placeholder.com/800x400/2a2a2a/ffffff?text=TavernTable+Isometric+Grid)
+![TavernTable Preview](assets/preview.png) *Dynamic isometric grid with creature tokens and dice system*
 
-## 🎯 Overview
+## ✨ Key Features
 
-TavernTable brings the tactical combat experience of tabletop RPGs to your browser. Perfect for dungeon masters and players who want a clean, intuitive digital battlemap.
+### 🗺️ **Advanced Combat Grid System**
+- **Isometric battlefield view** with precise tactical positioning
+- **Dynamic grid resizing** (10×10 to 50×50 cells) for encounters of any scale
+- **Professional zoom controls** (0.25× to 4.0×) with smooth pan navigation
+- **Real-time coordinate validation** ensures tokens stay within battle boundaries
+- **Grid opacity controls** for optimal token visibility
 
-**Key Highlights:**
-- Zero installation required - runs in any modern browser
-- High-quality creature sprites with intelligent fallbacks
-- Modular architecture built with modern JavaScript
+### 🐉 **Comprehensive Creature Token Management**
+- **9 Distinct Creature Types** with unique sprite artwork:
+  - 🐲 **Dragon** - Legendary scaled beast (Large size)
+  - 💀 **Skeleton** - Undead warrior minion
+  - 👹 **Goblin** - Small cunning humanoid
+  - 👁️ **Beholder** - Aberrant floating eye beast
+  - 🏔️ **Giant** - Massive towering humanoid
+  - ⚔️ **Orc** - Brutal savage warrior
+  - 🦅 **Owlbear** - Ferocious hybrid predator
+  - 🧌 **Troll** - Regenerating cave monster
+- **Intuitive drag-and-drop placement** with automatic grid snapping
+- **Smart collision detection** prevents token overlap
+- **Removal mode** for quick battlefield cleanup
+- **Robust sprite fallback system** (colored shapes when images unavailable)
 
-## ✨ Features
+### 🎲 **Professional Dice Rolling System**
+- **Complete RPG dice collection**: D4, D6, D8, D10, D12, D20, D100
+- **Animated rolling display** with smooth number transitions during roll animation
+- **Multi-dice rolling** (1-10 dice per roll) for complex damage calculations
+- **Intelligent result highlighting** (critical hits/misses with color coding)
+- **Comprehensive dice log** with timestamps and color-coded results
+- **Roll history tracking** for session review
 
-### 🗺️ Tactical Grid System
-- **Isometric View**: Beautiful diamond-shaped grid for tactical positioning
-- **Zoom & Pan**: Mouse wheel zoom and click-drag navigation
-- **Dynamic Sizing**: Adjustable grid dimensions
-- **Visual Feedback**: Clear grid intersections and snap-to-grid placement
+### � **Modern User Interface**
+- **Organized tabbed sidebar** with four specialized panels:
+  - 📜 **Dice Log** - Complete roll history with filtering
+  - 🐾 **Creatures** - Token selection and placement tools
+  - 🌄 **Terrain** - Grid configuration and environment controls
+  - ⚙️ **Settings** - Application preferences and customization
+- **Full keyboard navigation** with accessibility support
+- **Responsive design** optimized for desktop and tablet use
+- **Screen reader compatibility** with semantic markup
 
-### 🐉 Creature Management
-- **9 Creature Types**: Dragons, skeletons, goblins, beholders, and more
-- **Smart Placement**: Click grid intersections to place tokens
-- **Drag & Drop**: Intuitive token movement with automatic grid snapping
-- **Facing Control**: Toggle creature direction before placement
-- **Easy Removal**: Dedicated remove mode for cleanup
+## 🚀 Quick Start Guide
 
-### 🎲 Dice System
-- **Complete RPG Set**: D4, D6, D8, D10, D12, D20, D100
-- **Multiple Dice**: Roll up to 10 dice of the same type
-- **Color Coding**: Green for max rolls, red for minimum, white for normal
-- **Roll History**: Persistent log of all dice results with timestamps
+### 🌐 **Web Browser Setup (Recommended)**
+```bash
+# Choose your preferred local server method:
 
-### 🎨 Visual Excellence
-- **High-Quality Sprites**: PNG artwork for each creature type
-- **Fallback Graphics**: Colored shapes when sprites unavailable
-- **Responsive Design**: Works on desktop, tablet, and mobile
-- **Clean Interface**: Uncluttered sidebar with organized controls
+# Python 3 (most common)
+python -m http.server 3000
 
-## 🚀 Quick Start
+# Node.js with npx
+npx http-server -p 3000
 
-### Prerequisites
-- Modern web browser (Chrome 88+, Firefox 78+, Safari 14+)
-- Local HTTP server (required for ES6 module loading)
+# PHP built-in server
+php -S localhost:3000
 
-### Setup
+# Python 2 (legacy systems)
+python -m SimpleHTTPServer 3000
+```
 
-1. **Download/Clone the project**
-   ```bash
-   git clone <your-repo-url>
-   cd TavernTable
+1. **Clone/download** the repository
+2. **Navigate** to the TavernTable directory
+3. **Start local server** using any method above
+4. **Open** http://localhost:3000 in your browser
+5. **Begin your tactical encounter!**
+
+### 🎯 **VS Code Integration**
+1. Install **"Live Server"** extension
+2. Right-click `index.html` → **"Open with Live Server"**
+3. Automatic browser launch with hot-reload capability
+
+## 🎮 Tactical Combat Workflow
+
+### 🎲 **Rolling Dice Like a Pro**
+1. **Select dice type** from the professional dice panel
+2. **Set quantity** (1-10 dice) for damage rolls or group checks
+3. **Execute roll** with smooth animated number display
+4. **Review results** in the color-coded dice log
+5. **Track critical outcomes** with automatic highlighting
+
+### 🗺️ **Battlefield Management**
+1. **Choose creature type** from the organized token panel
+2. **Click grid cell** for precise token placement
+3. **Drag tokens** for tactical repositioning during combat
+4. **Remove tokens** using dedicated removal mode
+5. **Adjust view** with zoom/pan for optimal battlefield oversight
+
+### ⚙️ **Grid Customization**
+1. **Resize battlefield** using width/height controls (10-50 cells)
+2. **Zoom control** with mouse wheel or dedicated buttons
+3. **Pan battlefield** by dragging for large encounter management
+4. **Reset view** to return to optimal viewing angle
+5. **Adjust transparency** for token visibility optimization
+
+## �️ Technical Architecture
+
+### 💻 **Modern Web Technologies**
+- **ES6 Modules** - Clean dependency management and code organization
+- **PIXI.js v7.x** - Hardware-accelerated 2D rendering engine
+- **Vanilla JavaScript** - Lightweight, dependency-free dice system with smooth animations
+- **Semantic HTML5** - Accessibility-first markup with ARIA support
+
+### �️ **Enterprise-Grade Error Handling**
+- **Comprehensive validation system** with input sanitization
+- **6 Error categories** (Initialization, Rendering, Input, Sprites, Validation, Network)
+- **4 Severity levels** (Info, Warning, Error, Critical)
+- **User-friendly notifications** with graceful error recovery
+- **Debugging support** with structured console logging
+
+### � **Browser Compatibility**
+- **Modern browsers**: Chrome 61+, Firefox 60+, Safari 11+, Edge 79+
+- **ES6 module support** required
+- **WebGL acceleration** recommended for optimal performance
+- **Local HTTP server** mandatory (security restrictions prevent file:// usage)
+
+## 🔧 Advanced Configuration
+
+### 📂 **Project Structure**
+```
+TavernTable/
+├── � index.html                    # Application entry point
+├── 🎨 assets/
+│   └── sprites/                     # Creature token artwork
+├── 🧠 src/
+│   ├── ⚙️ config/                   # Game constants and configuration
+│   │   └── GameConstants.js         # Core settings and limits
+│   ├── 🎮 core/                     # Main game logic
+│   │   ├── GameManager.js           # Central game state controller
+│   │   └── SpriteManager.js         # Asset loading and management
+│   ├── 🐾 entities/                 # Game objects
+│   │   └── creatures/               # Creature token system
+│   ├── 🎛️ managers/                 # Specialized system managers
+│   │   ├── TokenManager.js          # Token placement and tracking
+│   │   ├── InteractionManager.js    # User input and events
+│   │   └── GridRenderer.js          # Battlefield rendering
+│   ├── 🎯 systems/                  # Game mechanics
+│   │   ├── dice/                    # Animated dice rolling system
+│   │   └── DragController.js        # Drag-and-drop interactions
+│   ├── 🖥️ ui/                       # User interface
+│   │   ├── UIController.js          # Main UI coordination
+│   │   └── SidebarController.js     # Tabbed panel management
+│   └── 🛠️ utils/                    # Core utilities
+│       ├── ErrorHandler.js          # Centralized error management
+│       ├── Validation.js            # Input validation and sanitization
+│       ├── Logger.js                # Structured logging system
+│       └── CoordinateUtils.js       # Grid coordinate mathematics
+├── 📋 reports/                      # Documentation and templates
+└── 📖 README.md
+```
+
+### 🎨 **Customization Options**
+
+#### Adding New Creatures
+1. **Place sprite** in `assets/sprites/[creature-name].png`
+2. **Define constants** in `src/config/GameConstants.js`:
+   ```javascript
+   CREATURE_SCALES: {
+     newCreature: 1.0  // Scale factor
+   },
+   FALLBACK_COLORS: {
+     newCreature: 0xFF5733  // Hex color
+   }
    ```
-
-2. **Start a local server**
-   ```bash
-   # Python 3
-   python -m http.server 8000
-   
-   # Node.js (with http-server)
-   npx http-server -p 8000
-   
-   # PHP
-   php -S localhost:8000
+3. **Create factory** in `src/entities/creatures/index.js`:
+   ```javascript
+   export function createNewCreature() {
+     return CreatureFactory.create('newCreature');
+   }
    ```
+4. **Add UI button** in `index.html` creature panel
 
-3. **Open in browser**
-   Navigate to `http://localhost:8000`
-
-### First Steps
-1. **Place Tokens**: Select a creature from the sidebar → click grid intersections
-2. **Move Tokens**: Click "Move Tokens" button → drag creatures to new positions  
-3. **Roll Dice**: Choose die type → set quantity → click to roll
-4. **Explore**: Try zooming, panning, and resizing the grid
-
-## 🎭 Available Creatures
-
-| Creature | Size | Role | Special Notes |
-|----------|------|------|---------------|
-| 🐉 **Dragon** | Large (2x2) | Boss Enemy | Powerful winged beast |
-| 💀 **Skeleton** | Medium | Undead | Classic undead warrior |
-| 🧌 **Goblin** | Small | Minion | Agile and numerous |
-| 👁️ **Beholder** | Large | Aberration | Multi-eyed floating terror |
-| 🐙 **Mind Flayer** | Medium | Psionic | Tentacled brain eater |
-| 🐂 **Minotaur** | Large | Brute | Bull-headed labyrinth guardian |
-| 🧟 **Orc** | Medium | Warrior | Brutal tribal fighter |
-| 🐻 **Owlbear** | Large | Beast | Ferocious owl-bear hybrid |
-| 🧟‍♂️ **Troll** | Large | Giant | Regenerating mountain dweller |
-
-## 📱 How to Use
-
-### Token Operations
-- **Placing**: Select creature type → click any grid intersection
-- **Moving**: Switch to "Move Tokens" mode → drag tokens anywhere
-- **Removing**: Use "Remove Tokens" mode → click tokens to delete
-- **Facing**: Toggle facing direction before placing new tokens
-
-### Dice Rolling
+#### Grid Appearance Modifications
+```javascript
+// src/config/GameConstants.js
+export const GRID_CONFIG = {
+  TILE_WIDTH: 64,        // Isometric tile width
+  TILE_HEIGHT: 32,       // Isometric tile height
+  DEFAULT_COLS: 20,      // Starting grid width
+  DEFAULT_ROWS: 15,      // Starting grid height
+  MIN_SIZE: 10,          // Minimum grid dimension
+  MAX_SIZE: 50           // Maximum grid dimension
+};
+```
 - **Single Die**: Select type (D4-D100) → click to roll
 - **Multiple Dice**: Adjust count slider → roll multiple dice at once
 - **Reading Results**: 
@@ -106,57 +197,70 @@ TavernTable brings the tactical combat experience of tabletop RPGs to your brows
   - All results logged with timestamps
 
 ### Grid Controls
-- **Zoom**: Mouse wheel or +/- buttons
-- **Pan**: Click and drag empty grid space
-- **Resize**: Use width/height controls in sidebar
-- **Reset**: "Reset Zoom" button returns to default view
+## 🔍 Debugging & Troubleshooting
 
-## 🏗️ Technical Architecture
+### 🚨 **Common Issues & Solutions**
 
-### Project Structure
-```
-TavernTable/
-├── index.html                    # Application entry point with accessibility features
-├── README.md                     # Comprehensive documentation
-├── assets/                       # Game resources
-│   └── sprites/                  # Creature PNG files
-├── src/                         # Source code (Clean ES6 modules)
-│   ├── config/
-│   │   └── GameConstants.js     # Centralized configuration and constants
-│   ├── core/
-│   │   ├── GameManager.js       # Main game controller with error handling
-│   │   └── SpriteManager.js     # Asset loading and management
-│   ├── entities/
-│   │   └── creatures/           # Creature token system
-│   │       ├── CreatureFactory.js  # Factory pattern for creation
-│   │       ├── CreatureToken.js     # Base token class with validation
-│   │       └── index.js             # Global creation functions
-│   ├── systems/
-│   │   ├── DragController.js    # Token drag-and-drop system
-│   │   └── dice/                # Dice rolling mechanics
-│   │       ├── dice.js              # Main rolling logic
-│   │       └── diceLog.js           # Roll history management
-│   ├── ui/
-│   │   ├── UIController.js      # Interface management with validation
-│   │   └── styles.css           # Application styling
-│   └── utils/                   # Utility modules (NEW)
-│       ├── ErrorHandler.js      # Centralized error management
-│       └── Validation.js        # Input validation and sanitization
-├── tools/                       # Development configurations
-└── .github/                     # Project documentation
-    └── copilot-instructions.md  # Coding standards and guidelines
-```
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| **Module not found errors** | Direct file:// access | ✅ Use HTTP server (required for ES6 modules) |
+| **Sprites not loading** | Missing PNG files | ✅ Verify `assets/sprites/` contains all creature images |
+| **Performance lag** | Large grid + multiple tokens | ✅ Reduce grid size or close browser tabs |
+| **Zoom not working** | Mouse wheel conflicts | ✅ Use zoom buttons or check browser settings |
+| **Tokens disappearing** | Grid resize boundary issue | ✅ Automatic validation removes out-of-bounds tokens |
 
-### Design Patterns & Architecture
-- **ES6 Modules**: Clean import/export structure for maintainability
-- **Factory Pattern**: Consistent creature creation via `CreatureFactory`
-- **Singleton Pattern**: Global managers for game state and assets
-- **Observer Pattern**: Event-driven communication between systems
-- **Error Handling**: Comprehensive try-catch with user-friendly messages
-- **Input Validation**: Sanitization and type checking throughout
-- **Centralized Configuration**: Constants management for magic numbers
-- **Accessibility**: ARIA labels and screen reader support
-- **Component Architecture**: Modular systems with clear responsibilities
+### 🔬 **Debug Features**
+Open browser console (`F12`) to access:
+- **Sprite loading status** with detailed error reporting
+- **Token placement coordinates** for precise positioning
+- **Validation messages** with helpful error context
+- **Performance metrics** for optimization analysis
+- **Module loading progress** for debugging startup issues
+
+### 📊 **Performance Optimization**
+- **Grid size**: Smaller grids (10×10 to 25×25) for optimal performance
+- **Token count**: Limit to 50-100 tokens for smooth interaction
+- **Browser resources**: Close unnecessary tabs for better WebGL performance
+- **Zoom level**: Stay within 0.5× to 2× range for best rendering
+
+## 🤝 Contributing to TavernTable
+
+### 🛠️ **Development Workflow**
+1. **Fork repository** and create feature branch
+2. **Set up development environment** with HTTP server
+3. **Follow code standards**:
+   - ES6+ modern JavaScript syntax
+   - Comprehensive JSDoc documentation
+   - 2-space indentation consistency
+   - Descriptive variable/function naming
+   - Error handling for all user interactions
+4. **Test thoroughly** across multiple browsers
+5. **Submit pull request** with detailed change description
+
+### 📝 **Code Quality Standards**
+- **Type safety**: Use validation utilities for all inputs
+- **Error handling**: Implement graceful fallbacks
+- **Documentation**: JSDoc comments for all public functions
+- **Testing**: Manual testing across browser matrix
+- **Accessibility**: Maintain WCAG 2.1 compliance
+
+## 📄 License & Usage
+
+This project is **open source** and free to use. Feel free to:
+- ✅ Use in personal D&D campaigns
+- ✅ Modify for custom game systems
+- ✅ Distribute to your gaming group
+- ✅ Contribute improvements back to the community
+
+## 🎲 Ready for Epic Encounters!
+
+TavernTable transforms your browser into a professional-grade tactical combat simulator. Whether orchestrating intricate dungeon encounters or managing epic boss battles, you now have the tools for cinematic tabletop combat.
+
+**May your dice roll natural twenties and your tactics prove legendary!** 🏰⚔️
+
+---
+
+*Built with ❤️ for the tabletop RPG community*
 
 ### Key Technologies
 - **PIXI.js**: Hardware-accelerated 2D rendering engine

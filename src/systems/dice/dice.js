@@ -169,3 +169,4 @@ export function rollDice(sides) {
 
 // Make rollDice available globally for HTML onclick handlers
 window.rollDice = rollDice;
+console.log('Dice system loaded - rollDice function available');
