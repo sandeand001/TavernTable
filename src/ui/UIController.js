@@ -12,26 +12,46 @@
  * - Zoom reset functionality
  * - Game initialization coordination
  * - Global function exposure for HTML compatibility
+ * 
+ * @module UIController
+ * @version 1.0.0
  */
 
 import GameManager from '../core/GameManager.js';
+import { GRID_CONFIG } from '../config/GameConstants.js';
+import { GameErrors } from '../utils/ErrorHandler.js';
+import { Sanitizers, GameValidators } from '../utils/Validation.js';
 
 /**
  * Toggle the visibility of the creature tokens panel
  * Manages the collapsible state and arrow indicator
  */
 function toggleCreatureTokens() {
-  const content = document.getElementById('creature-content');
-  const arrow = document.getElementById('creature-arrow');
-  
-  if (content) {
-    if (content.style.display === 'none') {
-      content.style.display = 'block';
-      if (arrow) arrow.textContent = '▼';
-    } else {
-      content.style.display = 'none';
-      if (arrow) arrow.textContent = '▶';
+  try {
+    const content = document.getElementById('creature-content');
+    const arrow = document.getElementById('creature-arrow');
+    
+    // Validate DOM elements
+    const contentValidation = GameValidators.domElement(content, 'div');
+    if (!contentValidation.isValid) {
+      throw new Error(`Content panel validation failed: ${contentValidation.getErrorMessage()}`);
     }
+    
+    // Toggle visibility
+    const isHidden = content.style.display === 'none';
+    content.style.display = isHidden ? 'block' : 'none';
+    
+    // Update arrow indicator if present
+    if (arrow) {
+      arrow.textContent = isHidden ? '▼' : '▶';
+    }
+    
+    console.log(`Creature tokens panel ${isHidden ? 'expanded' : 'collapsed'}`);
+  } catch (error) {
+    GameErrors.input(error, {
+      stage: 'toggleCreatureTokens',
+      elementIds: ['creature-content', 'creature-arrow']
+    });
   }
 }
 
@@ -40,34 +60,50 @@ function toggleCreatureTokens() {
  * Validates input values and delegates to GameManager for actual resizing
  */
 function resizeGrid() {
-  const widthInput = document.getElementById('grid-width');
-  const heightInput = document.getElementById('grid-height');
-  
-  if (!window.gameManager) {
-    alert('Game is still loading. Please wait a moment and try again.');
-    return;
-  }
-  
-  if (!window.gameManager.resizeGrid) {
-    console.error('resizeGrid method not found on gameManager');
-    alert('Grid resize feature is not available.');
-    return;
-  }
-  
-  if (widthInput && heightInput) {
-    const newWidth = parseInt(widthInput.value);
-    const newHeight = parseInt(heightInput.value);
-    
-    if (newWidth >= 5 && newWidth <= 50 && newHeight >= 5 && newHeight <= 50) {
-      try {
-        window.gameManager.resizeGrid(newWidth, newHeight);
-      } catch (error) {
-        console.error('Error resizing grid:', error);
-        alert('Error resizing grid. Check console for details.');
-      }
-    } else {
-      alert('Grid size must be between 5x5 and 50x50');
+  try {
+    // Validate GameManager availability
+    if (!window.gameManager) {
+      throw new Error('Game is still loading. Please wait a moment and try again.');
     }
+    
+    if (!window.gameManager.resizeGrid) {
+      throw new Error('Grid resize feature is not available.');
+    }
+    
+    // Get and validate input elements
+    const widthInput = document.getElementById('grid-width');
+    const heightInput = document.getElementById('grid-height');
+    
+    const widthValidation = GameValidators.domElement(widthInput, 'input');
+    const heightValidation = GameValidators.domElement(heightInput, 'input');
+    
+    if (!widthValidation.isValid || !heightValidation.isValid) {
+      throw new Error('Grid resize input elements not found or invalid.');
+    }
+    
+    // Sanitize and validate input values
+    const newWidth = Sanitizers.integer(widthInput.value, GRID_CONFIG.DEFAULT_COLS, {
+      min: GRID_CONFIG.MIN_COLS,
+      max: GRID_CONFIG.MAX_COLS
+    });
+    
+    const newHeight = Sanitizers.integer(heightInput.value, GRID_CONFIG.DEFAULT_ROWS, {
+      min: GRID_CONFIG.MIN_ROWS,
+      max: GRID_CONFIG.MAX_ROWS
+    });
+    
+    // Perform grid resize
+    window.gameManager.resizeGrid(newWidth, newHeight);
+    
+    console.log(`Grid resized to ${newWidth}x${newHeight}`);
+  } catch (error) {
+    GameErrors.input(error, {
+      stage: 'resizeGrid',
+      inputValues: {
+        width: document.getElementById('grid-width')?.value,
+        height: document.getElementById('grid-height')?.value
+      }
+    });
   }
 }
 
@@ -76,38 +112,78 @@ function resizeGrid() {
  * Provides user-friendly zoom reset functionality
  */
 function resetZoom() {
-  if (window.gameManager && window.gameManager.resetZoom) {
+  try {
+    if (!window.gameManager) {
+      throw new Error('Game manager not available');
+    }
+    
+    if (!window.gameManager.resetZoom) {
+      throw new Error('Reset zoom feature not available');
+    }
+    
     window.gameManager.resetZoom();
-  } else {
-    console.warn('Game not ready or zoom reset not available');
+    console.log('Grid zoom reset to default scale');
+  } catch (error) {
+    GameErrors.input(error, { stage: 'resetZoom' });
   }
 }
 
 /**
  * Initialize the application when the page loads
+ * Sets up the game manager and handles any initialization errors
  */
 async function initializeApplication() {
-  // Ensure gameManager exists
-  if (!window.gameManager) {
-    console.error('GameManager not found');
-    return;
-  }
-  
   try {
+    // Validate gameManager exists
+    if (!window.gameManager) {
+      throw new Error('GameManager not found. Application cannot start.');
+    }
+    
+    console.log('Starting TavernTable application initialization...');
+    
+    // Initialize the game manager
     await window.gameManager.initialize();
+    
+    console.log('TavernTable application initialized successfully');
   } catch (error) {
-    console.error('Error during initialization:', error);
+    GameErrors.initialization(error, {
+      stage: 'initializeApplication',
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+/**
+ * Create and configure the global GameManager instance
+ * This provides the main application controller
+ */
+function createGameManager() {
+  try {
+    const gameManager = new GameManager();
+    window.gameManager = gameManager;
+    console.log('GameManager instance created');
+    return gameManager;
+  } catch (error) {
+    GameErrors.initialization(error, { stage: 'createGameManager' });
+    throw error;
   }
 }
 
 // Initialize the game manager and set up event listeners
-const gameManager = new GameManager();
-window.gameManager = gameManager;
+const gameManager = createGameManager();
 
-// Make functions available globally for HTML onclick handlers
+// Make functions available globally for HTML onclick handlers (backward compatibility)
 window.toggleCreatureTokens = toggleCreatureTokens;
 window.resizeGrid = resizeGrid;
 window.resetZoom = resetZoom;
 
 // Start the application when the page loads
 window.addEventListener('load', initializeApplication);
+
+// Export functions for ES6 module usage
+export { 
+  toggleCreatureTokens, 
+  resizeGrid, 
+  resetZoom, 
+  initializeApplication 
+};

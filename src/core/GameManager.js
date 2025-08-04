@@ -13,6 +13,15 @@ import {
   createMindFlayer 
 } from '../entities/creatures/index.js';
 
+// Import configuration and utilities
+import { 
+  GRID_CONFIG, 
+  CREATURE_SCALES, 
+  VALIDATION 
+} from '../config/GameConstants.js';
+import { errorHandler, GameErrors } from '../utils/ErrorHandler.js';
+import { GameValidators, Sanitizers } from '../utils/Validation.js';
+
 /**
  * TavernTable Game Manager
  * 
@@ -22,50 +31,7 @@ import {
  * 
  * Key Responsibilities:
  * - Initialize and manage the PIXI.js application
- * - Render the is           /      /      // Ha      sprite.on('pointerupoutside', function() {
-        if (this.isRightDragging) {
-          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
-          
-          this.isRightDragging = false;
-          this.alpha = 1.0;
-          this.dragData = null;
-          
-          // Snap to grid
-          if (window.snapToGrid) {
-            window.snapToGrid(this);
-          }
-        }
-      });ving the canvas area
-      sprite.on('pointerupoutside', function() {
-        if (this.isRightDragging) {
-          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
-          
-          this.isRightDragging = false;
-          this.alpha = 1.0;
-          this.dragData = null;
-          
-          // Snap to grid
-          if (window.snapToGrid) {use leaving the canvas area
-      sprite.on('pointerupoutside', function() {
-        if (this.isRightDragging) {
-          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
-          
-          this.isRightDragging = false;
-          this.alpha = 1.0;
-          this.dragData = null; mouse leaving the canvas area
-      sprite.on('pointerupoutside', function() {
-        if (this.isRightDragging) {
-          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
-          
-          this.isRightDragging = false;
-          this.alpha = 1.0;
-          this.dragData = null;on('pointerupoutside', function(event) {
-        if (this.isRightDragging) {
-          console.log('Right-drag cancelled (mouse left canvas) - snapping to grid');
-          
-          this.isRightDragging = false;
-          this.alpha = 1.0;
-          this.dragData = null; grid with proper tile placement
+ * - Render the isometric grid with proper tile placement
  * - Handle token creation, placement, and removal
  * - Manage grid panning, zooming, and resizing
  * - Convert between screen coordinates and grid coordinates
@@ -95,11 +61,11 @@ class GameManager {
     this.tokenFacingRight = true;
     this.placedTokens = [];
     
-    // Grid constants
-    this.tileWidth = 64;
-    this.tileHeight = 32;
-    this.rows = 10;
-    this.cols = 10;
+    // Grid configuration from constants
+    this.tileWidth = GRID_CONFIG.TILE_WIDTH;
+    this.tileHeight = GRID_CONFIG.TILE_HEIGHT;
+    this.cols = GRID_CONFIG.DEFAULT_COLS;
+    this.rows = GRID_CONFIG.DEFAULT_ROWS;
     
     // Grid panning variables
     this.isDragging = false;
@@ -110,10 +76,13 @@ class GameManager {
     this.isSpacePressed = false; // Track space bar state for panning
     
     // Grid zoom variables
-    this.gridScale = 1.0;
-    this.minScale = 0.3;
-    this.maxScale = 3.0;
-    this.zoomSpeed = 0.1;
+    this.gridScale = GRID_CONFIG.DEFAULT_SCALE;
+    this.minScale = GRID_CONFIG.MIN_SCALE;
+    this.maxScale = GRID_CONFIG.MAX_SCALE;
+    this.zoomSpeed = GRID_CONFIG.ZOOM_SPEED;
+    
+    // Initialize error handler
+    errorHandler.initialize();
   }
 
   /**
@@ -122,62 +91,94 @@ class GameManager {
    */
   async initialize() {
     try {
+      // Log initialization start
+      console.log('Initializing TavernTable GameManager...');
+      
+      // Create PIXI app with validation
       this.createPixiApp();
+      
+      // Set up grid system
       this.setupGrid();
+      
+      // Configure global variables
       this.setupGlobalVariables();
+      
+      // Enable grid interaction
       this.setupGridInteraction();
       
-      // Initialize sprites
+      // Initialize sprites with error handling
       await this.initializeSprites();
       
       // Fix any existing tokens that might be in wrong container
       this.fixExistingTokens();
+      
+      console.log('GameManager initialization completed successfully');
     } catch (error) {
-      console.error('Failed to initialize game:', error);
-      this.showErrorMessage('Failed to initialize game. Please refresh the page.');
-      throw error;
+      GameErrors.initialization(error, {
+        stage: 'GameManager.initialize',
+        timestamp: new Date().toISOString()
+      });
+      throw error; // Re-throw to allow caller to handle
     }
   }
 
   /**
    * Create and configure the PIXI application
+   * @throws {Error} When PIXI application cannot be created or container not found
    */
   createPixiApp() {
     try {
-      // Initialize PIXI application
+      // Validate PIXI availability
+      if (typeof PIXI === 'undefined') {
+        throw new Error('PIXI.js library is not loaded');
+      }
+      
+      // Initialize PIXI application with configuration
       this.app = new PIXI.Application({
         width: window.innerWidth,
         height: window.innerHeight,
-        backgroundColor: 0x2c2c2c
+        backgroundColor: GRID_CONFIG.BACKGROUND_COLOR
       });
       
-      const gameContainer = document.getElementById('game-container');
-      if (!gameContainer) {
-        throw new Error('Game container element not found');
+      // Validate application creation
+      const appValidation = GameValidators.pixiApp(this.app);
+      if (!appValidation.isValid) {
+        throw new Error(`PIXI application validation failed: ${appValidation.getErrorMessage()}`);
       }
       
-      gameContainer.appendChild(this.app.view);
+      // Find and validate game container
+      const gameContainer = document.getElementById('game-container');
+      const containerValidation = GameValidators.domElement(gameContainer, 'div');
+      if (!containerValidation.isValid) {
+        throw new Error(`Game container validation failed: ${containerValidation.getErrorMessage()}`);
+      }
       
-      // Disable stage interaction but allow children to be interactive
+      // Attach canvas to container (PIXI 7 compatibility)
+      const canvas = this.app.canvas || this.app.view;
+      if (!canvas) {
+        throw new Error('PIXI application canvas not found');
+      }
+      gameContainer.appendChild(canvas);
+      
+      // Configure stage interaction
       this.app.stage.interactive = false;
       this.app.stage.interactiveChildren = true;
       
-      // Make app globally available
+      // Make app globally available for debugging
       window.app = this.app;
+      
+      console.log('PIXI application created successfully');
     } catch (error) {
-      console.error('Failed to create PIXI application:', error);
-      throw new Error('Failed to initialize graphics engine');
+      GameErrors.initialization(error, {
+        stage: 'createPixiApp',
+        pixiAvailable: typeof PIXI !== 'undefined',
+        containerExists: !!document.getElementById('game-container')
+      });
+      throw error;
     }
   }
 
-  /**
-   * Display an error message to the user
-   * @param {string} message - The error message to display
-   */
-  showErrorMessage(message) {
-    // Simple error notification - could be enhanced with a proper notification system
-    alert(message);
-  }
+
 
   /**
    * Fix any existing tokens that might be in the wrong container
@@ -209,26 +210,28 @@ class GameManager {
 
   /**
    * Resize the game grid to new dimensions
-   * @param {number} newCols - Number of columns (5-50)
-   * @param {number} newRows - Number of rows (5-50)
+   * @param {number} newCols - Number of columns
+   * @param {number} newRows - Number of rows
    * @throws {Error} When dimensions are invalid or out of range
    */
   resizeGrid(newCols, newRows) {
-    // Validate input parameters
-    if (!Number.isInteger(newCols) || !Number.isInteger(newRows)) {
-      throw new Error('Grid dimensions must be integers');
-    }
-    
-    if (newCols < 5 || newCols > 50 || newRows < 5 || newRows > 50) {
-      throw new Error('Grid dimensions must be between 5 and 50');
-    }
-    
     try {
-      // Update grid dimensions
-      this.cols = newCols;
-      this.rows = newRows;
+      // Sanitize and validate input parameters
+      const sanitizedCols = Sanitizers.integer(newCols, GRID_CONFIG.DEFAULT_COLS, {
+        min: GRID_CONFIG.MIN_COLS,
+        max: GRID_CONFIG.MAX_COLS
+      });
       
-      // Update global variables
+      const sanitizedRows = Sanitizers.integer(newRows, GRID_CONFIG.DEFAULT_ROWS, {
+        min: GRID_CONFIG.MIN_ROWS,
+        max: GRID_CONFIG.MAX_ROWS
+      });
+      
+      // Update grid dimensions
+      this.cols = sanitizedCols;
+      this.rows = sanitizedRows;
+      
+      // Update global variables for backward compatibility
       window.cols = this.cols;
       window.rows = this.rows;
       
@@ -247,9 +250,17 @@ class GameManager {
       
       // Recenter the grid
       this.centerGrid();
+      
+      console.log(`Grid resized to ${sanitizedCols}x${sanitizedRows}`);
     } catch (error) {
-      console.error('Error resizing grid:', error);
-      throw new Error(`Failed to resize grid: ${error.message}`);
+      GameErrors.validation(error, {
+        stage: 'resizeGrid',
+        requestedCols: newCols,
+        requestedRows: newRows,
+        currentCols: this.cols,
+        currentRows: this.rows
+      });
+      throw error;
     }
   }
 
@@ -276,15 +287,27 @@ class GameManager {
    * Called after grid resize to ensure all tokens remain within valid positions
    */
   validateTokenPositions() {
-    // Remove tokens that are outside the new grid bounds
     const tokensToRemove = [];
     
     this.placedTokens.forEach(tokenData => {
-      if (tokenData.gridX >= this.cols || tokenData.gridY >= this.rows) {
+      // Validate token coordinates
+      const coordValidation = GameValidators.coordinates(tokenData.gridX, tokenData.gridY);
+      const isOutOfBounds = tokenData.gridX >= this.cols || tokenData.gridY >= this.rows;
+      
+      if (!coordValidation.isValid || isOutOfBounds) {
         if (tokenData.creature) {
           tokenData.creature.removeFromStage();
         }
         tokensToRemove.push(tokenData);
+        
+        GameErrors.validation(
+          `Token removed due to invalid position: (${tokenData.gridX}, ${tokenData.gridY})`,
+          {
+            tokenData,
+            gridBounds: { cols: this.cols, rows: this.rows },
+            coordValidation
+          }
+        );
       }
     });
     
@@ -296,14 +319,17 @@ class GameManager {
       }
     });
     
-    // Update global token array
+    // Update global token array for backward compatibility
     window.placedTokens = this.placedTokens;
     
     if (tokensToRemove.length > 0) {
-      console.log(`Removed ${tokensToRemove.length} tokens that were outside new grid bounds`);
+      console.log(`Removed ${tokensToRemove.length} tokens outside grid bounds`);
     }
   }
 
+  /**
+   * Center the grid on the screen
+   */
   centerGrid() {
     // Recenter the grid based on new dimensions and current zoom
     this.gridContainer.x = this.app.screen.width / 2 - (this.cols * this.tileWidth / 4) * this.gridScale;
@@ -314,26 +340,44 @@ class GameManager {
    * Reset the grid zoom to default scale and center the view
    */
   resetZoom() {
-    this.gridScale = 1.0;
-    this.gridContainer.scale.set(this.gridScale);
-    this.centerGrid();
+    try {
+      this.gridScale = GRID_CONFIG.DEFAULT_SCALE;
+      this.gridContainer.scale.set(this.gridScale);
+      this.centerGrid();
+      console.log('Grid zoom reset to default');
+    } catch (error) {
+      GameErrors.rendering(error, { stage: 'resetZoom' });
+    }
   }
 
   /**
    * Set up the isometric grid with tiles and visual elements
    */
   setupGrid() {
-    console.log('Creating grid container...');
-    this.gridContainer = new PIXI.Container();
-    this.gridContainer.x = this.app.screen.width / 2 - (this.cols * this.tileWidth / 4);
-    this.gridContainer.y = 100;
-    this.app.stage.addChild(this.gridContainer);
-    
-    // Draw grid tiles
-    for (let y = 0; y < this.rows; y++) {
-      for (let x = 0; x < this.cols; x++) {
-        this.drawIsometricTile(x, y);
+    try {
+      console.log('Creating grid container...');
+      
+      // Create main grid container
+      this.gridContainer = new PIXI.Container();
+      this.gridContainer.x = this.app.screen.width / 2 - (this.cols * this.tileWidth / 4);
+      this.gridContainer.y = GRID_CONFIG.INITIAL_Y_OFFSET;
+      this.app.stage.addChild(this.gridContainer);
+      
+      // Draw grid tiles
+      for (let y = 0; y < this.rows; y++) {
+        for (let x = 0; x < this.cols; x++) {
+          this.drawIsometricTile(x, y);
+        }
       }
+      
+      console.log(`Grid setup completed: ${this.cols}x${this.rows} tiles`);
+    } catch (error) {
+      GameErrors.rendering(error, {
+        stage: 'setupGrid',
+        cols: this.cols,
+        rows: this.rows
+      });
+      throw error;
     }
   }
 
@@ -341,43 +385,74 @@ class GameManager {
    * Draw an isometric tile at the specified grid coordinates
    * @param {number} x - Grid x coordinate
    * @param {number} y - Grid y coordinate  
-   * @param {number} color - Hex color value (default: 0x555555)
+   * @param {number} color - Hex color value (default from config)
    * @returns {PIXI.Graphics} The created tile graphics object
    */
-  drawIsometricTile(x, y, color = 0x555555) {
-    const tile = new PIXI.Graphics();
-    tile.lineStyle(1, 0xffffff, 0.3);
-    tile.beginFill(color);
-    tile.moveTo(0, this.tileHeight / 2);
-    tile.lineTo(this.tileWidth / 2, 0);
-    tile.lineTo(this.tileWidth, this.tileHeight / 2);
-    tile.lineTo(this.tileWidth / 2, this.tileHeight);
-    tile.lineTo(0, this.tileHeight / 2);
-    tile.endFill();
-    tile.x = (x - y) * (this.tileWidth / 2);
-    tile.y = (x + y) * (this.tileHeight / 2);
-    
-    // Mark this as a grid tile (not a creature token)
-    tile.isGridTile = true;
-    
-    // Store grid coordinates on the tile
-    tile.gridX = x;
-    tile.gridY = y;
-    
-    this.gridContainer.addChild(tile);
+  drawIsometricTile(x, y, color = GRID_CONFIG.TILE_COLOR) {
+    try {
+      // Validate coordinates
+      const coordValidation = GameValidators.coordinates(x, y);
+      if (!coordValidation.isValid) {
+        throw new Error(`Invalid tile coordinates: ${coordValidation.getErrorMessage()}`);
+      }
+      
+      // Create tile graphics
+      const tile = new PIXI.Graphics();
+      tile.lineStyle(1, GRID_CONFIG.TILE_BORDER_COLOR, GRID_CONFIG.TILE_BORDER_ALPHA);
+      tile.beginFill(color);
+      
+      // Draw isometric diamond shape
+      tile.moveTo(0, this.tileHeight / 2);
+      tile.lineTo(this.tileWidth / 2, 0);
+      tile.lineTo(this.tileWidth, this.tileHeight / 2);
+      tile.lineTo(this.tileWidth / 2, this.tileHeight);
+      tile.lineTo(0, this.tileHeight / 2);
+      tile.endFill();
+      
+      // Position tile in isometric space
+      tile.x = (x - y) * (this.tileWidth / 2);
+      tile.y = (x + y) * (this.tileHeight / 2);
+      
+      // Mark this as a grid tile (not a creature token)
+      tile.isGridTile = true;
+      
+      // Store grid coordinates on the tile for reference
+      tile.gridX = x;
+      tile.gridY = y;
+      
+      this.gridContainer.addChild(tile);
+      return tile;
+    } catch (error) {
+      GameErrors.rendering(error, {
+        stage: 'drawIsometricTile',
+        coordinates: { x, y },
+        color
+      });
+      throw error;
+    }
   }
 
+  /**
+   * Set up global variables for backward compatibility
+   * @deprecated - This is maintained for legacy code compatibility
+   */
   setupGlobalVariables() {
-    // Make variables globally available for other modules
-    window.tileWidth = this.tileWidth;
-    window.tileHeight = this.tileHeight;
-    window.rows = this.rows;
-    window.cols = this.cols;
-    window.gridContainer = this.gridContainer;
-    window.selectedTokenType = this.selectedTokenType;
-    window.tokenFacingRight = this.tokenFacingRight;
-    window.placedTokens = this.placedTokens;
-    window.gameManager = this;
+    try {
+      // Make variables globally available for other modules (legacy support)
+      window.tileWidth = this.tileWidth;
+      window.tileHeight = this.tileHeight;
+      window.rows = this.rows;
+      window.cols = this.cols;
+      window.gridContainer = this.gridContainer;
+      window.selectedTokenType = this.selectedTokenType;
+      window.tokenFacingRight = this.tokenFacingRight;
+      window.placedTokens = this.placedTokens;
+      window.gameManager = this;
+      
+      console.log('Global variables initialized for backward compatibility');
+    } catch (error) {
+      GameErrors.initialization(error, { stage: 'setupGlobalVariables' });
+    }
   }
 
   setupGridInteraction() {
@@ -534,31 +609,56 @@ class GameManager {
     this.gridContainer.y = mouseY - localY * this.gridScale;
   }
 
+  /**
+   * Handle left mouse click for token placement
+   * @param {MouseEvent} event - Mouse click event
+   */
   handleLeftClick(event) {
-    // ONLY handle left clicks (button 0)
-    if (event.button !== 0) {
-      return;
+    try {
+      // Only handle left clicks (button 0)
+      if (event.button !== 0) {
+        return;
+      }
+      
+      const gridCoords = this.getGridCoordinatesFromClick(event);
+      if (!gridCoords) {
+        GameErrors.validation('Click outside valid grid area', {
+          event: { x: event.clientX, y: event.clientY }
+        });
+        return;
+      }
+      
+      const { gridX, gridY } = gridCoords;
+      this.handleTokenInteraction(gridX, gridY);
+    } catch (error) {
+      GameErrors.input(error, {
+        stage: 'handleLeftClick',
+        event: { button: event.button, x: event.clientX, y: event.clientY }
+      });
     }
-    
-    const gridCoords = this.getGridCoordinatesFromClick(event);
-    if (!gridCoords) return;
-    
-    const { gridX, gridY } = gridCoords;
-    
-    this.handleTokenInteraction(gridX, gridY);
   }
 
+  /**
+   * Get grid coordinates from mouse click event
+   * @param {MouseEvent} event - Mouse click event
+   * @returns {Object|null} Grid coordinates or null if invalid
+   */
   getGridCoordinatesFromClick(event) {
-    const mouseCoords = this.getMousePosition(event);
-    const localCoords = this.convertToLocalCoordinates(mouseCoords);
-    const gridCoords = this.convertToGridCoordinates(localCoords);
-    
-    // Check bounds
-    if (!this.isValidGridPosition(gridCoords)) {
+    try {
+      const mouseCoords = this.getMousePosition(event);
+      const localCoords = this.convertToLocalCoordinates(mouseCoords);
+      const gridCoords = this.convertToGridCoordinates(localCoords);
+      
+      // Validate coordinates
+      if (!this.isValidGridPosition(gridCoords)) {
+        return null;
+      }
+      
+      return gridCoords;
+    } catch (error) {
+      GameErrors.input(error, { stage: 'getGridCoordinatesFromClick' });
       return null;
     }
-    
-    return gridCoords;
   }
 
   getMousePosition(event) {
@@ -592,23 +692,56 @@ class GameManager {
     };
   }
 
+  /**
+   * Validate if grid position is within bounds
+   * @param {Object} gridCoords - Grid coordinates {gridX, gridY}
+   * @returns {boolean} True if position is valid
+   */
   isValidGridPosition({ gridX, gridY }) {
-    return gridX >= 0 && gridX < this.cols && gridY >= 0 && gridY < this.rows;
+    const coordValidation = GameValidators.coordinates(gridX, gridY);
+    return coordValidation.isValid && 
+           gridX >= 0 && gridX < this.cols && 
+           gridY >= 0 && gridY < this.rows;
   }
 
+  /**
+   * Handle token placement or removal at grid coordinates
+   * @param {number} gridX - Grid X coordinate
+   * @param {number} gridY - Grid Y coordinate
+   */
   handleTokenInteraction(gridX, gridY) {
-    const existingToken = this.findExistingTokenAt(gridX, gridY);
-    
-    if (existingToken) {
-      this.removeToken(existingToken);
+    try {
+      // Validate coordinates first
+      const coordValidation = GameValidators.coordinates(gridX, gridY);
+      if (!coordValidation.isValid) {
+        throw new Error(`Invalid coordinates: ${coordValidation.getErrorMessage()}`);
+      }
+      
+      const existingToken = this.findExistingTokenAt(gridX, gridY);
+      
+      if (existingToken) {
+        this.removeToken(existingToken);
+      }
+      
+      // If remove mode is selected, only remove tokens
+      if (this.selectedTokenType === 'remove') {
+        return;
+      }
+      
+      // Validate creature type before placement
+      const creatureValidation = GameValidators.creatureType(this.selectedTokenType);
+      if (!creatureValidation.isValid) {
+        throw new Error(`Invalid creature type: ${creatureValidation.getErrorMessage()}`);
+      }
+      
+      this.placeNewToken(gridX, gridY);
+    } catch (error) {
+      GameErrors.input(error, {
+        stage: 'handleTokenInteraction',
+        coordinates: { gridX, gridY },
+        selectedTokenType: this.selectedTokenType
+      });
     }
-    
-    // If remove mode is selected, only remove tokens
-    if (this.selectedTokenType === 'remove') {
-      return;
-    }
-    
-    this.placeNewToken(gridX, gridY);
   }
 
   findExistingTokenAt(gridX, gridY) {
@@ -625,20 +758,37 @@ class GameManager {
     window.placedTokens = this.placedTokens;
   }
 
+  /**
+   * Place a new token at the specified grid coordinates
+   * @param {number} gridX - Grid X coordinate
+   * @param {number} gridY - Grid Y coordinate
+   */
   placeNewToken(gridX, gridY) {
-    // Create new token
-    const creature = this.createCreatureByType(this.selectedTokenType);
-    if (!creature) return;
+    try {
+      // Create new creature instance
+      const creature = this.createCreatureByType(this.selectedTokenType);
+      if (!creature) {
+        throw new Error(`Failed to create creature of type: ${this.selectedTokenType}`);
+      }
 
-    // Add to grid container FIRST
-    creature.addToStage(this.gridContainer);
-    
-    // THEN set position relative to grid container
-    const isoCoords = this.gridToIsometric(gridX, gridY);
-    creature.setPosition(isoCoords.isoX, isoCoords.isoY);
-    
-    // Store token info
-    this.addTokenToCollection(creature, gridX, gridY);
+      // Add to grid container first
+      creature.addToStage(this.gridContainer);
+      
+      // Calculate isometric position
+      const isoCoords = this.gridToIsometric(gridX, gridY);
+      creature.setPosition(isoCoords.isoX, isoCoords.isoY);
+      
+      // Store token info and set up interactions
+      this.addTokenToCollection(creature, gridX, gridY);
+      
+      console.log(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`);
+    } catch (error) {
+      GameErrors.sprites(error, {
+        stage: 'placeNewToken',
+        coordinates: { gridX, gridY },
+        creatureType: this.selectedTokenType
+      });
+    }
   }
 
   gridToIsometric(gridX, gridY) {
@@ -735,50 +885,76 @@ class GameManager {
     window.placedTokens = this.placedTokens;
   }
 
+  /**
+   * Initialize sprite manager and load creature sprites
+   * @returns {Promise<void>} Promise that resolves when sprites are loaded
+   */
   async initializeSprites() {
-    if (window.spriteManager) {
-      console.log('Sprite manager found, initializing...');
-      try {
+    try {
+      if (window.spriteManager) {
+        console.log('Sprite manager found, initializing...');
         await window.spriteManager.initialize();
         console.log('Sprites loaded successfully');
         this.spritesReady = true;
         window.spritesReady = true;
-      } catch (error) {
-        console.error('Failed to load sprites:', error);
-        this.spritesReady = true; // Allow fallback to drawn graphics
+      } else {
+        console.log('No sprite manager found, using drawn graphics');
+        this.spritesReady = true;
         window.spritesReady = true;
       }
-    } else {
-      console.log('No sprite manager found, using drawn graphics');
+    } catch (error) {
+      GameErrors.sprites(error, { stage: 'initializeSprites' });
+      // Allow fallback to drawn graphics
       this.spritesReady = true;
       window.spritesReady = true;
     }
   }
 
+  /**
+   * Select a token type for placement
+   * @param {string} tokenType - Type of token to select
+   */
   selectToken(tokenType) {
-    console.log('selectToken called with:', tokenType);
-    
-    // Update UI selection - look for buttons in both creature tokens and action sections
-    document.querySelectorAll('#token-panel button[id^="token-"]').forEach(btn => {
-      btn.classList.remove('selected');
-    });
-    
-    const tokenButton = document.getElementById(`token-${tokenType}`);
-    if (tokenButton) {
-      tokenButton.classList.add('selected');
-    } else {
-      console.warn(`Button not found for token type: ${tokenType}`);
-    }
-    
-    this.selectedTokenType = tokenType;
-    window.selectedTokenType = tokenType;
-    
-    // Update info text
-    const infoEl = document.getElementById('token-info');
-    if (tokenType === 'remove') {
-      infoEl.textContent = 'Click on tokens to remove them';
-    } else {
-      infoEl.textContent = `Click on grid to place ${tokenType}`;
+    try {
+      console.log('selectToken called with:', tokenType);
+      
+      // Validate token type
+      if (tokenType !== 'remove') {
+        const typeValidation = GameValidators.creatureType(tokenType);
+        if (!typeValidation.isValid) {
+          throw new Error(`Invalid token type: ${typeValidation.getErrorMessage()}`);
+        }
+      }
+      
+      // Update UI selection - look for buttons in both creature tokens and action sections
+      document.querySelectorAll('#token-panel button[id^="token-"]').forEach(btn => {
+        btn.classList.remove('selected');
+      });
+      
+      const tokenButton = document.getElementById(`token-${tokenType}`);
+      if (tokenButton) {
+        tokenButton.classList.add('selected');
+      } else {
+        console.warn(`Button not found for token type: ${tokenType}`);
+      }
+      
+      this.selectedTokenType = tokenType;
+      window.selectedTokenType = tokenType;
+      
+      // Update info text
+      const infoEl = document.getElementById('token-info');
+      if (infoEl) {
+        if (tokenType === 'remove') {
+          infoEl.textContent = 'Click on tokens to remove them';
+        } else {
+          infoEl.textContent = `Click on grid to place ${tokenType}`;
+        }
+      }
+    } catch (error) {
+      GameErrors.validation(error, {
+        stage: 'selectToken',
+        tokenType
+      });
     }
   }
 
@@ -793,75 +969,136 @@ class GameManager {
     }
   }
 
+  /**
+   * Create a creature instance by type
+   * @param {string} type - Creature type identifier
+   * @returns {Object|null} Creature instance or null if creation fails
+   */
   createCreatureByType(type) {
-    const creationFunctions = {
-      'goblin': () => createGoblin(),
-      'orc': () => createOrc(),
-      'skeleton': () => createSkeleton(),
-      'dragon': () => createDragon(),
-      'beholder': () => createBeholder(),
-      'troll': () => createTroll(),
-      'owlbear': () => createOwlbear(),
-      'minotaur': () => createMinotaur(),
-      'mindflayer': () => createMindFlayer()
-    };
-    
-    const createFunction = creationFunctions[type];
-    return createFunction ? createFunction() : null;
+    try {
+      // Validate creature type
+      const typeValidation = GameValidators.creatureType(type);
+      if (!typeValidation.isValid) {
+        throw new Error(`Invalid creature type: ${typeValidation.getErrorMessage()}`);
+      }
+      
+      const creationFunctions = {
+        'goblin': () => createGoblin(),
+        'orc': () => createOrc(),
+        'skeleton': () => createSkeleton(),
+        'dragon': () => createDragon(),
+        'beholder': () => createBeholder(),
+        'troll': () => createTroll(),
+        'owlbear': () => createOwlbear(),
+        'minotaur': () => createMinotaur(),
+        'mindflayer': () => createMindFlayer()
+      };
+      
+      const createFunction = creationFunctions[type];
+      if (!createFunction) {
+        throw new Error(`No creation function found for creature type: ${type}`);
+      }
+      
+      const creature = createFunction();
+      if (!creature) {
+        throw new Error(`Creation function returned null for creature type: ${type}`);
+      }
+      
+      return creature;
+    } catch (error) {
+      GameErrors.sprites(error, {
+        stage: 'createCreatureByType',
+        creatureType: type
+      });
+      return null;
+    }
   }
 
+  /**
+   * Snap a token to the nearest grid intersection
+   * @param {PIXI.Sprite} token - Token sprite to snap
+   */
   snapToGrid(token) {
-    // Token position is already relative to gridContainer since that's its parent
-    // No need to subtract gridContainer position
-    const localX = token.x;
-    const localY = token.y;
+    try {
+      // Token position is already relative to gridContainer since that's its parent
+      const localX = token.x;
+      const localY = token.y;
 
-    // Convert back to grid coordinates to find nearest intersection
-    const gridX = Math.round((localX / (this.tileWidth / 2) + localY / (this.tileHeight / 2)) / 2);
-    const gridY = Math.round((localY / (this.tileHeight / 2) - localX / (this.tileWidth / 2)) / 2);
+      // Convert back to grid coordinates to find nearest intersection
+      const gridX = Math.round((localX / (this.tileWidth / 2) + localY / (this.tileHeight / 2)) / 2);
+      const gridY = Math.round((localY / (this.tileHeight / 2) - localX / (this.tileWidth / 2)) / 2);
 
-    const clampedX = Math.max(0, Math.min(this.cols - 1, gridX));
-    const clampedY = Math.max(0, Math.min(this.rows - 1, gridY));
+      // Clamp to grid bounds
+      const clampedX = Math.max(0, Math.min(this.cols - 1, gridX));
+      const clampedY = Math.max(0, Math.min(this.rows - 1, gridY));
 
-    // Position at intersection point (relative to grid container)
-    const isoX = (clampedX - clampedY) * (this.tileWidth / 2);
-    const isoY = (clampedX + clampedY) * (this.tileHeight / 2);
+      // Position at intersection point (relative to grid container)
+      const isoX = (clampedX - clampedY) * (this.tileWidth / 2);
+      const isoY = (clampedX + clampedY) * (this.tileHeight / 2);
 
-    token.x = isoX;
-    token.y = isoY;
-    
-    // Update the token's grid position in the placedTokens array
-    const tokenEntry = this.placedTokens.find(t => t.creature && t.creature.sprite === token);
-    if (tokenEntry) {
-      tokenEntry.gridX = clampedX;
-      tokenEntry.gridY = clampedY;
+      token.x = isoX;
+      token.y = isoY;
+      
+      // Update the token's grid position in the placedTokens array
+      const tokenEntry = this.placedTokens.find(t => t.creature && t.creature.sprite === token);
+      if (tokenEntry) {
+        tokenEntry.gridX = clampedX;
+        tokenEntry.gridY = clampedY;
+        console.log(`Token snapped to grid (${clampedX}, ${clampedY})`);
+      }
+    } catch (error) {
+      GameErrors.input(error, {
+        stage: 'snapToGrid',
+        tokenPosition: { x: token.x, y: token.y }
+      });
     }
   }
 }
 
-// Global functions for UI interaction
+/**
+ * Global functions for backward compatibility and UI interaction
+ * @deprecated - These should be replaced with direct GameManager method calls
+ */
+
+/**
+ * Select a token type for placement
+ * @param {string} tokenType - Type of token to select
+ */
 function selectToken(tokenType) {
   if (window.gameManager) {
     window.gameManager.selectToken(tokenType);
+  } else {
+    console.error('GameManager not initialized');
   }
 }
 
+/**
+ * Toggle token facing direction
+ */
 function toggleFacing() {
   if (window.gameManager) {
     window.gameManager.toggleFacing();
+  } else {
+    console.error('GameManager not initialized');
   }
 }
 
+/**
+ * Snap a token to the nearest grid position
+ * @param {PIXI.Sprite} token - Token sprite to snap
+ */
 function snapToGrid(token) {
   if (window.gameManager) {
     window.gameManager.snapToGrid(token);
+  } else {
+    console.error('GameManager not initialized');
   }
 }
 
-// Make functions globally available
+// Make global functions available for backward compatibility
 window.selectToken = selectToken;
 window.toggleFacing = toggleFacing;
 window.snapToGrid = snapToGrid;
 
-// Export the GameManager class
+// Export the GameManager class for ES6 module usage
 export default GameManager;

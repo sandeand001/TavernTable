@@ -116,38 +116,46 @@ TavernTable brings the tactical combat experience of tabletop RPGs to your brows
 ### Project Structure
 ```
 TavernTable/
-├── index.html                    # Application entry point
-├── README.md                     # This file
+├── index.html                    # Application entry point with accessibility features
+├── README.md                     # Comprehensive documentation
 ├── assets/                       # Game resources
 │   └── sprites/                  # Creature PNG files
-├── src/                         # Source code (ES6 modules)
+├── src/                         # Source code (Clean ES6 modules)
 │   ├── config/
-│   │   └── GameConfig.js        # Game settings and configurations
+│   │   └── GameConstants.js     # Centralized configuration and constants
 │   ├── core/
-│   │   ├── GameManager.js       # Main game controller and state
+│   │   ├── GameManager.js       # Main game controller with error handling
 │   │   └── SpriteManager.js     # Asset loading and management
 │   ├── entities/
 │   │   └── creatures/           # Creature token system
 │   │       ├── CreatureFactory.js  # Factory pattern for creation
-│   │       ├── CreatureToken.js     # Base token class
+│   │       ├── CreatureToken.js     # Base token class with validation
 │   │       └── index.js             # Global creation functions
 │   ├── systems/
 │   │   ├── DragController.js    # Token drag-and-drop system
 │   │   └── dice/                # Dice rolling mechanics
 │   │       ├── dice.js              # Main rolling logic
 │   │       └── diceLog.js           # Roll history management
-│   └── ui/
-│       ├── UIController.js      # Interface management
-│       └── style.css            # Application styling
+│   ├── ui/
+│   │   ├── UIController.js      # Interface management with validation
+│   │   └── styles.css           # Application styling
+│   └── utils/                   # Utility modules (NEW)
+│       ├── ErrorHandler.js      # Centralized error management
+│       └── Validation.js        # Input validation and sanitization
 ├── tools/                       # Development configurations
-└── archive/                     # Legacy files and tests
+└── .github/                     # Project documentation
+    └── copilot-instructions.md  # Coding standards and guidelines
 ```
 
-### Design Patterns
+### Design Patterns & Architecture
 - **ES6 Modules**: Clean import/export structure for maintainability
 - **Factory Pattern**: Consistent creature creation via `CreatureFactory`
 - **Singleton Pattern**: Global managers for game state and assets
 - **Observer Pattern**: Event-driven communication between systems
+- **Error Handling**: Comprehensive try-catch with user-friendly messages
+- **Input Validation**: Sanitization and type checking throughout
+- **Centralized Configuration**: Constants management for magic numbers
+- **Accessibility**: ARIA labels and screen reader support
 - **Component Architecture**: Modular systems with clear responsibilities
 
 ### Key Technologies
@@ -168,7 +176,7 @@ TavernTable/
 
 #### New Creatures
 1. Add sprite image to `assets/sprites/` (e.g., `phoenix-sprite.png`)
-2. Update `src/config/GameConfig.js` with sprite mapping
+2. Update `src/config/GameConstants.js` with sprite mapping
 3. Add creation function in `src/entities/creatures/index.js`
 4. Add UI button in `index.html`
 5. Test with both sprite and fallback graphics
@@ -187,7 +195,7 @@ TavernTable/
 ## 🔧 Configuration
 
 ### Game Settings
-Edit `src/config/GameConfig.js` to customize:
+Edit `src/config/GameConstants.js` to customize:
 - Creature sprite paths and scaling
 - Grid appearance and behavior
 - Default game parameters
@@ -211,7 +219,7 @@ Modify `src/ui/style.css` for:
 
 **Sprites not loading**
 - Check that PNG files exist in `assets/sprites/`
-- Verify file names match `GameConfig.js` entries
+- Verify file names match `GameConstants.js` entries
 - Fallback colored shapes should appear if sprites fail
 
 **Performance issues**
@@ -246,7 +254,40 @@ python -m http.server 8000
 ```
 
 
-## 🙏 Acknowledgments
+## � Recent Development Updates
+
+### Code Quality Improvements (August 2025)
+Our recent comprehensive cleanup follows strict coding standards for maintainability and reliability:
+
+#### ✅ **Architectural Enhancements**
+- **Centralized Configuration**: Consolidated all magic numbers and constants into `GameConstants.js`
+- **Error Handling System**: Implemented comprehensive `ErrorHandler.js` with user-friendly notifications
+- **Input Validation**: Added robust `Validation.js` utilities with type checking and sanitization
+- **Modular Design**: Enhanced ES6 module structure with clear separation of concerns
+
+#### ✅ **Code Standards Applied**
+- **JSDoc Documentation**: Comprehensive inline documentation for all modules
+- **Error Recovery**: Graceful fallbacks and user-friendly error messages throughout
+- **Input Sanitization**: Protection against invalid data with helpful validation feedback
+- **Accessibility**: ARIA labels and screen reader support in UI components
+
+#### ✅ **Files Enhanced**
+- `GameManager.js` - Main controller with centralized error handling
+- `UIController.js` - Interface management with input validation
+- `CreatureToken.js` - Token system with comprehensive error recovery
+- `dice.js` & `diceLog.js` - Dice system with validation and constants
+- `DragController.js` - Drag-and-drop with proper event handling
+- `index.html` - Accessibility improvements and semantic structure
+
+#### ✅ **Infrastructure**
+- Removed duplicate directory structures for cleaner organization
+- Eliminated legacy `GameConfig.js` in favor of modular `GameConstants.js`
+- Updated all documentation to reflect new architecture
+- Ensured backward compatibility while modernizing codebase
+
+---
+
+## �🙏 Acknowledgments
 
 - **PIXI.js** team for the excellent 2D rendering library
 - **D&D Community** for inspiration and feedback
