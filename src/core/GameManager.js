@@ -81,6 +81,12 @@ class GameManager {
     this.maxScale = GRID_CONFIG.MAX_SCALE;
     this.zoomSpeed = GRID_CONFIG.ZOOM_SPEED;
     
+    // Testing mode variables
+    this.testingMode = {
+      logSprite: false,
+      logCenter: false
+    };
+    
     // Initialize error handler
     errorHandler.initialize();
   }
@@ -634,6 +640,12 @@ class GameManager {
         return;
       }
       
+      // Handle testing mode clicks
+      if (this.testingMode.logSprite || this.testingMode.logCenter) {
+        this.handleTestingClick(event);
+        return;
+      }
+      
       const gridCoords = this.getGridCoordinatesFromClick(event);
       if (!gridCoords) {
         GameErrors.validation('Click outside valid grid area', {
@@ -696,9 +708,13 @@ class GameManager {
   }
 
   convertToGridCoordinates({ localX, localY }) {
-    // Convert to grid coordinates - find the closest intersection
-    const rawGridX = (localX / (this.tileWidth / 2) + localY / (this.tileHeight / 2)) / 2;
-    const rawGridY = (localY / (this.tileHeight / 2) - localX / (this.tileWidth / 2)) / 2;
+    // Account for tile centering offset - subtract half tile dimensions
+    const adjustedX = localX - (this.tileWidth / 2);
+    const adjustedY = localY - (this.tileHeight / 2);
+    
+    // Convert to grid coordinates using adjusted coordinates
+    const rawGridX = (adjustedX / (this.tileWidth / 2) + adjustedY / (this.tileHeight / 2)) / 2;
+    const rawGridY = (adjustedY / (this.tileHeight / 2) - adjustedX / (this.tileWidth / 2)) / 2;
     
     return {
       gridX: Math.round(rawGridX),
@@ -806,9 +822,13 @@ class GameManager {
   }
 
   gridToIsometric(gridX, gridY) {
+    // Subtract 0.5 offset from both gridX and gridY to center sprites in tile diamonds
+    const offsetGridX = gridX - 0.5;
+    const offsetGridY = gridY - 0.5;
+    
     return {
-      isoX: (gridX - gridY) * (this.tileWidth / 2),
-      isoY: (gridX + gridY) * (this.tileHeight / 2)
+      isoX: (offsetGridX - offsetGridY) * (this.tileWidth / 2) + (this.tileWidth / 2),
+      isoY: (offsetGridX + offsetGridY) * (this.tileHeight / 2) + (this.tileHeight / 2)
     };
   }
 
@@ -1036,7 +1056,7 @@ class GameManager {
   }
 
   /**
-   * Snap a token to the nearest grid intersection
+   * Snap a token to the nearest grid center
    * @param {PIXI.Sprite} token - Token sprite to snap
    */
   snapToGrid(token) {
@@ -1045,17 +1065,23 @@ class GameManager {
       const localX = token.x;
       const localY = token.y;
 
-      // Convert back to grid coordinates to find nearest intersection
-      const gridX = Math.round((localX / (this.tileWidth / 2) + localY / (this.tileHeight / 2)) / 2);
-      const gridY = Math.round((localY / (this.tileHeight / 2) - localX / (this.tileWidth / 2)) / 2);
+      // Account for tile centering offset - subtract half tile dimensions
+      const adjustedX = localX - (this.tileWidth / 2);
+      const adjustedY = localY - (this.tileHeight / 2);
+
+      // Convert back to grid coordinates using adjusted coordinates  
+      const gridX = Math.round((adjustedX / (this.tileWidth / 2) + adjustedY / (this.tileHeight / 2)) / 2);
+      const gridY = Math.round((adjustedY / (this.tileHeight / 2) - adjustedX / (this.tileWidth / 2)) / 2);
 
       // Clamp to grid bounds
       const clampedX = Math.max(0, Math.min(this.cols - 1, gridX));
       const clampedY = Math.max(0, Math.min(this.rows - 1, gridY));
 
-      // Position at intersection point (relative to grid container)
-      const isoX = (clampedX - clampedY) * (this.tileWidth / 2);
-      const isoY = (clampedX + clampedY) * (this.tileHeight / 2);
+      // Position at diamond center - same logic as gridToIsometric with -0.5 offset for both coordinates
+      const offsetGridX = clampedX - 0.5;
+      const offsetGridY = clampedY - 0.5;
+      const isoX = (offsetGridX - offsetGridY) * (this.tileWidth / 2) + (this.tileWidth / 2);
+      const isoY = (offsetGridX + offsetGridY) * (this.tileHeight / 2) + (this.tileHeight / 2);
 
       token.x = isoX;
       token.y = isoY;
@@ -1072,6 +1098,145 @@ class GameManager {
         stage: 'snapToGrid',
         tokenPosition: { x: token.x, y: token.y }
       });
+    }
+  }
+
+  /**
+   * Handle testing mode clicks for position logging
+   * @param {MouseEvent} event - Mouse click event
+   */
+  handleTestingClick(event) {
+    try {
+      const mouseCoords = this.getMousePosition(event);
+      const localCoords = this.convertToLocalCoordinates(mouseCoords);
+      const gridCoords = this.convertToGridCoordinates(localCoords);
+      
+      const timestamp = new Date().toLocaleTimeString();
+      
+      if (this.testingMode.logSprite) {
+        console.log(`🔴 SPRITE POSITION LOG [${timestamp}]:`);
+        console.log(`  Screen: (${event.clientX}, ${event.clientY})`);
+        console.log(`  Canvas: (${mouseCoords.mouseX}, ${mouseCoords.mouseY})`);
+        console.log(`  Local: (${localCoords.localX.toFixed(1)}, ${localCoords.localY.toFixed(1)})`);
+        console.log(`  Grid: (${gridCoords.gridX}, ${gridCoords.gridY})`);
+        
+        this.addTestingLogEntry(`🔴 Sprite at Grid(${gridCoords.gridX},${gridCoords.gridY}) Local(${localCoords.localX.toFixed(1)},${localCoords.localY.toFixed(1)})`, timestamp);
+        
+        // Auto-disable after logging
+        this.toggleSpriteLogging();
+      }
+      
+      if (this.testingMode.logCenter) {
+        console.log(`🔵 TILE CENTER LOG [${timestamp}]:`);
+        console.log(`  Screen: (${event.clientX}, ${event.clientY})`);
+        console.log(`  Canvas: (${mouseCoords.mouseX}, ${mouseCoords.mouseY})`);
+        console.log(`  Local: (${localCoords.localX.toFixed(1)}, ${localCoords.localY.toFixed(1)})`);
+        console.log(`  Grid: (${gridCoords.gridX}, ${gridCoords.gridY})`);
+        
+        this.addTestingLogEntry(`🔵 Center at Grid(${gridCoords.gridX},${gridCoords.gridY}) Local(${localCoords.localX.toFixed(1)},${localCoords.localY.toFixed(1)})`, timestamp);
+        
+        // Auto-disable after logging
+        this.toggleCenterLogging();
+      }
+    } catch (error) {
+      GameErrors.input(error, {
+        stage: 'handleTestingClick',
+        event: { button: event.button, x: event.clientX, y: event.clientY }
+      });
+    }
+  }
+
+  /**
+   * Toggle sprite position logging mode
+   */
+  toggleSpriteLogging() {
+    this.testingMode.logSprite = !this.testingMode.logSprite;
+    
+    // Ensure only one mode is active at a time
+    if (this.testingMode.logSprite) {
+      this.testingMode.logCenter = false;
+      this.updateTestingButton('testing-log-center', false);
+    }
+    
+    this.updateTestingButton('testing-log-sprite', this.testingMode.logSprite);
+    
+    const status = this.testingMode.logSprite ? 'ENABLED' : 'DISABLED';
+    console.log(`🔴 Sprite position logging ${status}`);
+  }
+
+  /**
+   * Toggle tile center logging mode
+   */
+  toggleCenterLogging() {
+    this.testingMode.logCenter = !this.testingMode.logCenter;
+    
+    // Ensure only one mode is active at a time
+    if (this.testingMode.logCenter) {
+      this.testingMode.logSprite = false;
+      this.updateTestingButton('testing-log-sprite', false);
+    }
+    
+    this.updateTestingButton('testing-log-center', this.testingMode.logCenter);
+    
+    const status = this.testingMode.logCenter ? 'ENABLED' : 'DISABLED';
+    console.log(`🔵 Tile center logging ${status}`);
+  }
+
+  /**
+   * Update testing button visual state
+   * @param {string} buttonId - ID of the button to update
+   * @param {boolean} active - Whether the button should be active
+   */
+  updateTestingButton(buttonId, active) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+      if (active) {
+        button.classList.add('selected');
+        button.setAttribute('aria-pressed', 'true');
+      } else {
+        button.classList.remove('selected');
+        button.setAttribute('aria-pressed', 'false');
+      }
+    }
+  }
+
+  /**
+   * Add entry to testing log display
+   * @param {string} message - Log message
+   * @param {string} timestamp - Timestamp
+   */
+  addTestingLogEntry(message, timestamp) {
+    const logContent = document.getElementById('testing-log-content');
+    if (logContent) {
+      // Remove placeholder if present
+      const placeholder = logContent.querySelector('.testing-log-entry');
+      if (placeholder && placeholder.textContent === 'No tests performed yet') {
+        placeholder.remove();
+      }
+      
+      const entry = document.createElement('div');
+      entry.className = 'testing-log-entry';
+      entry.innerHTML = `<small>${timestamp}</small><br>${message}`;
+      logContent.appendChild(entry);
+      
+      // Keep only last 10 entries
+      const entries = logContent.querySelectorAll('.testing-log-entry');
+      if (entries.length > 10) {
+        entries[0].remove();
+      }
+      
+      // Scroll to bottom
+      logContent.scrollTop = logContent.scrollHeight;
+    }
+  }
+
+  /**
+   * Clear testing log
+   */
+  clearTestingLog() {
+    const logContent = document.getElementById('testing-log-content');
+    if (logContent) {
+      logContent.innerHTML = '<div class="testing-log-entry">No tests performed yet</div>';
     }
   }
 }
@@ -1116,10 +1281,50 @@ function snapToGrid(token) {
   }
 }
 
+/**
+ * Testing Functions
+ */
+
+/**
+ * Toggle sprite position logging mode
+ */
+function toggleSpriteLogging() {
+  if (window.gameManager) {
+    window.gameManager.toggleSpriteLogging();
+  } else {
+    console.error('GameManager not initialized');
+  }
+}
+
+/**
+ * Toggle tile center logging mode
+ */
+function toggleCenterLogging() {
+  if (window.gameManager) {
+    window.gameManager.toggleCenterLogging();
+  } else {
+    console.error('GameManager not initialized');
+  }
+}
+
+/**
+ * Clear testing log
+ */
+function clearTestingLog() {
+  if (window.gameManager) {
+    window.gameManager.clearTestingLog();
+  } else {
+    console.error('GameManager not initialized');
+  }
+}
+
 // Make global functions available for backward compatibility
 window.selectToken = selectToken;
 window.toggleFacing = toggleFacing;
 window.snapToGrid = snapToGrid;
+window.toggleSpriteLogging = toggleSpriteLogging;
+window.toggleCenterLogging = toggleCenterLogging;
+window.clearTestingLog = clearTestingLog;
 
 // Export the GameManager class for ES6 module usage
 export default GameManager;

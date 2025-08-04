@@ -91,7 +91,7 @@ class SidebarController {
    */
   showTab(tabId) {
     // Validate tab ID
-    const validTabs = ['dice-log', 'creatures', 'terrain', 'settings'];
+    const validTabs = ['dice-log', 'creatures', 'terrain', 'testing', 'settings'];
     if (!validTabs.includes(tabId)) {
       console.warn(`Invalid tab ID: ${tabId}`);
       return;
@@ -134,6 +134,9 @@ class SidebarController {
         break;
       case 'terrain':
         // Future: Initialize terrain tools
+        break;
+      case 'testing':
+        // Testing tab is ready - no special initialization needed
         break;
       case 'settings':
         // Future: Load current game settings

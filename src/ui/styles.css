@@ -414,6 +414,36 @@ html, body {
   font-weight: 500;
 }
 
+/* Testing Log Specific Styles */
+#testing-log-content {
+  flex: 1;
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+  overflow-y: auto;
+  min-height: 150px;
+  max-height: 300px;
+}
+
+.testing-log-entry {
+  padding: 6px 0;
+  border-bottom: 1px solid #333;
+  font-size: 12px;
+  color: #ccc;
+  line-height: 1.4;
+}
+
+.testing-log-entry:last-child {
+  border-bottom: none;
+}
+
+.testing-log-entry small {
+  color: #888;
+  font-size: 10px;
+}
+
 .panel-footer {
   margin-top: auto;
   padding-top: 12px;
