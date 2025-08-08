@@ -147,10 +147,10 @@ export class TokenManager {
   toggleFacing() {
     this.tokenFacingRight = !this.tokenFacingRight;
     
-    // Update button display
+    // Update button display securely to prevent XSS
     const facingBtn = document.getElementById('facing-right');
     if (facingBtn) {
-      facingBtn.innerHTML = this.tokenFacingRight ? '➡️ Right' : '⬅️ Left';
+      facingBtn.textContent = this.tokenFacingRight ? '➡️ Right' : '⬅️ Left';
     }
   }
 
