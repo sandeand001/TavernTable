@@ -140,11 +140,22 @@ export class ErrorHandler {
       animation: slideIn 0.3s ease-out;
     `;
     
-    notification.innerHTML = `
-      <strong>${errorEntry.level === ERROR_LEVELS.CRITICAL ? 'Critical Error' : 'Error'}:</strong><br>
-      ${this.getUserFriendlyMessage(errorEntry)}
-      <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; color: inherit; cursor: pointer;">×</button>
-    `;
+    // Create secure DOM elements instead of innerHTML to prevent XSS
+    const strongElement = document.createElement('strong');
+    strongElement.textContent = errorEntry.level === ERROR_LEVELS.CRITICAL ? 'Critical Error' : 'Error';
+    
+    const messageElement = document.createElement('span');
+    messageElement.textContent = this.getUserFriendlyMessage(errorEntry);
+    
+    const closeButton = document.createElement('button');
+    closeButton.textContent = '×';
+    closeButton.style.cssText = 'float: right; background: none; border: none; color: inherit; cursor: pointer;';
+    closeButton.addEventListener('click', () => notification.remove());
+    
+    notification.appendChild(strongElement);
+    notification.appendChild(document.createElement('br'));
+    notification.appendChild(messageElement);
+    notification.appendChild(closeButton);
     
     errorDisplay.appendChild(notification);
     
@@ -234,5 +245,33 @@ export const GameErrors = {
    */
   sprites(error, context = {}) {
     return errorHandler.handle(error, ERROR_LEVELS.WARNING, ERROR_CATEGORIES.SPRITES, context);
+  },
+  
+  /**
+   * Handle input validation errors
+   * @param {Error|string} error - Error details
+   * @param {Object} context - Additional context
+   */
+  input(error, context = {}) {
+    return errorHandler.handle(error, ERROR_LEVELS.WARNING, ERROR_CATEGORIES.INPUT, context);
+  },
+  
+  /**
+   * Handle network errors
+   * @param {Error|string} error - Error details
+   * @param {Object} context - Additional context
+   */
+  network(error, context = {}) {
+    return errorHandler.handle(error, ERROR_LEVELS.ERROR, ERROR_CATEGORIES.NETWORK, context);
+  },
+  
+  /**
+   * Generic error handler
+   * @param {Error|string} error - Error details
+   * @param {string} message - User-friendly message
+   * @param {Object} context - Additional context
+   */
+  handleError(error, message, context = {}) {
+    return errorHandler.handle(error, ERROR_LEVELS.ERROR, ERROR_CATEGORIES.INITIALIZATION, { message, ...context });
   }
 };

@@ -6,6 +6,10 @@ npm-debug.log*
 dist/
 build/
 
+# Test coverage reports
+coverage/
+*.lcov
+
 # Environment files
 .env
 .env.local

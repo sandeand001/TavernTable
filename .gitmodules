@@ -1,0 +1,3 @@
+[submodule "devworkflow"]
+	path = devworkflow
+	url = https://github.com/sandeand001/DevWorkflow-Framework.git

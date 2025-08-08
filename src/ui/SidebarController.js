@@ -176,24 +176,38 @@ class SidebarController {
     const logContent = document.getElementById('dice-log-content');
     if (!logContent) return;
 
+    // Clear existing content securely
+    while (logContent.firstChild) {
+      logContent.removeChild(logContent.firstChild);
+    }
+
     if (this.diceLogEntries.length === 0) {
-      logContent.innerHTML = '<div class="dice-log-entry">No dice rolls yet. Roll some dice!</div>';
+      const emptyEntry = document.createElement('div');
+      emptyEntry.className = 'dice-log-entry';
+      emptyEntry.textContent = 'No dice rolls yet. Roll some dice!';
+      logContent.appendChild(emptyEntry);
       return;
     }
 
-    const logHTML = this.diceLogEntries.map((entry, index) => {
+    // Create DOM elements securely to prevent XSS
+    this.diceLogEntries.forEach((entry, index) => {
       const isRecent = index < 3; // Mark first 3 entries as recent
-      const recentClass = isRecent ? 'recent' : '';
       
-      return `
-        <div class="dice-log-entry ${recentClass}">
-          <span class="log-time">[${entry.timestamp}]</span>
-          <span class="log-message">${entry.message}</span>
-        </div>
-      `;
-    }).join('');
-
-    logContent.innerHTML = logHTML;
+      const entryDiv = document.createElement('div');
+      entryDiv.className = `dice-log-entry${isRecent ? ' recent' : ''}`;
+      
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'log-time';
+      timeSpan.textContent = `[${entry.timestamp}]`;
+      
+      const messageSpan = document.createElement('span');
+      messageSpan.className = 'log-message';
+      messageSpan.textContent = entry.message;
+      
+      entryDiv.appendChild(timeSpan);
+      entryDiv.appendChild(messageSpan);
+      logContent.appendChild(entryDiv);
+    });
 
     // Auto-scroll to top to show newest entries
     logContent.scrollTop = 0;
@@ -257,8 +271,18 @@ class SidebarController {
    * @param {number} opacity - Opacity value from 0 to 1
    */
   onGridOpacityChange(opacity) {
-    // TODO: Integrate with GameManager to change grid opacity
-    console.log(`Grid opacity changed to: ${opacity}`);
+    // Integrate with GameManager to change grid opacity
+    if (window.gameManager && window.gameManager.gridContainer) {
+      // Apply opacity to grid tiles while preserving token visibility
+      window.gameManager.gridContainer.children.forEach(child => {
+        if (child.isGridTile) {
+          child.alpha = opacity;
+        }
+      });
+      console.log(`Grid opacity changed to: ${opacity}`);
+    } else {
+      console.warn('GameManager not available for grid opacity change');
+    }
   }
 
   /**
@@ -266,8 +290,20 @@ class SidebarController {
    * @param {number} speed - Speed multiplier
    */
   onAnimationSpeedChange(speed) {
-    // TODO: Integrate with GameManager to change animation speed
-    console.log(`Animation speed changed to: ${speed}x`);
+    // Integrate with GameManager to change animation speed
+    if (window.gameManager && window.gameManager.app) {
+      // Store animation speed in app for use by animation systems
+      window.gameManager.app.animationSpeedMultiplier = speed;
+      
+      // Update any existing PIXI ticker speed if available
+      if (window.gameManager.app.ticker) {
+        window.gameManager.app.ticker.speed = speed;
+      }
+      
+      console.log(`Animation speed changed to: ${speed}x`);
+    } else {
+      console.warn('GameManager not available for animation speed change');
+    }
   }
 }
 
