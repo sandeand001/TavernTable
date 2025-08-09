@@ -384,7 +384,6 @@ function snapToGrid(token) {
 window.selectToken = selectToken;
 window.toggleFacing = toggleFacing;
 window.snapToGrid = snapToGrid;
-console.log('GameManager loaded - token functions available');
 
 // Export the GameManager class for ES6 module usage
 export default GameManager;

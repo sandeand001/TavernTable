@@ -37,7 +37,7 @@ export class InputCoordinator {
       // Validate coordinates first
       const coordValidation = GameValidators.coordinates(gridX, gridY);
       if (!coordValidation.isValid) {
-        throw new Error(`Invalid coordinates: ${coordValidation.getErrorMessage()}`);
+        throw new Error(`Invalid coordinates: ${coordValidation.errors.join(', ')}`);
       }
 
       const existingToken = this.findExistingTokenAt(gridX, gridY);
@@ -54,7 +54,7 @@ export class InputCoordinator {
       // Validate creature type before placement
       const creatureValidation = GameValidators.creatureType(this.gameManager.selectedTokenType);
       if (!creatureValidation.isValid) {
-        throw new Error(`Invalid creature type: ${creatureValidation.getErrorMessage()}`);
+        throw new Error(`Invalid creature type: ${creatureValidation.errors.join(', ')}`);
       }
       
       this.placeNewToken(gridX, gridY);

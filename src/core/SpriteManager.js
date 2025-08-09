@@ -58,12 +58,10 @@ class SpriteManager {
   addSprite(name, filename) {
     const fullPath = this.getBasePath() + filename;
     
-    console.log(`🎨 Registering sprite: ${name} -> ${fullPath}`);
-    
     // Test if the file exists by attempting to create an image
     const testImg = new Image();
     testImg.onload = () => {
-      console.log(`✅ File exists: ${fullPath}`);
+      // File exists validation passed
     };
     testImg.onerror = () => {
       console.error(`❌ File NOT found: ${fullPath}`);
@@ -103,8 +101,6 @@ class SpriteManager {
         }
       }
       
-      console.log(`Sprite loading complete: ${successfulLoads.length} successful, ${failedLoads.length} failed`);
-      console.log('Successfully loaded:', successfulLoads);
       if (failedLoads.length > 0) {
         console.warn('Failed to load:', failedLoads);
       }
@@ -179,17 +175,13 @@ class SpriteManager {
    */
   registerGameSprites() {
     try {
-      console.log('🎨 Registering game sprites from GameConstants...');
-      
       const spriteFiles = this.getSpriteFiles();
-      console.log('🎨 Generated sprite files mapping:', spriteFiles);
       
       // Register all sprites from config
       for (const [spriteName, filename] of Object.entries(spriteFiles)) {
         this.addSprite(spriteName, filename);
       }
       
-      console.log(`✅ Registered ${Object.keys(spriteFiles).length} sprites successfully`);
     } catch (error) {
       GameErrors.handleError(error, 'Failed to register game sprites');
       

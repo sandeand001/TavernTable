@@ -36,14 +36,14 @@ export class RenderCoordinator {
       // Validate application creation
       const appValidation = GameValidators.pixiApp(this.gameManager.app);
       if (!appValidation.isValid) {
-        throw new Error(`PIXI application validation failed: ${appValidation.getErrorMessage()}`);
+        throw new Error(`PIXI application validation failed: ${appValidation.errors.join(', ')}`);
       }
       
       // Find and validate game container
       const gameContainer = document.getElementById('game-container');
       const containerValidation = GameValidators.domElement(gameContainer, 'div');
       if (!containerValidation.isValid) {
-        throw new Error(`Game container validation failed: ${containerValidation.getErrorMessage()}`);
+        throw new Error(`Game container validation failed: ${containerValidation.errors.join(', ')}`);
       }
       
       // Attach canvas to container (PIXI 7 compatibility)

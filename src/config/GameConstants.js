@@ -12,7 +12,7 @@ export const GRID_CONFIG = {
   // Default grid size
   DEFAULT_ROWS: 25,
   DEFAULT_COLS: 25,
-  
+   
   // Grid size limits
   MIN_SIZE: 5,
   MAX_SIZE: 50,

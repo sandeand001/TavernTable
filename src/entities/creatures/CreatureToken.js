@@ -75,23 +75,19 @@ class CreatureToken {
     try {
       // Check if sprite manager is ready
       if (!window.spriteManager || !window.spriteManager.isLoaded()) {
-        console.log(`🎨 Sprite manager not ready for ${this.type}, using fallback graphics`);
         this.createFallbackGraphics();
         return;
       }
       
       const spriteKey = `${this.type}-sprite`;
-      console.log(`🎨 Checking sprite availability for ${spriteKey}...`);
       
       // Check if this specific sprite is available
       if (!window.spriteManager.hasSpriteLoaded(spriteKey)) {
-        console.log(`🎨 Sprite not loaded for ${this.type} (${spriteKey}), using fallback graphics`);
         this.createFallbackGraphics();
         
         // Try to retry sprite loading after a short delay
         setTimeout(() => {
           if (window.spriteManager.hasSpriteLoaded(spriteKey) && this.sprite && this.sprite.parent) {
-            console.log(`🎨 Retrying sprite creation for ${this.type}`);
             this.replaceWithSprite();
           }
         }, 1000);
@@ -100,7 +96,6 @@ class CreatureToken {
       
       const texture = window.spriteManager.getSprite(spriteKey);
       if (!texture) {
-        console.log(`Failed to get texture for ${this.type}, using fallback graphics`);
         this.createFallbackGraphics();
         return;
       }
@@ -113,7 +108,6 @@ class CreatureToken {
       const scale = this.getCreatureScale();
       this.sprite.scale.set(scale, scale);
       
-      console.log(`Created sprite for ${this.type} with scale ${scale}`);
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'createCreatureSprite',
@@ -206,7 +200,6 @@ class CreatureToken {
       this.sprite.drawCircle(0, 0, 20);
       this.sprite.endFill();
       
-      console.log(`Created fallback circle sprite for ${this.type}`);
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'createFallbackSprite',
@@ -324,7 +317,6 @@ class CreatureToken {
    */
   recreateSprite() {
     try {
-      console.log(`Recreating sprite for ${this.type}`);
       
       // Store current state
       let parent = null;
@@ -352,7 +344,6 @@ class CreatureToken {
         }
       }
       
-      console.log(`Successfully recreated sprite for ${this.type}`);
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'recreateSprite',
@@ -402,7 +393,6 @@ class CreatureToken {
         parent.addChild(this.sprite);
       }
       
-      console.log(`✅ Successfully replaced fallback graphics with sprite for ${this.type}`);
     } catch (error) {
       console.error(`❌ Failed to replace sprite for ${this.type}:`, error);
     }

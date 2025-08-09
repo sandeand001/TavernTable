@@ -113,6 +113,20 @@ export class StateCoordinator {
         this.gameManager.spritesReady = true;
         window.spritesReady = true;
       }
+
+      // Initialize animated sprite manager
+      if (window.animatedSpriteManager) {
+        logger.debug('Animated sprite manager found, initializing...');
+        try {
+          await window.animatedSpriteManager.initialize();
+          logger.debug('Animated sprites loaded successfully');
+        } catch (error) {
+          logger.warn('Failed to initialize animated sprites, using static fallbacks', error);
+          // Non-critical error - game can continue with static sprites
+        }
+      } else {
+        logger.debug('No animated sprite manager found');
+      }
     } catch (error) {
       GameErrors.sprites(error, { stage: 'initializeSprites' });
       // Allow fallback to drawn graphics

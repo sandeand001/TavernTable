@@ -1,0 +1,11 @@
+File Type,Original Path,Moved To,Reason,Date
+Directory,src/debug/,".attic/debug/","Debug test directory",2025-08-08
+JavaScript,src/debug/DefeatedDollTest.js,".attic/debug/DefeatedDollTest.js","Test file",2025-08-08
+JavaScript,src/debug/RunDefeatedDollTest.js,".attic/debug/RunDefeatedDollTest.js","Test runner",2025-08-08
+JavaScript,src/debug/AnimatedSpriteIntegrationTest.js,".attic/debug/AnimatedSpriteIntegrationTest.js","Integration test",2025-08-08
+JavaScript,src/debug/DragonAnimationTest.js,".attic/debug/DragonAnimationTest.js","Animation test",2025-08-08
+JavaScript,src/debug/DragonBaselineTest.js,".attic/debug/DragonBaselineTest.js","Baseline test",2025-08-08
+JavaScript,src/debug/SpriteConfigTest.js,".attic/debug/SpriteConfigTest.js","Config test",2025-08-08
+JavaScript,src/debug/TextureTest.js,".attic/debug/TextureTest.js","Texture test",2025-08-08
+JavaScript,src/debug/AnimationTestFramework.js,".attic/debug/AnimationTestFramework.js","Test framework",2025-08-08
+JavaScript,src/utils/DiagnosticTool.js,".attic/utils/DiagnosticTool.js","Debug utility",2025-08-08

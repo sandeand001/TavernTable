@@ -46,7 +46,6 @@ function toggleCreatureTokens() {
       arrow.textContent = isHidden ? '▼' : '▶';
     }
     
-    console.log(`Creature tokens panel ${isHidden ? 'expanded' : 'collapsed'}`);
   } catch (error) {
     GameErrors.input(error, {
       stage: 'toggleCreatureTokens',
@@ -95,7 +94,6 @@ function resizeGrid() {
     // Perform grid resize
     window.gameManager.resizeGrid(newWidth, newHeight);
     
-    console.log(`Grid resized to ${newWidth}x${newHeight}`);
   } catch (error) {
     GameErrors.input(error, {
       stage: 'resizeGrid',
@@ -122,7 +120,6 @@ function resetZoom() {
     }
     
     window.gameManager.resetZoom();
-    console.log('Grid zoom reset to default scale');
   } catch (error) {
     GameErrors.input(error, { stage: 'resetZoom' });
   }
@@ -139,12 +136,9 @@ async function initializeApplication() {
       throw new Error('GameManager not found. Application cannot start.');
     }
     
-    console.log('Starting TavernTable application initialization...');
-    
     // Initialize the game manager
     await window.gameManager.initialize();
     
-    console.log('TavernTable application initialized successfully');
   } catch (error) {
     GameErrors.initialization(error, {
       stage: 'initializeApplication',
@@ -161,7 +155,6 @@ function createGameManager() {
   try {
     const gameManager = new GameManager();
     window.gameManager = gameManager;
-    console.log('GameManager instance created');
     return gameManager;
   } catch (error) {
     GameErrors.initialization(error, { stage: 'createGameManager' });
@@ -180,7 +173,6 @@ window.resetZoom = resetZoom;
 // Signal that UI modules are loaded (for debugging module loading issues)
 window.moduleLoadStatus = window.moduleLoadStatus || {};
 window.moduleLoadStatus.loaded = true;
-console.log('UIController loaded - global functions available');
 
 // Start the application when the page loads
 window.addEventListener('load', initializeApplication);

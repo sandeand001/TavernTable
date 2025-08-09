@@ -279,7 +279,6 @@ class SidebarController {
           child.alpha = opacity;
         }
       });
-      console.log(`Grid opacity changed to: ${opacity}`);
     } else {
       console.warn('GameManager not available for grid opacity change');
     }
@@ -300,7 +299,6 @@ class SidebarController {
         window.gameManager.app.ticker.speed = speed;
       }
       
-      console.log(`Animation speed changed to: ${speed}x`);
     } else {
       console.warn('GameManager not available for animation speed change');
     }
