@@ -12,7 +12,8 @@
  */
 
 import { CREATURE_SCALES } from '../config/GameConstants.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 
 /**
  * Centralized sprite management class
@@ -174,8 +175,9 @@ class SpriteManager {
    * Uses creature types from CREATURE_SCALES to generate sprite list
    */
   registerGameSprites() {
+    let spriteFiles = null;
     try {
-      const spriteFiles = this.getSpriteFiles();
+      spriteFiles = this.getSpriteFiles();
       
       // Register all sprites from config
       for (const [spriteName, filename] of Object.entries(spriteFiles)) {
@@ -183,10 +185,20 @@ class SpriteManager {
       }
       
     } catch (error) {
-      GameErrors.handleError(error, 'Failed to register game sprites');
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+        context: 'SpriteManager.registerSprites',
+        stage: 'sprite_registration',
+        spritesRegistered: this.registeredSprites.length,
+        fallbackMode: true,
+        configAvailable: !!spriteFiles
+      });
       
       // Register minimal sprites as fallback
-      console.warn('⚠️ Using fallback sprite registration...');
+      logger.log(LOG_LEVEL.WARN, 'Using fallback sprite registration', LOG_CATEGORY.SYSTEM, {
+        context: 'SpriteManager.registerSprites',
+        fallbackSprites: ['dragon-sprite', 'skeleton-sprite'],
+        originalError: error.message
+      });
       this.addSprite('dragon-sprite', 'dragon-sprite.png');
       this.addSprite('skeleton-sprite', 'skeleton-sprite.png');
     }

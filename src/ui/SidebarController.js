@@ -125,19 +125,19 @@ class SidebarController {
    */
   onTabChange(tabId) {
     switch (tabId) {
-      case 'dice-log':
-        this.refreshDiceLog();
-        break;
-      case 'creatures':
-        // Ensure selected creature token is highlighted
-        this.refreshCreatureSelection();
-        break;
-      case 'terrain':
-        // Future: Initialize terrain tools
-        break;
-      case 'settings':
-        // Future: Load current game settings
-        break;
+    case 'dice-log':
+      this.refreshDiceLog();
+      break;
+    case 'creatures':
+      // Ensure selected creature token is highlighted
+      this.refreshCreatureSelection();
+      break;
+    case 'terrain':
+      // Future: Initialize terrain tools
+      break;
+    case 'settings':
+      // Future: Load current game settings
+      break;
     }
   }
 

@@ -5,8 +5,8 @@
  * Handles PIXI application lifecycle, grid positioning, and zoom management
  */
 
-import logger from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
@@ -60,12 +60,24 @@ export class RenderCoordinator {
       // Make app globally available for debugging
       window.app = this.gameManager.app;
       
-      logger.debug('PIXI application created successfully');
+      logger.log(LOG_LEVEL.DEBUG, 'PIXI application created successfully', LOG_CATEGORY.SYSTEM, {
+        context: 'RenderCoordinator.createPixiApp',
+        stage: 'pixi_initialization_complete',
+        appDimensions: {
+          width: this.gameManager.app.screen.width,
+          height: this.gameManager.app.screen.height
+        },
+        renderer: this.gameManager.app.renderer.type,
+        globallyAvailable: !!window.app
+      });
     } catch (error) {
-      GameErrors.initialization(error, {
-        stage: 'createPixiApp',
+      new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
+        context: 'RenderCoordinator.createPixiApp',
+        stage: 'pixi_application_creation',
         pixiAvailable: typeof PIXI !== 'undefined',
-        containerExists: !!document.getElementById('game-container')
+        containerExists: !!document.getElementById('game-container'),
+        gameManagerState: !!this.gameManager,
+        errorType: error.constructor.name
       });
       throw error;
     }
@@ -151,11 +163,27 @@ export class RenderCoordinator {
       // Recenter grid with new dimensions
       this.centerGrid();
       
-      logger.debug(`Render view resized to ${window.innerWidth}x${window.innerHeight}`);
+      logger.log(LOG_LEVEL.DEBUG, 'Render view resized', LOG_CATEGORY.SYSTEM, {
+        context: 'RenderCoordinator.handleResize',
+        stage: 'viewport_resize_complete',
+        newDimensions: { 
+          width: window.innerWidth, 
+          height: window.innerHeight 
+        },
+        gridRecentered: true,
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
-      GameErrors.rendering(error, { 
-        stage: 'handleResize',
-        dimensions: { width: window.innerWidth, height: window.innerHeight }
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+        context: 'RenderCoordinator.handleResize',
+        stage: 'viewport_resize',
+        targetDimensions: { 
+          width: window.innerWidth, 
+          height: window.innerHeight 
+        },
+        pixiAppAvailable: !!(this.gameManager.app),
+        rendererAvailable: !!(this.gameManager.app?.renderer),
+        gridCenteringAttempted: true
       });
     }
   }

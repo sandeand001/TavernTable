@@ -5,8 +5,8 @@
  * Handles all user input interactions including mouse, keyboard, and zoom
  */
 
-import logger from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 
@@ -144,6 +144,13 @@ export class InteractionManager {
     this.gridStartX = this.gameManager.gridContainer.x;
     this.gridStartY = this.gameManager.gridContainer.y;
     this.gameManager.app.view.style.cursor = 'grabbing';
+    
+    logger.log(LOG_LEVEL.TRACE, 'Grid dragging started', LOG_CATEGORY.USER, {
+      startPosition: { x: this.dragStartX, y: this.dragStartY },
+      gridPosition: { x: this.gridStartX, y: this.gridStartY },
+      currentScale: this.gridScale
+    });
+    
     event.preventDefault();
     event.stopPropagation();
   }
@@ -195,7 +202,15 @@ export class InteractionManager {
     }
     
     this.applyZoom(newScale, mouseX, mouseY);
-    logger.debug(`Zoom: ${(this.gridScale * 100).toFixed(0)}%`);
+    logger.log(LOG_LEVEL.DEBUG, 'Zoom applied', LOG_CATEGORY.USER, {
+      zoomDirection,
+      zoomFactor,
+      previousScale: this.gridScale / zoomFactor,
+      newScale: this.gridScale,
+      zoomPercentage: `${(this.gridScale * 100).toFixed(0)}%`,
+      mousePosition: { x: mouseX, y: mouseY },
+      bounds: { min: this.minScale, max: this.maxScale }
+    });
   }
 
   /**
@@ -223,9 +238,14 @@ export class InteractionManager {
       this.gridScale = 1.0;
       this.gameManager.gridContainer.scale.set(this.gridScale);
       this.gameManager.centerGrid();
-      logger.debug('Grid zoom reset to default');
+      logger.debug('Grid zoom reset to default', {
+        newScale: this.gridScale
+      }, LOG_CATEGORY.USER);
     } catch (error) {
-      GameErrors.rendering(error, { stage: 'resetZoom' });
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.RENDERING, { 
+        stage: 'resetZoom' 
+      });
     }
   }
 
@@ -241,16 +261,23 @@ export class InteractionManager {
       
       const gridCoords = this.getGridCoordinatesFromClick(event);
       if (!gridCoords) {
-        GameErrors.validation('Click outside valid grid area', {
-          event: { x: event.clientX, y: event.clientY }
-        });
+        const errorHandler = new ErrorHandler();
+        errorHandler.handle(
+          new Error('Click outside valid grid area'), 
+          ERROR_SEVERITY.INFO, 
+          ERROR_CATEGORY.VALIDATION, 
+          {
+            event: { x: event.clientX, y: event.clientY }
+          }
+        );
         return;
       }
       
       const { gridX, gridY } = gridCoords;
       this.gameManager.handleTokenInteraction(gridX, gridY);
     } catch (error) {
-      GameErrors.input(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
         stage: 'handleLeftClick',
         event: { button: event.button, x: event.clientX, y: event.clientY }
       });
@@ -274,7 +301,11 @@ export class InteractionManager {
       
       return gridCoords;
     } catch (error) {
-      GameErrors.input(error, { stage: 'getGridCoordinatesFromClick' });
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+        context: 'getGridCoordinatesFromClick',
+        stage: 'coordinate_conversion',
+        event: event ? { x: event.clientX, y: event.clientY } : null
+      });
       return null;
     }
   }

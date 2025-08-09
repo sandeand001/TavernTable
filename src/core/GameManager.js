@@ -20,8 +20,8 @@
  * - Integrates with existing manager systems
  */
 
-import logger from '../utils/Logger.js';
-import { GameErrors, errorHandler } from '../utils/ErrorHandler.js';
+import { logger, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { Sanitizers } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
@@ -69,7 +69,7 @@ class GameManager {
     errorHandler.initialize();
     
     // Configure logger context
-    logger.setContext('GameManager');
+    logger.pushContext({ component: 'GameManager' });
   }
 
   // Property getters for backward compatibility with null safety
@@ -332,9 +332,13 @@ class GameManager {
         this.renderCoordinator.centerGrid();
       }
       
-      logger.info(`Grid resized to ${sanitizedCols}x${sanitizedRows}`);
+      logger.info(`Grid resized to ${sanitizedCols}x${sanitizedRows}`, {
+        newDimensions: { cols: sanitizedCols, rows: sanitizedRows },
+        previousDimensions: { cols: this.cols, rows: this.rows }
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
-      GameErrors.validation(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.VALIDATION, {
         stage: 'resizeGrid',
         requestedCols: newCols,
         requestedRows: newRows,

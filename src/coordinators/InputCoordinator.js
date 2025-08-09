@@ -5,7 +5,7 @@
  * Handles mouse clicks, token placement/removal, and user interaction workflows
  */
 
-import logger from '../utils/Logger.js';
+import { logger } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
@@ -196,24 +196,26 @@ export class InputCoordinator {
       operations.forEach((operation, index) => {
         try {
           switch (operation.type) {
-            case 'place':
-              this.placeNewToken(operation.gridX, operation.gridY);
-              break;
-            case 'remove':
-              const token = this.findExistingTokenAt(operation.gridX, operation.gridY);
-              if (token) {
-                this.removeToken(token);
-              }
-              break;
-            case 'move':
-              const moveToken = this.findExistingTokenAt(operation.fromX, operation.fromY);
-              if (moveToken) {
-                this.removeToken(moveToken);
-                this.placeNewToken(operation.toX, operation.toY);
-              }
-              break;
-            default:
-              logger.warn(`Unknown batch operation type: ${operation.type}`);
+          case 'place':
+            this.placeNewToken(operation.gridX, operation.gridY);
+            break;
+          case 'remove': {
+            const token = this.findExistingTokenAt(operation.gridX, operation.gridY);
+            if (token) {
+              this.removeToken(token);
+            }
+            break;
+          }
+          case 'move': {
+            const moveToken = this.findExistingTokenAt(operation.fromX, operation.fromY);
+            if (moveToken) {
+              this.removeToken(moveToken);
+              this.placeNewToken(operation.toX, operation.toY);
+            }
+            break;
+          }
+          default:
+            logger.warn(`Unknown batch operation type: ${operation.type}`);
           }
         } catch (operationError) {
           GameErrors.input(operationError, {

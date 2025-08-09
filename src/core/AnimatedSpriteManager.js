@@ -10,8 +10,8 @@
  * @since 1.1.0
  */
 
-import { GameErrors } from '../utils/ErrorHandler.js';
-import logger from '../utils/Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 
 /**
  * Configuration for animated sprites
@@ -56,7 +56,7 @@ class AnimatedSpriteManager {
     this.animatedSprites = new Map();
     this.isInitialized = false;
     
-    logger.setContext('AnimatedSpriteManager');
+    logger.pushContext({ component: 'AnimatedSpriteManager' });
   }
 
   /**
@@ -76,10 +76,21 @@ class AnimatedSpriteManager {
       await Promise.all(loadPromises);
       
       this.isInitialized = true;
-      logger.info('AnimatedSpriteManager initialized successfully');
+      logger.log(LOG_LEVEL.INFO, 'AnimatedSpriteManager initialized successfully', LOG_CATEGORY.SYSTEM, {
+        context: 'AnimatedSpriteManager.initialize',
+        stage: 'initialization_complete',
+        configuredSprites: Object.keys(ANIMATED_SPRITE_CONFIG),
+        texturesLoaded: loadPromises.length,
+        isInitialized: this.isInitialized
+      });
     } catch (error) {
-      GameErrors.sprites(error, {
-        stage: 'AnimatedSpriteManager.initialize'
+      new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.RENDERING, {
+        context: 'AnimatedSpriteManager.initialize',
+        stage: 'animation_manager_initialization',
+        configuredSprites: Object.keys(ANIMATED_SPRITE_CONFIG),
+        pixiAvailable: typeof PIXI !== 'undefined',
+        loaderAvailable: !!(PIXI.Loader || PIXI.Assets),
+        isInitialized: this.isInitialized
       });
       throw error;
     }
@@ -146,11 +157,10 @@ class AnimatedSpriteManager {
    * @returns {PIXI.Texture[]} Array of normalized frame textures
    */
   createFramesFromSpriteSheet(baseTexture, config) {
-    const frames = [];
     const { frameWidth, frameHeight, columns, rows, totalFrames, baselineAlignment } = config;
     
     // Log sprite sheet info for debugging
-    logger.debug(`Creating frames from sprite sheet:`);
+    logger.debug('Creating frames from sprite sheet:');
     logger.debug(`  - Sheet size: ${baseTexture.width}x${baseTexture.height}px`);
     logger.debug(`  - Frame size: ${frameWidth}x${frameHeight}px`);
     logger.debug(`  - Grid layout: ${columns}x${rows} (${totalFrames} total frames)`);
@@ -161,7 +171,7 @@ class AnimatedSpriteManager {
     
     // Apply baseline normalization if enabled
     if (baselineAlignment && baselineAlignment.enabled) {
-      return this.normalizeFrameBaselines(rawFrames, config);
+      return this.normalizeFrameBaselines(rawFrames);
     } else {
       return rawFrames;
     }
@@ -209,7 +219,7 @@ class AnimatedSpriteManager {
    * @param {Object} config - Sprite sheet configuration
    * @returns {PIXI.Texture[]} Array of baseline-normalized frame textures
    */
-  normalizeFrameBaselines(rawFrames, config) {
+  normalizeFrameBaselines(rawFrames) {
     // For the container-based approach, we don't need to modify the textures
     // Instead, we apply dynamic offsets in the container system
     return rawFrames;
@@ -243,7 +253,7 @@ class AnimatedSpriteManager {
    */
   hasAnimatedSprite(creatureType) {
     return this.isInitialized && 
-           ANIMATED_SPRITE_CONFIG.hasOwnProperty(creatureType) &&
+           Object.prototype.hasOwnProperty.call(ANIMATED_SPRITE_CONFIG, creatureType) &&
            this.loadedTextures.has(creatureType);
   }
 
@@ -317,10 +327,14 @@ class AnimatedSpriteManager {
       }
       
     } catch (error) {
-      GameErrors.sprites(error, {
-        stage: 'createAnimatedSprite',
-        creatureType,
-        options
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+        context: 'AnimatedSpriteManager.createAnimatedSprite',
+        stage: 'animated_sprite_creation',
+        creatureType: creatureType,
+        options: options || {},
+        configAvailable: !!(ANIMATED_SPRITE_CONFIG[creatureType]),
+        textureAvailable: !!(PIXI.utils?.TextureCache && PIXI.utils.TextureCache[ANIMATED_SPRITE_CONFIG[creatureType]?.texture]),
+        isInitialized: this.isInitialized
       });
       return null;
     }
@@ -333,7 +347,7 @@ class AnimatedSpriteManager {
    * @param {Object} config - Sprite configuration with baseline alignment settings
    * @returns {PIXI.Container} Container with baseline alignment behavior
    */
-  createBaselineAlignedContainer(animatedSprite, config) {
+  createBaselineAlignedContainer(animatedSprite) {
     const container = new PIXI.Container();
     const baselineOffsets = this.calculateDragonBaselineOffsets();
     

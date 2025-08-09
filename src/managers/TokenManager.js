@@ -5,9 +5,9 @@
  * Handles all token-related operations while preserving existing functionality
  */
 
-import logger from '../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 
 // Import creature creation functions
@@ -77,9 +77,13 @@ export class TokenManager {
         throw new Error(`${outOfBounds.length} tokens are out of bounds: ${invalidPositions}`);
       }
       
-      logger.debug(`All ${this.placedTokens.length} tokens are within grid bounds`);
+      logger.debug(`All ${this.placedTokens.length} tokens are within grid bounds`, {
+        tokenCount: this.placedTokens.length,
+        gridSize: { cols, rows }
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
-      GameErrors.validation(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
         stage: 'validateTokenPositions',
         gridSize: { cols, rows },
         tokenCount: this.placedTokens.length
@@ -133,8 +137,14 @@ export class TokenManager {
           infoEl.textContent = `Click on grid to place ${tokenType}`;
         }
       }
+
+      logger.info(`Token type selected: ${tokenType}`, {
+        tokenType,
+        previousType: this.selectedTokenType
+      }, LOG_CATEGORY.USER);
     } catch (error) {
-      GameErrors.validation(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
         stage: 'selectToken',
         tokenType
       });
@@ -206,9 +216,14 @@ export class TokenManager {
       // Store token info and set up interactions
       this.addTokenToCollection(creature, gridX, gridY);
       
-      logger.info(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`);
+      logger.info(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`, {
+        creatureType: this.selectedTokenType,
+        coordinates: { gridX, gridY },
+        position: isoCoords
+      }, LOG_CATEGORY.USER);
     } catch (error) {
-      GameErrors.sprites(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
         stage: 'placeNewToken',
         coordinates: { gridX, gridY },
         creatureType: this.selectedTokenType
@@ -251,9 +266,15 @@ export class TokenManager {
         throw new Error(`Creation function returned null for creature type: ${type}`);
       }
       
+      logger.debug(`Created creature: ${type}`, {
+        creatureType: type,
+        hasSprite: !!creature.sprite
+      }, LOG_CATEGORY.SYSTEM);
+
       return creature;
     } catch (error) {
-      GameErrors.sprites(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
         stage: 'createCreatureByType',
         creatureType: type
       });
@@ -288,10 +309,15 @@ export class TokenManager {
       if (tokenEntry) {
         tokenEntry.gridX = clampedCoords.gridX;
         tokenEntry.gridY = clampedCoords.gridY;
-        logger.debug(`Token snapped to grid (${clampedCoords.gridX}, ${clampedCoords.gridY})`);
+        logger.debug(`Token snapped to grid (${clampedCoords.gridX}, ${clampedCoords.gridY})`, {
+          coordinates: clampedCoords,
+          originalPosition: { localX, localY },
+          newPosition: isoCoords
+        }, LOG_CATEGORY.USER);
       }
     } catch (error) {
-      GameErrors.input(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
         stage: 'snapToGrid',
         tokenPosition: { x: token.x, y: token.y }
       });

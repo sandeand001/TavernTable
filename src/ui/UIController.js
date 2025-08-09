@@ -19,7 +19,8 @@
 
 import GameManager from '../core/GameManager.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
 
 /**
@@ -47,9 +48,11 @@ function toggleCreatureTokens() {
     }
     
   } catch (error) {
-    GameErrors.input(error, {
-      stage: 'toggleCreatureTokens',
-      elementIds: ['creature-content', 'creature-arrow']
+    new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
+      context: 'toggleCreatureTokens',
+      stage: 'ui_toggle',
+      elementIds: ['creature-content', 'creature-arrow'],
+      uiAction: 'panel_visibility_toggle'
     });
   }
 }
@@ -95,11 +98,18 @@ function resizeGrid() {
     window.gameManager.resizeGrid(newWidth, newHeight);
     
   } catch (error) {
-    GameErrors.input(error, {
-      stage: 'resizeGrid',
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+      context: 'resizeGrid',
+      stage: 'grid_resize_validation',
       inputValues: {
         width: document.getElementById('grid-width')?.value,
         height: document.getElementById('grid-height')?.value
+      },
+      constraints: {
+        minWidth: GRID_CONFIG.MIN_COLS,
+        maxWidth: GRID_CONFIG.MAX_COLS,
+        minHeight: GRID_CONFIG.MIN_ROWS,
+        maxHeight: GRID_CONFIG.MAX_ROWS
       }
     });
   }
@@ -121,7 +131,12 @@ function resetZoom() {
     
     window.gameManager.resetZoom();
   } catch (error) {
-    GameErrors.input(error, { stage: 'resetZoom' });
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+      context: 'resetZoom',
+      stage: 'zoom_reset_operation',
+      gameManagerAvailable: !!window.gameManager,
+      resetZoomAvailable: !!(window.gameManager?.resetZoom)
+    });
   }
 }
 
@@ -140,9 +155,12 @@ async function initializeApplication() {
     await window.gameManager.initialize();
     
   } catch (error) {
-    GameErrors.initialization(error, {
-      stage: 'initializeApplication',
-      timestamp: new Date().toISOString()
+    new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
+      context: 'initializeApplication',
+      stage: 'application_startup',
+      timestamp: new Date().toISOString(),
+      gameManagerAvailable: !!window.gameManager,
+      initializationFailed: true
     });
   }
 }
@@ -157,7 +175,12 @@ function createGameManager() {
     window.gameManager = gameManager;
     return gameManager;
   } catch (error) {
-    GameErrors.initialization(error, { stage: 'createGameManager' });
+    new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
+      context: 'createGameManager',
+      stage: 'game_manager_instantiation',
+      errorType: error.constructor.name,
+      timestamp: new Date().toISOString()
+    });
     throw error;
   }
 }
@@ -165,10 +188,21 @@ function createGameManager() {
 // Initialize the game manager and set up event listeners
 const gameManager = createGameManager();
 
+logger.log(LOG_LEVEL.INFO, 'GameManager created successfully', LOG_CATEGORY.SYSTEM, {
+  gameManagerType: gameManager.constructor.name,
+  globallyAvailable: !!window.gameManager,
+  timestamp: new Date().toISOString()
+});
+
 // Make functions available globally for HTML onclick handlers (backward compatibility)
 window.toggleCreatureTokens = toggleCreatureTokens;
 window.resizeGrid = resizeGrid;
 window.resetZoom = resetZoom;
+
+logger.log(LOG_LEVEL.DEBUG, 'UI functions exposed globally', LOG_CATEGORY.SYSTEM, {
+  exposedFunctions: ['toggleCreatureTokens', 'resizeGrid', 'resetZoom'],
+  compatibilityMode: 'HTML_onclick_handlers'
+});
 
 // Signal that UI modules are loaded (for debugging module loading issues)
 window.moduleLoadStatus = window.moduleLoadStatus || {};

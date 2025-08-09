@@ -1,7 +1,7 @@
 // src/entities/creatures/CreatureToken.js - Base class for all creature tokens
 
-import { CREATURE_SCALES, VALIDATION } from '../../config/GameConstants.js';
-import { GameErrors } from '../../utils/ErrorHandler.js';
+import { CREATURE_SCALES } from '../../config/GameConstants.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../../utils/ErrorHandler.js';
 import { GameValidators, Sanitizers } from '../../utils/Validation.js';
 
 /**
@@ -38,9 +38,12 @@ class CreatureToken {
       
       this.createSprite();
     } catch (error) {
-      GameErrors.sprites(error, {
-        stage: 'CreatureToken.constructor',
-        parameters: { type, x, y, facingRight }
+      new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.RENDERING, {
+        context: 'CreatureToken.constructor',
+        stage: 'token_initialization',
+        parameters: { type, x, y, facingRight },
+        typeValidation: !!type,
+        coordinateValidation: { x: typeof x, y: typeof y }
       });
       throw error;
     }
@@ -114,17 +117,6 @@ class CreatureToken {
         creatureType: this.type
       });
       this.createFallbackGraphics();
-    }
-  }
-
-  createFallbackGraphics() {
-    // Try to use the old drawing method if available, otherwise use colored circle
-    if (typeof this.drawCreature === 'function') {
-      this.sprite = new PIXI.Graphics();
-      this.sprite.scale.set(0.7, 0.7);
-      this.drawCreature();
-    } else {
-      this.createFallbackSprite();
     }
   }
 
