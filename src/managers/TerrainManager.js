@@ -434,11 +434,119 @@ export class TerrainManager {
   _addVisualEffects(terrainTile, height, x, y) {
     // Add visual depth cues for better height perception
     if (height > 0) {
-      // Elevated terrain: add shadow effect
       this.addElevationShadow(terrainTile, height, x, y);
     } else if (height < 0) {
-      // Depressed terrain: add darkening effect
       this.addDepressionEffect(terrainTile, height);
+    }
+
+    // Add 3D walls for all edges where neighbor height is lower
+    try {
+      // Cleanup previous faces if present
+      if (terrainTile.sideFaces && terrainTile.sideFaces.parent) {
+        terrainTile.sideFaces.parent.removeChild(terrainTile.sideFaces);
+        if (typeof terrainTile.sideFaces.destroy === 'function' && !terrainTile.sideFaces.destroyed) {
+          terrainTile.sideFaces.destroy();
+        }
+        terrainTile.sideFaces = null;
+      }
+
+      const hHere = height;
+      const hRight = this.terrainCoordinator.getTerrainHeight(x + 1, y);
+      const hBottom = this.terrainCoordinator.getTerrainHeight(x, y + 1);
+      const hLeft = this.terrainCoordinator.getTerrainHeight(x - 1, y);
+      const hTop = this.terrainCoordinator.getTerrainHeight(x, y - 1);
+
+      const diffRight = Math.max(0, hHere - hRight);
+      const diffBottom = Math.max(0, hHere - hBottom);
+      const diffLeft = Math.max(0, hHere - hLeft);
+      const diffTop = Math.max(0, hHere - hTop);
+
+      if (diffRight === 0 && diffBottom === 0 && diffLeft === 0 && diffTop === 0) {
+        return; // no visible walls
+      }
+
+      const faces = new PIXI.Graphics();
+      const unit = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET; // pixels per height step
+      const downR = diffRight * unit;
+      const downB = diffBottom * unit;
+      const downL = diffLeft * unit;
+      const downT = diffTop * unit;
+
+      // Use grid color for walls to match base grid
+      const wallColor = GRID_CONFIG.TILE_COLOR;
+
+      const w = this.gameManager.tileWidth;
+      const h = this.gameManager.tileHeight;
+
+      const topV = { x: w / 2, y: 0 };
+      const rightV = { x: w, y: h / 2 };
+      const bottomV = { x: w / 2, y: h };
+      const leftV = { x: 0, y: h / 2 };
+
+      // Right wall: along edge top->right
+      if (downR > 0) {
+        const topD = { x: topV.x, y: topV.y + downR };
+        const rightD = { x: rightV.x, y: rightV.y + downR };
+        faces.beginFill(wallColor, 1.0);
+        faces.moveTo(topV.x, topV.y);
+        faces.lineTo(rightV.x, rightV.y);
+        faces.lineTo(rightD.x, rightD.y);
+        faces.lineTo(topD.x, topD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Bottom wall: along edge right->bottom
+      if (downB > 0) {
+        const rightD = { x: rightV.x, y: rightV.y + downB };
+        const bottomD = { x: bottomV.x, y: bottomV.y + downB };
+        faces.beginFill(wallColor, 1.0);
+        faces.moveTo(rightV.x, rightV.y);
+        faces.lineTo(bottomV.x, bottomV.y);
+        faces.lineTo(bottomD.x, bottomD.y);
+        faces.lineTo(rightD.x, rightD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Left wall: along edge bottom->left
+      if (downL > 0) {
+        const bottomD = { x: bottomV.x, y: bottomV.y + downL };
+        const leftD = { x: leftV.x, y: leftV.y + downL };
+        faces.beginFill(wallColor, 1.0);
+        faces.moveTo(bottomV.x, bottomV.y);
+        faces.lineTo(leftV.x, leftV.y);
+        faces.lineTo(leftD.x, leftD.y);
+        faces.lineTo(bottomD.x, bottomD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Top wall: along edge left->top
+      if (downT > 0) {
+        const leftD = { x: leftV.x, y: leftV.y + downT };
+        const topD = { x: topV.x, y: topV.y + downT };
+        faces.beginFill(wallColor, 1.0);
+        faces.moveTo(leftV.x, leftV.y);
+        faces.lineTo(topV.x, topV.y);
+        faces.lineTo(topD.x, topD.y);
+        faces.lineTo(leftD.x, leftD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Position faces and add behind the tile at same depth
+      faces.x = terrainTile.x;
+      faces.y = terrainTile.y;
+      faces.depthValue = terrainTile.depthValue;
+      faces.isShadowTile = true; // treat as background element for ordering
+
+      const parent = this.terrainContainer;
+      const tileIndex = parent.getChildIndex(terrainTile);
+      parent.addChildAt(faces, Math.max(0, tileIndex));
+      terrainTile.sideFaces = faces;
+    } catch (e) {
+      logger.warn('Failed to add 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
     }
   }
 

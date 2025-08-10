@@ -793,6 +793,14 @@ export class TerrainCoordinator {
               }
               child.shadowTile = null;
             }
+            // Remove any existing base 3D faces
+            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
+              child.parent.removeChild(child.baseSideFaces);
+              if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
+                child.baseSideFaces.destroy();
+              }
+              child.baseSideFaces = null;
+            }
           }
         });
       }
@@ -1146,6 +1154,14 @@ export class TerrainCoordinator {
         }
         existingTile.shadowTile = null;
       }
+      // Remove any existing base 3D faces
+      if (existingTile.baseSideFaces && existingTile.parent?.children?.includes(existingTile.baseSideFaces)) {
+        existingTile.parent.removeChild(existingTile.baseSideFaces);
+        if (typeof existingTile.baseSideFaces.destroy === 'function' && !existingTile.baseSideFaces.destroyed) {
+          existingTile.baseSideFaces.destroy();
+        }
+        existingTile.baseSideFaces = null;
+      }
       
       // Decide styling based on whether terrain mode is active
       const isEditing = !!this.isTerrainModeActive;
@@ -1170,9 +1186,11 @@ export class TerrainCoordinator {
       // Update tile properties
       existingTile.terrainHeight = height;
       
-      // Apply elevation effect if needed (always positionally); visuals (color) stay base when not editing
+      // Apply elevation effect if needed (position only); visuals remain base color when not editing
       if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
         this.addVisualElevationEffect(existingTile, height);
+        // Add neighbor-aware base faces (3D walls) for base grid view
+        this._addBase3DFaces(existingTile, x, y, height);
       } else if (typeof existingTile.baseIsoY === 'number') {
         // Ensure baseline when default height
         existingTile.y = existingTile.baseIsoY;
@@ -1295,6 +1313,8 @@ export class TerrainCoordinator {
     if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
       try {
         this.addVisualElevationEffect(newTile, height);
+        // Add neighbor-aware base faces (3D walls) for base grid view
+        this._addBase3DFaces(newTile, x, y, height);
       } catch (effectError) {
         logger.warn('Failed to add elevation effect, continuing without it', {
           context: 'TerrainCoordinator._applyTileEffectsAndData',
@@ -1363,10 +1383,8 @@ export class TerrainCoordinator {
       
       // Add subtle border effect for raised/lowered appearance
       if (height > TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-        // Raised terrain - lighter border
         tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0xFFFFFF, 0.3);
       } else if (height < TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-        // Lowered terrain - darker border  
         tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0x000000, 0.3);
       }
       
@@ -1378,17 +1396,24 @@ export class TerrainCoordinator {
         }
         tile.shadowTile = null;
       }
+
+      // Ensure any previous 3D faces attached to this tile are removed here (faces are managed elsewhere)
+      if (tile.sideFaces && tile.parent?.children?.includes(tile.sideFaces)) {
+        tile.parent.removeChild(tile.sideFaces);
+        if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) {
+          tile.sideFaces.destroy();
+        }
+        tile.sideFaces = null;
+      }
       
-      // Add height-based shadow effect using simplified approach
+      // Add height-based shadow effect
       if (Math.abs(height) > 1) {
         const shadowAlpha = Math.min(Math.abs(height) * 0.1, 0.4);
         const shadowColor = height > 0 ? 0x000000 : 0x444444;
         
-        // Create shadow graphics using the same isometric shape
         const shadow = new PIXI.Graphics();
         shadow.beginFill(shadowColor, shadowAlpha);
         
-        // Draw isometric diamond shape for shadow (same as original tile)
         const tileWidth = this.gameManager.tileWidth;
         const tileHeight = this.gameManager.tileHeight;
         shadow.moveTo(0, tileHeight / 2);
@@ -1398,11 +1423,9 @@ export class TerrainCoordinator {
         shadow.lineTo(0, tileHeight / 2);
         shadow.endFill();
         
-        // Position shadow slightly offset
         shadow.x = tile.x + 2;
         shadow.y = tile.y + 2;
         
-        // Add shadow to the same parent container, behind the tile
         if (tile.parent) {
           const tileIndex = tile.parent.getChildIndex(tile);
           tile.parent.addChildAt(shadow, Math.max(0, tileIndex));
@@ -1418,59 +1441,131 @@ export class TerrainCoordinator {
     }
   }
 
-  /**
-   * Get appropriate color for terrain height using consistent color scale
-   * @param {number} height - Terrain height value
-   * @returns {number} Hex color value
-   */
-  getColorForHeight(height) {
-    // Use the same color mapping as TerrainManager for consistency
-    const colorKey = height.toString();
-    return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[colorKey] || TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'];
-  }
-
-  /**
-   * Get terrain system statistics
-   * @returns {Object} Terrain system statistics
-   */
-  getTerrainStatistics() {
-    if (!this.terrainHeights) {
-      return {
-        initialized: false,
-        gridDimensions: null,
-        heightRange: null,
-        modifiedCells: 0
-      };
-    }
-    
-    let minHeight = TERRAIN_CONFIG.MAX_HEIGHT;
-    let maxHeight = TERRAIN_CONFIG.MIN_HEIGHT;
-    let modifiedCells = 0;
-    
-    for (let y = 0; y < this.gameManager.rows; y++) {
-      for (let x = 0; x < this.gameManager.cols; x++) {
-        const height = this.terrainHeights[y][x];
-        minHeight = Math.min(minHeight, height);
-        maxHeight = Math.max(maxHeight, height);
-        
-        if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-          modifiedCells++;
+  // Add neighbor-aware 3D faces for base grid tiles (all four sides)
+  _addBase3DFaces(tile, x, y, height) {
+    try {
+      // Cleanup previous base faces
+      if (tile.baseSideFaces && tile.parent?.children?.includes(tile.baseSideFaces)) {
+        tile.parent.removeChild(tile.baseSideFaces);
+        if (typeof tile.baseSideFaces.destroy === 'function' && !tile.baseSideFaces.destroyed) {
+          tile.baseSideFaces.destroy();
         }
+        tile.baseSideFaces = null;
       }
+
+      if (!this.baseTerrainHeights || height === TERRAIN_CONFIG.DEFAULT_HEIGHT) {
+        return;
+      }
+
+      const rows = this.baseTerrainHeights.length;
+      const cols = this.baseTerrainHeights[0]?.length || 0;
+      const getBase = (gx, gy) => (gx >= 0 && gy >= 0 && gy < rows && gx < cols)
+        ? this.baseTerrainHeights[gy][gx]
+        : TERRAIN_CONFIG.DEFAULT_HEIGHT;
+
+      const hHere = height;
+      const hRight = getBase(x + 1, y);
+      const hBottom = getBase(x, y + 1);
+      const hLeft = getBase(x - 1, y);
+      const hTop = getBase(x, y - 1);
+
+      const diffRight = Math.max(0, hHere - hRight);
+      const diffBottom = Math.max(0, hHere - hBottom);
+      const diffLeft = Math.max(0, hHere - hLeft);
+      const diffTop = Math.max(0, hHere - hTop);
+
+      if (diffRight === 0 && diffBottom === 0 && diffLeft === 0 && diffTop === 0) {
+        return; // nothing to draw
+      }
+
+      const faces = new PIXI.Graphics();
+      const unit = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+      const downR = diffRight * unit;
+      const downB = diffBottom * unit;
+      const downL = diffLeft * unit;
+      const downT = diffTop * unit;
+
+      const baseTopColor = GRID_CONFIG.TILE_COLOR;
+      const darken = (hex, factor) => {
+        const r = Math.max(0, ((hex >> 16) & 0xff) * (1 - factor));
+        const g = Math.max(0, ((hex >> 8) & 0xff) * (1 - factor));
+        const b = Math.max(0, (hex & 0xff) * (1 - factor));
+        return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+      };
+      // Slightly different darkening per side for subtle shading
+      const rightColor = darken(baseTopColor, 0.25);
+      const bottomColor = darken(baseTopColor, 0.4);
+      const leftColor = darken(baseTopColor, 0.35);
+      const topColor = darken(baseTopColor, 0.2);
+
+      const w = this.gameManager.tileWidth;
+      const h = this.gameManager.tileHeight;
+      const top = { x: w / 2, y: 0 };
+      const right = { x: w, y: h / 2 };
+      const bottom = { x: w / 2, y: h };
+      const left = { x: 0, y: h / 2 };
+
+      // Right wall: along edge top -> right
+      if (downR > 0) {
+        const topD = { x: top.x, y: top.y + downR };
+        const rightD = { x: right.x, y: right.y + downR };
+        faces.beginFill(rightColor, 1.0);
+        faces.moveTo(top.x, top.y);
+        faces.lineTo(right.x, right.y);
+        faces.lineTo(rightD.x, rightD.y);
+        faces.lineTo(topD.x, topD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Bottom wall: along edge right -> bottom
+      if (downB > 0) {
+        const rightD = { x: right.x, y: right.y + downB };
+        const bottomD = { x: bottom.x, y: bottom.y + downB };
+        faces.beginFill(bottomColor, 1.0);
+        faces.moveTo(right.x, right.y);
+        faces.lineTo(bottom.x, bottom.y);
+        faces.lineTo(bottomD.x, bottomD.y);
+        faces.lineTo(rightD.x, rightD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Left wall: along edge bottom -> left
+      if (downL > 0) {
+        const bottomD = { x: bottom.x, y: bottom.y + downL };
+        const leftD = { x: left.x, y: left.y + downL };
+        faces.beginFill(leftColor, 1.0);
+        faces.moveTo(bottom.x, bottom.y);
+        faces.lineTo(left.x, left.y);
+        faces.lineTo(leftD.x, leftD.y);
+        faces.lineTo(bottomD.x, bottomD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Top wall: along edge left -> top
+      if (downT > 0) {
+        const leftD = { x: left.x, y: left.y + downT };
+        const topD = { x: top.x, y: top.y + downT };
+        faces.beginFill(topColor, 1.0);
+        faces.moveTo(left.x, left.y);
+        faces.lineTo(top.x, top.y);
+        faces.lineTo(topD.x, topD.y);
+        faces.lineTo(leftD.x, leftD.y);
+        faces.closePath();
+        faces.endFill();
+      }
+
+      // Position and add behind the tile at the same depth
+      faces.x = tile.x;
+      faces.y = tile.y;
+
+      const idx = tile.parent.getChildIndex(tile);
+      tile.parent.addChildAt(faces, Math.max(0, idx));
+      tile.baseSideFaces = faces;
+    } catch (e) {
+      logger.warn('Failed to add base 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
     }
-    
-    return {
-      initialized: true,
-      gridDimensions: { 
-        cols: this.gameManager.cols, 
-        rows: this.gameManager.rows 
-      },
-      heightRange: { min: minHeight, max: maxHeight },
-      modifiedCells,
-      totalCells: this.gameManager.cols * this.gameManager.rows,
-      isTerrainModeActive: this.isTerrainModeActive,
-      currentTool: this.currentTerrainTool,
-      brushSize: this.brushSize
-    };
   }
 }
