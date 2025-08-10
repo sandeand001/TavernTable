@@ -48,6 +48,9 @@ export class StateCoordinator {
       // Enable grid interaction
       this.gameManager.interactionManager.setupGridInteraction();
       
+      // Initialize terrain system
+      await this.gameManager.terrainCoordinator.initialize();
+      
       // Initialize sprites with error handling
       await this.initializeSprites();
       

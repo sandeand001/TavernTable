@@ -644,3 +644,278 @@ html, body {
 #token-panel {
   display: none;
 }
+
+/* === TERRAIN TOOL STYLES === */
+
+/* Terrain mode toggle switch */
+.terrain-mode {
+  margin-bottom: 15px;
+}
+
+.toggle-switch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  gap: 10px;
+}
+
+.toggle-switch input[type="checkbox"] {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 50px;
+  height: 24px;
+  background-color: #4a4a4a;
+  border-radius: 12px;
+  transition: background-color 0.3s ease;
+  flex-shrink: 0;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background-color: white;
+  border-radius: 50%;
+  transition: transform 0.3s ease;
+}
+
+.toggle-switch input[type="checkbox"]:checked + .toggle-slider {
+  background-color: #4CAF50;
+}
+
+.toggle-switch input[type="checkbox"]:checked + .toggle-slider::before {
+  transform: translateX(26px);
+}
+
+.toggle-label {
+  color: #e0e0e0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Terrain tools container */
+.terrain-tools-container {
+  margin-top: 10px;
+}
+
+.tool-group {
+  margin-bottom: 20px;
+}
+
+.section-subtitle {
+  font-size: 12px;
+  color: #b0b0b0;
+  font-weight: 600;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Tool buttons */
+.tool-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.terrain-tool-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background-color: #4a4a4a;
+  color: #e0e0e0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.terrain-tool-btn:hover {
+  background-color: #5a5a5a;
+  color: white;
+}
+
+.terrain-tool-btn.active {
+  background-color: #4CAF50;
+  color: white;
+  border-color: #45a049;
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+}
+
+.terrain-tool-btn.active:hover {
+  background-color: #45a049;
+}
+
+/* Brush controls */
+.brush-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.brush-btn {
+  width: 32px;
+  height: 32px;
+  background-color: #4a4a4a;
+  color: #e0e0e0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.brush-btn:hover {
+  background-color: #5a5a5a;
+}
+
+.brush-btn:active {
+  background-color: #3a3a3a;
+}
+
+.brush-size {
+  color: #e0e0e0;
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Terrain reset button */
+.terrain-reset {
+  width: 100%;
+  background-color: #ff6b6b;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+.terrain-reset:hover {
+  background-color: #ff5252;
+}
+
+.terrain-reset:active {
+  background-color: #f44336;
+}
+
+/* Height indicator */
+.height-indicator {
+  padding: 8px 0;
+  text-align: center;
+}
+
+.height-label {
+  color: #ccc;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 8px;
+}
+
+.height-value {
+  color: #4CAF50;
+  font-size: 16px;
+  font-weight: bold;
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid #4CAF50;
+  border-radius: 4px;
+  padding: 2px 8px;
+  margin-left: 4px;
+}
+
+.height-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 4px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.scale-mark {
+  flex: 1;
+  padding: 4px 2px;
+  font-size: 10px;
+  text-align: center;
+  color: #666;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.scale-mark:last-child {
+  border-right: none;
+}
+
+.scale-mark.current {
+  background: #4CAF50;
+  color: white;
+  font-weight: bold;
+  transform: scale(1.1);
+}
+
+.scale-mark[data-height="-5"] { background-color: #1e1b4b; }
+.scale-mark[data-height="-4"] { background-color: #3730a3; }
+.scale-mark[data-height="-3"] { background-color: #4338ca; }
+.scale-mark[data-height="-2"] { background-color: #6366f1; }
+.scale-mark[data-height="-1"] { background-color: #8b5cf6; }
+.scale-mark[data-height="0"] { background-color: #6b7280; }
+.scale-mark[data-height="1"] { background-color: #10b981; }
+.scale-mark[data-height="2"] { background-color: #16a34a; }
+.scale-mark[data-height="3"] { background-color: #eab308; }
+.scale-mark[data-height="4"] { background-color: #f59e0b; }
+.scale-mark[data-height="5"] { background-color: #ef4444; }
+
+/* Shortcuts text */
+.shortcuts-text {
+  color: #888;
+  line-height: 1.4;
+}
+
+.shortcuts-text small {
+  font-size: 11px;
+}
+
+/* Responsive adjustments for terrain tools */
+@media (max-width: 768px) {
+  .tool-buttons {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .terrain-tool-btn {
+    padding: 10px;
+    font-size: 16px;
+  }
+  
+  .brush-controls {
+    gap: 15px;
+  }
+  
+  .brush-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+  
+  .brush-size {
+    font-size: 16px;
+  }
+}

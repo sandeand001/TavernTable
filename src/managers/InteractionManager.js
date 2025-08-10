@@ -258,6 +258,21 @@ export class InteractionManager {
       if (event.button !== 0) {
         return;
       }
+
+      // Check if terrain mode is active - if so, ignore token placement
+      if (this.gameManager.isTerrainModeActive()) {
+        // Terrain mode is active, token placement is disabled
+        logger.log('Token placement disabled while terrain mode is active', 
+                   LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION);
+        
+        // Provide visual feedback through cursor change or similar
+        this.gameManager.app.view.style.cursor = 'not-allowed';
+        setTimeout(() => {
+          this.gameManager.app.view.style.cursor = 'crosshair'; // Reset to terrain cursor
+        }, 200);
+        
+        return;
+      }
       
       const gridCoords = this.getGridCoordinatesFromClick(event);
       if (!gridCoords) {

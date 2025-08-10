@@ -140,6 +140,193 @@ function resetZoom() {
   }
 }
 
+// === TERRAIN CONTROL FUNCTIONS ===
+
+/**
+ * Toggle terrain modification mode on/off
+ */
+function toggleTerrainMode() {
+  try {
+    const terrainToggle = document.getElementById('terrain-mode-toggle');
+    const terrainTools = document.getElementById('terrain-tools');
+    
+    if (!terrainToggle || !terrainTools) {
+      throw new Error('Terrain UI elements not found');
+    }
+    
+    const isEnabled = terrainToggle.checked;
+    
+    // Show/hide terrain tools
+    terrainTools.style.display = isEnabled ? 'block' : 'none';
+    
+    // Enable/disable terrain mode in game
+    if (window.gameManager) {
+      if (isEnabled) {
+        window.gameManager.enableTerrainMode();
+      } else {
+        window.gameManager.disableTerrainMode();
+      }
+    }
+    
+    logger.log(LOG_LEVEL.INFO, 'Terrain mode toggled', LOG_CATEGORY.USER, {
+      context: 'toggleTerrainMode',
+      terrainModeEnabled: isEnabled,
+      gameManagerAvailable: !!window.gameManager
+    });
+    
+  } catch (error) {
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+      context: 'toggleTerrainMode',
+      stage: 'terrain_mode_toggle',
+      gameManagerAvailable: !!window.gameManager
+    });
+  }
+}
+
+/**
+ * Set the active terrain tool
+ * @param {string} tool - Tool name ('raise' or 'lower')
+ */
+function setTerrainTool(tool) {
+  try {
+    if (!window.gameManager) {
+      throw new Error('Game is still loading. Please wait a moment and try again.');
+    }
+    
+    // Update tool in game manager
+    window.gameManager.setTerrainTool(tool);
+    
+    // Update UI button states
+    const raiseBtn = document.getElementById('terrain-raise-btn');
+    const lowerBtn = document.getElementById('terrain-lower-btn');
+    
+    if (raiseBtn && lowerBtn) {
+      // Remove active class from all buttons
+      raiseBtn.classList.remove('active');
+      lowerBtn.classList.remove('active');
+      
+      // Add active class to selected tool
+      if (tool === 'raise') {
+        raiseBtn.classList.add('active');
+      } else if (tool === 'lower') {
+        lowerBtn.classList.add('active');
+      }
+    }
+    
+    logger.log(LOG_LEVEL.DEBUG, 'Terrain tool selected', LOG_CATEGORY.USER, {
+      context: 'setTerrainTool',
+      selectedTool: tool,
+      uiUpdated: !!(raiseBtn && lowerBtn)
+    });
+    
+  } catch (error) {
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+      context: 'setTerrainTool',
+      stage: 'terrain_tool_selection',
+      requestedTool: tool,
+      gameManagerAvailable: !!window.gameManager
+    });
+  }
+}
+
+/**
+ * Increase brush size for terrain tools
+ */
+function increaseBrushSize() {
+  try {
+    if (!window.gameManager || !window.gameManager.terrainCoordinator) {
+      throw new Error('Terrain system not available');
+    }
+    
+    // Increase brush size in game
+    window.gameManager.terrainCoordinator.increaseBrushSize();
+    
+    // Update UI display
+    updateBrushSizeDisplay();
+    
+  } catch (error) {
+    new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
+      context: 'increaseBrushSize',
+      stage: 'brush_size_increase',
+      terrainCoordinatorAvailable: !!(window.gameManager?.terrainCoordinator)
+    });
+  }
+}
+
+/**
+ * Decrease brush size for terrain tools
+ */
+function decreaseBrushSize() {
+  try {
+    if (!window.gameManager || !window.gameManager.terrainCoordinator) {
+      throw new Error('Terrain system not available');
+    }
+    
+    // Decrease brush size in game
+    window.gameManager.terrainCoordinator.decreaseBrushSize();
+    
+    // Update UI display
+    updateBrushSizeDisplay();
+    
+  } catch (error) {
+    new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
+      context: 'decreaseBrushSize',
+      stage: 'brush_size_decrease',
+      terrainCoordinatorAvailable: !!(window.gameManager?.terrainCoordinator)
+    });
+  }
+}
+
+/**
+ * Update brush size display in UI
+ */
+function updateBrushSizeDisplay() {
+  try {
+    const brushDisplay = document.getElementById('brush-size-display');
+    if (!brushDisplay) {
+      return;
+    }
+    
+    if (window.gameManager && window.gameManager.terrainCoordinator) {
+      const brushSize = window.gameManager.terrainCoordinator.brushSize;
+      brushDisplay.textContent = `${brushSize}x${brushSize}`;
+    }
+    
+  } catch (error) {
+    logger.warn('Failed to update brush size display', {
+      error: error.message
+    }, LOG_CATEGORY.UI);
+  }
+}
+
+/**
+ * Reset all terrain to default height
+ */
+function resetTerrain() {
+  try {
+    if (!window.gameManager) {
+      throw new Error('Game is still loading. Please wait a moment and try again.');
+    }
+    
+    // Confirm with user before resetting
+    if (confirm('Are you sure you want to reset all terrain to default height? This action cannot be undone.')) {
+      window.gameManager.resetTerrain();
+      
+      logger.log(LOG_LEVEL.INFO, 'Terrain reset by user', LOG_CATEGORY.USER, {
+        context: 'resetTerrain',
+        stage: 'terrain_reset_complete'
+      });
+    }
+    
+  } catch (error) {
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+      context: 'resetTerrain',
+      stage: 'terrain_reset',
+      gameManagerAvailable: !!window.gameManager
+    });
+  }
+}
+
 /**
  * Initialize the application when the page loads
  * Sets up the game manager and handles any initialization errors
@@ -198,9 +385,23 @@ logger.log(LOG_LEVEL.INFO, 'GameManager created successfully', LOG_CATEGORY.SYST
 window.toggleCreatureTokens = toggleCreatureTokens;
 window.resizeGrid = resizeGrid;
 window.resetZoom = resetZoom;
+window.toggleTerrainMode = toggleTerrainMode;
+window.setTerrainTool = setTerrainTool;
+window.increaseBrushSize = increaseBrushSize;
+window.decreaseBrushSize = decreaseBrushSize;
+window.resetTerrain = resetTerrain;
 
 logger.log(LOG_LEVEL.DEBUG, 'UI functions exposed globally', LOG_CATEGORY.SYSTEM, {
-  exposedFunctions: ['toggleCreatureTokens', 'resizeGrid', 'resetZoom'],
+  exposedFunctions: [
+    'toggleCreatureTokens', 
+    'resizeGrid', 
+    'resetZoom', 
+    'toggleTerrainMode', 
+    'setTerrainTool', 
+    'increaseBrushSize', 
+    'decreaseBrushSize', 
+    'resetTerrain'
+  ],
   compatibilityMode: 'HTML_onclick_handlers'
 });
 
@@ -215,6 +416,11 @@ window.addEventListener('load', initializeApplication);
 export { 
   toggleCreatureTokens, 
   resizeGrid, 
-  resetZoom, 
+  resetZoom,
+  toggleTerrainMode,
+  setTerrainTool,
+  increaseBrushSize,
+  decreaseBrushSize,
+  resetTerrain,
   initializeApplication 
 };

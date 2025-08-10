@@ -6,6 +6,7 @@
  */
 
 import { GRID_CONFIG, CREATURE_SCALES, DICE_CONFIG } from '../config/GameConstants.js';
+import { logger } from './Logger.js';
 
 /**
  * Basic type validation utilities
@@ -322,5 +323,31 @@ export const Sanitizers = {
       x: Math.max(0, Math.min(Math.floor(x || 0), width - 1)),
       y: Math.max(0, Math.min(Math.floor(y || 0), height - 1))
     };
+  },
+
+  /**
+   * Sanitize enum values to allowed options
+   * @param {*} value - Value to sanitize
+   * @param {*} defaultValue - Default value if value not in allowed list
+   * @param {Array} allowedValues - Array of allowed values
+   * @returns {*} Sanitized value from allowed list
+   */
+  enum(value, defaultValue, allowedValues = []) {
+    if (!Array.isArray(allowedValues)) {
+      logger.warn('Sanitizers.enum called with invalid allowedValues array', {
+        allowedValues,
+        defaultValue,
+        value
+      });
+      return defaultValue;
+    }
+    
+    // Check if value is in allowed list
+    if (allowedValues.includes(value)) {
+      return value;
+    }
+    
+    // Fallback to default value
+    return defaultValue;
   }
 };

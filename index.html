@@ -109,14 +109,72 @@
           <button onclick="resetZoom()" class="action-button" aria-label="Reset zoom level to default">🔍 Reset Zoom</button>
         </div>
         
-        <!-- Terrain Tools (Future) -->
+        <!-- Terrain Tools -->
         <div class="section">
           <div class="section-title">Terrain Tools</div>
-          <div class="placeholder-content">
-            🚧 Terrain manipulation tools coming soon!
-            <br><small>• Add walls and barriers</small>
-            <br><small>• Paint terrain types</small>
-            <br><small>• Place environmental objects</small>
+          
+          <!-- Terrain Mode Toggle -->
+          <div class="terrain-mode">
+            <label class="toggle-switch">
+              <input type="checkbox" id="terrain-mode-toggle" onchange="toggleTerrainMode()">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Terrain Mode</span>
+            </label>
+          </div>
+          
+          <!-- Terrain Tools -->
+          <div id="terrain-tools" class="terrain-tools-container" style="display: none;">
+            <div class="tool-group">
+              <div class="section-subtitle">Tools</div>
+              <div class="tool-buttons">
+                <button id="terrain-raise-btn" onclick="setTerrainTool('raise')" class="terrain-tool-btn active" aria-label="Raise terrain height">⬆️ Raise</button>
+                <button id="terrain-lower-btn" onclick="setTerrainTool('lower')" class="terrain-tool-btn" aria-label="Lower terrain height">⬇️ Lower</button>
+              </div>
+            </div>
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Brush Size</div>
+              <div class="brush-controls">
+                <button onclick="decreaseBrushSize()" class="brush-btn" aria-label="Decrease brush size">➖</button>
+                <span id="brush-size-display" class="brush-size">1x1</span>
+                <button onclick="increaseBrushSize()" class="brush-btn" aria-label="Increase brush size">➕</button>
+              </div>
+            </div>
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Height Indicator</div>
+              <div class="height-indicator">
+                <span class="height-label">Current Level:</span>
+                <span id="terrain-height-display" class="height-value">0</span>
+                <div class="height-scale">
+                  <span class="scale-mark" data-height="-5">-5</span>
+                  <span class="scale-mark" data-height="-4">-4</span>
+                  <span class="scale-mark" data-height="-3">-3</span>
+                  <span class="scale-mark" data-height="-2">-2</span>
+                  <span class="scale-mark" data-height="-1">-1</span>
+                  <span class="scale-mark current" data-height="0">0</span>
+                  <span class="scale-mark" data-height="1">1</span>
+                  <span class="scale-mark" data-height="2">2</span>
+                  <span class="scale-mark" data-height="3">3</span>
+                  <span class="scale-mark" data-height="4">4</span>
+                  <span class="scale-mark" data-height="5">5</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Actions</div>
+              <button onclick="resetTerrain()" class="action-button terrain-reset" aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
+            </div>
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Shortcuts</div>
+              <div class="shortcuts-text">
+                <small>• <strong>R</strong>: Raise tool</small><br>
+                <small>• <strong>L</strong>: Lower tool</small><br>
+                <small>• <strong>[ ]</strong>: Brush size</small>
+              </div>
+            </div>
           </div>
         </div>
       </div>
