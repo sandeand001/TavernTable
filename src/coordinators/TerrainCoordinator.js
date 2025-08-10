@@ -1147,13 +1147,17 @@ export class TerrainCoordinator {
         existingTile.shadowTile = null;
       }
       
-      // Update tile appearance for new height without destroying object
-      const terrainColor = this.getColorForHeight(height);
+      // Decide styling based on whether terrain mode is active
+      const isEditing = !!this.isTerrainModeActive;
+      const fillColor = isEditing ? this.getColorForHeight(height) : GRID_CONFIG.TILE_COLOR;
+      const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
+      const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
+      const fillAlpha = isEditing ? 0.8 : 1.0;
       
       // Clear and redraw the tile graphics content
       existingTile.clear();
-      existingTile.lineStyle(1, 0x000000, 0.3);
-      existingTile.beginFill(terrainColor, 0.8);
+      existingTile.lineStyle(1, borderColor, borderAlpha);
+      existingTile.beginFill(fillColor, fillAlpha);
       
       // Redraw diamond shape
       existingTile.moveTo(0, this.gameManager.tileHeight / 2);
@@ -1166,14 +1170,12 @@ export class TerrainCoordinator {
       // Update tile properties
       existingTile.terrainHeight = height;
       
-      // Apply elevation effect if needed, otherwise ensure baseline visuals
+      // Apply elevation effect if needed (always positionally); visuals (color) stay base when not editing
       if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
         this.addVisualElevationEffect(existingTile, height);
-      } else {
-        // Ensure tile is at baseline when height is default (no elevation)
-        if (typeof existingTile.baseIsoY === 'number') {
-          existingTile.y = existingTile.baseIsoY;
-        }
+      } else if (typeof existingTile.baseIsoY === 'number') {
+        // Ensure baseline when default height
+        existingTile.y = existingTile.baseIsoY;
       }
       
       return true; // Successfully updated in-place
@@ -1268,8 +1270,9 @@ export class TerrainCoordinator {
    * @throws {Error} If tile creation fails
    */
   _createReplacementTile(x, y, height) {
-    const terrainColor = this.getColorForHeight(height);
-    const newTile = this.gameManager.gridRenderer.drawIsometricTile(x, y, terrainColor);
+    const isEditing = !!this.isTerrainModeActive;
+    const color = isEditing ? this.getColorForHeight(height) : GRID_CONFIG.TILE_COLOR;
+    const newTile = this.gameManager.gridRenderer.drawIsometricTile(x, y, color);
     
     // Validate new tile before returning
     if (!newTile || newTile.destroyed) {
