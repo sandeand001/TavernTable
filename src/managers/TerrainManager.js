@@ -10,6 +10,7 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
 
 export class TerrainManager {
   constructor(gameManager, terrainCoordinator) {
@@ -110,10 +111,57 @@ export class TerrainManager {
   }
 
   /**
+   * NEW METHOD: Validate terrain container state before operations
+   * @throws {Error} If containers are in invalid state
+   * @returns {boolean} True if validation passes
+   */
+  validateContainerState() {
+    try {
+      // Use centralized PIXI container validation
+      if (!TerrainPixiUtils.validatePixiContainer(this.terrainContainer, 'terrainContainer', 'TerrainManager.validateContainerState')) {
+        throw new Error('Terrain container validation failed');
+      }
+      
+      // Check if parent game container exists and is valid
+      if (!TerrainPixiUtils.validatePixiContainer(this.gameManager?.gridContainer, 'gridContainer', 'TerrainManager.validateContainerState')) {
+        throw new Error('Game grid container validation failed');
+      }
+      
+      // Validate terrain tiles map consistency
+      if (!this.terrainTiles) {
+        throw new Error('Terrain tiles map is not initialized');
+      }
+      
+      logger.log(LOG_LEVEL.DEBUG, 'Terrain container state validation passed', LOG_CATEGORY.SYSTEM, {
+        context: 'TerrainManager.validateContainerState',
+        terrainContainerExists: !!this.terrainContainer,
+        gridContainerExists: !!this.gameManager?.gridContainer,
+        tilesMapSize: this.terrainTiles.size,
+        containerChildrenCount: this.terrainContainer.children.length
+      });
+      
+      return true;
+    } catch (error) {
+      logger.error('Terrain container state validation failed', {
+        context: 'TerrainManager.validateContainerState',
+        error: error.message,
+        terrainContainerExists: !!this.terrainContainer,
+        terrainContainerDestroyed: this.terrainContainer?.destroyed,
+        gridContainerExists: !!this.gameManager?.gridContainer,
+        gridContainerDestroyed: this.gameManager?.gridContainer?.destroyed
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Show all terrain tiles (when terrain mode is enabled)
    */
   showAllTerrainTiles() {
     try {
+      // ENHANCED: Validate container state before operations
+      this.validateContainerState();
+      
       this.terrainContainer.visible = true;
       
       // Create tiles for all positions if not already created
@@ -158,101 +206,82 @@ export class TerrainManager {
   }
 
   /**
+   * Clear all terrain tiles completely (for terrain mode transitions)
+   */
+  clearAllTerrainTiles() {
+    try {
+      // Early exit if no terrain tiles exist
+      if (!this.terrainTiles || this.terrainTiles.size === 0) {
+        logger.log(LOG_LEVEL.DEBUG, 'No terrain tiles to clear', LOG_CATEGORY.SYSTEM, {
+          context: 'TerrainManager.clearAllTerrainTiles'
+        });
+        if (this.terrainContainer) {
+          this.terrainContainer.visible = false;
+        }
+        return;
+      }
+      
+      const tileCount = this.terrainTiles.size;
+      
+      // Use centralized cleanup utility for consistent behavior
+      const cleanupResults = TerrainPixiUtils.batchCleanupTerrainTiles(
+        this.terrainTiles, 
+        this.terrainContainer, 
+        'TerrainManager.clearAllTerrainTiles'
+      );
+      
+      // Clear the terrain tiles map
+      this.terrainTiles.clear();
+      
+      // Hide container
+      if (this.terrainContainer) {
+        this.terrainContainer.visible = false;
+      }
+      
+      logger.log(LOG_LEVEL.INFO, 'All terrain tiles cleared completely', LOG_CATEGORY.SYSTEM, {
+        context: 'TerrainManager.clearAllTerrainTiles',
+        clearedTileCount: tileCount,
+        cleanupResults
+      });
+    } catch (error) {
+      // Force clear the map even if individual tiles had issues
+      if (this.terrainTiles) {
+        this.terrainTiles.clear();
+      }
+      if (this.terrainContainer) {
+        this.terrainContainer.visible = false;
+      }
+      
+      GameErrors.rendering(error, {
+        stage: 'clearAllTerrainTiles',
+        context: 'TerrainManager.clearAllTerrainTiles'
+      });
+      
+      // Don't re-throw to prevent cascade failures
+      logger.log(LOG_LEVEL.WARN, 'Terrain tiles cleared with errors', LOG_CATEGORY.SYSTEM, {
+        context: 'TerrainManager.clearAllTerrainTiles',
+        error: error.message
+      });
+    }
+  }
+
+  /**
    * Create a terrain tile at specified coordinates
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
    */
   createTerrainTile(x, y) {
     try {
-      // Validate coordinates
-      const coordValidation = GameValidators.coordinates(x, y);
-      if (!coordValidation.isValid) {
-        throw new Error(`Invalid tile coordinates: ${coordValidation.getErrorMessage()}`);
-      }
-      
+      this._validateTileCreationInputs(x, y);
       const height = this.terrainCoordinator.getTerrainHeight(x, y);
       const tileKey = `${x},${y}`;
       
-      // Remove existing tile if present
-      if (this.terrainTiles.has(tileKey)) {
-        const existingTile = this.terrainTiles.get(tileKey);
-        
-        // Clean up shadow and overlay effects
-        if (existingTile.shadowTile) {
-          this.terrainContainer.removeChild(existingTile.shadowTile);
-        }
-        if (existingTile.depressionOverlay) {
-          existingTile.removeChild(existingTile.depressionOverlay);
-        }
-        
-        this.terrainContainer.removeChild(existingTile);
-        this.terrainTiles.delete(tileKey);
-      }
-      
-      // Always create terrain tile to provide visual feedback
-      // Show different appearance for default vs modified heights
-      const isDefaultHeight = (height === TERRAIN_CONFIG.DEFAULT_HEIGHT);
-      
-      // Create terrain tile graphics
-      const terrainTile = new PIXI.Graphics();
-      const color = this.getColorForHeight(height);
-      
-      // Use different styling for default vs modified heights
-      if (isDefaultHeight) {
-        // Subtle indicator for default height when terrain mode is active
-        terrainTile.lineStyle(1, 0x666666, 0.3);
-        terrainTile.beginFill(color, 0.1); // Very subtle for default height
-      } else {
-        // Prominent display for modified heights
-        terrainTile.lineStyle(
-          TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 
-          this.getBorderColorForHeight(height), 
-          TERRAIN_CONFIG.HEIGHT_BORDER_ALPHA
-        );
-        terrainTile.beginFill(color, TERRAIN_CONFIG.HEIGHT_ALPHA);
-      }
-      
-      // Draw diamond shape
-      terrainTile.moveTo(0, this.gameManager.tileHeight / 2);
-      terrainTile.lineTo(this.gameManager.tileWidth / 2, 0);
-      terrainTile.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
-      terrainTile.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
-      terrainTile.lineTo(0, this.gameManager.tileHeight / 2);
-      terrainTile.endFill();
-      
-      // Position tile in isometric space (same calculation as grid tiles)
-      terrainTile.x = (x - y) * (this.gameManager.tileWidth / 2);
-      terrainTile.y = (x + y) * (this.gameManager.tileHeight / 2);
-      
-      // Apply elevation effect for ALL heights relative to base level (height 0)
-      // Positive heights: move UP (negative Y offset) to appear elevated
-      // Negative heights: move DOWN (positive Y offset) to appear as depressions
-      // Height 0: no offset (base reference level)
-      const elevationOffset = -height * TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-      terrainTile.y += elevationOffset;
-      
-      // Add visual depth cues for better height perception
-      if (height > 0) {
-        // Elevated terrain: add shadow effect
-        this.addElevationShadow(terrainTile, height, x, y);
-      } else if (height < 0) {
-        // Depressed terrain: add darkening effect
-        this.addDepressionEffect(terrainTile, height);
-      }
-      
-      // Mark as terrain tile and store coordinates
-      terrainTile.isTerrainTile = true;
-      terrainTile.gridX = x;
-      terrainTile.gridY = y;
-      terrainTile.terrainHeight = height;
-      
-      // Calculate depth value for isometric ordering
-      // In isometric view, tiles with higher x+y values should appear behind tiles with lower x+y values
-      terrainTile.depthValue = x + y;
-      
-      // Add to container with proper depth ordering
-      this.addTileWithDepthSorting(terrainTile);
-      this.terrainTiles.set(tileKey, terrainTile);
+      this._cleanupExistingTile(tileKey);
+      const terrainTile = this._createBaseTerrainGraphics(x, y, height);
+      this._applyTerrainStyling(terrainTile, height);
+      this._positionTerrainTile(terrainTile, x, y, height);
+      this._addVisualEffects(terrainTile, height, x, y);
+      this._finalizeTerrainTile(terrainTile, x, y, tileKey);
       
       return terrainTile;
     } catch (error) {
@@ -263,6 +292,168 @@ export class TerrainManager {
       });
       throw error;
     }
+  }
+
+  /**
+   * DECOMPOSED METHOD: Validate tile creation inputs
+   * @private
+   * @param {number} x - Grid X coordinate
+   * @param {number} y - Grid Y coordinate
+   */
+  _validateTileCreationInputs(x, y) {
+    // ENHANCED: Validate container state before tile creation
+    this.validateContainerState();
+    
+    // Validate coordinates
+    const coordValidation = GameValidators.coordinates(x, y);
+    if (!coordValidation.isValid) {
+      throw new Error(`Invalid tile coordinates: ${coordValidation.getErrorMessage()}`);
+    }
+  }
+
+  /**
+   * DECOMPOSED METHOD: Cleanup existing tile if present
+   * @private
+   * @param {string} tileKey - Tile key for cleanup
+   */
+  _cleanupExistingTile(tileKey) {
+    // Remove existing tile if present (with enhanced safety)
+    if (this.terrainTiles.has(tileKey)) {
+      const existingTile = this.terrainTiles.get(tileKey);
+      
+      // Use centralized cleanup utility for consistency
+      const cleanupSuccess = TerrainPixiUtils.cleanupTerrainTile(
+        existingTile, 
+        this.terrainContainer, 
+        tileKey, 
+        'TerrainManager.createTerrainTile'
+      );
+      
+      if (!cleanupSuccess) {
+        logger.warn('Tile cleanup had partial failures, continuing with creation', {
+          context: 'TerrainManager.createTerrainTile',
+          coordinates: { x: existingTile.gridX, y: existingTile.gridY },
+          tileKey
+        });
+      }
+      
+      this.terrainTiles.delete(tileKey);
+    }
+  }
+
+  /**
+   * DECOMPOSED METHOD: Create base terrain graphics object
+   * @private
+   * @param {number} x - Grid X coordinate
+   * @param {number} y - Grid Y coordinate
+   * @param {number} height - Terrain height
+   * @returns {PIXI.Graphics} Created terrain tile graphics
+   */
+  _createBaseTerrainGraphics(x, y, height) {
+    // Create terrain tile graphics
+    const terrainTile = new PIXI.Graphics();
+    
+    // Mark as terrain tile and store coordinates
+    terrainTile.isTerrainTile = true;
+    terrainTile.gridX = x;
+    terrainTile.gridY = y;
+    terrainTile.terrainHeight = height;
+    
+    // Calculate depth value for isometric ordering
+    // In isometric view, tiles with higher x+y values should appear behind tiles with lower x+y values
+    terrainTile.depthValue = x + y;
+    
+    return terrainTile;
+  }
+
+  /**
+   * DECOMPOSED METHOD: Apply styling to terrain tile
+   * @private
+   * @param {PIXI.Graphics} terrainTile - Terrain tile to style
+   * @param {number} height - Terrain height
+   */
+  _applyTerrainStyling(terrainTile, height) {
+    // Always create terrain tile to provide visual feedback
+    // Show different appearance for default vs modified heights
+    const isDefaultHeight = (height === TERRAIN_CONFIG.DEFAULT_HEIGHT);
+    const color = this.getColorForHeight(height);
+    
+    // Use different styling for default vs modified heights
+    if (isDefaultHeight) {
+      // Subtle indicator for default height when terrain mode is active
+      terrainTile.lineStyle(1, 0x666666, 0.3);
+      terrainTile.beginFill(color, 0.1); // Very subtle for default height
+    } else {
+      // Prominent display for modified heights
+      terrainTile.lineStyle(
+        TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 
+        this.getBorderColorForHeight(height), 
+        TERRAIN_CONFIG.HEIGHT_BORDER_ALPHA
+      );
+      terrainTile.beginFill(color, TERRAIN_CONFIG.HEIGHT_ALPHA);
+    }
+    
+    // Draw diamond shape
+    terrainTile.moveTo(0, this.gameManager.tileHeight / 2);
+    terrainTile.lineTo(this.gameManager.tileWidth / 2, 0);
+    terrainTile.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
+    terrainTile.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
+    terrainTile.lineTo(0, this.gameManager.tileHeight / 2);
+    terrainTile.endFill();
+  }
+
+  /**
+   * DECOMPOSED METHOD: Position terrain tile in isometric space
+   * @private
+   * @param {PIXI.Graphics} terrainTile - Terrain tile to position
+   * @param {number} x - Grid X coordinate
+   * @param {number} y - Grid Y coordinate
+   * @param {number} height - Terrain height
+   */
+  _positionTerrainTile(terrainTile, x, y, height) {
+    // Position tile in isometric space (same calculation as grid tiles)
+    terrainTile.x = (x - y) * (this.gameManager.tileWidth / 2);
+    terrainTile.y = (x + y) * (this.gameManager.tileHeight / 2);
+    
+    // Apply elevation effect for ALL heights relative to base level (height 0)
+    // Positive heights: move UP (negative Y offset) to appear elevated
+    // Negative heights: move DOWN (positive Y offset) to appear as depressions
+    // Height 0: no offset (base reference level)
+    const elevationOffset = -height * TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+    terrainTile.y += elevationOffset;
+  }
+
+  /**
+   * DECOMPOSED METHOD: Add visual effects for height perception
+   * @private
+   * @param {PIXI.Graphics} terrainTile - Terrain tile for effects
+   * @param {number} height - Terrain height
+   * @param {number} x - Grid X coordinate
+   * @param {number} y - Grid Y coordinate
+   */
+  _addVisualEffects(terrainTile, height, x, y) {
+    // Add visual depth cues for better height perception
+    if (height > 0) {
+      // Elevated terrain: add shadow effect
+      this.addElevationShadow(terrainTile, height, x, y);
+    } else if (height < 0) {
+      // Depressed terrain: add darkening effect
+      this.addDepressionEffect(terrainTile, height);
+    }
+  }
+
+  /**
+   * DECOMPOSED METHOD: Finalize terrain tile and add to container
+   * @private
+   * @param {PIXI.Graphics} terrainTile - Terrain tile to finalize
+   * @param {number} x - Grid X coordinate
+   * @param {number} y - Grid Y coordinate
+   * @param {string} tileKey - Tile key for storage
+   */
+  _finalizeTerrainTile(terrainTile, x, y, tileKey) {
+    // Add to container with proper depth ordering
+    this.addTileWithDepthSorting(terrainTile);
+    this.terrainTiles.set(tileKey, terrainTile);
   }
 
   /**

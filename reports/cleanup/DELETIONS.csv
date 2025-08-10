@@ -1,0 +1,7 @@
+FilePath,MethodName,LinesDeleted,ReplacementUtility,Reason
+src/coordinators/TerrainCoordinator.js,initializeTerrainData (custom array creation),8,TerrainHeightUtils.createHeightArray(),Eliminated duplicate 2D array initialization patterns
+src/coordinators/TerrainCoordinator.js,validateTerrainSystemState (custom validation),25,TerrainValidation.validateTerrainSystemState(),Consolidated scattered validation logic
+src/coordinators/TerrainCoordinator.js,isValidGridPosition (coordinate validation),4,TerrainValidation.validateTerrainCoordinates(),Centralized coordinate bounds checking
+src/managers/TerrainManager.js,createTerrainTile (tile cleanup),12,TerrainPixiUtils.cleanupTerrainTile(),Standardized PIXI object cleanup patterns
+src/managers/TerrainManager.js,validateContainerState (container validation),8,TerrainPixiUtils.validateContainerState(),Eliminated container validation duplication
+src/managers/TerrainManager.js,clearAllTerrainTiles (batch cleanup),12,TerrainPixiUtils.batchCleanupTerrainTiles(),Consolidated batch cleanup operations
