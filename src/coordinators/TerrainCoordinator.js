@@ -779,6 +779,24 @@ export class TerrainCoordinator {
       this.isDragging = false;
       this.lastModifiedCell = null;
       
+      // Reset any elevation offsets and remove shadows before applying to base grid
+      if (this.gameManager?.gridContainer?.children) {
+        this.gameManager.gridContainer.children.forEach(child => {
+          if (child.isGridTile) {
+            if (typeof child.baseIsoY === 'number') {
+              child.y = child.baseIsoY;
+            }
+            if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
+              child.parent.removeChild(child.shadowTile);
+              if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
+                child.shadowTile.destroy();
+              }
+              child.shadowTile = null;
+            }
+          }
+        });
+      }
+      
       // Apply current terrain modifications permanently to base grid
       this.applyTerrainToBaseGrid();
       
@@ -1115,6 +1133,20 @@ export class TerrainCoordinator {
         return false; // No existing tile to update, need replacement
       }
       
+      // Always reset to baseline before redrawing/applying effects to avoid cumulative offsets
+      if (typeof existingTile.baseIsoY === 'number') {
+        existingTile.y = existingTile.baseIsoY;
+      }
+      
+      // If there is an existing shadow from a previous non-default height, remove it
+      if (existingTile.shadowTile && existingTile.parent?.children?.includes(existingTile.shadowTile)) {
+        existingTile.parent.removeChild(existingTile.shadowTile);
+        if (typeof existingTile.shadowTile.destroy === 'function' && !existingTile.shadowTile.destroyed) {
+          existingTile.shadowTile.destroy();
+        }
+        existingTile.shadowTile = null;
+      }
+      
       // Update tile appearance for new height without destroying object
       const terrainColor = this.getColorForHeight(height);
       
@@ -1134,9 +1166,14 @@ export class TerrainCoordinator {
       // Update tile properties
       existingTile.terrainHeight = height;
       
-      // Apply elevation effect if needed
+      // Apply elevation effect if needed, otherwise ensure baseline visuals
       if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
         this.addVisualElevationEffect(existingTile, height);
+      } else {
+        // Ensure tile is at baseline when height is default (no elevation)
+        if (typeof existingTile.baseIsoY === 'number') {
+          existingTile.y = existingTile.baseIsoY;
+        }
       }
       
       return true; // Successfully updated in-place
@@ -1314,9 +1351,12 @@ export class TerrainCoordinator {
    */
   addVisualElevationEffect(tile, height) {
     try {
-      // Adjust tile position for elevation illusion
+      // Reset to baseline isometric Y before applying elevation to avoid stacking
+      if (typeof tile.baseIsoY === 'number') {
+        tile.y = tile.baseIsoY;
+      }
       const elevationOffset = height * TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-      tile.y -= elevationOffset;
+      tile.y = tile.y - elevationOffset;
       
       // Add subtle border effect for raised/lowered appearance
       if (height > TERRAIN_CONFIG.DEFAULT_HEIGHT) {
@@ -1325,6 +1365,15 @@ export class TerrainCoordinator {
       } else if (height < TERRAIN_CONFIG.DEFAULT_HEIGHT) {
         // Lowered terrain - darker border  
         tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0x000000, 0.3);
+      }
+      
+      // Remove any previous shadow if present to avoid duplicates
+      if (tile.shadowTile && tile.parent?.children?.includes(tile.shadowTile)) {
+        tile.parent.removeChild(tile.shadowTile);
+        if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
+          tile.shadowTile.destroy();
+        }
+        tile.shadowTile = null;
       }
       
       // Add height-based shadow effect using simplified approach
@@ -1354,6 +1403,7 @@ export class TerrainCoordinator {
         if (tile.parent) {
           const tileIndex = tile.parent.getChildIndex(tile);
           tile.parent.addChildAt(shadow, Math.max(0, tileIndex));
+          tile.shadowTile = shadow;
         }
       }
     } catch (error) {

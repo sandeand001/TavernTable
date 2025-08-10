@@ -109,6 +109,8 @@ export class GridRenderer {
       // Position tile in isometric space
       tile.x = (x - y) * (this.gameManager.tileWidth / 2);
       tile.y = (x + y) * (this.gameManager.tileHeight / 2);
+      // Store baseline isometric Y to avoid cumulative elevation offsets
+      tile.baseIsoY = tile.y;
       
       // Mark this as a grid tile (not a creature token)
       tile.isGridTile = true;
