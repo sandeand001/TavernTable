@@ -8,6 +8,7 @@
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { GameValidators } from '../utils/Validation.js';
 
 // Import creature creation functions
@@ -211,7 +212,20 @@ export class TokenManager {
         this.gameManager.tileWidth, 
         this.gameManager.tileHeight
       );
-      creature.setPosition(isoCoords.x, isoCoords.y);
+      // Apply terrain elevation to Y so token stands on raised/lowered tiles
+      let height = 0;
+      try {
+        height = this.gameManager.getTerrainHeight?.(gridX, gridY) ?? 0;
+      } catch {}
+      const yOffset = TerrainHeightUtils.calculateElevationOffset(height);
+      const finalY = isoCoords.y + yOffset;
+      creature.setPosition(isoCoords.x, finalY);
+      // Set zIndex so occlusion works: base depth by x+y, add tiny elevation bias
+      const depth = gridX + gridY;
+      const elevationBias = Math.round((height || 0) * 2);
+      if (creature.sprite) {
+        creature.sprite.zIndex = depth * 100 + 10 + elevationBias; // tiles use *100; tokens at +10
+      }
       
       // Store token info and set up interactions
       this.addTokenToCollection(creature, gridX, gridY);
@@ -300,19 +314,30 @@ export class TokenManager {
 
       // Position at diamond center using CoordinateUtils
       const isoCoords = CoordinateUtils.gridToIsometric(clampedCoords.gridX, clampedCoords.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      
-      token.x = isoCoords.x;
-      token.y = isoCoords.y;
+      // Add terrain elevation offset so snapped token sits on the terrain
+      let height = 0;
+      try {
+        height = this.gameManager.getTerrainHeight?.(clampedCoords.gridX, clampedCoords.gridY) ?? 0;
+      } catch {}
+      const yOffset = TerrainHeightUtils.calculateElevationOffset(height);
+  token.x = isoCoords.x;
+  token.y = isoCoords.y + yOffset;
+  // Update zIndex for occlusion
+  const depth = clampedCoords.gridX + clampedCoords.gridY;
+  const elevationBias = Math.round((height || 0) * 2);
+  token.zIndex = depth * 100 + 10 + elevationBias;
       
       // Update the token's grid position in the placedTokens array
       const tokenEntry = this.placedTokens.find(t => t.creature && t.creature.sprite === token);
       if (tokenEntry) {
         tokenEntry.gridX = clampedCoords.gridX;
         tokenEntry.gridY = clampedCoords.gridY;
+        tokenEntry.terrainHeight = height;
         logger.debug(`Token snapped to grid (${clampedCoords.gridX}, ${clampedCoords.gridY})`, {
           coordinates: clampedCoords,
           originalPosition: { localX, localY },
-          newPosition: isoCoords
+          newPosition: { x: token.x, y: token.y },
+          terrain: { height, yOffset }
         }, LOG_CATEGORY.USER);
       }
     } catch (error) {

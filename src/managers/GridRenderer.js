@@ -34,6 +34,8 @@ export class GridRenderer {
       
       // Create main grid container
       this.gameManager.gridContainer = new PIXI.Container();
+  // Enable zIndex-based sorting so tokens/tiles can occlude correctly in isometric depth
+  this.gameManager.gridContainer.sortableChildren = true;
       this.gameManager.app.stage.addChild(this.gameManager.gridContainer);
       
       // Draw grid tiles
@@ -111,6 +113,9 @@ export class GridRenderer {
       tile.y = (x + y) * (this.gameManager.tileHeight / 2);
       // Store baseline isometric Y to avoid cumulative elevation offsets
       tile.baseIsoY = tile.y;
+  // Depth sorting: lower (x+y) renders first; higher renders on top
+  tile.depthValue = x + y;
+  tile.zIndex = tile.depthValue * 100; // leave room between layers for tokens/effects
       
       // Mark this as a grid tile (not a creature token)
       tile.isGridTile = true;

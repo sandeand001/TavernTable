@@ -1038,27 +1038,49 @@ export class TerrainCoordinator {
    */
   handleGridResize(newCols, newRows) {
     try {
-      // Backup existing terrain data if needed
-      const oldHeights = this.dataStore.working;
-      const oldCols = this.gameManager.cols;
-      const oldRows = this.gameManager.rows;
-      
-      // Update grid dimensions (this will be done by GameManager)
-      // Then reinitialize terrain data with new dimensions
+      // Capture old terrain data and dimensions from the data store (pre-resize)
+      const oldHeights = this.dataStore?.working;
+      const oldCols = this.dataStore?.cols;
+      const oldRows = this.dataStore?.rows;
+
+      // Reinitialize terrain data arrays to the new dimensions
+      // (uses dataStore.resize under the hood)
       this.initializeTerrainData();
-      
-      // Copy over existing height data where possible
-      if (oldHeights && oldCols > 0 && oldRows > 0) {
+
+      // Copy over existing height data where possible (within overlap bounds)
+      if (oldHeights && Number.isInteger(oldCols) && Number.isInteger(oldRows) && oldCols > 0 && oldRows > 0) {
         const copyRows = Math.min(oldRows, newRows);
         const copyCols = Math.min(oldCols, newCols);
-        
+
         for (let y = 0; y < copyRows; y++) {
+          const oldRow = oldHeights[y];
+          if (!Array.isArray(oldRow)) continue;
           for (let x = 0; x < copyCols; x++) {
-            this.dataStore.working[y][x] = oldHeights[y][x];
+            const val = oldRow[x];
+            if (typeof val === 'number') {
+              this.dataStore.working[y][x] = val;
+            }
           }
         }
       }
-      
+
+      // If terrain mode is active, refresh the terrain overlay tiles to cover the new grid size
+      if (this.terrainManager && this.isTerrainModeActive) {
+        try {
+          if (typeof this.terrainManager.handleGridResize === 'function') {
+            this.terrainManager.handleGridResize(newCols, newRows);
+          } else {
+            // Fallback: refresh full terrain display
+            this.terrainManager.refreshAllTerrainDisplay();
+          }
+        } catch (e) {
+          logger.warn('Terrain display refresh after resize encountered issues', {
+            context: 'TerrainCoordinator.handleGridResize',
+            error: e.message
+          });
+        }
+      }
+
       logger.log(LOG_LEVEL.INFO, 'Terrain data resized', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainCoordinator.handleGridResize',
         oldDimensions: { cols: oldCols, rows: oldRows },
@@ -1068,7 +1090,7 @@ export class TerrainCoordinator {
     } catch (error) {
       GameErrors.operation(error, {
         stage: 'handleGridResize',
-        oldDimensions: { cols: this.gameManager?.cols, rows: this.gameManager?.rows },
+        oldDimensions: { cols: this.dataStore?.cols, rows: this.dataStore?.rows },
         newDimensions: { cols: newCols, rows: newRows }
       });
       throw error;

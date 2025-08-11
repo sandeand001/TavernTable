@@ -82,34 +82,12 @@ class CreatureToken {
         return;
       }
       
-      const spriteKey = `${this.type}-sprite`;
-      
-      // Check if this specific sprite is available
-      if (!window.spriteManager.hasSpriteLoaded(spriteKey)) {
-        this.createFallbackGraphics();
-        
-        // Try to retry sprite loading after a short delay
-        setTimeout(() => {
-          if (window.spriteManager.hasSpriteLoaded(spriteKey) && this.sprite && this.sprite.parent) {
-            this.replaceWithSprite();
-          }
-        }, 1000);
-        return;
-      }
-      
-      const texture = window.spriteManager.getSprite(spriteKey);
-      if (!texture) {
-        this.createFallbackGraphics();
-        return;
-      }
-      
-      // Create sprite with texture
-      this.sprite = new PIXI.Sprite(texture);
-      this.sprite.anchor.set(0.5, 0.5);
-      
-      // Set scale based on creature type
-      const scale = this.getCreatureScale();
-      this.sprite.scale.set(scale, scale);
+  const spriteKey = `${this.type}-sprite`;
+
+  // Try to build sprite via SpriteManager helper (handles fallback)
+  const scale = this.getCreatureScale();
+  const built = window.spriteManager.createSprite(spriteKey, { anchor: 0.5, scale });
+  this.sprite = built;
       
     } catch (error) {
       GameErrors.sprites(error, {
@@ -351,9 +329,7 @@ class CreatureToken {
   replaceWithSprite() {
     try {
       const spriteKey = `${this.type}-sprite`;
-      const texture = window.spriteManager.getSprite(spriteKey);
-      
-      if (!texture) {
+  if (!window.spriteManager || !window.spriteManager.hasSpriteLoaded?.(spriteKey)) {
         console.warn(`🎨 Cannot replace sprite for ${this.type} - texture not available`);
         return;
       }
@@ -368,13 +344,9 @@ class CreatureToken {
         this.sprite.parent.removeChild(this.sprite);
       }
       
-      // Create new sprite with texture
-      this.sprite = new PIXI.Sprite(texture);
-      this.sprite.anchor.set(0.5);
-      
-      // Apply creature-specific configuration
-      const scale = this.getCreatureScale();
-      this.sprite.scale.set(scale, scale);
+  // Create new sprite using manager helper
+  const scale = this.getCreatureScale();
+  this.sprite = window.spriteManager.createSprite(spriteKey, { anchor: 0.5, scale });
       this.applyFacing();
       
       // Restore position and add to parent

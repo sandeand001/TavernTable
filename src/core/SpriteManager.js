@@ -23,6 +23,8 @@ class SpriteManager {
     this.sprites = new Map();
     this.loaded = false;
     this.registeredSprites = []; // Track registered sprite names
+  // Initialization promise for consumers that need to await readiness
+  this._initPromise = null;
   }
 
   /**
@@ -58,21 +60,22 @@ class SpriteManager {
    */
   addSprite(name, filename) {
     const fullPath = this.getBasePath() + filename;
-    
-    // Test if the file exists by attempting to create an image
-    const testImg = new Image();
-    testImg.onload = () => {
-      // File exists validation passed
-    };
-    testImg.onerror = () => {
-      console.error(`❌ File NOT found: ${fullPath}`);
-    };
-    testImg.src = fullPath;
-    
-    // Add the sprite to PIXI.Assets
-    PIXI.Assets.add(name, fullPath);
-    
-    this.registeredSprites.push(name); // Track registered sprites
+
+    try {
+      PIXI.Assets.add(name, fullPath);
+      this.registeredSprites.push(name);
+      logger.log(LOG_LEVEL.DEBUG, 'Registered sprite', LOG_CATEGORY.ASSETS, {
+        context: 'SpriteManager.addSprite',
+        name,
+        path: fullPath
+      });
+    } catch (e) {
+      new ErrorHandler().handle(e, ERROR_SEVERITY.LOW, ERROR_CATEGORY.RENDERING, {
+        context: 'SpriteManager.addSprite',
+        name,
+        path: fullPath
+      });
+    }
   }
 
   // Load all registered sprites
@@ -93,23 +96,37 @@ class SpriteManager {
             // Store reference for quick verification
             this.sprites.set(spriteName, texture);
           } else {
-            console.error(`✗ Invalid texture for ${spriteName}:`, texture);
+            logger.log(LOG_LEVEL.ERROR, `Invalid texture`, LOG_CATEGORY.ASSETS, {
+              context: 'SpriteManager.loadSprites',
+              spriteName,
+              textureInfo: texture ? { width: texture.width, height: texture.height } : null
+            });
             failedLoads.push(spriteName);
           }
         } catch (spriteError) {
-          console.error(`✗ Failed to load sprite ${spriteName}:`, spriteError);
+          logger.log(LOG_LEVEL.ERROR, 'Failed to load sprite', LOG_CATEGORY.ASSETS, {
+            context: 'SpriteManager.loadSprites',
+            spriteName,
+            error: spriteError?.message || String(spriteError)
+          });
           failedLoads.push(spriteName);
         }
       }
       
       if (failedLoads.length > 0) {
-        console.warn('Failed to load:', failedLoads);
+        logger.log(LOG_LEVEL.WARN, 'Some sprites failed to load', LOG_CATEGORY.ASSETS, {
+          context: 'SpriteManager.loadSprites',
+          failed: failedLoads
+        });
       }
       
       this.loaded = true;
       return true;
     } catch (error) {
-      console.error('Error loading sprites:', error);
+      logger.log(LOG_LEVEL.ERROR, 'Error loading sprites', LOG_CATEGORY.ASSETS, {
+        context: 'SpriteManager.loadSprites',
+        error: error?.message || String(error)
+      });
       this.loaded = true; // Still set to true to allow fallback graphics
       return false;
     }
@@ -118,7 +135,10 @@ class SpriteManager {
   // Get a loaded sprite texture
   getSprite(name) {
     if (!this.loaded) {
-      console.warn('Sprites not yet loaded');
+      logger.log(LOG_LEVEL.WARN, 'Sprites not yet loaded', LOG_CATEGORY.ASSETS, {
+        context: 'SpriteManager.getSprite',
+        name
+      });
       return null;
     }
     
@@ -134,11 +154,18 @@ class SpriteManager {
         // Store for future reference
         this.sprites.set(name, sprite);
       } else {
-        console.error(`✗ Sprite ${name} not found in PIXI.Assets`);
+        logger.log(LOG_LEVEL.ERROR, 'Sprite not found in PIXI.Assets', LOG_CATEGORY.ASSETS, {
+          context: 'SpriteManager.getSprite',
+          name
+        });
       }
       return sprite;
     } catch (error) {
-      console.error(`Error retrieving sprite ${name}:`, error);
+      logger.log(LOG_LEVEL.ERROR, 'Error retrieving sprite', LOG_CATEGORY.ASSETS, {
+        context: 'SpriteManager.getSprite',
+        name,
+        error: error?.message || String(error)
+      });
       return null;
     }
   }
@@ -209,10 +236,66 @@ class SpriteManager {
    * @returns {Promise<boolean>} Success status of sprite loading
    */
   async initialize() {
-    this.registerGameSprites();
-    return await this.loadSprites();
+    if (this._initPromise) {
+      return this._initPromise;
+    }
+    this._initPromise = (async () => {
+      try {
+        this.registerGameSprites();
+        const ok = await this.loadSprites();
+        return ok;
+      } catch (e) {
+        return false;
+      }
+    })();
+    return this._initPromise;
   }
 
+  /**
+   * Create a PIXI.Sprite from a loaded texture name. If not loaded, returns a placeholder Graphics.
+   * Does not add to stage; caller owns the display object.
+   * @param {string} name Sprite asset name (e.g., 'dragon-sprite')
+   * @param {{anchor?: number|{x:number,y:number}, scale?: number}} [options]
+   * @returns {PIXI.DisplayObject} PIXI.Sprite if texture exists, otherwise PIXI.Graphics placeholder
+   */
+  createSprite(name, options = {}) {
+    const { anchor = 0.5, scale = 1 } = options;
+
+    const texture = this.getSprite(name);
+    if (texture) {
+      const sprite = new PIXI.Sprite(texture);
+      if (typeof anchor === 'number') {
+        sprite.anchor.set(anchor);
+      } else if (anchor && typeof anchor === 'object') {
+        sprite.anchor.set(anchor.x ?? 0.5, anchor.y ?? 0.5);
+      }
+      sprite.scale.set(scale);
+      return sprite;
+    }
+
+    // Fallback placeholder
+    const g = new PIXI.Graphics();
+    g.beginFill(0xAA0000, 0.6);
+    g.lineStyle(2, 0xFFFFFF, 0.9);
+    g.drawRoundedRect(-16, -16, 32, 32, 6);
+    g.endFill();
+    g.scale.set(scale);
+    return g;
+  }
+
+  /**
+   * Convenience: get a scaled PIXI.Sprite for a creature type defined in CREATURE_SCALES
+   * @param {string} creatureType e.g., 'dragon', 'skeleton'
+   * @returns {PIXI.DisplayObject}
+   */
+  getCreatureSprite(creatureType) {
+    const name = `${creatureType}-sprite`;
+    const scale = CREATURE_SCALES?.[creatureType] ?? 1;
+    return this.createSprite(name, { scale });
+  }
+
+  // Note: We intentionally do not cache PIXI.Sprite instances because
+  // display objects cannot be added to multiple parents. Textures are cached.
 }
 
 // Create global sprite manager instance
