@@ -845,6 +845,8 @@ export class TerrainCoordinator {
       if (this.gameManager?.gridContainer?.children) {
         this.gameManager.gridContainer.children.forEach(child => {
           if (child.isGridTile) {
+            // Ensure base tiles are fully opaque when exiting edit mode
+            child.alpha = 1.0;
             if (typeof child.baseIsoY === 'number') {
               child.y = child.baseIsoY;
             }
@@ -854,6 +856,18 @@ export class TerrainCoordinator {
                 child.shadowTile.destroy();
               }
               child.shadowTile = null;
+            }
+            // Remove any depression overlays that might have been attached erroneously
+            if (child.depressionOverlay) {
+              try {
+                if (child.children?.includes(child.depressionOverlay)) {
+                  child.removeChild(child.depressionOverlay);
+                }
+                if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
+                  child.depressionOverlay.destroy();
+                }
+              } catch (_) { /* best-effort */ }
+              child.depressionOverlay = null;
             }
             // Remove any existing base 3D faces
             if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {

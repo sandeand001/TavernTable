@@ -10,15 +10,18 @@ export class TerrainFacesRenderer {
     this.gameManager = gameManager;
   }
 
-  addOverlayFaces(container, tile, getHeight, x, y, height) {
+  addOverlayFaces(container, tile, getHeight, x, y, height, faceBaseColor = GRID_CONFIG.TILE_COLOR) {
     // Computes diffs vs neighbors and adds faces into given container behind tile
-    const faces = this._buildFaces(getHeight, x, y, height, GRID_CONFIG.TILE_COLOR, true);
+    // Use a darkened variant of the overlay tile color for clearer contrast
+    const faces = this._buildFaces(getHeight, x, y, height, faceBaseColor, false);
     if (!faces) return;
     faces.x = tile.x;
     faces.y = tile.y;
   // Tag for sorting/cleanup
   faces.isOverlayFace = true;
   faces.depthValue = tile.depthValue;
+  // If parent supports zIndex sorting, set faces between shadows (0) and tiles (100)
+  faces.zIndex = (tile.depthValue || 0) * 100 + 5;
 
     const parent = tile.parent || container;
     let idx = 0;
@@ -39,6 +42,11 @@ export class TerrainFacesRenderer {
     let idx = 0; try { if (typeof parent.getChildIndex === 'function') idx = parent.getChildIndex(tile); } catch { idx = 0; }
     if (typeof parent.addChildAt === 'function') parent.addChildAt(faces, Math.max(0, idx));
     else if (typeof parent.addChild === 'function') parent.addChild(faces);
+    // If parent sorts by zIndex, ensure base faces render just UNDER the tile at its depth
+    // Grid tiles use zIndex = depth*100, so place faces slightly lower to stay behind the top face
+    if (parent.sortableChildren) {
+      faces.zIndex = (tile.depthValue || (x + y)) * 100 - 1;
+    }
     tile.baseSideFaces = faces;
   }
 

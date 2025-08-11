@@ -45,13 +45,21 @@ export class TerrainManager {
    */
   initialize() {
     try {
-      // Create terrain container - positioned above grid tiles
-      this.terrainContainer = new PIXI.Container();
+  // Create terrain container - positioned above grid tiles
+  this.terrainContainer = new PIXI.Container();
+  // Allow internal ordering if needed and ensure this container renders above base grid/tokens
+  this.terrainContainer.sortableChildren = true;
+  // Grid tiles use zIndex depth*100; tokens use depth*100+10, so pick a value higher than any expected
+  this.terrainContainer.zIndex = 100000;
       
       // Add terrain container to the grid container AFTER grid tiles
       // This ensures terrain tiles appear above the base grid for proper height visualization
       // Grid tiles are added first, then terrain on top
       this.gameManager.gridContainer.addChild(this.terrainContainer);
+      // If parent sorts by zIndex, ensure our container is placed accordingly
+      if (this.gameManager.gridContainer.sortableChildren && typeof this.gameManager.gridContainer.sortChildren === 'function') {
+        this.gameManager.gridContainer.sortChildren();
+      }
       
       // Initialize terrain tiles for the current grid
       this.createInitialTerrainTiles();
@@ -433,6 +441,8 @@ export class TerrainManager {
     // Calculate depth value for isometric ordering
     // In isometric view, tiles with higher x+y values should appear behind tiles with lower x+y values
     terrainTile.depthValue = x + y;
+  // If container uses zIndex sorting, place terrain tile above faces/shadows at its depth
+  terrainTile.zIndex = terrainTile.depthValue * 100 + 20;
 
   // Defensive: ensure clean visual state
   terrainTile.shadowTile = null;
@@ -523,8 +533,9 @@ export class TerrainManager {
         terrainTile.sideFaces = null;
       }
 
-      const getH = (gx, gy) => this.terrainCoordinator.getTerrainHeight(gx, gy);
-      this.facesRenderer.addOverlayFaces(this.terrainContainer, terrainTile, getH, x, y, height);
+  const getH = (gx, gy) => this.terrainCoordinator.getTerrainHeight(gx, gy);
+  const faceBase = this.getColorForHeight(height);
+  this.facesRenderer.addOverlayFaces(this.terrainContainer, terrainTile, getH, x, y, height, faceBase);
     } catch (e) {
       logger.warn('Failed to add 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
     }
@@ -606,6 +617,8 @@ export class TerrainManager {
       // Set depth value for shadow (same as main tile but mark as shadow)
       shadowTile.depthValue = terrainTile.depthValue;
       shadowTile.isShadowTile = true;
+  // Position shadows below faces/tiles at same depth
+  shadowTile.zIndex = (shadowTile.depthValue || 0) * 100 + 0;
       
       // Add shadow using depth sorting (shadows should appear behind their main tiles)
       this.addTileWithDepthSorting(shadowTile);
