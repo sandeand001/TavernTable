@@ -7,7 +7,8 @@
 
 class SidebarController {
   constructor() {
-    this.activeTab = 'dice-log';
+  // Default active tab (original): dice-log
+  this.activeTab = 'dice-log';
     this.diceLogEntries = [];
     this.maxLogEntries = 50; // Prevent memory issues with large logs
     

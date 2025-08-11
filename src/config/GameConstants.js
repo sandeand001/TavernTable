@@ -94,6 +94,31 @@ export const CREATURE_SCALES = {
 };
 
 /**
+ * Creature footprint configuration (in tiles)
+ * Defines how many grid cells wide/high a creature occupies for snapping
+ */
+export const CREATURE_FOOTPRINTS = {
+  // Defaults to 1x1 if not specified
+  dragon: { w: 2, h: 2 }
+};
+
+/**
+ * Optional per-creature baseline Y offsets (in pixels at scale=1)
+ * Negative moves the sprite up (useful when textures include bottom padding)
+ */
+export const CREATURE_BASELINE_OFFSETS = {
+  goblin: 0,
+  beholder: 0,
+  skeleton: -6,
+  mindflayer: -6,
+  orc: -6,
+  dragon: -8,
+  minotaur: -8,
+  owlbear: -8,
+  troll: -8
+};
+
+/**
  * Creature color mapping for fallback graphics
  * Used when PNG sprites are not available
  */

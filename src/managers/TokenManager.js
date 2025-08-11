@@ -8,8 +8,8 @@
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { GameValidators } from '../utils/Validation.js';
+import { getSpriteOffset } from '../config/SpriteOffsets.js';
 
 // Import creature creation functions
 import { 
@@ -212,19 +212,37 @@ export class TokenManager {
         this.gameManager.tileWidth, 
         this.gameManager.tileHeight
       );
-      // Apply terrain elevation to Y so token stands on raised/lowered tiles
+      // Terrain elevation offset
       let height = 0;
       try {
         height = this.gameManager.getTerrainHeight?.(gridX, gridY) ?? 0;
       } catch {}
-      const yOffset = TerrainHeightUtils.calculateElevationOffset(height);
-      const finalY = isoCoords.y + yOffset;
-      creature.setPosition(isoCoords.x, finalY);
-      // Set zIndex so occlusion works: base depth by x+y, add tiny elevation bias
-      const depth = gridX + gridY;
-      const elevationBias = Math.round((height || 0) * 2);
+      const yOffset = height * (this.gameManager.tileHeight * 0.5);
+      creature.setPosition(isoCoords.x, isoCoords.y + yOffset);
+
+      // Apply per-creature calibrated sprite offset (visual fine-tune)
+      let dx = 0, dy = 0;
+      try {
+        const off = getSpriteOffset(this.selectedTokenType) || { dx: 0, dy: 0 };
+        dx = Number(off.dx) || 0;
+        dy = Number(off.dy) || 0;
+        if ((dx || dy) && creature.sprite) {
+          creature.sprite.x += dx;
+          creature.sprite.y += dy;
+          creature.sprite.__offsetApplied = true;
+        }
+      } catch(offsetErr) {
+        logger.warn('Offset application failed', {
+          error: offsetErr?.message,
+          creatureType: this.selectedTokenType
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      // Set zIndex for occlusion: base depth by x+y, add elevation bias
       if (creature.sprite) {
-        creature.sprite.zIndex = depth * 100 + 10 + elevationBias; // tiles use *100; tokens at +10
+        const depth = gridX + gridY;
+        const elevationBias = Math.round((height || 0) * 2);
+        creature.sprite.zIndex = depth * 100 + 10 + elevationBias;
       }
       
       // Store token info and set up interactions
@@ -233,7 +251,7 @@ export class TokenManager {
       logger.info(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`, {
         creatureType: this.selectedTokenType,
         coordinates: { gridX, gridY },
-        position: isoCoords
+  position: { base: isoCoords, appliedOffset: { dx, dy }, final: { x: creature.sprite.x, y: creature.sprite.y } }
       }, LOG_CATEGORY.USER);
     } catch (error) {
       const errorHandler = new ErrorHandler();
@@ -314,19 +332,18 @@ export class TokenManager {
 
       // Position at diamond center using CoordinateUtils
       const isoCoords = CoordinateUtils.gridToIsometric(clampedCoords.gridX, clampedCoords.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      // Add terrain elevation offset so snapped token sits on the terrain
+      // Terrain elevation offset
       let height = 0;
       try {
         height = this.gameManager.getTerrainHeight?.(clampedCoords.gridX, clampedCoords.gridY) ?? 0;
       } catch {}
-      const yOffset = TerrainHeightUtils.calculateElevationOffset(height);
-  token.x = isoCoords.x;
-  token.y = isoCoords.y + yOffset;
-  // Update zIndex for occlusion
-  const depth = clampedCoords.gridX + clampedCoords.gridY;
-  const elevationBias = Math.round((height || 0) * 2);
-  token.zIndex = depth * 100 + 10 + elevationBias;
-      
+      const yOffset = height * (this.gameManager.tileHeight * 0.5);
+      token.x = isoCoords.x;
+      token.y = isoCoords.y + yOffset;
+      // Update zIndex for occlusion
+      const depth = clampedCoords.gridX + clampedCoords.gridY;
+      const elevationBias = Math.round((height || 0) * 2);
+      token.zIndex = depth * 100 + 10 + elevationBias;
       // Update the token's grid position in the placedTokens array
       const tokenEntry = this.placedTokens.find(t => t.creature && t.creature.sprite === token);
       if (tokenEntry) {

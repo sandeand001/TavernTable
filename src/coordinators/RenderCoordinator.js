@@ -6,6 +6,7 @@
  */
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
@@ -138,11 +139,13 @@ export class RenderCoordinator {
         // Add to grid container
         this.gameManager.gridContainer.addChild(sprite);
         
-        // Recalculate position relative to grid
-        const isoX = (tokenData.gridX - tokenData.gridY) * (this.gameManager.tileWidth / 2);
-        const isoY = (tokenData.gridX + tokenData.gridY) * (this.gameManager.tileHeight / 2);
-        sprite.x = isoX;
-        sprite.y = isoY;
+        // Recalculate position relative to grid using CoordinateUtils and footprint center
+  const fp = tokenData.footprint || { w: 1, h: 1 };
+  const centerGX = tokenData.gridX + (fp.w - 1) / 2;
+  const centerGY = tokenData.gridY + (fp.h - 1) / 2;
+  const iso = CoordinateUtils.gridToIsometric(centerGX, centerGY, this.gameManager.tileWidth, this.gameManager.tileHeight);
+  sprite.x = iso.x;
+  sprite.y = iso.y;
       }
     });
   }

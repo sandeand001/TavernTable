@@ -86,8 +86,19 @@ class CreatureToken {
 
   // Try to build sprite via SpriteManager helper (handles fallback)
   const scale = this.getCreatureScale();
-  const built = window.spriteManager.createSprite(spriteKey, { anchor: 0.5, scale });
+  const built = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
   this.sprite = built;
+  // Always enforce bottom-center anchor/pivot
+  if (this.sprite instanceof PIXI.Sprite) {
+    this.sprite.anchor.set(0.5, 1.0);
+    window.logger?.debug?.('Sprite anchor set', { anchor: this.sprite.anchor, type: this.type });
+  } else if (this.sprite instanceof PIXI.Graphics) {
+    try {
+      const b = this.sprite.getLocalBounds();
+      this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
+      window.logger?.debug?.('Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
+    } catch {}
+  }
       
     } catch (error) {
       GameErrors.sprites(error, {
@@ -132,6 +143,12 @@ class CreatureToken {
         this.sprite = new PIXI.Graphics();
         this.sprite.scale.set(0.7, 0.7);
         this.drawCreature();
+        // Bottom-center align pivot using local bounds
+        try {
+          const b = this.sprite.getLocalBounds();
+          this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
+          window.logger?.debug?.('Fallback Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
+        } catch {}
       } else {
         this.createFallbackSprite();
       }
@@ -169,6 +186,11 @@ class CreatureToken {
       this.sprite.beginFill(color);
       this.sprite.drawCircle(0, 0, 20);
       this.sprite.endFill();
+      // Bottom-center align pivot for fallback circle
+      try {
+        const b = this.sprite.getLocalBounds();
+        this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
+      } catch {}
       
     } catch (error) {
       GameErrors.sprites(error, {
@@ -346,7 +368,10 @@ class CreatureToken {
       
   // Create new sprite using manager helper
   const scale = this.getCreatureScale();
-  this.sprite = window.spriteManager.createSprite(spriteKey, { anchor: 0.5, scale });
+  this.sprite = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
+      if (this.sprite instanceof PIXI.Sprite) {
+        this.sprite.anchor.set(0.5, 1.0);
+      }
       this.applyFacing();
       
       // Restore position and add to parent

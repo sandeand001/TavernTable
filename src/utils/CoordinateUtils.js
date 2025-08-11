@@ -32,35 +32,18 @@ export class CoordinateUtils {
    */
   static gridToIsometric(gridX, gridY, tileWidth, tileHeight) {
     try {
-      // Validate input parameters
       if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
         throw new Error(`Invalid grid coordinates: gridX=${gridX}, gridY=${gridY}`);
       }
-      
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
-
-      logger.trace('Converting grid to isometric coordinates', {
-        input: { gridX, gridY, tileWidth, tileHeight }
-      }, LOG_CATEGORY.SYSTEM);
-
-      // Apply -0.5 offset to both coordinates for center positioning
+      // Restore -0.5 offset for center positioning
       const offsetGridX = gridX - 0.5;
       const offsetGridY = gridY - 0.5;
-      
-      // Convert to isometric coordinates
       const x = (offsetGridX - offsetGridY) * (tileWidth / 2) + (tileWidth / 2);
       const y = (offsetGridX + offsetGridY) * (tileHeight / 2) + (tileHeight / 2);
-      
-      const result = { x, y };
-      
-      logger.trace('Grid to isometric conversion completed', {
-        input: { gridX, gridY },
-        output: result
-      }, LOG_CATEGORY.SYSTEM);
-
-      return result;
+      return { x, y };
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {
@@ -81,35 +64,19 @@ export class CoordinateUtils {
    */
   static isometricToGrid(x, y, tileWidth, tileHeight) {
     try {
-      // Validate input parameters
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error(`Invalid pixel coordinates: x=${x}, y=${y}`);
       }
-      
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
-
-      logger.trace('Converting isometric to grid coordinates', {
-        input: { x, y, tileWidth, tileHeight }
-      }, LOG_CATEGORY.SYSTEM);
-
-      // Account for tile centering offset - subtract half tile dimensions
+      // Subtract half tile dimensions for centering
       const adjustedX = x - (tileWidth / 2);
       const adjustedY = y - (tileHeight / 2);
-      
-      // Convert back to grid coordinates using adjusted coordinates  
-      const gridX = Math.round((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
-      const gridY = Math.round((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
-      
-      const result = { gridX, gridY };
-      
-      logger.trace('Isometric to grid conversion completed', {
-        input: { x, y },
-        output: result
-      }, LOG_CATEGORY.SYSTEM);
-
-      return result;
+      // Reverse the -0.5 offset
+      const gridX = ((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2) + 0.5;
+      const gridY = ((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2) + 0.5;
+      return { gridX: Math.round(gridX), gridY: Math.round(gridY) };
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {
@@ -118,6 +85,12 @@ export class CoordinateUtils {
       });
       throw error;
     }
+  }
+  // Static test utility for round-trip validation
+  static testRoundTrip(gridX, gridY, tileWidth, tileHeight) {
+    const iso = CoordinateUtils.gridToIsometric(gridX, gridY, tileWidth, tileHeight);
+    const grid = CoordinateUtils.isometricToGrid(iso.x, iso.y, tileWidth, tileHeight);
+    return { input: { gridX, gridY }, iso, grid };
   }
   
   /**
