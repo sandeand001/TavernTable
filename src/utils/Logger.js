@@ -40,6 +40,9 @@ export const LOG_CATEGORY = Object.freeze({
   PERFORMANCE: 'performance', // Performance metrics and monitoring
   SECURITY: 'security',       // Security-related events
   USER: 'user',              // User interactions and behavior
+  RENDERING: 'rendering',     // Graphics and display events
+  UI: 'ui',                  // UI-specific events
+  INTERACTION: 'interaction', // Input/interaction events
   API: 'api',                // API calls and responses
   DATABASE: 'database',       // Database operations
   CACHE: 'cache',            // Caching operations
@@ -565,17 +568,64 @@ export class Logger {
    * @param {Object} context - Additional context
    */
   log(level, category, message, data = {}, context = {}) {
+    // Backward-compatibility normalization: accept legacy argument orders
+    // Supported patterns:
+    // 1) log(level:number, category:string, message:string, ...)
+    // 2) legacy: log(level:number, message:string, category:string, ...)
+    // 3) legacy alt: log(message:string, level:number, category:string, ...)
+    const validLevels = new Set(Object.values(LOG_LEVEL));
+    const validCategories = new Set(Object.values(LOG_CATEGORY));
+
+    let normLevel = level;
+    let normCategory = category;
+    let normMessage = message;
+    let normData = data;
+    let normContext = context;
+
+    // Pattern 3: (message, level, category)
+    if (!validLevels.has(level) && validLevels.has(category) && typeof message === 'string') {
+      normLevel = category;
+      normCategory = validCategories.has(message) ? message : LOG_CATEGORY.SYSTEM;
+      normMessage = typeof level === 'string' ? level : String(level ?? '');
+    } else if (validLevels.has(level) && typeof category === 'string' && typeof message === 'string') {
+      // Patterns 1 or 2: decide which string is category
+      if (validCategories.has(category) && !validCategories.has(message)) {
+        // Correct order already
+        normLevel = level;
+        normCategory = category;
+        normMessage = message;
+      } else if (!validCategories.has(category) && validCategories.has(message)) {
+        // Swapped legacy order
+        normLevel = level;
+        normCategory = message;
+        normMessage = category;
+      } else {
+        // Unknown strings; default to given order
+        normLevel = level;
+        normCategory = category;
+        normMessage = message;
+      }
+    }
+
+    // Ensure category/message sane defaults
+    if (!validCategories.has(normCategory)) {
+      normCategory = LOG_CATEGORY.SYSTEM;
+    }
+    if (typeof normMessage !== 'string') {
+      normMessage = String(normMessage ?? '');
+    }
+
     // Check if logging is enabled for this level
-    if (level < this.config.level) return;
+    if (!validLevels.has(normLevel) || normLevel < this.config.level) return;
 
     // Merge context from stack
     const mergedContext = {
       ...this.getCurrentContext(),
-      ...context
+      ...normContext
     };
 
     // Create log entry
-    const logEntry = new LogEntry(level, category, message, data, mergedContext);
+    const logEntry = new LogEntry(normLevel, normCategory, normMessage, normData, mergedContext);
 
     // Send to all output handlers
     for (const handler of this.outputHandlers) {

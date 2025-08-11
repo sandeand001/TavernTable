@@ -7,16 +7,20 @@
  */
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../utils/ErrorHandler.js';
+import { GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
-import { GRID_CONFIG } from '../config/GameConstants.js';
+// import { GRID_CONFIG } from '../config/GameConstants.js';
+import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
+import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 
 export class TerrainManager {
   constructor(gameManager, terrainCoordinator) {
     this.gameManager = gameManager;
     this.terrainCoordinator = terrainCoordinator;
+    this.facesRenderer = new TerrainFacesRenderer(gameManager);
     
     // PIXI containers for terrain rendering
     this.terrainContainer = null;
@@ -86,13 +90,13 @@ export class TerrainManager {
       if (!this.terrainCoordinator.isTerrainModeActive) {
         return;
       }
-      
+
       for (let y = 0; y < this.gameManager.rows; y++) {
         for (let x = 0; x < this.gameManager.cols; x++) {
           this.createTerrainTile(x, y);
         }
       }
-      
+
       logger.log(LOG_LEVEL.DEBUG, 'Initial terrain tiles created', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainManager.createInitialTerrainTiles',
         stage: 'tile_creation',
@@ -102,9 +106,9 @@ export class TerrainManager {
     } catch (error) {
       GameErrors.rendering(error, {
         stage: 'createInitialTerrainTiles',
-        gridDimensions: { 
-          cols: this.gameManager?.cols, 
-          rows: this.gameManager?.rows 
+        gridDimensions: {
+          cols: this.gameManager?.cols,
+          rows: this.gameManager?.rows
         }
       });
       throw error;
@@ -194,6 +198,39 @@ export class TerrainManager {
    */
   hideAllTerrainTiles() {
     try {
+      // Proactively remove any overlay faces attached to terrain tiles
+      try {
+        const children = [...this.terrainContainer.children];
+        children.forEach(child => {
+          if (child && child.isTerrainTile) {
+            if (child.sideFaces) {
+              if (child.sideFaces.parent) {
+                child.sideFaces.parent.removeChild(child.sideFaces);
+              }
+              if (typeof child.sideFaces.destroy === 'function' && !child.sideFaces.destroyed) {
+                child.sideFaces.destroy();
+              }
+              child.sideFaces = null;
+            }
+            if (child.shadowTile) {
+              if (child.shadowTile.parent) {
+                child.shadowTile.parent.removeChild(child.shadowTile);
+              }
+              if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
+                child.shadowTile.destroy();
+              }
+              child.shadowTile = null;
+            }
+            if (child.depressionOverlay) {
+              try { child.removeChild(child.depressionOverlay); } catch { /* ignore */ }
+              if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
+                child.depressionOverlay.destroy();
+              }
+              child.depressionOverlay = null;
+            }
+          }
+        });
+      } catch (_) { /* best-effort cleanup */ }
       this.terrainContainer.visible = false;
       
       logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles hidden', LOG_CATEGORY.SYSTEM, {
@@ -224,6 +261,37 @@ export class TerrainManager {
       
       const tileCount = this.terrainTiles.size;
       
+      // Best-effort removal of overlay faces and effects before batch cleanup
+      try {
+        this.terrainTiles.forEach(tile => {
+          if (tile && tile.sideFaces) {
+            if (tile.sideFaces.parent) {
+              tile.sideFaces.parent.removeChild(tile.sideFaces);
+            }
+            if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) {
+              tile.sideFaces.destroy();
+            }
+            tile.sideFaces = null;
+          }
+          if (tile && tile.shadowTile) {
+            if (tile.shadowTile.parent) {
+              tile.shadowTile.parent.removeChild(tile.shadowTile);
+            }
+            if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
+              tile.shadowTile.destroy();
+            }
+            tile.shadowTile = null;
+          }
+          if (tile && tile.depressionOverlay) {
+            try { tile.removeChild(tile.depressionOverlay); } catch { /* ignore */ }
+            if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) {
+              tile.depressionOverlay.destroy();
+            }
+            tile.depressionOverlay = null;
+          }
+        });
+      } catch (_) { /* ignore */ }
+
       // Use centralized cleanup utility for consistent behavior
       const cleanupResults = TerrainPixiUtils.batchCleanupTerrainTiles(
         this.terrainTiles, 
@@ -365,6 +433,11 @@ export class TerrainManager {
     // Calculate depth value for isometric ordering
     // In isometric view, tiles with higher x+y values should appear behind tiles with lower x+y values
     terrainTile.depthValue = x + y;
+
+  // Defensive: ensure clean visual state
+  terrainTile.shadowTile = null;
+  terrainTile.depressionOverlay = null;
+  terrainTile.sideFaces = null;
     
     return terrainTile;
   }
@@ -418,12 +491,9 @@ export class TerrainManager {
     terrainTile.x = (x - y) * (this.gameManager.tileWidth / 2);
     terrainTile.y = (x + y) * (this.gameManager.tileHeight / 2);
     
-    // Apply elevation effect for ALL heights relative to base level (height 0)
-    // Positive heights: move UP (negative Y offset) to appear elevated
-    // Negative heights: move DOWN (positive Y offset) to appear as depressions
-    // Height 0: no offset (base reference level)
-    const elevationOffset = -height * TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-    terrainTile.y += elevationOffset;
+  // Apply elevation effect using centralized util for consistency
+  const elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
+  terrainTile.y += elevationOffset;
   }
 
   /**
@@ -453,114 +523,8 @@ export class TerrainManager {
         terrainTile.sideFaces = null;
       }
 
-      const hHere = height;
-      const hRight = this.terrainCoordinator.getTerrainHeight(x + 1, y);
-      const hBottom = this.terrainCoordinator.getTerrainHeight(x, y + 1);
-      const hLeft = this.terrainCoordinator.getTerrainHeight(x - 1, y);
-      const hTop = this.terrainCoordinator.getTerrainHeight(x, y - 1);
-
-      const diffRight = Math.max(0, hHere - hRight);
-      const diffBottom = Math.max(0, hHere - hBottom);
-      const diffLeft = Math.max(0, hHere - hLeft);
-      const diffTop = Math.max(0, hHere - hTop);
-
-      if (diffRight === 0 && diffBottom === 0 && diffLeft === 0 && diffTop === 0) {
-        return; // no visible walls
-      }
-
-      const faces = new PIXI.Graphics();
-      const unit = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET; // pixels per height step
-      const downR = diffRight * unit;
-      const downB = diffBottom * unit;
-      const downL = diffLeft * unit;
-      const downT = diffTop * unit;
-
-      // Use grid color for walls to match base grid
-      const wallColor = GRID_CONFIG.TILE_COLOR;
-
-      const w = this.gameManager.tileWidth;
-      const h = this.gameManager.tileHeight;
-
-      const topV = { x: w / 2, y: 0 };
-      const rightV = { x: w, y: h / 2 };
-      const bottomV = { x: w / 2, y: h };
-      const leftV = { x: 0, y: h / 2 };
-
-      // Right wall: along edge top->right
-      if (downR > 0) {
-        const topD = { x: topV.x, y: topV.y + downR };
-        const rightD = { x: rightV.x, y: rightV.y + downR };
-        faces.beginFill(wallColor, 1.0);
-        faces.moveTo(topV.x, topV.y);
-        faces.lineTo(rightV.x, rightV.y);
-        faces.lineTo(rightD.x, rightD.y);
-        faces.lineTo(topD.x, topD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Bottom wall: along edge right->bottom
-      if (downB > 0) {
-        const rightD = { x: rightV.x, y: rightV.y + downB };
-        const bottomD = { x: bottomV.x, y: bottomV.y + downB };
-        faces.beginFill(wallColor, 1.0);
-        faces.moveTo(rightV.x, rightV.y);
-        faces.lineTo(bottomV.x, bottomV.y);
-        faces.lineTo(bottomD.x, bottomD.y);
-        faces.lineTo(rightD.x, rightD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Left wall: along edge bottom->left
-      if (downL > 0) {
-        const bottomD = { x: bottomV.x, y: bottomV.y + downL };
-        const leftD = { x: leftV.x, y: leftV.y + downL };
-        faces.beginFill(wallColor, 1.0);
-        faces.moveTo(bottomV.x, bottomV.y);
-        faces.lineTo(leftV.x, leftV.y);
-        faces.lineTo(leftD.x, leftD.y);
-        faces.lineTo(bottomD.x, bottomD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Top wall: along edge left->top
-      if (downT > 0) {
-        const leftD = { x: leftV.x, y: leftV.y + downT };
-        const topD = { x: topV.x, y: topV.y + downT };
-        faces.beginFill(wallColor, 1.0);
-        faces.moveTo(leftV.x, leftV.y);
-        faces.lineTo(topV.x, topV.y);
-        faces.lineTo(topD.x, topD.y);
-        faces.lineTo(leftD.x, leftD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Position faces and add behind the tile at same depth
-      faces.x = terrainTile.x;
-      faces.y = terrainTile.y;
-      faces.depthValue = terrainTile.depthValue;
-      faces.isShadowTile = true; // treat as background element for ordering
-
-      // Use the tile's parent if available; otherwise fall back to terrainContainer
-      const parent = terrainTile.parent || this.terrainContainer;
-      let tileIndex = 0;
-      try {
-        if (parent && terrainTile.parent === parent && typeof parent.getChildIndex === 'function') {
-          tileIndex = parent.getChildIndex(terrainTile);
-        }
-      } catch (_) {
-        // If not a child yet, keep default index 0
-        tileIndex = 0;
-      }
-      if (parent && typeof parent.addChildAt === 'function') {
-        parent.addChildAt(faces, Math.max(0, tileIndex));
-      } else if (parent && typeof parent.addChild === 'function') {
-        parent.addChild(faces);
-      }
-      terrainTile.sideFaces = faces;
+      const getH = (gx, gy) => this.terrainCoordinator.getTerrainHeight(gx, gy);
+      this.facesRenderer.addOverlayFaces(this.terrainContainer, terrainTile, getH, x, y, height);
     } catch (e) {
       logger.warn('Failed to add 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
     }
@@ -601,49 +565,15 @@ export class TerrainManager {
     // For positive heights, lighten the border
     // For negative heights, darken the border
     if (height > 0) {
-      return this.lightenColor(baseColor, 0.3);
+      return lightenColor(baseColor, 0.3);
     } else if (height < 0) {
-      return this.darkenColor(baseColor, 0.3);
+      return darkenColor(baseColor, 0.3);
     } else {
       return baseColor;
     }
   }
 
-  /**
-   * Lighten a hex color by a factor
-   * @param {number} color - Hex color
-   * @param {number} factor - Lightening factor (0-1)
-   * @returns {number} Lightened hex color
-   */
-  lightenColor(color, factor) {
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
-    
-    const newR = Math.min(255, Math.floor(r + (255 - r) * factor));
-    const newG = Math.min(255, Math.floor(g + (255 - g) * factor));
-    const newB = Math.min(255, Math.floor(b + (255 - b) * factor));
-    
-    return (newR << 16) | (newG << 8) | newB;
-  }
-
-  /**
-   * Darken a hex color by a factor
-   * @param {number} color - Hex color
-   * @param {number} factor - Darkening factor (0-1)
-   * @returns {number} Darkened hex color
-   */
-  darkenColor(color, factor) {
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
-    
-    const newR = Math.max(0, Math.floor(r * (1 - factor)));
-    const newG = Math.max(0, Math.floor(g * (1 - factor)));
-    const newB = Math.max(0, Math.floor(b * (1 - factor)));
-    
-    return (newR << 16) | (newG << 8) | newB;
-  }
+  // lightenColor/darkenColor moved to shared ColorUtils
 
   /**
    * Add shadow effect for elevated terrain
@@ -814,69 +744,62 @@ export class TerrainManager {
    */
   sortAllTerrainTilesByDepth() {
     try {
-      // Get all children and separate them by type
+      // Get all children and group by depth and type
       const allChildren = [...this.terrainContainer.children];
-      const terrainTiles = [];
-      const shadowTiles = [];
-      const otherChildren = [];
-      
-      // Categorize children
-      allChildren.forEach(child => {
-        if (child.isTerrainTile) {
-          terrainTiles.push(child);
-        } else if (child.isShadowTile) {
-          shadowTiles.push(child);
+      const byDepth = new Map();
+      const others = [];
+
+      const addToDepth = (depth, type, obj) => {
+        const key = Number.isFinite(depth) ? depth : 0;
+        if (!byDepth.has(key)) byDepth.set(key, { shadows: [], faces: [], tiles: [] });
+        byDepth.get(key)[type].push(obj);
+      };
+
+      for (const child of allChildren) {
+        if (child.isShadowTile) {
+          addToDepth(child.depthValue || 0, 'shadows', child);
+        } else if (child.isTerrainTile) {
+          addToDepth(child.depthValue || 0, 'tiles', child);
+        } else if (child.isOverlayFace) {
+          addToDepth(child.depthValue || 0, 'faces', child);
         } else {
-          otherChildren.push(child);
-        }
-      });
-      
-      // Sort terrain tiles by depth value
-      terrainTiles.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
-      shadowTiles.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
-      
-      // Clear container and re-add in correct order
-      this.terrainContainer.removeChildren();
-      
-      // Add in depth order: shadows first, then terrain tiles, for each depth level
-      let currentDepth = -1;
-      let terrainIndex = 0;
-      let shadowIndex = 0;
-      
-      while (terrainIndex < terrainTiles.length || shadowIndex < shadowTiles.length) {
-        // Find next depth level to process
-        const nextTerrainDepth = terrainIndex < terrainTiles.length ? 
-                                terrainTiles[terrainIndex].depthValue : Infinity;
-        const nextShadowDepth = shadowIndex < shadowTiles.length ? 
-                               shadowTiles[shadowIndex].depthValue : Infinity;
-        
-        currentDepth = Math.min(nextTerrainDepth, nextShadowDepth);
-        
-        // Add all shadows at current depth level
-        while (shadowIndex < shadowTiles.length && 
-               shadowTiles[shadowIndex].depthValue === currentDepth) {
-          this.terrainContainer.addChild(shadowTiles[shadowIndex]);
-          shadowIndex++;
-        }
-        
-        // Add all terrain tiles at current depth level
-        while (terrainIndex < terrainTiles.length && 
-               terrainTiles[terrainIndex].depthValue === currentDepth) {
-          this.terrainContainer.addChild(terrainTiles[terrainIndex]);
-          terrainIndex++;
+          others.push(child);
         }
       }
+
+      // Sort keys and buckets
+      const depths = [...byDepth.keys()].sort((a, b) => a - b);
+
+      // Clear container and re-add in correct order per depth:
+      // shadows -> faces -> tiles, so faces render behind tiles
+      this.terrainContainer.removeChildren();
+      for (const d of depths) {
+        const bucket = byDepth.get(d);
+        bucket.shadows.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
+        bucket.faces.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
+        bucket.tiles.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
+        bucket.shadows.forEach(ch => this.terrainContainer.addChild(ch));
+        bucket.faces.forEach(ch => this.terrainContainer.addChild(ch));
+        bucket.tiles.forEach(ch => this.terrainContainer.addChild(ch));
+      }
+
+      // Add any other children at the end unchanged
+      others.forEach(child => this.terrainContainer.addChild(child));
       
-      // Add any other children at the end
-      otherChildren.forEach(child => {
-        this.terrainContainer.addChild(child);
-      });
-      
+      // Aggregate counts for logging (avoid referencing undefined locals)
+      const aggregateCounts = [...byDepth.values()].reduce((acc, bucket) => {
+        acc.tiles += bucket.tiles.length;
+        acc.shadows += bucket.shadows.length;
+        acc.faces += bucket.faces.length;
+        return acc;
+      }, { tiles: 0, shadows: 0, faces: 0 });
+
       logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles re-sorted by depth', LOG_CATEGORY.RENDERING, {
         context: 'TerrainManager.sortAllTerrainTilesByDepth',
-        terrainTilesCount: terrainTiles.length,
-        shadowTilesCount: shadowTiles.length,
-        otherChildrenCount: otherChildren.length,
+        tilesCount: aggregateCounts.tiles,
+        shadowTilesCount: aggregateCounts.shadows,
+        facesCount: aggregateCounts.faces,
+        otherChildrenCount: others.length,
         totalChildren: this.terrainContainer.children.length
       });
     } catch (error) {
@@ -1006,30 +929,7 @@ export class TerrainManager {
   /**
    * Clear all terrain tiles from display
    */
-  clearAllTerrainTiles() {
-    try {
-      // Remove all terrain tiles from container
-      for (const [tileKey, tile] of this.terrainTiles) {
-        this.terrainContainer.removeChild(tile);
-      }
-      
-      // Clear the tiles map
-      this.terrainTiles.clear();
-      
-      // Clear update queue
-      this.updateQueue.clear();
-      
-      logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles cleared', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.clearAllTerrainTiles',
-        stage: 'tiles_cleared'
-      });
-    } catch (error) {
-      GameErrors.rendering(error, {
-        stage: 'clearAllTerrainTiles'
-      });
-      throw error;
-    }
-  }
+  // duplicate clearAllTerrainTiles removed; using the primary implementation above
 
   /**
    * Handle grid resize - update terrain container and tiles

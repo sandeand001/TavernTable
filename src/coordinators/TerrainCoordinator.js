@@ -10,8 +10,14 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../uti
 import { GameValidators, Sanitizers } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+// import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { darkenColor } from '../utils/ColorUtils.js';
 import { TerrainValidation } from '../utils/TerrainValidation.js';
+import { TerrainDataStore } from '../terrain/TerrainDataStore.js';
+import { TerrainBrushController } from '../terrain/TerrainBrushController.js';
+import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
+import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -21,17 +27,11 @@ export class TerrainCoordinator {
     // Validate dependencies at construction time
     this.validateDependencies();
     
-    // Terrain modification state
+    // Terrain modification state & helpers
     this.isTerrainModeActive = false;
-    this.currentTerrainTool = 'raise'; // 'raise', 'lower'
-    this.brushSize = 1; // Grid cells affected (1 = single cell)
-    this.heightStep = 1; // Amount to modify height per operation
-    
-    // Terrain data storage - 2D array storing height values
-    this.terrainHeights = null;
-    
-    // Base terrain state - stores permanent terrain modifications
-    this.baseTerrainHeights = null;
+    this.dataStore = new TerrainDataStore(this.gameManager.cols, this.gameManager.rows);
+    this.brush = new TerrainBrushController(this.dataStore);
+    this.faces = new TerrainFacesRenderer(this.gameManager);
     
     // UI state
     this.isDragging = false;
@@ -40,8 +40,8 @@ export class TerrainCoordinator {
     logger.log(LOG_LEVEL.DEBUG, 'TerrainCoordinator initialized', LOG_CATEGORY.SYSTEM, {
       context: 'TerrainCoordinator.constructor',
       stage: 'initialization',
-      defaultTool: this.currentTerrainTool,
-      defaultBrushSize: this.brushSize,
+      defaultTool: this.brush.tool,
+      defaultBrushSize: this.brush.brushSize,
       timestamp: new Date().toISOString()
     });
   }
@@ -143,13 +143,8 @@ export class TerrainCoordinator {
         throw new Error(`Invalid grid dimensions: ${cols}x${rows}`);
       }
       
-      // Initialize 2D array with default height using centralized utility
-      this.terrainHeights = TerrainHeightUtils.createHeightArray(rows, cols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
-      
-      // Initialize base terrain heights if not already set
-      if (!this.baseTerrainHeights) {
-        this.baseTerrainHeights = TerrainHeightUtils.createHeightArray(rows, cols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
-      }
+      // Ensure datastore is sized properly
+      this.dataStore.resize(cols, rows);
       
       logger.log(LOG_LEVEL.DEBUG, 'Terrain data initialized', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainCoordinator.initializeTerrainData',
@@ -284,8 +279,8 @@ export class TerrainCoordinator {
         logger.log(LOG_LEVEL.TRACE, 'Terrain painting session completed', LOG_CATEGORY.USER, {
           context: 'TerrainCoordinator.handleTerrainMouseUp',
           stage: 'painting_complete',
-          tool: this.currentTerrainTool,
-          brushSize: this.brushSize
+          tool: this.brush.tool,
+          brushSize: this.brush.brushSize
         });
       }
     } catch (error) {
@@ -318,26 +313,26 @@ export class TerrainCoordinator {
       }
       
       switch (event.code) {
-        case 'KeyR':
-          if (!event.ctrlKey && !event.altKey) {
-            this.setTerrainTool('raise');
-            event.preventDefault();
-          }
-          break;
-        case 'KeyL':
-          if (!event.ctrlKey && !event.altKey) {
-            this.setTerrainTool('lower');
-            event.preventDefault();
-          }
-          break;
-        case 'BracketLeft': // [
-          this.decreaseBrushSize();
+      case 'KeyR':
+        if (!event.ctrlKey && !event.altKey) {
+          this.setTerrainTool('raise');
           event.preventDefault();
-          break;
-        case 'BracketRight': // ]
-          this.increaseBrushSize();
+        }
+        break;
+      case 'KeyL':
+        if (!event.ctrlKey && !event.altKey) {
+          this.setTerrainTool('lower');
           event.preventDefault();
-          break;
+        }
+        break;
+      case 'BracketLeft': // [
+        this.decreaseBrushSize();
+        event.preventDefault();
+        break;
+      case 'BracketRight': // ]
+        this.increaseBrushSize();
+        event.preventDefault();
+        break;
       }
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
@@ -367,7 +362,7 @@ export class TerrainCoordinator {
       if (heightDisplay) {
         heightDisplay.textContent = currentHeight.toString();
         heightDisplay.style.color = currentHeight === 0 ? '#6b7280' : 
-                                  currentHeight > 0 ? '#10b981' : '#8b5cf6';
+          currentHeight > 0 ? '#10b981' : '#8b5cf6';
       }
       
       // Update height scale visual indicator
@@ -475,17 +470,8 @@ export class TerrainCoordinator {
         return;
       }
       
-      // Apply brush area modification
-      for (let dy = -Math.floor(this.brushSize / 2); dy <= Math.floor(this.brushSize / 2); dy++) {
-        for (let dx = -Math.floor(this.brushSize / 2); dx <= Math.floor(this.brushSize / 2); dx++) {
-          const targetX = gridX + dx;
-          const targetY = gridY + dy;
-          
-          if (this.isValidGridPosition(targetX, targetY)) {
-            this.modifyTerrainHeightAtCell(targetX, targetY);
-          }
-        }
-      }
+      // Apply brush area modification via controller
+      this.brush.applyAt(gridX, gridY);
       
       // Update visual representation
       if (this.terrainManager) {
@@ -507,29 +493,8 @@ export class TerrainCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   modifyTerrainHeightAtCell(gridX, gridY) {
-    const currentHeight = this.terrainHeights[gridY][gridX];
-    let newHeight;
-    
-    if (this.currentTerrainTool === 'raise') {
-      newHeight = Math.min(currentHeight + this.heightStep, TERRAIN_CONFIG.MAX_HEIGHT);
-    } else if (this.currentTerrainTool === 'lower') {
-      newHeight = Math.max(currentHeight - this.heightStep, TERRAIN_CONFIG.MIN_HEIGHT);
-    } else {
-      return; // Unknown tool
-    }
-    
-    // Only update if height actually changed
-    if (newHeight !== currentHeight) {
-      this.terrainHeights[gridY][gridX] = newHeight;
-      
-      logger.log(LOG_LEVEL.TRACE, 'Terrain height modified', LOG_CATEGORY.USER, {
-        context: 'TerrainCoordinator.modifyTerrainHeightAtCell',
-        coordinates: { gridX, gridY },
-        heightChange: { from: currentHeight, to: newHeight },
-        tool: this.currentTerrainTool,
-        heightStep: this.heightStep
-      });
-    }
+  // Delegate to brush controller (kept for compatibility of method name)
+    this.brush.applyAt(gridX, gridY);
   }
 
   /**
@@ -539,12 +504,12 @@ export class TerrainCoordinator {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition(gridX, gridY) {
-    return TerrainValidation.validateTerrainCoordinates(
-      gridX, 
-      gridY, 
-      this.gameManager.cols, 
-      this.gameManager.rows
+    const result = TerrainValidation.validateTerrainCoordinates(
+      gridX,
+      gridY,
+      { cols: this.gameManager.cols, rows: this.gameManager.rows }
     );
+    return !!result?.isValid;
   }
 
   /**
@@ -602,7 +567,7 @@ export class TerrainCoordinator {
    */
   validateTerrainDataConsistency() {
     try {
-      if (!this.terrainHeights || !this.baseTerrainHeights) {
+      if (!this.dataStore?.working || !this.dataStore?.base) {
         return false;
       }
       
@@ -610,23 +575,23 @@ export class TerrainCoordinator {
       const expectedCols = this.gameManager.cols;
       
       // Check terrainHeights dimensions
-      if (this.terrainHeights.length !== expectedRows) {
+      if (this.dataStore.working.length !== expectedRows) {
         return false;
       }
       
-      for (let i = 0; i < this.terrainHeights.length; i++) {
-        if (!Array.isArray(this.terrainHeights[i]) || this.terrainHeights[i].length !== expectedCols) {
+      for (let i = 0; i < this.dataStore.working.length; i++) {
+        if (!Array.isArray(this.dataStore.working[i]) || this.dataStore.working[i].length !== expectedCols) {
           return false;
         }
       }
       
       // Check baseTerrainHeights dimensions
-      if (this.baseTerrainHeights.length !== expectedRows) {
+      if (this.dataStore.base.length !== expectedRows) {
         return false;
       }
       
-      for (let i = 0; i < this.baseTerrainHeights.length; i++) {
-        if (!Array.isArray(this.baseTerrainHeights[i]) || this.baseTerrainHeights[i].length !== expectedCols) {
+      for (let i = 0; i < this.dataStore.base.length; i++) {
+        if (!Array.isArray(this.dataStore.base[i]) || this.dataStore.base[i].length !== expectedCols) {
           return false;
         }
       }
@@ -646,13 +611,15 @@ export class TerrainCoordinator {
       this._validateTerrainSystemForActivation();
       this._resetTerrainContainerSafely();
       this._validateContainerIntegrity();
+      // Ensure base grid visuals are neutralized so overlay doesn't appear stacked
+      this._prepareBaseGridForEditing();
       this._activateTerrainMode();
       this._loadTerrainStateAndDisplay();
       
       logger.log(LOG_LEVEL.INFO, 'Terrain mode enabled with enhanced safety checks', LOG_CATEGORY.USER, {
         context: 'TerrainCoordinator.enableTerrainMode',
-        tool: this.currentTerrainTool,
-        brushSize: this.brushSize,
+        tool: this.brush.tool,
+        brushSize: this.brush.brushSize,
         baseTerrainLoaded: true,
         terrainManagerReady: !!this.terrainManager,
         containerIntegrity: 'validated',
@@ -660,6 +627,72 @@ export class TerrainCoordinator {
       });
     } catch (error) {
       this._handleTerrainModeActivationError(error);
+    }
+  }
+
+  /**
+   * DECOMPOSED METHOD: Prepare base grid visuals for editing overlay
+   * Resets per-tile elevation offsets, shadows, and base 3D faces so
+   * the editing overlay is the sole visual representation of height.
+   * @private
+   */
+  _prepareBaseGridForEditing() {
+    try {
+      if (this.gameManager?.gridContainer?.children) {
+        this.gameManager.gridContainer.children.forEach(child => {
+          if (child && child.isGridTile) {
+            // Reset tile Y to baseline to avoid double elevation with overlay
+            if (typeof child.baseIsoY === 'number') {
+              child.y = child.baseIsoY;
+            }
+
+            // Remove any existing shadow tiles
+            if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
+              child.parent.removeChild(child.shadowTile);
+              if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
+                child.shadowTile.destroy();
+              }
+              child.shadowTile = null;
+            }
+
+            // Remove any depression overlays mistakenly attached to base tiles
+            if (child.depressionOverlay) {
+              try {
+                if (child.children?.includes(child.depressionOverlay)) {
+                  child.removeChild(child.depressionOverlay);
+                }
+                if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
+                  child.depressionOverlay.destroy();
+                }
+              } catch (_) { /* best-effort */ }
+              child.depressionOverlay = null;
+            }
+
+            // Remove any existing base 3D faces
+            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
+              child.parent.removeChild(child.baseSideFaces);
+              if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
+                child.baseSideFaces.destroy();
+              }
+              child.baseSideFaces = null;
+            }
+
+            // Remove any overlay side faces accidentally lingering on base tiles
+            if (child.sideFaces && child.parent?.children?.includes(child.sideFaces)) {
+              child.parent.removeChild(child.sideFaces);
+              if (typeof child.sideFaces.destroy === 'function' && !child.sideFaces.destroyed) {
+                child.sideFaces.destroy();
+              }
+              child.sideFaces = null;
+            }
+          }
+        });
+      }
+    } catch (error) {
+      logger.log(LOG_LEVEL.DEBUG, 'Error preparing base grid for editing', LOG_CATEGORY.RENDERING, {
+        context: 'TerrainCoordinator._prepareBaseGridForEditing',
+        error: error.message
+      });
     }
   }
 
@@ -685,18 +718,24 @@ export class TerrainCoordinator {
         tilesMapSizeBefore: this.terrainManager.terrainTiles.size
       });
       
-      // Force clear terrain container safely
+      // Force clear terrain container safely using centralized utility
       try {
-        this.terrainManager.terrainContainer.removeChildren();
-        this.terrainManager.terrainTiles.clear();
-        this.terrainManager.updateQueue.clear();
-        this.terrainManager.isUpdating = false;
+        TerrainPixiUtils.resetContainer(
+          this.terrainManager.terrainContainer,
+          'terrainContainer',
+          'TerrainCoordinator.enableTerrainMode.reset'
+        );
       } catch (containerError) {
         logger.warn('Error during container reset, continuing', {
           context: 'TerrainCoordinator.enableTerrainMode',
           error: containerError.message
         });
       }
+
+      // Clear manager state
+      this.terrainManager.terrainTiles.clear();
+      this.terrainManager.updateQueue.clear();
+      this.terrainManager.isUpdating = false;
     }
   }
 
@@ -717,6 +756,29 @@ export class TerrainCoordinator {
       // Recreate terrain container
       this.terrainManager.terrainContainer = new PIXI.Container();
       this.gameManager.gridContainer.addChild(this.terrainManager.terrainContainer);
+    }
+
+    // Ensure terrain overlay container is on top of base tiles
+    try {
+      const parent = this.gameManager.gridContainer;
+      const overlay = this.terrainManager?.terrainContainer;
+      if (parent && overlay && parent.children?.length) {
+        const topIndex = parent.children.length - 1;
+        if (typeof parent.setChildIndex === 'function') {
+          parent.setChildIndex(overlay, topIndex);
+        } else {
+          // Fallback: remove and re-add to bring to front
+          if (parent.children.includes(overlay)) {
+            parent.removeChild(overlay);
+          }
+          parent.addChild(overlay);
+        }
+      }
+    } catch (zErr) {
+      logger.log(LOG_LEVEL.WARN, 'Failed to raise terrain overlay container to top', LOG_CATEGORY.RENDERING, {
+        context: 'TerrainCoordinator._validateContainerIntegrity',
+        error: zErr.message
+      });
     }
   }
 
@@ -761,12 +823,12 @@ export class TerrainCoordinator {
       terrainContainerReady: !!this.terrainManager?.terrainContainer,
       terrainContainerDestroyed: this.terrainManager?.terrainContainer?.destroyed,
       dataStructures: {
-        terrainHeights: !!this.terrainHeights,
-        baseTerrainHeights: !!this.baseTerrainHeights
+        terrainHeights: !!this.dataStore?.working,
+        baseTerrainHeights: !!this.dataStore?.base
       }
     };
     
-    GameErrors.state(error, errorContext);
+  GameErrors.gameState(error, errorContext);
     throw error;
   }
 
@@ -822,7 +884,7 @@ export class TerrainCoordinator {
         permanentIntegration: true
       });
     } catch (error) {
-      GameErrors.state(error, {
+      GameErrors.gameState(error, {
         stage: 'disableTerrainMode',
         context: 'TerrainCoordinator.disableTerrainMode'
       });
@@ -855,26 +917,43 @@ export class TerrainCoordinator {
       });
     }
     
-    this.currentTerrainTool = sanitizedTool;
+    this.brush.setTool(sanitizedTool);
     
     logger.log(LOG_LEVEL.DEBUG, 'Terrain tool changed', LOG_CATEGORY.USER, {
       context: 'TerrainCoordinator.setTerrainTool',
-      newTool: this.currentTerrainTool,
+      newTool: this.brush.tool,
       previousTool: tool !== sanitizedTool ? tool : 'same',
       validationMethod: typeof Sanitizers?.enum === 'function' ? 'enum' : 'fallback'
     });
   }
 
   /**
+   * Brush size proxy for UI and render calls
+   * Getter returns current brush size from controller.
+   * Setter clamps value within config bounds.
+   */
+  get brushSize() {
+    return this.brush?.brushSize ?? TERRAIN_CONFIG.MIN_BRUSH_SIZE;
+  }
+
+  set brushSize(value) {
+    if (!Number.isFinite(value)) return;
+    const clamped = Math.max(TERRAIN_CONFIG.MIN_BRUSH_SIZE, Math.min(TERRAIN_CONFIG.MAX_BRUSH_SIZE, Math.floor(value)));
+    if (this.brush) {
+      this.brush.brushSize = clamped;
+    }
+  }
+
+  /**
    * Increase brush size
    */
   increaseBrushSize() {
-    const newSize = Math.min(this.brushSize + 1, TERRAIN_CONFIG.MAX_BRUSH_SIZE);
-    if (newSize !== this.brushSize) {
-      this.brushSize = newSize;
+    const before = this.brush.brushSize;
+    this.brush.increaseBrush();
+    if (this.brush.brushSize !== before) {
       logger.log(LOG_LEVEL.DEBUG, 'Brush size increased', LOG_CATEGORY.USER, {
         context: 'TerrainCoordinator.increaseBrushSize',
-        newSize: this.brushSize
+        newSize: this.brush.brushSize
       });
     }
   }
@@ -883,12 +962,12 @@ export class TerrainCoordinator {
    * Decrease brush size
    */
   decreaseBrushSize() {
-    const newSize = Math.max(this.brushSize - 1, TERRAIN_CONFIG.MIN_BRUSH_SIZE);
-    if (newSize !== this.brushSize) {
-      this.brushSize = newSize;
+    const before = this.brush.brushSize;
+    this.brush.decreaseBrush();
+    if (this.brush.brushSize !== before) {
       logger.log(LOG_LEVEL.DEBUG, 'Brush size decreased', LOG_CATEGORY.USER, {
         context: 'TerrainCoordinator.decreaseBrushSize',
-        newSize: this.brushSize
+        newSize: this.brush.brushSize
       });
     }
   }
@@ -900,8 +979,8 @@ export class TerrainCoordinator {
    * @returns {number} Terrain height
    */
   getTerrainHeight(gridX, gridY) {
-    // Defensive bounds checks to avoid out-of-range indexing
-    const heights = this.terrainHeights;
+  // Defensive bounds checks to avoid out-of-range indexing
+    const heights = this.dataStore?.working;
     if (!heights || !Array.isArray(heights)) {
       return TERRAIN_CONFIG.DEFAULT_HEIGHT;
     }
@@ -960,7 +1039,7 @@ export class TerrainCoordinator {
   handleGridResize(newCols, newRows) {
     try {
       // Backup existing terrain data if needed
-      const oldHeights = this.terrainHeights;
+      const oldHeights = this.dataStore.working;
       const oldCols = this.gameManager.cols;
       const oldRows = this.gameManager.rows;
       
@@ -975,7 +1054,7 @@ export class TerrainCoordinator {
         
         for (let y = 0; y < copyRows; y++) {
           for (let x = 0; x < copyCols; x++) {
-            this.terrainHeights[y][x] = oldHeights[y][x];
+            this.dataStore.working[y][x] = oldHeights[y][x];
           }
         }
       }
@@ -1001,7 +1080,7 @@ export class TerrainCoordinator {
    */
   loadBaseTerrainIntoWorkingState() {
     try {
-      if (!this.baseTerrainHeights) {
+      if (!this.dataStore.base) {
         logger.warn('No base terrain heights available, initializing default state', {
           context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState'
         });
@@ -1010,7 +1089,7 @@ export class TerrainCoordinator {
       }
       
       // Deep copy base terrain heights into working state
-      this.terrainHeights = this.baseTerrainHeights.map(row => [...row]);
+      this.dataStore.loadBaseIntoWorking();
       
       logger.log(LOG_LEVEL.DEBUG, 'Base terrain loaded into working state', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState',
@@ -1020,7 +1099,7 @@ export class TerrainCoordinator {
         }
       });
     } catch (error) {
-      GameErrors.state(error, {
+  GameErrors.gameState(error, {
         stage: 'loadBaseTerrainIntoWorkingState',
         context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState'
       });
@@ -1049,11 +1128,11 @@ export class TerrainCoordinator {
    * @throws {Error} If requirements are not met
    */
   _validateTerrainApplicationRequirements() {
-    if (!this.gameManager.gridContainer || !this.terrainHeights) {
+    if (!this.gameManager.gridContainer || !this.dataStore.working) {
       logger.warn('Cannot apply terrain to base grid - missing requirements', {
         context: 'TerrainCoordinator._validateTerrainApplicationRequirements',
         hasGridContainer: !!this.gameManager.gridContainer,
-        hasTerrainHeights: !!this.terrainHeights
+        hasTerrainHeights: !!this.dataStore.working
       });
       throw new Error('Missing requirements for terrain application');
     }
@@ -1065,7 +1144,7 @@ export class TerrainCoordinator {
    */
   _initializeBaseTerrainHeights() {
     // Update base terrain heights with current modifications
-    this.baseTerrainHeights = this.terrainHeights.map(row => [...row]);
+    this.dataStore.applyWorkingToBase();
   }
 
   /**
@@ -1080,7 +1159,7 @@ export class TerrainCoordinator {
     // Only destroy/recreate when absolutely necessary
     for (let y = 0; y < this.gameManager.rows; y++) {
       for (let x = 0; x < this.gameManager.cols; x++) {
-        const height = this.baseTerrainHeights[y][x];
+        const height = this.dataStore.base[y][x];
         
         try {
           // Try to update existing tile first (safer)
@@ -1128,7 +1207,7 @@ export class TerrainCoordinator {
    * @throws {Error} Re-throws the error after logging
    */
   _handleTerrainApplicationError(error) {
-    GameErrors.state(error, {
+  GameErrors.gameState(error, {
       stage: 'applyTerrainToBaseGrid',
       context: 'TerrainCoordinator.applyTerrainToBaseGrid'
     });
@@ -1396,8 +1475,8 @@ export class TerrainCoordinator {
       if (typeof tile.baseIsoY === 'number') {
         tile.y = tile.baseIsoY;
       }
-      const elevationOffset = height * TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-      tile.y = tile.y - elevationOffset;
+  const elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
+  tile.y += elevationOffset;
       
       // Add subtle border effect for raised/lowered appearance
       if (height > TERRAIN_CONFIG.DEFAULT_HEIGHT) {
@@ -1462,7 +1541,7 @@ export class TerrainCoordinator {
   // Add neighbor-aware 3D faces for base grid tiles (all four sides)
   _addBase3DFaces(tile, x, y, height) {
     try {
-      // Cleanup previous base faces
+      // Cleanup previous base faces if any
       if (tile.baseSideFaces && tile.parent?.children?.includes(tile.baseSideFaces)) {
         tile.parent.removeChild(tile.baseSideFaces);
         if (typeof tile.baseSideFaces.destroy === 'function' && !tile.baseSideFaces.destroyed) {
@@ -1471,134 +1550,16 @@ export class TerrainCoordinator {
         tile.baseSideFaces = null;
       }
 
-      // Only skip if baseTerrainHeights is missing; allow height 0 to render faces when neighbors are lower
-      if (!this.baseTerrainHeights) {
-        return;
-      }
+      if (!this.dataStore?.base) return;
 
-      const rows = this.baseTerrainHeights.length;
-      const cols = this.baseTerrainHeights[0]?.length || 0;
+      const rows = this.dataStore.base.length;
+      const cols = this.dataStore.base[0]?.length || 0;
       const getBase = (gx, gy) => (gx >= 0 && gy >= 0 && gy < rows && gx < cols)
-        ? this.baseTerrainHeights[gy][gx]
+        ? this.dataStore.base[gy][gx]
         : TERRAIN_CONFIG.DEFAULT_HEIGHT;
 
-      const hHere = height;
-      const hRight = getBase(x + 1, y);
-      const hBottom = getBase(x, y + 1);
-      const hLeft = getBase(x - 1, y);
-      const hTop = getBase(x, y - 1);
-
-      const diffRight = Math.max(0, hHere - hRight);
-      const diffBottom = Math.max(0, hHere - hBottom);
-      const diffLeft = Math.max(0, hHere - hLeft);
-      const diffTop = Math.max(0, hHere - hTop);
-
-      if (diffRight === 0 && diffBottom === 0 && diffLeft === 0 && diffTop === 0) {
-        return; // nothing to draw
-      }
-
-      const faces = new PIXI.Graphics();
-      const unit = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-      const downR = diffRight * unit;
-      const downB = diffBottom * unit;
-      const downL = diffLeft * unit;
-      const downT = diffTop * unit;
-
-      const baseTopColor = GRID_CONFIG.TILE_COLOR;
-      const darken = (hex, factor) => {
-        const r = Math.max(0, ((hex >> 16) & 0xff) * (1 - factor));
-        const g = Math.max(0, ((hex >> 8) & 0xff) * (1 - factor));
-        const b = Math.max(0, (hex & 0xff) * (1 - factor));
-        return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
-      };
-      // Slightly different darkening per side for subtle shading
-      const rightColor = darken(baseTopColor, 0.25);
-      const bottomColor = darken(baseTopColor, 0.4);
-      const leftColor = darken(baseTopColor, 0.35);
-      const topColor = darken(baseTopColor, 0.2);
-
-      const w = this.gameManager.tileWidth;
-      const h = this.gameManager.tileHeight;
-      const top = { x: w / 2, y: 0 };
-      const right = { x: w, y: h / 2 };
-      const bottom = { x: w / 2, y: h };
-      const left = { x: 0, y: h / 2 };
-
-      // Right wall: along edge top -> right
-      if (downR > 0) {
-        const topD = { x: top.x, y: top.y + downR };
-        const rightD = { x: right.x, y: right.y + downR };
-        faces.beginFill(rightColor, 1.0);
-        faces.moveTo(top.x, top.y);
-        faces.lineTo(right.x, right.y);
-        faces.lineTo(rightD.x, rightD.y);
-        faces.lineTo(topD.x, topD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Bottom wall: along edge right -> bottom
-      if (downB > 0) {
-        const rightD = { x: right.x, y: right.y + downB };
-        const bottomD = { x: bottom.x, y: bottom.y + downB };
-        faces.beginFill(bottomColor, 1.0);
-        faces.moveTo(right.x, right.y);
-        faces.lineTo(bottom.x, bottom.y);
-        faces.lineTo(bottomD.x, bottomD.y);
-        faces.lineTo(rightD.x, rightD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Left wall: along edge bottom -> left
-      if (downL > 0) {
-        const bottomD = { x: bottom.x, y: bottom.y + downL };
-        const leftD = { x: left.x, y: left.y + downL };
-        faces.beginFill(leftColor, 1.0);
-        faces.moveTo(bottom.x, bottom.y);
-        faces.lineTo(left.x, left.y);
-        faces.lineTo(leftD.x, leftD.y);
-        faces.lineTo(bottomD.x, bottomD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Top wall: along edge left -> top
-      if (downT > 0) {
-        const leftD = { x: left.x, y: left.y + downT };
-        const topD = { x: top.x, y: top.y + downT };
-        faces.beginFill(topColor, 1.0);
-        faces.moveTo(left.x, left.y);
-        faces.lineTo(top.x, top.y);
-        faces.lineTo(topD.x, topD.y);
-        faces.lineTo(leftD.x, leftD.y);
-        faces.closePath();
-        faces.endFill();
-      }
-
-      // Position and add faces behind the tile safely
-      faces.x = tile.x;
-      faces.y = tile.y;
-
-      const parent = tile.parent;
-      if (!parent) {
-        tile.baseSideFaces = faces; // defer; will be harmless without parent
-        return;
-      }
-      let idx = 0;
-      try {
-        if (typeof parent.getChildIndex === 'function') {
-          idx = parent.getChildIndex(tile);
-        }
-      } catch (_) {
-        idx = 0;
-      }
-      if (typeof parent.addChildAt === 'function') {
-        parent.addChildAt(faces, Math.max(0, idx));
-      } else if (typeof parent.addChild === 'function') {
-        parent.addChild(faces);
-      }
-      tile.baseSideFaces = faces;
+      // Delegate to shared FacesRenderer for consistency
+      this.faces.addBaseFaces(tile, x, y, height, getBase);
     } catch (e) {
       logger.warn('Failed to add base 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
     }

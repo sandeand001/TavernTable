@@ -39,7 +39,7 @@ html, body {
 }
 
 /* Responsive adjustments for dice panel */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   #dice-panel {
     min-width: auto; /* Allow smaller width on mobile */
     max-width: calc(100vw - 20px); /* Take available width on mobile */
@@ -80,7 +80,7 @@ html, body {
 }
 
 /* Responsive adjustments for smaller screens */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   #token-panel {
     max-width: calc(100vw - 20px); /* Leave 10px margin on each side */
     left: 10px;
@@ -89,7 +89,7 @@ html, body {
   }
 }
 
-@media (max-height: 600px) {
+@media (height <= 600px) {
   #token-panel {
     max-height: calc(100vh - 80px); /* Even more aggressive height limit on short screens */
     padding: 6px; /* Reduce padding to save space */
@@ -393,6 +393,7 @@ html, body {
   padding: 12px;
   margin-bottom: 12px;
   overflow-y: auto;
+
   /* Allow content to expand but with reasonable limits */
   min-height: 200px;
   max-height: calc(100vh - 250px); /* Conservative limit to ensure footer visibility */
@@ -436,28 +437,7 @@ html, body {
   background-color: #b71c1c;
 }
 
-/* Creature Buttons in Grid Layout */
-#creature-content {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-  margin-bottom: 16px;
-}
-
-#creature-content button {
-  padding: 8px 4px;
-  background-color: #444;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.2s ease;
-}
+/* Duplicate creature-content styles removed (consolidated earlier for responsive grid) */
 
 #creature-content button:hover {
   background-color: #555;
@@ -560,29 +540,16 @@ html, body {
   line-height: 1.5;
 }
 
-/* Help section */
-.help-section {
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
-  padding: 12px;
-  margin-top: 12px;
-}
-
-.help-text {
-  font-size: 12px;
-  color: #aaa;
-  margin-bottom: 4px;
-  line-height: 1.4;
-}
+/* Duplicate help-section/help-text styles removed to avoid conflicts; using earlier definitions */
 
 /* Responsive adjustments */
-@media (max-width: 1200px) {
+@media (width <= 1200px) {
   #right-sidebar {
     width: 300px;
   }
 }
 
-@media (max-width: 900px) {
+@media (width <= 900px) {
   #right-sidebar {
     width: 280px;
   }
@@ -603,7 +570,7 @@ html, body {
   }
 }
 
-@media (max-width: 600px) {
+@media (width <= 600px) {
   #right-sidebar {
     width: 100vw;
     position: fixed;
@@ -622,26 +589,26 @@ html, body {
 }
 
 /* Adjust game container to account for sidebar */
-@media (min-width: 601px) {
+@media (width >= 601px) {
   #game-container {
     width: calc(100vw - 350px);
   }
 }
 
-@media (max-width: 1200px) and (min-width: 901px) {
+@media (width <= 1200px) and (width >= 901px) {
   #game-container {
     width: calc(100vw - 300px);
   }
 }
 
-@media (max-width: 900px) and (min-width: 601px) {
+@media (width <= 900px) and (width >= 601px) {
   #game-container {
     width: calc(100vw - 280px);
   }
 }
 
-/* Hide old token panel since we moved it to sidebar */
-#token-panel {
+/* Hide old token panel since we moved it to sidebar (use more specific selector to avoid duplicate) */
+body #token-panel {
   display: none;
 }
 
@@ -894,7 +861,7 @@ html, body {
 }
 
 /* Responsive adjustments for terrain tools */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .tool-buttons {
     flex-direction: column;
     gap: 6px;

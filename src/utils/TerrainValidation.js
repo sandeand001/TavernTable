@@ -35,20 +35,23 @@ export class TerrainValidation {
         result.details.coordinatorInitialized = !!terrainCoordinator.isInitialized;
         result.details.terrainModeActive = !!terrainCoordinator.isTerrainModeActive;
         
-        // Validate height data structures
-        if (!terrainCoordinator.terrainHeights) {
-          result.errors.push('TerrainCoordinator terrainHeights is null');
+        // Validate height data structures (support legacy fields and new dataStore)
+        const workingHeights = terrainCoordinator.terrainHeights || terrainCoordinator.dataStore?.working;
+        const baseHeights = terrainCoordinator.baseTerrainHeights || terrainCoordinator.dataStore?.base;
+
+        if (!workingHeights) {
+          result.errors.push('TerrainCoordinator working heights are missing (terrainHeights or dataStore.working)');
           result.isValid = false;
-        } else if (!TerrainHeightUtils.isValidHeightArray(terrainCoordinator.terrainHeights)) {
-          result.errors.push('TerrainCoordinator terrainHeights is invalid');
+        } else if (!TerrainHeightUtils.isValidHeightArray(workingHeights)) {
+          result.errors.push('TerrainCoordinator working heights are invalid');
           result.isValid = false;
         }
 
-        if (!terrainCoordinator.baseTerrainHeights) {
-          result.errors.push('TerrainCoordinator baseTerrainHeights is null');
+        if (!baseHeights) {
+          result.errors.push('TerrainCoordinator base heights are missing (baseTerrainHeights or dataStore.base)');
           result.isValid = false;
-        } else if (!TerrainHeightUtils.isValidHeightArray(terrainCoordinator.baseTerrainHeights)) {
-          result.errors.push('TerrainCoordinator baseTerrainHeights is invalid');
+        } else if (!TerrainHeightUtils.isValidHeightArray(baseHeights)) {
+          result.errors.push('TerrainCoordinator base heights are invalid');
           result.isValid = false;
         }
 

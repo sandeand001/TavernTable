@@ -8,7 +8,6 @@
  */
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { GameErrors } from './ErrorHandler.js';
 
 export class TerrainPixiUtils {
   /**
@@ -95,6 +94,38 @@ export class TerrainPixiUtils {
       }
 
       let cleanupSuccess = true;
+
+      // Clean up sibling faces (overlay/base) that were added to the container behind the tile
+      if (tile.sideFaces) {
+        const facesRemoved = this.safeRemoveFromContainer(tile.sideFaces, container, `${context}.sideFacesCleanup`)
+          || this.safeRemoveFromContainer(tile.sideFaces, tile.parent, `${context}.sideFacesCleanup`);
+        const facesDestroyed = this.safeDestroyPixiObject(tile.sideFaces, `${context}.sideFacesCleanup`);
+        tile.sideFaces = null;
+        if (!facesRemoved || !facesDestroyed) {
+          logger.log(LOG_LEVEL.WARN, 'Partial sideFaces cleanup', LOG_CATEGORY.SYSTEM, {
+            context,
+            tileKey,
+            facesRemoved,
+            facesDestroyed
+          });
+          cleanupSuccess = false;
+        }
+      }
+      if (tile.baseSideFaces) {
+        const baseFacesRemoved = this.safeRemoveFromContainer(tile.baseSideFaces, container, `${context}.baseFacesCleanup`)
+          || this.safeRemoveFromContainer(tile.baseSideFaces, tile.parent, `${context}.baseFacesCleanup`);
+        const baseFacesDestroyed = this.safeDestroyPixiObject(tile.baseSideFaces, `${context}.baseFacesCleanup`);
+        tile.baseSideFaces = null;
+        if (!baseFacesRemoved || !baseFacesDestroyed) {
+          logger.log(LOG_LEVEL.WARN, 'Partial baseSideFaces cleanup', LOG_CATEGORY.SYSTEM, {
+            context,
+            tileKey,
+            baseFacesRemoved,
+            baseFacesDestroyed
+          });
+          cleanupSuccess = false;
+        }
+      }
 
       // Clean up shadow tile if present
       if (tile.shadowTile) {
@@ -323,7 +354,7 @@ export class TerrainPixiUtils {
 
       const success = successfulRemovals === childCount;
       
-      logger.log(LOG_LEVEL.INFO, `Container reset completed`, LOG_CATEGORY.SYSTEM, {
+      logger.log(LOG_LEVEL.INFO, 'Container reset completed', LOG_CATEGORY.SYSTEM, {
         context,
         containerName,
         childCount,
