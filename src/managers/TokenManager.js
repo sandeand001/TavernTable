@@ -9,7 +9,6 @@ import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
-import { getSpriteOffset } from '../config/SpriteOffsets.js';
 
 // Import creature creation functions
 import { 
@@ -212,25 +211,11 @@ export class TokenManager {
         this.gameManager.tileWidth, 
         this.gameManager.tileHeight
       );
-      // Terrain elevation offset
-      let height = 0;
-      try {
-        height = this.gameManager.getTerrainHeight?.(gridX, gridY) ?? 0;
-      } catch {}
-      const yOffset = height * (this.gameManager.tileHeight * 0.5);
-      creature.setPosition(isoCoords.x, isoCoords.y + yOffset);
-      // Apply global offset (5,7) if terrain height is 0
-      if (height === 0 && creature.sprite) {
-        creature.sprite.x += 5;
-        creature.sprite.y += 7;
-        creature.sprite.__offsetApplied = true;
-      }
-
-      // Set zIndex for occlusion: base depth by x+y, add elevation bias
+      creature.setPosition(isoCoords.x, isoCoords.y);
+      // Ensure token renders above its tile but respects depth ordering
       if (creature.sprite) {
-        const depth = gridX + gridY;
-        const elevationBias = Math.round((height || 0) * 2);
-        creature.sprite.zIndex = depth * 100 + 10 + elevationBias;
+        const depth = gridX + gridY; // same metric tiles use
+        creature.sprite.zIndex = depth * 100 + 1; // tiles: depth*100
       }
       
       // Store token info and set up interactions
@@ -239,7 +224,7 @@ export class TokenManager {
       logger.info(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`, {
         creatureType: this.selectedTokenType,
         coordinates: { gridX, gridY },
-        position: { base: isoCoords, offsetApplied: (height === 0 ? { dx: 5, dy: 7 } : { dx: 0, dy: 0 }), final: { x: creature.sprite.x, y: creature.sprite.y } }
+        position: isoCoords
       }, LOG_CATEGORY.USER);
     } catch (error) {
       const errorHandler = new ErrorHandler();
@@ -320,35 +305,22 @@ export class TokenManager {
 
       // Position at diamond center using CoordinateUtils
       const isoCoords = CoordinateUtils.gridToIsometric(clampedCoords.gridX, clampedCoords.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      // Terrain elevation offset
-      let height = 0;
-      try {
-        height = this.gameManager.getTerrainHeight?.(clampedCoords.gridX, clampedCoords.gridY) ?? 0;
-      } catch {}
-      const yOffset = height * (this.gameManager.tileHeight * 0.5);
+      
       token.x = isoCoords.x;
-      token.y = isoCoords.y + yOffset;
-      // Apply global offset (5,7) if terrain height is 0
-      if (height === 0) {
-        token.x += 5;
-        token.y += 7;
-        token.__offsetApplied = true;
-      }
-      // Update zIndex for occlusion
-      const depth = clampedCoords.gridX + clampedCoords.gridY;
-      const elevationBias = Math.round((height || 0) * 2);
-      token.zIndex = depth * 100 + 10 + elevationBias;
+      token.y = isoCoords.y;
+  // Maintain correct layering after snapping
+  const newDepth = clampedCoords.gridX + clampedCoords.gridY;
+  token.zIndex = newDepth * 100 + 1;
+      
       // Update the token's grid position in the placedTokens array
       const tokenEntry = this.placedTokens.find(t => t.creature && t.creature.sprite === token);
       if (tokenEntry) {
         tokenEntry.gridX = clampedCoords.gridX;
         tokenEntry.gridY = clampedCoords.gridY;
-        tokenEntry.terrainHeight = height;
         logger.debug(`Token snapped to grid (${clampedCoords.gridX}, ${clampedCoords.gridY})`, {
           coordinates: clampedCoords,
           originalPosition: { localX, localY },
-          newPosition: { x: token.x, y: token.y },
-          terrain: { height, yOffset }
+          newPosition: isoCoords
         }, LOG_CATEGORY.USER);
       }
     } catch (error) {
@@ -410,9 +382,11 @@ export class TokenManager {
         this.isRightDragging = true;
         this.alpha = 0.7; // Visual feedback - make semi-transparent
         this.dragData = event.data;
-        
-        // Store initial position for potential cancellation
-        this.dragStartX = this.x;
+        // Capture starting pointer local position and compute offset so cursor "grabs" sprite at contact point
+        const startLocal = this.dragData.getLocalPosition(this.parent);
+        this.dragOffsetX = this.x - startLocal.x;
+        this.dragOffsetY = this.y - startLocal.y;
+        this.dragStartX = this.x; // for potential future cancel logic
         this.dragStartY = this.y;
         
         event.stopPropagation();
@@ -420,27 +394,40 @@ export class TokenManager {
       }
     });
     
-    // Mouse move - update token position if right-dragging
-    sprite.on('pointermove', function() {
+    // Mouse move - update token position if right-dragging (allow full directional movement)
+    const gm = this.gameManager; // capture for closure
+    sprite.on('pointermove', function(event) {
       if (this.isRightDragging && this.dragData) {
-        const newPosition = this.dragData.getLocalPosition(this.parent);
-        this.x = newPosition.x;
-        this.y = newPosition.y;
+        const moveData = event?.data || this.dragData;
+        const newLocal = moveData.getLocalPosition(this.parent);
+        const candidateX = newLocal.x + (this.dragOffsetX || 0);
+        const candidateY = newLocal.y + (this.dragOffsetY || 0);
+        this.x = candidateX;
+        this.y = candidateY;
+        // Dynamic zIndex so dragging "toward user" (down) reorders correctly
+        if (gm) {
+          const gridCoords = CoordinateUtils.isometricToGrid(candidateX, candidateY, gm.tileWidth, gm.tileHeight);
+          this.zIndex = (gridCoords.gridX + gridCoords.gridY) * 100 + 1;
+        }
       }
     });
     
     // Right mouse button up - end dragging and snap to grid
     sprite.on('pointerup', function(event) {
-      if (this.isRightDragging && event.data.originalEvent.button === 2) {
+      // Some browsers report button=0 on pointerup for a right-button drag; rely on state instead of button check
+      if (this.isRightDragging) {
         logger.debug(`Right-drag ended on ${this.tokenData.type} - snapping to grid`);
         
         this.isRightDragging = false;
         this.alpha = 1.0; // Restore full opacity
         this.dragData = null;
+  this.dragOffsetX = this.dragOffsetY = undefined;
         
         // Snap to grid using the global snap function
         if (window.snapToGrid) {
           window.snapToGrid(this);
+        } else if (gm?.tokenManager) {
+          gm.tokenManager.snapToGrid(this);
         }
         
         event.stopPropagation();
@@ -455,12 +442,36 @@ export class TokenManager {
         this.isRightDragging = false;
         this.alpha = 1.0;
         this.dragData = null;
+        this.dragOffsetX = this.dragOffsetY = undefined;
         
         // Snap to grid
         if (window.snapToGrid) {
           window.snapToGrid(this);
+        } else if (gm?.tokenManager) {
+          gm.tokenManager.snapToGrid(this);
         }
       }
     });
+
+    // One-time context menu suppression for right-drag UX
+    if (!window.__tt_context_menu_suppressed && this.gameManager?.app?.view) {
+      window.__tt_context_menu_suppressed = true;
+      this.gameManager.app.view.addEventListener('contextmenu', e => {
+        if (e.target === this.gameManager.app.view) {
+          e.preventDefault();
+        }
+      });
+    }
+
+    // Ensure a global snapToGrid bridge exists (backward compatibility for existing handlers)
+    if (typeof window !== 'undefined' && !window.snapToGrid) {
+      window.snapToGrid = (tokenSprite) => {
+        try {
+          this.snapToGrid(tokenSprite);
+        } catch (e) {
+          console.error('snapToGrid bridge error', e);
+        }
+      };
+    }
   }
 }

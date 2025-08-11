@@ -15,6 +15,7 @@ import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
 import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 
 export class TerrainManager {
   constructor(gameManager, terrainCoordinator) {
@@ -981,9 +982,7 @@ export class TerrainManager {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition(x, y) {
-    return Number.isInteger(x) && Number.isInteger(y) &&
-           x >= 0 && x < this.gameManager.cols &&
-           y >= 0 && y < this.gameManager.rows;
+  return CoordinateUtils.isValidGridPosition(x, y, this.gameManager.cols, this.gameManager.rows);
   }
 
   /**

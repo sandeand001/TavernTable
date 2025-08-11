@@ -148,27 +148,12 @@ export class StateCoordinator {
         window.spritesReady = true;
       }
 
-      // Initialize animated sprite manager
-      if (window.animatedSpriteManager) {
-        logger.debug('Animated sprite manager found, initializing...');
-        try {
-          await window.animatedSpriteManager.initialize();
-          logger.debug('Animated sprites loaded successfully');
-        } catch (error) {
-          logger.warn('Failed to initialize animated sprites, using static fallbacks', error);
-          // Non-critical error - game can continue with static sprites
-        }
-      } else {
-        logger.debug('No animated sprite manager found');
-      }
+  // Animated sprite system removed (2025-08 cleanup) – static sprites only.
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
         context: 'StateCoordinator.initializeSprites',
         stage: 'sprite_initialization',
-        spriteManagers: {
-          spriteManager: !!window.spriteManager,
-          animatedSpriteManager: !!window.animatedSpriteManager
-        },
+  spriteManagers: { spriteManager: !!window.spriteManager },
         fallbackEnabled: true,
         spritesReady: this.gameManager.spritesReady
       });

@@ -135,6 +135,14 @@ export const CREATURE_COLORS = {
 };
 
 /**
+ * Global token placement fine-tuning offset (pixels)
+ * Applied after computing isometric center so that bottom-center anchored sprites
+ * visually align with tiles. Negative values shift left/up.
+ * Calibrated to correct observed constant Δ=(+3,+8) (tokens too far right and down).
+ */
+export const TOKEN_PLACEMENT_OFFSET = { x: 3, y: 8 };
+
+/**
  * Validation helpers
  * Provides consistent validation logic across the application
  */

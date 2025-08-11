@@ -581,7 +581,7 @@ export class ErrorHandler {
       
       // Log to central Logger system
       const logLevel = this.mapSeverityToLogLevel(severity);
-      this.logger.log(logLevel, errorEntry.message, LOG_CATEGORY.ERROR, {
+      this.logger.log(logLevel, LOG_CATEGORY.ERROR, errorEntry.message, {
         errorId: errorEntry.id,
         category: errorEntry.category,
         context: errorEntry.context,

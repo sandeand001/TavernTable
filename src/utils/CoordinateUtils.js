@@ -15,6 +15,9 @@
  */
 
 import { logger, LOG_CATEGORY } from './Logger.js';
+import { TOKEN_PLACEMENT_OFFSET as CONFIG_TOKEN_OFFSET } from '../config/GameConstants.js';
+// Fallback in case build caching serves older GameConstants without export
+const TOKEN_PLACEMENT_OFFSET = (typeof CONFIG_TOKEN_OFFSET !== 'undefined') ? CONFIG_TOKEN_OFFSET : { x: 0, y: 0 };
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from './ErrorHandler.js';
 
 /**
@@ -32,16 +35,45 @@ export class CoordinateUtils {
    */
   static gridToIsometric(gridX, gridY, tileWidth, tileHeight) {
     try {
+      // Validate input parameters
       if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
         throw new Error(`Invalid grid coordinates: gridX=${gridX}, gridY=${gridY}`);
       }
+      
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
-  // Direct mapping to tile center
-  const x = (gridX - gridY) * (tileWidth / 2) + (tileWidth / 2);
-  const y = (gridX + gridY) * (tileHeight / 2) + (tileHeight / 2);
-  return { x, y };
+
+      if (logger.config?.level === 0) { // TRACE level
+        logger.trace('Converting grid to isometric coordinates', {
+          input: { gridX, gridY, tileWidth, tileHeight }
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+  // Compute tile origin (top point) identical to GridRenderer.drawIsometricTile positioning
+  // tileOriginX = (gx - gy) * (w/2)
+  // tileOriginY = (gx + gy) * (h/2)
+  const tileOriginX = (gridX - gridY) * (tileWidth / 2);
+  const tileOriginY = (gridX + gridY) * (tileHeight / 2);
+
+  // For tokens whose sprites use anchor (0.5,1.0) (bottom-center), we want the bottom of the sprite
+  // to sit on the vertical center line of the diamond (which is tileOriginY + h/2).
+  // So final placement point for sprite.x/y should be:
+  //   x = tileOriginX + w/2  (center horizontally)
+  //   y = tileOriginY + h/2  (baseline where bottom of sprite rests)
+  const x = tileOriginX + (tileWidth / 2) + (TOKEN_PLACEMENT_OFFSET?.x || 0);
+  const y = tileOriginY + (tileHeight / 2) + (TOKEN_PLACEMENT_OFFSET?.y || 0);
+      
+      const result = { x, y };
+      
+      if (logger.config?.level === 0) {
+        logger.trace('Grid to isometric conversion completed', {
+          input: { gridX, gridY },
+          output: result
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      return result;
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {
@@ -62,18 +94,39 @@ export class CoordinateUtils {
    */
   static isometricToGrid(x, y, tileWidth, tileHeight) {
     try {
+      // Validate input parameters
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error(`Invalid pixel coordinates: x=${x}, y=${y}`);
       }
+      
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
-  // Subtract half tile dimensions for centering
-  const adjustedX = x - (tileWidth / 2);
-  const adjustedY = y - (tileHeight / 2);
-  const gridX = ((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
-  const gridY = ((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
-  return { gridX: Math.round(gridX), gridY: Math.round(gridY) };
+
+      if (logger.config?.level === 0) {
+        logger.trace('Converting isometric to grid coordinates', {
+          input: { x, y, tileWidth, tileHeight }
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+  // Invert forward transform derived above:
+  // Given x = (gx - gy)*(w/2) + w/2 and y = (gx + gy)*(h/2) + h/2
+  // Subtract the center offsets first.
+  const adjustedX = x - (tileWidth / 2) - (TOKEN_PLACEMENT_OFFSET?.x || 0);
+  const adjustedY = y - (tileHeight / 2) - (TOKEN_PLACEMENT_OFFSET?.y || 0);
+  const gridX = Math.round((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
+  const gridY = Math.round((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
+      
+      const result = { gridX, gridY };
+      
+      if (logger.config?.level === 0) {
+        logger.trace('Isometric to grid conversion completed', {
+          input: { x, y },
+          output: result
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      return result;
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {
@@ -82,12 +135,6 @@ export class CoordinateUtils {
       });
       throw error;
     }
-  }
-  // Static test utility for round-trip validation
-  static testRoundTrip(gridX, gridY, tileWidth, tileHeight) {
-    const iso = CoordinateUtils.gridToIsometric(gridX, gridY, tileWidth, tileHeight);
-    const grid = CoordinateUtils.isometricToGrid(iso.x, iso.y, tileWidth, tileHeight);
-    return { input: { gridX, gridY }, iso, grid };
   }
   
   /**
@@ -109,9 +156,11 @@ export class CoordinateUtils {
         throw new Error(`Invalid grid bounds: maxCols=${maxCols}, maxRows=${maxRows}`);
       }
 
-      logger.trace('Clamping coordinates to grid bounds', {
-        input: { gridX, gridY, maxCols, maxRows }
-      }, LOG_CATEGORY.SYSTEM);
+      if (logger.config?.level === 0) {
+        logger.trace('Clamping coordinates to grid bounds', {
+          input: { gridX, gridY, maxCols, maxRows }
+        }, LOG_CATEGORY.SYSTEM);
+      }
 
       const clampedX = Math.max(0, Math.min(maxCols - 1, gridX));
       const clampedY = Math.max(0, Math.min(maxRows - 1, gridY));
@@ -165,11 +214,13 @@ export class CoordinateUtils {
 
       const isValid = gridX >= 0 && gridX < maxCols && gridY >= 0 && gridY < maxRows;
       
-      logger.trace('Grid position validation completed', {
-        coordinates: { gridX, gridY },
-        bounds: { maxCols, maxRows },
-        isValid
-      }, LOG_CATEGORY.SYSTEM);
+      if (logger.config?.level === 0) {
+        logger.trace('Grid position validation completed', {
+          coordinates: { gridX, gridY },
+          bounds: { maxCols, maxRows },
+          isValid
+        }, LOG_CATEGORY.SYSTEM);
+      }
 
       return isValid;
     } catch (error) {

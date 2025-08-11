@@ -373,9 +373,8 @@ export class InteractionManager {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition({ gridX, gridY }) {
-    const coordValidation = GameValidators.coordinates(gridX, gridY);
-    return coordValidation.isValid && 
-           CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
+  // Consolidated validation: coordinates must be integers within grid bounds
+  return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
   }
 
   // Getters for backward compatibility

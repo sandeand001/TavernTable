@@ -18,6 +18,7 @@ import { TerrainBrushController } from '../terrain/TerrainBrushController.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -37,13 +38,13 @@ export class TerrainCoordinator {
     this.isDragging = false;
     this.lastModifiedCell = null;
     
-    logger.log(LOG_LEVEL.DEBUG, 'TerrainCoordinator initialized', LOG_CATEGORY.SYSTEM, {
+    logger.debug('TerrainCoordinator initialized', {
       context: 'TerrainCoordinator.constructor',
       stage: 'initialization',
       defaultTool: this.brush.tool,
       defaultBrushSize: this.brush.brushSize,
       timestamp: new Date().toISOString()
-    });
+    }, LOG_CATEGORY.SYSTEM);
   }
 
   /**
@@ -75,11 +76,11 @@ export class TerrainCoordinator {
       throw new Error(`Missing required dependencies: ${missingDependencies.join(', ')}`);
     }
     
-    logger.log(LOG_LEVEL.DEBUG, 'Dependencies validated', LOG_CATEGORY.SYSTEM, {
+    logger.debug('Dependencies validated', {
       context: 'TerrainCoordinator.validateDependencies',
       sanitizersEnumAvailable: typeof Sanitizers?.enum === 'function',
       allDependenciesValid: missingDependencies.length === 0
-    });
+    }, LOG_CATEGORY.SYSTEM);
   }
 
   /**
@@ -106,7 +107,7 @@ export class TerrainCoordinator {
       // Set up terrain-specific input handlers
       this.setupTerrainInputHandlers();
       
-      logger.log(LOG_LEVEL.INFO, 'Terrain system initialized', LOG_CATEGORY.SYSTEM, {
+      logger.info('Terrain system initialized', {
         context: 'TerrainCoordinator.initialize',
         stage: 'initialization_complete',
         gridDimensions: { 
@@ -116,7 +117,7 @@ export class TerrainCoordinator {
         terrainManagerReady: !!this.terrainManager,
         inputHandlersConfigured: true,
         timestamp: new Date().toISOString()
-      });
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
       GameErrors.initialization(error, {
         stage: 'TerrainCoordinator.initialize',
@@ -146,14 +147,14 @@ export class TerrainCoordinator {
       // Ensure datastore is sized properly
       this.dataStore.resize(cols, rows);
       
-      logger.log(LOG_LEVEL.DEBUG, 'Terrain data initialized', LOG_CATEGORY.SYSTEM, {
+      logger.debug('Terrain data initialized', {
         context: 'TerrainCoordinator.initializeTerrainData',
         stage: 'data_initialization',
         gridDimensions: { cols, rows },
         totalCells: cols * rows,
         defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT,
         dataStructure: 'complete'
-      });
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
       GameErrors.initialization(error, {
         stage: 'initializeTerrainData',
@@ -180,12 +181,12 @@ export class TerrainCoordinator {
       // Keyboard shortcuts for terrain tools
       document.addEventListener('keydown', this.handleTerrainKeyDown.bind(this));
       
-      logger.log(LOG_LEVEL.DEBUG, 'Terrain input handlers configured', LOG_CATEGORY.SYSTEM, {
+      logger.debug('Terrain input handlers configured', {
         context: 'TerrainCoordinator.setupTerrainInputHandlers',
         stage: 'input_configuration',
         eventTypes: ['mousedown', 'mousemove', 'mouseup', 'mouseleave', 'keydown'],
         handlersBound: true
-      });
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
       GameErrors.initialization(error, {
         stage: 'setupTerrainInputHandlers',
@@ -276,12 +277,12 @@ export class TerrainCoordinator {
         this.isDragging = false;
         this.lastModifiedCell = null;
         
-        logger.log(LOG_LEVEL.TRACE, 'Terrain painting session completed', LOG_CATEGORY.USER, {
+        logger.trace('Terrain painting session completed', {
           context: 'TerrainCoordinator.handleTerrainMouseUp',
           stage: 'painting_complete',
           tool: this.brush.tool,
           brushSize: this.brush.brushSize
-        });
+        }, LOG_CATEGORY.USER);
       }
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
@@ -504,12 +505,7 @@ export class TerrainCoordinator {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition(gridX, gridY) {
-    const result = TerrainValidation.validateTerrainCoordinates(
-      gridX,
-      gridY,
-      { cols: this.gameManager.cols, rows: this.gameManager.rows }
-    );
-    return !!result?.isValid;
+  return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
   }
 
   /**
@@ -540,16 +536,16 @@ export class TerrainCoordinator {
       // Log any warnings even if validation passes
       const warnings = TerrainValidation.getWarningMessages(validationResult);
       if (warnings.length > 0) {
-        logger.log(LOG_LEVEL.WARN, 'Terrain system validation warnings', LOG_CATEGORY.SYSTEM, {
+        logger.warn('Terrain system validation warnings', {
           context: 'TerrainCoordinator.validateTerrainSystemState',
           warnings
-        });
+        }, LOG_CATEGORY.SYSTEM);
       }
       
-      logger.log(LOG_LEVEL.DEBUG, 'Terrain system state validation passed', LOG_CATEGORY.SYSTEM, {
+      logger.debug('Terrain system state validation passed', {
         context: 'TerrainCoordinator.validateTerrainSystemState',
         details: validationResult.details
-      });
+      }, LOG_CATEGORY.SYSTEM);
       
       return true;
     } catch (error) {
@@ -616,7 +612,7 @@ export class TerrainCoordinator {
       this._activateTerrainMode();
       this._loadTerrainStateAndDisplay();
       
-      logger.log(LOG_LEVEL.INFO, 'Terrain mode enabled with enhanced safety checks', LOG_CATEGORY.USER, {
+      logger.info('Terrain mode enabled with enhanced safety checks', {
         context: 'TerrainCoordinator.enableTerrainMode',
         tool: this.brush.tool,
         brushSize: this.brush.brushSize,
@@ -624,7 +620,7 @@ export class TerrainCoordinator {
         terrainManagerReady: !!this.terrainManager,
         containerIntegrity: 'validated',
         safetyEnhancements: 'applied'
-      });
+      }, LOG_CATEGORY.USER);
     } catch (error) {
       this._handleTerrainModeActivationError(error);
     }
@@ -689,10 +685,10 @@ export class TerrainCoordinator {
         });
       }
     } catch (error) {
-      logger.log(LOG_LEVEL.DEBUG, 'Error preparing base grid for editing', LOG_CATEGORY.RENDERING, {
+      logger.debug('Error preparing base grid for editing', {
         context: 'TerrainCoordinator._prepareBaseGridForEditing',
         error: error.message
-      });
+      }, LOG_CATEGORY.RENDERING);
     }
   }
 
@@ -712,11 +708,11 @@ export class TerrainCoordinator {
   _resetTerrainContainerSafely() {
     // CONTAINER RESET STRATEGY: Clean up terrain container state before reuse
     if (this.terrainManager?.terrainContainer) {
-      logger.log(LOG_LEVEL.DEBUG, 'Resetting terrain container for safe reuse', LOG_CATEGORY.SYSTEM, {
+      logger.debug('Resetting terrain container for safe reuse', {
         context: 'TerrainCoordinator.enableTerrainMode',
         containerChildrenBefore: this.terrainManager.terrainContainer.children.length,
         tilesMapSizeBefore: this.terrainManager.terrainTiles.size
-      });
+      }, LOG_CATEGORY.SYSTEM);
       
       // Force clear terrain container safely using centralized utility
       try {
@@ -775,10 +771,10 @@ export class TerrainCoordinator {
         }
       }
     } catch (zErr) {
-      logger.log(LOG_LEVEL.WARN, 'Failed to raise terrain overlay container to top', LOG_CATEGORY.RENDERING, {
+      logger.warn('Failed to raise terrain overlay container to top', {
         context: 'TerrainCoordinator._validateContainerIntegrity',
         error: zErr.message
-      });
+      }, LOG_CATEGORY.RENDERING);
     }
   }
 
@@ -893,10 +889,10 @@ export class TerrainCoordinator {
       // Reset height indicator
       this.resetHeightIndicator();
       
-      logger.log(LOG_LEVEL.INFO, 'Terrain mode disabled with permanent grid integration', LOG_CATEGORY.USER, {
+      logger.info('Terrain mode disabled with permanent grid integration', {
         context: 'TerrainCoordinator.disableTerrainMode',
         permanentIntegration: true
-      });
+      }, LOG_CATEGORY.USER);
     } catch (error) {
       GameErrors.gameState(error, {
         stage: 'disableTerrainMode',
@@ -916,29 +912,29 @@ export class TerrainCoordinator {
     
     if (typeof Sanitizers?.enum === 'function') {
       sanitizedTool = Sanitizers.enum(tool, 'raise', ['raise', 'lower']);
-      logger.log(LOG_LEVEL.DEBUG, 'Used Sanitizers.enum for validation', LOG_CATEGORY.SYSTEM, {
+      logger.debug('Used Sanitizers.enum for validation', {
         context: 'TerrainCoordinator.setTerrainTool',
         method: 'Sanitizers.enum'
-      });
+      }, LOG_CATEGORY.SYSTEM);
     } else {
       // Fallback validation for browser caching or module loading issues
       const allowedTools = ['raise', 'lower'];
       sanitizedTool = allowedTools.includes(tool) ? tool : 'raise';
-      logger.log(LOG_LEVEL.DEBUG, 'Used fallback validation', LOG_CATEGORY.SYSTEM, {
+      logger.debug('Used fallback validation', {
         context: 'TerrainCoordinator.setTerrainTool',
         method: 'inline_validation',
         reason: 'Sanitizers.enum not available'
-      });
+      }, LOG_CATEGORY.SYSTEM);
     }
     
     this.brush.setTool(sanitizedTool);
     
-    logger.log(LOG_LEVEL.DEBUG, 'Terrain tool changed', LOG_CATEGORY.USER, {
+    logger.debug('Terrain tool changed', {
       context: 'TerrainCoordinator.setTerrainTool',
       newTool: this.brush.tool,
       previousTool: tool !== sanitizedTool ? tool : 'same',
       validationMethod: typeof Sanitizers?.enum === 'function' ? 'enum' : 'fallback'
-    });
+    }, LOG_CATEGORY.USER);
   }
 
   /**
@@ -965,10 +961,10 @@ export class TerrainCoordinator {
     const before = this.brush.brushSize;
     this.brush.increaseBrush();
     if (this.brush.brushSize !== before) {
-      logger.log(LOG_LEVEL.DEBUG, 'Brush size increased', LOG_CATEGORY.USER, {
+      logger.debug('Brush size increased', {
         context: 'TerrainCoordinator.increaseBrushSize',
         newSize: this.brush.brushSize
-      });
+      }, LOG_CATEGORY.USER);
     }
   }
 
@@ -979,10 +975,10 @@ export class TerrainCoordinator {
     const before = this.brush.brushSize;
     this.brush.decreaseBrush();
     if (this.brush.brushSize !== before) {
-      logger.log(LOG_LEVEL.DEBUG, 'Brush size decreased', LOG_CATEGORY.USER, {
+      logger.debug('Brush size decreased', {
         context: 'TerrainCoordinator.decreaseBrushSize',
         newSize: this.brush.brushSize
-      });
+      }, LOG_CATEGORY.USER);
     }
   }
 
@@ -1025,14 +1021,14 @@ export class TerrainCoordinator {
         this.terrainManager.refreshAllTerrainDisplay();
       }
       
-      logger.log(LOG_LEVEL.INFO, 'Terrain reset to default', LOG_CATEGORY.USER, {
+      logger.info('Terrain reset to default', {
         context: 'TerrainCoordinator.resetTerrain',
         gridDimensions: { 
           cols: this.gameManager.cols, 
           rows: this.gameManager.rows 
         },
         defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT
-      });
+      }, LOG_CATEGORY.USER);
     } catch (error) {
       GameErrors.operation(error, {
         stage: 'resetTerrain',
@@ -1095,12 +1091,12 @@ export class TerrainCoordinator {
         }
       }
 
-      logger.log(LOG_LEVEL.INFO, 'Terrain data resized', LOG_CATEGORY.SYSTEM, {
+      logger.info('Terrain data resized', {
         context: 'TerrainCoordinator.handleGridResize',
         oldDimensions: { cols: oldCols, rows: oldRows },
         newDimensions: { cols: newCols, rows: newRows },
         dataPreserved: !!(oldHeights && oldCols > 0 && oldRows > 0)
-      });
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
       GameErrors.operation(error, {
         stage: 'handleGridResize',
@@ -1127,13 +1123,13 @@ export class TerrainCoordinator {
       // Deep copy base terrain heights into working state
       this.dataStore.loadBaseIntoWorking();
       
-      logger.log(LOG_LEVEL.DEBUG, 'Base terrain loaded into working state', LOG_CATEGORY.SYSTEM, {
+      logger.debug('Base terrain loaded into working state', {
         context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState',
         gridDimensions: { 
           cols: this.gameManager.cols, 
           rows: this.gameManager.rows 
         }
-      });
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
   GameErrors.gameState(error, {
         stage: 'loadBaseTerrainIntoWorkingState',
@@ -1228,12 +1224,12 @@ export class TerrainCoordinator {
    * @param {number} modifiedTiles - Number of tiles that were modified
    */
   _logTerrainApplicationCompletion(modifiedTiles) {
-    logger.log(LOG_LEVEL.INFO, 'Terrain applied permanently to base grid with safer approach', LOG_CATEGORY.SYSTEM, {
+    logger.info('Terrain applied permanently to base grid with safer approach', {
       context: 'TerrainCoordinator.applyTerrainToBaseGrid',
       modifiedTiles,
       totalTiles: this.gameManager.rows * this.gameManager.cols,
       approach: 'safer_in_place_updates'
-    });
+    }, LOG_CATEGORY.SYSTEM);
   }
 
   /**
@@ -1330,12 +1326,12 @@ export class TerrainCoordinator {
       
       return true; // Successfully updated in-place
     } catch (error) {
-      logger.log(LOG_LEVEL.DEBUG, 'In-place tile update failed, will use replacement', LOG_CATEGORY.RENDERING, {
+      logger.debug('In-place tile update failed, will use replacement', {
         context: 'TerrainCoordinator.updateBaseGridTileInPlace',
         coordinates: { x, y },
         height,
         error: error.message
-      });
+      }, LOG_CATEGORY.RENDERING);
       return false; // Update failed, caller should use replacement
     }
   }
@@ -1471,13 +1467,13 @@ export class TerrainCoordinator {
    * @param {number} removedTileCount - Number of tiles removed
    */
   _logTileReplacementSuccess(x, y, height, removedTileCount) {
-    logger.log(LOG_LEVEL.TRACE, 'Base grid tile replaced safely', LOG_CATEGORY.RENDERING, {
+    logger.trace('Base grid tile replaced safely', {
       context: 'TerrainCoordinator.replaceBaseGridTile',
       coordinates: { x, y },
       height,
       removedTiles: removedTileCount,
       newTileCreated: true
-    });
+    }, LOG_CATEGORY.RENDERING);
   }
 
   /**
@@ -1566,11 +1562,11 @@ export class TerrainCoordinator {
         }
       }
     } catch (error) {
-      logger.log(LOG_LEVEL.DEBUG, 'Error adding visual elevation effect', LOG_CATEGORY.RENDERING, {
+      logger.debug('Error adding visual elevation effect', {
         context: 'TerrainCoordinator.addVisualElevationEffect',
         height,
         error: error.message
-      });
+      }, LOG_CATEGORY.RENDERING);
     }
   }
 

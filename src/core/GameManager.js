@@ -32,9 +32,10 @@ import { InputCoordinator } from '../coordinators/InputCoordinator.js';
 import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 
 // Import existing managers
-import { TokenManager } from '../managers/TokenManager.js';
-import { InteractionManager } from '../managers/InteractionManager.js';
-import { GridRenderer } from '../managers/GridRenderer.js';
+// Managers are created dynamically within StateCoordinator to avoid circular dependencies
+// import { TokenManager } from '../managers/TokenManager.js';
+// import { InteractionManager } from '../managers/InteractionManager.js';
+// import { GridRenderer } from '../managers/GridRenderer.js';
 
 /**
  * TavernTable Game Manager
@@ -135,12 +136,7 @@ class GameManager {
   /**
    * Create manager instances after PIXI app is ready
    */
-  createManagers() {
-    logger.debug('Creating manager instances...');
-    this.tokenManager = new TokenManager(this);
-    this.interactionManager = new InteractionManager(this);
-    this.gridRenderer = new GridRenderer(this);
-  }
+  // createManagers() no longer needed here (handled by StateCoordinator.createManagers())
 
   // === RENDERING OPERATIONS (Delegated to RenderCoordinator) ===
   
@@ -425,85 +421,7 @@ class GameManager {
   }
 }
 
-/**
- * Global functions for backward compatibility and UI interaction
- * @deprecated - These should be replaced with direct GameManager method calls
- */
-
-/**
- * Select a token type for placement
- * @param {string} tokenType - Type of token to select
- */
-function selectToken(tokenType) {
-  if (window.gameManager) {
-    window.gameManager.selectToken(tokenType);
-  }
-}
-
-/**
- * Toggle token facing direction
- */
-function toggleFacing() {
-  if (window.gameManager) {
-    window.gameManager.toggleFacing();
-  }
-}
-
-/**
- * Snap a token to the nearest grid position
- * @param {PIXI.Sprite} token - Token sprite to snap
- */
-function snapToGrid(token) {
-  if (window.gameManager) {
-    window.gameManager.snapToGrid(token);
-  }
-}
-
-/**
- * Enable terrain modification mode
- */
-function enableTerrainMode() {
-  if (window.gameManager) {
-    window.gameManager.enableTerrainMode();
-  }
-}
-
-/**
- * Disable terrain modification mode
- */
-function disableTerrainMode() {
-  if (window.gameManager) {
-    window.gameManager.disableTerrainMode();
-  }
-}
-
-/**
- * Set current terrain tool
- * @param {string} tool - Tool name ('raise' or 'lower')
- */
-function setTerrainTool(tool) {
-  if (window.gameManager) {
-    window.gameManager.setTerrainTool(tool);
-  }
-}
-
-/**
- * Reset all terrain to default height
- */
-function resetTerrain() {
-  if (window.gameManager) {
-    window.gameManager.resetTerrain();
-  }
-}
-
-// Make global functions available for backward compatibility
-window.selectToken = selectToken;
-window.toggleFacing = toggleFacing;
-window.snapToGrid = snapToGrid;
-window.enableTerrainMode = enableTerrainMode;
-window.disableTerrainMode = disableTerrainMode;
-window.setTerrainTool = setTerrainTool;
-window.resetTerrain = resetTerrain;
+// Legacy global wrapper functions removed (2025-08 cleanup). UI now binds directly to gameManager methods.
 
 // Export the GameManager class for ES6 module usage
 export default GameManager;

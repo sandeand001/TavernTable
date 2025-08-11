@@ -184,6 +184,79 @@ function toggleTerrainMode() {
 }
 
 /**
+ * Attach event listeners replacing legacy inline onclick globals
+ * Called after DOMContentLoaded and gameManager initialization
+ */
+function attachDynamicUIHandlers() {
+  try {
+    if (!window.gameManager) return;
+
+    // Token buttons (data-token attribute or legacy id naming)
+    const tokenButtons = document.querySelectorAll('[id^="token-"]');
+    tokenButtons.forEach(btn => {
+      if (btn.dataset.boundTokenHandler) return; // avoid duplicate
+      const id = btn.id.replace('token-', '');
+      btn.addEventListener('click', () => {
+        if (id === 'remove') {
+          window.gameManager.selectToken('remove');
+        } else {
+          window.gameManager.selectToken(id);
+        }
+      });
+      btn.dataset.boundTokenHandler = 'true';
+    });
+
+    // Facing button
+    const facingBtn = document.getElementById('facing-right');
+    if (facingBtn && !facingBtn.dataset.boundFacingHandler) {
+      facingBtn.addEventListener('click', () => window.gameManager.toggleFacing());
+      facingBtn.dataset.boundFacingHandler = 'true';
+    }
+
+    // Terrain tool buttons
+    const raiseBtn = document.getElementById('terrain-raise-btn');
+    const lowerBtn = document.getElementById('terrain-lower-btn');
+    if (raiseBtn && !raiseBtn.dataset.boundTerrainHandler) {
+      raiseBtn.addEventListener('click', () => window.gameManager.setTerrainTool('raise'));
+      raiseBtn.dataset.boundTerrainHandler = 'true';
+    }
+    if (lowerBtn && !lowerBtn.dataset.boundTerrainHandler) {
+      lowerBtn.addEventListener('click', () => window.gameManager.setTerrainTool('lower'));
+      lowerBtn.dataset.boundTerrainHandler = 'true';
+    }
+
+    // Terrain reset
+    const resetTerrainBtn = document.querySelector('.terrain-reset');
+    if (resetTerrainBtn && !resetTerrainBtn.dataset.boundResetHandler) {
+      resetTerrainBtn.addEventListener('click', () => window.gameManager.resetTerrain());
+      resetTerrainBtn.dataset.boundResetHandler = 'true';
+    }
+
+    logger.debug('Dynamic UI handlers attached');
+  } catch (error) {
+    new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
+      context: 'attachDynamicUIHandlers'
+    });
+  }
+}
+
+// Attach after DOM ready & when game manager exists
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.gameManager) {
+    attachDynamicUIHandlers();
+  } else {
+    // Poll briefly until gameManager set by StateCoordinator
+    const interval = setInterval(() => {
+      if (window.gameManager) {
+        clearInterval(interval);
+        attachDynamicUIHandlers();
+      }
+    }, 100);
+    setTimeout(() => clearInterval(interval), 5000); // stop after 5s
+  }
+});
+
+/**
  * Set the active terrain tool
  * @param {string} tool - Tool name ('raise' or 'lower')
  */
