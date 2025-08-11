@@ -38,12 +38,10 @@ export class CoordinateUtils {
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
-      // Restore -0.5 offset for center positioning
-      const offsetGridX = gridX - 0.5;
-      const offsetGridY = gridY - 0.5;
-      const x = (offsetGridX - offsetGridY) * (tileWidth / 2) + (tileWidth / 2);
-      const y = (offsetGridX + offsetGridY) * (tileHeight / 2) + (tileHeight / 2);
-      return { x, y };
+  // Direct mapping to tile center
+  const x = (gridX - gridY) * (tileWidth / 2) + (tileWidth / 2);
+  const y = (gridX + gridY) * (tileHeight / 2) + (tileHeight / 2);
+  return { x, y };
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {
@@ -70,13 +68,12 @@ export class CoordinateUtils {
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
-      // Subtract half tile dimensions for centering
-      const adjustedX = x - (tileWidth / 2);
-      const adjustedY = y - (tileHeight / 2);
-      // Reverse the -0.5 offset
-      const gridX = ((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2) + 0.5;
-      const gridY = ((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2) + 0.5;
-      return { gridX: Math.round(gridX), gridY: Math.round(gridY) };
+  // Subtract half tile dimensions for centering
+  const adjustedX = x - (tileWidth / 2);
+  const adjustedY = y - (tileHeight / 2);
+  const gridX = ((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
+  const gridY = ((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
+  return { gridX: Math.round(gridX), gridY: Math.round(gridY) };
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {

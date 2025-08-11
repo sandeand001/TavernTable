@@ -219,23 +219,11 @@ export class TokenManager {
       } catch {}
       const yOffset = height * (this.gameManager.tileHeight * 0.5);
       creature.setPosition(isoCoords.x, isoCoords.y + yOffset);
-
-      // Apply per-creature calibrated sprite offset (visual fine-tune)
-      let dx = 0, dy = 0;
-      try {
-        const off = getSpriteOffset(this.selectedTokenType) || { dx: 0, dy: 0 };
-        dx = Number(off.dx) || 0;
-        dy = Number(off.dy) || 0;
-        if ((dx || dy) && creature.sprite) {
-          creature.sprite.x += dx;
-          creature.sprite.y += dy;
-          creature.sprite.__offsetApplied = true;
-        }
-      } catch(offsetErr) {
-        logger.warn('Offset application failed', {
-          error: offsetErr?.message,
-          creatureType: this.selectedTokenType
-        }, LOG_CATEGORY.SYSTEM);
+      // Apply global offset (5,7) if terrain height is 0
+      if (height === 0 && creature.sprite) {
+        creature.sprite.x += 5;
+        creature.sprite.y += 7;
+        creature.sprite.__offsetApplied = true;
       }
 
       // Set zIndex for occlusion: base depth by x+y, add elevation bias
@@ -251,7 +239,7 @@ export class TokenManager {
       logger.info(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`, {
         creatureType: this.selectedTokenType,
         coordinates: { gridX, gridY },
-  position: { base: isoCoords, appliedOffset: { dx, dy }, final: { x: creature.sprite.x, y: creature.sprite.y } }
+        position: { base: isoCoords, offsetApplied: (height === 0 ? { dx: 5, dy: 7 } : { dx: 0, dy: 0 }), final: { x: creature.sprite.x, y: creature.sprite.y } }
       }, LOG_CATEGORY.USER);
     } catch (error) {
       const errorHandler = new ErrorHandler();
@@ -340,6 +328,12 @@ export class TokenManager {
       const yOffset = height * (this.gameManager.tileHeight * 0.5);
       token.x = isoCoords.x;
       token.y = isoCoords.y + yOffset;
+      // Apply global offset (5,7) if terrain height is 0
+      if (height === 0) {
+        token.x += 5;
+        token.y += 7;
+        token.__offsetApplied = true;
+      }
       // Update zIndex for occlusion
       const depth = clampedCoords.gridX + clampedCoords.gridY;
       const elevationBias = Math.round((height || 0) * 2);
