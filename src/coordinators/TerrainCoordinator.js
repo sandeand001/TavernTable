@@ -900,10 +900,25 @@ export class TerrainCoordinator {
    * @returns {number} Terrain height
    */
   getTerrainHeight(gridX, gridY) {
-    if (!this.isValidGridPosition(gridX, gridY) || !this.terrainHeights) {
+    // Defensive bounds checks to avoid out-of-range indexing
+    const heights = this.terrainHeights;
+    if (!heights || !Array.isArray(heights)) {
       return TERRAIN_CONFIG.DEFAULT_HEIGHT;
     }
-    return this.terrainHeights[gridY][gridX];
+    if (!Number.isInteger(gridX) || !Number.isInteger(gridY)) {
+      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
+    }
+    if (gridY < 0 || gridY >= heights.length) {
+      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
+    }
+    const row = heights[gridY];
+    if (!Array.isArray(row)) {
+      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
+    }
+    if (gridX < 0 || gridX >= row.length) {
+      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
+    }
+    return row[gridX];
   }
 
   /**
@@ -1189,12 +1204,14 @@ export class TerrainCoordinator {
       // Apply elevation effect if needed (position only); visuals remain base color when not editing
       if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
         this.addVisualElevationEffect(existingTile, height);
-        // Add neighbor-aware base faces (3D walls) for base grid view
-        this._addBase3DFaces(existingTile, x, y, height);
       } else if (typeof existingTile.baseIsoY === 'number') {
         // Ensure baseline when default height
         existingTile.y = existingTile.baseIsoY;
       }
+
+      // Always attempt to add neighbor-aware base faces (3D walls)
+      // Faces will only render when this tile is higher than a neighbor (including height 0 over negative)
+      this._addBase3DFaces(existingTile, x, y, height);
       
       return true; // Successfully updated in-place
     } catch (error) {
@@ -1313,8 +1330,6 @@ export class TerrainCoordinator {
     if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
       try {
         this.addVisualElevationEffect(newTile, height);
-        // Add neighbor-aware base faces (3D walls) for base grid view
-        this._addBase3DFaces(newTile, x, y, height);
       } catch (effectError) {
         logger.warn('Failed to add elevation effect, continuing without it', {
           context: 'TerrainCoordinator._applyTileEffectsAndData',
@@ -1324,6 +1339,9 @@ export class TerrainCoordinator {
         });
       }
     }
+    // Always attempt to add neighbor-aware base faces (3D walls) regardless of height
+    // Faces will only render when this tile is higher than a neighbor (e.g., 0 vs negative)
+    this._addBase3DFaces(newTile, x, y, height);
     
     // Store height information on tile
     newTile.terrainHeight = height;
@@ -1453,7 +1471,8 @@ export class TerrainCoordinator {
         tile.baseSideFaces = null;
       }
 
-      if (!this.baseTerrainHeights || height === TERRAIN_CONFIG.DEFAULT_HEIGHT) {
+      // Only skip if baseTerrainHeights is missing; allow height 0 to render faces when neighbors are lower
+      if (!this.baseTerrainHeights) {
         return;
       }
 
@@ -1557,12 +1576,28 @@ export class TerrainCoordinator {
         faces.endFill();
       }
 
-      // Position and add behind the tile at the same depth
+      // Position and add faces behind the tile safely
       faces.x = tile.x;
       faces.y = tile.y;
 
-      const idx = tile.parent.getChildIndex(tile);
-      tile.parent.addChildAt(faces, Math.max(0, idx));
+      const parent = tile.parent;
+      if (!parent) {
+        tile.baseSideFaces = faces; // defer; will be harmless without parent
+        return;
+      }
+      let idx = 0;
+      try {
+        if (typeof parent.getChildIndex === 'function') {
+          idx = parent.getChildIndex(tile);
+        }
+      } catch (_) {
+        idx = 0;
+      }
+      if (typeof parent.addChildAt === 'function') {
+        parent.addChildAt(faces, Math.max(0, idx));
+      } else if (typeof parent.addChild === 'function') {
+        parent.addChild(faces);
+      }
       tile.baseSideFaces = faces;
     } catch (e) {
       logger.warn('Failed to add base 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);

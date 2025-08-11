@@ -11,6 +11,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../uti
 import { GameValidators } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
+import { GRID_CONFIG } from '../config/GameConstants.js';
 
 export class TerrainManager {
   constructor(gameManager, terrainCoordinator) {
@@ -280,8 +281,10 @@ export class TerrainManager {
       const terrainTile = this._createBaseTerrainGraphics(x, y, height);
       this._applyTerrainStyling(terrainTile, height);
       this._positionTerrainTile(terrainTile, x, y, height);
-      this._addVisualEffects(terrainTile, height, x, y);
+      // Add tile to container BEFORE adding any faces/shadows to ensure parentage is set
       this._finalizeTerrainTile(terrainTile, x, y, tileKey);
+      // Now add visual effects that rely on parent/indices
+      this._addVisualEffects(terrainTile, height, x, y);
       
       return terrainTile;
     } catch (error) {
@@ -541,9 +544,22 @@ export class TerrainManager {
       faces.depthValue = terrainTile.depthValue;
       faces.isShadowTile = true; // treat as background element for ordering
 
-      const parent = this.terrainContainer;
-      const tileIndex = parent.getChildIndex(terrainTile);
-      parent.addChildAt(faces, Math.max(0, tileIndex));
+      // Use the tile's parent if available; otherwise fall back to terrainContainer
+      const parent = terrainTile.parent || this.terrainContainer;
+      let tileIndex = 0;
+      try {
+        if (parent && terrainTile.parent === parent && typeof parent.getChildIndex === 'function') {
+          tileIndex = parent.getChildIndex(terrainTile);
+        }
+      } catch (_) {
+        // If not a child yet, keep default index 0
+        tileIndex = 0;
+      }
+      if (parent && typeof parent.addChildAt === 'function') {
+        parent.addChildAt(faces, Math.max(0, tileIndex));
+      } else if (parent && typeof parent.addChild === 'function') {
+        parent.addChild(faces);
+      }
       terrainTile.sideFaces = faces;
     } catch (e) {
       logger.warn('Failed to add 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
