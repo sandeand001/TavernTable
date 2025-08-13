@@ -23,6 +23,9 @@ class SidebarController {
     this.setupTabListeners();
     this.setupRangeSliderListeners();
     this.showTab(this.activeTab);
+
+  // Attempt biome menu build when terrain tab assets exist
+  setTimeout(() => this.buildBiomeMenuSafely(), 0);
     
     // Add welcome message to dice log
     this.addDiceLogEntry('Welcome to TavernTable! Roll some dice to see history here.', 'system');
@@ -135,11 +138,80 @@ class SidebarController {
       break;
     case 'terrain':
       // Future: Initialize terrain tools
+      this.buildBiomeMenuSafely();
       break;
     case 'settings':
       // Future: Load current game settings
       break;
     }
+  }
+
+  buildBiomeMenuSafely() {
+    try {
+      if (this._biomesBuilt) return;
+      // Lazy import to avoid blocking initial load
+      import('../config/BiomeConstants.js').then(mod => {
+        const { BIOME_GROUPS } = mod;
+        const root = document.getElementById('biome-menu-root');
+        if (!root) return;
+        root.textContent = '';
+        Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
+          const groupContainer = document.createElement('div');
+          groupContainer.className = 'biome-group';
+
+          const headerBtn = document.createElement('button');
+          headerBtn.className = 'biome-group-toggle';
+          headerBtn.type = 'button';
+          headerBtn.setAttribute('aria-expanded', 'false');
+          headerBtn.textContent = group;
+
+            const listEl = document.createElement('div');
+            listEl.className = 'biome-group-list';
+            listEl.style.display = 'none';
+
+            headerBtn.addEventListener('click', () => {
+              const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
+              headerBtn.setAttribute('aria-expanded', String(!expanded));
+              listEl.style.display = expanded ? 'none' : 'grid';
+            });
+
+          list.forEach(b => {
+            const bBtn = document.createElement('button');
+            bBtn.className = 'biome-btn';
+            bBtn.type = 'button';
+            bBtn.dataset.biome = b.key;
+            bBtn.title = b.label;
+            bBtn.textContent = (b.emoji || '') + ' ' + b.label;
+            bBtn.addEventListener('click', () => this.selectBiome(b.key));
+            listEl.appendChild(bBtn);
+          });
+
+          groupContainer.appendChild(headerBtn);
+          groupContainer.appendChild(listEl);
+          root.appendChild(groupContainer);
+        });
+        this._biomesBuilt = true;
+      }).catch(() => {/* ignore */});
+    } catch (_) { /* swallow to avoid UI disruption */ }
+  }
+
+  selectBiome(biomeKey) {
+    window.selectedBiome = biomeKey;
+    if (window.sidebarController?.activeTab === 'terrain') {
+      console.log('Biome selected:', biomeKey);
+    }
+    // Visual selection state
+    try {
+      const root = document.getElementById('biome-menu-root');
+      if (root) {
+        root.querySelectorAll('.biome-btn.selected').forEach(btn => btn.classList.remove('selected'));
+        const newly = root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+        if (newly) {
+          newly.classList.add('selected');
+          newly.setAttribute('aria-pressed', 'true');
+        }
+      }
+    } catch (_) { /* silent */ }
   }
 
   /**

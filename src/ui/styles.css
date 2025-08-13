@@ -977,3 +977,121 @@ html, body {
     font-size: 16px;
   }
 }
+/* ====================================
+   Biome Menu Styling (matches terrain tool aesthetics)
+   ==================================== */
+.biome-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.biome-group {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 6px 6px 4px;
+}
+
+.biome-group-toggle {
+  width: 100%;
+  background: #4a4a4a;
+  color: #e0e0e0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 10px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.biome-group-toggle::after {
+  content: '\25BC';
+  font-size: 11px;
+  opacity: 0.7;
+  transition: transform 0.25s ease;
+}
+
+.biome-group-toggle[aria-expanded="false"]::after {
+  transform: rotate(-90deg);
+}
+
+.biome-group-toggle:hover {
+  background: #5a5a5a;
+  color: #fff;
+}
+
+.biome-group-list {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+
+.biome-btn {
+  background: #404040;
+  color: #d0d0d0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 8px;
+  text-align: center;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.biome-btn:hover {
+  background: #555;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.biome-btn.selected {
+  background: #4CAF50;
+  color: #fff;
+  border-color: #45a049;
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+  font-weight: 600;
+}
+
+.biome-btn.selected:hover {
+  background: #45a049;
+}
+
+.biome-menu::-webkit-scrollbar {
+  width: 8px;
+}
+.biome-menu::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+}
+.biome-menu::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+.biome-menu::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+@media (max-width: 768px) {
+  .biome-group-list {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+}

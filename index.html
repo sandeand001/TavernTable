@@ -188,6 +188,13 @@
               <div class="section-subtitle">Actions</div>
               <button onclick="resetTerrain()" class="action-button terrain-reset" aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
             </div>
+
+            <div class="tool-group" id="biome-selection-group">
+              <div class="section-subtitle">Biomes</div>
+              <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
+                <!-- Biome group buttons injected at runtime -->
+              </div>
+            </div>
             
             <div class="tool-group">
               <div class="section-subtitle">Shortcuts</div>
@@ -271,6 +278,7 @@
 
   <!-- Core Configuration and Utilities (ES6) -->
   <script type="module" src="./src/config/GameConstants.js"></script>
+  <script type="module" src="./src/config/BiomeConstants.js"></script>
   <script type="module" src="./src/utils/ErrorHandler.js"></script>
   <script type="module" src="./src/utils/Validation.js"></script>
   <script type="module" src="./src/utils/Logger.js"></script>
