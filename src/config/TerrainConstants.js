@@ -10,10 +10,10 @@
  * Controls terrain height modification behavior and limits
  */
 export const TERRAIN_CONFIG = {
-  // Height system
+  // Height system (reverted to +/-5 operational range; biome palettes can still internally map if extended later)
   DEFAULT_HEIGHT: 0,
-  MIN_HEIGHT: -10,
-  MAX_HEIGHT: 10,
+  MIN_HEIGHT: -5,
+  MAX_HEIGHT: 5,
   HEIGHT_STEP: 1,
   
   // Brush system
@@ -23,30 +23,20 @@ export const TERRAIN_CONFIG = {
   
   // Visual representation
   HEIGHT_COLOR_SCALE: {
-    // Extended color mapping for -10..10 range
-    // Negative heights = deep cool → mid cool → violet transition
-    // Positive heights = green → yellow → orange → red gradient
-    '-10': 0x0b0f33, // Near black blue
-    '-9':  0x131b4a,
-    '-8':  0x1b2561,
-    '-7':  0x233078,
-    '-6':  0x2b3b90,
-    '-5':  0x3346a7, // (old -5 ~ adapt)
-    '-4':  0x3b51be,
-    '-3':  0x4756d1,
-    '-2':  0x5b63e5,
-    '-1':  0x7a5ff2, // violet
-    '0':   0x6b7280, // Neutral gray
-    '1':   0x0f9d70,
-    '2':   0x10b981, // Emerald
-    '3':   0x16a34a, // Green (old 2)
-    '4':   0x4caf50, // Mid green
-    '5':   0xa2b91a, // Yellow‑green
-    '6':   0xc9b416, // Yellow shifting
-    '7':   0xeab308, // Yellow
-    '8':   0xf59e0b, // Orange
-    '9':   0xf97316, // Deep orange
-    '10':  0xef4444  // Red
+    // Simplified color mapping for -5..5 operational range
+    // Negative heights = deep cool → violet transition
+    // Positive heights = green → yellow‑green gradient
+    '-5': 0x0b0f33,
+    '-4': 0x1b2561,
+    '-3': 0x3346a7,
+    '-2': 0x5b63e5,
+    '-1': 0x7a5ff2,
+    '0':  0x6b7280,
+    '1':  0x10b981,
+    '2':  0x16a34a,
+    '3':  0x4caf50,
+    '4':  0xa2b91a,
+    '5':  0xefe36a
   },
   
   // Visual effects

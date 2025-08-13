@@ -43,6 +43,7 @@
   <button class="tab-button active" data-tab="dice-log" role="tab" aria-selected="true" aria-controls="dice-log-panel">🎲 Dice Log</button>
   <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false" aria-controls="creatures-panel">🗡️ Creatures</button>
       <button class="tab-button" data-tab="terrain" role="tab" aria-selected="false" aria-controls="terrain-panel">🏔️ Terrain</button>
+      <button class="tab-button" data-tab="biomes" role="tab" aria-selected="false" aria-controls="biomes-panel">🌍 Biomes</button>
       <button class="tab-button" data-tab="settings" role="tab" aria-selected="false" aria-controls="settings-panel">⚙️ Settings</button>
     </div>
 
@@ -168,12 +169,7 @@
               <div class="height-indicator">
                 <span class="height-label">Current Level:</span>
                 <span id="terrain-height-display" class="height-value">0</span>
-                <div class="height-scale">
-                  <span class="scale-mark" data-height="-10">-10</span>
-                  <span class="scale-mark" data-height="-9">-9</span>
-                  <span class="scale-mark" data-height="-8">-8</span>
-                  <span class="scale-mark" data-height="-7">-7</span>
-                  <span class="scale-mark" data-height="-6">-6</span>
+                <div class="height-scale" aria-label="Terrain height scale -5 to 5">
                   <span class="scale-mark" data-height="-5">-5</span>
                   <span class="scale-mark" data-height="-4">-4</span>
                   <span class="scale-mark" data-height="-3">-3</span>
@@ -185,26 +181,16 @@
                   <span class="scale-mark" data-height="3">3</span>
                   <span class="scale-mark" data-height="4">4</span>
                   <span class="scale-mark" data-height="5">5</span>
-                  <span class="scale-mark" data-height="6">6</span>
-                  <span class="scale-mark" data-height="7">7</span>
-                  <span class="scale-mark" data-height="8">8</span>
-                  <span class="scale-mark" data-height="9">9</span>
-                  <span class="scale-mark" data-height="10">10</span>
                 </div>
               </div>
             </div>
             
             <div class="tool-group">
               <div class="section-subtitle">Actions</div>
-              <button onclick="resetTerrain()" class="action-button terrain-reset" aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
+              <button id="terrain-reset-btn" class="action-button terrain-reset" aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
             </div>
 
-            <div class="tool-group" id="biome-selection-group">
-              <div class="section-subtitle">Biomes</div>
-              <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
-                <!-- Biome group buttons injected at runtime -->
-              </div>
-            </div>
+            <!-- Biome selection moved to dedicated Biomes tab (panel relocated outside terrain panel) -->
             
             <div class="tool-group">
               <div class="section-subtitle">Shortcuts</div>
@@ -215,6 +201,19 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Biomes Panel (sibling to terrain/settings panels) -->
+      <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
+        <div class="panel-header">🌍 Biomes</div>
+        <div class="section">
+          <div class="section-title">Select a Biome Palette</div>
+          <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
+            <!-- Biome group buttons injected at runtime -->
+          </div>
+          <div class="section-subtitle" style="margin-top:1rem;">Notes</div>
+          <p class="small-text">Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to edit heights; exit to view biome coloring.</p>
         </div>
       </div>
 

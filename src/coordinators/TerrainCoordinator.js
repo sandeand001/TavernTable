@@ -10,6 +10,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../uti
 import { GameValidators, Sanitizers } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
+import { getBiomeHeightColor } from '../config/BiomePalettes.js';
 // import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { darkenColor } from '../utils/ColorUtils.js';
 import { TerrainValidation } from '../utils/TerrainValidation.js';
@@ -888,6 +889,11 @@ export class TerrainCoordinator {
       
       // Reset height indicator
       this.resetHeightIndicator();
+
+      // Apply biome palette immediately if a biome is selected
+      if (typeof window !== 'undefined' && window.selectedBiome) {
+        try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+      }
       
       logger.info('Terrain mode disabled with permanent grid integration', {
         context: 'TerrainCoordinator.disableTerrainMode',
@@ -1019,6 +1025,11 @@ export class TerrainCoordinator {
       
       if (this.terrainManager) {
         this.terrainManager.refreshAllTerrainDisplay();
+      }
+
+      // Ensure UI height indicator reflects cleared state
+      if (typeof this.resetHeightIndicator === 'function') {
+        this.resetHeightIndicator();
       }
       
       logger.info('Terrain reset to default', {
@@ -1289,9 +1300,9 @@ export class TerrainCoordinator {
         existingTile.baseSideFaces = null;
       }
       
-      // Decide styling based on whether terrain mode is active
-      const isEditing = !!this.isTerrainModeActive;
-      const fillColor = isEditing ? this.getColorForHeight(height) : GRID_CONFIG.TILE_COLOR;
+  // Decide styling based on whether terrain mode is active
+  const isEditing = !!this.isTerrainModeActive;
+  const fillColor = isEditing ? this.getColorForHeight(height) : this._getBiomeOrBaseColor(height);
       const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
       const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
       const fillAlpha = isEditing ? 0.8 : 1.0;
@@ -1417,7 +1428,7 @@ export class TerrainCoordinator {
    */
   _createReplacementTile(x, y, height) {
     const isEditing = !!this.isTerrainModeActive;
-    const color = isEditing ? this.getColorForHeight(height) : GRID_CONFIG.TILE_COLOR;
+    const color = isEditing ? this.getColorForHeight(height) : this._getBiomeOrBaseColor(height);
     const newTile = this.gameManager.gridRenderer.drawIsometricTile(x, y, color);
     
     // Validate new tile before returning
@@ -1594,6 +1605,90 @@ export class TerrainCoordinator {
       this.faces.addBaseFaces(tile, x, y, height, getBase);
     } catch (e) {
       logger.warn('Failed to add base 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
+    }
+  }
+  /** Determine base tile color when not editing: biome palette if selected, else neutral. */
+  _getBiomeOrBaseColor(height) {
+    try {
+      if (typeof window !== 'undefined' && window.selectedBiome) {
+        // Base biome palette color
+        let base = getBiomeHeightColor(window.selectedBiome, height);
+        // Introduce subtle intra-biome variation so large areas aren't flat.
+        // Use tile coordinates hashed into pseudo-random modifier if available (this method is used in contexts where "this" has gridX/gridY only indirectly).
+        // We'll fall back to a low amplitude if coords unknown.
+        const gx = (this._currentColorEvalX ?? 0);
+        const gy = (this._currentColorEvalY ?? 0);
+        const hash = ((gx * 73856093) ^ (gy * 19349663) ^ (height * 83492791)) >>> 0; // simple spatial hash
+        const noise01 = (hash & 0xffff) / 0xffff; // 0..1
+        // Convert to RGB, apply slight brightness +/- and hue drift via channel scaling.
+        const r = (base >> 16) & 0xff;
+        const g = (base >> 8) & 0xff;
+        const b = base & 0xff;
+        const brightnessJitter = (noise01 - 0.5) * 0.18; // ~±9%
+        const hueShift = ((hash >> 16) & 0xff) / 255 - 0.5; // -0.5..0.5
+        // Apply brightness
+        let nr = Math.min(255, Math.max(0, r + r * brightnessJitter));
+        let ng = Math.min(255, Math.max(0, g + g * brightnessJitter));
+        let nb = Math.min(255, Math.max(0, b + b * brightnessJitter));
+        // Gentle hue nuance: push green vs red vs blue slightly based on biome class
+        const biome = window.selectedBiome;
+        if (/forest|grove|bamboo|orchard|fey|cedar/i.test(biome)) {
+          // add greener mid-tones
+          ng = Math.min(255, ng + 8 * hueShift);
+        } else if (/desert|dune|savanna|thorn|steppe/i.test(biome)) {
+          nr = Math.min(255, nr + 10 * hueShift);
+          ng = Math.min(255, ng + 6 * (0.5 - hueShift));
+        } else if (/swamp|mangrove|marsh|wetland/i.test(biome)) {
+          ng = Math.min(255, ng + 12 * hueShift);
+          nb = Math.min(255, nb + 5 * (0.5 - hueShift));
+        } else if (/ice|glacier|tundra|pack|frozen/i.test(biome)) {
+          nb = Math.min(255, nb + 14 * hueShift);
+        } else if (/volcan|lava|ash|obsidian/i.test(biome)) {
+          nr = Math.min(255, nr + 16 * hueShift);
+        } else if (/reef|ocean|coast|river|lake/i.test(biome)) {
+          nb = Math.min(255, nb + 16 * hueShift);
+        }
+        base = ((nr & 0xff) << 16) | ((ng & 0xff) << 8) | (nb & 0xff);
+        return base;
+      }
+    } catch (_) { /* ignore */ }
+    return GRID_CONFIG.TILE_COLOR;
+  }
+
+  /** Re-color existing base grid tiles using currently selected biome palette. */
+  applyBiomePaletteToBaseGrid() {
+    if (this.isTerrainModeActive) return;
+    if (typeof window === 'undefined' || !window.selectedBiome) return;
+    const biomeKey = window.selectedBiome;
+    try {
+      this.gameManager.gridContainer.children.forEach(child => {
+        if (!child.isGridTile) return;
+        const h = typeof child.terrainHeight === 'number' ? child.terrainHeight : 0;
+  // Provide coordinates to color function for variation
+  this._currentColorEvalX = child.gridX;
+  this._currentColorEvalY = child.gridY;
+  const fillColor = this._getBiomeOrBaseColor(h);
+        const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
+        const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
+        child.clear();
+        child.lineStyle(1, borderColor, borderAlpha);
+        child.beginFill(fillColor, 1.0);
+        child.moveTo(0, this.gameManager.tileHeight / 2);
+        child.lineTo(this.gameManager.tileWidth / 2, 0);
+        child.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
+        child.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
+        child.lineTo(0, this.gameManager.tileHeight / 2);
+        child.endFill();
+        if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
+        if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.addVisualElevationEffect(child, h);
+      });
+      logger.info('Applied biome palette to base grid', { context: 'TerrainCoordinator.applyBiomePaletteToBaseGrid', biome: biomeKey }, LOG_CATEGORY.USER);
+    } catch (e) {
+      logger.warn('Failed applying biome palette to base grid', { context: 'TerrainCoordinator.applyBiomePaletteToBaseGrid', biome: biomeKey, error: e.message });
+    }
+    finally {
+      this._currentColorEvalX = undefined;
+      this._currentColorEvalY = undefined;
     }
   }
 }

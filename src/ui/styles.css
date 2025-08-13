@@ -929,11 +929,6 @@ html, body {
   transform: scale(1.1);
 }
 
-.scale-mark[data-height="-10"] { background-color: #0b0f33; }
-.scale-mark[data-height="-9"]  { background-color: #131b4a; }
-.scale-mark[data-height="-8"]  { background-color: #1b2561; }
-.scale-mark[data-height="-7"]  { background-color: #233078; }
-.scale-mark[data-height="-6"]  { background-color: #2b3b90; }
 .scale-mark[data-height="-5"]  { background-color: #3346a7; }
 .scale-mark[data-height="-4"]  { background-color: #3b51be; }
 .scale-mark[data-height="-3"]  { background-color: #4756d1; }
@@ -945,11 +940,6 @@ html, body {
 .scale-mark[data-height="3"]   { background-color: #16a34a; }
 .scale-mark[data-height="4"]   { background-color: #4caf50; }
 .scale-mark[data-height="5"]   { background-color: #a2b91a; }
-.scale-mark[data-height="6"]   { background-color: #c9b416; }
-.scale-mark[data-height="7"]   { background-color: #eab308; }
-.scale-mark[data-height="8"]   { background-color: #f59e0b; }
-.scale-mark[data-height="9"]   { background-color: #f97316; }
-.scale-mark[data-height="10"]  { background-color: #ef4444; }
 
 /* Shortcuts text */
 .shortcuts-text {

@@ -228,7 +228,15 @@ function attachDynamicUIHandlers() {
     // Terrain reset
     const resetTerrainBtn = document.querySelector('.terrain-reset');
     if (resetTerrainBtn && !resetTerrainBtn.dataset.boundResetHandler) {
-      resetTerrainBtn.addEventListener('click', () => window.gameManager.resetTerrain());
+      // Use global resetTerrain wrapper to preserve confirmation & logging
+      resetTerrainBtn.addEventListener('click', () => {
+        if (typeof window.resetTerrain === 'function') {
+          window.resetTerrain();
+        } else if (window.gameManager?.resetTerrain) {
+          // Fallback if wrapper not yet defined
+          window.gameManager.resetTerrain();
+        }
+      });
       resetTerrainBtn.dataset.boundResetHandler = 'true';
     }
 

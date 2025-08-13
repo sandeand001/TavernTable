@@ -24,8 +24,7 @@ class SidebarController {
     this.setupRangeSliderListeners();
     this.showTab(this.activeTab);
 
-  // Attempt biome menu build when terrain tab assets exist
-  setTimeout(() => this.buildBiomeMenuSafely(), 0);
+  // Biome menu now lazy-builds when Biomes tab first opened
     
     // Add welcome message to dice log
     this.addDiceLogEntry('Welcome to TavernTable! Roll some dice to see history here.', 'system');
@@ -95,7 +94,7 @@ class SidebarController {
    */
   showTab(tabId) {
     // Validate tab ID
-    const validTabs = ['dice-log', 'creatures', 'terrain', 'settings'];
+  const validTabs = ['dice-log', 'creatures', 'terrain', 'biomes', 'settings'];
     if (!validTabs.includes(tabId)) {
       console.warn(`Invalid tab ID: ${tabId}`);
       return;
@@ -138,6 +137,8 @@ class SidebarController {
       break;
     case 'terrain':
       // Future: Initialize terrain tools
+      break;
+    case 'biomes':
       this.buildBiomeMenuSafely();
       break;
     case 'settings':
@@ -148,11 +149,18 @@ class SidebarController {
 
   buildBiomeMenuSafely() {
     try {
-      if (this._biomesBuilt) return;
+      const root = document.getElementById('biome-menu-root');
+      // If previously built but root is missing or empty (e.g., moved to new tab), allow rebuild
+      if (this._biomesBuilt) {
+        if (!root || root.children.length === 0) {
+          this._biomesBuilt = false; // reset flag to trigger rebuild
+        } else {
+          return; // already populated
+        }
+      }
       // Lazy import to avoid blocking initial load
       import('../config/BiomeConstants.js').then(mod => {
         const { BIOME_GROUPS } = mod;
-        const root = document.getElementById('biome-menu-root');
         if (!root) return;
         root.textContent = '';
         Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
@@ -191,6 +199,10 @@ class SidebarController {
           root.appendChild(groupContainer);
         });
         this._biomesBuilt = true;
+        // Re-apply selected biome highlight if one was chosen earlier
+        if (window.selectedBiome) {
+          try { this.selectBiome(window.selectedBiome); } catch(_) { /* ignore */ }
+        }
       }).catch(() => {/* ignore */});
     } catch (_) { /* swallow to avoid UI disruption */ }
   }
@@ -200,6 +212,12 @@ class SidebarController {
     if (window.sidebarController?.activeTab === 'terrain') {
       console.log('Biome selected:', biomeKey);
     }
+    // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
+    try {
+      if (window.gameManager && window.gameManager.terrainCoordinator && !window.gameManager.terrainCoordinator.isTerrainModeActive) {
+        window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
+      }
+    } catch(_) { /* non-fatal */ }
     // Visual selection state
     try {
       const root = document.getElementById('biome-menu-root');
