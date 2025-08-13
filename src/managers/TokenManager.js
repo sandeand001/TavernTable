@@ -7,6 +7,7 @@
 
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 
@@ -204,14 +205,22 @@ export class TokenManager {
       // Add to grid container first
       creature.addToStage(gridContainer);
       
-      // Calculate isometric position
+      // Calculate isometric base position
       const isoCoords = CoordinateUtils.gridToIsometric(
-        gridX, 
-        gridY, 
-        this.gameManager.tileWidth, 
+        gridX,
+        gridY,
+        this.gameManager.tileWidth,
         this.gameManager.tileHeight
       );
-      creature.setPosition(isoCoords.x, isoCoords.y);
+
+      // Elevation adjustment (terrain height -> vertical offset)
+      let elevationOffset = 0;
+      try {
+        const height = this.gameManager?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
+        elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
+      } catch (_) { /* graceful fallback */ }
+
+      creature.setPosition(isoCoords.x, isoCoords.y + elevationOffset);
       // Ensure token renders above its tile but respects depth ordering
       if (creature.sprite) {
         const depth = gridX + gridY; // same metric tiles use
@@ -303,11 +312,17 @@ export class TokenManager {
       // Clamp to grid bounds
       const clampedCoords = CoordinateUtils.clampToGrid(gridCoords.gridX, gridCoords.gridY, this.gameManager.cols, this.gameManager.rows);
 
-      // Position at diamond center using CoordinateUtils
+      // Position at diamond center using CoordinateUtils + elevation
       const isoCoords = CoordinateUtils.gridToIsometric(clampedCoords.gridX, clampedCoords.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      
+
+      let elevationOffset = 0;
+      try {
+        const height = this.gameManager?.terrainCoordinator?.dataStore?.get(clampedCoords.gridX, clampedCoords.gridY) ?? 0;
+        elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
+      } catch (_) { /* ignore */ }
+
       token.x = isoCoords.x;
-      token.y = isoCoords.y;
+      token.y = isoCoords.y + elevationOffset;
   // Maintain correct layering after snapping
   const newDepth = clampedCoords.gridX + clampedCoords.gridY;
   token.zIndex = newDepth * 100 + 1;
@@ -402,13 +417,21 @@ export class TokenManager {
         const newLocal = moveData.getLocalPosition(this.parent);
         const candidateX = newLocal.x + (this.dragOffsetX || 0);
         const candidateY = newLocal.y + (this.dragOffsetY || 0);
-        this.x = candidateX;
-        this.y = candidateY;
-        // Dynamic zIndex so dragging "toward user" (down) reorders correctly
+
+        // Convert to tentative grid to fetch elevation for live preview
+        let adjustedY = candidateY;
         if (gm) {
           const gridCoords = CoordinateUtils.isometricToGrid(candidateX, candidateY, gm.tileWidth, gm.tileHeight);
-          this.zIndex = (gridCoords.gridX + gridCoords.gridY) * 100 + 1;
+          try {
+            const height = gm?.terrainCoordinator?.dataStore?.get(gridCoords.gridX, gridCoords.gridY) ?? 0;
+            const elev = TerrainHeightUtils.calculateElevationOffset(height);
+            adjustedY = candidateY + elev; // apply elevation visually during drag
+            this.zIndex = (gridCoords.gridX + gridCoords.gridY) * 100 + 1;
+          } catch (_) { /* ignore elevation errors */ }
         }
+
+        this.x = candidateX;
+        this.y = adjustedY;
       }
     });
     
