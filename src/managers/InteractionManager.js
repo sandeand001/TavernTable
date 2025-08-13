@@ -9,6 +9,7 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 
 export class InteractionManager {
   constructor(gameManager) {
@@ -359,12 +360,32 @@ export class InteractionManager {
    * @returns {Object} Grid coordinates
    */
   convertToGridCoordinates({ localX, localY }) {
-    return CoordinateUtils.isometricToGrid(
-      localX, 
-      localY, 
-      this.gameManager.tileWidth, 
+    // Initial conversion ignoring elevation
+    let gridCoords = CoordinateUtils.isometricToGrid(
+      localX,
+      localY,
+      this.gameManager.tileWidth,
       this.gameManager.tileHeight
     );
+
+    // Elevation-aware refinement: adjust Y by inverse elevation offset of candidate cell
+    try {
+      const height = this.gameManager?.terrainCoordinator?.dataStore?.get(gridCoords.gridX, gridCoords.gridY);
+      if (Number.isFinite(height) && height !== 0) {
+        const elevOffset = TerrainHeightUtils.calculateElevationOffset(height);
+        if (elevOffset !== 0) {
+          const refined = CoordinateUtils.isometricToGrid(
+            localX,
+            localY - elevOffset, // remove visual shift to recover baseline before inversion
+            this.gameManager.tileWidth,
+            this.gameManager.tileHeight
+          );
+          gridCoords = refined;
+        }
+      }
+    } catch (_) { /* graceful fallback if terrain not initialized */ }
+
+    return gridCoords;
   }
 
   /**

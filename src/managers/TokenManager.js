@@ -416,22 +416,22 @@ export class TokenManager {
         const moveData = event?.data || this.dragData;
         const newLocal = moveData.getLocalPosition(this.parent);
         const candidateX = newLocal.x + (this.dragOffsetX || 0);
-        const candidateY = newLocal.y + (this.dragOffsetY || 0);
+        const candidateBaseY = newLocal.y + (this.dragOffsetY || 0);
 
-        // Convert to tentative grid to fetch elevation for live preview
-        let adjustedY = candidateY;
+        let finalY = candidateBaseY;
         if (gm) {
-          const gridCoords = CoordinateUtils.isometricToGrid(candidateX, candidateY, gm.tileWidth, gm.tileHeight);
+          // First invert using baseline (remove any prior elevation we might have added)
+          const baselineGrid = CoordinateUtils.isometricToGrid(candidateX, candidateBaseY, gm.tileWidth, gm.tileHeight);
           try {
-            const height = gm?.terrainCoordinator?.dataStore?.get(gridCoords.gridX, gridCoords.gridY) ?? 0;
+            const height = gm?.terrainCoordinator?.dataStore?.get(baselineGrid.gridX, baselineGrid.gridY) ?? 0;
             const elev = TerrainHeightUtils.calculateElevationOffset(height);
-            adjustedY = candidateY + elev; // apply elevation visually during drag
-            this.zIndex = (gridCoords.gridX + gridCoords.gridY) * 100 + 1;
-          } catch (_) { /* ignore elevation errors */ }
+            finalY = candidateBaseY + elev; // add elevation effect after determining grid
+            this.zIndex = (baselineGrid.gridX + baselineGrid.gridY) * 100 + 1;
+          } catch (_) { /* ignore */ }
         }
 
         this.x = candidateX;
-        this.y = adjustedY;
+        this.y = finalY;
       }
     });
     
