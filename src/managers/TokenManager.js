@@ -5,9 +5,10 @@
  * Handles all token-related operations while preserving existing functionality
  */
 
-import logger from '../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 
 // Import creature creation functions
@@ -77,9 +78,13 @@ export class TokenManager {
         throw new Error(`${outOfBounds.length} tokens are out of bounds: ${invalidPositions}`);
       }
       
-      logger.debug(`All ${this.placedTokens.length} tokens are within grid bounds`);
+      logger.debug(`All ${this.placedTokens.length} tokens are within grid bounds`, {
+        tokenCount: this.placedTokens.length,
+        gridSize: { cols, rows }
+      }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
-      GameErrors.validation(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
         stage: 'validateTokenPositions',
         gridSize: { cols, rows },
         tokenCount: this.placedTokens.length
@@ -133,8 +138,14 @@ export class TokenManager {
           infoEl.textContent = `Click on grid to place ${tokenType}`;
         }
       }
+
+      logger.info(`Token type selected: ${tokenType}`, {
+        tokenType,
+        previousType: this.selectedTokenType
+      }, LOG_CATEGORY.USER);
     } catch (error) {
-      GameErrors.validation(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
         stage: 'selectToken',
         tokenType
       });
@@ -194,21 +205,39 @@ export class TokenManager {
       // Add to grid container first
       creature.addToStage(gridContainer);
       
-      // Calculate isometric position
+      // Calculate isometric base position
       const isoCoords = CoordinateUtils.gridToIsometric(
-        gridX, 
-        gridY, 
-        this.gameManager.tileWidth, 
+        gridX,
+        gridY,
+        this.gameManager.tileWidth,
         this.gameManager.tileHeight
       );
-      creature.setPosition(isoCoords.x, isoCoords.y);
+
+      // Elevation adjustment (terrain height -> vertical offset)
+      let elevationOffset = 0;
+      try {
+        const height = this.gameManager?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
+        elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
+      } catch (_) { /* graceful fallback */ }
+
+      creature.setPosition(isoCoords.x, isoCoords.y + elevationOffset);
+      // Ensure token renders above its tile but respects depth ordering
+      if (creature.sprite) {
+        const depth = gridX + gridY; // same metric tiles use
+        creature.sprite.zIndex = depth * 100 + 1; // tiles: depth*100
+      }
       
       // Store token info and set up interactions
       this.addTokenToCollection(creature, gridX, gridY);
       
-      logger.info(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`);
+      logger.info(`Placed ${this.selectedTokenType} at grid (${gridX}, ${gridY})`, {
+        creatureType: this.selectedTokenType,
+        coordinates: { gridX, gridY },
+        position: isoCoords
+      }, LOG_CATEGORY.USER);
     } catch (error) {
-      GameErrors.sprites(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
         stage: 'placeNewToken',
         coordinates: { gridX, gridY },
         creatureType: this.selectedTokenType
@@ -251,9 +280,15 @@ export class TokenManager {
         throw new Error(`Creation function returned null for creature type: ${type}`);
       }
       
+      logger.debug(`Created creature: ${type}`, {
+        creatureType: type,
+        hasSprite: !!creature.sprite
+      }, LOG_CATEGORY.SYSTEM);
+
       return creature;
     } catch (error) {
-      GameErrors.sprites(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
         stage: 'createCreatureByType',
         creatureType: type
       });
@@ -277,21 +312,35 @@ export class TokenManager {
       // Clamp to grid bounds
       const clampedCoords = CoordinateUtils.clampToGrid(gridCoords.gridX, gridCoords.gridY, this.gameManager.cols, this.gameManager.rows);
 
-      // Position at diamond center using CoordinateUtils
+      // Position at diamond center using CoordinateUtils + elevation
       const isoCoords = CoordinateUtils.gridToIsometric(clampedCoords.gridX, clampedCoords.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      
+
+      let elevationOffset = 0;
+      try {
+        const height = this.gameManager?.terrainCoordinator?.dataStore?.get(clampedCoords.gridX, clampedCoords.gridY) ?? 0;
+        elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
+      } catch (_) { /* ignore */ }
+
       token.x = isoCoords.x;
-      token.y = isoCoords.y;
+      token.y = isoCoords.y + elevationOffset;
+  // Maintain correct layering after snapping
+  const newDepth = clampedCoords.gridX + clampedCoords.gridY;
+  token.zIndex = newDepth * 100 + 1;
       
       // Update the token's grid position in the placedTokens array
       const tokenEntry = this.placedTokens.find(t => t.creature && t.creature.sprite === token);
       if (tokenEntry) {
         tokenEntry.gridX = clampedCoords.gridX;
         tokenEntry.gridY = clampedCoords.gridY;
-        logger.debug(`Token snapped to grid (${clampedCoords.gridX}, ${clampedCoords.gridY})`);
+        logger.debug(`Token snapped to grid (${clampedCoords.gridX}, ${clampedCoords.gridY})`, {
+          coordinates: clampedCoords,
+          originalPosition: { localX, localY },
+          newPosition: isoCoords
+        }, LOG_CATEGORY.USER);
       }
     } catch (error) {
-      GameErrors.input(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
         stage: 'snapToGrid',
         tokenPosition: { x: token.x, y: token.y }
       });
@@ -348,9 +397,11 @@ export class TokenManager {
         this.isRightDragging = true;
         this.alpha = 0.7; // Visual feedback - make semi-transparent
         this.dragData = event.data;
-        
-        // Store initial position for potential cancellation
-        this.dragStartX = this.x;
+        // Capture starting pointer local position and compute offset so cursor "grabs" sprite at contact point
+        const startLocal = this.dragData.getLocalPosition(this.parent);
+        this.dragOffsetX = this.x - startLocal.x;
+        this.dragOffsetY = this.y - startLocal.y;
+        this.dragStartX = this.x; // for potential future cancel logic
         this.dragStartY = this.y;
         
         event.stopPropagation();
@@ -358,27 +409,48 @@ export class TokenManager {
       }
     });
     
-    // Mouse move - update token position if right-dragging
-    sprite.on('pointermove', function() {
+    // Mouse move - update token position if right-dragging (allow full directional movement)
+    const gm = this.gameManager; // capture for closure
+    sprite.on('pointermove', function(event) {
       if (this.isRightDragging && this.dragData) {
-        const newPosition = this.dragData.getLocalPosition(this.parent);
-        this.x = newPosition.x;
-        this.y = newPosition.y;
+        const moveData = event?.data || this.dragData;
+        const newLocal = moveData.getLocalPosition(this.parent);
+        const candidateX = newLocal.x + (this.dragOffsetX || 0);
+        const candidateBaseY = newLocal.y + (this.dragOffsetY || 0);
+
+        let finalY = candidateBaseY;
+        if (gm) {
+          // First invert using baseline (remove any prior elevation we might have added)
+          const baselineGrid = CoordinateUtils.isometricToGrid(candidateX, candidateBaseY, gm.tileWidth, gm.tileHeight);
+          try {
+            const height = gm?.terrainCoordinator?.dataStore?.get(baselineGrid.gridX, baselineGrid.gridY) ?? 0;
+            const elev = TerrainHeightUtils.calculateElevationOffset(height);
+            finalY = candidateBaseY + elev; // add elevation effect after determining grid
+            this.zIndex = (baselineGrid.gridX + baselineGrid.gridY) * 100 + 1;
+          } catch (_) { /* ignore */ }
+        }
+
+        this.x = candidateX;
+        this.y = finalY;
       }
     });
     
     // Right mouse button up - end dragging and snap to grid
     sprite.on('pointerup', function(event) {
-      if (this.isRightDragging && event.data.originalEvent.button === 2) {
+      // Some browsers report button=0 on pointerup for a right-button drag; rely on state instead of button check
+      if (this.isRightDragging) {
         logger.debug(`Right-drag ended on ${this.tokenData.type} - snapping to grid`);
         
         this.isRightDragging = false;
         this.alpha = 1.0; // Restore full opacity
         this.dragData = null;
+  this.dragOffsetX = this.dragOffsetY = undefined;
         
         // Snap to grid using the global snap function
         if (window.snapToGrid) {
           window.snapToGrid(this);
+        } else if (gm?.tokenManager) {
+          gm.tokenManager.snapToGrid(this);
         }
         
         event.stopPropagation();
@@ -393,12 +465,36 @@ export class TokenManager {
         this.isRightDragging = false;
         this.alpha = 1.0;
         this.dragData = null;
+        this.dragOffsetX = this.dragOffsetY = undefined;
         
         // Snap to grid
         if (window.snapToGrid) {
           window.snapToGrid(this);
+        } else if (gm?.tokenManager) {
+          gm.tokenManager.snapToGrid(this);
         }
       }
     });
+
+    // One-time context menu suppression for right-drag UX
+    if (!window.__tt_context_menu_suppressed && this.gameManager?.app?.view) {
+      window.__tt_context_menu_suppressed = true;
+      this.gameManager.app.view.addEventListener('contextmenu', e => {
+        if (e.target === this.gameManager.app.view) {
+          e.preventDefault();
+        }
+      });
+    }
+
+    // Ensure a global snapToGrid bridge exists (backward compatibility for existing handlers)
+    if (typeof window !== 'undefined' && !window.snapToGrid) {
+      window.snapToGrid = (tokenSprite) => {
+        try {
+          this.snapToGrid(tokenSprite);
+        } catch (e) {
+          console.error('snapToGrid bridge error', e);
+        }
+      };
+    }
   }
 }

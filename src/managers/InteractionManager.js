@@ -5,10 +5,11 @@
  * Handles all user input interactions including mouse, keyboard, and zoom
  */
 
-import logger from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 
 export class InteractionManager {
   constructor(gameManager) {
@@ -144,6 +145,13 @@ export class InteractionManager {
     this.gridStartX = this.gameManager.gridContainer.x;
     this.gridStartY = this.gameManager.gridContainer.y;
     this.gameManager.app.view.style.cursor = 'grabbing';
+    
+    logger.log(LOG_LEVEL.TRACE, 'Grid dragging started', LOG_CATEGORY.USER, {
+      startPosition: { x: this.dragStartX, y: this.dragStartY },
+      gridPosition: { x: this.gridStartX, y: this.gridStartY },
+      currentScale: this.gridScale
+    });
+    
     event.preventDefault();
     event.stopPropagation();
   }
@@ -195,7 +203,15 @@ export class InteractionManager {
     }
     
     this.applyZoom(newScale, mouseX, mouseY);
-    logger.debug(`Zoom: ${(this.gridScale * 100).toFixed(0)}%`);
+    logger.log(LOG_LEVEL.DEBUG, 'Zoom applied', LOG_CATEGORY.USER, {
+      zoomDirection,
+      zoomFactor,
+      previousScale: this.gridScale / zoomFactor,
+      newScale: this.gridScale,
+      zoomPercentage: `${(this.gridScale * 100).toFixed(0)}%`,
+      mousePosition: { x: mouseX, y: mouseY },
+      bounds: { min: this.minScale, max: this.maxScale }
+    });
   }
 
   /**
@@ -223,9 +239,14 @@ export class InteractionManager {
       this.gridScale = 1.0;
       this.gameManager.gridContainer.scale.set(this.gridScale);
       this.gameManager.centerGrid();
-      logger.debug('Grid zoom reset to default');
+      logger.debug('Grid zoom reset to default', {
+        newScale: this.gridScale
+      }, LOG_CATEGORY.USER);
     } catch (error) {
-      GameErrors.rendering(error, { stage: 'resetZoom' });
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.RENDERING, { 
+        stage: 'resetZoom' 
+      });
     }
   }
 
@@ -238,19 +259,41 @@ export class InteractionManager {
       if (event.button !== 0) {
         return;
       }
+
+      // Check if terrain mode is active - if so, ignore token placement
+      if (this.gameManager.isTerrainModeActive()) {
+        // Terrain mode is active, token placement is disabled
+        logger.log('Token placement disabled while terrain mode is active', 
+          LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION);
+        
+        // Provide visual feedback through cursor change or similar
+        this.gameManager.app.view.style.cursor = 'not-allowed';
+        setTimeout(() => {
+          this.gameManager.app.view.style.cursor = 'crosshair'; // Reset to terrain cursor
+        }, 200);
+        
+        return;
+      }
       
       const gridCoords = this.getGridCoordinatesFromClick(event);
       if (!gridCoords) {
-        GameErrors.validation('Click outside valid grid area', {
-          event: { x: event.clientX, y: event.clientY }
-        });
+        const errorHandler = new ErrorHandler();
+        errorHandler.handle(
+          new Error('Click outside valid grid area'), 
+          ERROR_SEVERITY.INFO, 
+          ERROR_CATEGORY.VALIDATION, 
+          {
+            event: { x: event.clientX, y: event.clientY }
+          }
+        );
         return;
       }
       
       const { gridX, gridY } = gridCoords;
       this.gameManager.handleTokenInteraction(gridX, gridY);
     } catch (error) {
-      GameErrors.input(error, {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
         stage: 'handleLeftClick',
         event: { button: event.button, x: event.clientX, y: event.clientY }
       });
@@ -274,7 +317,11 @@ export class InteractionManager {
       
       return gridCoords;
     } catch (error) {
-      GameErrors.input(error, { stage: 'getGridCoordinatesFromClick' });
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+        context: 'getGridCoordinatesFromClick',
+        stage: 'coordinate_conversion',
+        event: event ? { x: event.clientX, y: event.clientY } : null
+      });
       return null;
     }
   }
@@ -313,12 +360,32 @@ export class InteractionManager {
    * @returns {Object} Grid coordinates
    */
   convertToGridCoordinates({ localX, localY }) {
-    return CoordinateUtils.isometricToGrid(
-      localX, 
-      localY, 
-      this.gameManager.tileWidth, 
+    // Initial conversion ignoring elevation
+    let gridCoords = CoordinateUtils.isometricToGrid(
+      localX,
+      localY,
+      this.gameManager.tileWidth,
       this.gameManager.tileHeight
     );
+
+    // Elevation-aware refinement: adjust Y by inverse elevation offset of candidate cell
+    try {
+      const height = this.gameManager?.terrainCoordinator?.dataStore?.get(gridCoords.gridX, gridCoords.gridY);
+      if (Number.isFinite(height) && height !== 0) {
+        const elevOffset = TerrainHeightUtils.calculateElevationOffset(height);
+        if (elevOffset !== 0) {
+          const refined = CoordinateUtils.isometricToGrid(
+            localX,
+            localY - elevOffset, // remove visual shift to recover baseline before inversion
+            this.gameManager.tileWidth,
+            this.gameManager.tileHeight
+          );
+          gridCoords = refined;
+        }
+      }
+    } catch (_) { /* graceful fallback if terrain not initialized */ }
+
+    return gridCoords;
   }
 
   /**
@@ -327,9 +394,8 @@ export class InteractionManager {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition({ gridX, gridY }) {
-    const coordValidation = GameValidators.coordinates(gridX, gridY);
-    return coordValidation.isValid && 
-           CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
+  // Consolidated validation: coordinates must be integers within grid bounds
+  return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
   }
 
   // Getters for backward compatibility

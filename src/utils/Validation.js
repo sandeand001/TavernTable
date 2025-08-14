@@ -6,6 +6,7 @@
  */
 
 import { GRID_CONFIG, CREATURE_SCALES, DICE_CONFIG } from '../config/GameConstants.js';
+import { logger } from './Logger.js';
 
 /**
  * Basic type validation utilities
@@ -322,105 +323,31 @@ export const Sanitizers = {
       x: Math.max(0, Math.min(Math.floor(x || 0), width - 1)),
       y: Math.max(0, Math.min(Math.floor(y || 0), height - 1))
     };
+  },
+
+  /**
+   * Sanitize enum values to allowed options
+   * @param {*} value - Value to sanitize
+   * @param {*} defaultValue - Default value if value not in allowed list
+   * @param {Array} allowedValues - Array of allowed values
+   * @returns {*} Sanitized value from allowed list
+   */
+  enum(value, defaultValue, allowedValues = []) {
+    if (!Array.isArray(allowedValues)) {
+      logger.warn('Sanitizers.enum called with invalid allowedValues array', {
+        allowedValues,
+        defaultValue,
+        value
+      });
+      return defaultValue;
+    }
+    
+    // Check if value is in allowed list
+    if (allowedValues.includes(value)) {
+      return value;
+    }
+    
+    // Fallback to default value
+    return defaultValue;
   }
 };
-
-/**
- * Validation result builder utility
- */
-export class ValidationResult {
-  constructor() {
-    this.isValid = true;
-    this.errors = [];
-    this.warnings = [];
-  }
-  
-  /**
-   * Add an error to the result
-   * @param {string} message - Error message
-   * @returns {ValidationResult} This instance for chaining
-   */
-  addError(message) {
-    this.isValid = false;
-    this.errors.push(message);
-    return this;
-  }
-  
-  /**
-   * Add a warning to the result
-   * @param {string} message - Warning message
-   * @returns {ValidationResult} This instance for chaining
-   */
-  addWarning(message) {
-    this.warnings.push(message);
-    return this;
-  }
-  
-  /**
-   * Merge another validation result
-   * @param {ValidationResult} other - Other validation result
-   * @returns {ValidationResult} This instance for chaining
-   */
-  merge(other) {
-    if (!other.isValid) {
-      this.isValid = false;
-      this.errors.push(...other.errors);
-    }
-    this.warnings.push(...other.warnings);
-    return this;
-  }
-  
-  /**
-   * Get formatted error message
-   * @returns {string} Formatted error message
-   */
-  getErrorMessage() {
-    return this.errors.join(' ');
-  }
-  
-  /**
-   * Get formatted warning message
-   * @returns {string} Formatted warning message
-   */
-  getWarningMessage() {
-    return this.warnings.join(' ');
-  }
-}
-
-/**
- * Validation schema utility for complex object validation
- */
-export class ValidationSchema {
-  constructor(schema) {
-    this.schema = schema;
-  }
-  
-  /**
-   * Validate object against schema
-   * @param {Object} obj - Object to validate
-   * @returns {ValidationResult} Validation result
-   */
-  validate(obj) {
-    const result = new ValidationResult();
-    
-    for (const [key, validator] of Object.entries(this.schema)) {
-      const value = obj[key];
-      
-      if (typeof validator === 'function') {
-        const validationResult = validator(value);
-        if (validationResult && !validationResult.isValid) {
-          result.merge(validationResult);
-        }
-      } else if (validator.required && !(key in obj)) {
-        result.addError(`Missing required field: ${key}`);
-      } else if (key in obj && validator.validate) {
-        const validationResult = validator.validate(value);
-        if (validationResult && !validationResult.isValid) {
-          result.merge(validationResult);
-        }
-      }
-    }
-    
-    return result;
-  }
-}

@@ -5,8 +5,8 @@
  * Manages all grid rendering operations while preserving existing functionality
  */
 
-import logger from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
@@ -25,10 +25,17 @@ export class GridRenderer {
         throw new Error('GameManager PIXI app not initialized before grid setup');
       }
       
-      logger.debug('Creating grid container...');
+      logger.log(LOG_LEVEL.DEBUG, 'Creating grid container', LOG_CATEGORY.SYSTEM, {
+        context: 'GridRenderer.setupGrid',
+        stage: 'container_creation',
+        pixiApp: !!(this.gameManager.app),
+        pixiStage: !!(this.gameManager.app?.stage)
+      });
       
       // Create main grid container
       this.gameManager.gridContainer = new PIXI.Container();
+  // Enable zIndex-based sorting so tokens/tiles can occlude correctly in isometric depth
+  this.gameManager.gridContainer.sortableChildren = true;
       this.gameManager.app.stage.addChild(this.gameManager.gridContainer);
       
       // Draw grid tiles
@@ -41,12 +48,33 @@ export class GridRenderer {
       // Center the grid after initial setup
       this.gameManager.centerGrid();
       
-      logger.debug(`Grid setup completed: ${this.gameManager.cols}x${this.gameManager.rows} tiles`);
+      logger.log(LOG_LEVEL.DEBUG, 'Grid setup completed', LOG_CATEGORY.SYSTEM, {
+        context: 'GridRenderer.setupGrid',
+        stage: 'setup_completion',
+        gridDimensions: { 
+          cols: this.gameManager.cols, 
+          rows: this.gameManager.rows,
+          totalTiles: this.gameManager.cols * this.gameManager.rows
+        },
+        gridCentered: true,
+        performance: {
+          timestamp: new Date().toISOString()
+        }
+      });
     } catch (error) {
-      GameErrors.rendering(error, {
-        stage: 'setupGrid',
-        cols: this.gameManager.cols,
-        rows: this.gameManager.rows
+      new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.RENDERING, {
+        context: 'setupGrid',
+        stage: 'grid_initialization',
+        gridDimensions: { 
+          cols: this.gameManager.cols, 
+          rows: this.gameManager.rows 
+        },
+        pixiAppAvailable: !!(this.gameManager.app),
+        pixiStageAvailable: !!(this.gameManager.app?.stage),
+        gameManagerState: {
+          initialized: !!this.gameManager,
+          hasContainer: !!(this.gameManager.gridContainer)
+        }
       });
       throw error;
     }
@@ -83,6 +111,11 @@ export class GridRenderer {
       // Position tile in isometric space
       tile.x = (x - y) * (this.gameManager.tileWidth / 2);
       tile.y = (x + y) * (this.gameManager.tileHeight / 2);
+      // Store baseline isometric Y to avoid cumulative elevation offsets
+      tile.baseIsoY = tile.y;
+  // Depth sorting: lower (x+y) renders first; higher renders on top
+  tile.depthValue = x + y;
+  tile.zIndex = tile.depthValue * 100; // leave room between layers for tokens/effects
       
       // Mark this as a grid tile (not a creature token)
       tile.isGridTile = true;

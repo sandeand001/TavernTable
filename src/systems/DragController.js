@@ -20,7 +20,8 @@
  * @since 1.0.0
  */
 
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { TypeValidators } from '../utils/Validation.js';
 
 /**
@@ -31,7 +32,17 @@ function onDragStart(event) {
   try {
     // Validate event object
     if (!TypeValidators.isObject(event, ['data'])) {
-      GameErrors.showSystemError('Invalid drag start event');
+      new ErrorHandler().handle(
+        new Error('Invalid drag start event structure'),
+        ERROR_SEVERITY.MEDIUM,
+        ERROR_CATEGORY.INPUT,
+        {
+          context: 'onDragStart',
+          stage: 'event_validation',
+          eventObject: event ? typeof event : 'undefined',
+          hasData: !!(event?.data)
+        }
+      );
       return;
     }
     
@@ -44,11 +55,25 @@ function onDragStart(event) {
     this.dragging = true;
     this.alpha = 0.7;
     
+    logger.log(LOG_LEVEL.TRACE, 'Token drag started', LOG_CATEGORY.USER, {
+      tokenId: this?.id || 'unknown',
+      tokenType: this?.tokenType || 'unknown',
+      startPosition: { x: this.x, y: this.y },
+      buttonPressed: event?.data?.originalEvent?.button,
+      alpha: this.alpha
+    });
+    
     // Stop event propagation to prevent grid dragging
     event.stopPropagation();
     
   } catch (error) {
-    GameErrors.handleError(error, 'Failed to start token drag');
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+      context: 'onDragStart',
+      stage: 'drag_initialization',
+      tokenId: this?.id || 'unknown',
+      buttonPressed: event?.data?.originalEvent?.button,
+      hasData: !!(event?.data)
+    });
   }
 }
 
@@ -72,16 +97,31 @@ function onDragEnd(event) {
       window.snapToGrid(this);
     }
     
+    logger.log(LOG_LEVEL.TRACE, 'Token drag completed', LOG_CATEGORY.USER, {
+      tokenId: this?.id || 'unknown',
+      finalPosition: { x: this.x, y: this.y },
+      snapToGridUsed: !!window.snapToGrid,
+      alpha: this.alpha,
+      draggingState: this.dragging
+    });
+    
   } catch (error) {
-    GameErrors.handleError(error, 'Failed to end token drag');
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+      context: 'onDragEnd',
+      stage: 'drag_completion',
+      tokenId: this?.id || 'unknown',
+      buttonPressed: event?.data?.originalEvent?.button,
+      snapToGridAvailable: !!window.snapToGrid,
+      finalAlpha: this?.alpha,
+      draggingState: this?.dragging
+    });
   }
 }
 
 /**
  * Handle drag move event for creature tokens
- * @param {Object} event - PIXI interaction event
  */
-function onDragMove(event) {
+function onDragMove() {
   try {
     if (this.dragging && this.data) {
       const newPosition = this.data.getLocalPosition(this.parent);
@@ -89,7 +129,15 @@ function onDragMove(event) {
       this.y = newPosition.y;
     }
   } catch (error) {
-    GameErrors.handleError(error, 'Failed to move token during drag');
+    new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.RENDERING, {
+      context: 'onDragMove',
+      stage: 'position_update',
+      tokenId: this?.id || 'unknown',
+      draggingState: this?.dragging,
+      hasData: !!(this?.data),
+      currentPosition: { x: this?.x, y: this?.y },
+      targetPosition: this?.data ? 'calculated' : 'unavailable'
+    });
   }
 }
 

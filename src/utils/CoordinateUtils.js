@@ -3,7 +3,22 @@
  * 
  * Provides isometric coordinate conversion utilities extracted from GameManager
  * Following the single responsibility principle and separation of concerns
+ * 
+ * Features:
+ * - Coordinate transformation between grid and isometric space
+ * - Input validation and error handling with structured logging
+ * - Boundary checking and coordinate clamping
+ * - Performance monitoring for coordinate operations
+ * 
+ * @author TavernTable Development Team
+ * @version 2.0.0
  */
+
+import { logger, LOG_CATEGORY } from './Logger.js';
+import { TOKEN_PLACEMENT_OFFSET as CONFIG_TOKEN_OFFSET } from '../config/GameConstants.js';
+// Fallback in case build caching serves older GameConstants without export
+const TOKEN_PLACEMENT_OFFSET = (typeof CONFIG_TOKEN_OFFSET !== 'undefined') ? CONFIG_TOKEN_OFFSET : { x: 0, y: 0 };
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from './ErrorHandler.js';
 
 /**
  * Coordinate transformation utilities for isometric grid systems
@@ -19,15 +34,54 @@ export class CoordinateUtils {
    * @returns {Object} Object with x, y pixel coordinates
    */
   static gridToIsometric(gridX, gridY, tileWidth, tileHeight) {
-    // Apply -0.5 offset to both coordinates for center positioning
-    const offsetGridX = gridX - 0.5;
-    const offsetGridY = gridY - 0.5;
-    
-    // Convert to isometric coordinates
-    const x = (offsetGridX - offsetGridY) * (tileWidth / 2) + (tileWidth / 2);
-    const y = (offsetGridX + offsetGridY) * (tileHeight / 2) + (tileHeight / 2);
-    
-    return { x, y };
+    try {
+      // Validate input parameters
+      if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
+        throw new Error(`Invalid grid coordinates: gridX=${gridX}, gridY=${gridY}`);
+      }
+      
+      if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
+        throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
+      }
+
+      if (logger.config?.level === 0) { // TRACE level
+        logger.trace('Converting grid to isometric coordinates', {
+          input: { gridX, gridY, tileWidth, tileHeight }
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+  // Compute tile origin (top point) identical to GridRenderer.drawIsometricTile positioning
+  // tileOriginX = (gx - gy) * (w/2)
+  // tileOriginY = (gx + gy) * (h/2)
+  const tileOriginX = (gridX - gridY) * (tileWidth / 2);
+  const tileOriginY = (gridX + gridY) * (tileHeight / 2);
+
+  // For tokens whose sprites use anchor (0.5,1.0) (bottom-center), we want the bottom of the sprite
+  // to sit on the vertical center line of the diamond (which is tileOriginY + h/2).
+  // So final placement point for sprite.x/y should be:
+  //   x = tileOriginX + w/2  (center horizontally)
+  //   y = tileOriginY + h/2  (baseline where bottom of sprite rests)
+  const x = tileOriginX + (tileWidth / 2) + (TOKEN_PLACEMENT_OFFSET?.x || 0);
+  const y = tileOriginY + (tileHeight / 2) + (TOKEN_PLACEMENT_OFFSET?.y || 0);
+      
+      const result = { x, y };
+      
+      if (logger.config?.level === 0) {
+        logger.trace('Grid to isometric conversion completed', {
+          input: { gridX, gridY },
+          output: result
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      return result;
+    } catch (error) {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {
+        operation: 'gridToIsometric',
+        input: { gridX, gridY, tileWidth, tileHeight }
+      });
+      throw error;
+    }
   }
   
   /**
@@ -39,35 +93,48 @@ export class CoordinateUtils {
    * @returns {Object} Object with gridX, gridY coordinates
    */
   static isometricToGrid(x, y, tileWidth, tileHeight) {
-    // Account for tile centering offset - subtract half tile dimensions
-    const adjustedX = x - (tileWidth / 2);
-    const adjustedY = y - (tileHeight / 2);
-    
-    // Convert back to grid coordinates using adjusted coordinates  
-    const gridX = Math.round((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
-    const gridY = Math.round((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
-    
-    return { gridX, gridY };
-  }
-  
-  /**
-   * Convert screen coordinates to local container coordinates
-   * @param {number} clientX - Mouse client X position
-   * @param {number} clientY - Mouse client Y position
-   * @param {PIXI.Container} container - PIXI container
-   * @param {HTMLElement} canvasElement - Canvas DOM element
-   * @returns {Object} Object with localX, localY coordinates
-   */
-  static screenToLocal(clientX, clientY, container, canvasElement) {
-    const rect = canvasElement.getBoundingClientRect();
-    const mouseX = clientX - rect.left;
-    const mouseY = clientY - rect.top;
-    
-    // Account for container position and scale
-    const localX = (mouseX - container.x) / container.scale.x;
-    const localY = (mouseY - container.y) / container.scale.y;
-    
-    return { localX, localY };
+    try {
+      // Validate input parameters
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new Error(`Invalid pixel coordinates: x=${x}, y=${y}`);
+      }
+      
+      if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
+        throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
+      }
+
+      if (logger.config?.level === 0) {
+        logger.trace('Converting isometric to grid coordinates', {
+          input: { x, y, tileWidth, tileHeight }
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+  // Invert forward transform derived above:
+  // Given x = (gx - gy)*(w/2) + w/2 and y = (gx + gy)*(h/2) + h/2
+  // Subtract the center offsets first.
+  const adjustedX = x - (tileWidth / 2) - (TOKEN_PLACEMENT_OFFSET?.x || 0);
+  const adjustedY = y - (tileHeight / 2) - (TOKEN_PLACEMENT_OFFSET?.y || 0);
+  const gridX = Math.round((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
+  const gridY = Math.round((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
+      
+      const result = { gridX, gridY };
+      
+      if (logger.config?.level === 0) {
+        logger.trace('Isometric to grid conversion completed', {
+          input: { x, y },
+          output: result
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      return result;
+    } catch (error) {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.COORDINATE, {
+        operation: 'isometricToGrid',
+        input: { x, y, tileWidth, tileHeight }
+      });
+      throw error;
+    }
   }
   
   /**
@@ -79,10 +146,45 @@ export class CoordinateUtils {
    * @returns {Object} Object with clamped gridX, gridY coordinates
    */
   static clampToGrid(gridX, gridY, maxCols, maxRows) {
-    const clampedX = Math.max(0, Math.min(maxCols - 1, gridX));
-    const clampedY = Math.max(0, Math.min(maxRows - 1, gridY));
-    
-    return { gridX: clampedX, gridY: clampedY };
+    try {
+      // Validate input parameters
+      if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
+        throw new Error(`Invalid grid coordinates: gridX=${gridX}, gridY=${gridY}`);
+      }
+      
+      if (!Number.isInteger(maxCols) || maxCols <= 0 || !Number.isInteger(maxRows) || maxRows <= 0) {
+        throw new Error(`Invalid grid bounds: maxCols=${maxCols}, maxRows=${maxRows}`);
+      }
+
+      if (logger.config?.level === 0) {
+        logger.trace('Clamping coordinates to grid bounds', {
+          input: { gridX, gridY, maxCols, maxRows }
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      const clampedX = Math.max(0, Math.min(maxCols - 1, gridX));
+      const clampedY = Math.max(0, Math.min(maxRows - 1, gridY));
+      
+      const result = { gridX: clampedX, gridY: clampedY };
+      
+      if (clampedX !== gridX || clampedY !== gridY) {
+        logger.debug('Coordinates clamped to grid bounds', {
+          original: { gridX, gridY },
+          clamped: result,
+          bounds: { maxCols, maxRows }
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      return result;
+    } catch (error) {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.COORDINATE, {
+        operation: 'clampToGrid',
+        input: { gridX, gridY, maxCols, maxRows }
+      });
+      // Return safe default coordinates
+      return { gridX: 0, gridY: 0 };
+    }
   }
   
   /**
@@ -94,20 +196,40 @@ export class CoordinateUtils {
    * @returns {boolean} True if coordinates are valid
    */
   static isValidGridPosition(gridX, gridY, maxCols, maxRows) {
-    return gridX >= 0 && gridX < maxCols && gridY >= 0 && gridY < maxRows;
-  }
-  
-  /**
-   * Calculate distance between two grid positions
-   * @param {number} x1 - First position X
-   * @param {number} y1 - First position Y
-   * @param {number} x2 - Second position X
-   * @param {number} y2 - Second position Y
-   * @returns {number} Distance between positions
-   */
-  static gridDistance(x1, y1, x2, y2) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    return Math.sqrt(dx * dx + dy * dy);
+    try {
+      // Validate input parameters
+      if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
+        logger.debug('Invalid grid coordinates for bounds check', {
+          gridX, gridY, maxCols, maxRows
+        }, LOG_CATEGORY.SYSTEM);
+        return false;
+      }
+      
+      if (!Number.isInteger(maxCols) || maxCols <= 0 || !Number.isInteger(maxRows) || maxRows <= 0) {
+        logger.debug('Invalid grid bounds for position check', {
+          gridX, gridY, maxCols, maxRows
+        }, LOG_CATEGORY.SYSTEM);
+        return false;
+      }
+
+      const isValid = gridX >= 0 && gridX < maxCols && gridY >= 0 && gridY < maxRows;
+      
+      if (logger.config?.level === 0) {
+        logger.trace('Grid position validation completed', {
+          coordinates: { gridX, gridY },
+          bounds: { maxCols, maxRows },
+          isValid
+        }, LOG_CATEGORY.SYSTEM);
+      }
+
+      return isValid;
+    } catch (error) {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.COORDINATE, {
+        operation: 'isValidGridPosition',
+        input: { gridX, gridY, maxCols, maxRows }
+      });
+      return false;
+    }
   }
 }

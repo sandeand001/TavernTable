@@ -20,8 +20,8 @@
  * - Integrates with existing manager systems
  */
 
-import { logger, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import logger from '../utils/Logger.js';
+import { GameErrors, errorHandler } from '../utils/ErrorHandler.js';
 import { Sanitizers } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
@@ -29,13 +29,11 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
 import { StateCoordinator } from '../coordinators/StateCoordinator.js';
 import { InputCoordinator } from '../coordinators/InputCoordinator.js';
-import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 
 // Import existing managers
-// Managers are created dynamically within StateCoordinator to avoid circular dependencies
-// import { TokenManager } from '../managers/TokenManager.js';
-// import { InteractionManager } from '../managers/InteractionManager.js';
-// import { GridRenderer } from '../managers/GridRenderer.js';
+import { TokenManager } from '../managers/TokenManager.js';
+import { InteractionManager } from '../managers/InteractionManager.js';
+import { GridRenderer } from '../managers/GridRenderer.js';
 
 /**
  * TavernTable Game Manager
@@ -51,28 +49,27 @@ class GameManager {
     this.gridContainer = null;
     this.spritesReady = false;
     
-    // Grid configuration from constants (must be set BEFORE coordinators use them)
-    this.tileWidth = GRID_CONFIG.TILE_WIDTH;
-    this.tileHeight = GRID_CONFIG.TILE_HEIGHT;
-    this.cols = GRID_CONFIG.DEFAULT_COLS;
-    this.rows = GRID_CONFIG.DEFAULT_ROWS;
-
-    // Create coordinators after grid dimensions are available
+    // Create coordinators first
     this.renderCoordinator = new RenderCoordinator(this);
     this.stateCoordinator = new StateCoordinator(this);
     this.inputCoordinator = new InputCoordinator(this);
-    this.terrainCoordinator = new TerrainCoordinator(this);
     
     // Managers will be initialized after PIXI app creation in initialize()
     this.tokenManager = null;
     this.interactionManager = null;
     this.gridRenderer = null;
     
+    // Grid configuration from constants
+    this.tileWidth = GRID_CONFIG.TILE_WIDTH;
+    this.tileHeight = GRID_CONFIG.TILE_HEIGHT;
+    this.cols = GRID_CONFIG.DEFAULT_COLS;
+    this.rows = GRID_CONFIG.DEFAULT_ROWS;
+    
     // Initialize error handler
     errorHandler.initialize();
     
     // Configure logger context
-    logger.pushContext({ component: 'GameManager' });
+    logger.setContext('GameManager');
   }
 
   // Property getters for backward compatibility with null safety
@@ -136,7 +133,12 @@ class GameManager {
   /**
    * Create manager instances after PIXI app is ready
    */
-  // createManagers() no longer needed here (handled by StateCoordinator.createManagers())
+  createManagers() {
+    logger.debug('Creating manager instances...');
+    this.tokenManager = new TokenManager(this);
+    this.interactionManager = new InteractionManager(this);
+    this.gridRenderer = new GridRenderer(this);
+  }
 
   // === RENDERING OPERATIONS (Delegated to RenderCoordinator) ===
   
@@ -292,74 +294,6 @@ class GameManager {
     return this.inputCoordinator.snapToGrid(token);
   }
 
-  // === TERRAIN OPERATIONS (Delegated to TerrainCoordinator) ===
-
-  /**
-   * Enable terrain modification mode
-   */
-  enableTerrainMode() {
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.enableTerrainMode();
-    }
-  }
-
-  /**
-   * Disable terrain modification mode
-   */
-  disableTerrainMode() {
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.disableTerrainMode();
-    }
-  }
-
-  /**
-   * Set current terrain tool
-   * @param {string} tool - Tool name ('raise' or 'lower')
-   */
-  setTerrainTool(tool) {
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.setTerrainTool(tool);
-    }
-  }
-
-  /**
-   * Get terrain height at specific coordinates
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   * @returns {number} Terrain height
-   */
-  getTerrainHeight(gridX, gridY) {
-    return this.terrainCoordinator ? 
-      this.terrainCoordinator.getTerrainHeight(gridX, gridY) : 0;
-  }
-
-  /**
-   * Reset all terrain heights to default
-   */
-  resetTerrain() {
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.resetTerrain();
-    }
-  }
-
-  /**
-   * Get terrain system statistics
-   * @returns {Object} Terrain system statistics
-   */
-  getTerrainStatistics() {
-    return this.terrainCoordinator ? 
-      this.terrainCoordinator.getTerrainStatistics() : null;
-  }
-
-  /**
-   * Check if terrain mode is currently active
-   * @returns {boolean} True if terrain mode is active
-   */
-  isTerrainModeActive() {
-    return this.terrainCoordinator ? 
-      this.terrainCoordinator.isTerrainModeActive : false;
-  }
-
   // === GRID MANAGEMENT ===
 
   /**
@@ -385,11 +319,6 @@ class GameManager {
       // Update grid dimensions through state coordinator
       this.stateCoordinator.updateGridDimensions(sanitizedCols, sanitizedRows);
       
-      // Update terrain system for new grid dimensions
-      if (this.terrainCoordinator) {
-        this.terrainCoordinator.handleGridResize(sanitizedCols, sanitizedRows);
-      }
-      
       // Clear existing grid tiles and redraw
       if (this.gridRenderer) {
         this.gridRenderer.redrawGrid();
@@ -403,13 +332,9 @@ class GameManager {
         this.renderCoordinator.centerGrid();
       }
       
-      logger.info(`Grid resized to ${sanitizedCols}x${sanitizedRows}`, {
-        newDimensions: { cols: sanitizedCols, rows: sanitizedRows },
-        previousDimensions: { cols: this.cols, rows: this.rows }
-      }, LOG_CATEGORY.SYSTEM);
+      logger.info(`Grid resized to ${sanitizedCols}x${sanitizedRows}`);
     } catch (error) {
-      const errorHandler = new ErrorHandler();
-      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.VALIDATION, {
+      GameErrors.validation(error, {
         stage: 'resizeGrid',
         requestedCols: newCols,
         requestedRows: newRows,
@@ -421,7 +346,44 @@ class GameManager {
   }
 }
 
-// Legacy global wrapper functions removed (2025-08 cleanup). UI now binds directly to gameManager methods.
+/**
+ * Global functions for backward compatibility and UI interaction
+ * @deprecated - These should be replaced with direct GameManager method calls
+ */
+
+/**
+ * Select a token type for placement
+ * @param {string} tokenType - Type of token to select
+ */
+function selectToken(tokenType) {
+  if (window.gameManager) {
+    window.gameManager.selectToken(tokenType);
+  }
+}
+
+/**
+ * Toggle token facing direction
+ */
+function toggleFacing() {
+  if (window.gameManager) {
+    window.gameManager.toggleFacing();
+  }
+}
+
+/**
+ * Snap a token to the nearest grid position
+ * @param {PIXI.Sprite} token - Token sprite to snap
+ */
+function snapToGrid(token) {
+  if (window.gameManager) {
+    window.gameManager.snapToGrid(token);
+  }
+}
+
+// Make global functions available for backward compatibility
+window.selectToken = selectToken;
+window.toggleFacing = toggleFacing;
+window.snapToGrid = snapToGrid;
 
 // Export the GameManager class for ES6 module usage
 export default GameManager;

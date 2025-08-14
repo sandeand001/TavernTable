@@ -40,9 +40,10 @@
   <div id="right-sidebar" role="complementary" aria-label="Game management sidebar">
     <!-- Tab Navigation -->
     <div id="sidebar-tabs" role="tablist" aria-label="Game menu tabs">
-      <button class="tab-button active" data-tab="dice-log" role="tab" aria-selected="true" aria-controls="dice-log-panel">🎲 Dice Log</button>
-      <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false" aria-controls="creatures-panel">🗡️ Creatures</button>
+  <button class="tab-button active" data-tab="dice-log" role="tab" aria-selected="true" aria-controls="dice-log-panel">🎲 Dice Log</button>
+  <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false" aria-controls="creatures-panel">🗡️ Creatures</button>
       <button class="tab-button" data-tab="terrain" role="tab" aria-selected="false" aria-controls="terrain-panel">🏔️ Terrain</button>
+      <button class="tab-button" data-tab="biomes" role="tab" aria-selected="false" aria-controls="biomes-panel">🌍 Biomes</button>
       <button class="tab-button" data-tab="settings" role="tab" aria-selected="false" aria-controls="settings-panel">⚙️ Settings</button>
     </div>
 
@@ -67,10 +68,12 @@
         <div class="section">
           <div class="section-title">Token Selection</div>
           <div id="creature-content" role="group" aria-label="Creature token selection">
+            <!-- Only tokens with existing sprites -->
             <button id="token-beholder" onclick="selectToken('beholder')" aria-label="Select Beholder token">👁️ Beholder</button>
+            <button id="token-defeated-doll" onclick="selectToken('defeated-doll')" aria-label="Select Defeated Doll token">� Defeated Doll</button>
             <button id="token-dragon" onclick="selectToken('dragon')" aria-label="Select Dragon token">🐉 Dragon</button>
-            <button id="token-goblin" onclick="selectToken('goblin')" class="selected" aria-label="Select Goblin token" aria-pressed="true">🧌 Goblin</button>
-            <button id="token-mindflayer" onclick="selectToken('mindflayer')" aria-label="Select Mind Flayer token">🐙 Mind Flayer</button>
+            <button id="token-goblin" onclick="selectToken('goblin')" aria-label="Select Goblin token">🧌 Goblin</button>
+            <button id="token-mindflayer" onclick="selectToken('mindflayer')" aria-label="Select Mind Flayer token">🦑 Mind Flayer</button>
             <button id="token-minotaur" onclick="selectToken('minotaur')" aria-label="Select Minotaur token">🐂 Minotaur</button>
             <button id="token-orc" onclick="selectToken('orc')" aria-label="Select Orc token">🧟 Orc</button>
             <button id="token-owlbear" onclick="selectToken('owlbear')" aria-label="Select Owlbear token">🐻 Owlbear</button>
@@ -89,6 +92,26 @@
         <div class="section">
           <div class="section-title">Facing Direction</div>
           <button id="facing-right" onclick="toggleFacing()" class="action-button selected" aria-pressed="true" aria-label="Toggle token facing direction">➡️ Right</button>
+        </div>
+
+        <!-- Sprite Position Adjuster -->
+        <div class="section">
+          <div class="section-title">Sprite Adjust</div>
+          <div class="nudge-grid">
+            <button id="nudge-up" onclick="nudgeSelectedSprite(0,-1)" aria-label="Nudge sprite up">⬆️</button>
+            <div class="nudge-middle-row">
+              <button id="nudge-left" onclick="nudgeSelectedSprite(-1,0)" aria-label="Nudge sprite left">⬅️</button>
+              <button id="nudge-center" onclick="captureSpriteBaseline()" aria-label="Capture current sprite baseline">🎯</button>
+              <button id="nudge-right" onclick="nudgeSelectedSprite(1,0)" aria-label="Nudge sprite right">➡️</button>
+            </div>
+            <button id="nudge-down" onclick="nudgeSelectedSprite(0,1)" aria-label="Nudge sprite down">⬇️</button>
+          </div>
+          <div class="adjust-actions">
+            <button id="save-offset" onclick="saveSpriteOffset()" aria-label="Save current sprite offset for this creature type">💾 Save Offset</button>
+            <button id="toggle-auto-apply" onclick="toggleAutoApplyOffsets()" aria-label="Toggle auto apply saved offsets">⚡ Auto Apply: Off</button>
+            <button id="reset-offset" onclick="resetSpriteOffset()" aria-label="Reset saved offset for this creature type">♻️ Reset Offset</button>
+          </div>
+          <div id="sprite-adjust-log" class="adjust-log" aria-live="polite"></div>
         </div>
       </div>
 
@@ -109,15 +132,88 @@
           <button onclick="resetZoom()" class="action-button" aria-label="Reset zoom level to default">🔍 Reset Zoom</button>
         </div>
         
-        <!-- Terrain Tools (Future) -->
+        <!-- Terrain Tools -->
         <div class="section">
           <div class="section-title">Terrain Tools</div>
-          <div class="placeholder-content">
-            🚧 Terrain manipulation tools coming soon!
-            <br><small>• Add walls and barriers</small>
-            <br><small>• Paint terrain types</small>
-            <br><small>• Place environmental objects</small>
+          
+          <!-- Terrain Mode Toggle -->
+          <div class="terrain-mode">
+            <label class="toggle-switch">
+              <input type="checkbox" id="terrain-mode-toggle" onchange="toggleTerrainMode()">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Terrain Mode</span>
+            </label>
           </div>
+          
+          <!-- Terrain Tools -->
+          <div id="terrain-tools" class="terrain-tools-container" style="display: none;">
+            <div class="tool-group">
+              <div class="section-subtitle">Tools</div>
+              <div class="tool-buttons">
+                <button id="terrain-raise-btn" onclick="setTerrainTool('raise')" class="terrain-tool-btn active" aria-label="Raise terrain height">⬆️ Raise</button>
+                <button id="terrain-lower-btn" onclick="setTerrainTool('lower')" class="terrain-tool-btn" aria-label="Lower terrain height">⬇️ Lower</button>
+              </div>
+            </div>
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Brush Size</div>
+              <div class="brush-controls">
+                <button onclick="decreaseBrushSize()" class="brush-btn" aria-label="Decrease brush size">➖</button>
+                <span id="brush-size-display" class="brush-size">1x1</span>
+                <button onclick="increaseBrushSize()" class="brush-btn" aria-label="Increase brush size">➕</button>
+              </div>
+            </div>
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Height Indicator</div>
+              <div class="height-indicator">
+                <span class="height-label">Current Level:</span>
+                <span id="terrain-height-display" class="height-value">0</span>
+                <div class="height-scale" aria-label="Terrain height scale -5 to 5">
+                  <span class="scale-mark" data-height="-5">-5</span>
+                  <span class="scale-mark" data-height="-4">-4</span>
+                  <span class="scale-mark" data-height="-3">-3</span>
+                  <span class="scale-mark" data-height="-2">-2</span>
+                  <span class="scale-mark" data-height="-1">-1</span>
+                  <span class="scale-mark current" data-height="0">0</span>
+                  <span class="scale-mark" data-height="1">1</span>
+                  <span class="scale-mark" data-height="2">2</span>
+                  <span class="scale-mark" data-height="3">3</span>
+                  <span class="scale-mark" data-height="4">4</span>
+                  <span class="scale-mark" data-height="5">5</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Actions</div>
+              <button id="terrain-reset-btn" class="action-button terrain-reset" aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
+            </div>
+
+            <!-- Biome selection moved to dedicated Biomes tab (panel relocated outside terrain panel) -->
+            
+            <div class="tool-group">
+              <div class="section-subtitle">Shortcuts</div>
+              <div class="shortcuts-text">
+                <small>• <strong>R</strong>: Raise tool</small><br>
+                <small>• <strong>L</strong>: Lower tool</small><br>
+                <small>• <strong>[ ]</strong>: Brush size</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Biomes Panel (sibling to terrain/settings panels) -->
+      <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
+        <div class="panel-header">🌍 Biomes</div>
+        <div class="section">
+          <div class="section-title">Select a Biome Palette</div>
+          <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
+            <!-- Biome group buttons injected at runtime -->
+          </div>
+          <div class="section-subtitle" style="margin-top:1rem;">Notes</div>
+          <p class="small-text">Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to edit heights; exit to view biome coloring.</p>
         </div>
       </div>
 
@@ -160,7 +256,6 @@
 
   <!-- External Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 
   <!-- Global Function Safety Stubs - Prevent timing errors during module loading -->
   <script>
@@ -192,12 +287,14 @@
 
   <!-- Core Configuration and Utilities (ES6) -->
   <script type="module" src="./src/config/GameConstants.js"></script>
+  <script type="module" src="./src/config/BiomeConstants.js"></script>
   <script type="module" src="./src/utils/ErrorHandler.js"></script>
   <script type="module" src="./src/utils/Validation.js"></script>
   <script type="module" src="./src/utils/Logger.js"></script>
   <script type="module" src="./src/utils/CoordinateUtils.js"></script>
 
   <!-- Manager Classes (ES6) -->
+  <script type="module" src="./src/config/SpriteOffsets.js"></script>
   <script type="module" src="./src/managers/TokenManager.js"></script>
   <script type="module" src="./src/managers/InteractionManager.js"></script>
   <script type="module" src="./src/managers/GridRenderer.js"></script>

@@ -22,7 +22,8 @@
  */
 
 import { GameValidators } from '../../utils/Validation.js';
-import { GameErrors } from '../../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 import { DICE_CONFIG } from '../../config/GameConstants.js';
 
 // Dice rolling functionality with animation
@@ -37,14 +38,35 @@ export function rollDice(sides) {
   try {
     // Prevent multiple concurrent rolls
     if (isRolling) {
-      GameErrors.showUserError('Please wait for current roll to complete');
+      new ErrorHandler().handle(
+        new Error('Concurrent dice roll attempt blocked'),
+        ERROR_SEVERITY.LOW,
+        ERROR_CATEGORY.INPUT,
+        {
+          context: 'rollDice',
+          stage: 'concurrency_check',
+          isRolling: true,
+          requestedSides: sides
+        }
+      );
       return false;
     }
     
     // Validate dice sides
     const validationResult = GameValidators.validateDiceSides(sides);
     if (!validationResult.isValid) {
-      GameErrors.showValidationError(`Invalid dice type: ${validationResult.message}`);
+      new ErrorHandler().handle(
+        new Error(`Invalid dice type: ${validationResult.message}`),
+        ERROR_SEVERITY.MEDIUM,
+        ERROR_CATEGORY.INPUT,
+        {
+          context: 'rollDice',
+          stage: 'dice_validation',
+          requestedSides: sides,
+          validationMessage: validationResult.message,
+          supportedDice: DICE_CONFIG.VALID_SIDES
+        }
+      );
       return false;
     }
     
@@ -53,14 +75,40 @@ export function rollDice(sides) {
     const resultEl = document.getElementById('dice-result');
     
     if (!diceCountEl || !resultEl) {
-      GameErrors.showSystemError('Dice interface elements not found');
+      new ErrorHandler().handle(
+        new Error('Required dice interface elements not found'),
+        ERROR_SEVERITY.HIGH,
+        ERROR_CATEGORY.INITIALIZATION,
+        {
+          context: 'rollDice',
+          stage: 'element_validation',
+          diceCountElement: !!diceCountEl,
+          resultElement: !!resultEl,
+          missingElements: [
+            !diceCountEl ? 'dice-count' : null,
+            !resultEl ? 'dice-result' : null
+          ].filter(Boolean)
+        }
+      );
       return false;
     }
 
     const diceCount = parseInt(diceCountEl.value) || 1;
     const countValidation = GameValidators.validateDiceCount(diceCount);
     if (!countValidation.isValid) {
-      GameErrors.showValidationError(`Invalid dice count: ${countValidation.message}`);
+      new ErrorHandler().handle(
+        new Error(`Invalid dice count: ${countValidation.message}`),
+        ERROR_SEVERITY.MEDIUM,
+        ERROR_CATEGORY.INPUT,
+        {
+          context: 'rollDice',
+          stage: 'count_validation',
+          requestedCount: diceCount,
+          originalValue: diceCountEl.value,
+          validationMessage: countValidation.message,
+          limits: { min: DICE_CONFIG.MIN_COUNT, max: DICE_CONFIG.MAX_COUNT }
+        }
+      );
       return false;
     }
 
@@ -70,7 +118,7 @@ export function rollDice(sides) {
     let animationFrame = 0;
     const animationDuration = DICE_CONFIG.ANIMATION_FRAMES;
     
-    function animateRoll() {
+    const animateRoll = () => {
       try {
         animationFrame++;
         
@@ -83,9 +131,9 @@ export function rollDice(sides) {
         if (diceCount === 1) {
           resultEl.textContent = `Rolling... ${tempResults[0]}`;
         } else {
-      const tempTotal = tempResults.reduce((sum, val) => sum + val, 0);
-      resultEl.textContent = `Rolling... [${tempResults.join(', ')}] = ${tempTotal}`;
-    }
+          const tempTotal = tempResults.reduce((sum, val) => sum + val, 0);
+          resultEl.textContent = `Rolling... [${tempResults.join(', ')}] = ${tempTotal}`;
+        }
     
         if (animationFrame < animationDuration) {
           requestAnimationFrame(animateRoll);
@@ -94,19 +142,40 @@ export function rollDice(sides) {
           showFinalResult();
         }
       } catch (error) {
-        GameErrors.handleError(error, 'Failed to animate dice roll');
+        new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+          context: 'rollDice',
+          stage: 'animation_error',
+          animationFrame: animationFrame,
+          totalFrames: DICE_CONFIG.ANIMATION_FRAMES,
+          diceType: `d${sides}`,
+          diceCount: diceCount,
+          isRolling: isRolling
+        });
         isRolling = false;
       }
-    }
-    
-    function showFinalResult() {
+    };
+
+    const showFinalResult = () => {
+      const results = [];
+      let total = 0;
+      
       try {
-        const results = [];
         for (let i = 0; i < diceCount; i++) {
           results.push(Math.floor(Math.random() * sides) + 1);
         }
         
-        const total = results.reduce((sum, val) => sum + val, 0);
+        total = results.reduce((sum, val) => sum + val, 0);
+        
+        logger.log(LOG_LEVEL.INFO, 'Dice roll completed', LOG_CATEGORY.USER, {
+          diceType: `d${sides}`,
+          diceCount: diceCount,
+          results: results,
+          total: total,
+          rollQuality: diceCount === 1 ? 
+            (results[0] === sides ? 'maximum' : results[0] === 1 ? 'minimum' : 'normal') :
+            'multiple_dice',
+          timestamp: new Date().toISOString()
+        });
         
         // Determine result color based on roll quality
         let resultColor = DICE_CONFIG.COLORS.NORMAL_ROLL;
@@ -151,17 +220,35 @@ export function rollDice(sides) {
           isRolling = false;
         }, DICE_CONFIG.RESULT_DISPLAY_DURATION);
       } catch (error) {
-        GameErrors.handleError(error, 'Failed to display dice result');
+        new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+          context: 'rollDice',
+          stage: 'result_display_error',
+          results: results || [],
+          total: total || 0,
+          diceType: `d${sides}`,
+          diceCount: diceCount,
+          sidebarAvailable: !!window.sidebarController
+        });
         isRolling = false;
       }
-    }
+    };
     
     // Start animation
     requestAnimationFrame(animateRoll);
     return true;
     
   } catch (error) {
-    GameErrors.handleError(error, 'Failed to roll dice');
+    new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.SYSTEM, {
+      context: 'rollDice',
+      stage: 'main_function_error',
+      sides: sides,
+      isRolling: isRolling,
+      globalScope: {
+        sidebarController: !!window.sidebarController,
+        diceCountElement: !!document.getElementById('dice-count'),
+        resultElement: !!document.getElementById('dice-result')
+      }
+    });
     isRolling = false;
     return false;
   }
@@ -169,4 +256,3 @@ export function rollDice(sides) {
 
 // Make rollDice available globally for HTML onclick handlers
 window.rollDice = rollDice;
-console.log('Dice system loaded - rollDice function available');

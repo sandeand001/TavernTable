@@ -7,7 +7,8 @@
 
 class SidebarController {
   constructor() {
-    this.activeTab = 'dice-log';
+  // Default active tab (original): dice-log
+  this.activeTab = 'dice-log';
     this.diceLogEntries = [];
     this.maxLogEntries = 50; // Prevent memory issues with large logs
     
@@ -22,6 +23,8 @@ class SidebarController {
     this.setupTabListeners();
     this.setupRangeSliderListeners();
     this.showTab(this.activeTab);
+
+  // Biome menu now lazy-builds when Biomes tab first opened
     
     // Add welcome message to dice log
     this.addDiceLogEntry('Welcome to TavernTable! Roll some dice to see history here.', 'system');
@@ -91,7 +94,7 @@ class SidebarController {
    */
   showTab(tabId) {
     // Validate tab ID
-    const validTabs = ['dice-log', 'creatures', 'terrain', 'settings'];
+  const validTabs = ['dice-log', 'creatures', 'terrain', 'biomes', 'settings'];
     if (!validTabs.includes(tabId)) {
       console.warn(`Invalid tab ID: ${tabId}`);
       return;
@@ -125,20 +128,108 @@ class SidebarController {
    */
   onTabChange(tabId) {
     switch (tabId) {
-      case 'dice-log':
-        this.refreshDiceLog();
-        break;
-      case 'creatures':
-        // Ensure selected creature token is highlighted
-        this.refreshCreatureSelection();
-        break;
-      case 'terrain':
-        // Future: Initialize terrain tools
-        break;
-      case 'settings':
-        // Future: Load current game settings
-        break;
+    case 'dice-log':
+      this.refreshDiceLog();
+      break;
+    case 'creatures':
+      // Ensure selected creature token is highlighted
+      this.refreshCreatureSelection();
+      break;
+    case 'terrain':
+      // Future: Initialize terrain tools
+      break;
+    case 'biomes':
+      this.buildBiomeMenuSafely();
+      break;
+    case 'settings':
+      // Future: Load current game settings
+      break;
     }
+  }
+
+  buildBiomeMenuSafely() {
+    try {
+      const root = document.getElementById('biome-menu-root');
+      // If previously built but root is missing or empty (e.g., moved to new tab), allow rebuild
+      if (this._biomesBuilt) {
+        if (!root || root.children.length === 0) {
+          this._biomesBuilt = false; // reset flag to trigger rebuild
+        } else {
+          return; // already populated
+        }
+      }
+      // Lazy import to avoid blocking initial load
+      import('../config/BiomeConstants.js').then(mod => {
+        const { BIOME_GROUPS } = mod;
+        if (!root) return;
+        root.textContent = '';
+        Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
+          const groupContainer = document.createElement('div');
+          groupContainer.className = 'biome-group';
+
+          const headerBtn = document.createElement('button');
+          headerBtn.className = 'biome-group-toggle';
+          headerBtn.type = 'button';
+          headerBtn.setAttribute('aria-expanded', 'false');
+          headerBtn.textContent = group;
+
+            const listEl = document.createElement('div');
+            listEl.className = 'biome-group-list';
+            listEl.style.display = 'none';
+
+            headerBtn.addEventListener('click', () => {
+              const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
+              headerBtn.setAttribute('aria-expanded', String(!expanded));
+              listEl.style.display = expanded ? 'none' : 'grid';
+            });
+
+          list.forEach(b => {
+            const bBtn = document.createElement('button');
+            bBtn.className = 'biome-btn';
+            bBtn.type = 'button';
+            bBtn.dataset.biome = b.key;
+            bBtn.title = b.label;
+            bBtn.textContent = (b.emoji || '') + ' ' + b.label;
+            bBtn.addEventListener('click', () => this.selectBiome(b.key));
+            listEl.appendChild(bBtn);
+          });
+
+          groupContainer.appendChild(headerBtn);
+          groupContainer.appendChild(listEl);
+          root.appendChild(groupContainer);
+        });
+        this._biomesBuilt = true;
+        // Re-apply selected biome highlight if one was chosen earlier
+        if (window.selectedBiome) {
+          try { this.selectBiome(window.selectedBiome); } catch(_) { /* ignore */ }
+        }
+      }).catch(() => {/* ignore */});
+    } catch (_) { /* swallow to avoid UI disruption */ }
+  }
+
+  selectBiome(biomeKey) {
+    window.selectedBiome = biomeKey;
+    if (window.sidebarController?.activeTab === 'terrain') {
+      console.log('Biome selected:', biomeKey);
+    }
+    // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
+    try {
+      if (window.gameManager && window.gameManager.terrainCoordinator && !window.gameManager.terrainCoordinator.isTerrainModeActive) {
+        window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
+      }
+    } catch(_) { /* non-fatal */ }
+    // Visual selection state
+    try {
+      const root = document.getElementById('biome-menu-root');
+      if (root) {
+        root.querySelectorAll('.biome-btn.selected').forEach(btn => btn.classList.remove('selected'));
+        const newly = root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+        if (newly) {
+          newly.classList.add('selected');
+          newly.setAttribute('aria-pressed', 'true');
+        }
+      }
+    } catch (_) { /* silent */ }
   }
 
   /**
@@ -279,7 +370,6 @@ class SidebarController {
           child.alpha = opacity;
         }
       });
-      console.log(`Grid opacity changed to: ${opacity}`);
     } else {
       console.warn('GameManager not available for grid opacity change');
     }
@@ -300,7 +390,6 @@ class SidebarController {
         window.gameManager.app.ticker.speed = speed;
       }
       
-      console.log(`Animation speed changed to: ${speed}x`);
     } else {
       console.warn('GameManager not available for animation speed change');
     }

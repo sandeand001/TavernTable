@@ -5,8 +5,8 @@
  * Handles application initialization, global state management, and configuration
  */
 
-import logger from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
 export class StateCoordinator {
@@ -22,13 +22,21 @@ export class StateCoordinator {
   async initializeApplication() {
     try {
       // Log initialization start
-      logger.info('Initializing TavernTable GameManager...');
+      logger.log(LOG_LEVEL.INFO, 'Initializing TavernTable GameManager', LOG_CATEGORY.SYSTEM, {
+        context: 'StateCoordinator.initializeApplication',
+        stage: 'initialization_start',
+        timestamp: new Date().toISOString()
+      });
       
       // Create PIXI app with validation
       this.gameManager.renderCoordinator.createPixiApp();
       
       // NOW create managers after PIXI app exists
-      logger.debug('Creating manager instances...');
+      logger.log(LOG_LEVEL.DEBUG, 'Creating manager instances', LOG_CATEGORY.SYSTEM, {
+        context: 'StateCoordinator.initializeApplication',
+        stage: 'manager_creation',
+        pixiAppReady: !!(this.gameManager.app)
+      });
       await this.createManagers();
       
       // Set up grid system
@@ -40,6 +48,9 @@ export class StateCoordinator {
       // Enable grid interaction
       this.gameManager.interactionManager.setupGridInteraction();
       
+      // Initialize terrain system
+      await this.gameManager.terrainCoordinator.initialize();
+      
       // Initialize sprites with error handling
       await this.initializeSprites();
       
@@ -47,10 +58,24 @@ export class StateCoordinator {
       this.gameManager.renderCoordinator.fixExistingTokens();
       
       this.initializationComplete = true;
-      logger.info('GameManager initialization completed successfully');
+      logger.log(LOG_LEVEL.INFO, 'GameManager initialization completed successfully', LOG_CATEGORY.SYSTEM, {
+        context: 'StateCoordinator.initializeApplication',
+        stage: 'initialization_complete',
+        gridDimensions: { cols: this.gameManager.cols, rows: this.gameManager.rows },
+        spritesReady: this.gameManager.spritesReady,
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
-      GameErrors.initialization(error, {
-        stage: 'GameManager.initialize',
+      new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
+        context: 'StateCoordinator.initializeApplication',
+        stage: 'game_manager_initialization',
+        initializationSteps: {
+          pixiApp: !!(this.gameManager.renderCoordinator),
+          managers: !!(this.gameManager.tokenManager && this.gameManager.interactionManager),
+          grid: !!(this.gameManager.gridRenderer),
+          globalVars: !!window.gameManager,
+          sprites: this.gameManager.spritesReady
+        },
         timestamp: new Date().toISOString()
       });
       throw error; // Re-throw to allow caller to handle
@@ -92,7 +117,16 @@ export class StateCoordinator {
       
       logger.debug('Global variables initialized for backward compatibility');
     } catch (error) {
-      GameErrors.initialization(error, { stage: 'setupGlobalVariables' });
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INITIALIZATION, {
+        context: 'StateCoordinator.setupGlobalVariables',
+        stage: 'global_variable_setup',
+        variables: {
+          gameManager: !!this.gameManager,
+          gridContainer: !!(this.gameManager.gridContainer),
+          placedTokens: !!(this.gameManager.placedTokens)
+        },
+        legacyCompatibility: true
+      });
     }
   }
 
@@ -113,8 +147,16 @@ export class StateCoordinator {
         this.gameManager.spritesReady = true;
         window.spritesReady = true;
       }
+
+  // Animated sprite system removed (2025-08 cleanup) – static sprites only.
     } catch (error) {
-      GameErrors.sprites(error, { stage: 'initializeSprites' });
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+        context: 'StateCoordinator.initializeSprites',
+        stage: 'sprite_initialization',
+  spriteManagers: { spriteManager: !!window.spriteManager },
+        fallbackEnabled: true,
+        spritesReady: this.gameManager.spritesReady
+      });
       // Allow fallback to drawn graphics
       this.gameManager.spritesReady = true;
       window.spritesReady = true;
@@ -195,7 +237,19 @@ export class StateCoordinator {
 
       logger.info('Application state reset to defaults');
     } catch (error) {
-      GameErrors.initialization(error, { stage: 'resetApplication' });
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.SYSTEM, {
+        context: 'StateCoordinator.resetApplication',
+        stage: 'application_reset',
+        resetSteps: {
+          tokensCleared: !!(this.gameManager.tokenManager),
+          gridReset: true,
+          zoomReset: !!(this.gameManager.renderCoordinator)
+        },
+        targetDimensions: {
+          cols: GRID_CONFIG.DEFAULT_COLS,
+          rows: GRID_CONFIG.DEFAULT_ROWS
+        }
+      });
     }
   }
 }
