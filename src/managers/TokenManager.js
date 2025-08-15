@@ -202,7 +202,7 @@ export class TokenManager {
         throw new Error(`Failed to create creature of type: ${this.selectedTokenType}`);
       }
 
-      // Add to grid container first
+  // Add to grid container first
       creature.addToStage(gridContainer);
       
       // Calculate isometric base position
@@ -223,6 +223,8 @@ export class TokenManager {
       creature.setPosition(isoCoords.x, isoCoords.y + elevationOffset);
       // Ensure token renders above its tile but respects depth ordering
       if (creature.sprite) {
+        // Flag as token for pickers to ignore when selecting tiles
+        creature.sprite.isCreatureToken = true;
         const depth = gridX + gridY; // same metric tiles use
         creature.sprite.zIndex = depth * 100 + 1; // tiles: depth*100
       }
@@ -300,40 +302,49 @@ export class TokenManager {
    * Snap a token to the nearest grid center
    * @param {PIXI.Sprite} token - Token sprite to snap
    */
-  snapToGrid(token) {
+  snapToGrid(token, pointerLocalX = null, pointerLocalY = null) {
     try {
-      // Token position is already relative to gridContainer since that's its parent
-      const localX = token.x;
-      const localY = token.y;
+      // Determine the local point to evaluate under the cursor; prefer pointer-local coords
+      const localX = (pointerLocalX !== null && pointerLocalY !== null) ? pointerLocalX : token.x;
+      const localY = (pointerLocalX !== null && pointerLocalY !== null) ? pointerLocalY : token.y;
 
-      // Convert to grid coordinates using CoordinateUtils
-      const gridCoords = CoordinateUtils.isometricToGrid(localX, localY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      
-      // Clamp to grid bounds
-      const clampedCoords = CoordinateUtils.clampToGrid(gridCoords.gridX, gridCoords.gridY, this.gameManager.cols, this.gameManager.rows);
+      // Prefer visually topmost picking for snap target
+      let target = null;
+      try {
+        const im = this.gameManager?.interactionManager;
+        if (im && typeof im.pickTopmostGridCellAt === 'function') {
+          target = im.pickTopmostGridCellAt(localX, localY);
+        }
+      } catch (_) { /* ignore and fallback */ }
+
+      // Fallback to geometric inversion if picker returned nothing
+      if (!target) {
+        const coarse = CoordinateUtils.isometricToGrid(localX, localY, this.gameManager.tileWidth, this.gameManager.tileHeight);
+        target = CoordinateUtils.clampToGrid(coarse.gridX, coarse.gridY, this.gameManager.cols, this.gameManager.rows);
+      }
 
       // Position at diamond center using CoordinateUtils + elevation
-      const isoCoords = CoordinateUtils.gridToIsometric(clampedCoords.gridX, clampedCoords.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
+      const isoCoords = CoordinateUtils.gridToIsometric(target.gridX, target.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
 
       let elevationOffset = 0;
       try {
-        const height = this.gameManager?.terrainCoordinator?.dataStore?.get(clampedCoords.gridX, clampedCoords.gridY) ?? 0;
+        const height = this.gameManager?.terrainCoordinator?.dataStore?.get(target.gridX, target.gridY) ?? 0;
         elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
       } catch (_) { /* ignore */ }
 
       token.x = isoCoords.x;
       token.y = isoCoords.y + elevationOffset;
-  // Maintain correct layering after snapping
-  const newDepth = clampedCoords.gridX + clampedCoords.gridY;
-  token.zIndex = newDepth * 100 + 1;
+      // Maintain correct layering after snapping
+      const newDepth = target.gridX + target.gridY;
+      token.zIndex = newDepth * 100 + 1;
       
       // Update the token's grid position in the placedTokens array
       const tokenEntry = this.placedTokens.find(t => t.creature && t.creature.sprite === token);
       if (tokenEntry) {
-        tokenEntry.gridX = clampedCoords.gridX;
-        tokenEntry.gridY = clampedCoords.gridY;
-        logger.debug(`Token snapped to grid (${clampedCoords.gridX}, ${clampedCoords.gridY})`, {
-          coordinates: clampedCoords,
+        tokenEntry.gridX = target.gridX;
+        tokenEntry.gridY = target.gridY;
+        logger.debug(`Token snapped to grid (${target.gridX}, ${target.gridY})`, {
+          coordinates: target,
           originalPosition: { localX, localY },
           newPosition: isoCoords
         }, LOG_CATEGORY.USER);
@@ -382,6 +393,8 @@ export class TokenManager {
   setupTokenInteractions(sprite, tokenData) {
     sprite.interactive = true;
     sprite.buttonMode = true;
+  // Ensure pickers ignore tokens when selecting tiles
+  sprite.isCreatureToken = true;
     
     // Store references for event handling
     sprite.tokenData = tokenData;
@@ -443,36 +456,60 @@ export class TokenManager {
         
         this.isRightDragging = false;
         this.alpha = 1.0; // Restore full opacity
-        this.dragData = null;
-  this.dragOffsetX = this.dragOffsetY = undefined;
+        // Capture pointer-local coordinates before clearing drag state
+        let localX = null, localY = null;
+        try {
+          const data = event?.data || this.dragData;
+          if (data && this.parent) {
+            const p = data.getLocalPosition(this.parent);
+            localX = p.x;
+            localY = p.y;
+          }
+        } catch(_) {}
         
-        // Snap to grid using the global snap function
+        // Snap to grid using the topmost picker via TokenManager (pass pointer coords when available)
         if (window.snapToGrid) {
-          window.snapToGrid(this);
+          window.snapToGrid(this, localX, localY);
         } else if (gm?.tokenManager) {
-          gm.tokenManager.snapToGrid(this);
+          gm.tokenManager.snapToGrid(this, localX, localY);
         }
+        
+        // Now clear drag data
+        this.dragData = null;
+        this.dragOffsetX = this.dragOffsetY = undefined;
         
         event.stopPropagation();
       }
     });
     
     // Handle mouse leaving the canvas area
-    sprite.on('pointerupoutside', function() {
+    sprite.on('pointerupoutside', function(event) {
       if (this.isRightDragging) {
         logger.debug('Right-drag cancelled (mouse left canvas) - snapping to grid');
         
         this.isRightDragging = false;
         this.alpha = 1.0;
-        this.dragData = null;
-        this.dragOffsetX = this.dragOffsetY = undefined;
+        // Capture pointer-local coordinates if available before clearing
+        let localX = null, localY = null;
+        try {
+          const data = event?.data || this.dragData;
+          if (data && this.parent) {
+            const p = data.getLocalPosition(this.parent);
+            localX = p.x;
+            localY = p.y;
+          }
+        } catch(_) {}
         
         // Snap to grid
         if (window.snapToGrid) {
-          window.snapToGrid(this);
+          window.snapToGrid(this, localX, localY);
         } else if (gm?.tokenManager) {
-          gm.tokenManager.snapToGrid(this);
+          gm.tokenManager.snapToGrid(this, localX, localY);
         }
+        
+        // Clear drag data
+        this.dragData = null;
+        this.dragOffsetX = this.dragOffsetY = undefined;
       }
     });
 
@@ -488,9 +525,9 @@ export class TokenManager {
 
     // Ensure a global snapToGrid bridge exists (backward compatibility for existing handlers)
     if (typeof window !== 'undefined' && !window.snapToGrid) {
-      window.snapToGrid = (tokenSprite) => {
+    window.snapToGrid = (tokenSprite, localX = null, localY = null) => {
         try {
-          this.snapToGrid(tokenSprite);
+      this.snapToGrid(tokenSprite, localX, localY);
         } catch (e) {
           console.error('snapToGrid bridge error', e);
         }

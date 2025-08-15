@@ -929,17 +929,28 @@ html, body {
   transform: scale(1.1);
 }
 
-.scale-mark[data-height="-5"]  { background-color: #3346a7; }
-.scale-mark[data-height="-4"]  { background-color: #3b51be; }
-.scale-mark[data-height="-3"]  { background-color: #4756d1; }
-.scale-mark[data-height="-2"]  { background-color: #5b63e5; }
-.scale-mark[data-height="-1"]  { background-color: #7a5ff2; }
+/* Height indicator colors (-10..10) aligned with TERRAIN_CONFIG.HEIGHT_COLOR_SCALE */
+.scale-mark[data-height="-10"] { background-color: #040913; }
+.scale-mark[data-height="-9"]  { background-color: #071225; }
+.scale-mark[data-height="-8"]  { background-color: #0b1c36; }
+.scale-mark[data-height="-7"]  { background-color: #112848; }
+.scale-mark[data-height="-6"]  { background-color: #18345a; }
+.scale-mark[data-height="-5"]  { background-color: #1f416d; }
+.scale-mark[data-height="-4"]  { background-color: #2a4f82; }
+.scale-mark[data-height="-3"]  { background-color: #365d97; }
+.scale-mark[data-height="-2"]  { background-color: #496ab1; }
+.scale-mark[data-height="-1"]  { background-color: #5d72c6; }
 .scale-mark[data-height="0"]   { background-color: #6b7280; }
-.scale-mark[data-height="1"]   { background-color: #0f9d70; }
-.scale-mark[data-height="2"]   { background-color: #10b981; }
-.scale-mark[data-height="3"]   { background-color: #16a34a; }
-.scale-mark[data-height="4"]   { background-color: #4caf50; }
-.scale-mark[data-height="5"]   { background-color: #a2b91a; }
+.scale-mark[data-height="1"]   { background-color: #1a7b53; }
+.scale-mark[data-height="2"]   { background-color: #138b48; }
+.scale-mark[data-height="3"]   { background-color: #16994b; }
+.scale-mark[data-height="4"]   { background-color: #21a556; }
+.scale-mark[data-height="5"]   { background-color: #3db268; }
+.scale-mark[data-height="6"]   { background-color: #64bf75; }
+.scale-mark[data-height="7"]   { background-color: #8fcc7f; }
+.scale-mark[data-height="8"]   { background-color: #b7d789; }
+.scale-mark[data-height="9"]   { background-color: #dfe09a; }
+.scale-mark[data-height="10"]  { background-color: #f3e9b2; }
 
 /* Shortcuts text */
 .shortcuts-text {
