@@ -232,6 +232,34 @@
           <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
             <!-- Biome group buttons injected at runtime -->
           </div>
+          <div class="section-subtitle" style="margin-top:1rem;">Rich Tile Shading</div>
+          <div id="biome-shading-controls" class="setting-group" role="group" aria-label="Rich tile shading controls">
+            <div class="setting-item">
+              <label class="toggle-switch" for="rich-shading-toggle">
+                <input type="checkbox" id="rich-shading-toggle" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Enable rich tile shading</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label for="shading-intensity">Shading Intensity:</label>
+              <input type="range" id="shading-intensity" min="0" max="150" step="5" value="100" class="range-input" aria-label="Adjust shading opacity/intensity">
+              <span id="shading-intensity-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label for="pattern-density">Pattern Density:</label>
+              <input type="range" id="pattern-density" min="50" max="150" step="5" value="100" class="range-input" aria-label="Adjust pattern density/detail">
+              <span id="pattern-density-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label class="toggle-switch" for="performance-simplify">
+                <input type="checkbox" id="performance-simplify" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Performance saver (simplify patterns)</span>
+              </label>
+            </div>
+            <small class="small-text">Shading is most visible in Terrain mode. Intensity adjusts opacity; Density changes how many pattern elements are drawn.</small>
+          </div>
           <div class="section-subtitle" style="margin-top:1rem;">Notes</div>
           <p class="small-text">Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to edit heights; exit to view biome coloring.</p>
         </div>

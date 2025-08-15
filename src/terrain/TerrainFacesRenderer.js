@@ -94,10 +94,13 @@ export class TerrainFacesRenderer {
       faces.endFill();
     };
 
-    if (diffR > 0) drawFace(top, right, diffR * unit, colors.r);
-    if (diffB > 0) drawFace(right, bottom, diffB * unit, colors.b);
-    if (diffL > 0) drawFace(bottom, left, diffL * unit, colors.l);
-    if (diffT > 0) drawFace(left, top, diffT * unit, colors.t);
+  // Correct edge mapping for iso diamonds (x_screen=(x-y), y_screen=(x+y)):
+  // East (x+1,y): right -> bottom; South (x,y+1): bottom -> left;
+  // West (x-1,y): left -> top; North (x,y-1): top -> right
+  if (diffR > 0) drawFace(right, bottom, diffR * unit, colors.r); // East neighbor lower
+  if (diffB > 0) drawFace(bottom, left, diffB * unit, colors.b);  // South neighbor lower
+  if (diffL > 0) drawFace(left, top, diffL * unit, colors.l);     // West neighbor lower
+  if (diffT > 0) drawFace(top, right, diffT * unit, colors.t);    // North neighbor lower
 
     return faces;
   }

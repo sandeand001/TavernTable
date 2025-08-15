@@ -12,7 +12,7 @@ import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { getBiomeHeightColor } from '../config/BiomePalettes.js';
 // import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-import { darkenColor } from '../utils/ColorUtils.js';
+import { darkenColor, lightenColor } from '../utils/ColorUtils.js';
 import { TerrainValidation } from '../utils/TerrainValidation.js';
 import { TerrainDataStore } from '../terrain/TerrainDataStore.js';
 import { TerrainBrushController } from '../terrain/TerrainBrushController.js';
@@ -787,6 +787,22 @@ export class TerrainCoordinator {
               }
               child.sideFaces = null;
             }
+
+            // Remove any rich shading layers (paintLayer/mask) attached to base tiles
+            if (child.paintLayer) {
+              try { child.removeChild(child.paintLayer); } catch(_) {}
+              if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
+                child.paintLayer.destroy({ children: true });
+              }
+              child.paintLayer = null;
+            }
+            if (child.paintMask) {
+              try { child.removeChild(child.paintMask); } catch(_) {}
+              if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
+                child.paintMask.destroy();
+              }
+              child.paintMask = null;
+            }
           }
         });
       }
@@ -995,8 +1011,8 @@ export class TerrainCoordinator {
       // Reset height indicator
       this.resetHeightIndicator();
 
-      // Apply biome palette immediately if a biome is selected
-      if (typeof window !== 'undefined' && window.selectedBiome) {
+  // Apply biome palette immediately if a biome is selected
+  if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
         try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
       }
       
@@ -1715,7 +1731,7 @@ export class TerrainCoordinator {
   /** Determine base tile color when not editing: biome palette if selected, else neutral. */
   _getBiomeOrBaseColor(height) {
     try {
-      if (typeof window !== 'undefined' && window.selectedBiome) {
+      if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
         // Base biome palette color
         let base = getBiomeHeightColor(window.selectedBiome, height);
         // Introduce subtle intra-biome variation so large areas aren't flat.
@@ -1736,7 +1752,7 @@ export class TerrainCoordinator {
         let ng = Math.min(255, Math.max(0, g + g * brightnessJitter));
         let nb = Math.min(255, Math.max(0, b + b * brightnessJitter));
         // Gentle hue nuance: push green vs red vs blue slightly based on biome class
-        const biome = window.selectedBiome;
+  const biome = window.selectedBiome;
         if (/forest|grove|bamboo|orchard|fey|cedar/i.test(biome)) {
           // add greener mid-tones
           ng = Math.min(255, ng + 8 * hueShift);
@@ -1775,6 +1791,25 @@ export class TerrainCoordinator {
   const fillColor = this._getBiomeOrBaseColor(h);
         const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
         const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
+
+        // Clean up any previous rich shading layers
+        try {
+          if (child.paintLayer) {
+            child.removeChild(child.paintLayer);
+            if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
+              child.paintLayer.destroy({ children: true });
+            }
+            child.paintLayer = null;
+          }
+          if (child.paintMask) {
+            child.removeChild(child.paintMask);
+            if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
+              child.paintMask.destroy();
+            }
+            child.paintMask = null;
+          }
+        } catch(_) { /* ignore */ }
+
         child.clear();
         child.lineStyle(1, borderColor, borderAlpha);
         child.beginFill(fillColor, 1.0);
@@ -1784,6 +1819,77 @@ export class TerrainCoordinator {
         child.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
         child.lineTo(0, this.gameManager.tileHeight / 2);
         child.endFill();
+
+        // Apply rich tile shading overlay if enabled
+        try {
+          const settings = (typeof window !== 'undefined' && window.richShadingSettings) ? window.richShadingSettings : null;
+          const enabled = settings ? !!settings.enabled : true;
+          const intensityMul = settings && Number.isFinite(settings.intensity) ? settings.intensity : 1.0; // 0..1.5
+          const densityMul = settings && Number.isFinite(settings.density) ? settings.density : 1.0;     // 0.5..1.5
+          const simplify = settings ? !!settings.performance : false;
+          if (enabled) {
+            const w = this.gameManager.tileWidth;
+            const hPx = this.gameManager.tileHeight;
+            const baseAlphaRaw = 0.18; // subtle overlay for base grid
+            const alpha = Math.max(0, Math.min(1, baseAlphaRaw * intensityMul));
+            const paint = new PIXI.Container();
+            paint.x = 0; paint.y = 0;
+            const mask = new PIXI.Graphics();
+            mask.beginFill(0xffffff, 1);
+            mask.moveTo(0, hPx / 2);
+            mask.lineTo(w / 2, 0);
+            mask.lineTo(w, hPx / 2);
+            mask.lineTo(w / 2, hPx);
+            mask.lineTo(0, hPx / 2);
+            mask.endFill();
+
+            const biome = String(biomeKey || '');
+            const seed = (child.gridX * 73856093) ^ (child.gridY * 19349663) ^ ((h || 0) * 83492791);
+
+            if (/desert|dune|salt|thorn|savanna|steppe/i.test(biome)) {
+              this._drawShade_DesertBands(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
+            } else if (/forest|grove|bamboo|orchard|cedar|fey/i.test(biome)) {
+              this._drawShade_ForestDapples(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
+            } else if (/swamp|marsh|wetland|mangrove|flood/i.test(biome)) {
+              this._drawShade_SwampMottling(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
+            } else if (/glacier|tundra|frozen|pack|alpine|mountain|scree/i.test(biome)) {
+              this._drawShade_IcyFacets(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
+            } else if (/ocean|coast|river|lake|reef/i.test(biome)) {
+              this._drawShade_WaterWaves(paint, fillColor, w, hPx, alpha, seed, /reef/i.test(biome), densityMul, simplify);
+            } else if (/volcan|lava|obsidian|ash/i.test(biome)) {
+              this._drawShade_VolcanicVeins(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
+            } else if (/ruin|urban|grave|waste/i.test(biome)) {
+              this._drawShade_RuinGrid(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
+            } else {
+              // subtle tri-tone band
+              const lighter = lightenColor(fillColor, 0.12);
+              const darker = darkenColor(fillColor, 0.12);
+              const top = new PIXI.Graphics();
+              top.beginFill(lighter, alpha * 0.9);
+              top.moveTo(w / 2, 0);
+              top.lineTo(w, hPx / 2);
+              top.lineTo(0, hPx / 2);
+              top.closePath();
+              top.endFill();
+              paint.addChild(top);
+              const bottom = new PIXI.Graphics();
+              bottom.beginFill(darker, alpha * 0.85);
+              bottom.moveTo(w / 2, hPx);
+              bottom.lineTo(w, hPx / 2);
+              bottom.lineTo(0, hPx / 2);
+              bottom.closePath();
+              bottom.endFill();
+              paint.addChild(bottom);
+            }
+
+            paint.mask = mask;
+            child.addChild(mask);
+            child.addChild(paint);
+            child.paintLayer = paint;
+            child.paintMask = mask;
+          }
+        } catch(_) { /* non-fatal */ }
+
         if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
         if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.addVisualElevationEffect(child, h);
       });
@@ -1795,5 +1901,170 @@ export class TerrainCoordinator {
       this._currentColorEvalX = undefined;
       this._currentColorEvalY = undefined;
     }
+  }
+
+  // --- Lightweight shading helpers for base grid (outside terrain mode) ---
+  _shadeRand(seed) {
+    let s = (seed >>> 0) || 1;
+    return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s & 0xffffffff) / 0x100000000; };
+  }
+  _drawShade_DesertBands(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+    const rnd = this._shadeRand(seed);
+    let bandCount = 2 + Math.floor(rnd() * 2);
+    bandCount = Math.max(1, Math.round(bandCount * density));
+    if (simplify) bandCount = Math.min(2, bandCount);
+    for (let i = 0; i < bandCount; i++) {
+      const t = (i + 1) / (bandCount + 1);
+      const y = h * (0.2 + 0.6 * t + (rnd() - 0.5) * 0.04);
+      const thickness = h * (0.08 + rnd() * 0.04) * (simplify ? 0.8 : 1);
+      const c = lightenColor(baseColor, 0.1 + 0.1 * (t - 0.5));
+      const g = new PIXI.Graphics();
+      g.beginFill(c, alpha * 0.85);
+      g.moveTo(0, y - thickness / 2);
+      g.lineTo(w / 2, y - thickness);
+      g.lineTo(w, y - thickness / 2);
+      g.lineTo(w / 2, y + thickness);
+      g.closePath();
+      g.endFill();
+      container.addChild(g);
+    }
+  }
+  _drawShade_ForestDapples(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+    const rnd = this._shadeRand(seed);
+    let spots = 4 + Math.floor(rnd() * 2);
+    spots = Math.max(2, Math.round(spots * density));
+    if (simplify) spots = Math.min(4, spots);
+    for (let i = 0; i < spots; i++) {
+      const cx = w * (0.2 + rnd() * 0.6);
+      const cy = h * (0.25 + rnd() * 0.5);
+      const rx = w * (0.07 + rnd() * 0.05) * (simplify ? 0.9 : 1);
+      const ry = h * (0.05 + rnd() * 0.04) * (simplify ? 0.9 : 1);
+      const c = (i % 2 === 0) ? lightenColor(baseColor, 0.1) : darkenColor(baseColor, 0.1);
+      const g = new PIXI.Graphics();
+      g.beginFill(c, alpha * 0.9);
+      g.drawEllipse(cx, cy, rx, ry);
+      g.endFill();
+      container.addChild(g);
+    }
+  }
+  _drawShade_SwampMottling(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+    const rnd = this._shadeRand(seed);
+    let blobs = 3 + Math.floor(rnd() * 2);
+    blobs = Math.max(2, Math.round(blobs * density));
+    if (simplify) blobs = Math.min(3, blobs);
+    for (let i = 0; i < blobs; i++) {
+      const cx = w * (0.2 + rnd() * 0.6);
+      const cy = h * (0.3 + rnd() * 0.4);
+      const r = Math.min(w, h) * (0.06 + rnd() * 0.06) * (simplify ? 0.85 : 1);
+      const g = new PIXI.Graphics();
+      const shade = i % 2 === 0 ? darkenColor(baseColor, 0.16) : darkenColor(baseColor, 0.08);
+      g.beginFill(shade, alpha * 0.8);
+      g.drawCircle(cx, cy, r);
+      g.endFill();
+      container.addChild(g);
+    }
+  }
+  _drawShade_IcyFacets(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+    const rnd = this._shadeRand(seed);
+    let facets = 2 + Math.floor(rnd() * 2);
+    facets = Math.max(1, Math.round(facets * density));
+    if (simplify) facets = Math.min(2, facets);
+    const hi = lightenColor(baseColor, 0.16);
+    const mid = lightenColor(baseColor, 0.05);
+    const lo = darkenColor(baseColor, 0.09);
+    const palette = [hi, mid, lo];
+    for (let i = 0; i < facets; i++) {
+      const g = new PIXI.Graphics();
+      const c = palette[i % palette.length];
+      g.beginFill(c, alpha);
+      const x1 = w * (0.25 + rnd() * 0.5);
+      const y1 = h * (0.15 + rnd() * 0.3);
+      const x2 = w * (0.15 + rnd() * 0.7);
+      const y2 = h * (0.5 + rnd() * 0.2);
+      const x3 = w * (0.35 + rnd() * 0.4);
+      const y3 = h * (0.7 + rnd() * 0.25);
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.lineTo(x3, y3);
+      g.closePath();
+      g.endFill();
+      container.addChild(g);
+    }
+  }
+  _drawShade_WaterWaves(container, baseColor, w, h, alpha, seed, coral = false, density = 1.0, simplify = false) {
+    const rnd = this._shadeRand(seed);
+    let lanes = 2 + Math.floor(rnd() * 1);
+    lanes = Math.max(1, Math.round(lanes * density));
+    if (simplify) lanes = Math.min(2, lanes);
+    for (let i = 0; i < lanes; i++) {
+      const t = (i + 1) / (lanes + 1);
+      const y = h * (0.2 + 0.6 * t + (rnd() - 0.5) * 0.04);
+      const thickness = h * (0.05 + rnd() * 0.035) * (simplify ? 0.85 : 1);
+      const c = lightenColor(baseColor, 0.1 + 0.06 * (0.5 - Math.abs(0.5 - t)));
+      const g = new PIXI.Graphics();
+      g.beginFill(c, alpha * 0.85);
+      g.moveTo(0, y - thickness / 2);
+      g.lineTo(w / 2, y - thickness * 0.9);
+      g.lineTo(w, y - thickness / 2);
+      g.lineTo(w / 2, y + thickness * 0.9);
+      g.closePath();
+      g.endFill();
+      container.addChild(g);
+    }
+    if (coral && !simplify) {
+      let spots = 4 + Math.floor(rnd() * 3);
+      spots = Math.max(2, Math.round(spots * density));
+      for (let i = 0; i < spots; i++) {
+        const cx = w * (0.2 + rnd() * 0.6);
+        const cy = h * (0.25 + rnd() * 0.5);
+        const r = Math.min(w, h) * (0.02 + rnd() * 0.015);
+        const pink = lightenColor(0xff6fa3, 0.15 * (rnd() - 0.5));
+        const g = new PIXI.Graphics();
+        g.beginFill(pink, Math.min(1, alpha + 0.05));
+        g.drawCircle(cx, cy, r);
+        g.endFill();
+        container.addChild(g);
+      }
+    }
+  }
+  _drawShade_VolcanicVeins(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+    const rnd = this._shadeRand(seed);
+    let veins = 2 + Math.floor(rnd() * 1);
+    veins = Math.max(1, Math.round(veins * density));
+    if (simplify) veins = Math.min(2, veins);
+    for (let i = 0; i < veins; i++) {
+      const g = new PIXI.Graphics();
+      g.lineStyle(2, lightenColor(0xff6a00, 0.1), Math.min(1, alpha + 0.1));
+      const x0 = w * (0.15 + rnd() * 0.7);
+      const y0 = h * (0.2 + rnd() * 0.6);
+      const x1 = x0 + w * (0.15 * (rnd() - 0.5));
+      const y1 = y0 + h * (0.25 * (rnd() - 0.5));
+      const x2 = x1 + w * (0.2 * (rnd() - 0.5));
+      const y2 = y1 + h * (0.3 * (rnd() - 0.5));
+      g.moveTo(x0, y0);
+      g.lineTo(x1, y1);
+      g.lineTo(x2, y2);
+      container.addChild(g);
+    }
+  }
+  _drawShade_RuinGrid(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+    const g = new PIXI.Graphics();
+    const lineC = darkenColor(baseColor, 0.22);
+    g.lineStyle(1, lineC, alpha * 0.8);
+    let rows = 3, cols = 3;
+    rows = Math.max(2, Math.round(rows * density));
+    cols = Math.max(2, Math.round(cols * density));
+    if (simplify) { rows = Math.min(rows, 3); cols = Math.min(cols, 3); }
+    for (let i = 1; i < rows; i++) {
+      const ty = h * (i / rows);
+      g.moveTo(w * 0.2, ty);
+      g.lineTo(w * 0.8, ty);
+    }
+    for (let j = 1; j < cols; j++) {
+      const tx = w * (j / cols);
+      g.moveTo(tx, h * 0.2);
+      g.lineTo(tx, h * 0.8);
+    }
+    container.addChild(g);
   }
 }

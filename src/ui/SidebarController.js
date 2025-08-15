@@ -25,6 +25,15 @@ class SidebarController {
     this.showTab(this.activeTab);
 
   // Biome menu now lazy-builds when Biomes tab first opened
+    // Initialize global rich shading defaults
+    if (!window.richShadingSettings) {
+      window.richShadingSettings = {
+        enabled: true,
+        intensity: 1.0, // 0..1 multiplier for alpha
+        density: 1.0,   // 0.5..1.5 multiplier for element counts/sizes
+        performance: false
+      };
+    }
     
     // Add welcome message to dice log
     this.addDiceLogEntry('Welcome to TavernTable! Roll some dice to see history here.', 'system');
@@ -86,6 +95,52 @@ class SidebarController {
         this.onAnimationSpeedChange(value);
       });
     }
+
+    // Biome Rich Shading controls
+    const shadeToggle = document.getElementById('rich-shading-toggle');
+    const intensity = document.getElementById('shading-intensity');
+    const intensityVal = document.getElementById('shading-intensity-value');
+    const density = document.getElementById('pattern-density');
+    const densityVal = document.getElementById('pattern-density-value');
+    const perf = document.getElementById('performance-simplify');
+
+    if (shadeToggle) {
+      // Initialize from current settings
+      shadeToggle.checked = !!window.richShadingSettings?.enabled;
+      shadeToggle.addEventListener('change', () => {
+        window.richShadingSettings.enabled = shadeToggle.checked;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
+    if (intensity && intensityVal) {
+      const init = Math.round((window.richShadingSettings?.intensity ?? 1) * 100);
+      intensity.value = String(init);
+      intensityVal.textContent = `${init}%`;
+      intensity.addEventListener('input', () => {
+        const pct = parseInt(intensity.value, 10) || 0;
+        window.richShadingSettings.intensity = Math.max(0, Math.min(150, pct)) / 100;
+        intensityVal.textContent = `${pct}%`;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
+    if (density && densityVal) {
+      const init = Math.round((window.richShadingSettings?.density ?? 1) * 100);
+      density.value = String(init);
+      densityVal.textContent = `${init}%`;
+      density.addEventListener('input', () => {
+        const pct = parseInt(density.value, 10) || 0;
+        window.richShadingSettings.density = Math.max(50, Math.min(150, pct)) / 100; // 0.5..1.5
+        densityVal.textContent = `${pct}%`;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
+    if (perf) {
+      perf.checked = !!window.richShadingSettings?.performance;
+      perf.addEventListener('change', () => {
+        window.richShadingSettings.performance = perf.checked;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
   }
 
   /**
@@ -140,11 +195,51 @@ class SidebarController {
       break;
     case 'biomes':
       this.buildBiomeMenuSafely();
+  // Ensure control defaults reflect current settings when switching tabs
+  this._syncRichShadingControlsFromState();
       break;
     case 'settings':
       // Future: Load current game settings
       break;
     }
+  }
+
+  _syncRichShadingControlsFromState() {
+    try {
+      const s = window.richShadingSettings || {};
+      const shadeToggle = document.getElementById('rich-shading-toggle');
+      const intensity = document.getElementById('shading-intensity');
+      const intensityVal = document.getElementById('shading-intensity-value');
+      const density = document.getElementById('pattern-density');
+      const densityVal = document.getElementById('pattern-density-value');
+      const perf = document.getElementById('performance-simplify');
+      if (shadeToggle) shadeToggle.checked = !!s.enabled;
+      if (intensity && intensityVal && Number.isFinite(s.intensity)) {
+        const pct = Math.round(s.intensity * 100);
+        intensity.value = String(pct);
+        intensityVal.textContent = `${pct}%`;
+      }
+      if (density && densityVal && Number.isFinite(s.density)) {
+        const pct = Math.round(s.density * 100);
+        density.value = String(pct);
+        densityVal.textContent = `${pct}%`;
+      }
+      if (perf) perf.checked = !!s.performance;
+    } catch (_) { /* ignore */ }
+  }
+
+  _refreshTerrainOverlayIfActive() {
+    try {
+      const gm = window.gameManager;
+      if (gm?.terrainCoordinator?.isTerrainModeActive && gm?.terrainCoordinator?.terrainManager) {
+        gm.terrainCoordinator.terrainManager.refreshAllTerrainDisplay();
+      } else if (gm?.terrainCoordinator && !gm.terrainCoordinator.isTerrainModeActive) {
+        // Outside edit mode, re-apply biome palette to base grid for immediate feedback on color-only changes
+        if (typeof gm.terrainCoordinator.applyBiomePaletteToBaseGrid === 'function') {
+          gm.terrainCoordinator.applyBiomePaletteToBaseGrid();
+        }
+      }
+    } catch (_) { /* non-fatal */ }
   }
 
   buildBiomeMenuSafely() {
