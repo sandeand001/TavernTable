@@ -1,7 +1,8 @@
 /**
  * BiomePalettes.js
  * ------------------------------------------------------
- * Generates and exports per-height ( -5 .. 5 ) color palettes
+ * Generates and exports per-height color palettes covering the
+ * configured terrain height range (TERRAIN_CONFIG.MIN_HEIGHT .. TERRAIN_CONFIG.MAX_HEIGHT)
  * for every biome defined in BiomeConstants.
  *
  * Design Goals:
@@ -13,7 +14,7 @@
  *
  * Implementation Notes:
  *  - We interpolate in RGB space for simplicity (adequate for UI tinting).
- *  - Height range anchored to TERRAIN_CONFIG MIN/MAX (-5..5 today).
+ *  - Height range anchored to TERRAIN_CONFIG MIN/MAX (currently -10..10 after expansion).
  *  - Each palette is an object: { '-10': 0xRRGGBB, ..., '0': 0xRRGGBB, ..., '10': 0xRRGGBB }
  */
 
