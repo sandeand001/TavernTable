@@ -3,6 +3,7 @@
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { darkenColor } from '../utils/ColorUtils.js';
 
 export class TerrainFacesRenderer {
@@ -51,7 +52,7 @@ export class TerrainFacesRenderer {
   }
 
   _buildFaces(getNeighborHeight, x, y, hHere, baseTopColor, shaded) {
-    const unit = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+  const unit = TerrainHeightUtils.getElevationUnit();
     const hRight = getNeighborHeight(x + 1, y);
     const hBottom = getNeighborHeight(x, y + 1);
     const hLeft = getNeighborHeight(x - 1, y);

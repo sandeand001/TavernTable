@@ -38,6 +38,9 @@ export class TerrainCoordinator {
     // UI state
     this.isDragging = false;
     this.lastModifiedCell = null;
+
+  // Elevation perception runtime state (pixels per level). Initialized from config default.
+  this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
     
     logger.debug('TerrainCoordinator initialized', {
       context: 'TerrainCoordinator.constructor',
@@ -412,6 +415,108 @@ export class TerrainCoordinator {
       logger.log(LOG_LEVEL.DEBUG, 'Error resetting height indicator', LOG_CATEGORY.UI, {
         context: 'TerrainCoordinator.resetHeightIndicator',
         error: error.message
+      });
+    }
+  }
+
+  /** Get the current elevation perception scale (pixels per level). */
+  getElevationScale() {
+    return this._elevationScale;
+  }
+
+  /**
+   * Set the elevation perception scale (pixels per level) at runtime and refresh visuals.
+   * Applies to overlay tiles, base tiles, faces, and tokens.
+   * @param {number} unit - Pixels per height level (0 disables vertical exaggeration)
+   */
+  setElevationScale(unit) {
+    try {
+      if (!Number.isFinite(unit) || unit < 0) return;
+      if (this._elevationScale === unit) return;
+      this._elevationScale = unit;
+      // Update global height util override so all compute paths use the new unit
+      TerrainHeightUtils.setElevationUnit(unit);
+
+      // 1) Refresh terrain overlay visuals if active
+      if (this.terrainManager && this.isTerrainModeActive) {
+        try {
+          this.terrainManager.refreshAllTerrainDisplay();
+        } catch (_) { /* non-fatal */ }
+      }
+
+      // 2) Re-apply elevation to base grid tiles (position and faces)
+      if (this.gameManager?.gridContainer?.children) {
+        const children = this.gameManager.gridContainer.children;
+        // First, remove any base faces to avoid duplicates; will be re-added per tile below
+        children.forEach(child => {
+          if (child && child.isGridTile) {
+            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
+              try {
+                child.parent.removeChild(child.baseSideFaces);
+                if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
+                  child.baseSideFaces.destroy();
+                }
+              } catch(_) { /* ignore */ }
+              child.baseSideFaces = null;
+            }
+          }
+        });
+
+        // Now recompute y position and shadows for each base tile; then re-add faces
+        children.forEach(child => {
+          if (child && child.isGridTile) {
+            try {
+              // Reset to baseline
+              if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
+              // Remove prior shadow
+              if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
+                child.parent.removeChild(child.shadowTile);
+                if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
+                  child.shadowTile.destroy();
+                }
+                child.shadowTile = null;
+              }
+              // Apply new elevation offset
+              const h = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
+              if (h !== 0) {
+                this.addVisualElevationEffect(child, h);
+              }
+              // Re-add base faces using current base heights
+              const gx = child.gridX, gy = child.gridY;
+              const height = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
+              this._addBase3DFaces(child, gx, gy, height);
+            } catch(_) { /* continue */ }
+          }
+        });
+      }
+
+      // 3) Reposition tokens vertically to match new scale and keep zIndex consistent
+      if (this.gameManager?.tokenManager?.placedTokens) {
+        this.gameManager.tokenManager.placedTokens.forEach(t => {
+          try {
+            if (!t?.creature?.sprite) return;
+            const sprite = t.creature.sprite;
+            const iso = CoordinateUtils.gridToIsometric(t.gridX, t.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
+            const h = this.dataStore?.get(t.gridX, t.gridY) ?? 0;
+            const elev = TerrainHeightUtils.calculateElevationOffset(h);
+            sprite.x = iso.x;
+            sprite.y = iso.y + elev;
+            sprite.zIndex = (t.gridX + t.gridY) * 100 + 1;
+          } catch(_) { /* ignore */ }
+        });
+      }
+
+      // 4) If overlay container exists, ensure it still sorts correctly
+      try { this.gameManager?.gridContainer?.sortChildren?.(); } catch(_) {}
+
+      logger.info('Elevation perception scale updated', {
+        context: 'TerrainCoordinator.setElevationScale',
+        unit
+      }, LOG_CATEGORY.USER);
+    } catch (error) {
+      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
+        context: 'TerrainCoordinator.setElevationScale',
+        unit
       });
     }
   }

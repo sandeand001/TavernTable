@@ -240,6 +240,29 @@ function attachDynamicUIHandlers() {
       resetTerrainBtn.dataset.boundResetHandler = 'true';
     }
 
+    // Elevation perception slider
+    const elevSlider = document.getElementById('elevation-scale-range');
+    const elevValue = document.getElementById('elevation-scale-value');
+    if (elevSlider && !elevSlider.dataset.boundElevHandler) {
+      const applyValue = (val) => {
+        if (elevValue) elevValue.textContent = `${val} px/level`;
+        if (window.gameManager?.terrainCoordinator?.setElevationScale) {
+          window.gameManager.terrainCoordinator.setElevationScale(Number(val));
+        }
+      };
+      elevSlider.addEventListener('input', (e) => applyValue(e.target.value));
+      elevSlider.addEventListener('change', (e) => applyValue(e.target.value));
+      // Initialize from current config if available
+      try {
+        const current = window.gameManager?.terrainCoordinator?.getElevationScale?.();
+        if (Number.isFinite(current)) {
+          elevSlider.value = String(current);
+          if (elevValue) elevValue.textContent = `${current} px/level`;
+        }
+      } catch {}
+      elevSlider.dataset.boundElevHandler = 'true';
+    }
+
     logger.debug('Dynamic UI handlers attached');
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
