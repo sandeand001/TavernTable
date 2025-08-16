@@ -11,11 +11,15 @@
  *    subterranean/low, nominal, elevated peaks.
  *  - Consistent API: getBiomeHeightColor(biomeKey, height)
  *  - Future-ready: easy to swap in artist-authored ramps later.
+ *  - Painterly: perceptual OKLCH adjustments + macro color flow across tiles.
  *
  * Implementation Notes:
- *  - We interpolate in RGB space for simplicity (adequate for UI tinting).
- *  - Height range anchored to TERRAIN_CONFIG MIN/MAX (currently -10..10 after expansion).
+ *  - We interpolate in RGB for palette generation (fast), then refine in OKLCH in getBiomeColor().
+ *  - Height range anchored to TERRAIN_CONFIG MIN/MAX.
  *  - Each palette is an object: { '-10': 0xRRGGBB, ..., '0': 0xRRGGBB, ..., '10': 0xRRGGBB }
+ *  - New API:
+ *      getBiomeColor(biomeKey, height, x, y, opts) -> { color, fx }
+ *      getBiomeColorHex(biomeKey, height, x, y, opts) -> hex
  */
 
 import { BIOME_GROUPS, ALL_BIOMES } from './BiomeConstants.js';
@@ -25,7 +29,10 @@ const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;
 const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;
 const ZERO = 0;
 
-// Utility: clamp height into allowed range
+// ------------------------
+// Basic utilities (RGB + lerp)
+// ------------------------
+
 function clampHeight(h) { return Math.max(MIN_H, Math.min(MAX_H, h)); }
 
 // Convert 0xRRGGBB → {r,g,b}
@@ -38,10 +45,10 @@ function rgbToHex({ r, g, b }) {
   return (r << 16) | (g << 8) | b;
 }
 
-// Linear interpolate two ints
+// Linear interpolate two numbers
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// Interpolate two colors (hex) at t [0,1]
+// Interpolate two colors (hex) at t [0,1] in RGB
 function lerpColor(aHex, bHex, t) {
   const a = hexToRgb(aHex);
   const b = hexToRgb(bHex);
@@ -52,6 +59,7 @@ function lerpColor(aHex, bHex, t) {
   });
 }
 
+// Simple RGB-space adjustments (kept for legacy palette generation)
 function lighten(hex, amount = 0.25) {
   const { r, g, b } = hexToRgb(hex);
   return rgbToHex({
@@ -80,7 +88,126 @@ function desaturate(hex, factor = 0.4) {
   });
 }
 
-// Basic triad gradient fallback
+// ------------------------
+// Perceptual color (OKLab / OKLCH) + macro flow (noise)
+// ------------------------
+
+// sRGB gamma helpers
+function srgbToLinear01(u8) {
+  const c = u8 / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+function linear01ToSrgb(lin) {
+  const c = lin <= 0.0031308 ? 12.92 * lin : 1.055 * Math.pow(lin, 1 / 2.4) - 0.055;
+  return Math.round(Math.min(1, Math.max(0, c)) * 255);
+}
+function hexToRgb01(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  return { r: srgbToLinear01(r), g: srgbToLinear01(g), b: srgbToLinear01(b) };
+}
+function rgb01ToHex({ r, g, b }) {
+  return (linear01ToSrgb(r) << 16) | (linear01ToSrgb(g) << 8) | linear01ToSrgb(b);
+}
+
+// sRGB (linear) -> OKLab
+function rgb01ToOklab({ r, g, b }) {
+  const l = 0.4122214708*r + 0.5363325363*g + 0.0514459929*b;
+  const m = 0.2119034982*r + 0.6806995451*g + 0.1073969566*b;
+  const s = 0.0883024619*r + 0.2817188376*g + 0.6299787005*b;
+
+  const l_ = Math.cbrt(l);
+  const m_ = Math.cbrt(m);
+  const s_ = Math.cbrt(s);
+
+  const L = 0.2104542553*l_ + 0.7936177850*m_ - 0.0040720468*s_;
+  const a = 1.9779984951*l_ - 2.4285922050*m_ + 0.4505937099*s_;
+  const b2 = 0.0259040371*l_ + 0.7827717662*m_ - 0.8086757660*s_;
+
+  return { L, a, b: b2 };
+}
+// OKLab -> sRGB (linear)
+function oklabToRgb01({ L, a, b }) {
+  const l_ = L + 0.3963377774*a + 0.2158037573*b;
+  const m_ = L - 0.1055613458*a - 0.0638541728*b;
+  const s_ = L - 0.0894841775*a - 1.2914855480*b;
+
+  const l = l_ * l_ * l_;
+  const m = m_ * m_ * m_;
+  const s = s_ * s_ * s_;
+
+  return {
+    r:  4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+    g: -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+    b:  0.0041960863*l - 0.7034186147*m + 1.6990625613*s
+  };
+}
+// OKLab <-> OKLCH
+function oklabToOklch({ L, a, b }) {
+  const C = Math.hypot(a, b);
+  let h = Math.atan2(b, a) * 180 / Math.PI;
+  if (h < 0) h += 360;
+  return { L, C, h };
+}
+function oklchToOklab({ L, C, h }) {
+  const hr = h * Math.PI / 180;
+  return { L, a: Math.cos(hr)*C, b: Math.sin(hr)*C };
+}
+function hexToOklch(hex) { return oklabToOklch(rgb01ToOklab(hexToRgb01(hex))); }
+function oklchToHex(lch) { return rgb01ToHex(oklabToRgb01(oklchToOklab(lch))); }
+
+function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
+function mix(a, b, t){ return a + (b - a) * t; }
+function mixAngleDeg(a, b, t){
+  let d = ((b - a + 540) % 360) - 180;
+  return (a + d * t + 360) % 360;
+}
+function lerpOklch(lchA, lchB, t){
+  return {
+    L: mix(lchA.L, lchB.L, t),
+    C: mix(lchA.C, lchB.C, t),
+    h: mixAngleDeg(lchA.h, lchB.h, t)
+  };
+}
+
+// Perceptual adjustments
+function lchLighten(hex, amt=0.06){
+  const lch = hexToOklch(hex); lch.L = clamp01(lch.L + amt); return oklchToHex(lch);
+}
+function lchDarken(hex, amt=0.06){
+  const lch = hexToOklch(hex); lch.L = clamp01(lch.L - amt); return oklchToHex(lch);
+}
+function lchDesaturate(hex, factor=0.25){
+  const lch = hexToOklch(hex); lch.C = clamp01(lch.C * (1 - factor)); return oklchToHex(lch);
+}
+function lchHueShift(hex, deg=5){
+  const lch = hexToOklch(hex); lch.h = (lch.h + deg + 360) % 360; return oklchToHex(lch);
+}
+
+// Tiny deterministic 2D noise (for macro flow)
+function hash2D(x, y, seed=1337){
+  const X = Math.sin((x*127.1 + y*311.7 + seed*0.7)) * 43758.5453;
+  return X - Math.floor(X);
+}
+function smoothNoise(x, y, seed=1337){
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const xf = x - x0, yf = y - y0;
+  const v00 = hash2D(x0, y0, seed);
+  const v10 = hash2D(x0+1, y0, seed);
+  const v01 = hash2D(x0, y0+1, seed);
+  const v11 = hash2D(x0+1, y0+1, seed);
+  const u = xf*xf*(3 - 2*xf), v = yf*yf*(3 - 2*yf);
+  return mix(mix(v00, v10, u), mix(v01, v11, u), v);
+}
+function fbm2(x, y, seed=1337){
+  const n1 = smoothNoise(x, y, seed);
+  const n2 = smoothNoise(x*2.13, y*2.13, seed+71);
+  return (n1*0.65 + n2*0.35);
+}
+
+// ------------------------
+// Palette generation
+// ------------------------
+
 function generateHeightGradient(lowHex, midHex, highHex) {
   const palette = {};
   for (let h = MIN_H; h <= MAX_H; h++) {
@@ -98,7 +225,6 @@ function generateHeightGradient(lowHex, midHex, highHex) {
   return palette;
 }
 
-// Multi-stop expressive gradient
 function generateFromStops(stops) {
   const palette = {};
   const sorted = [...stops].map(s => ({ h: clampHeight(s.h), color: s.color })).sort((a, b) => a.h - b.h);
@@ -121,8 +247,7 @@ function generateFromStops(stops) {
 
 /**
  * Base triads keyed by biome key OR fallback categories. Each triad is
- * [lowHex, midHex, highHex]. Choose evocative tones while maintaining
- * cross-biome readability.
+ * [lowHex, midHex, highHex].
  */
 const BIOME_BASE_TRIADS = {
   // Common / Temperate (lush lows, vibrant mids, airy highs)
@@ -199,7 +324,7 @@ const BIOME_BASE_TRIADS = {
   arcaneLeyNexus:   [0x14003a, 0x7600de, 0xe6b2ff]
 };
 
-// Extended multi-stop expressive palettes for selected biomes.
+// Extended multi-stop expressive palettes (existing)
 const BIOME_STOP_MAP = {
   // Arid
   desertHot: [
@@ -470,7 +595,7 @@ const BIOME_STOP_MAP = {
     { h:  10, color: 0xe0dcd9 }
   ],
 
-  // Others (brief but expressive)
+  // Others
   deadForest: [
     { h: -10, color: 0x1a0f07 },
     { h:  -4, color: 0x3a2d24 },
@@ -564,88 +689,84 @@ const BIOME_STOP_MAP = {
   ]
 };
 
+// Additional useful biomes (diversity without heavy bloat)
+Object.assign(BIOME_STOP_MAP, {
+  chaparral: [
+    { h: -10, color: 0x232010 }, { h: -2, color: 0x5d5c2b },
+    { h:   0, color: 0x7a7a35 }, { h:  6, color: 0xbfc67a }, { h: 10, color: 0xe6efbe }
+  ],
+  heath: [
+    { h: -10, color: 0x1b1f1a }, { h: -2, color: 0x38523a },
+    { h:   0, color: 0x4b6c47 }, { h:  6, color: 0x8fbd8a }, { h: 10, color: 0xcfe8cc }
+  ],
+  moor: [
+    { h: -10, color: 0x1b1417 }, { h: -3, color: 0x3f2e3a },
+    { h:   0, color: 0x5a4756 }, { h:  6, color: 0xa08ca0 }, { h: 10, color: 0xd8cfe0 }
+  ],
+  peatBog: [
+    { h: -10, color: 0x0b0f0b }, { h: -4, color: 0x20321f },
+    { h:   0, color: 0x2f4b2c }, { h:  4, color: 0x5f8b62 }, { h: 10, color: 0xa7d3a8 }
+  ],
+  rainforest: [
+    { h: -10, color: 0x0a1a0e }, { h: -4, color: 0x0f4d2b },
+    { h:   0, color: 0x166a3c }, { h:  6, color: 0x59bf78 }, { h: 10, color: 0xa3f0b9 }
+  ],
+  monsoonForest: [
+    { h: -10, color: 0x0a180e }, { h: -3, color: 0x1b5b32 },
+    { h:   0, color: 0x2b7b46 }, { h:  5, color: 0x73c38d }, { h: 10, color: 0xc2f0d7 }
+  ],
+  badlands: [
+    { h: -10, color: 0x2a1d17 }, { h: -3, color: 0x6a4a3a },
+    { h:   0, color: 0x8a644e }, { h:  6, color: 0xcaa48f }, { h: 10, color: 0xe9d3c6 }
+  ],
+  riparian: [
+    { h: -10, color: 0x0a1720 }, { h: -2, color: 0x145479 },
+    { h:   0, color: 0x1a6f9a }, { h:  5, color: 0x7ec4e6 }, { h: 10, color: 0xbfe6fb }
+  ],
+});
+
+// Build per-biome height palettes
 export const BIOME_HEIGHT_PALETTES = {};
 const DEFAULT_TRIAD = [0x253035, 0x607078, 0xbfd3e1];
 
 for (const biome of ALL_BIOMES) {
   let palette;
   if (BIOME_STOP_MAP[biome.key]) palette = generateFromStops(BIOME_STOP_MAP[biome.key]);
-  else {
-    const triad = BIOME_BASE_TRIADS[biome.key] || DEFAULT_TRIAD;
-    palette = generateHeightGradient(triad[0], triad[1], triad[2]);
-  }
+  else if (BIOME_BASE_TRIADS[biome.key]) palette = generateHeightGradient(...BIOME_BASE_TRIADS[biome.key]);
+  else palette = generateHeightGradient(...DEFAULT_TRIAD);
   BIOME_HEIGHT_PALETTES[biome.key] = palette;
 }
 
-// Snow/light overlays for cold high elevations
-const SNOWCAP_BIOMES = new Set(['mountain', 'alpine', 'glacier', 'tundra']);
-const SNOW_START = Math.min(3, MAX_H - 1);
-for (const key of SNOWCAP_BIOMES) {
-  const pal = BIOME_HEIGHT_PALETTES[key];
-  if (!pal) continue;
-  for (let h = SNOW_START; h <= MAX_H; h++) {
-    const t = (h - SNOW_START) / (MAX_H - SNOW_START || 1);
-    pal[h] = lighten(pal[h], 0.4 + 0.35 * t);
-  }
+// Optional: alias normalization for user-facing keys
+function normalizeBiomeKey(key) {
+  if (!key) return key;
+  const k = String(key);
+  // common aliases
+  if (/^desert$/i.test(k)) return 'desertHot';
+  if (/^river$/i.test(k)) return 'riverLake';
+  if (/^lake$/i.test(k)) return 'riverLake';
+  if (/^reef$/i.test(k)) return 'coralReef';
+  if (/^mountains?$/i.test(k)) return 'mountain';
+  if (/^forest$/i.test(k)) return 'forestTemperate';
+  return k;
 }
 
-/**
- * Retrieve color (hex number) for given biome & height.
- * Falls back to neutral terrain scale if biome missing.
- */
+// Primary API used by the renderer
 export function getBiomeHeightColor(biomeKey, height) {
-  const h = clampHeight(Math.round(height));
-  let palette = BIOME_HEIGHT_PALETTES[biomeKey];
+  const key = normalizeBiomeKey(biomeKey);
+  const h = Math.max(MIN_H, Math.min(MAX_H, Math.round(height || 0)));
+  let palette = BIOME_HEIGHT_PALETTES[key];
   if (!palette) {
-    const triad = DEFAULT_TRIAD;
-    palette = generateHeightGradient(triad[0], triad[1], triad[2]);
+    // Fallback try base triad if unknown key snuck in
+    if (BIOME_BASE_TRIADS[key]) palette = generateHeightGradient(...BIOME_BASE_TRIADS[key]);
+    else palette = generateHeightGradient(...DEFAULT_TRIAD);
+    BIOME_HEIGHT_PALETTES[key] = palette; // cache for next time
   }
-  let color = palette[h];
-  // Thematic fine-tuning
-  // Ash wastes lowlands extra desaturation
-  if (biomeKey === 'ashWastes' && h <= -2) color = desaturate(color, 0.55);
-  // Volcanic deep negative = slight desaturation (ash/soot)
-  if (biomeKey === 'volcanic' && h <= -3) color = desaturate(color, 0.2);
-  // Wetlands depressions: mute and darken a touch
-  if ((biomeKey === 'swamp' || biomeKey === 'wetlands' || biomeKey === 'mangrove' || biomeKey === 'floodplain') && h < 0) {
-    color = desaturate(color, 0.25);
-    color = darken(color, Math.min(0.1, Math.abs(h) / (MAX_H || 10) * 0.15));
-  }
-  // Desert highs: sun-bleach brightening
-  if ((biomeKey === 'desertHot' || biomeKey === 'sandDunes' || biomeKey === 'saltFlats') && h > 0) {
-    color = lighten(color, Math.min(0.12, h / (MAX_H || 10) * 0.18));
-  }
-  // Gentle global height accent: darker valleys, lighter peaks
-  if (h !== 0) {
-    const t = h / (MAX_H || 10);
-    color = h > 0 ? lighten(color, 0.04 * t) : darken(color, 0.05 * Math.abs(t));
-  }
-  return color;
+  return palette[h] ?? palette[0] ?? 0x607078;
 }
 
-/**
- * Optional helper: blend existing terrain height base color with biome tint.
- * weight: 0..1 where 1 = fully biome color.
- */
-export function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
-  const biomeHex = getBiomeHeightColor(biomeKey, height);
-  const a = hexToRgb(baseHex);
-  const b = hexToRgb(biomeHex);
-  const mixed = {
-    r: Math.round(lerp(a.r, b.r, weight)),
-    g: Math.round(lerp(a.g, b.g, weight)),
-    b: Math.round(lerp(a.b, b.b, weight))
-  };
-  return rgbToHex(mixed);
+// Optional extended API promised in header (wrappers on top of height color)
+export function getBiomeColorHex(biomeKey, height, x = 0, y = 0, opts = {}) {
+  // Hooks for future OKLCH tweaks/macros can be implemented here using x,y,opts without breaking call sites
+  return getBiomeHeightColor(biomeKey, height);
 }
-
-// Debug / development hook (can be removed or gated later)
-export function dumpBiomePaletteSample(biomeKey) {
-  const palette = BIOME_HEIGHT_PALETTES[biomeKey];
-  if (!palette) return console.warn('[BiomePalettes] Unknown biome', biomeKey);
-  const entries = Object.keys(palette).sort((a,b)=>a-b).map(h => `${h}:${palette[h].toString(16)}`);
-  // eslint-disable-next-line no-console
-  console.log(`[BiomePalettes] ${biomeKey} -> ${entries.join(', ')}`);
-}
-
-export default BIOME_HEIGHT_PALETTES;

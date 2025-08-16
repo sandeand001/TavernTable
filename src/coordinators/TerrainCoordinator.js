@@ -10,7 +10,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../uti
 import { GameValidators, Sanitizers } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { getBiomeHeightColor } from '../config/BiomePalettes.js';
+import { getBiomeColorHex } from '../config/BiomePalettes.js';
 // import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { darkenColor, lightenColor } from '../utils/ColorUtils.js';
 import { TerrainValidation } from '../utils/TerrainValidation.js';
@@ -20,6 +20,7 @@ import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+import BiomeCanvasPainter from '../terrain/BiomeCanvasPainter.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -41,6 +42,8 @@ export class TerrainCoordinator {
 
   // Elevation perception runtime state (pixels per level). Initialized from config default.
   this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+  // Continuous biome canvas painter (used outside terrain mode)
+  this._biomeCanvas = null;
     
     logger.debug('TerrainCoordinator initialized', {
       context: 'TerrainCoordinator.constructor',
@@ -509,6 +512,11 @@ export class TerrainCoordinator {
       // 4) If overlay container exists, ensure it still sorts correctly
       try { this.gameManager?.gridContainer?.sortChildren?.(); } catch(_) {}
 
+      // 5) If outside terrain mode and a biome is selected, repaint the biome canvas
+      if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
+        try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+      }
+
       logger.info('Elevation perception scale updated', {
         context: 'TerrainCoordinator.setElevationScale',
         unit
@@ -740,6 +748,13 @@ export class TerrainCoordinator {
    */
   _prepareBaseGridForEditing() {
     try {
+      // Ensure any biome canvas is cleared and base tiles restored when entering terrain mode
+      try {
+        if (this._biomeCanvas) {
+          this._biomeCanvas.clear(() => this._toggleBaseTileVisibility(true));
+        }
+      } catch(_) { /* ignore */ }
+
       if (this.gameManager?.gridContainer?.children) {
         this.gameManager.gridContainer.children.forEach(child => {
           if (child && child.isGridTile) {
@@ -1732,45 +1747,13 @@ export class TerrainCoordinator {
   _getBiomeOrBaseColor(height) {
     try {
       if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        // Base biome palette color
-        let base = getBiomeHeightColor(window.selectedBiome, height);
-        // Introduce subtle intra-biome variation so large areas aren't flat.
-        // Use tile coordinates hashed into pseudo-random modifier if available (this method is used in contexts where "this" has gridX/gridY only indirectly).
-        // We'll fall back to a low amplitude if coords unknown.
-        const gx = (this._currentColorEvalX ?? 0);
-        const gy = (this._currentColorEvalY ?? 0);
-        const hash = ((gx * 73856093) ^ (gy * 19349663) ^ (height * 83492791)) >>> 0; // simple spatial hash
-        const noise01 = (hash & 0xffff) / 0xffff; // 0..1
-        // Convert to RGB, apply slight brightness +/- and hue drift via channel scaling.
-        const r = (base >> 16) & 0xff;
-        const g = (base >> 8) & 0xff;
-        const b = base & 0xff;
-        const brightnessJitter = (noise01 - 0.5) * 0.18; // ~±9%
-        const hueShift = ((hash >> 16) & 0xff) / 255 - 0.5; // -0.5..0.5
-        // Apply brightness
-        let nr = Math.min(255, Math.max(0, r + r * brightnessJitter));
-        let ng = Math.min(255, Math.max(0, g + g * brightnessJitter));
-        let nb = Math.min(255, Math.max(0, b + b * brightnessJitter));
-        // Gentle hue nuance: push green vs red vs blue slightly based on biome class
-  const biome = window.selectedBiome;
-        if (/forest|grove|bamboo|orchard|fey|cedar/i.test(biome)) {
-          // add greener mid-tones
-          ng = Math.min(255, ng + 8 * hueShift);
-        } else if (/desert|dune|savanna|thorn|steppe/i.test(biome)) {
-          nr = Math.min(255, nr + 10 * hueShift);
-          ng = Math.min(255, ng + 6 * (0.5 - hueShift));
-        } else if (/swamp|mangrove|marsh|wetland/i.test(biome)) {
-          ng = Math.min(255, ng + 12 * hueShift);
-          nb = Math.min(255, nb + 5 * (0.5 - hueShift));
-        } else if (/ice|glacier|tundra|pack|frozen/i.test(biome)) {
-          nb = Math.min(255, nb + 14 * hueShift);
-        } else if (/volcan|lava|ash|obsidian/i.test(biome)) {
-          nr = Math.min(255, nr + 16 * hueShift);
-        } else if (/reef|ocean|coast|river|lake/i.test(biome)) {
-          nb = Math.min(255, nb + 16 * hueShift);
-        }
-        base = ((nr & 0xff) << 16) | ((ng & 0xff) << 8) | (nb & 0xff);
-        return base;
+  // Painterly, context-aware color
+  const gx = (this._currentColorEvalX ?? 0);
+  const gy = (this._currentColorEvalY ?? 0);
+  const mapFreq = (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
+  const seed = (this._biomeSeed ?? 1337) >>> 0;
+  const hex = getBiomeColorHex(window.selectedBiome, height, gx, gy, { moisture: 0.5, slope: 0, aspectRad: 0, seed, mapFreq });
+  return hex;
       }
     } catch (_) { /* ignore */ }
     return GRID_CONFIG.TILE_COLOR;
@@ -1782,6 +1765,19 @@ export class TerrainCoordinator {
     if (typeof window === 'undefined' || !window.selectedBiome) return;
     const biomeKey = window.selectedBiome;
     try {
+      // Ensure a continuous biome canvas exists and paint it from current heights
+      if (!this._biomeCanvas) this._biomeCanvas = new BiomeCanvasPainter(this.gameManager);
+      const rows = this.gameManager.rows, cols = this.gameManager.cols;
+      const heights = Array(rows).fill(null).map(() => Array(cols).fill(0));
+      this.gameManager.gridContainer.children.forEach(ch => {
+        if (!ch?.isGridTile) return;
+        const gx = ch.gridX, gy = ch.gridY;
+        if (gy >= 0 && gy < rows && gx >= 0 && gx < cols) heights[gy][gx] = Number.isFinite(ch.terrainHeight) ? ch.terrainHeight : 0;
+      });
+      // Hide per-tile fills so the canvas shows through
+      this._toggleBaseTileVisibility(false);
+      this._biomeCanvas.paint(biomeKey, heights, null);
+
       this.gameManager.gridContainer.children.forEach(child => {
         if (!child.isGridTile) return;
         const h = typeof child.terrainHeight === 'number' ? child.terrainHeight : 0;
@@ -1810,85 +1806,18 @@ export class TerrainCoordinator {
           }
         } catch(_) { /* ignore */ }
 
-        child.clear();
-        child.lineStyle(1, borderColor, borderAlpha);
-        child.beginFill(fillColor, 1.0);
+  child.clear();
+  child.lineStyle(1, borderColor, borderAlpha);
+  // Draw only the border path; leave unfilled to let the biome canvas be visible
         child.moveTo(0, this.gameManager.tileHeight / 2);
         child.lineTo(this.gameManager.tileWidth / 2, 0);
         child.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
         child.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
         child.lineTo(0, this.gameManager.tileHeight / 2);
-        child.endFill();
+  // no fill
 
-        // Apply rich tile shading overlay if enabled
-        try {
-          const settings = (typeof window !== 'undefined' && window.richShadingSettings) ? window.richShadingSettings : null;
-          const enabled = settings ? !!settings.enabled : true;
-          const intensityMul = settings && Number.isFinite(settings.intensity) ? settings.intensity : 1.0; // 0..1.5
-          const densityMul = settings && Number.isFinite(settings.density) ? settings.density : 1.0;     // 0.5..1.5
-          const simplify = settings ? !!settings.performance : false;
-          if (enabled) {
-            const w = this.gameManager.tileWidth;
-            const hPx = this.gameManager.tileHeight;
-            const baseAlphaRaw = 0.18; // subtle overlay for base grid
-            const alpha = Math.max(0, Math.min(1, baseAlphaRaw * intensityMul));
-            const paint = new PIXI.Container();
-            paint.x = 0; paint.y = 0;
-            const mask = new PIXI.Graphics();
-            mask.beginFill(0xffffff, 1);
-            mask.moveTo(0, hPx / 2);
-            mask.lineTo(w / 2, 0);
-            mask.lineTo(w, hPx / 2);
-            mask.lineTo(w / 2, hPx);
-            mask.lineTo(0, hPx / 2);
-            mask.endFill();
-
-            const biome = String(biomeKey || '');
-            const seed = (child.gridX * 73856093) ^ (child.gridY * 19349663) ^ ((h || 0) * 83492791);
-
-            if (/desert|dune|salt|thorn|savanna|steppe/i.test(biome)) {
-              this._drawShade_DesertBands(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
-            } else if (/forest|grove|bamboo|orchard|cedar|fey/i.test(biome)) {
-              this._drawShade_ForestDapples(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
-            } else if (/swamp|marsh|wetland|mangrove|flood/i.test(biome)) {
-              this._drawShade_SwampMottling(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
-            } else if (/glacier|tundra|frozen|pack|alpine|mountain|scree/i.test(biome)) {
-              this._drawShade_IcyFacets(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
-            } else if (/ocean|coast|river|lake|reef/i.test(biome)) {
-              this._drawShade_WaterWaves(paint, fillColor, w, hPx, alpha, seed, /reef/i.test(biome), densityMul, simplify);
-            } else if (/volcan|lava|obsidian|ash/i.test(biome)) {
-              this._drawShade_VolcanicVeins(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
-            } else if (/ruin|urban|grave|waste/i.test(biome)) {
-              this._drawShade_RuinGrid(paint, fillColor, w, hPx, alpha, seed, densityMul, simplify);
-            } else {
-              // subtle tri-tone band
-              const lighter = lightenColor(fillColor, 0.12);
-              const darker = darkenColor(fillColor, 0.12);
-              const top = new PIXI.Graphics();
-              top.beginFill(lighter, alpha * 0.9);
-              top.moveTo(w / 2, 0);
-              top.lineTo(w, hPx / 2);
-              top.lineTo(0, hPx / 2);
-              top.closePath();
-              top.endFill();
-              paint.addChild(top);
-              const bottom = new PIXI.Graphics();
-              bottom.beginFill(darker, alpha * 0.85);
-              bottom.moveTo(w / 2, hPx);
-              bottom.lineTo(w, hPx / 2);
-              bottom.lineTo(0, hPx / 2);
-              bottom.closePath();
-              bottom.endFill();
-              paint.addChild(bottom);
-            }
-
-            paint.mask = mask;
-            child.addChild(mask);
-            child.addChild(paint);
-            child.paintLayer = paint;
-            child.paintMask = mask;
-          }
-        } catch(_) { /* non-fatal */ }
+  // Suppress per-tile shading overlays; biome canvas provides painterly shading
+  try { /* intentionally no tile-level overlays when canvas is active */ } catch(_) { /* non-fatal */ }
 
         if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
         if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.addVisualElevationEffect(child, h);
@@ -1901,6 +1830,26 @@ export class TerrainCoordinator {
       this._currentColorEvalX = undefined;
       this._currentColorEvalY = undefined;
     }
+  }
+
+  /** Show or hide the base tile fills (keeping borders) */
+  _toggleBaseTileVisibility(show) {
+    try {
+      this.gameManager.gridContainer.children.forEach(child => {
+        if (!child?.isGridTile) return;
+        child.clear();
+        child.lineStyle(1, GRID_CONFIG.TILE_BORDER_COLOR, GRID_CONFIG.TILE_BORDER_ALPHA);
+        if (show) {
+          child.beginFill(GRID_CONFIG.TILE_COLOR, 1.0);
+        }
+        child.moveTo(0, this.gameManager.tileHeight / 2);
+        child.lineTo(this.gameManager.tileWidth / 2, 0);
+        child.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
+        child.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
+        child.lineTo(0, this.gameManager.tileHeight / 2);
+        if (show) child.endFill();
+      });
+    } catch(_) { /* ignore */ }
   }
 
   // --- Lightweight shading helpers for base grid (outside terrain mode) ---

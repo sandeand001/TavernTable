@@ -13,7 +13,7 @@ import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
 // import { GRID_CONFIG } from '../config/GameConstants.js';
 import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
-import { getBiomeHeightColor } from '../config/BiomePalettes.js';
+import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
@@ -675,7 +675,11 @@ export class TerrainManager {
     // Terrain mode should not be affected by biome selection
     try {
       if (!this.terrainCoordinator?.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        return getBiomeHeightColor(window.selectedBiome, height);
+  const gx = (this._currentColorEvalX ?? 0);
+  const gy = (this._currentColorEvalY ?? 0);
+  const mapFreq = (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
+  const seed = (this._biomeSeed ?? 1337) >>> 0;
+  return getBiomeColorHex(window.selectedBiome, height, gx, gy, { moisture: 0.5, slope: 0, aspectRad: 0, seed, mapFreq });
       }
     } catch (_) { /* fall back */ }
     const colorKey = height.toString();
