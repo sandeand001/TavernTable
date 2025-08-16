@@ -7,7 +7,6 @@
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
-import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 
@@ -346,7 +345,7 @@ export class InteractionManager {
       if (Number.isFinite(h)) {
         elevOffset = TerrainHeightUtils.calculateElevationOffset(h);
       }
-    } catch(_) {}
+    } catch(_) { /* ignore data lookup failure */ }
 
     const cx = baseX + (this.gameManager.tileWidth / 2);
     const cy = baseY + (this.gameManager.tileHeight / 2) + elevOffset;
@@ -384,7 +383,7 @@ export class InteractionManager {
           if (Number.isFinite(h) && h !== 0) {
             baseY += TerrainHeightUtils.calculateElevationOffset(h);
           }
-        } catch(_) {}
+        } catch(_) { /* ignore elevation lookup */ }
       }
       const cy = baseY + halfH;
       const dx = Math.abs(localX - cx);
@@ -393,8 +392,8 @@ export class InteractionManager {
     };
 
     // Build ordered candidate lists by zIndex to mirror actual draw order
-  const terrainContainer = this.gameManager?.terrainCoordinator?.terrainManager?.terrainContainer;
-  if (terrainContainer && terrainContainer.visible && terrainContainer.children && terrainContainer.children.length) {
+    const terrainContainer = this.gameManager?.terrainCoordinator?.terrainManager?.terrainContainer;
+    if (terrainContainer && terrainContainer.visible && terrainContainer.children && terrainContainer.children.length) {
       // Filter to true top faces only and sort by zIndex descending (topmost first)
       const terrainTops = terrainContainer.children
         .filter(t => t && t.visible && t.isTerrainTile === true && t.isOverlayFace !== true && t.isShadowTile !== true)
@@ -452,7 +451,7 @@ export class InteractionManager {
       try {
         const h = this.gameManager?.terrainCoordinator?.dataStore?.get(c.gx, c.gy) ?? 0;
         if (Number.isFinite(h)) elev = TerrainHeightUtils.calculateElevationOffset(h);
-      } catch(_) {}
+      } catch(_) { /* ignore elevation lookup */ }
       const cx = baseX + halfW;
       const cy = baseY + halfH + elev;
       const dx = Math.abs(localX - cx);
@@ -468,7 +467,7 @@ export class InteractionManager {
     if (best) {
       return { gridX: best.gx, gridY: best.gy };
     }
-    return coarse;
+    return null;
   }
 
   /**
@@ -540,7 +539,7 @@ export class InteractionManager {
    */
   isValidGridPosition({ gridX, gridY }) {
   // Consolidated validation: coordinates must be integers within grid bounds
-  return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
+    return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
   }
 
   // Getters for backward compatibility

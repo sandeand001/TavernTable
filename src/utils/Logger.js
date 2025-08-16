@@ -579,8 +579,8 @@ export class Logger {
     let normLevel = level;
     let normCategory = category;
     let normMessage = message;
-    let normData = data;
-    let normContext = context;
+    const normData = data;
+    const normContext = context;
 
     // Pattern 3: (message, level, category)
     if (!validLevels.has(level) && validLevels.has(category) && typeof message === 'string') {

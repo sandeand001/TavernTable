@@ -50,19 +50,19 @@ export class CoordinateUtils {
         }, LOG_CATEGORY.SYSTEM);
       }
 
-  // Compute tile origin (top point) identical to GridRenderer.drawIsometricTile positioning
-  // tileOriginX = (gx - gy) * (w/2)
-  // tileOriginY = (gx + gy) * (h/2)
-  const tileOriginX = (gridX - gridY) * (tileWidth / 2);
-  const tileOriginY = (gridX + gridY) * (tileHeight / 2);
+      // Compute tile origin (top point) identical to GridRenderer.drawIsometricTile positioning
+      // tileOriginX = (gx - gy) * (w/2)
+      // tileOriginY = (gx + gy) * (h/2)
+      const tileOriginX = (gridX - gridY) * (tileWidth / 2);
+      const tileOriginY = (gridX + gridY) * (tileHeight / 2);
 
-  // For tokens whose sprites use anchor (0.5,1.0) (bottom-center), we want the bottom of the sprite
-  // to sit on the vertical center line of the diamond (which is tileOriginY + h/2).
-  // So final placement point for sprite.x/y should be:
-  //   x = tileOriginX + w/2  (center horizontally)
-  //   y = tileOriginY + h/2  (baseline where bottom of sprite rests)
-  const x = tileOriginX + (tileWidth / 2) + (TOKEN_PLACEMENT_OFFSET?.x || 0);
-  const y = tileOriginY + (tileHeight / 2) + (TOKEN_PLACEMENT_OFFSET?.y || 0);
+      // For tokens whose sprites use anchor (0.5,1.0) (bottom-center), we want the bottom of the sprite
+      // to sit on the vertical center line of the diamond (which is tileOriginY + h/2).
+      // So final placement point for sprite.x/y should be:
+      //   x = tileOriginX + w/2  (center horizontally)
+      //   y = tileOriginY + h/2  (baseline where bottom of sprite rests)
+      const x = tileOriginX + (tileWidth / 2) + (TOKEN_PLACEMENT_OFFSET?.x || 0);
+      const y = tileOriginY + (tileHeight / 2) + (TOKEN_PLACEMENT_OFFSET?.y || 0);
       
       const result = { x, y };
       
@@ -109,13 +109,13 @@ export class CoordinateUtils {
         }, LOG_CATEGORY.SYSTEM);
       }
 
-  // Invert forward transform derived above:
-  // Given x = (gx - gy)*(w/2) + w/2 and y = (gx + gy)*(h/2) + h/2
-  // Subtract the center offsets first.
-  const adjustedX = x - (tileWidth / 2) - (TOKEN_PLACEMENT_OFFSET?.x || 0);
-  const adjustedY = y - (tileHeight / 2) - (TOKEN_PLACEMENT_OFFSET?.y || 0);
-  const gridX = Math.round((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
-  const gridY = Math.round((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
+      // Invert forward transform derived above:
+      // Given x = (gx - gy)*(w/2) + w/2 and y = (gx + gy)*(h/2) + h/2
+      // Subtract the center offsets first.
+      const adjustedX = x - (tileWidth / 2) - (TOKEN_PLACEMENT_OFFSET?.x || 0);
+      const adjustedY = y - (tileHeight / 2) - (TOKEN_PLACEMENT_OFFSET?.y || 0);
+      const gridX = Math.round((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
+      const gridY = Math.round((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
       
       const result = { gridX, gridY };
       

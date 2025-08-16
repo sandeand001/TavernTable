@@ -202,7 +202,7 @@ export class TokenManager {
         throw new Error(`Failed to create creature of type: ${this.selectedTokenType}`);
       }
 
-  // Add to grid container first
+      // Add to grid container first
       creature.addToStage(gridContainer);
       
       // Calculate isometric base position
@@ -393,8 +393,8 @@ export class TokenManager {
   setupTokenInteractions(sprite, tokenData) {
     sprite.interactive = true;
     sprite.buttonMode = true;
-  // Ensure pickers ignore tokens when selecting tiles
-  sprite.isCreatureToken = true;
+    // Ensure pickers ignore tokens when selecting tiles
+    sprite.isCreatureToken = true;
     
     // Store references for event handling
     sprite.tokenData = tokenData;
@@ -465,7 +465,7 @@ export class TokenManager {
             localX = p.x;
             localY = p.y;
           }
-        } catch(_) {}
+        } catch(_) { /* ignore getLocalPosition errors */ }
         
         // Snap to grid using the topmost picker via TokenManager (pass pointer coords when available)
         if (window.snapToGrid) {
@@ -498,7 +498,7 @@ export class TokenManager {
             localX = p.x;
             localY = p.y;
           }
-        } catch(_) {}
+        } catch(_) { /* ignore getLocalPosition errors */ }
         
         // Snap to grid
         if (window.snapToGrid) {
@@ -514,8 +514,8 @@ export class TokenManager {
     });
 
     // One-time context menu suppression for right-drag UX
-    if (!window.__tt_context_menu_suppressed && this.gameManager?.app?.view) {
-      window.__tt_context_menu_suppressed = true;
+    if (!window.__ttContextMenuSuppressed && this.gameManager?.app?.view) {
+      window.__ttContextMenuSuppressed = true;
       this.gameManager.app.view.addEventListener('contextmenu', e => {
         if (e.target === this.gameManager.app.view) {
           e.preventDefault();
@@ -525,9 +525,9 @@ export class TokenManager {
 
     // Ensure a global snapToGrid bridge exists (backward compatibility for existing handlers)
     if (typeof window !== 'undefined' && !window.snapToGrid) {
-    window.snapToGrid = (tokenSprite, localX = null, localY = null) => {
+      window.snapToGrid = (tokenSprite, localX = null, localY = null) => {
         try {
-      this.snapToGrid(tokenSprite, localX, localY);
+          this.snapToGrid(tokenSprite, localX, localY);
         } catch (e) {
           console.error('snapToGrid bridge error', e);
         }

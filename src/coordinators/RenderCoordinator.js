@@ -140,12 +140,12 @@ export class RenderCoordinator {
         this.gameManager.gridContainer.addChild(sprite);
         
         // Recalculate position relative to grid using CoordinateUtils and footprint center
-  const fp = tokenData.footprint || { w: 1, h: 1 };
-  const centerGX = tokenData.gridX + (fp.w - 1) / 2;
-  const centerGY = tokenData.gridY + (fp.h - 1) / 2;
-  const iso = CoordinateUtils.gridToIsometric(centerGX, centerGY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-  sprite.x = iso.x;
-  sprite.y = iso.y;
+        const fp = tokenData.footprint || { w: 1, h: 1 };
+        const centerGX = tokenData.gridX + (fp.w - 1) / 2;
+        const centerGY = tokenData.gridY + (fp.h - 1) / 2;
+        const iso = CoordinateUtils.gridToIsometric(centerGX, centerGY, this.gameManager.tileWidth, this.gameManager.tileHeight);
+        sprite.x = iso.x;
+        sprite.y = iso.y;
       }
     });
   }

@@ -96,7 +96,7 @@ function onDragEnd(event) {
         localX = p.x;
         localY = p.y;
       }
-    } catch(_) {}
+    } catch(_) { /* ignore getLocalPosition errors */ }
 
     this.dragging = false;
     this.alpha = 1.0;

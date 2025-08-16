@@ -82,23 +82,23 @@ class CreatureToken {
         return;
       }
       
-  const spriteKey = `${this.type}-sprite`;
+      const spriteKey = `${this.type}-sprite`;
 
-  // Try to build sprite via SpriteManager helper (handles fallback)
-  const scale = this.getCreatureScale();
-  const built = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
-  this.sprite = built;
-  // Always enforce bottom-center anchor/pivot
-  if (this.sprite instanceof PIXI.Sprite) {
-    this.sprite.anchor.set(0.5, 1.0);
-    window.logger?.debug?.('Sprite anchor set', { anchor: this.sprite.anchor, type: this.type });
-  } else if (this.sprite instanceof PIXI.Graphics) {
-    try {
-      const b = this.sprite.getLocalBounds();
-      this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
-      window.logger?.debug?.('Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
-    } catch {}
-  }
+      // Try to build sprite via SpriteManager helper (handles fallback)
+      const scale = this.getCreatureScale();
+      const built = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
+      this.sprite = built;
+      // Always enforce bottom-center anchor/pivot
+      if (this.sprite instanceof PIXI.Sprite) {
+        this.sprite.anchor.set(0.5, 1.0);
+        window.logger?.debug?.('Sprite anchor set', { anchor: this.sprite.anchor, type: this.type });
+      } else if (this.sprite instanceof PIXI.Graphics) {
+        try {
+          const b = this.sprite.getLocalBounds();
+          this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
+          window.logger?.debug?.('Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
+        } catch { /* ignore bounds error */ }
+      }
       
     } catch (error) {
       GameErrors.sprites(error, {
@@ -148,7 +148,7 @@ class CreatureToken {
           const b = this.sprite.getLocalBounds();
           this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
           window.logger?.debug?.('Fallback Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
-        } catch {}
+        } catch { /* ignore bounds error */ }
       } else {
         this.createFallbackSprite();
       }
@@ -190,7 +190,7 @@ class CreatureToken {
       try {
         const b = this.sprite.getLocalBounds();
         this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
-      } catch {}
+      } catch { /* ignore bounds error */ }
       
     } catch (error) {
       GameErrors.sprites(error, {
@@ -351,7 +351,7 @@ class CreatureToken {
   replaceWithSprite() {
     try {
       const spriteKey = `${this.type}-sprite`;
-  if (!window.spriteManager || !window.spriteManager.hasSpriteLoaded?.(spriteKey)) {
+      if (!window.spriteManager || !window.spriteManager.hasSpriteLoaded?.(spriteKey)) {
         console.warn(`🎨 Cannot replace sprite for ${this.type} - texture not available`);
         return;
       }
@@ -366,9 +366,9 @@ class CreatureToken {
         this.sprite.parent.removeChild(this.sprite);
       }
       
-  // Create new sprite using manager helper
-  const scale = this.getCreatureScale();
-  this.sprite = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
+      // Create new sprite using manager helper
+      const scale = this.getCreatureScale();
+      this.sprite = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
       if (this.sprite instanceof PIXI.Sprite) {
         this.sprite.anchor.set(0.5, 1.0);
       }

@@ -8,7 +8,7 @@
 class SidebarController {
   constructor() {
   // Default active tab (original): dice-log
-  this.activeTab = 'dice-log';
+    this.activeTab = 'dice-log';
     this.diceLogEntries = [];
     this.maxLogEntries = 50; // Prevent memory issues with large logs
     
@@ -24,14 +24,15 @@ class SidebarController {
     this.setupRangeSliderListeners();
     this.showTab(this.activeTab);
 
-  // Biome menu now lazy-builds when Biomes tab first opened
+    // Biome menu now lazy-builds when Biomes tab first opened
     // Initialize global rich shading defaults
     if (!window.richShadingSettings) {
       window.richShadingSettings = {
         enabled: true,
         intensity: 1.0, // 0..1 multiplier for alpha
         density: 1.0,   // 0.5..1.5 multiplier for element counts/sizes
-        performance: false
+        performance: false,
+        shorelineSandStrength: 1.0 // 0..2 multiplier for shoreline sand effect
       };
     }
     
@@ -102,14 +103,27 @@ class SidebarController {
     const intensityVal = document.getElementById('shading-intensity-value');
     const density = document.getElementById('pattern-density');
     const densityVal = document.getElementById('pattern-density-value');
+    const shore = document.getElementById('shoreline-sand-strength');
+    const shoreVal = document.getElementById('shoreline-sand-strength-value');
     const perf = document.getElementById('performance-simplify');
 
     if (shadeToggle) {
       // Initialize from current settings
       shadeToggle.checked = !!window.richShadingSettings?.enabled;
       shadeToggle.addEventListener('change', () => {
-        window.richShadingSettings.enabled = shadeToggle.checked;
-        this._refreshTerrainOverlayIfActive();
+        const enabled = !!shadeToggle.checked;
+        window.richShadingSettings.enabled = enabled;
+        // Prefer coordinator API to manage painter + base grid
+        try {
+          if (window.gameManager?.terrainCoordinator?.setRichShadingEnabled) {
+            window.gameManager.terrainCoordinator.setRichShadingEnabled(enabled);
+          } else {
+            // Fallback: refresh terrain or re-apply palette
+            this._refreshTerrainOverlayIfActive();
+          }
+        } catch(_) {
+          this._refreshTerrainOverlayIfActive();
+        }
       });
     }
     if (intensity && intensityVal) {
@@ -134,6 +148,18 @@ class SidebarController {
         this._refreshTerrainOverlayIfActive();
       });
     }
+    if (shore && shoreVal) {
+      const init = Math.round((window.richShadingSettings?.shorelineSandStrength ?? 1) * 100);
+      shore.value = String(init);
+      shoreVal.textContent = `${init}%`;
+      shore.addEventListener('input', () => {
+        const pct = parseInt(shore.value, 10) || 0;
+        // allow 0..200% → 0..2 multiplier
+        window.richShadingSettings.shorelineSandStrength = Math.max(0, Math.min(200, pct)) / 100;
+        shoreVal.textContent = `${pct}%`;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
     if (perf) {
       perf.checked = !!window.richShadingSettings?.performance;
       perf.addEventListener('change', () => {
@@ -149,7 +175,7 @@ class SidebarController {
    */
   showTab(tabId) {
     // Validate tab ID
-  const validTabs = ['dice-log', 'creatures', 'terrain', 'biomes', 'settings'];
+    const validTabs = ['dice-log', 'creatures', 'terrain', 'biomes', 'settings'];
     if (!validTabs.includes(tabId)) {
       console.warn(`Invalid tab ID: ${tabId}`);
       return;
@@ -195,8 +221,8 @@ class SidebarController {
       break;
     case 'biomes':
       this.buildBiomeMenuSafely();
-  // Ensure control defaults reflect current settings when switching tabs
-  this._syncRichShadingControlsFromState();
+      // Ensure control defaults reflect current settings when switching tabs
+      this._syncRichShadingControlsFromState();
       break;
     case 'settings':
       // Future: Load current game settings
@@ -212,6 +238,8 @@ class SidebarController {
       const intensityVal = document.getElementById('shading-intensity-value');
       const density = document.getElementById('pattern-density');
       const densityVal = document.getElementById('pattern-density-value');
+      const shore = document.getElementById('shoreline-sand-strength');
+      const shoreVal = document.getElementById('shoreline-sand-strength-value');
       const perf = document.getElementById('performance-simplify');
       if (shadeToggle) shadeToggle.checked = !!s.enabled;
       if (intensity && intensityVal && Number.isFinite(s.intensity)) {
@@ -224,6 +252,11 @@ class SidebarController {
         density.value = String(pct);
         densityVal.textContent = `${pct}%`;
       }
+      if (shore && shoreVal && Number.isFinite(s.shorelineSandStrength)) {
+        const pct = Math.round(s.shorelineSandStrength * 100);
+        shore.value = String(pct);
+        shoreVal.textContent = `${pct}%`;
+      }
       if (perf) perf.checked = !!s.performance;
     } catch (_) { /* ignore */ }
   }
@@ -234,9 +267,19 @@ class SidebarController {
       if (gm?.terrainCoordinator?.isTerrainModeActive && gm?.terrainCoordinator?.terrainManager) {
         gm.terrainCoordinator.terrainManager.refreshAllTerrainDisplay();
       } else if (gm?.terrainCoordinator && !gm.terrainCoordinator.isTerrainModeActive) {
-        // Outside edit mode, re-apply biome palette to base grid for immediate feedback on color-only changes
-        if (typeof gm.terrainCoordinator.applyBiomePaletteToBaseGrid === 'function') {
-          gm.terrainCoordinator.applyBiomePaletteToBaseGrid();
+        // Outside edit mode: only repaint the biome canvas if shading is enabled.
+        const enabled = !!window.richShadingSettings?.enabled;
+        if (enabled) {
+          if (typeof gm.terrainCoordinator.applyBiomePaletteToBaseGrid === 'function') {
+            gm.terrainCoordinator.applyBiomePaletteToBaseGrid();
+          } else { /* applyBiomePaletteToBaseGrid not present (older build) */ }
+        } else {
+          // If disabled, ensure painter is cleared and base tiles are visible
+          if (typeof gm.terrainCoordinator.setRichShadingEnabled === 'function') {
+            gm.terrainCoordinator.setRichShadingEnabled(false);
+          } else {
+            try { gm.terrainCoordinator._toggleBaseTileVisibility?.(true); } catch(_) { /* ignore refresh error */ }
+          }
         }
       }
     } catch (_) { /* non-fatal */ }
@@ -268,15 +311,15 @@ class SidebarController {
           headerBtn.setAttribute('aria-expanded', 'false');
           headerBtn.textContent = group;
 
-            const listEl = document.createElement('div');
-            listEl.className = 'biome-group-list';
-            listEl.style.display = 'none';
+          const listEl = document.createElement('div');
+          listEl.className = 'biome-group-list';
+          listEl.style.display = 'none';
 
-            headerBtn.addEventListener('click', () => {
-              const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
-              headerBtn.setAttribute('aria-expanded', String(!expanded));
-              listEl.style.display = expanded ? 'none' : 'grid';
-            });
+          headerBtn.addEventListener('click', () => {
+            const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
+            headerBtn.setAttribute('aria-expanded', String(!expanded));
+            listEl.style.display = expanded ? 'none' : 'grid';
+          });
 
           list.forEach(b => {
             const bBtn = document.createElement('button');
@@ -298,7 +341,7 @@ class SidebarController {
         if (window.selectedBiome) {
           try { this.selectBiome(window.selectedBiome); } catch(_) { /* ignore */ }
         }
-      }).catch(() => {/* ignore */});
+      }).catch(() => { /* ignore dynamic import errors */ });
     } catch (_) { /* swallow to avoid UI disruption */ }
   }
 

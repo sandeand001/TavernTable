@@ -148,12 +148,12 @@ export class StateCoordinator {
         window.spritesReady = true;
       }
 
-  // Animated sprite system removed (2025-08 cleanup) – static sprites only.
+      // Animated sprite system removed (2025-08 cleanup) – static sprites only.
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
         context: 'StateCoordinator.initializeSprites',
         stage: 'sprite_initialization',
-  spriteManagers: { spriteManager: !!window.spriteManager },
+        spriteManagers: { spriteManager: !!window.spriteManager },
         fallbackEnabled: true,
         spritesReady: this.gameManager.spritesReady
       });

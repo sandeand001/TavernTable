@@ -198,8 +198,8 @@ export class TerrainHeightUtils {
     // Positive heights: move UP (negative Y offset) to appear elevated
     // Negative heights: move DOWN (positive Y offset) to appear as depressions
     // Height 0: no offset (base reference level)
-  const unit = this.getElevationUnit();
-  return -height * unit;
+    const unit = this.getElevationUnit();
+    return -height * unit;
   }
 
   /**

@@ -40,10 +40,14 @@ export class TerrainCoordinator {
     this.isDragging = false;
     this.lastModifiedCell = null;
 
-  // Elevation perception runtime state (pixels per level). Initialized from config default.
-  this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-  // Continuous biome canvas painter (used outside terrain mode)
-  this._biomeCanvas = null;
+    // Elevation perception runtime state (pixels per level). Initialized from config default.
+    this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+    // Continuous biome canvas painter (used outside terrain mode)
+    this._biomeCanvas = null;
+    // Shared seed for biome color/painter coherence (can be overridden by UI)
+    this._biomeSeed = (typeof window !== 'undefined' && Number.isFinite(window.richShadingSettings?.seed))
+      ? (window.richShadingSettings.seed >>> 0)
+      : (Math.floor(Math.random() * 1e9) >>> 0);
     
     logger.debug('TerrainCoordinator initialized', {
       context: 'TerrainCoordinator.constructor',
@@ -488,7 +492,7 @@ export class TerrainCoordinator {
               const gx = child.gridX, gy = child.gridY;
               const height = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
               this._addBase3DFaces(child, gx, gy, height);
-            } catch(_) { /* continue */ }
+            } catch(_) { /* continue on error */ }
           }
         });
       }
@@ -510,11 +514,11 @@ export class TerrainCoordinator {
       }
 
       // 4) If overlay container exists, ensure it still sorts correctly
-      try { this.gameManager?.gridContainer?.sortChildren?.(); } catch(_) {}
+      try { this.gameManager?.gridContainer?.sortChildren?.(); } catch(_) { /* no-op */ }
 
       // 5) If outside terrain mode and a biome is selected, repaint the biome canvas
       if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+        try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal repaint failure */ }
       }
 
       logger.info('Elevation perception scale updated', {
@@ -619,7 +623,7 @@ export class TerrainCoordinator {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition(gridX, gridY) {
-  return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
+    return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
   }
 
   /**
@@ -805,14 +809,14 @@ export class TerrainCoordinator {
 
             // Remove any rich shading layers (paintLayer/mask) attached to base tiles
             if (child.paintLayer) {
-              try { child.removeChild(child.paintLayer); } catch(_) {}
+              try { child.removeChild(child.paintLayer); } catch(_) { /* ignore remove error */ }
               if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
                 child.paintLayer.destroy({ children: true });
               }
               child.paintLayer = null;
             }
             if (child.paintMask) {
-              try { child.removeChild(child.paintMask); } catch(_) {}
+              try { child.removeChild(child.paintMask); } catch(_) { /* ignore remove error */ }
               if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
                 child.paintMask.destroy();
               }
@@ -961,7 +965,7 @@ export class TerrainCoordinator {
       }
     };
     
-  GameErrors.gameState(error, errorContext);
+    GameErrors.gameState(error, errorContext);
     throw error;
   }
 
@@ -1026,8 +1030,8 @@ export class TerrainCoordinator {
       // Reset height indicator
       this.resetHeightIndicator();
 
-  // Apply biome palette immediately if a biome is selected
-  if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
+      // Apply biome palette immediately if a biome is selected
+      if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
         try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
       }
       
@@ -1176,6 +1180,23 @@ export class TerrainCoordinator {
         },
         defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT
       }, LOG_CATEGORY.USER);
+
+      // If we're outside terrain mode and rich shading is enabled with a selected biome, re-apply the biome canvas
+      try {
+        if (!this.isTerrainModeActive && typeof window !== 'undefined') {
+          const enabled = !!window.richShadingSettings?.enabled;
+          const hasBiome = !!window.selectedBiome;
+          if (enabled && hasBiome) {
+            this.applyBiomePaletteToBaseGrid();
+          } else if (!enabled) {
+            // Ensure base tiles are visible if shading is disabled
+            this._toggleBaseTileVisibility(true);
+            if (this._biomeCanvas) {
+              try { this._biomeCanvas.clear(); } catch(_) { /* ignore clear error */ }
+            }
+          }
+        }
+      } catch(_) { /* non-fatal */ }
     } catch (error) {
       GameErrors.operation(error, {
         stage: 'resetTerrain',
@@ -1186,6 +1207,34 @@ export class TerrainCoordinator {
       });
       throw error;
     }
+  }
+
+  /** Enable or disable the rich biome canvas shading outside terrain mode. */
+  setRichShadingEnabled(enabled) {
+    try {
+      if (typeof window !== 'undefined') {
+        if (!window.richShadingSettings) window.richShadingSettings = {};
+        window.richShadingSettings.enabled = !!enabled;
+      }
+
+      // Only affects outside terrain edit mode
+      if (this.isTerrainModeActive) return;
+
+      if (enabled) {
+        if (typeof window !== 'undefined' && window.selectedBiome) {
+          this.applyBiomePaletteToBaseGrid();
+        }
+      } else {
+        // Disable: clear painter if present and restore base tiles
+        try {
+          if (this._biomeCanvas) {
+            this._biomeCanvas.clear(() => this._toggleBaseTileVisibility(true));
+          } else {
+            this._toggleBaseTileVisibility(true);
+          }
+        } catch(_) { this._toggleBaseTileVisibility(true); }
+      }
+    } catch(_) { /* ignore */ }
   }
 
   /**
@@ -1278,7 +1327,7 @@ export class TerrainCoordinator {
         }
       }, LOG_CATEGORY.SYSTEM);
     } catch (error) {
-  GameErrors.gameState(error, {
+      GameErrors.gameState(error, {
         stage: 'loadBaseTerrainIntoWorkingState',
         context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState'
       });
@@ -1386,7 +1435,7 @@ export class TerrainCoordinator {
    * @throws {Error} Re-throws the error after logging
    */
   _handleTerrainApplicationError(error) {
-  GameErrors.gameState(error, {
+    GameErrors.gameState(error, {
       stage: 'applyTerrainToBaseGrid',
       context: 'TerrainCoordinator.applyTerrainToBaseGrid'
     });
@@ -1436,9 +1485,9 @@ export class TerrainCoordinator {
         existingTile.baseSideFaces = null;
       }
       
-  // Decide styling based on whether terrain mode is active
-  const isEditing = !!this.isTerrainModeActive;
-  const fillColor = isEditing ? this.getColorForHeight(height) : this._getBiomeOrBaseColor(height);
+      // Decide styling based on whether terrain mode is active
+      const isEditing = !!this.isTerrainModeActive;
+      const fillColor = isEditing ? this.getColorForHeight(height) : this._getBiomeOrBaseColor(height);
       const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
       const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
       const fillAlpha = isEditing ? 0.8 : 1.0;
@@ -1654,8 +1703,8 @@ export class TerrainCoordinator {
       if (typeof tile.baseIsoY === 'number') {
         tile.y = tile.baseIsoY;
       }
-  const elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
-  tile.y += elevationOffset;
+      const elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
+      tile.y += elevationOffset;
       
       // Add subtle border effect for raised/lowered appearance
       if (height > TERRAIN_CONFIG.DEFAULT_HEIGHT) {
@@ -1747,13 +1796,13 @@ export class TerrainCoordinator {
   _getBiomeOrBaseColor(height) {
     try {
       if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-  // Painterly, context-aware color
-  const gx = (this._currentColorEvalX ?? 0);
-  const gy = (this._currentColorEvalY ?? 0);
-  const mapFreq = (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
-  const seed = (this._biomeSeed ?? 1337) >>> 0;
-  const hex = getBiomeColorHex(window.selectedBiome, height, gx, gy, { moisture: 0.5, slope: 0, aspectRad: 0, seed, mapFreq });
-  return hex;
+        // Painterly, context-aware color
+        const gx = (this._currentColorEvalX ?? 0);
+        const gy = (this._currentColorEvalY ?? 0);
+        const mapFreq = (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
+        const seed = (this._biomeSeed ?? 1337) >>> 0;
+        const hex = getBiomeColorHex(window.selectedBiome, height, gx, gy, { moisture: 0.5, slope: 0, aspectRad: 0, seed, mapFreq });
+        return hex;
       }
     } catch (_) { /* ignore */ }
     return GRID_CONFIG.TILE_COLOR;
@@ -1767,6 +1816,8 @@ export class TerrainCoordinator {
     try {
       // Ensure a continuous biome canvas exists and paint it from current heights
       if (!this._biomeCanvas) this._biomeCanvas = new BiomeCanvasPainter(this.gameManager);
+      // Keep painter noise deterministic with our coordinator seed
+      try { this._biomeCanvas.setSeed?.(this._biomeSeed >>> 0); } catch(_) { /* ignore setSeed error */ }
       const rows = this.gameManager.rows, cols = this.gameManager.cols;
       const heights = Array(rows).fill(null).map(() => Array(cols).fill(0));
       this.gameManager.gridContainer.children.forEach(ch => {
@@ -1781,10 +1832,11 @@ export class TerrainCoordinator {
       this.gameManager.gridContainer.children.forEach(child => {
         if (!child.isGridTile) return;
         const h = typeof child.terrainHeight === 'number' ? child.terrainHeight : 0;
-  // Provide coordinates to color function for variation
-  this._currentColorEvalX = child.gridX;
-  this._currentColorEvalY = child.gridY;
-  const fillColor = this._getBiomeOrBaseColor(h);
+        // Provide coordinates to color function for variation
+        this._currentColorEvalX = child.gridX;
+        this._currentColorEvalY = child.gridY;
+        // Determine color if needed; base tiles remain unfilled while canvas is active
+        // const fillColor = this._getBiomeOrBaseColor(h);
         const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
         const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
 
@@ -1806,18 +1858,18 @@ export class TerrainCoordinator {
           }
         } catch(_) { /* ignore */ }
 
-  child.clear();
-  child.lineStyle(1, borderColor, borderAlpha);
-  // Draw only the border path; leave unfilled to let the biome canvas be visible
+        child.clear();
+        child.lineStyle(1, borderColor, borderAlpha);
+        // Draw only the border path; leave unfilled to let the biome canvas be visible
         child.moveTo(0, this.gameManager.tileHeight / 2);
         child.lineTo(this.gameManager.tileWidth / 2, 0);
         child.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
         child.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
         child.lineTo(0, this.gameManager.tileHeight / 2);
-  // no fill
+        // no fill
 
-  // Suppress per-tile shading overlays; biome canvas provides painterly shading
-  try { /* intentionally no tile-level overlays when canvas is active */ } catch(_) { /* non-fatal */ }
+        // Suppress per-tile shading overlays; biome canvas provides painterly shading
+        try { /* intentionally no tile-level overlays when canvas is active */ } catch(_) { /* non-fatal */ }
 
         if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
         if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.addVisualElevationEffect(child, h);
@@ -1829,6 +1881,19 @@ export class TerrainCoordinator {
     finally {
       this._currentColorEvalX = undefined;
       this._currentColorEvalY = undefined;
+    }
+  }
+
+  /** Optional: allow external systems/UI to set a deterministic seed for biome visuals. */
+  setBiomeSeed(seed) {
+    if (!Number.isFinite(seed)) return;
+    this._biomeSeed = (seed >>> 0);
+    if (this._biomeCanvas) {
+      try { this._biomeCanvas.setSeed?.(this._biomeSeed); } catch(_) { /* ignore setSeed error */ }
+    }
+    // Repaint if active
+    if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
+      try { this.applyBiomePaletteToBaseGrid(); } catch(_) { /* ignore repaint error */ }
     }
   }
 
@@ -1857,7 +1922,7 @@ export class TerrainCoordinator {
     let s = (seed >>> 0) || 1;
     return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s & 0xffffffff) / 0x100000000; };
   }
-  _drawShade_DesertBands(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+  _drawShadeDesertBands(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
     const rnd = this._shadeRand(seed);
     let bandCount = 2 + Math.floor(rnd() * 2);
     bandCount = Math.max(1, Math.round(bandCount * density));
@@ -1878,7 +1943,7 @@ export class TerrainCoordinator {
       container.addChild(g);
     }
   }
-  _drawShade_ForestDapples(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+  _drawShadeForestDapples(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
     const rnd = this._shadeRand(seed);
     let spots = 4 + Math.floor(rnd() * 2);
     spots = Math.max(2, Math.round(spots * density));
@@ -1896,7 +1961,7 @@ export class TerrainCoordinator {
       container.addChild(g);
     }
   }
-  _drawShade_SwampMottling(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+  _drawShadeSwampMottling(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
     const rnd = this._shadeRand(seed);
     let blobs = 3 + Math.floor(rnd() * 2);
     blobs = Math.max(2, Math.round(blobs * density));
@@ -1913,7 +1978,7 @@ export class TerrainCoordinator {
       container.addChild(g);
     }
   }
-  _drawShade_IcyFacets(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+  _drawShadeIcyFacets(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
     const rnd = this._shadeRand(seed);
     let facets = 2 + Math.floor(rnd() * 2);
     facets = Math.max(1, Math.round(facets * density));
@@ -1940,7 +2005,7 @@ export class TerrainCoordinator {
       container.addChild(g);
     }
   }
-  _drawShade_WaterWaves(container, baseColor, w, h, alpha, seed, coral = false, density = 1.0, simplify = false) {
+  _drawShadeWaterWaves(container, baseColor, w, h, alpha, seed, coral = false, density = 1.0, simplify = false) {
     const rnd = this._shadeRand(seed);
     let lanes = 2 + Math.floor(rnd() * 1);
     lanes = Math.max(1, Math.round(lanes * density));
@@ -1976,7 +2041,7 @@ export class TerrainCoordinator {
       }
     }
   }
-  _drawShade_VolcanicVeins(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+  _drawShadeVolcanicVeins(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
     const rnd = this._shadeRand(seed);
     let veins = 2 + Math.floor(rnd() * 1);
     veins = Math.max(1, Math.round(veins * density));
@@ -1996,7 +2061,7 @@ export class TerrainCoordinator {
       container.addChild(g);
     }
   }
-  _drawShade_RuinGrid(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+  _drawShadeRuinGrid(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
     const g = new PIXI.Graphics();
     const lineC = darkenColor(baseColor, 0.22);
     g.lineStyle(1, lineC, alpha * 0.8);

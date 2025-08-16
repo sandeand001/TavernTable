@@ -2,7 +2,6 @@
 // Shared between TerrainManager (overlay) and TerrainCoordinator (base tiles)
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { darkenColor } from '../utils/ColorUtils.js';
 
@@ -18,11 +17,11 @@ export class TerrainFacesRenderer {
     if (!faces) return;
     faces.x = tile.x;
     faces.y = tile.y;
-  // Tag for sorting/cleanup
-  faces.isOverlayFace = true;
-  faces.depthValue = tile.depthValue;
-  // If parent supports zIndex sorting, set faces between shadows (0) and tiles (100)
-  faces.zIndex = (tile.depthValue || 0) * 100 + 5;
+    // Tag for sorting/cleanup
+    faces.isOverlayFace = true;
+    faces.depthValue = tile.depthValue;
+    // If parent supports zIndex sorting, set faces between shadows (0) and tiles (100)
+    faces.zIndex = (tile.depthValue || 0) * 100 + 5;
 
     const parent = tile.parent || container;
     let idx = 0;
@@ -52,7 +51,7 @@ export class TerrainFacesRenderer {
   }
 
   _buildFaces(getNeighborHeight, x, y, hHere, baseTopColor, shaded) {
-  const unit = TerrainHeightUtils.getElevationUnit();
+    const unit = TerrainHeightUtils.getElevationUnit();
     const hRight = getNeighborHeight(x + 1, y);
     const hBottom = getNeighborHeight(x, y + 1);
     const hLeft = getNeighborHeight(x - 1, y);
@@ -94,13 +93,13 @@ export class TerrainFacesRenderer {
       faces.endFill();
     };
 
-  // Correct edge mapping for iso diamonds (x_screen=(x-y), y_screen=(x+y)):
-  // East (x+1,y): right -> bottom; South (x,y+1): bottom -> left;
-  // West (x-1,y): left -> top; North (x,y-1): top -> right
-  if (diffR > 0) drawFace(right, bottom, diffR * unit, colors.r); // East neighbor lower
-  if (diffB > 0) drawFace(bottom, left, diffB * unit, colors.b);  // South neighbor lower
-  if (diffL > 0) drawFace(left, top, diffL * unit, colors.l);     // West neighbor lower
-  if (diffT > 0) drawFace(top, right, diffT * unit, colors.t);    // North neighbor lower
+    // Correct edge mapping for iso diamonds (x_screen=(x-y), y_screen=(x+y)):
+    // East (x+1,y): right -> bottom; South (x,y+1): bottom -> left;
+    // West (x-1,y): left -> top; North (x,y-1): top -> right
+    if (diffR > 0) drawFace(right, bottom, diffR * unit, colors.r); // East neighbor lower
+    if (diffB > 0) drawFace(bottom, left, diffB * unit, colors.b);  // South neighbor lower
+    if (diffL > 0) drawFace(left, top, diffL * unit, colors.l);     // West neighbor lower
+    if (diffT > 0) drawFace(top, right, diffT * unit, colors.t);    // North neighbor lower
 
     return faces;
   }

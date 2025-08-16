@@ -259,7 +259,7 @@ function attachDynamicUIHandlers() {
           elevSlider.value = String(current);
           if (elevValue) elevValue.textContent = `${current} px/level`;
         }
-      } catch {}
+      } catch { /* ignore getElevationScale failure */ }
       elevSlider.dataset.boundElevHandler = 'true';
     }
 
@@ -496,7 +496,7 @@ window.decreaseBrushSize = decreaseBrushSize;
 window.resetTerrain = resetTerrain;
 
 // === SPRITE ADJUSTMENT SYSTEM ===
-let spriteAdjustState = {
+const spriteAdjustState = {
   baselineCaptured: false,
   baseline: { x: 0, y: 0 },
   totalOffset: { x: 0, y: 0 },
@@ -695,7 +695,7 @@ function installSpriteOffsetAutoApplyHook() {
         const sprite = token?.creature?.sprite;
         if (sprite) applySavedOffsetToSprite(sprite, true);
       }
-    } catch(_){}
+    } catch(_) { /* ignore auto-apply errors */ }
     return result;
   };
   tm[candidateFnName]._wrappedForAutoApply = true;
@@ -709,7 +709,7 @@ function installSpriteOffsetAutoApplyHook() {
 
 // Attempt hook installation repeatedly until tokenManager exists
 setTimeout(function retryHook(){
-  try { installSpriteOffsetAutoApplyHook(); } catch(_){}
+  try { installSpriteOffsetAutoApplyHook(); } catch(_) { /* ignore install errors */ }
   if (!spriteAdjustState._autoApplyHookInstalled) setTimeout(retryHook, 800);
 }, 800);
 
@@ -718,7 +718,7 @@ window.nudgeSelectedSprite = nudgeSelectedSprite;
 window.captureSpriteBaseline = captureSpriteBaseline;
 window.reapplySpriteOffsets = function() {
   if (!window.gameManager) return;
-  const { placedTokens, tileWidth, tileHeight } = window.gameManager;
+  const { placedTokens } = window.gameManager;
   if (!placedTokens) return;
   placedTokens.forEach(t => {
     const sprite = t.creature?.sprite;
