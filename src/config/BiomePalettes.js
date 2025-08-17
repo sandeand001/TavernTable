@@ -546,7 +546,6 @@ for (const key of SNOWCAP_BIOMES) {
 // Biome normalization and groups
 // ------------------------
 
-const WATER_BIOMES = new Set(['ocean','coast','riverLake','coralReef','frozenLake','packIce']);
 const SUBTERRANEAN_BIOMES = new Set(['cavern','fungalGrove','crystalFields','crystalSpires','eldritchRift']);
 
 function normalizeBiomeKey(biomeKey) {
@@ -577,7 +576,6 @@ export function getBiomeColorLegacy(biomeKey, height, x, y, opts = {}) {
     slope = 0.0,
     aspectRad = 0.0, // 0=N, π/2=E, π=S, 3π/2=W
     seed = 1337,
-    season = 0.75,
     mapFreq = 0.05,
     shorelineSandStrength = (typeof window !== 'undefined' && Number.isFinite(window?.richShadingSettings?.shorelineSandStrength)) ? window.richShadingSettings.shorelineSandStrength : 1.0
   } = opts;
@@ -709,7 +707,6 @@ export function getBiomeColor(biomeKey, height, x, y, opts = {}) {
     slope = 0.0,
     aspectRad = 0.0, // 0=N, π/2=E, π=S, 3π/2=W
     seed = 1337,
-    season = 0.75,
     mapFreq = 0.05,
     shorelineSandStrength = (typeof window !== 'undefined' && Number.isFinite(window?.richShadingSettings?.shorelineSandStrength)) ? window.richShadingSettings.shorelineSandStrength : 1.0,
     // Shading intensity (0.0..1.5 typically). If not provided by caller, fall back to global UI state if available.

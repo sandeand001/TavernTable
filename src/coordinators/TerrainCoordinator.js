@@ -5,22 +5,29 @@
  * Handles terrain height data management, rendering coordination, and system lifecycle
  */
 
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators, Sanitizers } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { getBiomeColorHex } from '../config/BiomePalettes.js';
 // import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-import { darkenColor, lightenColor } from '../utils/ColorUtils.js';
-import { TerrainValidation } from '../utils/TerrainValidation.js';
+// import { darkenColor, lightenColor } from '../utils/ColorUtils.js';
+// import { TerrainValidation } from '../utils/TerrainValidation.js';
 import { TerrainDataStore } from '../terrain/TerrainDataStore.js';
 import { TerrainBrushController } from '../terrain/TerrainBrushController.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
-import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+// import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
+// import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
-import BiomeCanvasPainter from '../terrain/BiomeCanvasPainter.js';
+import { TerrainInputHandlers } from './terrain-coordinator/TerrainInputHandlers.js';
+import { ElevationScaleController } from './terrain-coordinator/ElevationScaleController.js';
+import { ActivationHelpers } from './terrain-coordinator/ActivationHelpers.js';
+import { BiomeShadingController } from './terrain-coordinator/BiomeShadingController.js';
+import { TileLifecycleController } from './terrain-coordinator/TileLifecycleController.js';
+import { ElevationVisualsController } from './terrain-coordinator/ElevationVisualsController.js';
+import { prepareBaseGridForEditing as _prepareGridForEdit, resetTerrainContainerSafely as _resetContainerSafely, validateContainerIntegrity as _validateContainer } from './terrain-coordinator/internals/container.js';
+import { validateTerrainSystemState as _validateSystemState, validateTerrainDataConsistency as _validateDataConsistency } from './terrain-coordinator/internals/validation.js';
+import { validateApplicationRequirements as _validateApplyReqs, initializeBaseHeights as _initBaseHeights, processAllGridTiles as _processAllTiles, logCompletion as _logApplyComplete, handleApplicationError as _handleApplyError } from './terrain-coordinator/internals/apply.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -35,6 +42,12 @@ export class TerrainCoordinator {
     this.dataStore = new TerrainDataStore(this.gameManager.cols, this.gameManager.rows);
     this.brush = new TerrainBrushController(this.dataStore);
     this.faces = new TerrainFacesRenderer(this.gameManager);
+    // Façade-backed extractions
+    this._inputHandlers = new TerrainInputHandlers(this);
+    this._elevationScaleController = new ElevationScaleController(this);
+    this._activationHelpers = new ActivationHelpers(this);
+    this._tileLifecycle = new TileLifecycleController(this);
+  this._elevationVisuals = new ElevationVisualsController(this);
     
     // UI state
     this.isDragging = false;
@@ -44,6 +57,8 @@ export class TerrainCoordinator {
     this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
     // Continuous biome canvas painter (used outside terrain mode)
     this._biomeCanvas = null;
+    // Biome shading façade
+    this._biomeShading = new BiomeShadingController(this);
     // Shared seed for biome color/painter coherence (can be overridden by UI)
     this._biomeSeed = (typeof window !== 'undefined' && Number.isFinite(window.richShadingSettings?.seed))
       ? (window.richShadingSettings.seed >>> 0)
@@ -182,23 +197,8 @@ export class TerrainCoordinator {
    * Set up terrain-specific input event handlers
    */
   setupTerrainInputHandlers() {
-    try {
-      // Mouse events for terrain painting
-      this.gameManager.app.view.addEventListener('mousedown', this.handleTerrainMouseDown.bind(this));
-      this.gameManager.app.view.addEventListener('mousemove', this.handleTerrainMouseMove.bind(this));
-      this.gameManager.app.view.addEventListener('mouseup', this.handleTerrainMouseUp.bind(this));
-      this.gameManager.app.view.addEventListener('mouseleave', this.handleTerrainMouseLeave.bind(this));
-      
-      // Keyboard shortcuts for terrain tools
-      document.addEventListener('keydown', this.handleTerrainKeyDown.bind(this));
-      
-      logger.debug('Terrain input handlers configured', {
-        context: 'TerrainCoordinator.setupTerrainInputHandlers',
-        stage: 'input_configuration',
-        eventTypes: ['mousedown', 'mousemove', 'mouseup', 'mouseleave', 'keydown'],
-        handlersBound: true
-      }, LOG_CATEGORY.SYSTEM);
-    } catch (error) {
+    try { this._inputHandlers.setup(); }
+    catch (error) {
       GameErrors.initialization(error, {
         stage: 'setupTerrainInputHandlers',
         appViewAvailable: !!this.gameManager?.app?.view
@@ -212,30 +212,7 @@ export class TerrainCoordinator {
    * @param {MouseEvent} event - Mouse event
    */
   handleTerrainMouseDown(event) {
-    try {
-      // Only handle left mouse button and when terrain mode is active
-      if (event.button !== 0 || !this.isTerrainModeActive) {
-        return;
-      }
-      
-      const gridCoords = this.getGridCoordinatesFromEvent(event);
-      if (!gridCoords) {
-        return;
-      }
-      
-      this.isDragging = true;
-      this.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
-      
-      event.preventDefault();
-      event.stopPropagation();
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainCoordinator.handleTerrainMouseDown',
-        stage: 'terrain_mouse_down',
-        isTerrainModeActive: this.isTerrainModeActive,
-        buttonPressed: event?.button
-      });
-    }
+    return this._inputHandlers.handleMouseDown(event);
   }
 
   /**
@@ -243,39 +220,7 @@ export class TerrainCoordinator {
    * @param {MouseEvent} event - Mouse event
    */
   handleTerrainMouseMove(event) {
-    try {
-      const gridCoords = this.getGridCoordinatesFromEvent(event);
-      
-      // Update height indicator if in terrain mode
-      if (this.isTerrainModeActive && gridCoords) {
-        this.updateHeightIndicator(gridCoords.gridX, gridCoords.gridY);
-      }
-      
-      // Only process if we're actively dragging in terrain mode
-      if (!this.isDragging || !this.isTerrainModeActive) {
-        return;
-      }
-      
-      if (!gridCoords) {
-        return;
-      }
-      
-      // Avoid modifying the same cell repeatedly during a single drag
-      const cellKey = `${gridCoords.gridX},${gridCoords.gridY}`;
-      if (this.lastModifiedCell === cellKey) {
-        return;
-      }
-      
-      this.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
-      this.lastModifiedCell = cellKey;
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainCoordinator.handleTerrainMouseMove',
-        stage: 'terrain_mouse_move',
-        isDragging: this.isDragging,
-        isTerrainModeActive: this.isTerrainModeActive
-      });
-    }
+    return this._inputHandlers.handleMouseMove(event);
   }
 
   /**
@@ -283,35 +228,14 @@ export class TerrainCoordinator {
    * @param {MouseEvent} event - Mouse event
    */
   handleTerrainMouseUp(event) {
-    try {
-      if (event.button === 0 && this.isDragging) {
-        this.isDragging = false;
-        this.lastModifiedCell = null;
-        
-        logger.trace('Terrain painting session completed', {
-          context: 'TerrainCoordinator.handleTerrainMouseUp',
-          stage: 'painting_complete',
-          tool: this.brush.tool,
-          brushSize: this.brush.brushSize
-        }, LOG_CATEGORY.USER);
-      }
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainCoordinator.handleTerrainMouseUp',
-        stage: 'terrain_mouse_up',
-        isDragging: this.isDragging
-      });
-    }
+    return this._inputHandlers.handleMouseUp(event);
   }
 
   /**
    * Handle mouse leave events to stop terrain painting
    */
   handleTerrainMouseLeave() {
-    if (this.isDragging) {
-      this.isDragging = false;
-      this.lastModifiedCell = null;
-    }
+    return this._inputHandlers.handleMouseLeave();
   }
 
   /**
@@ -319,41 +243,7 @@ export class TerrainCoordinator {
    * @param {KeyboardEvent} event - Keyboard event
    */
   handleTerrainKeyDown(event) {
-    try {
-      if (!this.isTerrainModeActive) {
-        return;
-      }
-      
-      switch (event.code) {
-      case 'KeyR':
-        if (!event.ctrlKey && !event.altKey) {
-          this.setTerrainTool('raise');
-          event.preventDefault();
-        }
-        break;
-      case 'KeyL':
-        if (!event.ctrlKey && !event.altKey) {
-          this.setTerrainTool('lower');
-          event.preventDefault();
-        }
-        break;
-      case 'BracketLeft': // [
-        this.decreaseBrushSize();
-        event.preventDefault();
-        break;
-      case 'BracketRight': // ]
-        this.increaseBrushSize();
-        event.preventDefault();
-        break;
-      }
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainCoordinator.handleTerrainKeyDown',
-        stage: 'terrain_keyboard',
-        key: event?.code,
-        isTerrainModeActive: this.isTerrainModeActive
-      });
-    }
+    return this._inputHandlers.handleKeyDown(event);
   }
 
   /**
@@ -362,68 +252,14 @@ export class TerrainCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   updateHeightIndicator(gridX, gridY) {
-    try {
-      if (!this.isValidGridPosition(gridX, gridY)) {
-        return;
-      }
-      
-      const currentHeight = this.getTerrainHeight(gridX, gridY);
-      
-      // Update height value display
-      const heightDisplay = document.getElementById('terrain-height-display');
-      if (heightDisplay) {
-        heightDisplay.textContent = currentHeight.toString();
-        heightDisplay.style.color = currentHeight === 0 ? '#6b7280' : 
-          currentHeight > 0 ? '#10b981' : '#8b5cf6';
-      }
-      
-      // Update height scale visual indicator
-      const scaleMarks = document.querySelectorAll('.scale-mark');
-      scaleMarks.forEach(mark => {
-        const markHeight = parseInt(mark.getAttribute('data-height'));
-        if (markHeight === currentHeight) {
-          mark.classList.add('current');
-        } else {
-          mark.classList.remove('current');
-        }
-      });
-      
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
-        context: 'TerrainCoordinator.updateHeightIndicator',
-        coordinates: { gridX, gridY },
-        terrainHeight: this.getTerrainHeight(gridX, gridY)
-      });
-    }
+    return this._inputHandlers.updateHeightIndicator(gridX, gridY);
   }
 
   /**
    * Reset the height indicator to default state
    */
   resetHeightIndicator() {
-    try {
-      const heightDisplay = document.getElementById('terrain-height-display');
-      if (heightDisplay) {
-        heightDisplay.textContent = '0';
-        heightDisplay.style.color = '#6b7280';
-      }
-      
-      const scaleMarks = document.querySelectorAll('.scale-mark');
-      scaleMarks.forEach(mark => {
-        const markHeight = parseInt(mark.getAttribute('data-height'));
-        if (markHeight === 0) {
-          mark.classList.add('current');
-        } else {
-          mark.classList.remove('current');
-        }
-      });
-    } catch (error) {
-      // Silently handle UI errors
-      logger.log(LOG_LEVEL.DEBUG, 'Error resetting height indicator', LOG_CATEGORY.UI, {
-        context: 'TerrainCoordinator.resetHeightIndicator',
-        error: error.message
-      });
-    }
+    return this._inputHandlers.resetHeightIndicator();
   }
 
   /** Get the current elevation perception scale (pixels per level). */
@@ -437,100 +273,7 @@ export class TerrainCoordinator {
    * @param {number} unit - Pixels per height level (0 disables vertical exaggeration)
    */
   setElevationScale(unit) {
-    try {
-      if (!Number.isFinite(unit) || unit < 0) return;
-      if (this._elevationScale === unit) return;
-      this._elevationScale = unit;
-      // Update global height util override so all compute paths use the new unit
-      TerrainHeightUtils.setElevationUnit(unit);
-
-      // 1) Refresh terrain overlay visuals if active
-      if (this.terrainManager && this.isTerrainModeActive) {
-        try {
-          this.terrainManager.refreshAllTerrainDisplay();
-        } catch (_) { /* non-fatal */ }
-      }
-
-      // 2) Re-apply elevation to base grid tiles (position and faces)
-      if (this.gameManager?.gridContainer?.children) {
-        const children = this.gameManager.gridContainer.children;
-        // First, remove any base faces to avoid duplicates; will be re-added per tile below
-        children.forEach(child => {
-          if (child && child.isGridTile) {
-            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
-              try {
-                child.parent.removeChild(child.baseSideFaces);
-                if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
-                  child.baseSideFaces.destroy();
-                }
-              } catch(_) { /* ignore */ }
-              child.baseSideFaces = null;
-            }
-          }
-        });
-
-        // Now recompute y position and shadows for each base tile; then re-add faces
-        children.forEach(child => {
-          if (child && child.isGridTile) {
-            try {
-              // Reset to baseline
-              if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
-              // Remove prior shadow
-              if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
-                child.parent.removeChild(child.shadowTile);
-                if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
-                  child.shadowTile.destroy();
-                }
-                child.shadowTile = null;
-              }
-              // Apply new elevation offset
-              const h = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
-              if (h !== 0) {
-                this.addVisualElevationEffect(child, h);
-              }
-              // Re-add base faces using current base heights
-              const gx = child.gridX, gy = child.gridY;
-              const height = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
-              this._addBase3DFaces(child, gx, gy, height);
-            } catch(_) { /* continue on error */ }
-          }
-        });
-      }
-
-      // 3) Reposition tokens vertically to match new scale and keep zIndex consistent
-      if (this.gameManager?.tokenManager?.placedTokens) {
-        this.gameManager.tokenManager.placedTokens.forEach(t => {
-          try {
-            if (!t?.creature?.sprite) return;
-            const sprite = t.creature.sprite;
-            const iso = CoordinateUtils.gridToIsometric(t.gridX, t.gridY, this.gameManager.tileWidth, this.gameManager.tileHeight);
-            const h = this.dataStore?.get(t.gridX, t.gridY) ?? 0;
-            const elev = TerrainHeightUtils.calculateElevationOffset(h);
-            sprite.x = iso.x;
-            sprite.y = iso.y + elev;
-            sprite.zIndex = (t.gridX + t.gridY) * 100 + 1;
-          } catch(_) { /* ignore */ }
-        });
-      }
-
-      // 4) If overlay container exists, ensure it still sorts correctly
-      try { this.gameManager?.gridContainer?.sortChildren?.(); } catch(_) { /* no-op */ }
-
-      // 5) If outside terrain mode and a biome is selected, repaint the biome canvas
-      if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal repaint failure */ }
-      }
-
-      logger.info('Elevation perception scale updated', {
-        context: 'TerrainCoordinator.setElevationScale',
-        unit
-      }, LOG_CATEGORY.USER);
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
-        context: 'TerrainCoordinator.setElevationScale',
-        unit
-      });
-    }
+    return this._elevationScaleController.apply(unit);
   }
 
   /**
@@ -636,43 +379,7 @@ export class TerrainCoordinator {
    * @returns {boolean} True if all validations pass
    */
   validateTerrainSystemState() {
-    try {
-      // Use centralized validation utility for consistent system state checking
-      const validationResult = TerrainValidation.validateTerrainSystemState(this, this.terrainManager);
-      
-      if (!validationResult.isValid) {
-        const errorMessage = TerrainValidation.getErrorMessage(validationResult);
-        logger.error('Terrain system state validation failed', {
-          context: 'TerrainCoordinator.validateTerrainSystemState',
-          errors: validationResult.errors,
-          warnings: validationResult.warnings,
-          details: validationResult.details
-        });
-        throw new Error(`Terrain system state corrupted: ${errorMessage}`);
-      }
-      
-      // Log any warnings even if validation passes
-      const warnings = TerrainValidation.getWarningMessages(validationResult);
-      if (warnings.length > 0) {
-        logger.warn('Terrain system validation warnings', {
-          context: 'TerrainCoordinator.validateTerrainSystemState',
-          warnings
-        }, LOG_CATEGORY.SYSTEM);
-      }
-      
-      logger.debug('Terrain system state validation passed', {
-        context: 'TerrainCoordinator.validateTerrainSystemState',
-        details: validationResult.details
-      }, LOG_CATEGORY.SYSTEM);
-      
-      return true;
-    } catch (error) {
-      logger.error('Critical error during terrain system validation', {
-        context: 'TerrainCoordinator.validateTerrainSystemState',
-        error: error.message
-      });
-      throw error;
-    }
+  return _validateSystemState(this);
   }
 
   /**
@@ -680,68 +387,11 @@ export class TerrainCoordinator {
    * @returns {boolean} True if terrain data structures are consistent
    */
   validateTerrainDataConsistency() {
-    try {
-      if (!this.dataStore?.working || !this.dataStore?.base) {
-        return false;
-      }
-      
-      const expectedRows = this.gameManager.rows;
-      const expectedCols = this.gameManager.cols;
-      
-      // Check terrainHeights dimensions
-      if (this.dataStore.working.length !== expectedRows) {
-        return false;
-      }
-      
-      for (let i = 0; i < this.dataStore.working.length; i++) {
-        if (!Array.isArray(this.dataStore.working[i]) || this.dataStore.working[i].length !== expectedCols) {
-          return false;
-        }
-      }
-      
-      // Check baseTerrainHeights dimensions
-      if (this.dataStore.base.length !== expectedRows) {
-        return false;
-      }
-      
-      for (let i = 0; i < this.dataStore.base.length; i++) {
-        if (!Array.isArray(this.dataStore.base[i]) || this.dataStore.base[i].length !== expectedCols) {
-          return false;
-        }
-      }
-      
-      return true;
-    } catch (error) {
-      logger.warn('Error validating terrain data consistency', {
-        context: 'TerrainCoordinator.validateTerrainDataConsistency',
-        error: error.message
-      });
-      return false;
-    }
+  return _validateDataConsistency(this);
   }
 
   enableTerrainMode() {
-    try {
-      this._validateTerrainSystemForActivation();
-      this._resetTerrainContainerSafely();
-      this._validateContainerIntegrity();
-      // Ensure base grid visuals are neutralized so overlay doesn't appear stacked
-      this._prepareBaseGridForEditing();
-      this._activateTerrainMode();
-      this._loadTerrainStateAndDisplay();
-      
-      logger.info('Terrain mode enabled with enhanced safety checks', {
-        context: 'TerrainCoordinator.enableTerrainMode',
-        tool: this.brush.tool,
-        brushSize: this.brush.brushSize,
-        baseTerrainLoaded: true,
-        terrainManagerReady: !!this.terrainManager,
-        containerIntegrity: 'validated',
-        safetyEnhancements: 'applied'
-      }, LOG_CATEGORY.USER);
-    } catch (error) {
-      this._handleTerrainModeActivationError(error);
-    }
+    return this._activationHelpers.enableTerrainMode();
   }
 
   /**
@@ -751,86 +401,7 @@ export class TerrainCoordinator {
    * @private
    */
   _prepareBaseGridForEditing() {
-    try {
-      // Ensure any biome canvas is cleared and base tiles restored when entering terrain mode
-      try {
-        if (this._biomeCanvas) {
-          this._biomeCanvas.clear(() => this._toggleBaseTileVisibility(true));
-        }
-      } catch(_) { /* ignore */ }
-
-      if (this.gameManager?.gridContainer?.children) {
-        this.gameManager.gridContainer.children.forEach(child => {
-          if (child && child.isGridTile) {
-            // Reset tile Y to baseline to avoid double elevation with overlay
-            if (typeof child.baseIsoY === 'number') {
-              child.y = child.baseIsoY;
-            }
-
-            // Remove any existing shadow tiles
-            if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
-              child.parent.removeChild(child.shadowTile);
-              if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
-                child.shadowTile.destroy();
-              }
-              child.shadowTile = null;
-            }
-
-            // Remove any depression overlays mistakenly attached to base tiles
-            if (child.depressionOverlay) {
-              try {
-                if (child.children?.includes(child.depressionOverlay)) {
-                  child.removeChild(child.depressionOverlay);
-                }
-                if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
-                  child.depressionOverlay.destroy();
-                }
-              } catch (_) { /* best-effort */ }
-              child.depressionOverlay = null;
-            }
-
-            // Remove any existing base 3D faces
-            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
-              child.parent.removeChild(child.baseSideFaces);
-              if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
-                child.baseSideFaces.destroy();
-              }
-              child.baseSideFaces = null;
-            }
-
-            // Remove any overlay side faces accidentally lingering on base tiles
-            if (child.sideFaces && child.parent?.children?.includes(child.sideFaces)) {
-              child.parent.removeChild(child.sideFaces);
-              if (typeof child.sideFaces.destroy === 'function' && !child.sideFaces.destroyed) {
-                child.sideFaces.destroy();
-              }
-              child.sideFaces = null;
-            }
-
-            // Remove any rich shading layers (paintLayer/mask) attached to base tiles
-            if (child.paintLayer) {
-              try { child.removeChild(child.paintLayer); } catch(_) { /* ignore remove error */ }
-              if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
-                child.paintLayer.destroy({ children: true });
-              }
-              child.paintLayer = null;
-            }
-            if (child.paintMask) {
-              try { child.removeChild(child.paintMask); } catch(_) { /* ignore remove error */ }
-              if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
-                child.paintMask.destroy();
-              }
-              child.paintMask = null;
-            }
-          }
-        });
-      }
-    } catch (error) {
-      logger.debug('Error preparing base grid for editing', {
-        context: 'TerrainCoordinator._prepareBaseGridForEditing',
-        error: error.message
-      }, LOG_CATEGORY.RENDERING);
-    }
+  return _prepareGridForEdit(this);
   }
 
   /**
@@ -847,33 +418,7 @@ export class TerrainCoordinator {
    * @private
    */
   _resetTerrainContainerSafely() {
-    // CONTAINER RESET STRATEGY: Clean up terrain container state before reuse
-    if (this.terrainManager?.terrainContainer) {
-      logger.debug('Resetting terrain container for safe reuse', {
-        context: 'TerrainCoordinator.enableTerrainMode',
-        containerChildrenBefore: this.terrainManager.terrainContainer.children.length,
-        tilesMapSizeBefore: this.terrainManager.terrainTiles.size
-      }, LOG_CATEGORY.SYSTEM);
-      
-      // Force clear terrain container safely using centralized utility
-      try {
-        TerrainPixiUtils.resetContainer(
-          this.terrainManager.terrainContainer,
-          'terrainContainer',
-          'TerrainCoordinator.enableTerrainMode.reset'
-        );
-      } catch (containerError) {
-        logger.warn('Error during container reset, continuing', {
-          context: 'TerrainCoordinator.enableTerrainMode',
-          error: containerError.message
-        });
-      }
-
-      // Clear manager state
-      this.terrainManager.terrainTiles.clear();
-      this.terrainManager.updateQueue.clear();
-      this.terrainManager.isUpdating = false;
-    }
+  return _resetContainerSafely(this);
   }
 
   /**
@@ -881,42 +426,7 @@ export class TerrainCoordinator {
    * @private
    */
   _validateContainerIntegrity() {
-    // Validate container integrity after reset
-    if (this.gameManager.gridContainer?.destroyed) {
-      throw new Error('Grid container corrupted - requires application reload');
-    }
-
-    if (this.terrainManager?.terrainContainer?.destroyed) {
-      logger.warn('Terrain container was destroyed, recreating', {
-        context: 'TerrainCoordinator.enableTerrainMode'
-      });
-      // Recreate terrain container
-      this.terrainManager.terrainContainer = new PIXI.Container();
-      this.gameManager.gridContainer.addChild(this.terrainManager.terrainContainer);
-    }
-
-    // Ensure terrain overlay container is on top of base tiles
-    try {
-      const parent = this.gameManager.gridContainer;
-      const overlay = this.terrainManager?.terrainContainer;
-      if (parent && overlay && parent.children?.length) {
-        const topIndex = parent.children.length - 1;
-        if (typeof parent.setChildIndex === 'function') {
-          parent.setChildIndex(overlay, topIndex);
-        } else {
-          // Fallback: remove and re-add to bring to front
-          if (parent.children.includes(overlay)) {
-            parent.removeChild(overlay);
-          }
-          parent.addChild(overlay);
-        }
-      }
-    } catch (zErr) {
-      logger.warn('Failed to raise terrain overlay container to top', {
-        context: 'TerrainCoordinator._validateContainerIntegrity',
-        error: zErr.message
-      }, LOG_CATEGORY.RENDERING);
-    }
+  return _validateContainer(this);
   }
 
   /**
@@ -973,79 +483,7 @@ export class TerrainCoordinator {
    * Disable terrain modification mode and apply changes permanently
    */
   disableTerrainMode() {
-    try {
-      this.isTerrainModeActive = false;
-      this.isDragging = false;
-      this.lastModifiedCell = null;
-      
-      // Reset any elevation offsets and remove shadows before applying to base grid
-      if (this.gameManager?.gridContainer?.children) {
-        this.gameManager.gridContainer.children.forEach(child => {
-          if (child.isGridTile) {
-            // Ensure base tiles are fully opaque when exiting edit mode
-            child.alpha = 1.0;
-            if (typeof child.baseIsoY === 'number') {
-              child.y = child.baseIsoY;
-            }
-            if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
-              child.parent.removeChild(child.shadowTile);
-              if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
-                child.shadowTile.destroy();
-              }
-              child.shadowTile = null;
-            }
-            // Remove any depression overlays that might have been attached erroneously
-            if (child.depressionOverlay) {
-              try {
-                if (child.children?.includes(child.depressionOverlay)) {
-                  child.removeChild(child.depressionOverlay);
-                }
-                if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
-                  child.depressionOverlay.destroy();
-                }
-              } catch (_) { /* best-effort */ }
-              child.depressionOverlay = null;
-            }
-            // Remove any existing base 3D faces
-            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
-              child.parent.removeChild(child.baseSideFaces);
-              if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
-                child.baseSideFaces.destroy();
-              }
-              child.baseSideFaces = null;
-            }
-          }
-        });
-      }
-      
-      // Apply current terrain modifications permanently to base grid
-      this.applyTerrainToBaseGrid();
-      
-      // Clear terrain overlay system completely
-      if (this.terrainManager) {
-        this.terrainManager.hideAllTerrainTiles();
-        this.terrainManager.clearAllTerrainTiles();
-      }
-      
-      // Reset height indicator
-      this.resetHeightIndicator();
-
-      // Apply biome palette immediately if a biome is selected
-      if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
-      }
-      
-      logger.info('Terrain mode disabled with permanent grid integration', {
-        context: 'TerrainCoordinator.disableTerrainMode',
-        permanentIntegration: true
-      }, LOG_CATEGORY.USER);
-    } catch (error) {
-      GameErrors.gameState(error, {
-        stage: 'disableTerrainMode',
-        context: 'TerrainCoordinator.disableTerrainMode'
-      });
-      throw error;
-    }
+  return this._activationHelpers.disableTerrainMode();
   }
 
   /**
@@ -1341,12 +779,12 @@ export class TerrainCoordinator {
    */
   applyTerrainToBaseGrid() {
     try {
-      this._validateTerrainApplicationRequirements();
-      this._initializeBaseTerrainHeights();
-      const modifiedTiles = this._processAllGridTiles();
-      this._logTerrainApplicationCompletion(modifiedTiles);
+  this._validateTerrainApplicationRequirements();
+  this._initializeBaseTerrainHeights();
+  const modifiedTiles = this._processAllGridTiles();
+  this._logTerrainApplicationCompletion(modifiedTiles);
     } catch (error) {
-      this._handleTerrainApplicationError(error);
+  this._handleTerrainApplicationError(error);
     }
   }
 
@@ -1356,14 +794,7 @@ export class TerrainCoordinator {
    * @throws {Error} If requirements are not met
    */
   _validateTerrainApplicationRequirements() {
-    if (!this.gameManager.gridContainer || !this.dataStore.working) {
-      logger.warn('Cannot apply terrain to base grid - missing requirements', {
-        context: 'TerrainCoordinator._validateTerrainApplicationRequirements',
-        hasGridContainer: !!this.gameManager.gridContainer,
-        hasTerrainHeights: !!this.dataStore.working
-      });
-      throw new Error('Missing requirements for terrain application');
-    }
+  return _validateApplyReqs(this);
   }
 
   /**
@@ -1371,8 +802,7 @@ export class TerrainCoordinator {
    * @private
    */
   _initializeBaseTerrainHeights() {
-    // Update base terrain heights with current modifications
-    this.dataStore.applyWorkingToBase();
+  return _initBaseHeights(this);
   }
 
   /**
@@ -1381,37 +811,7 @@ export class TerrainCoordinator {
    * @returns {number} Number of modified tiles
    */
   _processAllGridTiles() {
-    let modifiedTiles = 0;
-    
-    // SAFER APPROACH: Update existing tiles in-place when possible
-    // Only destroy/recreate when absolutely necessary
-    for (let y = 0; y < this.gameManager.rows; y++) {
-      for (let x = 0; x < this.gameManager.cols; x++) {
-        const height = this.dataStore.base[y][x];
-        
-        try {
-          // Try to update existing tile first (safer)
-          const updated = this.updateBaseGridTileInPlace(x, y, height);
-          if (!updated) {
-            // Fallback to replacement only if update fails
-            this.replaceBaseGridTile(x, y, height);
-          }
-          
-          if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-            modifiedTiles++;
-          }
-        } catch (tileError) {
-          logger.warn('Failed to update tile, skipping', {
-            context: 'TerrainCoordinator._processAllGridTiles',
-            coordinates: { x, y },
-            height,
-            error: tileError.message
-          });
-        }
-      }
-    }
-    
-    return modifiedTiles;
+  return _processAllTiles(this);
   }
 
   /**
@@ -1420,12 +820,7 @@ export class TerrainCoordinator {
    * @param {number} modifiedTiles - Number of tiles that were modified
    */
   _logTerrainApplicationCompletion(modifiedTiles) {
-    logger.info('Terrain applied permanently to base grid with safer approach', {
-      context: 'TerrainCoordinator.applyTerrainToBaseGrid',
-      modifiedTiles,
-      totalTiles: this.gameManager.rows * this.gameManager.cols,
-      approach: 'safer_in_place_updates'
-    }, LOG_CATEGORY.SYSTEM);
+  return _logApplyComplete(this, modifiedTiles);
   }
 
   /**
@@ -1435,11 +830,7 @@ export class TerrainCoordinator {
    * @throws {Error} Re-throws the error after logging
    */
   _handleTerrainApplicationError(error) {
-    GameErrors.gameState(error, {
-      stage: 'applyTerrainToBaseGrid',
-      context: 'TerrainCoordinator.applyTerrainToBaseGrid'
-    });
-    throw error;
+  return _handleApplyError(error);
   }
 
   /**
@@ -1515,10 +906,10 @@ export class TerrainCoordinator {
         // Ensure baseline when default height
         existingTile.y = existingTile.baseIsoY;
       }
-
+      
       // Always attempt to add neighbor-aware base faces (3D walls)
       // Faces will only render when this tile is higher than a neighbor (including height 0 over negative)
-      this._addBase3DFaces(existingTile, x, y, height);
+      this._tileLifecycle.addBase3DFaces(existingTile, x, y, height);
       
       return true; // Successfully updated in-place
     } catch (error) {
@@ -1540,13 +931,13 @@ export class TerrainCoordinator {
    */
   replaceBaseGridTile(x, y, height) {
     try {
-      const tilesToRemove = this._findGridTilesToRemove(x, y);
-      this._removeGridTilesSafely(tilesToRemove, x, y);
-      const newTile = this._createReplacementTile(x, y, height);
-      this._applyTileEffectsAndData(newTile, height, x, y);
-      this._logTileReplacementSuccess(x, y, height, tilesToRemove.length);
+      const tilesToRemove = this._tileLifecycle.findGridTilesToRemove(x, y);
+      this._tileLifecycle.removeGridTilesSafely(tilesToRemove, x, y);
+      const newTile = this._tileLifecycle.createReplacementTile(x, y, height);
+      this._tileLifecycle.applyTileEffectsAndData(newTile, height, x, y);
+      this._tileLifecycle.logTileReplacementSuccess(x, y, height, tilesToRemove.length);
     } catch (error) {
-      this._handleTileReplacementError(error, x, y, height);
+      this._tileLifecycle.handleTileReplacementError(error, x, y, height);
     }
   }
 
@@ -1557,21 +948,7 @@ export class TerrainCoordinator {
    * @param {number} y - Grid Y coordinate
    * @returns {Array} Array of tiles to remove
    */
-  _findGridTilesToRemove(x, y) {
-    const tilesToRemove = [];
-    const gridChildren = this.gameManager.gridContainer.children || [];
-    
-    gridChildren.forEach(child => {
-      if (child && child.isGridTile && child.gridX === x && child.gridY === y) {
-        // Validate child before adding to removal list
-        if (!child.destroyed) {
-          tilesToRemove.push(child);
-        }
-      }
-    });
-    
-    return tilesToRemove;
-  }
+  // moved to TileLifecycleController: findGridTilesToRemove
 
   /**
    * Safely remove grid tiles with error isolation
@@ -1580,27 +957,7 @@ export class TerrainCoordinator {
    * @param {number} x - Grid X coordinate for logging
    * @param {number} y - Grid Y coordinate for logging
    */
-  _removeGridTilesSafely(tilesToRemove, x, y) {
-    tilesToRemove.forEach(tile => {
-      try {
-        if (this.gameManager.gridContainer.children.includes(tile)) {
-          this.gameManager.gridContainer.removeChild(tile);
-        }
-        
-        // Destroy tile safely
-        if (tile.destroy && !tile.destroyed) {
-          tile.destroy();
-        }
-      } catch (tileRemovalError) {
-        logger.warn('Error removing individual tile during replacement', {
-          context: 'TerrainCoordinator._removeGridTilesSafely',
-          coordinates: { x, y },
-          error: tileRemovalError.message
-        });
-        // Continue with other tiles even if one fails
-      }
-    });
-  }
+  // moved to TileLifecycleController: removeGridTilesSafely
 
   /**
    * Create new terrain tile replacement
@@ -1611,18 +968,7 @@ export class TerrainCoordinator {
    * @returns {PIXI.Graphics} New tile graphics object
    * @throws {Error} If tile creation fails
    */
-  _createReplacementTile(x, y, height) {
-    const isEditing = !!this.isTerrainModeActive;
-    const color = isEditing ? this.getColorForHeight(height) : this._getBiomeOrBaseColor(height);
-    const newTile = this.gameManager.gridRenderer.drawIsometricTile(x, y, color);
-    
-    // Validate new tile before returning
-    if (!newTile || newTile.destroyed) {
-      throw new Error('Failed to create replacement tile');
-    }
-    
-    return newTile;
-  }
+  // moved to TileLifecycleController: createReplacementTile
 
   /**
    * Apply elevation effects and store height data on tile
@@ -1632,27 +978,7 @@ export class TerrainCoordinator {
    * @param {number} x - Grid X coordinate for logging
    * @param {number} y - Grid Y coordinate for logging
    */
-  _applyTileEffectsAndData(newTile, height, x, y) {
-    // Add visual elevation effect for non-default heights
-    if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-      try {
-        this.addVisualElevationEffect(newTile, height);
-      } catch (effectError) {
-        logger.warn('Failed to add elevation effect, continuing without it', {
-          context: 'TerrainCoordinator._applyTileEffectsAndData',
-          coordinates: { x, y },
-          height,
-          error: effectError.message
-        });
-      }
-    }
-    // Always attempt to add neighbor-aware base faces (3D walls) regardless of height
-    // Faces will only render when this tile is higher than a neighbor (e.g., 0 vs negative)
-    this._addBase3DFaces(newTile, x, y, height);
-    
-    // Store height information on tile
-    newTile.terrainHeight = height;
-  }
+  // moved to TileLifecycleController: applyTileEffectsAndData
 
   /**
    * Log successful tile replacement
@@ -1662,15 +988,7 @@ export class TerrainCoordinator {
    * @param {number} height - Terrain height value
    * @param {number} removedTileCount - Number of tiles removed
    */
-  _logTileReplacementSuccess(x, y, height, removedTileCount) {
-    logger.trace('Base grid tile replaced safely', {
-      context: 'TerrainCoordinator.replaceBaseGridTile',
-      coordinates: { x, y },
-      height,
-      removedTiles: removedTileCount,
-      newTileCreated: true
-    }, LOG_CATEGORY.RENDERING);
-  }
+  // moved to TileLifecycleController: logTileReplacementSuccess
 
   /**
    * Handle tile replacement errors gracefully
@@ -1680,208 +998,22 @@ export class TerrainCoordinator {
    * @param {number} y - Grid Y coordinate
    * @param {number} height - Terrain height value
    */
-  _handleTileReplacementError(error, x, y, height) {
-    logger.error('Error replacing base grid tile', {
-      context: 'TerrainCoordinator.replaceBaseGridTile',
-      coordinates: { x, y },
-      height,
-      error: error.message
-    });
-    
-    // Don't throw - log error and continue to prevent cascade failures
-    // This allows the rest of the grid to update even if one tile fails
-  }
+  // moved to TileLifecycleController: handleTileReplacementError
 
-  /**
-   * Add visual elevation effect to a tile based on height
-   * @param {PIXI.Graphics} tile - The tile graphics object
-   * @param {number} height - The terrain height
-   */
-  addVisualElevationEffect(tile, height) {
-    try {
-      // Reset to baseline isometric Y before applying elevation to avoid stacking
-      if (typeof tile.baseIsoY === 'number') {
-        tile.y = tile.baseIsoY;
-      }
-      const elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
-      tile.y += elevationOffset;
-      
-      // Add subtle border effect for raised/lowered appearance
-      if (height > TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-        tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0xFFFFFF, 0.3);
-      } else if (height < TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-        tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0x000000, 0.3);
-      }
-      
-      // Remove any previous shadow if present to avoid duplicates
-      if (tile.shadowTile && tile.parent?.children?.includes(tile.shadowTile)) {
-        tile.parent.removeChild(tile.shadowTile);
-        if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
-          tile.shadowTile.destroy();
-        }
-        tile.shadowTile = null;
-      }
-
-      // Ensure any previous 3D faces attached to this tile are removed here (faces are managed elsewhere)
-      if (tile.sideFaces && tile.parent?.children?.includes(tile.sideFaces)) {
-        tile.parent.removeChild(tile.sideFaces);
-        if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) {
-          tile.sideFaces.destroy();
-        }
-        tile.sideFaces = null;
-      }
-      
-      // Add height-based shadow effect
-      if (Math.abs(height) > 1) {
-        const shadowAlpha = Math.min(Math.abs(height) * 0.1, 0.4);
-        const shadowColor = height > 0 ? 0x000000 : 0x444444;
-        
-        const shadow = new PIXI.Graphics();
-        shadow.beginFill(shadowColor, shadowAlpha);
-        
-        const tileWidth = this.gameManager.tileWidth;
-        const tileHeight = this.gameManager.tileHeight;
-        shadow.moveTo(0, tileHeight / 2);
-        shadow.lineTo(tileWidth / 2, 0);
-        shadow.lineTo(tileWidth, tileHeight / 2);
-        shadow.lineTo(tileWidth / 2, tileHeight);
-        shadow.lineTo(0, tileHeight / 2);
-        shadow.endFill();
-        
-        shadow.x = tile.x + 2;
-        shadow.y = tile.y + 2;
-        
-        if (tile.parent) {
-          const tileIndex = tile.parent.getChildIndex(tile);
-          tile.parent.addChildAt(shadow, Math.max(0, tileIndex));
-          tile.shadowTile = shadow;
-        }
-      }
-    } catch (error) {
-      logger.debug('Error adding visual elevation effect', {
-        context: 'TerrainCoordinator.addVisualElevationEffect',
-        height,
-        error: error.message
-      }, LOG_CATEGORY.RENDERING);
-    }
-  }
+  // moved to ElevationVisualsController: addVisualElevationEffect
 
   // Add neighbor-aware 3D faces for base grid tiles (all four sides)
-  _addBase3DFaces(tile, x, y, height) {
-    try {
-      // Cleanup previous base faces if any
-      if (tile.baseSideFaces && tile.parent?.children?.includes(tile.baseSideFaces)) {
-        tile.parent.removeChild(tile.baseSideFaces);
-        if (typeof tile.baseSideFaces.destroy === 'function' && !tile.baseSideFaces.destroyed) {
-          tile.baseSideFaces.destroy();
-        }
-        tile.baseSideFaces = null;
-      }
-
-      if (!this.dataStore?.base) return;
-
-      const rows = this.dataStore.base.length;
-      const cols = this.dataStore.base[0]?.length || 0;
-      const getBase = (gx, gy) => (gx >= 0 && gy >= 0 && gy < rows && gx < cols)
-        ? this.dataStore.base[gy][gx]
-        : TERRAIN_CONFIG.DEFAULT_HEIGHT;
-
-      // Delegate to shared FacesRenderer for consistency
-      this.faces.addBaseFaces(tile, x, y, height, getBase);
-    } catch (e) {
-      logger.warn('Failed to add base 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
-    }
-  }
+  // moved to TileLifecycleController: addBase3DFaces
   /** Determine base tile color when not editing: biome palette if selected, else neutral. */
   _getBiomeOrBaseColor(height) {
-    try {
-      if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        // Painterly, context-aware color
-        const gx = (this._currentColorEvalX ?? 0);
-        const gy = (this._currentColorEvalY ?? 0);
-        const mapFreq = (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
-        const seed = (this._biomeSeed ?? 1337) >>> 0;
-        const hex = getBiomeColorHex(window.selectedBiome, height, gx, gy, { moisture: 0.5, slope: 0, aspectRad: 0, seed, mapFreq });
-        return hex;
-      }
-    } catch (_) { /* ignore */ }
-    return GRID_CONFIG.TILE_COLOR;
+    const gx = (this._currentColorEvalX ?? 0);
+    const gy = (this._currentColorEvalY ?? 0);
+    return this._biomeShading.getBiomeOrBaseColor(height, gx, gy);
   }
 
   /** Re-color existing base grid tiles using currently selected biome palette. */
   applyBiomePaletteToBaseGrid() {
-    if (this.isTerrainModeActive) return;
-    if (typeof window === 'undefined' || !window.selectedBiome) return;
-    const biomeKey = window.selectedBiome;
-    try {
-      // Ensure a continuous biome canvas exists and paint it from current heights
-      if (!this._biomeCanvas) this._biomeCanvas = new BiomeCanvasPainter(this.gameManager);
-      // Keep painter noise deterministic with our coordinator seed
-      try { this._biomeCanvas.setSeed?.(this._biomeSeed >>> 0); } catch(_) { /* ignore setSeed error */ }
-      const rows = this.gameManager.rows, cols = this.gameManager.cols;
-      const heights = Array(rows).fill(null).map(() => Array(cols).fill(0));
-      this.gameManager.gridContainer.children.forEach(ch => {
-        if (!ch?.isGridTile) return;
-        const gx = ch.gridX, gy = ch.gridY;
-        if (gy >= 0 && gy < rows && gx >= 0 && gx < cols) heights[gy][gx] = Number.isFinite(ch.terrainHeight) ? ch.terrainHeight : 0;
-      });
-      // Hide per-tile fills so the canvas shows through
-      this._toggleBaseTileVisibility(false);
-      this._biomeCanvas.paint(biomeKey, heights, null);
-
-      this.gameManager.gridContainer.children.forEach(child => {
-        if (!child.isGridTile) return;
-        const h = typeof child.terrainHeight === 'number' ? child.terrainHeight : 0;
-        // Provide coordinates to color function for variation
-        this._currentColorEvalX = child.gridX;
-        this._currentColorEvalY = child.gridY;
-        // Determine color if needed; base tiles remain unfilled while canvas is active
-        // const fillColor = this._getBiomeOrBaseColor(h);
-        const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
-        const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
-
-        // Clean up any previous rich shading layers
-        try {
-          if (child.paintLayer) {
-            child.removeChild(child.paintLayer);
-            if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
-              child.paintLayer.destroy({ children: true });
-            }
-            child.paintLayer = null;
-          }
-          if (child.paintMask) {
-            child.removeChild(child.paintMask);
-            if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
-              child.paintMask.destroy();
-            }
-            child.paintMask = null;
-          }
-        } catch(_) { /* ignore */ }
-
-        child.clear();
-        child.lineStyle(1, borderColor, borderAlpha);
-        // Draw only the border path; leave unfilled to let the biome canvas be visible
-        child.moveTo(0, this.gameManager.tileHeight / 2);
-        child.lineTo(this.gameManager.tileWidth / 2, 0);
-        child.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
-        child.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
-        child.lineTo(0, this.gameManager.tileHeight / 2);
-        // no fill
-
-        // Suppress per-tile shading overlays; biome canvas provides painterly shading
-        try { /* intentionally no tile-level overlays when canvas is active */ } catch(_) { /* non-fatal */ }
-
-        if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
-        if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.addVisualElevationEffect(child, h);
-      });
-      logger.info('Applied biome palette to base grid', { context: 'TerrainCoordinator.applyBiomePaletteToBaseGrid', biome: biomeKey }, LOG_CATEGORY.USER);
-    } catch (e) {
-      logger.warn('Failed applying biome palette to base grid', { context: 'TerrainCoordinator.applyBiomePaletteToBaseGrid', biome: biomeKey, error: e.message });
-    }
-    finally {
-      this._currentColorEvalX = undefined;
-      this._currentColorEvalY = undefined;
-    }
+    return this._biomeShading.applyToBaseGrid();
   }
 
   /** Optional: allow external systems/UI to set a deterministic seed for biome visuals. */
@@ -1899,186 +1031,18 @@ export class TerrainCoordinator {
 
   /** Show or hide the base tile fills (keeping borders) */
   _toggleBaseTileVisibility(show) {
-    try {
-      this.gameManager.gridContainer.children.forEach(child => {
-        if (!child?.isGridTile) return;
-        child.clear();
-        child.lineStyle(1, GRID_CONFIG.TILE_BORDER_COLOR, GRID_CONFIG.TILE_BORDER_ALPHA);
-        if (show) {
-          child.beginFill(GRID_CONFIG.TILE_COLOR, 1.0);
-        }
-        child.moveTo(0, this.gameManager.tileHeight / 2);
-        child.lineTo(this.gameManager.tileWidth / 2, 0);
-        child.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
-        child.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
-        child.lineTo(0, this.gameManager.tileHeight / 2);
-        if (show) child.endFill();
-      });
-    } catch(_) { /* ignore */ }
+    return this._biomeShading.toggleBaseTileVisibility(show);
   }
 
-  // --- Lightweight shading helpers for base grid (outside terrain mode) ---
-  _shadeRand(seed) {
-    let s = (seed >>> 0) || 1;
-    return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s & 0xffffffff) / 0x100000000; };
-  }
-  _drawShadeDesertBands(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
-    const rnd = this._shadeRand(seed);
-    let bandCount = 2 + Math.floor(rnd() * 2);
-    bandCount = Math.max(1, Math.round(bandCount * density));
-    if (simplify) bandCount = Math.min(2, bandCount);
-    for (let i = 0; i < bandCount; i++) {
-      const t = (i + 1) / (bandCount + 1);
-      const y = h * (0.2 + 0.6 * t + (rnd() - 0.5) * 0.04);
-      const thickness = h * (0.08 + rnd() * 0.04) * (simplify ? 0.8 : 1);
-      const c = lightenColor(baseColor, 0.1 + 0.1 * (t - 0.5));
-      const g = new PIXI.Graphics();
-      g.beginFill(c, alpha * 0.85);
-      g.moveTo(0, y - thickness / 2);
-      g.lineTo(w / 2, y - thickness);
-      g.lineTo(w, y - thickness / 2);
-      g.lineTo(w / 2, y + thickness);
-      g.closePath();
-      g.endFill();
-      container.addChild(g);
-    }
-  }
-  _drawShadeForestDapples(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
-    const rnd = this._shadeRand(seed);
-    let spots = 4 + Math.floor(rnd() * 2);
-    spots = Math.max(2, Math.round(spots * density));
-    if (simplify) spots = Math.min(4, spots);
-    for (let i = 0; i < spots; i++) {
-      const cx = w * (0.2 + rnd() * 0.6);
-      const cy = h * (0.25 + rnd() * 0.5);
-      const rx = w * (0.07 + rnd() * 0.05) * (simplify ? 0.9 : 1);
-      const ry = h * (0.05 + rnd() * 0.04) * (simplify ? 0.9 : 1);
-      const c = (i % 2 === 0) ? lightenColor(baseColor, 0.1) : darkenColor(baseColor, 0.1);
-      const g = new PIXI.Graphics();
-      g.beginFill(c, alpha * 0.9);
-      g.drawEllipse(cx, cy, rx, ry);
-      g.endFill();
-      container.addChild(g);
-    }
-  }
-  _drawShadeSwampMottling(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
-    const rnd = this._shadeRand(seed);
-    let blobs = 3 + Math.floor(rnd() * 2);
-    blobs = Math.max(2, Math.round(blobs * density));
-    if (simplify) blobs = Math.min(3, blobs);
-    for (let i = 0; i < blobs; i++) {
-      const cx = w * (0.2 + rnd() * 0.6);
-      const cy = h * (0.3 + rnd() * 0.4);
-      const r = Math.min(w, h) * (0.06 + rnd() * 0.06) * (simplify ? 0.85 : 1);
-      const g = new PIXI.Graphics();
-      const shade = i % 2 === 0 ? darkenColor(baseColor, 0.16) : darkenColor(baseColor, 0.08);
-      g.beginFill(shade, alpha * 0.8);
-      g.drawCircle(cx, cy, r);
-      g.endFill();
-      container.addChild(g);
-    }
-  }
-  _drawShadeIcyFacets(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
-    const rnd = this._shadeRand(seed);
-    let facets = 2 + Math.floor(rnd() * 2);
-    facets = Math.max(1, Math.round(facets * density));
-    if (simplify) facets = Math.min(2, facets);
-    const hi = lightenColor(baseColor, 0.16);
-    const mid = lightenColor(baseColor, 0.05);
-    const lo = darkenColor(baseColor, 0.09);
-    const palette = [hi, mid, lo];
-    for (let i = 0; i < facets; i++) {
-      const g = new PIXI.Graphics();
-      const c = palette[i % palette.length];
-      g.beginFill(c, alpha);
-      const x1 = w * (0.25 + rnd() * 0.5);
-      const y1 = h * (0.15 + rnd() * 0.3);
-      const x2 = w * (0.15 + rnd() * 0.7);
-      const y2 = h * (0.5 + rnd() * 0.2);
-      const x3 = w * (0.35 + rnd() * 0.4);
-      const y3 = h * (0.7 + rnd() * 0.25);
-      g.moveTo(x1, y1);
-      g.lineTo(x2, y2);
-      g.lineTo(x3, y3);
-      g.closePath();
-      g.endFill();
-      container.addChild(g);
-    }
-  }
-  _drawShadeWaterWaves(container, baseColor, w, h, alpha, seed, coral = false, density = 1.0, simplify = false) {
-    const rnd = this._shadeRand(seed);
-    let lanes = 2 + Math.floor(rnd() * 1);
-    lanes = Math.max(1, Math.round(lanes * density));
-    if (simplify) lanes = Math.min(2, lanes);
-    for (let i = 0; i < lanes; i++) {
-      const t = (i + 1) / (lanes + 1);
-      const y = h * (0.2 + 0.6 * t + (rnd() - 0.5) * 0.04);
-      const thickness = h * (0.05 + rnd() * 0.035) * (simplify ? 0.85 : 1);
-      const c = lightenColor(baseColor, 0.1 + 0.06 * (0.5 - Math.abs(0.5 - t)));
-      const g = new PIXI.Graphics();
-      g.beginFill(c, alpha * 0.85);
-      g.moveTo(0, y - thickness / 2);
-      g.lineTo(w / 2, y - thickness * 0.9);
-      g.lineTo(w, y - thickness / 2);
-      g.lineTo(w / 2, y + thickness * 0.9);
-      g.closePath();
-      g.endFill();
-      container.addChild(g);
-    }
-    if (coral && !simplify) {
-      let spots = 4 + Math.floor(rnd() * 3);
-      spots = Math.max(2, Math.round(spots * density));
-      for (let i = 0; i < spots; i++) {
-        const cx = w * (0.2 + rnd() * 0.6);
-        const cy = h * (0.25 + rnd() * 0.5);
-        const r = Math.min(w, h) * (0.02 + rnd() * 0.015);
-        const pink = lightenColor(0xff6fa3, 0.15 * (rnd() - 0.5));
-        const g = new PIXI.Graphics();
-        g.beginFill(pink, Math.min(1, alpha + 0.05));
-        g.drawCircle(cx, cy, r);
-        g.endFill();
-        container.addChild(g);
-      }
-    }
-  }
-  _drawShadeVolcanicVeins(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
-    const rnd = this._shadeRand(seed);
-    let veins = 2 + Math.floor(rnd() * 1);
-    veins = Math.max(1, Math.round(veins * density));
-    if (simplify) veins = Math.min(2, veins);
-    for (let i = 0; i < veins; i++) {
-      const g = new PIXI.Graphics();
-      g.lineStyle(2, lightenColor(0xff6a00, 0.1), Math.min(1, alpha + 0.1));
-      const x0 = w * (0.15 + rnd() * 0.7);
-      const y0 = h * (0.2 + rnd() * 0.6);
-      const x1 = x0 + w * (0.15 * (rnd() - 0.5));
-      const y1 = y0 + h * (0.25 * (rnd() - 0.5));
-      const x2 = x1 + w * (0.2 * (rnd() - 0.5));
-      const y2 = y1 + h * (0.3 * (rnd() - 0.5));
-      g.moveTo(x0, y0);
-      g.lineTo(x1, y1);
-      g.lineTo(x2, y2);
-      container.addChild(g);
-    }
-  }
-  _drawShadeRuinGrid(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
-    const g = new PIXI.Graphics();
-    const lineC = darkenColor(baseColor, 0.22);
-    g.lineStyle(1, lineC, alpha * 0.8);
-    let rows = 3, cols = 3;
-    rows = Math.max(2, Math.round(rows * density));
-    cols = Math.max(2, Math.round(cols * density));
-    if (simplify) { rows = Math.min(rows, 3); cols = Math.min(cols, 3); }
-    for (let i = 1; i < rows; i++) {
-      const ty = h * (i / rows);
-      g.moveTo(w * 0.2, ty);
-      g.lineTo(w * 0.8, ty);
-    }
-    for (let j = 1; j < cols; j++) {
-      const tx = w * (j / cols);
-      g.moveTo(tx, h * 0.2);
-      g.lineTo(tx, h * 0.8);
-    }
-    container.addChild(g);
+  // moved to ShadingHelpers.js: shadeRand, drawShade* helpers
+
+  /**
+   * Public pass-through for elevation visual effect so tests and collaborators
+   * can stub/spy this method without depending on private fields.
+   * @param {PIXI.DisplayObject} tile
+   * @param {number} height
+   */
+  addVisualElevationEffect(tile, height) {
+    return this._elevationVisuals.addVisualElevationEffect(tile, height);
   }
 }

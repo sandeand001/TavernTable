@@ -39,7 +39,7 @@ html, body {
 }
 
 /* Responsive adjustments for dice panel */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   #dice-panel {
     min-width: auto; /* Allow smaller width on mobile */
     max-width: calc(100vw - 20px); /* Take available width on mobile */
@@ -64,37 +64,7 @@ html, body {
   font-weight: bold;
 }
 
-#token-panel {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  background-color: rgba(0, 0, 0, 0.7);
-  padding: 10px;
-  border-radius: 8px;
-  color: white;
-  font-family: sans-serif;
-  max-width: 250px; /* Prevent panel from getting too wide */
-  max-height: calc(100vh - 100px); /* More generous height - account for dice panel */
-  overflow-y: auto; /* Allow scrolling if content is too tall */
-  box-sizing: border-box; /* Include padding in width calculations */
-}
-
-/* Responsive adjustments for smaller screens */
-@media (max-width: 768px) {
-  #token-panel {
-    max-width: calc(100vw - 20px); /* Leave 10px margin on each side */
-    left: 10px;
-    right: 10px;
-    width: auto; /* Use available width */
-  }
-}
-
-@media (max-height: 600px) {
-  #token-panel {
-    max-height: calc(100vh - 80px); /* Even more aggressive height limit on short screens */
-    padding: 6px; /* Reduce padding to save space */
-  }
-  
+@media (height <= 600px) {
   #creature-content {
     max-height: 300px; /* Reduce creature content height on short screens */
   }
@@ -110,14 +80,6 @@ html, body {
   align-items: center;
 }
 
-#creature-header:hover {
-  color: #4da6ff;
-}
-
-#creature-arrow {
-  transition: transform 0.3s ease;
-  font-size: 12px;
-}
 
 #creature-arrow.collapsed {
   transform: rotate(-90deg);
@@ -131,6 +93,24 @@ html, body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Responsive grid layout */
   gap: 4px; /* Small gap between buttons */
+  margin-bottom: 16px; /* Merged from later duplicate */
+}
+
+/* Ensure creature buttons work well in grid layout */
+#creature-content button {
+  margin: 0; /* Remove margin since we're using gap */
+  padding: 8px 4px; /* Use consistent padding */
+  background-color: #444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap; /* Prevent text wrapping */
+  overflow: hidden;
+  text-overflow: ellipsis; /* Show ... if text is too long */
+  transition: all 0.2s ease;
 }
 
 #creature-content.collapsed {
@@ -140,16 +120,6 @@ html, body {
   margin: 0 !important;
 }
 
-/* Ensure creature buttons work well in grid layout */
-#creature-content button {
-  margin: 0; /* Remove margin since we're using gap */
-  padding: 6px 4px; /* Reduced from 8px to 6px for more compact layout */
-  font-size: 13px; /* Slightly smaller font */
-  text-align: center;
-  white-space: nowrap; /* Prevent text wrapping */
-  overflow: hidden;
-  text-overflow: ellipsis; /* Show ... if text is too long */
-}
 
 #token-panel button {
   margin: 2px 0; /* Only vertical margin, horizontal handled by grid gap */
@@ -229,21 +199,7 @@ html, body {
   font-style: italic;
 }
 
-.help-section {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid #444;
-  font-size: 11px;
-}
-
-.help-text {
-  margin: 2px 0;
-  color: #ccc;
-}
-
-.help-text strong {
-  color: #fff;
-}
+/* merged later Help section styles with earlier border/font-size */
 
 #dice-3d-container {
   position: absolute;
@@ -393,6 +349,7 @@ html, body {
   padding: 12px;
   margin-bottom: 12px;
   overflow-y: auto;
+
   /* Allow content to expand but with reasonable limits */
   min-height: 200px;
   max-height: calc(100vh - 250px); /* Conservative limit to ensure footer visibility */
@@ -436,29 +393,7 @@ html, body {
   background-color: #b71c1c;
 }
 
-/* Creature Buttons in Grid Layout */
-#creature-content {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-  margin-bottom: 16px;
-}
-
-#creature-content button {
-  padding: 8px 4px;
-  background-color: #444;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.2s ease;
-}
-
+/* Creature button hover/selected states */
 #creature-content button:hover {
   background-color: #555;
   transform: translateY(-1px);
@@ -470,18 +405,11 @@ html, body {
   font-weight: 600;
 }
 
-/* Sprite nudge controls */
-.nudge-grid {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-}
 .nudge-middle-row {
   display: flex;
   gap: 4px;
 }
+
 .nudge-grid button {
   background-color: #444;
   color: #fff;
@@ -494,6 +422,7 @@ html, body {
 }
 .nudge-grid button:hover { background-color: #555; transform: translateY(-1px); }
 .nudge-grid button:active { transform: translateY(0); }
+
 .adjust-log {
   margin-top: 6px;
   font-size: 11px;
@@ -514,6 +443,7 @@ html, body {
   gap: 4px;
   margin-top: 6px;
 }
+
 .adjust-actions button {
   flex: 1 1 auto;
   background: #444;
@@ -634,13 +564,13 @@ html, body {
 }
 
 /* Responsive adjustments */
-@media (max-width: 1200px) {
+@media (width <= 1200px) {
   #right-sidebar {
     width: 300px;
   }
 }
 
-@media (max-width: 900px) {
+@media (width <= 900px) {
   #right-sidebar {
     width: 280px;
   }
@@ -661,7 +591,7 @@ html, body {
   }
 }
 
-@media (max-width: 600px) {
+@media (width <= 600px) {
   #right-sidebar {
     width: 100vw;
     position: fixed;
@@ -680,19 +610,19 @@ html, body {
 }
 
 /* Adjust game container to account for sidebar */
-@media (min-width: 601px) {
+@media (width >= 601px) {
   #game-container {
     width: calc(100vw - 350px);
   }
 }
 
-@media (max-width: 1200px) and (min-width: 901px) {
+@media (width <= 1200px) and (width >= 901px) {
   #game-container {
     width: calc(100vw - 300px);
   }
 }
 
-@media (max-width: 900px) and (min-width: 601px) {
+@media (width <= 900px) and (width >= 601px) {
   #game-container {
     width: calc(100vw - 280px);
   }
@@ -963,7 +893,7 @@ html, body {
 }
 
 /* Responsive adjustments for terrain tools */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .tool-buttons {
     flex-direction: column;
     gap: 6px;
@@ -988,6 +918,7 @@ html, body {
     font-size: 16px;
   }
 }
+
 /* ====================================
    Biome Menu Styling (matches terrain tool aesthetics)
    ==================================== */
@@ -1089,19 +1020,22 @@ html, body {
 .biome-menu::-webkit-scrollbar {
   width: 8px;
 }
+
 .biome-menu::-webkit-scrollbar-track {
   background: rgba(255,255,255,0.05);
   border-radius: 4px;
 }
+
 .biome-menu::-webkit-scrollbar-thumb {
   background: #444;
   border-radius: 4px;
 }
+
 .biome-menu::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .biome-group-list {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }
