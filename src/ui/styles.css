@@ -420,8 +420,15 @@ html, body {
   font-size: 14px;
   transition: background-color 0.2s ease, transform 0.15s ease;
 }
-.nudge-grid button:hover { background-color: #555; transform: translateY(-1px); }
-.nudge-grid button:active { transform: translateY(0); }
+
+.nudge-grid button:hover {
+  background-color: #555;
+  transform: translateY(-1px);
+}
+
+.nudge-grid button:active {
+  transform: translateY(0);
+}
 
 .adjust-log {
   margin-top: 6px;

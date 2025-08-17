@@ -8,40 +8,34 @@
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
-import { GameValidators } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
 // import { GRID_CONFIG } from '../config/GameConstants.js';
 import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+// elevation offset calculation is delegated into internals
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
-import {
-  drawShadeDesertBands,
-  drawShadeForestDapples,
-  drawShadeSwampMottling,
-  drawShadeIcyFacets,
-  drawShadeWaterWaves,
-  drawShadeVolcanicVeins,
-  drawShadeRuinGrid
-} from '../terrain/ShadingHelpers.js';
+// shading pattern helpers are used within internals
+import { validateContainerState as _validateContainerState, showAllTerrainTiles as _showAll, hideAllTerrainTiles as _hideAll, clearAllTerrainTiles as _clearAll } from './terrain-manager/internals/container.js';
+import { validateTileCreationInputs as _validateTileInputs, cleanupExistingTile as _cleanupTile, createBaseTerrainGraphics as _createBase, applyTerrainStyling as _applyStyle, positionTerrainTile as _positionTile, finalizeTerrainTile as _finalizeTile, addVisualEffects as _addEffects } from './terrain-manager/internals/tiles.js';
+import { addTileWithDepthSorting as _addWithSort, sortAllTerrainTilesByDepth as _sortAllDepth } from './terrain-manager/internals/sorting.js';
+import { updateTerrainDisplay as _updateDisplay, processUpdateQueue as _processUpdates } from './terrain-manager/internals/updates.js';
 
 export class TerrainManager {
   constructor(gameManager, terrainCoordinator) {
     this.gameManager = gameManager;
     this.terrainCoordinator = terrainCoordinator;
     this.facesRenderer = new TerrainFacesRenderer(gameManager);
-    
+
     // PIXI containers for terrain rendering
     this.terrainContainer = null;
     this.terrainTiles = new Map(); // Map of "x,y" -> PIXI.Graphics terrain tile
-    
+
     // Performance optimization
     this.updateQueue = new Set(); // Cells that need visual updates
     this.isUpdating = false;
     this.lastUpdateTime = 0;
-    
+
     logger.log(LOG_LEVEL.DEBUG, 'TerrainManager initialized', LOG_CATEGORY.SYSTEM, {
       context: 'TerrainManager.constructor',
       stage: 'initialization',
@@ -62,7 +56,7 @@ export class TerrainManager {
       this.terrainContainer.sortableChildren = true;
       // Grid tiles use zIndex depth*100; tokens use depth*100+10, so pick a value higher than any expected
       this.terrainContainer.zIndex = 100000;
-      
+
       // Add terrain container to the grid container AFTER grid tiles
       // This ensures terrain tiles appear above the base grid for proper height visualization
       // Grid tiles are added first, then terrain on top
@@ -71,17 +65,17 @@ export class TerrainManager {
       if (this.gameManager.gridContainer.sortableChildren && typeof this.gameManager.gridContainer.sortChildren === 'function') {
         this.gameManager.gridContainer.sortChildren();
       }
-      
+
       // Initialize terrain tiles for the current grid
       this.createInitialTerrainTiles();
-      
+
       logger.log(LOG_LEVEL.INFO, 'Terrain rendering system initialized', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainManager.initialize',
         stage: 'rendering_initialization',
         terrainContainerReady: !!this.terrainContainer,
-        gridDimensions: { 
-          cols: this.gameManager.cols, 
-          rows: this.gameManager.rows 
+        gridDimensions: {
+          cols: this.gameManager.cols,
+          rows: this.gameManager.rows
         },
         initialTilesCreated: this.terrainTiles.size,
         timestamp: new Date().toISOString()
@@ -90,9 +84,9 @@ export class TerrainManager {
       GameErrors.initialization(error, {
         stage: 'TerrainManager.initialize',
         hasGridContainer: !!this.gameManager?.gridContainer,
-        gridDimensions: { 
-          cols: this.gameManager?.cols, 
-          rows: this.gameManager?.rows 
+        gridDimensions: {
+          cols: this.gameManager?.cols,
+          rows: this.gameManager?.rows
         }
       });
       throw error;
@@ -140,217 +134,28 @@ export class TerrainManager {
    * @returns {boolean} True if validation passes
    */
   validateContainerState() {
-    try {
-      // Use centralized PIXI container validation
-      if (!TerrainPixiUtils.validatePixiContainer(this.terrainContainer, 'terrainContainer', 'TerrainManager.validateContainerState')) {
-        throw new Error('Terrain container validation failed');
-      }
-      
-      // Check if parent game container exists and is valid
-      if (!TerrainPixiUtils.validatePixiContainer(this.gameManager?.gridContainer, 'gridContainer', 'TerrainManager.validateContainerState')) {
-        throw new Error('Game grid container validation failed');
-      }
-      
-      // Validate terrain tiles map consistency
-      if (!this.terrainTiles) {
-        throw new Error('Terrain tiles map is not initialized');
-      }
-      
-      logger.log(LOG_LEVEL.DEBUG, 'Terrain container state validation passed', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.validateContainerState',
-        terrainContainerExists: !!this.terrainContainer,
-        gridContainerExists: !!this.gameManager?.gridContainer,
-        tilesMapSize: this.terrainTiles.size,
-        containerChildrenCount: this.terrainContainer.children.length
-      });
-      
-      return true;
-    } catch (error) {
-      logger.error('Terrain container state validation failed', {
-        context: 'TerrainManager.validateContainerState',
-        error: error.message,
-        terrainContainerExists: !!this.terrainContainer,
-        terrainContainerDestroyed: this.terrainContainer?.destroyed,
-        gridContainerExists: !!this.gameManager?.gridContainer,
-        gridContainerDestroyed: this.gameManager?.gridContainer?.destroyed
-      });
-      throw error;
-    }
+    return _validateContainerState(this);
   }
 
   /**
    * Show all terrain tiles (when terrain mode is enabled)
    */
   showAllTerrainTiles() {
-    try {
-      // ENHANCED: Validate container state before operations
-      this.validateContainerState();
-      
-      this.terrainContainer.visible = true;
-      
-      // Create tiles for all positions if not already created
-      for (let y = 0; y < this.gameManager.rows; y++) {
-        for (let x = 0; x < this.gameManager.cols; x++) {
-          const tileKey = `${x},${y}`;
-          if (!this.terrainTiles.has(tileKey)) {
-            this.createTerrainTile(x, y);
-          }
-        }
-      }
-      
-      // Ensure all tiles are properly depth sorted
-      this.sortAllTerrainTilesByDepth();
-      
-      logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles shown with depth sorting', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.showAllTerrainTiles',
-        totalTiles: this.terrainTiles.size
-      });
-    } catch (error) {
-      GameErrors.rendering(error, {
-        stage: 'showAllTerrainTiles'
-      });
-    }
+    return _showAll(this);
   }
 
   /**
    * Hide all terrain tiles (when terrain mode is disabled)
    */
   hideAllTerrainTiles() {
-    try {
-      // Proactively remove any overlay faces attached to terrain tiles
-      try {
-        const children = [...this.terrainContainer.children];
-        children.forEach(child => {
-          if (child && child.isTerrainTile) {
-            if (child.sideFaces) {
-              if (child.sideFaces.parent) {
-                child.sideFaces.parent.removeChild(child.sideFaces);
-              }
-              if (typeof child.sideFaces.destroy === 'function' && !child.sideFaces.destroyed) {
-                child.sideFaces.destroy();
-              }
-              child.sideFaces = null;
-            }
-            if (child.shadowTile) {
-              if (child.shadowTile.parent) {
-                child.shadowTile.parent.removeChild(child.shadowTile);
-              }
-              if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
-                child.shadowTile.destroy();
-              }
-              child.shadowTile = null;
-            }
-            if (child.depressionOverlay) {
-              try { child.removeChild(child.depressionOverlay); } catch { /* ignore */ }
-              if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
-                child.depressionOverlay.destroy();
-              }
-              child.depressionOverlay = null;
-            }
-          }
-        });
-      } catch (_) { /* best-effort cleanup */ }
-      this.terrainContainer.visible = false;
-      
-      logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles hidden', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.hideAllTerrainTiles'
-      });
-    } catch (error) {
-      GameErrors.rendering(error, {
-        stage: 'hideAllTerrainTiles'
-      });
-    }
+    return _hideAll(this);
   }
 
   /**
    * Clear all terrain tiles completely (for terrain mode transitions)
    */
   clearAllTerrainTiles() {
-    try {
-      // Early exit if no terrain tiles exist
-      if (!this.terrainTiles || this.terrainTiles.size === 0) {
-        logger.log(LOG_LEVEL.DEBUG, 'No terrain tiles to clear', LOG_CATEGORY.SYSTEM, {
-          context: 'TerrainManager.clearAllTerrainTiles'
-        });
-        if (this.terrainContainer) {
-          this.terrainContainer.visible = false;
-        }
-        return;
-      }
-      
-      const tileCount = this.terrainTiles.size;
-      
-      // Best-effort removal of overlay faces and effects before batch cleanup
-      try {
-        this.terrainTiles.forEach(tile => {
-          if (tile && tile.sideFaces) {
-            if (tile.sideFaces.parent) {
-              tile.sideFaces.parent.removeChild(tile.sideFaces);
-            }
-            if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) {
-              tile.sideFaces.destroy();
-            }
-            tile.sideFaces = null;
-          }
-          if (tile && tile.shadowTile) {
-            if (tile.shadowTile.parent) {
-              tile.shadowTile.parent.removeChild(tile.shadowTile);
-            }
-            if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
-              tile.shadowTile.destroy();
-            }
-            tile.shadowTile = null;
-          }
-          if (tile && tile.depressionOverlay) {
-            try { tile.removeChild(tile.depressionOverlay); } catch { /* ignore */ }
-            if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) {
-              tile.depressionOverlay.destroy();
-            }
-            tile.depressionOverlay = null;
-          }
-        });
-      } catch (_) { /* ignore */ }
-
-      // Use centralized cleanup utility for consistent behavior
-      const cleanupResults = TerrainPixiUtils.batchCleanupTerrainTiles(
-        this.terrainTiles, 
-        this.terrainContainer, 
-        'TerrainManager.clearAllTerrainTiles'
-      );
-      
-      // Clear the terrain tiles map
-      this.terrainTiles.clear();
-      
-      // Hide container
-      if (this.terrainContainer) {
-        this.terrainContainer.visible = false;
-      }
-      
-      logger.log(LOG_LEVEL.INFO, 'All terrain tiles cleared completely', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.clearAllTerrainTiles',
-        clearedTileCount: tileCount,
-        cleanupResults
-      });
-    } catch (error) {
-      // Force clear the map even if individual tiles had issues
-      if (this.terrainTiles) {
-        this.terrainTiles.clear();
-      }
-      if (this.terrainContainer) {
-        this.terrainContainer.visible = false;
-      }
-      
-      GameErrors.rendering(error, {
-        stage: 'clearAllTerrainTiles',
-        context: 'TerrainManager.clearAllTerrainTiles'
-      });
-      
-      // Don't re-throw to prevent cascade failures
-      logger.log(LOG_LEVEL.WARN, 'Terrain tiles cleared with errors', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.clearAllTerrainTiles',
-        error: error.message
-      });
-    }
+    return _clearAll(this);
   }
 
   /**
@@ -363,7 +168,7 @@ export class TerrainManager {
       this._validateTileCreationInputs(x, y);
       const height = this.terrainCoordinator.getTerrainHeight(x, y);
       const tileKey = `${x},${y}`;
-      
+
       this._cleanupExistingTile(tileKey);
       const terrainTile = this._createBaseTerrainGraphics(x, y, height);
       this._applyTerrainStyling(terrainTile, height);
@@ -372,7 +177,7 @@ export class TerrainManager {
       this._finalizeTerrainTile(terrainTile, x, y, tileKey);
       // Now add visual effects that rely on parent/indices
       this._addVisualEffects(terrainTile, height, x, y);
-      
+
       return terrainTile;
     } catch (error) {
       GameErrors.rendering(error, {
@@ -390,46 +195,14 @@ export class TerrainManager {
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
    */
-  _validateTileCreationInputs(x, y) {
-    // ENHANCED: Validate container state before tile creation
-    this.validateContainerState();
-    
-    // Validate coordinates
-    const coordValidation = GameValidators.coordinates(x, y);
-    if (!coordValidation.isValid) {
-      throw new Error(`Invalid tile coordinates: ${coordValidation.getErrorMessage()}`);
-    }
-  }
+  _validateTileCreationInputs(x, y) { return _validateTileInputs(this, x, y); }
 
   /**
    * DECOMPOSED METHOD: Cleanup existing tile if present
    * @private
    * @param {string} tileKey - Tile key for cleanup
    */
-  _cleanupExistingTile(tileKey) {
-    // Remove existing tile if present (with enhanced safety)
-    if (this.terrainTiles.has(tileKey)) {
-      const existingTile = this.terrainTiles.get(tileKey);
-      
-      // Use centralized cleanup utility for consistency
-      const cleanupSuccess = TerrainPixiUtils.cleanupTerrainTile(
-        existingTile, 
-        this.terrainContainer, 
-        tileKey, 
-        'TerrainManager.createTerrainTile'
-      );
-      
-      if (!cleanupSuccess) {
-        logger.warn('Tile cleanup had partial failures, continuing with creation', {
-          context: 'TerrainManager.createTerrainTile',
-          coordinates: { x: existingTile.gridX, y: existingTile.gridY },
-          tileKey
-        });
-      }
-      
-      this.terrainTiles.delete(tileKey);
-    }
-  }
+  _cleanupExistingTile(tileKey) { return _cleanupTile(this, tileKey); }
 
   /**
    * DECOMPOSED METHOD: Create base terrain graphics object
@@ -439,29 +212,7 @@ export class TerrainManager {
    * @param {number} height - Terrain height
    * @returns {PIXI.Graphics} Created terrain tile graphics
    */
-  _createBaseTerrainGraphics(x, y, height) {
-    // Create terrain tile graphics
-    const terrainTile = new PIXI.Graphics();
-    
-    // Mark as terrain tile and store coordinates
-    terrainTile.isTerrainTile = true;
-    terrainTile.gridX = x;
-    terrainTile.gridY = y;
-    terrainTile.terrainHeight = height;
-    
-    // Calculate depth value for isometric ordering
-    // In isometric view, tiles with higher x+y values should appear behind tiles with lower x+y values
-    terrainTile.depthValue = x + y;
-    // If container uses zIndex sorting, place terrain tile above faces/shadows at its depth
-    terrainTile.zIndex = terrainTile.depthValue * 100 + 20;
-
-    // Defensive: ensure clean visual state
-    terrainTile.shadowTile = null;
-    terrainTile.depressionOverlay = null;
-    terrainTile.sideFaces = null;
-    
-    return terrainTile;
-  }
+  _createBaseTerrainGraphics(x, y, height) { return _createBase(this, x, y, height); }
 
   /**
    * DECOMPOSED METHOD: Apply styling to terrain tile
@@ -469,144 +220,7 @@ export class TerrainManager {
    * @param {PIXI.Graphics} terrainTile - Terrain tile to style
    * @param {number} height - Terrain height
    */
-  _applyTerrainStyling(terrainTile, height) {
-    // Always create terrain tile to provide visual feedback
-    // Show different appearance for default vs modified heights
-    const isDefaultHeight = (height === TERRAIN_CONFIG.DEFAULT_HEIGHT);
-    const color = this.getColorForHeight(height);
-    // Clear previous paint layer if any
-    try {
-      if (terrainTile.paintLayer) {
-        terrainTile.removeChild(terrainTile.paintLayer);
-        if (typeof terrainTile.paintLayer.destroy === 'function' && !terrainTile.paintLayer.destroyed) {
-          terrainTile.paintLayer.destroy({ children: true });
-        }
-        terrainTile.paintLayer = null;
-      }
-      if (terrainTile.paintMask) {
-        // Remove and destroy old mask
-        try { terrainTile.removeChild(terrainTile.paintMask); } catch { /* ignore removeChild error */ }
-        if (typeof terrainTile.paintMask.destroy === 'function' && !terrainTile.paintMask.destroyed) {
-          terrainTile.paintMask.destroy();
-        }
-        terrainTile.paintMask = null;
-      }
-    } catch (_) { /* best-effort */ }
-
-    // Border style only on the main graphics; fills are drawn in child layers
-    if (isDefaultHeight) {
-      terrainTile.lineStyle(1, 0x666666, 0.3);
-    } else {
-      terrainTile.lineStyle(
-        TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH,
-        this.getBorderColorForHeight(height),
-        TERRAIN_CONFIG.HEIGHT_BORDER_ALPHA
-      );
-    }
-
-    // Draw diamond stroke (no fill on the main graphics)
-    terrainTile.moveTo(0, this.gameManager.tileHeight / 2);
-    terrainTile.lineTo(this.gameManager.tileWidth / 2, 0);
-    terrainTile.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
-    terrainTile.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
-    terrainTile.lineTo(0, this.gameManager.tileHeight / 2);
-
-    // Create a paint layer with multiple colored sub-shapes covering the diamond
-    const paint = new PIXI.Container();
-    paint.x = 0;
-    paint.y = 0;
-
-    const w = this.gameManager.tileWidth;
-    const h = this.gameManager.tileHeight;
-    // Rich shading settings
-    const settings = (typeof window !== 'undefined' && window.richShadingSettings) ? window.richShadingSettings : null;
-    const shadingEnabled = settings ? !!settings.enabled : true;
-    const intensityMul = settings && Number.isFinite(settings.intensity) ? settings.intensity : 1.0; // 0..1.5
-    const densityMul = settings && Number.isFinite(settings.density) ? settings.density : 1.0;     // 0.5..1.5
-    const simplify = settings ? !!settings.performance : false;
-    const baseAlphaRaw = isDefaultHeight ? 0.12 : TERRAIN_CONFIG.HEIGHT_ALPHA;
-    const baseAlpha = Math.max(0, Math.min(1, baseAlphaRaw * intensityMul));
-
-    // Mask to keep sub-shapes within the diamond
-    const mask = new PIXI.Graphics();
-    mask.beginFill(0xffffff, 1);
-    mask.moveTo(0, h / 2);
-    mask.lineTo(w / 2, 0);
-    mask.lineTo(w, h / 2);
-    mask.lineTo(w / 2, h);
-    mask.lineTo(0, h / 2);
-    mask.endFill();
-
-    // Choose pattern based on biome, fallback to tri-tone split
-    // In terrain mode, ignore biome selector entirely; use neutral/default styling
-    const biome = (!this.terrainCoordinator?.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome)
-      ? String(window.selectedBiome)
-      : '';
-    const seed = (terrainTile.gridX * 73856093) ^ (terrainTile.gridY * 19349663) ^ ((height || 0) * 83492791);
-    if (!shadingEnabled) {
-      // Simple single fill if rich shading disabled
-      const center = new PIXI.Graphics();
-      center.beginFill(color, Math.min(1, baseAlpha + 0.05));
-      center.moveTo(w / 2, h * 0.18);
-      center.lineTo(w * 0.85, h / 2);
-      center.lineTo(w / 2, h * 0.82);
-      center.lineTo(w * 0.15, h / 2);
-      center.closePath();
-      center.endFill();
-      paint.addChild(center);
-    } else if (/desert|dune|salt|thorn|savanna|steppe/i.test(biome)) {
-      drawShadeDesertBands(paint, color, w, h, baseAlpha, seed, densityMul, simplify);
-    } else if (/forest|grove|bamboo|orchard|cedar|fey/i.test(biome)) {
-      drawShadeForestDapples(paint, color, w, h, baseAlpha, seed, densityMul, simplify);
-    } else if (/swamp|marsh|wetland|mangrove|flood/i.test(biome)) {
-      drawShadeSwampMottling(paint, color, w, h, baseAlpha, seed, densityMul, simplify);
-    } else if (/glacier|tundra|frozen|pack|alpine|mountain|scree/i.test(biome)) {
-      drawShadeIcyFacets(paint, color, w, h, baseAlpha, seed, densityMul, simplify);
-    } else if (/ocean|coast|river|lake|reef/i.test(biome)) {
-      drawShadeWaterWaves(paint, color, w, h, baseAlpha, seed, /reef/i.test(biome), densityMul, simplify);
-    } else if (/volcan|lava|obsidian|ash/i.test(biome)) {
-      drawShadeVolcanicVeins(paint, color, w, h, baseAlpha, seed, densityMul, simplify);
-    } else if (/ruin|urban|grave|waste/i.test(biome)) {
-      drawShadeRuinGrid(paint, color, w, h, baseAlpha, seed, densityMul, simplify);
-    } else {
-      // Default tri-tone split
-      const lighter = lightenColor(color, 0.15);
-      const darker = darkenColor(color, 0.15);
-      const topTri = new PIXI.Graphics();
-      topTri.beginFill(lighter, baseAlpha);
-      topTri.moveTo(w / 2, 0);
-      topTri.lineTo(w, h / 2);
-      topTri.lineTo(0, h / 2);
-      topTri.closePath();
-      topTri.endFill();
-      paint.addChild(topTri);
-      const bottomTri = new PIXI.Graphics();
-      bottomTri.beginFill(darker, baseAlpha);
-      bottomTri.moveTo(w / 2, h);
-      bottomTri.lineTo(w, h / 2);
-      bottomTri.lineTo(0, h / 2);
-      bottomTri.closePath();
-      bottomTri.endFill();
-      paint.addChild(bottomTri);
-      const center = new PIXI.Graphics();
-      center.beginFill(color, Math.min(1, baseAlpha + 0.05));
-      center.moveTo(w / 2, h * 0.18);
-      center.lineTo(w * 0.85, h / 2);
-      center.lineTo(w / 2, h * 0.82);
-      center.lineTo(w * 0.15, h / 2);
-      center.closePath();
-      center.endFill();
-      paint.addChild(center);
-    }
-
-    // Apply mask
-    paint.mask = mask;
-    terrainTile.addChild(mask);
-
-    terrainTile.addChild(paint);
-    terrainTile.paintLayer = paint;
-    terrainTile.paintMask = mask;
-  }
+  _applyTerrainStyling(terrainTile, height) { return _applyStyle(this, terrainTile, height); }
 
   /**
    * DECOMPOSED METHOD: Position terrain tile in isometric space
@@ -616,15 +230,7 @@ export class TerrainManager {
    * @param {number} y - Grid Y coordinate
    * @param {number} height - Terrain height
    */
-  _positionTerrainTile(terrainTile, x, y, height) {
-    // Position tile in isometric space (same calculation as grid tiles)
-    terrainTile.x = (x - y) * (this.gameManager.tileWidth / 2);
-    terrainTile.y = (x + y) * (this.gameManager.tileHeight / 2);
-    
-    // Apply elevation effect using centralized util for consistency
-    const elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
-    terrainTile.y += elevationOffset;
-  }
+  _positionTerrainTile(terrainTile, x, y, height) { return _positionTile(this, terrainTile, x, y, height); }
 
   /**
    * DECOMPOSED METHOD: Add visual effects for height perception
@@ -634,32 +240,7 @@ export class TerrainManager {
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
    */
-  _addVisualEffects(terrainTile, height, x, y) {
-    // Add visual depth cues for better height perception
-    if (height > 0) {
-      this.addElevationShadow(terrainTile, height, x, y);
-    } else if (height < 0) {
-      this.addDepressionEffect(terrainTile, height);
-    }
-
-    // Add 3D walls for all edges where neighbor height is lower
-    try {
-      // Cleanup previous faces if present
-      if (terrainTile.sideFaces && terrainTile.sideFaces.parent) {
-        terrainTile.sideFaces.parent.removeChild(terrainTile.sideFaces);
-        if (typeof terrainTile.sideFaces.destroy === 'function' && !terrainTile.sideFaces.destroyed) {
-          terrainTile.sideFaces.destroy();
-        }
-        terrainTile.sideFaces = null;
-      }
-
-      const getH = (gx, gy) => this.terrainCoordinator.getTerrainHeight(gx, gy);
-      const faceBase = this.getColorForHeight(height);
-      this.facesRenderer.addOverlayFaces(this.terrainContainer, terrainTile, getH, x, y, height, faceBase);
-    } catch (e) {
-      logger.warn('Failed to add 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
-    }
-  }
+  _addVisualEffects(terrainTile, height, x, y) { return _addEffects(this, terrainTile, height, x, y); }
 
   /**
    * DECOMPOSED METHOD: Finalize terrain tile and add to container
@@ -669,11 +250,7 @@ export class TerrainManager {
    * @param {number} y - Grid Y coordinate
    * @param {string} tileKey - Tile key for storage
    */
-  _finalizeTerrainTile(terrainTile, x, y, tileKey) {
-    // Add to container with proper depth ordering
-    this.addTileWithDepthSorting(terrainTile);
-    this.terrainTiles.set(tileKey, terrainTile);
-  }
+  _finalizeTerrainTile(terrainTile, x, y, tileKey) { return _finalizeTile(this, terrainTile, x, y, tileKey); }
 
   /**
    * Get color for terrain height
@@ -707,7 +284,7 @@ export class TerrainManager {
    */
   getBorderColorForHeight(height) {
     const baseColor = this.getColorForHeight(height);
-    
+
     // For positive heights, lighten the border
     // For negative heights, darken the border
     if (height > 0) {
@@ -734,9 +311,9 @@ export class TerrainManager {
       const shadowTile = new PIXI.Graphics();
       const shadowColor = 0x000000; // Black shadow
       const shadowAlpha = 0.2 * height / TERRAIN_CONFIG.MAX_HEIGHT; // Stronger shadow for higher terrain
-      
+
       shadowTile.beginFill(shadowColor, shadowAlpha);
-      
+
       // Draw same diamond shape as main tile
       shadowTile.moveTo(0, this.gameManager.tileHeight / 2);
       shadowTile.lineTo(this.gameManager.tileWidth / 2, 0);
@@ -744,28 +321,28 @@ export class TerrainManager {
       shadowTile.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
       shadowTile.lineTo(0, this.gameManager.tileHeight / 2);
       shadowTile.endFill();
-      
+
       // Position shadow slightly offset (down and right for 3D effect)
       shadowTile.x = terrainTile.x + 2;
       shadowTile.y = terrainTile.y + 2;
-      
+
       // Set depth value for shadow (same as main tile but mark as shadow)
       shadowTile.depthValue = terrainTile.depthValue;
       shadowTile.isShadowTile = true;
       // Position shadows below faces/tiles at same depth
       shadowTile.zIndex = (shadowTile.depthValue || 0) * 100 + 0;
-      
+
       // Add shadow using depth sorting (shadows should appear behind their main tiles)
       this.addTileWithDepthSorting(shadowTile);
-      
+
       // Store reference for cleanup
       terrainTile.shadowTile = shadowTile;
     } catch (error) {
       // Don't fail tile creation if shadow fails
-      logger.warn('Failed to create elevation shadow', { 
-        coordinates: { x, y }, 
-        height, 
-        error: error.message 
+      logger.warn('Failed to create elevation shadow', {
+        coordinates: { x, y },
+        height,
+        error: error.message
       });
     }
   }
@@ -780,9 +357,9 @@ export class TerrainManager {
       // Create overlay to darken the tile
       const overlay = new PIXI.Graphics();
       const overlayAlpha = 0.3 * Math.abs(height) / TERRAIN_CONFIG.MAX_HEIGHT; // Darker for deeper depressions
-      
+
       overlay.beginFill(0x000000, overlayAlpha); // Semi-transparent black
-      
+
       // Draw same diamond shape as main tile
       overlay.moveTo(0, this.gameManager.tileHeight / 2);
       overlay.lineTo(this.gameManager.tileWidth / 2, 0);
@@ -790,21 +367,21 @@ export class TerrainManager {
       overlay.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
       overlay.lineTo(0, this.gameManager.tileHeight / 2);
       overlay.endFill();
-      
+
       // Position overlay exactly on top of tile
       overlay.x = 0;
       overlay.y = 0;
-      
+
       // Add overlay as child of the terrain tile
       terrainTile.addChild(overlay);
-      
+
       // Store reference for cleanup
       terrainTile.depressionOverlay = overlay;
     } catch (error) {
       // Don't fail tile creation if overlay fails
-      logger.warn('Failed to create depression effect', { 
-        height, 
-        error: error.message 
+      logger.warn('Failed to create depression effect', {
+        height,
+        error: error.message
       });
     }
   }
@@ -815,75 +392,7 @@ export class TerrainManager {
    * @param {PIXI.Graphics} terrainTile - The terrain tile to add
    */
   addTileWithDepthSorting(terrainTile) {
-    try {
-      const targetDepth = terrainTile.depthValue;
-      const isShadow = terrainTile.isShadowTile;
-      const children = this.terrainContainer.children;
-      
-      // Find insertion point for proper depth ordering
-      // Order: shadows first (behind), then terrain tiles, for each depth level
-      let insertIndex = 0;
-      
-      for (let i = 0; i < children.length; i++) {
-        const child = children[i];
-        
-        if (child.depthValue !== undefined) {
-          const childDepth = child.depthValue;
-          const childIsShadow = child.isShadowTile;
-          
-          // Skip to correct depth level
-          if (childDepth < targetDepth) {
-            insertIndex = i + 1;
-            continue;
-          }
-          
-          // Same depth level - position shadows before terrain tiles
-          if (childDepth === targetDepth) {
-            if (isShadow && !childIsShadow) {
-              // Insert shadow before terrain tile at same depth
-              insertIndex = i;
-              break;
-            } else if (!isShadow && childIsShadow) {
-              // Insert terrain tile after shadow at same depth
-              insertIndex = i + 1;
-              continue;
-            } else {
-              // Same type at same depth - insert after
-              insertIndex = i + 1;
-              continue;
-            }
-          }
-          
-          // Higher depth level - insert before
-          if (childDepth > targetDepth) {
-            insertIndex = i;
-            break;
-          }
-        } else {
-          // For children without depth value, increment insertion point
-          insertIndex = i + 1;
-        }
-      }
-      
-      // Insert tile at calculated position
-      this.terrainContainer.addChildAt(terrainTile, insertIndex);
-      
-      logger.log(LOG_LEVEL.TRACE, 'Terrain tile added with depth sorting', LOG_CATEGORY.RENDERING, {
-        context: 'TerrainManager.addTileWithDepthSorting',
-        coordinates: { x: terrainTile.gridX, y: terrainTile.gridY },
-        depthValue: targetDepth,
-        isShadow,
-        insertIndex,
-        totalChildren: this.terrainContainer.children.length
-      });
-    } catch (error) {
-      // Fallback to simple addChild if sorting fails
-      logger.warn('Depth sorting failed, using fallback addChild', { 
-        coordinates: { x: terrainTile.gridX, y: terrainTile.gridY },
-        error: error.message 
-      });
-      this.terrainContainer.addChild(terrainTile);
-    }
+    return _addWithSort(this, terrainTile);
   }
 
   /**
@@ -891,70 +400,7 @@ export class TerrainManager {
    * Call this method if depth ordering becomes inconsistent
    */
   sortAllTerrainTilesByDepth() {
-    try {
-      // Get all children and group by depth and type
-      const allChildren = [...this.terrainContainer.children];
-      const byDepth = new Map();
-      const others = [];
-
-      const addToDepth = (depth, type, obj) => {
-        const key = Number.isFinite(depth) ? depth : 0;
-        if (!byDepth.has(key)) byDepth.set(key, { shadows: [], faces: [], tiles: [] });
-        byDepth.get(key)[type].push(obj);
-      };
-
-      for (const child of allChildren) {
-        if (child.isShadowTile) {
-          addToDepth(child.depthValue || 0, 'shadows', child);
-        } else if (child.isTerrainTile) {
-          addToDepth(child.depthValue || 0, 'tiles', child);
-        } else if (child.isOverlayFace) {
-          addToDepth(child.depthValue || 0, 'faces', child);
-        } else {
-          others.push(child);
-        }
-      }
-
-      // Sort keys and buckets
-      const depths = [...byDepth.keys()].sort((a, b) => a - b);
-
-      // Clear container and re-add in correct order per depth:
-      // shadows -> faces -> tiles, so faces render behind tiles
-      this.terrainContainer.removeChildren();
-      for (const d of depths) {
-        const bucket = byDepth.get(d);
-        bucket.shadows.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
-        bucket.faces.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
-        bucket.tiles.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
-        bucket.shadows.forEach(ch => this.terrainContainer.addChild(ch));
-        bucket.faces.forEach(ch => this.terrainContainer.addChild(ch));
-        bucket.tiles.forEach(ch => this.terrainContainer.addChild(ch));
-      }
-
-      // Add any other children at the end unchanged
-      others.forEach(child => this.terrainContainer.addChild(child));
-      
-      // Aggregate counts for logging (avoid referencing undefined locals)
-      const aggregateCounts = [...byDepth.values()].reduce((acc, bucket) => {
-        acc.tiles += bucket.tiles.length;
-        acc.shadows += bucket.shadows.length;
-        acc.faces += bucket.faces.length;
-        return acc;
-      }, { tiles: 0, shadows: 0, faces: 0 });
-
-      logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles re-sorted by depth', LOG_CATEGORY.RENDERING, {
-        context: 'TerrainManager.sortAllTerrainTilesByDepth',
-        tilesCount: aggregateCounts.tiles,
-        shadowTilesCount: aggregateCounts.shadows,
-        facesCount: aggregateCounts.faces,
-        otherChildrenCount: others.length,
-        totalChildren: this.terrainContainer.children.length
-      });
-    } catch (error) {
-      GameErrors.rendering(error, {
-        stage: 'sortAllTerrainTilesByDepth'
-      });
-    }
+    return _sortAllDepth(this);
   }
 
   /**
@@ -964,82 +410,14 @@ export class TerrainManager {
    * @param {number} brushSize - Size of area to update
    */
   updateTerrainDisplay(centerX, centerY, brushSize) {
-    try {
-      // Add affected cells to update queue
-      for (let dy = -Math.floor(brushSize / 2); dy <= Math.floor(brushSize / 2); dy++) {
-        for (let dx = -Math.floor(brushSize / 2); dx <= Math.floor(brushSize / 2); dx++) {
-          const x = centerX + dx;
-          const y = centerY + dy;
-          
-          if (this.isValidGridPosition(x, y)) {
-            this.updateQueue.add(`${x},${y}`);
-          }
-        }
-      }
-      
-      // Process updates with throttling
-      this.processUpdateQueue();
-    } catch (error) {
-      GameErrors.rendering(error, {
-        stage: 'updateTerrainDisplay',
-        centerCoordinates: { x: centerX, y: centerY },
-        brushSize
-      });
-    }
+    return _updateDisplay(this, centerX, centerY, brushSize);
   }
 
   /**
    * Process queued terrain tile updates with performance throttling
    */
   processUpdateQueue() {
-    const now = Date.now();
-    
-    // Throttle updates to maintain 60fps
-    if (this.isUpdating || (now - this.lastUpdateTime) < TERRAIN_CONFIG.UPDATE_THROTTLE_MS) {
-      return;
-    }
-    
-    this.isUpdating = true;
-    this.lastUpdateTime = now;
-    
-    try {
-      let updatesProcessed = 0;
-      const maxUpdatesPerFrame = TERRAIN_CONFIG.BATCH_UPDATE_SIZE;
-      
-      for (const tileKey of this.updateQueue) {
-        if (updatesProcessed >= maxUpdatesPerFrame) {
-          break;
-        }
-        
-        const [x, y] = tileKey.split(',').map(Number);
-        this.createTerrainTile(x, y);
-        this.updateQueue.delete(tileKey);
-        updatesProcessed++;
-      }
-      
-      // Schedule next update if more tiles remain
-      if (this.updateQueue.size > 0) {
-        requestAnimationFrame(() => {
-          this.isUpdating = false;
-          this.processUpdateQueue();
-        });
-      } else {
-        this.isUpdating = false;
-      }
-      
-      logger.log(LOG_LEVEL.TRACE, 'Terrain display update processed', LOG_CATEGORY.RENDERING, {
-        context: 'TerrainManager.processUpdateQueue',
-        updatesProcessed,
-        remainingUpdates: this.updateQueue.size,
-        processingTime: Date.now() - now
-      });
-    } catch (error) {
-      this.isUpdating = false;
-      GameErrors.rendering(error, {
-        stage: 'processUpdateQueue',
-        queueSize: this.updateQueue.size
-      });
-    }
+    return _processUpdates(this);
   }
 
   /**
@@ -1049,25 +427,25 @@ export class TerrainManager {
     try {
       // Clear existing terrain tiles
       this.clearAllTerrainTiles();
-      
+
       // Recreate all terrain tiles
       this.createInitialTerrainTiles();
-      
+
       logger.log(LOG_LEVEL.INFO, 'All terrain display refreshed', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainManager.refreshAllTerrainDisplay',
         stage: 'complete_refresh',
-        gridDimensions: { 
-          cols: this.gameManager.cols, 
-          rows: this.gameManager.rows 
+        gridDimensions: {
+          cols: this.gameManager.cols,
+          rows: this.gameManager.rows
         },
         tilesCreated: this.terrainTiles.size
       });
     } catch (error) {
       GameErrors.rendering(error, {
         stage: 'refreshAllTerrainDisplay',
-        gridDimensions: { 
-          cols: this.gameManager?.cols, 
-          rows: this.gameManager?.rows 
+        gridDimensions: {
+          cols: this.gameManager?.cols,
+          rows: this.gameManager?.rows
         }
       });
       throw error;
@@ -1088,11 +466,11 @@ export class TerrainManager {
     try {
       // Clear existing terrain tiles
       this.clearAllTerrainTiles();
-      
+
       // Recreate terrain tiles for new grid dimensions
       // The terrainCoordinator has already handled the data resize
       this.createInitialTerrainTiles();
-      
+
       logger.log(LOG_LEVEL.INFO, 'Terrain display resized', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainManager.handleGridResize',
         stage: 'resize_complete',
@@ -1148,11 +526,11 @@ export class TerrainManager {
     try {
       const tileKey = `${x},${y}`;
       const tile = this.terrainTiles.get(tileKey);
-      
+
       if (tile) {
         const originalTint = tile.tint;
         tile.tint = highlightColor;
-        
+
         // Reset tint after 1 second
         setTimeout(() => {
           if (this.terrainTiles.has(tileKey)) {

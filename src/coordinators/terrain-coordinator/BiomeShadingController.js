@@ -68,8 +68,8 @@ export class BiomeShadingController {
         child.lineTo(this.c.gameManager.tileWidth / 2, this.c.gameManager.tileHeight);
         child.lineTo(0, this.c.gameManager.tileHeight / 2);
 
-  if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
-  if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.c._elevationVisuals.addVisualElevationEffect(child, h);
+        if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
+        if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.c.addVisualElevationEffect(child, h);
       });
       logger.info('Applied biome palette to base grid', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey }, LOG_CATEGORY.USER);
     } catch (e) {
