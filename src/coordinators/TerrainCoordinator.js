@@ -9,7 +9,6 @@ import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators, Sanitizers } from '../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-import { GRID_CONFIG } from '../config/GameConstants.js';
 // import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 // import { darkenColor, lightenColor } from '../utils/ColorUtils.js';
 // import { TerrainValidation } from '../utils/TerrainValidation.js';
@@ -30,9 +29,10 @@ import { validateTerrainSystemState as _validateSystemState, validateTerrainData
 import { validateApplicationRequirements as _validateApplyReqs, initializeBaseHeights as _initBaseHeights, processAllGridTiles as _processAllTiles, logCompletion as _logApplyComplete, handleApplicationError as _handleApplyError } from './terrain-coordinator/internals/apply.js';
 import { activateTerrainMode as _activateMode, loadTerrainStateAndDisplay as _loadStateAndDisplay, handleTerrainModeActivationError as _handleActivationError } from './terrain-coordinator/internals/mode.js';
 import { getGridCoordinatesFromEvent as _getCoordsFromEvent, modifyTerrainAtPosition as _modifyAtPos } from './terrain-coordinator/internals/inputs.js';
-import { setRichShadingEnabled as _setRichShadingEnabled } from './terrain-coordinator/internals/biome.js';
+import { setRichShadingEnabled as _setRichShadingEnabled, setBiomeSeed as _setBiomeSeed, handlePostResetShading as _handlePostResetShading } from './terrain-coordinator/internals/biome.js';
 import { handleGridResize as _handleResize } from './terrain-coordinator/internals/resize.js';
 import { setTerrainTool as _setTool, getBrushSize as _getBrushSize, setBrushSize as _setBrushSize, increaseBrushSize as _incBrush, decreaseBrushSize as _decBrush } from './terrain-coordinator/internals/tools.js';
+import { updateBaseGridTileInPlace as _updateBaseGridTileInPlace, replaceBaseGridTile as _replaceBaseGridTile } from './terrain-coordinator/internals/baseGridUpdates.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -499,22 +499,8 @@ export class TerrainCoordinator {
         defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT
       }, LOG_CATEGORY.USER);
 
-      // If we're outside terrain mode and rich shading is enabled with a selected biome, re-apply the biome canvas
-      try {
-        if (!this.isTerrainModeActive && typeof window !== 'undefined') {
-          const enabled = !!window.richShadingSettings?.enabled;
-          const hasBiome = !!window.selectedBiome;
-          if (enabled && hasBiome) {
-            this.applyBiomePaletteToBaseGrid();
-          } else if (!enabled) {
-            // Ensure base tiles are visible if shading is disabled
-            this._toggleBaseTileVisibility(true);
-            if (this._biomeCanvas) {
-              try { this._biomeCanvas.clear(); } catch (_) { /* ignore clear error */ }
-            }
-          }
-        }
-      } catch (_) { /* non-fatal */ }
+      // Outside terrain mode, synchronize biome shading state after reset
+      _handlePostResetShading(this);
     } catch (error) {
       GameErrors.operation(error, {
         stage: 'resetTerrain',
@@ -641,86 +627,7 @@ export class TerrainCoordinator {
    * @returns {boolean} True if tile was updated successfully, false if replacement needed
    */
   updateBaseGridTileInPlace(x, y, height) {
-    try {
-      // Find existing base grid tile at this position
-      let existingTile = null;
-      this.gameManager.gridContainer.children.forEach(child => {
-        if (child.isGridTile && child.gridX === x && child.gridY === y) {
-          existingTile = child;
-        }
-      });
-
-      if (!existingTile) {
-        return false; // No existing tile to update, need replacement
-      }
-
-      // Always reset to baseline before redrawing/applying effects to avoid cumulative offsets
-      if (typeof existingTile.baseIsoY === 'number') {
-        existingTile.y = existingTile.baseIsoY;
-      }
-
-      // If there is an existing shadow from a previous non-default height, remove it
-      if (existingTile.shadowTile && existingTile.parent?.children?.includes(existingTile.shadowTile)) {
-        existingTile.parent.removeChild(existingTile.shadowTile);
-        if (typeof existingTile.shadowTile.destroy === 'function' && !existingTile.shadowTile.destroyed) {
-          existingTile.shadowTile.destroy();
-        }
-        existingTile.shadowTile = null;
-      }
-      // Remove any existing base 3D faces
-      if (existingTile.baseSideFaces && existingTile.parent?.children?.includes(existingTile.baseSideFaces)) {
-        existingTile.parent.removeChild(existingTile.baseSideFaces);
-        if (typeof existingTile.baseSideFaces.destroy === 'function' && !existingTile.baseSideFaces.destroyed) {
-          existingTile.baseSideFaces.destroy();
-        }
-        existingTile.baseSideFaces = null;
-      }
-
-      // Decide styling based on whether terrain mode is active
-      const isEditing = !!this.isTerrainModeActive;
-      const fillColor = isEditing ? this.getColorForHeight(height) : this._getBiomeOrBaseColor(height);
-      const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
-      const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
-      const fillAlpha = isEditing ? 0.8 : 1.0;
-
-      // Clear and redraw the tile graphics content
-      existingTile.clear();
-      existingTile.lineStyle(1, borderColor, borderAlpha);
-      existingTile.beginFill(fillColor, fillAlpha);
-
-      // Redraw diamond shape
-      existingTile.moveTo(0, this.gameManager.tileHeight / 2);
-      existingTile.lineTo(this.gameManager.tileWidth / 2, 0);
-      existingTile.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
-      existingTile.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
-      existingTile.lineTo(0, this.gameManager.tileHeight / 2);
-      existingTile.endFill();
-
-      // Update tile properties
-      existingTile.terrainHeight = height;
-
-      // Apply elevation effect if needed (position only); visuals remain base color when not editing
-      if (height !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-        this.addVisualElevationEffect(existingTile, height);
-      } else if (typeof existingTile.baseIsoY === 'number') {
-        // Ensure baseline when default height
-        existingTile.y = existingTile.baseIsoY;
-      }
-
-      // Always attempt to add neighbor-aware base faces (3D walls)
-      // Faces will only render when this tile is higher than a neighbor (including height 0 over negative)
-      this._tileLifecycle.addBase3DFaces(existingTile, x, y, height);
-
-      return true; // Successfully updated in-place
-    } catch (error) {
-      logger.debug('In-place tile update failed, will use replacement', {
-        context: 'TerrainCoordinator.updateBaseGridTileInPlace',
-        coordinates: { x, y },
-        height,
-        error: error.message
-      }, LOG_CATEGORY.RENDERING);
-      return false; // Update failed, caller should use replacement
-    }
+    return _updateBaseGridTileInPlace(this, x, y, height);
   }
 
   /**
@@ -730,15 +637,7 @@ export class TerrainCoordinator {
    * @param {number} height - Terrain height value
    */
   replaceBaseGridTile(x, y, height) {
-    try {
-      const tilesToRemove = this._tileLifecycle.findGridTilesToRemove(x, y);
-      this._tileLifecycle.removeGridTilesSafely(tilesToRemove, x, y);
-      const newTile = this._tileLifecycle.createReplacementTile(x, y, height);
-      this._tileLifecycle.applyTileEffectsAndData(newTile, height, x, y);
-      this._tileLifecycle.logTileReplacementSuccess(x, y, height, tilesToRemove.length);
-    } catch (error) {
-      this._tileLifecycle.handleTileReplacementError(error, x, y, height);
-    }
+    return _replaceBaseGridTile(this, x, y, height);
   }
 
   /**
@@ -818,15 +717,7 @@ export class TerrainCoordinator {
 
   /** Optional: allow external systems/UI to set a deterministic seed for biome visuals. */
   setBiomeSeed(seed) {
-    if (!Number.isFinite(seed)) return;
-    this._biomeSeed = (seed >>> 0);
-    if (this._biomeCanvas) {
-      try { this._biomeCanvas.setSeed?.(this._biomeSeed); } catch (_) { /* ignore setSeed error */ }
-    }
-    // Repaint if active
-    if (!this.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-      try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* ignore repaint error */ }
-    }
+    return _setBiomeSeed(this, seed);
   }
 
   /** Show or hide the base tile fills (keeping borders) */
