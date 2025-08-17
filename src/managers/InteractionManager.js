@@ -10,6 +10,8 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHand
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { isPointInCellDiamond as _isPointInCellDiamond, pickTopmostGridCellAt as _pickTopmost } from './interaction-manager/internals/picking.js';
+import { startGridDragging as _startDrag, updateGridDragPosition as _updateDrag, stopGridDragging as _stopDrag } from './interaction-manager/internals/pan.js';
+import { handleZoomWheel as _handleZoomWheel, applyZoom as _applyZoom } from './interaction-manager/internals/zoom.js';
 
 export class InteractionManager {
   constructor(gameManager) {
@@ -139,21 +141,7 @@ export class InteractionManager {
    * @param {MouseEvent} event - Mouse event
    */
   startGridDragging(event) {
-    this.isDragging = true;
-    this.dragStartX = event.clientX;
-    this.dragStartY = event.clientY;
-    this.gridStartX = this.gameManager.gridContainer.x;
-    this.gridStartY = this.gameManager.gridContainer.y;
-    this.gameManager.app.view.style.cursor = 'grabbing';
-    
-    logger.log(LOG_LEVEL.TRACE, 'Grid dragging started', LOG_CATEGORY.USER, {
-      startPosition: { x: this.dragStartX, y: this.dragStartY },
-      gridPosition: { x: this.gridStartX, y: this.gridStartY },
-      currentScale: this.gridScale
-    });
-    
-    event.preventDefault();
-    event.stopPropagation();
+    return _startDrag(this, event);
   }
 
   /**
@@ -161,18 +149,14 @@ export class InteractionManager {
    * @param {MouseEvent} event - Mouse event
    */
   updateGridDragPosition(event) {
-    const deltaX = event.clientX - this.dragStartX;
-    const deltaY = event.clientY - this.dragStartY;
-    this.gameManager.gridContainer.x = this.gridStartX + deltaX;
-    this.gameManager.gridContainer.y = this.gridStartY + deltaY;
+    return _updateDrag(this, event);
   }
 
   /**
    * Stop grid dragging interaction
    */
   stopGridDragging() {
-    this.isDragging = false;
-    this.gameManager.app.view.style.cursor = this.isSpacePressed ? 'grab' : 'default';
+    return _stopDrag(this);
   }
 
   /**
@@ -190,28 +174,7 @@ export class InteractionManager {
    * @param {WheelEvent} event - Wheel event
    */
   handleZoomWheel(event) {
-    const rect = this.gameManager.app.view.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-    
-    const zoomDirection = event.deltaY > 0 ? -1 : 1;
-    const zoomFactor = 1 + (this.zoomSpeed * zoomDirection);
-    const newScale = this.gridScale * zoomFactor;
-    
-    if (newScale < this.minScale || newScale > this.maxScale) {
-      return;
-    }
-    
-    this.applyZoom(newScale, mouseX, mouseY);
-    logger.log(LOG_LEVEL.DEBUG, 'Zoom applied', LOG_CATEGORY.USER, {
-      zoomDirection,
-      zoomFactor,
-      previousScale: this.gridScale / zoomFactor,
-      newScale: this.gridScale,
-      zoomPercentage: `${(this.gridScale * 100).toFixed(0)}%`,
-      mousePosition: { x: mouseX, y: mouseY },
-      bounds: { min: this.minScale, max: this.maxScale }
-    });
+    return _handleZoomWheel(this, event);
   }
 
   /**
@@ -221,14 +184,7 @@ export class InteractionManager {
    * @param {number} mouseY - Mouse Y position
    */
   applyZoom(newScale, mouseX, mouseY) {
-    const localX = (mouseX - this.gameManager.gridContainer.x) / this.gridScale;
-    const localY = (mouseY - this.gameManager.gridContainer.y) / this.gridScale;
-    
-    this.gridScale = newScale;
-    this.gameManager.gridContainer.scale.set(this.gridScale);
-    
-    this.gameManager.gridContainer.x = mouseX - localX * this.gridScale;
-    this.gameManager.gridContainer.y = mouseY - localY * this.gridScale;
+    return _applyZoom(this, newScale, mouseX, mouseY);
   }
 
   /**
