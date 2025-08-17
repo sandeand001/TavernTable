@@ -34,6 +34,7 @@ import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-c
 import { handleGridResize as _handleResize } from './terrain-coordinator/internals/resize.js';
 import { setTerrainTool as _setTool, getBrushSize as _getBrushSize, setBrushSize as _setBrushSize, increaseBrushSize as _incBrush, decreaseBrushSize as _decBrush } from './terrain-coordinator/internals/tools.js';
 import { updateBaseGridTileInPlace as _updateBaseGridTileInPlace, replaceBaseGridTile as _replaceBaseGridTile } from './terrain-coordinator/internals/baseGridUpdates.js';
+import { resetTerrain as _resetTerrain } from './terrain-coordinator/internals/reset.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -478,41 +479,7 @@ export class TerrainCoordinator {
   /**
    * Reset all terrain heights to default
    */
-  resetTerrain() {
-    try {
-      this.initializeTerrainData();
-
-      if (this.terrainManager) {
-        this.terrainManager.refreshAllTerrainDisplay();
-      }
-
-      // Ensure UI height indicator reflects cleared state
-      if (typeof this.resetHeightIndicator === 'function') {
-        this.resetHeightIndicator();
-      }
-
-      logger.info('Terrain reset to default', {
-        context: 'TerrainCoordinator.resetTerrain',
-        gridDimensions: {
-          cols: this.gameManager.cols,
-          rows: this.gameManager.rows
-        },
-        defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT
-      }, LOG_CATEGORY.USER);
-
-      // Outside terrain mode, synchronize biome shading state after reset
-      _handlePostResetShading(this);
-    } catch (error) {
-      GameErrors.operation(error, {
-        stage: 'resetTerrain',
-        gridDimensions: {
-          cols: this.gameManager?.cols,
-          rows: this.gameManager?.rows
-        }
-      });
-      throw error;
-    }
-  }
+  resetTerrain() { return _resetTerrain(this); }
 
   /** Enable or disable the rich biome canvas shading outside terrain mode. */
   setRichShadingEnabled(enabled) {
