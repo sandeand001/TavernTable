@@ -30,6 +30,7 @@ import { validateApplicationRequirements as _validateApplyReqs, initializeBaseHe
 import { activateTerrainMode as _activateMode, loadTerrainStateAndDisplay as _loadStateAndDisplay, handleTerrainModeActivationError as _handleActivationError } from './terrain-coordinator/internals/mode.js';
 import { getGridCoordinatesFromEvent as _getCoordsFromEvent, modifyTerrainAtPosition as _modifyAtPos } from './terrain-coordinator/internals/inputs.js';
 import { setRichShadingEnabled as _setRichShadingEnabled, setBiomeSeed as _setBiomeSeed, handlePostResetShading as _handlePostResetShading } from './terrain-coordinator/internals/biome.js';
+import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-coordinator/internals/color.js';
 import { handleGridResize as _handleResize } from './terrain-coordinator/internals/resize.js';
 import { setTerrainTool as _setTool, getBrushSize as _getBrushSize, setBrushSize as _setBrushSize, increaseBrushSize as _incBrush, decreaseBrushSize as _decBrush } from './terrain-coordinator/internals/tools.js';
 import { updateBaseGridTileInPlace as _updateBaseGridTileInPlace, replaceBaseGridTile as _replaceBaseGridTile } from './terrain-coordinator/internals/baseGridUpdates.js';
@@ -705,9 +706,7 @@ export class TerrainCoordinator {
   // moved to TileLifecycleController: addBase3DFaces
   /** Determine base tile color when not editing: biome palette if selected, else neutral. */
   _getBiomeOrBaseColor(height) {
-    const gx = (this._currentColorEvalX ?? 0);
-    const gy = (this._currentColorEvalY ?? 0);
-    return this._biomeShading.getBiomeOrBaseColor(height, gx, gy);
+    return _getBiomeOrBaseColorInternal(this, height);
   }
 
   /** Re-color existing base grid tiles using currently selected biome palette. */
