@@ -9,6 +9,7 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { isPointInCellDiamond as _isPointInCellDiamond, pickTopmostGridCellAt as _pickTopmost } from './interaction-manager/internals/picking.js';
 
 export class InteractionManager {
   constructor(gameManager) {
@@ -334,28 +335,7 @@ export class InteractionManager {
    * Accounts for elevation offset so the test matches the visually shifted tile.
    */
   _isPointInCellDiamond(gx, gy, lx, ly) {
-    // Compute diamond center origin for cell without elevation
-    const baseX = (gx - gy) * (this.gameManager.tileWidth / 2);
-    const baseY = (gx + gy) * (this.gameManager.tileHeight / 2);
-
-    // Apply elevation visual offset for the cell
-    let elevOffset = 0;
-    try {
-      const h = this.gameManager?.terrainCoordinator?.dataStore?.get(gx, gy) ?? 0;
-      if (Number.isFinite(h)) {
-        elevOffset = TerrainHeightUtils.calculateElevationOffset(h);
-      }
-    } catch(_) { /* ignore data lookup failure */ }
-
-    const cx = baseX + (this.gameManager.tileWidth / 2);
-    const cy = baseY + (this.gameManager.tileHeight / 2) + elevOffset;
-
-    // Transform point into diamond-space: |dx|/(w/2) + |dy|/(h/2) <= 1
-    const dx = Math.abs(lx - cx);
-    const dy = Math.abs(ly - cy);
-    const halfW = this.gameManager.tileWidth / 2;
-    const halfH = this.gameManager.tileHeight / 2;
-    return (dx / halfW + dy / halfH) <= 1;
+    return _isPointInCellDiamond(this, gx, gy, lx, ly);
   }
 
   /**
@@ -363,111 +343,7 @@ export class InteractionManager {
    * Returns { gridX, gridY } or null.
    */
   pickTopmostGridCellAt(localX, localY) {
-    const gc = this.gameManager.gridContainer;
-    if (!gc) return null;
-
-    // Helper to test a tile top (grid or terrain overlay)
-    const hitTileTop = (tile) => {
-      const isGridTop = tile.isGridTile === true;
-      const isTerrainTop = tile.isTerrainTile === true;
-      if (!isGridTop && !isTerrainTop) return false;
-      const halfW = this.gameManager.tileWidth / 2;
-      const halfH = this.gameManager.tileHeight / 2;
-      const cx = tile.x + halfW;
-      // Compute Y center with elevation applied for both grid and terrain tiles
-      let baseY = isGridTop && typeof tile.baseIsoY === 'number' ? tile.baseIsoY : tile.y;
-      if (isGridTop) {
-        // Apply current terrain elevation so picking matches visual top face even when overlays are hidden
-        try {
-          const h = this.gameManager?.terrainCoordinator?.dataStore?.get(tile.gridX, tile.gridY) ?? 0;
-          if (Number.isFinite(h) && h !== 0) {
-            baseY += TerrainHeightUtils.calculateElevationOffset(h);
-          }
-        } catch(_) { /* ignore elevation lookup */ }
-      }
-      const cy = baseY + halfH;
-      const dx = Math.abs(localX - cx);
-      const dy = Math.abs(localY - cy);
-      return (dx / halfW + dy / halfH) <= 1;
-    };
-
-    // Build ordered candidate lists by zIndex to mirror actual draw order
-    const terrainContainer = this.gameManager?.terrainCoordinator?.terrainManager?.terrainContainer;
-    if (terrainContainer && terrainContainer.visible && terrainContainer.children && terrainContainer.children.length) {
-      // Filter to true top faces only and sort by zIndex descending (topmost first)
-      const terrainTops = terrainContainer.children
-        .filter(t => t && t.visible && t.isTerrainTile === true && t.isOverlayFace !== true && t.isShadowTile !== true)
-        .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
-      for (const t of terrainTops) {
-        if (hitTileTop(t)) {
-          return { gridX: t.gridX, gridY: t.gridY };
-        }
-      }
-    }
-
-    // Next, consider base grid tiles, sorted by their zIndex descending
-    const gridTops = gc.children
-      .filter(ch => ch && ch.visible && ch.isGridTile === true)
-      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
-    for (const tile of gridTops) {
-      if (hitTileTop(tile)) {
-        return { gridX: tile.gridX, gridY: tile.gridY };
-      }
-    }
-
-    // Fallback: coarse inverse mapping + neighbor refinement by diamond distance
-    const coarse = this.convertToGridCoordinates({ localX, localY });
-    if (!this.isValidGridPosition(coarse)) return null;
-
-    // Build small neighborhood around coarse guess
-    const candidates = [];
-    const pushIfValid = (gx, gy) => {
-      if (CoordinateUtils.isValidGridPosition(gx, gy, this.gameManager.cols, this.gameManager.rows)) {
-        candidates.push({ gx, gy });
-      }
-    };
-    pushIfValid(coarse.gridX, coarse.gridY);
-    // 4-neighbors
-    pushIfValid(coarse.gridX + 1, coarse.gridY);
-    pushIfValid(coarse.gridX - 1, coarse.gridY);
-    pushIfValid(coarse.gridX, coarse.gridY + 1);
-    pushIfValid(coarse.gridX, coarse.gridY - 1);
-    // diagonals
-    pushIfValid(coarse.gridX + 1, coarse.gridY + 1);
-    pushIfValid(coarse.gridX - 1, coarse.gridY - 1);
-    pushIfValid(coarse.gridX + 1, coarse.gridY - 1);
-    pushIfValid(coarse.gridX - 1, coarse.gridY + 1);
-
-    const halfW = this.gameManager.tileWidth / 2;
-    const halfH = this.gameManager.tileHeight / 2;
-
-    let best = null;
-    let bestScore = Infinity;
-    for (const c of candidates) {
-      // Compute diamond center analytically with elevation
-      const baseX = (c.gx - c.gy) * halfW;
-      const baseY = (c.gx + c.gy) * halfH;
-      let elev = 0;
-      try {
-        const h = this.gameManager?.terrainCoordinator?.dataStore?.get(c.gx, c.gy) ?? 0;
-        if (Number.isFinite(h)) elev = TerrainHeightUtils.calculateElevationOffset(h);
-      } catch(_) { /* ignore elevation lookup */ }
-      const cx = baseX + halfW;
-      const cy = baseY + halfH + elev;
-      const dx = Math.abs(localX - cx);
-      const dy = Math.abs(localY - cy);
-      const norm = (dx / halfW + dy / halfH);
-      if (norm < bestScore) {
-        bestScore = norm;
-        best = c;
-      }
-    }
-
-    // Accept best match even if slightly outside diamond to reduce edge misses
-    if (best) {
-      return { gridX: best.gx, gridY: best.gy };
-    }
-    return null;
+    return _pickTopmost(this, localX, localY);
   }
 
   /**
