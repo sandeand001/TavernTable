@@ -22,7 +22,16 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
-import { getCreatureButtons, getFacingButton } from './domHelpers.js';
+import {
+  getCreatureButtons,
+  getFacingButton,
+  getTerrainToolButtons,
+  getGridSizeInputs,
+  getTerrainResetButton,
+  getElevationScaleControls,
+  getBrushSizeDisplay,
+  getSpriteAdjustLogEl
+} from './domHelpers.js';
 
 /**
  * Toggle the visibility of the creature tokens panel
@@ -58,25 +67,7 @@ function toggleCreatureTokens() {
   }
 }
 
-// Small helper to DRY repeated log element lookups
-function getSpriteAdjustLogEl() {
-  return document.getElementById('sprite-adjust-log');
-}
-
-// Small helpers to DRY terrain tool buttons and grid size inputs
-function getTerrainToolButtons() {
-  return {
-    raiseBtn: document.getElementById('terrain-raise-btn'),
-    lowerBtn: document.getElementById('terrain-lower-btn')
-  };
-}
-
-function getGridSizeInputs() {
-  return {
-    widthInput: document.getElementById('grid-width'),
-    heightInput: document.getElementById('grid-height')
-  };
-}
+// selector helpers moved to domHelpers.js
 
 /**
  * Resize the game grid based on user input
@@ -245,7 +236,7 @@ function attachDynamicUIHandlers() {
     }
 
     // Terrain reset
-    const resetTerrainBtn = document.querySelector('.terrain-reset');
+    const resetTerrainBtn = getTerrainResetButton();
     if (resetTerrainBtn && !resetTerrainBtn.dataset.boundResetHandler) {
       // Use global resetTerrain wrapper to preserve confirmation & logging
       resetTerrainBtn.addEventListener('click', () => {
@@ -260,8 +251,7 @@ function attachDynamicUIHandlers() {
     }
 
     // Elevation perception slider
-    const elevSlider = document.getElementById('elevation-scale-range');
-    const elevValue = document.getElementById('elevation-scale-value');
+    const { slider: elevSlider, valueEl: elevValue } = getElevationScaleControls();
     if (elevSlider && !elevSlider.dataset.boundElevHandler) {
       const applyValue = (val) => {
         if (elevValue) elevValue.textContent = `${val} px/level`;
@@ -404,7 +394,7 @@ function decreaseBrushSize() {
  */
 function updateBrushSizeDisplay() {
   try {
-    const brushDisplay = document.getElementById('brush-size-display');
+    const brushDisplay = getBrushSizeDisplay();
     if (!brushDisplay) {
       return;
     }
