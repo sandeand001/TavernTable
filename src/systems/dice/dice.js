@@ -25,7 +25,7 @@ import { GameValidators } from '../../utils/Validation.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 import { DICE_CONFIG } from '../../config/GameConstants.js';
-import { getDiceCountEl, getDiceResultEl } from '../../ui/domHelpers.js';
+import { getDiceButtons, getDiceCountEl, getDiceResultEl } from '../../ui/domHelpers.js';
 
 // Dice rolling functionality with animation
 let isRolling = false;
@@ -114,6 +114,18 @@ export function rollDice(sides) {
     }
 
     isRolling = true;
+
+    // Soft-disable dice buttons to avoid rapid re-clicks during animation
+    const diceButtons = getDiceButtons();
+    diceButtons.forEach(btn => {
+      // Preserve prior disabled state
+      if (!btn.hasAttribute('data-prev-disabled')) {
+        btn.setAttribute('data-prev-disabled', btn.disabled ? '1' : '0');
+      }
+      btn.disabled = true;
+      btn.classList.add('disabled');
+      btn.setAttribute('aria-disabled', 'true');
+    });
     
     // Animation phase
     let animationFrame = 0;
@@ -153,6 +165,15 @@ export function rollDice(sides) {
           isRolling: isRolling
         });
         isRolling = false;
+        // Re-enable dice buttons based on previous state
+        const diceBtns = getDiceButtons();
+        diceBtns.forEach(btn => {
+          const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
+          btn.disabled = wasDisabled;
+          btn.classList.toggle('disabled', wasDisabled);
+          btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
+          btn.removeAttribute('data-prev-disabled');
+        });
       }
     };
 
@@ -219,6 +240,15 @@ export function rollDice(sides) {
           resultEl.style.color = DICE_CONFIG.COLORS.NORMAL_ROLL;
           resultEl.style.textShadow = 'none';
           isRolling = false;
+          // Re-enable dice buttons after successful roll concludes
+          const diceBtns = getDiceButtons();
+          diceBtns.forEach(btn => {
+            const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
+            btn.disabled = wasDisabled;
+            btn.classList.toggle('disabled', wasDisabled);
+            btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
+            btn.removeAttribute('data-prev-disabled');
+          });
         }, DICE_CONFIG.RESULT_DISPLAY_DURATION);
       } catch (error) {
         new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
@@ -231,6 +261,15 @@ export function rollDice(sides) {
           sidebarAvailable: !!window.sidebarController
         });
         isRolling = false;
+        // Re-enable dice buttons after result shows
+        const diceBtns = getDiceButtons();
+        diceBtns.forEach(btn => {
+          const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
+          btn.disabled = wasDisabled;
+          btn.classList.toggle('disabled', wasDisabled);
+          btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
+          btn.removeAttribute('data-prev-disabled');
+        });
       }
     };
     
@@ -251,6 +290,15 @@ export function rollDice(sides) {
       }
     });
     isRolling = false;
+    // Attempt to re-enable dice buttons on failure
+    const diceBtns = getDiceButtons();
+    diceBtns.forEach(btn => {
+      const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
+      btn.disabled = wasDisabled;
+      btn.classList.toggle('disabled', wasDisabled);
+      btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
+      btn.removeAttribute('data-prev-disabled');
+    });
     return false;
   }
 }

@@ -95,6 +95,12 @@ export function getDiceResultEl() {
   return document.getElementById('dice-result');
 }
 
+/** Returns all dice roll buttons in the dice panel. */
+export function getDiceButtons() {
+  // Only the top dice panel's buttons; does not include sidebar controls
+  return document.querySelectorAll('#dice-panel button');
+}
+
 /** Returns the terrain height display element. */
 export function getTerrainHeightDisplay() {
   return document.getElementById('terrain-height-display');
