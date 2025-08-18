@@ -19,6 +19,7 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from './Logger.js';
 import { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './error/enums.js';
 import { ErrorNotificationManager } from './error/notification.js';
+import { ErrorTelemetryManager } from './error/telemetry.js';
 
 // Re-export enums to preserve public API for existing imports from this module
 export { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './error/enums.js';
@@ -152,62 +153,7 @@ export class ErrorEntry {
  */
 // ErrorNotificationManager moved to ./error/notification.js
 
-/**
- * Telemetry manager for error reporting
- */
-export class ErrorTelemetryManager {
-  constructor(config) {
-    this.config = config;
-    this.pendingErrors = [];
-    this.sendTimeout = null;
-  }
-
-  async report(errorEntry) {
-    if (!this.config.enableTelemetry || !this.config.telemetryEndpoint) {
-      return;
-    }
-
-    this.pendingErrors.push(errorEntry.toJSON());
-    
-    // Batch send errors to reduce network requests
-    if (this.sendTimeout) {
-      clearTimeout(this.sendTimeout);
-    }
-    
-    this.sendTimeout = setTimeout(() => {
-      this.sendBatch();
-    }, 2000);
-  }
-
-  async sendBatch() {
-    if (this.pendingErrors.length === 0) return;
-
-    const errors = [...this.pendingErrors];
-    this.pendingErrors = [];
-
-    try {
-      await fetch(this.config.telemetryEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          errors,
-          metadata: {
-            userAgent: navigator.userAgent,
-            timestamp: new Date().toISOString(),
-            environment: this.config.environment
-          }
-        })
-      });
-    } catch (error) {
-      // Failed to send telemetry - add back to pending (with limit)
-      if (this.pendingErrors.length < 50) {
-        this.pendingErrors.unshift(...errors);
-      }
-    }
-  }
-}
+// ErrorTelemetryManager moved to ./error/telemetry.js
 
 /**
  * Main ErrorHandler class - Central error management system
