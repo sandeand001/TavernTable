@@ -4,7 +4,7 @@
  * Handles tab switching, dice log management, and sidebar interactions
  * Following clean, modular design principles with single responsibility
  */
-import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl, getTabButtons, getTabPanels, getGridOpacityControl, getAnimationSpeedControl } from './domHelpers.js';
+import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl, getTabButtons, getTabPanels, getGridOpacityControl, getAnimationSpeedControl, getBiomeButtons, getBiomeButtonByKey } from './domHelpers.js';
 
 class SidebarController {
   constructor() {
@@ -356,8 +356,8 @@ class SidebarController {
     try {
       const root = getBiomeRootEl();
       if (root) {
-        root.querySelectorAll('.biome-btn.selected').forEach(btn => btn.classList.remove('selected'));
-        const newly = root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+        getBiomeButtons(root).forEach(btn => btn.classList.remove('selected'));
+        const newly = getBiomeButtonByKey(biomeKey, root);
         if (newly) {
           newly.classList.add('selected');
           newly.setAttribute('aria-pressed', 'true');

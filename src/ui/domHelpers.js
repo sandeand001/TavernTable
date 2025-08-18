@@ -161,3 +161,15 @@ export function getAnimationSpeedControl() {
   const slider = document.getElementById('animation-speed');
   return { slider, valueEl: slider?.nextElementSibling || null };
 }
+
+/** Returns all biome button elements under the biome root (or provided root). */
+export function getBiomeButtons(root = getBiomeRootEl()) {
+  if (!root) return [];
+  return root.querySelectorAll('.biome-btn');
+}
+
+/** Returns a specific biome button by biome key under the biome root (or provided root). */
+export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
+  if (!root) return null;
+  return root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+}
