@@ -11,12 +11,12 @@ import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { isPointInCellDiamond as _isPointInCellDiamond, pickTopmostGridCellAt as _pickTopmost } from './interaction-manager/internals/picking.js';
 import { startGridDragging as _startDrag, updateGridDragPosition as _updateDrag, stopGridDragging as _stopDrag } from './interaction-manager/internals/pan.js';
-import { handleZoomWheel as _handleZoomWheel, applyZoom as _applyZoom } from './interaction-manager/internals/zoom.js';
+import { handleZoomWheel as _handleZoomWheel, applyZoom as _applyZoom, resetZoom as _resetZoom } from './interaction-manager/internals/zoom.js';
 
 export class InteractionManager {
   constructor(gameManager) {
     this.gameManager = gameManager;
-    
+
     // Grid panning variables
     this.isDragging = false;
     this.dragStartX = 0;
@@ -24,7 +24,7 @@ export class InteractionManager {
     this.gridStartX = 0;
     this.gridStartY = 0;
     this.isSpacePressed = false;
-    
+
     // Grid zoom variables
     this.gridScale = 1.0;
     this.minScale = 0.2;
@@ -191,19 +191,7 @@ export class InteractionManager {
    * Reset zoom to default scale and center grid
    */
   resetZoom() {
-    try {
-      this.gridScale = 1.0;
-      this.gameManager.gridContainer.scale.set(this.gridScale);
-      this.gameManager.centerGrid();
-      logger.debug('Grid zoom reset to default', {
-        newScale: this.gridScale
-      }, LOG_CATEGORY.USER);
-    } catch (error) {
-      const errorHandler = new ErrorHandler();
-      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.RENDERING, { 
-        stage: 'resetZoom' 
-      });
-    }
+    return _resetZoom(this);
   }
 
   /**
@@ -219,32 +207,32 @@ export class InteractionManager {
       // Check if terrain mode is active - if so, ignore token placement
       if (this.gameManager.isTerrainModeActive()) {
         // Terrain mode is active, token placement is disabled
-        logger.log('Token placement disabled while terrain mode is active', 
+        logger.log('Token placement disabled while terrain mode is active',
           LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION);
-        
+
         // Provide visual feedback through cursor change or similar
         this.gameManager.app.view.style.cursor = 'not-allowed';
         setTimeout(() => {
           this.gameManager.app.view.style.cursor = 'crosshair'; // Reset to terrain cursor
         }, 200);
-        
+
         return;
       }
-      
+
       const gridCoords = this.getGridCoordinatesFromClick(event);
       if (!gridCoords) {
         const errorHandler = new ErrorHandler();
         errorHandler.handle(
-          new Error('Click outside valid grid area'), 
-          ERROR_SEVERITY.INFO, 
-          ERROR_CATEGORY.VALIDATION, 
+          new Error('Click outside valid grid area'),
+          ERROR_SEVERITY.INFO,
+          ERROR_CATEGORY.VALIDATION,
           {
             event: { x: event.clientX, y: event.clientY }
           }
         );
         return;
       }
-      
+
       const { gridX, gridY } = gridCoords;
       this.gameManager.handleTokenInteraction(gridX, gridY);
     } catch (error) {
@@ -323,7 +311,7 @@ export class InteractionManager {
   convertToLocalCoordinates({ mouseX, mouseY }) {
     const gridRelativeX = mouseX - this.gameManager.gridContainer.x;
     const gridRelativeY = mouseY - this.gameManager.gridContainer.y;
-    
+
     return {
       localX: gridRelativeX / this.gridScale,
       localY: gridRelativeY / this.gridScale
@@ -370,7 +358,7 @@ export class InteractionManager {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition({ gridX, gridY }) {
-  // Consolidated validation: coordinates must be integers within grid bounds
+    // Consolidated validation: coordinates must be integers within grid bounds
     return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
   }
 

@@ -66,7 +66,8 @@ export class ElevationScaleController {
               // Re-add base faces using current base heights
               const gx = child.gridX, gy = child.gridY;
               const height = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
-              this.c._addBase3DFaces(child, gx, gy, height);
+              // Re-add base side faces using tile lifecycle controller
+              this.c._tileLifecycle.addBase3DFaces(child, gx, gy, height);
             } catch(_) { /* continue on error */ }
           }
         });

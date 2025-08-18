@@ -1,5 +1,5 @@
-import { CoordinateUtils } from '../../../../utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../../../../utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
 
 /**
  * Hit test an isometric diamond at grid cell (gx, gy) against a local point (lx, ly),
@@ -16,7 +16,7 @@ export function isPointInCellDiamond(c, gx, gy, lx, ly) {
     if (Number.isFinite(h)) {
       elevOffset = TerrainHeightUtils.calculateElevationOffset(h);
     }
-  } catch(_) { /* ignore data lookup failure */ }
+  } catch (_) { /* ignore data lookup failure */ }
 
   const cx = baseX + (c.gameManager.tileWidth / 2);
   const cy = baseY + (c.gameManager.tileHeight / 2) + elevOffset;
@@ -49,7 +49,7 @@ export function pickTopmostGridCellAt(c, localX, localY) {
         if (Number.isFinite(h) && h !== 0) {
           baseY += TerrainHeightUtils.calculateElevationOffset(h);
         }
-      } catch(_) { /* ignore elevation lookup */ }
+      } catch (_) { /* ignore elevation lookup */ }
     }
     const cy = baseY + halfH;
     const dx = Math.abs(localX - cx);
@@ -108,7 +108,7 @@ export function pickTopmostGridCellAt(c, localX, localY) {
     try {
       const h = c.gameManager?.terrainCoordinator?.dataStore?.get(can.gx, can.gy) ?? 0;
       if (Number.isFinite(h)) elev = TerrainHeightUtils.calculateElevationOffset(h);
-    } catch(_) { /* ignore elevation lookup */ }
+    } catch (_) { /* ignore elevation lookup */ }
     const cx = baseX + halfW;
     const cy = baseY + halfH + elev;
     const dx = Math.abs(localX - cx);

@@ -1,4 +1,5 @@
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../../utils/Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
 export function handleZoomWheel(c, event) {
   const rect = c.gameManager.app.view.getBoundingClientRect();
@@ -34,4 +35,20 @@ export function applyZoom(c, newScale, mouseX, mouseY) {
 
   c.gameManager.gridContainer.x = mouseX - localX * c.gridScale;
   c.gameManager.gridContainer.y = mouseY - localY * c.gridScale;
+}
+
+export function resetZoom(c) {
+  try {
+    c.gridScale = 1.0;
+    c.gameManager.gridContainer.scale.set(c.gridScale);
+    c.gameManager.centerGrid();
+    logger.debug('Grid zoom reset to default', {
+      newScale: c.gridScale
+    }, LOG_CATEGORY.USER);
+  } catch (error) {
+    const errorHandler = new ErrorHandler();
+    errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.RENDERING, {
+      stage: 'resetZoom'
+    });
+  }
 }

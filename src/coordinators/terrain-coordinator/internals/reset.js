@@ -1,7 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameErrors } from '../../../utils/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
-import { handlePostResetShading } from './biome.js';
+import * as biomeInternals from './biome.js';
 
 /**
  * Reset all terrain heights to default and refresh visuals.
@@ -31,7 +31,7 @@ export function resetTerrain(c) {
     }, LOG_CATEGORY.USER);
 
     // Outside terrain mode, synchronize biome shading state after reset
-    handlePostResetShading(c);
+    biomeInternals.handlePostResetShading?.(c);
   } catch (error) {
     GameErrors.operation(error, {
       stage: 'resetTerrain',

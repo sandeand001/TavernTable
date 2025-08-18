@@ -7,7 +7,7 @@
 
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
-import { GameValidators, Sanitizers } from '../utils/Validation.js';
+// Validation utilities are referenced within internals; no direct import needed here
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 // import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 // import { darkenColor, lightenColor } from '../utils/ColorUtils.js';
@@ -17,7 +17,7 @@ import { TerrainBrushController } from '../terrain/TerrainBrushController.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 // import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
 // import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+// import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainInputHandlers } from './terrain-coordinator/TerrainInputHandlers.js';
 import { ElevationScaleController } from './terrain-coordinator/ElevationScaleController.js';
 import { ActivationHelpers } from './terrain-coordinator/ActivationHelpers.js';
@@ -32,9 +32,15 @@ import { getGridCoordinatesFromEvent as _getCoordsFromEvent, modifyTerrainAtPosi
 import { setRichShadingEnabled as _setRichShadingEnabled, setBiomeSeed as _setBiomeSeed } from './terrain-coordinator/internals/biome.js';
 import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-coordinator/internals/color.js';
 import { handleGridResize as _handleResize } from './terrain-coordinator/internals/resize.js';
+import { getTerrainHeight as _getHeight } from './terrain-coordinator/internals/height.js';
+import { isValidGridPosition as _isValidPos } from './terrain-coordinator/internals/coords.js';
+import { modifyTerrainHeightAtCell as _modifyAtCell } from './terrain-coordinator/internals/brush.js';
 import { setTerrainTool as _setTool, getBrushSize as _getBrushSize, setBrushSize as _setBrushSize, increaseBrushSize as _incBrush, decreaseBrushSize as _decBrush } from './terrain-coordinator/internals/tools.js';
 import { updateBaseGridTileInPlace as _updateBaseGridTileInPlace, replaceBaseGridTile as _replaceBaseGridTile } from './terrain-coordinator/internals/baseGridUpdates.js';
 import { resetTerrain as _resetTerrain } from './terrain-coordinator/internals/reset.js';
+import { loadBaseTerrainIntoWorkingState as _loadBaseIntoWorking } from './terrain-coordinator/internals/state.js';
+import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/init.js';
+import { validateDependencies as _validateDeps } from './terrain-coordinator/internals/deps.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -84,37 +90,7 @@ export class TerrainCoordinator {
    * Validate that all required dependencies are available
    * @private
    */
-  validateDependencies() {
-    const missingDependencies = [];
-
-    // Check required utilities
-    if (!GameValidators) {
-      missingDependencies.push('GameValidators');
-    }
-    if (!Sanitizers) {
-      missingDependencies.push('Sanitizers');
-    }
-
-    // Check specific methods we need
-    if (typeof Sanitizers?.enum !== 'function') {
-      logger.warn('Sanitizers.enum method not available', {
-        context: 'TerrainCoordinator.validateDependencies',
-        sanitizersType: typeof Sanitizers,
-        enumType: typeof Sanitizers?.enum,
-        availableMethods: Sanitizers ? Object.keys(Sanitizers) : []
-      });
-    }
-
-    if (missingDependencies.length > 0) {
-      throw new Error(`Missing required dependencies: ${missingDependencies.join(', ')}`);
-    }
-
-    logger.debug('Dependencies validated', {
-      context: 'TerrainCoordinator.validateDependencies',
-      sanitizersEnumAvailable: typeof Sanitizers?.enum === 'function',
-      allDependenciesValid: missingDependencies.length === 0
-    }, LOG_CATEGORY.SYSTEM);
-  }
+  validateDependencies() { return _validateDeps(this); }
 
   /**
    * Initialize terrain system and create managers
@@ -167,38 +143,7 @@ export class TerrainCoordinator {
   /**
    * Initialize terrain height data for the current grid
    */
-  initializeTerrainData() {
-    try {
-      const cols = this.gameManager.cols;
-      const rows = this.gameManager.rows;
-
-      // Validate grid dimensions
-      if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0) {
-        throw new Error(`Invalid grid dimensions: ${cols}x${rows}`);
-      }
-
-      // Ensure datastore is sized properly
-      this.dataStore.resize(cols, rows);
-
-      logger.debug('Terrain data initialized', {
-        context: 'TerrainCoordinator.initializeTerrainData',
-        stage: 'data_initialization',
-        gridDimensions: { cols, rows },
-        totalCells: cols * rows,
-        defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT,
-        dataStructure: 'complete'
-      }, LOG_CATEGORY.SYSTEM);
-    } catch (error) {
-      GameErrors.initialization(error, {
-        stage: 'initializeTerrainData',
-        gridDimensions: {
-          cols: this.gameManager?.cols,
-          rows: this.gameManager?.rows
-        }
-      });
-      throw error;
-    }
-  }
+  initializeTerrainData() { return _initTerrainData(this); }
 
   /**
    * Set up terrain-specific input event handlers
@@ -307,8 +252,7 @@ export class TerrainCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   modifyTerrainHeightAtCell(gridX, gridY) {
-    // Delegate to brush controller (kept for compatibility of method name)
-    this.brush.applyAt(gridX, gridY);
+    return _modifyAtCell(this, gridX, gridY);
   }
 
   /**
@@ -318,7 +262,7 @@ export class TerrainCoordinator {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition(gridX, gridY) {
-    return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
+    return _isValidPos(this, gridX, gridY);
   }
 
   /**
@@ -455,25 +399,7 @@ export class TerrainCoordinator {
    * @returns {number} Terrain height
    */
   getTerrainHeight(gridX, gridY) {
-    // Defensive bounds checks to avoid out-of-range indexing
-    const heights = this.dataStore?.working;
-    if (!heights || !Array.isArray(heights)) {
-      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
-    }
-    if (!Number.isInteger(gridX) || !Number.isInteger(gridY)) {
-      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
-    }
-    if (gridY < 0 || gridY >= heights.length) {
-      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
-    }
-    const row = heights[gridY];
-    if (!Array.isArray(row)) {
-      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
-    }
-    if (gridX < 0 || gridX >= row.length) {
-      return TERRAIN_CONFIG.DEFAULT_HEIGHT;
-    }
-    return row[gridX];
+    return _getHeight(this, gridX, gridY);
   }
 
   /**
@@ -498,34 +424,7 @@ export class TerrainCoordinator {
   /**
    * Load base terrain state into working terrain heights for editing
    */
-  loadBaseTerrainIntoWorkingState() {
-    try {
-      if (!this.dataStore.base) {
-        logger.warn('No base terrain heights available, initializing default state', {
-          context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState'
-        });
-        this.initializeTerrainData();
-        return;
-      }
-
-      // Deep copy base terrain heights into working state
-      this.dataStore.loadBaseIntoWorking();
-
-      logger.debug('Base terrain loaded into working state', {
-        context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState',
-        gridDimensions: {
-          cols: this.gameManager.cols,
-          rows: this.gameManager.rows
-        }
-      }, LOG_CATEGORY.SYSTEM);
-    } catch (error) {
-      GameErrors.gameState(error, {
-        stage: 'loadBaseTerrainIntoWorkingState',
-        context: 'TerrainCoordinator.loadBaseTerrainIntoWorkingState'
-      });
-      throw error;
-    }
-  }
+  loadBaseTerrainIntoWorkingState() { return _loadBaseIntoWorking(this); }
 
   /**
    * Apply terrain modifications permanently to the base grid
@@ -701,5 +600,18 @@ export class TerrainCoordinator {
    */
   addVisualElevationEffect(tile, height) {
     return this._elevationVisuals.addVisualElevationEffect(tile, height);
+  }
+
+  /**
+   * Pass-through: get color for a given height when editing terrain.
+   * Uses TerrainManager's palette logic if available; falls back to biome/base color.
+   */
+  getColorForHeight(height) {
+    try {
+      if (this.terrainManager && typeof this.terrainManager.getColorForHeight === 'function') {
+        return this.terrainManager.getColorForHeight(height);
+      }
+    } catch (_) { /* ignore and fall back */ }
+    return this._getBiomeOrBaseColor(height);
   }
 }
