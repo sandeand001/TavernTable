@@ -63,6 +63,21 @@ function getSpriteAdjustLogEl() {
   return document.getElementById('sprite-adjust-log');
 }
 
+// Small helpers to DRY terrain tool buttons and grid size inputs
+function getTerrainToolButtons() {
+  return {
+    raiseBtn: document.getElementById('terrain-raise-btn'),
+    lowerBtn: document.getElementById('terrain-lower-btn')
+  };
+}
+
+function getGridSizeInputs() {
+  return {
+    widthInput: document.getElementById('grid-width'),
+    heightInput: document.getElementById('grid-height')
+  };
+}
+
 /**
  * Resize the game grid based on user input
  * Validates input values and delegates to GameManager for actual resizing
@@ -79,8 +94,7 @@ function resizeGrid() {
     }
 
     // Get and validate input elements
-    const widthInput = document.getElementById('grid-width');
-    const heightInput = document.getElementById('grid-height');
+    const { widthInput, heightInput } = getGridSizeInputs();
 
     const widthValidation = GameValidators.domElement(widthInput, 'input');
     const heightValidation = GameValidators.domElement(heightInput, 'input');
@@ -108,8 +122,8 @@ function resizeGrid() {
       context: 'resizeGrid',
       stage: 'grid_resize_validation',
       inputValues: {
-        width: document.getElementById('grid-width')?.value,
-        height: document.getElementById('grid-height')?.value
+        width: getGridSizeInputs().widthInput?.value,
+        height: getGridSizeInputs().heightInput?.value
       },
       constraints: {
         minWidth: GRID_CONFIG.MIN_COLS,
@@ -220,8 +234,7 @@ function attachDynamicUIHandlers() {
     }
 
     // Terrain tool buttons
-    const raiseBtn = document.getElementById('terrain-raise-btn');
-    const lowerBtn = document.getElementById('terrain-lower-btn');
+    const { raiseBtn, lowerBtn } = getTerrainToolButtons();
     if (raiseBtn && !raiseBtn.dataset.boundTerrainHandler) {
       raiseBtn.addEventListener('click', () => window.gameManager.setTerrainTool('raise'));
       raiseBtn.dataset.boundTerrainHandler = 'true';
@@ -307,8 +320,7 @@ function setTerrainTool(tool) {
     window.gameManager.setTerrainTool(tool);
 
     // Update UI button states
-    const raiseBtn = document.getElementById('terrain-raise-btn');
-    const lowerBtn = document.getElementById('terrain-lower-btn');
+    const { raiseBtn, lowerBtn } = getTerrainToolButtons();
 
     if (raiseBtn && lowerBtn) {
       // Remove active class from all buttons
