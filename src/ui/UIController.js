@@ -58,6 +58,11 @@ function toggleCreatureTokens() {
   }
 }
 
+// Small helper to DRY repeated log element lookups
+function getSpriteAdjustLogEl() {
+  return document.getElementById('sprite-adjust-log');
+}
+
 /**
  * Resize the game grid based on user input
  * Validates input values and delegates to GameManager for actual resizing
@@ -530,7 +535,7 @@ function getSelectedCreatureSprite() {
 
 function captureSpriteBaseline() {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   if (!spriteAdjustState.initialPlacementLogged) {
     logEl.textContent += `Original placement at (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)})\n`;
@@ -546,7 +551,7 @@ function captureSpriteBaseline() {
 
 function nudgeSelectedSprite(dx, dy) {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   if (!spriteAdjustState.initialPlacementLogged) {
     logEl.textContent += `Original placement at (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)})\n`;
@@ -612,7 +617,7 @@ function ensureSpriteAdjustExtendedState() {
 
 function saveSpriteOffset() {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   ensureSpriteAdjustExtendedState();
   if (!spriteAdjustState.baselineCaptured) {
@@ -629,7 +634,7 @@ function saveSpriteOffset() {
 
 function resetSpriteOffset() {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   ensureSpriteAdjustExtendedState();
   const key = getCurrentSpriteKey(sprite);
@@ -646,7 +651,7 @@ function toggleAutoApplyOffsets() {
   spriteAdjustState.autoApply = !spriteAdjustState.autoApply;
   const btn = document.getElementById('toggle-auto-apply');
   if (btn) btn.textContent = `⚡ Auto Apply: ${spriteAdjustState.autoApply ? 'On' : 'Off'}`;
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (logEl) {
     logEl.textContent += `Auto-Apply ${spriteAdjustState.autoApply ? 'ENABLED' : 'DISABLED'}\n`;
     logEl.scrollTop = logEl.scrollHeight;
@@ -663,7 +668,7 @@ function applySavedOffsetToSprite(sprite, silent = false) {
     sprite.x += saved.x;
     sprite.y += saved.y;
     if (!silent) {
-      const logEl = document.getElementById('sprite-adjust-log');
+      const logEl = getSpriteAdjustLogEl();
       if (logEl) {
         logEl.textContent += `Applied saved offset for [${key}] Δ=(${saved.x},${saved.y}) now=(${sprite.x.toFixed(1)},${sprite.y.toFixed(1)})\n`;
         logEl.scrollTop = logEl.scrollHeight;
@@ -701,7 +706,7 @@ function installSpriteOffsetAutoApplyHook() {
   };
   tm[candidateFnName]._wrappedForAutoApply = true;
   spriteAdjustState._autoApplyHookInstalled = true;
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (logEl) {
     logEl.textContent += `Installed auto-apply hook on TokenManager.${candidateFnName}\n`;
     logEl.scrollTop = logEl.scrollHeight;
@@ -738,7 +743,7 @@ window.reapplySpriteOffsets = function () {
 };
 window.logInitialSpritePlacement = () => {
   const s = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (s && logEl && !spriteAdjustState.initialPlacementLogged) {
     logEl.textContent += `Original placement at (${s.x.toFixed(1)}, ${s.y.toFixed(1)})\n`;
     spriteAdjustState.initialPlacementLogged = true;
