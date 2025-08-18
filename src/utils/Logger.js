@@ -72,10 +72,10 @@ export class LogEntry {
 
   sanitizeData(data) {
     if (!data || typeof data !== 'object') return data;
-    
+
     const sanitized = {};
     const sensitivePatterns = /password|token|secret|key|auth|credential|ssn|credit/i;
-    
+
     for (const [key, value] of Object.entries(data)) {
       if (sensitivePatterns.test(key)) {
         sanitized[key] = '[REDACTED]';
@@ -87,7 +87,7 @@ export class LogEntry {
         sanitized[key] = value;
       }
     }
-    
+
     return sanitized;
   }
 
@@ -118,7 +118,7 @@ export class LogEntry {
     if (typeof performance !== 'undefined') {
       return {
         timing: performance.now(),
-        navigation: performance.getEntriesByType ? 
+        navigation: performance.getEntriesByType ?
           performance.getEntriesByType('navigation')[0] : null
       };
     }
@@ -202,7 +202,7 @@ export class ConsoleOutputHandler {
     const levelName = Object.keys(LOG_LEVEL).find(key => LOG_LEVEL[key] === logEntry.level) || 'UNKNOWN';
     const color = this.colors[logEntry.level] || '';
     const timestamp = new Date(logEntry.timestamp).toLocaleTimeString();
-    
+
     const prefix = `${color}[${timestamp}] ${levelName} [${logEntry.category}]${this.reset}`;
     const message = `${prefix} ${logEntry.message}`;
 
@@ -249,7 +249,7 @@ export class MemoryOutputHandler {
     if (!this.config.enableMemory) return;
 
     this.logs.push(logEntry);
-    
+
     // Maintain size limit
     if (this.logs.length > this.maxLogs) {
       this.logs.shift();
@@ -325,7 +325,7 @@ export class RemoteOutputHandler {
     if (!this.config.enableRemote || !this.config.remoteEndpoint) return;
 
     this.buffer.push(logEntry.toJSON());
-    
+
     // Send batch when buffer is full or after timeout
     if (this.buffer.length >= this.batchSize) {
       this.flush();
@@ -336,7 +336,7 @@ export class RemoteOutputHandler {
 
   scheduleFlush() {
     if (this.sendTimeout) return;
-    
+
     this.sendTimeout = setTimeout(() => {
       this.flush();
     }, this.flushInterval);
@@ -347,7 +347,7 @@ export class RemoteOutputHandler {
 
     const logs = [...this.buffer];
     this.buffer = [];
-    
+
     if (this.sendTimeout) {
       clearTimeout(this.sendTimeout);
       this.sendTimeout = null;
@@ -397,7 +397,7 @@ export class PerformanceMonitor {
   startTimer(operationName, context = {}) {
     const timerId = `${operationName}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const startTime = performance.now();
-    
+
     this.activeTimers.set(timerId, {
       operationName,
       startTime,
@@ -416,7 +416,7 @@ export class PerformanceMonitor {
 
     const endTime = performance.now();
     const duration = endTime - timer.startTime;
-    
+
     this.activeTimers.delete(timerId);
 
     this.logger.info(`Operation completed: ${timer.operationName}`, {
@@ -439,9 +439,9 @@ export class PerformanceMonitor {
         this.endTimer(timerId, { success: true });
         return result;
       } catch (error) {
-        this.endTimer(timerId, { 
-          success: false, 
-          error: error.message 
+        this.endTimer(timerId, {
+          success: false,
+          error: error.message
         });
         throw error;
       }
@@ -456,9 +456,9 @@ export class PerformanceMonitor {
         this.endTimer(timerId, { success: true });
         return result;
       } catch (error) {
-        this.endTimer(timerId, { 
-          success: false, 
-          error: error.message 
+        this.endTimer(timerId, {
+          success: false,
+          error: error.message
         });
         throw error;
       }
@@ -476,7 +476,7 @@ export class Logger {
     this.performanceMonitor = new PerformanceMonitor(this);
     this.contextStack = [];
     this.initialized = false;
-    
+
     this.initialize();
   }
 
@@ -487,7 +487,7 @@ export class Logger {
     this.outputHandlers.push(new ConsoleOutputHandler(this.config));
     this.memoryHandler = new MemoryOutputHandler(this.config);
     this.outputHandlers.push(this.memoryHandler);
-    
+
     if (this.config.enableRemote) {
       this.remoteHandler = new RemoteOutputHandler(this.config);
       this.outputHandlers.push(this.remoteHandler);
@@ -717,7 +717,7 @@ export class Logger {
    */
   updateConfig(newConfig) {
     this.config = new LoggerConfig({ ...this.config, ...newConfig });
-    
+
     // Reinitialize handlers if needed
     this.outputHandlers = [];
     this.initialize();
@@ -728,13 +728,13 @@ export class Logger {
    */
   async flush() {
     const promises = [];
-    
+
     for (const handler of this.outputHandlers) {
       if (handler.flush) {
         promises.push(handler.flush());
       }
     }
-    
+
     await Promise.all(promises);
   }
 
@@ -747,7 +747,7 @@ export class Logger {
         handler.destroy();
       }
     }
-    
+
     this.outputHandlers = [];
     this.initialized = false;
   }
@@ -759,7 +759,7 @@ const getEnvironment = () => {
   if (typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env) {
     return globalThis.process.env.NODE_ENV || 'development';
   }
-  
+
   // Browser environment - check for common production indicators
   if (typeof window !== 'undefined') {
     // Check if we're on localhost or development domains
@@ -769,7 +769,7 @@ const getEnvironment = () => {
     }
     return 'production';
   }
-  
+
   // Default fallback
   return 'development';
 };
@@ -796,43 +796,43 @@ export const GameLogger = {
   /**
    * Log system operations
    */
-  system: (message, data = {}, level = LOG_LEVEL.INFO) => 
+  system: (message, data = {}, level = LOG_LEVEL.INFO) =>
     logger.log(level, LOG_CATEGORY.SYSTEM, message, data),
 
   /**
    * Log performance metrics
    */
-  performance: (message, data = {}) => 
+  performance: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.PERFORMANCE),
 
   /**
    * Log user interactions
    */
-  user: (message, data = {}) => 
+  user: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.USER),
 
   /**
    * Log API operations
    */
-  api: (message, data = {}, level = LOG_LEVEL.INFO) => 
+  api: (message, data = {}, level = LOG_LEVEL.INFO) =>
     logger.log(level, LOG_CATEGORY.API, message, data),
 
   /**
    * Log security events
    */
-  security: (message, data = {}, level = LOG_LEVEL.WARN) => 
+  security: (message, data = {}, level = LOG_LEVEL.WARN) =>
     logger.log(level, LOG_CATEGORY.SECURITY, message, data),
 
   /**
    * Log business logic operations
    */
-  business: (message, data = {}) => 
+  business: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.BUSINESS),
 
   /**
    * Log audit trail events
    */
-  audit: (message, data = {}) => 
+  audit: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.AUDIT)
 };
 

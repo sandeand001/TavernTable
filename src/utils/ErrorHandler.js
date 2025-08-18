@@ -97,10 +97,10 @@ export class ErrorEntry {
     // Remove sensitive information and limit context size
     const sanitized = {};
     const maxValueLength = 1000;
-    
+
     for (const [key, value] of Object.entries(context)) {
       if (this.isSensitiveKey(key)) continue;
-      
+
       if (typeof value === 'string' && value.length > maxValueLength) {
         sanitized[key] = value.substring(0, maxValueLength) + '...';
       } else if (typeof value === 'object' && value !== null) {
@@ -109,7 +109,7 @@ export class ErrorEntry {
         sanitized[key] = value;
       }
     }
-    
+
     return sanitized;
   }
 
@@ -209,10 +209,10 @@ export class ErrorHandler {
     try {
       // Create structured error entry
       const errorEntry = new ErrorEntry(error, severity, category, context);
-      
+
       // Add to internal log
       this.addToLog(errorEntry);
-      
+
       // Log to central Logger system
       const logLevel = this.mapSeverityToLogLevel(severity);
       this.logger.log(logLevel, LOG_CATEGORY.ERROR, errorEntry.message, {
@@ -224,19 +224,19 @@ export class ErrorHandler {
         url: errorEntry.url,
         sessionId: errorEntry.sessionId
       });
-      
+
       // User notification
       this.notificationManager.show(errorEntry, recoveryStrategy);
-      
+
       // Telemetry reporting
       this.telemetryManager.report(errorEntry);
-      
+
       // Track error frequency
       this.trackErrorFrequency(errorEntry);
-      
+
       // Apply recovery strategy
       this.applyRecoveryStrategy(errorEntry, recoveryStrategy);
-      
+
       return errorEntry.id;
     } catch (handlerError) {
       // Fallback error handling to prevent infinite loops
@@ -249,7 +249,7 @@ export class ErrorHandler {
 
   addToLog(errorEntry) {
     this.errorLog.push(errorEntry);
-    
+
     // Maintain log size limit
     if (this.errorLog.length > this.config.maxLogEntries) {
       this.errorLog.shift();
@@ -398,7 +398,7 @@ export class ErrorHandler {
       total: this.errorLog.length,
       bySeverity: {},
       byCategory: {},
-      recent: this.errorLog.filter(e => 
+      recent: this.errorLog.filter(e =>
         new Date() - new Date(e.timestamp) < 3600000 // Last hour
       ).length
     };
@@ -475,7 +475,7 @@ const getEnvironment = () => {
   if (typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env) {
     return globalThis.process.env.NODE_ENV || 'development';
   }
-  
+
   // Browser environment - check for common production indicators
   if (typeof window !== 'undefined') {
     // Check if we're on localhost or development domains
@@ -485,7 +485,7 @@ const getEnvironment = () => {
     }
     return 'production';
   }
-  
+
   // Default fallback
   return 'development';
 };
@@ -521,10 +521,10 @@ export const GameErrors = {
    */
   initialization(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.RELOAD) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.CRITICAL, 
-      ERROR_CATEGORY.INITIALIZATION, 
-      context, 
+      error,
+      ERROR_SEVERITY.CRITICAL,
+      ERROR_CATEGORY.INITIALIZATION,
+      context,
       recoveryStrategy
     );
   },
@@ -538,10 +538,10 @@ export const GameErrors = {
    */
   rendering(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.GRACEFUL_DEGRADATION) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.ERROR, 
-      ERROR_CATEGORY.RENDERING, 
-      context, 
+      error,
+      ERROR_SEVERITY.ERROR,
+      ERROR_CATEGORY.RENDERING,
+      context,
       recoveryStrategy
     );
   },
@@ -554,9 +554,9 @@ export const GameErrors = {
    */
   validation(error, context = {}) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.WARNING, 
-      ERROR_CATEGORY.VALIDATION, 
+      error,
+      ERROR_SEVERITY.WARNING,
+      ERROR_CATEGORY.VALIDATION,
       context
     );
   },
@@ -570,10 +570,10 @@ export const GameErrors = {
    */
   assets(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.FALLBACK) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.WARNING, 
-      ERROR_CATEGORY.ASSETS, 
-      context, 
+      error,
+      ERROR_SEVERITY.WARNING,
+      ERROR_CATEGORY.ASSETS,
+      context,
       recoveryStrategy
     );
   },
@@ -587,10 +587,10 @@ export const GameErrors = {
    */
   sprites(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.FALLBACK) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.WARNING, 
-      ERROR_CATEGORY.TOKEN, 
-      context, 
+      error,
+      ERROR_SEVERITY.WARNING,
+      ERROR_CATEGORY.TOKEN,
+      context,
       recoveryStrategy
     );
   },
@@ -604,10 +604,10 @@ export const GameErrors = {
    */
   input(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.RETRY) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.WARNING, 
-      ERROR_CATEGORY.INPUT, 
-      context, 
+      error,
+      ERROR_SEVERITY.WARNING,
+      ERROR_CATEGORY.INPUT,
+      context,
       recoveryStrategy
     );
   },
@@ -621,10 +621,10 @@ export const GameErrors = {
    */
   network(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.RETRY) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.ERROR, 
-      ERROR_CATEGORY.NETWORK, 
-      context, 
+      error,
+      ERROR_SEVERITY.ERROR,
+      ERROR_CATEGORY.NETWORK,
+      context,
       recoveryStrategy
     );
   },
@@ -638,10 +638,10 @@ export const GameErrors = {
    */
   coordinate(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.FALLBACK) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.WARNING, 
-      ERROR_CATEGORY.COORDINATE, 
-      context, 
+      error,
+      ERROR_SEVERITY.WARNING,
+      ERROR_CATEGORY.COORDINATE,
+      context,
       recoveryStrategy
     );
   },
@@ -655,10 +655,10 @@ export const GameErrors = {
    */
   gameState(error, context = {}, recoveryStrategy = RECOVERY_STRATEGY.RESET) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.ERROR, 
-      ERROR_CATEGORY.GAME_STATE, 
-      context, 
+      error,
+      ERROR_SEVERITY.ERROR,
+      ERROR_CATEGORY.GAME_STATE,
+      context,
       recoveryStrategy
     );
   },
@@ -671,10 +671,10 @@ export const GameErrors = {
    */
   performance(error, context = {}) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.WARNING, 
-      ERROR_CATEGORY.PERFORMANCE, 
-      context, 
+      error,
+      ERROR_SEVERITY.WARNING,
+      ERROR_CATEGORY.PERFORMANCE,
+      context,
       RECOVERY_STRATEGY.GRACEFUL_DEGRADATION
     );
   },
@@ -687,9 +687,9 @@ export const GameErrors = {
    */
   security(error, context = {}) {
     return errorHandler.handle(
-      error, 
-      ERROR_SEVERITY.CRITICAL, 
-      ERROR_CATEGORY.SECURITY, 
+      error,
+      ERROR_SEVERITY.CRITICAL,
+      ERROR_CATEGORY.SECURITY,
       context
     );
   },
@@ -705,9 +705,9 @@ export const GameErrors = {
   generic(error, context = {}, severity = ERROR_SEVERITY.ERROR, recoveryStrategy = RECOVERY_STRATEGY.NONE) {
     // Attempt to auto-categorize based on error message/context
     let category = ERROR_CATEGORY.SYSTEM;
-    
+
     const errorMsg = (error instanceof Error ? error.message : error).toLowerCase();
-    
+
     if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
       category = ERROR_CATEGORY.NETWORK;
     } else if (errorMsg.includes('render') || errorMsg.includes('display')) {
@@ -721,7 +721,7 @@ export const GameErrors = {
     } else if (errorMsg.includes('coordinate') || errorMsg.includes('position')) {
       category = ERROR_CATEGORY.COORDINATE;
     }
-    
+
     return errorHandler.handle(error, severity, category, context, recoveryStrategy);
   }
 };
@@ -763,10 +763,10 @@ export function withErrorHandling(asyncFn, context = {}, category = ERROR_CATEGO
  * @returns {Function} Method decorator
  */
 export function handleErrors(category = ERROR_CATEGORY.SYSTEM, recoveryStrategy = RECOVERY_STRATEGY.NONE) {
-  return function(target, propertyKey, descriptor) {
+  return function (target, propertyKey, descriptor) {
     const originalMethod = descriptor.value;
-    
-    descriptor.value = async function(...args) {
+
+    descriptor.value = async function (...args) {
       try {
         return await originalMethod.apply(this, args);
       } catch (error) {
@@ -778,7 +778,7 @@ export function handleErrors(category = ERROR_CATEGORY.SYSTEM, recoveryStrategy 
         throw error;
       }
     };
-    
+
     return descriptor;
   };
 }
@@ -793,11 +793,11 @@ export function handleErrors(category = ERROR_CATEGORY.SYSTEM, recoveryStrategy 
 export function withPerformanceMonitoring(fn, operationName, thresholdMs = 1000) {
   return async (...args) => {
     const startTime = performance.now();
-    
+
     try {
       const result = await fn(...args);
       const duration = performance.now() - startTime;
-      
+
       if (duration > thresholdMs) {
         GameErrors.performance(`Slow operation detected: ${operationName}`, {
           operation: operationName,
@@ -805,7 +805,7 @@ export function withPerformanceMonitoring(fn, operationName, thresholdMs = 1000)
           threshold: thresholdMs
         });
       }
-      
+
       return result;
     } catch (error) {
       const duration = performance.now() - startTime;

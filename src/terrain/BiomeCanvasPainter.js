@@ -9,6 +9,8 @@
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { styleForBiome } from './biome-painter/style.js';
+import { strokeBlob as motifStrokeBlob, strokeRibbon as motifStrokeRibbon, globalStriations as motifGlobalStriations, globalCracks as motifGlobalCracks, scatterBlobsGlobal as motifScatterBlobsGlobal, scatterTuftsGlobal as motifScatterTuftsGlobal } from './biome-painter/motifs.js';
+import { computeSlopeAspect, computeMoistureField } from './biome-painter/fields.js';
 
 export class BiomeCanvasPainter {
   constructor(gameManager) {
@@ -54,39 +56,13 @@ export class BiomeCanvasPainter {
   }
 
   // ========================= TERRAIN FIELD HELPERS =========================
-  /**
-     * Compute per-tile slope magnitude and aspect (downhill direction angle in radians)
-     * using simple central differences. Aspect is atan2(dzdy, dzdx).
-     */
-  _computeSlopeAspect(heights) {
-    const cols = this.gameManager.cols;
-    const rows = this.gameManager.rows;
-    const slope = Array.from({ length: rows }, () => new Array(cols).fill(0));
-    const aspect = Array.from({ length: rows }, () => new Array(cols).fill(0));
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const hC = Number.isFinite(heights?.[y]?.[x]) ? heights[y][x] : 0;
-        const hL = Number.isFinite(heights?.[y]?.[x - 1]) ? heights[y][x - 1] : hC;
-        const hR = Number.isFinite(heights?.[y]?.[x + 1]) ? heights[y][x + 1] : hC;
-        const hU = Number.isFinite(heights?.[y - 1]?.[x]) ? heights[y - 1][x] : hC;
-        const hD = Number.isFinite(heights?.[y + 1]?.[x]) ? heights[y + 1][x] : hC;
-        const dzdx = (hR - hL) * 0.5;
-        const dzdy = (hD - hU) * 0.5;
-        const s = Math.hypot(dzdx, dzdy);
-        // Downhill aspect points in gradient direction (positive dz/dx, dz/dy). Adjust as needed visually.
-        const a = Math.atan2(dzdy, dzdx);
-        slope[y][x] = s;
-        aspect[y][x] = a;
-      }
-    }
-    return { slope, aspect };
-  }
+  // field helpers moved to biome-painter/fields.js
 
   /** Compute a representative orientation for a depth band, weighted by slope and optional predicate. */
   _bandOrientationForDepth(d, heights, slope, aspect, predicateFn = null, slopeGain = 1.0) {
     const cols = this.gameManager.cols;
     const rows = this.gameManager.rows;
-    let vx = 0, vy = 0, wsum = 0;
+    let vx = 0, vy = 0;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         if ((x + y) !== d) continue;
@@ -99,93 +75,49 @@ export class BiomeCanvasPainter {
         const w = Math.min(1.0, Math.max(0, s));
         vx += Math.cos(a) * w;
         vy += Math.sin(a) * w;
-        wsum += w;
       }
     }
-    if (wsum < 1e-3 || (Math.abs(vx) + Math.abs(vy)) < 1e-3) return 0;
     return Math.atan2(vy, vx);
   }
 
-  /** Approximate canvas->grid index conversion (ignores elevation; good enough for orientation sampling). */
-  _canvasToGridApprox(px, py, bounds) {
-    const w = this.gameManager.tileWidth;
-    const h = this.gameManager.tileHeight;
-    const X = (px + bounds.minX - (w / 2)) / (w / 2); // ~ gx - gy
-    const Y = (py + bounds.minY - (h / 2)) / (h / 2); // ~ gx + gy
-    const gx = (X + Y) * 0.5;
-    const gy = (Y - X) * 0.5;
-    return { gx, gy };
-  }
-
-  _sampleFieldAtCanvas(field, px, py, bounds) {
-    const { gx, gy } = this._canvasToGridApprox(px, py, bounds);
-    const x = Math.max(0, Math.min(this.gameManager.cols - 1, Math.round(gx)));
-    const y = Math.max(0, Math.min(this.gameManager.rows - 1, Math.round(gy)));
-    const v = Number.isFinite(field?.[y]?.[x]) ? field[y][x] : 0;
-    return v;
-  }
-
-  /** Compute multi-source BFS distance (in tiles) to nearest source cell matching predicate. */
-  _computeDistanceField(heights, isSourceFn) {
+  /** Average a scalar field over tiles at depth band d, optionally filtered. */
+  _bandAverage(field, d, predicateFn = null) {
     const cols = this.gameManager.cols;
     const rows = this.gameManager.rows;
-    const dist = Array.from({ length: rows }, () => new Array(cols).fill(Infinity));
-    const q = [];
+    let sum = 0;
+    let count = 0;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        if (isSourceFn(x, y)) { dist[y][x] = 0; q.push([x, y]); }
-      }
-    }
-    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    for (let i = 0; i < q.length; i++) {
-      const [cx, cy] = q[i];
-      const cd = dist[cy][cx];
-      for (const [dx, dy] of dirs) {
-        const nx = cx + dx, ny = cy + dy;
-        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
-        const nd = cd + 1;
-        if (nd < dist[ny][nx]) { dist[ny][nx] = nd; q.push([nx, ny]); }
-      }
-    }
-    return dist;
-  }
-
-  /** Moisture field 0..1, decaying with distance from negative-height (depressions) as proxy for water. */
-  _computeMoistureField(heights) {
-    const rows = this.gameManager.rows;
-    const cols = this.gameManager.cols;
-    const dist = this._computeDistanceField(heights, (x, y) => (Number.isFinite(heights?.[y]?.[x]) ? heights[y][x] : 0) < 0);
-    const moisture = Array.from({ length: rows }, () => new Array(cols).fill(0));
-    // Exponential decay; closer to water => higher moisture
-    const lambda = 0.35; // decay per tile
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const d = dist[y][x];
-        if (!isFinite(d)) { moisture[y][x] = 0; continue; }
-        const m = Math.exp(-lambda * d);
-        moisture[y][x] = Math.max(0, Math.min(1, m));
-      }
-    }
-    return moisture;
-  }
-
-  /** Average of a per-tile scalar field across a depth band (optionally with predicate). */
-  _bandAverage(field, depth, predicateFn = null) {
-    const cols = this.gameManager.cols;
-    const rows = this.gameManager.rows;
-    let sum = 0, cnt = 0;
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        if ((x + y) !== depth) continue;
+        if ((x + y) !== d) continue;
         if (typeof predicateFn === 'function' && !predicateFn(x, y)) continue;
         const v = Number.isFinite(field?.[y]?.[x]) ? field[y][x] : 0;
-        sum += v; cnt++;
+        sum += v;
+        count++;
       }
     }
-    return cnt > 0 ? (sum / cnt) : 0;
+    return count > 0 ? (sum / count) : 0;
   }
 
-  /** Compute grid bounds in gridContainer local space, including elevation extremes. */
+  /** Sample a per-tile field at canvas pixel coordinates by nearest tile. */
+  _sampleFieldAtCanvas(field, px, py, bounds) {
+    const w = this.gameManager.tileWidth;
+    const h = this.gameManager.tileHeight;
+    const cols = this.gameManager.cols;
+    const rows = this.gameManager.rows;
+    // Convert canvas px to isometric tile coordinates (approximate inverse)
+    const Xp = px + (bounds?.minX ?? 0) - (w / 2);
+    const Yp = py + (bounds?.minY ?? 0) - (h / 2);
+    const A = (2 * Xp) / w; // x - y
+    const B = (2 * Yp) / h; // x + y
+    let gx = Math.round((A + B) * 0.5);
+    let gy = Math.round((B - A) * 0.5);
+    // Clamp to grid
+    if (gx < 0) gx = 0; else if (gx >= cols) gx = cols - 1;
+    if (gy < 0) gy = 0; else if (gy >= rows) gy = rows - 1;
+    return Number.isFinite(field?.[gy]?.[gx]) ? field[gy][gx] : 0;
+  }
+
+  /** Compute canvas bounds that cover all tile top faces across elevation. */
   _computeGridBounds(heights = null) {
     const cols = this.gameManager.cols;
     const rows = this.gameManager.rows;
@@ -229,6 +161,27 @@ export class BiomeCanvasPainter {
     if (layer.canvas.width !== bounds.width || layer.canvas.height !== bounds.height) {
       layer.canvas.width = bounds.width;
       layer.canvas.height = bounds.height;
+      // If a sprite already exists, replace its texture so baseTexture matches new canvas size
+      if (layer.sprite && !layer.sprite.destroyed) {
+        try {
+          const hasPIXI = (typeof window !== 'undefined') && window.PIXI;
+          if (hasPIXI) {
+            const tex = window.PIXI.Texture.from(layer.canvas);
+            layer.sprite.texture = tex;
+          } else if (typeof PIXI !== 'undefined') {
+            const tex = PIXI.Texture.from(layer.canvas);
+            layer.sprite.texture = tex;
+          } else {
+            // Fallback: mark sprite for rebuild in next paint pass
+            try { layer.sprite.destroy?.({ children: false, texture: false, baseTexture: false }); } catch (_) { /* ignore */ }
+            layer.sprite = null;
+          }
+        } catch (_) {
+          // If texture replacement fails, drop sprite; it will be recreated below
+          try { layer.sprite.destroy?.(); } catch (_) { /* ignore */ }
+          layer.sprite = null;
+        }
+      }
     }
     return layer;
   }
@@ -323,54 +276,12 @@ export class BiomeCanvasPainter {
 
   /** Painterly stroke: large soft disc with slightly perturbed contour. */
   _strokeBlob(ctx, cx, cy, r, color, alpha, jag = 0.12, steps = 24) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = this._hex(color);
-    ctx.beginPath();
-    for (let i = 0; i <= steps; i++) {
-      const t = (i / steps) * Math.PI * 2;
-      const wob = 1 + (this._valueNoise2D(Math.cos(t) * 3 + cx * 0.01, Math.sin(t) * 3 + cy * 0.01) * jag);
-      const rr = r * wob;
-      const x = cx + Math.cos(t) * rr;
-      const y = cy + Math.sin(t) * rr;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    motifStrokeBlob(ctx, cx, cy, r, color, alpha, jag, steps, this._motifUtils());
   }
 
   /** Long ribbon stroke for dunes/waves, following a noisy direction field. */
   _strokeRibbon(ctx, sx, sy, len, width, color, alpha, orient = 0) {
-    let x = sx, y = sy;
-    const step = Math.max(8, width * 0.6);
-    ctx.save();
-    ctx.strokeStyle = this._hex(color);
-    ctx.globalAlpha = alpha;
-    ctx.lineWidth = width;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    for (let d = 0; d < len; d += step) {
-      // Blend global band orientation with local downhill aspect for better slope-following
-      const localAspect = this._sampleFieldAtCanvas(this._aspectFieldForStroke, x, y, this.bounds) || 0;
-      const localSlope = this._sampleFieldAtCanvas(this._slopeFieldForStroke, x, y, this.bounds) || 0;
-      const slopeGain = this._slopeGainForStroke;
-      const sNorm = Math.max(0, Math.min(1, localSlope * 1.5));
-      const sW = Math.pow(sNorm, Math.max(0.1, slopeGain)); // 0..1 weight favoring higher slopes
-      // Dunes/waves tend to align along contour lines; use aspect +/- 90deg. Water: along flow (aspect).
-      const alongFlow = this._ribbonAlongFlow === true;
-      const aspectDir = alongFlow ? (localAspect + Math.PI) : (localAspect + Math.PI / 2);
-      const blended = (1 - 0.5 * sW) * orient + (0.5 * sW) * aspectDir;
-      const noise = (this._valueNoise2D(x * 0.01, y * 0.01) * 0.7);
-      const angle = blended + noise;
-      x += Math.cos(angle) * step;
-      y += Math.sin(angle) * step * 0.6;
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
+    motifStrokeRibbon(ctx, sx, sy, len, width, color, alpha, orient, this._motifUtils());
   }
 
   /** Utility: clip to a single diamond face centered at (cx,cy). Must be balanced with ctx.restore(). */
@@ -553,83 +464,43 @@ export class BiomeCanvasPainter {
 
   /** Parallel striations across current clip at a given angle. */
   _globalStriations(ctx, canvas, color, alpha = 0.16, angle = Math.PI / 6, gap = 40) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = this._hex(this._shadeHex(color, 0.7));
-    ctx.lineWidth = Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) * 0.01));
-    const diag = Math.hypot(canvas.width, canvas.height);
-    const cx = canvas.width / 2, cy = canvas.height / 2;
-    const count = Math.ceil(diag / gap) + 2;
-    for (let i = -count; i <= count; i++) {
-      const offset = i * gap;
-      const nx = Math.cos(angle + Math.PI / 2), ny = Math.sin(angle + Math.PI / 2);
-      const px = cx + nx * offset;
-      const py = cy + ny * offset;
-      const dx = Math.cos(angle) * diag;
-      const dy = Math.sin(angle) * diag;
-      ctx.beginPath();
-      ctx.moveTo(px - dx, py - dy);
-      ctx.lineTo(px + dx, py + dy);
-      ctx.stroke();
-    }
-    ctx.restore();
+    motifGlobalStriations(ctx, canvas, color, alpha, angle, gap, this._motifUtils());
   }
 
   /** Crack network across current clip. */
   _globalCracks(ctx, canvas, color, alpha = 0.22, count = 8, step = 48, jitter = 0.25) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = this._hex(this._shadeHex(color, 0.4));
-    ctx.lineWidth = Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) * 0.01));
-    const len = Math.max(canvas.width, canvas.height) * 0.9;
-    for (let i = 0; i < count; i++) {
-      let x = this._randU('crack', i, 1) * canvas.width;
-      let y = this._randU('crack', i, 2) * canvas.height;
-      const theta = (this._randU('crack', i, 3) - 0.5) * Math.PI;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      for (let t = 0; t < len; t += step) {
-        const j = (this._randU('crack', i, t) - 0.5) * jitter;
-        x += Math.cos(theta + j) * step;
-        y += Math.sin(theta + j) * step;
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
+    motifGlobalCracks(ctx, canvas, color, alpha, count, step, jitter, this._motifUtils());
   }
 
   /** Scatter soft canopy blobs across current clip. */
   _scatterBlobsGlobal(ctx, canvas, count, rBase, rVar, color, alpha = 0.16, jag = 0.08, steps = 18) {
-    for (let i = 0; i < count; i++) {
-      const x = this._randU('blob', i, 1) * canvas.width;
-      const y = this._randU('blob', i, 2) * canvas.height;
-      const r = rBase * (1 + this._randU('blob', i, 3) * rVar);
-      this._strokeBlob(ctx, x, y, r, color, alpha, jag, steps);
-    }
+    motifScatterBlobsGlobal(ctx, canvas, count, rBase, rVar, color, alpha, jag, steps, this._motifUtils());
   }
 
   /** Scatter grassy/reedy tufts across current clip. */
   _scatterTuftsGlobal(ctx, canvas, count, len, color, alpha = 0.2, lean = 0.15) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = this._hex(color);
-    ctx.lineWidth = Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) * 0.008));
-    for (let i = 0; i < count; i++) {
-      const x0 = this._randU('tuft', i, 1) * canvas.width;
-      const y0 = this._randU('tuft', i, 2) * canvas.height;
-      const ang = -Math.PI / 3 + (this._randU('tuft', i, 3) - 0.5) * 0.3;
-      const x1 = x0 + Math.cos(ang) * len * (1 + lean);
-      const y1 = y0 + Math.sin(ang) * len * (1 - lean);
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-    }
-    ctx.restore();
+    motifScatterTuftsGlobal(ctx, canvas, count, len, color, alpha, lean, this._motifUtils());
   }
 
+
+
   _styleForBiome(biome) { return styleForBiome(biome); }
+
+  // Build a utils bag to pass to motif helpers, binding this instance methods/fields.
+  _motifUtils() {
+    return {
+      hex: (c) => this._hex(c),
+      shadeHex: (c, f) => this._shadeHex(c, f),
+      valueNoise2D: (x, y) => this._valueNoise2D(x, y),
+      sampleFieldAtCanvas: (field, x, y, bounds) => this._sampleFieldAtCanvas(field, x, y, bounds),
+      randU: (a, b, c) => this._randU(a, b, c),
+      bounds: this.bounds,
+      aspectFieldForStroke: this._aspectFieldForStroke,
+      slopeFieldForStroke: this._slopeFieldForStroke,
+      slopeGainForStroke: this._slopeGainForStroke,
+      ribbonAlongFlow: this._ribbonAlongFlow
+    };
+  }
 
   /** Paint the canvas for the given biome and heights. */
   paint(biomeKey, heights, tilesHiddenCallback = null) {
@@ -638,8 +509,8 @@ export class BiomeCanvasPainter {
     const rows = this.gameManager.rows;
     this.bounds = this._computeGridBounds(heights);
     // Precompute terrain derivatives once
-    const { slope, aspect } = this._computeSlopeAspect(heights);
-    const moisture = this._computeMoistureField(heights);
+    const { slope, aspect } = computeSlopeAspect(this.gameManager, heights);
+    const moisture = computeMoistureField(this.gameManager, heights);
 
     // Expose fields to stroke helpers
     this._aspectFieldForStroke = aspect;
@@ -987,21 +858,34 @@ export class BiomeCanvasPainter {
 
       // Create/update sprite for this depth
       if (!layer.sprite || layer.sprite.destroyed) {
-        const tex = PIXI.Texture.from(canvas);
-        const sprite = new PIXI.Sprite(tex);
+        let sprite = null;
+        try {
+          const hasPIXI = (typeof window !== 'undefined') && window.PIXI;
+          const tex = hasPIXI ? window.PIXI.Texture.from(canvas)
+            : (typeof PIXI !== 'undefined' ? PIXI.Texture.from(canvas) : null);
+          if (tex) {
+            sprite = hasPIXI ? new window.PIXI.Sprite(tex)
+              : (typeof PIXI !== 'undefined' ? new PIXI.Sprite(tex) : null);
+          }
+        } catch (_) { /* ignore */ }
+        if (!sprite) { continue; }
         sprite.name = `BiomeCanvasPainterSprite_${d}`;
         // Place just under the top-face borders for this depth to avoid z-fighting
         sprite.zIndex = d * 100 - 1; // tiles are depth*100; tokens start at +1
         this.gameManager.gridContainer.addChild(sprite);
         layer.sprite = sprite;
       } else {
-        const tex = layer.sprite.texture;
-        // Force a reupload of the canvas to the GPU
-        tex.baseTexture?.update?.();
-        tex.update?.(); // fallback; harmless if no-op
+        try {
+          const tex = layer.sprite.texture;
+          // Force a reupload of the canvas to the GPU
+          tex.baseTexture?.update?.();
+          tex.update?.(); // fallback; harmless if no-op
+        } catch (_) { /* ignore */ }
       }
-      layer.sprite.x = this.bounds.minX;
-      layer.sprite.y = this.bounds.minY;
+      if (layer.sprite && !layer.sprite.destroyed) {
+        layer.sprite.x = this.bounds.minX;
+        layer.sprite.y = this.bounds.minY;
+      }
       paintedDepths.add(d);
     }
 

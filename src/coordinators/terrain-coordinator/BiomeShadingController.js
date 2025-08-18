@@ -17,10 +17,15 @@ export class BiomeShadingController {
     if (typeof window === 'undefined' || !window.selectedBiome) return;
     const biomeKey = window.selectedBiome;
     try {
+      // Ensure grid container is available
+      if (!this.c?.gameManager?.gridContainer) {
+        logger.debug('Biome shading skipped: gridContainer missing', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey });
+        return;
+      }
       // Ensure a continuous biome canvas exists and paint it from current heights
       if (!this.c._biomeCanvas) this.c._biomeCanvas = new BiomeCanvasPainter(this.c.gameManager);
       // Keep painter noise deterministic with our coordinator seed
-      try { this.c._biomeCanvas.setSeed?.(this.c._biomeSeed >>> 0); } catch(_) { /* ignore setSeed error */ }
+      try { this.c._biomeCanvas.setSeed?.(this.c._biomeSeed >>> 0); } catch (_) { /* ignore setSeed error */ }
       const rows = this.c.gameManager.rows, cols = this.c.gameManager.cols;
       const heights = Array(rows).fill(null).map(() => Array(cols).fill(0));
       this.c.gameManager.gridContainer.children.forEach(ch => {
@@ -30,7 +35,12 @@ export class BiomeShadingController {
       });
       // Hide per-tile fills so the canvas shows through
       this.toggleBaseTileVisibility(false);
-      this.c._biomeCanvas.paint(biomeKey, heights, null);
+      try {
+        this.c._biomeCanvas.paint(biomeKey, heights, null);
+      } catch (pe) {
+        logger.warn('Biome painter paint() failed', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey, error: pe?.message, stack: pe?.stack });
+        throw pe;
+      }
 
       this.c.gameManager.gridContainer.children.forEach(child => {
         if (!child.isGridTile) return;
@@ -57,7 +67,7 @@ export class BiomeShadingController {
             }
             child.paintMask = null;
           }
-        } catch(_) { /* ignore */ }
+        } catch (_) { /* ignore */ }
 
         child.clear();
         child.lineStyle(1, borderColor, borderAlpha);
@@ -73,7 +83,8 @@ export class BiomeShadingController {
       });
       logger.info('Applied biome palette to base grid', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey }, LOG_CATEGORY.USER);
     } catch (e) {
-      logger.warn('Failed applying biome palette to base grid', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey, error: e.message });
+      // Downgraded to DEBUG to avoid noisy repeats; inner paint() warns on real failures
+      logger.debug('Biome palette application encountered an error', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey, error: e?.message, stack: e?.stack });
     } finally {
       this.c._currentColorEvalX = undefined;
       this.c._currentColorEvalY = undefined;
@@ -97,7 +108,7 @@ export class BiomeShadingController {
         child.lineTo(0, this.c.gameManager.tileHeight / 2);
         if (show) child.endFill();
       });
-    } catch(_) { /* ignore */ }
+    } catch (_) { /* ignore */ }
   }
 
   /** Determine base tile color when not editing: biome palette if selected, else neutral. */
