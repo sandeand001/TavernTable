@@ -30,7 +30,10 @@ import {
   getTerrainResetButton,
   getElevationScaleControls,
   getBrushSizeDisplay,
-  getSpriteAdjustLogEl
+  getSpriteAdjustLogEl,
+  getCreaturePanelEls,
+  getTerrainModeEls,
+  getAutoApplyButton
 } from './domHelpers.js';
 
 /**
@@ -39,8 +42,7 @@ import {
  */
 function toggleCreatureTokens() {
   try {
-    const content = document.getElementById('creature-content');
-    const arrow = document.getElementById('creature-arrow');
+    const { contentEl: content, arrowEl: arrow } = getCreaturePanelEls();
 
     // Validate DOM elements
     const contentValidation = GameValidators.domElement(content, 'div');
@@ -158,8 +160,7 @@ function resetZoom() {
  */
 function toggleTerrainMode() {
   try {
-    const terrainToggle = document.getElementById('terrain-mode-toggle');
-    const terrainTools = document.getElementById('terrain-tools');
+    const { toggleEl: terrainToggle, toolsEl: terrainTools } = getTerrainModeEls();
 
     if (!terrainToggle || !terrainTools) {
       throw new Error('Terrain UI elements not found');
@@ -651,7 +652,7 @@ function resetSpriteOffset() {
 function toggleAutoApplyOffsets() {
   ensureSpriteAdjustExtendedState();
   spriteAdjustState.autoApply = !spriteAdjustState.autoApply;
-  const btn = document.getElementById('toggle-auto-apply');
+  const btn = getAutoApplyButton();
   if (btn) btn.textContent = `⚡ Auto Apply: ${spriteAdjustState.autoApply ? 'On' : 'Off'}`;
   const logEl = getSpriteAdjustLogEl();
   if (logEl) {

@@ -1,5 +1,5 @@
 import { GameValidators } from '../../../utils/Validation.js';
-import { getCreatureButtons } from '../../../ui/domHelpers.js';
+import { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } from '../../../ui/domHelpers.js';
 
 export function findExistingTokenAt(c, gridX, gridY) {
   return c.placedTokens.find(token => {
@@ -23,7 +23,7 @@ export function selectToken(c, tokenType) {
     btn.classList.remove('selected');
     btn.setAttribute('aria-pressed', 'false');
   });
-  const tokenButton = document.getElementById(`token-${tokenType}`);
+  const tokenButton = getTokenButtonByType(tokenType);
   if (tokenButton) {
     tokenButton.classList.add('selected');
     tokenButton.setAttribute('aria-pressed', 'true');
@@ -37,7 +37,7 @@ export function selectToken(c, tokenType) {
   if (window.sidebarController) {
     window.sidebarController.updateTokenSelection(tokenType);
   }
-  const infoEl = document.getElementById('token-info');
+  const infoEl = getTokenInfoEl();
   if (infoEl) {
     infoEl.textContent = tokenType === 'remove' ? 'Click on tokens to remove them' : `Click on grid to place ${tokenType}`;
   }

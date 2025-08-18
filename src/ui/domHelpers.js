@@ -54,3 +54,34 @@ export function getBrushSizeDisplay() {
 export function getSpriteAdjustLogEl() {
   return document.getElementById('sprite-adjust-log');
 }
+
+/** Returns the token info element used for UI hints. */
+export function getTokenInfoEl() {
+  return document.getElementById('token-info');
+}
+
+/** Returns creature panel elements: the collapsible content and arrow. */
+export function getCreaturePanelEls() {
+  return {
+    contentEl: document.getElementById('creature-content'),
+    arrowEl: document.getElementById('creature-arrow')
+  };
+}
+
+/** Returns terrain mode elements: the toggle checkbox and tools container. */
+export function getTerrainModeEls() {
+  return {
+    toggleEl: document.getElementById('terrain-mode-toggle'),
+    toolsEl: document.getElementById('terrain-tools')
+  };
+}
+
+/** Returns a specific token button by creature type or 'remove'. */
+export function getTokenButtonByType(tokenType) {
+  return document.getElementById(`token-${tokenType}`);
+}
+
+/** Returns the auto-apply offsets toggle button. */
+export function getAutoApplyButton() {
+  return document.getElementById('toggle-auto-apply');
+}
