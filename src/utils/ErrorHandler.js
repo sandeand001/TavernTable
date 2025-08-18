@@ -202,6 +202,9 @@ export class ErrorNotificationManager {
     const container = document.createElement('div');
     container.id = 'tavern-error-container';
     container.className = 'tavern-error-container';
+    // Accessibility: announce errors to assistive tech without being too disruptive
+    container.setAttribute('aria-live', 'polite');
+    container.setAttribute('aria-atomic', 'true');
     return container;
   }
 
@@ -347,6 +350,8 @@ export class ErrorNotificationManager {
     const notification = document.createElement('div');
     notification.className = `tavern-error-notification ${errorEntry.severity}`;
     notification.dataset.errorId = errorEntry.id;
+    // Accessibility: treat as an alert for immediate announcement
+    notification.setAttribute('role', 'alert');
 
     const header = document.createElement('div');
     header.className = 'tavern-error-header';
