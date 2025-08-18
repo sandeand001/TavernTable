@@ -81,7 +81,7 @@ export class BiomeShadingController {
         if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
         if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.c.addVisualElevationEffect(child, h);
       });
-      logger.info('Applied biome palette to base grid', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey }, LOG_CATEGORY.USER);
+      logger.debug('Applied biome palette to base grid', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey }, LOG_CATEGORY.USER);
     } catch (e) {
       // Downgraded to DEBUG to avoid noisy repeats; inner paint() warns on real failures
       logger.debug('Biome palette application encountered an error', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey, error: e?.message, stack: e?.stack });
