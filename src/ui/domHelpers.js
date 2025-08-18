@@ -85,3 +85,27 @@ export function getTokenButtonByType(tokenType) {
 export function getAutoApplyButton() {
   return document.getElementById('toggle-auto-apply');
 }
+
+/** Returns dice UI elements. */
+export function getDiceCountEl() {
+  return document.getElementById('dice-count');
+}
+
+export function getDiceResultEl() {
+  return document.getElementById('dice-result');
+}
+
+/** Returns the terrain height display element. */
+export function getTerrainHeightDisplay() {
+  return document.getElementById('terrain-height-display');
+}
+
+/** Returns the main game container element. */
+export function getGameContainer() {
+  return document.getElementById('game-container');
+}
+
+/** Returns the dice log content container element. */
+export function getDiceLogContentEl() {
+  return document.getElementById('dice-log-content');
+}

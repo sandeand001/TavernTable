@@ -4,7 +4,7 @@
  * Handles tab switching, dice log management, and sidebar interactions
  * Following clean, modular design principles with single responsibility
  */
-import { getCreatureButtons } from './domHelpers.js';
+import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType } from './domHelpers.js';
 
 class SidebarController {
   constructor() {
@@ -416,7 +416,7 @@ class SidebarController {
    * Refresh the dice log display
    */
   refreshDiceLog() {
-    const logContent = document.getElementById('dice-log-content');
+    const logContent = getDiceLogContentEl();
     if (!logContent) return;
 
     // Clear existing content securely
@@ -488,7 +488,7 @@ class SidebarController {
     });
     
     // Highlight the selected token
-    const selectedButton = document.getElementById(`token-${selectedToken}`);
+    const selectedButton = getTokenButtonByType(selectedToken);
     if (selectedButton) {
       selectedButton.classList.add('selected');
       selectedButton.setAttribute('aria-pressed', 'true');

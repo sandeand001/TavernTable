@@ -25,6 +25,7 @@ import { GameValidators } from '../../utils/Validation.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 import { DICE_CONFIG } from '../../config/GameConstants.js';
+import { getDiceCountEl, getDiceResultEl } from '../../ui/domHelpers.js';
 
 // Dice rolling functionality with animation
 let isRolling = false;
@@ -71,8 +72,8 @@ export function rollDice(sides) {
     }
     
     // Get and validate dice count
-    const diceCountEl = document.getElementById('dice-count');
-    const resultEl = document.getElementById('dice-result');
+    const diceCountEl = getDiceCountEl();
+    const resultEl = getDiceResultEl();
     
     if (!diceCountEl || !resultEl) {
       new ErrorHandler().handle(
@@ -245,8 +246,8 @@ export function rollDice(sides) {
       isRolling: isRolling,
       globalScope: {
         sidebarController: !!window.sidebarController,
-        diceCountElement: !!document.getElementById('dice-count'),
-        resultElement: !!document.getElementById('dice-result')
+        diceCountElement: !!getDiceCountEl(),
+        resultElement: !!getDiceResultEl()
       }
     });
     isRolling = false;

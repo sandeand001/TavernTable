@@ -10,6 +10,7 @@ import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
+import { getGameContainer } from '../ui/domHelpers.js';
 
 export class RenderCoordinator {
   constructor(gameManager) {
@@ -41,7 +42,7 @@ export class RenderCoordinator {
       }
       
       // Find and validate game container
-      const gameContainer = document.getElementById('game-container');
+      const gameContainer = getGameContainer();
       const containerValidation = GameValidators.domElement(gameContainer, 'div');
       if (!containerValidation.isValid) {
         throw new Error(`Game container validation failed: ${containerValidation.errors.join(', ')}`);
@@ -76,7 +77,7 @@ export class RenderCoordinator {
         context: 'RenderCoordinator.createPixiApp',
         stage: 'pixi_application_creation',
         pixiAvailable: typeof PIXI !== 'undefined',
-        containerExists: !!document.getElementById('game-container'),
+        containerExists: !!getGameContainer(),
         gameManagerState: !!this.gameManager,
         errorType: error.constructor.name
       });

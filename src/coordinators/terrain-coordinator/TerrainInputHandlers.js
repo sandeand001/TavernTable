@@ -1,3 +1,4 @@
+import { getTerrainHeightDisplay } from '../../ui/domHelpers.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 
@@ -187,7 +188,7 @@ export class TerrainInputHandlers {
       const currentHeight = this.c.getTerrainHeight(gridX, gridY);
 
       // Update height value display
-      const heightDisplay = document.getElementById('terrain-height-display');
+      const heightDisplay = getTerrainHeightDisplay();
       if (heightDisplay) {
         heightDisplay.textContent = currentHeight.toString();
         heightDisplay.style.color = currentHeight === 0 ? '#6b7280' : 
@@ -217,7 +218,7 @@ export class TerrainInputHandlers {
   /** Reset the height indicator to default state */
   resetHeightIndicator() {
     try {
-      const heightDisplay = document.getElementById('terrain-height-display');
+      const heightDisplay = getTerrainHeightDisplay();
       if (heightDisplay) {
         heightDisplay.textContent = '0';
         heightDisplay.style.color = '#6b7280';
