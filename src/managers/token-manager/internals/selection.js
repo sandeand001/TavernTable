@@ -1,4 +1,5 @@
 import { GameValidators } from '../../../utils/Validation.js';
+import { getCreatureButtons } from '../../../ui/domHelpers.js';
 
 export function findExistingTokenAt(c, gridX, gridY) {
   return c.placedTokens.find(token => {
@@ -18,7 +19,7 @@ export function selectToken(c, tokenType) {
   }
 
   // Update UI selection
-  document.querySelectorAll('#creature-content button[id^="token-"], #token-remove').forEach(btn => {
+  getCreatureButtons().forEach(btn => {
     btn.classList.remove('selected');
     btn.setAttribute('aria-pressed', 'false');
   });

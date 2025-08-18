@@ -4,6 +4,7 @@
  * Handles tab switching, dice log management, and sidebar interactions
  * Following clean, modular design principles with single responsibility
  */
+import { getCreatureButtons } from './domHelpers.js';
 
 class SidebarController {
   constructor() {
@@ -475,7 +476,8 @@ class SidebarController {
     if (!selectedToken) return;
     
     // Clear all selections first
-    const allTokenButtons = document.querySelectorAll('#creature-content button[id^="token-"], #token-remove');
+    // DRY: use shared helper
+    const allTokenButtons = getCreatureButtons();
     allTokenButtons.forEach(btn => {
       btn.classList.remove('selected');
       btn.setAttribute('aria-pressed', 'false');
