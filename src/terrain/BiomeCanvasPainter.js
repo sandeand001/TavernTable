@@ -8,6 +8,7 @@
 
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { styleForBiome } from './biome-painter/style.js';
 
 export class BiomeCanvasPainter {
   constructor(gameManager) {
@@ -628,18 +629,7 @@ export class BiomeCanvasPainter {
     ctx.restore();
   }
 
-  _styleForBiome(biome) {
-    const b = String(biome || '');
-    if (/(grassland|steppe|prairie|hill)/i.test(b)) return 'plains';
-    if (/desert|dune|savanna|thorn|salt/i.test(b)) return 'arid';
-    if (/forest|grove|bamboo|orchard|cedar|fey|shadowfell/i.test(b)) return 'forest';
-    if (/swamp|marsh|wetland|mangrove|flood/i.test(b)) return 'wetland';
-    if (/glacier|tundra|frozen|pack|alpine|mountain|scree/i.test(b)) return 'alpine';
-    if (/ocean|coast|river|lake|reef|oasis|geyser|beach|shore/i.test(b)) return 'water';
-    if (/volcan|lava|obsidian|ash/i.test(b)) return 'volcanic';
-    if (/waste|ruin|urban|grave|cavern|crystal|eldritch|astral|arcane/i.test(b)) return 'arcane';
-    return 'generic';
-  }
+  _styleForBiome(biome) { return styleForBiome(biome); }
 
   /** Paint the canvas for the given biome and heights. */
   paint(biomeKey, heights, tilesHiddenCallback = null) {
