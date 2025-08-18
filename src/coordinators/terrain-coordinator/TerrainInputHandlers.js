@@ -10,6 +10,11 @@ export class TerrainInputHandlers {
     this.c = coordinator; // reference to TerrainCoordinator
   }
 
+  /** Small helper to avoid duplicating the scale mark selector */
+  _getScaleMarks() {
+    return document.querySelectorAll('.scale-mark');
+  }
+
   /** Set up terrain-specific input event handlers */
   setup() {
     try {
@@ -190,7 +195,7 @@ export class TerrainInputHandlers {
       }
 
       // Update height scale visual indicator
-      const scaleMarks = document.querySelectorAll('.scale-mark');
+      const scaleMarks = this._getScaleMarks();
       scaleMarks.forEach(mark => {
         const markHeight = parseInt(mark.getAttribute('data-height'));
         if (markHeight === currentHeight) {
@@ -219,6 +224,9 @@ export class TerrainInputHandlers {
       }
 
       const scaleMarks = document.querySelectorAll('.scale-mark');
+      // Use helper for consistency with updateHeightIndicator
+      // (kept original variable for minimal diff)
+      // const scaleMarks = this._getScaleMarks();
       scaleMarks.forEach(mark => {
         const markHeight = parseInt(mark.getAttribute('data-height'));
         if (markHeight === 0) {
