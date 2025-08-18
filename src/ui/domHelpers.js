@@ -139,3 +139,25 @@ export function getBiomeRootEl() {
 export function getScaleMarks() {
   return document.querySelectorAll('.scale-mark');
 }
+
+/** Returns the tab navigation buttons. */
+export function getTabButtons() {
+  return document.querySelectorAll('.tab-button');
+}
+
+/** Returns the tab panels. */
+export function getTabPanels() {
+  return document.querySelectorAll('.tab-panel');
+}
+
+/** Returns grid opacity slider and its value element (next sibling). */
+export function getGridOpacityControl() {
+  const slider = document.getElementById('grid-opacity');
+  return { slider, valueEl: slider?.nextElementSibling || null };
+}
+
+/** Returns animation speed slider and its value element (next sibling). */
+export function getAnimationSpeedControl() {
+  const slider = document.getElementById('animation-speed');
+  return { slider, valueEl: slider?.nextElementSibling || null };
+}

@@ -4,7 +4,7 @@
  * Handles tab switching, dice log management, and sidebar interactions
  * Following clean, modular design principles with single responsibility
  */
-import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl } from './domHelpers.js';
+import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl, getTabButtons, getTabPanels, getGridOpacityControl, getAnimationSpeedControl } from './domHelpers.js';
 
 class SidebarController {
   constructor() {
@@ -18,11 +18,11 @@ class SidebarController {
 
   // Small helpers to avoid repeating common selectors
   _getTabButtons() {
-    return document.querySelectorAll('.tab-button');
+    return getTabButtons();
   }
 
   _getTabPanels() {
-    return document.querySelectorAll('.tab-panel');
+    return getTabPanels();
   }
 
   // Grouped getters moved to domHelpers for DRY
@@ -80,8 +80,7 @@ class SidebarController {
    */
   setupRangeSliderListeners() {
     // Grid opacity slider
-    const gridOpacitySlider = document.getElementById('grid-opacity');
-    const gridOpacityValue = gridOpacitySlider?.nextElementSibling;
+    const { slider: gridOpacitySlider, valueEl: gridOpacityValue } = getGridOpacityControl();
 
     if (gridOpacitySlider) {
       gridOpacitySlider.addEventListener('input', (e) => {
@@ -95,8 +94,7 @@ class SidebarController {
     }
 
     // Animation speed slider
-    const animationSpeedSlider = document.getElementById('animation-speed');
-    const animationSpeedValue = animationSpeedSlider?.nextElementSibling;
+    const { slider: animationSpeedSlider, valueEl: animationSpeedValue } = getAnimationSpeedControl();
 
     if (animationSpeedSlider) {
       animationSpeedSlider.addEventListener('input', (e) => {
@@ -238,7 +236,7 @@ class SidebarController {
   _syncRichShadingControlsFromState() {
     try {
       const s = window.richShadingSettings || {};
-      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = this._getRichShadingControls();
+      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = getShadingControls();
       if (shadeToggle) shadeToggle.checked = !!s.enabled;
       if (intensity && intensityVal && Number.isFinite(s.intensity)) {
         const pct = Math.round(s.intensity * 100);
