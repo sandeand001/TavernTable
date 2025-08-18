@@ -25,6 +25,24 @@ class SidebarController {
     return document.querySelectorAll('.tab-panel');
   }
 
+  // Grouped getters to DRY repeated DOM lookups
+  _getRichShadingControls() {
+    return {
+      shadeToggle: document.getElementById('rich-shading-toggle'),
+      intensity: document.getElementById('shading-intensity'),
+      intensityVal: document.getElementById('shading-intensity-value'),
+      density: document.getElementById('pattern-density'),
+      densityVal: document.getElementById('pattern-density-value'),
+      shore: document.getElementById('shoreline-sand-strength'),
+      shoreVal: document.getElementById('shoreline-sand-strength-value'),
+      perf: document.getElementById('performance-simplify')
+    };
+  }
+
+  _getBiomeRoot() {
+    return document.getElementById('biome-menu-root');
+  }
+
   /**
    * Initialize the sidebar controller
    * Sets up event listeners and default state
@@ -108,14 +126,7 @@ class SidebarController {
     }
 
     // Biome Rich Shading controls
-    const shadeToggle = document.getElementById('rich-shading-toggle');
-    const intensity = document.getElementById('shading-intensity');
-    const intensityVal = document.getElementById('shading-intensity-value');
-    const density = document.getElementById('pattern-density');
-    const densityVal = document.getElementById('pattern-density-value');
-    const shore = document.getElementById('shoreline-sand-strength');
-    const shoreVal = document.getElementById('shoreline-sand-strength-value');
-    const perf = document.getElementById('performance-simplify');
+    const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = this._getRichShadingControls();
 
     if (shadeToggle) {
       // Initialize from current settings
@@ -243,14 +254,7 @@ class SidebarController {
   _syncRichShadingControlsFromState() {
     try {
       const s = window.richShadingSettings || {};
-      const shadeToggle = document.getElementById('rich-shading-toggle');
-      const intensity = document.getElementById('shading-intensity');
-      const intensityVal = document.getElementById('shading-intensity-value');
-      const density = document.getElementById('pattern-density');
-      const densityVal = document.getElementById('pattern-density-value');
-      const shore = document.getElementById('shoreline-sand-strength');
-      const shoreVal = document.getElementById('shoreline-sand-strength-value');
-      const perf = document.getElementById('performance-simplify');
+      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = this._getRichShadingControls();
       if (shadeToggle) shadeToggle.checked = !!s.enabled;
       if (intensity && intensityVal && Number.isFinite(s.intensity)) {
         const pct = Math.round(s.intensity * 100);
@@ -297,7 +301,7 @@ class SidebarController {
 
   buildBiomeMenuSafely() {
     try {
-      const root = document.getElementById('biome-menu-root');
+      const root = this._getBiomeRoot();
       // If previously built but root is missing or empty (e.g., moved to new tab), allow rebuild
       if (this._biomesBuilt) {
         if (!root || root.children.length === 0) {
@@ -368,7 +372,7 @@ class SidebarController {
     } catch(_) { /* non-fatal */ }
     // Visual selection state
     try {
-      const root = document.getElementById('biome-menu-root');
+      const root = this._getBiomeRoot();
       if (root) {
         root.querySelectorAll('.biome-btn.selected').forEach(btn => btn.classList.remove('selected'));
         const newly = root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
