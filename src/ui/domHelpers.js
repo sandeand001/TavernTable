@@ -115,3 +115,27 @@ export function getGameContainer() {
 export function getDiceLogContentEl() {
   return document.getElementById('dice-log-content');
 }
+
+/** Returns the rich shading controls elements (shading intensity, density, shoreline sand, perf). */
+export function getShadingControls() {
+  return {
+    shadeToggle: document.getElementById('rich-shading-toggle'),
+    intensity: document.getElementById('shading-intensity'),
+    intensityVal: document.getElementById('shading-intensity-value'),
+    density: document.getElementById('pattern-density'),
+    densityVal: document.getElementById('pattern-density-value'),
+    shore: document.getElementById('shoreline-sand-strength'),
+    shoreVal: document.getElementById('shoreline-sand-strength-value'),
+    perf: document.getElementById('performance-simplify')
+  };
+}
+
+/** Returns the biome menu root element. */
+export function getBiomeRootEl() {
+  return document.getElementById('biome-menu-root');
+}
+
+/** Returns NodeList of terrain height scale marks. */
+export function getScaleMarks() {
+  return document.querySelectorAll('.scale-mark');
+}

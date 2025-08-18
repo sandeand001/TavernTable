@@ -52,7 +52,7 @@ export function rollDice(sides) {
       );
       return false;
     }
-    
+
     // Validate dice sides
     const validationResult = GameValidators.validateDiceSides(sides);
     if (!validationResult.isValid) {
@@ -70,11 +70,11 @@ export function rollDice(sides) {
       );
       return false;
     }
-    
+
     // Get and validate dice count
     const diceCountEl = getDiceCountEl();
     const resultEl = getDiceResultEl();
-    
+
     if (!diceCountEl || !resultEl) {
       new ErrorHandler().handle(
         new Error('Required dice interface elements not found'),
@@ -126,28 +126,28 @@ export function rollDice(sides) {
       btn.classList.add('disabled');
       btn.setAttribute('aria-disabled', 'true');
     });
-    
+
     // Animation phase
     let animationFrame = 0;
     const animationDuration = DICE_CONFIG.ANIMATION_FRAMES;
-    
+
     const animateRoll = () => {
       try {
         animationFrame++;
-        
+
         // Show random numbers during animation
         const tempResults = [];
         for (let i = 0; i < diceCount; i++) {
           tempResults.push(Math.floor(Math.random() * sides) + 1);
         }
-        
+
         if (diceCount === 1) {
           resultEl.textContent = `Rolling... ${tempResults[0]}`;
         } else {
           const tempTotal = tempResults.reduce((sum, val) => sum + val, 0);
           resultEl.textContent = `Rolling... [${tempResults.join(', ')}] = ${tempTotal}`;
         }
-    
+
         if (animationFrame < animationDuration) {
           requestAnimationFrame(animateRoll);
         } else {
@@ -180,25 +180,25 @@ export function rollDice(sides) {
     const showFinalResult = () => {
       const results = [];
       let total = 0;
-      
+
       try {
         for (let i = 0; i < diceCount; i++) {
           results.push(Math.floor(Math.random() * sides) + 1);
         }
-        
+
         total = results.reduce((sum, val) => sum + val, 0);
-        
+
         logger.log(LOG_LEVEL.INFO, 'Dice roll completed', LOG_CATEGORY.USER, {
           diceType: `d${sides}`,
           diceCount: diceCount,
           results: results,
           total: total,
-          rollQuality: diceCount === 1 ? 
+          rollQuality: diceCount === 1 ?
             (results[0] === sides ? 'maximum' : results[0] === 1 ? 'minimum' : 'normal') :
             'multiple_dice',
           timestamp: new Date().toISOString()
         });
-        
+
         // Determine result color based on roll quality
         let resultColor = DICE_CONFIG.COLORS.NORMAL_ROLL;
         if (diceCount === 1) {
@@ -210,32 +210,32 @@ export function rollDice(sides) {
         } else {
           const maxPossible = diceCount * sides;
           const minPossible = diceCount;
-          
+
           if (total === maxPossible) {
             resultColor = DICE_CONFIG.COLORS.MAX_ROLL;
           } else if (total === minPossible) {
             resultColor = DICE_CONFIG.COLORS.MIN_ROLL;
           }
         }
-        
+
         if (diceCount === 1) {
           resultEl.textContent = `Result: d${sides} → ${results[0]}`;
         } else {
           resultEl.textContent = `Result: ${diceCount}d${sides} → [${results.join(', ')}] = ${total}`;
         }
-        
+
         // Apply color coding
         resultEl.style.color = resultColor;
         resultEl.style.textShadow = `0 0 5px ${resultColor}`;
-        
+
         // Log to sidebar dice log
         if (window.sidebarController) {
-          const logMessage = diceCount === 1 
+          const logMessage = diceCount === 1
             ? `Rolled d${sides}: ${results[0]}`
             : `Rolled ${diceCount}d${sides}: [${results.join(', ')}] = ${total}`;
           window.sidebarController.addDiceLogEntry(logMessage, 'roll');
         }
-        
+
         setTimeout(() => {
           resultEl.style.color = DICE_CONFIG.COLORS.NORMAL_ROLL;
           resultEl.style.textShadow = 'none';
@@ -272,11 +272,11 @@ export function rollDice(sides) {
         });
       }
     };
-    
+
     // Start animation
     requestAnimationFrame(animateRoll);
     return true;
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.SYSTEM, {
       context: 'rollDice',

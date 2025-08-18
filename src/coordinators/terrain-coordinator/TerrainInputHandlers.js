@@ -1,4 +1,4 @@
-import { getTerrainHeightDisplay } from '../../ui/domHelpers.js';
+import { getTerrainHeightDisplay, getScaleMarks } from '../../ui/domHelpers.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 
@@ -13,7 +13,7 @@ export class TerrainInputHandlers {
 
   /** Small helper to avoid duplicating the scale mark selector */
   _getScaleMarks() {
-    return document.querySelectorAll('.scale-mark');
+    return getScaleMarks();
   }
 
   /** Set up terrain-specific input event handlers */
@@ -191,7 +191,7 @@ export class TerrainInputHandlers {
       const heightDisplay = getTerrainHeightDisplay();
       if (heightDisplay) {
         heightDisplay.textContent = currentHeight.toString();
-        heightDisplay.style.color = currentHeight === 0 ? '#6b7280' : 
+        heightDisplay.style.color = currentHeight === 0 ? '#6b7280' :
           currentHeight > 0 ? '#10b981' : '#8b5cf6';
       }
 
