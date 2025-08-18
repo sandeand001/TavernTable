@@ -9,15 +9,9 @@ import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
 // Validation utilities are referenced within internals; no direct import needed here
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-// import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-// import { darkenColor, lightenColor } from '../utils/ColorUtils.js';
-// import { TerrainValidation } from '../utils/TerrainValidation.js';
 import { TerrainDataStore } from '../terrain/TerrainDataStore.js';
 import { TerrainBrushController } from '../terrain/TerrainBrushController.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
-// import { TerrainPixiUtils } from '../utils/TerrainPixiUtils.js';
-// import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-// import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainInputHandlers } from './terrain-coordinator/TerrainInputHandlers.js';
 import { ElevationScaleController } from './terrain-coordinator/ElevationScaleController.js';
 import { ActivationHelpers } from './terrain-coordinator/ActivationHelpers.js';

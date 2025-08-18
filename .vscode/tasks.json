@@ -1,0 +1,65 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Lint",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Serve",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"serve"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"test"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test: Watch",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"test:watch"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Lint: Fix",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint:fix"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			]
+		}
+	]
+}

@@ -5,6 +5,7 @@
  * Following clean, modular design principles with single responsibility
  */
 import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl, getTabButtons, getTabPanels, getGridOpacityControl, getAnimationSpeedControl, getBiomeButtons, getBiomeButtonByKey } from './domHelpers.js';
+import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 
 class SidebarController {
   constructor() {
@@ -180,7 +181,7 @@ class SidebarController {
     // Validate tab ID
     const validTabs = ['dice-log', 'creatures', 'terrain', 'biomes', 'settings'];
     if (!validTabs.includes(tabId)) {
-      console.warn(`Invalid tab ID: ${tabId}`);
+      logger.debug('Invalid tab ID', { tabId }, LOG_CATEGORY.UI);
       return;
     }
 
@@ -344,7 +345,7 @@ class SidebarController {
   selectBiome(biomeKey) {
     window.selectedBiome = biomeKey;
     if (window.sidebarController?.activeTab === 'terrain') {
-      console.log('Biome selected:', biomeKey);
+      logger.debug('Biome selected', { biomeKey }, LOG_CATEGORY.UI);
     }
     // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
     try {
@@ -506,7 +507,7 @@ class SidebarController {
         }
       });
     } else {
-      console.warn('GameManager not available for grid opacity change');
+      logger.debug('GameManager not available for grid opacity change', {}, LOG_CATEGORY.UI);
     }
   }
 
@@ -526,7 +527,7 @@ class SidebarController {
       }
 
     } else {
-      console.warn('GameManager not available for animation speed change');
+      logger.debug('GameManager not available for animation speed change', {}, LOG_CATEGORY.UI);
     }
   }
 }

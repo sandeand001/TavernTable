@@ -2,6 +2,7 @@
 
 import CreatureToken from './CreatureToken.js';
 import { CREATURE_HELPERS } from '../../config/GameConstants.js';
+import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 
 class CreatureFactory {
   static createCreature(type, x = 0, y = 0, facingRight = true) {
@@ -9,7 +10,7 @@ class CreatureFactory {
     const validTypes = CREATURE_HELPERS.getAllTypes();
     
     if (!validTypes.includes(type.toLowerCase())) {
-      console.warn(`Unknown creature type: ${type}. Valid types:`, validTypes);
+      logger.debug('Unknown creature type requested', { type, validTypes }, LOG_CATEGORY.SYSTEM);
     }
     
     // Create CreatureToken directly

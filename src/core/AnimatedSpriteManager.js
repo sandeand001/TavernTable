@@ -143,7 +143,7 @@ class AnimatedSpriteManager {
       
       logger.debug(`Successfully loaded animated texture: ${key} (${frames.length} frames)`);
     } catch (error) {
-      console.error(`❌ Failed to load animated texture: ${key}`, error);
+      logger.error('Failed to load animated texture', { key, error: error?.message, stack: error?.stack }, LOG_CATEGORY.SYSTEM);
       logger.warn(`Failed to load animated texture: ${key}`, error);
       // Don't throw - allow fallback to static sprites
     }

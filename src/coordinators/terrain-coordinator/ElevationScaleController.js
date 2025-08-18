@@ -97,7 +97,7 @@ export class ElevationScaleController {
         try { this.c.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal repaint failure */ }
       }
 
-      logger.info('Elevation perception scale updated', {
+      logger.debug('Elevation perception scale updated', {
         context: 'ElevationScaleController.apply',
         unit
       }, LOG_CATEGORY.USER);

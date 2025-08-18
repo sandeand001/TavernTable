@@ -1,6 +1,7 @@
 // src/entities/creatures/CreatureToken.js - Base class for all creature tokens
 
 import { CREATURE_SCALES } from '../../config/GameConstants.js';
+import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../../utils/ErrorHandler.js';
 import { GameValidators, Sanitizers } from '../../utils/Validation.js';
 
@@ -122,7 +123,7 @@ class CreatureToken {
       }
       
       // Fallback: Default scale for unknown creatures
-      console.warn(`No scale defined for creature type: ${this.type}, using default`);
+      logger.debug('No scale defined for creature type; using default', { type: this.type }, LOG_CATEGORY.SYSTEM);
       return CREATURE_SCALES.goblin || 0.06;
     } catch (error) {
       GameErrors.validation(error, {
@@ -352,7 +353,7 @@ class CreatureToken {
     try {
       const spriteKey = `${this.type}-sprite`;
       if (!window.spriteManager || !window.spriteManager.hasSpriteLoaded?.(spriteKey)) {
-        console.warn(`🎨 Cannot replace sprite for ${this.type} - texture not available`);
+        logger.debug('Texture not available; cannot replace sprite', { type: this.type }, LOG_CATEGORY.SYSTEM);
         return;
       }
       
@@ -383,7 +384,7 @@ class CreatureToken {
       }
       
     } catch (error) {
-      console.error(`❌ Failed to replace sprite for ${this.type}:`, error);
+      logger.error('Failed to replace sprite', { type: this.type, error: error?.message, stack: error?.stack }, LOG_CATEGORY.SYSTEM);
     }
   }
 }

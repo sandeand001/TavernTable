@@ -145,7 +145,7 @@ export function setupTokenInteractions(c, sprite, tokenData) {
       try {
         c.snapToGrid(tokenSprite, localX, localY);
       } catch (e) {
-        console.error('snapToGrid bridge error', e);
+        logger.error('snapToGrid bridge error', { error: e?.message, stack: e?.stack });
       }
     };
   }

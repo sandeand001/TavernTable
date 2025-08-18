@@ -102,7 +102,7 @@ export class TerrainPixiUtils {
         const facesDestroyed = this.safeDestroyPixiObject(tile.sideFaces, `${context}.sideFacesCleanup`);
         tile.sideFaces = null;
         if (!facesRemoved || !facesDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial sideFaces cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial sideFaces cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             facesRemoved,
@@ -117,7 +117,7 @@ export class TerrainPixiUtils {
         const baseFacesDestroyed = this.safeDestroyPixiObject(tile.baseSideFaces, `${context}.baseFacesCleanup`);
         tile.baseSideFaces = null;
         if (!baseFacesRemoved || !baseFacesDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial baseSideFaces cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial baseSideFaces cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             baseFacesRemoved,
@@ -133,7 +133,7 @@ export class TerrainPixiUtils {
         const shadowDestroyed = this.safeDestroyPixiObject(tile.shadowTile, `${context}.shadowCleanup`);
         
         if (!shadowRemoved || !shadowDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial shadow tile cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial shadow tile cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             shadowRemoved,
@@ -149,7 +149,7 @@ export class TerrainPixiUtils {
         const overlayDestroyed = this.safeDestroyPixiObject(tile.depressionOverlay, `${context}.overlayCleanup`);
         
         if (!overlayRemoved || !overlayDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial depression overlay cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial depression overlay cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             overlayRemoved,
@@ -173,7 +173,7 @@ export class TerrainPixiUtils {
       const tileDestroyed = this.safeDestroyPixiObject(tile, `${context}.tileCleanup`);
 
       if (!tileRemoved || !tileDestroyed) {
-        logger.log(LOG_LEVEL.WARN, 'Partial main tile cleanup', LOG_CATEGORY.SYSTEM, {
+        logger.log(LOG_LEVEL.DEBUG, 'Partial main tile cleanup', LOG_CATEGORY.SYSTEM, {
           context,
           tileKey,
           tileRemoved,

@@ -113,6 +113,18 @@ html, body {
   transition: all 0.2s ease;
 }
 
+/* Creature button hover/selected states */
+#creature-content button:hover {
+  background-color: #555;
+  transform: translateY(-1px);
+}
+
+#creature-content button.selected {
+  background-color: #4da6ff;
+  color: white;
+  font-weight: 600;
+}
+
 #creature-content.collapsed {
   max-height: 0 !important;
   opacity: 0 !important;
@@ -393,17 +405,7 @@ html, body {
   background-color: #b71c1c;
 }
 
-/* Creature button hover/selected states */
-#creature-content button:hover {
-  background-color: #555;
-  transform: translateY(-1px);
-}
-
-#creature-content button.selected {
-  background-color: #4da6ff;
-  color: white;
-  font-weight: 600;
-}
+/* (moved up next to #creature-content button block for deduplication) */
 
 .nudge-middle-row {
   display: flex;

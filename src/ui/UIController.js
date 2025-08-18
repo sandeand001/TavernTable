@@ -35,6 +35,8 @@ import {
   getTerrainModeEls,
   getAutoApplyButton
 } from './domHelpers.js';
+import { getCurrentSpriteKey } from './lib/spriteKeys.js';
+import { computeElevationVisualOffset } from './lib/elevationUtils.js';
 
 /**
  * Toggle the visibility of the creature tokens panel
@@ -251,27 +253,44 @@ function attachDynamicUIHandlers() {
       resetTerrainBtn.dataset.boundResetHandler = 'true';
     }
 
-    // Elevation perception slider
+    // Elevation perception slider (debounced to reduce log/render spam during drag)
     const { slider: elevSlider, valueEl: elevValue } = getElevationScaleControls();
     if (elevSlider && !elevSlider.dataset.boundElevHandler) {
-      const applyValue = (val) => {
+      const DEBOUNCE_MS = 120;
+      let debounceId = null;
+      const updateDisplay = (val) => {
         if (elevValue) elevValue.textContent = `${val} px/level`;
+      };
+      const applyScale = (val) => {
         if (window.gameManager?.terrainCoordinator?.setElevationScale) {
           window.gameManager.terrainCoordinator.setElevationScale(Number(val));
         }
       };
-      elevSlider.addEventListener('input', (e) => applyValue(e.target.value));
-      elevSlider.addEventListener('change', (e) => applyValue(e.target.value));
+      elevSlider.addEventListener('input', (e) => {
+        const val = e.target.value;
+        updateDisplay(val);
+        if (debounceId) clearTimeout(debounceId);
+        debounceId = setTimeout(() => applyScale(val), DEBOUNCE_MS);
+      });
+      elevSlider.addEventListener('change', (e) => {
+        const val = e.target.value;
+        updateDisplay(val);
+        if (debounceId) clearTimeout(debounceId);
+        applyScale(val);
+      });
       // Initialize from current config if available
       try {
         const current = window.gameManager?.terrainCoordinator?.getElevationScale?.();
         if (Number.isFinite(current)) {
           elevSlider.value = String(current);
-          if (elevValue) elevValue.textContent = `${current} px/level`;
+          updateDisplay(current);
         }
       } catch { /* ignore getElevationScale failure */ }
       elevSlider.dataset.boundElevHandler = 'true';
     }
+
+    // Ensure brush size label reflects current state on load
+    try { updateBrushSizeDisplay(); } catch (_) { /* non-fatal UI update */ }
 
     logger.debug('Dynamic UI handlers attached');
   } catch (error) {
@@ -406,7 +425,7 @@ function updateBrushSizeDisplay() {
     }
 
   } catch (error) {
-    logger.warn('Failed to update brush size display', {
+    logger.debug('Failed to update brush size display', {
       error: error.message
     }, LOG_CATEGORY.UI);
   }
@@ -488,7 +507,7 @@ function createGameManager() {
 // Initialize the game manager and set up event listeners
 const gameManager = createGameManager();
 
-logger.log(LOG_LEVEL.INFO, 'GameManager created successfully', LOG_CATEGORY.SYSTEM, {
+logger.log(LOG_LEVEL.DEBUG, 'GameManager created successfully', LOG_CATEGORY.SYSTEM, {
   gameManagerType: gameManager.constructor.name,
   globallyAvailable: !!window.gameManager,
   timestamp: new Date().toISOString()
@@ -583,11 +602,7 @@ function getSpriteElevation(sprite) {
   } catch { return 0; }
 }
 
-function computeElevationVisualOffset(height) {
-  // Heuristic: each elevation step moves sprite visually by tileHeight * 0.5 upward
-  const tileH = window.gameManager ? window.gameManager.tileHeight : 64;
-  return -height * (tileH * 0.5);
-}
+// computeElevationVisualOffset moved to ./lib/elevationUtils.js
 
 // API to auto-adjust all sprites after terrain tweaks (future extension)
 function applyElevationOffsetsToTokens() {
@@ -606,11 +621,7 @@ function applyElevationOffsetsToTokens() {
 window.applyElevationOffsetsToTokens = applyElevationOffsetsToTokens;
 
 // ---------------- Sprite Offset Persistence & Auto-Apply ----------------
-function getCurrentSpriteKey(sprite) {
-  if (!sprite) return null;
-  // Try several identifiers to group by creature type; fallback to texture UID
-  return sprite.creatureType || sprite.name || (sprite.texture && sprite.texture.textureCacheIds && sprite.texture.textureCacheIds[0]) || `uid_${sprite.uid || sprite._texture?.uid}`;
-}
+// getCurrentSpriteKey moved to ./lib/spriteKeys.js
 
 function ensureSpriteAdjustExtendedState() {
   // Extend existing state object without needing to locate original declaration
