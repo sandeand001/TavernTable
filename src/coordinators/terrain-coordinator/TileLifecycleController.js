@@ -162,4 +162,61 @@ export class TileLifecycleController {
       logger.warn('Failed to add base 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
     }
   }
+
+  /**
+   * Clear elevation-related artifacts from a tile (shadow, faces, overlays) and optionally reset visuals.
+   * @param {any} tile - The grid tile display object
+   * @param {{ resetAlpha?: boolean, resetY?: boolean }} [options]
+   */
+  clearTileArtifacts(tile, options = {}) {
+    const { resetAlpha = false, resetY = false } = options;
+    try {
+      if (!tile) return;
+
+      // Reset alpha if requested
+      if (resetAlpha) {
+        try { tile.alpha = 1.0; } catch (_) { /* ignore */ }
+      }
+
+      // Reset Y position to baseline if requested
+      if (resetY && typeof tile.baseIsoY === 'number') {
+        try { tile.y = tile.baseIsoY; } catch (_) { /* ignore */ }
+      }
+
+      // Remove shadow tile from parent and destroy
+      if (tile.shadowTile && tile.parent?.children?.includes(tile.shadowTile)) {
+        try {
+          tile.parent.removeChild(tile.shadowTile);
+          if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
+            tile.shadowTile.destroy();
+          }
+        } catch (_) { /* ignore */ }
+        tile.shadowTile = null;
+      }
+
+      // Remove depression overlay from tile children and destroy
+      if (tile.depressionOverlay) {
+        try {
+          if (tile.children?.includes(tile.depressionOverlay)) tile.removeChild(tile.depressionOverlay);
+          if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) {
+            tile.depressionOverlay.destroy();
+          }
+        } catch (_) { /* ignore */ }
+        tile.depressionOverlay = null;
+      }
+
+      // Remove base side faces from parent and destroy
+      if (tile.baseSideFaces && tile.parent?.children?.includes(tile.baseSideFaces)) {
+        try {
+          tile.parent.removeChild(tile.baseSideFaces);
+          if (typeof tile.baseSideFaces.destroy === 'function' && !tile.baseSideFaces.destroyed) {
+            tile.baseSideFaces.destroy();
+          }
+        } catch (_) { /* ignore */ }
+        tile.baseSideFaces = null;
+      }
+    } catch (e) {
+      logger.warn('Failed to clear tile artifacts', { error: e.message }, LOG_CATEGORY.RENDERING);
+    }
+  }
 }

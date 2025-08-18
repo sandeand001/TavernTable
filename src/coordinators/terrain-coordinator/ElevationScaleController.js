@@ -38,7 +38,7 @@ export class ElevationScaleController {
                 if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
                   child.baseSideFaces.destroy();
                 }
-              } catch(_) { /* ignore */ }
+              } catch (_) { /* ignore */ }
               child.baseSideFaces = null;
             }
           }
@@ -68,7 +68,7 @@ export class ElevationScaleController {
               const height = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
               // Re-add base side faces using tile lifecycle controller
               this.c._tileLifecycle.addBase3DFaces(child, gx, gy, height);
-            } catch(_) { /* continue on error */ }
+            } catch (_) { /* continue on error */ }
           }
         });
       }
@@ -85,12 +85,12 @@ export class ElevationScaleController {
             sprite.x = iso.x;
             sprite.y = iso.y + elev;
             sprite.zIndex = (t.gridX + t.gridY) * 100 + 1;
-          } catch(_) { /* ignore */ }
+          } catch (_) { /* ignore */ }
         });
       }
 
       // 4) If overlay container exists, ensure it still sorts correctly
-      try { this.c.gameManager?.gridContainer?.sortChildren?.(); } catch(_) { /* no-op */ }
+      try { this.c.gameManager?.gridContainer?.sortChildren?.(); } catch (_) { /* no-op */ }
 
       // 5) If outside terrain mode and a biome is selected, repaint the biome canvas
       if (!this.c.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {

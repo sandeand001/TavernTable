@@ -51,30 +51,37 @@ export class ActivationHelpers {
       if (this.c.gameManager?.gridContainer?.children) {
         this.c.gameManager.gridContainer.children.forEach(child => {
           if (child.isGridTile) {
-            child.alpha = 1.0;
-            if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
-            if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
-              child.parent.removeChild(child.shadowTile);
-              if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
-                child.shadowTile.destroy();
-              }
-              child.shadowTile = null;
-            }
-            if (child.depressionOverlay) {
-              try {
-                if (child.children?.includes(child.depressionOverlay)) child.removeChild(child.depressionOverlay);
-                if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
-                  child.depressionOverlay.destroy();
+            const tlc = this.c._tileLifecycle;
+            if (tlc && typeof tlc.clearTileArtifacts === 'function') {
+              // Centralized cleanup of per-tile artifacts with explicit resets
+              tlc.clearTileArtifacts(child, { resetAlpha: true, resetY: true });
+            } else {
+              // Fallback to previous inline behavior to preserve compatibility
+              child.alpha = 1.0;
+              if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
+              if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
+                child.parent.removeChild(child.shadowTile);
+                if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
+                  child.shadowTile.destroy();
                 }
-              } catch (_) { /* best-effort */ }
-              child.depressionOverlay = null;
-            }
-            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
-              child.parent.removeChild(child.baseSideFaces);
-              if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
-                child.baseSideFaces.destroy();
+                child.shadowTile = null;
               }
-              child.baseSideFaces = null;
+              if (child.depressionOverlay) {
+                try {
+                  if (child.children?.includes(child.depressionOverlay)) child.removeChild(child.depressionOverlay);
+                  if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
+                    child.depressionOverlay.destroy();
+                  }
+                } catch (_) { /* best-effort */ }
+                child.depressionOverlay = null;
+              }
+              if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
+                child.parent.removeChild(child.baseSideFaces);
+                if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
+                  child.baseSideFaces.destroy();
+                }
+                child.baseSideFaces = null;
+              }
             }
           }
         });

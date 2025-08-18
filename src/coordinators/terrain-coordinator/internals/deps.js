@@ -11,15 +11,15 @@ export function validateDependencies(c) {
   // Resolve validators/sanitizers from coordinator instance, globals, or module defaults
   const gv = (
     c?.GameValidators
-    || (typeof window !== 'undefined' ? window.GameValidators : undefined)
-    || globalThis?.GameValidators
-    || DefaultGameValidators
+        || (typeof window !== 'undefined' ? window.GameValidators : undefined)
+        || globalThis?.GameValidators
+        || DefaultGameValidators
   );
   const sz = (
     c?.Sanitizers
-    || (typeof window !== 'undefined' ? window.Sanitizers : undefined)
-    || globalThis?.Sanitizers
-    || DefaultSanitizers
+        || (typeof window !== 'undefined' ? window.Sanitizers : undefined)
+        || globalThis?.Sanitizers
+        || DefaultSanitizers
   );
 
   const usedDefaultsGV = gv === DefaultGameValidators;

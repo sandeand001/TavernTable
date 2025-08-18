@@ -60,9 +60,15 @@ export class ElevationVisualsController {
         shadow.x = tile.x + 2;
         shadow.y = tile.y + 2;
         if (tile.parent) {
-          const tileIndex = tile.parent.getChildIndex(tile);
-          tile.parent.addChildAt(shadow, Math.max(0, tileIndex));
-          tile.shadowTile = shadow;
+          try {
+            const hasGetChildIndex = typeof tile.parent.getChildIndex === 'function';
+            const hasAddChildAt = typeof tile.parent.addChildAt === 'function';
+            if (hasGetChildIndex && hasAddChildAt) {
+              const tileIndex = tile.parent.getChildIndex(tile);
+              tile.parent.addChildAt(shadow, Math.max(0, tileIndex));
+              tile.shadowTile = shadow;
+            }
+          } catch (_) { /* best-effort: skip shadow insertion if container API unavailable */ }
         }
       }
     } catch (error) {
