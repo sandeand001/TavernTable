@@ -90,7 +90,7 @@ export class RenderCoordinator {
    */
   centerGrid() {
     if (!this.gameManager.gridContainer || !this.gameManager.app) {
-      logger.warn('Cannot center grid: missing gridContainer or app');
+      logger.debug('Cannot center grid: missing gridContainer or app');
       return;
     }
 
@@ -115,7 +115,7 @@ export class RenderCoordinator {
     if (this.gameManager.interactionManager) {
       this.gameManager.interactionManager.resetZoom();
     } else {
-      logger.warn('Cannot reset zoom: InteractionManager not available');
+      logger.debug('Cannot reset zoom: InteractionManager not available');
     }
   }
 

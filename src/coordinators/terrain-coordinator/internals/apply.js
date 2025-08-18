@@ -4,7 +4,7 @@ import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
 
 export function validateApplicationRequirements(c) {
   if (!c.gameManager.gridContainer || !c.dataStore.working) {
-    logger.warn('Cannot apply terrain to base grid - missing requirements', {
+    logger.debug('Cannot apply terrain to base grid - missing requirements', {
       context: 'apply.validateApplicationRequirements',
       hasGridContainer: !!c.gameManager.gridContainer,
       hasTerrainHeights: !!c.dataStore.working

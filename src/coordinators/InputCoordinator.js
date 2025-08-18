@@ -23,7 +23,7 @@ export class InputCoordinator {
     if (this.gameManager.interactionManager) {
       this.gameManager.interactionManager.handleLeftClick(event);
     } else {
-      logger.warn('Cannot handle click: InteractionManager not available');
+      logger.debug('Cannot handle click: InteractionManager not available');
     }
   }
 
@@ -103,7 +103,7 @@ export class InputCoordinator {
       // Update global array for backward compatibility
       window.placedTokens = this.gameManager.placedTokens;
     } else {
-      logger.warn('Cannot place token: TokenManager or gridContainer not available');
+      logger.debug('Cannot place token: TokenManager or gridContainer not available');
     }
   }
 
