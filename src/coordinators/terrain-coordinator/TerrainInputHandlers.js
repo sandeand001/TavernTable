@@ -223,10 +223,7 @@ export class TerrainInputHandlers {
         heightDisplay.style.color = '#6b7280';
       }
 
-      const scaleMarks = document.querySelectorAll('.scale-mark');
-      // Use helper for consistency with updateHeightIndicator
-      // (kept original variable for minimal diff)
-      // const scaleMarks = this._getScaleMarks();
+      const scaleMarks = this._getScaleMarks();
       scaleMarks.forEach(mark => {
         const markHeight = parseInt(mark.getAttribute('data-height'));
         if (markHeight === 0) {

@@ -22,6 +22,7 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
+import { getCreatureButtons } from './domHelpers.js';
 
 /**
  * Toggle the visibility of the creature tokens panel
@@ -192,7 +193,7 @@ function attachDynamicUIHandlers() {
     if (!window.gameManager) return;
 
     // Token buttons (data-token attribute or legacy id naming)
-    const tokenButtons = document.querySelectorAll('[id^="token-"]');
+    const tokenButtons = getCreatureButtons();
     tokenButtons.forEach(btn => {
       if (btn.dataset.boundTokenHandler) return; // avoid duplicate
       const id = btn.id.replace('token-', '');
