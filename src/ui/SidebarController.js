@@ -15,6 +15,15 @@ class SidebarController {
     this.init();
   }
 
+  // Small helpers to avoid repeating common selectors
+  _getTabButtons() {
+    return document.querySelectorAll('.tab-button');
+  }
+
+  _getTabPanels() {
+    return document.querySelectorAll('.tab-panel');
+  }
+
   /**
    * Initialize the sidebar controller
    * Sets up event listeners and default state
@@ -44,7 +53,7 @@ class SidebarController {
    * Set up event listeners for tab navigation
    */
   setupTabListeners() {
-    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabButtons = this._getTabButtons();
     
     tabButtons.forEach(button => {
       button.addEventListener('click', (e) => {
@@ -185,7 +194,7 @@ class SidebarController {
     this.activeTab = tabId;
 
     // Update tab button states
-    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabButtons = this._getTabButtons();
     tabButtons.forEach(button => {
       const isActive = button.getAttribute('data-tab') === tabId;
       button.classList.toggle('active', isActive);
@@ -193,7 +202,7 @@ class SidebarController {
     });
 
     // Update tab panel visibility
-    const tabPanels = document.querySelectorAll('.tab-panel');
+    const tabPanels = this._getTabPanels();
     tabPanels.forEach(panel => {
       const isActive = panel.id === `${tabId}-panel`;
       panel.classList.toggle('active', isActive);
