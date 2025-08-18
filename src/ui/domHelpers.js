@@ -173,3 +173,12 @@ export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
   if (!root) return null;
   return root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
 }
+
+/** Error UI helpers */
+export function getErrorContainer() {
+  return document.getElementById('tavern-error-container');
+}
+
+export function getErrorStylesEl() {
+  return document.getElementById('tavern-error-styles');
+}

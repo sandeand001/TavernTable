@@ -171,6 +171,8 @@ export class ErrorEntry {
 /**
  * User notification manager for error display
  */
+import { getErrorContainer, getErrorStylesEl } from '../ui/domHelpers.js';
+
 export class ErrorNotificationManager {
   constructor(config) {
     this.config = config;
@@ -182,7 +184,11 @@ export class ErrorNotificationManager {
   initialize() {
     if (this.initialized || typeof document === 'undefined') return;
 
-    this.container = document.getElementById('tavern-error-container');
+    // Use shared DOM helper for consistency
+    this.container = getErrorContainer();
+    if (!this.container) {
+      this.container = document.getElementById('tavern-error-container');
+    }
     if (!this.container) {
       this.container = this.createContainer();
       document.body.appendChild(this.container);
@@ -200,6 +206,7 @@ export class ErrorNotificationManager {
   }
 
   injectStyles() {
+    if (getErrorStylesEl()) return;
     if (document.getElementById('tavern-error-styles')) return;
 
     const styles = document.createElement('style');
