@@ -10,3 +10,8 @@ export const CREATURE_BUTTONS_SELECTOR = '#creature-content button[id^="token-"]
 export function getCreatureButtons() {
   return document.querySelectorAll(CREATURE_BUTTONS_SELECTOR);
 }
+
+/** Returns the facing toggle button element if present. */
+export function getFacingButton() {
+  return document.getElementById('facing-right');
+}
