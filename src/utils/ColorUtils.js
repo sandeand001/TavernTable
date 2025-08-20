@@ -38,3 +38,22 @@ export function darkenColor(color, factor = 0.0) {
 
   return (newR << 16) | (newG << 8) | newB;
 }
+
+/**
+ * shadeMul - Multiply RGB channels by a factor (used in painterly shading)
+ * Matches legacy BiomeCanvasPainter _shadeHex behavior using Math.round.
+ * @param {number} color - 0xRRGGBB
+ * @param {number} factor - e.g., 1.15 lighter, 0.8 darker
+ * @returns {number}
+ */
+export function shadeMul(color, factor = 1.0) {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+
+  const newR = Math.max(0, Math.min(255, Math.round(r * factor)));
+  const newG = Math.max(0, Math.min(255, Math.round(g * factor)));
+  const newB = Math.max(0, Math.min(255, Math.round(b * factor)));
+
+  return (newR << 16) | (newG << 8) | newB;
+}

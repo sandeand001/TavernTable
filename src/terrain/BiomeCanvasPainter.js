@@ -7,6 +7,7 @@
  */
 
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
+import { shadeMul as _sharedShadeMul } from '../utils/ColorUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { styleForBiome } from './biome-painter/style.js';
 import { strokeBlob as motifStrokeBlob, strokeRibbon as motifStrokeRibbon, globalStriations as motifGlobalStriations, globalCracks as motifGlobalCracks, scatterBlobsGlobal as motifScatterBlobsGlobal, scatterTuftsGlobal as motifScatterTuftsGlobal } from './biome-painter/motifs.js';
@@ -298,10 +299,8 @@ export class BiomeCanvasPainter {
 
   /** Small helper to shade a color (hex int) lighter/darker by factor (e.g., 1.1 lighter, 0.9 darker). */
   _shadeHex(hexInt, factor) {
-    const r = Math.max(0, Math.min(255, Math.round(((hexInt >> 16) & 255) * factor)));
-    const g = Math.max(0, Math.min(255, Math.round(((hexInt >> 8) & 255) * factor)));
-    const b = Math.max(0, Math.min(255, Math.round((hexInt & 255) * factor)));
-    return (r << 16) | (g << 8) | b;
+    // Delegate to shared implementation to avoid duplication; behavior preserved
+    return _sharedShadeMul(hexInt >>> 0, factor);
   }
 
   /** Draw concentric soft ripples centered in a face. */
