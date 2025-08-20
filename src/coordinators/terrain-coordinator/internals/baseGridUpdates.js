@@ -1,6 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GRID_CONFIG } from '../../../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
+import { traceDiamondPath } from '../../../utils/PixiShapeUtils.js';
 
 /**
  * Update base grid tile in-place without destruction (safer), extracted from TerrainCoordinator.
@@ -54,13 +55,8 @@ export function updateBaseGridTileInPlace(c, x, y, height) {
     existingTile.clear();
     existingTile.lineStyle(1, borderColor, borderAlpha);
     existingTile.beginFill(fillColor, fillAlpha);
-
     // Redraw diamond shape
-    existingTile.moveTo(0, c.gameManager.tileHeight / 2);
-    existingTile.lineTo(c.gameManager.tileWidth / 2, 0);
-    existingTile.lineTo(c.gameManager.tileWidth, c.gameManager.tileHeight / 2);
-    existingTile.lineTo(c.gameManager.tileWidth / 2, c.gameManager.tileHeight);
-    existingTile.lineTo(0, c.gameManager.tileHeight / 2);
+    traceDiamondPath(existingTile, c.gameManager.tileWidth, c.gameManager.tileHeight);
     existingTile.endFill();
 
     // Update tile properties

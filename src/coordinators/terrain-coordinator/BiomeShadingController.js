@@ -3,6 +3,7 @@ import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../../config/TerrainConstants.js';
 import BiomeCanvasPainter from '../../terrain/BiomeCanvasPainter.js';
 import { getBiomeColorHex } from '../../config/BiomePalettes.js';
+import { traceDiamondPath } from '../../utils/PixiShapeUtils.js';
 
 /**
  * BiomeShadingController - façade for painterly biome shading outside terrain mode.
@@ -72,11 +73,7 @@ export class BiomeShadingController {
         child.clear();
         child.lineStyle(1, borderColor, borderAlpha);
         // Draw only the border path; leave unfilled to let the biome canvas be visible
-        child.moveTo(0, this.c.gameManager.tileHeight / 2);
-        child.lineTo(this.c.gameManager.tileWidth / 2, 0);
-        child.lineTo(this.c.gameManager.tileWidth, this.c.gameManager.tileHeight / 2);
-        child.lineTo(this.c.gameManager.tileWidth / 2, this.c.gameManager.tileHeight);
-        child.lineTo(0, this.c.gameManager.tileHeight / 2);
+        traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
 
         if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
         if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.c.addVisualElevationEffect(child, h);
@@ -101,11 +98,7 @@ export class BiomeShadingController {
         if (show) {
           child.beginFill(GRID_CONFIG.TILE_COLOR, 1.0);
         }
-        child.moveTo(0, this.c.gameManager.tileHeight / 2);
-        child.lineTo(this.c.gameManager.tileWidth / 2, 0);
-        child.lineTo(this.c.gameManager.tileWidth, this.c.gameManager.tileHeight / 2);
-        child.lineTo(this.c.gameManager.tileWidth / 2, this.c.gameManager.tileHeight);
-        child.lineTo(0, this.c.gameManager.tileHeight / 2);
+        traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
         if (show) child.endFill();
       });
     } catch (_) { /* ignore */ }

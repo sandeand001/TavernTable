@@ -1,6 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { TERRAIN_CONFIG } from '../../config/TerrainConstants.js';
 import { TerrainHeightUtils } from '../../utils/TerrainHeightUtils.js';
+import { traceDiamondPath } from '../../utils/PixiShapeUtils.js';
 
 /**
  * ElevationVisualsController - Encapsulates height-based visual effects on tiles.
@@ -51,11 +52,7 @@ export class ElevationVisualsController {
         shadow.beginFill(shadowColor, shadowAlpha);
         const tileWidth = this.c.gameManager.tileWidth;
         const tileHeight = this.c.gameManager.tileHeight;
-        shadow.moveTo(0, tileHeight / 2);
-        shadow.lineTo(tileWidth / 2, 0);
-        shadow.lineTo(tileWidth, tileHeight / 2);
-        shadow.lineTo(tileWidth / 2, tileHeight);
-        shadow.lineTo(0, tileHeight / 2);
+        traceDiamondPath(shadow, tileWidth, tileHeight);
         shadow.endFill();
         shadow.x = tile.x + 2;
         shadow.y = tile.y + 2;
