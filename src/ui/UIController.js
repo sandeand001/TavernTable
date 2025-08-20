@@ -233,11 +233,11 @@ function attachDynamicUIHandlers() {
     // Terrain tool buttons
     const { raiseBtn, lowerBtn } = getTerrainToolButtons();
     if (raiseBtn && !raiseBtn.dataset.boundTerrainHandler) {
-      raiseBtn.addEventListener('click', () => window.gameManager.setTerrainTool('raise'));
+      raiseBtn.addEventListener('click', () => setTerrainTool('raise'));
       raiseBtn.dataset.boundTerrainHandler = 'true';
     }
     if (lowerBtn && !lowerBtn.dataset.boundTerrainHandler) {
-      lowerBtn.addEventListener('click', () => window.gameManager.setTerrainTool('lower'));
+      lowerBtn.addEventListener('click', () => setTerrainTool('lower'));
       lowerBtn.dataset.boundTerrainHandler = 'true';
     }
 
