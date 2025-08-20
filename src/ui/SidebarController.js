@@ -26,7 +26,7 @@ class SidebarController {
     return getTabPanels();
   }
 
-  // Grouped getters moved to domHelpers for DRY
+  //
 
   /**
    * Initialize the sidebar controller

@@ -273,8 +273,7 @@ export class TerrainManager {
   }
 
   /**
-   * Biome pattern helpers moved to shared ShadingHelpers module.
-   * This class now delegates drawing of biome-specific patterns.
+   * Delegates drawing of biome-specific patterns to shared helpers.
    */
 
   /**
@@ -296,7 +295,7 @@ export class TerrainManager {
     }
   }
 
-  // lightenColor/darkenColor moved to shared ColorUtils
+  //
 
   /**
    * Add shadow effect for elevated terrain

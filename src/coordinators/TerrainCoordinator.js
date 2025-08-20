@@ -501,69 +501,8 @@ export class TerrainCoordinator {
     return _replaceBaseGridTile(this, x, y, height);
   }
 
-  /**
-   * Find existing grid tiles at specified coordinates that need removal
-   * @private
-   * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate
-   * @returns {Array} Array of tiles to remove
-   */
-  // moved to TileLifecycleController: findGridTilesToRemove
-
-  /**
-   * Safely remove grid tiles with error isolation
-   * @private
-   * @param {Array} tilesToRemove - Array of tiles to remove
-   * @param {number} x - Grid X coordinate for logging
-   * @param {number} y - Grid Y coordinate for logging
-   */
-  // moved to TileLifecycleController: removeGridTilesSafely
-
-  /**
-   * Create new terrain tile replacement
-   * @private
-   * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate
-   * @param {number} height - Terrain height value
-   * @returns {PIXI.Graphics} New tile graphics object
-   * @throws {Error} If tile creation fails
-   */
-  // moved to TileLifecycleController: createReplacementTile
-
-  /**
-   * Apply elevation effects and store height data on tile
-   * @private
-   * @param {PIXI.Graphics} newTile - The newly created tile
-   * @param {number} height - Terrain height value
-   * @param {number} x - Grid X coordinate for logging
-   * @param {number} y - Grid Y coordinate for logging
-   */
-  // moved to TileLifecycleController: applyTileEffectsAndData
-
-  /**
-   * Log successful tile replacement
-   * @private
-   * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate
-   * @param {number} height - Terrain height value
-   * @param {number} removedTileCount - Number of tiles removed
-   */
-  // moved to TileLifecycleController: logTileReplacementSuccess
-
-  /**
-   * Handle tile replacement errors gracefully
-   * @private
-   * @param {Error} error - The error that occurred
-   * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate
-   * @param {number} height - Terrain height value
-   */
-  // moved to TileLifecycleController: handleTileReplacementError
-
-  // moved to ElevationVisualsController: addVisualElevationEffect
-
-  // Add neighbor-aware 3D faces for base grid tiles (all four sides)
-  // moved to TileLifecycleController: addBase3DFaces
+  // (implementation details for tile lifecycle and elevation visuals are handled
+  //  by TileLifecycleController and ElevationVisualsController respectively)
   /** Determine base tile color when not editing: biome palette if selected, else neutral. */
   _getBiomeOrBaseColor(height) {
     return _getBiomeOrBaseColorInternal(this, height);
@@ -584,7 +523,6 @@ export class TerrainCoordinator {
     return this._biomeShading.toggleBaseTileVisibility(show);
   }
 
-  // moved to ShadingHelpers.js: shadeRand, drawShade* helpers
 
   /**
    * Public pass-through for elevation visual effect so tests and collaborators

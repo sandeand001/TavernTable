@@ -71,7 +71,7 @@ function toggleCreatureTokens() {
   }
 }
 
-// selector helpers moved to domHelpers.js
+//
 
 /**
  * Resize the game grid based on user input
@@ -602,7 +602,7 @@ function getSpriteElevation(sprite) {
   } catch { return 0; }
 }
 
-// computeElevationVisualOffset moved to ./lib/elevationUtils.js
+//
 
 // API to auto-adjust all sprites after terrain tweaks (future extension)
 function applyElevationOffsetsToTokens() {
@@ -621,7 +621,7 @@ function applyElevationOffsetsToTokens() {
 window.applyElevationOffsetsToTokens = applyElevationOffsetsToTokens;
 
 // ---------------- Sprite Offset Persistence & Auto-Apply ----------------
-// getCurrentSpriteKey moved to ./lib/spriteKeys.js
+//
 
 function ensureSpriteAdjustExtendedState() {
   // Extend existing state object without needing to locate original declaration
