@@ -1,5 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { GameErrors } from '../../utils/ErrorHandler.js';
+import { prepareBaseGridForEditing as _prepareGridForEdit, resetTerrainContainerSafely as _resetContainerSafely, validateContainerIntegrity as _validateContainer } from './internals/container.js';
+import { activateTerrainMode as _activateMode, loadTerrainStateAndDisplay as _loadStateAndDisplay, handleTerrainModeActivationError as _handleActivationError } from './internals/mode.js';
 
 /**
  * ActivationHelpers - façade for TerrainCoordinator enable/disable helpers.
@@ -8,13 +10,35 @@ import { GameErrors } from '../../utils/ErrorHandler.js';
 export class ActivationHelpers {
   constructor(coordinator) { this.c = coordinator; }
 
-  prepareBaseGridForEditing() { return this.c._prepareBaseGridForEditing(); }
-  validateTerrainSystemForActivation() { return this.c._validateTerrainSystemForActivation(); }
-  resetTerrainContainerSafely() { return this.c._resetTerrainContainerSafely(); }
-  validateContainerIntegrity() { return this.c._validateContainerIntegrity(); }
-  activateTerrainMode() { return this.c._activateTerrainMode(); }
-  loadTerrainStateAndDisplay() { return this.c._loadTerrainStateAndDisplay(); }
-  handleTerrainModeActivationError(error) { return this.c._handleTerrainModeActivationError(error); }
+  prepareBaseGridForEditing() {
+    if (typeof this.c._prepareBaseGridForEditing === 'function') return this.c._prepareBaseGridForEditing();
+    return _prepareGridForEdit(this.c);
+  }
+  validateTerrainSystemForActivation() {
+    if (typeof this.c._validateTerrainSystemForActivation === 'function') return this.c._validateTerrainSystemForActivation();
+    // Fall back to the public validator when wrapper is absent
+    return this.c.validateTerrainSystemState();
+  }
+  resetTerrainContainerSafely() {
+    if (typeof this.c._resetTerrainContainerSafely === 'function') return this.c._resetTerrainContainerSafely();
+    return _resetContainerSafely(this.c);
+  }
+  validateContainerIntegrity() {
+    if (typeof this.c._validateContainerIntegrity === 'function') return this.c._validateContainerIntegrity();
+    return _validateContainer(this.c);
+  }
+  activateTerrainMode() {
+    if (typeof this.c._activateTerrainMode === 'function') return this.c._activateTerrainMode();
+    return _activateMode(this.c);
+  }
+  loadTerrainStateAndDisplay() {
+    if (typeof this.c._loadTerrainStateAndDisplay === 'function') return this.c._loadTerrainStateAndDisplay();
+    return _loadStateAndDisplay(this.c);
+  }
+  handleTerrainModeActivationError(error) {
+    if (typeof this.c._handleTerrainModeActivationError === 'function') return this.c._handleTerrainModeActivationError(error);
+    return _handleActivationError(this.c, error);
+  }
 
   // Provide a single entry point mirroring enableTerrainMode body
   enableTerrainMode() {

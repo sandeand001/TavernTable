@@ -21,6 +21,7 @@ export class ErrorTelemetryManager {
     this.sendTimeout = setTimeout(() => {
       this.sendBatch();
     }, 2000);
+    if (typeof this.sendTimeout?.unref === 'function') this.sendTimeout.unref();
   }
 
   async sendBatch() {

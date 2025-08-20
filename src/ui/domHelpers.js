@@ -98,7 +98,34 @@ export function getDiceResultEl() {
 /** Returns all dice roll buttons in the dice panel. */
 export function getDiceButtons() {
   // Only the top dice panel's buttons; does not include sidebar controls
-  return document.querySelectorAll('#dice-panel button');
+  return document.querySelectorAll('#dice-panel button[data-sides]');
+}
+
+/** Returns the dice panel clear-history button. */
+export function getDiceClearButton() {
+  return document.querySelector('#dice-log-panel .panel-footer .clear-button');
+}
+
+/** Returns sprite nudge and adjust buttons. */
+export function getSpriteAdjustButtons() {
+  return {
+    up: document.getElementById('nudge-up'),
+    down: document.getElementById('nudge-down'),
+    left: document.getElementById('nudge-left'),
+    right: document.getElementById('nudge-right'),
+    center: document.getElementById('nudge-center'),
+    save: document.getElementById('save-offset'),
+    reset: document.getElementById('reset-offset'),
+    auto: document.getElementById('toggle-auto-apply')
+  };
+}
+
+/** Returns grid apply/reset zoom buttons. */
+export function getGridActionButtons() {
+  return {
+    applySize: document.getElementById('apply-grid-size'),
+    resetZoom: document.getElementById('reset-zoom')
+  };
 }
 
 /** Returns the terrain height display element. */

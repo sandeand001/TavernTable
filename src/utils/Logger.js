@@ -1,3 +1,4 @@
+import { getNodeEnv, isJest } from './env.js';
 /**
  * Logger.js - Enterprise-Grade Logging System for TavernTable
  * 
@@ -340,6 +341,8 @@ export class RemoteOutputHandler {
     this.sendTimeout = setTimeout(() => {
       this.flush();
     }, this.flushInterval);
+    // In Node/Jest, prevent this timer from keeping the process alive
+    if (typeof this.sendTimeout?.unref === 'function') this.sendTimeout.unref();
   }
 
   async flush() {
@@ -753,39 +756,21 @@ export class Logger {
   }
 }
 
-// Browser-safe environment detection
-const getEnvironment = () => {
-  // Check if we're in Node.js environment
-  if (typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env) {
-    return globalThis.process.env.NODE_ENV || 'development';
-  }
-
-  // Browser environment - check for common production indicators
-  if (typeof window !== 'undefined') {
-    // Check if we're on localhost or development domains
-    const hostname = window.location?.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname?.includes('dev')) {
-      return 'development';
-    }
-    return 'production';
-  }
-
-  // Default fallback
-  return 'development';
-};
-
-const environment = getEnvironment();
+// Environment detection centralized via env helper
+const environment = getNodeEnv();
 const isProduction = environment === 'production';
 const isDevelopment = environment === 'development';
+const runningInJest = typeof isJest === 'function' ? isJest() : false;
 
 // Global logger instance with environment-specific configuration
 export const logger = new Logger({
-  level: isProduction ? LOG_LEVEL.INFO : LOG_LEVEL.DEBUG,
+  // Quieter during tests to reduce noise and avoid any console-driven timeouts
+  level: runningInJest ? LOG_LEVEL.WARN : (isProduction ? LOG_LEVEL.INFO : LOG_LEVEL.DEBUG),
   environment: environment,
-  enableConsole: true,
+  enableConsole: !runningInJest,
   enableMemory: true,
   enableRemote: isProduction,
-  enableStackTrace: isDevelopment,
+  enableStackTrace: isDevelopment && !runningInJest,
   enablePerformanceMetrics: true,
   maxMemoryLogs: 2000,
   applicationName: 'TavernTable'

@@ -532,11 +532,12 @@ export class TerrainManager {
         tile.tint = highlightColor;
 
         // Reset tint after 1 second
-        setTimeout(() => {
+        const t = setTimeout(() => {
           if (this.terrainTiles.has(tileKey)) {
             tile.tint = originalTint;
           }
         }, 1000);
+        if (typeof t?.unref === 'function') t.unref();
       }
     } catch (error) {
       logger.warn('Failed to highlight terrain tile', {

@@ -323,7 +323,7 @@ export class ErrorHandler {
       return;
     }
 
-    setTimeout(() => {
+    const t = setTimeout(() => {
       errorEntry.retryCount++;
       // Emit retry event
       if (typeof window !== 'undefined') {
@@ -332,6 +332,7 @@ export class ErrorHandler {
         }));
       }
     }, this.config.retryDelay * Math.pow(2, errorEntry.retryCount)); // Exponential backoff
+    if (typeof t?.unref === 'function') t.unref();
   }
 
   executeFallback(errorEntry) {

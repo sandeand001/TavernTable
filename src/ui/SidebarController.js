@@ -35,6 +35,7 @@ class SidebarController {
   init() {
     this.setupTabListeners();
     this.setupRangeSliderListeners();
+    this.setupDiceLogControls();
     this.showTab(this.activeTab);
 
     // Biome menu now lazy-builds when Biomes tab first opened
@@ -51,6 +52,16 @@ class SidebarController {
 
     // Add welcome message to dice log
     this.addDiceLogEntry('Welcome to TavernTable! Roll some dice to see history here.', 'system');
+  }
+
+  setupDiceLogControls() {
+    try {
+      const clearBtn = document.querySelector('#dice-log-panel .panel-footer .clear-button');
+      if (clearBtn && !clearBtn.dataset.boundClick) {
+        clearBtn.addEventListener('click', () => this.clearDiceLog());
+        clearBtn.dataset.boundClick = 'true';
+      }
+    } catch (_) { /* ignore */ }
   }
 
   /**
@@ -532,12 +543,7 @@ class SidebarController {
   }
 }
 
-// Global functions for HTML onclick handlers
-window.clearDiceLog = () => {
-  if (window.sidebarController) {
-    window.sidebarController.clearDiceLog();
-  }
-};
+// No inline HTML handlers needed; events are delegated in setup
 
 // Create and expose global instance
 window.sidebarController = new SidebarController();

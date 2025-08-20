@@ -64,7 +64,8 @@ export class ErrorNotificationManager {
     this.container.appendChild(notification);
     this.activeNotifications.set(errorEntry.id, notification);
     if (errorEntry.severity !== 'critical') {
-      setTimeout(() => this.dismiss(errorEntry.id), this.config.userNotificationTimeout);
+      const t = setTimeout(() => this.dismiss(errorEntry.id), this.config.userNotificationTimeout);
+      if (typeof t?.unref === 'function') t.unref();
     }
   }
 
@@ -139,10 +140,11 @@ export class ErrorNotificationManager {
     const notification = this.activeNotifications.get(errorId);
     if (notification) {
       notification.style.animation = 'slideOutRight 0.3s ease-in';
-      setTimeout(() => {
+      const t = setTimeout(() => {
         if (notification.parentNode) notification.parentNode.removeChild(notification);
         this.activeNotifications.delete(errorId);
       }, 300);
+      if (typeof t?.unref === 'function') t.unref();
     }
   }
 

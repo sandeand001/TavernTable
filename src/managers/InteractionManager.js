@@ -212,9 +212,10 @@ export class InteractionManager {
 
         // Provide visual feedback through cursor change or similar
         this.gameManager.app.view.style.cursor = 'not-allowed';
-        setTimeout(() => {
+        const t = setTimeout(() => {
           this.gameManager.app.view.style.cursor = 'crosshair'; // Reset to terrain cursor
         }, 200);
+        if (typeof t?.unref === 'function') t.unref();
 
         return;
       }

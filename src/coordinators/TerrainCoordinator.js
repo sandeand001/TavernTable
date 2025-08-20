@@ -18,10 +18,8 @@ import { ActivationHelpers } from './terrain-coordinator/ActivationHelpers.js';
 import { BiomeShadingController } from './terrain-coordinator/BiomeShadingController.js';
 import { TileLifecycleController } from './terrain-coordinator/TileLifecycleController.js';
 import { ElevationVisualsController } from './terrain-coordinator/ElevationVisualsController.js';
-import { prepareBaseGridForEditing as _prepareGridForEdit, resetTerrainContainerSafely as _resetContainerSafely, validateContainerIntegrity as _validateContainer } from './terrain-coordinator/internals/container.js';
 import { validateTerrainSystemState as _validateSystemState, validateTerrainDataConsistency as _validateDataConsistency } from './terrain-coordinator/internals/validation.js';
 import { validateApplicationRequirements as _validateApplyReqs, initializeBaseHeights as _initBaseHeights, processAllGridTiles as _processAllTiles, logCompletion as _logApplyComplete, handleApplicationError as _handleApplyError } from './terrain-coordinator/internals/apply.js';
-import { activateTerrainMode as _activateMode, loadTerrainStateAndDisplay as _loadStateAndDisplay, handleTerrainModeActivationError as _handleActivationError } from './terrain-coordinator/internals/mode.js';
 import { getGridCoordinatesFromEvent as _getCoordsFromEvent, modifyTerrainAtPosition as _modifyAtPos } from './terrain-coordinator/internals/inputs.js';
 import { setRichShadingEnabled as _setRichShadingEnabled, setBiomeSeed as _setBiomeSeed } from './terrain-coordinator/internals/biome.js';
 import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-coordinator/internals/color.js';
@@ -290,59 +288,44 @@ export class TerrainCoordinator {
    * the editing overlay is the sole visual representation of height.
    * @private
    */
-  _prepareBaseGridForEditing() {
-    return _prepareGridForEdit(this);
-  }
+  // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
    * DECOMPOSED METHOD: Validate terrain system before activation
    * @private
    */
-  _validateTerrainSystemForActivation() {
-    // CRITICAL: Validate terrain system state before proceeding
-    this.validateTerrainSystemState();
-  }
+  // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
    * DECOMPOSED METHOD: Reset terrain container state safely
    * @private
    */
-  _resetTerrainContainerSafely() {
-    return _resetContainerSafely(this);
-  }
+  // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
    * DECOMPOSED METHOD: Validate container integrity after reset
    * @private
    */
-  _validateContainerIntegrity() {
-    return _validateContainer(this);
-  }
+  // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
    * DECOMPOSED METHOD: Activate terrain mode state
    * @private
    */
-  _activateTerrainMode() {
-    return _activateMode(this);
-  }
+  // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
    * DECOMPOSED METHOD: Load terrain state and display
    * @private
    */
-  _loadTerrainStateAndDisplay() {
-    return _loadStateAndDisplay(this);
-  }
+  // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
    * DECOMPOSED METHOD: Handle terrain mode activation errors
    * @private
    * @param {Error} error - The error that occurred during activation
    */
-  _handleTerrainModeActivationError(error) {
-    return _handleActivationError(this, error);
-  }
+  // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
    * Disable terrain modification mode and apply changes permanently

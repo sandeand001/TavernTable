@@ -236,7 +236,7 @@ export function rollDice(sides) {
           window.sidebarController.addDiceLogEntry(logMessage, 'roll');
         }
 
-        setTimeout(() => {
+        const t = setTimeout(() => {
           resultEl.style.color = DICE_CONFIG.COLORS.NORMAL_ROLL;
           resultEl.style.textShadow = 'none';
           isRolling = false;
@@ -250,6 +250,7 @@ export function rollDice(sides) {
             btn.removeAttribute('data-prev-disabled');
           });
         }, DICE_CONFIG.RESULT_DISPLAY_DURATION);
+        if (typeof t?.unref === 'function') t.unref();
       } catch (error) {
         new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
           context: 'rollDice',
@@ -303,5 +304,4 @@ export function rollDice(sides) {
   }
 }
 
-// Make rollDice available globally for HTML onclick handlers
-window.rollDice = rollDice;
+// No global exposure needed; UI wires events via modules

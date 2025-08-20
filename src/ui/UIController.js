@@ -1,3 +1,4 @@
+import { isJest } from '../utils/env.js';
 /**
  * UIController.js
  * Handles UI interactions and initialization for TavernTable
@@ -35,6 +36,8 @@ import {
   getTerrainModeEls,
   getAutoApplyButton
 } from './domHelpers.js';
+import { getDiceButtons, getGridActionButtons, getSpriteAdjustButtons } from './domHelpers.js';
+import { rollDice } from '../systems/dice/dice.js';
 import { getCurrentSpriteKey } from './lib/spriteKeys.js';
 import { computeElevationVisualOffset } from './lib/elevationUtils.js';
 
@@ -292,6 +295,52 @@ function attachDynamicUIHandlers() {
     // Ensure brush size label reflects current state on load
     try { updateBrushSizeDisplay(); } catch (_) { /* non-fatal UI update */ }
 
+    // Dice buttons (top panel)
+    const diceButtons = getDiceButtons();
+    diceButtons.forEach(btn => {
+      if (btn.dataset.boundDiceHandler) return;
+      btn.addEventListener('click', () => {
+        const sides = parseInt(btn.getAttribute('data-sides'), 10);
+        if (Number.isFinite(sides)) rollDice(sides);
+      });
+      btn.dataset.boundDiceHandler = 'true';
+    });
+
+    // Grid apply/reset buttons
+    const { applySize, resetZoom: resetZoomBtn } = getGridActionButtons();
+    if (applySize && !applySize.dataset.boundClick) {
+      applySize.addEventListener('click', resizeGrid);
+      applySize.dataset.boundClick = 'true';
+    }
+    if (resetZoomBtn && !resetZoomBtn.dataset.boundClick) {
+      resetZoomBtn.addEventListener('click', resetZoom);
+      resetZoomBtn.dataset.boundClick = 'true';
+    }
+
+    // Terrain mode toggle
+    const { toggleEl: terrainToggle } = getTerrainModeEls();
+    if (terrainToggle && !terrainToggle.dataset.boundChange) {
+      terrainToggle.addEventListener('change', toggleTerrainMode);
+      terrainToggle.dataset.boundChange = 'true';
+    }
+
+    // Brush size controls
+    const dec = document.getElementById('brush-decrease');
+    const inc = document.getElementById('brush-increase');
+    if (dec && !dec.dataset.boundClick) { dec.addEventListener('click', decreaseBrushSize); dec.dataset.boundClick = 'true'; }
+    if (inc && !inc.dataset.boundClick) { inc.addEventListener('click', increaseBrushSize); inc.dataset.boundClick = 'true'; }
+
+    // Sprite adjust buttons
+    const spr = getSpriteAdjustButtons();
+    if (spr.up && !spr.up.dataset.boundClick) { spr.up.addEventListener('click', () => nudgeSelectedSprite(0, -1)); spr.up.dataset.boundClick = 'true'; }
+    if (spr.down && !spr.down.dataset.boundClick) { spr.down.addEventListener('click', () => nudgeSelectedSprite(0, 1)); spr.down.dataset.boundClick = 'true'; }
+    if (spr.left && !spr.left.dataset.boundClick) { spr.left.addEventListener('click', () => nudgeSelectedSprite(-1, 0)); spr.left.dataset.boundClick = 'true'; }
+    if (spr.right && !spr.right.dataset.boundClick) { spr.right.addEventListener('click', () => nudgeSelectedSprite(1, 0)); spr.right.dataset.boundClick = 'true'; }
+    if (spr.center && !spr.center.dataset.boundClick) { spr.center.addEventListener('click', captureSpriteBaseline); spr.center.dataset.boundClick = 'true'; }
+    if (spr.save && !spr.save.dataset.boundClick) { spr.save.addEventListener('click', saveSpriteOffset); spr.save.dataset.boundClick = 'true'; }
+    if (spr.reset && !spr.reset.dataset.boundClick) { spr.reset.addEventListener('click', resetSpriteOffset); spr.reset.dataset.boundClick = 'true'; }
+    if (spr.auto && !spr.auto.dataset.boundClick) { spr.auto.addEventListener('click', toggleAutoApplyOffsets); spr.auto.dataset.boundClick = 'true'; }
+
     logger.debug('Dynamic UI handlers attached');
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
@@ -312,7 +361,11 @@ document.addEventListener('DOMContentLoaded', () => {
         attachDynamicUIHandlers();
       }
     }, 100);
-    setTimeout(() => clearInterval(interval), 5000); // stop after 5s
+    // In Node/Jest environments, prevent timers from keeping the process alive
+    if (typeof interval?.unref === 'function') interval.unref();
+    const stopAfterMs = isJest() ? 1000 : 5000;
+    const stopper = setTimeout(() => clearInterval(interval), stopAfterMs);
+    if (typeof stopper?.unref === 'function') stopper.unref();
   }
 });
 
@@ -513,15 +566,7 @@ logger.log(LOG_LEVEL.DEBUG, 'GameManager created successfully', LOG_CATEGORY.SYS
   timestamp: new Date().toISOString()
 });
 
-// Make functions available globally for HTML onclick handlers (backward compatibility)
-window.toggleCreatureTokens = toggleCreatureTokens;
-window.resizeGrid = resizeGrid;
-window.resetZoom = resetZoom;
-window.toggleTerrainMode = toggleTerrainMode;
-window.setTerrainTool = setTerrainTool;
-window.increaseBrushSize = increaseBrushSize;
-window.decreaseBrushSize = decreaseBrushSize;
-window.resetTerrain = resetTerrain;
+// No global UI function exposure needed; events are wired via modules
 
 // === SPRITE ADJUSTMENT SYSTEM ===
 const spriteAdjustState = {
@@ -605,6 +650,8 @@ function getSpriteElevation(sprite) {
 //
 
 // API to auto-adjust all sprites after terrain tweaks (future extension)
+// Dev-only helper: intentionally unused in production wiring
+// eslint-disable-next-line no-unused-vars
 function applyElevationOffsetsToTokens() {
   if (!window.gameManager) return;
   const tokens = window.gameManager.placedTokens || [];
@@ -618,7 +665,7 @@ function applyElevationOffsetsToTokens() {
   });
 }
 
-window.applyElevationOffsetsToTokens = applyElevationOffsetsToTokens;
+// ...
 
 // ---------------- Sprite Offset Persistence & Auto-Apply ----------------
 //
@@ -728,58 +775,24 @@ function installSpriteOffsetAutoApplyHook() {
 }
 
 // Attempt hook installation repeatedly until tokenManager exists
-setTimeout(function retryHook() {
+// Bound retries under Jest to avoid leaking timers in tests
+const __isJest = isJest();
+const __retryLimit = __isJest ? 3 : Infinity;
+let __retryCount = 0;
+const __first = setTimeout(function retryHook() {
   try { installSpriteOffsetAutoApplyHook(); } catch (_) { /* ignore install errors */ }
-  if (!spriteAdjustState._autoApplyHookInstalled) setTimeout(retryHook, 800);
-}, 800);
-
-// Expose sprite adjustment globally
-window.nudgeSelectedSprite = nudgeSelectedSprite;
-window.captureSpriteBaseline = captureSpriteBaseline;
-window.reapplySpriteOffsets = function () {
-  if (!window.gameManager) return;
-  const { placedTokens } = window.gameManager;
-  if (!placedTokens) return;
-  placedTokens.forEach(t => {
-    const sprite = t.creature?.sprite;
-    if (!sprite) return;
-    // Reset to raw isometric center, then reapply configured offset and manual adjustments
-    const iso = window.gameManager.gridToIsometric(t.gridX, t.gridY);
-    sprite.x = iso.x;
-    sprite.y = iso.y;
-    const { getSpriteOffset } = window;
-    if (getSpriteOffset) {
-      const off = getSpriteOffset(t.type);
-      sprite.x += off.dx;
-      sprite.y += off.dy;
-    }
-  });
-};
-window.logInitialSpritePlacement = () => {
-  const s = getSelectedCreatureSprite();
-  const logEl = getSpriteAdjustLogEl();
-  if (s && logEl && !spriteAdjustState.initialPlacementLogged) {
-    logEl.textContent += `Original placement at (${s.x.toFixed(1)}, ${s.y.toFixed(1)})\n`;
-    spriteAdjustState.initialPlacementLogged = true;
+  if (!spriteAdjustState._autoApplyHookInstalled && __retryCount < __retryLimit) {
+    __retryCount++;
+    const t = setTimeout(retryHook, 800);
+    if (typeof t?.unref === 'function') t.unref();
   }
-};
-window.saveSpriteOffset = saveSpriteOffset;
-window.resetSpriteOffset = resetSpriteOffset;
-window.toggleAutoApplyOffsets = toggleAutoApplyOffsets;
-window.applySavedOffsetToSprite = applySavedOffsetToSprite;
+}, 800);
+if (typeof __first?.unref === 'function') __first.unref();
+
 
 logger.log(LOG_LEVEL.DEBUG, 'UI functions exposed globally', LOG_CATEGORY.SYSTEM, {
-  exposedFunctions: [
-    'toggleCreatureTokens',
-    'resizeGrid',
-    'resetZoom',
-    'toggleTerrainMode',
-    'setTerrainTool',
-    'increaseBrushSize',
-    'decreaseBrushSize',
-    'resetTerrain'
-  ],
-  compatibilityMode: 'HTML_onclick_handlers'
+  exposedFunctions: [],
+  compatibilityMode: 'module_event_listeners'
 });
 
 // Signal that UI modules are loaded (for debugging module loading issues)
