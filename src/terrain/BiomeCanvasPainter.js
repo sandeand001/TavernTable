@@ -12,6 +12,7 @@ import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 import { styleForBiome } from './biome-painter/style.js';
 import { strokeBlob as motifStrokeBlob, strokeRibbon as motifStrokeRibbon, globalStriations as motifGlobalStriations, globalCracks as motifGlobalCracks, scatterBlobsGlobal as motifScatterBlobsGlobal, scatterTuftsGlobal as motifScatterTuftsGlobal } from './biome-painter/motifs.js';
 import { computeSlopeAspect, computeMoistureField } from './biome-painter/fields.js';
+import { traceDiamondFacePath2D } from '../utils/CanvasShapeUtils.js';
 
 export class BiomeCanvasPainter {
   constructor(gameManager) {
@@ -238,10 +239,7 @@ export class BiomeCanvasPainter {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.beginPath();
-    ctx.moveTo(cx, cy + h / 2);
-    ctx.lineTo(cx + w / 2, cy);
-    ctx.lineTo(cx, cy - h / 2);
-    ctx.lineTo(cx - w / 2, cy);
+    traceDiamondFacePath2D(ctx, cx, cy, w, h);
     ctx.closePath();
     ctx.fillStyle = color;
     ctx.fill();
@@ -265,10 +263,7 @@ export class BiomeCanvasPainter {
         const cx = cx0;
         const cy = cy0 + elev;
         // Diamond top face path at elevation
-        ctx.moveTo(cx, cy + h / 2);
-        ctx.lineTo(cx + w / 2, cy);
-        ctx.lineTo(cx, cy - h / 2);
-        ctx.lineTo(cx - w / 2, cy);
+        traceDiamondFacePath2D(ctx, cx, cy, w, h);
         ctx.closePath();
       }
     }
@@ -289,10 +284,7 @@ export class BiomeCanvasPainter {
   _clipSingleFace(ctx, cx, cy, w, h) {
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(cx, cy + h / 2);
-    ctx.lineTo(cx + w / 2, cy);
-    ctx.lineTo(cx, cy - h / 2);
-    ctx.lineTo(cx - w / 2, cy);
+    traceDiamondFacePath2D(ctx, cx, cy, w, h);
     ctx.closePath();
     ctx.clip();
   }
