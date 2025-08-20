@@ -1,6 +1,7 @@
 /* css/styles.css - Main stylesheet for TavernTable */
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   background-color: #1e1e1e;
@@ -15,14 +16,20 @@ html, body {
 #dice-panel {
   position: absolute;
   top: 10px;
-  left: 10px; /* Back to upper left */
+  left: 10px;
+
+  /* Back to upper left */
   background-color: rgba(0, 0, 0, 0.7);
   padding: 10px;
   border-radius: 8px;
   color: white;
   font-family: sans-serif;
-  min-width: 320px; /* Wide enough for all dice buttons in one row */
-  max-width: 400px; /* Reasonable maximum width */
+  min-width: 320px;
+
+  /* Wide enough for all dice buttons in one row */
+  max-width: 400px;
+
+  /* Reasonable maximum width */
   box-sizing: border-box;
 }
 
@@ -35,16 +42,22 @@ html, body {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  display: inline-block; /* Change from default block to inline-block */
+  display: inline-block;
+
+  /* Change from default block to inline-block */
 }
 
 /* Responsive adjustments for dice panel */
-@media (width <= 768px) {
+@media (width <=768px) {
   #dice-panel {
-    min-width: auto; /* Allow smaller width on mobile */
-    max-width: calc(100vw - 20px); /* Take available width on mobile */
+    min-width: auto;
+
+    /* Allow smaller width on mobile */
+    max-width: calc(100vw - 20px);
+
+    /* Take available width on mobile */
   }
-  
+
   /* On small screens, allow buttons to wrap if needed */
   #dice-panel button {
     margin: 1px;
@@ -64,9 +77,11 @@ html, body {
   font-weight: bold;
 }
 
-@media (height <= 600px) {
+@media (height <=600px) {
   #creature-content {
-    max-height: 300px; /* Reduce creature content height on short screens */
+    max-height: 300px;
+
+    /* Reduce creature content height on short screens */
   }
 }
 
@@ -88,18 +103,30 @@ html, body {
 #creature-content {
   transition: max-height 0.3s ease, opacity 0.3s ease;
   overflow: hidden;
-  max-height: 400px; /* Increased from 320px to show more creatures */
+  max-height: 400px;
+
+  /* Increased from 320px to show more creatures */
   opacity: 1 !important;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Responsive grid layout */
-  gap: 4px; /* Small gap between buttons */
-  margin-bottom: 16px; /* Merged from later duplicate */
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+
+  /* Responsive grid layout */
+  gap: 4px;
+
+  /* Small gap between buttons */
+  margin-bottom: 16px;
+
+  /* Merged from later duplicate */
 }
 
 /* Ensure creature buttons work well in grid layout */
 #creature-content button {
-  margin: 0; /* Remove margin since we're using gap */
-  padding: 8px 4px; /* Use consistent padding */
+  margin: 0;
+
+  /* Remove margin since we're using gap */
+  padding: 8px 4px;
+
+  /* Use consistent padding */
   background-color: #444;
   color: white;
   border: none;
@@ -107,9 +134,13 @@ html, body {
   cursor: pointer;
   font-size: 12px;
   text-align: center;
-  white-space: nowrap; /* Prevent text wrapping */
+  white-space: nowrap;
+
+  /* Prevent text wrapping */
   overflow: hidden;
-  text-overflow: ellipsis; /* Show ... if text is too long */
+  text-overflow: ellipsis;
+
+  /* Show ... if text is too long */
   transition: all 0.2s ease;
 }
 
@@ -134,7 +165,9 @@ html, body {
 
 
 #token-panel button {
-  margin: 2px 0; /* Only vertical margin, horizontal handled by grid gap */
+  margin: 2px 0;
+
+  /* Only vertical margin, horizontal handled by grid gap */
   padding: 8px 12px;
   background-color: #444;
   color: white;
@@ -144,7 +177,9 @@ html, body {
   display: block;
   width: 100%;
   font-size: 14px;
-  box-sizing: border-box; /* Include border in width calculations */
+  box-sizing: border-box;
+
+  /* Include border in width calculations */
 }
 
 /* Token section styling improvements */
@@ -154,7 +189,7 @@ html, body {
   border-top: 1px solid #444;
 }
 
-.token-section > div:first-child {
+.token-section>div:first-child {
   margin-bottom: 6px;
   font-weight: bold;
 }
@@ -319,7 +354,9 @@ html, body {
 
 .tab-panel {
   display: none;
-  height: calc(100% - 50px); /* Account for tab navigation height */
+  height: calc(100% - 50px);
+
+  /* Account for tab navigation height */
   padding: 16px;
   color: white;
 }
@@ -364,7 +401,9 @@ html, body {
 
   /* Allow content to expand but with reasonable limits */
   min-height: 200px;
-  max-height: calc(100vh - 250px); /* Conservative limit to ensure footer visibility */
+  max-height: calc(100vh - 250px);
+
+  /* Conservative limit to ensure footer visibility */
 }
 
 .dice-log-entry {
@@ -464,8 +503,14 @@ html, body {
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
-.adjust-actions button:hover { background:#555; }
-.adjust-actions button:active { background:#666; }
+
+.adjust-actions button:hover {
+  background: #555;
+}
+
+.adjust-actions button:active {
+  background: #666;
+}
 
 /* Action Buttons */
 .action-button {
@@ -513,7 +558,9 @@ html, body {
   border: 1px solid #555;
   border-radius: 4px;
   font-size: 12px;
-  width: 60px; /* Fixed width instead of 100% */
+  width: 60px;
+
+  /* Fixed width instead of 100% */
   max-width: 60px;
 }
 
@@ -573,45 +620,49 @@ html, body {
 }
 
 /* Responsive adjustments */
-@media (width <= 1200px) {
+@media (width <=1200px) {
   #right-sidebar {
     width: 300px;
   }
 }
 
-@media (width <= 900px) {
+@media (width <=900px) {
   #right-sidebar {
     width: 280px;
   }
-  
+
   .tab-button {
     font-size: 10px;
     padding: 10px 6px;
   }
-  
+
   /* Responsive adjustments for smaller tab panels */
   .tab-panel {
-    height: calc(100% - 45px); /* Smaller tab height on medium screens */
+    height: calc(100% - 45px);
+
+    /* Smaller tab height on medium screens */
   }
-  
+
   #dice-log-content {
     max-height: calc(100vh - 270px);
     min-height: 150px;
   }
 }
 
-@media (width <= 600px) {
+@media (width <=600px) {
   #right-sidebar {
     width: 100vw;
     position: fixed;
     z-index: 2000;
   }
-  
+
   /* Mobile adjustments */
   .tab-panel {
-    height: calc(100% - 40px); /* Even smaller tab height on mobile */
+    height: calc(100% - 40px);
+
+    /* Even smaller tab height on mobile */
   }
-  
+
   #dice-log-content {
     max-height: calc(100vh - 300px);
     min-height: 120px;
@@ -619,19 +670,19 @@ html, body {
 }
 
 /* Adjust game container to account for sidebar */
-@media (width >= 601px) {
+@media (width >=601px) {
   #game-container {
     width: calc(100vw - 350px);
   }
 }
 
-@media (width <= 1200px) and (width >= 901px) {
+@media (width <=1200px) and (width >=901px) {
   #game-container {
     width: calc(100vw - 300px);
   }
 }
 
-@media (width <= 900px) and (width >= 601px) {
+@media (width <=900px) and (width >=601px) {
   #game-container {
     width: calc(100vw - 280px);
   }
@@ -683,11 +734,11 @@ html, body {
   transition: transform 0.3s ease;
 }
 
-.toggle-switch input[type="checkbox"]:checked + .toggle-slider {
+.toggle-switch input[type="checkbox"]:checked+.toggle-slider {
   background-color: #4CAF50;
 }
 
-.toggle-switch input[type="checkbox"]:checked + .toggle-slider::before {
+.toggle-switch input[type="checkbox"]:checked+.toggle-slider::before {
   transform: translateX(26px);
 }
 
@@ -869,27 +920,89 @@ html, body {
 }
 
 /* Height indicator colors (-10..10) aligned with TERRAIN_CONFIG.HEIGHT_COLOR_SCALE */
-.scale-mark[data-height="-10"] { background-color: #040913; }
-.scale-mark[data-height="-9"]  { background-color: #071225; }
-.scale-mark[data-height="-8"]  { background-color: #0b1c36; }
-.scale-mark[data-height="-7"]  { background-color: #112848; }
-.scale-mark[data-height="-6"]  { background-color: #18345a; }
-.scale-mark[data-height="-5"]  { background-color: #1f416d; }
-.scale-mark[data-height="-4"]  { background-color: #2a4f82; }
-.scale-mark[data-height="-3"]  { background-color: #365d97; }
-.scale-mark[data-height="-2"]  { background-color: #496ab1; }
-.scale-mark[data-height="-1"]  { background-color: #5d72c6; }
-.scale-mark[data-height="0"]   { background-color: #6b7280; }
-.scale-mark[data-height="1"]   { background-color: #1a7b53; }
-.scale-mark[data-height="2"]   { background-color: #138b48; }
-.scale-mark[data-height="3"]   { background-color: #16994b; }
-.scale-mark[data-height="4"]   { background-color: #21a556; }
-.scale-mark[data-height="5"]   { background-color: #3db268; }
-.scale-mark[data-height="6"]   { background-color: #64bf75; }
-.scale-mark[data-height="7"]   { background-color: #8fcc7f; }
-.scale-mark[data-height="8"]   { background-color: #b7d789; }
-.scale-mark[data-height="9"]   { background-color: #dfe09a; }
-.scale-mark[data-height="10"]  { background-color: #f3e9b2; }
+.scale-mark[data-height="-10"] {
+  background-color: #040913;
+}
+
+.scale-mark[data-height="-9"] {
+  background-color: #071225;
+}
+
+.scale-mark[data-height="-8"] {
+  background-color: #0b1c36;
+}
+
+.scale-mark[data-height="-7"] {
+  background-color: #112848;
+}
+
+.scale-mark[data-height="-6"] {
+  background-color: #18345a;
+}
+
+.scale-mark[data-height="-5"] {
+  background-color: #1f416d;
+}
+
+.scale-mark[data-height="-4"] {
+  background-color: #2a4f82;
+}
+
+.scale-mark[data-height="-3"] {
+  background-color: #365d97;
+}
+
+.scale-mark[data-height="-2"] {
+  background-color: #496ab1;
+}
+
+.scale-mark[data-height="-1"] {
+  background-color: #5d72c6;
+}
+
+.scale-mark[data-height="0"] {
+  background-color: #6b7280;
+}
+
+.scale-mark[data-height="1"] {
+  background-color: #1a7b53;
+}
+
+.scale-mark[data-height="2"] {
+  background-color: #138b48;
+}
+
+.scale-mark[data-height="3"] {
+  background-color: #16994b;
+}
+
+.scale-mark[data-height="4"] {
+  background-color: #21a556;
+}
+
+.scale-mark[data-height="5"] {
+  background-color: #3db268;
+}
+
+.scale-mark[data-height="6"] {
+  background-color: #64bf75;
+}
+
+.scale-mark[data-height="7"] {
+  background-color: #8fcc7f;
+}
+
+.scale-mark[data-height="8"] {
+  background-color: #b7d789;
+}
+
+.scale-mark[data-height="9"] {
+  background-color: #dfe09a;
+}
+
+.scale-mark[data-height="10"] {
+  background-color: #f3e9b2;
+}
 
 /* Shortcuts text */
 .shortcuts-text {
@@ -902,27 +1015,27 @@ html, body {
 }
 
 /* Responsive adjustments for terrain tools */
-@media (width <= 768px) {
+@media (width <=768px) {
   .tool-buttons {
     flex-direction: column;
     gap: 6px;
   }
-  
+
   .terrain-tool-btn {
     padding: 10px;
     font-size: 16px;
   }
-  
+
   .brush-controls {
     gap: 15px;
   }
-  
+
   .brush-btn {
     width: 36px;
     height: 36px;
     font-size: 18px;
   }
-  
+
   .brush-size {
     font-size: 16px;
   }
@@ -941,7 +1054,7 @@ html, body {
 }
 
 .biome-group {
-  background: rgba(255,255,255,0.03);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid #333;
   border-radius: 6px;
   padding: 6px 6px 4px;
@@ -1031,7 +1144,7 @@ html, body {
 }
 
 .biome-menu::-webkit-scrollbar-track {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: 4px;
 }
 
@@ -1044,7 +1157,7 @@ html, body {
   background: #555;
 }
 
-@media (width <= 768px) {
+@media (width <=768px) {
   .biome-group-list {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }

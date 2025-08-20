@@ -11,6 +11,7 @@ import { GameErrors } from '../utils/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 // import { GRID_CONFIG } from '../config/GameConstants.js';
 import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
+import { traceDiamondPath } from '../utils/PixiShapeUtils.js';
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 // elevation offset calculation is delegated into internals
@@ -313,12 +314,12 @@ export class TerrainManager {
 
       shadowTile.beginFill(shadowColor, shadowAlpha);
 
-      // Draw same diamond shape as main tile
-      shadowTile.moveTo(0, this.gameManager.tileHeight / 2);
-      shadowTile.lineTo(this.gameManager.tileWidth / 2, 0);
-      shadowTile.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
-      shadowTile.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
-      shadowTile.lineTo(0, this.gameManager.tileHeight / 2);
+      // Draw same diamond shape as main tile (shared helper)
+      traceDiamondPath(
+        shadowTile,
+        this.gameManager.tileWidth,
+        this.gameManager.tileHeight
+      );
       shadowTile.endFill();
 
       // Position shadow slightly offset (down and right for 3D effect)
@@ -359,12 +360,12 @@ export class TerrainManager {
 
       overlay.beginFill(0x000000, overlayAlpha); // Semi-transparent black
 
-      // Draw same diamond shape as main tile
-      overlay.moveTo(0, this.gameManager.tileHeight / 2);
-      overlay.lineTo(this.gameManager.tileWidth / 2, 0);
-      overlay.lineTo(this.gameManager.tileWidth, this.gameManager.tileHeight / 2);
-      overlay.lineTo(this.gameManager.tileWidth / 2, this.gameManager.tileHeight);
-      overlay.lineTo(0, this.gameManager.tileHeight / 2);
+      // Draw same diamond shape as main tile (shared helper)
+      traceDiamondPath(
+        overlay,
+        this.gameManager.tileWidth,
+        this.gameManager.tileHeight
+      );
       overlay.endFill();
 
       // Position overlay exactly on top of tile

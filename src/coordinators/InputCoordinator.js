@@ -41,7 +41,7 @@ export class InputCoordinator {
       }
 
       const existingToken = this.findExistingTokenAt(gridX, gridY);
-      
+
       if (existingToken) {
         this.removeToken(existingToken);
       }
@@ -56,7 +56,7 @@ export class InputCoordinator {
       if (!creatureValidation.isValid) {
         throw new Error(`Invalid creature type: ${creatureValidation.errors.join(', ')}`);
       }
-      
+
       this.placeNewToken(gridX, gridY);
     } catch (error) {
       GameErrors.input(error, {
@@ -115,9 +115,9 @@ export class InputCoordinator {
    */
   gridToIsometric(gridX, gridY) {
     return CoordinateUtils.gridToIsometric(
-      gridX, 
-      gridY, 
-      this.gameManager.tileWidth, 
+      gridX,
+      gridY,
+      this.gameManager.tileWidth,
       this.gameManager.tileHeight
     );
   }
@@ -131,10 +131,10 @@ export class InputCoordinator {
   addTokenToCollection(creature, gridX, gridY) {
     if (this.gameManager.tokenManager) {
       this.gameManager.tokenManager.addTokenToCollection(
-        creature, 
-        gridX, 
-        gridY, 
-        this.gameManager.selectedTokenType, 
+        creature,
+        gridX,
+        gridY,
+        this.gameManager.selectedTokenType,
         this.gameManager.placedTokens
       );
       // Update global array for backward compatibility
