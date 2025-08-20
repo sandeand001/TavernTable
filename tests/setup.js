@@ -5,7 +5,9 @@
 if (typeof global.PIXI === 'undefined') {
   global.PIXI = {
     Container: class { constructor() { this.children = []; this.visible = true; } addChild() { } addChildAt() { } removeChild() { } removeChildren() { this.children = []; } },
-    Graphics: class { constructor() { this.children = []; this.destroyed = false; } lineStyle() { } beginFill() { } endFill() { } moveTo() { } lineTo() { } closePath() { } addChild() { } destroy() { this.destroyed = true; } },
+  Graphics: class { constructor() { this.children = []; this.destroyed = false; } lineStyle() { } beginFill() { } endFill() { } moveTo() { } lineTo() { } closePath() { } addChild() { } destroy() { this.destroyed = true; } },
+  Texture: { from: () => ({}) },
+  Sprite: class { constructor(tex) { this.texture = tex; this.destroyed = false; this.x = 0; this.y = 0; this.zIndex = 0; } destroy() { this.destroyed = true; } }
   };
 }
 

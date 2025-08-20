@@ -393,8 +393,14 @@ function setTerrainTool(tool) {
       // Add active class to selected tool
       if (tool === 'raise') {
         raiseBtn.classList.add('active');
+        // accessibility state
+        raiseBtn.setAttribute('aria-pressed', 'true');
+        lowerBtn.setAttribute('aria-pressed', 'false');
       } else if (tool === 'lower') {
         lowerBtn.classList.add('active');
+        // accessibility state
+        lowerBtn.setAttribute('aria-pressed', 'true');
+        raiseBtn.setAttribute('aria-pressed', 'false');
       }
     }
 
