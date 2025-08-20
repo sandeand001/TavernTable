@@ -426,58 +426,13 @@ export class TerrainCoordinator {
    */
   applyTerrainToBaseGrid() {
     try {
-      this._validateTerrainApplicationRequirements();
-      this._initializeBaseTerrainHeights();
-      const modifiedTiles = this._processAllGridTiles();
-      this._logTerrainApplicationCompletion(modifiedTiles);
+      _validateApplyReqs(this);
+      _initBaseHeights(this);
+      const modifiedTiles = _processAllTiles(this);
+      _logApplyComplete(this, modifiedTiles);
     } catch (error) {
-      this._handleTerrainApplicationError(error);
+      _handleApplyError(error);
     }
-  }
-
-  /**
-   * Validate requirements for terrain application to base grid
-   * @private
-   * @throws {Error} If requirements are not met
-   */
-  _validateTerrainApplicationRequirements() {
-    return _validateApplyReqs(this);
-  }
-
-  /**
-   * Initialize base terrain heights from current terrain state
-   * @private
-   */
-  _initializeBaseTerrainHeights() {
-    return _initBaseHeights(this);
-  }
-
-  /**
-   * Process all grid tiles with terrain modifications
-   * @private
-   * @returns {number} Number of modified tiles
-   */
-  _processAllGridTiles() {
-    return _processAllTiles(this);
-  }
-
-  /**
-   * Log successful completion of terrain application
-   * @private
-   * @param {number} modifiedTiles - Number of tiles that were modified
-   */
-  _logTerrainApplicationCompletion(modifiedTiles) {
-    return _logApplyComplete(this, modifiedTiles);
-  }
-
-  /**
-   * Handle errors during terrain application
-   * @private
-   * @param {Error} error - The error that occurred
-   * @throws {Error} Re-throws the error after logging
-   */
-  _handleTerrainApplicationError(error) {
-    return _handleApplyError(error);
   }
 
   /**
