@@ -1,6 +1,7 @@
 // src/entities/creatures/CreatureToken.js - Base class for all creature tokens
 
 import { CREATURE_SCALES } from '../../config/GameConstants.js';
+import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../../utils/ErrorHandler.js';
 import { GameValidators, Sanitizers } from '../../utils/Validation.js';
 
@@ -29,13 +30,13 @@ class CreatureToken {
       if (!typeValidation.isValid) {
         throw new Error(`Invalid creature type: ${typeValidation.getErrorMessage()}`);
       }
-      
+
       this.type = type;
       this.x = Sanitizers.integer(x, 0);
       this.y = Sanitizers.integer(y, 0);
       this.facingRight = Boolean(facingRight);
       this.sprite = null;
-      
+
       this.createSprite();
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.RENDERING, {
@@ -57,7 +58,7 @@ class CreatureToken {
     try {
       // Try to create sprite from asset first
       this.createCreatureSprite();
-      
+
       // Apply facing direction after sprite creation
       this.applyFacing();
     } catch (error) {
@@ -81,25 +82,25 @@ class CreatureToken {
         this.createFallbackGraphics();
         return;
       }
-      
-  const spriteKey = `${this.type}-sprite`;
 
-  // Try to build sprite via SpriteManager helper (handles fallback)
-  const scale = this.getCreatureScale();
-  const built = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
-  this.sprite = built;
-  // Always enforce bottom-center anchor/pivot
-  if (this.sprite instanceof PIXI.Sprite) {
-    this.sprite.anchor.set(0.5, 1.0);
-    window.logger?.debug?.('Sprite anchor set', { anchor: this.sprite.anchor, type: this.type });
-  } else if (this.sprite instanceof PIXI.Graphics) {
-    try {
-      const b = this.sprite.getLocalBounds();
-      this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
-      window.logger?.debug?.('Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
-    } catch {}
-  }
-      
+      const spriteKey = `${this.type}-sprite`;
+
+      // Try to build sprite via SpriteManager helper (handles fallback)
+      const scale = this.getCreatureScale();
+      const built = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
+      this.sprite = built;
+      // Always enforce bottom-center anchor/pivot
+      if (this.sprite instanceof PIXI.Sprite) {
+        this.sprite.anchor.set(0.5, 1.0);
+        window.logger?.debug?.('Sprite anchor set', { anchor: this.sprite.anchor, type: this.type });
+      } else if (this.sprite instanceof PIXI.Graphics) {
+        try {
+          const b = this.sprite.getLocalBounds();
+          this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
+          window.logger?.debug?.('Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
+        } catch { /* ignore bounds error */ }
+      }
+
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'createCreatureSprite',
@@ -120,9 +121,9 @@ class CreatureToken {
       if (CREATURE_SCALES[this.type]) {
         return CREATURE_SCALES[this.type];
       }
-      
+
       // Fallback: Default scale for unknown creatures
-      console.warn(`No scale defined for creature type: ${this.type}, using default`);
+      logger.debug('No scale defined for creature type; using default', { type: this.type }, LOG_CATEGORY.SYSTEM);
       return CREATURE_SCALES.goblin || 0.06;
     } catch (error) {
       GameErrors.validation(error, {
@@ -148,7 +149,7 @@ class CreatureToken {
           const b = this.sprite.getLocalBounds();
           this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
           window.logger?.debug?.('Fallback Graphics pivot set', { pivot: this.sprite.pivot, bounds: b, type: this.type });
-        } catch {}
+        } catch { /* ignore bounds error */ }
       } else {
         this.createFallbackSprite();
       }
@@ -179,9 +180,9 @@ class CreatureToken {
         'owlbear': 0xA52A2A,     // Dark Red
         'troll': 0x228B22        // Forest Green
       };
-      
+
       const color = colorMap[this.type] || 0x808080; // Default to gray
-      
+
       this.sprite = new PIXI.Graphics();
       this.sprite.beginFill(color);
       this.sprite.drawCircle(0, 0, 20);
@@ -190,8 +191,8 @@ class CreatureToken {
       try {
         const b = this.sprite.getLocalBounds();
         this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
-      } catch {}
-      
+      } catch { /* ignore bounds error */ }
+
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'createFallbackSprite',
@@ -206,11 +207,11 @@ class CreatureToken {
    */
   applyFacing() {
     if (!this.sprite) return;
-    
+
     try {
       const absScaleX = Math.abs(this.sprite.scale.x);
       const absScaleY = Math.abs(this.sprite.scale.y);
-      
+
       if (this.sprite instanceof PIXI.Sprite) {
         // For PNG sprites, use skew to avoid vertical flipping
         this.sprite.scale.x = absScaleX;
@@ -248,7 +249,7 @@ class CreatureToken {
     try {
       this.x = Sanitizers.integer(x, this.x);
       this.y = Sanitizers.integer(y, this.y);
-      
+
       if (this.sprite) {
         this.sprite.x = this.x;
         this.sprite.y = this.y;
@@ -271,12 +272,12 @@ class CreatureToken {
       if (!this.sprite) {
         throw new Error('No sprite available to add to stage');
       }
-      
+
       // Validate container
       if (!stage || typeof stage.addChild !== 'function') {
         throw new Error('Invalid stage container provided');
       }
-      
+
       stage.addChild(this.sprite);
     } catch (error) {
       GameErrors.sprites(error, {
@@ -309,12 +310,12 @@ class CreatureToken {
    */
   recreateSprite() {
     try {
-      
+
       // Store current state
       let parent = null;
       let currentX = this.x;
       let currentY = this.y;
-      
+
       // Remove existing sprite and store parent reference
       if (this.sprite && this.sprite.parent) {
         parent = this.sprite.parent;
@@ -322,20 +323,20 @@ class CreatureToken {
         currentY = this.sprite.y;
         parent.removeChild(this.sprite);
       }
-      
+
       // Create new sprite
       this.createSprite();
-      
+
       // Restore position and parent
       if (this.sprite) {
         this.sprite.x = currentX;
         this.sprite.y = currentY;
-        
+
         if (parent) {
           parent.addChild(this.sprite);
         }
       }
-      
+
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'recreateSprite',
@@ -351,39 +352,39 @@ class CreatureToken {
   replaceWithSprite() {
     try {
       const spriteKey = `${this.type}-sprite`;
-  if (!window.spriteManager || !window.spriteManager.hasSpriteLoaded?.(spriteKey)) {
-        console.warn(`🎨 Cannot replace sprite for ${this.type} - texture not available`);
+      if (!window.spriteManager || !window.spriteManager.hasSpriteLoaded?.(spriteKey)) {
+        logger.debug('Texture not available; cannot replace sprite', { type: this.type }, LOG_CATEGORY.SYSTEM);
         return;
       }
-      
+
       // Store current position and parent
       const currentX = this.sprite?.x || 0;
       const currentY = this.sprite?.y || 0;
       const parent = this.sprite?.parent;
-      
+
       // Remove old sprite
       if (this.sprite && this.sprite.parent) {
         this.sprite.parent.removeChild(this.sprite);
       }
-      
-  // Create new sprite using manager helper
-  const scale = this.getCreatureScale();
-  this.sprite = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
+
+      // Create new sprite using manager helper
+      const scale = this.getCreatureScale();
+      this.sprite = window.spriteManager.createSprite(spriteKey, { anchor: { x: 0.5, y: 1.0 }, scale });
       if (this.sprite instanceof PIXI.Sprite) {
         this.sprite.anchor.set(0.5, 1.0);
       }
       this.applyFacing();
-      
+
       // Restore position and add to parent
       this.sprite.x = currentX;
       this.sprite.y = currentY;
-      
+
       if (parent) {
         parent.addChild(this.sprite);
       }
-      
+
     } catch (error) {
-      console.error(`❌ Failed to replace sprite for ${this.type}:`, error);
+      logger.error('Failed to replace sprite', { type: this.type, error: error?.message, stack: error?.stack }, LOG_CATEGORY.SYSTEM);
     }
   }
 }

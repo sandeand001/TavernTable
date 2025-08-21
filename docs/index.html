@@ -1,0 +1,118 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TavernTable - Isometric D&D Grid</title>
+  <meta name="description"
+    content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling">
+  <link rel="stylesheet" href="src/ui/styles.css">
+</head>
+
+<body>
+  <!-- Main Game Canvas Container -->
+  <div id="game-container" aria-label="Game canvas for TavernTable grid"></div>
+
+  <!-- 3D Dice Container -->
+  <div id="dice-3d-container" aria-label="3D dice rolling area"></div>
+
+  <!-- Dice Rolling Panel -->
+  <div id="dice-panel" role="complementary" aria-label="Dice rolling controls">
+    <div>🎲 Roll Dice:</div>
+    <div class="dice-count-container">
+      <label for="dice-count" class="dice-count-label">Count:</label>
+      <input type="number" id="dice-count" min="1" max="10" value="1" aria-describedby="dice-help">
+    </div>
+    <button data-sides="4" aria-label="Roll 4-sided die">d4</button>
+    <button data-sides="6" aria-label="Roll 6-sided die">d6</button>
+    <button data-sides="8" aria-label="Roll 8-sided die">d8</button>
+    <button data-sides="10" aria-label="Roll 10-sided die">d10</button>
+    <button data-sides="12" aria-label="Roll 12-sided die">d12</button>
+    <button data-sides="20" aria-label="Roll 20-sided die">d20</button>
+    <div id="dice-result" aria-live="polite">Result: -</div>
+    <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
+  </div>
+
+  <!-- Token and Game Controls Panel -->
+  <div id="token-panel" role="complementary" aria-label="Game controls and creature tokens">
+    <!-- This panel will be moved to the right sidebar -->
+  </div>
+
+  <!-- Right Sidebar Menu System -->
+  <div id="right-sidebar" role="complementary" aria-label="Game management sidebar">
+    <!-- Tab Navigation -->
+    <div id="sidebar-tabs" role="tablist" aria-label="Game menu tabs">
+      <button class="tab-button active" data-tab="dice-log" role="tab" aria-selected="true"
+        aria-controls="dice-log-panel">🎲 Dice Log</button>
+      <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false"
+        aria-controls="creatures-panel">🗡️ Creatures</button>
+      <button class="tab-button" data-tab="terrain" role="tab" aria-selected="false" aria-controls="terrain-panel">🏔️
+        Terrain</button>
+      <button class="tab-button" data-tab="biomes" role="tab" aria-selected="false" aria-controls="biomes-panel">🌍
+        Biomes</button>
+      <button class="tab-button" data-tab="settings" role="tab" aria-selected="false" aria-controls="settings-panel">⚙️
+        Settings</button>
+    </div>
+
+    <!-- Tab Content Panels -->
+    <div id="sidebar-content">
+      <!-- ...existing code... (all sidebar panels, controls, etc.) ... -->
+    </div>
+  </div>
+
+  <!-- Error Display Container (created by ErrorHandler) -->
+  <div id="error-display" aria-live="assertive"></div>
+
+  <!-- External Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+
+  <!-- Core Configuration and Utilities (ES6) -->
+  <script type="module" src="src/config/GameConstants.js"></script>
+  <script type="module" src="src/config/BiomeConstants.js"></script>
+  <script type="module" src="src/utils/ErrorHandler.js"></script>
+  <script type="module" src="src/utils/Validation.js"></script>
+  <script type="module" src="src/utils/Logger.js"></script>
+  <script type="module" src="src/utils/CoordinateUtils.js"></script>
+
+  <!-- Manager Classes (ES6) -->
+  <script type="module" src="src/config/SpriteOffsets.js"></script>
+  <script type="module" src="src/managers/TokenManager.js"></script>
+  <script type="module" src="src/managers/InteractionManager.js"></script>
+  <script type="module" src="src/managers/GridRenderer.js"></script>
+
+  <!-- Core Game Modules (ES6) -->
+  <script type="module" src="src/core/SpriteManager.js"></script>
+  <script type="module" src="src/core/GameManager.js"></script>
+
+  <!-- Creature System (ES6) -->
+  <script type="module" src="src/entities/creatures/CreatureToken.js"></script>
+  <script type="module" src="src/entities/creatures/CreatureFactory.js"></script>
+  <script type="module" src="src/entities/creatures/index.js"></script>
+
+  <!-- Game Systems (ES6) -->
+  <script type="module" src="src/systems/DragController.js"></script>
+  <script type="module" src="src/systems/dice/dice.js"></script>
+
+  <!-- Main Application Entry Point -->
+  <script type="module" src="src/ui/UIController.js"></script>
+  <script type="module" src="src/ui/SidebarController.js"></script>
+
+  <style>
+    /* Screen reader only class for accessibility */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
+</body>
+
+</html>

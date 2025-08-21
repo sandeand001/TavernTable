@@ -5,14 +5,18 @@
   "main": "index.html",
   "scripts": {
     "test": "jest",
+    "test:stable": "jest --detectOpenHandles --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --ci --coverage --watchAll=false",
-    "lint": "eslint -c tools/.eslintrc.json src/**/*.js && stylelint -c tools/.stylelintrc.json src/**/*.css",
+  "lint": "eslint -c tools/.eslintrc.json src/**/*.js && stylelint -c tools/.stylelintrc.json src/**/*.css",
     "lint:js": "eslint -c tools/.eslintrc.json src/**/*.js",
     "lint:css": "stylelint -c tools/.stylelintrc.json src/**/*.css",
     "lint:fix": "eslint -c tools/.eslintrc.json src/**/*.js --fix && stylelint -c tools/.stylelintrc.json src/**/*.css --fix",
-    "serve": "python -m http.server 3000"
+  "serve": "python -m http.server 3000",
+  "start": "npm run serve",
+  "serve:open": "powershell -NoProfile -Command \"Start-Process http://localhost:3000\"; npm run serve",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",
@@ -20,11 +24,21 @@
     "babel-jest": "^30.0.5",
     "canvas": "^3.1.2",
     "eslint": "^8.57.0",
+    "husky": "^9.1.7",
     "jest": "^30.0.5",
     "jest-environment-jsdom": "^30.0.5",
     "jsdom": "^26.1.0",
+    "lint-staged": "^15.5.2",
     "stylelint": "^16.2.1",
     "stylelint-config-standard": "^36.0.0"
+  },
+  "lint-staged": {
+    "src/**/*.js": [
+      "eslint -c tools/.eslintrc.json --fix"
+    ],
+    "src/**/*.css": [
+      "stylelint -c tools/.stylelintrc.json --fix"
+    ]
   },
   "keywords": [
     "game",

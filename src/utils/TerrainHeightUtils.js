@@ -10,6 +10,22 @@ import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 
 export class TerrainHeightUtils {
+  // Runtime override for pixels-per-level. When null/undefined, falls back to config.
+  static _elevationUnitOverride = undefined;
+
+  /** Set the runtime elevation unit (pixels per level). Pass null/undefined to reset to default. */
+  static setElevationUnit(unit) {
+    if (Number.isFinite(unit) && unit >= 0) {
+      this._elevationUnitOverride = unit;
+    } else {
+      this._elevationUnitOverride = undefined;
+    }
+  }
+
+  /** Get the currently effective elevation unit (pixels per level). */
+  static getElevationUnit() {
+    return Number.isFinite(this._elevationUnitOverride) ? this._elevationUnitOverride : TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+  }
   /**
    * Create a new height array with specified dimensions and default height
    * @param {number} rows - Number of rows in the grid
@@ -182,7 +198,8 @@ export class TerrainHeightUtils {
     // Positive heights: move UP (negative Y offset) to appear elevated
     // Negative heights: move DOWN (positive Y offset) to appear as depressions
     // Height 0: no offset (base reference level)
-    return -height * TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+    const unit = this.getElevationUnit();
+    return -height * unit;
   }
 
   /**

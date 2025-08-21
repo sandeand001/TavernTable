@@ -1,3 +1,4 @@
+import { getNodeEnv, isJest } from './env.js';
 /**
  * Logger.js - Enterprise-Grade Logging System for TavernTable
  * 
@@ -19,47 +20,10 @@
  * @version 2.0.0
  */
 
-/**
- * Log severity levels with numeric values for comparison
- */
-export const LOG_LEVEL = Object.freeze({
-  TRACE: 0,    // Most detailed, typically only of interest during problem diagnosis
-  DEBUG: 1,    // Detailed information on application flow, for debugging
-  INFO: 2,     // General information about application operation
-  WARN: 3,     // Potentially harmful situations that should be noted
-  ERROR: 4,    // Error events but application may continue running
-  FATAL: 5,    // Very severe errors that will likely abort the application
-  OFF: 6       // No logging output
-});
+import { LOG_LEVEL, LOG_CATEGORY } from './logger/enums.js';
 
-/**
- * Log categories for organized output and filtering
- */
-export const LOG_CATEGORY = Object.freeze({
-  SYSTEM: 'system',           // System-level operations
-  PERFORMANCE: 'performance', // Performance metrics and monitoring
-  SECURITY: 'security',       // Security-related events
-  USER: 'user',              // User interactions and behavior
-  RENDERING: 'rendering',     // Graphics and display events
-  UI: 'ui',                  // UI-specific events
-  INTERACTION: 'interaction', // Input/interaction events
-  API: 'api',                // API calls and responses
-  DATABASE: 'database',       // Database operations
-  CACHE: 'cache',            // Caching operations
-  BUSINESS: 'business',       // Business logic operations
-  INTEGRATION: 'integration', // Third-party integrations
-  AUDIT: 'audit'             // Audit trail events
-});
-
-/**
- * Output target types
- */
-export const LOG_OUTPUT = Object.freeze({
-  CONSOLE: 'console',
-  FILE: 'file',
-  REMOTE: 'remote',
-  MEMORY: 'memory'
-});
+// Re-export enums to preserve public API for existing imports from this module
+export { LOG_LEVEL, LOG_CATEGORY, LOG_OUTPUT } from './logger/enums.js';
 
 /**
  * Configuration class for logger behavior
@@ -109,10 +73,10 @@ export class LogEntry {
 
   sanitizeData(data) {
     if (!data || typeof data !== 'object') return data;
-    
+
     const sanitized = {};
     const sensitivePatterns = /password|token|secret|key|auth|credential|ssn|credit/i;
-    
+
     for (const [key, value] of Object.entries(data)) {
       if (sensitivePatterns.test(key)) {
         sanitized[key] = '[REDACTED]';
@@ -124,7 +88,7 @@ export class LogEntry {
         sanitized[key] = value;
       }
     }
-    
+
     return sanitized;
   }
 
@@ -155,7 +119,7 @@ export class LogEntry {
     if (typeof performance !== 'undefined') {
       return {
         timing: performance.now(),
-        navigation: performance.getEntriesByType ? 
+        navigation: performance.getEntriesByType ?
           performance.getEntriesByType('navigation')[0] : null
       };
     }
@@ -239,7 +203,7 @@ export class ConsoleOutputHandler {
     const levelName = Object.keys(LOG_LEVEL).find(key => LOG_LEVEL[key] === logEntry.level) || 'UNKNOWN';
     const color = this.colors[logEntry.level] || '';
     const timestamp = new Date(logEntry.timestamp).toLocaleTimeString();
-    
+
     const prefix = `${color}[${timestamp}] ${levelName} [${logEntry.category}]${this.reset}`;
     const message = `${prefix} ${logEntry.message}`;
 
@@ -286,7 +250,7 @@ export class MemoryOutputHandler {
     if (!this.config.enableMemory) return;
 
     this.logs.push(logEntry);
-    
+
     // Maintain size limit
     if (this.logs.length > this.maxLogs) {
       this.logs.shift();
@@ -362,7 +326,7 @@ export class RemoteOutputHandler {
     if (!this.config.enableRemote || !this.config.remoteEndpoint) return;
 
     this.buffer.push(logEntry.toJSON());
-    
+
     // Send batch when buffer is full or after timeout
     if (this.buffer.length >= this.batchSize) {
       this.flush();
@@ -373,10 +337,12 @@ export class RemoteOutputHandler {
 
   scheduleFlush() {
     if (this.sendTimeout) return;
-    
+
     this.sendTimeout = setTimeout(() => {
       this.flush();
     }, this.flushInterval);
+    // In Node/Jest, prevent this timer from keeping the process alive
+    if (typeof this.sendTimeout?.unref === 'function') this.sendTimeout.unref();
   }
 
   async flush() {
@@ -384,7 +350,7 @@ export class RemoteOutputHandler {
 
     const logs = [...this.buffer];
     this.buffer = [];
-    
+
     if (this.sendTimeout) {
       clearTimeout(this.sendTimeout);
       this.sendTimeout = null;
@@ -434,7 +400,7 @@ export class PerformanceMonitor {
   startTimer(operationName, context = {}) {
     const timerId = `${operationName}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const startTime = performance.now();
-    
+
     this.activeTimers.set(timerId, {
       operationName,
       startTime,
@@ -453,7 +419,7 @@ export class PerformanceMonitor {
 
     const endTime = performance.now();
     const duration = endTime - timer.startTime;
-    
+
     this.activeTimers.delete(timerId);
 
     this.logger.info(`Operation completed: ${timer.operationName}`, {
@@ -476,9 +442,9 @@ export class PerformanceMonitor {
         this.endTimer(timerId, { success: true });
         return result;
       } catch (error) {
-        this.endTimer(timerId, { 
-          success: false, 
-          error: error.message 
+        this.endTimer(timerId, {
+          success: false,
+          error: error.message
         });
         throw error;
       }
@@ -493,9 +459,9 @@ export class PerformanceMonitor {
         this.endTimer(timerId, { success: true });
         return result;
       } catch (error) {
-        this.endTimer(timerId, { 
-          success: false, 
-          error: error.message 
+        this.endTimer(timerId, {
+          success: false,
+          error: error.message
         });
         throw error;
       }
@@ -513,7 +479,7 @@ export class Logger {
     this.performanceMonitor = new PerformanceMonitor(this);
     this.contextStack = [];
     this.initialized = false;
-    
+
     this.initialize();
   }
 
@@ -524,7 +490,7 @@ export class Logger {
     this.outputHandlers.push(new ConsoleOutputHandler(this.config));
     this.memoryHandler = new MemoryOutputHandler(this.config);
     this.outputHandlers.push(this.memoryHandler);
-    
+
     if (this.config.enableRemote) {
       this.remoteHandler = new RemoteOutputHandler(this.config);
       this.outputHandlers.push(this.remoteHandler);
@@ -579,8 +545,8 @@ export class Logger {
     let normLevel = level;
     let normCategory = category;
     let normMessage = message;
-    let normData = data;
-    let normContext = context;
+    const normData = data;
+    const normContext = context;
 
     // Pattern 3: (message, level, category)
     if (!validLevels.has(level) && validLevels.has(category) && typeof message === 'string') {
@@ -754,7 +720,7 @@ export class Logger {
    */
   updateConfig(newConfig) {
     this.config = new LoggerConfig({ ...this.config, ...newConfig });
-    
+
     // Reinitialize handlers if needed
     this.outputHandlers = [];
     this.initialize();
@@ -765,13 +731,13 @@ export class Logger {
    */
   async flush() {
     const promises = [];
-    
+
     for (const handler of this.outputHandlers) {
       if (handler.flush) {
         promises.push(handler.flush());
       }
     }
-    
+
     await Promise.all(promises);
   }
 
@@ -784,45 +750,27 @@ export class Logger {
         handler.destroy();
       }
     }
-    
+
     this.outputHandlers = [];
     this.initialized = false;
   }
 }
 
-// Browser-safe environment detection
-const getEnvironment = () => {
-  // Check if we're in Node.js environment
-  if (typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env) {
-    return globalThis.process.env.NODE_ENV || 'development';
-  }
-  
-  // Browser environment - check for common production indicators
-  if (typeof window !== 'undefined') {
-    // Check if we're on localhost or development domains
-    const hostname = window.location?.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname?.includes('dev')) {
-      return 'development';
-    }
-    return 'production';
-  }
-  
-  // Default fallback
-  return 'development';
-};
-
-const environment = getEnvironment();
+// Environment detection centralized via env helper
+const environment = getNodeEnv();
 const isProduction = environment === 'production';
 const isDevelopment = environment === 'development';
+const runningInJest = typeof isJest === 'function' ? isJest() : false;
 
 // Global logger instance with environment-specific configuration
 export const logger = new Logger({
-  level: isProduction ? LOG_LEVEL.INFO : LOG_LEVEL.DEBUG,
+  // Quieter during tests to reduce noise and avoid any console-driven timeouts
+  level: runningInJest ? LOG_LEVEL.WARN : (isProduction ? LOG_LEVEL.INFO : LOG_LEVEL.DEBUG),
   environment: environment,
-  enableConsole: true,
+  enableConsole: !runningInJest,
   enableMemory: true,
   enableRemote: isProduction,
-  enableStackTrace: isDevelopment,
+  enableStackTrace: isDevelopment && !runningInJest,
   enablePerformanceMetrics: true,
   maxMemoryLogs: 2000,
   applicationName: 'TavernTable'
@@ -833,43 +781,43 @@ export const GameLogger = {
   /**
    * Log system operations
    */
-  system: (message, data = {}, level = LOG_LEVEL.INFO) => 
+  system: (message, data = {}, level = LOG_LEVEL.INFO) =>
     logger.log(level, LOG_CATEGORY.SYSTEM, message, data),
 
   /**
    * Log performance metrics
    */
-  performance: (message, data = {}) => 
+  performance: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.PERFORMANCE),
 
   /**
    * Log user interactions
    */
-  user: (message, data = {}) => 
+  user: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.USER),
 
   /**
    * Log API operations
    */
-  api: (message, data = {}, level = LOG_LEVEL.INFO) => 
+  api: (message, data = {}, level = LOG_LEVEL.INFO) =>
     logger.log(level, LOG_CATEGORY.API, message, data),
 
   /**
    * Log security events
    */
-  security: (message, data = {}, level = LOG_LEVEL.WARN) => 
+  security: (message, data = {}, level = LOG_LEVEL.WARN) =>
     logger.log(level, LOG_CATEGORY.SECURITY, message, data),
 
   /**
    * Log business logic operations
    */
-  business: (message, data = {}) => 
+  business: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.BUSINESS),
 
   /**
    * Log audit trail events
    */
-  audit: (message, data = {}) => 
+  audit: (message, data = {}) =>
     logger.info(message, data, LOG_CATEGORY.AUDIT)
 };
 

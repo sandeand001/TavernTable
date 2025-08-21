@@ -7,14 +7,16 @@
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
-import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { isPointInCellDiamond as _isPointInCellDiamond, pickTopmostGridCellAt as _pickTopmost } from './interaction-manager/internals/picking.js';
+import { startGridDragging as _startDrag, updateGridDragPosition as _updateDrag, stopGridDragging as _stopDrag } from './interaction-manager/internals/pan.js';
+import { handleZoomWheel as _handleZoomWheel, applyZoom as _applyZoom, resetZoom as _resetZoom } from './interaction-manager/internals/zoom.js';
 
 export class InteractionManager {
   constructor(gameManager) {
     this.gameManager = gameManager;
-    
+
     // Grid panning variables
     this.isDragging = false;
     this.dragStartX = 0;
@@ -22,7 +24,7 @@ export class InteractionManager {
     this.gridStartX = 0;
     this.gridStartY = 0;
     this.isSpacePressed = false;
-    
+
     // Grid zoom variables
     this.gridScale = 1.0;
     this.minScale = 0.2;
@@ -139,21 +141,7 @@ export class InteractionManager {
    * @param {MouseEvent} event - Mouse event
    */
   startGridDragging(event) {
-    this.isDragging = true;
-    this.dragStartX = event.clientX;
-    this.dragStartY = event.clientY;
-    this.gridStartX = this.gameManager.gridContainer.x;
-    this.gridStartY = this.gameManager.gridContainer.y;
-    this.gameManager.app.view.style.cursor = 'grabbing';
-    
-    logger.log(LOG_LEVEL.TRACE, 'Grid dragging started', LOG_CATEGORY.USER, {
-      startPosition: { x: this.dragStartX, y: this.dragStartY },
-      gridPosition: { x: this.gridStartX, y: this.gridStartY },
-      currentScale: this.gridScale
-    });
-    
-    event.preventDefault();
-    event.stopPropagation();
+    return _startDrag(this, event);
   }
 
   /**
@@ -161,18 +149,14 @@ export class InteractionManager {
    * @param {MouseEvent} event - Mouse event
    */
   updateGridDragPosition(event) {
-    const deltaX = event.clientX - this.dragStartX;
-    const deltaY = event.clientY - this.dragStartY;
-    this.gameManager.gridContainer.x = this.gridStartX + deltaX;
-    this.gameManager.gridContainer.y = this.gridStartY + deltaY;
+    return _updateDrag(this, event);
   }
 
   /**
    * Stop grid dragging interaction
    */
   stopGridDragging() {
-    this.isDragging = false;
-    this.gameManager.app.view.style.cursor = this.isSpacePressed ? 'grab' : 'default';
+    return _stopDrag(this);
   }
 
   /**
@@ -190,28 +174,7 @@ export class InteractionManager {
    * @param {WheelEvent} event - Wheel event
    */
   handleZoomWheel(event) {
-    const rect = this.gameManager.app.view.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-    
-    const zoomDirection = event.deltaY > 0 ? -1 : 1;
-    const zoomFactor = 1 + (this.zoomSpeed * zoomDirection);
-    const newScale = this.gridScale * zoomFactor;
-    
-    if (newScale < this.minScale || newScale > this.maxScale) {
-      return;
-    }
-    
-    this.applyZoom(newScale, mouseX, mouseY);
-    logger.log(LOG_LEVEL.DEBUG, 'Zoom applied', LOG_CATEGORY.USER, {
-      zoomDirection,
-      zoomFactor,
-      previousScale: this.gridScale / zoomFactor,
-      newScale: this.gridScale,
-      zoomPercentage: `${(this.gridScale * 100).toFixed(0)}%`,
-      mousePosition: { x: mouseX, y: mouseY },
-      bounds: { min: this.minScale, max: this.maxScale }
-    });
+    return _handleZoomWheel(this, event);
   }
 
   /**
@@ -221,33 +184,14 @@ export class InteractionManager {
    * @param {number} mouseY - Mouse Y position
    */
   applyZoom(newScale, mouseX, mouseY) {
-    const localX = (mouseX - this.gameManager.gridContainer.x) / this.gridScale;
-    const localY = (mouseY - this.gameManager.gridContainer.y) / this.gridScale;
-    
-    this.gridScale = newScale;
-    this.gameManager.gridContainer.scale.set(this.gridScale);
-    
-    this.gameManager.gridContainer.x = mouseX - localX * this.gridScale;
-    this.gameManager.gridContainer.y = mouseY - localY * this.gridScale;
+    return _applyZoom(this, newScale, mouseX, mouseY);
   }
 
   /**
    * Reset zoom to default scale and center grid
    */
   resetZoom() {
-    try {
-      this.gridScale = 1.0;
-      this.gameManager.gridContainer.scale.set(this.gridScale);
-      this.gameManager.centerGrid();
-      logger.debug('Grid zoom reset to default', {
-        newScale: this.gridScale
-      }, LOG_CATEGORY.USER);
-    } catch (error) {
-      const errorHandler = new ErrorHandler();
-      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.RENDERING, { 
-        stage: 'resetZoom' 
-      });
-    }
+    return _resetZoom(this);
   }
 
   /**
@@ -263,32 +207,33 @@ export class InteractionManager {
       // Check if terrain mode is active - if so, ignore token placement
       if (this.gameManager.isTerrainModeActive()) {
         // Terrain mode is active, token placement is disabled
-        logger.log('Token placement disabled while terrain mode is active', 
+        logger.log('Token placement disabled while terrain mode is active',
           LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION);
-        
+
         // Provide visual feedback through cursor change or similar
         this.gameManager.app.view.style.cursor = 'not-allowed';
-        setTimeout(() => {
+        const t = setTimeout(() => {
           this.gameManager.app.view.style.cursor = 'crosshair'; // Reset to terrain cursor
         }, 200);
-        
+        if (typeof t?.unref === 'function') t.unref();
+
         return;
       }
-      
+
       const gridCoords = this.getGridCoordinatesFromClick(event);
       if (!gridCoords) {
         const errorHandler = new ErrorHandler();
         errorHandler.handle(
-          new Error('Click outside valid grid area'), 
-          ERROR_SEVERITY.INFO, 
-          ERROR_CATEGORY.VALIDATION, 
+          new Error('Click outside valid grid area'),
+          ERROR_SEVERITY.INFO,
+          ERROR_CATEGORY.VALIDATION,
           {
             event: { x: event.clientX, y: event.clientY }
           }
         );
         return;
       }
-      
+
       const { gridX, gridY } = gridCoords;
       this.gameManager.handleTokenInteraction(gridX, gridY);
     } catch (error) {
@@ -309,13 +254,17 @@ export class InteractionManager {
     try {
       const mouseCoords = this.getMousePosition(event);
       const localCoords = this.convertToLocalCoordinates(mouseCoords);
-      const gridCoords = this.convertToGridCoordinates(localCoords);
-      
-      if (!this.isValidGridPosition(gridCoords)) {
+
+      // Enhanced picking: prefer visually topmost tile at pointer, honoring elevation
+      const picked = this.pickTopmostGridCellAt(localCoords.localX, localCoords.localY);
+      if (!picked) {
         return null;
       }
-      
-      return gridCoords;
+
+      if (!this.isValidGridPosition(picked)) {
+        return null;
+      }
+      return picked;
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
         context: 'getGridCoordinatesFromClick',
@@ -324,6 +273,22 @@ export class InteractionManager {
       });
       return null;
     }
+  }
+
+  /**
+   * Hit test an isometric diamond at grid cell (gx, gy) against a local point (lx, ly)
+   * Accounts for elevation offset so the test matches the visually shifted tile.
+   */
+  _isPointInCellDiamond(gx, gy, lx, ly) {
+    return _isPointInCellDiamond(this, gx, gy, lx, ly);
+  }
+
+  /**
+   * Pick the topmost grid cell under local pointer, considering elevation and depth order.
+   * Returns { gridX, gridY } or null.
+   */
+  pickTopmostGridCellAt(localX, localY) {
+    return _pickTopmost(this, localX, localY);
   }
 
   /**
@@ -347,7 +312,7 @@ export class InteractionManager {
   convertToLocalCoordinates({ mouseX, mouseY }) {
     const gridRelativeX = mouseX - this.gameManager.gridContainer.x;
     const gridRelativeY = mouseY - this.gameManager.gridContainer.y;
-    
+
     return {
       localX: gridRelativeX / this.gridScale,
       localY: gridRelativeY / this.gridScale
@@ -394,8 +359,8 @@ export class InteractionManager {
    * @returns {boolean} True if position is valid
    */
   isValidGridPosition({ gridX, gridY }) {
-  // Consolidated validation: coordinates must be integers within grid bounds
-  return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
+    // Consolidated validation: coordinates must be integers within grid bounds
+    return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
   }
 
   // Getters for backward compatibility

@@ -102,7 +102,7 @@ export class TerrainPixiUtils {
         const facesDestroyed = this.safeDestroyPixiObject(tile.sideFaces, `${context}.sideFacesCleanup`);
         tile.sideFaces = null;
         if (!facesRemoved || !facesDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial sideFaces cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial sideFaces cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             facesRemoved,
@@ -117,7 +117,7 @@ export class TerrainPixiUtils {
         const baseFacesDestroyed = this.safeDestroyPixiObject(tile.baseSideFaces, `${context}.baseFacesCleanup`);
         tile.baseSideFaces = null;
         if (!baseFacesRemoved || !baseFacesDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial baseSideFaces cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial baseSideFaces cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             baseFacesRemoved,
@@ -131,9 +131,9 @@ export class TerrainPixiUtils {
       if (tile.shadowTile) {
         const shadowRemoved = this.safeRemoveFromContainer(tile.shadowTile, container, `${context}.shadowCleanup`);
         const shadowDestroyed = this.safeDestroyPixiObject(tile.shadowTile, `${context}.shadowCleanup`);
-        
+
         if (!shadowRemoved || !shadowDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial shadow tile cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial shadow tile cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             shadowRemoved,
@@ -147,9 +147,9 @@ export class TerrainPixiUtils {
       if (tile.depressionOverlay) {
         const overlayRemoved = this.safeRemoveFromContainer(tile.depressionOverlay, tile, `${context}.overlayCleanup`);
         const overlayDestroyed = this.safeDestroyPixiObject(tile.depressionOverlay, `${context}.overlayCleanup`);
-        
+
         if (!overlayRemoved || !overlayDestroyed) {
-          logger.log(LOG_LEVEL.WARN, 'Partial depression overlay cleanup', LOG_CATEGORY.SYSTEM, {
+          logger.log(LOG_LEVEL.DEBUG, 'Partial depression overlay cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             overlayRemoved,
@@ -173,7 +173,7 @@ export class TerrainPixiUtils {
       const tileDestroyed = this.safeDestroyPixiObject(tile, `${context}.tileCleanup`);
 
       if (!tileRemoved || !tileDestroyed) {
-        logger.log(LOG_LEVEL.WARN, 'Partial main tile cleanup', LOG_CATEGORY.SYSTEM, {
+        logger.log(LOG_LEVEL.DEBUG, 'Partial main tile cleanup', LOG_CATEGORY.SYSTEM, {
           context,
           tileKey,
           tileRemoved,
@@ -196,7 +196,7 @@ export class TerrainPixiUtils {
         tileKey,
         error: error.message
       });
-      
+
       // Still try to clean up the main tile as a fallback
       try {
         this.safeRemoveFromContainer(tile, container, `${context}.fallback`);
@@ -291,7 +291,7 @@ export class TerrainPixiUtils {
         } catch (tileError) {
           results.failed++;
           results.errors.push(`Error cleaning tile ${tileKey}: ${tileError.message}`);
-          
+
           logger.log(LOG_LEVEL.ERROR, 'Individual tile cleanup failed', LOG_CATEGORY.SYSTEM, {
             context: `${context}.batch`,
             tileKey,
@@ -313,7 +313,7 @@ export class TerrainPixiUtils {
         context,
         error: error.message
       });
-      
+
       results.errors.push(`Batch process error: ${error.message}`);
       return results;
     }
@@ -333,7 +333,7 @@ export class TerrainPixiUtils {
       }
 
       const childCount = container.children.length;
-      
+
       if (childCount === 0) {
         logger.log(LOG_LEVEL.DEBUG, `${containerName} is already empty`, LOG_CATEGORY.SYSTEM, { context });
         return true;
@@ -346,14 +346,14 @@ export class TerrainPixiUtils {
       for (const child of children) {
         const removed = this.safeRemoveFromContainer(child, container, `${context}.reset`);
         const destroyed = this.safeDestroyPixiObject(child, `${context}.reset`);
-        
+
         if (removed && destroyed) {
           successfulRemovals++;
         }
       }
 
       const success = successfulRemovals === childCount;
-      
+
       logger.log(LOG_LEVEL.INFO, 'Container reset completed', LOG_CATEGORY.SYSTEM, {
         context,
         containerName,

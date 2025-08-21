@@ -88,14 +88,25 @@ function onDragEnd(event) {
       return;
     }
     
+    // Capture pointer-local coordinates before clearing state for precise snap target
+    let localX = null, localY = null;
+    try {
+      if (event && event.data && this.parent) {
+        const p = event.data.getLocalPosition(this.parent);
+        localX = p.x;
+        localY = p.y;
+      }
+    } catch(_) { /* ignore getLocalPosition errors */ }
+
     this.dragging = false;
-    this.data = null;
     this.alpha = 1.0;
     
-    // Snap to grid if the function is available
+    // Snap to grid if the function is available (pass pointer coords)
     if (window.snapToGrid) {
-      window.snapToGrid(this);
+      window.snapToGrid(this, localX, localY);
     }
+    // Clear data at the end to avoid losing pointer during snap
+    this.data = null;
     
     logger.log(LOG_LEVEL.TRACE, 'Token drag completed', LOG_CATEGORY.USER, {
       tokenId: this?.id || 'unknown',

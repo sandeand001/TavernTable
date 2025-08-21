@@ -23,8 +23,8 @@ class SpriteManager {
     this.sprites = new Map();
     this.loaded = false;
     this.registeredSprites = []; // Track registered sprite names
-  // Initialization promise for consumers that need to await readiness
-  this._initPromise = null;
+    // Initialization promise for consumers that need to await readiness
+    this._initPromise = null;
   }
 
   /**
@@ -96,7 +96,7 @@ class SpriteManager {
             // Store reference for quick verification
             this.sprites.set(spriteName, texture);
           } else {
-            logger.log(LOG_LEVEL.ERROR, `Invalid texture`, LOG_CATEGORY.ASSETS, {
+            logger.log(LOG_LEVEL.ERROR, 'Invalid texture', LOG_CATEGORY.ASSETS, {
               context: 'SpriteManager.loadSprites',
               spriteName,
               textureInfo: texture ? { width: texture.width, height: texture.height } : null

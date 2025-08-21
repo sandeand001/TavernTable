@@ -4,16 +4,29 @@
  * Handles tab switching, dice log management, and sidebar interactions
  * Following clean, modular design principles with single responsibility
  */
+import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl, getTabButtons, getTabPanels, getGridOpacityControl, getAnimationSpeedControl, getBiomeButtons, getBiomeButtonByKey } from './domHelpers.js';
+import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 
 class SidebarController {
   constructor() {
-  // Default active tab (original): dice-log
-  this.activeTab = 'dice-log';
+    // Default active tab (original): dice-log
+    this.activeTab = 'dice-log';
     this.diceLogEntries = [];
     this.maxLogEntries = 50; // Prevent memory issues with large logs
-    
+
     this.init();
   }
+
+  // Small helpers to avoid repeating common selectors
+  _getTabButtons() {
+    return getTabButtons();
+  }
+
+  _getTabPanels() {
+    return getTabPanels();
+  }
+
+  //
 
   /**
    * Initialize the sidebar controller
@@ -22,26 +35,47 @@ class SidebarController {
   init() {
     this.setupTabListeners();
     this.setupRangeSliderListeners();
+    this.setupDiceLogControls();
     this.showTab(this.activeTab);
 
-  // Biome menu now lazy-builds when Biomes tab first opened
-    
+    // Biome menu now lazy-builds when Biomes tab first opened
+    // Initialize global rich shading defaults
+    if (!window.richShadingSettings) {
+      window.richShadingSettings = {
+        enabled: true,
+        intensity: 1.0, // 0..1 multiplier for alpha
+        density: 1.0,   // 0.5..1.5 multiplier for element counts/sizes
+        performance: false,
+        shorelineSandStrength: 1.0 // 0..2 multiplier for shoreline sand effect
+      };
+    }
+
     // Add welcome message to dice log
     this.addDiceLogEntry('Welcome to TavernTable! Roll some dice to see history here.', 'system');
+  }
+
+  setupDiceLogControls() {
+    try {
+      const clearBtn = document.querySelector('#dice-log-panel .panel-footer .clear-button');
+      if (clearBtn && !clearBtn.dataset.boundClick) {
+        clearBtn.addEventListener('click', () => this.clearDiceLog());
+        clearBtn.dataset.boundClick = 'true';
+      }
+    } catch (_) { /* ignore */ }
   }
 
   /**
    * Set up event listeners for tab navigation
    */
   setupTabListeners() {
-    const tabButtons = document.querySelectorAll('.tab-button');
-    
+    const tabButtons = this._getTabButtons();
+
     tabButtons.forEach(button => {
       button.addEventListener('click', (e) => {
         const tabId = e.target.getAttribute('data-tab');
         this.showTab(tabId);
       });
-      
+
       // Keyboard accessibility
       button.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -58,9 +92,8 @@ class SidebarController {
    */
   setupRangeSliderListeners() {
     // Grid opacity slider
-    const gridOpacitySlider = document.getElementById('grid-opacity');
-    const gridOpacityValue = gridOpacitySlider?.nextElementSibling;
-    
+    const { slider: gridOpacitySlider, valueEl: gridOpacityValue } = getGridOpacityControl();
+
     if (gridOpacitySlider) {
       gridOpacitySlider.addEventListener('input', (e) => {
         const value = e.target.value;
@@ -73,9 +106,8 @@ class SidebarController {
     }
 
     // Animation speed slider
-    const animationSpeedSlider = document.getElementById('animation-speed');
-    const animationSpeedValue = animationSpeedSlider?.nextElementSibling;
-    
+    const { slider: animationSpeedSlider, valueEl: animationSpeedValue } = getAnimationSpeedControl();
+
     if (animationSpeedSlider) {
       animationSpeedSlider.addEventListener('input', (e) => {
         const value = parseFloat(e.target.value);
@@ -86,6 +118,70 @@ class SidebarController {
         this.onAnimationSpeedChange(value);
       });
     }
+
+    // Biome Rich Shading controls
+    const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = getShadingControls();
+
+    if (shadeToggle) {
+      // Initialize from current settings
+      shadeToggle.checked = !!window.richShadingSettings?.enabled;
+      shadeToggle.addEventListener('change', () => {
+        const enabled = !!shadeToggle.checked;
+        window.richShadingSettings.enabled = enabled;
+        // Prefer coordinator API to manage painter + base grid
+        try {
+          if (window.gameManager?.terrainCoordinator?.setRichShadingEnabled) {
+            window.gameManager.terrainCoordinator.setRichShadingEnabled(enabled);
+          } else {
+            // Fallback: refresh terrain or re-apply palette
+            this._refreshTerrainOverlayIfActive();
+          }
+        } catch (_) {
+          this._refreshTerrainOverlayIfActive();
+        }
+      });
+    }
+    if (intensity && intensityVal) {
+      const init = Math.round((window.richShadingSettings?.intensity ?? 1) * 100);
+      intensity.value = String(init);
+      intensityVal.textContent = `${init}%`;
+      intensity.addEventListener('input', () => {
+        const pct = parseInt(intensity.value, 10) || 0;
+        window.richShadingSettings.intensity = Math.max(0, Math.min(150, pct)) / 100;
+        intensityVal.textContent = `${pct}%`;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
+    if (density && densityVal) {
+      const init = Math.round((window.richShadingSettings?.density ?? 1) * 100);
+      density.value = String(init);
+      densityVal.textContent = `${init}%`;
+      density.addEventListener('input', () => {
+        const pct = parseInt(density.value, 10) || 0;
+        window.richShadingSettings.density = Math.max(50, Math.min(150, pct)) / 100; // 0.5..1.5
+        densityVal.textContent = `${pct}%`;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
+    if (shore && shoreVal) {
+      const init = Math.round((window.richShadingSettings?.shorelineSandStrength ?? 1) * 100);
+      shore.value = String(init);
+      shoreVal.textContent = `${init}%`;
+      shore.addEventListener('input', () => {
+        const pct = parseInt(shore.value, 10) || 0;
+        // allow 0..200% → 0..2 multiplier
+        window.richShadingSettings.shorelineSandStrength = Math.max(0, Math.min(200, pct)) / 100;
+        shoreVal.textContent = `${pct}%`;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
+    if (perf) {
+      perf.checked = !!window.richShadingSettings?.performance;
+      perf.addEventListener('change', () => {
+        window.richShadingSettings.performance = perf.checked;
+        this._refreshTerrainOverlayIfActive();
+      });
+    }
   }
 
   /**
@@ -94,9 +190,9 @@ class SidebarController {
    */
   showTab(tabId) {
     // Validate tab ID
-  const validTabs = ['dice-log', 'creatures', 'terrain', 'biomes', 'settings'];
+    const validTabs = ['dice-log', 'creatures', 'terrain', 'biomes', 'settings'];
     if (!validTabs.includes(tabId)) {
-      console.warn(`Invalid tab ID: ${tabId}`);
+      logger.debug('Invalid tab ID', { tabId }, LOG_CATEGORY.UI);
       return;
     }
 
@@ -104,7 +200,7 @@ class SidebarController {
     this.activeTab = tabId;
 
     // Update tab button states
-    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabButtons = this._getTabButtons();
     tabButtons.forEach(button => {
       const isActive = button.getAttribute('data-tab') === tabId;
       button.classList.toggle('active', isActive);
@@ -112,7 +208,7 @@ class SidebarController {
     });
 
     // Update tab panel visibility
-    const tabPanels = document.querySelectorAll('.tab-panel');
+    const tabPanels = this._getTabPanels();
     tabPanels.forEach(panel => {
       const isActive = panel.id === `${tabId}-panel`;
       panel.classList.toggle('active', isActive);
@@ -140,6 +236,8 @@ class SidebarController {
       break;
     case 'biomes':
       this.buildBiomeMenuSafely();
+      // Ensure control defaults reflect current settings when switching tabs
+      this._syncRichShadingControlsFromState();
       break;
     case 'settings':
       // Future: Load current game settings
@@ -147,9 +245,57 @@ class SidebarController {
     }
   }
 
+  _syncRichShadingControlsFromState() {
+    try {
+      const s = window.richShadingSettings || {};
+      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = getShadingControls();
+      if (shadeToggle) shadeToggle.checked = !!s.enabled;
+      if (intensity && intensityVal && Number.isFinite(s.intensity)) {
+        const pct = Math.round(s.intensity * 100);
+        intensity.value = String(pct);
+        intensityVal.textContent = `${pct}%`;
+      }
+      if (density && densityVal && Number.isFinite(s.density)) {
+        const pct = Math.round(s.density * 100);
+        density.value = String(pct);
+        densityVal.textContent = `${pct}%`;
+      }
+      if (shore && shoreVal && Number.isFinite(s.shorelineSandStrength)) {
+        const pct = Math.round(s.shorelineSandStrength * 100);
+        shore.value = String(pct);
+        shoreVal.textContent = `${pct}%`;
+      }
+      if (perf) perf.checked = !!s.performance;
+    } catch (_) { /* ignore */ }
+  }
+
+  _refreshTerrainOverlayIfActive() {
+    try {
+      const gm = window.gameManager;
+      if (gm?.terrainCoordinator?.isTerrainModeActive && gm?.terrainCoordinator?.terrainManager) {
+        gm.terrainCoordinator.terrainManager.refreshAllTerrainDisplay();
+      } else if (gm?.terrainCoordinator && !gm.terrainCoordinator.isTerrainModeActive) {
+        // Outside edit mode: only repaint the biome canvas if shading is enabled.
+        const enabled = !!window.richShadingSettings?.enabled;
+        if (enabled) {
+          if (typeof gm.terrainCoordinator.applyBiomePaletteToBaseGrid === 'function') {
+            gm.terrainCoordinator.applyBiomePaletteToBaseGrid();
+          } else { /* applyBiomePaletteToBaseGrid not present (older build) */ }
+        } else {
+          // If disabled, ensure painter is cleared and base tiles are visible
+          if (typeof gm.terrainCoordinator.setRichShadingEnabled === 'function') {
+            gm.terrainCoordinator.setRichShadingEnabled(false);
+          } else {
+            try { gm.terrainCoordinator._toggleBaseTileVisibility?.(true); } catch (_) { /* ignore refresh error */ }
+          }
+        }
+      }
+    } catch (_) { /* non-fatal */ }
+  }
+
   buildBiomeMenuSafely() {
     try {
-      const root = document.getElementById('biome-menu-root');
+      const root = getBiomeRootEl();
       // If previously built but root is missing or empty (e.g., moved to new tab), allow rebuild
       if (this._biomesBuilt) {
         if (!root || root.children.length === 0) {
@@ -173,15 +319,15 @@ class SidebarController {
           headerBtn.setAttribute('aria-expanded', 'false');
           headerBtn.textContent = group;
 
-            const listEl = document.createElement('div');
-            listEl.className = 'biome-group-list';
-            listEl.style.display = 'none';
+          const listEl = document.createElement('div');
+          listEl.className = 'biome-group-list';
+          listEl.style.display = 'none';
 
-            headerBtn.addEventListener('click', () => {
-              const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
-              headerBtn.setAttribute('aria-expanded', String(!expanded));
-              listEl.style.display = expanded ? 'none' : 'grid';
-            });
+          headerBtn.addEventListener('click', () => {
+            const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
+            headerBtn.setAttribute('aria-expanded', String(!expanded));
+            listEl.style.display = expanded ? 'none' : 'grid';
+          });
 
           list.forEach(b => {
             const bBtn = document.createElement('button');
@@ -201,29 +347,29 @@ class SidebarController {
         this._biomesBuilt = true;
         // Re-apply selected biome highlight if one was chosen earlier
         if (window.selectedBiome) {
-          try { this.selectBiome(window.selectedBiome); } catch(_) { /* ignore */ }
+          try { this.selectBiome(window.selectedBiome); } catch (_) { /* ignore */ }
         }
-      }).catch(() => {/* ignore */});
+      }).catch(() => { /* ignore dynamic import errors */ });
     } catch (_) { /* swallow to avoid UI disruption */ }
   }
 
   selectBiome(biomeKey) {
     window.selectedBiome = biomeKey;
     if (window.sidebarController?.activeTab === 'terrain') {
-      console.log('Biome selected:', biomeKey);
+      logger.debug('Biome selected', { biomeKey }, LOG_CATEGORY.UI);
     }
     // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
     try {
       if (window.gameManager && window.gameManager.terrainCoordinator && !window.gameManager.terrainCoordinator.isTerrainModeActive) {
         window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
       }
-    } catch(_) { /* non-fatal */ }
+    } catch (_) { /* non-fatal */ }
     // Visual selection state
     try {
-      const root = document.getElementById('biome-menu-root');
+      const root = getBiomeRootEl();
       if (root) {
-        root.querySelectorAll('.biome-btn.selected').forEach(btn => btn.classList.remove('selected'));
-        const newly = root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+        getBiomeButtons(root).forEach(btn => btn.classList.remove('selected'));
+        const newly = getBiomeButtonByKey(biomeKey, root);
         if (newly) {
           newly.classList.add('selected');
           newly.setAttribute('aria-pressed', 'true');
@@ -264,7 +410,7 @@ class SidebarController {
    * Refresh the dice log display
    */
   refreshDiceLog() {
-    const logContent = document.getElementById('dice-log-content');
+    const logContent = getDiceLogContentEl();
     if (!logContent) return;
 
     // Clear existing content securely
@@ -283,18 +429,18 @@ class SidebarController {
     // Create DOM elements securely to prevent XSS
     this.diceLogEntries.forEach((entry, index) => {
       const isRecent = index < 3; // Mark first 3 entries as recent
-      
+
       const entryDiv = document.createElement('div');
       entryDiv.className = `dice-log-entry${isRecent ? ' recent' : ''}`;
-      
+
       const timeSpan = document.createElement('span');
       timeSpan.className = 'log-time';
       timeSpan.textContent = `[${entry.timestamp}]`;
-      
+
       const messageSpan = document.createElement('span');
       messageSpan.className = 'log-message';
       messageSpan.textContent = entry.message;
-      
+
       entryDiv.appendChild(timeSpan);
       entryDiv.appendChild(messageSpan);
       logContent.appendChild(entryDiv);
@@ -324,18 +470,19 @@ class SidebarController {
     } else {
       selectedToken = window.selectedTokenType;
     }
-    
+
     if (!selectedToken) return;
-    
+
     // Clear all selections first
-    const allTokenButtons = document.querySelectorAll('#creature-content button[id^="token-"], #token-remove');
+    // DRY: use shared helper
+    const allTokenButtons = getCreatureButtons();
     allTokenButtons.forEach(btn => {
       btn.classList.remove('selected');
       btn.setAttribute('aria-pressed', 'false');
     });
-    
+
     // Highlight the selected token
-    const selectedButton = document.getElementById(`token-${selectedToken}`);
+    const selectedButton = getTokenButtonByType(selectedToken);
     if (selectedButton) {
       selectedButton.classList.add('selected');
       selectedButton.setAttribute('aria-pressed', 'true');
@@ -371,7 +518,7 @@ class SidebarController {
         }
       });
     } else {
-      console.warn('GameManager not available for grid opacity change');
+      logger.debug('GameManager not available for grid opacity change', {}, LOG_CATEGORY.UI);
     }
   }
 
@@ -384,24 +531,19 @@ class SidebarController {
     if (window.gameManager && window.gameManager.app) {
       // Store animation speed in app for use by animation systems
       window.gameManager.app.animationSpeedMultiplier = speed;
-      
+
       // Update any existing PIXI ticker speed if available
       if (window.gameManager.app.ticker) {
         window.gameManager.app.ticker.speed = speed;
       }
-      
+
     } else {
-      console.warn('GameManager not available for animation speed change');
+      logger.debug('GameManager not available for animation speed change', {}, LOG_CATEGORY.UI);
     }
   }
 }
 
-// Global functions for HTML onclick handlers
-window.clearDiceLog = () => {
-  if (window.sidebarController) {
-    window.sidebarController.clearDiceLog();
-  }
-};
+// No inline HTML handlers needed; events are delegated in setup
 
 // Create and expose global instance
 window.sidebarController = new SidebarController();

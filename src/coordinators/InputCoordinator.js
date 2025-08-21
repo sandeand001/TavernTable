@@ -23,7 +23,7 @@ export class InputCoordinator {
     if (this.gameManager.interactionManager) {
       this.gameManager.interactionManager.handleLeftClick(event);
     } else {
-      logger.warn('Cannot handle click: InteractionManager not available');
+      logger.debug('Cannot handle click: InteractionManager not available');
     }
   }
 
@@ -41,7 +41,7 @@ export class InputCoordinator {
       }
 
       const existingToken = this.findExistingTokenAt(gridX, gridY);
-      
+
       if (existingToken) {
         this.removeToken(existingToken);
       }
@@ -56,7 +56,7 @@ export class InputCoordinator {
       if (!creatureValidation.isValid) {
         throw new Error(`Invalid creature type: ${creatureValidation.errors.join(', ')}`);
       }
-      
+
       this.placeNewToken(gridX, gridY);
     } catch (error) {
       GameErrors.input(error, {
@@ -103,7 +103,7 @@ export class InputCoordinator {
       // Update global array for backward compatibility
       window.placedTokens = this.gameManager.placedTokens;
     } else {
-      logger.warn('Cannot place token: TokenManager or gridContainer not available');
+      logger.debug('Cannot place token: TokenManager or gridContainer not available');
     }
   }
 
@@ -115,9 +115,9 @@ export class InputCoordinator {
    */
   gridToIsometric(gridX, gridY) {
     return CoordinateUtils.gridToIsometric(
-      gridX, 
-      gridY, 
-      this.gameManager.tileWidth, 
+      gridX,
+      gridY,
+      this.gameManager.tileWidth,
       this.gameManager.tileHeight
     );
   }
@@ -131,10 +131,10 @@ export class InputCoordinator {
   addTokenToCollection(creature, gridX, gridY) {
     if (this.gameManager.tokenManager) {
       this.gameManager.tokenManager.addTokenToCollection(
-        creature, 
-        gridX, 
-        gridY, 
-        this.gameManager.selectedTokenType, 
+        creature,
+        gridX,
+        gridY,
+        this.gameManager.selectedTokenType,
         this.gameManager.placedTokens
       );
       // Update global array for backward compatibility

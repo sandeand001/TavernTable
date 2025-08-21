@@ -1,3 +1,4 @@
+import { isJest } from '../utils/env.js';
 /**
  * UIController.js
  * Handles UI interactions and initialization for TavernTable
@@ -22,6 +23,23 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
+import {
+  getCreatureButtons,
+  getFacingButton,
+  getTerrainToolButtons,
+  getGridSizeInputs,
+  getTerrainResetButton,
+  getElevationScaleControls,
+  getBrushSizeDisplay,
+  getSpriteAdjustLogEl,
+  getCreaturePanelEls,
+  getTerrainModeEls,
+  getAutoApplyButton
+} from './domHelpers.js';
+import { getDiceButtons, getGridActionButtons, getSpriteAdjustButtons } from './domHelpers.js';
+import { rollDice } from '../systems/dice/dice.js';
+import { getCurrentSpriteKey } from './lib/spriteKeys.js';
+import { computeElevationVisualOffset } from './lib/elevationUtils.js';
 
 /**
  * Toggle the visibility of the creature tokens panel
@@ -29,24 +47,23 @@ import { Sanitizers, GameValidators } from '../utils/Validation.js';
  */
 function toggleCreatureTokens() {
   try {
-    const content = document.getElementById('creature-content');
-    const arrow = document.getElementById('creature-arrow');
-    
+    const { contentEl: content, arrowEl: arrow } = getCreaturePanelEls();
+
     // Validate DOM elements
     const contentValidation = GameValidators.domElement(content, 'div');
     if (!contentValidation.isValid) {
       throw new Error(`Content panel validation failed: ${contentValidation.getErrorMessage()}`);
     }
-    
+
     // Toggle visibility
     const isHidden = content.style.display === 'none';
     content.style.display = isHidden ? 'block' : 'none';
-    
+
     // Update arrow indicator if present
     if (arrow) {
       arrow.textContent = isHidden ? '▼' : '▶';
     }
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'toggleCreatureTokens',
@@ -56,6 +73,8 @@ function toggleCreatureTokens() {
     });
   }
 }
+
+//
 
 /**
  * Resize the game grid based on user input
@@ -67,43 +86,42 @@ function resizeGrid() {
     if (!window.gameManager) {
       throw new Error('Game is still loading. Please wait a moment and try again.');
     }
-    
+
     if (!window.gameManager.resizeGrid) {
       throw new Error('Grid resize feature is not available.');
     }
-    
+
     // Get and validate input elements
-    const widthInput = document.getElementById('grid-width');
-    const heightInput = document.getElementById('grid-height');
-    
+    const { widthInput, heightInput } = getGridSizeInputs();
+
     const widthValidation = GameValidators.domElement(widthInput, 'input');
     const heightValidation = GameValidators.domElement(heightInput, 'input');
-    
+
     if (!widthValidation.isValid || !heightValidation.isValid) {
       throw new Error('Grid resize input elements not found or invalid.');
     }
-    
+
     // Sanitize and validate input values
     const newWidth = Sanitizers.integer(widthInput.value, GRID_CONFIG.DEFAULT_COLS, {
       min: GRID_CONFIG.MIN_COLS,
       max: GRID_CONFIG.MAX_COLS
     });
-    
+
     const newHeight = Sanitizers.integer(heightInput.value, GRID_CONFIG.DEFAULT_ROWS, {
       min: GRID_CONFIG.MIN_ROWS,
       max: GRID_CONFIG.MAX_ROWS
     });
-    
+
     // Perform grid resize
     window.gameManager.resizeGrid(newWidth, newHeight);
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'resizeGrid',
       stage: 'grid_resize_validation',
       inputValues: {
-        width: document.getElementById('grid-width')?.value,
-        height: document.getElementById('grid-height')?.value
+        width: getGridSizeInputs().widthInput?.value,
+        height: getGridSizeInputs().heightInput?.value
       },
       constraints: {
         minWidth: GRID_CONFIG.MIN_COLS,
@@ -124,11 +142,11 @@ function resetZoom() {
     if (!window.gameManager) {
       throw new Error('Game manager not available');
     }
-    
+
     if (!window.gameManager.resetZoom) {
       throw new Error('Reset zoom feature not available');
     }
-    
+
     window.gameManager.resetZoom();
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
@@ -147,18 +165,17 @@ function resetZoom() {
  */
 function toggleTerrainMode() {
   try {
-    const terrainToggle = document.getElementById('terrain-mode-toggle');
-    const terrainTools = document.getElementById('terrain-tools');
-    
+    const { toggleEl: terrainToggle, toolsEl: terrainTools } = getTerrainModeEls();
+
     if (!terrainToggle || !terrainTools) {
       throw new Error('Terrain UI elements not found');
     }
-    
+
     const isEnabled = terrainToggle.checked;
-    
+
     // Show/hide terrain tools
     terrainTools.style.display = isEnabled ? 'block' : 'none';
-    
+
     // Enable/disable terrain mode in game
     if (window.gameManager) {
       if (isEnabled) {
@@ -167,13 +184,13 @@ function toggleTerrainMode() {
         window.gameManager.disableTerrainMode();
       }
     }
-    
+
     logger.log(LOG_LEVEL.INFO, 'Terrain mode toggled', LOG_CATEGORY.USER, {
       context: 'toggleTerrainMode',
       terrainModeEnabled: isEnabled,
       gameManagerAvailable: !!window.gameManager
     });
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'toggleTerrainMode',
@@ -192,7 +209,7 @@ function attachDynamicUIHandlers() {
     if (!window.gameManager) return;
 
     // Token buttons (data-token attribute or legacy id naming)
-    const tokenButtons = document.querySelectorAll('[id^="token-"]');
+    const tokenButtons = getCreatureButtons();
     tokenButtons.forEach(btn => {
       if (btn.dataset.boundTokenHandler) return; // avoid duplicate
       const id = btn.id.replace('token-', '');
@@ -207,26 +224,25 @@ function attachDynamicUIHandlers() {
     });
 
     // Facing button
-    const facingBtn = document.getElementById('facing-right');
+    const facingBtn = getFacingButton();
     if (facingBtn && !facingBtn.dataset.boundFacingHandler) {
       facingBtn.addEventListener('click', () => window.gameManager.toggleFacing());
       facingBtn.dataset.boundFacingHandler = 'true';
     }
 
     // Terrain tool buttons
-    const raiseBtn = document.getElementById('terrain-raise-btn');
-    const lowerBtn = document.getElementById('terrain-lower-btn');
+    const { raiseBtn, lowerBtn } = getTerrainToolButtons();
     if (raiseBtn && !raiseBtn.dataset.boundTerrainHandler) {
-      raiseBtn.addEventListener('click', () => window.gameManager.setTerrainTool('raise'));
+      raiseBtn.addEventListener('click', () => setTerrainTool('raise'));
       raiseBtn.dataset.boundTerrainHandler = 'true';
     }
     if (lowerBtn && !lowerBtn.dataset.boundTerrainHandler) {
-      lowerBtn.addEventListener('click', () => window.gameManager.setTerrainTool('lower'));
+      lowerBtn.addEventListener('click', () => setTerrainTool('lower'));
       lowerBtn.dataset.boundTerrainHandler = 'true';
     }
 
     // Terrain reset
-    const resetTerrainBtn = document.querySelector('.terrain-reset');
+    const resetTerrainBtn = getTerrainResetButton();
     if (resetTerrainBtn && !resetTerrainBtn.dataset.boundResetHandler) {
       // Use global resetTerrain wrapper to preserve confirmation & logging
       resetTerrainBtn.addEventListener('click', () => {
@@ -239,6 +255,91 @@ function attachDynamicUIHandlers() {
       });
       resetTerrainBtn.dataset.boundResetHandler = 'true';
     }
+
+    // Elevation perception slider (debounced to reduce log/render spam during drag)
+    const { slider: elevSlider, valueEl: elevValue } = getElevationScaleControls();
+    if (elevSlider && !elevSlider.dataset.boundElevHandler) {
+      const DEBOUNCE_MS = 120;
+      let debounceId = null;
+      const updateDisplay = (val) => {
+        if (elevValue) elevValue.textContent = `${val} px/level`;
+      };
+      const applyScale = (val) => {
+        if (window.gameManager?.terrainCoordinator?.setElevationScale) {
+          window.gameManager.terrainCoordinator.setElevationScale(Number(val));
+        }
+      };
+      elevSlider.addEventListener('input', (e) => {
+        const val = e.target.value;
+        updateDisplay(val);
+        if (debounceId) clearTimeout(debounceId);
+        debounceId = setTimeout(() => applyScale(val), DEBOUNCE_MS);
+      });
+      elevSlider.addEventListener('change', (e) => {
+        const val = e.target.value;
+        updateDisplay(val);
+        if (debounceId) clearTimeout(debounceId);
+        applyScale(val);
+      });
+      // Initialize from current config if available
+      try {
+        const current = window.gameManager?.terrainCoordinator?.getElevationScale?.();
+        if (Number.isFinite(current)) {
+          elevSlider.value = String(current);
+          updateDisplay(current);
+        }
+      } catch { /* ignore getElevationScale failure */ }
+      elevSlider.dataset.boundElevHandler = 'true';
+    }
+
+    // Ensure brush size label reflects current state on load
+    try { updateBrushSizeDisplay(); } catch (_) { /* non-fatal UI update */ }
+
+    // Dice buttons (top panel)
+    const diceButtons = getDiceButtons();
+    diceButtons.forEach(btn => {
+      if (btn.dataset.boundDiceHandler) return;
+      btn.addEventListener('click', () => {
+        const sides = parseInt(btn.getAttribute('data-sides'), 10);
+        if (Number.isFinite(sides)) rollDice(sides);
+      });
+      btn.dataset.boundDiceHandler = 'true';
+    });
+
+    // Grid apply/reset buttons
+    const { applySize, resetZoom: resetZoomBtn } = getGridActionButtons();
+    if (applySize && !applySize.dataset.boundClick) {
+      applySize.addEventListener('click', resizeGrid);
+      applySize.dataset.boundClick = 'true';
+    }
+    if (resetZoomBtn && !resetZoomBtn.dataset.boundClick) {
+      resetZoomBtn.addEventListener('click', resetZoom);
+      resetZoomBtn.dataset.boundClick = 'true';
+    }
+
+    // Terrain mode toggle
+    const { toggleEl: terrainToggle } = getTerrainModeEls();
+    if (terrainToggle && !terrainToggle.dataset.boundChange) {
+      terrainToggle.addEventListener('change', toggleTerrainMode);
+      terrainToggle.dataset.boundChange = 'true';
+    }
+
+    // Brush size controls
+    const dec = document.getElementById('brush-decrease');
+    const inc = document.getElementById('brush-increase');
+    if (dec && !dec.dataset.boundClick) { dec.addEventListener('click', decreaseBrushSize); dec.dataset.boundClick = 'true'; }
+    if (inc && !inc.dataset.boundClick) { inc.addEventListener('click', increaseBrushSize); inc.dataset.boundClick = 'true'; }
+
+    // Sprite adjust buttons
+    const spr = getSpriteAdjustButtons();
+    if (spr.up && !spr.up.dataset.boundClick) { spr.up.addEventListener('click', () => nudgeSelectedSprite(0, -1)); spr.up.dataset.boundClick = 'true'; }
+    if (spr.down && !spr.down.dataset.boundClick) { spr.down.addEventListener('click', () => nudgeSelectedSprite(0, 1)); spr.down.dataset.boundClick = 'true'; }
+    if (spr.left && !spr.left.dataset.boundClick) { spr.left.addEventListener('click', () => nudgeSelectedSprite(-1, 0)); spr.left.dataset.boundClick = 'true'; }
+    if (spr.right && !spr.right.dataset.boundClick) { spr.right.addEventListener('click', () => nudgeSelectedSprite(1, 0)); spr.right.dataset.boundClick = 'true'; }
+    if (spr.center && !spr.center.dataset.boundClick) { spr.center.addEventListener('click', captureSpriteBaseline); spr.center.dataset.boundClick = 'true'; }
+    if (spr.save && !spr.save.dataset.boundClick) { spr.save.addEventListener('click', saveSpriteOffset); spr.save.dataset.boundClick = 'true'; }
+    if (spr.reset && !spr.reset.dataset.boundClick) { spr.reset.addEventListener('click', resetSpriteOffset); spr.reset.dataset.boundClick = 'true'; }
+    if (spr.auto && !spr.auto.dataset.boundClick) { spr.auto.addEventListener('click', toggleAutoApplyOffsets); spr.auto.dataset.boundClick = 'true'; }
 
     logger.debug('Dynamic UI handlers attached');
   } catch (error) {
@@ -260,7 +361,11 @@ document.addEventListener('DOMContentLoaded', () => {
         attachDynamicUIHandlers();
       }
     }, 100);
-    setTimeout(() => clearInterval(interval), 5000); // stop after 5s
+    // In Node/Jest environments, prevent timers from keeping the process alive
+    if (typeof interval?.unref === 'function') interval.unref();
+    const stopAfterMs = isJest() ? 1000 : 5000;
+    const stopper = setTimeout(() => clearInterval(interval), stopAfterMs);
+    if (typeof stopper?.unref === 'function') stopper.unref();
   }
 });
 
@@ -273,33 +378,38 @@ function setTerrainTool(tool) {
     if (!window.gameManager) {
       throw new Error('Game is still loading. Please wait a moment and try again.');
     }
-    
+
     // Update tool in game manager
     window.gameManager.setTerrainTool(tool);
-    
+
     // Update UI button states
-    const raiseBtn = document.getElementById('terrain-raise-btn');
-    const lowerBtn = document.getElementById('terrain-lower-btn');
-    
+    const { raiseBtn, lowerBtn } = getTerrainToolButtons();
+
     if (raiseBtn && lowerBtn) {
       // Remove active class from all buttons
       raiseBtn.classList.remove('active');
       lowerBtn.classList.remove('active');
-      
+
       // Add active class to selected tool
       if (tool === 'raise') {
         raiseBtn.classList.add('active');
+        // accessibility state
+        raiseBtn.setAttribute('aria-pressed', 'true');
+        lowerBtn.setAttribute('aria-pressed', 'false');
       } else if (tool === 'lower') {
         lowerBtn.classList.add('active');
+        // accessibility state
+        lowerBtn.setAttribute('aria-pressed', 'true');
+        raiseBtn.setAttribute('aria-pressed', 'false');
       }
     }
-    
+
     logger.log(LOG_LEVEL.DEBUG, 'Terrain tool selected', LOG_CATEGORY.USER, {
       context: 'setTerrainTool',
       selectedTool: tool,
       uiUpdated: !!(raiseBtn && lowerBtn)
     });
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'setTerrainTool',
@@ -318,13 +428,13 @@ function increaseBrushSize() {
     if (!window.gameManager || !window.gameManager.terrainCoordinator) {
       throw new Error('Terrain system not available');
     }
-    
+
     // Increase brush size in game
     window.gameManager.terrainCoordinator.increaseBrushSize();
-    
+
     // Update UI display
     updateBrushSizeDisplay();
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'increaseBrushSize',
@@ -342,13 +452,13 @@ function decreaseBrushSize() {
     if (!window.gameManager || !window.gameManager.terrainCoordinator) {
       throw new Error('Terrain system not available');
     }
-    
+
     // Decrease brush size in game
     window.gameManager.terrainCoordinator.decreaseBrushSize();
-    
+
     // Update UI display
     updateBrushSizeDisplay();
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'decreaseBrushSize',
@@ -363,18 +473,18 @@ function decreaseBrushSize() {
  */
 function updateBrushSizeDisplay() {
   try {
-    const brushDisplay = document.getElementById('brush-size-display');
+    const brushDisplay = getBrushSizeDisplay();
     if (!brushDisplay) {
       return;
     }
-    
+
     if (window.gameManager && window.gameManager.terrainCoordinator) {
       const brushSize = window.gameManager.terrainCoordinator.brushSize;
       brushDisplay.textContent = `${brushSize}x${brushSize}`;
     }
-    
+
   } catch (error) {
-    logger.warn('Failed to update brush size display', {
+    logger.debug('Failed to update brush size display', {
       error: error.message
     }, LOG_CATEGORY.UI);
   }
@@ -388,17 +498,17 @@ function resetTerrain() {
     if (!window.gameManager) {
       throw new Error('Game is still loading. Please wait a moment and try again.');
     }
-    
+
     // Confirm with user before resetting
     if (confirm('Are you sure you want to reset all terrain to default height? This action cannot be undone.')) {
       window.gameManager.resetTerrain();
-      
+
       logger.log(LOG_LEVEL.INFO, 'Terrain reset by user', LOG_CATEGORY.USER, {
         context: 'resetTerrain',
         stage: 'terrain_reset_complete'
       });
     }
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'resetTerrain',
@@ -418,10 +528,10 @@ async function initializeApplication() {
     if (!window.gameManager) {
       throw new Error('GameManager not found. Application cannot start.');
     }
-    
+
     // Initialize the game manager
     await window.gameManager.initialize();
-    
+
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
       context: 'initializeApplication',
@@ -456,24 +566,16 @@ function createGameManager() {
 // Initialize the game manager and set up event listeners
 const gameManager = createGameManager();
 
-logger.log(LOG_LEVEL.INFO, 'GameManager created successfully', LOG_CATEGORY.SYSTEM, {
+logger.log(LOG_LEVEL.DEBUG, 'GameManager created successfully', LOG_CATEGORY.SYSTEM, {
   gameManagerType: gameManager.constructor.name,
   globallyAvailable: !!window.gameManager,
   timestamp: new Date().toISOString()
 });
 
-// Make functions available globally for HTML onclick handlers (backward compatibility)
-window.toggleCreatureTokens = toggleCreatureTokens;
-window.resizeGrid = resizeGrid;
-window.resetZoom = resetZoom;
-window.toggleTerrainMode = toggleTerrainMode;
-window.setTerrainTool = setTerrainTool;
-window.increaseBrushSize = increaseBrushSize;
-window.decreaseBrushSize = decreaseBrushSize;
-window.resetTerrain = resetTerrain;
+// No global UI function exposure needed; events are wired via modules
 
 // === SPRITE ADJUSTMENT SYSTEM ===
-let spriteAdjustState = {
+const spriteAdjustState = {
   baselineCaptured: false,
   baseline: { x: 0, y: 0 },
   totalOffset: { x: 0, y: 0 },
@@ -506,7 +608,7 @@ function getSelectedCreatureSprite() {
 
 function captureSpriteBaseline() {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   if (!spriteAdjustState.initialPlacementLogged) {
     logEl.textContent += `Original placement at (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)})\n`;
@@ -522,7 +624,7 @@ function captureSpriteBaseline() {
 
 function nudgeSelectedSprite(dx, dy) {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   if (!spriteAdjustState.initialPlacementLogged) {
     logEl.textContent += `Original placement at (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)})\n`;
@@ -551,13 +653,11 @@ function getSpriteElevation(sprite) {
   } catch { return 0; }
 }
 
-function computeElevationVisualOffset(height) {
-  // Heuristic: each elevation step moves sprite visually by tileHeight * 0.5 upward
-  const tileH = window.gameManager ? window.gameManager.tileHeight : 64;
-  return -height * (tileH * 0.5);
-}
+//
 
 // API to auto-adjust all sprites after terrain tweaks (future extension)
+// Dev-only helper: intentionally unused in production wiring
+// eslint-disable-next-line no-unused-vars
 function applyElevationOffsetsToTokens() {
   if (!window.gameManager) return;
   const tokens = window.gameManager.placedTokens || [];
@@ -571,14 +671,10 @@ function applyElevationOffsetsToTokens() {
   });
 }
 
-window.applyElevationOffsetsToTokens = applyElevationOffsetsToTokens;
+// ...
 
 // ---------------- Sprite Offset Persistence & Auto-Apply ----------------
-function getCurrentSpriteKey(sprite) {
-  if (!sprite) return null;
-  // Try several identifiers to group by creature type; fallback to texture UID
-  return sprite.creatureType || sprite.name || (sprite.texture && sprite.texture.textureCacheIds && sprite.texture.textureCacheIds[0]) || `uid_${sprite.uid || sprite._texture?.uid}`;
-}
+//
 
 function ensureSpriteAdjustExtendedState() {
   // Extend existing state object without needing to locate original declaration
@@ -588,7 +684,7 @@ function ensureSpriteAdjustExtendedState() {
 
 function saveSpriteOffset() {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   ensureSpriteAdjustExtendedState();
   if (!spriteAdjustState.baselineCaptured) {
@@ -605,7 +701,7 @@ function saveSpriteOffset() {
 
 function resetSpriteOffset() {
   const sprite = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (!sprite || !logEl) return;
   ensureSpriteAdjustExtendedState();
   const key = getCurrentSpriteKey(sprite);
@@ -620,16 +716,16 @@ function resetSpriteOffset() {
 function toggleAutoApplyOffsets() {
   ensureSpriteAdjustExtendedState();
   spriteAdjustState.autoApply = !spriteAdjustState.autoApply;
-  const btn = document.getElementById('toggle-auto-apply');
+  const btn = getAutoApplyButton();
   if (btn) btn.textContent = `⚡ Auto Apply: ${spriteAdjustState.autoApply ? 'On' : 'Off'}`;
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (logEl) {
     logEl.textContent += `Auto-Apply ${spriteAdjustState.autoApply ? 'ENABLED' : 'DISABLED'}\n`;
     logEl.scrollTop = logEl.scrollHeight;
   }
 }
 
-function applySavedOffsetToSprite(sprite, silent=false) {
+function applySavedOffsetToSprite(sprite, silent = false) {
   ensureSpriteAdjustExtendedState();
   if (!sprite) return;
   const key = getCurrentSpriteKey(sprite);
@@ -639,7 +735,7 @@ function applySavedOffsetToSprite(sprite, silent=false) {
     sprite.x += saved.x;
     sprite.y += saved.y;
     if (!silent) {
-      const logEl = document.getElementById('sprite-adjust-log');
+      const logEl = getSpriteAdjustLogEl();
       if (logEl) {
         logEl.textContent += `Applied saved offset for [${key}] Δ=(${saved.x},${saved.y}) now=(${sprite.x.toFixed(1)},${sprite.y.toFixed(1)})\n`;
         logEl.scrollTop = logEl.scrollHeight;
@@ -654,11 +750,11 @@ function installSpriteOffsetAutoApplyHook() {
   if (!window.gameManager || !window.gameManager.tokenManager) return;
   const tm = window.gameManager.tokenManager;
   // Heuristic: wrap a common placement method if it exists
-  const candidateFnName = ['placeToken','finalizeTokenPlacement','addPlacedToken'].find(n => typeof tm[n] === 'function');
+  const candidateFnName = ['placeToken', 'finalizeTokenPlacement', 'addPlacedToken'].find(n => typeof tm[n] === 'function');
   if (!candidateFnName) return;
   const original = tm[candidateFnName];
   if (original._wrappedForAutoApply) return; // already wrapped
-  tm[candidateFnName] = function(...args) {
+  tm[candidateFnName] = function (...args) {
     const result = original.apply(this, args);
     try {
       if (spriteAdjustState.autoApply) {
@@ -672,12 +768,12 @@ function installSpriteOffsetAutoApplyHook() {
         const sprite = token?.creature?.sprite;
         if (sprite) applySavedOffsetToSprite(sprite, true);
       }
-    } catch(_){}
+    } catch (_) { /* ignore auto-apply errors */ }
     return result;
   };
   tm[candidateFnName]._wrappedForAutoApply = true;
   spriteAdjustState._autoApplyHookInstalled = true;
-  const logEl = document.getElementById('sprite-adjust-log');
+  const logEl = getSpriteAdjustLogEl();
   if (logEl) {
     logEl.textContent += `Installed auto-apply hook on TokenManager.${candidateFnName}\n`;
     logEl.scrollTop = logEl.scrollHeight;
@@ -685,58 +781,24 @@ function installSpriteOffsetAutoApplyHook() {
 }
 
 // Attempt hook installation repeatedly until tokenManager exists
-setTimeout(function retryHook(){
-  try { installSpriteOffsetAutoApplyHook(); } catch(_){}
-  if (!spriteAdjustState._autoApplyHookInstalled) setTimeout(retryHook, 800);
-}, 800);
-
-// Expose sprite adjustment globally
-window.nudgeSelectedSprite = nudgeSelectedSprite;
-window.captureSpriteBaseline = captureSpriteBaseline;
-window.reapplySpriteOffsets = function() {
-  if (!window.gameManager) return;
-  const { placedTokens, tileWidth, tileHeight } = window.gameManager;
-  if (!placedTokens) return;
-  placedTokens.forEach(t => {
-    const sprite = t.creature?.sprite;
-    if (!sprite) return;
-    // Reset to raw isometric center, then reapply configured offset and manual adjustments
-    const iso = window.gameManager.gridToIsometric(t.gridX, t.gridY);
-    sprite.x = iso.x;
-    sprite.y = iso.y;
-    const { getSpriteOffset } = window;
-    if (getSpriteOffset) {
-      const off = getSpriteOffset(t.type);
-      sprite.x += off.dx;
-      sprite.y += off.dy;
-    }
-  });
-};
-window.logInitialSpritePlacement = () => {
-  const s = getSelectedCreatureSprite();
-  const logEl = document.getElementById('sprite-adjust-log');
-  if (s && logEl && !spriteAdjustState.initialPlacementLogged) {
-    logEl.textContent += `Original placement at (${s.x.toFixed(1)}, ${s.y.toFixed(1)})\n`;
-    spriteAdjustState.initialPlacementLogged = true;
+// Bound retries under Jest to avoid leaking timers in tests
+const __isJest = isJest();
+const __retryLimit = __isJest ? 3 : Infinity;
+let __retryCount = 0;
+const __first = setTimeout(function retryHook() {
+  try { installSpriteOffsetAutoApplyHook(); } catch (_) { /* ignore install errors */ }
+  if (!spriteAdjustState._autoApplyHookInstalled && __retryCount < __retryLimit) {
+    __retryCount++;
+    const t = setTimeout(retryHook, 800);
+    if (typeof t?.unref === 'function') t.unref();
   }
-};
-window.saveSpriteOffset = saveSpriteOffset;
-window.resetSpriteOffset = resetSpriteOffset;
-window.toggleAutoApplyOffsets = toggleAutoApplyOffsets;
-window.applySavedOffsetToSprite = applySavedOffsetToSprite;
+}, 800);
+if (typeof __first?.unref === 'function') __first.unref();
+
 
 logger.log(LOG_LEVEL.DEBUG, 'UI functions exposed globally', LOG_CATEGORY.SYSTEM, {
-  exposedFunctions: [
-    'toggleCreatureTokens', 
-    'resizeGrid', 
-    'resetZoom', 
-    'toggleTerrainMode', 
-    'setTerrainTool', 
-    'increaseBrushSize', 
-    'decreaseBrushSize', 
-    'resetTerrain'
-  ],
-  compatibilityMode: 'HTML_onclick_handlers'
+  exposedFunctions: [],
+  compatibilityMode: 'module_event_listeners'
 });
 
 // Signal that UI modules are loaded (for debugging module loading issues)
@@ -747,14 +809,14 @@ window.moduleLoadStatus.loaded = true;
 window.addEventListener('load', initializeApplication);
 
 // Export functions for ES6 module usage
-export { 
-  toggleCreatureTokens, 
-  resizeGrid, 
+export {
+  toggleCreatureTokens,
+  resizeGrid,
   resetZoom,
   toggleTerrainMode,
   setTerrainTool,
   increaseBrushSize,
   decreaseBrushSize,
   resetTerrain,
-  initializeApplication 
+  initializeApplication
 };
