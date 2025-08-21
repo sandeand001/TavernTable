@@ -32,6 +32,7 @@ class SpriteManager {
    * @returns {string} Base path for sprites
    */
   getBasePath() {
+    // Always use assets/sprites/ relative to the site root for GitHub Pages
     return 'assets/sprites/';
   }
 
