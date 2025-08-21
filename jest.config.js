@@ -1,6 +1,12 @@
 module.exports = {
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/src', '<rootDir>/tests'],
+  testPathIgnorePatterns: [
+    '<rootDir>/coverage/',
+    '<rootDir>/.attic/',
+    '<rootDir>/tools/',
+    '<rootDir>/devworkflow/'
+  ],
   testMatch: [
     '**/__tests__/**/*.test.js',
     '**/?(*.)+(spec|test).js'

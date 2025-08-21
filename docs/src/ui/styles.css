@@ -1,0 +1,60 @@
+/* css/styles.css - Main stylesheet for TavernTable */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #1e1e1e;
+  overflow: hidden;
+}
+
+#game-container {
+  width: 100vw;
+  height: 100vh;
+}
+
+#dice-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+
+  /* Back to upper left */
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  border-radius: 8px;
+  color: white;
+  font-family: sans-serif;
+  min-width: 320px;
+
+  /* Wide enough for all dice buttons in one row */
+  max-width: 400px;
+
+  /* Reasonable maximum width */
+  box-sizing: border-box;
+}
+
+/* Make dice buttons display inline for single row layout */
+#dice-panel button {
+  margin: 2px;
+  padding: 6px 10px;
+  background-color: #444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-block;
+
+  /* Change from default block to inline-block */
+}
+
+/* Responsive adjustments for dice panel */
+@media (width <=768px) {
+  #dice-panel {
+    min-width: auto;
+
+    /* Allow smaller width on mobile */
+    max-width: calc(100vw - 20px);
+
+    /* Take available width on mobile */
+  }
+}

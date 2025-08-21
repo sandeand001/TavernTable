@@ -1,0 +1,28 @@
+{
+  "project": "taverntable",
+  "version": "1.0.0 (5a2447a-dirty)",
+  "stacks": ["node", "javascript"],
+  "entry_points": [
+    {"path": "index.html", "type": "service"},
+    {"path": "src/ui/UIController.js", "type": "library"}
+  ],
+  "commands": [
+    {"name": "build", "cmd": "npm run build", "verified": false},
+    {"name": "serve", "cmd": "npm run serve", "verified": true},
+    {"name": "lint", "cmd": "npm run lint", "verified": true},
+    {"name": "test", "cmd": "npm test", "verified": true}
+  ],
+  "ports": [
+    {"service": "dev-server", "port": 3000, "source": "package.json:serve"}
+  ],
+  "env_schema": [
+    {"name": "NODE_ENV", "required": false, "default": "development", "source": "src/utils/env.js"},
+    {"name": "JEST_WORKER_ID", "required": false, "default": null, "source": "src/utils/env.js"}
+  ],
+  "apis": [],
+  "data": {"migrations": null, "primary_store": null},
+  "ci": {"provider": null, "workflows": []},
+  "observability": {"health": null, "metrics": null},
+  "files_of_truth": ["package.json", "README.md"],
+  "generated_at": "2025-08-20T00:00:00Z"
+}
