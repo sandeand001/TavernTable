@@ -1,4 +1,3 @@
-/* eslint-disable indent */
 import { getTerrainHeightDisplay, getScaleMarks } from '../../ui/domHelpers.js';
 import { buildBrushHighlightDescriptor } from '../../terrain/TerrainBrushHighlighter.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
@@ -313,4 +312,4 @@ export class TerrainInputHandlers {
     }
   }
 }
-/* eslint-enable indent */
+

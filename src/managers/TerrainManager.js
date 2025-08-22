@@ -1,4 +1,3 @@
-/* eslint-disable indent */
 /**
  * TerrainManager.js - Handles terrain rendering and visual management
  * 
@@ -465,15 +464,25 @@ export class TerrainManager {
   reapplyElevationScaleToOverlay() {
     try {
       if (!this.terrainContainer || !this.terrainTiles || this.terrainTiles.size === 0) return;
+
       const w = this.gameManager.tileWidth;
       const h = this.gameManager.tileHeight;
+
       for (const [key, tile] of this.terrainTiles) {
         if (!tile) continue;
+
         const [x, y] = key.split(',').map(Number);
-        // Reset base iso Y, then apply new elevation offset
+
+        // Reset base iso position, then apply new elevation offset
         tile.x = (x - y) * (w / 2);
         tile.y = (x + y) * (h / 2);
-        const height = Number.isFinite(tile.terrainHeight) ? tile.terrainHeight : this.terrainCoordinator.getTerrainHeight(x, y);
+
+        let height;
+        if (Number.isFinite(tile.terrainHeight)) {
+          height = tile.terrainHeight;
+        } else {
+          height = this.terrainCoordinator.getTerrainHeight(x, y);
+        }
         const offset = TerrainHeightUtils.calculateElevationOffset(height);
         tile.y += offset;
 
@@ -481,30 +490,48 @@ export class TerrainManager {
         try {
           if (tile.shadowTile && tile.parent?.children?.includes(tile.shadowTile)) {
             tile.parent.removeChild(tile.shadowTile);
-            if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) tile.shadowTile.destroy();
+            if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
+              tile.shadowTile.destroy();
+            }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         tile.shadowTile = null;
 
         try {
           if (tile.depressionOverlay && tile.children?.includes(tile.depressionOverlay)) {
             tile.removeChild(tile.depressionOverlay);
-            if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) tile.depressionOverlay.destroy();
+            if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) {
+              tile.depressionOverlay.destroy();
+            }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         tile.depressionOverlay = null;
 
         try {
           if (tile.sideFaces && tile.parent?.children?.includes(tile.sideFaces)) {
             tile.parent.removeChild(tile.sideFaces);
-            if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) tile.sideFaces.destroy();
+            if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) {
+              tile.sideFaces.destroy();
+            }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         tile.sideFaces = null;
 
         this._addVisualEffects(tile, height, x, y);
       }
-  try { this.terrainContainer.sortChildren?.(); } catch { /* no-op */ }
+
+      try {
+        this.terrainContainer.sortChildren?.();
+      } catch {
+        /* no-op */
+      }
+
       this.ensurePreviewLayerOnTop();
     } catch (error) {
       GameErrors.rendering(error, {
@@ -718,4 +745,4 @@ export class TerrainManager {
     }
   }
 }
-/* eslint-enable indent */
+
