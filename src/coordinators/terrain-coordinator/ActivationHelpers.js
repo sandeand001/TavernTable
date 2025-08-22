@@ -70,6 +70,8 @@ export class ActivationHelpers {
       this.c.isTerrainModeActive = false;
       this.c.isDragging = false;
       this.c.lastModifiedCell = null;
+      // Clear any lingering brush preview since terrain mode is now off
+      try { this.c.terrainManager?.clearBrushPreview(); } catch { /* non-fatal */ }
 
       // Reset any elevation offsets and remove shadows before applying to base grid
       if (this.c.gameManager?.gridContainer?.children) {

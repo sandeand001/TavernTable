@@ -13,8 +13,8 @@
  * @param {number} h - tile height
  */
 export function traceDiamondFacePath2D(ctx, cx, cy, w, h) {
-  ctx.moveTo(cx, cy + h / 2);
-  ctx.lineTo(cx + w / 2, cy);
-  ctx.lineTo(cx, cy - h / 2);
-  ctx.lineTo(cx - w / 2, cy);
+    ctx.moveTo(cx, cy + h / 2);
+    ctx.lineTo(cx + w / 2, cy);
+    ctx.lineTo(cx, cy - h / 2);
+    ctx.lineTo(cx - w / 2, cy);
 }

@@ -1,0 +1,7372 @@
+{
+  "meta": {
+    "project": "TavernTable",
+    "generated_at": "2025-08-21T20:50:06.254Z",
+    "languages": [
+      "JavaScript",
+      "HTML",
+      "CSS"
+    ],
+    "package_managers": [
+      "npm"
+    ],
+    "entry_points": [
+      "index.html",
+      "docs/index.html",
+      "src/core/GameManager.js"
+    ],
+    "test_commands": [
+      "npm run test"
+    ],
+    "lint_commands": [
+      "npm run lint"
+    ],
+    "typecheck_commands": []
+  },
+  "structure": {
+    "directories": [
+      {
+        "path": "src/ui",
+        "purpose": "UI and DOM controllers",
+        "layer": "ui",
+        "notes": "Sidebar tabs, UI bootstrapping"
+      },
+      {
+        "path": "src/coordinators",
+        "purpose": "App orchestration and state",
+        "layer": "app",
+        "notes": "State/Render/Input/Terrain"
+      },
+      {
+        "path": "src/core",
+        "purpose": "Game bootstrap and sprite/animation managers",
+        "layer": "app",
+        "notes": "GameManager, SpriteManager"
+      },
+      {
+        "path": "src/managers",
+        "purpose": "Managers for grid, interaction, tokens, terrain",
+        "layer": "app",
+        "notes": "May import utils and config"
+      },
+      {
+        "path": "src/systems",
+        "purpose": "System utilities like dragging and dice",
+        "layer": "app",
+        "notes": "Lower-level helpers"
+      },
+      {
+        "path": "src/entities",
+        "purpose": "Domain entities such as creatures",
+        "layer": "domain",
+        "notes": "Factories and tokens"
+      },
+      {
+        "path": "src/terrain",
+        "purpose": "Terrain/biome logic",
+        "layer": "domain",
+        "notes": "Painter, faces, data store"
+      },
+      {
+        "path": "src/config",
+        "purpose": "Constants and palettes",
+        "layer": "infra",
+        "notes": "Game constants and colors"
+      },
+      {
+        "path": "src/utils",
+        "purpose": "Utilities, validation, logging",
+        "layer": "domain",
+        "notes": "Shared helpers"
+      },
+      {
+        "path": "docs/src",
+        "purpose": "Deployed mirror for GitHub Pages",
+        "layer": "ui",
+        "notes": "Should mirror src/"
+      },
+      {
+        "path": "tests",
+        "purpose": "Unit tests",
+        "layer": "test",
+        "notes": "Jest tests"
+      }
+    ],
+    "modules": [
+      {
+        "id": "fc9eff56c2b8",
+        "path": "src/config/BiomeConstants.js",
+        "layer": "app",
+        "exports": [
+          "BIOME_GROUPS",
+          "ALL_BIOMES",
+          "findBiome"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "618161e21138",
+          "1ac8779a1633"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "618161e21138",
+        "path": "src/config/BiomePalettes.js",
+        "layer": "app",
+        "exports": [
+          "BIOME_HEIGHT_PALETTES",
+          "getBiomeHeightColor",
+          "getBiomeColorLegacy",
+          "getBiomeColor",
+          "getBiomeColorHex",
+          "blendWithBiome",
+          "dumpBiomePaletteSample",
+          "BIOME_HEIGHT_PALETTES"
+        ],
+        "imports_internal": [
+          "./BiomeConstants.js",
+          "./TerrainConstants.js",
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "fc9eff56c2b8",
+          "e623a0b6986f",
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "538322d62452",
+          "aaa5a6230090",
+          "39ae79cd6016",
+          "f652e70c5169"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomePalettes.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a71c51e1083e",
+        "path": "src/config/GameConstants.js",
+        "layer": "app",
+        "exports": [
+          "GRID_CONFIG",
+          "APP_CONFIG",
+          "INPUT_CONFIG",
+          "CREATURE_SCALES",
+          "CREATURE_FOOTPRINTS",
+          "CREATURE_BASELINE_OFFSETS",
+          "CREATURE_COLORS",
+          "TOKEN_PLACEMENT_OFFSET",
+          "VALIDATION",
+          "CREATURE_HELPERS",
+          "DICE_CONFIG"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "418ca7f88f9b",
+          "711a2b6cf63b",
+          "538322d62452",
+          "e15fbc0ea4e2",
+          "0fcb156de43d",
+          "4033b266b6b5",
+          "af271411845f",
+          "ddba575d4da5",
+          "4c273229be11",
+          "d77501f2ea30",
+          "39ae79cd6016",
+          "bbf7ac60bfa8",
+          "5164ab1ee5db",
+          "e8d76d94cd75",
+          "e28bad82c9c7",
+          "68b5dd71185e"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "4d95d31df1a4",
+        "path": "src/config/SpriteOffsets.js",
+        "layer": "app",
+        "exports": [
+          "getSpriteOffset"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e623a0b6986f",
+        "path": "src/config/TerrainConstants.js",
+        "layer": "app",
+        "exports": [
+          "TERRAIN_CONFIG",
+          "TERRAIN_TOOLS",
+          "TERRAIN_SHORTCUTS",
+          "TERRAIN_VALIDATION"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "618161e21138",
+          "538322d62452",
+          "3c0d05e3cf2b",
+          "567192c7fd0d",
+          "e15fbc0ea4e2",
+          "c26ee2f18485",
+          "cc164a98996c",
+          "d078baf81263",
+          "9ee91910b643",
+          "09b857b0cd6b",
+          "fb5708d12ec8",
+          "aaa5a6230090",
+          "14922d4b3d04",
+          "39ae79cd6016",
+          "a62c8ecc3b7d",
+          "10b757caeebe",
+          "37fb05b4943e",
+          "0f5753f22409"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "159ccdfb1216",
+        "path": "src/coordinators/InputCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "InputCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../utils/CoordinateUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "68b5dd71185e",
+          "e28bad82c9c7"
+        ],
+        "used_by": [
+          "0fcb156de43d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "418ca7f88f9b",
+        "path": "src/coordinators/RenderCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "RenderCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/CoordinateUtils.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../config/GameConstants.js",
+          "../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "e28bad82c9c7",
+          "ecbbd71626d8",
+          "68b5dd71185e",
+          "a71c51e1083e",
+          "2452655fdde1"
+        ],
+        "used_by": [
+          "0fcb156de43d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "711a2b6cf63b",
+        "path": "src/coordinators/StateCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "StateCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../config/GameConstants.js",
+          "../managers/TokenManager.js",
+          "../managers/InteractionManager.js",
+          "../managers/GridRenderer.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "a71c51e1083e",
+          "f3070e4a7ab8",
+          "f37a2df4e2f7",
+          "d77501f2ea30"
+        ],
+        "used_by": [
+          "0fcb156de43d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "55fb7a9e0603",
+        "path": "src/coordinators/terrain-coordinator/ActivationHelpers.js",
+        "layer": "app",
+        "exports": [
+          "ActivationHelpers"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js",
+          "./internals/container.js",
+          "./internals/mode.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "63316e39278b",
+          "6982687205c3"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ActivationHelpers.test.js",
+            "tests/unit/ActivationHelpersEnable.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "538322d62452",
+        "path": "src/coordinators/terrain-coordinator/BiomeShadingController.js",
+        "layer": "app",
+        "exports": [
+          "BiomeShadingController"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../config/GameConstants.js",
+          "../../config/TerrainConstants.js",
+          "../../terrain/BiomeCanvasPainter.js",
+          "../../config/BiomePalettes.js",
+          "../../utils/PixiShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "a71c51e1083e",
+          "e623a0b6986f",
+          "f652e70c5169",
+          "618161e21138",
+          "f65e81872eec"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "8d23988f6a84",
+        "path": "src/coordinators/terrain-coordinator/ElevationScaleController.js",
+        "layer": "app",
+        "exports": [
+          "ElevationScaleController"
+        ],
+        "imports_internal": [
+          "../../utils/ErrorHandler.js",
+          "../../utils/Logger.js",
+          "../../utils/TerrainHeightUtils.js",
+          "../../utils/CoordinateUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "ecbbd71626d8",
+          "8c711cb2f768",
+          "37fb05b4943e",
+          "e28bad82c9c7"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ElevationScaleController.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "3c0d05e3cf2b",
+        "path": "src/coordinators/terrain-coordinator/ElevationVisualsController.js",
+        "layer": "app",
+        "exports": [
+          "ElevationVisualsController"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../config/TerrainConstants.js",
+          "../../utils/TerrainHeightUtils.js",
+          "../../utils/PixiShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "e623a0b6986f",
+          "37fb05b4943e",
+          "f65e81872eec"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "567192c7fd0d",
+        "path": "src/coordinators/terrain-coordinator/internals/apply.js",
+        "layer": "app",
+        "exports": [
+          "validateApplicationRequirements",
+          "initializeBaseHeights",
+          "processAllGridTiles",
+          "logCompletion",
+          "handleApplicationError"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "e623a0b6986f"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e15fbc0ea4e2",
+        "path": "src/coordinators/terrain-coordinator/internals/baseGridUpdates.js",
+        "layer": "app",
+        "exports": [
+          "updateBaseGridTileInPlace",
+          "replaceBaseGridTile"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../config/GameConstants.js",
+          "../../../config/TerrainConstants.js",
+          "../../../utils/PixiShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "a71c51e1083e",
+          "e623a0b6986f",
+          "f65e81872eec"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "bb316879cd49",
+        "path": "src/coordinators/terrain-coordinator/internals/biome.js",
+        "layer": "app",
+        "exports": [
+          "setRichShadingEnabled",
+          "setBiomeSeed",
+          "handlePostResetShading"
+        ],
+        "imports_internal": [
+          "../../TerrainCoordinator.js",
+          "../../TerrainCoordinator.js",
+          "../../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "fb5708d12ec8"
+        ],
+        "used_by": [
+          "d078baf81263",
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/terrain/biome-painter/fields.test.js",
+            "tests/unit/BiomeCanvasPainterSmoke.test.js",
+            "tests/unit/BiomePalettes.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "29630e08c3a8",
+        "path": "src/coordinators/terrain-coordinator/internals/brush.js",
+        "layer": "app",
+        "exports": [
+          "modifyTerrainHeightAtCell"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainBrushInternals.test.js",
+            "tests/unit/TerrainBrushPreview.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "321c27b011c5",
+        "path": "src/coordinators/terrain-coordinator/internals/color.js",
+        "layer": "app",
+        "exports": [
+          "getBiomeOrBaseColor"
+        ],
+        "imports_internal": [
+          "../../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "fb5708d12ec8"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ColorUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "63316e39278b",
+        "path": "src/coordinators/terrain-coordinator/internals/container.js",
+        "layer": "app",
+        "exports": [
+          "prepareBaseGridForEditing",
+          "resetTerrainContainerSafely",
+          "validateContainerIntegrity"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/TerrainPixiUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "318571309d3f"
+        ],
+        "used_by": [
+          "55fb7a9e0603"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "05722cd2c852",
+        "path": "src/coordinators/terrain-coordinator/internals/coords.js",
+        "layer": "app",
+        "exports": [
+          "isValidGridPosition"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e28bad82c9c7"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordsValidation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "7a1126fea5a7",
+        "path": "src/coordinators/terrain-coordinator/internals/deps.js",
+        "layer": "app",
+        "exports": [
+          "validateDependencies"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/Validation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "68b5dd71185e"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainDepsValidation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "c26ee2f18485",
+        "path": "src/coordinators/terrain-coordinator/internals/height.js",
+        "layer": "app",
+        "exports": [
+          "getTerrainHeight"
+        ],
+        "imports_internal": [
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e623a0b6986f"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainHeightRead.test.js",
+            "tests/unit/TerrainHeightUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "cc164a98996c",
+        "path": "src/coordinators/terrain-coordinator/internals/init.js",
+        "layer": "app",
+        "exports": [
+          "initializeTerrainData"
+        ],
+        "imports_internal": [
+          "../../../config/TerrainConstants.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e623a0b6986f",
+          "ecbbd71626d8",
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "880c8b513217",
+        "path": "src/coordinators/terrain-coordinator/internals/inputs.js",
+        "layer": "app",
+        "exports": [
+          "getGridCoordinatesFromEvent",
+          "modifyTerrainAtPosition"
+        ],
+        "imports_internal": [
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "6982687205c3",
+        "path": "src/coordinators/terrain-coordinator/internals/mode.js",
+        "layer": "app",
+        "exports": [
+          "activateTerrainMode",
+          "loadTerrainStateAndDisplay",
+          "handleTerrainModeActivationError"
+        ],
+        "imports_internal": [
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "55fb7a9e0603"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d078baf81263",
+        "path": "src/coordinators/terrain-coordinator/internals/reset.js",
+        "layer": "app",
+        "exports": [
+          "resetTerrain"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../config/TerrainConstants.js",
+          "./biome.js",
+          "../../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "e623a0b6986f",
+          "bb316879cd49",
+          "fb5708d12ec8"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a0bf4d9c362f",
+        "path": "src/coordinators/terrain-coordinator/internals/resize.js",
+        "layer": "app",
+        "exports": [
+          "handleGridResize"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "78166fe75d92",
+        "path": "src/coordinators/terrain-coordinator/internals/state.js",
+        "layer": "app",
+        "exports": [
+          "loadBaseTerrainIntoWorkingState"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainStateInternals.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9ee91910b643",
+        "path": "src/coordinators/terrain-coordinator/internals/tools.js",
+        "layer": "app",
+        "exports": [
+          "setTerrainTool",
+          "getBrushSize",
+          "setBrushSize",
+          "increaseBrushSize",
+          "decreaseBrushSize"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/Validation.js",
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "68b5dd71185e",
+          "e623a0b6986f"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9b6c690742ab",
+        "path": "src/coordinators/terrain-coordinator/internals/validation.js",
+        "layer": "app",
+        "exports": [
+          "validateTerrainSystemState",
+          "validateTerrainDataConsistency"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/TerrainValidation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "0f5753f22409"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js",
+            "tests/unit/TerrainCoordsValidation.test.js",
+            "tests/unit/TerrainDepsValidation.test.js",
+            "tests/unit/TerrainValidation.test.js",
+            "tests/unit/Validation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "6555d4ac4a16",
+        "path": "src/coordinators/terrain-coordinator/TerrainInputHandlers.js",
+        "layer": "app",
+        "exports": [
+          "TerrainInputHandlers"
+        ],
+        "imports_internal": [
+          "../../ui/domHelpers.js",
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "2452655fdde1",
+          "8c711cb2f768",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "09b857b0cd6b",
+        "path": "src/coordinators/terrain-coordinator/TileLifecycleController.js",
+        "layer": "app",
+        "exports": [
+          "TileLifecycleController"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../config/TerrainConstants.js",
+          "../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "e623a0b6986f",
+          "fb5708d12ec8"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TileLifecycleController.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "fb5708d12ec8",
+        "path": "src/coordinators/TerrainCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "TerrainCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../config/TerrainConstants.js",
+          "../terrain/TerrainDataStore.js",
+          "../terrain/TerrainBrushController.js",
+          "../terrain/TerrainFacesRenderer.js",
+          "./terrain-coordinator/TerrainInputHandlers.js",
+          "./terrain-coordinator/ElevationScaleController.js",
+          "./terrain-coordinator/ActivationHelpers.js",
+          "./terrain-coordinator/BiomeShadingController.js",
+          "./terrain-coordinator/TileLifecycleController.js",
+          "./terrain-coordinator/ElevationVisualsController.js",
+          "./terrain-coordinator/internals/validation.js",
+          "./terrain-coordinator/internals/apply.js",
+          "./terrain-coordinator/internals/inputs.js",
+          "./terrain-coordinator/internals/biome.js",
+          "./terrain-coordinator/internals/color.js",
+          "./terrain-coordinator/internals/resize.js",
+          "./terrain-coordinator/internals/height.js",
+          "./terrain-coordinator/internals/coords.js",
+          "./terrain-coordinator/internals/brush.js",
+          "./terrain-coordinator/internals/tools.js",
+          "./terrain-coordinator/internals/baseGridUpdates.js",
+          "./terrain-coordinator/internals/reset.js",
+          "./terrain-coordinator/internals/state.js",
+          "./terrain-coordinator/internals/init.js",
+          "./terrain-coordinator/internals/deps.js",
+          "../managers/TerrainManager.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "e623a0b6986f",
+          "10b757caeebe",
+          "a62c8ecc3b7d",
+          "5164ab1ee5db",
+          "6555d4ac4a16",
+          "8d23988f6a84",
+          "55fb7a9e0603",
+          "538322d62452",
+          "09b857b0cd6b",
+          "3c0d05e3cf2b",
+          "9b6c690742ab",
+          "567192c7fd0d",
+          "880c8b513217",
+          "bb316879cd49",
+          "321c27b011c5",
+          "a0bf4d9c362f",
+          "c26ee2f18485",
+          "05722cd2c852",
+          "29630e08c3a8",
+          "9ee91910b643",
+          "e15fbc0ea4e2",
+          "d078baf81263",
+          "78166fe75d92",
+          "cc164a98996c",
+          "7a1126fea5a7",
+          "39ae79cd6016"
+        ],
+        "used_by": [
+          "bb316879cd49",
+          "321c27b011c5",
+          "d078baf81263",
+          "09b857b0cd6b",
+          "0fcb156de43d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorPublic.test.js",
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "8f31129d83fd",
+        "path": "src/core/AnimatedSpriteManager.js",
+        "layer": "app",
+        "exports": [
+          "animatedSpriteManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "0fcb156de43d",
+        "path": "src/core/GameManager.js",
+        "layer": "app",
+        "exports": [
+          "GameManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../config/GameConstants.js",
+          "../coordinators/RenderCoordinator.js",
+          "../coordinators/StateCoordinator.js",
+          "../coordinators/InputCoordinator.js",
+          "../coordinators/TerrainCoordinator.js",
+          "../managers/TokenManager.js",
+          "../managers/InteractionManager.js",
+          "../managers/GridRenderer.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "68b5dd71185e",
+          "a71c51e1083e",
+          "418ca7f88f9b",
+          "711a2b6cf63b",
+          "159ccdfb1216",
+          "fb5708d12ec8",
+          "f3070e4a7ab8",
+          "f37a2df4e2f7",
+          "d77501f2ea30"
+        ],
+        "used_by": [
+          "e8d76d94cd75"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "4033b266b6b5",
+        "path": "src/core/SpriteManager.js",
+        "layer": "app",
+        "exports": [
+          "SpriteManager"
+        ],
+        "imports_internal": [
+          "../config/GameConstants.js",
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a71c51e1083e",
+          "8c711cb2f768",
+          "ecbbd71626d8"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "af271411845f",
+        "path": "src/entities/creatures/CreatureFactory.js",
+        "layer": "app",
+        "exports": [
+          "CreatureFactory"
+        ],
+        "imports_internal": [
+          "./CreatureToken.js",
+          "../../config/GameConstants.js",
+          "../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "ddba575d4da5",
+          "a71c51e1083e",
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "e72111372fe0"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "ddba575d4da5",
+        "path": "src/entities/creatures/CreatureToken.js",
+        "layer": "app",
+        "exports": [
+          "CreatureToken"
+        ],
+        "imports_internal": [
+          "../../config/GameConstants.js",
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js",
+          "../../utils/Validation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a71c51e1083e",
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "68b5dd71185e"
+        ],
+        "used_by": [
+          "af271411845f"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e72111372fe0",
+        "path": "src/entities/creatures/index.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [
+          "./CreatureFactory.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "af271411845f"
+        ],
+        "used_by": [
+          "3bd99433e3aa"
+        ],
+        "public_api": true,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "1bf0cb4ede90",
+        "path": "src/managers/BiomeCanvasPainter.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomeCanvasPainterSmoke.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "4c273229be11",
+        "path": "src/managers/grid-renderer/internals/tiles.js",
+        "layer": "app",
+        "exports": [
+          "drawIsometricTile",
+          "clearGridTiles"
+        ],
+        "imports_internal": [
+          "../../../config/GameConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a71c51e1083e"
+        ],
+        "used_by": [
+          "d77501f2ea30"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d77501f2ea30",
+        "path": "src/managers/GridRenderer.js",
+        "layer": "app",
+        "exports": [
+          "GridRenderer"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../config/GameConstants.js",
+          "./grid-renderer/internals/tiles.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "68b5dd71185e",
+          "a71c51e1083e",
+          "4c273229be11"
+        ],
+        "used_by": [
+          "711a2b6cf63b",
+          "0fcb156de43d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "6426b552066d",
+        "path": "src/managers/interaction-manager/internals/pan.js",
+        "layer": "app",
+        "exports": [
+          "startGridDragging",
+          "updateGridDragPosition",
+          "stopGridDragging"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "f37a2df4e2f7"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d80ccf4528b9",
+        "path": "src/managers/interaction-manager/internals/picking.js",
+        "layer": "app",
+        "exports": [
+          "isPointInCellDiamond",
+          "pickTopmostGridCellAt"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e28bad82c9c7",
+          "37fb05b4943e"
+        ],
+        "used_by": [
+          "f37a2df4e2f7"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "bde68ed7bd13",
+        "path": "src/managers/interaction-manager/internals/zoom.js",
+        "layer": "app",
+        "exports": [
+          "handleZoomWheel",
+          "applyZoom",
+          "resetZoom"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "f37a2df4e2f7"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f37a2df4e2f7",
+        "path": "src/managers/InteractionManager.js",
+        "layer": "app",
+        "exports": [
+          "InteractionManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/CoordinateUtils.js",
+          "../utils/TerrainHeightUtils.js",
+          "./interaction-manager/internals/picking.js",
+          "./interaction-manager/internals/pan.js",
+          "./interaction-manager/internals/zoom.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "e28bad82c9c7",
+          "37fb05b4943e",
+          "d80ccf4528b9",
+          "6426b552066d",
+          "bde68ed7bd13"
+        ],
+        "used_by": [
+          "711a2b6cf63b",
+          "0fcb156de43d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9ebf4581265a",
+        "path": "src/managers/terrain-manager/internals/container.js",
+        "layer": "app",
+        "exports": [
+          "validateContainerState",
+          "showAllTerrainTiles",
+          "hideAllTerrainTiles",
+          "clearAllTerrainTiles"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/TerrainPixiUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "318571309d3f"
+        ],
+        "used_by": [
+          "39ae79cd6016"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "26239cd3d038",
+        "path": "src/managers/terrain-manager/internals/sorting.js",
+        "layer": "app",
+        "exports": [
+          "addTileWithDepthSorting",
+          "sortAllTerrainTilesByDepth"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "39ae79cd6016"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "aaa5a6230090",
+        "path": "src/managers/terrain-manager/internals/tiles.js",
+        "layer": "app",
+        "exports": [
+          "validateTileCreationInputs",
+          "cleanupExistingTile",
+          "createBaseTerrainGraphics",
+          "getColorForHeightInternal",
+          "applyTerrainStyling",
+          "positionTerrainTile",
+          "finalizeTerrainTile",
+          "addVisualEffects"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/Validation.js",
+          "../../../utils/TerrainPixiUtils.js",
+          "../../../config/TerrainConstants.js",
+          "../../../utils/ColorUtils.js",
+          "../../../config/BiomePalettes.js",
+          "../../../utils/TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "68b5dd71185e",
+          "318571309d3f",
+          "e623a0b6986f",
+          "7b9405bf0f18",
+          "618161e21138",
+          "37fb05b4943e"
+        ],
+        "used_by": [
+          "39ae79cd6016"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "14922d4b3d04",
+        "path": "src/managers/terrain-manager/internals/updates.js",
+        "layer": "app",
+        "exports": [
+          "updateTerrainDisplay",
+          "processUpdateQueue"
+        ],
+        "imports_internal": [
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/Logger.js",
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "ecbbd71626d8",
+          "8c711cb2f768",
+          "e623a0b6986f"
+        ],
+        "used_by": [
+          "39ae79cd6016"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "39ae79cd6016",
+        "path": "src/managers/TerrainManager.js",
+        "layer": "app",
+        "exports": [
+          "TerrainManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../config/TerrainConstants.js",
+          "../config/GameConstants.js",
+          "../utils/ColorUtils.js",
+          "../utils/PixiShapeUtils.js",
+          "../config/BiomePalettes.js",
+          "../terrain/TerrainFacesRenderer.js",
+          "../utils/CoordinateUtils.js",
+          "./terrain-manager/internals/container.js",
+          "./terrain-manager/internals/tiles.js",
+          "./terrain-manager/internals/sorting.js",
+          "./terrain-manager/internals/updates.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "e623a0b6986f",
+          "a71c51e1083e",
+          "7b9405bf0f18",
+          "f65e81872eec",
+          "618161e21138",
+          "5164ab1ee5db",
+          "e28bad82c9c7",
+          "9ebf4581265a",
+          "aaa5a6230090",
+          "26239cd3d038",
+          "14922d4b3d04"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "3a7f253945a4",
+        "path": "src/managers/token-manager/internals/collection.js",
+        "layer": "app",
+        "exports": [
+          "addTokenToCollection"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerCollection.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "3bd99433e3aa",
+        "path": "src/managers/token-manager/internals/creatures.js",
+        "layer": "app",
+        "exports": [
+          "createCreatureByType"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/Validation.js",
+          "../../../entities/creatures/index.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "68b5dd71185e",
+          "e72111372fe0"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "12b3dff352c4",
+        "path": "src/managers/token-manager/internals/facing.js",
+        "layer": "app",
+        "exports": [
+          "toggleFacing"
+        ],
+        "imports_internal": [
+          "../../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "2452655fdde1"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "2e81bed45966",
+        "path": "src/managers/token-manager/internals/interactions.js",
+        "layer": "app",
+        "exports": [
+          "setupTokenInteractions"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "e28bad82c9c7",
+          "37fb05b4943e"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "7d5d44c50dd8",
+        "path": "src/managers/token-manager/internals/placement.js",
+        "layer": "app",
+        "exports": [
+          "placeNewToken"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e28bad82c9c7",
+          "37fb05b4943e",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerPlacement.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "7179c1418d2c",
+        "path": "src/managers/token-manager/internals/positioning.js",
+        "layer": "app",
+        "exports": [
+          "snapTokenToGrid"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js",
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e28bad82c9c7",
+          "37fb05b4943e",
+          "8c711cb2f768",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerPositioning.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d2eb15bcd5dc",
+        "path": "src/managers/token-manager/internals/removal.js",
+        "layer": "app",
+        "exports": [
+          "removeToken"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "ddab55041ef8",
+        "path": "src/managers/token-manager/internals/selection.js",
+        "layer": "app",
+        "exports": [
+          "findExistingTokenAt",
+          "selectToken"
+        ],
+        "imports_internal": [
+          "../../../utils/Validation.js",
+          "../../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "68b5dd71185e",
+          "2452655fdde1"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "80725ccd8f1f",
+        "path": "src/managers/token-manager/internals/validation.js",
+        "layer": "app",
+        "exports": [
+          "validateTokenPositions"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "e28bad82c9c7",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "f3070e4a7ab8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js",
+            "tests/unit/TerrainCoordsValidation.test.js",
+            "tests/unit/TerrainDepsValidation.test.js",
+            "tests/unit/TerrainValidation.test.js",
+            "tests/unit/Validation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f3070e4a7ab8",
+        "path": "src/managers/TokenManager.js",
+        "layer": "app",
+        "exports": [
+          "TokenManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "./token-manager/internals/selection.js",
+          "./token-manager/internals/interactions.js",
+          "./token-manager/internals/positioning.js",
+          "./token-manager/internals/collection.js",
+          "./token-manager/internals/creatures.js",
+          "./token-manager/internals/validation.js",
+          "./token-manager/internals/facing.js",
+          "./token-manager/internals/removal.js",
+          "./token-manager/internals/placement.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "ddab55041ef8",
+          "2e81bed45966",
+          "7179c1418d2c",
+          "3a7f253945a4",
+          "3bd99433e3aa",
+          "80725ccd8f1f",
+          "12b3dff352c4",
+          "d2eb15bcd5dc",
+          "7d5d44c50dd8"
+        ],
+        "used_by": [
+          "711a2b6cf63b",
+          "0fcb156de43d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerCollection.test.js",
+            "tests/unit/TokenManagerMisc.test.js",
+            "tests/unit/TokenManagerPlacement.test.js",
+            "tests/unit/TokenManagerPositioning.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "bbf7ac60bfa8",
+        "path": "src/systems/dice/dice.js",
+        "layer": "app",
+        "exports": [
+          "rollDice"
+        ],
+        "imports_internal": [
+          "../../utils/Validation.js",
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js",
+          "../../config/GameConstants.js",
+          "../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "68b5dd71185e",
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "a71c51e1083e",
+          "2452655fdde1"
+        ],
+        "used_by": [
+          "e8d76d94cd75"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/DiceSmoke.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "638a5d693b53",
+        "path": "src/systems/DragController.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "68b5dd71185e"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "c02de18f9171",
+        "path": "src/terrain/biome-painter/fields.js",
+        "layer": "app",
+        "exports": [
+          "computeSlopeAspect",
+          "computeDistanceField",
+          "computeMoistureField"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "f652e70c5169"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/terrain/biome-painter/fields.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "65edd4555988",
+        "path": "src/terrain/biome-painter/index.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": true,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "3a636c5df59e",
+        "path": "src/terrain/biome-painter/motifs.js",
+        "layer": "app",
+        "exports": [
+          "strokeBlob",
+          "strokeRibbon",
+          "globalStriations",
+          "globalCracks",
+          "scatterBlobsGlobal",
+          "scatterTuftsGlobal"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "f652e70c5169"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "22cfad36046c",
+        "path": "src/terrain/biome-painter/style.js",
+        "layer": "app",
+        "exports": [
+          "styleForBiome",
+          "styleForBiome"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "f652e70c5169"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f652e70c5169",
+        "path": "src/terrain/BiomeCanvasPainter.js",
+        "layer": "app",
+        "exports": [
+          "BiomeCanvasPainter",
+          "BiomeCanvasPainter"
+        ],
+        "imports_internal": [
+          "../config/BiomePalettes.js",
+          "../utils/ColorUtils.js",
+          "../utils/TerrainHeightUtils.js",
+          "./biome-painter/style.js",
+          "./biome-painter/motifs.js",
+          "./biome-painter/fields.js",
+          "../utils/CanvasShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "618161e21138",
+          "7b9405bf0f18",
+          "37fb05b4943e",
+          "22cfad36046c",
+          "3a636c5df59e",
+          "c02de18f9171",
+          "99a674c5082b"
+        ],
+        "used_by": [
+          "538322d62452"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomeCanvasPainterSmoke.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "71322f2892b9",
+        "path": "src/terrain/ShadingHelpers.js",
+        "layer": "app",
+        "exports": [
+          "shadeRand",
+          "drawShadeDesertBands",
+          "drawShadeForestDapples",
+          "drawShadeSwampMottling",
+          "drawShadeIcyFacets",
+          "drawShadeWaterWaves",
+          "drawShadeVolcanicVeins",
+          "drawShadeRuinGrid"
+        ],
+        "imports_internal": [
+          "../utils/ColorUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "7b9405bf0f18"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a62c8ecc3b7d",
+        "path": "src/terrain/TerrainBrushController.js",
+        "layer": "app",
+        "exports": [
+          "TerrainBrushController"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "e623a0b6986f"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "10b757caeebe",
+        "path": "src/terrain/TerrainDataStore.js",
+        "layer": "app",
+        "exports": [
+          "TerrainDataStore"
+        ],
+        "imports_internal": [
+          "../config/TerrainConstants.js",
+          "../utils/TerrainHeightUtils.js",
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e623a0b6986f",
+          "37fb05b4943e",
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "5164ab1ee5db",
+        "path": "src/terrain/TerrainFacesRenderer.js",
+        "layer": "app",
+        "exports": [
+          "TerrainFacesRenderer"
+        ],
+        "imports_internal": [
+          "../config/GameConstants.js",
+          "../utils/TerrainHeightUtils.js",
+          "../utils/ColorUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a71c51e1083e",
+          "37fb05b4943e",
+          "7b9405bf0f18"
+        ],
+        "used_by": [
+          "fb5708d12ec8",
+          "39ae79cd6016"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "2452655fdde1",
+        "path": "src/ui/domHelpers.js",
+        "layer": "app",
+        "exports": [
+          "CREATURE_BUTTONS_SELECTOR",
+          "getCreatureButtons",
+          "getFacingButton",
+          "getTerrainToolButtons",
+          "getGridSizeInputs",
+          "getTerrainResetButton",
+          "getElevationScaleControls",
+          "getBrushSizeDisplay",
+          "getSpriteAdjustLogEl",
+          "getTokenInfoEl",
+          "getCreaturePanelEls",
+          "getTerrainModeEls",
+          "getTokenButtonByType",
+          "getAutoApplyButton",
+          "getDiceCountEl",
+          "getDiceResultEl",
+          "getDiceButtons",
+          "getDiceClearButton",
+          "getSpriteAdjustButtons",
+          "getGridActionButtons"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "418ca7f88f9b",
+          "6555d4ac4a16",
+          "12b3dff352c4",
+          "ddab55041ef8",
+          "bbf7ac60bfa8",
+          "1ac8779a1633",
+          "e8d76d94cd75",
+          "f63a83e71cbd"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/DomHelpersSelectors.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "c638c6d2f8cb",
+        "path": "src/ui/lib/elevationUtils.js",
+        "layer": "app",
+        "exports": [
+          "computeElevationVisualOffset",
+          "computeElevationVisualOffset"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "e8d76d94cd75"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "86321edfa84d",
+        "path": "src/ui/lib/spriteKeys.js",
+        "layer": "app",
+        "exports": [
+          "getCurrentSpriteKey",
+          "getCurrentSpriteKey"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "e8d76d94cd75"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "1ac8779a1633",
+        "path": "src/ui/SidebarController.js",
+        "layer": "app",
+        "exports": [
+          "SidebarController"
+        ],
+        "imports_internal": [
+          "./domHelpers.js",
+          "../utils/Logger.js",
+          "../config/BiomeConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "2452655fdde1",
+          "8c711cb2f768",
+          "fc9eff56c2b8"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e8d76d94cd75",
+        "path": "src/ui/UIController.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [
+          "../utils/env.js",
+          "../core/GameManager.js",
+          "../config/GameConstants.js",
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "./domHelpers.js",
+          "./domHelpers.js",
+          "../systems/dice/dice.js",
+          "./lib/spriteKeys.js",
+          "./lib/elevationUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8721557a149d",
+          "0fcb156de43d",
+          "a71c51e1083e",
+          "8c711cb2f768",
+          "ecbbd71626d8",
+          "68b5dd71185e",
+          "2452655fdde1",
+          "bbf7ac60bfa8",
+          "86321edfa84d",
+          "c638c6d2f8cb"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/UIControllerElevationSlider.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "99a674c5082b",
+        "path": "src/utils/CanvasShapeUtils.js",
+        "layer": "app",
+        "exports": [
+          "traceDiamondFacePath2D"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "f652e70c5169"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/CanvasShapeUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "7b9405bf0f18",
+        "path": "src/utils/ColorUtils.js",
+        "layer": "app",
+        "exports": [
+          "lightenColor",
+          "darkenColor",
+          "shadeMul"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "aaa5a6230090",
+          "39ae79cd6016",
+          "f652e70c5169",
+          "71322f2892b9",
+          "5164ab1ee5db"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ColorUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e28bad82c9c7",
+        "path": "src/utils/CoordinateUtils.js",
+        "layer": "app",
+        "exports": [
+          "TOKEN_PLACEMENT_OFFSET",
+          "CoordinateUtils"
+        ],
+        "imports_internal": [
+          "./Logger.js",
+          "../config/GameConstants.js",
+          "./ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "a71c51e1083e",
+          "ecbbd71626d8"
+        ],
+        "used_by": [
+          "159ccdfb1216",
+          "418ca7f88f9b",
+          "8d23988f6a84",
+          "05722cd2c852",
+          "d80ccf4528b9",
+          "f37a2df4e2f7",
+          "39ae79cd6016",
+          "2e81bed45966",
+          "7d5d44c50dd8",
+          "7179c1418d2c",
+          "80725ccd8f1f"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "8721557a149d",
+        "path": "src/utils/env.js",
+        "layer": "app",
+        "exports": [
+          "isJest",
+          "getNodeEnv"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "e8d76d94cd75",
+          "8c711cb2f768"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [
+          "process.env"
+        ],
+        "tests": {
+          "files": [
+            "tests/unit/env.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "144167c41989",
+        "path": "src/utils/error/enums.js",
+        "layer": "app",
+        "exports": [
+          "ERROR_SEVERITY",
+          "ERROR_CATEGORY",
+          "RECOVERY_STRATEGY"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "f63a83e71cbd",
+          "ecbbd71626d8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f63a83e71cbd",
+        "path": "src/utils/error/notification.js",
+        "layer": "app",
+        "exports": [
+          "ErrorNotificationManager"
+        ],
+        "imports_internal": [
+          "./enums.js",
+          "../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "144167c41989",
+          "2452655fdde1"
+        ],
+        "used_by": [
+          "ecbbd71626d8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "2888baf60279",
+        "path": "src/utils/error/telemetry.js",
+        "layer": "app",
+        "exports": [
+          "ErrorTelemetryManager"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "ecbbd71626d8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "ecbbd71626d8",
+        "path": "src/utils/ErrorHandler.js",
+        "layer": "app",
+        "exports": [
+          "ErrorHandlerConfig",
+          "ErrorEntry",
+          "ErrorHandler",
+          "errorHandler",
+          "GameErrors",
+          "withErrorHandling",
+          "handleErrors",
+          "withPerformanceMonitoring"
+        ],
+        "imports_internal": [
+          "./Logger.js",
+          "./error/enums.js",
+          "./error/notification.js",
+          "./error/telemetry.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768",
+          "144167c41989",
+          "f63a83e71cbd",
+          "2888baf60279"
+        ],
+        "used_by": [
+          "159ccdfb1216",
+          "418ca7f88f9b",
+          "711a2b6cf63b",
+          "55fb7a9e0603",
+          "8d23988f6a84",
+          "567192c7fd0d",
+          "cc164a98996c",
+          "880c8b513217",
+          "6982687205c3",
+          "d078baf81263",
+          "a0bf4d9c362f",
+          "78166fe75d92",
+          "6555d4ac4a16",
+          "fb5708d12ec8",
+          "8f31129d83fd",
+          "0fcb156de43d",
+          "4033b266b6b5",
+          "ddba575d4da5",
+          "d77501f2ea30",
+          "bde68ed7bd13",
+          "f37a2df4e2f7",
+          "9ebf4581265a",
+          "14922d4b3d04",
+          "39ae79cd6016",
+          "3bd99433e3aa",
+          "7d5d44c50dd8",
+          "7179c1418d2c",
+          "80725ccd8f1f",
+          "f3070e4a7ab8",
+          "bbf7ac60bfa8",
+          "638a5d693b53",
+          "e8d76d94cd75",
+          "e28bad82c9c7"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [
+          "process.env"
+        ],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "167a76c48bfa",
+        "path": "src/utils/logger/enums.js",
+        "layer": "app",
+        "exports": [
+          "LOG_LEVEL",
+          "LOG_CATEGORY",
+          "LOG_OUTPUT"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "8c711cb2f768"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "8c711cb2f768",
+        "path": "src/utils/Logger.js",
+        "layer": "app",
+        "exports": [
+          "LoggerConfig",
+          "LogEntry",
+          "ConsoleOutputHandler",
+          "MemoryOutputHandler",
+          "RemoteOutputHandler",
+          "PerformanceMonitor",
+          "Logger",
+          "logger",
+          "GameLogger",
+          "withPerformanceLogging",
+          "withLoggingContext",
+          "logger"
+        ],
+        "imports_internal": [
+          "./env.js",
+          "./logger/enums.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8721557a149d",
+          "167a76c48bfa"
+        ],
+        "used_by": [
+          "618161e21138",
+          "159ccdfb1216",
+          "418ca7f88f9b",
+          "711a2b6cf63b",
+          "55fb7a9e0603",
+          "538322d62452",
+          "8d23988f6a84",
+          "3c0d05e3cf2b",
+          "567192c7fd0d",
+          "e15fbc0ea4e2",
+          "63316e39278b",
+          "7a1126fea5a7",
+          "cc164a98996c",
+          "d078baf81263",
+          "a0bf4d9c362f",
+          "78166fe75d92",
+          "9ee91910b643",
+          "9b6c690742ab",
+          "6555d4ac4a16",
+          "09b857b0cd6b",
+          "fb5708d12ec8",
+          "8f31129d83fd",
+          "0fcb156de43d",
+          "4033b266b6b5",
+          "af271411845f",
+          "ddba575d4da5",
+          "d77501f2ea30",
+          "6426b552066d",
+          "bde68ed7bd13",
+          "f37a2df4e2f7",
+          "9ebf4581265a",
+          "26239cd3d038",
+          "aaa5a6230090",
+          "14922d4b3d04",
+          "39ae79cd6016",
+          "3a7f253945a4",
+          "3bd99433e3aa",
+          "2e81bed45966",
+          "7179c1418d2c",
+          "80725ccd8f1f",
+          "f3070e4a7ab8",
+          "bbf7ac60bfa8",
+          "638a5d693b53",
+          "a62c8ecc3b7d",
+          "10b757caeebe",
+          "1ac8779a1633",
+          "e8d76d94cd75",
+          "e28bad82c9c7",
+          "ecbbd71626d8",
+          "37fb05b4943e",
+          "318571309d3f",
+          "0f5753f22409",
+          "68b5dd71185e"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f65e81872eec",
+        "path": "src/utils/PixiShapeUtils.js",
+        "layer": "app",
+        "exports": [
+          "traceDiamondPath"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "538322d62452",
+          "3c0d05e3cf2b",
+          "e15fbc0ea4e2",
+          "39ae79cd6016"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/PixiShapeUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "37fb05b4943e",
+        "path": "src/utils/TerrainHeightUtils.js",
+        "layer": "app",
+        "exports": [
+          "TerrainHeightUtils"
+        ],
+        "imports_internal": [
+          "../config/TerrainConstants.js",
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e623a0b6986f",
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "8d23988f6a84",
+          "3c0d05e3cf2b",
+          "d80ccf4528b9",
+          "f37a2df4e2f7",
+          "aaa5a6230090",
+          "2e81bed45966",
+          "7d5d44c50dd8",
+          "7179c1418d2c",
+          "f652e70c5169",
+          "10b757caeebe",
+          "5164ab1ee5db",
+          "0f5753f22409"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainHeightUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "318571309d3f",
+        "path": "src/utils/TerrainPixiUtils.js",
+        "layer": "app",
+        "exports": [
+          "TerrainPixiUtils"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "63316e39278b",
+          "9ebf4581265a",
+          "aaa5a6230090"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "0f5753f22409",
+        "path": "src/utils/TerrainValidation.js",
+        "layer": "app",
+        "exports": [
+          "TerrainValidation"
+        ],
+        "imports_internal": [
+          "../config/TerrainConstants.js",
+          "../utils/Logger.js",
+          "./TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e623a0b6986f",
+          "8c711cb2f768",
+          "37fb05b4943e"
+        ],
+        "used_by": [
+          "9b6c690742ab"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainValidation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "68b5dd71185e",
+        "path": "src/utils/Validation.js",
+        "layer": "app",
+        "exports": [
+          "TypeValidators",
+          "GameValidators",
+          "Sanitizers"
+        ],
+        "imports_internal": [
+          "../config/GameConstants.js",
+          "./Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a71c51e1083e",
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "159ccdfb1216",
+          "418ca7f88f9b",
+          "7a1126fea5a7",
+          "9ee91910b643",
+          "0fcb156de43d",
+          "ddba575d4da5",
+          "d77501f2ea30",
+          "aaa5a6230090",
+          "3bd99433e3aa",
+          "ddab55041ef8",
+          "bbf7ac60bfa8",
+          "638a5d693b53",
+          "e8d76d94cd75"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js",
+            "tests/unit/TerrainCoordsValidation.test.js",
+            "tests/unit/TerrainDepsValidation.test.js",
+            "tests/unit/TerrainValidation.test.js",
+            "tests/unit/Validation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d9506bf28717",
+        "path": "docs/src/config/BiomeConstants.js",
+        "layer": "app",
+        "exports": [
+          "BIOME_GROUPS",
+          "ALL_BIOMES",
+          "findBiome"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "c755eabfbeb4",
+          "03ac6efa7904"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "c755eabfbeb4",
+        "path": "docs/src/config/BiomePalettes.js",
+        "layer": "app",
+        "exports": [
+          "BIOME_HEIGHT_PALETTES",
+          "getBiomeHeightColor",
+          "getBiomeColorLegacy",
+          "getBiomeColor",
+          "getBiomeColorHex",
+          "blendWithBiome",
+          "dumpBiomePaletteSample",
+          "BIOME_HEIGHT_PALETTES"
+        ],
+        "imports_internal": [
+          "./BiomeConstants.js",
+          "./TerrainConstants.js",
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "d9506bf28717",
+          "d8764c6bd110",
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "ace2831a8976",
+          "7107ad0caabe",
+          "2a40d4fae080",
+          "03d015110f74"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomePalettes.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "462e58195daf",
+        "path": "docs/src/config/GameConstants.js",
+        "layer": "app",
+        "exports": [
+          "GRID_CONFIG",
+          "APP_CONFIG",
+          "INPUT_CONFIG",
+          "CREATURE_SCALES",
+          "CREATURE_FOOTPRINTS",
+          "CREATURE_BASELINE_OFFSETS",
+          "CREATURE_COLORS",
+          "TOKEN_PLACEMENT_OFFSET",
+          "VALIDATION",
+          "CREATURE_HELPERS",
+          "DICE_CONFIG"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "a1f877c21e6a",
+          "d4c53787af5c",
+          "ace2831a8976",
+          "036f0960f853",
+          "cdf7ffea86d6",
+          "51c702b4387a",
+          "fe7556f007d2",
+          "a93954534afc",
+          "9ff9f6746a85",
+          "f4e1303f23b9",
+          "2a40d4fae080",
+          "bee5237e6c35",
+          "cc143fa3b01d",
+          "35c89d2b02e5",
+          "945083ba9bf2",
+          "9024c284e0f8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "5fc69addb43e",
+        "path": "docs/src/config/SpriteOffsets.js",
+        "layer": "app",
+        "exports": [
+          "getSpriteOffset"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d8764c6bd110",
+        "path": "docs/src/config/TerrainConstants.js",
+        "layer": "app",
+        "exports": [
+          "TERRAIN_CONFIG",
+          "TERRAIN_TOOLS",
+          "TERRAIN_SHORTCUTS",
+          "TERRAIN_VALIDATION"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "c755eabfbeb4",
+          "ace2831a8976",
+          "47466aa1c511",
+          "244c1a4a5caf",
+          "036f0960f853",
+          "695e1a5f2971",
+          "412ccb8011c7",
+          "5e54732e7238",
+          "5edff0b6971d",
+          "94a9452e4482",
+          "1b221dba376c",
+          "7107ad0caabe",
+          "acd9fe948324",
+          "2a40d4fae080",
+          "02ba89f50f5a",
+          "7a3dc61d17e1",
+          "71a47db1fe32",
+          "fee35146aa6e"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d1a00da25b4c",
+        "path": "docs/src/coordinators/InputCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "InputCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../utils/CoordinateUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "9024c284e0f8",
+          "945083ba9bf2"
+        ],
+        "used_by": [
+          "cdf7ffea86d6"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a1f877c21e6a",
+        "path": "docs/src/coordinators/RenderCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "RenderCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/CoordinateUtils.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../config/GameConstants.js",
+          "../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "945083ba9bf2",
+          "a3da9b68828b",
+          "9024c284e0f8",
+          "462e58195daf",
+          "1209ae38acbb"
+        ],
+        "used_by": [
+          "cdf7ffea86d6"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d4c53787af5c",
+        "path": "docs/src/coordinators/StateCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "StateCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../config/GameConstants.js",
+          "../managers/TokenManager.js",
+          "../managers/InteractionManager.js",
+          "../managers/GridRenderer.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "462e58195daf",
+          "d4f9b3d0e5df",
+          "9ce8a17fdc73",
+          "f4e1303f23b9"
+        ],
+        "used_by": [
+          "cdf7ffea86d6"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "19bf93e013d8",
+        "path": "docs/src/coordinators/terrain-coordinator/ActivationHelpers.js",
+        "layer": "app",
+        "exports": [
+          "ActivationHelpers"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js",
+          "./internals/container.js",
+          "./internals/mode.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "be1f40dc5545",
+          "4d6db975b5d5"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ActivationHelpers.test.js",
+            "tests/unit/ActivationHelpersEnable.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "ace2831a8976",
+        "path": "docs/src/coordinators/terrain-coordinator/BiomeShadingController.js",
+        "layer": "app",
+        "exports": [
+          "BiomeShadingController"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../config/GameConstants.js",
+          "../../config/TerrainConstants.js",
+          "../../terrain/BiomeCanvasPainter.js",
+          "../../config/BiomePalettes.js",
+          "../../utils/PixiShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "462e58195daf",
+          "d8764c6bd110",
+          "03d015110f74",
+          "c755eabfbeb4",
+          "61a5e24b3a0f"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "87c838aff503",
+        "path": "docs/src/coordinators/terrain-coordinator/ElevationScaleController.js",
+        "layer": "app",
+        "exports": [
+          "ElevationScaleController"
+        ],
+        "imports_internal": [
+          "../../utils/ErrorHandler.js",
+          "../../utils/Logger.js",
+          "../../utils/TerrainHeightUtils.js",
+          "../../utils/CoordinateUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a3da9b68828b",
+          "a182ffb8d986",
+          "71a47db1fe32",
+          "945083ba9bf2"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ElevationScaleController.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "47466aa1c511",
+        "path": "docs/src/coordinators/terrain-coordinator/ElevationVisualsController.js",
+        "layer": "app",
+        "exports": [
+          "ElevationVisualsController"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../config/TerrainConstants.js",
+          "../../utils/TerrainHeightUtils.js",
+          "../../utils/PixiShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "d8764c6bd110",
+          "71a47db1fe32",
+          "61a5e24b3a0f"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "244c1a4a5caf",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/apply.js",
+        "layer": "app",
+        "exports": [
+          "validateApplicationRequirements",
+          "initializeBaseHeights",
+          "processAllGridTiles",
+          "logCompletion",
+          "handleApplicationError"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "d8764c6bd110"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "036f0960f853",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/baseGridUpdates.js",
+        "layer": "app",
+        "exports": [
+          "updateBaseGridTileInPlace",
+          "replaceBaseGridTile"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../config/GameConstants.js",
+          "../../../config/TerrainConstants.js",
+          "../../../utils/PixiShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "462e58195daf",
+          "d8764c6bd110",
+          "61a5e24b3a0f"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "74eb2b47d6a3",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/biome.js",
+        "layer": "app",
+        "exports": [
+          "setRichShadingEnabled",
+          "setBiomeSeed",
+          "handlePostResetShading"
+        ],
+        "imports_internal": [
+          "../../TerrainCoordinator.js",
+          "../../TerrainCoordinator.js",
+          "../../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "1b221dba376c"
+        ],
+        "used_by": [
+          "5e54732e7238",
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/terrain/biome-painter/fields.test.js",
+            "tests/unit/BiomeCanvasPainterSmoke.test.js",
+            "tests/unit/BiomePalettes.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f8b607be4859",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/brush.js",
+        "layer": "app",
+        "exports": [
+          "modifyTerrainHeightAtCell"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainBrushInternals.test.js",
+            "tests/unit/TerrainBrushPreview.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9ddc2373bbb1",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/color.js",
+        "layer": "app",
+        "exports": [
+          "getBiomeOrBaseColor"
+        ],
+        "imports_internal": [
+          "../../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "1b221dba376c"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ColorUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "be1f40dc5545",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/container.js",
+        "layer": "app",
+        "exports": [
+          "prepareBaseGridForEditing",
+          "resetTerrainContainerSafely",
+          "validateContainerIntegrity"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/TerrainPixiUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "d1d95d2bc6d2"
+        ],
+        "used_by": [
+          "19bf93e013d8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "43d835dd9288",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/coords.js",
+        "layer": "app",
+        "exports": [
+          "isValidGridPosition"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "945083ba9bf2"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordsValidation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "329e319c7f33",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/deps.js",
+        "layer": "app",
+        "exports": [
+          "validateDependencies"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/Validation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "9024c284e0f8"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainDepsValidation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "695e1a5f2971",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/height.js",
+        "layer": "app",
+        "exports": [
+          "getTerrainHeight"
+        ],
+        "imports_internal": [
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "d8764c6bd110"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainHeightRead.test.js",
+            "tests/unit/TerrainHeightUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "412ccb8011c7",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/init.js",
+        "layer": "app",
+        "exports": [
+          "initializeTerrainData"
+        ],
+        "imports_internal": [
+          "../../../config/TerrainConstants.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "d8764c6bd110",
+          "a3da9b68828b",
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "12e0239f191c",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/inputs.js",
+        "layer": "app",
+        "exports": [
+          "getGridCoordinatesFromEvent",
+          "modifyTerrainAtPosition"
+        ],
+        "imports_internal": [
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "4d6db975b5d5",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/mode.js",
+        "layer": "app",
+        "exports": [
+          "activateTerrainMode",
+          "loadTerrainStateAndDisplay",
+          "handleTerrainModeActivationError"
+        ],
+        "imports_internal": [
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "19bf93e013d8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "5e54732e7238",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/reset.js",
+        "layer": "app",
+        "exports": [
+          "resetTerrain"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../config/TerrainConstants.js",
+          "./biome.js",
+          "../../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "d8764c6bd110",
+          "74eb2b47d6a3",
+          "1b221dba376c"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "48648f02ff1e",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/resize.js",
+        "layer": "app",
+        "exports": [
+          "handleGridResize"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "4b068cb00668",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/state.js",
+        "layer": "app",
+        "exports": [
+          "loadBaseTerrainIntoWorkingState"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainStateInternals.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "5edff0b6971d",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/tools.js",
+        "layer": "app",
+        "exports": [
+          "setTerrainTool",
+          "getBrushSize",
+          "setBrushSize",
+          "increaseBrushSize",
+          "decreaseBrushSize"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/Validation.js",
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "9024c284e0f8",
+          "d8764c6bd110"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "474585e53e86",
+        "path": "docs/src/coordinators/terrain-coordinator/internals/validation.js",
+        "layer": "app",
+        "exports": [
+          "validateTerrainSystemState",
+          "validateTerrainDataConsistency"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/TerrainValidation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "fee35146aa6e"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js",
+            "tests/unit/TerrainCoordsValidation.test.js",
+            "tests/unit/TerrainDepsValidation.test.js",
+            "tests/unit/TerrainValidation.test.js",
+            "tests/unit/Validation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "76acb0f37d96",
+        "path": "docs/src/coordinators/terrain-coordinator/TerrainInputHandlers.js",
+        "layer": "app",
+        "exports": [
+          "TerrainInputHandlers"
+        ],
+        "imports_internal": [
+          "../../ui/domHelpers.js",
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "1209ae38acbb",
+          "a182ffb8d986",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "94a9452e4482",
+        "path": "docs/src/coordinators/terrain-coordinator/TileLifecycleController.js",
+        "layer": "app",
+        "exports": [
+          "TileLifecycleController"
+        ],
+        "imports_internal": [
+          "../../utils/Logger.js",
+          "../../config/TerrainConstants.js",
+          "../TerrainCoordinator.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "d8764c6bd110",
+          "1b221dba376c"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TileLifecycleController.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "1b221dba376c",
+        "path": "docs/src/coordinators/TerrainCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "TerrainCoordinator"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../config/TerrainConstants.js",
+          "../terrain/TerrainDataStore.js",
+          "../terrain/TerrainBrushController.js",
+          "../terrain/TerrainFacesRenderer.js",
+          "./terrain-coordinator/TerrainInputHandlers.js",
+          "./terrain-coordinator/ElevationScaleController.js",
+          "./terrain-coordinator/ActivationHelpers.js",
+          "./terrain-coordinator/BiomeShadingController.js",
+          "./terrain-coordinator/TileLifecycleController.js",
+          "./terrain-coordinator/ElevationVisualsController.js",
+          "./terrain-coordinator/internals/validation.js",
+          "./terrain-coordinator/internals/apply.js",
+          "./terrain-coordinator/internals/inputs.js",
+          "./terrain-coordinator/internals/biome.js",
+          "./terrain-coordinator/internals/color.js",
+          "./terrain-coordinator/internals/resize.js",
+          "./terrain-coordinator/internals/height.js",
+          "./terrain-coordinator/internals/coords.js",
+          "./terrain-coordinator/internals/brush.js",
+          "./terrain-coordinator/internals/tools.js",
+          "./terrain-coordinator/internals/baseGridUpdates.js",
+          "./terrain-coordinator/internals/reset.js",
+          "./terrain-coordinator/internals/state.js",
+          "./terrain-coordinator/internals/init.js",
+          "./terrain-coordinator/internals/deps.js",
+          "../managers/TerrainManager.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "d8764c6bd110",
+          "7a3dc61d17e1",
+          "02ba89f50f5a",
+          "cc143fa3b01d",
+          "76acb0f37d96",
+          "87c838aff503",
+          "19bf93e013d8",
+          "ace2831a8976",
+          "94a9452e4482",
+          "47466aa1c511",
+          "474585e53e86",
+          "244c1a4a5caf",
+          "12e0239f191c",
+          "74eb2b47d6a3",
+          "9ddc2373bbb1",
+          "48648f02ff1e",
+          "695e1a5f2971",
+          "43d835dd9288",
+          "f8b607be4859",
+          "5edff0b6971d",
+          "036f0960f853",
+          "5e54732e7238",
+          "4b068cb00668",
+          "412ccb8011c7",
+          "329e319c7f33",
+          "2a40d4fae080"
+        ],
+        "used_by": [
+          "74eb2b47d6a3",
+          "9ddc2373bbb1",
+          "5e54732e7238",
+          "94a9452e4482",
+          "cdf7ffea86d6"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorPublic.test.js",
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "234b89bacbaf",
+        "path": "docs/src/core/AnimatedSpriteManager.js",
+        "layer": "app",
+        "exports": [
+          "animatedSpriteManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "cdf7ffea86d6",
+        "path": "docs/src/core/GameManager.js",
+        "layer": "app",
+        "exports": [
+          "GameManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../config/GameConstants.js",
+          "../coordinators/RenderCoordinator.js",
+          "../coordinators/StateCoordinator.js",
+          "../coordinators/InputCoordinator.js",
+          "../coordinators/TerrainCoordinator.js",
+          "../managers/TokenManager.js",
+          "../managers/InteractionManager.js",
+          "../managers/GridRenderer.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "9024c284e0f8",
+          "462e58195daf",
+          "a1f877c21e6a",
+          "d4c53787af5c",
+          "d1a00da25b4c",
+          "1b221dba376c",
+          "d4f9b3d0e5df",
+          "9ce8a17fdc73",
+          "f4e1303f23b9"
+        ],
+        "used_by": [
+          "35c89d2b02e5"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "34fb21e9eeb5",
+        "path": "docs/src/core/Logger.js",
+        "layer": "app",
+        "exports": [
+          "LOG_CATEGORY",
+          "logger"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "51c702b4387a",
+        "path": "docs/src/core/SpriteManager.js",
+        "layer": "app",
+        "exports": [
+          "SpriteManager"
+        ],
+        "imports_internal": [
+          "../config/GameConstants.js",
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "462e58195daf",
+          "a182ffb8d986",
+          "a3da9b68828b"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "99e0156828c4",
+        "path": "docs/src/core/ThreeAnimationManager.js",
+        "layer": "app",
+        "exports": [
+          "ThreeAnimationManager"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "fe7556f007d2",
+        "path": "docs/src/entities/creatures/CreatureFactory.js",
+        "layer": "app",
+        "exports": [
+          "CreatureFactory"
+        ],
+        "imports_internal": [
+          "./CreatureToken.js",
+          "../../config/GameConstants.js",
+          "../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a93954534afc",
+          "462e58195daf",
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "2f803dbf7acd"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a93954534afc",
+        "path": "docs/src/entities/creatures/CreatureToken.js",
+        "layer": "app",
+        "exports": [
+          "CreatureToken"
+        ],
+        "imports_internal": [
+          "../../config/GameConstants.js",
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js",
+          "../../utils/Validation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "462e58195daf",
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "9024c284e0f8"
+        ],
+        "used_by": [
+          "fe7556f007d2"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "2f803dbf7acd",
+        "path": "docs/src/entities/creatures/index.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [
+          "./CreatureFactory.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "fe7556f007d2"
+        ],
+        "used_by": [
+          "521e9bde4aa5"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "089e81bc8358",
+        "path": "docs/src/managers/BiomeCanvasPainter.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomeCanvasPainterSmoke.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9ff9f6746a85",
+        "path": "docs/src/managers/grid-renderer/internals/tiles.js",
+        "layer": "app",
+        "exports": [
+          "drawIsometricTile",
+          "clearGridTiles"
+        ],
+        "imports_internal": [
+          "../../../config/GameConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "462e58195daf"
+        ],
+        "used_by": [
+          "f4e1303f23b9"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f4e1303f23b9",
+        "path": "docs/src/managers/GridRenderer.js",
+        "layer": "app",
+        "exports": [
+          "GridRenderer"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "../config/GameConstants.js",
+          "./grid-renderer/internals/tiles.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "9024c284e0f8",
+          "462e58195daf",
+          "9ff9f6746a85"
+        ],
+        "used_by": [
+          "d4c53787af5c",
+          "cdf7ffea86d6"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "05b47f5f977d",
+        "path": "docs/src/managers/interaction-manager/internals/pan.js",
+        "layer": "app",
+        "exports": [
+          "startGridDragging",
+          "updateGridDragPosition",
+          "stopGridDragging"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "9ce8a17fdc73"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "256721d0bdad",
+        "path": "docs/src/managers/interaction-manager/internals/picking.js",
+        "layer": "app",
+        "exports": [
+          "isPointInCellDiamond",
+          "pickTopmostGridCellAt"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "945083ba9bf2",
+          "71a47db1fe32"
+        ],
+        "used_by": [
+          "9ce8a17fdc73"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e10b2fe73e6d",
+        "path": "docs/src/managers/interaction-manager/internals/zoom.js",
+        "layer": "app",
+        "exports": [
+          "handleZoomWheel",
+          "applyZoom",
+          "resetZoom"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "9ce8a17fdc73"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9ce8a17fdc73",
+        "path": "docs/src/managers/InteractionManager.js",
+        "layer": "app",
+        "exports": [
+          "InteractionManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/CoordinateUtils.js",
+          "../utils/TerrainHeightUtils.js",
+          "./interaction-manager/internals/picking.js",
+          "./interaction-manager/internals/pan.js",
+          "./interaction-manager/internals/zoom.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "945083ba9bf2",
+          "71a47db1fe32",
+          "256721d0bdad",
+          "05b47f5f977d",
+          "e10b2fe73e6d"
+        ],
+        "used_by": [
+          "d4c53787af5c",
+          "cdf7ffea86d6"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9643848d78ef",
+        "path": "docs/src/managers/terrain-manager/internals/container.js",
+        "layer": "app",
+        "exports": [
+          "validateContainerState",
+          "showAllTerrainTiles",
+          "hideAllTerrainTiles",
+          "clearAllTerrainTiles"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/TerrainPixiUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "d1d95d2bc6d2"
+        ],
+        "used_by": [
+          "2a40d4fae080"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "c6452df8dc63",
+        "path": "docs/src/managers/terrain-manager/internals/sorting.js",
+        "layer": "app",
+        "exports": [
+          "addTileWithDepthSorting",
+          "sortAllTerrainTilesByDepth"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "2a40d4fae080"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "7107ad0caabe",
+        "path": "docs/src/managers/terrain-manager/internals/tiles.js",
+        "layer": "app",
+        "exports": [
+          "validateTileCreationInputs",
+          "cleanupExistingTile",
+          "createBaseTerrainGraphics",
+          "getColorForHeightInternal",
+          "applyTerrainStyling",
+          "positionTerrainTile",
+          "finalizeTerrainTile",
+          "addVisualEffects"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/Validation.js",
+          "../../../utils/TerrainPixiUtils.js",
+          "../../../config/TerrainConstants.js",
+          "../../../utils/ColorUtils.js",
+          "../../../config/BiomePalettes.js",
+          "../../../utils/TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "9024c284e0f8",
+          "d1d95d2bc6d2",
+          "d8764c6bd110",
+          "c1d0d003d669",
+          "c755eabfbeb4",
+          "71a47db1fe32"
+        ],
+        "used_by": [
+          "2a40d4fae080"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "acd9fe948324",
+        "path": "docs/src/managers/terrain-manager/internals/updates.js",
+        "layer": "app",
+        "exports": [
+          "updateTerrainDisplay",
+          "processUpdateQueue"
+        ],
+        "imports_internal": [
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/Logger.js",
+          "../../../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a3da9b68828b",
+          "a182ffb8d986",
+          "d8764c6bd110"
+        ],
+        "used_by": [
+          "2a40d4fae080"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "2a40d4fae080",
+        "path": "docs/src/managers/TerrainManager.js",
+        "layer": "app",
+        "exports": [
+          "TerrainManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../config/TerrainConstants.js",
+          "../config/GameConstants.js",
+          "../utils/ColorUtils.js",
+          "../utils/PixiShapeUtils.js",
+          "../config/BiomePalettes.js",
+          "../terrain/TerrainFacesRenderer.js",
+          "../utils/CoordinateUtils.js",
+          "./terrain-manager/internals/container.js",
+          "./terrain-manager/internals/tiles.js",
+          "./terrain-manager/internals/sorting.js",
+          "./terrain-manager/internals/updates.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "d8764c6bd110",
+          "462e58195daf",
+          "c1d0d003d669",
+          "61a5e24b3a0f",
+          "c755eabfbeb4",
+          "cc143fa3b01d",
+          "945083ba9bf2",
+          "9643848d78ef",
+          "7107ad0caabe",
+          "c6452df8dc63",
+          "acd9fe948324"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "15fca1de042e",
+        "path": "docs/src/managers/token-manager/internals/collection.js",
+        "layer": "app",
+        "exports": [
+          "addTokenToCollection"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerCollection.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "521e9bde4aa5",
+        "path": "docs/src/managers/token-manager/internals/creatures.js",
+        "layer": "app",
+        "exports": [
+          "createCreatureByType"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js",
+          "../../../utils/Validation.js",
+          "../../../entities/creatures/index.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "9024c284e0f8",
+          "2f803dbf7acd"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9226339c2e9c",
+        "path": "docs/src/managers/token-manager/internals/facing.js",
+        "layer": "app",
+        "exports": [
+          "toggleFacing"
+        ],
+        "imports_internal": [
+          "../../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "1209ae38acbb"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "018c9c979fe9",
+        "path": "docs/src/managers/token-manager/internals/interactions.js",
+        "layer": "app",
+        "exports": [
+          "setupTokenInteractions"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "945083ba9bf2",
+          "71a47db1fe32"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9dc44162f7d7",
+        "path": "docs/src/managers/token-manager/internals/placement.js",
+        "layer": "app",
+        "exports": [
+          "placeNewToken"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "945083ba9bf2",
+          "71a47db1fe32",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerPlacement.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "870874ca72f2",
+        "path": "docs/src/managers/token-manager/internals/positioning.js",
+        "layer": "app",
+        "exports": [
+          "snapTokenToGrid"
+        ],
+        "imports_internal": [
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js",
+          "../../../utils/Logger.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "945083ba9bf2",
+          "71a47db1fe32",
+          "a182ffb8d986",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerPositioning.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "82587898c035",
+        "path": "docs/src/managers/token-manager/internals/removal.js",
+        "layer": "app",
+        "exports": [
+          "removeToken"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "372e8374fbd1",
+        "path": "docs/src/managers/token-manager/internals/selection.js",
+        "layer": "app",
+        "exports": [
+          "findExistingTokenAt",
+          "selectToken"
+        ],
+        "imports_internal": [
+          "../../../utils/Validation.js",
+          "../../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "9024c284e0f8",
+          "1209ae38acbb"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "64aeb658bcdb",
+        "path": "docs/src/managers/token-manager/internals/validation.js",
+        "layer": "app",
+        "exports": [
+          "validateTokenPositions"
+        ],
+        "imports_internal": [
+          "../../../utils/Logger.js",
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "945083ba9bf2",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "d4f9b3d0e5df"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js",
+            "tests/unit/TerrainCoordsValidation.test.js",
+            "tests/unit/TerrainDepsValidation.test.js",
+            "tests/unit/TerrainValidation.test.js",
+            "tests/unit/Validation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d4f9b3d0e5df",
+        "path": "docs/src/managers/TokenManager.js",
+        "layer": "app",
+        "exports": [
+          "TokenManager"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "./token-manager/internals/selection.js",
+          "./token-manager/internals/interactions.js",
+          "./token-manager/internals/positioning.js",
+          "./token-manager/internals/collection.js",
+          "./token-manager/internals/creatures.js",
+          "./token-manager/internals/validation.js",
+          "./token-manager/internals/facing.js",
+          "./token-manager/internals/removal.js",
+          "./token-manager/internals/placement.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "372e8374fbd1",
+          "018c9c979fe9",
+          "870874ca72f2",
+          "15fca1de042e",
+          "521e9bde4aa5",
+          "64aeb658bcdb",
+          "9226339c2e9c",
+          "82587898c035",
+          "9dc44162f7d7"
+        ],
+        "used_by": [
+          "d4c53787af5c",
+          "cdf7ffea86d6"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TokenManagerCollection.test.js",
+            "tests/unit/TokenManagerMisc.test.js",
+            "tests/unit/TokenManagerPlacement.test.js",
+            "tests/unit/TokenManagerPositioning.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "bee5237e6c35",
+        "path": "docs/src/systems/dice/dice.js",
+        "layer": "app",
+        "exports": [
+          "rollDice"
+        ],
+        "imports_internal": [
+          "../../utils/Validation.js",
+          "../../utils/Logger.js",
+          "../../utils/ErrorHandler.js",
+          "../../config/GameConstants.js",
+          "../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "9024c284e0f8",
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "462e58195daf",
+          "1209ae38acbb"
+        ],
+        "used_by": [
+          "35c89d2b02e5"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/DiceSmoke.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "91c4eb9fc5d1",
+        "path": "docs/src/systems/DragController.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "9024c284e0f8"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "22b145baf6f6",
+        "path": "docs/src/terrain/biome-painter/fields.js",
+        "layer": "app",
+        "exports": [
+          "computeSlopeAspect",
+          "computeDistanceField",
+          "computeMoistureField"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "03d015110f74"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/terrain/biome-painter/fields.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "ef1ba30eb5f8",
+        "path": "docs/src/terrain/biome-painter/index.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "0e36fb26eb3d",
+        "path": "docs/src/terrain/biome-painter/motifs.js",
+        "layer": "app",
+        "exports": [
+          "strokeBlob",
+          "strokeRibbon",
+          "globalStriations",
+          "globalCracks",
+          "scatterBlobsGlobal",
+          "scatterTuftsGlobal"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "03d015110f74"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d6bc75ce3dd6",
+        "path": "docs/src/terrain/biome-painter/style.js",
+        "layer": "app",
+        "exports": [
+          "styleForBiome",
+          "styleForBiome"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "03d015110f74"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "03d015110f74",
+        "path": "docs/src/terrain/BiomeCanvasPainter.js",
+        "layer": "app",
+        "exports": [
+          "BiomeCanvasPainter",
+          "BiomeCanvasPainter"
+        ],
+        "imports_internal": [
+          "../config/BiomePalettes.js",
+          "../utils/ColorUtils.js",
+          "../utils/TerrainHeightUtils.js",
+          "./biome-painter/style.js",
+          "./biome-painter/motifs.js",
+          "./biome-painter/fields.js",
+          "../utils/CanvasShapeUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "c755eabfbeb4",
+          "c1d0d003d669",
+          "71a47db1fe32",
+          "d6bc75ce3dd6",
+          "0e36fb26eb3d",
+          "22b145baf6f6",
+          "fb624119ea69"
+        ],
+        "used_by": [
+          "ace2831a8976"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomeCanvasPainterSmoke.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "cac4d5039e32",
+        "path": "docs/src/terrain/ShadingHelpers.js",
+        "layer": "app",
+        "exports": [
+          "shadeRand",
+          "drawShadeDesertBands",
+          "drawShadeForestDapples",
+          "drawShadeSwampMottling",
+          "drawShadeIcyFacets",
+          "drawShadeWaterWaves",
+          "drawShadeVolcanicVeins",
+          "drawShadeRuinGrid"
+        ],
+        "imports_internal": [
+          "../utils/ColorUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "c1d0d003d669"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "02ba89f50f5a",
+        "path": "docs/src/terrain/TerrainBrushController.js",
+        "layer": "app",
+        "exports": [
+          "TerrainBrushController"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js",
+          "../config/TerrainConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "d8764c6bd110"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "7649a6920064",
+        "path": "docs/src/terrain/TerrainCoordinator.js",
+        "layer": "app",
+        "exports": [
+          "TerrainCoordinator"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorPublic.test.js",
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "7a3dc61d17e1",
+        "path": "docs/src/terrain/TerrainDataStore.js",
+        "layer": "app",
+        "exports": [
+          "TerrainDataStore"
+        ],
+        "imports_internal": [
+          "../config/TerrainConstants.js",
+          "../utils/TerrainHeightUtils.js",
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "d8764c6bd110",
+          "71a47db1fe32",
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "cc143fa3b01d",
+        "path": "docs/src/terrain/TerrainFacesRenderer.js",
+        "layer": "app",
+        "exports": [
+          "TerrainFacesRenderer"
+        ],
+        "imports_internal": [
+          "../config/GameConstants.js",
+          "../utils/TerrainHeightUtils.js",
+          "../utils/ColorUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "462e58195daf",
+          "71a47db1fe32",
+          "c1d0d003d669"
+        ],
+        "used_by": [
+          "1b221dba376c",
+          "2a40d4fae080"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "37028ee2ac57",
+        "path": "docs/src/terrain/TerrainHeightUtils.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainHeightUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f49da251a165",
+        "path": "docs/src/terrain/TerrainPixiUtils.js",
+        "layer": "app",
+        "exports": [
+          "TerrainPixiUtils"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "278b5b8fd223",
+        "path": "docs/src/terrain/TerrainValidation.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainValidation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "1209ae38acbb",
+        "path": "docs/src/ui/domHelpers.js",
+        "layer": "app",
+        "exports": [
+          "CREATURE_BUTTONS_SELECTOR",
+          "getCreatureButtons",
+          "getFacingButton",
+          "getTerrainToolButtons",
+          "getGridSizeInputs",
+          "getTerrainResetButton",
+          "getElevationScaleControls",
+          "getBrushSizeDisplay",
+          "getSpriteAdjustLogEl",
+          "getTokenInfoEl",
+          "getCreaturePanelEls",
+          "getTerrainModeEls",
+          "getTokenButtonByType",
+          "getAutoApplyButton",
+          "getDiceCountEl",
+          "getDiceResultEl",
+          "getDiceButtons",
+          "getDiceClearButton",
+          "getSpriteAdjustButtons",
+          "getGridActionButtons"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "a1f877c21e6a",
+          "76acb0f37d96",
+          "9226339c2e9c",
+          "372e8374fbd1",
+          "bee5237e6c35",
+          "03ac6efa7904",
+          "35c89d2b02e5",
+          "6ddf7dfce7c0"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/DomHelpersSelectors.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "82317bff4823",
+        "path": "docs/src/ui/lib/elevationUtils.js",
+        "layer": "app",
+        "exports": [
+          "computeElevationVisualOffset",
+          "computeElevationVisualOffset"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "35c89d2b02e5"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "fe21218099ac",
+        "path": "docs/src/ui/lib/spriteKeys.js",
+        "layer": "app",
+        "exports": [
+          "getCurrentSpriteKey",
+          "getCurrentSpriteKey"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "35c89d2b02e5"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "03ac6efa7904",
+        "path": "docs/src/ui/SidebarController.js",
+        "layer": "app",
+        "exports": [
+          "SidebarController"
+        ],
+        "imports_internal": [
+          "./domHelpers.js",
+          "../utils/Logger.js",
+          "../config/BiomeConstants.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "1209ae38acbb",
+          "a182ffb8d986",
+          "d9506bf28717"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "35c89d2b02e5",
+        "path": "docs/src/ui/UIController.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [
+          "../utils/env.js",
+          "../core/GameManager.js",
+          "../config/GameConstants.js",
+          "../utils/Logger.js",
+          "../utils/ErrorHandler.js",
+          "../utils/Validation.js",
+          "./domHelpers.js",
+          "./domHelpers.js",
+          "../systems/dice/dice.js",
+          "./lib/spriteKeys.js",
+          "./lib/elevationUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e0052f7647e5",
+          "cdf7ffea86d6",
+          "462e58195daf",
+          "a182ffb8d986",
+          "a3da9b68828b",
+          "9024c284e0f8",
+          "1209ae38acbb",
+          "bee5237e6c35",
+          "fe21218099ac",
+          "82317bff4823"
+        ],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/UIControllerElevationSlider.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "fb624119ea69",
+        "path": "docs/src/utils/CanvasShapeUtils.js",
+        "layer": "app",
+        "exports": [
+          "traceDiamondFacePath2D"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "03d015110f74"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/CanvasShapeUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "c1d0d003d669",
+        "path": "docs/src/utils/ColorUtils.js",
+        "layer": "app",
+        "exports": [
+          "lightenColor",
+          "darkenColor",
+          "shadeMul"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "7107ad0caabe",
+          "2a40d4fae080",
+          "03d015110f74",
+          "cac4d5039e32",
+          "cc143fa3b01d"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/ColorUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "945083ba9bf2",
+        "path": "docs/src/utils/CoordinateUtils.js",
+        "layer": "app",
+        "exports": [
+          "TOKEN_PLACEMENT_OFFSET",
+          "CoordinateUtils"
+        ],
+        "imports_internal": [
+          "./Logger.js",
+          "../config/GameConstants.js",
+          "./ErrorHandler.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "462e58195daf",
+          "a3da9b68828b"
+        ],
+        "used_by": [
+          "d1a00da25b4c",
+          "a1f877c21e6a",
+          "87c838aff503",
+          "43d835dd9288",
+          "256721d0bdad",
+          "9ce8a17fdc73",
+          "2a40d4fae080",
+          "018c9c979fe9",
+          "9dc44162f7d7",
+          "870874ca72f2",
+          "64aeb658bcdb"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "70350dacb084",
+        "path": "docs/src/utils/DiagnosticTool.js",
+        "layer": "app",
+        "exports": [
+          "DiagnosticTool"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e0052f7647e5",
+        "path": "docs/src/utils/env.js",
+        "layer": "app",
+        "exports": [
+          "isJest",
+          "getNodeEnv"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "35c89d2b02e5",
+          "a182ffb8d986"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [
+          "process.env"
+        ],
+        "tests": {
+          "files": [
+            "tests/unit/env.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "5ce32cc035a9",
+        "path": "docs/src/utils/error/enums.js",
+        "layer": "app",
+        "exports": [
+          "ERROR_SEVERITY",
+          "ERROR_CATEGORY",
+          "RECOVERY_STRATEGY"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "6ddf7dfce7c0",
+          "a3da9b68828b"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "6ddf7dfce7c0",
+        "path": "docs/src/utils/error/notification.js",
+        "layer": "app",
+        "exports": [
+          "ErrorNotificationManager"
+        ],
+        "imports_internal": [
+          "./enums.js",
+          "../../ui/domHelpers.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "5ce32cc035a9",
+          "1209ae38acbb"
+        ],
+        "used_by": [
+          "a3da9b68828b"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "6ef41343e96f",
+        "path": "docs/src/utils/error/telemetry.js",
+        "layer": "app",
+        "exports": [
+          "ErrorTelemetryManager"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "a3da9b68828b"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a3da9b68828b",
+        "path": "docs/src/utils/ErrorHandler.js",
+        "layer": "app",
+        "exports": [
+          "ErrorHandlerConfig",
+          "ErrorEntry",
+          "ErrorHandler",
+          "errorHandler",
+          "GameErrors",
+          "withErrorHandling",
+          "handleErrors",
+          "withPerformanceMonitoring"
+        ],
+        "imports_internal": [
+          "./Logger.js",
+          "./error/enums.js",
+          "./error/notification.js",
+          "./error/telemetry.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986",
+          "5ce32cc035a9",
+          "6ddf7dfce7c0",
+          "6ef41343e96f"
+        ],
+        "used_by": [
+          "d1a00da25b4c",
+          "a1f877c21e6a",
+          "d4c53787af5c",
+          "19bf93e013d8",
+          "87c838aff503",
+          "244c1a4a5caf",
+          "412ccb8011c7",
+          "12e0239f191c",
+          "4d6db975b5d5",
+          "5e54732e7238",
+          "48648f02ff1e",
+          "4b068cb00668",
+          "76acb0f37d96",
+          "1b221dba376c",
+          "234b89bacbaf",
+          "cdf7ffea86d6",
+          "51c702b4387a",
+          "a93954534afc",
+          "f4e1303f23b9",
+          "e10b2fe73e6d",
+          "9ce8a17fdc73",
+          "9643848d78ef",
+          "acd9fe948324",
+          "2a40d4fae080",
+          "521e9bde4aa5",
+          "9dc44162f7d7",
+          "870874ca72f2",
+          "64aeb658bcdb",
+          "d4f9b3d0e5df",
+          "bee5237e6c35",
+          "91c4eb9fc5d1",
+          "35c89d2b02e5",
+          "945083ba9bf2"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [
+          "process.env"
+        ],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "466ff7a34130",
+        "path": "docs/src/utils/index.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "4e090ca5dca8",
+        "path": "docs/src/utils/logger/enums.js",
+        "layer": "app",
+        "exports": [
+          "LOG_LEVEL",
+          "LOG_CATEGORY",
+          "LOG_OUTPUT"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "a182ffb8d986"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "de59e461eb91",
+        "path": "docs/src/utils/logger/notification.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a3e1581e5de1",
+        "path": "docs/src/utils/logger/telemetry.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "a182ffb8d986",
+        "path": "docs/src/utils/Logger.js",
+        "layer": "app",
+        "exports": [
+          "LoggerConfig",
+          "LogEntry",
+          "ConsoleOutputHandler",
+          "MemoryOutputHandler",
+          "RemoteOutputHandler",
+          "PerformanceMonitor",
+          "Logger",
+          "logger",
+          "GameLogger",
+          "withPerformanceLogging",
+          "withLoggingContext",
+          "logger"
+        ],
+        "imports_internal": [
+          "./env.js",
+          "./logger/enums.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e0052f7647e5",
+          "4e090ca5dca8"
+        ],
+        "used_by": [
+          "c755eabfbeb4",
+          "d1a00da25b4c",
+          "a1f877c21e6a",
+          "d4c53787af5c",
+          "19bf93e013d8",
+          "ace2831a8976",
+          "87c838aff503",
+          "47466aa1c511",
+          "244c1a4a5caf",
+          "036f0960f853",
+          "be1f40dc5545",
+          "329e319c7f33",
+          "412ccb8011c7",
+          "5e54732e7238",
+          "48648f02ff1e",
+          "4b068cb00668",
+          "5edff0b6971d",
+          "474585e53e86",
+          "76acb0f37d96",
+          "94a9452e4482",
+          "1b221dba376c",
+          "234b89bacbaf",
+          "cdf7ffea86d6",
+          "51c702b4387a",
+          "fe7556f007d2",
+          "a93954534afc",
+          "f4e1303f23b9",
+          "05b47f5f977d",
+          "e10b2fe73e6d",
+          "9ce8a17fdc73",
+          "9643848d78ef",
+          "c6452df8dc63",
+          "7107ad0caabe",
+          "acd9fe948324",
+          "2a40d4fae080",
+          "15fca1de042e",
+          "521e9bde4aa5",
+          "018c9c979fe9",
+          "870874ca72f2",
+          "64aeb658bcdb",
+          "d4f9b3d0e5df",
+          "bee5237e6c35",
+          "91c4eb9fc5d1",
+          "02ba89f50f5a",
+          "7a3dc61d17e1",
+          "f49da251a165",
+          "03ac6efa7904",
+          "35c89d2b02e5",
+          "945083ba9bf2",
+          "a3da9b68828b",
+          "71a47db1fe32",
+          "d1d95d2bc6d2",
+          "fee35146aa6e",
+          "9024c284e0f8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "61a5e24b3a0f",
+        "path": "docs/src/utils/PixiShapeUtils.js",
+        "layer": "app",
+        "exports": [
+          "traceDiamondPath"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "ace2831a8976",
+          "47466aa1c511",
+          "036f0960f853",
+          "2a40d4fae080"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/PixiShapeUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "71a47db1fe32",
+        "path": "docs/src/utils/TerrainHeightUtils.js",
+        "layer": "app",
+        "exports": [
+          "TerrainHeightUtils"
+        ],
+        "imports_internal": [
+          "../config/TerrainConstants.js",
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "d8764c6bd110",
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "87c838aff503",
+          "47466aa1c511",
+          "256721d0bdad",
+          "9ce8a17fdc73",
+          "7107ad0caabe",
+          "018c9c979fe9",
+          "9dc44162f7d7",
+          "870874ca72f2",
+          "03d015110f74",
+          "7a3dc61d17e1",
+          "cc143fa3b01d",
+          "fee35146aa6e"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainHeightUtils.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "d1d95d2bc6d2",
+        "path": "docs/src/utils/TerrainPixiUtils.js",
+        "layer": "app",
+        "exports": [
+          "TerrainPixiUtils"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "be1f40dc5545",
+          "9643848d78ef",
+          "7107ad0caabe"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "fee35146aa6e",
+        "path": "docs/src/utils/TerrainValidation.js",
+        "layer": "app",
+        "exports": [
+          "TerrainValidation"
+        ],
+        "imports_internal": [
+          "../config/TerrainConstants.js",
+          "../utils/Logger.js",
+          "./TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "d8764c6bd110",
+          "a182ffb8d986",
+          "71a47db1fe32"
+        ],
+        "used_by": [
+          "474585e53e86"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainValidation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "9024c284e0f8",
+        "path": "docs/src/utils/Validation.js",
+        "layer": "app",
+        "exports": [
+          "TypeValidators",
+          "GameValidators",
+          "Sanitizers"
+        ],
+        "imports_internal": [
+          "../config/GameConstants.js",
+          "./Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "462e58195daf",
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "d1a00da25b4c",
+          "a1f877c21e6a",
+          "329e319c7f33",
+          "5edff0b6971d",
+          "cdf7ffea86d6",
+          "a93954534afc",
+          "f4e1303f23b9",
+          "7107ad0caabe",
+          "521e9bde4aa5",
+          "372e8374fbd1",
+          "bee5237e6c35",
+          "91c4eb9fc5d1",
+          "35c89d2b02e5"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainCoordinatorValidationWrappers.test.js",
+            "tests/unit/TerrainCoordsValidation.test.js",
+            "tests/unit/TerrainDepsValidation.test.js",
+            "tests/unit/TerrainValidation.test.js",
+            "tests/unit/Validation.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      }
+    ]
+  },
+  "architecture": {
+    "layers": [
+      "ui",
+      "app",
+      "domain",
+      "infra",
+      "test"
+    ],
+    "rules": [
+      "ui -> app only",
+      "app -> domain, infra",
+      "domain -> stdlib/utils only",
+      "infra -> may not import ui"
+    ],
+    "approved_patterns": [
+      "Split internals/ by concern",
+      "Event/callback decoupling"
+    ],
+    "anti_patterns": [
+      "God module > 1000 LOC",
+      "Business logic in UI controllers"
+    ]
+  },
+  "conventions": {
+    "naming": [
+      "PascalCase classes",
+      "camelCase functions",
+      "CONSTANT_CASE for config keys"
+    ],
+    "errors": [
+      "Use ErrorHandler and typed enums in utils/error"
+    ],
+    "logging": [
+      "Structured logs via utils/Logger with context and stage"
+    ],
+    "formatting": [
+      "ESLint + Stylelint via tools configs"
+    ],
+    "testing": [
+      "Unit tests in tests/unit; terrain tests under tests/terrain"
+    ]
+  },
+  "risks": {
+    "cycles": [],
+    "dead_files": [],
+    "duplication": [
+      "docs/src mirrors src/**/*; keep in sync"
+    ]
+  }
+}

@@ -8,7 +8,7 @@ import { ErrorHandler, ERROR_CATEGORY, ERROR_SEVERITY, GameErrors } from '../../
 export function getGridCoordinatesFromEvent(c, event) {
   try {
     if (c.gameManager.interactionManager &&
-        typeof c.gameManager.interactionManager.getGridCoordinatesFromClick === 'function') {
+      typeof c.gameManager.interactionManager.getGridCoordinatesFromClick === 'function') {
       return c.gameManager.interactionManager.getGridCoordinatesFromClick(event);
     }
 
@@ -44,6 +44,15 @@ export function getGridCoordinatesFromEvent(c, event) {
  */
 export function modifyTerrainAtPosition(c, gridX, gridY) {
   try {
+    // Only allow modification when terrain mode is active and coordinator is in a drag session
+    if (!c.isTerrainModeActive || !c.isDragging) {
+      return;
+    }
+    // Do not modify while grid panning is active or Space bar is held
+    const im = c.gameManager?.interactionManager;
+    if (im && (im.isDragging || im.isSpacePressed)) {
+      return;
+    }
     if (!c.isValidGridPosition(gridX, gridY)) {
       return;
     }

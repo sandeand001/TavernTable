@@ -14,13 +14,14 @@ import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
 import { traceDiamondPath } from '../utils/PixiShapeUtils.js';
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
+import { TerrainHeightUtils } from '../terrain/TerrainHeightUtils.js';
 // elevation offset calculation is delegated into internals
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 // shading pattern helpers are used within internals
 import { validateContainerState as _validateContainerState, showAllTerrainTiles as _showAll, hideAllTerrainTiles as _hideAll, clearAllTerrainTiles as _clearAll } from './terrain-manager/internals/container.js';
 import { validateTileCreationInputs as _validateTileInputs, cleanupExistingTile as _cleanupTile, createBaseTerrainGraphics as _createBase, applyTerrainStyling as _applyStyle, positionTerrainTile as _positionTile, finalizeTerrainTile as _finalizeTile, addVisualEffects as _addEffects } from './terrain-manager/internals/tiles.js';
 import { addTileWithDepthSorting as _addWithSort, sortAllTerrainTilesByDepth as _sortAllDepth } from './terrain-manager/internals/sorting.js';
-import { updateTerrainDisplay as _updateDisplay, processUpdateQueue as _processUpdates } from './terrain-manager/internals/updates.js';
+import { updateTerrainDisplay as _updateDisplay, processUpdateQueue as _processUpdates, flushUpdateQueue as _flushUpdates } from './terrain-manager/internals/updates.js';
 
 export class TerrainManager {
   constructor(gameManager, terrainCoordinator) {
@@ -31,6 +32,9 @@ export class TerrainManager {
     // PIXI containers for terrain rendering
     this.terrainContainer = null;
     this.terrainTiles = new Map(); // Map of "x,y" -> PIXI.Graphics terrain tile
+    // Preview overlay for brush footprint highlighting (non-destructive)
+    this.previewContainer = null;
+    this.previewCache = new Map(); // Map of "x,y" -> PIXI.Graphics preview diamond
 
     // Performance optimization
     this.updateQueue = new Set(); // Cells that need visual updates
@@ -67,8 +71,16 @@ export class TerrainManager {
         this.gameManager.gridContainer.sortChildren();
       }
 
+      // Initialize preview container above terrain tiles
+      this.previewContainer = new PIXI.Container();
+      this.previewContainer.sortableChildren = true;
+      this.previewContainer.zIndex = 100500; // above terrain tiles
+      this.terrainContainer.addChild(this.previewContainer);
+
       // Initialize terrain tiles for the current grid
       this.createInitialTerrainTiles();
+      // Ensure preview layer sits on top of terrain tiles
+      this.ensurePreviewLayerOnTop();
 
       logger.log(LOG_LEVEL.INFO, 'Terrain rendering system initialized', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainManager.initialize',
@@ -92,6 +104,25 @@ export class TerrainManager {
       });
       throw error;
     }
+  }
+
+  /** Ensure the preview container is the top-most child within terrainContainer. */
+  ensurePreviewLayerOnTop() {
+    try {
+      if (!this.terrainContainer || !this.previewContainer) return;
+      const parent = this.terrainContainer;
+      // Move to end to render above tiles/faces/shadows
+      if (typeof parent.setChildIndex === 'function') {
+        parent.setChildIndex(this.previewContainer, Math.max(0, parent.children.length - 1));
+      } else {
+        // Fallback: remove and re-add
+        try { parent.removeChild(this.previewContainer); } catch { /* ignore */ }
+        parent.addChild(this.previewContainer);
+      }
+  this.previewContainer.visible = true;
+  // Ensure zIndex remains higher than terrain tiles
+  this.previewContainer.zIndex = Math.max(this.previewContainer.zIndex || 0, 100500);
+    } catch (_) { /* best-effort */ }
   }
 
   /**
@@ -418,6 +449,143 @@ export class TerrainManager {
    */
   processUpdateQueue() {
     return _processUpdates(this);
+  }
+
+  /** Immediately process all pending updates, bypassing throttle/batching. */
+  flushUpdateQueue() {
+    return _flushUpdates(this);
+  }
+
+  /**
+   * Re-apply the current elevation scale to all overlay terrain tiles without
+   * recreating them or changing their colors. This avoids flicker and ensures
+   * terrain-mode colors persist while using the perception slider.
+   */
+  reapplyElevationScaleToOverlay() {
+    try {
+      if (!this.terrainContainer || !this.terrainTiles || this.terrainTiles.size === 0) return;
+      const w = this.gameManager.tileWidth;
+      const h = this.gameManager.tileHeight;
+      for (const [key, tile] of this.terrainTiles) {
+        if (!tile) continue;
+        const [x, y] = key.split(',').map(Number);
+        // Reset base iso Y, then apply new elevation offset
+        tile.x = (x - y) * (w / 2);
+        tile.y = (x + y) * (h / 2);
+        const height = Number.isFinite(tile.terrainHeight) ? tile.terrainHeight : this.terrainCoordinator.getTerrainHeight(x, y);
+        const offset = TerrainHeightUtils.calculateElevationOffset(height);
+        tile.y += offset;
+
+        // Clear and rebuild side faces/shadows/depressions to match new scale
+        try {
+          if (tile.shadowTile && tile.parent?.children?.includes(tile.shadowTile)) {
+            tile.parent.removeChild(tile.shadowTile);
+            if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) tile.shadowTile.destroy();
+          }
+        } catch { /* ignore */ }
+        tile.shadowTile = null;
+
+        try {
+          if (tile.depressionOverlay && tile.children?.includes(tile.depressionOverlay)) {
+            tile.removeChild(tile.depressionOverlay);
+            if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) tile.depressionOverlay.destroy();
+          }
+        } catch { /* ignore */ }
+        tile.depressionOverlay = null;
+
+        try {
+          if (tile.sideFaces && tile.parent?.children?.includes(tile.sideFaces)) {
+            tile.parent.removeChild(tile.sideFaces);
+            if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) tile.sideFaces.destroy();
+          }
+        } catch { /* ignore */ }
+        tile.sideFaces = null;
+
+        this._addVisualEffects(tile, height, x, y);
+      }
+      try { this.terrainContainer.sortChildren?.(); } catch { /* no-op */ }
+      this.ensurePreviewLayerOnTop();
+    } catch (error) {
+      GameErrors.rendering(error, {
+        stage: 'TerrainManager.reapplyElevationScaleToOverlay',
+        tiles: this.terrainTiles?.size
+      });
+    }
+  }
+
+  /**
+   * Render a non-destructive preview highlight for a set of grid cells.
+   * Clears any previous preview before drawing the new one.
+   * @param {Array<{x:number,y:number}>} cells
+   */
+  renderBrushPreview(cells, options = {}) {
+    try {
+      if (!this.previewContainer || !this.terrainCoordinator?.isTerrainModeActive) return;
+      this.ensurePreviewLayerOnTop();
+      this.clearBrushPreview();
+      if (!Array.isArray(cells) || cells.length === 0) return;
+
+      const w = this.gameManager.tileWidth;
+      const h = this.gameManager.tileHeight;
+      const color = typeof options.color === 'number' ? options.color : 0xffff00;
+      const lineWidth = typeof options.lineWidth === 'number' ? options.lineWidth : 2;
+      const fillAlpha = typeof options.fillAlpha === 'number' ? options.fillAlpha : 0.12;
+      const lineAlpha = typeof options.lineAlpha === 'number' ? options.lineAlpha : 0.9;
+
+      for (const { x, y } of cells) {
+        const g = new PIXI.Graphics();
+        // Semi-transparent outline to avoid altering underlying colors
+        g.lineStyle(lineWidth, color, lineAlpha);
+        g.beginFill(color, fillAlpha);
+        g.moveTo(0, h / 2);
+        g.lineTo(w / 2, 0);
+        g.lineTo(w, h / 2);
+        g.lineTo(w / 2, h);
+        g.closePath();
+        g.endFill();
+
+        // Position in iso space, reusing the same transform logic as tiles
+        g.x = (x - y) * (w / 2);
+        g.y = (x + y) * (h / 2);
+
+        // Elevation offset so outline sits on the tile
+        const height = this.terrainCoordinator.getTerrainHeight(x, y);
+        const offset = (height || 0) * (this.gameManager.tileHeight * 0.1);
+        g.y += offset;
+
+        // Sort above tiles but below tokens if needed
+        g.zIndex = (x + y) * 100 + 90;
+
+        this.previewContainer.addChild(g);
+        this.previewCache.set(`${x},${y}`, g);
+      }
+      if (this.previewContainer.sortableChildren && typeof this.previewContainer.sortChildren === 'function') {
+        this.previewContainer.sortChildren();
+      }
+    } catch (error) {
+      logger.warn('Failed to render brush preview', {
+        error: error.message,
+        cellsCount: Array.isArray(cells) ? cells.length : 0
+      }, LOG_CATEGORY.RENDERING);
+    }
+  }
+
+  /** Clear any existing brush preview graphics. */
+  clearBrushPreview() {
+    try {
+      if (!this.previewContainer) return;
+      for (const [, g] of this.previewCache) {
+        try { if (g.parent) g.parent.removeChild(g); } catch { /* ignore */ }
+        try { if (typeof g.destroy === 'function' && !g.destroyed) g.destroy({ children: true }); } catch { /* ignore */ }
+      }
+      this.previewCache.clear();
+      // Also remove any stray children just in case
+      if (typeof this.previewContainer.removeChildren === 'function') {
+        this.previewContainer.removeChildren();
+      }
+    } catch (error) {
+      logger.warn('Failed to clear brush preview', { error: error.message }, LOG_CATEGORY.RENDERING);
+    }
   }
 
   /**

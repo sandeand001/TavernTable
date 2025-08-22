@@ -9,14 +9,15 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --ci --coverage --watchAll=false",
-  "lint": "eslint -c tools/.eslintrc.json src/**/*.js && stylelint -c tools/.stylelintrc.json src/**/*.css",
+    "lint": "eslint -c tools/.eslintrc.json src/**/*.js && stylelint -c tools/.stylelintrc.json src/**/*.css",
     "lint:js": "eslint -c tools/.eslintrc.json src/**/*.js",
     "lint:css": "stylelint -c tools/.stylelintrc.json src/**/*.css",
     "lint:fix": "eslint -c tools/.eslintrc.json src/**/*.js --fix && stylelint -c tools/.stylelintrc.json src/**/*.css --fix",
-  "serve": "python -m http.server 3000",
-  "start": "npm run serve",
-  "serve:open": "powershell -NoProfile -Command \"Start-Process http://localhost:3000\"; npm run serve",
-    "prepare": "husky"
+    "serve": "python -m http.server 3000",
+    "start": "npm run serve",
+    "serve:open": "start \"\" http://localhost:3000 && npm run serve",
+    "prepare": "husky",
+    "map:update": "node ai/update_codebase_map.js"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",

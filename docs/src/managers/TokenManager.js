@@ -27,138 +27,138 @@ import { removeToken as _removeToken } from './token-manager/internals/removal.j
 import { placeNewToken as _placeNewToken } from './token-manager/internals/placement.js';
 
 export class TokenManager {
-  constructor(gameManager) {
-    this.gameManager = gameManager;
-    this.selectedTokenType = 'goblin';
-    this.tokenFacingRight = true;
-    this.placedTokens = [];
-  }
-
-  // Getters for backward compatibility
-  getSelectedTokenType() {
-    return this.selectedTokenType;
-  }
-
-  getTokenFacingRight() {
-    return this.tokenFacingRight;
-  }
-
-  getPlacedTokens() {
-    return this.placedTokens;
-  }
-
-  // Setters for proper state management
-  setSelectedTokenType(tokenType) {
-    this.selectedTokenType = tokenType;
-    // Sync with global variable for backward compatibility
-    if (typeof window !== 'undefined') {
-      window.selectedTokenType = tokenType;
+    constructor(gameManager) {
+        this.gameManager = gameManager;
+        this.selectedTokenType = 'goblin';
+        this.tokenFacingRight = true;
+        this.placedTokens = [];
     }
-  }
 
-  setTokenFacingRight(facing) {
-    this.tokenFacingRight = facing;
-    // Sync with global variable for backward compatibility
-    if (typeof window !== 'undefined') {
-      window.tokenFacingRight = facing;
+    // Getters for backward compatibility
+    getSelectedTokenType() {
+        return this.selectedTokenType;
     }
-  }
 
-  /**
-   * Validate positions of all placed tokens
-   * @param {number} cols - Number of grid columns
-   * @param {number} rows - Number of grid rows
-   */
-  validateTokenPositions(cols, rows) {
-    return _validateTokenPositions(this, cols, rows);
-  }
-
-  /**
-   * Select a token type for placement
-   * @param {string} tokenType - Type of token to select
-   */
-  selectToken(tokenType) {
-    try {
-      logger.debug('selectToken called with:', tokenType);
-      _selectToken(this, tokenType);
-      logger.info(`Token type selected: ${tokenType}`, {
-        tokenType,
-        previousType: this.selectedTokenType
-      }, LOG_CATEGORY.USER);
-    } catch (error) {
-      const errorHandler = new ErrorHandler();
-      errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
-        stage: 'selectToken',
-        tokenType
-      });
+    getTokenFacingRight() {
+        return this.tokenFacingRight;
     }
-  }
 
-  /**
-   * Toggle token facing direction
-   */
-  toggleFacing() {
-    return _toggleFacing(this);
-  }
+    getPlacedTokens() {
+        return this.placedTokens;
+    }
 
-  /**
-   * Find existing token at grid coordinates
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   * @returns {Object|null} Found token or null
-   */
-  findExistingTokenAt(gridX, gridY) {
-    return _findExistingTokenAt(this, gridX, gridY);
-  }
+    // Setters for proper state management
+    setSelectedTokenType(tokenType) {
+        this.selectedTokenType = tokenType;
+        // Sync with global variable for backward compatibility
+        if (typeof window !== 'undefined') {
+            window.selectedTokenType = tokenType;
+        }
+    }
 
-  /**
-   * Remove a token from the game
-   * @param {Object} token - Token to remove
-   */
-  removeToken(token) {
-    return _removeToken(this, token);
-  }
+    setTokenFacingRight(facing) {
+        this.tokenFacingRight = facing;
+        // Sync with global variable for backward compatibility
+        if (typeof window !== 'undefined') {
+            window.tokenFacingRight = facing;
+        }
+    }
 
-  /**
-   * Place a new token at the specified grid coordinates
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   * @param {PIXI.Container} gridContainer - Grid container to add token to
-   */
-  placeNewToken(gridX, gridY, gridContainer) {
-    return _placeNewToken(this, gridX, gridY, gridContainer);
-  }
+    /**
+     * Validate positions of all placed tokens
+     * @param {number} cols - Number of grid columns
+     * @param {number} rows - Number of grid rows
+     */
+    validateTokenPositions(cols, rows) {
+        return _validateTokenPositions(this, cols, rows);
+    }
 
-  createCreatureByType(type) {
-    return _createCreatureByType(this, type);
-  }
+    /**
+     * Select a token type for placement
+     * @param {string} tokenType - Type of token to select
+     */
+    selectToken(tokenType) {
+        try {
+            logger.debug('selectToken called with:', tokenType);
+            _selectToken(this, tokenType);
+            logger.info(`Token type selected: ${tokenType}`, {
+                tokenType,
+                previousType: this.selectedTokenType
+            }, LOG_CATEGORY.USER);
+        } catch (error) {
+            const errorHandler = new ErrorHandler();
+            errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
+                stage: 'selectToken',
+                tokenType
+            });
+        }
+    }
 
-  /**
-   * Snap a token to the nearest grid center
-   * @param {PIXI.Sprite} token - Token sprite to snap
-   */
-  snapToGrid(token, pointerLocalX = null, pointerLocalY = null) {
-    return _snapTokenToGrid(this, token, pointerLocalX, pointerLocalY);
-  }
+    /**
+     * Toggle token facing direction
+     */
+    toggleFacing() {
+        return _toggleFacing(this);
+    }
 
-  /**
-   * Add a token to the collection and set up interaction handlers
-   * @param {Object} creature - Creature to add
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   * @param {string} selectedTokenType - Currently selected token type
-   * @param {Array} placedTokens - Array to add token to
-   */
-  addTokenToCollection(creature, gridX, gridY, selectedTokenType = null, placedTokens = null) {
-    return _addTokenToCollection(this, creature, gridX, gridY, selectedTokenType, placedTokens);
-  }
+    /**
+     * Find existing token at grid coordinates
+     * @param {number} gridX - Grid X coordinate
+     * @param {number} gridY - Grid Y coordinate
+     * @returns {Object|null} Found token or null
+     */
+    findExistingTokenAt(gridX, gridY) {
+        return _findExistingTokenAt(this, gridX, gridY);
+    }
 
-  /**
-   * Set up token interaction events
-   * @param {PIXI.Sprite} sprite - Token sprite
-   * @param {Object} tokenData - Token data
-   */
-  setupTokenInteractions(sprite, tokenData) {
-    return _setupTokenInteractions(this, sprite, tokenData);
-  }
+    /**
+     * Remove a token from the game
+     * @param {Object} token - Token to remove
+     */
+    removeToken(token) {
+        return _removeToken(this, token);
+    }
+
+    /**
+     * Place a new token at the specified grid coordinates
+     * @param {number} gridX - Grid X coordinate
+     * @param {number} gridY - Grid Y coordinate
+     * @param {PIXI.Container} gridContainer - Grid container to add token to
+     */
+    placeNewToken(gridX, gridY, gridContainer) {
+        return _placeNewToken(this, gridX, gridY, gridContainer);
+    }
+
+    createCreatureByType(type) {
+        return _createCreatureByType(this, type);
+    }
+
+    /**
+     * Snap a token to the nearest grid center
+     * @param {PIXI.Sprite} token - Token sprite to snap
+     */
+    snapToGrid(token, pointerLocalX = null, pointerLocalY = null) {
+        return _snapTokenToGrid(this, token, pointerLocalX, pointerLocalY);
+    }
+
+    /**
+     * Add a token to the collection and set up interaction handlers
+     * @param {Object} creature - Creature to add
+     * @param {number} gridX - Grid X coordinate
+     * @param {number} gridY - Grid Y coordinate
+     * @param {string} selectedTokenType - Currently selected token type
+     * @param {Array} placedTokens - Array to add token to
+     */
+    addTokenToCollection(creature, gridX, gridY, selectedTokenType = null, placedTokens = null) {
+        return _addTokenToCollection(this, creature, gridX, gridY, selectedTokenType, placedTokens);
+    }
+
+    /**
+     * Set up token interaction events
+     * @param {PIXI.Sprite} sprite - Token sprite
+     * @param {Object} tokenData - Token data
+     */
+    setupTokenInteractions(sprite, tokenData) {
+        return _setupTokenInteractions(this, sprite, tokenData);
+    }
 }

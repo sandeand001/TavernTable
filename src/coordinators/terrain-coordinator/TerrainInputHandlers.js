@@ -9,6 +9,8 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorH
 export class TerrainInputHandlers {
   constructor(coordinator) {
     this.c = coordinator; // reference to TerrainCoordinator
+    // Track last hovered grid coords to support live preview refresh on tool/size changes
+    this.lastGridCoords = null;
   }
 
   /** Small helper to avoid duplicating the scale mark selector */
@@ -24,6 +26,18 @@ export class TerrainInputHandlers {
       this.c.gameManager.app.view.addEventListener('mousemove', this.handleMouseMove.bind(this));
       this.c.gameManager.app.view.addEventListener('mouseup', this.handleMouseUp.bind(this));
       this.c.gameManager.app.view.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
+      // Ensure drag always ends even if mouseup occurs outside the canvas
+      // Use capture to guarantee we receive the event before it is possibly stopped elsewhere
+      window.addEventListener('mouseup', this.handleMouseUp.bind(this), true);
+      // Extra safety: if the window loses focus during a drag, end the session
+      window.addEventListener('blur', () => {
+        if (this.c.isDragging) {
+          this.c.isDragging = false;
+          this.c.lastModifiedCell = null;
+          // Ensure any pending updates are applied now to avoid lingering visuals
+          try { this.c.terrainManager?.flushUpdateQueue(); } catch { /* ignore */ }
+        }
+      }, true);
 
       // Keyboard shortcuts for terrain tools
       document.addEventListener('keydown', this.handleKeyDown.bind(this));
@@ -51,12 +65,20 @@ export class TerrainInputHandlers {
         return;
       }
 
+      // Do not start a terrain drag while panning (Space held)
+      const im = this.c.gameManager?.interactionManager;
+      if (im && im.isSpacePressed) {
+        return;
+      }
+
       const gridCoords = this.c.getGridCoordinatesFromEvent(event);
       if (!gridCoords) {
         return;
       }
 
       this.c.isDragging = true;
+      // Reset drag bookkeeping at the start of a new stroke
+      this.c.lastModifiedCell = `${gridCoords.gridX},${gridCoords.gridY}`;
       this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
 
       event.preventDefault();
@@ -79,10 +101,24 @@ export class TerrainInputHandlers {
       // Update height indicator if in terrain mode
       if (this.c.isTerrainModeActive && gridCoords) {
         this.updateHeightIndicator(gridCoords.gridX, gridCoords.gridY);
+        // Render brush preview of affected cells (non-destructive)
+        try {
+          const cells = this.c.brush.getFootprintCells(gridCoords.gridX, gridCoords.gridY);
+          // choose color based on current tool
+          const isLowering = this.c.brush.tool === 'lower';
+          const color = isLowering ? 0x8b5cf6 : 0x10b981; // lower: violet, raise: emerald
+          this.c.terrainManager?.renderBrushPreview(cells, { color, lineWidth: 3, fillAlpha: 0.15, lineAlpha: 0.9 });
+        } catch (_) { /* non-fatal preview */ }
+
+        // Remember last valid hover position for key-driven updates
+        this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
       }
 
       // Only process if we're actively dragging in terrain mode
-      if (!this.c.isDragging || !this.c.isTerrainModeActive) {
+      // Also require that the primary button is currently pressed to avoid lingering edits
+      // And never edit while the grid panning interaction is active or Space is pressed
+      const im = this.c.gameManager?.interactionManager;
+      if (!this.c.isDragging || !this.c.isTerrainModeActive || !(event.buttons & 1) || (im && (im.isDragging || im.isSpacePressed))) {
         return;
       }
 
@@ -114,6 +150,9 @@ export class TerrainInputHandlers {
       if (event.button === 0 && this.c.isDragging) {
         this.c.isDragging = false;
         this.c.lastModifiedCell = null;
+        // Complete any pending terrain updates immediately
+        try { this.c.terrainManager?.flushUpdateQueue(); } catch { /* ignore */ }
+        // Do NOT clear preview on mouse up; keep showing hover footprint per spec
 
         logger.trace('Terrain painting session completed', {
           context: 'TerrainInputHandlers.handleMouseUp',
@@ -137,6 +176,10 @@ export class TerrainInputHandlers {
       this.c.isDragging = false;
       this.c.lastModifiedCell = null;
     }
+    // If leaving the canvas, finish any pending updates to prevent later application
+    try { this.c.terrainManager?.flushUpdateQueue(); } catch { /* ignore */ }
+    // Always clear preview on mouse leave
+    try { this.c.terrainManager?.clearBrushPreview(); } catch { /* ignore */ }
   }
 
   /** Handle keyboard shortcuts for terrain tools */
@@ -151,21 +194,27 @@ export class TerrainInputHandlers {
         if (!event.ctrlKey && !event.altKey) {
           this.c.setTerrainTool('raise');
           event.preventDefault();
+          // Re-render preview at last hover
+          this._rerenderPreviewAtLastHover();
         }
         break;
       case 'KeyL':
         if (!event.ctrlKey && !event.altKey) {
           this.c.setTerrainTool('lower');
           event.preventDefault();
+          // Re-render preview at last hover
+          this._rerenderPreviewAtLastHover();
         }
         break;
       case 'BracketLeft': // [
         this.c.decreaseBrushSize();
         event.preventDefault();
+        this._rerenderPreviewAtLastHover();
         break;
       case 'BracketRight': // ]
         this.c.increaseBrushSize();
         event.preventDefault();
+        this._rerenderPreviewAtLastHover();
         break;
       }
     } catch (error) {
@@ -176,6 +225,23 @@ export class TerrainInputHandlers {
         isTerrainModeActive: this.c.isTerrainModeActive
       });
     }
+  }
+
+  /**
+   * Re-render the brush preview at the last known hover coordinates
+   * if terrain mode is active and a valid position is cached.
+   * Keeps preview persistent during painting and key changes.
+   */
+  _rerenderPreviewAtLastHover() {
+    try {
+      if (!this.c.isTerrainModeActive || !this.lastGridCoords) return;
+      const { x, y } = this.lastGridCoords;
+      if (!this.c.isValidGridPosition(x, y)) return;
+      const cells = this.c.brush.getFootprintCells(x, y);
+      const isLowering = this.c.brush.tool === 'lower';
+      const color = isLowering ? 0x8b5cf6 : 0x10b981;
+      this.c.terrainManager?.renderBrushPreview(cells, { color, lineWidth: 3, fillAlpha: 0.15, lineAlpha: 0.9 });
+    } catch (_) { /* ignore preview issues */ }
   }
 
   /** Update the height indicator in the UI to show terrain level at cursor position */

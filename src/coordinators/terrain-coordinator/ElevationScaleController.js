@@ -21,9 +21,9 @@ export class ElevationScaleController {
       // Update global height util override so all compute paths use the new unit
       TerrainHeightUtils.setElevationUnit(unit);
 
-      // 1) Refresh terrain overlay visuals if active
+      // 1) Re-apply elevation to overlay tiles without recreating them (preserve colors) when terrain mode is active
       if (this.c.terrainManager && this.c.isTerrainModeActive) {
-        try { this.c.terrainManager.refreshAllTerrainDisplay(); } catch (_) { /* non-fatal */ }
+        try { this.c.terrainManager.reapplyElevationScaleToOverlay(); } catch (_) { /* non-fatal */ }
       }
 
       // 2) Re-apply elevation to base grid tiles (position and faces)
