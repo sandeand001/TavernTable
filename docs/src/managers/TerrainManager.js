@@ -119,9 +119,9 @@ export class TerrainManager {
         try { parent.removeChild(this.previewContainer); } catch { /* ignore */ }
         parent.addChild(this.previewContainer);
       }
-  this.previewContainer.visible = true;
-  // Ensure zIndex remains higher than terrain tiles
-  this.previewContainer.zIndex = Math.max(this.previewContainer.zIndex || 0, 100500);
+      this.previewContainer.visible = true;
+      // Ensure zIndex remains higher than terrain tiles
+      this.previewContainer.zIndex = Math.max(this.previewContainer.zIndex || 0, 100500);
     } catch (_) { /* best-effort */ }
   }
 

@@ -173,8 +173,8 @@ export class TerrainInputHandlers {
             this.c.isDragging = false;
             this.c.lastModifiedCell = null;
         }
-    // If leaving the canvas, finish any pending updates to prevent later application
-    try { this.c.terrainManager?.flushUpdateQueue(); } catch { /* ignore */ }
+        // If leaving the canvas, finish any pending updates to prevent later application
+        try { this.c.terrainManager?.flushUpdateQueue(); } catch { /* ignore */ }
         // Always clear preview on mouse leave
         try { this.c.terrainManager?.clearBrushPreview(); } catch { /* ignore */ }
     }
