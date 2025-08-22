@@ -1,4 +1,5 @@
 import { getTerrainHeightDisplay, getScaleMarks } from '../../ui/domHelpers.js';
+import { buildBrushHighlightDescriptor } from '../../terrain/TerrainBrushHighlighter.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 
@@ -100,12 +101,16 @@ export class TerrainInputHandlers {
             // Update height indicator if in terrain mode
             if (this.c.isTerrainModeActive && gridCoords) {
                 this.updateHeightIndicator(gridCoords.gridX, gridCoords.gridY);
-                // Render brush preview of affected cells (non-destructive)
+                // Render brush preview using highlighter helper; distinct style from raise/lower
                 try {
-                    const cells = this.c.brush.getFootprintCells(gridCoords.gridX, gridCoords.gridY);
-                    // Color by tool for clarity
-                    const color = this.c.brush.tool === 'lower' ? 0x8b5cf6 : 0x10b981; // purple for lower, green for raise
-                    this.c.terrainManager?.renderBrushPreview(cells, { color, lineWidth: 3, fillAlpha: 0.18, lineAlpha: 1.0 });
+                    const desc = buildBrushHighlightDescriptor({
+                        brush: this.c.brush,
+                        center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
+                        terrainModeActive: this.c.isTerrainModeActive
+                    });
+                    if (desc.cells.length) {
+                        this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
+                    }
                 } catch (_) { /* non-fatal preview */ }
                 // Remember last valid hover position for key-driven updates
                 this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
@@ -234,9 +239,10 @@ export class TerrainInputHandlers {
             if (!this.c.isTerrainModeActive || !this.lastGridCoords) return;
             const { x, y } = this.lastGridCoords;
             if (!this.c.isValidGridPosition(x, y)) return;
-            const cells = this.c.brush.getFootprintCells(x, y);
-            const color = this.c.brush.tool === 'lower' ? 0x8b5cf6 : 0x10b981;
-            this.c.terrainManager?.renderBrushPreview(cells, { color, lineWidth: 3, fillAlpha: 0.15, lineAlpha: 0.9 });
+            const desc = buildBrushHighlightDescriptor({ brush: this.c.brush, center: { gridX: x, gridY: y }, terrainModeActive: this.c.isTerrainModeActive });
+            if (desc.cells.length) {
+                this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
+            }
         } catch (_) { /* ignore preview issues */ }
     }
 

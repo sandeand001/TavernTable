@@ -71,11 +71,12 @@ export class TerrainManager {
         this.gameManager.gridContainer.sortChildren();
       }
 
-      // Initialize preview container above terrain tiles
-      this.previewContainer = new PIXI.Container();
-      this.previewContainer.sortableChildren = true;
-      this.previewContainer.zIndex = 100500; // above terrain tiles
-      this.terrainContainer.addChild(this.previewContainer);
+  // Initialize preview container in the main gridContainer so we can depth-sort
+  // previews BETWEEN base tiles (depth*100) and tokens (depth*100 + 1).
+  this.previewContainer = new PIXI.Container();
+  this.previewContainer.sortableChildren = true;
+  // Do not give a huge parent zIndex; each preview graphic will carry its own zIndex.
+  this.gameManager.gridContainer.addChild(this.previewContainer);
 
       // Initialize terrain tiles for the current grid
       this.createInitialTerrainTiles();
@@ -106,12 +107,12 @@ export class TerrainManager {
     }
   }
 
-  /** Ensure the preview container is the top-most child within terrainContainer. */
+  /** Ensure the preview container is present and visible in gridContainer. */
   ensurePreviewLayerOnTop() {
     try {
-      if (!this.terrainContainer || !this.previewContainer) return;
-      const parent = this.terrainContainer;
-      // Move to end to render above tiles/faces/shadows
+      if (!this.gameManager?.gridContainer || !this.previewContainer) return;
+      const parent = this.gameManager.gridContainer;
+      // Keep container alive and visible; order among siblings is handled by child zIndex
       if (typeof parent.setChildIndex === 'function') {
         parent.setChildIndex(this.previewContainer, Math.max(0, parent.children.length - 1));
       } else {
@@ -120,8 +121,7 @@ export class TerrainManager {
         parent.addChild(this.previewContainer);
       }
       this.previewContainer.visible = true;
-      // Ensure zIndex remains higher than terrain tiles
-      this.previewContainer.zIndex = Math.max(this.previewContainer.zIndex || 0, 100500);
+      // Parent container uses children zIndex to interleave; parent zIndex is not forced here.
     } catch (_) { /* best-effort */ }
   }
 
@@ -548,20 +548,22 @@ export class TerrainManager {
         g.x = (x - y) * (w / 2);
         g.y = (x + y) * (h / 2);
 
-        // Elevation offset so outline sits on the tile
-        const height = this.terrainCoordinator.getTerrainHeight(x, y);
-        const offset = (height || 0) * (this.gameManager.tileHeight * 0.1);
-        g.y += offset;
+        // Elevation offset so outline sits on the tile using the same scale util
+        try {
+          const height = this.terrainCoordinator.getTerrainHeight(x, y);
+          const offset = (typeof TerrainHeightUtils?.calculateElevationOffset === 'function')
+            ? TerrainHeightUtils.calculateElevationOffset(height)
+            : ((height || 0) * (this.gameManager.tileHeight * 0.1));
+          g.y += offset;
+        } catch { /* best-effort */ }
 
-        // Sort above tiles but below tokens if needed
-        g.zIndex = (x + y) * 100 + 90;
+  // Depth-sort preview strictly BETWEEN tile top (depth*100) and tokens (depth*100 + 1)
+  g.zIndex = (x + y) * 100 + 0.5;
 
         this.previewContainer.addChild(g);
         this.previewCache.set(`${x},${y}`, g);
       }
-      if (this.previewContainer.sortableChildren && typeof this.previewContainer.sortChildren === 'function') {
-        this.previewContainer.sortChildren();
-      }
+  try { this.previewContainer.sortChildren?.(); } catch { /* no-op */ }
     } catch (error) {
       logger.warn('Failed to render brush preview', {
         error: error.message,

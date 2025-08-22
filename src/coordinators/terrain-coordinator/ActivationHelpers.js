@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { GameErrors } from '../../utils/ErrorHandler.js';
 import { prepareBaseGridForEditing as _prepareGridForEdit, resetTerrainContainerSafely as _resetContainerSafely, validateContainerIntegrity as _validateContainer } from './internals/container.js';
@@ -143,3 +144,4 @@ export class ActivationHelpers {
     }
   }
 }
+/* eslint-enable indent */
