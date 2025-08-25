@@ -325,7 +325,9 @@ export class InteractionManager {
    * @returns {Object} Grid coordinates
    */
   convertToGridCoordinates({ localX, localY }) {
-    // Initial conversion ignoring elevation
+    // Convert to continuous (fractional) grid coordinates first. This avoids
+    // premature rounding which can flip tiles when the pointer is near diamond
+    // boundaries. Callers can still round as needed.
     let gridCoords = CoordinateUtils.isometricToGrid(
       localX,
       localY,
@@ -333,9 +335,16 @@ export class InteractionManager {
       this.gameManager.tileHeight
     );
 
-    // Elevation-aware refinement: adjust Y by inverse elevation offset of candidate cell
+    // If a fractional result was provided, prefer it for nearby-candidate tests.
+    const gridXf = (typeof gridCoords.gridXf === 'number') ? gridCoords.gridXf : gridCoords.gridX;
+    const gridYf = (typeof gridCoords.gridYf === 'number') ? gridCoords.gridYf : gridCoords.gridY;
+
+    // Elevation-aware refinement: if the candidate cell has elevation, adjust
+    // the localY before converting so the fractional coords align with visual.
     try {
-      const height = this.gameManager?.terrainCoordinator?.dataStore?.get(gridCoords.gridX, gridCoords.gridY);
+      const candidateX = Math.round(gridXf);
+      const candidateY = Math.round(gridYf);
+      const height = this.gameManager?.terrainCoordinator?.dataStore?.get(candidateX, candidateY);
       if (Number.isFinite(height) && height !== 0) {
         const elevOffset = TerrainHeightUtils.calculateElevationOffset(height);
         if (elevOffset !== 0) {
@@ -345,6 +354,7 @@ export class InteractionManager {
             this.gameManager.tileWidth,
             this.gameManager.tileHeight
           );
+          // prefer fractional refined values when available
           gridCoords = refined;
         }
       }

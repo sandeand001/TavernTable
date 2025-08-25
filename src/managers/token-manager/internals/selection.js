@@ -2,11 +2,13 @@ import { GameValidators } from '../../../utils/Validation.js';
 import { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } from '../../../ui/domHelpers.js';
 
 export function findExistingTokenAt(c, gridX, gridY) {
-  return c.placedTokens.find(token => {
-    const diffX = Math.abs(token.gridX - gridX);
-    const diffY = Math.abs(token.gridY - gridY);
-    return diffX <= 1 && diffY <= 1 && (diffX + diffY) <= 1;
-  });
+  // Previously this matched tokens in adjacent cells which caused
+  // accidental removals/moves when clicking nearby tiles. Only return
+  // a token if it exactly occupies the requested grid cell.
+  return c.placedTokens.find(token => (
+    Number.isFinite(token.gridX) && Number.isFinite(token.gridY) &&
+    token.gridX === gridX && token.gridY === gridY
+  ));
 }
 
 export function selectToken(c, tokenType) {

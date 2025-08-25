@@ -71,12 +71,12 @@ export class TerrainManager {
         this.gameManager.gridContainer.sortChildren();
       }
 
-  // Initialize preview container in the main gridContainer so we can depth-sort
-  // previews BETWEEN base tiles (depth*100) and tokens (depth*100 + 1).
-  this.previewContainer = new PIXI.Container();
-  this.previewContainer.sortableChildren = true;
-  // Do not give a huge parent zIndex; each preview graphic will carry its own zIndex.
-  this.gameManager.gridContainer.addChild(this.previewContainer);
+      // Initialize preview container in the main gridContainer so we can depth-sort
+      // previews BETWEEN base tiles (depth*100) and tokens (depth*100 + 1).
+      this.previewContainer = new PIXI.Container();
+      this.previewContainer.sortableChildren = true;
+      // Do not give a huge parent zIndex; each preview graphic will carry its own zIndex.
+      this.gameManager.gridContainer.addChild(this.previewContainer);
 
       // Initialize terrain tiles for the current grid
       this.createInitialTerrainTiles();
@@ -557,13 +557,13 @@ export class TerrainManager {
           g.y += offset;
         } catch { /* best-effort */ }
 
-  // Depth-sort preview strictly BETWEEN tile top (depth*100) and tokens (depth*100 + 1)
-  g.zIndex = (x + y) * 100 + 0.5;
+        // Depth-sort preview strictly BETWEEN tile top (depth*100) and tokens (depth*100 + 1)
+        g.zIndex = (x + y) * 100 + 0.5;
 
         this.previewContainer.addChild(g);
         this.previewCache.set(`${x},${y}`, g);
       }
-  try { this.previewContainer.sortChildren?.(); } catch { /* no-op */ }
+      try { this.previewContainer.sortChildren?.(); } catch { /* no-op */ }
     } catch (error) {
       logger.warn('Failed to render brush preview', {
         error: error.message,

@@ -236,6 +236,7 @@ class SidebarController {
                 break;
             case 'biomes':
                 this.buildBiomeMenuSafely();
+                this._wireGenerateMapButton();
                 // Ensure control defaults reflect current settings when switching tabs
                 this._syncRichShadingControlsFromState();
                 break;
@@ -243,6 +244,25 @@ class SidebarController {
                 // Future: Load current game settings
                 break;
         }
+    }
+
+    _wireGenerateMapButton() {
+        try {
+            const btn = document.getElementById('generate-map');
+            if (btn && !btn.dataset.boundClick) {
+                btn.addEventListener('click', () => {
+                    const biome = window.selectedBiome;
+                    if (!biome) return;
+                    try {
+                        const ok = window.gameManager?.terrainCoordinator?.generateBiomeElevation?.(biome);
+                        if (ok && window.gameManager?.terrainCoordinator?.applyBiomePaletteToBaseGrid) {
+                            window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
+                        }
+                    } catch (_) { /* ignore */ }
+                });
+                btn.dataset.boundClick = 'true';
+            }
+        } catch (_) { /* ignore */ }
     }
 
     _syncRichShadingControlsFromState() {
@@ -359,6 +379,7 @@ class SidebarController {
             logger.debug('Biome selected', { biomeKey }, LOG_CATEGORY.UI);
         }
         // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
+        // If game manager exists and terrain mode is OFF, apply palette only (no auto-generation here)
         try {
             if (window.gameManager && window.gameManager.terrainCoordinator && !window.gameManager.terrainCoordinator.isTerrainModeActive) {
                 window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();

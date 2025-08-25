@@ -536,6 +536,39 @@ body {
   color: white;
 }
 
+/* Primary button style (matches action-button aesthetics) */
+.primary-button {
+  padding: 10px 16px;
+  background-color: #4da6ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  width: auto;
+  transition: all 0.2s ease;
+}
+
+.primary-button:hover {
+  background-color: #318ce7;
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+  background-color: #2a2a2a;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Small helper text under controls */
+.small-text {
+  color: #9aa3af;
+  font-size: 12px;
+}
+
+/* .primary-button.selected already defined earlier; avoid duplicates */
+
 /* Grid Controls */
 .grid-controls-row {
   display: grid;

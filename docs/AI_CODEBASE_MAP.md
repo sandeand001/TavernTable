@@ -1,4 +1,4 @@
-AI Codebase Map — TavernTable
+ AI Codebase Map — TavernTable
 
 Overview
 

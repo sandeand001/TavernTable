@@ -1,7 +1,7 @@
 {
   "meta": {
     "project": "TavernTable",
-    "generated_at": "2025-08-21T20:50:06.254Z",
+    "generated_at": "2025-08-24T05:40:32.439Z",
     "languages": [
       "JavaScript",
       "HTML",
@@ -275,6 +275,7 @@
           "aaa5a6230090",
           "14922d4b3d04",
           "39ae79cd6016",
+          "8312167310c9",
           "a62c8ecc3b7d",
           "10b757caeebe",
           "37fb05b4943e",
@@ -680,7 +681,9 @@
           "files": [
             "tests/terrain/biome-painter/fields.test.js",
             "tests/unit/BiomeCanvasPainterSmoke.test.js",
-            "tests/unit/BiomePalettes.test.js"
+            "tests/unit/BiomeElevationGenerator.test.js",
+            "tests/unit/BiomePalettes.test.js",
+            "tests/unit/TerrainBiomeAutoGenIntegration.test.js"
           ],
           "coverage_hint": "ok"
         },
@@ -709,6 +712,7 @@
         "config": [],
         "tests": {
           "files": [
+            "tests/unit/TerrainBrushHighlighter.test.js",
             "tests/unit/TerrainBrushInternals.test.js",
             "tests/unit/TerrainBrushPreview.test.js"
           ],
@@ -1182,12 +1186,14 @@
         ],
         "imports_internal": [
           "../../ui/domHelpers.js",
+          "../../terrain/TerrainBrushHighlighter.js",
           "../../utils/Logger.js",
           "../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
         "depends_on": [
           "2452655fdde1",
+          "86682de8a160",
           "8c711cb2f768",
           "ecbbd71626d8"
         ],
@@ -1280,6 +1286,7 @@
           "./terrain-coordinator/internals/state.js",
           "./terrain-coordinator/internals/init.js",
           "./terrain-coordinator/internals/deps.js",
+          "../terrain/BiomeElevationGenerator.js",
           "../managers/TerrainManager.js"
         ],
         "imports_external": [],
@@ -1311,6 +1318,7 @@
           "78166fe75d92",
           "cc164a98996c",
           "7a1126fea5a7",
+          "8312167310c9",
           "39ae79cd6016"
         ],
         "used_by": [
@@ -1922,7 +1930,8 @@
         "layer": "app",
         "exports": [
           "updateTerrainDisplay",
-          "processUpdateQueue"
+          "processUpdateQueue",
+          "flushUpdateQueue"
         ],
         "imports_internal": [
           "../../../utils/ErrorHandler.js",
@@ -1968,6 +1977,7 @@
           "../utils/PixiShapeUtils.js",
           "../config/BiomePalettes.js",
           "../terrain/TerrainFacesRenderer.js",
+          "../utils/TerrainHeightUtils.js",
           "../utils/CoordinateUtils.js",
           "./terrain-manager/internals/container.js",
           "./terrain-manager/internals/tiles.js",
@@ -1984,6 +1994,7 @@
           "f65e81872eec",
           "618161e21138",
           "5164ab1ee5db",
+          "37fb05b4943e",
           "e28bad82c9c7",
           "9ebf4581265a",
           "aaa5a6230090",
@@ -2611,6 +2622,44 @@
         "todo": []
       },
       {
+        "id": "8312167310c9",
+        "path": "src/terrain/BiomeElevationGenerator.js",
+        "layer": "app",
+        "exports": [
+          "isAllDefaultHeight",
+          "generateBiomeElevationField",
+          "applyBiomeElevationIfFlat",
+          "getBiomeElevationScaleHint"
+        ],
+        "imports_internal": [
+          "../config/TerrainConstants.js",
+          "../utils/TerrainHeightUtils.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "e623a0b6986f",
+          "37fb05b4943e"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomeElevationGenerator.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
         "id": "71322f2892b9",
         "path": "src/terrain/ShadingHelpers.js",
         "layer": "app",
@@ -2675,6 +2724,39 @@
         "tests": {
           "files": [],
           "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "86682de8a160",
+        "path": "src/terrain/TerrainBrushHighlighter.js",
+        "layer": "app",
+        "exports": [
+          "buildBrushHighlightDescriptor"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "6555d4ac4a16"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainBrushHighlighter.test.js"
+          ],
+          "coverage_hint": "ok"
         },
         "smells": [],
         "todo": []
@@ -3354,6 +3436,7 @@
           "bbf7ac60bfa8",
           "638a5d693b53",
           "a62c8ecc3b7d",
+          "86682de8a160",
           "10b757caeebe",
           "1ac8779a1633",
           "e8d76d94cd75",
@@ -3432,10 +3515,12 @@
           "d80ccf4528b9",
           "f37a2df4e2f7",
           "aaa5a6230090",
+          "39ae79cd6016",
           "2e81bed45966",
           "7d5d44c50dd8",
           "7179c1418d2c",
           "f652e70c5169",
+          "8312167310c9",
           "10b757caeebe",
           "5164ab1ee5db",
           "0f5753f22409"
@@ -4166,7 +4251,9 @@
           "files": [
             "tests/terrain/biome-painter/fields.test.js",
             "tests/unit/BiomeCanvasPainterSmoke.test.js",
-            "tests/unit/BiomePalettes.test.js"
+            "tests/unit/BiomeElevationGenerator.test.js",
+            "tests/unit/BiomePalettes.test.js",
+            "tests/unit/TerrainBiomeAutoGenIntegration.test.js"
           ],
           "coverage_hint": "ok"
         },
@@ -4195,6 +4282,7 @@
         "config": [],
         "tests": {
           "files": [
+            "tests/unit/TerrainBrushHighlighter.test.js",
             "tests/unit/TerrainBrushInternals.test.js",
             "tests/unit/TerrainBrushPreview.test.js"
           ],
@@ -4668,12 +4756,14 @@
         ],
         "imports_internal": [
           "../../ui/domHelpers.js",
+          "../../terrain/TerrainBrushHighlighter.js",
           "../../utils/Logger.js",
           "../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
         "depends_on": [
           "1209ae38acbb",
+          "965b4d611ec1",
           "a182ffb8d986",
           "a3da9b68828b"
         ],
@@ -4766,6 +4856,8 @@
           "./terrain-coordinator/internals/state.js",
           "./terrain-coordinator/internals/init.js",
           "./terrain-coordinator/internals/deps.js",
+          "./terrain-coordinator/internals/apply.js",
+          "../../src/terrain/BiomeElevationGenerator.js",
           "../managers/TerrainManager.js"
         ],
         "imports_external": [],
@@ -4797,6 +4889,7 @@
           "4b068cb00668",
           "412ccb8011c7",
           "329e319c7f33",
+          "b91f52af3a56",
           "2a40d4fae080"
         ],
         "used_by": [
@@ -5459,7 +5552,8 @@
         "layer": "app",
         "exports": [
           "updateTerrainDisplay",
-          "processUpdateQueue"
+          "processUpdateQueue",
+          "flushUpdateQueue"
         ],
         "imports_internal": [
           "../../../utils/ErrorHandler.js",
@@ -5505,6 +5599,7 @@
           "../utils/PixiShapeUtils.js",
           "../config/BiomePalettes.js",
           "../terrain/TerrainFacesRenderer.js",
+          "../terrain/TerrainHeightUtils.js",
           "../utils/CoordinateUtils.js",
           "./terrain-manager/internals/container.js",
           "./terrain-manager/internals/tiles.js",
@@ -5521,6 +5616,7 @@
           "61a5e24b3a0f",
           "c755eabfbeb4",
           "cc143fa3b01d",
+          "37028ee2ac57",
           "945083ba9bf2",
           "9643848d78ef",
           "7107ad0caabe",
@@ -6148,6 +6244,33 @@
         "todo": []
       },
       {
+        "id": "b91f52af3a56",
+        "path": "docs/src/terrain/BiomeElevationGenerator.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "1b221dba376c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/BiomeElevationGenerator.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
         "id": "cac4d5039e32",
         "path": "docs/src/terrain/ShadingHelpers.js",
         "layer": "app",
@@ -6212,6 +6335,39 @@
         "tests": {
           "files": [],
           "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "965b4d611ec1",
+        "path": "docs/src/terrain/TerrainBrushHighlighter.js",
+        "layer": "app",
+        "exports": [
+          "buildBrushHighlightDescriptor"
+        ],
+        "imports_internal": [
+          "../utils/Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "a182ffb8d986"
+        ],
+        "used_by": [
+          "76acb0f37d96"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/TerrainBrushHighlighter.test.js"
+          ],
+          "coverage_hint": "ok"
         },
         "smells": [],
         "todo": []
@@ -6323,7 +6479,9 @@
         "imports_internal": [],
         "imports_external": [],
         "depends_on": [],
-        "used_by": [],
+        "used_by": [
+          "2a40d4fae080"
+        ],
         "public_api": false,
         "responsibilities": [],
         "invariants": [],
@@ -7092,6 +7250,7 @@
           "bee5237e6c35",
           "91c4eb9fc5d1",
           "02ba89f50f5a",
+          "965b4d611ec1",
           "7a3dc61d17e1",
           "f49da251a165",
           "03ac6efa7904",

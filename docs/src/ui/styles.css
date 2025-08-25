@@ -536,6 +536,35 @@ body {
     color: white;
 }
 
+/* Primary button (used in Biomes panel) — matches action-button styling but auto width */
+.primary-button {
+    padding: 10px 16px;
+    background-color: #444;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    margin-bottom: 6px;
+    transition: all 0.2s ease;
+}
+
+.primary-button:hover {
+    background-color: #555;
+    transform: translateY(-1px);
+}
+
+.primary-button.selected {
+    background-color: #4da6ff;
+    color: white;
+}
+
+/* Small helper text */
+.small-text {
+    color: #aaa;
+    font-size: 12px;
+}
+
 /* Grid Controls */
 .grid-controls-row {
     display: grid;

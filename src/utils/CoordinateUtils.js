@@ -24,7 +24,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from './ErrorHandler.js'
  * Coordinate transformation utilities for isometric grid systems
  */
 export class CoordinateUtils {
-  
+
   /**
    * Convert grid coordinates to isometric pixel coordinates
    * @param {number} gridX - Grid X coordinate
@@ -39,7 +39,7 @@ export class CoordinateUtils {
       if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
         throw new Error(`Invalid grid coordinates: gridX=${gridX}, gridY=${gridY}`);
       }
-      
+
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
@@ -63,9 +63,9 @@ export class CoordinateUtils {
       //   y = tileOriginY + h/2  (baseline where bottom of sprite rests)
       const x = tileOriginX + (tileWidth / 2) + (TOKEN_PLACEMENT_OFFSET?.x || 0);
       const y = tileOriginY + (tileHeight / 2) + (TOKEN_PLACEMENT_OFFSET?.y || 0);
-      
+
       const result = { x, y };
-      
+
       if (logger.config?.level === 0) {
         logger.trace('Grid to isometric conversion completed', {
           input: { gridX, gridY },
@@ -83,7 +83,7 @@ export class CoordinateUtils {
       throw error;
     }
   }
-  
+
   /**
    * Convert isometric pixel coordinates to grid coordinates
    * @param {number} x - Pixel X coordinate (relative to grid container)
@@ -98,12 +98,12 @@ export class CoordinateUtils {
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error(`Invalid pixel coordinates: x=${x}, y=${y}`);
       }
-      
+
       if (!Number.isFinite(tileWidth) || tileWidth <= 0 || !Number.isFinite(tileHeight) || tileHeight <= 0) {
         throw new Error(`Invalid tile dimensions: width=${tileWidth}, height=${tileHeight}`);
       }
 
-      if (logger.config?.level === 0) {
+      if (logger.config?.level === 0) { // TRACE level
         logger.trace('Converting isometric to grid coordinates', {
           input: { x, y, tileWidth, tileHeight }
         }, LOG_CATEGORY.SYSTEM);
@@ -114,11 +114,20 @@ export class CoordinateUtils {
       // Subtract the center offsets first.
       const adjustedX = x - (tileWidth / 2) - (TOKEN_PLACEMENT_OFFSET?.x || 0);
       const adjustedY = y - (tileHeight / 2) - (TOKEN_PLACEMENT_OFFSET?.y || 0);
-      const gridX = Math.round((adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2);
-      const gridY = Math.round((adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2);
-      
-      const result = { gridX, gridY };
-      
+
+      // Compute continuous (fractional) grid coordinates. Consumers that need
+      // integer cell indices should decide how to quantize (floor/round/ceil)
+      // depending on their picking strategy. Returning floats here avoids
+      // premature rounding that can jump to adjacent tiles near diamond edges.
+      const gridXf = (adjustedX / (tileWidth / 2) + adjustedY / (tileHeight / 2)) / 2;
+      const gridYf = (adjustedY / (tileHeight / 2) - adjustedX / (tileWidth / 2)) / 2;
+
+      const result = { gridX: Math.round(gridXf), gridY: Math.round(gridYf) };
+      // Preserve fractional values on a secondary return value for callers that
+      // want the continuous result (new API: callers may dereference .gridXf/.gridYf)
+      result.gridXf = gridXf;
+      result.gridYf = gridYf;
+
       if (logger.config?.level === 0) {
         logger.trace('Isometric to grid conversion completed', {
           input: { x, y },
@@ -136,7 +145,7 @@ export class CoordinateUtils {
       throw error;
     }
   }
-  
+
   /**
    * Clamp grid coordinates to valid bounds
    * @param {number} gridX - Grid X coordinate
@@ -151,7 +160,7 @@ export class CoordinateUtils {
       if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
         throw new Error(`Invalid grid coordinates: gridX=${gridX}, gridY=${gridY}`);
       }
-      
+
       if (!Number.isInteger(maxCols) || maxCols <= 0 || !Number.isInteger(maxRows) || maxRows <= 0) {
         throw new Error(`Invalid grid bounds: maxCols=${maxCols}, maxRows=${maxRows}`);
       }
@@ -164,9 +173,9 @@ export class CoordinateUtils {
 
       const clampedX = Math.max(0, Math.min(maxCols - 1, gridX));
       const clampedY = Math.max(0, Math.min(maxRows - 1, gridY));
-      
+
       const result = { gridX: clampedX, gridY: clampedY };
-      
+
       if (clampedX !== gridX || clampedY !== gridY) {
         logger.debug('Coordinates clamped to grid bounds', {
           original: { gridX, gridY },
@@ -186,7 +195,7 @@ export class CoordinateUtils {
       return { gridX: 0, gridY: 0 };
     }
   }
-  
+
   /**
    * Check if grid coordinates are within valid bounds
    * @param {number} gridX - Grid X coordinate
@@ -204,7 +213,7 @@ export class CoordinateUtils {
         }, LOG_CATEGORY.SYSTEM);
         return false;
       }
-      
+
       if (!Number.isInteger(maxCols) || maxCols <= 0 || !Number.isInteger(maxRows) || maxRows <= 0) {
         logger.debug('Invalid grid bounds for position check', {
           gridX, gridY, maxCols, maxRows
@@ -213,7 +222,7 @@ export class CoordinateUtils {
       }
 
       const isValid = gridX >= 0 && gridX < maxCols && gridY >= 0 && gridY < maxRows;
-      
+
       if (logger.config?.level === 0) {
         logger.trace('Grid position validation completed', {
           coordinates: { gridX, gridY },

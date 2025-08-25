@@ -236,6 +236,7 @@ class SidebarController {
       break;
     case 'biomes':
       this.buildBiomeMenuSafely();
+      this._wireGenerateMapButton();
       // Ensure control defaults reflect current settings when switching tabs
       this._syncRichShadingControlsFromState();
       break;
@@ -243,6 +244,67 @@ class SidebarController {
       // Future: Load current game settings
       break;
     }
+  }
+
+  _wireGenerateMapButton() {
+    try {
+      const btn = document.getElementById('generate-map');
+      const lock = document.getElementById('biome-seed-lock');
+      const reseed = document.getElementById('biome-reseed');
+      if (btn && !btn.dataset.boundClick) {
+        btn.addEventListener('click', async () => {
+          const biome = window.selectedBiome;
+          if (!biome) return; // require a selection
+          try {
+            // Randomize seed unless locked
+            const tc = window.gameManager?.terrainCoordinator;
+            // Guard: prevent re-entry if generation is already running
+            if (!tc || tc._isGenerating) return;
+            // Disable button to prevent spamming
+            try { btn.disabled = true; btn.classList.add('disabled'); } catch (_) { /* ignore */ }
+            if (tc && lock && !lock.checked) {
+              const newSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+              try { tc.setBiomeSeed?.(newSeed); } catch (_) { /* ignore */ }
+            }
+            let ok = false;
+            try { ok = await tc?.generateBiomeElevation?.(biome); } catch (_) { /* ignore */ }
+            try {
+              if (ok && window.gameManager?.terrainCoordinator?.applyBiomePaletteToBaseGrid) {
+                window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
+              }
+            } catch (_) { /* ignore */ }
+          } catch (_) { /* ignore */ }
+          finally {
+            // Re-enable button after generation cycle ends
+            try { btn.disabled = false; btn.classList.remove('disabled'); } catch (_) { /* ignore */ }
+          }
+        });
+        btn.dataset.boundClick = 'true';
+      }
+      if (lock && !lock.dataset.boundChange) {
+        // reflect current locked state from global settings if present
+        try {
+          const s = window.richShadingSettings || {};
+          if (typeof s.lockSeed === 'boolean') lock.checked = !!s.lockSeed;
+        } catch (_) { /* ignore */ }
+        lock.addEventListener('change', () => {
+          if (!window.richShadingSettings) window.richShadingSettings = {};
+          window.richShadingSettings.lockSeed = !!lock.checked;
+        });
+        lock.dataset.boundChange = 'true';
+      }
+      if (reseed && !reseed.dataset.boundClick) {
+        reseed.addEventListener('click', () => {
+          const tc = window.gameManager?.terrainCoordinator;
+          if (!tc) return;
+          const newSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+          try { tc.setBiomeSeed?.(newSeed); } catch (_) { /* ignore */ }
+          // If a biome is currently selected and outside terrain mode, repaint palette-only
+          try { tc.applyBiomePaletteToBaseGrid?.(); } catch (_) { /* ignore */ }
+        });
+        reseed.dataset.boundClick = 'true';
+      }
+    } catch (_) { /* ignore */ }
   }
 
   _syncRichShadingControlsFromState() {
@@ -358,7 +420,7 @@ class SidebarController {
     if (window.sidebarController?.activeTab === 'terrain') {
       logger.debug('Biome selected', { biomeKey }, LOG_CATEGORY.UI);
     }
-    // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
+    // If game manager exists and terrain mode is OFF, apply palette only (no auto-generation here)
     try {
       if (window.gameManager && window.gameManager.terrainCoordinator && !window.gameManager.terrainCoordinator.isTerrainModeActive) {
         window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();

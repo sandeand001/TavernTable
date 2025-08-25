@@ -67,8 +67,10 @@ flowchart LR
   3a636c5df59e[src/terrain/biome-painter/motifs.js]
   22cfad36046c[src/terrain/biome-painter/style.js]
   f652e70c5169[src/terrain/BiomeCanvasPainter.js]
+  8312167310c9[src/terrain/BiomeElevationGenerator.js]
   71322f2892b9[src/terrain/ShadingHelpers.js]
   a62c8ecc3b7d[src/terrain/TerrainBrushController.js]
+  86682de8a160[src/terrain/TerrainBrushHighlighter.js]
   10b757caeebe[src/terrain/TerrainDataStore.js]
   5164ab1ee5db[src/terrain/TerrainFacesRenderer.js]
   2452655fdde1[src/ui/domHelpers.js]
@@ -160,8 +162,10 @@ flowchart LR
   0e36fb26eb3d[docs/src/terrain/biome-painter/motifs.js]
   d6bc75ce3dd6[docs/src/terrain/biome-painter/style.js]
   03d015110f74[docs/src/terrain/BiomeCanvasPainter.js]
+  b91f52af3a56[docs/src/terrain/BiomeElevationGenerator.js]
   cac4d5039e32[docs/src/terrain/ShadingHelpers.js]
   02ba89f50f5a[docs/src/terrain/TerrainBrushController.js]
+  965b4d611ec1[docs/src/terrain/TerrainBrushHighlighter.js]
   7649a6920064[docs/src/terrain/TerrainCoordinator.js]
   7a3dc61d17e1[docs/src/terrain/TerrainDataStore.js]
   cc143fa3b01d[docs/src/terrain/TerrainFacesRenderer.js]
@@ -264,6 +268,7 @@ flowchart LR
   9b6c690742ab --> 8c711cb2f768
   9b6c690742ab --> 0f5753f22409
   6555d4ac4a16 --> 2452655fdde1
+  6555d4ac4a16 --> 86682de8a160
   6555d4ac4a16 --> 8c711cb2f768
   6555d4ac4a16 --> ecbbd71626d8
   09b857b0cd6b --> 8c711cb2f768
@@ -296,6 +301,7 @@ flowchart LR
   fb5708d12ec8 --> 78166fe75d92
   fb5708d12ec8 --> cc164a98996c
   fb5708d12ec8 --> 7a1126fea5a7
+  fb5708d12ec8 --> 8312167310c9
   fb5708d12ec8 --> 39ae79cd6016
   8f31129d83fd --> 8c711cb2f768
   8f31129d83fd --> ecbbd71626d8
@@ -361,6 +367,7 @@ flowchart LR
   39ae79cd6016 --> f65e81872eec
   39ae79cd6016 --> 618161e21138
   39ae79cd6016 --> 5164ab1ee5db
+  39ae79cd6016 --> 37fb05b4943e
   39ae79cd6016 --> e28bad82c9c7
   39ae79cd6016 --> 9ebf4581265a
   39ae79cd6016 --> aaa5a6230090
@@ -413,9 +420,12 @@ flowchart LR
   f652e70c5169 --> 3a636c5df59e
   f652e70c5169 --> c02de18f9171
   f652e70c5169 --> 99a674c5082b
+  8312167310c9 --> e623a0b6986f
+  8312167310c9 --> 37fb05b4943e
   71322f2892b9 --> 7b9405bf0f18
   a62c8ecc3b7d --> 8c711cb2f768
   a62c8ecc3b7d --> e623a0b6986f
+  86682de8a160 --> 8c711cb2f768
   10b757caeebe --> e623a0b6986f
   10b757caeebe --> 37fb05b4943e
   10b757caeebe --> 8c711cb2f768
@@ -526,6 +536,7 @@ flowchart LR
   474585e53e86 --> a182ffb8d986
   474585e53e86 --> fee35146aa6e
   76acb0f37d96 --> 1209ae38acbb
+  76acb0f37d96 --> 965b4d611ec1
   76acb0f37d96 --> a182ffb8d986
   76acb0f37d96 --> a3da9b68828b
   94a9452e4482 --> a182ffb8d986
@@ -558,6 +569,7 @@ flowchart LR
   1b221dba376c --> 4b068cb00668
   1b221dba376c --> 412ccb8011c7
   1b221dba376c --> 329e319c7f33
+  1b221dba376c --> b91f52af3a56
   1b221dba376c --> 2a40d4fae080
   234b89bacbaf --> a182ffb8d986
   234b89bacbaf --> a3da9b68828b
@@ -623,6 +635,7 @@ flowchart LR
   2a40d4fae080 --> 61a5e24b3a0f
   2a40d4fae080 --> c755eabfbeb4
   2a40d4fae080 --> cc143fa3b01d
+  2a40d4fae080 --> 37028ee2ac57
   2a40d4fae080 --> 945083ba9bf2
   2a40d4fae080 --> 9643848d78ef
   2a40d4fae080 --> 7107ad0caabe
@@ -678,6 +691,7 @@ flowchart LR
   cac4d5039e32 --> c1d0d003d669
   02ba89f50f5a --> a182ffb8d986
   02ba89f50f5a --> d8764c6bd110
+  965b4d611ec1 --> a182ffb8d986
   7a3dc61d17e1 --> d8764c6bd110
   7a3dc61d17e1 --> 71a47db1fe32
   7a3dc61d17e1 --> a182ffb8d986

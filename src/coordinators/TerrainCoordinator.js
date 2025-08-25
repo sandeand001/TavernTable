@@ -33,6 +33,7 @@ import { resetTerrain as _resetTerrain } from './terrain-coordinator/internals/r
 import { loadBaseTerrainIntoWorkingState as _loadBaseIntoWorking } from './terrain-coordinator/internals/state.js';
 import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/init.js';
 import { validateDependencies as _validateDeps } from './terrain-coordinator/internals/deps.js';
+import { generateBiomeElevationField, isAllDefaultHeight, getBiomeElevationScaleHint } from '../terrain/BiomeElevationGenerator.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -216,8 +217,8 @@ export class TerrainCoordinator {
    * Applies to overlay tiles, base tiles, faces, and tokens.
    * @param {number} unit - Pixels per height level (0 disables vertical exaggeration)
    */
-  setElevationScale(unit) {
-    return this._elevationScaleController.apply(unit);
+  setElevationScale(unit, options = {}) {
+    return this._elevationScaleController.apply(unit, options);
   }
 
   /**
@@ -483,5 +484,101 @@ export class TerrainCoordinator {
       }
     } catch (_) { /* ignore and fall back */ }
     return this._getBiomeOrBaseColor(height);
+  }
+
+  /**
+   * Generate and apply biome-based elevations if the terrain is flat (no manual edits).
+   * Safe to call repeatedly; it will no-op once edits exist.
+   * Only affects base/working data and base tiles; does nothing in terrain edit mode.
+   */
+  generateBiomeElevationIfFlat(biomeKey, options = {}) {
+    try {
+      if (!this.gameManager?.gridContainer || this.isTerrainModeActive) return false;
+      if (this._isGenerating) return false;
+      this._isGenerating = true;
+      const base = this.dataStore?.base;
+      const working = this.dataStore?.working;
+      if (!base || !working) return false;
+      const flatBase = isAllDefaultHeight(base);
+      const flatWorking = isAllDefaultHeight(working);
+      if (!flatBase || !flatWorking) return false;
+
+      const rows = this.gameManager.rows;
+      const cols = this.gameManager.cols;
+      const seed = Number.isFinite(options.seed) ? options.seed : (this._biomeSeed >>> 0);
+      const field = generateBiomeElevationField(
+        biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland',
+        rows,
+        cols,
+        { ...options, seed }
+      );
+
+      // Update data store
+      this.dataStore.base = field.map(r => [...r]);
+      this.dataStore.working = field.map(r => [...r]);
+
+      // Repaint base tiles to reflect new elevations
+      _validateApplyReqs(this); // throws if missing requirements
+      const modified = _processAllTiles(this);
+      _logApplyComplete(this, modified);
+      // Ensure rich biome canvas (if enabled) repaints using the new heights to avoid stale overlays
+      try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      this._isGenerating = false;
+    }
+  }
+
+  /**
+   * Generate and apply biome-based elevations regardless of current flatness.
+   * Overwrites base and working height fields and repaints base tiles.
+   * Does nothing while terrain edit mode is active.
+   * @param {string} biomeKey
+   * @param {{seed?: number}} options
+   * @returns {boolean} true if generation applied
+   */
+  generateBiomeElevation(biomeKey, options = {}) {
+    try {
+      if (!this.gameManager?.gridContainer || this.isTerrainModeActive) return false;
+      if (this._isGenerating) return false;
+      this._isGenerating = true;
+
+      const rows = this.gameManager.rows;
+      const cols = this.gameManager.cols;
+      const seed = Number.isFinite(options.seed) ? options.seed : (this._biomeSeed >>> 0);
+      const activeBiome = biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland';
+      // Auto-apply biome-appropriate elevation perception (pixels per level) before generation
+      try {
+        const hintedUnit = getBiomeElevationScaleHint(activeBiome);
+        if (Number.isFinite(hintedUnit) && this.setElevationScale) {
+          // Avoid mid-generation repaint to reduce flicker/ghosting
+          this.setElevationScale(hintedUnit, { repaintBiome: false });
+        }
+      } catch (_) { /* non-fatal: fall back to current unit */ }
+      const field = generateBiomeElevationField(
+        activeBiome,
+        rows,
+        cols,
+        { ...options, seed }
+      );
+
+      // Update data store
+      this.dataStore.base = field.map(r => [...r]);
+      this.dataStore.working = field.map(r => [...r]);
+
+      // Repaint base tiles to reflect new elevations
+      _validateApplyReqs(this);
+      const modified = _processAllTiles(this);
+      _logApplyComplete(this, modified);
+      // Repaint biome canvas/shading with updated heights to prevent ghosting from the previous map
+      try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      this._isGenerating = false;
+    }
   }
 }

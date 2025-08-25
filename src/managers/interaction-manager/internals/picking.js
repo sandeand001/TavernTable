@@ -114,7 +114,11 @@ export function pickTopmostGridCellAt(c, localX, localY) {
     const dx = Math.abs(localX - cx);
     const dy = Math.abs(localY - cy);
     const norm = (dx / halfW + dy / halfH);
-    if (norm < bestScore) {
+    // Only accept candidates where the pointer is inside the isometric diamond.
+    // This prevents clicks on side faces, overlay tiles, or nearby sprites from
+    // selecting an adjacent cell. If no candidate qualifies, the function
+    // will return null which prevents accidental placement.
+    if (norm <= 1 && norm < bestScore) {
       bestScore = norm;
       best = can;
     }

@@ -1,9 +1,19 @@
 import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
 export function placeNewToken(c, gridX, gridY, gridContainer) {
   try {
+    // Prevent placing a new token on a cell that's already occupied
+    try {
+      const existing = (typeof c.findExistingTokenAt === 'function') ? c.findExistingTokenAt(gridX, gridY) : null;
+      if (existing) {
+        logger.debug('Attempted to place token on occupied tile; aborting placement', { gridX, gridY }, LOG_CATEGORY.USER);
+        return; // do not place when occupied
+      }
+    } catch (_) { /* ignore selection errors and proceed */ }
+
     const creature = c.createCreatureByType(c.selectedTokenType);
     if (!creature) {
       return;

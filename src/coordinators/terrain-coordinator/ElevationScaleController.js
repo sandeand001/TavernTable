@@ -13,7 +13,7 @@ export class ElevationScaleController {
   }
 
   /** Apply a new elevation unit (pixels per level) and refresh visuals accordingly. */
-  apply(unit) {
+  apply(unit, options = {}) {
     try {
       if (!Number.isFinite(unit) || unit < 0) return;
       if (this.c._elevationScale === unit) return;
@@ -93,7 +93,8 @@ export class ElevationScaleController {
       try { this.c.gameManager?.gridContainer?.sortChildren?.(); } catch (_) { /* no-op */ }
 
       // 5) If outside terrain mode and a biome is selected, repaint the biome canvas
-      if (!this.c.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
+      const shouldRepaintBiome = options?.repaintBiome !== false;
+      if (shouldRepaintBiome && !this.c.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
         try { this.c.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal repaint failure */ }
       }
 
