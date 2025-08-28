@@ -204,16 +204,28 @@ export class InteractionManager {
         return;
       }
 
-      // Check if terrain mode is active - if so, ignore token placement
-      if (this.gameManager.isTerrainModeActive()) {
-        // Terrain mode is active, token placement is disabled
-        logger.log('Token placement disabled while terrain mode is active',
-          LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION);
+      // Check if terrain mode is active OR a placeable is actively selected (and panel visible)
+      const terrainActive = this.gameManager.isTerrainModeActive && this.gameManager.isTerrainModeActive();
+      // Only treat placeables as blocking when a placeable is actually selected AND the Placeable Tiles panel is visible.
+      const placeableSelected = (this.gameManager && this.gameManager.terrainCoordinator && typeof this.gameManager.terrainCoordinator.getSelectedPlaceable === 'function')
+        ? !!this.gameManager.terrainCoordinator.getSelectedPlaceable()
+        : false;
+      const panelVisible = (this.gameManager && this.gameManager.terrainCoordinator && typeof this.gameManager.terrainCoordinator.isPlaceablesPanelVisible === 'function')
+        ? !!this.gameManager.terrainCoordinator.isPlaceablesPanelVisible()
+        : false;
+
+      if (terrainActive || (placeableSelected && panelVisible)) {
+        // Terrain mode active or a placeable is selected, token placement is disabled
+        logger.log('Token placement blocked - state', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
+          terrainActive: !!terrainActive,
+          placeableSelected: !!placeableSelected,
+          placeablesPanelVisible: !!panelVisible
+        });
 
         // Provide visual feedback through cursor change or similar
-        this.gameManager.app.view.style.cursor = 'not-allowed';
+        try { this.gameManager.app.view.style.cursor = 'not-allowed'; } catch (_) { /* ignore UI failures */ }
         const t = setTimeout(() => {
-          this.gameManager.app.view.style.cursor = 'crosshair'; // Reset to terrain cursor
+          try { this.gameManager.app.view.style.cursor = terrainActive ? 'crosshair' : 'default'; } catch (_) { /* ignore */ }
         }, 200);
         if (typeof t?.unref === 'function') t.unref();
 

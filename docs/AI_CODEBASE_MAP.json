@@ -1,7 +1,7 @@
 {
   "meta": {
     "project": "TavernTable",
-    "generated_at": "2025-08-24T05:40:32.439Z",
+    "generated_at": "2025-08-26T04:56:36.144Z",
     "languages": [
       "JavaScript",
       "HTML",
@@ -280,6 +280,34 @@
           "10b757caeebe",
           "37fb05b4943e",
           "0f5753f22409"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "58b5d2f1f154",
+        "path": "src/config/TerrainPlaceables.js",
+        "layer": "app",
+        "exports": [
+          "TERRAIN_PLACEABLES"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "59a26aa556a6",
+          "1ac8779a1633"
         ],
         "public_api": false,
         "responsibilities": [],
@@ -1843,6 +1871,39 @@
         "todo": []
       },
       {
+        "id": "59a26aa556a6",
+        "path": "src/managers/terrain-manager/internals/placeables.js",
+        "layer": "app",
+        "exports": [
+          "createPlaceableSprite",
+          "placeItem",
+          "removeItem"
+        ],
+        "imports_internal": [
+          "../../../config/TerrainPlaceables.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "58b5d2f1f154"
+        ],
+        "used_by": [
+          "39ae79cd6016"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
         "id": "26239cd3d038",
         "path": "src/managers/terrain-manager/internals/sorting.js",
         "layer": "app",
@@ -1982,7 +2043,8 @@
           "./terrain-manager/internals/container.js",
           "./terrain-manager/internals/tiles.js",
           "./terrain-manager/internals/sorting.js",
-          "./terrain-manager/internals/updates.js"
+          "./terrain-manager/internals/updates.js",
+          "./terrain-manager/internals/placeables.js"
         ],
         "imports_external": [],
         "depends_on": [
@@ -1999,7 +2061,8 @@
           "9ebf4581265a",
           "aaa5a6230090",
           "26239cd3d038",
-          "14922d4b3d04"
+          "14922d4b3d04",
+          "59a26aa556a6"
         ],
         "used_by": [
           "fb5708d12ec8"
@@ -2164,12 +2227,14 @@
         "imports_internal": [
           "../../../utils/CoordinateUtils.js",
           "../../../utils/TerrainHeightUtils.js",
+          "../../../utils/Logger.js",
           "../../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
         "depends_on": [
           "e28bad82c9c7",
           "37fb05b4943e",
+          "8c711cb2f768",
           "ecbbd71626d8"
         ],
         "used_by": [
@@ -2180,7 +2245,7 @@
         "invariants": [],
         "data_models": [],
         "errors": [],
-        "logging": "none",
+        "logging": "Logger",
         "config": [],
         "tests": {
           "files": [
@@ -2953,12 +3018,14 @@
         "imports_internal": [
           "./domHelpers.js",
           "../utils/Logger.js",
+          "../config/TerrainPlaceables.js",
           "../config/BiomeConstants.js"
         ],
         "imports_external": [],
         "depends_on": [
           "2452655fdde1",
           "8c711cb2f768",
+          "58b5d2f1f154",
           "fc9eff56c2b8"
         ],
         "used_by": [],
@@ -3430,6 +3497,7 @@
           "3a7f253945a4",
           "3bd99433e3aa",
           "2e81bed45966",
+          "7d5d44c50dd8",
           "7179c1418d2c",
           "80725ccd8f1f",
           "f3070e4a7ab8",

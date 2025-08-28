@@ -5,6 +5,7 @@ flowchart LR
   a71c51e1083e[src/config/GameConstants.js]
   4d95d31df1a4[src/config/SpriteOffsets.js]
   e623a0b6986f[src/config/TerrainConstants.js]
+  58b5d2f1f154[src/config/TerrainPlaceables.js]
   159ccdfb1216[src/coordinators/InputCoordinator.js]
   418ca7f88f9b[src/coordinators/RenderCoordinator.js]
   711a2b6cf63b[src/coordinators/StateCoordinator.js]
@@ -46,6 +47,7 @@ flowchart LR
   bde68ed7bd13[src/managers/interaction-manager/internals/zoom.js]
   f37a2df4e2f7[src/managers/InteractionManager.js]
   9ebf4581265a[src/managers/terrain-manager/internals/container.js]
+  59a26aa556a6[src/managers/terrain-manager/internals/placeables.js]
   26239cd3d038[src/managers/terrain-manager/internals/sorting.js]
   aaa5a6230090[src/managers/terrain-manager/internals/tiles.js]
   14922d4b3d04[src/managers/terrain-manager/internals/updates.js]
@@ -348,6 +350,7 @@ flowchart LR
   9ebf4581265a --> 8c711cb2f768
   9ebf4581265a --> ecbbd71626d8
   9ebf4581265a --> 318571309d3f
+  59a26aa556a6 --> 58b5d2f1f154
   26239cd3d038 --> 8c711cb2f768
   aaa5a6230090 --> 8c711cb2f768
   aaa5a6230090 --> 68b5dd71185e
@@ -373,6 +376,7 @@ flowchart LR
   39ae79cd6016 --> aaa5a6230090
   39ae79cd6016 --> 26239cd3d038
   39ae79cd6016 --> 14922d4b3d04
+  39ae79cd6016 --> 59a26aa556a6
   3a7f253945a4 --> 8c711cb2f768
   3bd99433e3aa --> 8c711cb2f768
   3bd99433e3aa --> ecbbd71626d8
@@ -384,6 +388,7 @@ flowchart LR
   2e81bed45966 --> 37fb05b4943e
   7d5d44c50dd8 --> e28bad82c9c7
   7d5d44c50dd8 --> 37fb05b4943e
+  7d5d44c50dd8 --> 8c711cb2f768
   7d5d44c50dd8 --> ecbbd71626d8
   7179c1418d2c --> e28bad82c9c7
   7179c1418d2c --> 37fb05b4943e
@@ -434,6 +439,7 @@ flowchart LR
   5164ab1ee5db --> 7b9405bf0f18
   1ac8779a1633 --> 2452655fdde1
   1ac8779a1633 --> 8c711cb2f768
+  1ac8779a1633 --> 58b5d2f1f154
   1ac8779a1633 --> fc9eff56c2b8
   e8d76d94cd75 --> 8721557a149d
   e8d76d94cd75 --> 0fcb156de43d

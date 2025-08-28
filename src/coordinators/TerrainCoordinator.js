@@ -70,6 +70,17 @@ export class TerrainCoordinator {
       ? (window.richShadingSettings.seed >>> 0)
       : (Math.floor(Math.random() * 1e9) >>> 0);
 
+    // Currently selected terrain placeable id (managed by coordinator)
+    this._selectedPlaceable = null;
+    // (no placeable paint mode flag)
+    // Whether the Placeable Tiles panel is visible in the UI. Controlled by UI layer.
+    // When false, placeable selection/preview/placement should be inert.
+    // Default to hidden (DOM default uses display:none) and let UI sync actual state
+    this._placeablesPanelVisible = false;
+    // Placeable Tiles brush size (independent from terrain brush)
+    // Initialized to current terrain brush size so UI starts consistent but remains independent
+    this._ptBrushSize = this.brush?.brushSize || 1;
+
     logger.debug('TerrainCoordinator initialized', {
       context: 'TerrainCoordinator.constructor',
       stage: 'initialization',
@@ -389,6 +400,63 @@ export class TerrainCoordinator {
   setRichShadingEnabled(enabled) {
     return _setRichShadingEnabled(this, enabled);
   }
+
+  /**
+   * Coordinator-managed selection for terrain placeable items.
+   */
+  setSelectedPlaceable(placeableId) {
+    // Placeable Tiles UI removed; keep API but make it inert.
+    this._selectedPlaceable = null;
+    try { logger.debug('setSelectedPlaceable called but placeables UI removed', { selected: null }, LOG_CATEGORY.SYSTEM); } catch (_) { /* ignore */ }
+  }
+
+  getSelectedPlaceable() {
+    // Always return null since placeables are no longer selectable via UI
+    return null;
+  }
+
+  clearSelectedPlaceable() {
+    // No-op: selection state is kept inert
+    try { logger.debug('clearSelectedPlaceable called (no-op)', LOG_CATEGORY.SYSTEM); } catch (_) { /* ignore */ }
+  }
+
+  /**
+   * UI-driven: mark whether the Placeable Tiles panel is visible.
+   * When hiding the panel we proactively clear any selected placeable to avoid
+   * accidental placement while the UI panel is not shown.
+   * @param {boolean} visible
+   */
+  setPlaceablesPanelVisible(visible) {
+    // Placeables panel removed from UI; preserve API but ignore state changes.
+    try { logger.debug('setPlaceablesPanelVisible called but placeables UI removed', { requested: !!visible }, LOG_CATEGORY.SYSTEM); } catch (_) { /* ignore */ }
+  }
+
+  /**
+   * Returns true when the Placeable Tiles panel is visible in the UI.
+   */
+  isPlaceablesPanelVisible() {
+    // Always false since the panel no longer exists
+    return false;
+  }
+
+  /** Placeable Tiles brush size (independent from terrain brush) */
+  get ptBrushSize() {
+    return this._ptBrushSize || 1;
+  }
+
+  set ptBrushSize(value) {
+    const v = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : this._ptBrushSize || 1;
+    this._ptBrushSize = v;
+  }
+
+  increasePTBrushSize() {
+    this.ptBrushSize = Math.min(this.ptBrushSize + 1, TERRAIN_CONFIG.MAX_BRUSH_SIZE);
+  }
+
+  decreasePTBrushSize() {
+    this.ptBrushSize = Math.max(this.ptBrushSize - 1, TERRAIN_CONFIG.MIN_BRUSH_SIZE);
+  }
+
 
   /**
    * Handle grid resize - reinitialize terrain data

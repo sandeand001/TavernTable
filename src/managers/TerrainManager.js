@@ -22,6 +22,7 @@ import { validateContainerState as _validateContainerState, showAllTerrainTiles 
 import { validateTileCreationInputs as _validateTileInputs, cleanupExistingTile as _cleanupTile, createBaseTerrainGraphics as _createBase, applyTerrainStyling as _applyStyle, positionTerrainTile as _positionTile, finalizeTerrainTile as _finalizeTile, addVisualEffects as _addEffects } from './terrain-manager/internals/tiles.js';
 import { addTileWithDepthSorting as _addWithSort, sortAllTerrainTilesByDepth as _sortAllDepth } from './terrain-manager/internals/sorting.js';
 import { updateTerrainDisplay as _updateDisplay, processUpdateQueue as _processUpdates, flushUpdateQueue as _flushUpdates } from './terrain-manager/internals/updates.js';
+import { placeItem as _placeItem, removeItem as _removeItem } from './terrain-manager/internals/placeables.js';
 
 export class TerrainManager {
   constructor(gameManager, terrainCoordinator) {
@@ -35,6 +36,8 @@ export class TerrainManager {
     // Preview overlay for brush footprint highlighting (non-destructive)
     this.previewContainer = null;
     this.previewCache = new Map(); // Map of "x,y" -> PIXI.Graphics preview diamond
+    // Per-tile placeable items (paths, structures)
+    this.placeables = new Map(); // Map of "x,y" -> Array<PIXI.Sprite>
 
     // Performance optimization
     this.updateQueue = new Set(); // Cells that need visual updates
@@ -218,6 +221,44 @@ export class TerrainManager {
         height: this.terrainCoordinator?.getTerrainHeight(x, y)
       });
       throw error;
+    }
+  }
+
+  /**
+   * Place a placeable terrain item at grid coords.
+   * Returns true if placement succeeded, false if rejected (occupied/exclusive rules).
+   */
+  placeTerrainItem(x, y, placeableId) {
+    try {
+      const result = _placeItem(this, placeableId, x, y);
+      logger.log(LOG_LEVEL.DEBUG, 'placeTerrainItem attempt', LOG_CATEGORY.RENDERING, { x, y, placeableId, success: !!result });
+      if (!result) {
+        // Lightweight diagnostics for common rejection reasons so UI traces are useful
+        let reason = 'rejected_by_rules';
+        try {
+          const key = `${x},${y}`;
+          if (this.placeables && this.placeables.has(key) && this.placeables.get(key).some(p => p.placeableType === 'structure')) {
+            reason = 'occupied_by_structure';
+          } else if (this.gameManager?.tokenManager?.findExistingTokenAt?.(x, y)) {
+            reason = 'tokens_present';
+          }
+        } catch (_) { /* best-effort */ }
+        logger.log(LOG_LEVEL.INFO, 'placeTerrainItem rejected', LOG_CATEGORY.RENDERING, { x, y, placeableId, reason });
+      }
+      return result;
+    } catch (e) {
+      logger.warn('placeTerrainItem failed', { x, y, placeableId, error: e.message }, LOG_CATEGORY.RENDERING);
+      return false;
+    }
+  }
+
+  /** Remove a placeable item (optionally by id) from a tile. */
+  removeTerrainItem(x, y, placeableId = null) {
+    try {
+      return _removeItem(this, x, y, placeableId);
+    } catch (e) {
+      logger.warn('removeTerrainItem failed', { x, y, placeableId, error: e.message }, LOG_CATEGORY.RENDERING);
+      return false;
     }
   }
 

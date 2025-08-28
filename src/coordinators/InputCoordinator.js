@@ -34,6 +34,15 @@ export class InputCoordinator {
    */
   handleTokenInteraction(gridX, gridY) {
     try {
+      // If a terrain placeable is currently selected, token placement must be disabled.
+      const terrainCoordinator = this.gameManager.terrainCoordinator;
+      const selectedPlaceable = terrainCoordinator && typeof terrainCoordinator.getSelectedPlaceable === 'function'
+        ? terrainCoordinator.getSelectedPlaceable()
+        : window.selectedTerrainPlaceable;
+      if (selectedPlaceable) {
+        logger.debug('Token placement blocked because a terrain placeable is selected');
+        return;
+      }
       // Validate coordinates first
       const coordValidation = GameValidators.coordinates(gridX, gridY);
       if (!coordValidation.isValid) {
@@ -98,6 +107,16 @@ export class InputCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   placeNewToken(gridX, gridY) {
+    // Defensive: also check here in case placeNewToken is called programmatically.
+    const terrainCoordinator = this.gameManager.terrainCoordinator;
+    const selectedPlaceable = terrainCoordinator && typeof terrainCoordinator.getSelectedPlaceable === 'function'
+      ? terrainCoordinator.getSelectedPlaceable()
+      : window.selectedTerrainPlaceable;
+    if (selectedPlaceable) {
+      logger.debug('placeNewToken aborted because a terrain placeable is selected');
+      return;
+    }
+
     if (this.gameManager.tokenManager && this.gameManager.gridContainer) {
       this.gameManager.tokenManager.placeNewToken(gridX, gridY, this.gameManager.gridContainer);
       // Update global array for backward compatibility

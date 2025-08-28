@@ -399,11 +399,8 @@ body {
   margin-bottom: 12px;
   overflow-y: auto;
 
-  /* Allow content to expand but with reasonable limits */
-  min-height: 200px;
-  max-height: calc(100vh - 250px);
 
-  /* Conservative limit to ensure footer visibility */
+  /* Placeables UI removed - styles deleted intentionally */
 }
 
 .dice-log-entry {
@@ -1194,4 +1191,14 @@ body {
   .biome-group-list {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }
+}
+
+.placeable-pointer-btn {
+  background-color: #222;
+}
+
+.placeable-pointer-btn.selected {
+  background-color: #4da6ff;
+  color: white;
+  font-weight: 600;
 }

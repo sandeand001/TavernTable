@@ -324,11 +324,15 @@ function attachDynamicUIHandlers() {
       terrainToggle.dataset.boundChange = 'true';
     }
 
+    // ...existing code...
+
     // Brush size controls
     const dec = document.getElementById('brush-decrease');
     const inc = document.getElementById('brush-increase');
     if (dec && !dec.dataset.boundClick) { dec.addEventListener('click', decreaseBrushSize); dec.dataset.boundClick = 'true'; }
     if (inc && !inc.dataset.boundClick) { inc.addEventListener('click', increaseBrushSize); inc.dataset.boundClick = 'true'; }
+
+    // Placeable Tiles UI handlers removed — placeables menu and PT brush are deprecated.
 
     // Sprite adjust buttons
     const spr = getSpriteAdjustButtons();
@@ -434,6 +438,8 @@ function increaseBrushSize() {
 
     // Update UI display
     updateBrushSizeDisplay();
+    // Placeable Tiles UI removed
+    // PT brush display removed
 
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
@@ -458,6 +464,9 @@ function decreaseBrushSize() {
 
     // Update UI display
     updateBrushSizeDisplay();
+
+    // Also update Placeable Tiles brush display if present
+    try { updatePTBrushSizeDisplay(); } catch (e) { /* ignore */ }
 
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
@@ -484,9 +493,23 @@ function updateBrushSizeDisplay() {
     }
 
   } catch (error) {
-    logger.debug('Failed to update brush size display', {
-      error: error.message
-    }, LOG_CATEGORY.UI);
+    logger.debug('Failed to update brush size display', { error: error.message }, LOG_CATEGORY.UI);
+  }
+}
+
+/**
+ * Update the Placeable Tiles brush size display if present
+ */
+function updatePTBrushSizeDisplay() {
+  try {
+    const el = document.getElementById('pt-brush-size-display');
+    if (!el) return;
+    if (window.gameManager && window.gameManager.terrainCoordinator) {
+      const ptSize = window.gameManager.terrainCoordinator.ptBrushSize;
+      el.textContent = `${ptSize}x${ptSize}`;
+    }
+  } catch (error) {
+    logger.debug('Failed to update PT brush size display', { error: error.message }, LOG_CATEGORY.UI);
   }
 }
 
@@ -681,7 +704,8 @@ function ensureSpriteAdjustExtendedState() {
   spriteAdjustState.savedOffsets = spriteAdjustState.savedOffsets || {}; // key -> {x,y}
   if (typeof spriteAdjustState.autoApply !== 'boolean') spriteAdjustState.autoApply = false;
 }
-
+// Also update Placeable Tiles brush display if present
+try { updatePTBrushSizeDisplay(); } catch (e) { /* ignore */ }
 function saveSpriteOffset() {
   const sprite = getSelectedCreatureSprite();
   const logEl = getSpriteAdjustLogEl();

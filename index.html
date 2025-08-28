@@ -169,6 +169,7 @@
                 <button id="terrain-lower-btn" class="terrain-tool-btn" aria-label="Lower terrain height">⬇️
                   Lower</button>
               </div>
+              <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center;"></div>
             </div>
 
             <div class="tool-group">
@@ -239,8 +240,15 @@
                 <small>• <strong>[ ]</strong>: Brush size</small>
               </div>
             </div>
+
+            <!-- Placeables were moved outside the toggled tools so they remain reachable
+                 in the Terrain panel without requiring Terrain Mode to be active. The
+                 runtime UI will still inject items into the same `#terrain-placeables-root`. -->
           </div>
         </div>
+
+        <!-- Placeable Tiles UI removed. Placeable assets and runtime managers remain available; the
+       UI elements were intentionally removed to simplify the sidebar. -->
       </div>
 
       <!-- Biomes Panel (sibling to terrain/settings panels) -->

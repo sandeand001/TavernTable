@@ -201,6 +201,12 @@ export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
   return root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
 }
 
+/** Returns the root element where terrain placeable items should be injected. */
+export function getTerrainPlaceablesRoot() {
+  // Placeable Tiles menu has been removed from the UI; avoid querying the DOM.
+  return null;
+}
+
 /** Error UI helpers */
 export function getErrorContainer() {
   return document.getElementById('tavern-error-container');

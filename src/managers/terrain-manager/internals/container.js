@@ -121,11 +121,53 @@ export function clearAllTerrainTiles(m) {
       });
     } catch (_) { /* ignore */ }
 
+    // Preserve placeable sprites so they are not destroyed by clearing terrain tiles.
+    const preservedPlaceables = [];
+    try {
+      if (m.placeables && m.placeables.size) {
+        for (const [, arr] of m.placeables) {
+          for (const sprite of arr) {
+            try {
+              if (sprite && sprite.parent === m.terrainContainer) {
+                // Remove without destroying so cleanup won't touch it
+                TerrainPixiUtils.safeRemoveFromContainer(sprite, m.terrainContainer, 'clearAllTerrainTiles.preserve');
+              }
+              preservedPlaceables.push(sprite);
+            } catch (_) { /* best-effort preserve */ }
+          }
+        }
+      }
+      logger.log(LOG_LEVEL.DEBUG, 'Preserved placeables before terrain cleanup', LOG_CATEGORY.SYSTEM, {
+        context: 'TerrainManager.clearAllTerrainTiles.preserve',
+        preservedCount: preservedPlaceables.length
+      });
+    } catch (_) { /* best-effort preserve */ }
+
     const cleanupResults = TerrainPixiUtils.batchCleanupTerrainTiles(
       m.terrainTiles,
       m.terrainContainer,
       'TerrainManager.clearAllTerrainTiles'
     );
+
+    // Reattach preserved placeables and rebuild placeables map
+    try {
+      m.placeables = new Map();
+      for (const sprite of preservedPlaceables) {
+        try {
+          if (!sprite) continue;
+          if (m.terrainContainer && !m.terrainContainer.children.includes(sprite)) {
+            m.terrainContainer.addChild(sprite);
+          }
+          const key = `${sprite.gridX},${sprite.gridY}`;
+          if (!m.placeables.has(key)) m.placeables.set(key, []);
+          m.placeables.get(key).push(sprite);
+        } catch (_) { /* ignore single sprite failures */ }
+      }
+      logger.log(LOG_LEVEL.DEBUG, 'Reattached preserved placeables after terrain cleanup', LOG_CATEGORY.SYSTEM, {
+        context: 'TerrainManager.clearAllTerrainTiles.restore',
+        restoredCount: (m.placeables && m.placeables.size) || 0
+      });
+    } catch (_) { /* best-effort rebuild */ }
 
     m.terrainTiles.clear();
     if (m.terrainContainer) m.terrainContainer.visible = false;

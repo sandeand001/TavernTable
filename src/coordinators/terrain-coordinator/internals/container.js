@@ -12,7 +12,7 @@ export function prepareBaseGridForEditing(c) {
       if (c._biomeCanvas) {
         c._biomeCanvas.clear(() => c._toggleBaseTileVisibility(true));
       }
-    } catch(_) { /* ignore */ }
+    } catch (_) { /* ignore */ }
 
     if (c.gameManager?.gridContainer?.children) {
       c.gameManager.gridContainer.children.forEach(child => {
@@ -64,14 +64,14 @@ export function prepareBaseGridForEditing(c) {
 
           // Remove any rich shading layers (paintLayer/mask) attached to base tiles
           if (child.paintLayer) {
-            try { child.removeChild(child.paintLayer); } catch(_) { /* ignore remove error */ }
+            try { child.removeChild(child.paintLayer); } catch (_) { /* ignore remove error */ }
             if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
               child.paintLayer.destroy({ children: true });
             }
             child.paintLayer = null;
           }
           if (child.paintMask) {
-            try { child.removeChild(child.paintMask); } catch(_) { /* ignore remove error */ }
+            try { child.removeChild(child.paintMask); } catch (_) { /* ignore remove error */ }
             if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
               child.paintMask.destroy();
             }
@@ -100,11 +100,47 @@ export function resetTerrainContainerSafely(c) {
     }, LOG_CATEGORY.SYSTEM);
 
     try {
+      // Preserve existing placeable sprites so they are not destroyed by a full container reset.
+      // Remove them from the container temporarily and reattach after the reset.
+      const preservedPlaceables = [];
+      try {
+        const placeablesMap = c.terrainManager.placeables;
+        if (placeablesMap && placeablesMap.size) {
+          for (const [, arr] of placeablesMap) {
+            for (const sprite of arr) {
+              try {
+                // Remove from container without destroying so resetContainer won't touch it
+                if (sprite && sprite.parent === c.terrainManager.terrainContainer) {
+                  c.terrainManager.terrainContainer.removeChild(sprite);
+                }
+                preservedPlaceables.push(sprite);
+              } catch (_) { /* best-effort */ }
+            }
+          }
+        }
+      } catch (_) { /* best-effort preserve */ }
+
       TerrainPixiUtils.resetContainer(
         c.terrainManager.terrainContainer,
         'terrainContainer',
         'container.reset'
       );
+      // Rebuild placeables map and reattach preserved sprites
+      try {
+        c.terrainManager.placeables = new Map();
+        for (const sprite of preservedPlaceables) {
+          try {
+            if (!sprite) continue;
+            // Ensure container still exists
+            if (c.terrainManager.terrainContainer && !c.terrainManager.terrainContainer.children.includes(sprite)) {
+              c.terrainManager.terrainContainer.addChild(sprite);
+            }
+            const key = `${sprite.gridX},${sprite.gridY}`;
+            if (!c.terrainManager.placeables.has(key)) c.terrainManager.placeables.set(key, []);
+            c.terrainManager.placeables.get(key).push(sprite);
+          } catch (_) { /* continue */ }
+        }
+      } catch (_) { /* best-effort rebuild */ }
     } catch (containerError) {
       logger.warn('Error during container reset, continuing', {
         context: 'container.resetTerrainContainerSafely',

@@ -61,8 +61,27 @@ export class TerrainInputHandlers {
   /** Handle mouse down events for terrain modification */
   handleMouseDown(event) {
     try {
-      // Only handle left mouse button and when terrain mode is active
-      if (event.button !== 0 || !this.c.isTerrainModeActive) {
+      // Only handle left mouse button
+      if (event.button !== 0) return;
+
+      // If a terrain placeable is selected in the UI, allow placement even when
+      // terrain mode is not active. Read selection from the coordinator-managed API
+      // when available so placement can occur outside terrain mode.
+      // If the Placeable Tiles menu is toggled off, do not allow placeables to be placed.
+      // Read the currently selected placeable from the coordinator or global state.
+      // Do NOT gate selection on the placeable-tiles visibility toggle: users should be able
+      // to place placeables even when terrain mode is off and the panel visibility is controlled separately.
+      const uiSelected = (this.c && typeof this.c.getSelectedPlaceable === 'function')
+        ? this.c.getSelectedPlaceable()
+        : (typeof window !== 'undefined' ? window.selectedTerrainPlaceable : null);
+      // If the placeables panel is hidden, do not allow placeable placement/preview
+      const panelVisible = (this.c && typeof this.c.isPlaceablesPanelVisible === 'function') ? this.c.isPlaceablesPanelVisible() : true;
+      if (!this.c.isTerrainModeActive && !uiSelected) {
+        // not in terrain mode and no placeable selected → ignore
+        return;
+      }
+      if (!panelVisible && uiSelected) {
+        // Panel hidden; treat as no selection
         return;
       }
 
@@ -80,7 +99,30 @@ export class TerrainInputHandlers {
       this.c.isDragging = true;
       // Reset drag bookkeeping at the start of a new stroke
       this.c.lastModifiedCell = `${gridCoords.gridX},${gridCoords.gridY}`;
-      this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
+
+      // If a terrain placeable is selected in the UI, place it instead of modifying height
+      const selected = uiSelected;
+      if (selected) {
+        try {
+          // Place across brush footprint so placement matches the visual highlighter
+          // When building the brush footprint for placement outside terrain mode
+          // we still want the same footprint semantics; pass the current terrainMode flag
+          // Use a temporary brush descriptor so Placeable Tiles use independent PT brush size
+          const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
+          const desc = buildBrushHighlightDescriptor({ brush: ptBrush, center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY }, terrainModeActive: this.c.isTerrainModeActive });
+          const cells = desc.cells && desc.cells.length ? desc.cells : [{ x: gridCoords.gridX, y: gridCoords.gridY }];
+          let anyPlaced = false;
+          for (const c of cells) {
+            try {
+              const r = this.c.terrainManager?.placeTerrainItem(c.x, c.y, selected);
+              anyPlaced = anyPlaced || !!r;
+            } catch (_) { /* continue */ }
+          }
+          logger.trace('Placed terrain item via UI selection (brush footprint)', { centerX: gridCoords.gridX, centerY: gridCoords.gridY, id: selected, placedAny: anyPlaced, cellCount: cells.length }, LOG_CATEGORY.USER);
+        } catch (e) { /* non-fatal */ }
+      } else {
+        this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
+      }
 
       event.preventDefault();
       event.stopPropagation();
@@ -99,30 +141,39 @@ export class TerrainInputHandlers {
     try {
       const gridCoords = this.c.getGridCoordinatesFromEvent(event);
 
-      // Update height indicator if in terrain mode
+      // Update height indicator when in terrain mode
       if (this.c.isTerrainModeActive && gridCoords) {
         this.updateHeightIndicator(gridCoords.gridX, gridCoords.gridY);
-        // Render brush preview of affected cells (non-destructive) using highlighter helper
+      }
+
+      // Read selected placeable and panel visibility
+      const uiSelected = (this.c && typeof this.c.getSelectedPlaceable === 'function')
+        ? this.c.getSelectedPlaceable()
+        : (typeof window !== 'undefined' ? window.selectedTerrainPlaceable : null);
+      const panelVisible = (this.c && typeof this.c.isPlaceablesPanelVisible === 'function') ? this.c.isPlaceablesPanelVisible() : true;
+
+      // Render placeable preview only when panel is visible and a placeable is selected
+      if (gridCoords && uiSelected && panelVisible) {
         try {
+          const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
           const desc = buildBrushHighlightDescriptor({
-            brush: this.c.brush,
+            brush: ptBrush,
             center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
             terrainModeActive: this.c.isTerrainModeActive
           });
-          if (desc.cells.length) {
-            this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
-          }
-        } catch (_) { /* non-fatal preview */ }
-
-        // Remember last valid hover position for key-driven updates
+          if (desc.cells.length) this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
+        } catch (_) { /* non-fatal */ }
         this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
       }
 
-      // Only process if we're actively dragging in terrain mode
+      // Only process if we're actively dragging. Allow drag edits when
+      // - terrain mode is active OR
+      // - a placeable is selected in the UI and the placeables panel is visible
+      //   (so placeables can be painted even when not in terrain edit mode).
       // Also require that the primary button is currently pressed to avoid lingering edits
       // And never edit while the grid panning interaction is active or Space is pressed
       const im = this.c.gameManager?.interactionManager;
-      if (!this.c.isDragging || !this.c.isTerrainModeActive || !(event.buttons & 1) || (im && (im.isDragging || im.isSpacePressed))) {
+      if (!this.c.isDragging || (!(this.c.isTerrainModeActive || (uiSelected && panelVisible))) || !(event.buttons & 1) || (im && (im.isDragging || im.isSpacePressed))) {
         return;
       }
 
@@ -136,7 +187,21 @@ export class TerrainInputHandlers {
         return;
       }
 
-      this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
+      // If a terrain placeable is selected and the panel is visible, paint it across dragged cells
+      const selected = (this.c && typeof this.c.getSelectedPlaceable === 'function') ? this.c.getSelectedPlaceable() : (typeof window !== 'undefined' ? window.selectedTerrainPlaceable : null);
+      if (selected && panelVisible) {
+        try {
+          // On drag, paint placeable across the brush footprint for consistency with preview
+          const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
+          const desc = buildBrushHighlightDescriptor({ brush: ptBrush, center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY }, terrainModeActive: this.c.isTerrainModeActive });
+          const cells = desc.cells && desc.cells.length ? desc.cells : [{ x: gridCoords.gridX, y: gridCoords.gridY }];
+          for (const c of cells) {
+            try { this.c.terrainManager?.placeTerrainItem(c.x, c.y, selected); } catch (_) { /* ignore individual failures */ }
+          }
+        } catch (_) { /* ignore */ }
+      } else {
+        this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
+      }
       this.c.lastModifiedCell = cellKey;
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
