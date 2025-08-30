@@ -1,6 +1,6 @@
 /**
  * TokenManager.js - Manages token creation, placement, and interactions
- * 
+ *
  * Extracted from GameManager to follow single responsibility principle
  * Handles all token-related operations while preserving existing functionality
  */
@@ -9,7 +9,10 @@ import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 // Validation and creature creation are handled in internals now
 // Internals for selection helpers
-import { findExistingTokenAt as _findExistingTokenAt, selectToken as _selectToken } from './token-manager/internals/selection.js';
+import {
+  findExistingTokenAt as _findExistingTokenAt,
+  selectToken as _selectToken,
+} from './token-manager/internals/selection.js';
 // Internals for token interaction wiring
 import { setupTokenInteractions as _setupTokenInteractions } from './token-manager/internals/interactions.js';
 // Internals for positioning helpers
@@ -81,15 +84,19 @@ export class TokenManager {
     try {
       logger.debug('selectToken called with:', tokenType);
       _selectToken(this, tokenType);
-      logger.info(`Token type selected: ${tokenType}`, {
-        tokenType,
-        previousType: this.selectedTokenType
-      }, LOG_CATEGORY.USER);
+      logger.info(
+        `Token type selected: ${tokenType}`,
+        {
+          tokenType,
+          previousType: this.selectedTokenType,
+        },
+        LOG_CATEGORY.USER
+      );
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
         stage: 'selectToken',
-        tokenType
+        tokenType,
       });
     }
   }

@@ -16,7 +16,13 @@ export function handleGridResize(c, newCols, newRows) {
     c.initializeTerrainData();
 
     // Copy over existing height data where possible (within overlap bounds)
-    if (oldHeights && Number.isInteger(oldCols) && Number.isInteger(oldRows) && oldCols > 0 && oldRows > 0) {
+    if (
+      oldHeights &&
+      Number.isInteger(oldCols) &&
+      Number.isInteger(oldRows) &&
+      oldCols > 0 &&
+      oldRows > 0
+    ) {
       const copyRows = Math.min(oldRows, newRows);
       const copyCols = Math.min(oldCols, newCols);
 
@@ -44,22 +50,26 @@ export function handleGridResize(c, newCols, newRows) {
       } catch (e) {
         logger.warn('Terrain display refresh after resize encountered issues', {
           context: 'TerrainCoordinator.handleGridResize',
-          error: e.message
+          error: e.message,
         });
       }
     }
 
-    logger.info('Terrain data resized', {
-      context: 'TerrainCoordinator.handleGridResize',
-      oldDimensions: { cols: oldCols, rows: oldRows },
-      newDimensions: { cols: newCols, rows: newRows },
-      dataPreserved: !!(oldHeights && oldCols > 0 && oldRows > 0)
-    }, LOG_CATEGORY.SYSTEM);
+    logger.info(
+      'Terrain data resized',
+      {
+        context: 'TerrainCoordinator.handleGridResize',
+        oldDimensions: { cols: oldCols, rows: oldRows },
+        newDimensions: { cols: newCols, rows: newRows },
+        dataPreserved: !!(oldHeights && oldCols > 0 && oldRows > 0),
+      },
+      LOG_CATEGORY.SYSTEM
+    );
   } catch (error) {
     GameErrors.operation(error, {
       stage: 'handleGridResize',
       oldDimensions: { cols: c.dataStore?.cols, rows: c.dataStore?.rows },
-      newDimensions: { cols: newCols, rows: newRows }
+      newDimensions: { cols: newCols, rows: newRows },
     });
     throw error;
   }

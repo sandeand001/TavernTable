@@ -5,10 +5,22 @@ import { TerrainPixiUtils } from '../../../utils/TerrainPixiUtils.js';
 /** Validate terrain container state before operations. */
 export function validateContainerState(m) {
   try {
-    if (!TerrainPixiUtils.validatePixiContainer(m.terrainContainer, 'terrainContainer', 'TerrainManager.validateContainerState')) {
+    if (
+      !TerrainPixiUtils.validatePixiContainer(
+        m.terrainContainer,
+        'terrainContainer',
+        'TerrainManager.validateContainerState'
+      )
+    ) {
       throw new Error('Terrain container validation failed');
     }
-    if (!TerrainPixiUtils.validatePixiContainer(m.gameManager?.gridContainer, 'gridContainer', 'TerrainManager.validateContainerState')) {
+    if (
+      !TerrainPixiUtils.validatePixiContainer(
+        m.gameManager?.gridContainer,
+        'gridContainer',
+        'TerrainManager.validateContainerState'
+      )
+    ) {
       throw new Error('Game grid container validation failed');
     }
     if (!m.terrainTiles) {
@@ -19,7 +31,7 @@ export function validateContainerState(m) {
       terrainContainerExists: !!m.terrainContainer,
       gridContainerExists: !!m.gameManager?.gridContainer,
       tilesMapSize: m.terrainTiles.size,
-      containerChildrenCount: m.terrainContainer.children.length
+      containerChildrenCount: m.terrainContainer.children.length,
     });
     return true;
   } catch (error) {
@@ -29,7 +41,7 @@ export function validateContainerState(m) {
       terrainContainerExists: !!m.terrainContainer,
       terrainContainerDestroyed: m.terrainContainer?.destroyed,
       gridContainerExists: !!m.gameManager?.gridContainer,
-      gridContainerDestroyed: m.gameManager?.gridContainer?.destroyed
+      gridContainerDestroyed: m.gameManager?.gridContainer?.destroyed,
     });
     throw error;
   }
@@ -51,7 +63,7 @@ export function showAllTerrainTiles(m) {
     m.sortAllTerrainTilesByDepth();
     logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles shown with depth sorting', LOG_CATEGORY.SYSTEM, {
       context: 'TerrainManager.showAllTerrainTiles',
-      totalTiles: m.terrainTiles.size
+      totalTiles: m.terrainTiles.size,
     });
   } catch (error) {
     GameErrors.rendering(error, { stage: 'showAllTerrainTiles' });
@@ -63,28 +75,42 @@ export function hideAllTerrainTiles(m) {
   try {
     try {
       const children = [...m.terrainContainer.children];
-      children.forEach(child => {
+      children.forEach((child) => {
         if (child && child.isTerrainTile) {
           if (child.sideFaces) {
             if (child.sideFaces.parent) child.sideFaces.parent.removeChild(child.sideFaces);
-            if (typeof child.sideFaces.destroy === 'function' && !child.sideFaces.destroyed) child.sideFaces.destroy();
+            if (typeof child.sideFaces.destroy === 'function' && !child.sideFaces.destroyed)
+              child.sideFaces.destroy();
             child.sideFaces = null;
           }
           if (child.shadowTile) {
             if (child.shadowTile.parent) child.shadowTile.parent.removeChild(child.shadowTile);
-            if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) child.shadowTile.destroy();
+            if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed)
+              child.shadowTile.destroy();
             child.shadowTile = null;
           }
           if (child.depressionOverlay) {
-            try { child.removeChild(child.depressionOverlay); } catch { /* ignore */ }
-            if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) child.depressionOverlay.destroy();
+            try {
+              child.removeChild(child.depressionOverlay);
+            } catch {
+              /* ignore */
+            }
+            if (
+              typeof child.depressionOverlay.destroy === 'function' &&
+              !child.depressionOverlay.destroyed
+            )
+              child.depressionOverlay.destroy();
             child.depressionOverlay = null;
           }
         }
       });
-    } catch (_) { /* best-effort cleanup */ }
+    } catch (_) {
+      /* best-effort cleanup */
+    }
     m.terrainContainer.visible = false;
-    logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles hidden', LOG_CATEGORY.SYSTEM, { context: 'TerrainManager.hideAllTerrainTiles' });
+    logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles hidden', LOG_CATEGORY.SYSTEM, {
+      context: 'TerrainManager.hideAllTerrainTiles',
+    });
   } catch (error) {
     GameErrors.rendering(error, { stage: 'hideAllTerrainTiles' });
   }
@@ -94,7 +120,9 @@ export function hideAllTerrainTiles(m) {
 export function clearAllTerrainTiles(m) {
   try {
     if (!m.terrainTiles || m.terrainTiles.size === 0) {
-      logger.log(LOG_LEVEL.DEBUG, 'No terrain tiles to clear', LOG_CATEGORY.SYSTEM, { context: 'TerrainManager.clearAllTerrainTiles' });
+      logger.log(LOG_LEVEL.DEBUG, 'No terrain tiles to clear', LOG_CATEGORY.SYSTEM, {
+        context: 'TerrainManager.clearAllTerrainTiles',
+      });
       if (m.terrainContainer) m.terrainContainer.visible = false;
       return;
     }
@@ -102,24 +130,36 @@ export function clearAllTerrainTiles(m) {
     const tileCount = m.terrainTiles.size;
 
     try {
-      m.terrainTiles.forEach(tile => {
+      m.terrainTiles.forEach((tile) => {
         if (tile && tile.sideFaces) {
           if (tile.sideFaces.parent) tile.sideFaces.parent.removeChild(tile.sideFaces);
-          if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) tile.sideFaces.destroy();
+          if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed)
+            tile.sideFaces.destroy();
           tile.sideFaces = null;
         }
         if (tile && tile.shadowTile) {
           if (tile.shadowTile.parent) tile.shadowTile.parent.removeChild(tile.shadowTile);
-          if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) tile.shadowTile.destroy();
+          if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed)
+            tile.shadowTile.destroy();
           tile.shadowTile = null;
         }
         if (tile && tile.depressionOverlay) {
-          try { tile.removeChild(tile.depressionOverlay); } catch { /* ignore */ }
-          if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) tile.depressionOverlay.destroy();
+          try {
+            tile.removeChild(tile.depressionOverlay);
+          } catch {
+            /* ignore */
+          }
+          if (
+            typeof tile.depressionOverlay.destroy === 'function' &&
+            !tile.depressionOverlay.destroyed
+          )
+            tile.depressionOverlay.destroy();
           tile.depressionOverlay = null;
         }
       });
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
 
     // Preserve placeable sprites so they are not destroyed by clearing terrain tiles.
     const preservedPlaceables = [];
@@ -130,18 +170,31 @@ export function clearAllTerrainTiles(m) {
             try {
               if (sprite && sprite.parent === m.terrainContainer) {
                 // Remove without destroying so cleanup won't touch it
-                TerrainPixiUtils.safeRemoveFromContainer(sprite, m.terrainContainer, 'clearAllTerrainTiles.preserve');
+                TerrainPixiUtils.safeRemoveFromContainer(
+                  sprite,
+                  m.terrainContainer,
+                  'clearAllTerrainTiles.preserve'
+                );
               }
               preservedPlaceables.push(sprite);
-            } catch (_) { /* best-effort preserve */ }
+            } catch (_) {
+              /* best-effort preserve */
+            }
           }
         }
       }
-      logger.log(LOG_LEVEL.DEBUG, 'Preserved placeables before terrain cleanup', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.clearAllTerrainTiles.preserve',
-        preservedCount: preservedPlaceables.length
-      });
-    } catch (_) { /* best-effort preserve */ }
+      logger.log(
+        LOG_LEVEL.DEBUG,
+        'Preserved placeables before terrain cleanup',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'TerrainManager.clearAllTerrainTiles.preserve',
+          preservedCount: preservedPlaceables.length,
+        }
+      );
+    } catch (_) {
+      /* best-effort preserve */
+    }
 
     const cleanupResults = TerrainPixiUtils.batchCleanupTerrainTiles(
       m.terrainTiles,
@@ -161,31 +214,44 @@ export function clearAllTerrainTiles(m) {
           const key = `${sprite.gridX},${sprite.gridY}`;
           if (!m.placeables.has(key)) m.placeables.set(key, []);
           m.placeables.get(key).push(sprite);
-        } catch (_) { /* ignore single sprite failures */ }
+        } catch (_) {
+          /* ignore single sprite failures */
+        }
       }
-      logger.log(LOG_LEVEL.DEBUG, 'Reattached preserved placeables after terrain cleanup', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainManager.clearAllTerrainTiles.restore',
-        restoredCount: (m.placeables && m.placeables.size) || 0
-      });
-    } catch (_) { /* best-effort rebuild */ }
-
+      logger.log(
+        LOG_LEVEL.DEBUG,
+        'Reattached preserved placeables after terrain cleanup',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'TerrainManager.clearAllTerrainTiles.restore',
+          restoredCount: (m.placeables && m.placeables.size) || 0,
+        }
+      );
+    } catch (_) {
+      /* best-effort rebuild */
+    }
     m.terrainTiles.clear();
-    if (m.terrainContainer) m.terrainContainer.visible = false;
+    // If placeables remain attached, keep the container visible so they persist
+    const hasPlaceables = !!(m.placeables && m.placeables.size > 0);
+    if (m.terrainContainer) m.terrainContainer.visible = hasPlaceables ? true : false;
 
     logger.log(LOG_LEVEL.INFO, 'All terrain tiles cleared completely', LOG_CATEGORY.SYSTEM, {
       context: 'TerrainManager.clearAllTerrainTiles',
       clearedTileCount: tileCount,
-      cleanupResults
+      cleanupResults,
     });
   } catch (error) {
     if (m.terrainTiles) m.terrainTiles.clear();
     if (m.terrainContainer) m.terrainContainer.visible = false;
 
-    GameErrors.rendering(error, { stage: 'clearAllTerrainTiles', context: 'TerrainManager.clearAllTerrainTiles' });
+    GameErrors.rendering(error, {
+      stage: 'clearAllTerrainTiles',
+      context: 'TerrainManager.clearAllTerrainTiles',
+    });
 
     logger.log(LOG_LEVEL.WARN, 'Terrain tiles cleared with errors', LOG_CATEGORY.SYSTEM, {
       context: 'TerrainManager.clearAllTerrainTiles',
-      error: error.message
+      error: error.message,
     });
   }
 }

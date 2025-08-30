@@ -1,14 +1,21 @@
 import { GameValidators } from '../../../utils/Validation.js';
-import { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } from '../../../ui/domHelpers.js';
+import {
+  getCreatureButtons,
+  getTokenButtonByType,
+  getTokenInfoEl,
+} from '../../../ui/domHelpers.js';
 
 export function findExistingTokenAt(c, gridX, gridY) {
   // Previously this matched tokens in adjacent cells which caused
   // accidental removals/moves when clicking nearby tiles. Only return
   // a token if it exactly occupies the requested grid cell.
-  return c.placedTokens.find(token => (
-    Number.isFinite(token.gridX) && Number.isFinite(token.gridY) &&
-    token.gridX === gridX && token.gridY === gridY
-  ));
+  return c.placedTokens.find(
+    (token) =>
+      Number.isFinite(token.gridX) &&
+      Number.isFinite(token.gridY) &&
+      token.gridX === gridX &&
+      token.gridY === gridY
+  );
 }
 
 export function selectToken(c, tokenType) {
@@ -21,7 +28,7 @@ export function selectToken(c, tokenType) {
   }
 
   // Update UI selection
-  getCreatureButtons().forEach(btn => {
+  getCreatureButtons().forEach((btn) => {
     btn.classList.remove('selected');
     btn.setAttribute('aria-pressed', 'false');
   });
@@ -41,6 +48,9 @@ export function selectToken(c, tokenType) {
   }
   const infoEl = getTokenInfoEl();
   if (infoEl) {
-    infoEl.textContent = tokenType === 'remove' ? 'Click on tokens to remove them' : `Click on grid to place ${tokenType}`;
+    infoEl.textContent =
+      tokenType === 'remove'
+        ? 'Click on tokens to remove them'
+        : `Click on grid to place ${tokenType}`;
   }
 }

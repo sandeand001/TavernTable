@@ -60,8 +60,10 @@ export class TerrainBrushController {
     if (x < 0 || y < 0 || y >= this.dataStore.rows || x >= this.dataStore.cols) return;
     const current = this.dataStore.get(x, y);
     let next = current;
-    if (this.tool === 'raise') next = Math.min(current + this.heightStep, TERRAIN_CONFIG.MAX_HEIGHT);
-    if (this.tool === 'lower') next = Math.max(current - this.heightStep, TERRAIN_CONFIG.MIN_HEIGHT);
+    if (this.tool === 'raise')
+      next = Math.min(current + this.heightStep, TERRAIN_CONFIG.MAX_HEIGHT);
+    if (this.tool === 'lower')
+      next = Math.max(current - this.heightStep, TERRAIN_CONFIG.MIN_HEIGHT);
     if (next !== current) {
       this.dataStore.set(x, y, next);
       logger.log(LOG_LEVEL.TRACE, 'Terrain height modified', LOG_CATEGORY.USER, {
@@ -69,7 +71,7 @@ export class TerrainBrushController {
         from: current,
         to: next,
         tool: this.tool,
-        heightStep: this.heightStep
+        heightStep: this.heightStep,
       });
     }
   }

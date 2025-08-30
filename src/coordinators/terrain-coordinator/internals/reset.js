@@ -21,14 +21,18 @@ export function resetTerrain(c) {
       c.resetHeightIndicator();
     }
 
-    logger.info('Terrain reset to default', {
-      context: 'TerrainCoordinator.resetTerrain',
-      gridDimensions: {
-        cols: c.gameManager.cols,
-        rows: c.gameManager.rows
+    logger.info(
+      'Terrain reset to default',
+      {
+        context: 'TerrainCoordinator.resetTerrain',
+        gridDimensions: {
+          cols: c.gameManager.cols,
+          rows: c.gameManager.rows,
+        },
+        defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT,
       },
-      defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT
-    }, LOG_CATEGORY.USER);
+      LOG_CATEGORY.USER
+    );
 
     // Outside terrain mode, synchronize biome shading state after reset
     biomeInternals.handlePostResetShading?.(c);
@@ -37,8 +41,8 @@ export function resetTerrain(c) {
       stage: 'resetTerrain',
       gridDimensions: {
         cols: c.gameManager?.cols,
-        rows: c.gameManager?.rows
-      }
+        rows: c.gameManager?.rows,
+      },
     });
     throw error;
   }

@@ -7,12 +7,19 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
   try {
     // Prevent placing a new token on a cell that's already occupied
     try {
-      const existing = (typeof c.findExistingTokenAt === 'function') ? c.findExistingTokenAt(gridX, gridY) : null;
+      const existing =
+        typeof c.findExistingTokenAt === 'function' ? c.findExistingTokenAt(gridX, gridY) : null;
       if (existing) {
-        logger.debug('Attempted to place token on occupied tile; aborting placement', { gridX, gridY }, LOG_CATEGORY.USER);
+        logger.debug(
+          'Attempted to place token on occupied tile; aborting placement',
+          { gridX, gridY },
+          LOG_CATEGORY.USER
+        );
         return; // do not place when occupied
       }
-    } catch (_) { /* ignore selection errors and proceed */ }
+    } catch (_) {
+      /* ignore selection errors and proceed */
+    }
 
     const creature = c.createCreatureByType(c.selectedTokenType);
     if (!creature) {
@@ -30,7 +37,9 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
     try {
       const height = c.gameManager?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
       elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
 
     if (creature.sprite) {
       creature.sprite.x = iso.x;
@@ -39,7 +48,11 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
 
       if (gridContainer) {
         gridContainer.addChild(creature.sprite);
-        try { gridContainer.sortChildren?.(); } catch (_) { /* ignore sort errors */ }
+        try {
+          gridContainer.sortChildren?.();
+        } catch (_) {
+          /* ignore sort errors */
+        }
       }
     }
 
@@ -48,7 +61,7 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
     const errorHandler = new ErrorHandler();
     errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
       stage: 'placeNewToken',
-      coordinates: { gridX, gridY }
+      coordinates: { gridX, gridY },
     });
   }
 }

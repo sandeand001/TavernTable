@@ -66,8 +66,6 @@ body {
   }
 }
 
-
-
 #dice-panel button:hover {
   background-color: #666;
 }
@@ -95,13 +93,14 @@ body {
   align-items: center;
 }
 
-
 #creature-arrow.collapsed {
   transform: rotate(-90deg);
 }
 
 #creature-content {
-  transition: max-height 0.3s ease, opacity 0.3s ease;
+  transition:
+    max-height 0.3s ease,
+    opacity 0.3s ease;
   overflow: hidden;
   max-height: 400px;
 
@@ -163,7 +162,6 @@ body {
   margin: 0 !important;
 }
 
-
 #token-panel button {
   margin: 2px 0;
 
@@ -189,7 +187,7 @@ body {
   border-top: 1px solid #444;
 }
 
-.token-section>div:first-child {
+.token-section > div:first-child {
   margin-bottom: 6px;
   font-weight: bold;
 }
@@ -221,23 +219,23 @@ body {
 }
 
 .facing-button.selected {
-  background-color: #228B22 !important;
-  border: 2px solid #32CD32 !important;
+  background-color: #228b22 !important;
+  border: 2px solid #32cd32 !important;
 }
 
 /* Special styling for action buttons (remove) */
 #token-remove.facing-button {
-  background-color: #DC143C !important;
+  background-color: #dc143c !important;
   width: 100% !important;
 }
 
 #token-remove.facing-button:hover {
-  background-color: #F54C6B !important;
+  background-color: #f54c6b !important;
 }
 
 #token-remove.facing-button.selected {
-  background-color: #FF4500 !important;
-  border: 2px solid #FF6347 !important;
+  background-color: #ff4500 !important;
+  border: 2px solid #ff6347 !important;
 }
 
 #token-info {
@@ -399,7 +397,6 @@ body {
   margin-bottom: 12px;
   overflow-y: auto;
 
-
   /* Placeables UI removed - styles deleted intentionally */
 }
 
@@ -456,7 +453,9 @@ body {
   padding: 6px 10px;
   cursor: pointer;
   font-size: 14px;
-  transition: background-color 0.2s ease, transform 0.15s ease;
+  transition:
+    background-color 0.2s ease,
+    transform 0.15s ease;
 }
 
 .nudge-grid button:hover {
@@ -738,7 +737,7 @@ body {
   gap: 10px;
 }
 
-.toggle-switch input[type="checkbox"] {
+.toggle-switch input[type='checkbox'] {
   display: none;
 }
 
@@ -764,11 +763,11 @@ body {
   transition: transform 0.3s ease;
 }
 
-.toggle-switch input[type="checkbox"]:checked+.toggle-slider {
-  background-color: #4CAF50;
+.toggle-switch input[type='checkbox']:checked + .toggle-slider {
+  background-color: #4caf50;
 }
 
-.toggle-switch input[type="checkbox"]:checked+.toggle-slider::before {
+.toggle-switch input[type='checkbox']:checked + .toggle-slider::before {
   transform: translateX(26px);
 }
 
@@ -822,7 +821,7 @@ body {
 }
 
 .terrain-tool-btn.active {
-  background-color: #4CAF50;
+  background-color: #4caf50;
   color: white;
   border-color: #45a049;
   box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
@@ -908,11 +907,11 @@ body {
 }
 
 .height-value {
-  color: #4CAF50;
+  color: #4caf50;
   font-size: 16px;
   font-weight: bold;
   background: rgba(76, 175, 80, 0.1);
-  border: 1px solid #4CAF50;
+  border: 1px solid #4caf50;
   border-radius: 4px;
   padding: 2px 8px;
   margin-left: 4px;
@@ -943,94 +942,94 @@ body {
 }
 
 .scale-mark.current {
-  background: #4CAF50;
+  background: #4caf50;
   color: white;
   font-weight: bold;
   transform: scale(1.1);
 }
 
 /* Height indicator colors (-10..10) aligned with TERRAIN_CONFIG.HEIGHT_COLOR_SCALE */
-.scale-mark[data-height="-10"] {
+.scale-mark[data-height='-10'] {
   background-color: #040913;
 }
 
-.scale-mark[data-height="-9"] {
+.scale-mark[data-height='-9'] {
   background-color: #071225;
 }
 
-.scale-mark[data-height="-8"] {
+.scale-mark[data-height='-8'] {
   background-color: #0b1c36;
 }
 
-.scale-mark[data-height="-7"] {
+.scale-mark[data-height='-7'] {
   background-color: #112848;
 }
 
-.scale-mark[data-height="-6"] {
+.scale-mark[data-height='-6'] {
   background-color: #18345a;
 }
 
-.scale-mark[data-height="-5"] {
+.scale-mark[data-height='-5'] {
   background-color: #1f416d;
 }
 
-.scale-mark[data-height="-4"] {
+.scale-mark[data-height='-4'] {
   background-color: #2a4f82;
 }
 
-.scale-mark[data-height="-3"] {
+.scale-mark[data-height='-3'] {
   background-color: #365d97;
 }
 
-.scale-mark[data-height="-2"] {
+.scale-mark[data-height='-2'] {
   background-color: #496ab1;
 }
 
-.scale-mark[data-height="-1"] {
+.scale-mark[data-height='-1'] {
   background-color: #5d72c6;
 }
 
-.scale-mark[data-height="0"] {
+.scale-mark[data-height='0'] {
   background-color: #6b7280;
 }
 
-.scale-mark[data-height="1"] {
+.scale-mark[data-height='1'] {
   background-color: #1a7b53;
 }
 
-.scale-mark[data-height="2"] {
+.scale-mark[data-height='2'] {
   background-color: #138b48;
 }
 
-.scale-mark[data-height="3"] {
+.scale-mark[data-height='3'] {
   background-color: #16994b;
 }
 
-.scale-mark[data-height="4"] {
+.scale-mark[data-height='4'] {
   background-color: #21a556;
 }
 
-.scale-mark[data-height="5"] {
+.scale-mark[data-height='5'] {
   background-color: #3db268;
 }
 
-.scale-mark[data-height="6"] {
+.scale-mark[data-height='6'] {
   background-color: #64bf75;
 }
 
-.scale-mark[data-height="7"] {
+.scale-mark[data-height='7'] {
   background-color: #8fcc7f;
 }
 
-.scale-mark[data-height="8"] {
+.scale-mark[data-height='8'] {
   background-color: #b7d789;
 }
 
-.scale-mark[data-height="9"] {
+.scale-mark[data-height='9'] {
   background-color: #dfe09a;
 }
 
-.scale-mark[data-height="10"] {
+.scale-mark[data-height='10'] {
   background-color: #f3e9b2;
 }
 
@@ -1115,7 +1114,7 @@ body {
   transition: transform 0.25s ease;
 }
 
-.biome-group-toggle[aria-expanded="false"]::after {
+.biome-group-toggle[aria-expanded='false']::after {
   transform: rotate(-90deg);
 }
 
@@ -1129,7 +1128,9 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 6px;
-  transition: max-height 0.3s ease, opacity 0.3s ease;
+  transition:
+    max-height 0.3s ease,
+    opacity 0.3s ease;
 }
 
 .biome-btn {
@@ -1158,7 +1159,7 @@ body {
 }
 
 .biome-btn.selected {
-  background: #4CAF50;
+  background: #4caf50;
   color: #fff;
   border-color: #45a049;
   box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
@@ -1201,4 +1202,82 @@ body {
   background-color: #4da6ff;
   color: white;
   font-weight: 600;
+}
+
+/* Placeables menu (trees, shrubs, etc.) - compact thumbnails */
+#terrain-placeables-root,
+.placeables-root {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+  align-items: start;
+  padding-right: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.placeable-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 6px;
+  background: #333;
+  color: #fff;
+  border: 1px solid #2b2b2b;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 56px;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: 11px;
+}
+
+.placeable-preview {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+
+.placeable-label {
+  font-size: 11px;
+  color: #ddd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.placeable-btn:hover {
+  background-color: #444;
+  transform: translateY(-1px);
+}
+
+.placeable-btn.selected {
+  background-color: #4da6ff;
+  color: white;
+  font-weight: 600;
+  border-color: #3a9be6;
+}
+
+@media (width <=768px) {
+  #terrain-placeables-root,
+  .placeables-root {
+    grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+    max-height: 200px;
+  }
+
+  .placeable-btn {
+    width: 48px;
+    padding: 4px;
+    font-size: 10px;
+  }
+
+  .placeable-preview {
+    width: 34px;
+    height: 34px;
+  }
 }

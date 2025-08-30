@@ -1,5 +1,8 @@
 import { logger } from '../../../utils/Logger.js';
-import { GameValidators as DefaultGameValidators, Sanitizers as DefaultSanitizers } from '../../../utils/Validation.js';
+import {
+  GameValidators as DefaultGameValidators,
+  Sanitizers as DefaultSanitizers,
+} from '../../../utils/Validation.js';
 
 export function validateDependencies(c) {
   const missingDependencies = [];
@@ -9,18 +12,16 @@ export function validateDependencies(c) {
   }
 
   // Resolve validators/sanitizers from coordinator instance, globals, or module defaults
-  const gv = (
-    c?.GameValidators
-        || (typeof window !== 'undefined' ? window.GameValidators : undefined)
-        || globalThis?.GameValidators
-        || DefaultGameValidators
-  );
-  const sz = (
-    c?.Sanitizers
-        || (typeof window !== 'undefined' ? window.Sanitizers : undefined)
-        || globalThis?.Sanitizers
-        || DefaultSanitizers
-  );
+  const gv =
+    c?.GameValidators ||
+    (typeof window !== 'undefined' ? window.GameValidators : undefined) ||
+    globalThis?.GameValidators ||
+    DefaultGameValidators;
+  const sz =
+    c?.Sanitizers ||
+    (typeof window !== 'undefined' ? window.Sanitizers : undefined) ||
+    globalThis?.Sanitizers ||
+    DefaultSanitizers;
 
   const usedDefaultsGV = gv === DefaultGameValidators;
   const usedDefaultsSZ = sz === DefaultSanitizers;
@@ -42,7 +43,7 @@ export function validateDependencies(c) {
       context: 'TerrainCoordinator.validateDependencies',
       sanitizersType: typeof (c?.Sanitizers || sz),
       enumType: typeof enumFn,
-      availableMethods: (c?.Sanitizers ? Object.keys(c.Sanitizers) : (sz ? Object.keys(sz) : []))
+      availableMethods: c?.Sanitizers ? Object.keys(c.Sanitizers) : sz ? Object.keys(sz) : [],
     });
   }
 
@@ -54,6 +55,6 @@ export function validateDependencies(c) {
     context: 'TerrainCoordinator.validateDependencies',
     sanitizersEnumAvailable: typeof enumFn === 'function',
     allDependenciesValid: missingDependencies.length === 0,
-    usedModuleDefaults: { GameValidators: usedDefaultsGV, Sanitizers: usedDefaultsSZ }
+    usedModuleDefaults: { GameValidators: usedDefaultsGV, Sanitizers: usedDefaultsSZ },
   });
 }

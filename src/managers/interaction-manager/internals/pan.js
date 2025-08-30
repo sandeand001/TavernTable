@@ -11,7 +11,7 @@ export function startGridDragging(c, event) {
   logger.log(LOG_LEVEL.TRACE, 'Grid dragging started', LOG_CATEGORY.USER, {
     startPosition: { x: c.dragStartX, y: c.dragStartY },
     gridPosition: { x: c.gridStartX, y: c.gridStartY },
-    currentScale: c.gridScale
+    currentScale: c.gridScale,
   });
 
   event.preventDefault();

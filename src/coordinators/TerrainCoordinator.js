@@ -1,6 +1,6 @@
 /**
  * TerrainCoordinator.js - Manages terrain height modification system
- * 
+ *
  * Follows the established coordinator pattern for the TavernTable application
  * Handles terrain height data management, rendering coordination, and system lifecycle
  */
@@ -18,22 +18,50 @@ import { ActivationHelpers } from './terrain-coordinator/ActivationHelpers.js';
 import { BiomeShadingController } from './terrain-coordinator/BiomeShadingController.js';
 import { TileLifecycleController } from './terrain-coordinator/TileLifecycleController.js';
 import { ElevationVisualsController } from './terrain-coordinator/ElevationVisualsController.js';
-import { validateTerrainSystemState as _validateSystemState, validateTerrainDataConsistency as _validateDataConsistency } from './terrain-coordinator/internals/validation.js';
-import { validateApplicationRequirements as _validateApplyReqs, initializeBaseHeights as _initBaseHeights, processAllGridTiles as _processAllTiles, logCompletion as _logApplyComplete, handleApplicationError as _handleApplyError } from './terrain-coordinator/internals/apply.js';
-import { getGridCoordinatesFromEvent as _getCoordsFromEvent, modifyTerrainAtPosition as _modifyAtPos } from './terrain-coordinator/internals/inputs.js';
-import { setRichShadingEnabled as _setRichShadingEnabled, setBiomeSeed as _setBiomeSeed } from './terrain-coordinator/internals/biome.js';
+import {
+  validateTerrainSystemState as _validateSystemState,
+  validateTerrainDataConsistency as _validateDataConsistency,
+} from './terrain-coordinator/internals/validation.js';
+import {
+  validateApplicationRequirements as _validateApplyReqs,
+  initializeBaseHeights as _initBaseHeights,
+  processAllGridTiles as _processAllTiles,
+  logCompletion as _logApplyComplete,
+  handleApplicationError as _handleApplyError,
+} from './terrain-coordinator/internals/apply.js';
+import {
+  getGridCoordinatesFromEvent as _getCoordsFromEvent,
+  modifyTerrainAtPosition as _modifyAtPos,
+} from './terrain-coordinator/internals/inputs.js';
+import {
+  setRichShadingEnabled as _setRichShadingEnabled,
+  setBiomeSeed as _setBiomeSeed,
+} from './terrain-coordinator/internals/biome.js';
 import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-coordinator/internals/color.js';
 import { handleGridResize as _handleResize } from './terrain-coordinator/internals/resize.js';
 import { getTerrainHeight as _getHeight } from './terrain-coordinator/internals/height.js';
 import { isValidGridPosition as _isValidPos } from './terrain-coordinator/internals/coords.js';
 import { modifyTerrainHeightAtCell as _modifyAtCell } from './terrain-coordinator/internals/brush.js';
-import { setTerrainTool as _setTool, getBrushSize as _getBrushSize, setBrushSize as _setBrushSize, increaseBrushSize as _incBrush, decreaseBrushSize as _decBrush } from './terrain-coordinator/internals/tools.js';
-import { updateBaseGridTileInPlace as _updateBaseGridTileInPlace, replaceBaseGridTile as _replaceBaseGridTile } from './terrain-coordinator/internals/baseGridUpdates.js';
+import {
+  setTerrainTool as _setTool,
+  getBrushSize as _getBrushSize,
+  setBrushSize as _setBrushSize,
+  increaseBrushSize as _incBrush,
+  decreaseBrushSize as _decBrush,
+} from './terrain-coordinator/internals/tools.js';
+import {
+  updateBaseGridTileInPlace as _updateBaseGridTileInPlace,
+  replaceBaseGridTile as _replaceBaseGridTile,
+} from './terrain-coordinator/internals/baseGridUpdates.js';
 import { resetTerrain as _resetTerrain } from './terrain-coordinator/internals/reset.js';
 import { loadBaseTerrainIntoWorkingState as _loadBaseIntoWorking } from './terrain-coordinator/internals/state.js';
 import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/init.js';
 import { validateDependencies as _validateDeps } from './terrain-coordinator/internals/deps.js';
-import { generateBiomeElevationField, isAllDefaultHeight, getBiomeElevationScaleHint } from '../terrain/BiomeElevationGenerator.js';
+import {
+  generateBiomeElevationField,
+  isAllDefaultHeight,
+  getBiomeElevationScaleHint,
+} from '../terrain/BiomeElevationGenerator.js';
 
 export class TerrainCoordinator {
   constructor(gameManager) {
@@ -66,9 +94,10 @@ export class TerrainCoordinator {
     // Biome shading façade
     this._biomeShading = new BiomeShadingController(this);
     // Shared seed for biome color/painter coherence (can be overridden by UI)
-    this._biomeSeed = (typeof window !== 'undefined' && Number.isFinite(window.richShadingSettings?.seed))
-      ? (window.richShadingSettings.seed >>> 0)
-      : (Math.floor(Math.random() * 1e9) >>> 0);
+    this._biomeSeed =
+      typeof window !== 'undefined' && Number.isFinite(window.richShadingSettings?.seed)
+        ? window.richShadingSettings.seed >>> 0
+        : Math.floor(Math.random() * 1e9) >>> 0;
 
     // Currently selected terrain placeable id (managed by coordinator)
     this._selectedPlaceable = null;
@@ -81,20 +110,26 @@ export class TerrainCoordinator {
     // Initialized to current terrain brush size so UI starts consistent but remains independent
     this._ptBrushSize = this.brush?.brushSize || 1;
 
-    logger.debug('TerrainCoordinator initialized', {
-      context: 'TerrainCoordinator.constructor',
-      stage: 'initialization',
-      defaultTool: this.brush.tool,
-      defaultBrushSize: this.brush.brushSize,
-      timestamp: new Date().toISOString()
-    }, LOG_CATEGORY.SYSTEM);
+    logger.debug(
+      'TerrainCoordinator initialized',
+      {
+        context: 'TerrainCoordinator.constructor',
+        stage: 'initialization',
+        defaultTool: this.brush.tool,
+        defaultBrushSize: this.brush.brushSize,
+        timestamp: new Date().toISOString(),
+      },
+      LOG_CATEGORY.SYSTEM
+    );
   }
 
   /**
    * Validate that all required dependencies are available
    * @private
    */
-  validateDependencies() { return _validateDeps(this); }
+  validateDependencies() {
+    return _validateDeps(this);
+  }
 
   /**
    * Initialize terrain system and create managers
@@ -120,25 +155,29 @@ export class TerrainCoordinator {
       // Set up terrain-specific input handlers
       this.setupTerrainInputHandlers();
 
-      logger.info('Terrain system initialized', {
-        context: 'TerrainCoordinator.initialize',
-        stage: 'initialization_complete',
-        gridDimensions: {
-          cols: this.gameManager.cols,
-          rows: this.gameManager.rows
+      logger.info(
+        'Terrain system initialized',
+        {
+          context: 'TerrainCoordinator.initialize',
+          stage: 'initialization_complete',
+          gridDimensions: {
+            cols: this.gameManager.cols,
+            rows: this.gameManager.rows,
+          },
+          terrainManagerReady: !!this.terrainManager,
+          inputHandlersConfigured: true,
+          timestamp: new Date().toISOString(),
         },
-        terrainManagerReady: !!this.terrainManager,
-        inputHandlersConfigured: true,
-        timestamp: new Date().toISOString()
-      }, LOG_CATEGORY.SYSTEM);
+        LOG_CATEGORY.SYSTEM
+      );
     } catch (error) {
       GameErrors.initialization(error, {
         stage: 'TerrainCoordinator.initialize',
         gameManagerAvailable: !!this.gameManager,
         gridDimensions: {
           cols: this.gameManager?.cols,
-          rows: this.gameManager?.rows
-        }
+          rows: this.gameManager?.rows,
+        },
       });
       throw error;
     }
@@ -147,17 +186,20 @@ export class TerrainCoordinator {
   /**
    * Initialize terrain height data for the current grid
    */
-  initializeTerrainData() { return _initTerrainData(this); }
+  initializeTerrainData() {
+    return _initTerrainData(this);
+  }
 
   /**
    * Set up terrain-specific input event handlers
    */
   setupTerrainInputHandlers() {
-    try { this._inputHandlers.setup(); }
-    catch (error) {
+    try {
+      this._inputHandlers.setup();
+    } catch (error) {
       GameErrors.initialization(error, {
         stage: 'setupTerrainInputHandlers',
-        appViewAvailable: !!this.gameManager?.app?.view
+        appViewAvailable: !!this.gameManager?.app?.view,
       });
       throw error;
     }
@@ -394,7 +436,9 @@ export class TerrainCoordinator {
   /**
    * Reset all terrain heights to default
    */
-  resetTerrain() { return _resetTerrain(this); }
+  resetTerrain() {
+    return _resetTerrain(this);
+  }
 
   /** Enable or disable the rich biome canvas shading outside terrain mode. */
   setRichShadingEnabled(enabled) {
@@ -405,19 +449,30 @@ export class TerrainCoordinator {
    * Coordinator-managed selection for terrain placeable items.
    */
   setSelectedPlaceable(placeableId) {
-    // Placeable Tiles UI removed; keep API but make it inert.
-    this._selectedPlaceable = null;
-    try { logger.debug('setSelectedPlaceable called but placeables UI removed', { selected: null }, LOG_CATEGORY.SYSTEM); } catch (_) { /* ignore */ }
+    // Store the selected placeable id so input handlers can read it.
+    this._selectedPlaceable = placeableId || null;
+    try {
+      logger.debug(
+        'setSelectedPlaceable',
+        { selected: this._selectedPlaceable },
+        LOG_CATEGORY.SYSTEM
+      );
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   getSelectedPlaceable() {
-    // Always return null since placeables are no longer selectable via UI
-    return null;
+    return this._selectedPlaceable || null;
   }
 
   clearSelectedPlaceable() {
-    // No-op: selection state is kept inert
-    try { logger.debug('clearSelectedPlaceable called (no-op)', LOG_CATEGORY.SYSTEM); } catch (_) { /* ignore */ }
+    this._selectedPlaceable = null;
+    try {
+      logger.debug('clearSelectedPlaceable', LOG_CATEGORY.SYSTEM);
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /**
@@ -427,15 +482,39 @@ export class TerrainCoordinator {
    * @param {boolean} visible
    */
   setPlaceablesPanelVisible(visible) {
-    // Placeables panel removed from UI; preserve API but ignore state changes.
-    try { logger.debug('setPlaceablesPanelVisible called but placeables UI removed', { requested: !!visible }, LOG_CATEGORY.SYSTEM); } catch (_) { /* ignore */ }
+    // Record panel visibility so input handlers can determine whether
+    // placeable selection should be honored. When hiding the panel we
+    // proactively clear selection to avoid accidental placement.
+    this._placeablesPanelVisible = !!visible;
+    if (!this._placeablesPanelVisible) this.clearSelectedPlaceable();
+    try {
+      logger.debug('setPlaceablesPanelVisible', { requested: !!visible }, LOG_CATEGORY.SYSTEM);
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /**
    * Returns true when the Placeable Tiles panel is visible in the UI.
    */
   isPlaceablesPanelVisible() {
-    // Always false since the panel no longer exists
+    // Prefer explicit state if set
+    if (typeof this._placeablesPanelVisible === 'boolean') return this._placeablesPanelVisible;
+    // Fallback: if running in a browser, detect the presence/visibility of the DOM root
+    try {
+      if (typeof document !== 'undefined') {
+        const el = document.getElementById('terrain-placeables-root');
+        if (el) {
+          if (window.getComputedStyle) {
+            const style = window.getComputedStyle(el);
+            return style && style.display !== 'none' && style.visibility !== 'hidden';
+          }
+          return true;
+        }
+      }
+    } catch (_) {
+      /* ignore DOM access failures (e.g., during unit tests) */
+    }
     return false;
   }
 
@@ -457,7 +536,6 @@ export class TerrainCoordinator {
     this.ptBrushSize = Math.max(this.ptBrushSize - 1, TERRAIN_CONFIG.MIN_BRUSH_SIZE);
   }
 
-
   /**
    * Handle grid resize - reinitialize terrain data
    * @param {number} newCols - New column count
@@ -470,7 +548,9 @@ export class TerrainCoordinator {
   /**
    * Load base terrain state into working terrain heights for editing
    */
-  loadBaseTerrainIntoWorkingState() { return _loadBaseIntoWorking(this); }
+  loadBaseTerrainIntoWorkingState() {
+    return _loadBaseIntoWorking(this);
+  }
 
   /**
    * Apply terrain modifications permanently to the base grid
@@ -490,7 +570,7 @@ export class TerrainCoordinator {
   /**
    * NEW METHOD: Update base grid tile in-place without destruction (SAFER)
    * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate  
+   * @param {number} y - Grid Y coordinate
    * @param {number} height - Terrain height value
    * @returns {boolean} True if tile was updated successfully, false if replacement needed
    */
@@ -501,7 +581,7 @@ export class TerrainCoordinator {
   /**
    * Replace a base grid tile with terrain-modified version (ENHANCED SAFETY)
    * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate  
+   * @param {number} y - Grid Y coordinate
    * @param {number} height - Terrain height value
    */
   replaceBaseGridTile(x, y, height) {
@@ -530,7 +610,6 @@ export class TerrainCoordinator {
     return this._biomeShading.toggleBaseTileVisibility(show);
   }
 
-
   /**
    * Public pass-through for elevation visual effect so tests and collaborators
    * can stub/spy this method without depending on private fields.
@@ -550,7 +629,9 @@ export class TerrainCoordinator {
       if (this.terrainManager && typeof this.terrainManager.getColorForHeight === 'function') {
         return this.terrainManager.getColorForHeight(height);
       }
-    } catch (_) { /* ignore and fall back */ }
+    } catch (_) {
+      /* ignore and fall back */
+    }
     return this._getBiomeOrBaseColor(height);
   }
 
@@ -573,7 +654,7 @@ export class TerrainCoordinator {
 
       const rows = this.gameManager.rows;
       const cols = this.gameManager.cols;
-      const seed = Number.isFinite(options.seed) ? options.seed : (this._biomeSeed >>> 0);
+      const seed = Number.isFinite(options.seed) ? options.seed : this._biomeSeed >>> 0;
       const field = generateBiomeElevationField(
         biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland',
         rows,
@@ -582,15 +663,19 @@ export class TerrainCoordinator {
       );
 
       // Update data store
-      this.dataStore.base = field.map(r => [...r]);
-      this.dataStore.working = field.map(r => [...r]);
+      this.dataStore.base = field.map((r) => [...r]);
+      this.dataStore.working = field.map((r) => [...r]);
 
       // Repaint base tiles to reflect new elevations
       _validateApplyReqs(this); // throws if missing requirements
       const modified = _processAllTiles(this);
       _logApplyComplete(this, modified);
       // Ensure rich biome canvas (if enabled) repaints using the new heights to avoid stale overlays
-      try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+      try {
+        this.applyBiomePaletteToBaseGrid();
+      } catch (_) {
+        /* non-fatal */
+      }
       return true;
     } catch (_) {
       return false;
@@ -615,8 +700,9 @@ export class TerrainCoordinator {
 
       const rows = this.gameManager.rows;
       const cols = this.gameManager.cols;
-      const seed = Number.isFinite(options.seed) ? options.seed : (this._biomeSeed >>> 0);
-      const activeBiome = biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland';
+      const seed = Number.isFinite(options.seed) ? options.seed : this._biomeSeed >>> 0;
+      const activeBiome =
+        biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland';
       // Auto-apply biome-appropriate elevation perception (pixels per level) before generation
       try {
         const hintedUnit = getBiomeElevationScaleHint(activeBiome);
@@ -624,24 +710,25 @@ export class TerrainCoordinator {
           // Avoid mid-generation repaint to reduce flicker/ghosting
           this.setElevationScale(hintedUnit, { repaintBiome: false });
         }
-      } catch (_) { /* non-fatal: fall back to current unit */ }
-      const field = generateBiomeElevationField(
-        activeBiome,
-        rows,
-        cols,
-        { ...options, seed }
-      );
+      } catch (_) {
+        /* non-fatal: fall back to current unit */
+      }
+      const field = generateBiomeElevationField(activeBiome, rows, cols, { ...options, seed });
 
       // Update data store
-      this.dataStore.base = field.map(r => [...r]);
-      this.dataStore.working = field.map(r => [...r]);
+      this.dataStore.base = field.map((r) => [...r]);
+      this.dataStore.working = field.map((r) => [...r]);
 
       // Repaint base tiles to reflect new elevations
       _validateApplyReqs(this);
       const modified = _processAllTiles(this);
       _logApplyComplete(this, modified);
       // Repaint biome canvas/shading with updated heights to prevent ghosting from the previous map
-      try { this.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+      try {
+        this.applyBiomePaletteToBaseGrid();
+      } catch (_) {
+        /* non-fatal */
+      }
       return true;
     } catch (_) {
       return false;

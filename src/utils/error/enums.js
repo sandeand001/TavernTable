@@ -4,7 +4,7 @@ export const ERROR_SEVERITY = Object.freeze({
   INFO: 'info',
   WARNING: 'warning',
   ERROR: 'error',
-  CRITICAL: 'critical'
+  CRITICAL: 'critical',
 });
 
 export const ERROR_CATEGORY = Object.freeze({
@@ -19,7 +19,7 @@ export const ERROR_CATEGORY = Object.freeze({
   GAME_STATE: 'game_state',
   PERFORMANCE: 'performance',
   SECURITY: 'security',
-  SYSTEM: 'system'
+  SYSTEM: 'system',
 });
 
 export const RECOVERY_STRATEGY = Object.freeze({
@@ -28,5 +28,5 @@ export const RECOVERY_STRATEGY = Object.freeze({
   FALLBACK: 'fallback',
   RELOAD: 'reload',
   RESET: 'reset',
-  GRACEFUL_DEGRADATION: 'graceful'
+  GRACEFUL_DEGRADATION: 'graceful',
 });

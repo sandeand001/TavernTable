@@ -1,10 +1,10 @@
 /**
  * AnimatedSpriteManager.js - Manages animated sprite sheets for creature tokens
- * 
+ *
  * Handles PIXI.js AnimatedSprite creation from sprite sheets, providing smooth
  * looping animations for creature tokens. Integrates with existing SpriteManager
  * while maintaining backward compatibility.
- * 
+ *
  * @module AnimatedSpriteManager
  * @author TavernTable
  * @since 1.1.0
@@ -18,13 +18,13 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHand
  * Define sprite sheet layouts and animation properties
  */
 const ANIMATED_SPRITE_CONFIG = {
-  'dragon': {
+  dragon: {
     texture: 'assets/animated-sprites/dragon-animation.png',
-    frameWidth: 512,  // Fixed: 1024 ÷ 2 = 512px (was 256)
+    frameWidth: 512, // Fixed: 1024 ÷ 2 = 512px (was 256)
     frameHeight: 341, // Fixed: 1024 ÷ 3 = 341px (was 384)
     totalFrames: 6,
-    columns: 2,  // 2 columns
-    rows: 3,     // 3 rows
+    columns: 2, // 2 columns
+    rows: 3, // 3 rows
     animationSpeed: 0.08, // ~5 FPS (slowed down from 0.133)
     loop: true,
     autoPlay: true,
@@ -38,10 +38,10 @@ const ANIMATED_SPRITE_CONFIG = {
     baselineAlignment: {
       enabled: false, // Temporarily disabled to eliminate frame shifting
       referenceY: 283, // Fixed: Proportional to new frame height (341 * 0.83 ≈ 283)
-      frontFeetX: 90,  // Approximate X position of front feet for detection
-      detectionHeight: 20 // Height range to search for feet baseline
-    }
-  }
+      frontFeetX: 90, // Approximate X position of front feet for detection
+      detectionHeight: 20, // Height range to search for feet baseline
+    },
+  },
   // Easy to add more animated creatures here:
   // 'phoenix': { texture: '...', frameWidth: 128, ... },
   // 'elemental': { texture: '...', frameWidth: 192, ... }
@@ -69,20 +69,25 @@ class AnimatedSpriteManager {
       logger.info('Initializing AnimatedSpriteManager...');
 
       // Preload all animated sprite textures
-      const loadPromises = Object.entries(ANIMATED_SPRITE_CONFIG).map(
-        ([key, config]) => this.preloadTexture(key, config)
+      const loadPromises = Object.entries(ANIMATED_SPRITE_CONFIG).map(([key, config]) =>
+        this.preloadTexture(key, config)
       );
 
       await Promise.all(loadPromises);
 
       this.isInitialized = true;
-      logger.log(LOG_LEVEL.INFO, 'AnimatedSpriteManager initialized successfully', LOG_CATEGORY.SYSTEM, {
-        context: 'AnimatedSpriteManager.initialize',
-        stage: 'initialization_complete',
-        configuredSprites: Object.keys(ANIMATED_SPRITE_CONFIG),
-        texturesLoaded: loadPromises.length,
-        isInitialized: this.isInitialized
-      });
+      logger.log(
+        LOG_LEVEL.INFO,
+        'AnimatedSpriteManager initialized successfully',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'AnimatedSpriteManager.initialize',
+          stage: 'initialization_complete',
+          configuredSprites: Object.keys(ANIMATED_SPRITE_CONFIG),
+          texturesLoaded: loadPromises.length,
+          isInitialized: this.isInitialized,
+        }
+      );
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.RENDERING, {
         context: 'AnimatedSpriteManager.initialize',
@@ -90,7 +95,7 @@ class AnimatedSpriteManager {
         configuredSprites: Object.keys(ANIMATED_SPRITE_CONFIG),
         pixiAvailable: typeof PIXI !== 'undefined',
         loaderAvailable: !!(PIXI.Loader || PIXI.Assets),
-        isInitialized: this.isInitialized
+        isInitialized: this.isInitialized,
       });
       throw error;
     }
@@ -122,9 +127,9 @@ class AnimatedSpriteManager {
       if (baseTexture.width < expectedWidth || baseTexture.height < expectedHeight) {
         throw new Error(
           `Sprite sheet dimensions insufficient for ${key}: ` +
-          `Image: ${baseTexture.width}x${baseTexture.height}px, ` +
-          `Required: ${expectedWidth}x${expectedHeight}px ` +
-          `(${config.columns}×${config.rows} grid of ${config.frameWidth}×${config.frameHeight}px frames)`
+            `Image: ${baseTexture.width}x${baseTexture.height}px, ` +
+            `Required: ${expectedWidth}x${expectedHeight}px ` +
+            `(${config.columns}×${config.rows} grid of ${config.frameWidth}×${config.frameHeight}px frames)`
         );
       }
 
@@ -138,12 +143,16 @@ class AnimatedSpriteManager {
       this.loadedTextures.set(key, {
         baseTexture,
         frames,
-        config
+        config,
       });
 
       logger.debug(`Successfully loaded animated texture: ${key} (${frames.length} frames)`);
     } catch (error) {
-      logger.error('Failed to load animated texture', { key, error: error?.message, stack: error?.stack }, LOG_CATEGORY.SYSTEM);
+      logger.error(
+        'Failed to load animated texture',
+        { key, error: error?.message, stack: error?.stack },
+        LOG_CATEGORY.SYSTEM
+      );
       logger.warn(`Failed to load animated texture: ${key}`, error);
       // Don't throw - allow fallback to static sprites
     }
@@ -203,7 +212,9 @@ class AnimatedSpriteManager {
         const frameTexture = new PIXI.Texture(baseTexture, rectangle);
         frames.push(frameTexture);
 
-        logger.debug(`  Frame ${frameCount + 1}: Position (${x}, ${y}) Size ${frameWidth}x${frameHeight}`);
+        logger.debug(
+          `  Frame ${frameCount + 1}: Position (${x}, ${y}) Size ${frameWidth}x${frameHeight}`
+        );
         frameCount++;
       }
     }
@@ -237,12 +248,12 @@ class AnimatedSpriteManager {
     // Values scaled from original 384px frame height to 341px frame height
     // Reduced magnitude to minimize visible shifting between frames
     return [
-      0,    // Frame 1: Neutral stance - reference position
-      1,    // Frame 2: Slight lean forward - minimal adjust down
-      2,    // Frame 3: Deep breath preparation - small adjust down  
-      1.5,  // Frame 4: Fire breath peak - small adjust down
-      0.5,  // Frame 5: Recovery breath - very slight adjust down
-      -0.5  // Frame 6: Return to neutral - very slight adjust up
+      0, // Frame 1: Neutral stance - reference position
+      1, // Frame 2: Slight lean forward - minimal adjust down
+      2, // Frame 3: Deep breath preparation - small adjust down
+      1.5, // Frame 4: Fire breath peak - small adjust down
+      0.5, // Frame 5: Recovery breath - very slight adjust down
+      -0.5, // Frame 6: Return to neutral - very slight adjust up
     ];
   }
 
@@ -252,9 +263,11 @@ class AnimatedSpriteManager {
    * @returns {boolean} True if animated version is available
    */
   hasAnimatedSprite(creatureType) {
-    return this.isInitialized &&
+    return (
+      this.isInitialized &&
       Object.prototype.hasOwnProperty.call(ANIMATED_SPRITE_CONFIG, creatureType) &&
-      this.loadedTextures.has(creatureType);
+      this.loadedTextures.has(creatureType)
+    );
   }
 
   /**
@@ -287,8 +300,7 @@ class AnimatedSpriteManager {
 
       // Create baseline alignment system if explicitly enabled
       // Use strict boolean check to ensure false/undefined/null all disable baseline alignment
-      const baselineEnabled = config.baselineAlignment &&
-        config.baselineAlignment.enabled === true;
+      const baselineEnabled = config.baselineAlignment && config.baselineAlignment.enabled === true;
 
       if (baselineEnabled) {
         const container = this.createBaselineAlignedContainer(animatedSprite, config);
@@ -298,7 +310,7 @@ class AnimatedSpriteManager {
         this.animatedSprites.set(spriteId, container);
 
         // Auto-start animation if configured
-        if (config.autoPlay && (options.autoPlay !== false)) {
+        if (config.autoPlay && options.autoPlay !== false) {
           animatedSprite.play();
         }
 
@@ -314,7 +326,7 @@ class AnimatedSpriteManager {
         const spriteId = `${creatureType}_${Date.now()}_${Math.random()}`;
         this.animatedSprites.set(spriteId, animatedSprite);
 
-        if (config.autoPlay && (options.autoPlay !== false)) {
+        if (config.autoPlay && options.autoPlay !== false) {
           animatedSprite.play();
         }
 
@@ -325,16 +337,18 @@ class AnimatedSpriteManager {
         logger.debug(`Created animated sprite for: ${creatureType}`);
         return animatedSprite;
       }
-
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
         context: 'AnimatedSpriteManager.createAnimatedSprite',
         stage: 'animated_sprite_creation',
         creatureType: creatureType,
         options: options || {},
-        configAvailable: !!(ANIMATED_SPRITE_CONFIG[creatureType]),
-        textureAvailable: !!(PIXI.utils?.TextureCache && PIXI.utils.TextureCache[ANIMATED_SPRITE_CONFIG[creatureType]?.texture]),
-        isInitialized: this.isInitialized
+        configAvailable: !!ANIMATED_SPRITE_CONFIG[creatureType],
+        textureAvailable: !!(
+          PIXI.utils?.TextureCache &&
+          PIXI.utils.TextureCache[ANIMATED_SPRITE_CONFIG[creatureType]?.texture]
+        ),
+        isInitialized: this.isInitialized,
       });
       return null;
     }
@@ -390,9 +404,7 @@ class AnimatedSpriteManager {
    * @returns {string[]} Array of creature types with animations
    */
   getAvailableAnimatedTypes() {
-    return Object.keys(ANIMATED_SPRITE_CONFIG).filter(
-      type => this.loadedTextures.has(type)
-    );
+    return Object.keys(ANIMATED_SPRITE_CONFIG).filter((type) => this.loadedTextures.has(type));
   }
 
   /**
@@ -400,7 +412,7 @@ class AnimatedSpriteManager {
    * Useful for resuming after pause
    */
   startAllAnimations() {
-    this.animatedSprites.forEach(sprite => {
+    this.animatedSprites.forEach((sprite) => {
       if (sprite && !sprite.playing) {
         sprite.play();
       }
@@ -412,7 +424,7 @@ class AnimatedSpriteManager {
    * Useful for pausing or performance optimization
    */
   stopAllAnimations() {
-    this.animatedSprites.forEach(sprite => {
+    this.animatedSprites.forEach((sprite) => {
       if (sprite && sprite.playing) {
         sprite.stop();
       }
@@ -433,7 +445,7 @@ class AnimatedSpriteManager {
    * @param {number} speedMultiplier - Speed multiplier (1.0 = normal)
    */
   updateAnimationSpeed(speedMultiplier) {
-    this.animatedSprites.forEach(sprite => {
+    this.animatedSprites.forEach((sprite) => {
       if (sprite) {
         const originalSpeed = sprite.animationSpeed / (this.currentSpeedMultiplier || 1);
         sprite.animationSpeed = originalSpeed * speedMultiplier;

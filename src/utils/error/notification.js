@@ -1,5 +1,6 @@
+/* eslint-disable indent */
 // Error notification manager extracted with no behavior changes.
-import { RECOVERY_STRATEGY } from './enums.js';
+import { RECOVERY_STRATEGY, ERROR_CATEGORY } from './enums.js';
 import { getErrorContainer, getErrorStylesEl } from '../../ui/domHelpers.js';
 
 export class ErrorNotificationManager {
@@ -110,22 +111,24 @@ export class ErrorNotificationManager {
     const actions = document.createElement('div');
     actions.className = 'tavern-error-actions';
     switch (strategy) {
-    case RECOVERY_STRATEGY.RETRY: {
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'tavern-error-button';
-      retryBtn.textContent = 'Retry';
-      retryBtn.onclick = () => this.handleRetry(errorEntry);
-      actions.appendChild(retryBtn);
-      break;
-    }
-    case RECOVERY_STRATEGY.RELOAD: {
-      const reloadBtn = document.createElement('button');
-      reloadBtn.className = 'tavern-error-button';
-      reloadBtn.textContent = 'Reload';
-      reloadBtn.onclick = () => window.location.reload();
-      actions.appendChild(reloadBtn);
-      break;
-    }
+      case RECOVERY_STRATEGY.RETRY: {
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'tavern-error-button';
+        retryBtn.textContent = 'Retry';
+        retryBtn.onclick = () => this.handleRetry(errorEntry);
+        actions.appendChild(retryBtn);
+        break;
+      }
+      case RECOVERY_STRATEGY.RELOAD: {
+        const reloadBtn = document.createElement('button');
+        reloadBtn.className = 'tavern-error-button';
+        reloadBtn.textContent = 'Reload';
+        reloadBtn.onclick = () => window.location.reload();
+        actions.appendChild(reloadBtn);
+        break;
+      }
+      default:
+        break;
     }
     return actions.children.length > 0 ? actions : null;
   }
@@ -157,7 +160,13 @@ export class ErrorNotificationManager {
   }
 
   getSeverityTitle(severity) {
-    const titles = { debug: 'Debug', info: 'Information', warning: 'Warning', error: 'Error', critical: 'Critical Error' };
+    const titles = {
+      debug: 'Debug',
+      info: 'Information',
+      warning: 'Warning',
+      error: 'Error',
+      critical: 'Critical Error',
+    };
     return titles[severity] || 'Error';
   }
 
@@ -171,11 +180,13 @@ export class ErrorNotificationManager {
       network: 'Network connection issue. Some features may be unavailable.',
       coordinate: 'Grid positioning error. Token placement may be affected.',
       token: 'Token management issue. Some tokens may not behave correctly.',
-      'game_state': 'Game state error. The game may not function as expected.',
+      [ERROR_CATEGORY.GAME_STATE]: 'Game state error. The game may not function as expected.',
       performance: 'Performance issue detected. The game may run slowly.',
       security: 'Security validation failed. Action was blocked for safety.',
-      system: 'System error encountered. Please try again.'
+      system: 'System error encountered. Please try again.',
     };
-    return categoryMessages[errorEntry.category] || errorEntry.message || 'An unexpected error occurred.';
+    return (
+      categoryMessages[errorEntry.category] || errorEntry.message || 'An unexpected error occurred.'
+    );
   }
 }

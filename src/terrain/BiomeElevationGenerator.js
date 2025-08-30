@@ -26,13 +26,15 @@ import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 // ------------------------
 
 function hash2D(x, y, seed = 1337) {
-  const X = Math.sin((x * 127.1 + y * 311.7 + seed * 0.73)) * 43758.5453;
+  const X = Math.sin(x * 127.1 + y * 311.7 + seed * 0.73) * 43758.5453;
   return X - Math.floor(X);
 }
 
 function smoothNoise(x, y, seed = 1337) {
-  const x0 = Math.floor(x), y0 = Math.floor(y);
-  const xf = x - x0, yf = y - y0;
+  const x0 = Math.floor(x),
+    y0 = Math.floor(y);
+  const xf = x - x0,
+    yf = y - y0;
   const v00 = hash2D(x0, y0, seed);
   const v10 = hash2D(x0 + 1, y0, seed);
   const v01 = hash2D(x0, y0 + 1, seed);
@@ -69,28 +71,37 @@ function ridge(x, y, seed = 1337, octaves = 5) {
   return s / (2 - Math.pow(0.5, octaves)); // normalize ~[0,1]
 }
 
-function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
-function mix(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+function mix(a, b, t) {
+  return a + (b - a) * t;
+}
 
 // Deterministic PRNG helper for seeded variation
 function randFromSeed(seed, k1 = 0, k2 = 0) {
   let h = (seed | 0) ^ 0x9e3779b9 ^ (k1 | 0) ^ ((k2 | 0) * 0x85ebca6b);
-  h ^= h >>> 16; h = Math.imul(h, 0x27d4eb2d); h ^= h >>> 15; h >>>= 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x27d4eb2d);
+  h ^= h >>> 15;
+  h >>>= 0;
   return h / 4294967296; // [0,1)
 }
 
 // Shape helpers
 function radial(nx, ny, seed, invert = false, scale = 1.0, bump = 0.0) {
-  const cx = 0.5, cy = 0.5;
-  const dx = nx - cx, dy = ny - cy;
+  const cx = 0.5,
+    cy = 0.5;
+  const dx = nx - cx,
+    dy = ny - cy;
   const d = Math.sqrt(dx * dx + dy * dy);
-  const base = invert ? d : (1.0 - d);
+  const base = invert ? d : 1.0 - d;
   const n = fbm2(nx * 4.0, ny * 4.0, seed, 4, 2.0, 0.5) - 0.5;
-  return (base * scale + n * 0.4 + bump);
+  return base * scale + n * 0.4 + bump;
 }
 
 function cliffBand(nx, ny, seed, angleDeg = 0, width = 0.08) {
-  const th = angleDeg * Math.PI / 180;
+  const th = (angleDeg * Math.PI) / 180;
   const u = nx * Math.cos(th) + ny * Math.sin(th);
   const edge = Math.tanh((u - 0.5) / width); // sharp transition
   const noise = (fbm2(nx * 8, ny * 8, seed, 3, 2.1, 0.5) - 0.5) * 0.2;
@@ -122,7 +133,7 @@ function shapeMountain(x, y, nx, ny, seed, opts) {
   const ridged = ridge(nx * 2.2, ny * 2.2, seed, 6);
   const valley = fbm2(nx * 0.7, ny * 0.7, seed + 123, 3, 2.0, 0.6);
   let h = (ridged * 1.1 - 0.55) * r; // center around 0
-  h -= (valley - 0.5) * (r * 0.4);    // carve valleys
+  h -= (valley - 0.5) * (r * 0.4); // carve valleys
   return h;
 }
 
@@ -135,8 +146,14 @@ function shapeDesertHot(x, y, nx, ny, seed, opts) {
 
 function shapeSandDunes(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 3.0;
-  const dirDeg = ((Number.isFinite(opts.orientation) ? opts.orientation : Math.floor(randFromSeed(seed, 13) * 360)) * Math.PI) / 180;
-  const dx = Math.cos(dirDeg), dy = Math.sin(dirDeg);
+  const dirDeg =
+    ((Number.isFinite(opts.orientation)
+      ? opts.orientation
+      : Math.floor(randFromSeed(seed, 13) * 360)) *
+      Math.PI) /
+    180;
+  const dx = Math.cos(dirDeg),
+    dy = Math.sin(dirDeg);
   // Project coords along dune direction to get waves; break up with fbm
   const wave = Math.sin((nx * dx + ny * dy) * 18.0 + seed * 0.001);
   const detail = fbm2(nx * 6.0, ny * 6.0, seed + 77, 4, 2.0, 0.5);
@@ -160,11 +177,12 @@ function shapeCoast(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 3.5;
   // Oriented shoreline across axis t; default random by seed when not provided
   const theta = Number.isFinite(opts.orientation)
-    ? (opts.orientation * Math.PI / 180)
-    : (randFromSeed(seed, 71) * Math.PI * 2);
-  const ax = Math.cos(theta), ay = Math.sin(theta);
+    ? (opts.orientation * Math.PI) / 180
+    : randFromSeed(seed, 71) * Math.PI * 2;
+  const ax = Math.cos(theta),
+    ay = Math.sin(theta);
   const t = nx * ax + ny * ay; // projection
-  const gradient = mix(-1.0, 1.0, (t + 0.25));
+  const gradient = mix(-1.0, 1.0, t + 0.25);
   const n = fbm2(nx * 3.0, ny * 3.0, seed, 4, 2.0, 0.55) - 0.5;
   return (gradient * 0.9 + n * 0.7) * r;
 }
@@ -213,7 +231,7 @@ function shapeDesertCold(x, y, nx, ny, seed, opts) {
 
 function shapeOasis(x, y, nx, ny, seed, opts) {
   // desert with central depression (water) surrounded by slight rim
-  const base = shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: (opts.relief ?? 1.5) });
+  const base = shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 1.5 });
   const bowl = -radial(nx, ny, seed + 5, false, 1.0, 0.0); // negative in center
   return base + bowl * 1.2;
 }
@@ -262,26 +280,26 @@ function shapeCedarHighlands(x, y, nx, ny, seed, opts) {
 
 function shapeGeyserBasin(x, y, nx, ny, seed, opts) {
   // rolling with random pits (vents)
-  const base = shapeWetlands(x, y, nx, ny, seed, { ...opts, relief: (opts.relief ?? 2.0) });
-  const pits = (fbm2(nx * 10.0, ny * 10.0, seed + 77, 2, 2.0, 0.5) - 0.4);
+  const base = shapeWetlands(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.0 });
+  const pits = fbm2(nx * 10.0, ny * 10.0, seed + 77, 2, 2.0, 0.5) - 0.4;
   return base - pits * 1.2;
 }
 
 function shapeFloodplain(x, y, nx, ny, seed, opts) {
-  const base = shapeRiverLake(x, y, nx, ny, seed, { ...opts, relief: (opts.relief ?? 2.0) });
+  const base = shapeRiverLake(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.0 });
   return base * 0.8; // gentler
 }
 
 function shapeBloodMarsh(x, y, nx, ny, seed, opts) {
-  const base = shapeWetlands(x, y, nx, ny, seed + 88, { ...opts, relief: (opts.relief ?? 2.2) });
+  const base = shapeWetlands(x, y, nx, ny, seed + 88, { ...opts, relief: opts.relief ?? 2.2 });
   return base - 0.5; // deeper bogs
 }
 
 function shapeMangrove(x, y, nx, ny, seed, opts) {
   // coastal wetlands
-  const coast = shapeCoast(x, y, nx, ny, seed, { ...opts, relief: (opts.relief ?? 2.5) });
-  const wet = shapeWetlands(x, y, nx, ny, seed + 99, { ...opts, relief: (opts.relief ?? 2.0) });
-  return (coast * 0.6 + wet * 0.7);
+  const coast = shapeCoast(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.5 });
+  const wet = shapeWetlands(x, y, nx, ny, seed + 99, { ...opts, relief: opts.relief ?? 2.0 });
+  return coast * 0.6 + wet * 0.7;
 }
 
 function shapeOcean(x, y, nx, ny, seed, opts) {
@@ -298,20 +316,24 @@ function shapeCoralReef(x, y, nx, ny, seed, opts) {
 }
 
 function shapeDeadForest(x, y, nx, ny, seed, opts) {
-  const base = shapeSteppe(x, y, nx, ny, seed + 131, { ...opts, relief: (opts.relief ?? 1.7) });
+  const base = shapeSteppe(x, y, nx, ny, seed + 131, { ...opts, relief: opts.relief ?? 1.7 });
   return base - 0.3;
 }
 
 function shapePetrifiedForest(x, y, nx, ny, seed, opts) {
-  const h = shapeHills(x, y, nx, ny, seed + 141, { ...opts, relief: (opts.relief ?? 3.2) });
+  const h = shapeHills(x, y, nx, ny, seed + 141, { ...opts, relief: opts.relief ?? 3.2 });
   const cracks = cliffBand(nx, ny, seed + 142, 90, 0.06) + cliffBand(nx, ny, seed + 143, 0, 0.06);
   return h + cracks * 0.6;
 }
 
 function shapeBambooThicket(x, y, nx, ny, seed, opts) {
   // gentle longitudinal ridges
-  const dir = (randFromSeed(seed, 7) * 360);
-  const dune = shapeSandDunes(x, y, nx, ny, seed + 151, { ...opts, relief: (opts.relief ?? 2.2), orientation: dir });
+  const dir = randFromSeed(seed, 7) * 360;
+  const dune = shapeSandDunes(x, y, nx, ny, seed + 151, {
+    ...opts,
+    relief: opts.relief ?? 2.2,
+    orientation: dir,
+  });
   return dune * 0.7;
 }
 
@@ -323,7 +345,9 @@ function shapeOrchard(x, y, nx, ny, seed, opts) {
 }
 
 function shapeMysticGrove(x, y, nx, ny, seed, opts) {
-  const humps = radial(nx, ny, seed + 171, true, 1.0, 0.0) + (fbm2(nx * 5.0, ny * 5.0, seed + 172, 3, 2.0, 0.5) - 0.5);
+  const humps =
+    radial(nx, ny, seed + 171, true, 1.0, 0.0) +
+    (fbm2(nx * 5.0, ny * 5.0, seed + 172, 3, 2.0, 0.5) - 0.5);
   return humps * (opts.relief ?? 2.4);
 }
 
@@ -384,13 +408,14 @@ function shapeObsidianPlain(x, y, nx, ny, seed, opts) {
 }
 
 function shapeAshWastes(x, y, nx, ny, seed, opts) {
-  const dunes = shapeSandDunes(x, y, nx, ny, seed + 271, { ...opts, relief: (opts.relief ?? 2.0) });
+  const dunes = shapeSandDunes(x, y, nx, ny, seed + 271, { ...opts, relief: opts.relief ?? 2.0 });
   return dunes * 0.7 - 0.4;
 }
 
 function shapeLavaFields(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.8;
-  const flows = Math.sin(nx * 14 + seed) * 0.5 + (fbm2(nx * 3.5, ny * 3.5, seed + 281, 3, 2.0, 0.55) - 0.5);
+  const flows =
+    Math.sin(nx * 14 + seed) * 0.5 + (fbm2(nx * 3.5, ny * 3.5, seed + 281, 3, 2.0, 0.55) - 0.5);
   return flows * r + 0.3;
 }
 
@@ -485,7 +510,7 @@ const RECIPE_INDEX = {
   graveyard: shapeGraveyard,
   // Exotic
   astralPlateau: shapeAstralPlateau,
-  arcaneLeyNexus: shapeArcaneLeyNexus
+  arcaneLeyNexus: shapeArcaneLeyNexus,
 };
 
 function pickRecipe(biomeKey) {
@@ -551,7 +576,7 @@ const BIOME_AMPLITUDE_BY_KEY = {
   graveyard: 2,
   // Exotic
   astralPlateau: 7,
-  arcaneLeyNexus: 8
+  arcaneLeyNexus: 8,
 };
 
 // Optional: per-biome post-process profiles to refine feel beyond amplitude alone.
@@ -567,76 +592,96 @@ const BIOME_ELEVATION_PROFILES = (() => {
   const p = {};
 
   // Helpers to assign multiple keys
-  const set = (keys, cfg) => { keys.forEach(k => { p[k] = { ...(p[k] || {}), ...cfg }; }); };
+  const set = (keys, cfg) => {
+    keys.forEach((k) => {
+      p[k] = { ...(p[k] || {}), ...cfg };
+    });
+  };
 
   // Very flat
   set(['saltFlats', 'frozenLake', 'obsidianPlain', 'ashWastes'], {
-    minAmp: 1, maxAmp: 3,
-    smoothRadius: 2, smoothIterations: 2,
+    minAmp: 1,
+    maxAmp: 3,
+    smoothRadius: 2,
+    smoothIterations: 2,
     ridgePower: 0.95,
-    jumpPx: 1.5
+    jumpPx: 1.5,
   });
 
   // Rolling
   set(['grassland', 'savanna', 'steppe', 'orchard', 'tundra'], {
-    minAmp: 3, maxAmp: 6,
-    smoothRadius: 1, smoothIterations: 1,
+    minAmp: 3,
+    maxAmp: 6,
+    smoothRadius: 1,
+    smoothIterations: 1,
     ridgePower: 1.0,
-    jumpPx: 2.5
+    jumpPx: 2.5,
   });
   // Dunes: extra smooth
   set(['sandDunes'], {
-    minAmp: 4, maxAmp: 7,
-    smoothRadius: 2, smoothIterations: 2,
+    minAmp: 4,
+    maxAmp: 7,
+    smoothRadius: 2,
+    smoothIterations: 2,
     ridgePower: 0.95,
-    jumpPx: 2.0
+    jumpPx: 2.0,
   });
 
   // Undulating/rugged forests
   set(['forestTemperate', 'forestConifer', 'wasteland', 'deadForest', 'bambooThicket'], {
-    minAmp: 4, maxAmp: 7,
-    smoothRadius: 1, smoothIterations: 1,
+    minAmp: 4,
+    maxAmp: 7,
+    smoothRadius: 1,
+    smoothIterations: 1,
     ridgePower: 1.05,
-    jumpPx: 3.5
+    jumpPx: 3.5,
   });
 
   // Hilly
   set(['hills', 'cedarHighlands', 'petrifiedForest'], {
-    minAmp: 6, maxAmp: 9,
+    minAmp: 6,
+    maxAmp: 9,
     ridgePower: 1.12,
-    jumpPx: 5.0
+    jumpPx: 5.0,
   });
 
   // Mountainous
   set(['mountain', 'alpine', 'screeSlope', 'crystalSpires', 'volcanic'], {
-    minAmp: 8, maxAmp: 10,
+    minAmp: 8,
+    maxAmp: 10,
     ridgePower: 1.25,
-    jumpPx: 10.0
+    jumpPx: 10.0,
   });
 
   // Wet/lowland
   set(['wetlands', 'swamp', 'floodplain', 'mangrove', 'riverLake', 'geyserBasin', 'bloodMarsh'], {
-    minAmp: 3, maxAmp: 6,
-    smoothRadius: 1, smoothIterations: 2,
+    minAmp: 3,
+    maxAmp: 6,
+    smoothRadius: 1,
+    smoothIterations: 2,
     ridgePower: 0.98,
     waterShift: -1,
-    jumpPx: 2.5
+    jumpPx: 2.5,
   });
 
   // Aquatic
   set(['ocean'], {
-    minAmp: 4, maxAmp: 6,
-    smoothRadius: 1, smoothIterations: 2,
+    minAmp: 4,
+    maxAmp: 6,
+    smoothRadius: 1,
+    smoothIterations: 2,
     ridgePower: 1.0,
     waterShift: -2,
-    jumpPx: 3.5
+    jumpPx: 3.5,
   });
   set(['coralReef'], {
-    minAmp: 5, maxAmp: 7,
-    smoothRadius: 1, smoothIterations: 1,
+    minAmp: 5,
+    maxAmp: 7,
+    smoothRadius: 1,
+    smoothIterations: 1,
     ridgePower: 1.12,
     waterShift: -1,
-    jumpPx: 4.5
+    jumpPx: 4.5,
   });
 
   // Cold
@@ -644,7 +689,14 @@ const BIOME_ELEVATION_PROFILES = (() => {
   set(['packIce'], { minAmp: 4, maxAmp: 6, smoothRadius: 1, smoothIterations: 1, jumpPx: 3.5 });
 
   // Underground/exotic
-  set(['cavern'], { minAmp: 4, maxAmp: 6, smoothRadius: 1, smoothIterations: 1, waterShift: -1, jumpPx: 3.0 });
+  set(['cavern'], {
+    minAmp: 4,
+    maxAmp: 6,
+    smoothRadius: 1,
+    smoothIterations: 1,
+    waterShift: -1,
+    jumpPx: 3.0,
+  });
   set(['fungalGrove'], { minAmp: 3, maxAmp: 5, smoothRadius: 1, smoothIterations: 1, jumpPx: 2.5 });
   set(['crystalFields'], { minAmp: 6, maxAmp: 8, ridgePower: 1.18, jumpPx: 6.0 });
   set(['eldritchRift'], { minAmp: 7, maxAmp: 9, ridgePower: 1.2, jumpPx: 7.0 });
@@ -652,7 +704,15 @@ const BIOME_ELEVATION_PROFILES = (() => {
   set(['arcaneLeyNexus'], { minAmp: 7, maxAmp: 9, ridgePower: 1.15, jumpPx: 6.5 });
 
   // Coasts
-  set(['coast'], { minAmp: 4, maxAmp: 6, smoothRadius: 2, smoothIterations: 1, ridgePower: 1.0, waterShift: -1, jumpPx: 3.0 });
+  set(['coast'], {
+    minAmp: 4,
+    maxAmp: 6,
+    smoothRadius: 2,
+    smoothIterations: 1,
+    ridgePower: 1.0,
+    waterShift: -1,
+    jumpPx: 3.0,
+  });
 
   // Defaults are permissive; missing keys will fall back gracefully.
   return p;
@@ -669,16 +729,19 @@ function smoothHeightsInPlace(arr, rows, cols, radius = 1, iterations = 1) {
   for (let it = 0; it < iterations; it++) {
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        let sum = 0, count = 0;
-        const y0 = Math.max(0, y - radius), y1 = Math.min(rows - 1, y + radius);
-        const x0 = Math.max(0, x - radius), x1 = Math.min(cols - 1, x + radius);
+        let sum = 0,
+          count = 0;
+        const y0 = Math.max(0, y - radius),
+          y1 = Math.min(rows - 1, y + radius);
+        const x0 = Math.max(0, x - radius),
+          x1 = Math.min(cols - 1, x + radius);
         for (let yy = y0; yy <= y1; yy++) {
           for (let xx = x0; xx <= x1; xx++) {
             sum += arr[yy][xx];
             count++;
           }
         }
-        tmp[y][x] = count > 0 ? (sum / count) : arr[y][x];
+        tmp[y][x] = count > 0 ? sum / count : arr[y][x];
       }
     }
     // copy back
@@ -708,7 +771,8 @@ function applyRidgePowerInPlace(arr, rows, cols, power = 1.0) {
 // ------------------------
 
 export function isAllDefaultHeight(heightArray, defaultHeight = TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-  if (!Array.isArray(heightArray) || heightArray.length === 0 || !Array.isArray(heightArray[0])) return false;
+  if (!Array.isArray(heightArray) || heightArray.length === 0 || !Array.isArray(heightArray[0]))
+    return false;
   for (let y = 0; y < heightArray.length; y++) {
     const row = heightArray[y];
     for (let x = 0; x < row.length; x++) {
@@ -719,7 +783,9 @@ export function isAllDefaultHeight(heightArray, defaultHeight = TERRAIN_CONFIG.D
 }
 
 export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) {
-  const seed = Number.isFinite(options.seed) ? options.seed : Math.floor((options.seed || Date.now()) % 2147483647);
+  const seed = Number.isFinite(options.seed)
+    ? options.seed
+    : Math.floor((options.seed || Date.now()) % 2147483647);
   const reliefMul = Number.isFinite(options.relief) ? options.relief : undefined;
   const roughness = Number.isFinite(options.roughness) ? options.roughness : undefined;
   const waterBias = Number.isFinite(options.waterBias) ? options.waterBias : undefined;
@@ -730,20 +796,19 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
 
   // First pass: compute raw heights from the biome recipe (floating)
   const raw = TerrainHeightUtils.createHeightArray(rows, cols, 0);
-  let minH = Infinity, maxH = -Infinity;
+  let minH = Infinity,
+    maxH = -Infinity;
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const nx = cols > 1 ? x / (cols - 1) : 0.5;
       const ny = rows > 1 ? y / (rows - 1) : 0.5;
-      const h = recipe(
-        x,
-        y,
-        nx,
-        ny,
-        seed,
-        { relief: reliefMul, roughness, waterBias, orientation }
-      );
+      const h = recipe(x, y, nx, ny, seed, {
+        relief: reliefMul,
+        roughness,
+        waterBias,
+        orientation,
+      });
       raw[y][x] = h;
       if (h < minH) minH = h;
       if (h > maxH) maxH = h;
@@ -753,15 +818,15 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
   // Determine scaling that preserves water bias (scale relative to 0, do NOT recenter on mean)
   const maxAbsRaw = Math.max(Math.abs(minH), Math.abs(maxH));
 
-  const maxAbsLevel = Math.max(Math.abs(TERRAIN_CONFIG.MIN_HEIGHT), Math.abs(TERRAIN_CONFIG.MAX_HEIGHT));
+  const maxAbsLevel = Math.max(
+    Math.abs(TERRAIN_CONFIG.MIN_HEIGHT),
+    Math.abs(TERRAIN_CONFIG.MAX_HEIGHT)
+  );
   // Biome-themed amplitude (in levels), only scaled by optional relief; perception affects quantization, not amplitude
   const biomeBase = BIOME_AMPLITUDE_BY_KEY[biomeKey] ?? Math.round(maxAbsLevel * 0.6);
   const reliefFactor = Number.isFinite(reliefMul) ? reliefMul : 1;
-  let targetAmplitude = Math.max(1, Math.min(
-    maxAbsLevel,
-    Math.round(biomeBase * reliefFactor)
-  ));
-    // Clamp by biome profile range if provided
+  let targetAmplitude = Math.max(1, Math.min(maxAbsLevel, Math.round(biomeBase * reliefFactor)));
+  // Clamp by biome profile range if provided
   if (Number.isFinite(profile.minAmp)) targetAmplitude = Math.max(profile.minAmp, targetAmplitude);
   if (Number.isFinite(profile.maxAmp)) targetAmplitude = Math.min(profile.maxAmp, targetAmplitude);
 
@@ -769,7 +834,7 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
   const baseUnit = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET || 8;
   const currentUnit = TerrainHeightUtils.getElevationUnit();
   const unitPx = currentUnit > 0 ? currentUnit : baseUnit;
-  let step = (TERRAIN_CONFIG.HEIGHT_STEP || 1);
+  let step = TERRAIN_CONFIG.HEIGHT_STEP || 1;
   if (typeof profile.jumpPx === 'number' && profile.jumpPx > 0 && unitPx > 0) {
     const levelsPerJump = profile.jumpPx / unitPx; // levels that produce desired px jump
     // Round to at least 1 step and prefer multiples of base step
@@ -797,7 +862,12 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
   }
 
   // Optional smoothing for specific biomes to ensure rolling/flat feel
-  if (profile.smoothRadius && profile.smoothRadius > 0 && profile.smoothIterations && profile.smoothIterations > 0) {
+  if (
+    profile.smoothRadius &&
+    profile.smoothRadius > 0 &&
+    profile.smoothIterations &&
+    profile.smoothIterations > 0
+  ) {
     smoothHeightsInPlace(work, rows, cols, profile.smoothRadius, profile.smoothIterations);
   }
 
@@ -840,25 +910,56 @@ export function applyBiomeElevationIfFlat(heightArray, biomeKey, options = {}) {
 // visuals and quantization (which uses getElevationUnit) align with the biome.
 const BIOME_UNIT_BY_KEY = {
   // Mountainous
-  mountain: 12, alpine: 12, screeSlope: 12, crystalSpires: 12, volcanic: 12,
+  mountain: 12,
+  alpine: 12,
+  screeSlope: 12,
+  crystalSpires: 12,
+  volcanic: 12,
   // Hilly
-  hills: 10, cedarHighlands: 10, petrifiedForest: 10,
+  hills: 10,
+  cedarHighlands: 10,
+  petrifiedForest: 10,
   // Forest/rugged
-  forestTemperate: 8, forestConifer: 8, wasteland: 8, deadForest: 8, bambooThicket: 8,
+  forestTemperate: 8,
+  forestConifer: 8,
+  wasteland: 8,
+  deadForest: 8,
+  bambooThicket: 8,
   // Rolling plains
-  grassland: 6, savanna: 6, steppe: 6, orchard: 6, tundra: 6,
+  grassland: 6,
+  savanna: 6,
+  steppe: 6,
+  orchard: 6,
+  tundra: 6,
   // Dunes
   sandDunes: 6,
   // Very flat
-  saltFlats: 5, frozenLake: 5, ashWastes: 5, obsidianPlain: 5,
+  saltFlats: 5,
+  frozenLake: 5,
+  ashWastes: 5,
+  obsidianPlain: 5,
   // Wet/coastal/riverine
-  wetlands: 6, swamp: 6, floodplain: 6, mangrove: 6, riverLake: 6, geyserBasin: 6, bloodMarsh: 6, coast: 7,
+  wetlands: 6,
+  swamp: 6,
+  floodplain: 6,
+  mangrove: 6,
+  riverLake: 6,
+  geyserBasin: 6,
+  bloodMarsh: 6,
+  coast: 7,
   // Aquatic
-  ocean: 7, coralReef: 8,
+  ocean: 7,
+  coralReef: 8,
   // Arctic
-  glacier: 9, packIce: 7,
+  glacier: 9,
+  packIce: 7,
   // Underground/exotic
-  cavern: 7, fungalGrove: 6, crystalFields: 9, eldritchRift: 10, astralPlateau: 8, arcaneLeyNexus: 9
+  cavern: 7,
+  fungalGrove: 6,
+  crystalFields: 9,
+  eldritchRift: 10,
+  astralPlateau: 8,
+  arcaneLeyNexus: 9,
 };
 
 export function getBiomeElevationScaleHint(biomeKey) {

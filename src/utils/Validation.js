@@ -22,14 +22,14 @@ export const TypeValidators = {
     if (typeof value !== 'number' || isNaN(value) || !isFinite(value)) {
       return false;
     }
-    
+
     if (options.min !== undefined && value < options.min) return false;
     if (options.max !== undefined && value > options.max) return false;
     if (options.integer && !Number.isInteger(value)) return false;
-    
+
     return true;
   },
-  
+
   /**
    * Check if value is a valid string
    * @param {*} value - Value to check
@@ -38,15 +38,15 @@ export const TypeValidators = {
    */
   isString(value, options = {}) {
     if (typeof value !== 'string') return false;
-    
+
     if (options.minLength !== undefined && value.length < options.minLength) return false;
     if (options.maxLength !== undefined && value.length > options.maxLength) return false;
     if (options.pattern && !options.pattern.test(value)) return false;
     if (options.notEmpty && value.trim().length === 0) return false;
-    
+
     return true;
   },
-  
+
   /**
    * Check if value is a valid object
    * @param {*} value - Value to check
@@ -57,10 +57,10 @@ export const TypeValidators = {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
       return false;
     }
-    
-    return requiredKeys.every(key => key in value);
+
+    return requiredKeys.every((key) => key in value);
   },
-  
+
   /**
    * Check if value is a valid array
    * @param {*} value - Value to check
@@ -69,13 +69,14 @@ export const TypeValidators = {
    */
   isArray(value, options = {}) {
     if (!Array.isArray(value)) return false;
-    
+
     if (options.minLength !== undefined && value.length < options.minLength) return false;
     if (options.maxLength !== undefined && value.length > options.maxLength) return false;
-    if (options.elementType && !value.every(el => typeof el === options.elementType)) return false;
-    
+    if (options.elementType && !value.every((el) => typeof el === options.elementType))
+      return false;
+
     return true;
-  }
+  },
 };
 
 /**
@@ -90,20 +91,20 @@ export const GameValidators = {
    */
   coordinates(x, y) {
     const result = { isValid: true, errors: [] };
-    
+
     if (!TypeValidators.isNumber(x, { integer: true, min: 0 })) {
       result.isValid = false;
       result.errors.push(`Invalid X coordinate: ${x}. Must be a non-negative integer.`);
     }
-    
+
     if (!TypeValidators.isNumber(y, { integer: true, min: 0 })) {
       result.isValid = false;
       result.errors.push(`Invalid Y coordinate: ${y}. Must be a non-negative integer.`);
     }
-    
+
     return result;
   },
-  
+
   /**
    * Validate creature type
    * @param {string} creatureType - Creature type to validate
@@ -112,21 +113,23 @@ export const GameValidators = {
   creatureType(creatureType) {
     const result = { isValid: true, errors: [] };
     const validTypes = Object.keys(CREATURE_SCALES);
-    
+
     if (!TypeValidators.isString(creatureType, { notEmpty: true })) {
       result.isValid = false;
       result.errors.push('Creature type must be a non-empty string.');
       return result;
     }
-    
+
     if (!validTypes.includes(creatureType)) {
       result.isValid = false;
-      result.errors.push(`Invalid creature type: ${creatureType}. Valid types: ${validTypes.join(', ')}`);
+      result.errors.push(
+        `Invalid creature type: ${creatureType}. Valid types: ${validTypes.join(', ')}`
+      );
     }
-    
+
     return result;
   },
-  
+
   /**
    * Validate grid cell dimensions
    * @param {number} cellSize - Cell size in pixels
@@ -135,21 +138,23 @@ export const GameValidators = {
   cellSize(cellSize) {
     const result = { isValid: true, errors: [] };
     const { MIN_CELL_SIZE, MAX_CELL_SIZE } = GRID_CONFIG;
-    
-    if (!TypeValidators.isNumber(cellSize, { 
-      integer: true, 
-      min: MIN_CELL_SIZE, 
-      max: MAX_CELL_SIZE 
-    })) {
+
+    if (
+      !TypeValidators.isNumber(cellSize, {
+        integer: true,
+        min: MIN_CELL_SIZE,
+        max: MAX_CELL_SIZE,
+      })
+    ) {
       result.isValid = false;
       result.errors.push(
         `Invalid cell size: ${cellSize}. Must be an integer between ${MIN_CELL_SIZE} and ${MAX_CELL_SIZE}.`
       );
     }
-    
+
     return result;
   },
-  
+
   /**
    * Validate PIXI.js application instance
    * @param {Object} app - PIXI application instance
@@ -157,36 +162,36 @@ export const GameValidators = {
    */
   pixiApp(app) {
     const result = { isValid: true, errors: [] };
-    
+
     // Check if app is an object
     if (!app || typeof app !== 'object') {
       result.isValid = false;
       result.errors.push('Invalid PIXI application: not an object.');
       return result;
     }
-    
+
     // Check for stage property and functionality
     if (!app.stage || typeof app.stage.addChild !== 'function') {
       result.isValid = false;
       result.errors.push('Invalid PIXI application: stage is not properly initialized.');
     }
-    
+
     // Check for renderer property and functionality
     if (!app.renderer || typeof app.renderer.render !== 'function') {
       result.isValid = false;
       result.errors.push('Invalid PIXI application: renderer is not properly initialized.');
     }
-    
+
     // Check for canvas OR view (PIXI 7 compatibility)
     const canvas = app.canvas || app.view;
     if (!canvas) {
       result.isValid = false;
       result.errors.push('Invalid PIXI application: neither canvas nor view property available.');
     }
-    
+
     return result;
   },
-  
+
   /**
    * Validate DOM element
    * @param {Element} element - DOM element to validate
@@ -195,26 +200,26 @@ export const GameValidators = {
    */
   domElement(element, expectedTag = null) {
     const result = { isValid: true, errors: [] };
-    
+
     if (!(element instanceof Element)) {
       result.isValid = false;
       result.errors.push('Value is not a valid DOM element.');
       return result;
     }
-    
+
     if (expectedTag && element.tagName.toLowerCase() !== expectedTag.toLowerCase()) {
       result.isValid = false;
       result.errors.push(`Expected ${expectedTag} element, got ${element.tagName}.`);
     }
-    
+
     if (!element.parentNode && !document.body.contains(element)) {
       result.isValid = false;
       result.errors.push('Element is not attached to the document.');
     }
-    
+
     return result;
   },
-  
+
   /**
    * Validate dice sides value
    * @param {number} sides - Number of sides on the die
@@ -224,17 +229,17 @@ export const GameValidators = {
     if (!TypeValidators.isNumber(sides, { integer: true, min: 1 })) {
       return { isValid: false, message: 'Dice sides must be a positive integer' };
     }
-    
+
     if (!DICE_CONFIG.VALID_SIDES.includes(sides)) {
-      return { 
-        isValid: false, 
-        message: `Invalid dice type. Valid options: ${DICE_CONFIG.VALID_SIDES.join(', ')}` 
+      return {
+        isValid: false,
+        message: `Invalid dice type. Valid options: ${DICE_CONFIG.VALID_SIDES.join(', ')}`,
       };
     }
-    
+
     return { isValid: true, message: 'Valid dice sides' };
   },
-  
+
   /**
    * Validate dice count value
    * @param {number} count - Number of dice to roll
@@ -242,21 +247,21 @@ export const GameValidators = {
    */
   validateDiceCount(count) {
     if (!TypeValidators.isNumber(count, { integer: true, min: DICE_CONFIG.MIN_COUNT })) {
-      return { 
-        isValid: false, 
-        message: `Count must be at least ${DICE_CONFIG.MIN_COUNT}` 
+      return {
+        isValid: false,
+        message: `Count must be at least ${DICE_CONFIG.MIN_COUNT}`,
       };
     }
-    
+
     if (count > DICE_CONFIG.MAX_COUNT) {
-      return { 
-        isValid: false, 
-        message: `Maximum ${DICE_CONFIG.MAX_COUNT} dice allowed` 
+      return {
+        isValid: false,
+        message: `Maximum ${DICE_CONFIG.MAX_COUNT} dice allowed`,
       };
     }
-    
+
     return { isValid: true, message: 'Valid dice count' };
-  }
+  },
 };
 
 /**
@@ -272,16 +277,16 @@ export const Sanitizers = {
    */
   integer(value, defaultValue = 0, options = {}) {
     const parsed = parseInt(value, 10);
-    
+
     if (isNaN(parsed)) return defaultValue;
-    
+
     let result = parsed;
     if (options.min !== undefined) result = Math.max(result, options.min);
     if (options.max !== undefined) result = Math.min(result, options.max);
-    
+
     return result;
   },
-  
+
   /**
    * Sanitize string input
    * @param {*} value - Value to sanitize
@@ -291,24 +296,24 @@ export const Sanitizers = {
    */
   string(value, defaultValue = '', options = {}) {
     if (typeof value !== 'string') return defaultValue;
-    
+
     let result = value;
-    
+
     if (options.trim !== false) result = result.trim();
     if (options.toLowerCase) result = result.toLowerCase();
     if (options.toUpperCase) result = result.toUpperCase();
-    
+
     if (options.maxLength !== undefined) {
       result = result.substring(0, options.maxLength);
     }
-    
+
     if (options.allowedChars && typeof options.allowedChars.test === 'function') {
       result = result.replace(new RegExp(`[^${options.allowedChars.source}]`, 'g'), '');
     }
-    
+
     return result || defaultValue;
   },
-  
+
   /**
    * Sanitize coordinates to grid bounds
    * @param {number} x - X coordinate
@@ -318,10 +323,10 @@ export const Sanitizers = {
    */
   coordinates(x, y, gridBounds = {}) {
     const { width = Infinity, height = Infinity } = gridBounds;
-    
+
     return {
       x: Math.max(0, Math.min(Math.floor(x || 0), width - 1)),
-      y: Math.max(0, Math.min(Math.floor(y || 0), height - 1))
+      y: Math.max(0, Math.min(Math.floor(y || 0), height - 1)),
     };
   },
 
@@ -337,17 +342,17 @@ export const Sanitizers = {
       logger.warn('Sanitizers.enum called with invalid allowedValues array', {
         allowedValues,
         defaultValue,
-        value
+        value,
       });
       return defaultValue;
     }
-    
+
     // Check if value is in allowed list
     if (allowedValues.includes(value)) {
       return value;
     }
-    
+
     // Fallback to default value
     return defaultValue;
-  }
+  },
 };

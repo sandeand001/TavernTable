@@ -2,11 +2,26 @@
 import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
 
 export function shadeRand(seed) {
-  let s = (seed >>> 0) || 1;
-  return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s & 0xffffffff) / 0x100000000; };
+  let s = seed >>> 0 || 1;
+  return () => {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return (s & 0xffffffff) / 0x100000000;
+  };
 }
 
-export function drawShadeDesertBands(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+export function drawShadeDesertBands(
+  container,
+  baseColor,
+  w,
+  h,
+  alpha,
+  seed,
+  density = 1.0,
+  simplify = false
+) {
   const rnd = shadeRand(seed);
   let bandCount = 2 + Math.floor(rnd() * 2);
   bandCount = Math.max(1, Math.round(bandCount * density));
@@ -28,7 +43,16 @@ export function drawShadeDesertBands(container, baseColor, w, h, alpha, seed, de
   }
 }
 
-export function drawShadeForestDapples(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+export function drawShadeForestDapples(
+  container,
+  baseColor,
+  w,
+  h,
+  alpha,
+  seed,
+  density = 1.0,
+  simplify = false
+) {
   const rnd = shadeRand(seed);
   let spots = 4 + Math.floor(rnd() * 2);
   spots = Math.max(2, Math.round(spots * density));
@@ -38,7 +62,7 @@ export function drawShadeForestDapples(container, baseColor, w, h, alpha, seed, 
     const cy = h * (0.25 + rnd() * 0.5);
     const rx = w * (0.07 + rnd() * 0.05) * (simplify ? 0.9 : 1);
     const ry = h * (0.05 + rnd() * 0.04) * (simplify ? 0.9 : 1);
-    const c = (i % 2 === 0) ? lightenColor(baseColor, 0.1) : darkenColor(baseColor, 0.1);
+    const c = i % 2 === 0 ? lightenColor(baseColor, 0.1) : darkenColor(baseColor, 0.1);
     const g = new PIXI.Graphics();
     g.beginFill(c, alpha * 0.9);
     g.drawEllipse(cx, cy, rx, ry);
@@ -47,7 +71,16 @@ export function drawShadeForestDapples(container, baseColor, w, h, alpha, seed, 
   }
 }
 
-export function drawShadeSwampMottling(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+export function drawShadeSwampMottling(
+  container,
+  baseColor,
+  w,
+  h,
+  alpha,
+  seed,
+  density = 1.0,
+  simplify = false
+) {
   const rnd = shadeRand(seed);
   let blobs = 3 + Math.floor(rnd() * 2);
   blobs = Math.max(2, Math.round(blobs * density));
@@ -65,7 +98,16 @@ export function drawShadeSwampMottling(container, baseColor, w, h, alpha, seed, 
   }
 }
 
-export function drawShadeIcyFacets(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+export function drawShadeIcyFacets(
+  container,
+  baseColor,
+  w,
+  h,
+  alpha,
+  seed,
+  density = 1.0,
+  simplify = false
+) {
   const rnd = shadeRand(seed);
   let facets = 2 + Math.floor(rnd() * 2);
   facets = Math.max(1, Math.round(facets * density));
@@ -93,7 +135,17 @@ export function drawShadeIcyFacets(container, baseColor, w, h, alpha, seed, dens
   }
 }
 
-export function drawShadeWaterWaves(container, baseColor, w, h, alpha, seed, coral = false, density = 1.0, simplify = false) {
+export function drawShadeWaterWaves(
+  container,
+  baseColor,
+  w,
+  h,
+  alpha,
+  seed,
+  coral = false,
+  density = 1.0,
+  simplify = false
+) {
   const rnd = shadeRand(seed);
   let lanes = 2 + Math.floor(rnd() * 1);
   lanes = Math.max(1, Math.round(lanes * density));
@@ -130,7 +182,16 @@ export function drawShadeWaterWaves(container, baseColor, w, h, alpha, seed, cor
   }
 }
 
-export function drawShadeVolcanicVeins(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+export function drawShadeVolcanicVeins(
+  container,
+  baseColor,
+  w,
+  h,
+  alpha,
+  seed,
+  density = 1.0,
+  simplify = false
+) {
   const rnd = shadeRand(seed);
   let veins = 2 + Math.floor(rnd() * 1);
   veins = Math.max(1, Math.round(veins * density));
@@ -151,14 +212,27 @@ export function drawShadeVolcanicVeins(container, baseColor, w, h, alpha, seed, 
   }
 }
 
-export function drawShadeRuinGrid(container, baseColor, w, h, alpha, seed, density = 1.0, simplify = false) {
+export function drawShadeRuinGrid(
+  container,
+  baseColor,
+  w,
+  h,
+  alpha,
+  seed,
+  density = 1.0,
+  simplify = false
+) {
   const g = new PIXI.Graphics();
   const lineC = darkenColor(baseColor, 0.22);
   g.lineStyle(1, lineC, alpha * 0.8);
-  let rows = 3, cols = 3;
+  let rows = 3,
+    cols = 3;
   rows = Math.max(2, Math.round(rows * density));
   cols = Math.max(2, Math.round(cols * density));
-  if (simplify) { rows = Math.min(rows, 3); cols = Math.min(cols, 3); }
+  if (simplify) {
+    rows = Math.min(rows, 3);
+    cols = Math.min(cols, 3);
+  }
   for (let i = 1; i < rows; i++) {
     const ty = h * (i / rows);
     g.moveTo(w * 0.2, ty);

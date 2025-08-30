@@ -20,7 +20,8 @@ export function setupTokenInteractions(c, sprite, tokenData) {
 
   // Right mouse button down - start dragging immediately
   sprite.on('pointerdown', function (event) {
-    if (event.data.originalEvent.button === 2) { // Right click
+    if (event.data.originalEvent.button === 2) {
+      // Right click
       logger.debug(`Right-drag started on ${this.tokenData.type}`);
 
       this.isRightDragging = true;
@@ -50,13 +51,21 @@ export function setupTokenInteractions(c, sprite, tokenData) {
       let finalY = candidateBaseY;
       if (gm) {
         // First invert using baseline (remove any prior elevation we might have added)
-        const baselineGrid = CoordinateUtils.isometricToGrid(candidateX, candidateBaseY, gm.tileWidth, gm.tileHeight);
+        const baselineGrid = CoordinateUtils.isometricToGrid(
+          candidateX,
+          candidateBaseY,
+          gm.tileWidth,
+          gm.tileHeight
+        );
         try {
-          const height = gm?.terrainCoordinator?.dataStore?.get(baselineGrid.gridX, baselineGrid.gridY) ?? 0;
+          const height =
+            gm?.terrainCoordinator?.dataStore?.get(baselineGrid.gridX, baselineGrid.gridY) ?? 0;
           const elev = TerrainHeightUtils.calculateElevationOffset(height);
           finalY = candidateBaseY + elev; // add elevation effect after determining grid
           this.zIndex = (baselineGrid.gridX + baselineGrid.gridY) * 100 + 1;
-        } catch (_) { /* ignore */ }
+        } catch (_) {
+          /* ignore */
+        }
       }
 
       this.x = candidateX;
@@ -73,7 +82,8 @@ export function setupTokenInteractions(c, sprite, tokenData) {
       this.isRightDragging = false;
       this.alpha = 1.0; // Restore full opacity
       // Capture pointer-local coordinates before clearing drag state
-      let localX = null, localY = null;
+      let localX = null,
+        localY = null;
       try {
         const data = event?.data || this.dragData;
         if (data && this.parent) {
@@ -81,7 +91,9 @@ export function setupTokenInteractions(c, sprite, tokenData) {
           localX = p.x;
           localY = p.y;
         }
-      } catch (_) { /* ignore getLocalPosition errors */ }
+      } catch (_) {
+        /* ignore getLocalPosition errors */
+      }
 
       // Snap to grid using the topmost picker via TokenManager (pass pointer coords when available)
       if (typeof window !== 'undefined' && window.snapToGrid) {
@@ -106,7 +118,8 @@ export function setupTokenInteractions(c, sprite, tokenData) {
       this.isRightDragging = false;
       this.alpha = 1.0;
       // Capture pointer-local coordinates if available before clearing
-      let localX = null, localY = null;
+      let localX = null,
+        localY = null;
       try {
         const data = event?.data || this.dragData;
         if (data && this.parent) {
@@ -114,7 +127,9 @@ export function setupTokenInteractions(c, sprite, tokenData) {
           localX = p.x;
           localY = p.y;
         }
-      } catch (_) { /* ignore getLocalPosition errors */ }
+      } catch (_) {
+        /* ignore getLocalPosition errors */
+      }
 
       // Snap to grid
       if (typeof window !== 'undefined' && window.snapToGrid) {
@@ -130,9 +145,13 @@ export function setupTokenInteractions(c, sprite, tokenData) {
   });
 
   // One-time context menu suppression for right-drag UX
-  if (typeof window !== 'undefined' && !window.__ttContextMenuSuppressed && c.gameManager?.app?.view) {
+  if (
+    typeof window !== 'undefined' &&
+    !window.__ttContextMenuSuppressed &&
+    c.gameManager?.app?.view
+  ) {
     window.__ttContextMenuSuppressed = true;
-    c.gameManager.app.view.addEventListener('contextmenu', e => {
+    c.gameManager.app.view.addEventListener('contextmenu', (e) => {
       if (e.target === c.gameManager.app.view) {
         e.preventDefault();
       }

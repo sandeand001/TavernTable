@@ -1,5 +1,10 @@
 // Internal input/event helpers for TerrainCoordinator. Zero functional change.
-import { ErrorHandler, ERROR_CATEGORY, ERROR_SEVERITY, GameErrors } from '../../../utils/ErrorHandler.js';
+import {
+  ErrorHandler,
+  ERROR_CATEGORY,
+  ERROR_SEVERITY,
+  GameErrors,
+} from '../../../utils/ErrorHandler.js';
 
 /**
  * Get grid coordinates from mouse event using interaction manager when available.
@@ -7,8 +12,10 @@ import { ErrorHandler, ERROR_CATEGORY, ERROR_SEVERITY, GameErrors } from '../../
  */
 export function getGridCoordinatesFromEvent(c, event) {
   try {
-    if (c.gameManager.interactionManager &&
-      typeof c.gameManager.interactionManager.getGridCoordinatesFromClick === 'function') {
+    if (
+      c.gameManager.interactionManager &&
+      typeof c.gameManager.interactionManager.getGridCoordinatesFromClick === 'function'
+    ) {
       return c.gameManager.interactionManager.getGridCoordinatesFromClick(event);
     }
 
@@ -23,7 +30,10 @@ export function getGridCoordinatesFromEvent(c, event) {
     const localX = gridRelativeX / scale;
     const localY = gridRelativeY / scale;
 
-    const gridCoords = c.gameManager.interactionManager?.convertToGridCoordinates({ localX, localY });
+    const gridCoords = c.gameManager.interactionManager?.convertToGridCoordinates({
+      localX,
+      localY,
+    });
     if (!gridCoords || !c.isValidGridPosition(gridCoords.gridX, gridCoords.gridY)) {
       return null;
     }
@@ -32,7 +42,7 @@ export function getGridCoordinatesFromEvent(c, event) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'TerrainCoordinator.getGridCoordinatesFromEvent',
       stage: 'coordinate_conversion',
-      hasInteractionManager: !!c.gameManager.interactionManager
+      hasInteractionManager: !!c.gameManager.interactionManager,
     });
     return null;
   }
@@ -66,11 +76,11 @@ export function modifyTerrainAtPosition(c, gridX, gridY) {
         stage: 'modifyTerrainAtPosition',
         coordinates: { gridX, gridY },
         tool: c.currentTerrainTool,
-        brushSize: c.brushSize
+        brushSize: c.brushSize,
       });
     } catch (_) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainCoordinator.modifyTerrainAtPosition'
+        context: 'TerrainCoordinator.modifyTerrainAtPosition',
       });
     }
   }

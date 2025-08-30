@@ -12,10 +12,12 @@ export function prepareBaseGridForEditing(c) {
       if (c._biomeCanvas) {
         c._biomeCanvas.clear(() => c._toggleBaseTileVisibility(true));
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
 
     if (c.gameManager?.gridContainer?.children) {
-      c.gameManager.gridContainer.children.forEach(child => {
+      c.gameManager.gridContainer.children.forEach((child) => {
         if (child && child.isGridTile) {
           // Reset tile Y to baseline to avoid double elevation with overlay
           if (typeof child.baseIsoY === 'number') {
@@ -37,17 +39,25 @@ export function prepareBaseGridForEditing(c) {
               if (child.children?.includes(child.depressionOverlay)) {
                 child.removeChild(child.depressionOverlay);
               }
-              if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
+              if (
+                typeof child.depressionOverlay.destroy === 'function' &&
+                !child.depressionOverlay.destroyed
+              ) {
                 child.depressionOverlay.destroy();
               }
-            } catch (_) { /* best-effort */ }
+            } catch (_) {
+              /* best-effort */
+            }
             child.depressionOverlay = null;
           }
 
           // Remove any existing base 3D faces
           if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
             child.parent.removeChild(child.baseSideFaces);
-            if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
+            if (
+              typeof child.baseSideFaces.destroy === 'function' &&
+              !child.baseSideFaces.destroyed
+            ) {
               child.baseSideFaces.destroy();
             }
             child.baseSideFaces = null;
@@ -64,14 +74,22 @@ export function prepareBaseGridForEditing(c) {
 
           // Remove any rich shading layers (paintLayer/mask) attached to base tiles
           if (child.paintLayer) {
-            try { child.removeChild(child.paintLayer); } catch (_) { /* ignore remove error */ }
+            try {
+              child.removeChild(child.paintLayer);
+            } catch (_) {
+              /* ignore remove error */
+            }
             if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
               child.paintLayer.destroy({ children: true });
             }
             child.paintLayer = null;
           }
           if (child.paintMask) {
-            try { child.removeChild(child.paintMask); } catch (_) { /* ignore remove error */ }
+            try {
+              child.removeChild(child.paintMask);
+            } catch (_) {
+              /* ignore remove error */
+            }
             if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
               child.paintMask.destroy();
             }
@@ -81,10 +99,14 @@ export function prepareBaseGridForEditing(c) {
       });
     }
   } catch (error) {
-    logger.debug('Error preparing base grid for editing', {
-      context: 'container.prepareBaseGridForEditing',
-      error: error.message
-    }, LOG_CATEGORY.RENDERING);
+    logger.debug(
+      'Error preparing base grid for editing',
+      {
+        context: 'container.prepareBaseGridForEditing',
+        error: error.message,
+      },
+      LOG_CATEGORY.RENDERING
+    );
   }
 }
 
@@ -93,11 +115,15 @@ export function prepareBaseGridForEditing(c) {
  */
 export function resetTerrainContainerSafely(c) {
   if (c.terrainManager?.terrainContainer) {
-    logger.debug('Resetting terrain container for safe reuse', {
-      context: 'container.resetTerrainContainerSafely',
-      containerChildrenBefore: c.terrainManager.terrainContainer.children.length,
-      tilesMapSizeBefore: c.terrainManager.terrainTiles.size
-    }, LOG_CATEGORY.SYSTEM);
+    logger.debug(
+      'Resetting terrain container for safe reuse',
+      {
+        context: 'container.resetTerrainContainerSafely',
+        containerChildrenBefore: c.terrainManager.terrainContainer.children.length,
+        tilesMapSizeBefore: c.terrainManager.terrainTiles.size,
+      },
+      LOG_CATEGORY.SYSTEM
+    );
 
     try {
       // Preserve existing placeable sprites so they are not destroyed by a full container reset.
@@ -114,11 +140,15 @@ export function resetTerrainContainerSafely(c) {
                   c.terrainManager.terrainContainer.removeChild(sprite);
                 }
                 preservedPlaceables.push(sprite);
-              } catch (_) { /* best-effort */ }
+              } catch (_) {
+                /* best-effort */
+              }
             }
           }
         }
-      } catch (_) { /* best-effort preserve */ }
+      } catch (_) {
+        /* best-effort preserve */
+      }
 
       TerrainPixiUtils.resetContainer(
         c.terrainManager.terrainContainer,
@@ -132,19 +162,26 @@ export function resetTerrainContainerSafely(c) {
           try {
             if (!sprite) continue;
             // Ensure container still exists
-            if (c.terrainManager.terrainContainer && !c.terrainManager.terrainContainer.children.includes(sprite)) {
+            if (
+              c.terrainManager.terrainContainer &&
+              !c.terrainManager.terrainContainer.children.includes(sprite)
+            ) {
               c.terrainManager.terrainContainer.addChild(sprite);
             }
             const key = `${sprite.gridX},${sprite.gridY}`;
             if (!c.terrainManager.placeables.has(key)) c.terrainManager.placeables.set(key, []);
             c.terrainManager.placeables.get(key).push(sprite);
-          } catch (_) { /* continue */ }
+          } catch (_) {
+            /* continue */
+          }
         }
-      } catch (_) { /* best-effort rebuild */ }
+      } catch (_) {
+        /* best-effort rebuild */
+      }
     } catch (containerError) {
       logger.warn('Error during container reset, continuing', {
         context: 'container.resetTerrainContainerSafely',
-        error: containerError.message
+        error: containerError.message,
       });
     }
 
@@ -166,7 +203,7 @@ export function validateContainerIntegrity(c) {
 
   if (c.terrainManager?.terrainContainer?.destroyed) {
     logger.warn('Terrain container was destroyed, recreating', {
-      context: 'container.validateContainerIntegrity'
+      context: 'container.validateContainerIntegrity',
     });
     // Recreate terrain container
     c.terrainManager.terrainContainer = new PIXI.Container();
@@ -190,9 +227,13 @@ export function validateContainerIntegrity(c) {
       }
     }
   } catch (zErr) {
-    logger.warn('Failed to raise terrain overlay container to top', {
-      context: 'container.validateContainerIntegrity',
-      error: zErr.message
-    }, LOG_CATEGORY.RENDERING);
+    logger.warn(
+      'Failed to raise terrain overlay container to top',
+      {
+        context: 'container.validateContainerIntegrity',
+        error: zErr.message,
+      },
+      LOG_CATEGORY.RENDERING
+    );
   }
 }

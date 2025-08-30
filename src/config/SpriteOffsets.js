@@ -11,7 +11,7 @@ const SPRITE_OFFSETS = {
   dragon: { dx: 0, dy: -6 },
   minotaur: { dx: 0, dy: -5 },
   owlbear: { dx: 0, dy: -5 },
-  troll: { dx: 0, dy: -5 }
+  troll: { dx: 0, dy: -5 },
 };
 
 // Default when type not listed

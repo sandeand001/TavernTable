@@ -17,7 +17,7 @@ export function updateTerrainDisplay(m, centerX, centerY, brushSize) {
     GameErrors.rendering(error, {
       stage: 'updateTerrainDisplay',
       centerCoordinates: { x: centerX, y: centerY },
-      brushSize
+      brushSize,
     });
   }
 }
@@ -34,10 +34,13 @@ export function processUpdateQueue(m) {
     // We're throttled: schedule a single deferred attempt instead of returning silently.
     const remaining = throttleMs - elapsed;
     if (!m._throttleTimer) {
-      m._throttleTimer = setTimeout(() => {
-        m._throttleTimer = null;
-        processUpdateQueue(m);
-      }, Math.max(0, remaining));
+      m._throttleTimer = setTimeout(
+        () => {
+          m._throttleTimer = null;
+          processUpdateQueue(m);
+        },
+        Math.max(0, remaining)
+      );
       if (typeof m._throttleTimer.unref === 'function') m._throttleTimer.unref();
     }
     return;
@@ -69,13 +72,13 @@ export function processUpdateQueue(m) {
       context: 'TerrainManager.processUpdateQueue',
       updatesProcessed,
       remainingUpdates: m.updateQueue.size,
-      processingTime: Date.now() - now
+      processingTime: Date.now() - now,
     });
   } catch (error) {
     m.isUpdating = false;
     GameErrors.rendering(error, {
       stage: 'processUpdateQueue',
-      queueSize: m.updateQueue.size
+      queueSize: m.updateQueue.size,
     });
   }
 }
@@ -89,7 +92,11 @@ export function flushUpdateQueue(m) {
   try {
     // Cancel any scheduled throttled attempt
     if (m._throttleTimer) {
-      try { clearTimeout(m._throttleTimer); } catch { /* ignore */ }
+      try {
+        clearTimeout(m._throttleTimer);
+      } catch {
+        /* ignore */
+      }
       m._throttleTimer = null;
     }
     // If another cycle is running, let it finish; otherwise drain now
@@ -106,13 +113,13 @@ export function flushUpdateQueue(m) {
     logger.log(LOG_LEVEL.TRACE, 'Terrain display flush complete', LOG_CATEGORY.RENDERING, {
       context: 'TerrainManager.flushUpdateQueue',
       remainingUpdates: m.updateQueue.size,
-      processingTime: Date.now() - started
+      processingTime: Date.now() - started,
     });
   } catch (error) {
     m.isUpdating = false;
     GameErrors.rendering(error, {
       stage: 'flushUpdateQueue',
-      queueSize: m.updateQueue?.size ?? -1
+      queueSize: m.updateQueue?.size ?? -1,
     });
   }
 }

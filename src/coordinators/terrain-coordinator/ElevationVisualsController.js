@@ -8,7 +8,9 @@ import { traceDiamondPath } from '../../utils/PixiShapeUtils.js';
  * Delegated by TerrainCoordinator.addVisualElevationEffect to keep behavior identical.
  */
 export class ElevationVisualsController {
-  constructor(coordinator) { this.c = coordinator; }
+  constructor(coordinator) {
+    this.c = coordinator;
+  }
 
   /**
    * Add visual elevation effect to a tile based on height
@@ -24,7 +26,7 @@ export class ElevationVisualsController {
       tile.y += elevationOffset;
 
       if (height > TERRAIN_CONFIG.DEFAULT_HEIGHT) {
-        tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0xFFFFFF, 0.3);
+        tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0xffffff, 0.3);
       } else if (height < TERRAIN_CONFIG.DEFAULT_HEIGHT) {
         tile.lineStyle(TERRAIN_CONFIG.HEIGHT_BORDER_WIDTH, 0x000000, 0.3);
       }
@@ -65,15 +67,21 @@ export class ElevationVisualsController {
               tile.parent.addChildAt(shadow, Math.max(0, tileIndex));
               tile.shadowTile = shadow;
             }
-          } catch (_) { /* best-effort: skip shadow insertion if container API unavailable */ }
+          } catch (_) {
+            /* best-effort: skip shadow insertion if container API unavailable */
+          }
         }
       }
     } catch (error) {
-      logger.debug('Error adding visual elevation effect', {
-        context: 'TerrainCoordinator.addVisualElevationEffect',
-        height,
-        error: error.message
-      }, LOG_CATEGORY.RENDERING);
+      logger.debug(
+        'Error adding visual elevation effect',
+        {
+          context: 'TerrainCoordinator.addVisualElevationEffect',
+          height,
+          error: error.message,
+        },
+        LOG_CATEGORY.RENDERING
+      );
     }
   }
 }

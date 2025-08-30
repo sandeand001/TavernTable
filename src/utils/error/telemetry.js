@@ -41,9 +41,9 @@ export class ErrorTelemetryManager {
           metadata: {
             userAgent: navigator.userAgent,
             timestamp: new Date().toISOString(),
-            environment: this.config.environment
-          }
-        })
+            environment: this.config.environment,
+          },
+        }),
       });
     } catch (error) {
       // Failed to send telemetry - add back to pending (with limit)

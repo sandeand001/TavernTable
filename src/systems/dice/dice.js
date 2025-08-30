@@ -1,11 +1,11 @@
 // src/systems/dice/dice.js - Interactive dice rolling system
 /**
  * Dice Rolling System
- * 
+ *
  * Provides animated dice rolling functionality with visual feedback and logging.
  * Supports standard RPG dice types (D4, D6, D8, D10, D12, D20, D100) with
  * multiple dice rolling capabilities.
- * 
+ *
  * Features:
  * - Animated rolling effect with random number display
  * - Color-coded results (green for max, red for min, white for normal)
@@ -13,9 +13,9 @@
  * - Support for multiple dice of the same type
  * - Prevention of concurrent rolls during animation
  * - Comprehensive error handling and input validation
- * 
+ *
  * Integration: Automatically integrates with sidebarController when available
- * 
+ *
  * @module DiceSystem
  * @author TavernTable
  * @since 1.0.0
@@ -47,7 +47,7 @@ export function rollDice(sides) {
           context: 'rollDice',
           stage: 'concurrency_check',
           isRolling: true,
-          requestedSides: sides
+          requestedSides: sides,
         }
       );
       return false;
@@ -65,7 +65,7 @@ export function rollDice(sides) {
           stage: 'dice_validation',
           requestedSides: sides,
           validationMessage: validationResult.message,
-          supportedDice: DICE_CONFIG.VALID_SIDES
+          supportedDice: DICE_CONFIG.VALID_SIDES,
         }
       );
       return false;
@@ -87,8 +87,8 @@ export function rollDice(sides) {
           resultElement: !!resultEl,
           missingElements: [
             !diceCountEl ? 'dice-count' : null,
-            !resultEl ? 'dice-result' : null
-          ].filter(Boolean)
+            !resultEl ? 'dice-result' : null,
+          ].filter(Boolean),
         }
       );
       return false;
@@ -107,7 +107,7 @@ export function rollDice(sides) {
           requestedCount: diceCount,
           originalValue: diceCountEl.value,
           validationMessage: countValidation.message,
-          limits: { min: DICE_CONFIG.MIN_COUNT, max: DICE_CONFIG.MAX_COUNT }
+          limits: { min: DICE_CONFIG.MIN_COUNT, max: DICE_CONFIG.MAX_COUNT },
         }
       );
       return false;
@@ -117,7 +117,7 @@ export function rollDice(sides) {
 
     // Soft-disable dice buttons to avoid rapid re-clicks during animation
     const diceButtons = getDiceButtons();
-    diceButtons.forEach(btn => {
+    diceButtons.forEach((btn) => {
       // Preserve prior disabled state
       if (!btn.hasAttribute('data-prev-disabled')) {
         btn.setAttribute('data-prev-disabled', btn.disabled ? '1' : '0');
@@ -162,12 +162,12 @@ export function rollDice(sides) {
           totalFrames: DICE_CONFIG.ANIMATION_FRAMES,
           diceType: `d${sides}`,
           diceCount: diceCount,
-          isRolling: isRolling
+          isRolling: isRolling,
         });
         isRolling = false;
         // Re-enable dice buttons based on previous state
         const diceBtns = getDiceButtons();
-        diceBtns.forEach(btn => {
+        diceBtns.forEach((btn) => {
           const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
           btn.disabled = wasDisabled;
           btn.classList.toggle('disabled', wasDisabled);
@@ -193,10 +193,15 @@ export function rollDice(sides) {
           diceCount: diceCount,
           results: results,
           total: total,
-          rollQuality: diceCount === 1 ?
-            (results[0] === sides ? 'maximum' : results[0] === 1 ? 'minimum' : 'normal') :
-            'multiple_dice',
-          timestamp: new Date().toISOString()
+          rollQuality:
+            diceCount === 1
+              ? results[0] === sides
+                ? 'maximum'
+                : results[0] === 1
+                  ? 'minimum'
+                  : 'normal'
+              : 'multiple_dice',
+          timestamp: new Date().toISOString(),
         });
 
         // Determine result color based on roll quality
@@ -230,9 +235,10 @@ export function rollDice(sides) {
 
         // Log to sidebar dice log
         if (window.sidebarController) {
-          const logMessage = diceCount === 1
-            ? `Rolled d${sides}: ${results[0]}`
-            : `Rolled ${diceCount}d${sides}: [${results.join(', ')}] = ${total}`;
+          const logMessage =
+            diceCount === 1
+              ? `Rolled d${sides}: ${results[0]}`
+              : `Rolled ${diceCount}d${sides}: [${results.join(', ')}] = ${total}`;
           window.sidebarController.addDiceLogEntry(logMessage, 'roll');
         }
 
@@ -242,7 +248,7 @@ export function rollDice(sides) {
           isRolling = false;
           // Re-enable dice buttons after successful roll concludes
           const diceBtns = getDiceButtons();
-          diceBtns.forEach(btn => {
+          diceBtns.forEach((btn) => {
             const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
             btn.disabled = wasDisabled;
             btn.classList.toggle('disabled', wasDisabled);
@@ -259,12 +265,12 @@ export function rollDice(sides) {
           total: total || 0,
           diceType: `d${sides}`,
           diceCount: diceCount,
-          sidebarAvailable: !!window.sidebarController
+          sidebarAvailable: !!window.sidebarController,
         });
         isRolling = false;
         // Re-enable dice buttons after result shows
         const diceBtns = getDiceButtons();
-        diceBtns.forEach(btn => {
+        diceBtns.forEach((btn) => {
           const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
           btn.disabled = wasDisabled;
           btn.classList.toggle('disabled', wasDisabled);
@@ -277,7 +283,6 @@ export function rollDice(sides) {
     // Start animation
     requestAnimationFrame(animateRoll);
     return true;
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.SYSTEM, {
       context: 'rollDice',
@@ -287,13 +292,13 @@ export function rollDice(sides) {
       globalScope: {
         sidebarController: !!window.sidebarController,
         diceCountElement: !!getDiceCountEl(),
-        resultElement: !!getDiceResultEl()
-      }
+        resultElement: !!getDiceResultEl(),
+      },
     });
     isRolling = false;
     // Attempt to re-enable dice buttons on failure
     const diceBtns = getDiceButtons();
-    diceBtns.forEach(btn => {
+    diceBtns.forEach((btn) => {
       const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
       btn.disabled = wasDisabled;
       btn.classList.toggle('disabled', wasDisabled);

@@ -51,12 +51,16 @@ export function buildBrushHighlightDescriptor(params) {
       color: 0x22d3ee,
       fillAlpha: 0.14,
       lineAlpha: 0.95,
-      lineWidth: 2
+      lineWidth: 2,
     });
     return { cells, style, zHint: 'aboveFacesBelowTokens' };
   } catch (error) {
     // Non-fatal: return empty descriptor
-    logger.warn('buildBrushHighlightDescriptor failed', { error: error?.message }, LOG_CATEGORY.RENDERING);
+    logger.warn(
+      'buildBrushHighlightDescriptor failed',
+      { error: error?.message },
+      LOG_CATEGORY.RENDERING
+    );
     return { cells: [], style: defaultHighlightStyle(), zHint: 'aboveFacesBelowTokens' };
   }
 }

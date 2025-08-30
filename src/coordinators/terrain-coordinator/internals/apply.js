@@ -7,7 +7,7 @@ export function validateApplicationRequirements(c) {
     logger.debug('Cannot apply terrain to base grid - missing requirements', {
       context: 'apply.validateApplicationRequirements',
       hasGridContainer: !!c.gameManager.gridContainer,
-      hasTerrainHeights: !!c.dataStore.working
+      hasTerrainHeights: !!c.dataStore.working,
     });
     throw new Error('Missing requirements for terrain application');
   }
@@ -35,7 +35,7 @@ export function processAllGridTiles(c) {
           context: 'apply.processAllGridTiles',
           coordinates: { x, y },
           height,
-          error: tileError.message
+          error: tileError.message,
         });
       }
     }
@@ -44,18 +44,22 @@ export function processAllGridTiles(c) {
 }
 
 export function logCompletion(c, modifiedTiles) {
-  logger.info('Terrain applied permanently to base grid with safer approach', {
-    context: 'apply.logCompletion',
-    modifiedTiles,
-    totalTiles: c.gameManager.rows * c.gameManager.cols,
-    approach: 'safer_in_place_updates'
-  }, LOG_CATEGORY.SYSTEM);
+  logger.info(
+    'Terrain applied permanently to base grid with safer approach',
+    {
+      context: 'apply.logCompletion',
+      modifiedTiles,
+      totalTiles: c.gameManager.rows * c.gameManager.cols,
+      approach: 'safer_in_place_updates',
+    },
+    LOG_CATEGORY.SYSTEM
+  );
 }
 
 export function handleApplicationError(error) {
   GameErrors.gameState(error, {
     stage: 'applyTerrainToBaseGrid',
-    context: 'apply.handleApplicationError'
+    context: 'apply.handleApplicationError',
   });
   throw error;
 }
