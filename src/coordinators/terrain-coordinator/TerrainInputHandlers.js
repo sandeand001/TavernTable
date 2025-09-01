@@ -194,7 +194,7 @@ export class TerrainInputHandlers {
           ? this.c.isPlaceablesPanelVisible()
           : true;
 
-      // Render placeable preview only when panel is visible and a placeable is selected
+      // Render preview: prefer placeable preview when a placeable is selected, otherwise render terrain elevation preview
       if (gridCoords && uiSelected && panelVisible) {
         try {
           const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
@@ -202,6 +202,19 @@ export class TerrainInputHandlers {
             brush: ptBrush,
             center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
             terrainModeActive: this.c.isTerrainModeActive,
+          });
+          if (desc.cells.length) this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
+        } catch (_) {
+          /* non-fatal */
+        }
+        this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
+      } else if (gridCoords && this.c.isTerrainModeActive) {
+        // Elevation tool hover highlight
+        try {
+          const desc = buildBrushHighlightDescriptor({
+            brush: this.c.brush,
+            center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
+            terrainModeActive: true,
           });
           if (desc.cells.length) this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
         } catch (_) {

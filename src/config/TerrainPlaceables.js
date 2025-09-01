@@ -49,139 +49,115 @@ const TREE_FRAME_SUFFIXES = [
   '60000',
   '70000',
 ];
+
+// Helper to build frame paths without multi-line map formatting churn
+const treeFrames = (pattern) => TREE_FRAME_SUFFIXES.map((s) => pattern.replace('{s}', s));
+
 export const TREE_PLACEABLES = {
   'tree-green-deciduous': {
     label: 'Green Deciduous',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_deciduous_trees/_tree_01_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/green_deciduous_trees/_tree_01_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-green-conifer': {
     label: 'Green Conifer',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_conifer_trees/_tree_02_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/green_conifer_trees/_tree_02_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-green-willow': {
     label: 'Green Willow',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_willow_trees/_tree_05_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/green_willow_trees/_tree_05_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-single-palm': {
     label: 'Single Palm',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/single_palm_trees/_tree_03_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/single_palm_trees/_tree_03_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-double-palm': {
     label: 'Double Palm',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/doulble_palm_trees/_tree_04_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/doulble_palm_trees/_tree_04_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-green-oval': {
     label: 'Green Oval',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_oval_deciduous_trees/_tree_09_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/green_oval_deciduous_trees/_tree_09_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-green-columnar': {
     label: 'Green Columnar',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_columnar_deciduouis_trees/_tree_08_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/green_columnar_deciduouis_trees/_tree_08_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-green-small': {
     label: 'Green Small',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_small_deciduous_trees/_tree_12_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/green_small_deciduous_trees/_tree_12_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-green-small-oval': {
     label: 'Green Small Oval',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_small_oval_trees/_tree_11_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/green_small_oval_trees/_tree_11_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-green-tall-columnar': {
     label: 'Green Tall Columnar',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/green_tall_columnar_deciduous_trees/_tree_13_${s}.png`
+    img: treeFrames(
+      'assets/terrain/plants/trees/green_tall_columnar_deciduous_trees/_tree_13_{s}.png'
     ),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-orange-deciduous': {
     label: 'Orange Deciduous',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/Orange_decisuous_trees/_tree_14_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/Orange_decisuous_trees/_tree_14_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-yellow-willow': {
     label: 'Yellow Willow',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/yellow_willow_trees/_tree_06_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/yellow_willow_trees/_tree_06_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-yellow-conifer': {
     label: 'Yellow Conifer',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/yellow_conifer_trees/_tree_07_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/yellow_conifer_trees/_tree_07_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
   'tree-bare-deciduous': {
     label: 'Bare Deciduous',
-    img: TREE_FRAME_SUFFIXES.map(
-      (s) => `assets/terrain/plants/trees/bare_decisuous_trees/_tree_10_${s}.png`
-    ),
+    img: treeFrames('assets/terrain/plants/trees/bare_decisuous_trees/_tree_10_{s}.png'),
     type: 'plant',
     scaleMode: 'contain',
-    baselineOffsetPx: 0,
+    baselineOffsetPx: 16,
   },
 };
 
 // Merge TREE_PLACEABLES into TERRAIN_PLACEABLES so existing code can reference
-// all placeables from a single exported object. We avoid mutating the original
-// constant in-place in case other modules import the named export; instead we
-// extend the export object for compatibility.
+// all placeables from a single exported object.
 Object.entries(TREE_PLACEABLES).forEach(([k, v]) => {
   TERRAIN_PLACEABLES[k] = v;
 });

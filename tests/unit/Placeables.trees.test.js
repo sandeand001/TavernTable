@@ -3,8 +3,12 @@ import { TERRAIN_PLACEABLES } from '../../src/config/TerrainPlaceables.js';
 
 describe('Placeables tree variants', () => {
     const mockM = {
-        gameManager: { tileWidth: 64, tileHeight: 32 },
-        // Use a lightweight container object that records children for assertions
+        gameManager: {
+            tileWidth: 64,
+            tileHeight: 32,
+            gridContainer: { children: [], addChild(obj) { this.children.push(obj); }, removeChild(obj) { const i = this.children.indexOf(obj); if (i >= 0) this.children.splice(i, 1); } }
+        },
+        // Keep terrainContainer stubbed for any incidental references
         terrainContainer: { children: [], addChild(obj) { this.children.push(obj); }, removeChild(obj) { const i = this.children.indexOf(obj); if (i >= 0) this.children.splice(i, 1); } },
         terrainCoordinator: { getTerrainHeight: () => 0 }
     };
@@ -21,10 +25,10 @@ describe('Placeables tree variants', () => {
         const id = Object.keys(TERRAIN_PLACEABLES).find(k => k.startsWith('tree-'));
         const ok = placeItem(mockM, id, 4, 5);
         expect(ok).toBe(true);
-        const before = mockM.terrainContainer.children.slice();
+    const before = mockM.gameManager.gridContainer.children.slice();
         const tileKey = '4,5';
         // ensure variant index exists on placed sprite
-        const placed = before.find(p => p.placeableId === id && p.gridX === 4 && p.gridY === 5);
+    const placed = before.find(p => p.placeableId === id && p.gridX === 4 && p.gridY === 5);
         expect(placed).toBeDefined();
         const oldIndex = placed.placeableVariantIndex;
         const changed = cyclePlaceableVariant(mockM, 4, 5, id);

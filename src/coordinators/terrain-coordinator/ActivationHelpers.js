@@ -65,6 +65,13 @@ export class ActivationHelpers {
       this.prepareBaseGridForEditing();
       this.activateTerrainMode();
       this.loadTerrainStateAndDisplay();
+      // Ensure existing placeables (trees/plants) are re-layered above the
+      // elevation overlay immediately when terrain mode turns on.
+      try {
+        this.c.terrainManager?.repositionAllPlaceables?.();
+      } catch (_) {
+        /* non-fatal */
+      }
 
       logger.info(
         'Terrain mode enabled with enhanced safety checks',
@@ -157,6 +164,13 @@ export class ActivationHelpers {
         // clearAllTerrainTiles will now preserve and reattach placeables and only hide
         // the container when no placeables remain
         m.clearAllTerrainTiles();
+        // Reposition placeables after overlay is removed so they return to
+        // normal interleaved depth (below overlay bias no longer needed).
+        try {
+          m.repositionAllPlaceables?.();
+        } catch (_) {
+          /* non-fatal */
+        }
       }
 
       // Reset height indicator

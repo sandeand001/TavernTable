@@ -135,9 +135,9 @@ export function resetTerrainContainerSafely(c) {
           for (const [, arr] of placeablesMap) {
             for (const sprite of arr) {
               try {
-                // Remove from container without destroying so resetContainer won't touch it
-                if (sprite && sprite.parent === c.terrainManager.terrainContainer) {
-                  c.terrainManager.terrainContainer.removeChild(sprite);
+                // Remove from any parent without destroying so resetContainer won't touch it
+                if (sprite && sprite.parent) {
+                  sprite.parent.removeChild(sprite);
                 }
                 preservedPlaceables.push(sprite);
               } catch (_) {
@@ -161,12 +161,12 @@ export function resetTerrainContainerSafely(c) {
         for (const sprite of preservedPlaceables) {
           try {
             if (!sprite) continue;
-            // Ensure container still exists
+            // Reattach to the main grid container so zIndex sorting interleaves with tokens
             if (
-              c.terrainManager.terrainContainer &&
-              !c.terrainManager.terrainContainer.children.includes(sprite)
+              c.gameManager.gridContainer &&
+              !c.gameManager.gridContainer.children.includes(sprite)
             ) {
-              c.terrainManager.terrainContainer.addChild(sprite);
+              c.gameManager.gridContainer.addChild(sprite);
             }
             const key = `${sprite.gridX},${sprite.gridY}`;
             if (!c.terrainManager.placeables.has(key)) c.terrainManager.placeables.set(key, []);
@@ -210,7 +210,7 @@ export function validateContainerIntegrity(c) {
     c.gameManager.gridContainer.addChild(c.terrainManager.terrainContainer);
   }
 
-  // Ensure terrain overlay container is on top of base tiles
+  // Ensure terrain overlay container is on top of base tiles; placeables live in gridContainer
   try {
     const parent = c.gameManager.gridContainer;
     const overlay = c.terrainManager?.terrainContainer;

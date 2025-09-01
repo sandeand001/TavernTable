@@ -208,11 +208,18 @@ export function clearAllTerrainTiles(m) {
       for (const sprite of preservedPlaceables) {
         try {
           if (!sprite) continue;
-          if (m.terrainContainer && !m.terrainContainer.children.includes(sprite)) {
-            m.terrainContainer.addChild(sprite);
-          }
           const key = `${sprite.gridX},${sprite.gridY}`;
           if (!m.placeables.has(key)) m.placeables.set(key, []);
+          // Ensure placeables are attached to the main grid container for interleaved z-index
+          try {
+            const gridContainer = m.gameManager?.gridContainer;
+            if (sprite.parent !== gridContainer && gridContainer) {
+              if (sprite.parent) sprite.parent.removeChild(sprite);
+              gridContainer.addChild(sprite);
+            }
+          } catch (_) {
+            /* best-effort */
+          }
           m.placeables.get(key).push(sprite);
         } catch (_) {
           /* ignore single sprite failures */

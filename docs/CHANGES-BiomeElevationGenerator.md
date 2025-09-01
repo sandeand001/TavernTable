@@ -1,2 +1,0 @@
-- Flip coast gradient: water (low) now at bottom, land rises toward top. This matches visual expectation and TerrainHeightUtils sign convention.
-- Add .primary-button and .small-text styles to docs UI CSS to match in-app styles.

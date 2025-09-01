@@ -42,12 +42,14 @@ export class BiomeShadingController {
       const rows = this.c.gameManager.rows,
         cols = this.c.gameManager.cols;
       // Prefer authoritative heights from datastore when available to avoid sampling half-updated tiles
-      const heights =
-        this.c?.dataStore?.base && this.c?.dataStore?.base.length === rows
-          ? this.c.dataStore.base.map((r) => r.slice())
-          : Array(rows)
-            .fill(null)
-            .map(() => Array(cols).fill(0));
+      let heights;
+      if (this.c?.dataStore?.base && this.c?.dataStore?.base.length === rows) {
+        heights = this.c.dataStore.base.map((r) => r.slice());
+      } else {
+        heights = Array(rows)
+          .fill(null)
+          .map(() => Array(cols).fill(0));
+      }
       // Paint canvas only when rich shading is enabled; keep per-tile fills so tops raise visually
       if (richEnabled) {
         try {

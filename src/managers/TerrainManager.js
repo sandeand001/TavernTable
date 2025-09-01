@@ -101,10 +101,13 @@ export class TerrainManager {
       }
 
       // Initialize preview container in the main gridContainer so we can depth-sort
-      // previews BETWEEN base tiles (depth*100) and tokens (depth*100 + 1).
+      // previews BETWEEN base tiles (depth*100) and tokens (depth*100 + 1) and always on top
+      // of the terrain overlay. Parent zIndex must be higher than terrainContainer because the
+      // parent gridContainer is frequently resorted by zIndex elsewhere (tokens/placeables).
       this.previewContainer = new PIXI.Container();
       this.previewContainer.sortableChildren = true;
-      // Do not give a huge parent zIndex; each preview graphic will carry its own zIndex.
+      // Ensure the preview container renders above terrain overlay regardless of parent sorting
+      this.previewContainer.zIndex = (this.terrainContainer?.zIndex || 100000) + 10;
       this.gameManager.gridContainer.addChild(this.previewContainer);
 
       // Initialize terrain tiles for the current grid
@@ -135,12 +138,22 @@ export class TerrainManager {
       throw error;
     }
   }
-  /** Ensure the preview container is present and visible in gridContainer. */
+  /** Ensure the preview container is present and visible in gridContainer.
+   *  Note: We no longer force preview to be the absolute top zIndex; tokens and
+   *  placeables may be raised above preview during terrain mode per UX request.
+   */
   ensurePreviewLayerOnTop() {
     try {
       if (!this.gameManager?.gridContainer || !this.previewContainer) return;
       const parent = this.gameManager.gridContainer;
+      // Keep zIndex higher than terrain overlay so resorting doesn't bury the preview.
+      // Tokens/placeables may be raised above this value when editing.
+      const desired = (this.terrainContainer?.zIndex || 100000) + 10;
+      if (this.previewContainer.zIndex !== desired) {
+        this.previewContainer.zIndex = desired;
+      }
       // Keep container alive and visible; order among siblings is handled by child zIndex
+      // Also nudge to the end as a safety net for environments not using zIndex sorting
       if (typeof parent.setChildIndex === 'function') {
         parent.setChildIndex(this.previewContainer, Math.max(0, parent.children.length - 1));
       } else {
@@ -151,6 +164,14 @@ export class TerrainManager {
           /* ignore */
         }
         parent.addChild(this.previewContainer);
+      }
+      // If the parent sorts by zIndex, apply ordering now
+      try {
+        if (parent.sortableChildren && typeof parent.sortChildren === 'function') {
+          parent.sortChildren();
+        }
+      } catch {
+        /* ignore */
       }
       this.previewContainer.visible = true;
       // Parent container uses children zIndex to interleave; parent zIndex is not forced here.
@@ -328,6 +349,22 @@ export class TerrainManager {
         LOG_CATEGORY.RENDERING
       );
       return false;
+    }
+  }
+
+  /** Reposition all placeables (trees/paths/structures) to reflect current heights/scale. */
+  repositionAllPlaceables() {
+    try {
+      // Import internals lazily to avoid circular load issues
+      return import('./terrain-manager/internals/placeables.js').then((mod) => {
+        try {
+          return mod.repositionAllPlaceables?.(this);
+        } catch (_) {
+          return undefined;
+        }
+      });
+    } catch (_) {
+      return undefined;
     }
   }
 
@@ -665,6 +702,46 @@ export class TerrainManager {
       }
 
       this.ensurePreviewLayerOnTop();
+
+      // After updating overlay positions, ensure tokens and placeables are visible above it
+      try {
+        const parent = this.gameManager?.gridContainer;
+        const previewZ = this.previewContainer?.zIndex;
+        const overlayZ = this.terrainContainer?.zIndex;
+        const desired = Number.isFinite(previewZ)
+          ? previewZ + 1
+          : Number.isFinite(overlayZ)
+            ? overlayZ + 11
+            : null;
+        if (Number.isFinite(desired) && parent?.children) {
+          // Raise tokens
+          if (Array.isArray(this.gameManager?.tokenManager?.placedTokens)) {
+            for (const t of this.gameManager.tokenManager.placedTokens) {
+              const s = t?.creature?.sprite;
+              if (!s) continue;
+              if (!Number.isFinite(s.zIndex) || s.zIndex < desired) s.zIndex = desired;
+            }
+          }
+          // Raise placeables managed by TerrainManager
+          if (this.placeables && this.placeables.size) {
+            for (const [, list] of this.placeables) {
+              if (!Array.isArray(list)) continue;
+              for (const s of list) {
+                if (!s) continue;
+                if (!Number.isFinite(s.zIndex) || s.zIndex < desired) s.zIndex = desired;
+              }
+            }
+          }
+          try {
+            parent.sortableChildren = true;
+            parent.sortChildren?.();
+          } catch (_) {
+            /* ignore */
+          }
+        }
+      } catch (_) {
+        /* best-effort */
+      }
     } catch (error) {
       GameErrors.rendering(error, {
         stage: 'TerrainManager.reapplyElevationScaleToOverlay',
@@ -681,8 +758,21 @@ export class TerrainManager {
   renderBrushPreview(cells, options = {}) {
     try {
       if (!this.previewContainer || !this.terrainCoordinator?.isTerrainModeActive) return;
+      // Ensure the preview layer is on top and visible before drawing
       this.ensurePreviewLayerOnTop();
+      // Clear previous preview before drawing new
       this.clearBrushPreview();
+      try {
+        if (this.previewContainer && this.previewContainer.visible === false) {
+          this.previewContainer.visible = true;
+        }
+        const parent = this.gameManager?.gridContainer;
+        if (parent && !parent.children?.includes(this.previewContainer)) {
+          parent.addChild(this.previewContainer);
+        }
+      } catch {
+        /* ignore */
+      }
       if (!Array.isArray(cells) || cells.length === 0) return;
 
       const w = this.gameManager.tileWidth;
@@ -721,6 +811,7 @@ export class TerrainManager {
         }
 
         // Depth-sort preview strictly BETWEEN tile top (depth*100) and tokens (depth*100 + 1)
+        // and ensure it isn't hidden by overlay container resorting.
         g.zIndex = (x + y) * 100 + 0.5;
 
         this.previewContainer.addChild(g);

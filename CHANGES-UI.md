@@ -1,3 +1,0 @@
-- Biomes panel: style for Generate Map button now matches other menu buttons via .primary-button.
-- Added .small-text helper class for consistent explanatory copy.
-- Mirrored styles in docs/src/ui/styles.css.

@@ -1,6 +1,7 @@
 import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
 import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
 
 // NOTE: previous QA introduced a fixed LEVEL_COMPENSATION which caused
 // consistent downward shifts and incorrect behavior for elevated tiles.
@@ -10,6 +11,9 @@ import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
 // (negative Y) by the appropriate pixel amount.
 
 // Temporary/adjustable baseline compensation removed: use per-asset offsets only.
+
+// Optional auto-baseline detection helpers for trees were removed in favor of
+// explicit, per-asset baselineOffsetPx in the config to keep behavior deterministic.
 
 /** Create a PIXI.Sprite for a placeable item and attach metadata. */
 export function createPlaceableSprite(m, id, x, y) {
@@ -21,7 +25,6 @@ export function createPlaceableSprite(m, id, x, y) {
   let imgPath = def.img;
   let variantIndex = 0;
   if (Array.isArray(def.img) && def.img.length > 0) {
-    // Simple but deterministic hash using coordinates
     const len = def.img.length;
     const hash = Math.abs(((x * 73856093) ^ (y * 19349663)) >>> 0);
     variantIndex = hash % len;
@@ -43,13 +46,14 @@ export function createPlaceableSprite(m, id, x, y) {
     try {
       sprite = new PIXI.Sprite(PIXI.Texture.from ? PIXI.Texture.from(imgPath) : {});
     } catch (_) {
-      sprite = { x: 0, y: 0, scale: { set: () => {} }, anchor: { set: () => {} } };
+      sprite = {
+        x: 0,
+        y: 0,
+        scale: { set: () => {} },
+        anchor: { set: () => {} },
+      };
     }
   }
-  // Bottom-center anchor: CoordinateUtils.gridToIsometric returns the tile
-  // baseline (tile center line). Tokens use anchor (0.5,1.0), so use the same
-  // anchor for placeables so their bottom aligns to the tile baseline and
-  // they visually sit correctly on the diamond.
   // Use bottom-center anchor so the sprite's bottom rests on the tile baseline
   // (matches tokens which use anchor (0.5, 1.0)). Using top-left caused sprites
   // to appear vertically offset above the selected tile.
@@ -78,21 +82,19 @@ export function createPlaceableSprite(m, id, x, y) {
   // Enable runtime debug logging by setting `window.DEBUG_PLACEABLES = true`
   const __dbg = !!(typeof window !== 'undefined' && window.DEBUG_PLACEABLES);
   // Position using coordinate util so behavior matches other systems
-  const iso = CoordinateUtils.gridToIsometric(
+  // Use the same baseline point as tokens/selection so the preview and final
+  // placement line up perfectly. CoordinateUtils.gridToIsometric already applies
+  // the TOKEN_PLACEMENT_OFFSET used by input picking, so we do not remove it here.
+  const isoBase = CoordinateUtils.gridToIsometric(
     x,
     y,
     m.gameManager.tileWidth,
     m.gameManager.tileHeight
   );
+  const iso = { x: isoBase.x, y: isoBase.y };
 
-  // Capture current terrain height for this tile so we can apply the
-  // visual elevation offset consistently (and re-apply after texture load)
-  const tileHeight =
-    m.terrainCoordinator && typeof m.terrainCoordinator.getTerrainHeight === 'function'
-      ? m.terrainCoordinator.getTerrainHeight(x, y)
-      : 0;
-  // Store on sprite so alignment helper can access it across re-aligns
-  sprite.terrainHeight = Number.isFinite(tileHeight) ? tileHeight : 0;
+  // No longer cache terrain height on the sprite; we will always recompute
+  // from the coordinator so trees stay attached to tiles when elevation changes.
 
   // Align sprite using its bottom-center anchor to the iso baseline.
   const alignBottomCenter = (s, targetX, targetY) => {
@@ -115,26 +117,8 @@ export function createPlaceableSprite(m, id, x, y) {
       }
       s.x = targetX;
       s.y = targetY;
-      // Apply elevation offset (height > 0 => negative Y to lift sprite)
-      try {
-        const elev =
-          typeof s.terrainHeight === 'number'
-            ? TerrainHeightUtils.calculateElevationOffset(s.terrainHeight)
-            : 0;
-        s.y += elev;
-      } catch (_) {
-        /* best-effort */
-      }
-      // Per-asset fine tuning
-      try {
-        const assetDef = TERRAIN_PLACEABLES[s.placeableId] || {};
-        const assetOffset = Number.isFinite(assetDef.baselineOffsetPx)
-          ? assetDef.baselineOffsetPx
-          : 0;
-        s.y += assetOffset;
-      } catch (_) {
-        /* best-effort */
-      }
+      // Elevation offset will be applied by the shared reposition helper so
+      // this align helper only sets the baseline iso position.
     } catch (err) {
       if (__dbg) console.debug('[placeable:alignBottomCenter] failed', { id, err });
       try {
@@ -205,7 +189,7 @@ export function createPlaceableSprite(m, id, x, y) {
         // Apply type-aware clamp to avoid outliers
         sx = clampScale(sx, def.type, def);
         sy = clampScale(sy, def.type, def);
-        if (__dbg)
+        if (__dbg) {
           console.debug('[placeable:setSize] initial/fallback', {
             id,
             type: def.type,
@@ -217,6 +201,7 @@ export function createPlaceableSprite(m, id, x, y) {
             sx,
             sy,
           });
+        }
         if (!sprite.scale) sprite.scale = { set: () => {} };
         if (scaleMode === 'stretch') {
           if (typeof id === 'string' && id.startsWith('tree-')) {
@@ -259,7 +244,7 @@ export function createPlaceableSprite(m, id, x, y) {
       if (def.type === 'path' && (scaleMode === 'cover' || scaleMode === 'contain')) {
         const s = clampScale(scaleX, def.type, def);
         sprite.scale.set(s, s);
-        if (__dbg)
+        if (__dbg) {
           console.debug('[placeable:setSize] path-preserve-width', {
             id,
             type: def.type,
@@ -272,11 +257,12 @@ export function createPlaceableSprite(m, id, x, y) {
             scaleY,
             finalScale: s,
           });
+        }
       } else if (scaleMode === 'stretch') {
         const sx = clampScale(scaleX, def.type, def);
         const sy = clampScale(scaleY, def.type, def);
         sprite.scale.set(sx, sy);
-        if (__dbg)
+        if (__dbg) {
           console.debug('[placeable:setSize] stretch', {
             id,
             type: def.type,
@@ -288,11 +274,12 @@ export function createPlaceableSprite(m, id, x, y) {
             sx,
             sy,
           });
+        }
       } else if (scaleMode === 'cover') {
         const s = clampScale(Math.max(scaleX, scaleY), def.type, def);
         const clamped = s;
         sprite.scale.set(clamped, clamped);
-        if (__dbg)
+        if (__dbg) {
           console.debug('[placeable:setSize] cover', {
             id,
             type: def.type,
@@ -303,12 +290,13 @@ export function createPlaceableSprite(m, id, x, y) {
             texH,
             finalScale: clamped,
           });
+        }
       } else {
         // contain
         const s = clampScale(Math.min(scaleX, scaleY), def.type, def);
         const clamped = s;
         sprite.scale.set(clamped, clamped);
-        if (__dbg)
+        if (__dbg) {
           console.debug('[placeable:setSize] contain', {
             id,
             type: def.type,
@@ -319,6 +307,7 @@ export function createPlaceableSprite(m, id, x, y) {
             texH,
             finalScale: clamped,
           });
+        }
       }
       // After any scale change, re-align to ensure pivot/anchor reflect new bounds
       try {
@@ -367,7 +356,8 @@ export function createPlaceableSprite(m, id, x, y) {
   } catch (_) {
     /* ignore */
   }
-  if (__dbg)
+  if (__dbg) {
+    const dbgBounds = sprite.getLocalBounds ? sprite.getLocalBounds() : null;
     console.debug('[placeable:create] positioned', {
       id,
       type: def.type,
@@ -377,17 +367,23 @@ export function createPlaceableSprite(m, id, x, y) {
       isoY: iso.y,
       anchor: sprite.anchor,
       scale: { x: sprite.scale.x, y: sprite.scale.y },
-      bounds: sprite.getLocalBounds ? sprite.getLocalBounds() : null,
+      bounds: dbgBounds,
     });
-  // Structures should sit above paths; small zIndex offset per type
-  sprite.zIndex = (x + y) * 100 + (def.type === 'structure' ? 80 : 30);
+  }
+  // Apply final positioning including elevation and per-asset baseline tweaks
+  try {
+    repositionPlaceableSprite(m, sprite);
+  } catch (_) {
+    // fallback: ensure zIndex is set deterministically
+    sprite.zIndex = (x + y) * 100 + (def.type === 'structure' ? 80 : 30);
+  }
   return sprite;
 }
 
 export function placeItem(m, id, x, y) {
   const tileKey = `${x},${y}`;
   // Validate map
-  if (!m.terrainContainer) throw new Error('Terrain container missing');
+  if (!m.gameManager?.gridContainer) throw new Error('Grid container missing');
   // Ensure placeables map exists
   if (!m.placeables) m.placeables = new Map();
 
@@ -402,10 +398,20 @@ export function placeItem(m, id, x, y) {
     const tokensAt = m.gameManager?.tokenManager?.findExistingTokenAt?.(x, y);
     if (tokensAt) return false;
   }
+  // If placing a plant (tree) and a token exists at the tile, disallow to prevent overlap
+  if (TERRAIN_PLACEABLES[id].type === 'plant') {
+    const tokensAt = m.gameManager?.tokenManager?.findExistingTokenAt?.(x, y);
+    if (tokensAt) return false;
+  }
 
   const sprite = createPlaceableSprite(m, id, x, y);
-  // Add to container and record
-  m.terrainContainer.addChild(sprite);
+  // Add to the main grid container so zIndex interleaves with tokens/tiles
+  m.gameManager.gridContainer.addChild(sprite);
+  try {
+    m.gameManager.gridContainer.sortChildren?.();
+  } catch (_) {
+    /* ignore */
+  }
   if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
   m.placeables.get(tileKey).push(sprite);
   return true;
@@ -471,4 +477,129 @@ export function removeItem(m, x, y, id = null) {
   }
   if (list.length === 0) m.placeables.delete(tileKey);
   return removed;
+}
+
+/**
+ * Compute isometric center for a grid cell using current tile dimensions.
+ * @private
+ */
+function _isoCenterForCell(m, gx, gy) {
+  return CoordinateUtils.gridToIsometric(gx, gy, m.gameManager.tileWidth, m.gameManager.tileHeight);
+}
+
+/**
+ * Reposition a single placeable sprite using current grid position and terrain height.
+ * Ensures bottom-center anchoring, elevation offset, per-asset baseline offset, and z-index.
+ */
+export function repositionPlaceableSprite(m, sprite) {
+  if (!sprite) return;
+  // Ensure parent is the main grid container so interleaving with tokens works
+  try {
+    const gridContainer = m.gameManager?.gridContainer;
+    if (gridContainer && sprite.parent !== gridContainer) {
+      if (sprite.parent) sprite.parent.removeChild(sprite);
+      gridContainer.addChild(sprite);
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  const gx = Number(sprite.gridX);
+  const gy = Number(sprite.gridY);
+  // Use the same baseline point as tokens/selection so placement matches the
+  // highlighted cell exactly.
+  const iso = _isoCenterForCell(m, gx, gy);
+  // Ensure bottom-center anchor
+  try {
+    sprite.anchor?.set?.(0.5, 1.0);
+    sprite.pivot?.set?.(0, 0);
+  } catch (_) {
+    /* ignore */
+  }
+  // Baseline position
+  // Round to whole pixels to avoid 0.5px artifacts that can land on tile edges
+  sprite.x = Math.round(iso.x);
+  sprite.y = Math.round(iso.y);
+  // Elevation offset from current terrain height
+  try {
+    const h = m.terrainCoordinator?.getTerrainHeight?.(gx, gy) ?? 0;
+    const elev = TerrainHeightUtils.calculateElevationOffset(h);
+    sprite.y += elev;
+  } catch (_) {
+    /* ignore */
+  }
+  // Per-asset tuning
+  try {
+    const def = TERRAIN_PLACEABLES[sprite.placeableId] || {};
+    const assetOffset = Number.isFinite(def.baselineOffsetPx) ? def.baselineOffsetPx : 0;
+    sprite.y += assetOffset;
+  } catch (_) {
+    /* ignore */
+  }
+  // Deterministic total ordering via shared utility
+  const type = sprite.placeableType || (TERRAIN_PLACEABLES[sprite.placeableId]?.type ?? 'path');
+  const typeBias =
+    type === 'structure'
+      ? TYPE_BIAS.structure
+      : type === 'plant'
+        ? TYPE_BIAS.plant
+        : TYPE_BIAS.path;
+  // Use grid-based depth with tie-breaker to keep ordering deterministic
+  const depthKey = computeDepthKey(gx, gy, typeBias);
+  sprite.zIndex = withOverlayRaise(m, depthKey);
+
+  // When elevation overlay/preview exists, raise placeables above it BUT preserve
+  // the diagonal interleaving and per-type bias so tokens vs. trees order remains correct.
+  try {
+    // Ensure parent is sorting by zIndex and apply sort after change
+    const parent = m.gameManager?.gridContainer;
+    if (parent) {
+      parent.sortableChildren = true;
+      try {
+        parent.sortChildren?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  } catch (_) {
+    /* best-effort */
+  }
+}
+
+/**
+ * Reposition all placeables located on a specific cell (gx, gy).
+ */
+export function updatePlaceablesForCell(m, gx, gy) {
+  if (!m.placeables) return;
+  const key = `${gx},${gy}`;
+  const list = m.placeables.get(key);
+  if (!list || !list.length) return;
+  for (const sprite of list) {
+    try {
+      repositionPlaceableSprite(m, sprite);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Reposition every placeable across the map (used when elevation scale changes).
+ */
+export function repositionAllPlaceables(m) {
+  if (!m.placeables || m.placeables.size === 0) return;
+  for (const [, list] of m.placeables) {
+    if (!Array.isArray(list)) continue;
+    for (const sprite of list) {
+      try {
+        repositionPlaceableSprite(m, sprite);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+  try {
+    m.gameManager?.gridContainer?.sortChildren?.();
+  } catch (_) {
+    /* ignore */
+  }
 }

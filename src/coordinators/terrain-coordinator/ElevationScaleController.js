@@ -108,14 +108,32 @@ export class ElevationScaleController {
         });
       }
 
-      // 4) If overlay container exists, ensure it still sorts correctly
+      // 4) Re-apply elevation to placeables so trees/plants stick to tiles
+      try {
+        const tm = this.c.terrainManager;
+        if (tm && typeof tm.repositionAllPlaceables === 'function') {
+          tm.repositionAllPlaceables();
+        } else if (tm) {
+          // dynamic import to avoid circular deps during initial load
+          import('../../managers/terrain-manager/internals/placeables.js').then((mod) => {
+            try {
+              mod.repositionAllPlaceables?.(tm);
+            } catch (_) {
+              /* ignore */
+            }
+          });
+        }
+      } catch (_) {
+        /* non-fatal */
+      }
+
+      // 5) If overlay container exists, ensure it still sorts correctly
       try {
         this.c.gameManager?.gridContainer?.sortChildren?.();
       } catch (_) {
         /* no-op */
       }
-
-      // 5) If outside terrain mode and a biome is selected, repaint the biome canvas
+      // 6) If outside terrain mode and a biome is selected, repaint the biome canvas
       const shouldRepaintBiome = options?.repaintBiome !== false;
       if (
         shouldRepaintBiome &&

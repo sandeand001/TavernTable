@@ -337,6 +337,15 @@ export class TerrainCoordinator {
   }
 
   /**
+   * Public: Load base terrain heights into the working buffer.
+   * Expected by internals/mode.loadTerrainStateAndDisplay which calls
+   * c.loadBaseTerrainIntoWorkingState().
+   */
+  loadBaseTerrainIntoWorkingState() {
+    return _loadBaseIntoWorking(this);
+  }
+
+  /**
    * DECOMPOSED METHOD: Prepare base grid visuals for editing overlay
    * Resets per-tile elevation offsets, shadows, and base 3D faces so
    * the editing overlay is the sole visual representation of height.
@@ -369,6 +378,15 @@ export class TerrainCoordinator {
   // Removed: pass-through wrapper now handled by ActivationHelpers directly
 
   /**
+   * Public: Handle grid resize by reinitializing terrain data and preserving overlap.
+   * @param {number} newCols
+   * @param {number} newRows
+   */
+  handleGridResize(newCols, newRows) {
+    return _handleResize(this, newCols, newRows);
+  }
+
+  /**
    * DECOMPOSED METHOD: Load terrain state and display
    * @private
    */
@@ -386,6 +404,23 @@ export class TerrainCoordinator {
    */
   disableTerrainMode() {
     return this._activationHelpers.disableTerrainMode();
+  }
+
+  /**
+   * Public: Apply current working terrain to the base grid permanently.
+   * Used by ActivationHelpers.disableTerrainMode().
+   * @returns {number} modifiedTiles - count of non-default tiles updated
+   */
+  applyTerrainToBaseGrid() {
+    try {
+      _validateApplyReqs(this);
+      _initBaseHeights(this);
+      const modified = _processAllTiles(this);
+      _logApplyComplete(this, modified);
+      return modified;
+    } catch (error) {
+      _handleApplyError(error);
+    }
   }
 
   /**
@@ -407,6 +442,27 @@ export class TerrainCoordinator {
 
   set brushSize(value) {
     _setBrushSize(this, value);
+  }
+
+  /**
+   * Placeable Tiles brush size (independent of terrain brush size).
+   * Getter/Setter are exposed for UI and tests. Setter clamps to config bounds.
+   */
+  get ptBrushSize() {
+    return this._ptBrushSize;
+  }
+
+  set ptBrushSize(value) {
+    try {
+      const min = TERRAIN_CONFIG.MIN_BRUSH_SIZE || 1;
+      const max = TERRAIN_CONFIG.MAX_BRUSH_SIZE || 5;
+      const n = Math.trunc(Number(value));
+      if (Number.isFinite(n)) {
+        this._ptBrushSize = Math.max(min, Math.min(max, n));
+      }
+    } catch (_) {
+      // leave as-is on bad input
+    }
   }
 
   /**
@@ -443,128 +499,6 @@ export class TerrainCoordinator {
   /** Enable or disable the rich biome canvas shading outside terrain mode. */
   setRichShadingEnabled(enabled) {
     return _setRichShadingEnabled(this, enabled);
-  }
-
-  /**
-   * Coordinator-managed selection for terrain placeable items.
-   */
-  setSelectedPlaceable(placeableId) {
-    // Store the selected placeable id so input handlers can read it.
-    this._selectedPlaceable = placeableId || null;
-    try {
-      logger.debug(
-        'setSelectedPlaceable',
-        { selected: this._selectedPlaceable },
-        LOG_CATEGORY.SYSTEM
-      );
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  getSelectedPlaceable() {
-    return this._selectedPlaceable || null;
-  }
-
-  clearSelectedPlaceable() {
-    this._selectedPlaceable = null;
-    try {
-      logger.debug('clearSelectedPlaceable', LOG_CATEGORY.SYSTEM);
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  /**
-   * UI-driven: mark whether the Placeable Tiles panel is visible.
-   * When hiding the panel we proactively clear any selected placeable to avoid
-   * accidental placement while the UI panel is not shown.
-   * @param {boolean} visible
-   */
-  setPlaceablesPanelVisible(visible) {
-    // Record panel visibility so input handlers can determine whether
-    // placeable selection should be honored. When hiding the panel we
-    // proactively clear selection to avoid accidental placement.
-    this._placeablesPanelVisible = !!visible;
-    if (!this._placeablesPanelVisible) this.clearSelectedPlaceable();
-    try {
-      logger.debug('setPlaceablesPanelVisible', { requested: !!visible }, LOG_CATEGORY.SYSTEM);
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  /**
-   * Returns true when the Placeable Tiles panel is visible in the UI.
-   */
-  isPlaceablesPanelVisible() {
-    // Prefer explicit state if set
-    if (typeof this._placeablesPanelVisible === 'boolean') return this._placeablesPanelVisible;
-    // Fallback: if running in a browser, detect the presence/visibility of the DOM root
-    try {
-      if (typeof document !== 'undefined') {
-        const el = document.getElementById('terrain-placeables-root');
-        if (el) {
-          if (window.getComputedStyle) {
-            const style = window.getComputedStyle(el);
-            return style && style.display !== 'none' && style.visibility !== 'hidden';
-          }
-          return true;
-        }
-      }
-    } catch (_) {
-      /* ignore DOM access failures (e.g., during unit tests) */
-    }
-    return false;
-  }
-
-  /** Placeable Tiles brush size (independent from terrain brush) */
-  get ptBrushSize() {
-    return this._ptBrushSize || 1;
-  }
-
-  set ptBrushSize(value) {
-    const v = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : this._ptBrushSize || 1;
-    this._ptBrushSize = v;
-  }
-
-  increasePTBrushSize() {
-    this.ptBrushSize = Math.min(this.ptBrushSize + 1, TERRAIN_CONFIG.MAX_BRUSH_SIZE);
-  }
-
-  decreasePTBrushSize() {
-    this.ptBrushSize = Math.max(this.ptBrushSize - 1, TERRAIN_CONFIG.MIN_BRUSH_SIZE);
-  }
-
-  /**
-   * Handle grid resize - reinitialize terrain data
-   * @param {number} newCols - New column count
-   * @param {number} newRows - New row count
-   */
-  handleGridResize(newCols, newRows) {
-    return _handleResize(this, newCols, newRows);
-  }
-
-  /**
-   * Load base terrain state into working terrain heights for editing
-   */
-  loadBaseTerrainIntoWorkingState() {
-    return _loadBaseIntoWorking(this);
-  }
-
-  /**
-   * Apply terrain modifications permanently to the base grid
-   * SAFER APPROACH: Updates existing tiles instead of mass destruction/recreation
-   */
-  applyTerrainToBaseGrid() {
-    try {
-      _validateApplyReqs(this);
-      _initBaseHeights(this);
-      const modifiedTiles = _processAllTiles(this);
-      _logApplyComplete(this, modifiedTiles);
-    } catch (error) {
-      _handleApplyError(error);
-    }
   }
 
   /**

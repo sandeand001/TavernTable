@@ -93,14 +93,17 @@ export class TerrainFacesRenderer {
     const left = { x: 0, y: h / 2 };
 
     const faces = new PIXI.Graphics();
-    const colors = shaded
-      ? { r: baseTopColor, b: baseTopColor, l: baseTopColor, t: baseTopColor }
-      : {
+    let colors;
+    if (shaded) {
+      colors = { r: baseTopColor, b: baseTopColor, l: baseTopColor, t: baseTopColor };
+    } else {
+      colors = {
         r: darkenColor(baseTopColor, 0.25),
         b: darkenColor(baseTopColor, 0.4),
         l: darkenColor(baseTopColor, 0.35),
         t: darkenColor(baseTopColor, 0.2),
       };
+    }
 
     const drawFace = (from, to, down, color) => {
       const fromD = { x: from.x, y: from.y + down };

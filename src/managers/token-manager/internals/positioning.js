@@ -1,6 +1,7 @@
 import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
 export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = null) {
@@ -11,6 +12,24 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
     let target = null;
     // Remember original token entry so we can prefer snapping back to it
     const tokenEntry = c.placedTokens.find((t) => t.creature && t.creature.sprite === token);
+    // Helper: does this grid cell have a blocking placeable (trees/plants or structures)?
+    const hasBlockingPlaceable = (gx, gy) => {
+      try {
+        const tm = c?.gameManager?.terrainManager;
+        const map = tm?.placeables;
+        if (!map || !map.size) return false;
+        const key = `${gx},${gy}`;
+        if (!map.has(key)) return false;
+        const list = map.get(key);
+        if (!Array.isArray(list)) return false;
+        return list.some(
+          (p) => p && (p.placeableType === 'plant' || p.placeableType === 'structure')
+        );
+      } catch (_) {
+        return false;
+      }
+    };
+
     try {
       const im = c.gameManager?.interactionManager;
       if (im && typeof im.pickTopmostGridCellAt === 'function') {
@@ -24,7 +43,8 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
               t.creature &&
               t.creature.sprite !== token
           );
-          if (occupying) {
+          const blocked = hasBlockingPlaceable(picked.gridX, picked.gridY);
+          if (occupying || blocked) {
             if (tokenEntry) {
               target = { gridX: tokenEntry.gridX, gridY: tokenEntry.gridY };
             } else {
@@ -55,12 +75,20 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
 
       const candidates = [];
       const pushIfValid = (gx, gy) => {
-        if (CoordinateUtils.isValidGridPosition(gx, gy, c.gameManager.cols, c.gameManager.rows)) {
+        const valid = CoordinateUtils.isValidGridPosition(
+          gx,
+          gy,
+          c.gameManager.cols,
+          c.gameManager.rows
+        );
+        if (valid) {
           // Skip tiles occupied by another token (allow own original tile)
           const occupying = c.placedTokens.find(
             (t) => t.gridX === gx && t.gridY === gy && t.creature && t.creature.sprite !== token
           );
           if (occupying) return;
+          // Skip tiles blocked by placeables (trees/plants or structures)
+          if (hasBlockingPlaceable(gx, gy)) return;
 
           // compute center and distance metric (manhattan-like normalized) to rank
           const baseX = (gx - gy) * (c.gameManager.tileWidth / 2);
@@ -106,7 +134,8 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
             t.creature &&
             t.creature.sprite !== token
         );
-        if (!occupied) {
+        const blocked = hasBlockingPlaceable(rounded.gx, rounded.gy);
+        if (!occupied && !blocked) {
           target = CoordinateUtils.clampToGrid(
             rounded.gx,
             rounded.gy,
@@ -114,16 +143,48 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
             c.gameManager.rows
           );
         } else {
-          // try original token cell
-          if (tokenEntry) {
+          // If rounded cell is blocked/occupied, pick nearest unblocked candidate in a small radius
+          const findNearest = () => {
+            for (let r = 1; r <= 2; r++) {
+              const ring = [
+                [rounded.gx + r, rounded.gy],
+                [rounded.gx - r, rounded.gy],
+                [rounded.gx, rounded.gy + r],
+                [rounded.gx, rounded.gy - r],
+                [rounded.gx + r, rounded.gy + r],
+                [rounded.gx - r, rounded.gy - r],
+                [rounded.gx + r, rounded.gy - r],
+                [rounded.gx - r, rounded.gy + r],
+              ];
+              for (const [gx, gy] of ring) {
+                if (
+                  !CoordinateUtils.isValidGridPosition(
+                    gx,
+                    gy,
+                    c.gameManager.cols,
+                    c.gameManager.rows
+                  )
+                )
+                  continue;
+                const occ = c.placedTokens.find(
+                  (t) =>
+                    t.gridX === gx && t.gridY === gy && t.creature && t.creature.sprite !== token
+                );
+                if (!occ && !hasBlockingPlaceable(gx, gy)) {
+                  return { gridX: gx, gridY: gy };
+                }
+              }
+            }
+            return null;
+          };
+          const nearest = findNearest();
+          if (nearest) {
+            target = nearest;
+          } else if (tokenEntry) {
             target = { gridX: tokenEntry.gridX, gridY: tokenEntry.gridY };
           } else {
-            target = CoordinateUtils.clampToGrid(
-              rounded.gx,
-              rounded.gy,
-              c.gameManager.cols,
-              c.gameManager.rows
-            );
+            // No valid target; keep current position by bailing out early
+            return;
           }
         }
       }
@@ -137,7 +198,8 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
         t.creature &&
         t.creature.sprite !== token
     );
-    if (collision) {
+    const placeableBlocked = hasBlockingPlaceable(target.gridX, target.gridY);
+    if (collision || placeableBlocked) {
       if (tokenEntry) {
         target = { gridX: tokenEntry.gridX, gridY: tokenEntry.gridY };
       }
@@ -158,11 +220,19 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
     } catch (_) {
       /* ignore */
     }
-
     token.x = finalIso.x;
     token.y = finalIso.y + elevationOffset;
-    const newDepth = target.gridX + target.gridY;
-    token.zIndex = newDepth * 100 + 1;
+    const depthKey = computeDepthKey(target.gridX, target.gridY, TYPE_BIAS.token);
+    token.zIndex = withOverlayRaise(c.gameManager?.terrainManager, depthKey);
+    const parent = c.gameManager?.gridContainer;
+    if (parent) {
+      parent.sortableChildren = true;
+      try {
+        parent.sortChildren?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }
 
     if (tokenEntry) {
       tokenEntry.gridX = target.gridX;

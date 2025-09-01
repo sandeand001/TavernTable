@@ -39,6 +39,11 @@ describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
             removeChild(child) { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); child.parent = null; },
             visible: true
         };
+        const gridContainer = {
+            children: [],
+            addChild(child) { this.children.push(child); child.parent = this; },
+            removeChild(child) { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); child.parent = null; }
+        };
 
         const sprite = { gridX: 0, gridY: 0, placeableId: 'test', parent: null };
         // Put sprite into container initially
@@ -46,6 +51,7 @@ describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
 
         const m = {
             terrainContainer,
+            gameManager: { gridContainer },
             terrainTiles: new Map([['0,0', { isTerrainTile: true }]]),
             placeables: new Map([['0,0', [sprite]]]),
             updateQueue: new Set(),
@@ -59,13 +65,13 @@ describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
         // Act
         clearAllTerrainTiles(m);
 
-        // After clear, placeables map should still contain the sprite and it should be reattached
+    // After clear, placeables map should still contain the sprite and it should be reattached
         expect(m.placeables.has('0,0')).toBe(true);
         const arr = m.placeables.get('0,0');
         expect(Array.isArray(arr)).toBe(true);
         expect(arr.length).toBe(1);
         expect(arr[0]).toBe(sprite);
-        // sprite should be in the container children again
-        expect(terrainContainer.children.includes(sprite)).toBe(true);
+    // sprite should be reattached under the grid container for z-index interleaving
+    expect(gridContainer.children.includes(sprite)).toBe(true);
     });
 });
