@@ -83,6 +83,7 @@ flowchart LR
   99a674c5082b[src/utils/CanvasShapeUtils.js]
   7b9405bf0f18[src/utils/ColorUtils.js]
   e28bad82c9c7[src/utils/CoordinateUtils.js]
+  e6d8c51e8084[src/utils/DepthUtils.js]
   8721557a149d[src/utils/env.js]
   144167c41989[src/utils/error/enums.js]
   f63a83e71cbd[src/utils/error/notification.js]
@@ -231,6 +232,7 @@ flowchart LR
   8d23988f6a84 --> 8c711cb2f768
   8d23988f6a84 --> 37fb05b4943e
   8d23988f6a84 --> e28bad82c9c7
+  8d23988f6a84 --> 59a26aa556a6
   3c0d05e3cf2b --> 8c711cb2f768
   3c0d05e3cf2b --> e623a0b6986f
   3c0d05e3cf2b --> 37fb05b4943e
@@ -351,6 +353,9 @@ flowchart LR
   9ebf4581265a --> ecbbd71626d8
   9ebf4581265a --> 318571309d3f
   59a26aa556a6 --> 58b5d2f1f154
+  59a26aa556a6 --> e28bad82c9c7
+  59a26aa556a6 --> 37fb05b4943e
+  59a26aa556a6 --> e6d8c51e8084
   26239cd3d038 --> 8c711cb2f768
   aaa5a6230090 --> 8c711cb2f768
   aaa5a6230090 --> 68b5dd71185e
@@ -362,6 +367,10 @@ flowchart LR
   14922d4b3d04 --> ecbbd71626d8
   14922d4b3d04 --> 8c711cb2f768
   14922d4b3d04 --> e623a0b6986f
+  14922d4b3d04 --> 59a26aa556a6
+  14922d4b3d04 --> e28bad82c9c7
+  14922d4b3d04 --> 37fb05b4943e
+  14922d4b3d04 --> e6d8c51e8084
   39ae79cd6016 --> 8c711cb2f768
   39ae79cd6016 --> ecbbd71626d8
   39ae79cd6016 --> e623a0b6986f
@@ -389,10 +398,12 @@ flowchart LR
   7d5d44c50dd8 --> e28bad82c9c7
   7d5d44c50dd8 --> 37fb05b4943e
   7d5d44c50dd8 --> 8c711cb2f768
+  7d5d44c50dd8 --> e6d8c51e8084
   7d5d44c50dd8 --> ecbbd71626d8
   7179c1418d2c --> e28bad82c9c7
   7179c1418d2c --> 37fb05b4943e
   7179c1418d2c --> 8c711cb2f768
+  7179c1418d2c --> e6d8c51e8084
   7179c1418d2c --> ecbbd71626d8
   ddab55041ef8 --> 68b5dd71185e
   ddab55041ef8 --> 2452655fdde1
@@ -440,6 +451,7 @@ flowchart LR
   1ac8779a1633 --> 2452655fdde1
   1ac8779a1633 --> 8c711cb2f768
   1ac8779a1633 --> 58b5d2f1f154
+  1ac8779a1633 --> 59a26aa556a6
   1ac8779a1633 --> fc9eff56c2b8
   e8d76d94cd75 --> 8721557a149d
   e8d76d94cd75 --> 0fcb156de43d

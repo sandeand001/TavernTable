@@ -1,7 +1,7 @@
 {
   "meta": {
     "project": "TavernTable",
-    "generated_at": "2025-08-26T04:56:36.144Z",
+    "generated_at": "2025-09-06T04:49:05.994Z",
     "languages": [
       "JavaScript",
       "HTML",
@@ -300,7 +300,8 @@
         "path": "src/config/TerrainPlaceables.js",
         "layer": "app",
         "exports": [
-          "TERRAIN_PLACEABLES"
+          "TERRAIN_PLACEABLES",
+          "TREE_PLACEABLES"
         ],
         "imports_internal": [],
         "imports_external": [],
@@ -534,14 +535,16 @@
           "../../utils/ErrorHandler.js",
           "../../utils/Logger.js",
           "../../utils/TerrainHeightUtils.js",
-          "../../utils/CoordinateUtils.js"
+          "../../utils/CoordinateUtils.js",
+          "../../managers/terrain-manager/internals/placeables.js"
         ],
         "imports_external": [],
         "depends_on": [
           "ecbbd71626d8",
           "8c711cb2f768",
           "37fb05b4943e",
-          "e28bad82c9c7"
+          "e28bad82c9c7",
+          "59a26aa556a6"
         ],
         "used_by": [
           "fb5708d12ec8"
@@ -742,7 +745,8 @@
           "files": [
             "tests/unit/TerrainBrushHighlighter.test.js",
             "tests/unit/TerrainBrushInternals.test.js",
-            "tests/unit/TerrainBrushPreview.test.js"
+            "tests/unit/TerrainBrushPreview.test.js",
+            "tests/unit/TerrainPTBrush.test.js"
           ],
           "coverage_hint": "ok"
         },
@@ -1877,17 +1881,30 @@
         "exports": [
           "createPlaceableSprite",
           "placeItem",
-          "removeItem"
+          "cyclePlaceableVariant",
+          "removeItem",
+          "repositionPlaceableSprite",
+          "updatePlaceablesForCell",
+          "repositionAllPlaceables"
         ],
         "imports_internal": [
-          "../../../config/TerrainPlaceables.js"
+          "../../../config/TerrainPlaceables.js",
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js",
+          "../../../utils/DepthUtils.js"
         ],
         "imports_external": [],
         "depends_on": [
-          "58b5d2f1f154"
+          "58b5d2f1f154",
+          "e28bad82c9c7",
+          "37fb05b4943e",
+          "e6d8c51e8084"
         ],
         "used_by": [
-          "39ae79cd6016"
+          "8d23988f6a84",
+          "14922d4b3d04",
+          "39ae79cd6016",
+          "1ac8779a1633"
         ],
         "public_api": false,
         "responsibilities": [],
@@ -1897,8 +1914,11 @@
         "logging": "none",
         "config": [],
         "tests": {
-          "files": [],
-          "coverage_hint": "none"
+          "files": [
+            "tests/unit/Placeables.trees.test.js",
+            "tests/unit/PlaceablesPersistence.test.js"
+          ],
+          "coverage_hint": "ok"
         },
         "smells": [],
         "todo": []
@@ -1997,13 +2017,21 @@
         "imports_internal": [
           "../../../utils/ErrorHandler.js",
           "../../../utils/Logger.js",
-          "../../../config/TerrainConstants.js"
+          "../../../config/TerrainConstants.js",
+          "./placeables.js",
+          "../../../utils/CoordinateUtils.js",
+          "../../../utils/TerrainHeightUtils.js",
+          "../../../utils/DepthUtils.js"
         ],
         "imports_external": [],
         "depends_on": [
           "ecbbd71626d8",
           "8c711cb2f768",
-          "e623a0b6986f"
+          "e623a0b6986f",
+          "59a26aa556a6",
+          "e28bad82c9c7",
+          "37fb05b4943e",
+          "e6d8c51e8084"
         ],
         "used_by": [
           "39ae79cd6016"
@@ -2044,6 +2072,8 @@
           "./terrain-manager/internals/tiles.js",
           "./terrain-manager/internals/sorting.js",
           "./terrain-manager/internals/updates.js",
+          "./terrain-manager/internals/placeables.js",
+          "./terrain-manager/internals/placeables.js",
           "./terrain-manager/internals/placeables.js"
         ],
         "imports_external": [],
@@ -2228,6 +2258,7 @@
           "../../../utils/CoordinateUtils.js",
           "../../../utils/TerrainHeightUtils.js",
           "../../../utils/Logger.js",
+          "../../../utils/DepthUtils.js",
           "../../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
@@ -2235,6 +2266,7 @@
           "e28bad82c9c7",
           "37fb05b4943e",
           "8c711cb2f768",
+          "e6d8c51e8084",
           "ecbbd71626d8"
         ],
         "used_by": [
@@ -2267,6 +2299,7 @@
           "../../../utils/CoordinateUtils.js",
           "../../../utils/TerrainHeightUtils.js",
           "../../../utils/Logger.js",
+          "../../../utils/DepthUtils.js",
           "../../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
@@ -2274,6 +2307,7 @@
           "e28bad82c9c7",
           "37fb05b4943e",
           "8c711cb2f768",
+          "e6d8c51e8084",
           "ecbbd71626d8"
         ],
         "used_by": [
@@ -3019,6 +3053,7 @@
           "./domHelpers.js",
           "../utils/Logger.js",
           "../config/TerrainPlaceables.js",
+          "../managers/terrain-manager/internals/placeables.js",
           "../config/BiomeConstants.js"
         ],
         "imports_external": [],
@@ -3026,6 +3061,7 @@
           "2452655fdde1",
           "8c711cb2f768",
           "58b5d2f1f154",
+          "59a26aa556a6",
           "fc9eff56c2b8"
         ],
         "used_by": [],
@@ -3181,6 +3217,8 @@
           "05722cd2c852",
           "d80ccf4528b9",
           "f37a2df4e2f7",
+          "59a26aa556a6",
+          "14922d4b3d04",
           "39ae79cd6016",
           "2e81bed45966",
           "7d5d44c50dd8",
@@ -3193,6 +3231,40 @@
         "data_models": [],
         "errors": [],
         "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "e6d8c51e8084",
+        "path": "src/utils/DepthUtils.js",
+        "layer": "app",
+        "exports": [
+          "DIAG_WEIGHT",
+          "X_TIE_WEIGHT",
+          "TYPE_BIAS",
+          "computeDepthKey",
+          "withOverlayRaise"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "59a26aa556a6",
+          "14922d4b3d04",
+          "7d5d44c50dd8",
+          "7179c1418d2c"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
         "config": [],
         "tests": {
           "files": [],
@@ -3582,7 +3654,9 @@
           "3c0d05e3cf2b",
           "d80ccf4528b9",
           "f37a2df4e2f7",
+          "59a26aa556a6",
           "aaa5a6230090",
+          "14922d4b3d04",
           "39ae79cd6016",
           "2e81bed45966",
           "7d5d44c50dd8",
@@ -4352,7 +4426,8 @@
           "files": [
             "tests/unit/TerrainBrushHighlighter.test.js",
             "tests/unit/TerrainBrushInternals.test.js",
-            "tests/unit/TerrainBrushPreview.test.js"
+            "tests/unit/TerrainBrushPreview.test.js",
+            "tests/unit/TerrainPTBrush.test.js"
           ],
           "coverage_hint": "ok"
         },
