@@ -38,6 +38,7 @@ import {
   setBiomeSeed as _setBiomeSeed,
 } from './terrain-coordinator/internals/biome.js';
 import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-coordinator/internals/color.js';
+import { autoPopulateBiomeFlora as _autoPopulateBiomeFlora } from './terrain-coordinator/internals/flora.js';
 import { handleGridResize as _handleResize } from './terrain-coordinator/internals/resize.js';
 import { getTerrainHeight as _getHeight } from './terrain-coordinator/internals/height.js';
 import { isValidGridPosition as _isValidPos } from './terrain-coordinator/internals/coords.js';
@@ -640,6 +641,15 @@ export class TerrainCoordinator {
       } catch (_) {
         /* non-fatal */
       }
+      // Populate biome flora (trees) after successful elevation generation
+      try {
+        _autoPopulateBiomeFlora(
+          this,
+          biomeKey || (typeof window !== 'undefined' && window.selectedBiome)
+        );
+      } catch (_) {
+        /* ignore flora errors */
+      }
       return true;
     } catch (_) {
       return false;
@@ -692,6 +702,12 @@ export class TerrainCoordinator {
         this.applyBiomePaletteToBaseGrid();
       } catch (_) {
         /* non-fatal */
+      }
+      // Populate biome flora for full regeneration path
+      try {
+        _autoPopulateBiomeFlora(this, activeBiome);
+      } catch (_) {
+        /* ignore flora errors */
       }
       return true;
     } catch (_) {
