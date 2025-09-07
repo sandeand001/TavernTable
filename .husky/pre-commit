@@ -1,1 +1,11 @@
+#!/usr/bin/env sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "Running architecture layering check..."
+npm run lint:layers || exit 1
+
+echo "Running ESLint/Stylelint (staged via lint-staged)..."
+npx lint-staged || exit 1
+
+echo "Pre-commit checks passed."
 npx --no-install lint-staged
