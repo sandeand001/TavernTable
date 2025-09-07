@@ -64,11 +64,41 @@ import {
 } from '../terrain/BiomeElevationGenerator.js';
 
 export class TerrainCoordinator {
-  constructor(gameManager) {
+  /**
+   * Extended constructor with optional injected collaborators and DOM ports.
+   * @param {object} gameManager
+   * @param {object} [terrainManager]
+   * @param {object} [biomeShadingController]
+   * @param {object} [domPorts] shape: { getTerrainHeightDisplay, getScaleMarks, getGameContainer }
+   */
+  constructor(gameManager, terrainManager = null, biomeShadingController = null, domPorts = {}) {
     this.gameManager = gameManager;
-    this.terrainManager = null;
-
-    // Validate dependencies at construction time
+    this.terrainManager = terrainManager;
+    this.biomeShadingController = biomeShadingController;
+    // Injected DOM accessors (UI layer) to avoid violating layering in submodules.
+    const defaultGetTerrainHeightDisplay = () => {
+      if (typeof document === 'undefined') {
+        return null;
+      }
+      return document.getElementById('terrain-height-display');
+    };
+    const defaultGetScaleMarks = () => {
+      if (typeof document === 'undefined') {
+        return [];
+      }
+      return document.querySelectorAll('.scale-mark');
+    };
+    const defaultGetGameContainer = () => {
+      if (typeof document === 'undefined') {
+        return null;
+      }
+      return document.getElementById('game-container');
+    };
+    this.domPorts = {
+      getTerrainHeightDisplay: domPorts.getTerrainHeightDisplay || defaultGetTerrainHeightDisplay,
+      getScaleMarks: domPorts.getScaleMarks || defaultGetScaleMarks,
+      getGameContainer: domPorts.getGameContainer || defaultGetGameContainer,
+    };
     this.validateDependencies();
 
     // Terrain modification state & helpers

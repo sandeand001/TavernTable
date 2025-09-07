@@ -1,5 +1,5 @@
 /* eslint-disable indent */
-import { getTerrainHeightDisplay, getScaleMarks } from '../../ui/domHelpers.js';
+// UI domHelpers removed; DOM access is injected via coordinator.domPorts to satisfy layering.
 import { buildBrushHighlightDescriptor } from '../../terrain/TerrainBrushHighlighter.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
@@ -17,7 +17,7 @@ export class TerrainInputHandlers {
 
   /** Small helper to avoid duplicating the scale mark selector */
   _getScaleMarks() {
-    return getScaleMarks();
+    return this.c?.domPorts?.getScaleMarks ? this.c.domPorts.getScaleMarks() : [];
   }
 
   /** Set up terrain-specific input event handlers */
@@ -425,7 +425,9 @@ export class TerrainInputHandlers {
       const currentHeight = this.c.getTerrainHeight(gridX, gridY);
 
       // Update height value display
-      const heightDisplay = getTerrainHeightDisplay();
+      const heightDisplay = this.c?.domPorts?.getTerrainHeightDisplay
+        ? this.c.domPorts.getTerrainHeightDisplay()
+        : null;
       if (heightDisplay) {
         heightDisplay.textContent = currentHeight.toString();
         heightDisplay.style.color =
@@ -454,7 +456,9 @@ export class TerrainInputHandlers {
   /** Reset the height indicator to default state */
   resetHeightIndicator() {
     try {
-      const heightDisplay = getTerrainHeightDisplay();
+      const heightDisplay = this.c?.domPorts?.getTerrainHeightDisplay
+        ? this.c.domPorts.getTerrainHeightDisplay()
+        : null;
       if (heightDisplay) {
         heightDisplay.textContent = '0';
         heightDisplay.style.color = '#6b7280';

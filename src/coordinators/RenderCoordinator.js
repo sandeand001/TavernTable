@@ -10,11 +10,25 @@ import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { getGameContainer } from '../ui/domHelpers.js';
+// Removed direct UI import (getGameContainer) per AGENT_PLAYBOOK layering.
+// A DOM accessor function is now injected via constructor (domPorts.getGameContainer).
 
 export class RenderCoordinator {
-  constructor(gameManager) {
+  /**
+   * @param {object} gameManager
+   * @param {object} [domPorts] - injected DOM accessors (UI layer). Expected shape:
+   *   { getGameContainer: () => HTMLElement|null }
+   */
+  constructor(gameManager, domPorts = {}) {
     this.gameManager = gameManager;
+    // Store injected DOM accessors with safe fallbacks (never hard-import UI layer).
+    const defaultGetGameContainer = () => {
+      if (typeof document === 'undefined') return null;
+      return document.getElementById('game-container');
+    };
+    this.domPorts = {
+      getGameContainer: domPorts.getGameContainer || defaultGetGameContainer,
+    };
   }
 
   /**
@@ -42,7 +56,7 @@ export class RenderCoordinator {
       }
 
       // Find and validate game container
-      const gameContainer = getGameContainer();
+      const gameContainer = this.domPorts.getGameContainer();
       const containerValidation = GameValidators.domElement(gameContainer, 'div');
       if (!containerValidation.isValid) {
         throw new Error(
@@ -79,7 +93,7 @@ export class RenderCoordinator {
         context: 'RenderCoordinator.createPixiApp',
         stage: 'pixi_application_creation',
         pixiAvailable: typeof PIXI !== 'undefined',
-        containerExists: !!getGameContainer(),
+        containerExists: !!this.domPorts.getGameContainer(),
         gameManagerState: !!this.gameManager,
         errorType: error.constructor.name,
       });
