@@ -1003,18 +1003,4 @@ export function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
   return rgbToHex(mixed);
 }
 
-// Debug
-import { logger, LOG_CATEGORY } from '../utils/Logger.js';
-export function dumpBiomePaletteSample(biomeKey) {
-  const palette = BIOME_HEIGHT_PALETTES[biomeKey];
-  if (!palette) {
-    logger.warn('[BiomePalettes] Unknown biome', { biomeKey }, LOG_CATEGORY.SYSTEM);
-    return;
-  }
-  const entries = Object.keys(palette)
-    .sort((a, b) => a - b)
-    .map((h) => `${h}:${palette[h].toString(16)}`);
-  logger.debug('[BiomePalettes] Dump', { biomeKey, entries }, LOG_CATEGORY.SYSTEM);
-}
-
 export default BIOME_HEIGHT_PALETTES;
