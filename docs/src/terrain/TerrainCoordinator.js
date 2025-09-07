@@ -1,7 +1,7 @@
 // TerrainCoordinator.js - Handles terrain logic
 export class TerrainCoordinator {
-    constructor() {
-        // ...existing code...
-    }
+  constructor() {
     // ...existing code...
+  }
+  // ...existing code...
 }

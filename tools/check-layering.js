@@ -1,3 +1,4 @@
+/* eslint-env node */
 /**
  * Layering enforcement script.
  *
@@ -31,7 +32,7 @@ function resolveImport(fromFile, rawSource) {
   if (fs.existsSync(base + '.js')) return base + '.js';
   // index.js resolution
   if (fs.existsSync(path.join(base, 'index.js'))) return path.join(base, 'index.js');
-  // Even if not found, still return the path so startsWith check can work (directory import)।
+  // Even if not found, still return the path so startsWith check can work (directory import).
   return base;
 }
 

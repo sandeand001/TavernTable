@@ -1,12 +1,17 @@
 // UI decoupling: retrieve facing button via injected domPorts (set by UI layer) with fallback query.
+// Tests (TokenManagerMisc.test) create a button with id="facing-right" and expect text toggling.
 function getFacingButtonPort(c) {
   if (c?.domPorts?.getFacingButton) return c.domPorts.getFacingButton();
   if (typeof document === 'undefined') return null;
-  return document.querySelector('[data-facing-button]');
+  // Prefer id used in existing UI helpers / tests.
+  return document.getElementById('facing-right');
 }
 
 export function toggleFacing(c) {
+  // Default initial orientation if field absent.
+  if (typeof c.tokenFacingRight !== 'boolean') c.tokenFacingRight = true;
   c.tokenFacingRight = !c.tokenFacingRight;
   const facingBtn = getFacingButtonPort(c);
   if (facingBtn) facingBtn.textContent = c.tokenFacingRight ? '➡️ Right' : '⬅️ Left';
+  return c.tokenFacingRight;
 }

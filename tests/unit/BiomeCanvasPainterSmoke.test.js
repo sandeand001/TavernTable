@@ -12,7 +12,7 @@ describe('BiomeCanvasPainter smoke', () => {
       tileHeight: 32,
       gridContainer: { addChild() {}, removeChild() {} },
       // minimal API referenced by painter in some branches
-      getBiomeKey: () => 'grassland'
+      getBiomeKey: () => 'grassland',
     };
   }
 
@@ -42,15 +42,15 @@ describe('BiomeCanvasPainter smoke', () => {
     const painter = new BiomeCanvasPainter(gm);
     painter.setSeed(42);
     const biomes = [
-      'grassland',   // plains
-      'desert',      // arid
-      'forest',      // forest
-      'swamp',       // wetland
-      'alpine',      // alpine
-      'ocean',       // water
-      'volcanic',    // volcanic
-      'arcane',      // arcane
-      'unknown'      // generic fallback
+      'grassland', // plains
+      'desert', // arid
+      'forest', // forest
+      'swamp', // wetland
+      'alpine', // alpine
+      'ocean', // water
+      'volcanic', // volcanic
+      'arcane', // arcane
+      'unknown', // generic fallback
     ];
     const h = heights(6, 5);
     for (const b of biomes) {

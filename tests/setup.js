@@ -4,10 +4,47 @@
 // Mock PIXI if not available in test environment
 if (typeof global.PIXI === 'undefined') {
   global.PIXI = {
-    Container: class { constructor() { this.children = []; this.visible = true; } addChild() { } addChildAt() { } removeChild() { } removeChildren() { this.children = []; } },
-  Graphics: class { constructor() { this.children = []; this.destroyed = false; } lineStyle() { } beginFill() { } endFill() { } moveTo() { } lineTo() { } closePath() { } addChild() { } destroy() { this.destroyed = true; } },
-  Texture: { from: () => ({}) },
-  Sprite: class { constructor(tex) { this.texture = tex; this.destroyed = false; this.x = 0; this.y = 0; this.zIndex = 0; } destroy() { this.destroyed = true; } }
+    Container: class {
+      constructor() {
+        this.children = [];
+        this.visible = true;
+      }
+      addChild() {}
+      addChildAt() {}
+      removeChild() {}
+      removeChildren() {
+        this.children = [];
+      }
+    },
+    Graphics: class {
+      constructor() {
+        this.children = [];
+        this.destroyed = false;
+      }
+      lineStyle() {}
+      beginFill() {}
+      endFill() {}
+      moveTo() {}
+      lineTo() {}
+      closePath() {}
+      addChild() {}
+      destroy() {
+        this.destroyed = true;
+      }
+    },
+    Texture: { from: () => ({}) },
+    Sprite: class {
+      constructor(tex) {
+        this.texture = tex;
+        this.destroyed = false;
+        this.x = 0;
+        this.y = 0;
+        this.zIndex = 0;
+      }
+      destroy() {
+        this.destroyed = true;
+      }
+    },
   };
 }
 
@@ -27,6 +64,6 @@ if (typeof global.Sanitizers === 'undefined') {
       if (Number.isFinite(min) && n < min) return min;
       if (Number.isFinite(max) && n > max) return max;
       return n;
-    }
+    },
   };
 }

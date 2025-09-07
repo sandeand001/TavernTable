@@ -1,0 +1,7 @@
+node_modules
+coverage
+coverage/**
+dist
+*.log
+*.lock
+docs/AI_CODEBASE_MAP.json

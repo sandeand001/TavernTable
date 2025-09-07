@@ -10,15 +10,15 @@
  * @returns {number}
  */
 export function lightenColor(color, factor = 0.0) {
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
 
-    const newR = Math.min(255, Math.floor(r + (255 - r) * factor));
-    const newG = Math.min(255, Math.floor(g + (255 - g) * factor));
-    const newB = Math.min(255, Math.floor(b + (255 - b) * factor));
+  const newR = Math.min(255, Math.floor(r + (255 - r) * factor));
+  const newG = Math.min(255, Math.floor(g + (255 - g) * factor));
+  const newB = Math.min(255, Math.floor(b + (255 - b) * factor));
 
-    return (newR << 16) | (newG << 8) | newB;
+  return (newR << 16) | (newG << 8) | newB;
 }
 
 /**
@@ -28,15 +28,15 @@ export function lightenColor(color, factor = 0.0) {
  * @returns {number}
  */
 export function darkenColor(color, factor = 0.0) {
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
 
-    const newR = Math.max(0, Math.floor(r * (1 - factor)));
-    const newG = Math.max(0, Math.floor(g * (1 - factor)));
-    const newB = Math.max(0, Math.floor(b * (1 - factor)));
+  const newR = Math.max(0, Math.floor(r * (1 - factor)));
+  const newG = Math.max(0, Math.floor(g * (1 - factor)));
+  const newB = Math.max(0, Math.floor(b * (1 - factor)));
 
-    return (newR << 16) | (newG << 8) | newB;
+  return (newR << 16) | (newG << 8) | newB;
 }
 
 /**
@@ -47,13 +47,13 @@ export function darkenColor(color, factor = 0.0) {
  * @returns {number}
  */
 export function shadeMul(color, factor = 1.0) {
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
 
-    const newR = Math.max(0, Math.min(255, Math.round(r * factor)));
-    const newG = Math.max(0, Math.min(255, Math.round(g * factor)));
-    const newB = Math.max(0, Math.min(255, Math.round(b * factor)));
+  const newR = Math.max(0, Math.min(255, Math.round(r * factor)));
+  const newG = Math.max(0, Math.min(255, Math.round(g * factor)));
+  const newB = Math.max(0, Math.min(255, Math.round(b * factor)));
 
-    return (newR << 16) | (newG << 8) | newB;
+  return (newR << 16) | (newG << 8) | newB;
 }

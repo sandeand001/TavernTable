@@ -5,7 +5,7 @@
  * @param {number} height
  */
 export function getBiomeOrBaseColor(c, height) {
-    const gx = (c._currentColorEvalX ?? 0);
-    const gy = (c._currentColorEvalY ?? 0);
-    return c._biomeShading.getBiomeOrBaseColor(height, gx, gy);
+  const gx = c._currentColorEvalX ?? 0;
+  const gy = c._currentColorEvalY ?? 0;
+  return c._biomeShading.getBiomeOrBaseColor(height, gx, gy);
 }

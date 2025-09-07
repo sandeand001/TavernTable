@@ -4,16 +4,17 @@
   "description": "An isometric grid-based tabletop game interface",
   "main": "index.html",
   "scripts": {
-    "format": "prettier --write \"src/**/*.{js,css,html,json}\"",
+    "format": "prettier --write \"{src,tests,tools,docs}/**/*.{js,css,html,json}\"",
+    "format:check": "prettier --check \"{src,tests,tools,docs}/**/*.{js,css,html,json}\"",
     "test": "jest",
     "test:stable": "jest --detectOpenHandles --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --ci --coverage --watchAll=false",
-    "lint": "eslint -c tools/.eslintrc.json --cache \"src/**/*.js\" && stylelint -c tools/.stylelintrc.json \"src/**/*.css\"",
-    "lint:js": "eslint -c tools/.eslintrc.json --cache \"src/**/*.js\"",
+    "lint": "eslint --cache \"{src,tools,tests}/**/*.js\" && stylelint -c tools/.stylelintrc.json \"src/**/*.css\"",
+    "lint:js": "eslint --cache \"{src,tools,tests}/**/*.js\"",
     "lint:css": "stylelint -c tools/.stylelintrc.json \"src/**/*.css\"",
-    "lint:fix": "eslint -c tools/.eslintrc.json --cache \"src/**/*.js\" --fix && stylelint -c tools/.stylelintrc.json \"src/**/*.css\" --fix",
+    "lint:fix": "eslint --cache \"{src,tools,tests}/**/*.js\" --fix && stylelint -c tools/.stylelintrc.json \"src/**/*.css\" --fix",
     "lint:layers": "node tools/check-layering.js",
     "lint:all": "npm run lint && npm run lint:layers",
     "serve": "python -m http.server 3000",
@@ -40,9 +41,9 @@
     "stylelint-config-standard": "^36.0.0"
   },
   "lint-staged": {
-    "src/**/*.js": [
+    "{src,tests,tools}/**/*.js": [
       "prettier --write",
-      "eslint -c tools/.eslintrc.json --fix"
+      "eslint --fix"
     ],
     "src/**/*.css": [
       "prettier --write",

@@ -5,10 +5,10 @@ import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
  * Mirrors TerrainCoordinator.isValidGridPosition behavior.
  */
 export function isValidGridPosition(c, gridX, gridY) {
-    return CoordinateUtils.isValidGridPosition(
-        gridX,
-        gridY,
-        c?.gameManager?.cols,
-        c?.gameManager?.rows
-    );
+  return CoordinateUtils.isValidGridPosition(
+    gridX,
+    gridY,
+    c?.gameManager?.cols,
+    c?.gameManager?.rows
+  );
 }

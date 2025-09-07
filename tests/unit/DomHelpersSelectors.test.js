@@ -1,4 +1,8 @@
-import { getDiceButtons, getGridActionButtons, getTerrainModeEls } from '../../src/ui/domHelpers.js';
+import {
+  getDiceButtons,
+  getGridActionButtons,
+  getTerrainModeEls,
+} from '../../src/ui/domHelpers.js';
 
 /**
  * Minimal DOM wiring smoke test to ensure selectors don't throw
@@ -20,10 +24,10 @@ describe('DOM helpers selectors', () => {
   });
 
   test('getDiceButtons returns elements with data-sides', () => {
-  const btns = getDiceButtons();
-  expect(btns).toBeTruthy();
-  expect(btns.length).toBe(2);
-  expect(btns[0].getAttribute('data-sides')).toBe('4');
+    const btns = getDiceButtons();
+    expect(btns).toBeTruthy();
+    expect(btns.length).toBe(2);
+    expect(btns[0].getAttribute('data-sides')).toBe('4');
   });
 
   test('getGridActionButtons returns apply/reset buttons', () => {
@@ -33,8 +37,8 @@ describe('DOM helpers selectors', () => {
   });
 
   test('getTerrainModeEls returns toggle and tools', () => {
-  const { toggleEl, toolsEl } = getTerrainModeEls();
-  expect(toggleEl).not.toBeNull();
-  expect(toolsEl).not.toBeNull();
+    const { toggleEl, toolsEl } = getTerrainModeEls();
+    expect(toggleEl).not.toBeNull();
+    expect(toolsEl).not.toBeNull();
   });
 });

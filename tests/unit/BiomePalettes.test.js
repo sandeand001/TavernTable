@@ -5,7 +5,7 @@ import { getBiomeColorHex } from '../../src/config/BiomePalettes.js';
 const KNOWN_BIOMES = ['grassland', 'desert', 'tundra'];
 
 // Helper: call with stable opts
-function sample(biome, height, x=10, y=20) {
+function sample(biome, height, x = 10, y = 20) {
   return getBiomeColorHex(biome, height, x, y, {
     intensity: 0.5,
     density: 0.5,
@@ -14,7 +14,7 @@ function sample(biome, height, x=10, y=20) {
     slope: 0.1,
     aspectRad: 0.0,
     seed: 1234,
-    mapFreq: 0.02
+    mapFreq: 0.02,
   });
 }
 
@@ -23,7 +23,7 @@ describe('BiomePalettes.getBiomeColorHex', () => {
     const hex = sample(KNOWN_BIOMES[0], 0);
     expect(typeof hex).toBe('number');
     expect(hex).toBeGreaterThanOrEqual(0x000000);
-    expect(hex).toBeLessThanOrEqual(0xFFFFFF);
+    expect(hex).toBeLessThanOrEqual(0xffffff);
   });
 
   test('height clamping yields stable results at extremes', () => {

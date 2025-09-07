@@ -6,9 +6,9 @@
  * @param {number} h - tile height
  */
 export function traceDiamondPath(g, w, h) {
-    g.moveTo(0, h / 2);
-    g.lineTo(w / 2, 0);
-    g.lineTo(w, h / 2);
-    g.lineTo(w / 2, h);
-    g.lineTo(0, h / 2);
+  g.moveTo(0, h / 2);
+  g.lineTo(w / 2, 0);
+  g.lineTo(w, h / 2);
+  g.lineTo(w / 2, h);
+  g.lineTo(0, h / 2);
 }
