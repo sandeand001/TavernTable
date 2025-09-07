@@ -10,7 +10,12 @@ import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { getGameContainer } from '../ui/domHelpers.js';
+// Decoupled from ui/domHelpers: allow injection via gameManager.domPorts.getGameContainer
+function _getGameContainer(gameManager){
+    if(gameManager?.domPorts?.getGameContainer) return gameManager.domPorts.getGameContainer();
+    if(typeof document==='undefined') return null;
+    return document.getElementById('game-container');
+}
 
 export class RenderCoordinator {
     constructor(gameManager) {
@@ -42,7 +47,7 @@ export class RenderCoordinator {
             }
 
             // Find and validate game container
-            const gameContainer = getGameContainer();
+            const gameContainer = _getGameContainer(this.gameManager);
             const containerValidation = GameValidators.domElement(gameContainer, 'div');
             if (!containerValidation.isValid) {
                 throw new Error(`Game container validation failed: ${containerValidation.errors.join(', ')}`);
@@ -77,7 +82,7 @@ export class RenderCoordinator {
                 context: 'RenderCoordinator.createPixiApp',
                 stage: 'pixi_application_creation',
                 pixiAvailable: typeof PIXI !== 'undefined',
-                containerExists: !!getGameContainer(),
+                containerExists: !!_getGameContainer(this.gameManager),
                 gameManagerState: !!this.gameManager,
                 errorType: error.constructor.name
             });

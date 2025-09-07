@@ -1,4 +1,14 @@
-import { getTerrainHeightDisplay, getScaleMarks } from '../../ui/domHelpers.js';
+// Removed direct import from ui/domHelpers; use injected domPorts with fallbacks
+function _getTerrainHeightDisplay(c){
+    if(c?.domPorts?.getTerrainHeightDisplay) return c.domPorts.getTerrainHeightDisplay();
+    if(typeof document==='undefined') return null;
+    return document.querySelector('[data-terrain-height]');
+}
+function _getScaleMarks(c){
+    if(c?.domPorts?.getScaleMarks) return c.domPorts.getScaleMarks();
+    if(typeof document==='undefined') return [];
+    return Array.from(document.querySelectorAll('[data-terrain-scale-mark]'));
+}
 import { buildBrushHighlightDescriptor } from '../../terrain/TerrainBrushHighlighter.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
@@ -15,9 +25,7 @@ export class TerrainInputHandlers {
     }
 
     /** Small helper to avoid duplicating the scale mark selector */
-    _getScaleMarks() {
-        return getScaleMarks();
-    }
+    _getScaleMarks() { return _getScaleMarks(this.c); }
 
     /** Set up terrain-specific input event handlers */
     setup() {
@@ -256,7 +264,7 @@ export class TerrainInputHandlers {
             const currentHeight = this.c.getTerrainHeight(gridX, gridY);
 
             // Update height value display
-            const heightDisplay = getTerrainHeightDisplay();
+            const heightDisplay = _getTerrainHeightDisplay(this.c);
             if (heightDisplay) {
                 heightDisplay.textContent = currentHeight.toString();
                 heightDisplay.style.color = currentHeight === 0 ? '#6b7280' :
@@ -286,7 +294,7 @@ export class TerrainInputHandlers {
     /** Reset the height indicator to default state */
     resetHeightIndicator() {
         try {
-            const heightDisplay = getTerrainHeightDisplay();
+            const heightDisplay = _getTerrainHeightDisplay(this.c);
             if (heightDisplay) {
                 heightDisplay.textContent = '0';
                 heightDisplay.style.color = '#6b7280';

@@ -10,8 +10,6 @@ import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-// Removed direct UI import (getGameContainer) per AGENT_PLAYBOOK layering.
-// A DOM accessor function is now injected via constructor (domPorts.getGameContainer).
 
 export class RenderCoordinator {
   /**
@@ -21,7 +19,6 @@ export class RenderCoordinator {
    */
   constructor(gameManager, domPorts = {}) {
     this.gameManager = gameManager;
-    // Store injected DOM accessors with safe fallbacks (never hard-import UI layer).
     const defaultGetGameContainer = () => {
       if (typeof document === 'undefined') return null;
       return document.getElementById('game-container');
@@ -33,29 +30,22 @@ export class RenderCoordinator {
 
   /**
    * Create and configure the PIXI application
-   * @throws {Error} When PIXI application cannot be created or container not found
    */
   createPixiApp() {
     try {
-      // Validate PIXI availability
-      if (typeof PIXI === 'undefined') {
-        throw new Error('PIXI.js library is not loaded');
-      }
+      if (typeof PIXI === 'undefined') throw new Error('PIXI.js library is not loaded');
 
-      // Initialize PIXI application with configuration
       this.gameManager.app = new PIXI.Application({
         width: window.innerWidth,
         height: window.innerHeight,
         backgroundColor: GRID_CONFIG.BACKGROUND_COLOR,
       });
 
-      // Validate application creation
       const appValidation = GameValidators.pixiApp(this.gameManager.app);
       if (!appValidation.isValid) {
         throw new Error(`PIXI application validation failed: ${appValidation.errors.join(', ')}`);
       }
 
-      // Find and validate game container
       const gameContainer = this.domPorts.getGameContainer();
       const containerValidation = GameValidators.domElement(gameContainer, 'div');
       if (!containerValidation.isValid) {
@@ -64,19 +54,14 @@ export class RenderCoordinator {
         );
       }
 
-      // Attach canvas to container (PIXI 7 compatibility)
       const canvas = this.gameManager.app.canvas || this.gameManager.app.view;
-      if (!canvas) {
-        throw new Error('PIXI application canvas not found');
-      }
+      if (!canvas) throw new Error('PIXI application canvas not found');
       gameContainer.appendChild(canvas);
 
-      // Configure stage interaction
       this.gameManager.app.stage.interactive = false;
       this.gameManager.app.stage.interactiveChildren = true;
 
-      // Make app globally available for debugging
-      window.app = this.gameManager.app;
+      window.app = this.gameManager.app; // debug convenience
 
       logger.log(LOG_LEVEL.DEBUG, 'PIXI application created successfully', LOG_CATEGORY.SYSTEM, {
         context: 'RenderCoordinator.createPixiApp',
@@ -101,27 +86,21 @@ export class RenderCoordinator {
     }
   }
 
-  /**
-   * Center the grid on the screen
-   */
+  /** Center the grid on the screen */
   centerGrid() {
     if (!this.gameManager.gridContainer || !this.gameManager.app) {
       logger.debug('Cannot center grid: missing gridContainer or app');
       return;
     }
-
-    // Calculate the actual grid size in pixels
     const gridWidthPixels =
       ((this.gameManager.cols * this.gameManager.tileWidth) / 2) * this.gameManager.gridScale;
     const gridHeightPixels =
       ((this.gameManager.rows * this.gameManager.tileHeight) / 2) * this.gameManager.gridScale;
 
-    // Center the grid based on current screen size and grid dimensions
     this.gameManager.gridContainer.x = this.gameManager.app.screen.width / 2 - gridWidthPixels / 2;
     this.gameManager.gridContainer.y =
       this.gameManager.app.screen.height / 2 - gridHeightPixels / 2;
 
-    // Ensure minimum margins from screen edges
     const minMargin = 50;
     this.gameManager.gridContainer.x = Math.max(
       minMargin - gridWidthPixels / 2,
@@ -129,40 +108,21 @@ export class RenderCoordinator {
     );
     this.gameManager.gridContainer.y = Math.max(minMargin, this.gameManager.gridContainer.y);
   }
-
-  /**
-   * Reset the grid zoom to default scale and center the view
-   */
+  /** Reset zoom via interaction manager */
   resetZoom() {
     if (this.gameManager.interactionManager) {
       this.gameManager.interactionManager.resetZoom();
-    } else {
-      logger.debug('Cannot reset zoom: InteractionManager not available');
-    }
+    } else logger.debug('Cannot reset zoom: InteractionManager not available');
   }
 
-  /**
-   * Fix any existing tokens that might be in the wrong container
-   * Ensures all placed tokens are properly positioned in the grid
-   */
+  /** Ensure placed token sprites are in grid container and positioned correctly */
   fixExistingTokens() {
-    if (!this.gameManager.placedTokens || !this.gameManager.gridContainer) {
-      return;
-    }
-
+    if (!this.gameManager.placedTokens || !this.gameManager.gridContainer) return;
     this.gameManager.placedTokens.forEach((tokenData) => {
       if (tokenData.creature && tokenData.creature.sprite) {
         const sprite = tokenData.creature.sprite;
-
-        // Remove from current parent
-        if (sprite.parent) {
-          sprite.parent.removeChild(sprite);
-        }
-
-        // Add to grid container
+        if (sprite.parent) sprite.parent.removeChild(sprite);
         this.gameManager.gridContainer.addChild(sprite);
-
-        // Recalculate position relative to grid using CoordinateUtils and footprint center
         const fp = tokenData.footprint || { w: 1, h: 1 };
         const centerGX = tokenData.gridX + (fp.w - 1) / 2;
         const centerGY = tokenData.gridY + (fp.h - 1) / 2;
@@ -178,29 +138,16 @@ export class RenderCoordinator {
     });
   }
 
-  /**
-   * Handle window resize events
-   * Updates PIXI application size and recenters grid
-   */
+  /** Handle window resize: resize renderer & recenter grid */
   handleResize() {
-    if (!this.gameManager.app) {
-      return;
-    }
-
+    if (!this.gameManager.app) return;
     try {
-      // Update PIXI app size
       this.gameManager.app.renderer.resize(window.innerWidth, window.innerHeight);
-
-      // Recenter grid with new dimensions
       this.centerGrid();
-
       logger.log(LOG_LEVEL.DEBUG, 'Render view resized', LOG_CATEGORY.SYSTEM, {
         context: 'RenderCoordinator.handleResize',
         stage: 'viewport_resize_complete',
-        newDimensions: {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        },
+        newDimensions: { width: window.innerWidth, height: window.innerHeight },
         gridRecentered: true,
         timestamp: new Date().toISOString(),
       });
@@ -208,10 +155,7 @@ export class RenderCoordinator {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
         context: 'RenderCoordinator.handleResize',
         stage: 'viewport_resize',
-        targetDimensions: {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        },
+        targetDimensions: { width: window.innerWidth, height: window.innerHeight },
         pixiAppAvailable: !!this.gameManager.app,
         rendererAvailable: !!this.gameManager.app?.renderer,
         gridCenteringAttempted: true,
@@ -219,15 +163,9 @@ export class RenderCoordinator {
     }
   }
 
-  /**
-   * Get current viewport information
-   * @returns {Object} Viewport details including dimensions and scale
-   */
+  /** Get viewport info snapshot */
   getViewportInfo() {
-    if (!this.gameManager.app || !this.gameManager.gridContainer) {
-      return null;
-    }
-
+    if (!this.gameManager.app || !this.gameManager.gridContainer) return null;
     return {
       screenWidth: this.gameManager.app.screen.width,
       screenHeight: this.gameManager.app.screen.height,

@@ -1,6 +1,7 @@
 // Error notification manager extracted with no behavior changes.
 import { RECOVERY_STRATEGY } from './enums.js';
-import { getErrorContainer, getErrorStylesEl } from '../../ui/domHelpers.js';
+let _errorDomPorts={};
+export function setErrorDomPorts(p={}){_errorDomPorts=p||{};}
 
 export class ErrorNotificationManager {
     constructor(config) {
@@ -13,7 +14,9 @@ export class ErrorNotificationManager {
     initialize() {
         if (this.initialized || typeof document === 'undefined') return;
 
-        this.container = getErrorContainer() || document.getElementById('tavern-error-container');
+        if(_errorDomPorts.getErrorContainer)
+            this.container = _errorDomPorts.getErrorContainer();
+        else this.container = document.getElementById('tavern-error-container');
         if (!this.container) {
             this.container = this.createContainer();
             document.body.appendChild(this.container);
@@ -35,6 +38,8 @@ export class ErrorNotificationManager {
     injectStyles() {
         if (getErrorStylesEl()) return;
         if (document.getElementById('tavern-error-styles')) return;
+
+    if(_errorDomPorts.getErrorStylesEl) return _errorDomPorts.getErrorStylesEl();
 
         const styles = document.createElement('style');
         styles.id = 'tavern-error-styles';

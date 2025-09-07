@@ -1,9 +1,26 @@
 import { GameValidators } from '../../../utils/Validation.js';
-import {
-  getCreatureButtons,
-  getTokenButtonByType,
-  getTokenInfoEl,
-} from '../../../ui/domHelpers.js';
+
+// UI decoupling: DOM access now routed through c.domPorts (injected by UI layer) with fallbacks.
+function getPorts(c) {
+  const dp = (c && c.domPorts) || {};
+  const fallback = {
+    getCreatureButtons: () => {
+      if (typeof document === 'undefined') return [];
+      return Array.from(document.querySelectorAll('[data-creature]'));
+    },
+    getTokenButtonByType: (type) => {
+      if (typeof document === 'undefined') return null;
+      return document.querySelector(`[data-creature="${type}"]`);
+    },
+    getTokenInfoEl: () =>
+      typeof document !== 'undefined' ? document.querySelector('[data-token-info]') : null,
+  };
+  return {
+    getCreatureButtons: dp.getCreatureButtons || fallback.getCreatureButtons,
+    getTokenButtonByType: dp.getTokenButtonByType || fallback.getTokenButtonByType,
+    getTokenInfoEl: dp.getTokenInfoEl || fallback.getTokenInfoEl,
+  };
+}
 
 export function findExistingTokenAt(c, gridX, gridY) {
   // Previously this matched tokens in adjacent cells which caused
@@ -28,6 +45,7 @@ export function selectToken(c, tokenType) {
   }
 
   // Update UI selection
+  const { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } = getPorts(c);
   getCreatureButtons().forEach((btn) => {
     btn.classList.remove('selected');
     btn.setAttribute('aria-pressed', 'false');

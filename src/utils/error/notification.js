@@ -1,7 +1,22 @@
 /* eslint-disable indent */
 // Error notification manager extracted with no behavior changes.
 import { RECOVERY_STRATEGY, ERROR_CATEGORY } from './enums.js';
-import { getErrorContainer, getErrorStylesEl } from '../../ui/domHelpers.js';
+
+// UI decoupling: replace domHelpers import with local fallback queries; allow injection via static configure.
+let _errorDomPorts = {};
+export function setErrorDomPorts(ports = {}) {
+  _errorDomPorts = ports || {};
+}
+function getErrorContainer() {
+  if (_errorDomPorts.getErrorContainer) return _errorDomPorts.getErrorContainer();
+  if (typeof document === 'undefined') return null;
+  return document.getElementById('tavern-error-container');
+}
+function getErrorStylesEl() {
+  if (_errorDomPorts.getErrorStylesEl) return _errorDomPorts.getErrorStylesEl();
+  if (typeof document === 'undefined') return null;
+  return document.getElementById('tavern-error-styles');
+}
 
 export class ErrorNotificationManager {
   constructor(config) {

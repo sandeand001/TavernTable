@@ -25,7 +25,11 @@ import { GameValidators } from '../../utils/Validation.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 import { DICE_CONFIG } from '../../config/GameConstants.js';
-import { getDiceButtons, getDiceCountEl, getDiceResultEl } from '../../ui/domHelpers.js';
+let _diceDomPorts={};
+export function setDiceDomPorts(p={}){_diceDomPorts=p||{};}
+function getDiceButtons(){if(_diceDomPorts.getDiceButtons)return _diceDomPorts.getDiceButtons();if(typeof document==='undefined')return [];return Array.from(document.querySelectorAll('[data-dice]'));}
+function getDiceCountEl(){if(_diceDomPorts.getDiceCountEl)return _diceDomPorts.getDiceCountEl();if(typeof document==='undefined')return null;return document.querySelector('[data-dice-count]');}
+function getDiceResultEl(){if(_diceDomPorts.getDiceResultEl)return _diceDomPorts.getDiceResultEl();if(typeof document==='undefined')return null;return document.querySelector('[data-dice-result]');}
 
 // Dice rolling functionality with animation
 let isRolling = false;

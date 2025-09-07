@@ -56,11 +56,19 @@ function collectViolations() {
       continue;
     }
     for (const node of ast.body) {
-      if (node.type === 'ImportDeclaration' && node.source && typeof node.source.value === 'string') {
+      if (
+        node.type === 'ImportDeclaration' &&
+        node.source &&
+        typeof node.source.value === 'string'
+      ) {
         const source = node.source.value;
         const resolved = resolveImport(file, source);
         if (resolved && isInUi(resolved)) {
-          violations.push({ file: path.relative(PROJECT_ROOT, file), importSource: source, resolved: path.relative(PROJECT_ROOT, resolved) });
+          violations.push({
+            file: path.relative(PROJECT_ROOT, file),
+            importSource: source,
+            resolved: path.relative(PROJECT_ROOT, resolved),
+          });
         }
       }
     }
@@ -88,7 +96,9 @@ function main() {
         console.error(`  ${v.file} -> ${v.importSource} (resolves to ${v.resolved})`);
       }
       console.error(`\nTotal: ${violations.length} violation(s).`);
-      console.error('\nFix: Replace direct UI imports with injected domPorts or module-level setters with safe fallbacks.');
+      console.error(
+        '\nFix: Replace direct UI imports with injected domPorts or module-level setters with safe fallbacks.'
+      );
     }
     return 1;
   } catch (e) {

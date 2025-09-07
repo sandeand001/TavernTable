@@ -65,13 +65,13 @@ describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
         // Act
         clearAllTerrainTiles(m);
 
-    // After clear, placeables map should still contain the sprite and it should be reattached
+        // After clear, placeables map should still contain the sprite and it should be reattached
         expect(m.placeables.has('0,0')).toBe(true);
         const arr = m.placeables.get('0,0');
         expect(Array.isArray(arr)).toBe(true);
         expect(arr.length).toBe(1);
         expect(arr[0]).toBe(sprite);
-    // sprite should be reattached under the grid container for z-index interleaving
-    expect(gridContainer.children.includes(sprite)).toBe(true);
+        // sprite should be reattached under the grid container for z-index interleaving
+        expect(gridContainer.children.includes(sprite)).toBe(true);
     });
 });
