@@ -22,6 +22,31 @@ Date: 2025-09-18
   - Safety: grep references == 0; tests still green.
 - [P] Identify any unused exports in `src/utils/` (e.g., logging helpers not referenced).
   - Safety: `grep -R "export function name"` & Jest run.
+  
+### 1.1 Preliminary Utils Export Inventory (Scan 2025-09-19) (NFC)
+Status Legend: USED = referenced in src (import grep), DUP = duplicated concept across files, TBD = needs manual follow-up.
+
+| File | Export(s) | Preliminary Status | Notes |
+|------|-----------|--------------------|-------|
+| env.js | isJest, getNodeEnv | USED | isJest used in UIController; getNodeEnv likely future-proof (keep) |
+| TerrainPixiUtils.js | TerrainPixiUtils (class) | USED | Imported in terrain rendering contexts |
+| Validation.js | TypeValidators, GameValidators, Sanitizers | PARTIAL USED | TypeValidators/GameValidators referenced; Sanitizers used in GameManager; all keep |
+| TerrainValidation.js | TerrainValidation (class) | USED | Referenced by tests and validators |
+| logger/enums.js | LOG_LEVEL, LOG_CATEGORY, LOG_OUTPUT | USED | Widely imported |
+| TerrainHeightUtils.js | TerrainHeightUtils (class) | USED | Multiple terrain modules |
+| SeededRNG.js | createSeededRNG, rngInt, rngPick, makeWeightedPicker, default aggregate | USED | Deterministic RNG in flora & tests |
+| PixiShapeUtils.js | traceDiamondPath | USED | TerrainManager uses traceDiamondPath |
+| Logger.js | many classes + logger (default), GameLogger, withPerformanceLogging, withLoggingContext | USED (broad) | High centrality; no action |
+| ErrorHandler.js | classes, errorHandler (const), GameErrors, withErrorHandling, handleErrors, withPerformanceMonitoring, default export alias | USED | Core error infra |
+| DepthUtils.js | DIAG_WEIGHT, X_TIE_WEIGHT, TYPE_BIAS, computeDepthKey, withOverlayRaise | USED | Depth ordering logic |
+| error/enums.js | ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY | USED | Error system |
+| error/notification.js | setErrorDomPorts, ErrorNotificationManager | TBD | UI usage not yet confirmed; keep (no removal) |
+| error/telemetry.js | ErrorTelemetryManager | TBD | Telemetry wiring not fully searched beyond base grep; assume keep |
+| CoordinateUtils.js | CoordinateUtils | USED | Interaction & coordinate transforms |
+| CanvasShapeUtils.js | traceDiamondFacePath2D | USED | BiomeCanvasPainter, tests |
+| ColorUtils.js | lightenColor, darkenColor, shadeMul | USED | Shading & tests |
+
+Follow-up: error notification & telemetry classes marked TBD—retain until deeper analysis; no deletions proposed in Phase 1.
 
 ## 2. Redundant / Overlapping Utilities
 - [P] Check for multiple color manipulation utilities vs `colord` usage.
@@ -56,7 +81,7 @@ Date: 2025-09-18
   - Safety: treat docs/src as derived — refresh after refactors.
 
 ## 9. Circular Dependency Scan
-- [P] Add a lightweight script (if quick) to detect obvious require/import cycles (NFC measure only).
+- [D] Added lightweight script `tools/cycle-scan.js` to detect straightforward relative import cycles (NFC visibility only). Does not fail CI; informational output.
 
 ## 10. Logging and Diagnostics
 - [P] Add clarifying comments for logger context constants; no renames.

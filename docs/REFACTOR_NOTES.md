@@ -12,4 +12,10 @@ Behavioral Impact: None (validated via tests & lint)
 ```
 
 ## Log
-*(No refactor commits yet on chore/nfc-cleanup)*
+### (Uncommitted) Formatting, Inventory & Cycle Scan (NFC)
+Scope: tests/unit/OrchardLayout.test.js (auto-format via lint:fix); CLEANUP_PLAN.md (utils export inventory + cycle scan status); docs/REFACTOR_NOTES.md; tools/cycle-scan.js (new)
+Type: formatting | doc | tooling
+Notes: Added non-enforcing cycle scan for visibility; no runtime import side-effects changed.
+Behavioral Impact: None (script unused by runtime, only optional tool)
+
+*(Will replace with commit hash after commit)*
