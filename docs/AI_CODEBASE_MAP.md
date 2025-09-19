@@ -41,6 +41,7 @@ Contracts and invariants (do not break)
 - Public UI selectors and Sidebar tabs in index.html/docs/index.html must match SidebarController.js expectations.
 - Asset paths: SpriteManager uses assets/sprites/*.png; paths must remain relative for GitHub Pages.
 - Config constants (GameConstants, TerrainConstants, Biome*): stable keys used across modules and tests.
+  (2025-09-19 cleanup: pruned unused APP_CONFIG, INPUT_CONFIG, creature footprint/baseline/color sets, legacy biome color helpers, findBiome.)
 - Token/Creature APIs: CreatureFactory/CreatureToken consumed by TokenManager and tests; keep constructor/shape stable.
 - Terrain painter invariants: brush size, elevation scales, biome palettes; validated by tests in tests/terrain and tests/unit.
 

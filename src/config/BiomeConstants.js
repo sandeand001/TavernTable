@@ -5,6 +5,9 @@
  * Each biome has: key (stable id), label (UI), emoji (optional), category (broad type), rarity.
  */
 
+// CLEANUP (2025-09-19): Initially internalized BIOME_GROUPS, but SidebarController dynamically
+// imports this module and destructures { BIOME_GROUPS } to build the biome selection menu.
+// Without a named export the palette disappears. Re-exporting to restore UI functionality.
 export const BIOME_GROUPS = {
   Common: [
     { key: 'grassland', label: 'Grassland', emoji: '🌾', rarity: 'common' },
@@ -84,9 +87,4 @@ export const BIOME_GROUPS = {
 // Flatten for quick lookups
 export const ALL_BIOMES = Object.values(BIOME_GROUPS).flat();
 
-export function findBiome(key) {
-  return ALL_BIOMES.find((b) => b.key === key) || null;
-}
-
-// FUTURE / REVIEW NOTE (2025-09-19): findBiome & BIOME_GROUPS appear unused in current runtime;
-// they are retained as they may support planned biome grouping UI or external map tooling.
+// CLEANUP NOTE (2025-09-19): Removed unused helper findBiome (no in-repo callers).

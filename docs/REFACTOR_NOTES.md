@@ -53,3 +53,27 @@ Scope: tests/timerRegistry.js (new), tests/setup.js (import + afterEach), CLEANU
 Type: tooling | test infra | doc
 Notes: Added non-intrusive test-only wrapper for setTimeout/setInterval to auto-clear timers per test and reduce Jest open-handle warnings. No production code modified.
 Behavioral Impact: None (test environment only)
+
+### (Uncommitted) Timer Diagnostics Enhancement (NFC)
+Scope: tests/timerRegistry.js (add setImmediate tracking, optional stack capture via TEST_TIMER_CAPTURE_STACKS, afterAll leak summary), tests/setup.js (register afterAll hook)
+Type: tooling | test infra | diagnostics
+Notes: Extended registry to capture setImmediate handles and optionally capture creation stacks for up to 10 remaining handles at suite end. Still observing Jest force-exit warning indicating non-timer handle type (e.g., process listener, lingering promise, or non-cleared animation frame) — further instrumentation planned.
+Behavioral Impact: None (test environment only; guarded by setup import)
+
+### (Uncommitted) RAF + Process Listener Diagnostics (NFC)
+Scope: tests/timerRegistry.js (requestAnimationFrame tracking), tests/processListenerDiagnostics.js (new), tests/setup.js (conditional import)
+Type: tooling | diagnostics | test infra
+Notes: Added requestAnimationFrame auto-clear to broaden handle coverage. Introduced env-gated process listener diff to detect unbalanced `process.on` usage. Parallel Jest run still occasionally emits force-exit warning while in-band detectOpenHandles run stays clean, suggesting timing/race rather than persistent handle leak.
+Behavioral Impact: None (test-only, gated by setup & env vars)
+
+### (Uncommitted) Unused Dependency Pruning (NFC)
+Scope: package.json (remove puppeteer, fast-levenshtein, fastest-levenshtein)
+Type: dependency cleanup
+Notes: Grep confirmed no references in src/tests. Removed legacy placeholders to reduce install surface and noise. No feature impact.
+
+### (Uncommitted) Export Pruning Batch (NFC)
+Scope: BiomePalettes (remove getBiomeColorLegacy, blendWithBiome; internalize BIOME_HEIGHT_PALETTES & getBiomeHeightColor), BiomeConstants (remove findBiome), GameConstants (remove APP_CONFIG, INPUT_CONFIG, CREATURE_FOOTPRINTS, CREATURE_BASELINE_OFFSETS, CREATURE_COLORS), SeededRNG (remove rngPick), DepthUtils (internalize DIAG_WEIGHT & X_TIE_WEIGHT)
+Type: delete | internalize | doc
+Notes: Multi-symbol grep confirmed zero external references; retained public shading APIs only. Reduced config surface clutter and removed dormant RNG picker utility.
+Safety Verification: grep=0; tests=PASS (39/39, 90 tests); lint=PASS.
+Behavioral Impact: None (no runtime call sites removed).

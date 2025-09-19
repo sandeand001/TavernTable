@@ -200,14 +200,80 @@ Objective: Eliminate Jest worker force-exit warning by ensuring no lingering tim
 Approach (Step 1 implemented):
 1. Add `tests/timerRegistry.js` wrapping `setTimeout` / `setInterval`, tracking IDs and auto-clearing after each test. Uses unref() when available to reduce impact on Node event loop.
 2. Integrate via `tests/setup.js` (try/catch guarded, comment-labeled NFC) — avoids touching runtime source.
-3. Observe test run output; if warning persists, add targeted manual clears in suites with long-running timers or consider jest fake timers for specific modules (deferred if intrusive).
+3. (Diagnostics Enhancement) Added setImmediate tracking + optional stack capture (env `TEST_TIMER_CAPTURE_STACKS=1`) + afterAll summary to surface remaining handles.
+
+Current Status:
+- Tests still emit Jest force-exit warning; registry shows no remaining tracked timers implying another handle class (e.g., process event listener, unresolved promise with active I/O, or requestAnimationFrame polyfill) is responsible.
+-Update (RAF + Process Diagnostics):
+-- Added requestAnimationFrame tracking & auto-cancel to `tests/timerRegistry.js` (NFC) — covers animation frame handles.
+-- Added optional process listener diagnostics module (`tests/processListenerDiagnostics.js`) gated by `TEST_PROCESS_LISTENER_DIAGNOSTICS=1` to surface added/removed listeners between start and end of test run.
+-- No regressions in test outcomes; parallel run still intermittently shows force-exit warning, in-band detectOpenHandles does not, suggesting race/timing rather than persistent handle retention.
+
+Next Investigative Steps:
+- Run Jest with `--detectOpenHandles --runInBand` to capture additional hints.
+- Instrument potential `requestAnimationFrame` or add wrapper if present in code under test.
+- Audit for added process listeners (`process.on`) not removed in teardown.
+- If still undetected, enable stack capture and log creation sites for intervals/timeouts to confirm zero residual handles.
+
+## Phase 2 – Export Pruning (Batch 1 Recap & Batch 2 Added)
+### Batch 1 (Recap)
+Removed unused exports: biome legacy color helpers (getBiomeColorLegacy, blendWithBiome, getBiomeHeightColor now internal), GameConstants large unused sets (APP_CONFIG, INPUT_CONFIG, CREATURE_FOOTPRINTS, CREATURE_BASELINE_OFFSETS, CREATURE_COLORS), findBiome, rngPick, depth weighting constants internalized.
+
+### Batch 2 (2025-09-19)
+Scope: Further shrink unused surface (logging + terrain constants) with NFC guarantee.
+
+Changes:
+- Logger: De-exported LoggerConfig, ConsoleOutputHandler, MemoryOutputHandler, RemoteOutputHandler, GameLogger, withPerformanceLogging, withLoggingContext (no external imports; internal logic retained). Enums (LOG_LEVEL, LOG_CATEGORY) and default logger remain.
+- TerrainConstants: Removed TERRAIN_TOOLS, TERRAIN_SHORTCUTS, TERRAIN_VALIDATION (0 imports). Added inline cleanup note.
+
+Safety Checks:
+- Grep before removal: confirmed zero external imports for removed symbols.
+- Lint: passes post-removal (no unused vars).
+- Tests: pending re-run verification step (expect PASS; functionality unaffected).
+
+Next Candidate Batch (Planned):
+- ShadingHelpers unused pattern functions (confirm no dynamic lookup).
+- Orphan managers/controllers if still unreferenced after shading pass.
+- DOM helper getters (defer until sure no manual test harness usage).
 
 Safety Considerations:
-- Registry only loads in test environment (setupFilesAfterEnv).
-- No mutation of production code paths.
-- Provides `global.__getActiveTimers()` for potential diagnostics (not used in tests yet).
+- All instrumentation confined to test layer; no production mutation.
+- Stack capture gated by environment variable to avoid noise during routine runs.
 
-Next Steps (Phase 2):
-- Run full suite to confirm warning removal or reduction.
-- If residual handles remain, instrument logging of remaining timer counts in `afterAll` (optional) for isolation — NFC.
-- Proceed to dependency duplication benchmark (Levenshtein) after stabilizing timer behavior.
+Additional Optional Steps:
+- If warning persists, capture run with both `TEST_TIMER_CAPTURE_STACKS=1` and `TEST_PROCESS_LISTENER_DIAGNOSTICS=1` to archive diagnostic output.
+- Consider wrapping `setTimeout` long delays with a cap during tests (e.g., clamp >2s delays) purely for faster teardown diagnostics (would remain NFC logically but deferred unless needed).
+
+### Phase 2 Export Pruning (2025-09-19)
+Removed truly unused exports after multi-file grep confirmation:
+- BiomePalettes: getBiomeColorLegacy, blendWithBiome (internalized BIOME_HEIGHT_PALETTES & getBiomeHeightColor)
+- BiomeConstants: findBiome
+- GameConstants: APP_CONFIG, INPUT_CONFIG, CREATURE_FOOTPRINTS, CREATURE_BASELINE_OFFSETS, CREATURE_COLORS (helpers now return neutral defaults)
+- SeededRNG: rngPick (unused)
+- DepthUtils: internalized DIAG_WEIGHT and X_TIE_WEIGHT (no external imports)
+
+Safety Checklist per removal batch:
+- grep old symbol name: 0 external refs (confirmed)
+- tests: 39/39 passing post-change
+- lint: PASS
+- layering script: no new violations
+
+Rationale: User directive removed future-retention constraint; objective shifted to minimal surface area. All deletions NFC (no executing call sites).
+
+Post-Removal Adjustment (2025-09-19): Initial Batch 2 logger pruning also dropped internal LogEntry helper methods (generateId, sanitizeData, collectMetadata) implicitly relied upon during log creation, causing test failures (TypeError: this.generateId is not a function). Restored lean implementations ONLY (no re‑expansion of removed public helpers) plus explicit re-export of required enums (LOG_LEVEL, LOG_CATEGORY, LOG_OUTPUT). Tests re-run: 39/39 PASS. Terrain constant removals confirmed unrelated. This constitutes a corrective NFC patch, maintaining reduced public surface while fixing inadvertent internal dependency removal.
+
+Current Logger Public Surface (post-correction):
+- logger (default instance)
+- Logger (class) — still exported for potential structured use
+- LOG_LEVEL, LOG_CATEGORY, LOG_OUTPUT (enums)
+
+Internal-Only (formerly exported, now intentionally private): LoggerConfig, ConsoleOutputHandler, MemoryOutputHandler, RemoteOutputHandler, GameLogger, withPerformanceLogging, withLoggingContext.
+
+Safety Recap After Correction:
+- grep removed symbols: 0 external refs
+- tests: PASS (39/39)
+- lint: PASS
+- layering script: PASS
+- docs: pending sync (next action)
+
+Next: Document in REFACTOR_NOTES and update AI map (deferred until batch commit).

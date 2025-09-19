@@ -1,7 +1,7 @@
 {
   "meta": {
     "project": "TavernTable",
-    "generated_at": "2025-09-06T04:49:05.994Z",
+    "generated_at": "2025-09-19T06:12:03.265Z",
     "languages": [
       "JavaScript",
       "HTML",
@@ -99,8 +99,7 @@
         "layer": "app",
         "exports": [
           "BIOME_GROUPS",
-          "ALL_BIOMES",
-          "findBiome"
+          "ALL_BIOMES"
         ],
         "imports_internal": [],
         "imports_external": [],
@@ -128,25 +127,17 @@
         "path": "src/config/BiomePalettes.js",
         "layer": "app",
         "exports": [
-          "BIOME_HEIGHT_PALETTES",
-          "getBiomeHeightColor",
-          "getBiomeColorLegacy",
           "getBiomeColor",
-          "getBiomeColorHex",
-          "blendWithBiome",
-          "dumpBiomePaletteSample",
-          "BIOME_HEIGHT_PALETTES"
+          "getBiomeColorHex"
         ],
         "imports_internal": [
           "./BiomeConstants.js",
-          "./TerrainConstants.js",
-          "../utils/Logger.js"
+          "./TerrainConstants.js"
         ],
         "imports_external": [],
         "depends_on": [
           "fc9eff56c2b8",
-          "e623a0b6986f",
-          "8c711cb2f768"
+          "e623a0b6986f"
         ],
         "used_by": [
           "538322d62452",
@@ -159,7 +150,7 @@
         "invariants": [],
         "data_models": [],
         "errors": [],
-        "logging": "Logger",
+        "logging": "none",
         "config": [],
         "tests": {
           "files": [
@@ -176,12 +167,7 @@
         "layer": "app",
         "exports": [
           "GRID_CONFIG",
-          "APP_CONFIG",
-          "INPUT_CONFIG",
           "CREATURE_SCALES",
-          "CREATURE_FOOTPRINTS",
-          "CREATURE_BASELINE_OFFSETS",
-          "CREATURE_COLORS",
           "TOKEN_PLACEMENT_OFFSET",
           "VALIDATION",
           "CREATURE_HELPERS",
@@ -252,10 +238,7 @@
         "path": "src/config/TerrainConstants.js",
         "layer": "app",
         "exports": [
-          "TERRAIN_CONFIG",
-          "TERRAIN_TOOLS",
-          "TERRAIN_SHORTCUTS",
-          "TERRAIN_VALIDATION"
+          "TERRAIN_CONFIG"
         ],
         "imports_internal": [],
         "imports_external": [],
@@ -307,6 +290,7 @@
         "imports_external": [],
         "depends_on": [],
         "used_by": [
+          "67f3090790ba",
           "59a26aa556a6",
           "1ac8779a1633"
         ],
@@ -373,8 +357,7 @@
           "../utils/CoordinateUtils.js",
           "../utils/ErrorHandler.js",
           "../utils/Validation.js",
-          "../config/GameConstants.js",
-          "../ui/domHelpers.js"
+          "../config/GameConstants.js"
         ],
         "imports_external": [],
         "depends_on": [
@@ -382,8 +365,7 @@
           "e28bad82c9c7",
           "ecbbd71626d8",
           "68b5dd71185e",
-          "a71c51e1083e",
-          "2452655fdde1"
+          "a71c51e1083e"
         ],
         "used_by": [
           "0fcb156de43d"
@@ -890,6 +872,43 @@
         "todo": []
       },
       {
+        "id": "67f3090790ba",
+        "path": "src/coordinators/terrain-coordinator/internals/flora.js",
+        "layer": "app",
+        "exports": [
+          "autoPopulateBiomeFlora"
+        ],
+        "imports_internal": [
+          "../../../config/TerrainPlaceables.js",
+          "../../../utils/SeededRNG.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "58b5d2f1f154",
+          "f0372f8d2bfd"
+        ],
+        "used_by": [
+          "fb5708d12ec8"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [
+            "tests/unit/DeadForestFloraComposition.test.js",
+            "tests/unit/FloraDeterminism.test.js",
+            "tests/unit/SwampFloraDensity.test.js"
+          ],
+          "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
         "id": "c26ee2f18485",
         "path": "src/coordinators/terrain-coordinator/internals/height.js",
         "layer": "app",
@@ -1217,14 +1236,12 @@
           "TerrainInputHandlers"
         ],
         "imports_internal": [
-          "../../ui/domHelpers.js",
           "../../terrain/TerrainBrushHighlighter.js",
           "../../utils/Logger.js",
           "../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
         "depends_on": [
-          "2452655fdde1",
           "86682de8a160",
           "8c711cb2f768",
           "ecbbd71626d8"
@@ -1308,6 +1325,7 @@
           "./terrain-coordinator/internals/inputs.js",
           "./terrain-coordinator/internals/biome.js",
           "./terrain-coordinator/internals/color.js",
+          "./terrain-coordinator/internals/flora.js",
           "./terrain-coordinator/internals/resize.js",
           "./terrain-coordinator/internals/height.js",
           "./terrain-coordinator/internals/coords.js",
@@ -1340,6 +1358,7 @@
           "880c8b513217",
           "bb316879cd49",
           "321c27b011c5",
+          "67f3090790ba",
           "a0bf4d9c362f",
           "c26ee2f18485",
           "05722cd2c852",
@@ -2188,13 +2207,9 @@
         "exports": [
           "toggleFacing"
         ],
-        "imports_internal": [
-          "../../../ui/domHelpers.js"
-        ],
+        "imports_internal": [],
         "imports_external": [],
-        "depends_on": [
-          "2452655fdde1"
-        ],
+        "depends_on": [],
         "used_by": [
           "f3070e4a7ab8"
         ],
@@ -2365,13 +2380,11 @@
           "selectToken"
         ],
         "imports_internal": [
-          "../../../utils/Validation.js",
-          "../../../ui/domHelpers.js"
+          "../../../utils/Validation.js"
         ],
         "imports_external": [],
         "depends_on": [
-          "68b5dd71185e",
-          "2452655fdde1"
+          "68b5dd71185e"
         ],
         "used_by": [
           "f3070e4a7ab8"
@@ -2493,22 +2506,21 @@
         "path": "src/systems/dice/dice.js",
         "layer": "app",
         "exports": [
+          "setDiceDomPorts",
           "rollDice"
         ],
         "imports_internal": [
           "../../utils/Validation.js",
           "../../utils/Logger.js",
           "../../utils/ErrorHandler.js",
-          "../../config/GameConstants.js",
-          "../../ui/domHelpers.js"
+          "../../config/GameConstants.js"
         ],
         "imports_external": [],
         "depends_on": [
           "68b5dd71185e",
           "8c711cb2f768",
           "ecbbd71626d8",
-          "a71c51e1083e",
-          "2452655fdde1"
+          "a71c51e1083e"
         ],
         "used_by": [
           "e8d76d94cd75"
@@ -2961,14 +2973,8 @@
         "imports_external": [],
         "depends_on": [],
         "used_by": [
-          "418ca7f88f9b",
-          "6555d4ac4a16",
-          "12b3dff352c4",
-          "ddab55041ef8",
-          "bbf7ac60bfa8",
           "1ac8779a1633",
-          "e8d76d94cd75",
-          "f63a83e71cbd"
+          "e8d76d94cd75"
         ],
         "public_api": false,
         "responsibilities": [],
@@ -3341,16 +3347,15 @@
         "path": "src/utils/error/notification.js",
         "layer": "app",
         "exports": [
+          "setErrorDomPorts",
           "ErrorNotificationManager"
         ],
         "imports_internal": [
-          "./enums.js",
-          "../../ui/domHelpers.js"
+          "./enums.js"
         ],
         "imports_external": [],
         "depends_on": [
-          "144167c41989",
-          "2452655fdde1"
+          "144167c41989"
         ],
         "used_by": [
           "ecbbd71626d8"
@@ -3508,18 +3513,12 @@
         "path": "src/utils/Logger.js",
         "layer": "app",
         "exports": [
-          "LoggerConfig",
-          "LogEntry",
-          "ConsoleOutputHandler",
-          "MemoryOutputHandler",
-          "RemoteOutputHandler",
           "PerformanceMonitor",
           "Logger",
           "logger",
-          "GameLogger",
-          "withPerformanceLogging",
-          "withLoggingContext",
-          "logger"
+          "LOG_LEVEL",
+          "LOG_CATEGORY",
+          "LOG_OUTPUT"
         ],
         "imports_internal": [
           "./env.js",
@@ -3531,7 +3530,6 @@
           "167a76c48bfa"
         ],
         "used_by": [
-          "618161e21138",
           "159ccdfb1216",
           "418ca7f88f9b",
           "711a2b6cf63b",
@@ -3629,6 +3627,36 @@
             "tests/unit/PixiShapeUtils.test.js"
           ],
           "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "f0372f8d2bfd",
+        "path": "src/utils/SeededRNG.js",
+        "layer": "app",
+        "exports": [
+          "createSeededRNG",
+          "rngInt",
+          "rngPick",
+          "makeWeightedPicker"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [
+          "67f3090790ba"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
         },
         "smells": [],
         "todo": []
@@ -3847,19 +3875,16 @@
           "getBiomeColor",
           "getBiomeColorHex",
           "blendWithBiome",
-          "dumpBiomePaletteSample",
           "BIOME_HEIGHT_PALETTES"
         ],
         "imports_internal": [
           "./BiomeConstants.js",
-          "./TerrainConstants.js",
-          "../utils/Logger.js"
+          "./TerrainConstants.js"
         ],
         "imports_external": [],
         "depends_on": [
           "d9506bf28717",
-          "d8764c6bd110",
-          "a182ffb8d986"
+          "d8764c6bd110"
         ],
         "used_by": [
           "ace2831a8976",
@@ -3872,7 +3897,7 @@
         "invariants": [],
         "data_models": [],
         "errors": [],
-        "logging": "Logger",
+        "logging": "none",
         "config": [],
         "tests": {
           "files": [
@@ -4056,8 +4081,7 @@
           "../utils/CoordinateUtils.js",
           "../utils/ErrorHandler.js",
           "../utils/Validation.js",
-          "../config/GameConstants.js",
-          "../ui/domHelpers.js"
+          "../config/GameConstants.js"
         ],
         "imports_external": [],
         "depends_on": [
@@ -4065,8 +4089,7 @@
           "945083ba9bf2",
           "a3da9b68828b",
           "9024c284e0f8",
-          "462e58195daf",
-          "1209ae38acbb"
+          "462e58195daf"
         ],
         "used_by": [
           "cdf7ffea86d6"
@@ -4898,14 +4921,12 @@
           "TerrainInputHandlers"
         ],
         "imports_internal": [
-          "../../ui/domHelpers.js",
           "../../terrain/TerrainBrushHighlighter.js",
           "../../utils/Logger.js",
           "../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
         "depends_on": [
-          "1209ae38acbb",
           "965b4d611ec1",
           "a182ffb8d986",
           "a3da9b68828b"
@@ -5860,13 +5881,9 @@
         "exports": [
           "toggleFacing"
         ],
-        "imports_internal": [
-          "../../../ui/domHelpers.js"
-        ],
+        "imports_internal": [],
         "imports_external": [],
-        "depends_on": [
-          "1209ae38acbb"
-        ],
+        "depends_on": [],
         "used_by": [
           "d4f9b3d0e5df"
         ],
@@ -6031,13 +6048,11 @@
           "selectToken"
         ],
         "imports_internal": [
-          "../../../utils/Validation.js",
-          "../../../ui/domHelpers.js"
+          "../../../utils/Validation.js"
         ],
         "imports_external": [],
         "depends_on": [
-          "9024c284e0f8",
-          "1209ae38acbb"
+          "9024c284e0f8"
         ],
         "used_by": [
           "d4f9b3d0e5df"
@@ -6159,22 +6174,21 @@
         "path": "docs/src/systems/dice/dice.js",
         "layer": "app",
         "exports": [
+          "setDiceDomPorts",
           "rollDice"
         ],
         "imports_internal": [
           "../../utils/Validation.js",
           "../../utils/Logger.js",
           "../../utils/ErrorHandler.js",
-          "../../config/GameConstants.js",
-          "../../ui/domHelpers.js"
+          "../../config/GameConstants.js"
         ],
         "imports_external": [],
         "depends_on": [
           "9024c284e0f8",
           "a182ffb8d986",
           "a3da9b68828b",
-          "462e58195daf",
-          "1209ae38acbb"
+          "462e58195daf"
         ],
         "used_by": [
           "35c89d2b02e5"
@@ -6725,14 +6739,8 @@
         "imports_external": [],
         "depends_on": [],
         "used_by": [
-          "a1f877c21e6a",
-          "76acb0f37d96",
-          "9226339c2e9c",
-          "372e8374fbd1",
-          "bee5237e6c35",
           "03ac6efa7904",
-          "35c89d2b02e5",
-          "6ddf7dfce7c0"
+          "35c89d2b02e5"
         ],
         "public_api": false,
         "responsibilities": [],
@@ -6998,6 +7006,35 @@
         "todo": []
       },
       {
+        "id": "13b795678295",
+        "path": "docs/src/utils/DepthUtils.js",
+        "layer": "app",
+        "exports": [
+          "DIAG_WEIGHT",
+          "X_TIE_WEIGHT",
+          "TYPE_BIAS",
+          "computeDepthKey",
+          "withOverlayRaise"
+        ],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
         "id": "70350dacb084",
         "path": "docs/src/utils/DiagnosticTool.js",
         "layer": "app",
@@ -7090,16 +7127,15 @@
         "path": "docs/src/utils/error/notification.js",
         "layer": "app",
         "exports": [
+          "setErrorDomPorts",
           "ErrorNotificationManager"
         ],
         "imports_internal": [
-          "./enums.js",
-          "../../ui/domHelpers.js"
+          "./enums.js"
         ],
         "imports_external": [],
         "depends_on": [
-          "5ce32cc035a9",
-          "1209ae38acbb"
+          "5ce32cc035a9"
         ],
         "used_by": [
           "a3da9b68828b"
@@ -7349,7 +7385,6 @@
           "4e090ca5dca8"
         ],
         "used_by": [
-          "c755eabfbeb4",
           "d1a00da25b4c",
           "a1f877c21e6a",
           "d4c53787af5c",
@@ -7630,19 +7665,12 @@
       "infra",
       "test"
     ],
-    "rules": [
-      "ui -> app only",
-      "app -> domain, infra",
-      "domain -> stdlib/utils only",
-      "infra -> may not import ui"
-    ],
     "approved_patterns": [
       "Split internals/ by concern",
       "Event/callback decoupling"
     ],
-    "anti_patterns": [
-      "God module > 1000 LOC",
-      "Business logic in UI controllers"
+    "constraints": [
+      "infra -> may not import ui"
     ]
   },
   "conventions": {

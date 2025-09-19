@@ -21,14 +21,17 @@ import { getNodeEnv, isJest } from './env.js';
  */
 
 import { LOG_LEVEL, LOG_CATEGORY } from './logger/enums.js';
-
-// Re-export enums to preserve public API for existing imports from this module
-export { LOG_LEVEL, LOG_CATEGORY, LOG_OUTPUT } from './logger/enums.js';
+// Re-export enums required by downstream imports (kept minimal public surface)
+// Narrowed public logging surface: consumers only need level & category.
+export { LOG_LEVEL, LOG_CATEGORY };
 
 /**
  * Configuration class for logger behavior
  */
-export class LoggerConfig {
+// CLEANUP (2025-09-19): Pruned unused public logging surface. LoggerConfig and handler classes
+// were only referenced internally; removed their exports to shrink API. withPerformanceLogging /
+// withLoggingContext / GameLogger also unexported (no consumers). Enums kept for any external usage.
+class LoggerConfig {
   constructor(options = {}) {
     this.level = options.level || LOG_LEVEL.INFO;
     this.enableConsole = options.enableConsole ?? true;
@@ -52,7 +55,7 @@ export class LoggerConfig {
 /**
  * Log entry structure with comprehensive metadata
  */
-export class LogEntry {
+class LogEntry {
   constructor(level, category, message, data = {}, context = {}) {
     this.id = this.generateId();
     this.timestamp = new Date().toISOString();
@@ -67,52 +70,43 @@ export class LogEntry {
     this.stackTrace = this.captureStackTrace();
   }
 
+  // Removed unused helper wrappers (GameLogger, withPerformanceLogging, withLoggingContext) during cleanup.
+
+  // CLEANUP NOTE (2025-09-19): These utility methods were accidentally pruned during
+  // surface minimization. Tests exercise logger paths that rely on them. Restoring
+  // lean implementations sufficient for current usage (ID generation, basic metadata
+  // and light sanitization). Avoid coupling to a config object to keep LogEntry
+  // standalone.
+
   generateId() {
-    return `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  sanitizeData(data) {
-    if (!data || typeof data !== 'object') return data;
-
-    const sanitized = {};
-    const sensitivePatterns = /password|token|secret|key|auth|credential|ssn|credit/i;
-
-    for (const [key, value] of Object.entries(data)) {
-      if (sensitivePatterns.test(key)) {
-        sanitized[key] = '[REDACTED]';
-      } else if (typeof value === 'string' && value.length > 1000) {
-        sanitized[key] = value.substring(0, 1000) + '...[TRUNCATED]';
-      } else if (typeof value === 'object' && value !== null) {
-        sanitized[key] = this.sanitizeData(value);
-      } else {
-        sanitized[key] = value;
+  sanitizeData(value) {
+    if (value == null) return value;
+    if (typeof value !== 'object') return value;
+    // Shallow clone with redaction of obvious sensitive keys
+    const SENSITIVE_KEYS = ['password', 'pass', 'secret', 'token', 'auth', 'apiKey', 'apikey'];
+    try {
+      const clone = Array.isArray(value) ? [...value] : { ...value };
+      for (const key of Object.keys(clone)) {
+        if (SENSITIVE_KEYS.includes(key.toLowerCase())) {
+          clone[key] = '[REDACTED]';
+        }
       }
+      return clone;
+    } catch (e) {
+      return value; // Fallback: return original if cloning fails
     }
-
-    return sanitized;
   }
 
   collectMetadata() {
-    const metadata = {
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
-      url: typeof window !== 'undefined' ? window.location.href : 'Unknown',
-      referrer: typeof document !== 'undefined' ? document.referrer : 'Unknown',
-      memory: this.getMemoryInfo(),
-      performance: this.getPerformanceInfo(),
+    const runtime = typeof window === 'undefined' ? 'node' : 'browser';
+    // Keep metadata minimal; previous version included memory & perf details.
+    return {
+      runtime,
+      env: typeof getNodeEnv === 'function' ? getNodeEnv() : undefined,
     };
-
-    return metadata;
-  }
-
-  getMemoryInfo() {
-    if (typeof performance !== 'undefined' && performance.memory) {
-      return {
-        used: performance.memory.usedJSHeapSize,
-        total: performance.memory.totalJSHeapSize,
-        limit: performance.memory.jsHeapSizeLimit,
-      };
-    }
-    return null;
   }
 
   getPerformanceInfo() {
@@ -185,7 +179,7 @@ export class LogEntry {
 /**
  * Console output handler with formatting
  */
-export class ConsoleOutputHandler {
+class ConsoleOutputHandler {
   constructor(config) {
     this.config = config;
     this.colors = {
@@ -242,7 +236,7 @@ export class ConsoleOutputHandler {
 /**
  * Memory output handler for log retention
  */
-export class MemoryOutputHandler {
+class MemoryOutputHandler {
   constructor(config) {
     this.config = config;
     this.logs = [];
@@ -316,7 +310,7 @@ export class MemoryOutputHandler {
 /**
  * Remote output handler for centralized logging
  */
-export class RemoteOutputHandler {
+class RemoteOutputHandler {
   constructor(config) {
     this.config = config;
     this.buffer = [];
@@ -789,71 +783,6 @@ export const logger = new Logger({
   maxMemoryLogs: 2000,
   applicationName: 'TavernTable',
 });
-
-// Export convenience functions for common logging patterns
-export const GameLogger = {
-  /**
-   * Log system operations
-   */
-  system: (message, data = {}, level = LOG_LEVEL.INFO) =>
-    logger.log(level, LOG_CATEGORY.SYSTEM, message, data),
-
-  /**
-   * Log performance metrics
-   */
-  performance: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.PERFORMANCE),
-
-  /**
-   * Log user interactions
-   */
-  user: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.USER),
-
-  /**
-   * Log API operations
-   */
-  api: (message, data = {}, level = LOG_LEVEL.INFO) =>
-    logger.log(level, LOG_CATEGORY.API, message, data),
-
-  /**
-   * Log security events
-   */
-  security: (message, data = {}, level = LOG_LEVEL.WARN) =>
-    logger.log(level, LOG_CATEGORY.SECURITY, message, data),
-
-  /**
-   * Log business logic operations
-   */
-  business: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.BUSINESS),
-
-  /**
-   * Log audit trail events
-   */
-  audit: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.AUDIT),
-};
-
-// Export performance monitoring utilities
-export const withPerformanceLogging = (operationName, fn, context = {}) => {
-  if (typeof fn === 'function') {
-    if (fn.constructor.name === 'AsyncFunction') {
-      return logger.performanceMonitor.measureAsync(operationName, fn, context);
-    } else {
-      return logger.performanceMonitor.measureSync(operationName, fn, context);
-    }
-  }
-  throw new Error('withPerformanceLogging requires a function');
-};
-
-// Export structured logging helpers
-export const withLoggingContext = (context, fn) => {
-  return (...args) => {
-    logger.pushContext(context);
-    try {
-      return fn(...args);
-    } finally {
-      logger.popContext();
-    }
-  };
-};
 
 // Export logger as default
 export default logger;

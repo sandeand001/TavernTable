@@ -11,3 +11,7 @@ AI Glossary — TavernTable
 - Sprite: PNG image used for creature tokens; loaded by SpriteManager.
 - Token: A placed creature or object on the grid, controlled by TokenManager.
 - UIController: Main UI entry controlling DOM, panels, and GameManager initialization.
+
+Cleanup Notes (2025-09-19):
+- Logger surface minimized: internal handler classes and wrapper HOFs removed; only enums + core Logger exposed.
+- Terrain tool/shortcut/validation constants removed (unused); retain only TERRAIN_CONFIG.
