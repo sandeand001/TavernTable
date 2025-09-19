@@ -47,3 +47,9 @@ Scope: src/core/*Manager.js, src/managers/BiomeCanvasPainter.js (shim), src/ui/U
 Type: doc | comments
 Notes: Added NFC rationale comments for heuristic orphans & legacy/future exports to prevent premature deletion; recorded Phase 1 closure & Phase 2 plan seed.
 Behavioral Impact: None (comment-only changes)
+
+### (Uncommitted) Timer Registry Installation (NFC)
+Scope: tests/timerRegistry.js (new), tests/setup.js (import + afterEach), CLEANUP_PLAN.md (Phase 2 section)
+Type: tooling | test infra | doc
+Notes: Added non-intrusive test-only wrapper for setTimeout/setInterval to auto-clear timers per test and reduce Jest open-handle warnings. No production code modified.
+Behavioral Impact: None (test environment only)

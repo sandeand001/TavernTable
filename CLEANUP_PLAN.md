@@ -193,3 +193,21 @@ Next Phase (Phase 2) Focus:
 3. Prepare dynamic usage capture (optional lightweight logging) to confirm orphan status before any removal.
 
 Transition Trigger: Begin Phase 2 when timer scaffold branch point created (chore/nfc-phase2) or continue on current branch if low-risk.
+
+## Phase 2 (In Progress) — Timer / Open Handle Mitigation (NFC)
+Objective: Eliminate Jest worker force-exit warning by ensuring no lingering timeouts/intervals after tests, without altering production logic.
+
+Approach (Step 1 implemented):
+1. Add `tests/timerRegistry.js` wrapping `setTimeout` / `setInterval`, tracking IDs and auto-clearing after each test. Uses unref() when available to reduce impact on Node event loop.
+2. Integrate via `tests/setup.js` (try/catch guarded, comment-labeled NFC) — avoids touching runtime source.
+3. Observe test run output; if warning persists, add targeted manual clears in suites with long-running timers or consider jest fake timers for specific modules (deferred if intrusive).
+
+Safety Considerations:
+- Registry only loads in test environment (setupFilesAfterEnv).
+- No mutation of production code paths.
+- Provides `global.__getActiveTimers()` for potential diagnostics (not used in tests yet).
+
+Next Steps (Phase 2):
+- Run full suite to confirm warning removal or reduction.
+- If residual handles remain, instrument logging of remaining timer counts in `afterAll` (optional) for isolation — NFC.
+- Proceed to dependency duplication benchmark (Levenshtein) after stabilizing timer behavior.
