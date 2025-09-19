@@ -27,3 +27,11 @@ Notes: Recorded absence of puppeteer & Levenshtein lib usage (deferred removal d
 Behavioral Impact: None (new script only, no runtime imports)
 
 *(Will replace with commit hash after commit)*
+
+### (Uncommitted) Archive formatted.tmp.js & Timer Scan (NFC)
+Scope: .attic/root/formatted.tmp.js (new archived copy); CLEANUP_PLAN.md (mark archived + timer scan section)
+Type: archive | doc
+Notes: Unreferenced scratch file archived following policy; added preliminary timer usage inventory to plan to support future open-handle mitigation.
+Behavioral Impact: None (file removed from root; not imported anywhere)
+
+*(Will replace with commit hash after commit)*

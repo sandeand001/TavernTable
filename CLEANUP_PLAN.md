@@ -17,9 +17,9 @@ Date: 2025-09-18
 | Q | Question / needs confirmation |
 
 ## 1. Candidate Dead Code / Unused Modules
-(TBD after automated / grep analysis)
-- [P] Verify if `formatted.tmp.js` is transient (likely scratch) — move to `.attic/` or delete.
-  - Safety: grep references == 0; tests still green.
+ (TBD after automated / grep analysis)
+- [D] `formatted.tmp.js` identified as transient scratch file (0 refs). Archived to `.attic/root/formatted.tmp.js` (2025-09-18) per policy.
+  - Safety Checks: grep references == 0 (confirmed); file not imported by runtime/tests; tests & lint rerun post-archival.
 - [P] Identify any unused exports in `src/utils/` (e.g., logging helpers not referenced).
   - Safety: `grep -R "export function name"` & Jest run.
   
@@ -47,6 +47,19 @@ Status Legend: USED = referenced in src (import grep), DUP = duplicated concept 
 | ColorUtils.js | lightenColor, darkenColor, shadeMul | USED | Shading & tests |
 
 Follow-up: error notification & telemetry classes marked TBD—retain until deeper analysis; no deletions proposed in Phase 1.
+
+### 1.2 Timer / Open Handle Preliminary Scan (2025-09-18)
+Scan: searched for `setTimeout|setInterval` across `src/`.
+Findings (representative hotspots):
+- `src/utils/Logger.js`: batching / sendTimeout logic.
+- `src/ui/UIController.js`: debounce & retry hooks; one interval with stopper timeout.
+- `src/utils/ErrorHandler.js` & `src/utils/error/*`: delayed error handling / notification dismissal.
+- Managers (`InteractionManager`, `TerrainManager`, terrain updates internals) use timeouts for throttling.
+- Dice system (`systems/dice/dice.js`): animation or deferred resolution.
+
+Risk: Some timers may persist after tests complete, triggering Jest force-exit warning. No teardown hooks currently standardizing cancellation.
+
+Deferred Action (Phase 2 candidate): Introduce a lightweight TestTimerRegistry to wrap and auto-clear timers in test environment (NFC) or add afterEach cleanup in specific suites. Requires careful audit to avoid masking genuine async issues.
 
 ## 2. Redundant / Overlapping Utilities
 - [P] Check for multiple color manipulation utilities vs `colord` usage.
