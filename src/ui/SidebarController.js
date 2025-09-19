@@ -840,4 +840,8 @@ class SidebarController {
 // Create and expose global instance
 window.sidebarController = new SidebarController();
 
+/* NFC NOTE (2025-09-19): SidebarController flagged as orphan; usage is indirect via global
+window.sidebarController for dice system & selection updates. Scheduled for architectural
+review in a later phase. Keep for now (NFC). */
+
 export default SidebarController;

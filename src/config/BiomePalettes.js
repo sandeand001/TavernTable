@@ -1043,4 +1043,8 @@ export function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
   return rgbToHex(mixed);
 }
 
+// LEGACY NOTE (2025-09-19): getBiomeColorLegacy and BIOME_HEIGHT_PALETTES retained for backward
+// compatibility / documentation. Heuristic scan reports them unused in current code path.
+// Do not remove until a second pass confirms no external (out-of-repo) usage.
+
 export default BIOME_HEIGHT_PALETTES;

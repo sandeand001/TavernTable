@@ -304,3 +304,7 @@ window.spriteManager = spriteManager;
 // ES6 module export
 export default SpriteManager;
 export { spriteManager };
+
+// NFC NOTE (2025-09-19): Heuristic orphan scan flags this file due to predominantly window-based
+// access patterns (window.spriteManager) established during earlier prototyping. It remains a
+// runtime singleton accessed indirectly; keep until a formal dependency injection pattern is adopted.

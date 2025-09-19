@@ -87,3 +87,6 @@ export const ALL_BIOMES = Object.values(BIOME_GROUPS).flat();
 export function findBiome(key) {
   return ALL_BIOMES.find((b) => b.key === key) || null;
 }
+
+// FUTURE / REVIEW NOTE (2025-09-19): findBiome & BIOME_GROUPS appear unused in current runtime;
+// they are retained as they may support planned biome grouping UI or external map tooling.

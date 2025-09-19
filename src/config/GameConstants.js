@@ -243,3 +243,7 @@ export const DICE_CONFIG = {
     NORMAL_ROLL: '#ffffff', // White for normal roll
   },
 };
+
+// RETENTION NOTE (2025-09-19): APP_CONFIG, INPUT_CONFIG, CREATURE_* groups surfaced as unused by
+// heuristic scan; they're intentionally exported as part of the public configuration surface and
+// may be consumed by external automation/scripts not in this repository. Keep (NFC).

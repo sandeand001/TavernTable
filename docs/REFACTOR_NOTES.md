@@ -41,3 +41,9 @@ Scope: tools/find-unused-exports.js (new), tools/unused-scan-output.txt (artifac
 Type: tooling | doc | analysis
 Notes: Added heuristic script enumerating unused exports and orphan modules; captured snapshot output and summarized triage (no deletions). Non-asserting test pass found no empty tests.
 Behavioral Impact: None (script not imported by runtime; docs only)
+
+### (Uncommitted) Orphan Retention & Legacy Tagging Annotations (NFC)
+Scope: src/core/*Manager.js, src/managers/BiomeCanvasPainter.js (shim), src/ui/UIController.js, src/ui/SidebarController.js, config (BiomePalettes, BiomeConstants, GameConstants), CLEANUP_PLAN.md (Phase 1 closure)
+Type: doc | comments
+Notes: Added NFC rationale comments for heuristic orphans & legacy/future exports to prevent premature deletion; recorded Phase 1 closure & Phase 2 plan seed.
+Behavioral Impact: None (comment-only changes)

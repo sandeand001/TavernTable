@@ -169,3 +169,27 @@ Notes: <short justification>
 
 ---
 (Plan will be iteratively expanded; see commit history for evolution.)
+
+## Phase 1 Closure (2025-09-19)
+Status: Completed core inventory & hygiene objectives.
+
+Deliverables Achieved:
+- Utils export inventory (1.1) and timer scan (1.2).
+- Unused export & orphan module heuristic scan (1.3) with triage; no deletions.
+- Annotations added to orphan modules (SpriteManager, AnimatedSpriteManager, TerrainManager, UIController, SidebarController, BiomeCanvasPainter shim) explaining retention.
+- Legacy/future exports tagged with inline comments (BiomePalettes, BiomeConstants, GameConstants).
+
+Deferred to Phase 2:
+- Timer/open-handle mitigation scaffolding (TestTimerRegistry or afterEach clears).
+- Potential removal or consolidation of clearly unused constants after second confirmation pass.
+
+Exit Criteria Met:
+- All additions NFC (tests & lint pass per verification commits).
+- Documentation & rationale captured before making any pruning decisions.
+
+Next Phase (Phase 2) Focus:
+1. Introduce standardized timer registration & teardown (minimize Jest open-handle warning) without behavior change.
+2. Evaluate feasibility of consolidating duplicate dependencies (Levenshtein libs) with micro benchmark.
+3. Prepare dynamic usage capture (optional lightweight logging) to confirm orphan status before any removal.
+
+Transition Trigger: Begin Phase 2 when timer scaffold branch point created (chore/nfc-phase2) or continue on current branch if low-risk.
