@@ -61,6 +61,46 @@ Risk: Some timers may persist after tests complete, triggering Jest force-exit w
 
 Deferred Action (Phase 2 candidate): Introduce a lightweight TestTimerRegistry to wrap and auto-clear timers in test environment (NFC) or add afterEach cleanup in specific suites. Requires careful audit to avoid masking genuine async issues.
 
+### 1.3 Unused Export & Orphan Module Scan (2025-09-19)
+Tooling: `tools/find-unused-exports.js` (heuristic; regex-based, no AST).
+
+Run Output Snapshot (abridged):
+```
+UNUSED_EXPORTS (examples):
+  src/config/BiomeConstants.js: findBiome, BIOME_GROUPS
+  src/config/BiomePalettes.js: getBiomeHeightColor, getBiomeColorLegacy, blendWithBiome, BIOME_HEIGHT_PALETTES
+  src/config/GameConstants.js: APP_CONFIG, INPUT_CONFIG, CREATURE_FOOTPRINTS, CREATURE_BASELINE_OFFSETS, CREATURE_COLORS
+  src/utils/Logger.js: LoggerConfig, ConsoleOutputHandler, MemoryOutputHandler, RemoteOutputHandler, GameLogger, withPerformanceLogging, withLoggingContext, LOG_OUTPUT
+  ... (see full: tools/unused-scan-output.txt)
+
+ORPHAN_MODULES (examples):
+  src/core/AnimatedSpriteManager.js
+  src/core/SpriteManager.js
+  src/managers/BiomeCanvasPainter.js
+  src/ui/SidebarController.js
+  src/ui/UIController.js
+```
+
+Interpretation / Triage:
+| Category | Rationale | Planned Action |
+|----------|-----------|----------------|
+| Config constants (e.g., APP_CONFIG) | May be referenced indirectly in future features; risk of premature removal | Defer (Phase 3 reevaluation) |
+| Legacy / transitional API (getBiomeColorLegacy, getBiomeHeightColor) | Potential backward-compatible helpers | Mark as legacy in comments later (NFC) |
+| Logger & Error extended exports | Intentional breadth for composition; not all variants imported yet | Keep; maybe add doc comment grouping |
+| Orphan managers (BiomeCanvasPainter, SpriteManager) | Possibly dynamically required or future integration | Verify dynamic usage before any change |
+| UIController / SidebarController orphans | Likely entry points referenced only by manual initialization | Keep until bootstrap pattern formalized |
+
+Non-asserting Test Scan:
+  - Enumerated all `test(` / `it(` declarations under `tests/unit`. Manual sampling shows assertions present (expect/usage) or implicit by not throwing. No empty tests detected.
+
+Safety Posture:
+  - No deletions in Phase 1; findings are informational.
+  - Will consider adding inline `// UNUSED?` comments only after second confirmation pass (deferred) to avoid churn.
+
+Next (related):
+  - Optional AST-based refinement (if heuristic noise proves high) — defer unless needed.
+  - Dynamic import / side-effect module identification pass (to reduce false positives) — later phase.
+
 ## 2. Redundant / Overlapping Utilities
 - [P] Check for multiple color manipulation utilities vs `colord` usage.
   - Safety: diff behavior by unit tests or add a quick surrogate test if missing.

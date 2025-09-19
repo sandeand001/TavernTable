@@ -35,3 +35,9 @@ Scope: No file changes (test + lint verification only)
 Type: verification
 Notes: Re-ran full Jest suite (39/39 passing, 90 tests) and lint after archival commit to confirm NFC integrity. Observed existing Jest worker force-exit warning (open handle) persists; aligns with previously identified timers — no regression.
 Behavioral Impact: None (baseline reaffirmed)
+
+### (Uncommitted) Unused Export & Orphan Scan Tooling (NFC)
+Scope: tools/find-unused-exports.js (new), tools/unused-scan-output.txt (artifact), CLEANUP_PLAN.md (Section 1.3)
+Type: tooling | doc | analysis
+Notes: Added heuristic script enumerating unused exports and orphan modules; captured snapshot output and summarized triage (no deletions). Non-asserting test pass found no empty tests.
+Behavioral Impact: None (script not imported by runtime; docs only)
