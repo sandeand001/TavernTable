@@ -161,10 +161,22 @@ function shapeSandDunes(x, y, nx, ny, seed, opts) {
 }
 
 function shapeWetlands(x, y, nx, ny, seed, opts) {
+  // Goal: patchy shallow pools with gentle slightly raised hummocks; ~55% water coverage.
   const r = opts.relief ?? 2.0;
-  const depress = fbm2(nx * 2.0, ny * 2.0, seed, 4, 2.0, 0.55);
-  // Bias negative to create soggy flats and pools
-  return (depress - 0.65) * r - Math.abs(opts.waterBias ?? 1.0);
+  const base = fbm2(nx * 1.8, ny * 1.8, seed, 4, 2.0, 0.55); // broad low variations
+  const micro = fbm2(nx * 5.5, ny * 5.5, seed + 17, 2, 2.1, 0.55); // small-scale mounds
+  // Center base around 0, then depress most of it below 0 slightly
+  let h = (base - 0.55) * (r * 0.9) - 0.25; // overall wet bias
+  // Add soft mounds (positive bumps) so some tiles rise above water
+  const hummock = Math.max(0, micro - 0.55) * 1.1; // only positive part
+  h += hummock * 0.9; // gentle uplift
+  // Additional seeded broad gradient to avoid uniform pools
+  const grad = Math.sin((nx + seed * 0.0003) * Math.PI) * Math.sin((ny + seed * 0.0007) * Math.PI);
+  h += grad * 0.15;
+  // Water bias parameter (negative lowers water table); allow caller override
+  const waterBias = opts.waterBias ?? -0.05;
+  h += waterBias;
+  return h;
 }
 
 function shapeTundra(x, y, nx, ny, seed, opts) {
@@ -230,10 +242,54 @@ function shapeDesertCold(x, y, nx, ny, seed, opts) {
 }
 
 function shapeOasis(x, y, nx, ny, seed, opts) {
-  // desert with central depression (water) surrounded by slight rim
-  const base = shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 1.5 });
-  const bowl = -radial(nx, ny, seed + 5, false, 1.0, 0.0); // negative in center
-  return base + bowl * 1.2;
+  // Enhanced oasis: guaranteed central water bowl with blending sand ring
+  // 1. Start from a low-relief desert base for subtle dunes
+  let base = shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 1.2 });
+  // 2. Compute radial distance from center (nx,ny already normalized 0..1)
+  const cx = nx - 0.5;
+  const cy = ny - 0.5;
+  const d = Math.sqrt(cx * cx + cy * cy); // 0 at center, ~0.707 at corner
+  // 3. Define bowl radius and inner water depress
+  const rnd = fbm2(nx * 3.0, ny * 3.0, seed + 501, 2, 2.0, 0.55) * 0.06; // subtle irregularity
+  const radius = 0.32 + ((seed & 0xff) / 255) * 0.04; // 0.32 - 0.36
+  const rimStart = radius * 0.92;
+  // 4. Water depression profile: smooth curve staying negative inside radius
+  let bowl = 0;
+  if (d < radius) {
+    const t = d / radius; // 0..1
+    // invert smoothstep for deeper center: center ~ -1, edge ~0
+    const smooth = 1 - t * t * (3 - 2 * t);
+    bowl = -smooth * 1.4; // scale depth
+  }
+  // 5. Slight raised rim just outside bowl for visual accent (dry sand ring)
+  let rim = 0;
+  if (d >= rimStart && d < radius * 1.15) {
+    const rt = (d - rimStart) / (radius * 1.15 - rimStart); // 0..1 across rim band
+    rim = Math.sin(rt * Math.PI) * 0.25; // rise then fall
+  }
+  // 6. Blend irregularity
+  // Outside the bowl push the base up so most oasis tiles are dry sand (> 0 height)
+  if (d >= radius) {
+    // Gradual lift that increases a little farther from water so outer desert is clearly above sea level
+    const liftT = Math.min(1, (d - radius) / (0.7 - radius)); // radius..corner
+    base += 0.32 + liftT * 0.15; // 0.32..~0.47 lift
+  } else if (d >= rimStart) {
+    // Transitional lift within rim band so edge waterline sits slightly below surrounding sand
+    const t = (d - rimStart) / (radius - rimStart);
+    base += t * 0.15;
+  }
+  let height = base + bowl + rim + rnd;
+  // 7. Target: only inner bowl below 0, rim neutral-positive forming sand ring.
+  // Apply water bias only to deeper center; shallower edge gets tapered bias.
+  // eslint-disable-next-line prettier/prettier
+  if (bowl < 0) {
+    height += (opts.waterBias ?? -0.2) * (0.6 + 0.4 * Math.min(1, Math.max(0, -bowl / 1.4)));
+  }
+  // Nudge rim positive if it dipped slightly
+  if (rim > 0 && height < 0.05 && d > rimStart) height += 0.08;
+  // Guarantee dry sand just outside bowl (avoid accidental water bleed from negative noise)
+  if (d >= radius && height < 0.05) height = 0.05 + height * 0.25;
+  return height;
 }
 
 function shapeSaltFlats(x, y, nx, ny, seed, opts) {
@@ -337,11 +393,15 @@ function shapeBambooThicket(x, y, nx, ny, seed, opts) {
   return dune * 0.7;
 }
 
-function shapeOrchard(x, y, nx, ny, seed, opts) {
-  const r = opts.relief ?? 1.8;
-  const grid = Math.sin(nx * 18 + seed * 0.01) * Math.sin(ny * 18 + seed * 0.013);
-  const base = fbm2(nx * 2.0, ny * 2.0, seed + 161, 3, 2.0, 0.55) - 0.5;
-  return (grid * 0.6 + base * 0.4) * r;
+function shapeOrchard(x, y, nx, ny, seed) {
+  // Orchard: intentionally near-flat to showcase regular planting rows.
+  // Replace previous noisy grid interference with a gentle single-axis tilt plus subtle micro-variation.
+  // Target variance < ~0.25. Relief scaling kept minimal regardless of opts.relief to preserve flatness.
+  const tiltAxis = seed % 2 === 0 ? 'x' : 'y';
+  const tilt = tiltAxis === 'x' ? (nx - 0.5) * 0.15 : (ny - 0.5) * 0.15; // gentle gradient
+  const micro = (fbm2(nx * 6.0, ny * 6.0, seed + 161, 2, 2.0, 0.55) - 0.5) * 0.12; // small ripples
+  const base = 0.4; // elevated slightly above waterline
+  return base + tilt + micro; // typically ~0.3..0.5 range
 }
 
 function shapeMysticGrove(x, y, nx, ny, seed, opts) {

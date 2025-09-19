@@ -333,11 +333,14 @@ const BIOME_STOP_MAP = {
     { h: 6, color: 0xdaba86 },
   ],
   oasis: [
-    { h: -10, color: 0x083d31 },
-    { h: -3, color: 0x158a79 },
-    { h: 0, color: 0x1aa28e },
-    { h: 4, color: 0x6be0cf },
-    { h: 10, color: 0xbef7ee },
+    // Reworked: negative heights (water bowl) use aqua/teal; >=0 shifts quickly to warm sand so biome not all "sea".
+    { h: -10, color: 0x06322a }, // deep water shadowed
+    { h: -4, color: 0x0d675a }, // mid-depth teal
+    { h: -1, color: 0x139b85 }, // shallow rim aqua
+    { h: 0, color: 0xc49a54 }, // immediate sand edge
+    { h: 3, color: 0xdabf80 }, // dry inner dune ring
+    { h: 7, color: 0xecdcb8 }, // sunbleached outer
+    { h: 10, color: 0xf5e9cf },
   ],
 
   // Grass & Forest
@@ -987,6 +990,43 @@ export function getBiomeColor(biomeKey, height, x, y, opts = {}) {
 
 /** Convenience: hex color only (painterly). */
 export function getBiomeColorHex(biomeKey, height, x = 0, y = 0, opts = {}) {
+  // Special post-color adjustment for oasis: introduce lush green ring just above waterline
+  if (biomeKey === 'oasis') {
+    // Compute distance from center heuristically assuming square normalized coords using optional width/height if provided
+    // If width/height unavailable, approximate center radius using x,y parity noise for subtle variation.
+    const w = opts.mapWidth || 1;
+    const hDim = opts.mapHeight || 1;
+    let rx = 0.5,
+      ry = 0.5;
+    if (Number.isFinite(w) && Number.isFinite(hDim) && w > 0 && hDim > 0) {
+      rx = (x + 0.5) / w;
+      ry = (y + 0.5) / hDim;
+    }
+    const dx = rx - 0.5;
+    const dy = ry - 0.5;
+    const dist = Math.sqrt(dx * dx + dy * dy); // ~0 center to ~0.707 corner
+    // Lush band region: just outside inner water bowl (~0.32-0.36 radius) up to ~0.45
+    const lush = dist > 0.33 && dist < 0.46 && height > 0 && height < 1.5;
+    if (lush) {
+      // Temporarily sample normal color, then blend with a vibrant green accent
+      const res = getBiomeColor(biomeKey, height, x, y, opts);
+      const baseHex = res.color;
+      // Vibrant palm green accent
+      const accent = 0x2fae6b;
+      const a = (baseHex & 0xff0000) >> 16;
+      const b = (baseHex & 0x00ff00) >> 8;
+      const c = baseHex & 0x0000ff;
+      const aa = (accent & 0xff0000) >> 16;
+      const ab = (accent & 0x00ff00) >> 8;
+      const ac = accent & 0x0000ff;
+      const t = 0.55; // blend factor
+      const mix =
+        ((Math.round(a + (aa - a) * t) & 0xff) << 16) |
+        ((Math.round(b + (ab - b) * t) & 0xff) << 8) |
+        (Math.round(c + (ac - c) * t) & 0xff);
+      return mix;
+    }
+  }
   return getBiomeColor(biomeKey, height, x, y, opts).color;
 }
 

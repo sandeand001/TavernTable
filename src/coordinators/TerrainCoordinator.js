@@ -607,7 +607,14 @@ export class TerrainCoordinator {
    */
   generateBiomeElevationIfFlat(biomeKey, options = {}) {
     try {
-      if (!this.gameManager?.gridContainer || this.isTerrainModeActive) return false;
+      if (this.isTerrainModeActive) return false;
+      // Headless/test mode support: if gridContainer is missing (no PIXI app), create a stub
+      if (!this.gameManager?.gridContainer) {
+        this.gameManager.gridContainer = {
+          removeChildren() {},
+          addChild() {},
+        };
+      }
       if (this._isGenerating) return false;
       this._isGenerating = true;
       const base = this.dataStore?.base;
@@ -641,11 +648,12 @@ export class TerrainCoordinator {
       } catch (_) {
         /* non-fatal */
       }
-      // Populate biome flora (trees) after successful elevation generation
+      // Populate sparse biome flora (trees)
       try {
         _autoPopulateBiomeFlora(
           this,
-          biomeKey || (typeof window !== 'undefined' && window.selectedBiome)
+          biomeKey || (typeof window !== 'undefined' && window.selectedBiome),
+          seed
         );
       } catch (_) {
         /* ignore flora errors */
@@ -668,7 +676,14 @@ export class TerrainCoordinator {
    */
   generateBiomeElevation(biomeKey, options = {}) {
     try {
-      if (!this.gameManager?.gridContainer || this.isTerrainModeActive) return false;
+      if (this.isTerrainModeActive) return false;
+      if (!this.gameManager?.gridContainer) {
+        // Headless mode: provide a minimal container so downstream calls succeed
+        this.gameManager.gridContainer = {
+          removeChildren() {},
+          addChild() {},
+        };
+      }
       if (this._isGenerating) return false;
       this._isGenerating = true;
 
@@ -693,7 +708,35 @@ export class TerrainCoordinator {
       this.dataStore.base = field.map((r) => [...r]);
       this.dataStore.working = field.map((r) => [...r]);
 
-      // Repaint base tiles to reflect new elevations
+      // If running in headless/testing mode, optionally skip expensive tile processing & rendering
+      if (options.headless === true) {
+        // Provide a stub terrainManager if not already available so flora population can record placements
+        if (!this.terrainManager) {
+          this.terrainManager = {
+            gameManager: this.gameManager,
+            placeables: new Map(),
+            placeTerrainItem(x, y, id) {
+              const key = `${x},${y}`;
+              let arr = this.placeables.get(key);
+              if (!arr) {
+                arr = [];
+                this.placeables.set(key, arr);
+              }
+              const sprite = { placeableType: 'plant', id, x, y, parent: null };
+              arr.push(sprite);
+              return true;
+            },
+          };
+        }
+        try {
+          _autoPopulateBiomeFlora(this, activeBiome, seed);
+        } catch (_) {
+          /* ignore flora errors */
+        }
+        return true;
+      }
+
+      // Repaint base tiles to reflect new elevations (full mode)
       _validateApplyReqs(this);
       const modified = _processAllTiles(this);
       _logApplyComplete(this, modified);
@@ -703,9 +746,8 @@ export class TerrainCoordinator {
       } catch (_) {
         /* non-fatal */
       }
-      // Populate biome flora for full regeneration path
       try {
-        _autoPopulateBiomeFlora(this, activeBiome);
+        _autoPopulateBiomeFlora(this, activeBiome, seed);
       } catch (_) {
         /* ignore flora errors */
       }

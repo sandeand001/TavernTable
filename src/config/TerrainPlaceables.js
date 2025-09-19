@@ -161,3 +161,5 @@ export const TREE_PLACEABLES = {
 Object.entries(TREE_PLACEABLES).forEach(([k, v]) => {
   TERRAIN_PLACEABLES[k] = v;
 });
+
+// (Former forest billboard experimental group removed; placeholder comments pruned.)

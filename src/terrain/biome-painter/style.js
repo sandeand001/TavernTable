@@ -10,11 +10,12 @@
 export function styleForBiome(biome) {
   const b = String(biome || '');
   if (/(grassland|steppe|prairie|hill)/i.test(b)) return 'plains';
-  if (/desert|dune|savanna|thorn|salt/i.test(b)) return 'arid';
+  // Treat oasis primarily as an arid biome with localized water pocket; don't bucket entire area as water.
+  if (/desert|dune|savanna|thorn|salt|oasis/i.test(b)) return 'arid';
   if (/forest|grove|bamboo|orchard|cedar|fey|shadowfell/i.test(b)) return 'forest';
   if (/swamp|marsh|wetland|mangrove|flood/i.test(b)) return 'wetland';
   if (/glacier|tundra|frozen|pack|alpine|mountain|scree/i.test(b)) return 'alpine';
-  if (/ocean|coast|river|lake|reef|oasis|geyser|beach|shore/i.test(b)) return 'water';
+  if (/ocean|coast|river|lake|reef|geyser|beach|shore/i.test(b)) return 'water';
   if (/volcan|lava|obsidian|ash/i.test(b)) return 'volcanic';
   if (/waste|ruin|urban|grave|cavern|crystal|eldritch|astral|arcane/i.test(b)) return 'arcane';
   return 'generic';

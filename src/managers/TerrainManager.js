@@ -77,6 +77,22 @@ export class TerrainManager {
   }
 
   /**
+   * Public wrapper for placing a terrain placeable (path/plant/structure) at grid coords.
+   * Exposed to allow biome flora population without reaching into internals directly.
+   * @param {string} id placeable id (must exist in TERRAIN_PLACEABLES)
+   * @param {number} x grid column
+   * @param {number} y grid row
+   * @returns {boolean} true if placed
+   */
+  placeItem(id, x, y) {
+    try {
+      return _placeItem(this, id, x, y);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
    * Initialize terrain rendering system
    */
   initialize() {

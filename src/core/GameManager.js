@@ -49,8 +49,13 @@ import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 class GameManager {
   /**
    * Initialize the GameManager with coordinators
+   * @param {object} [options] optional overrides
+   * @param {number} [options.cols] custom column count for grid
+   * @param {number} [options.rows] custom row count for grid
    */
-  constructor() {
+  constructor(options = {}) {
+    const { cols, rows } = options || {};
+
     // Core PIXI and rendering state
     this.app = null;
     this.gridContainer = null;
@@ -59,8 +64,8 @@ class GameManager {
     // Grid configuration from constants (must be set BEFORE coordinators use them)
     this.tileWidth = GRID_CONFIG.TILE_WIDTH;
     this.tileHeight = GRID_CONFIG.TILE_HEIGHT;
-    this.cols = GRID_CONFIG.DEFAULT_COLS;
-    this.rows = GRID_CONFIG.DEFAULT_ROWS;
+    this.cols = Number.isInteger(cols) && cols > 0 ? cols : GRID_CONFIG.DEFAULT_COLS;
+    this.rows = Number.isInteger(rows) && rows > 0 ? rows : GRID_CONFIG.DEFAULT_ROWS;
 
     // Create coordinators after grid dimensions are available
     this.renderCoordinator = new RenderCoordinator(this);
@@ -430,4 +435,5 @@ class GameManager {
 // Legacy global wrapper functions removed (2025-08 cleanup). UI now binds directly to gameManager methods.
 
 // Export the GameManager class for ES6 module usage
+export { GameManager }; // provide named export for compatibility with older test imports
 export default GameManager;
