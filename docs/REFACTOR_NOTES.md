@@ -19,3 +19,11 @@ Notes: Added non-enforcing cycle scan for visibility; no runtime import side-eff
 Behavioral Impact: None (script unused by runtime, only optional tool)
 
 *(Will replace with commit hash after commit)*
+
+### (Uncommitted) Dependency Audit Notes & cycle:scan script (NFC)
+Scope: CLEANUP_PLAN.md (dependency audit section elaboration); package.json (add cycle:scan npm script)
+Type: doc | tooling
+Notes: Recorded absence of puppeteer & Levenshtein lib usage (deferred removal decisions); added convenience script to invoke existing cycle scan tool.
+Behavioral Impact: None (new script only, no runtime imports)
+
+*(Will replace with commit hash after commit)*

@@ -72,9 +72,11 @@ Follow-up: error notification & telemetry classes marked TBD—retain until deep
 - [P] Run `npm run format:check` and resolve any drift.
 
 ## 7. Dependency Audit
-- [P] List devDependencies never imported in code (e.g., puppeteer?). Puppeteer presence suggests future e2e not currently used.
-  - Safety: postpone removal until confirmed unused via grep for `puppeteer`.
+- [D] Grep shows no runtime/test imports of `puppeteer` (only appears in package & plan doc). Treat as FUTURE (planned E2E) dependency; do NOT remove in Phase 1. Mark for reevaluation in Phase 3 (stabilization) if still unused.
+  - Safety: keep for now to avoid breaking unpublished workflows; add note to refactor log.
 - [Q] Evaluate if both `fast-levenshtein` and `fastest-levenshtein` are needed.
+  - Observation: Neither library name appears in `src/**/*.js` (grep zero hits). Both appear only in package manifests. Candidate duplication — prefer one (likely `fastest-levenshtein`).
+  - Action (Deferred): Add micro benchmark test before removal; remove the slower one in a dedicated NFC commit with perf note. Not in current phase.
 
 ## 8. Build / Deploy Artifacts
 - [P] Confirm `docs/src` parity: generate map and compare changed module counts.
@@ -82,6 +84,7 @@ Follow-up: error notification & telemetry classes marked TBD—retain until deep
 
 ## 9. Circular Dependency Scan
 - [D] Added lightweight script `tools/cycle-scan.js` to detect straightforward relative import cycles (NFC visibility only). Does not fail CI; informational output.
+  - Latest run (2025-09-19): "No simple relative import cycles detected. (NFC)"
 
 ## 10. Logging and Diagnostics
 - [P] Add clarifying comments for logger context constants; no renames.
