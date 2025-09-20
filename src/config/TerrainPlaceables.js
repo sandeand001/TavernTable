@@ -53,7 +53,7 @@ const TREE_FRAME_SUFFIXES = [
 // Helper to build frame paths without multi-line map formatting churn
 const treeFrames = (pattern) => TREE_FRAME_SUFFIXES.map((s) => pattern.replace('{s}', s));
 
-export const TREE_PLACEABLES = {
+const TREE_PLACEABLES = {
   'tree-green-deciduous': {
     label: 'Green Deciduous',
     img: treeFrames('assets/terrain/plants/trees/green_deciduous_trees/_tree_01_{s}.png'),

@@ -283,8 +283,7 @@
         "path": "src/config/TerrainPlaceables.js",
         "layer": "app",
         "exports": [
-          "TERRAIN_PLACEABLES",
-          "TREE_PLACEABLES"
+          "TERRAIN_PLACEABLES"
         ],
         "imports_internal": [],
         "imports_external": [],

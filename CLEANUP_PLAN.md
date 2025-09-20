@@ -218,6 +218,24 @@ Next Investigative Steps:
 ## Phase 2 – Export Pruning (Batch 1 Recap & Batch 2 Added)
 ### Batch 1 (Recap)
 Removed unused exports: biome legacy color helpers (getBiomeColorLegacy, blendWithBiome, getBiomeHeightColor now internal), GameConstants large unused sets (APP_CONFIG, INPUT_CONFIG, CREATURE_FOOTPRINTS, CREATURE_BASELINE_OFFSETS, CREATURE_COLORS), findBiome, rngPick, depth weighting constants internalized.
+### Batch 2 (2025-09-19)
+Actions (all NFC – verified via tests & lint):
+- Removed obsolete shading helper functions; `src/terrain/ShadingHelpers.js` reduced to explicit empty module stub (was fully unused, previously partially deleted creating lint noise).
+- Pruned logger `LOG_OUTPUT` re-export (no downstream imports) keeping `LOG_LEVEL` and `LOG_CATEGORY` public.
+- Temporarily internalized `BIOME_GROUPS` but UI biome menu (SidebarController dynamic import) depended on named export; restored export and added regression test `BiomeGroupsExport.test.js`.
+- Internalized `TREE_PLACEABLES` (no direct imports); now merged into `TERRAIN_PLACEABLES` internally without separate export to shrink surface.
+- Updated `AI_CODEBASE_MAP.json` to reflect removed exports (`LOG_OUTPUT`, `TREE_PLACEABLES`, shading helpers) and restored `BIOME_GROUPS`.
+
+Safety Checks:
+- Grep confirmed absence of external references before each removal (`LOG_OUTPUT`, `TREE_PLACEABLES`, shading helpers functions).
+- Full Jest run green after each step (added regression test increased total test count).
+- Lint clean post adjustments.
+
+Rationale Notes:
+- `TREE_PLACEABLES` added redundancy: consuming code always accesses consolidated `TERRAIN_PLACEABLES`; export removed to discourage future direct coupling to tree variants map.
+- Shading helpers presented maintenance burden with zero callers; replacement stub preserves potential future module path expectations while keeping bundle lean.
+- Logger surface minimized incrementally; retaining only enums actually used by callers prevents unnecessary API stabilization of unused output enum.
+- Regression test ensures accidental removal of `BIOME_GROUPS` will surface immediately (prevents silent UI palette disappearance).
 
 ### Batch 2 (2025-09-19)
 Scope: Further shrink unused surface (logging + terrain constants) with NFC guarantee.
