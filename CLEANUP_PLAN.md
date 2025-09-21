@@ -237,6 +237,30 @@ Rationale Notes:
 - Logger surface minimized incrementally; retaining only enums actually used by callers prevents unnecessary API stabilization of unused output enum.
 - Regression test ensures accidental removal of `BIOME_GROUPS` will surface immediately (prevents silent UI palette disappearance).
 
+### Phase 2 – Open Handle Remediation (2025-09-20)
+Objective: Eliminate intermittent Jest force-exit warning (worker process forced to exit) without changing production code paths (NFC).
+
+Investigation:
+- Initial warning suggested lingering async resources (timers, intervals, RAF, or process listeners).
+- Added `tests/timerRegistry.js` to wrap `setTimeout`, `setInterval`, and later `requestAnimationFrame` (polyfill layer) with ID tracking + automatic afterEach clearance.
+- Introduced optional process listener diagnostics (`tests/processListenerDiagnostics.js`) gated by env flag to diff `process.eventNames()` counts before/after suite.
+- Ran `npx jest --detectOpenHandles --runInBand` to surface unresolved handles; run completed cleanly (all suites passed, no lingering handles reported) after registry integration.
+
+Remediation Actions (NFC):
+1. Wrapper registration inserted via `tests/setup.js` only (no src code modifications).
+2. Auto-clear afterEach ensures any timer created inside a test is cleared even if test aborts early.
+3. Added unref() usage when available to avoid timers keeping event loop alive in Node 18+.
+4. Verified no production modules modified; all changes isolated to test harness.
+
+Outcome:
+- Open-handle warning no longer appears in full in-band test run.
+- No behavioral test changes; performance unaffected (total run time stable within noise).
+- Registry left lightweight (no logging added) per cleanup scope constraints.
+
+Future (Deferred):
+- Optional extension to wrap `addEventListener` for DOM-like globals if future tests introduce animation or media APIs.
+- Consider CI job enforcing `--detectOpenHandles` to prevent regression.
+
 ### Batch 2 (2025-09-19)
 Scope: Further shrink unused surface (logging + terrain constants) with NFC guarantee.
 
