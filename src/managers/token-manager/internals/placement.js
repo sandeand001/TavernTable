@@ -1,7 +1,7 @@
 import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
-import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
+// Depth utils no longer used for rendering order; we align to tile depth bands.
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
 export function placeNewToken(c, gridX, gridY, gridContainer) {
@@ -78,16 +78,26 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
     if (creature.sprite) {
       creature.sprite.x = iso.x;
       creature.sprite.y = iso.y + elevationOffset;
-      const depthKey = computeDepthKey(gridX, gridY, TYPE_BIAS.token);
-      creature.sprite.zIndex = withOverlayRaise(c.gameManager?.terrainManager, depthKey);
-
-      if (gridContainer) {
-        gridContainer.addChild(creature.sprite);
+      // Attach token to terrainContainer so elevated front tiles can occlude it properly.
+      const tContainer = c.gameManager?.terrainManager?.terrainContainer || gridContainer;
+      if (tContainer) {
         try {
-          gridContainer.sortableChildren = true;
-          gridContainer.sortChildren?.();
+          if (creature.sprite.parent && creature.sprite.parent !== tContainer) {
+            creature.sprite.parent.removeChild(creature.sprite);
+          }
+          tContainer.addChild(creature.sprite);
         } catch (_) {
-          /* ignore sort errors */
+          /* ignore */
+        }
+        // depthValue pattern from tiles: depth*100 + offset (tiles use +20, faces +5, placeables 32-45)
+        const depth = gridX + gridY;
+        creature.sprite.depthValue = depth;
+        creature.sprite.zIndex = depth * 100 + 70; // token band
+        try {
+          tContainer.sortableChildren = true;
+          tContainer.sortChildren?.();
+        } catch (_) {
+          /* ignore */
         }
       }
     }

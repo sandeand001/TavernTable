@@ -62,7 +62,23 @@ export function setupTokenInteractions(c, sprite, tokenData) {
             gm?.terrainCoordinator?.dataStore?.get(baselineGrid.gridX, baselineGrid.gridY) ?? 0;
           const elev = TerrainHeightUtils.calculateElevationOffset(height);
           finalY = candidateBaseY + elev; // add elevation effect after determining grid
-          this.zIndex = (baselineGrid.gridX + baselineGrid.gridY) * 100 + 1;
+          const depth = baselineGrid.gridX + baselineGrid.gridY;
+          this.depthValue = depth;
+          this.zIndex = depth * 100 + 70; // token band
+          // ensure container
+          try {
+            const tContainer = gm?.terrainManager?.terrainContainer || this.parent;
+            if (tContainer && this.parent !== tContainer) {
+              this.parent.removeChild(this);
+              tContainer.addChild(this);
+            }
+            if (tContainer) {
+              tContainer.sortableChildren = true;
+              tContainer.sortChildren?.();
+            }
+          } catch (_) {
+            /* ignore */
+          }
         } catch (_) {
           /* ignore */
         }
