@@ -38,7 +38,7 @@ export function computeSlopeAspect(gameManager, heights) {
  * @param {(x:number,y:number)=>boolean} isSourceFn
  * @returns {number[][]}
  */
-export function computeDistanceField(gameManager, heights, isSourceFn) {
+function computeDistanceField(gameManager, heights, isSourceFn) {
   const cols = gameManager.cols;
   const rows = gameManager.rows;
   const dist = Array.from({ length: rows }, () => new Array(cols).fill(Infinity));

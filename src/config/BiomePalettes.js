@@ -868,7 +868,6 @@ export function getBiomeColorHex(biomeKey, height, x = 0, y = 0, opts = {}) {
 
 // CLEANUP NOTE (2025-09-19): Removed unused exports getBiomeColorLegacy & blendWithBiome; internalized
 // BIOME_HEIGHT_PALETTES + getBiomeHeightColor as private helpers after confirming zero external imports.
-// Public API now limited to getBiomeColor / getBiomeColorHex (and default export of palette map if
-// legacy code references it dynamically).
-
-export default BIOME_HEIGHT_PALETTES;
+// Public API now limited to getBiomeColor / getBiomeColorHex. BIOME_HEIGHT_PALETTES no longer
+// exported (was default) after confirming no dynamic external access. If a regression surfaces,
+// re-export selectively with a narrower read-only facade.

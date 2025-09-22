@@ -21,8 +21,7 @@
     "start": "npm run serve",
     "serve:open": "start \"\" http://localhost:3000 && npm run serve",
     "prepare": "husky",
-    "map:update": "node ai/update_codebase_map.js",
-    "cycle:scan": "node tools/cycle-scan.js"
+    "map:update": "node ai/update_codebase_map.js"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",

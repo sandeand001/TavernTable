@@ -9,7 +9,19 @@
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { shadeMul as _sharedShadeMul } from '../utils/ColorUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-import { styleForBiome } from './biome-painter/style.js';
+// Internal style classification (inlined; original helper internalized)
+function __styleForBiome(biome) {
+  const b = String(biome || '');
+  if (/(grassland|steppe|prairie|hill)/i.test(b)) return 'plains';
+  if (/desert|dune|savanna|thorn|salt|oasis/i.test(b)) return 'arid';
+  if (/forest|grove|bamboo|orchard|cedar|fey|shadowfell/i.test(b)) return 'forest';
+  if (/swamp|marsh|wetland|mangrove|flood/i.test(b)) return 'wetland';
+  if (/glacier|tundra|frozen|pack|alpine|mountain|scree/i.test(b)) return 'alpine';
+  if (/ocean|coast|river|lake|reef|geyser|beach|shore/i.test(b)) return 'water';
+  if (/volcan|lava|obsidian|ash/i.test(b)) return 'volcanic';
+  if (/waste|ruin|urban|grave|cavern|crystal|eldritch|astral|arcane/i.test(b)) return 'arcane';
+  return 'generic';
+}
 import {
   strokeBlob as motifStrokeBlob,
   strokeRibbon as motifStrokeRibbon,
@@ -549,7 +561,7 @@ export class BiomeCanvasPainter {
   }
 
   _styleForBiome(biome) {
-    return styleForBiome(biome);
+    return __styleForBiome(biome);
   }
 
   // Build a utils bag to pass to motif helpers, binding this instance methods/fields.

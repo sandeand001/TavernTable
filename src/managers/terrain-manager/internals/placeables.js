@@ -15,8 +15,8 @@ import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/Dep
 // Optional auto-baseline detection helpers for trees were removed in favor of
 // explicit, per-asset baselineOffsetPx in the config to keep behavior deterministic.
 
-/** Create a PIXI.Sprite for a placeable item and attach metadata. */
-export function createPlaceableSprite(m, id, x, y) {
+/** Create a PIXI.Sprite for a placeable item and attach metadata (internal). */
+function createPlaceableSprite(m, id, x, y) {
   const def = TERRAIN_PLACEABLES[id];
   if (!def) throw new Error(`Unknown placeable id: ${id}`);
   // Support multi-variant placeables where `def.img` may be an array of
@@ -202,7 +202,6 @@ export function createPlaceableSprite(m, id, x, y) {
             sy,
           });
         }
-        if (!sprite.scale) sprite.scale = { set: () => {} };
         if (scaleMode === 'stretch') {
           if (typeof id === 'string' && id.startsWith('tree-')) {
             const s = normalizeTreeScale(Math.min(sx, sy), def);
@@ -240,7 +239,6 @@ export function createPlaceableSprite(m, id, x, y) {
       // preserve its isometric aspect ratio and size it to the tile width
       // so it visually sits correctly; avoid forcing it to match tile height
       // which can squash the perspective.
-      if (!sprite.scale) sprite.scale = { set: () => {} };
       if (def.type === 'path' && (scaleMode === 'cover' || scaleMode === 'contain')) {
         const s = clampScale(scaleX, def.type, def);
         sprite.scale.set(s, s);
@@ -491,7 +489,7 @@ function _isoCenterForCell(m, gx, gy) {
  * Reposition a single placeable sprite using current grid position and terrain height.
  * Ensures bottom-center anchoring, elevation offset, per-asset baseline offset, and z-index.
  */
-export function repositionPlaceableSprite(m, sprite) {
+function repositionPlaceableSprite(m, sprite) {
   if (!sprite) return;
   // Ensure parent is the main grid container so interleaving with tokens works
   try {
@@ -564,6 +562,10 @@ export function repositionPlaceableSprite(m, sprite) {
     /* best-effort */
   }
 }
+
+// TEST SUPPORT: createPlaceableSprite is re-exported solely for unit tests that validate variant
+// selection logic. Keep internal in production usage; if tests are refactored, remove export.
+export { createPlaceableSprite };
 
 /**
  * Reposition all placeables located on a specific cell (gx, gy).
