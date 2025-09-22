@@ -10,6 +10,20 @@ entry_points: ["index.html", "src/ui/UIController.js"]
 # Overview
 Taverntable is an isometric grid-based tabletop game interface, designed for browser-based play and extensible terrain/creature management. It features a modular terrain system, biome painter, and token management for digital tabletop experiences.
 
+## AI & Contribution Guidance
+This repository is AI-assistant aware. Before large changes, read:
+- `copilot-instructions.md` (TL;DR + architecture & depth rules)
+- `CONTRIBUTING.md` (workflow & checklist)
+- `docs/AI_CODEBASE_MAP.json` & `docs/AI_DEP_GRAPH.mmd` (module inventory & dependencies)
+
+Key rules (summary):
+1. Layering: Lower layers must not import from `src/ui` (enforced by `npm run lint:layers`).
+2. Depth: Use `zIndex = (gridX + gridY) * 100 + bandOffset`; keep all tokens/placeables in the unified terrain container and call `sortChildren()` after changes.
+3. Structural changes: Update AI docs (code map / dep graph / glossary) in the same PR.
+4. Favor minimal, reversible diffs; reuse existing utilities (see `ai-index.json`).
+
+PRs should include the checklist in `.github/PULL_REQUEST_TEMPLATE.md`.
+
 # Quickstart
 ## Windows PowerShell
 ```powershell

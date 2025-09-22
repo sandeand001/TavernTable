@@ -1,6 +1,9 @@
 /* eslint-env node */
 /**
  * Layering enforcement script.
+ * Reference: See `copilot-instructions.md` (Architecture Boundaries section) for
+ * rationale and the import direction matrix. Extend rules there first before
+ * modifying this script to keep human + AI guidance in sync.
  *
  * Rule (current): Any file outside src/ui/ MAY NOT import anything inside src/ui/.
  * UI layer can import downward freely. This protects architectural boundary defined
