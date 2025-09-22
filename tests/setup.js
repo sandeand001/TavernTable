@@ -1,13 +1,74 @@
 // Jest setup file
 // Keep minimal to avoid side effects during cleanup passes.
+// Phase 2 (NFC): Timer registry installation for auto-clearing test timers.
+try {
+  // Local require (CommonJS) since jest.config.js uses CJS.
+  const { install, afterEachHook, afterAllHook } = require('./timerRegistry.js');
+  install();
+  afterEach(afterEachHook);
+  afterAll(afterAllHook);
+} catch (e) {
+  // Non-fatal; if registry fails we proceed without it.
+  // eslint-disable-next-line no-console
+  console.warn('[timer-registry] optional install failed:', e.message);
+}
+
+// Optional process listener diagnostics (env gated)
+try {
+  if (process.env.TEST_PROCESS_LISTENER_DIAGNOSTICS === '1') {
+    // eslint-disable-next-line global-require
+    const { installProcessListenerDiagnostics } = require('./processListenerDiagnostics.js');
+    installProcessListenerDiagnostics();
+  }
+} catch (e) {
+  // eslint-disable-next-line no-console
+  console.warn('[process-listeners] optional diagnostics failed:', e.message);
+}
 
 // Mock PIXI if not available in test environment
 if (typeof global.PIXI === 'undefined') {
   global.PIXI = {
-    Container: class { constructor() { this.children = []; this.visible = true; } addChild() { } addChildAt() { } removeChild() { } removeChildren() { this.children = []; } },
-  Graphics: class { constructor() { this.children = []; this.destroyed = false; } lineStyle() { } beginFill() { } endFill() { } moveTo() { } lineTo() { } closePath() { } addChild() { } destroy() { this.destroyed = true; } },
-  Texture: { from: () => ({}) },
-  Sprite: class { constructor(tex) { this.texture = tex; this.destroyed = false; this.x = 0; this.y = 0; this.zIndex = 0; } destroy() { this.destroyed = true; } }
+    Container: class {
+      constructor() {
+        this.children = [];
+        this.visible = true;
+      }
+      addChild() {}
+      addChildAt() {}
+      removeChild() {}
+      removeChildren() {
+        this.children = [];
+      }
+    },
+    Graphics: class {
+      constructor() {
+        this.children = [];
+        this.destroyed = false;
+      }
+      lineStyle() {}
+      beginFill() {}
+      endFill() {}
+      moveTo() {}
+      lineTo() {}
+      closePath() {}
+      addChild() {}
+      destroy() {
+        this.destroyed = true;
+      }
+    },
+    Texture: { from: () => ({}) },
+    Sprite: class {
+      constructor(tex) {
+        this.texture = tex;
+        this.destroyed = false;
+        this.x = 0;
+        this.y = 0;
+        this.zIndex = 0;
+      }
+      destroy() {
+        this.destroyed = true;
+      }
+    },
   };
 }
 
@@ -27,6 +88,6 @@ if (typeof global.Sanitizers === 'undefined') {
       if (Number.isFinite(min) && n < min) return min;
       if (Number.isFinite(max) && n > max) return max;
       return n;
-    }
+    },
   };
 }

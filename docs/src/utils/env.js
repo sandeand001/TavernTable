@@ -8,7 +8,12 @@
  */
 export function isJest() {
   try {
-    return !!(typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env && globalThis.process.env.JEST_WORKER_ID);
+    return !!(
+      typeof globalThis !== 'undefined' &&
+      globalThis.process &&
+      globalThis.process.env &&
+      globalThis.process.env.JEST_WORKER_ID
+    );
   } catch (_) {
     return false;
   }
@@ -19,7 +24,13 @@ export function isJest() {
  */
 export function getNodeEnv() {
   try {
-    return (typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env && globalThis.process.env.NODE_ENV) || 'development';
+    return (
+      (typeof globalThis !== 'undefined' &&
+        globalThis.process &&
+        globalThis.process.env &&
+        globalThis.process.env.NODE_ENV) ||
+      'development'
+    );
   } catch (_) {
     return 'development';
   }

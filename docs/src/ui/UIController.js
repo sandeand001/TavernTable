@@ -2,18 +2,18 @@ import { isJest } from '../utils/env.js';
 /**
  * UIController.js
  * Handles UI interactions and initialization for TavernTable
- * 
+ *
  * This module manages all user interface interactions that were previously
  * defined inline in the HTML. It provides clean separation between the
  * game logic and UI control, making the code more maintainable and testable.
- * 
+ *
  * Key Features:
  * - Collapsible panel management
- * - Grid resizing controls  
+ * - Grid resizing controls
  * - Zoom reset functionality
  * - Game initialization coordination
  * - Global function exposure for HTML compatibility
- * 
+ *
  * @module UIController
  * @version 1.0.0
  */
@@ -34,7 +34,7 @@ import {
   getSpriteAdjustLogEl,
   getCreaturePanelEls,
   getTerrainModeEls,
-  getAutoApplyButton
+  getAutoApplyButton,
 } from './domHelpers.js';
 import { getDiceButtons, getGridActionButtons, getSpriteAdjustButtons } from './domHelpers.js';
 import { rollDice } from '../systems/dice/dice.js';
@@ -63,13 +63,12 @@ function toggleCreatureTokens() {
     if (arrow) {
       arrow.textContent = isHidden ? '▼' : '▶';
     }
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'toggleCreatureTokens',
       stage: 'ui_toggle',
       elementIds: ['creature-content', 'creature-arrow'],
-      uiAction: 'panel_visibility_toggle'
+      uiAction: 'panel_visibility_toggle',
     });
   }
 }
@@ -104,31 +103,30 @@ function resizeGrid() {
     // Sanitize and validate input values
     const newWidth = Sanitizers.integer(widthInput.value, GRID_CONFIG.DEFAULT_COLS, {
       min: GRID_CONFIG.MIN_COLS,
-      max: GRID_CONFIG.MAX_COLS
+      max: GRID_CONFIG.MAX_COLS,
     });
 
     const newHeight = Sanitizers.integer(heightInput.value, GRID_CONFIG.DEFAULT_ROWS, {
       min: GRID_CONFIG.MIN_ROWS,
-      max: GRID_CONFIG.MAX_ROWS
+      max: GRID_CONFIG.MAX_ROWS,
     });
 
     // Perform grid resize
     window.gameManager.resizeGrid(newWidth, newHeight);
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'resizeGrid',
       stage: 'grid_resize_validation',
       inputValues: {
         width: getGridSizeInputs().widthInput?.value,
-        height: getGridSizeInputs().heightInput?.value
+        height: getGridSizeInputs().heightInput?.value,
       },
       constraints: {
         minWidth: GRID_CONFIG.MIN_COLS,
         maxWidth: GRID_CONFIG.MAX_COLS,
         minHeight: GRID_CONFIG.MIN_ROWS,
-        maxHeight: GRID_CONFIG.MAX_ROWS
-      }
+        maxHeight: GRID_CONFIG.MAX_ROWS,
+      },
     });
   }
 }
@@ -153,7 +151,7 @@ function resetZoom() {
       context: 'resetZoom',
       stage: 'zoom_reset_operation',
       gameManagerAvailable: !!window.gameManager,
-      resetZoomAvailable: !!(window.gameManager?.resetZoom)
+      resetZoomAvailable: !!window.gameManager?.resetZoom,
     });
   }
 }
@@ -188,14 +186,13 @@ function toggleTerrainMode() {
     logger.log(LOG_LEVEL.INFO, 'Terrain mode toggled', LOG_CATEGORY.USER, {
       context: 'toggleTerrainMode',
       terrainModeEnabled: isEnabled,
-      gameManagerAvailable: !!window.gameManager
+      gameManagerAvailable: !!window.gameManager,
     });
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'toggleTerrainMode',
       stage: 'terrain_mode_toggle',
-      gameManagerAvailable: !!window.gameManager
+      gameManagerAvailable: !!window.gameManager,
     });
   }
 }
@@ -210,7 +207,7 @@ function attachDynamicUIHandlers() {
 
     // Token buttons (data-token attribute or legacy id naming)
     const tokenButtons = getCreatureButtons();
-    tokenButtons.forEach(btn => {
+    tokenButtons.forEach((btn) => {
       if (btn.dataset.boundTokenHandler) return; // avoid duplicate
       const id = btn.id.replace('token-', '');
       btn.addEventListener('click', () => {
@@ -288,16 +285,22 @@ function attachDynamicUIHandlers() {
           elevSlider.value = String(current);
           updateDisplay(current);
         }
-      } catch { /* ignore getElevationScale failure */ }
+      } catch {
+        /* ignore getElevationScale failure */
+      }
       elevSlider.dataset.boundElevHandler = 'true';
     }
 
     // Ensure brush size label reflects current state on load
-    try { updateBrushSizeDisplay(); } catch (_) { /* non-fatal UI update */ }
+    try {
+      updateBrushSizeDisplay();
+    } catch (_) {
+      /* non-fatal UI update */
+    }
 
     // Dice buttons (top panel)
     const diceButtons = getDiceButtons();
-    diceButtons.forEach(btn => {
+    diceButtons.forEach((btn) => {
       if (btn.dataset.boundDiceHandler) return;
       btn.addEventListener('click', () => {
         const sides = parseInt(btn.getAttribute('data-sides'), 10);
@@ -327,24 +330,54 @@ function attachDynamicUIHandlers() {
     // Brush size controls
     const dec = document.getElementById('brush-decrease');
     const inc = document.getElementById('brush-increase');
-    if (dec && !dec.dataset.boundClick) { dec.addEventListener('click', decreaseBrushSize); dec.dataset.boundClick = 'true'; }
-    if (inc && !inc.dataset.boundClick) { inc.addEventListener('click', increaseBrushSize); inc.dataset.boundClick = 'true'; }
+    if (dec && !dec.dataset.boundClick) {
+      dec.addEventListener('click', decreaseBrushSize);
+      dec.dataset.boundClick = 'true';
+    }
+    if (inc && !inc.dataset.boundClick) {
+      inc.addEventListener('click', increaseBrushSize);
+      inc.dataset.boundClick = 'true';
+    }
 
     // Sprite adjust buttons
     const spr = getSpriteAdjustButtons();
-    if (spr.up && !spr.up.dataset.boundClick) { spr.up.addEventListener('click', () => nudgeSelectedSprite(0, -1)); spr.up.dataset.boundClick = 'true'; }
-    if (spr.down && !spr.down.dataset.boundClick) { spr.down.addEventListener('click', () => nudgeSelectedSprite(0, 1)); spr.down.dataset.boundClick = 'true'; }
-    if (spr.left && !spr.left.dataset.boundClick) { spr.left.addEventListener('click', () => nudgeSelectedSprite(-1, 0)); spr.left.dataset.boundClick = 'true'; }
-    if (spr.right && !spr.right.dataset.boundClick) { spr.right.addEventListener('click', () => nudgeSelectedSprite(1, 0)); spr.right.dataset.boundClick = 'true'; }
-    if (spr.center && !spr.center.dataset.boundClick) { spr.center.addEventListener('click', captureSpriteBaseline); spr.center.dataset.boundClick = 'true'; }
-    if (spr.save && !spr.save.dataset.boundClick) { spr.save.addEventListener('click', saveSpriteOffset); spr.save.dataset.boundClick = 'true'; }
-    if (spr.reset && !spr.reset.dataset.boundClick) { spr.reset.addEventListener('click', resetSpriteOffset); spr.reset.dataset.boundClick = 'true'; }
-    if (spr.auto && !spr.auto.dataset.boundClick) { spr.auto.addEventListener('click', toggleAutoApplyOffsets); spr.auto.dataset.boundClick = 'true'; }
+    if (spr.up && !spr.up.dataset.boundClick) {
+      spr.up.addEventListener('click', () => nudgeSelectedSprite(0, -1));
+      spr.up.dataset.boundClick = 'true';
+    }
+    if (spr.down && !spr.down.dataset.boundClick) {
+      spr.down.addEventListener('click', () => nudgeSelectedSprite(0, 1));
+      spr.down.dataset.boundClick = 'true';
+    }
+    if (spr.left && !spr.left.dataset.boundClick) {
+      spr.left.addEventListener('click', () => nudgeSelectedSprite(-1, 0));
+      spr.left.dataset.boundClick = 'true';
+    }
+    if (spr.right && !spr.right.dataset.boundClick) {
+      spr.right.addEventListener('click', () => nudgeSelectedSprite(1, 0));
+      spr.right.dataset.boundClick = 'true';
+    }
+    if (spr.center && !spr.center.dataset.boundClick) {
+      spr.center.addEventListener('click', captureSpriteBaseline);
+      spr.center.dataset.boundClick = 'true';
+    }
+    if (spr.save && !spr.save.dataset.boundClick) {
+      spr.save.addEventListener('click', saveSpriteOffset);
+      spr.save.dataset.boundClick = 'true';
+    }
+    if (spr.reset && !spr.reset.dataset.boundClick) {
+      spr.reset.addEventListener('click', resetSpriteOffset);
+      spr.reset.dataset.boundClick = 'true';
+    }
+    if (spr.auto && !spr.auto.dataset.boundClick) {
+      spr.auto.addEventListener('click', toggleAutoApplyOffsets);
+      spr.auto.dataset.boundClick = 'true';
+    }
 
     logger.debug('Dynamic UI handlers attached');
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
-      context: 'attachDynamicUIHandlers'
+      context: 'attachDynamicUIHandlers',
     });
   }
 }
@@ -407,15 +440,14 @@ function setTerrainTool(tool) {
     logger.log(LOG_LEVEL.DEBUG, 'Terrain tool selected', LOG_CATEGORY.USER, {
       context: 'setTerrainTool',
       selectedTool: tool,
-      uiUpdated: !!(raiseBtn && lowerBtn)
+      uiUpdated: !!(raiseBtn && lowerBtn),
     });
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'setTerrainTool',
       stage: 'terrain_tool_selection',
       requestedTool: tool,
-      gameManagerAvailable: !!window.gameManager
+      gameManagerAvailable: !!window.gameManager,
     });
   }
 }
@@ -434,12 +466,11 @@ function increaseBrushSize() {
 
     // Update UI display
     updateBrushSizeDisplay();
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'increaseBrushSize',
       stage: 'brush_size_increase',
-      terrainCoordinatorAvailable: !!(window.gameManager?.terrainCoordinator)
+      terrainCoordinatorAvailable: !!window.gameManager?.terrainCoordinator,
     });
   }
 }
@@ -458,12 +489,11 @@ function decreaseBrushSize() {
 
     // Update UI display
     updateBrushSizeDisplay();
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'decreaseBrushSize',
       stage: 'brush_size_decrease',
-      terrainCoordinatorAvailable: !!(window.gameManager?.terrainCoordinator)
+      terrainCoordinatorAvailable: !!window.gameManager?.terrainCoordinator,
     });
   }
 }
@@ -482,11 +512,14 @@ function updateBrushSizeDisplay() {
       const brushSize = window.gameManager.terrainCoordinator.brushSize;
       brushDisplay.textContent = `${brushSize}x${brushSize}`;
     }
-
   } catch (error) {
-    logger.debug('Failed to update brush size display', {
-      error: error.message
-    }, LOG_CATEGORY.UI);
+    logger.debug(
+      'Failed to update brush size display',
+      {
+        error: error.message,
+      },
+      LOG_CATEGORY.UI
+    );
   }
 }
 
@@ -500,20 +533,23 @@ function resetTerrain() {
     }
 
     // Confirm with user before resetting
-    if (confirm('Are you sure you want to reset all terrain to default height? This action cannot be undone.')) {
+    if (
+      confirm(
+        'Are you sure you want to reset all terrain to default height? This action cannot be undone.'
+      )
+    ) {
       window.gameManager.resetTerrain();
 
       logger.log(LOG_LEVEL.INFO, 'Terrain reset by user', LOG_CATEGORY.USER, {
         context: 'resetTerrain',
-        stage: 'terrain_reset_complete'
+        stage: 'terrain_reset_complete',
       });
     }
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'resetTerrain',
       stage: 'terrain_reset',
-      gameManagerAvailable: !!window.gameManager
+      gameManagerAvailable: !!window.gameManager,
     });
   }
 }
@@ -531,14 +567,13 @@ async function initializeApplication() {
 
     // Initialize the game manager
     await window.gameManager.initialize();
-
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
       context: 'initializeApplication',
       stage: 'application_startup',
       timestamp: new Date().toISOString(),
       gameManagerAvailable: !!window.gameManager,
-      initializationFailed: true
+      initializationFailed: true,
     });
   }
 }
@@ -557,7 +592,7 @@ function createGameManager() {
       context: 'createGameManager',
       stage: 'game_manager_instantiation',
       errorType: error.constructor.name,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
     throw error;
   }
@@ -569,7 +604,7 @@ const gameManager = createGameManager();
 logger.log(LOG_LEVEL.DEBUG, 'GameManager created successfully', LOG_CATEGORY.SYSTEM, {
   gameManagerType: gameManager.constructor.name,
   globallyAvailable: !!window.gameManager,
-  timestamp: new Date().toISOString()
+  timestamp: new Date().toISOString(),
 });
 
 // No global UI function exposure needed; events are wired via modules
@@ -581,7 +616,7 @@ const spriteAdjustState = {
   totalOffset: { x: 0, y: 0 },
   appliedElevationOffset: 0,
   initialPlacementLogged: false,
-  lastSpriteId: null
+  lastSpriteId: null,
 };
 
 function getSelectedCreatureSprite() {
@@ -589,7 +624,7 @@ function getSelectedCreatureSprite() {
   const tokens = window.gameManager.placedTokens;
   if (!tokens || tokens.length === 0) return null;
   const selectedType = window.gameManager.selectedTokenType;
-  let candidate = [...tokens].reverse().find(t => t.type === selectedType);
+  let candidate = [...tokens].reverse().find((t) => t.type === selectedType);
   if (!candidate) candidate = tokens[tokens.length - 1];
   if (candidate && candidate.creature && candidate.creature.sprite) {
     const sprite = candidate.creature.sprite;
@@ -649,8 +684,12 @@ function getSpriteElevation(sprite) {
   try {
     if (!sprite || !sprite._gridRef || !window.gameManager) return 0;
     const { gridX, gridY } = sprite._gridRef;
-    return window.gameManager.getTerrainHeight ? window.gameManager.getTerrainHeight(gridX, gridY) : 0;
-  } catch { return 0; }
+    return window.gameManager.getTerrainHeight
+      ? window.gameManager.getTerrainHeight(gridX, gridY)
+      : 0;
+  } catch {
+    return 0;
+  }
 }
 
 //
@@ -661,10 +700,12 @@ function getSpriteElevation(sprite) {
 function applyElevationOffsetsToTokens() {
   if (!window.gameManager) return;
   const tokens = window.gameManager.placedTokens || [];
-  tokens.forEach(t => {
+  tokens.forEach((t) => {
     const sprite = t.creature?.sprite;
     if (!sprite) return;
-    const elev = window.gameManager.getTerrainHeight ? window.gameManager.getTerrainHeight(t.gridX, t.gridY) : 0;
+    const elev = window.gameManager.getTerrainHeight
+      ? window.gameManager.getTerrainHeight(t.gridX, t.gridY)
+      : 0;
     const offset = computeElevationVisualOffset(elev);
     // Only adjust Y to avoid lateral drift
     sprite.y = sprite.y + offset;
@@ -750,7 +791,9 @@ function installSpriteOffsetAutoApplyHook() {
   if (!window.gameManager || !window.gameManager.tokenManager) return;
   const tm = window.gameManager.tokenManager;
   // Heuristic: wrap a common placement method if it exists
-  const candidateFnName = ['placeToken', 'finalizeTokenPlacement', 'addPlacedToken'].find(n => typeof tm[n] === 'function');
+  const candidateFnName = ['placeToken', 'finalizeTokenPlacement', 'addPlacedToken'].find(
+    (n) => typeof tm[n] === 'function'
+  );
   if (!candidateFnName) return;
   const original = tm[candidateFnName];
   if (original._wrappedForAutoApply) return; // already wrapped
@@ -768,7 +811,9 @@ function installSpriteOffsetAutoApplyHook() {
         const sprite = token?.creature?.sprite;
         if (sprite) applySavedOffsetToSprite(sprite, true);
       }
-    } catch (_) { /* ignore auto-apply errors */ }
+    } catch (_) {
+      /* ignore auto-apply errors */
+    }
     return result;
   };
   tm[candidateFnName]._wrappedForAutoApply = true;
@@ -786,7 +831,11 @@ const __isJest = isJest();
 const __retryLimit = __isJest ? 3 : Infinity;
 let __retryCount = 0;
 const __first = setTimeout(function retryHook() {
-  try { installSpriteOffsetAutoApplyHook(); } catch (_) { /* ignore install errors */ }
+  try {
+    installSpriteOffsetAutoApplyHook();
+  } catch (_) {
+    /* ignore install errors */
+  }
   if (!spriteAdjustState._autoApplyHookInstalled && __retryCount < __retryLimit) {
     __retryCount++;
     const t = setTimeout(retryHook, 800);
@@ -795,10 +844,9 @@ const __first = setTimeout(function retryHook() {
 }, 800);
 if (typeof __first?.unref === 'function') __first.unref();
 
-
 logger.log(LOG_LEVEL.DEBUG, 'UI functions exposed globally', LOG_CATEGORY.SYSTEM, {
   exposedFunctions: [],
-  compatibilityMode: 'module_event_listeners'
+  compatibilityMode: 'module_event_listeners',
 });
 
 // Signal that UI modules are loaded (for debugging module loading issues)
@@ -818,5 +866,5 @@ export {
   increaseBrushSize,
   decreaseBrushSize,
   resetTerrain,
-  initializeApplication
+  initializeApplication,
 };

@@ -1,12 +1,38 @@
 import { GameValidators } from '../../../utils/Validation.js';
-import { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } from '../../../ui/domHelpers.js';
+
+// UI decoupling: DOM access now routed through c.domPorts (injected by UI layer) with fallbacks.
+function getPorts(c) {
+  const dp = (c && c.domPorts) || {};
+  const fallback = {
+    getCreatureButtons: () => {
+      if (typeof document === 'undefined') return [];
+      return Array.from(document.querySelectorAll('[data-creature]'));
+    },
+    getTokenButtonByType: (type) => {
+      if (typeof document === 'undefined') return null;
+      return document.querySelector(`[data-creature="${type}"]`);
+    },
+    getTokenInfoEl: () =>
+      typeof document !== 'undefined' ? document.querySelector('[data-token-info]') : null,
+  };
+  return {
+    getCreatureButtons: dp.getCreatureButtons || fallback.getCreatureButtons,
+    getTokenButtonByType: dp.getTokenButtonByType || fallback.getTokenButtonByType,
+    getTokenInfoEl: dp.getTokenInfoEl || fallback.getTokenInfoEl,
+  };
+}
 
 export function findExistingTokenAt(c, gridX, gridY) {
-  return c.placedTokens.find(token => {
-    const diffX = Math.abs(token.gridX - gridX);
-    const diffY = Math.abs(token.gridY - gridY);
-    return diffX <= 1 && diffY <= 1 && (diffX + diffY) <= 1;
-  });
+  // Previously this matched tokens in adjacent cells which caused
+  // accidental removals/moves when clicking nearby tiles. Only return
+  // a token if it exactly occupies the requested grid cell.
+  return c.placedTokens.find(
+    (token) =>
+      Number.isFinite(token.gridX) &&
+      Number.isFinite(token.gridY) &&
+      token.gridX === gridX &&
+      token.gridY === gridY
+  );
 }
 
 export function selectToken(c, tokenType) {
@@ -19,7 +45,8 @@ export function selectToken(c, tokenType) {
   }
 
   // Update UI selection
-  getCreatureButtons().forEach(btn => {
+  const { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } = getPorts(c);
+  getCreatureButtons().forEach((btn) => {
     btn.classList.remove('selected');
     btn.setAttribute('aria-pressed', 'false');
   });
@@ -39,6 +66,9 @@ export function selectToken(c, tokenType) {
   }
   const infoEl = getTokenInfoEl();
   if (infoEl) {
-    infoEl.textContent = tokenType === 'remove' ? 'Click on tokens to remove them' : `Click on grid to place ${tokenType}`;
+    infoEl.textContent =
+      tokenType === 'remove'
+        ? 'Click on tokens to remove them'
+        : `Click on grid to place ${tokenType}`;
   }
 }

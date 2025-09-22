@@ -1,9 +1,13 @@
-import { getFacingButton } from '../../../ui/domHelpers.js';
+// UI decoupling: docs mirror. Retrieve facing button via injected domPorts with fallback id lookup.
+function getFacingButtonPort(c) {
+  if (c?.domPorts?.getFacingButton) return c.domPorts.getFacingButton();
+  if (typeof document === 'undefined') return null;
+  return document.getElementById('facing-right');
+}
 export function toggleFacing(c) {
+  if (typeof c.tokenFacingRight !== 'boolean') c.tokenFacingRight = true;
   c.tokenFacingRight = !c.tokenFacingRight;
-
-  const facingBtn = getFacingButton();
-  if (facingBtn) {
-    facingBtn.textContent = c.tokenFacingRight ? '➡️ Right' : '⬅️ Left';
-  }
+  const btn = getFacingButtonPort(c);
+  if (btn) btn.textContent = c.tokenFacingRight ? '➡️ Right' : '⬅️ Left';
+  return c.tokenFacingRight;
 }

@@ -1,6 +1,6 @@
 /**
  * RenderCoordinator.js - Manages PIXI rendering setup and viewport operations
- * 
+ *
  * Extracted from GameManager to follow single responsibility principle
  * Handles PIXI application lifecycle, grid positioning, and zoom management
  */
@@ -10,7 +10,12 @@ import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { getGameContainer } from '../ui/domHelpers.js';
+// Decoupled from ui/domHelpers: allow injection via gameManager.domPorts.getGameContainer
+function _getGameContainer(gameManager) {
+  if (gameManager?.domPorts?.getGameContainer) return gameManager.domPorts.getGameContainer();
+  if (typeof document === 'undefined') return null;
+  return document.getElementById('game-container');
+}
 
 export class RenderCoordinator {
   constructor(gameManager) {
@@ -32,7 +37,7 @@ export class RenderCoordinator {
       this.gameManager.app = new PIXI.Application({
         width: window.innerWidth,
         height: window.innerHeight,
-        backgroundColor: GRID_CONFIG.BACKGROUND_COLOR
+        backgroundColor: GRID_CONFIG.BACKGROUND_COLOR,
       });
 
       // Validate application creation
@@ -42,10 +47,12 @@ export class RenderCoordinator {
       }
 
       // Find and validate game container
-      const gameContainer = getGameContainer();
+      const gameContainer = _getGameContainer(this.gameManager);
       const containerValidation = GameValidators.domElement(gameContainer, 'div');
       if (!containerValidation.isValid) {
-        throw new Error(`Game container validation failed: ${containerValidation.errors.join(', ')}`);
+        throw new Error(
+          `Game container validation failed: ${containerValidation.errors.join(', ')}`
+        );
       }
 
       // Attach canvas to container (PIXI 7 compatibility)
@@ -67,19 +74,19 @@ export class RenderCoordinator {
         stage: 'pixi_initialization_complete',
         appDimensions: {
           width: this.gameManager.app.screen.width,
-          height: this.gameManager.app.screen.height
+          height: this.gameManager.app.screen.height,
         },
         renderer: this.gameManager.app.renderer.type,
-        globallyAvailable: !!window.app
+        globallyAvailable: !!window.app,
       });
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
         context: 'RenderCoordinator.createPixiApp',
         stage: 'pixi_application_creation',
         pixiAvailable: typeof PIXI !== 'undefined',
-        containerExists: !!getGameContainer(),
+        containerExists: !!_getGameContainer(this.gameManager),
         gameManagerState: !!this.gameManager,
-        errorType: error.constructor.name
+        errorType: error.constructor.name,
       });
       throw error;
     }
@@ -95,16 +102,22 @@ export class RenderCoordinator {
     }
 
     // Calculate the actual grid size in pixels
-    const gridWidthPixels = (this.gameManager.cols * this.gameManager.tileWidth / 2) * this.gameManager.gridScale;
-    const gridHeightPixels = (this.gameManager.rows * this.gameManager.tileHeight / 2) * this.gameManager.gridScale;
+    const gridWidthPixels =
+      ((this.gameManager.cols * this.gameManager.tileWidth) / 2) * this.gameManager.gridScale;
+    const gridHeightPixels =
+      ((this.gameManager.rows * this.gameManager.tileHeight) / 2) * this.gameManager.gridScale;
 
     // Center the grid based on current screen size and grid dimensions
-    this.gameManager.gridContainer.x = (this.gameManager.app.screen.width / 2) - (gridWidthPixels / 2);
-    this.gameManager.gridContainer.y = (this.gameManager.app.screen.height / 2) - (gridHeightPixels / 2);
+    this.gameManager.gridContainer.x = this.gameManager.app.screen.width / 2 - gridWidthPixels / 2;
+    this.gameManager.gridContainer.y =
+      this.gameManager.app.screen.height / 2 - gridHeightPixels / 2;
 
     // Ensure minimum margins from screen edges
     const minMargin = 50;
-    this.gameManager.gridContainer.x = Math.max(minMargin - gridWidthPixels / 2, this.gameManager.gridContainer.x);
+    this.gameManager.gridContainer.x = Math.max(
+      minMargin - gridWidthPixels / 2,
+      this.gameManager.gridContainer.x
+    );
     this.gameManager.gridContainer.y = Math.max(minMargin, this.gameManager.gridContainer.y);
   }
 
@@ -128,7 +141,7 @@ export class RenderCoordinator {
       return;
     }
 
-    this.gameManager.placedTokens.forEach(tokenData => {
+    this.gameManager.placedTokens.forEach((tokenData) => {
       if (tokenData.creature && tokenData.creature.sprite) {
         const sprite = tokenData.creature.sprite;
 
@@ -144,7 +157,12 @@ export class RenderCoordinator {
         const fp = tokenData.footprint || { w: 1, h: 1 };
         const centerGX = tokenData.gridX + (fp.w - 1) / 2;
         const centerGY = tokenData.gridY + (fp.h - 1) / 2;
-        const iso = CoordinateUtils.gridToIsometric(centerGX, centerGY, this.gameManager.tileWidth, this.gameManager.tileHeight);
+        const iso = CoordinateUtils.gridToIsometric(
+          centerGX,
+          centerGY,
+          this.gameManager.tileWidth,
+          this.gameManager.tileHeight
+        );
         sprite.x = iso.x;
         sprite.y = iso.y;
       }
@@ -172,10 +190,10 @@ export class RenderCoordinator {
         stage: 'viewport_resize_complete',
         newDimensions: {
           width: window.innerWidth,
-          height: window.innerHeight
+          height: window.innerHeight,
         },
         gridRecentered: true,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
@@ -183,11 +201,11 @@ export class RenderCoordinator {
         stage: 'viewport_resize',
         targetDimensions: {
           width: window.innerWidth,
-          height: window.innerHeight
+          height: window.innerHeight,
         },
-        pixiAppAvailable: !!(this.gameManager.app),
-        rendererAvailable: !!(this.gameManager.app?.renderer),
-        gridCenteringAttempted: true
+        pixiAppAvailable: !!this.gameManager.app,
+        rendererAvailable: !!this.gameManager.app?.renderer,
+        gridCenteringAttempted: true,
       });
     }
   }
@@ -208,7 +226,7 @@ export class RenderCoordinator {
       gridY: this.gameManager.gridContainer.y,
       gridScale: this.gameManager.gridScale,
       cols: this.gameManager.cols,
-      rows: this.gameManager.rows
+      rows: this.gameManager.rows,
     };
   }
 }

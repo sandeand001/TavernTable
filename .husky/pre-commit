@@ -1,1 +1,7 @@
-npx --no-install lint-staged
+echo "[pre-commit] Architecture layering check" && \
+npm run lint:layers || exit 1
+
+echo "[pre-commit] Lint staged sources" && \
+npx lint-staged || exit 1
+
+echo "[pre-commit] All checks passed"

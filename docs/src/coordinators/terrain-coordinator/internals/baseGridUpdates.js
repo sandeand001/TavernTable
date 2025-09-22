@@ -12,7 +12,7 @@ export function updateBaseGridTileInPlace(c, x, y, height) {
     // Find existing base grid tile at this position
     let existingTile = null;
     const children = c.gameManager.gridContainer?.children || [];
-    children.forEach(child => {
+    children.forEach((child) => {
       if (child?.isGridTile && child.gridX === x && child.gridY === y) {
         existingTile = child;
       }
@@ -28,17 +28,29 @@ export function updateBaseGridTileInPlace(c, x, y, height) {
     }
 
     // If there is an existing shadow from a previous non-default height, remove it
-    if (existingTile.shadowTile && existingTile.parent?.children?.includes(existingTile.shadowTile)) {
+    if (
+      existingTile.shadowTile &&
+      existingTile.parent?.children?.includes(existingTile.shadowTile)
+    ) {
       existingTile.parent.removeChild(existingTile.shadowTile);
-      if (typeof existingTile.shadowTile.destroy === 'function' && !existingTile.shadowTile.destroyed) {
+      if (
+        typeof existingTile.shadowTile.destroy === 'function' &&
+        !existingTile.shadowTile.destroyed
+      ) {
         existingTile.shadowTile.destroy();
       }
       existingTile.shadowTile = null;
     }
     // Remove any existing base 3D faces
-    if (existingTile.baseSideFaces && existingTile.parent?.children?.includes(existingTile.baseSideFaces)) {
+    if (
+      existingTile.baseSideFaces &&
+      existingTile.parent?.children?.includes(existingTile.baseSideFaces)
+    ) {
       existingTile.parent.removeChild(existingTile.baseSideFaces);
-      if (typeof existingTile.baseSideFaces.destroy === 'function' && !existingTile.baseSideFaces.destroyed) {
+      if (
+        typeof existingTile.baseSideFaces.destroy === 'function' &&
+        !existingTile.baseSideFaces.destroyed
+      ) {
         existingTile.baseSideFaces.destroy();
       }
       existingTile.baseSideFaces = null;
@@ -76,12 +88,16 @@ export function updateBaseGridTileInPlace(c, x, y, height) {
 
     return true; // Successfully updated in-place
   } catch (error) {
-    logger.debug('In-place tile update failed, will use replacement', {
-      context: 'TerrainCoordinator.updateBaseGridTileInPlace',
-      coordinates: { x, y },
-      height,
-      error: error.message
-    }, LOG_CATEGORY.RENDERING);
+    logger.debug(
+      'In-place tile update failed, will use replacement',
+      {
+        context: 'TerrainCoordinator.updateBaseGridTileInPlace',
+        coordinates: { x, y },
+        height,
+        error: error.message,
+      },
+      LOG_CATEGORY.RENDERING
+    );
     return false; // Update failed, caller should use replacement
   }
 }

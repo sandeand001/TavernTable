@@ -1,6 +1,6 @@
 /**
  * InteractionManager.js - Manages user interactions with the grid
- * 
+ *
  * Extracted from GameManager to follow single responsibility principle
  * Handles all user input interactions including mouse, keyboard, and zoom
  */
@@ -9,9 +9,20 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-import { isPointInCellDiamond as _isPointInCellDiamond, pickTopmostGridCellAt as _pickTopmost } from './interaction-manager/internals/picking.js';
-import { startGridDragging as _startDrag, updateGridDragPosition as _updateDrag, stopGridDragging as _stopDrag } from './interaction-manager/internals/pan.js';
-import { handleZoomWheel as _handleZoomWheel, applyZoom as _applyZoom, resetZoom as _resetZoom } from './interaction-manager/internals/zoom.js';
+import {
+  isPointInCellDiamond as _isPointInCellDiamond,
+  pickTopmostGridCellAt as _pickTopmost,
+} from './interaction-manager/internals/picking.js';
+import {
+  startGridDragging as _startDrag,
+  updateGridDragPosition as _updateDrag,
+  stopGridDragging as _stopDrag,
+} from './interaction-manager/internals/pan.js';
+import {
+  handleZoomWheel as _handleZoomWheel,
+  applyZoom as _applyZoom,
+  resetZoom as _resetZoom,
+} from './interaction-manager/internals/zoom.js';
 
 export class InteractionManager {
   constructor(gameManager) {
@@ -66,7 +77,8 @@ export class InteractionManager {
    */
   setupMouseDown() {
     this.gameManager.app.view.addEventListener('mousedown', (event) => {
-      if (event.button === 0) { // Left mouse button
+      if (event.button === 0) {
+        // Left mouse button
         if (this.isSpacePressed) {
           // Space + left click = panning
           this.startGridDragging(event);
@@ -207,8 +219,11 @@ export class InteractionManager {
       // Check if terrain mode is active - if so, ignore token placement
       if (this.gameManager.isTerrainModeActive()) {
         // Terrain mode is active, token placement is disabled
-        logger.log('Token placement disabled while terrain mode is active',
-          LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION);
+        logger.log(
+          'Token placement disabled while terrain mode is active',
+          LOG_LEVEL.INFO,
+          LOG_CATEGORY.INTERACTION
+        );
 
         // Provide visual feedback through cursor change or similar
         this.gameManager.app.view.style.cursor = 'not-allowed';
@@ -228,7 +243,7 @@ export class InteractionManager {
           ERROR_SEVERITY.INFO,
           ERROR_CATEGORY.VALIDATION,
           {
-            event: { x: event.clientX, y: event.clientY }
+            event: { x: event.clientX, y: event.clientY },
           }
         );
         return;
@@ -240,7 +255,7 @@ export class InteractionManager {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
         stage: 'handleLeftClick',
-        event: { button: event.button, x: event.clientX, y: event.clientY }
+        event: { button: event.button, x: event.clientX, y: event.clientY },
       });
     }
   }
@@ -269,7 +284,7 @@ export class InteractionManager {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
         context: 'getGridCoordinatesFromClick',
         stage: 'coordinate_conversion',
-        event: event ? { x: event.clientX, y: event.clientY } : null
+        event: event ? { x: event.clientX, y: event.clientY } : null,
       });
       return null;
     }
@@ -300,7 +315,7 @@ export class InteractionManager {
     const rect = this.gameManager.app.view.getBoundingClientRect();
     return {
       mouseX: event.clientX - rect.left,
-      mouseY: event.clientY - rect.top
+      mouseY: event.clientY - rect.top,
     };
   }
 
@@ -315,7 +330,7 @@ export class InteractionManager {
 
     return {
       localX: gridRelativeX / this.gridScale,
-      localY: gridRelativeY / this.gridScale
+      localY: gridRelativeY / this.gridScale,
     };
   }
 
@@ -335,7 +350,10 @@ export class InteractionManager {
 
     // Elevation-aware refinement: adjust Y by inverse elevation offset of candidate cell
     try {
-      const height = this.gameManager?.terrainCoordinator?.dataStore?.get(gridCoords.gridX, gridCoords.gridY);
+      const height = this.gameManager?.terrainCoordinator?.dataStore?.get(
+        gridCoords.gridX,
+        gridCoords.gridY
+      );
       if (Number.isFinite(height) && height !== 0) {
         const elevOffset = TerrainHeightUtils.calculateElevationOffset(height);
         if (elevOffset !== 0) {
@@ -348,7 +366,9 @@ export class InteractionManager {
           gridCoords = refined;
         }
       }
-    } catch (_) { /* graceful fallback if terrain not initialized */ }
+    } catch (_) {
+      /* graceful fallback if terrain not initialized */
+    }
 
     return gridCoords;
   }
@@ -360,7 +380,12 @@ export class InteractionManager {
    */
   isValidGridPosition({ gridX, gridY }) {
     // Consolidated validation: coordinates must be integers within grid bounds
-    return CoordinateUtils.isValidGridPosition(gridX, gridY, this.gameManager.cols, this.gameManager.rows);
+    return CoordinateUtils.isValidGridPosition(
+      gridX,
+      gridY,
+      this.gameManager.cols,
+      this.gameManager.rows
+    );
   }
 
   // Getters for backward compatibility

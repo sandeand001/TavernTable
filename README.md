@@ -61,6 +61,7 @@ Taverntable/
 | Lint     | npm run lint                              | npm run lint                  |
 | Test     | npm test                                  | npm test                      |
 | Lint Fix | npm run lint:fix                          | npm run lint:fix              |
+ 
 
 # Configuration & Environment Variables
 <!-- @updatable:env_vars -->
@@ -128,6 +129,9 @@ Recent changes (from git log):
 - Step 6: remove global UI/dice exposures; migrate to module-only event wiring; clean dev helpers; fix linting; update HTML wiring and tests; add env helpers and tests
 - test(validation): add TerrainValidation boundary tests and TerrainCoordinator validation wrapper tests; suites green
 - test(terrain/ui): add smoke tests for TerrainCoordinator public surface and elevation slider UI; all tests passing
+ 
+
+<!-- Forest billboard generation feature removed: scripts and assets no longer present. -->
 <!-- /@updatable:release_notes -->
 
 # License

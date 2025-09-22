@@ -32,8 +32,8 @@ export function handleTerrainModeActivationError(c, error) {
     terrainContainerDestroyed: c.terrainManager?.terrainContainer?.destroyed,
     dataStructures: {
       terrainHeights: !!c.dataStore?.working,
-      baseTerrainHeights: !!c.dataStore?.base
-    }
+      baseTerrainHeights: !!c.dataStore?.base,
+    },
   };
 
   GameErrors.gameState(error, errorContext);

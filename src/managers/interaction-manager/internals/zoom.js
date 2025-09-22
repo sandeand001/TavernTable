@@ -7,7 +7,7 @@ export function handleZoomWheel(c, event) {
   const mouseY = event.clientY - rect.top;
 
   const zoomDirection = event.deltaY > 0 ? -1 : 1;
-  const zoomFactor = 1 + (c.zoomSpeed * zoomDirection);
+  const zoomFactor = 1 + c.zoomSpeed * zoomDirection;
   const newScale = c.gridScale * zoomFactor;
 
   if (newScale < c.minScale || newScale > c.maxScale) {
@@ -22,7 +22,7 @@ export function handleZoomWheel(c, event) {
     newScale: c.gridScale,
     zoomPercentage: `${(c.gridScale * 100).toFixed(0)}%`,
     mousePosition: { x: mouseX, y: mouseY },
-    bounds: { min: c.minScale, max: c.maxScale }
+    bounds: { min: c.minScale, max: c.maxScale },
   });
 }
 
@@ -42,13 +42,17 @@ export function resetZoom(c) {
     c.gridScale = 1.0;
     c.gameManager.gridContainer.scale.set(c.gridScale);
     c.gameManager.centerGrid();
-    logger.debug('Grid zoom reset to default', {
-      newScale: c.gridScale
-    }, LOG_CATEGORY.USER);
+    logger.debug(
+      'Grid zoom reset to default',
+      {
+        newScale: c.gridScale,
+      },
+      LOG_CATEGORY.USER
+    );
   } catch (error) {
     const errorHandler = new ErrorHandler();
     errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.RENDERING, {
-      stage: 'resetZoom'
+      stage: 'resetZoom',
     });
   }
 }

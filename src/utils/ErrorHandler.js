@@ -1,17 +1,18 @@
+/* eslint-disable indent */
 /**
  * ErrorHandler.js - Focused Error Management System for TavernTable
- * 
+ *
  * Pure error handling system focused on error processing, user notifications,
  * recovery strategies, and telemetry. All logging functionality moved to Logger.js
  * for proper separation of concerns.
- * 
+ *
  * Features:
  * - Error processing and categorization
  * - User-friendly notification system
  * - Error recovery and retry mechanisms
  * - Telemetry collection for production debugging
  * - Integration with Logger for structured logging
- * 
+ *
  * @author TavernTable Development Team
  * @version 2.1.0
  */
@@ -143,7 +144,7 @@ export class ErrorEntry {
       url: this.url,
       sessionId: this.sessionId,
       retryCount: this.retryCount,
-      resolved: this.resolved
+      resolved: this.resolved,
     };
   }
 }
@@ -181,14 +182,14 @@ export class ErrorHandler {
         this.handle(event.error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.SYSTEM, {
           filename: event.filename,
           lineno: event.lineno,
-          colno: event.colno
+          colno: event.colno,
         });
       });
 
       window.addEventListener('unhandledrejection', (event) => {
         this.handle(event.reason, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.SYSTEM, {
           type: 'unhandled_promise_rejection',
-          promise: event.promise
+          promise: event.promise,
         });
       });
     }
@@ -205,7 +206,13 @@ export class ErrorHandler {
    * @param {string} recoveryStrategy - Recovery strategy to apply
    * @returns {string} Error ID for tracking
    */
-  handle(error, severity = ERROR_SEVERITY.ERROR, category = ERROR_CATEGORY.SYSTEM, context = {}, recoveryStrategy = RECOVERY_STRATEGY.NONE) {
+  handle(
+    error,
+    severity = ERROR_SEVERITY.ERROR,
+    category = ERROR_CATEGORY.SYSTEM,
+    context = {},
+    recoveryStrategy = RECOVERY_STRATEGY.NONE
+  ) {
     try {
       // Create structured error entry
       const errorEntry = new ErrorEntry(error, severity, category, context);
@@ -222,7 +229,7 @@ export class ErrorHandler {
         stack: errorEntry.stack,
         userAgent: errorEntry.userAgent,
         url: errorEntry.url,
-        sessionId: errorEntry.sessionId
+        sessionId: errorEntry.sessionId,
       });
 
       // User notification
@@ -261,18 +268,18 @@ export class ErrorHandler {
    */
   mapSeverityToLogLevel(severity) {
     switch (severity) {
-    case ERROR_SEVERITY.DEBUG:
-      return LOG_LEVEL.DEBUG;
-    case ERROR_SEVERITY.INFO:
-      return LOG_LEVEL.INFO;
-    case ERROR_SEVERITY.WARNING:
-      return LOG_LEVEL.WARN;
-    case ERROR_SEVERITY.ERROR:
-      return LOG_LEVEL.ERROR;
-    case ERROR_SEVERITY.CRITICAL:
-      return LOG_LEVEL.FATAL;
-    default:
-      return LOG_LEVEL.INFO;
+      case ERROR_SEVERITY.DEBUG:
+        return LOG_LEVEL.DEBUG;
+      case ERROR_SEVERITY.INFO:
+        return LOG_LEVEL.INFO;
+      case ERROR_SEVERITY.WARNING:
+        return LOG_LEVEL.WARN;
+      case ERROR_SEVERITY.ERROR:
+        return LOG_LEVEL.ERROR;
+      case ERROR_SEVERITY.CRITICAL:
+        return LOG_LEVEL.FATAL;
+      default:
+        return LOG_LEVEL.INFO;
     }
   }
 
@@ -294,21 +301,21 @@ export class ErrorHandler {
 
   applyRecoveryStrategy(errorEntry, strategy) {
     switch (strategy) {
-    case RECOVERY_STRATEGY.RETRY:
-      this.scheduleRetry(errorEntry);
-      break;
-    case RECOVERY_STRATEGY.FALLBACK:
-      this.executeFallback(errorEntry);
-      break;
-    case RECOVERY_STRATEGY.RESET:
-      this.executeReset(errorEntry);
-      break;
-    case RECOVERY_STRATEGY.GRACEFUL_DEGRADATION:
-      this.executeGracefulDegradation(errorEntry);
-      break;
-    default:
-      // No recovery action
-      break;
+      case RECOVERY_STRATEGY.RETRY:
+        this.scheduleRetry(errorEntry);
+        break;
+      case RECOVERY_STRATEGY.FALLBACK:
+        this.executeFallback(errorEntry);
+        break;
+      case RECOVERY_STRATEGY.RESET:
+        this.executeReset(errorEntry);
+        break;
+      case RECOVERY_STRATEGY.GRACEFUL_DEGRADATION:
+        this.executeGracefulDegradation(errorEntry);
+        break;
+      default:
+        // No recovery action
+        break;
     }
   }
 
@@ -323,42 +330,53 @@ export class ErrorHandler {
       return;
     }
 
-    const t = setTimeout(() => {
-      errorEntry.retryCount++;
-      // Emit retry event
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('errorRetry', {
-          detail: { errorEntry }
-        }));
-      }
-    }, this.config.retryDelay * Math.pow(2, errorEntry.retryCount)); // Exponential backoff
+    const t = setTimeout(
+      () => {
+        errorEntry.retryCount++;
+        // Emit retry event
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('errorRetry', {
+              detail: { errorEntry },
+            })
+          );
+        }
+      },
+      this.config.retryDelay * Math.pow(2, errorEntry.retryCount)
+    ); // Exponential backoff
     if (typeof t?.unref === 'function') t.unref();
   }
 
   executeFallback(errorEntry) {
     // Emit fallback event for handlers to implement specific fallback logic
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('errorFallback', {
-        detail: { errorEntry }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('errorFallback', {
+          detail: { errorEntry },
+        })
+      );
     }
   }
 
   executeReset(errorEntry) {
     // Emit reset event
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('errorReset', {
-        detail: { errorEntry }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('errorReset', {
+          detail: { errorEntry },
+        })
+      );
     }
   }
 
   executeGracefulDegradation(errorEntry) {
     // Emit graceful degradation event
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('errorGracefulDegradation', {
-        detail: { errorEntry }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('errorGracefulDegradation', {
+          detail: { errorEntry },
+        })
+      );
     }
   }
 
@@ -371,11 +389,11 @@ export class ErrorHandler {
     let errors = [...this.errorLog];
 
     if (filters.severity) {
-      errors = errors.filter(e => e.severity === filters.severity);
+      errors = errors.filter((e) => e.severity === filters.severity);
     }
 
     if (filters.category) {
-      errors = errors.filter(e => e.category === filters.category);
+      errors = errors.filter((e) => e.category === filters.category);
     }
 
     if (filters.limit) {
@@ -384,7 +402,7 @@ export class ErrorHandler {
 
     if (filters.since) {
       const since = new Date(filters.since);
-      errors = errors.filter(e => new Date(e.timestamp) >= since);
+      errors = errors.filter((e) => new Date(e.timestamp) >= since);
     }
 
     return errors;
@@ -399,17 +417,17 @@ export class ErrorHandler {
       total: this.errorLog.length,
       bySeverity: {},
       byCategory: {},
-      recent: this.errorLog.filter(e =>
-        new Date() - new Date(e.timestamp) < 3600000 // Last hour
-      ).length
+      recent: this.errorLog.filter(
+        (e) => new Date() - new Date(e.timestamp) < 3600000 // Last hour
+      ).length,
     };
 
     for (const severity of Object.values(ERROR_SEVERITY)) {
-      stats.bySeverity[severity] = this.errorLog.filter(e => e.severity === severity).length;
+      stats.bySeverity[severity] = this.errorLog.filter((e) => e.severity === severity).length;
     }
 
     for (const category of Object.values(ERROR_CATEGORY)) {
-      stats.byCategory[category] = this.errorLog.filter(e => e.category === category).length;
+      stats.byCategory[category] = this.errorLog.filter((e) => e.category === category).length;
     }
 
     return stats;
@@ -428,16 +446,16 @@ export class ErrorHandler {
 
     // Selective clearing based on criteria
     if (criteria.severity) {
-      this.errorLog = this.errorLog.filter(e => e.severity !== criteria.severity);
+      this.errorLog = this.errorLog.filter((e) => e.severity !== criteria.severity);
     }
 
     if (criteria.category) {
-      this.errorLog = this.errorLog.filter(e => e.category !== criteria.category);
+      this.errorLog = this.errorLog.filter((e) => e.category !== criteria.category);
     }
 
     if (criteria.before) {
       const before = new Date(criteria.before);
-      this.errorLog = this.errorLog.filter(e => new Date(e.timestamp) >= before);
+      this.errorLog = this.errorLog.filter((e) => new Date(e.timestamp) >= before);
     }
   }
 
@@ -505,7 +523,7 @@ export const errorHandler = new ErrorHandler({
   maxRetries: 3,
   retryDelay: 1000,
   maxLogEntries: 1000,
-  userNotificationTimeout: 5000
+  userNotificationTimeout: 5000,
 });
 
 /**
@@ -554,12 +572,7 @@ export const GameErrors = {
    * @returns {string} Error ID
    */
   validation(error, context = {}) {
-    return errorHandler.handle(
-      error,
-      ERROR_SEVERITY.WARNING,
-      ERROR_CATEGORY.VALIDATION,
-      context
-    );
+    return errorHandler.handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, context);
   },
 
   /**
@@ -687,12 +700,7 @@ export const GameErrors = {
    * @returns {string} Error ID
    */
   security(error, context = {}) {
-    return errorHandler.handle(
-      error,
-      ERROR_SEVERITY.CRITICAL,
-      ERROR_CATEGORY.SECURITY,
-      context
-    );
+    return errorHandler.handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.SECURITY, context);
   },
 
   /**
@@ -703,7 +711,12 @@ export const GameErrors = {
    * @param {string} recoveryStrategy - Recovery strategy
    * @returns {string} Error ID
    */
-  generic(error, context = {}, severity = ERROR_SEVERITY.ERROR, recoveryStrategy = RECOVERY_STRATEGY.NONE) {
+  generic(
+    error,
+    context = {},
+    severity = ERROR_SEVERITY.ERROR,
+    recoveryStrategy = RECOVERY_STRATEGY.NONE
+  ) {
     // Attempt to auto-categorize based on error message/context
     let category = ERROR_CATEGORY.SYSTEM;
 
@@ -724,7 +737,7 @@ export const GameErrors = {
     }
 
     return errorHandler.handle(error, severity, category, context, recoveryStrategy);
-  }
+  },
 };
 
 // Export error handler for direct access if needed
@@ -742,16 +755,27 @@ export { errorHandler as default };
  * @param {string} recoveryStrategy - Recovery strategy
  * @returns {Function} Wrapped function
  */
-export function withErrorHandling(asyncFn, context = {}, category = ERROR_CATEGORY.SYSTEM, recoveryStrategy = RECOVERY_STRATEGY.NONE) {
+export function withErrorHandling(
+  asyncFn,
+  context = {},
+  category = ERROR_CATEGORY.SYSTEM,
+  recoveryStrategy = RECOVERY_STRATEGY.NONE
+) {
   return async (...args) => {
     try {
       return await asyncFn(...args);
     } catch (error) {
-      errorHandler.handle(error, ERROR_SEVERITY.ERROR, category, {
-        ...context,
-        functionName: asyncFn.name,
-        arguments: args
-      }, recoveryStrategy);
+      errorHandler.handle(
+        error,
+        ERROR_SEVERITY.ERROR,
+        category,
+        {
+          ...context,
+          functionName: asyncFn.name,
+          arguments: args,
+        },
+        recoveryStrategy
+      );
       throw error; // Re-throw for caller handling
     }
   };
@@ -763,7 +787,10 @@ export function withErrorHandling(asyncFn, context = {}, category = ERROR_CATEGO
  * @param {string} recoveryStrategy - Recovery strategy
  * @returns {Function} Method decorator
  */
-export function handleErrors(category = ERROR_CATEGORY.SYSTEM, recoveryStrategy = RECOVERY_STRATEGY.NONE) {
+export function handleErrors(
+  category = ERROR_CATEGORY.SYSTEM,
+  recoveryStrategy = RECOVERY_STRATEGY.NONE
+) {
   return function (target, propertyKey, descriptor) {
     const originalMethod = descriptor.value;
 
@@ -771,11 +798,17 @@ export function handleErrors(category = ERROR_CATEGORY.SYSTEM, recoveryStrategy 
       try {
         return await originalMethod.apply(this, args);
       } catch (error) {
-        errorHandler.handle(error, ERROR_SEVERITY.ERROR, category, {
-          className: target.constructor.name,
-          methodName: propertyKey,
-          arguments: args
-        }, recoveryStrategy);
+        errorHandler.handle(
+          error,
+          ERROR_SEVERITY.ERROR,
+          category,
+          {
+            className: target.constructor.name,
+            methodName: propertyKey,
+            arguments: args,
+          },
+          recoveryStrategy
+        );
         throw error;
       }
     };
@@ -803,7 +836,7 @@ export function withPerformanceMonitoring(fn, operationName, thresholdMs = 1000)
         GameErrors.performance(`Slow operation detected: ${operationName}`, {
           operation: operationName,
           duration,
-          threshold: thresholdMs
+          threshold: thresholdMs,
         });
       }
 
@@ -813,7 +846,7 @@ export function withPerformanceMonitoring(fn, operationName, thresholdMs = 1000)
       GameErrors.performance(`Operation failed: ${operationName}`, {
         operation: operationName,
         duration,
-        error: error.message
+        error: error.message,
       });
       throw error;
     }

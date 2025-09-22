@@ -1,10 +1,10 @@
 import { getNodeEnv, isJest } from './env.js';
 /**
  * Logger.js - Enterprise-Grade Logging System for TavernTable
- * 
+ *
  * Comprehensive logging solution with structured data, multiple outputs,
  * performance monitoring, and production-ready features.
- * 
+ *
  * Features:
  * - Hierarchical log levels with fine-grained control
  * - Structured logging with metadata and context
@@ -15,7 +15,7 @@ import { getNodeEnv, isJest } from './env.js';
  * - Correlation IDs for request tracing
  * - Sanitization for sensitive data
  * - Integration with error tracking systems
- * 
+ *
  * @author TavernTable Development Team
  * @version 2.0.0
  */
@@ -98,7 +98,7 @@ export class LogEntry {
       url: typeof window !== 'undefined' ? window.location.href : 'Unknown',
       referrer: typeof document !== 'undefined' ? document.referrer : 'Unknown',
       memory: this.getMemoryInfo(),
-      performance: this.getPerformanceInfo()
+      performance: this.getPerformanceInfo(),
     };
 
     return metadata;
@@ -109,7 +109,7 @@ export class LogEntry {
       return {
         used: performance.memory.usedJSHeapSize,
         total: performance.memory.totalJSHeapSize,
-        limit: performance.memory.jsHeapSizeLimit
+        limit: performance.memory.jsHeapSizeLimit,
       };
     }
     return null;
@@ -119,8 +119,9 @@ export class LogEntry {
     if (typeof performance !== 'undefined') {
       return {
         timing: performance.now(),
-        navigation: performance.getEntriesByType ?
-          performance.getEntriesByType('navigation')[0] : null
+        navigation: performance.getEntriesByType
+          ? performance.getEntriesByType('navigation')[0]
+          : null,
       };
     }
     return null;
@@ -170,12 +171,13 @@ export class LogEntry {
       metadata: this.metadata,
       correlationId: this.correlationId,
       sessionId: this.sessionId,
-      stackTrace: this.stackTrace
+      stackTrace: this.stackTrace,
     };
   }
 
   toString() {
-    const levelName = Object.keys(LOG_LEVEL).find(key => LOG_LEVEL[key] === this.level) || 'UNKNOWN';
+    const levelName =
+      Object.keys(LOG_LEVEL).find((key) => LOG_LEVEL[key] === this.level) || 'UNKNOWN';
     return `[${this.timestamp}] ${levelName} [${this.category}] ${this.message}`;
   }
 }
@@ -187,12 +189,12 @@ export class ConsoleOutputHandler {
   constructor(config) {
     this.config = config;
     this.colors = {
-      [LOG_LEVEL.TRACE]: '\x1b[37m',   // White
-      [LOG_LEVEL.DEBUG]: '\x1b[36m',   // Cyan
-      [LOG_LEVEL.INFO]: '\x1b[32m',    // Green
-      [LOG_LEVEL.WARN]: '\x1b[33m',    // Yellow
-      [LOG_LEVEL.ERROR]: '\x1b[31m',   // Red
-      [LOG_LEVEL.FATAL]: '\x1b[35m'    // Magenta
+      [LOG_LEVEL.TRACE]: '\x1b[37m', // White
+      [LOG_LEVEL.DEBUG]: '\x1b[36m', // Cyan
+      [LOG_LEVEL.INFO]: '\x1b[32m', // Green
+      [LOG_LEVEL.WARN]: '\x1b[33m', // Yellow
+      [LOG_LEVEL.ERROR]: '\x1b[31m', // Red
+      [LOG_LEVEL.FATAL]: '\x1b[35m', // Magenta
     };
     this.reset = '\x1b[0m';
   }
@@ -200,7 +202,8 @@ export class ConsoleOutputHandler {
   output(logEntry) {
     if (!this.config.enableConsole) return;
 
-    const levelName = Object.keys(LOG_LEVEL).find(key => LOG_LEVEL[key] === logEntry.level) || 'UNKNOWN';
+    const levelName =
+      Object.keys(LOG_LEVEL).find((key) => LOG_LEVEL[key] === logEntry.level) || 'UNKNOWN';
     const color = this.colors[logEntry.level] || '';
     const timestamp = new Date(logEntry.timestamp).toLocaleTimeString();
 
@@ -209,29 +212,29 @@ export class ConsoleOutputHandler {
 
     // Choose appropriate console method
     switch (logEntry.level) {
-    case LOG_LEVEL.TRACE:
-    case LOG_LEVEL.DEBUG:
-      if (console.debug) {
-        console.debug(message, logEntry.data);
-      } else {
+      case LOG_LEVEL.TRACE:
+      case LOG_LEVEL.DEBUG:
+        if (console.debug) {
+          console.debug(message, logEntry.data);
+        } else {
+          console.log(message, logEntry.data);
+        }
+        break;
+      case LOG_LEVEL.INFO:
+        console.info(message, logEntry.data);
+        break;
+      case LOG_LEVEL.WARN:
+        console.warn(message, logEntry.data);
+        break;
+      case LOG_LEVEL.ERROR:
+      case LOG_LEVEL.FATAL:
+        console.error(message, logEntry.data);
+        if (this.config.enableStackTrace && logEntry.stackTrace) {
+          console.error('Stack Trace:', logEntry.stackTrace);
+        }
+        break;
+      default:
         console.log(message, logEntry.data);
-      }
-      break;
-    case LOG_LEVEL.INFO:
-      console.info(message, logEntry.data);
-      break;
-    case LOG_LEVEL.WARN:
-      console.warn(message, logEntry.data);
-      break;
-    case LOG_LEVEL.ERROR:
-    case LOG_LEVEL.FATAL:
-      console.error(message, logEntry.data);
-      if (this.config.enableStackTrace && logEntry.stackTrace) {
-        console.error('Stack Trace:', logEntry.stackTrace);
-      }
-      break;
-    default:
-      console.log(message, logEntry.data);
     }
   }
 }
@@ -261,16 +264,16 @@ export class MemoryOutputHandler {
     let filteredLogs = [...this.logs];
 
     if (filters.level !== undefined) {
-      filteredLogs = filteredLogs.filter(log => log.level >= filters.level);
+      filteredLogs = filteredLogs.filter((log) => log.level >= filters.level);
     }
 
     if (filters.category) {
-      filteredLogs = filteredLogs.filter(log => log.category === filters.category);
+      filteredLogs = filteredLogs.filter((log) => log.category === filters.category);
     }
 
     if (filters.since) {
       const since = new Date(filters.since);
-      filteredLogs = filteredLogs.filter(log => new Date(log.timestamp) >= since);
+      filteredLogs = filteredLogs.filter((log) => new Date(log.timestamp) >= since);
     }
 
     if (filters.limit) {
@@ -291,19 +294,19 @@ export class MemoryOutputHandler {
       byCategory: {},
       timeRange: {
         oldest: this.logs.length > 0 ? this.logs[0].timestamp : null,
-        newest: this.logs.length > 0 ? this.logs[this.logs.length - 1].timestamp : null
-      }
+        newest: this.logs.length > 0 ? this.logs[this.logs.length - 1].timestamp : null,
+      },
     };
 
     // Count by level
     for (const level of Object.values(LOG_LEVEL)) {
       if (level === LOG_LEVEL.OFF) continue;
-      stats.byLevel[level] = this.logs.filter(log => log.level === level).length;
+      stats.byLevel[level] = this.logs.filter((log) => log.level === level).length;
     }
 
     // Count by category
     for (const category of Object.values(LOG_CATEGORY)) {
-      stats.byCategory[category] = this.logs.filter(log => log.category === category).length;
+      stats.byCategory[category] = this.logs.filter((log) => log.category === category).length;
     }
 
     return stats;
@@ -367,9 +370,9 @@ export class RemoteOutputHandler {
           metadata: {
             environment: this.config.environment,
             application: this.config.applicationName,
-            timestamp: new Date().toISOString()
-          }
-        })
+            timestamp: new Date().toISOString(),
+          },
+        }),
       });
     } catch (error) {
       // Failed to send - add back to buffer (with limit)
@@ -404,7 +407,7 @@ export class PerformanceMonitor {
     this.activeTimers.set(timerId, {
       operationName,
       startTime,
-      context
+      context,
     });
 
     return timerId;
@@ -422,14 +425,18 @@ export class PerformanceMonitor {
 
     this.activeTimers.delete(timerId);
 
-    this.logger.info(`Operation completed: ${timer.operationName}`, {
-      operation: timer.operationName,
-      duration: Math.round(duration * 100) / 100, // Round to 2 decimal places
-      startTime: timer.startTime,
-      endTime,
-      ...timer.context,
-      ...additionalContext
-    }, LOG_CATEGORY.PERFORMANCE);
+    this.logger.info(
+      `Operation completed: ${timer.operationName}`,
+      {
+        operation: timer.operationName,
+        duration: Math.round(duration * 100) / 100, // Round to 2 decimal places
+        startTime: timer.startTime,
+        endTime,
+        ...timer.context,
+        ...additionalContext,
+      },
+      LOG_CATEGORY.PERFORMANCE
+    );
 
     return duration;
   }
@@ -444,7 +451,7 @@ export class PerformanceMonitor {
       } catch (error) {
         this.endTimer(timerId, {
           success: false,
-          error: error.message
+          error: error.message,
         });
         throw error;
       }
@@ -461,7 +468,7 @@ export class PerformanceMonitor {
       } catch (error) {
         this.endTimer(timerId, {
           success: false,
-          error: error.message
+          error: error.message,
         });
         throw error;
       }
@@ -519,10 +526,13 @@ export class Logger {
    * @returns {Object} Merged context
    */
   getCurrentContext() {
-    return this.contextStack.reduce((merged, context) => ({
-      ...merged,
-      ...context
-    }), {});
+    return this.contextStack.reduce(
+      (merged, context) => ({
+        ...merged,
+        ...context,
+      }),
+      {}
+    );
   }
 
   /**
@@ -553,7 +563,11 @@ export class Logger {
       normLevel = category;
       normCategory = validCategories.has(message) ? message : LOG_CATEGORY.SYSTEM;
       normMessage = typeof level === 'string' ? level : String(level ?? '');
-    } else if (validLevels.has(level) && typeof category === 'string' && typeof message === 'string') {
+    } else if (
+      validLevels.has(level) &&
+      typeof category === 'string' &&
+      typeof message === 'string'
+    ) {
       // Patterns 1 or 2: decide which string is category
       if (validCategories.has(category) && !validCategories.has(message)) {
         // Correct order already
@@ -587,7 +601,7 @@ export class Logger {
     // Merge context from stack
     const mergedContext = {
       ...this.getCurrentContext(),
-      ...normContext
+      ...normContext,
     };
 
     // Create log entry
@@ -765,7 +779,7 @@ const runningInJest = typeof isJest === 'function' ? isJest() : false;
 // Global logger instance with environment-specific configuration
 export const logger = new Logger({
   // Quieter during tests to reduce noise and avoid any console-driven timeouts
-  level: runningInJest ? LOG_LEVEL.WARN : (isProduction ? LOG_LEVEL.INFO : LOG_LEVEL.DEBUG),
+  level: runningInJest ? LOG_LEVEL.WARN : isProduction ? LOG_LEVEL.INFO : LOG_LEVEL.DEBUG,
   environment: environment,
   enableConsole: !runningInJest,
   enableMemory: true,
@@ -773,7 +787,7 @@ export const logger = new Logger({
   enableStackTrace: isDevelopment && !runningInJest,
   enablePerformanceMetrics: true,
   maxMemoryLogs: 2000,
-  applicationName: 'TavernTable'
+  applicationName: 'TavernTable',
 });
 
 // Export convenience functions for common logging patterns
@@ -787,14 +801,12 @@ export const GameLogger = {
   /**
    * Log performance metrics
    */
-  performance: (message, data = {}) =>
-    logger.info(message, data, LOG_CATEGORY.PERFORMANCE),
+  performance: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.PERFORMANCE),
 
   /**
    * Log user interactions
    */
-  user: (message, data = {}) =>
-    logger.info(message, data, LOG_CATEGORY.USER),
+  user: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.USER),
 
   /**
    * Log API operations
@@ -811,14 +823,12 @@ export const GameLogger = {
   /**
    * Log business logic operations
    */
-  business: (message, data = {}) =>
-    logger.info(message, data, LOG_CATEGORY.BUSINESS),
+  business: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.BUSINESS),
 
   /**
    * Log audit trail events
    */
-  audit: (message, data = {}) =>
-    logger.info(message, data, LOG_CATEGORY.AUDIT)
+  audit: (message, data = {}) => logger.info(message, data, LOG_CATEGORY.AUDIT),
 };
 
 // Export performance monitoring utilities

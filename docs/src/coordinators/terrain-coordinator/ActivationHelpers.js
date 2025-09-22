@@ -1,30 +1,44 @@
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { GameErrors } from '../../utils/ErrorHandler.js';
-import { prepareBaseGridForEditing as _prepareGridForEdit, resetTerrainContainerSafely as _resetContainerSafely, validateContainerIntegrity as _validateContainer } from './internals/container.js';
-import { activateTerrainMode as _activateMode, loadTerrainStateAndDisplay as _loadStateAndDisplay, handleTerrainModeActivationError as _handleActivationError } from './internals/mode.js';
+import {
+  prepareBaseGridForEditing as _prepareGridForEdit,
+  resetTerrainContainerSafely as _resetContainerSafely,
+  validateContainerIntegrity as _validateContainer,
+} from './internals/container.js';
+import {
+  activateTerrainMode as _activateMode,
+  loadTerrainStateAndDisplay as _loadStateAndDisplay,
+  handleTerrainModeActivationError as _handleActivationError,
+} from './internals/mode.js';
 
 /**
  * ActivationHelpers - façade for TerrainCoordinator enable/disable helpers.
  * Pure delegation of existing logic to keep public behavior identical.
  */
 export class ActivationHelpers {
-  constructor(coordinator) { this.c = coordinator; }
+  constructor(coordinator) {
+    this.c = coordinator;
+  }
 
   prepareBaseGridForEditing() {
-    if (typeof this.c._prepareBaseGridForEditing === 'function') return this.c._prepareBaseGridForEditing();
+    if (typeof this.c._prepareBaseGridForEditing === 'function')
+      return this.c._prepareBaseGridForEditing();
     return _prepareGridForEdit(this.c);
   }
   validateTerrainSystemForActivation() {
-    if (typeof this.c._validateTerrainSystemForActivation === 'function') return this.c._validateTerrainSystemForActivation();
+    if (typeof this.c._validateTerrainSystemForActivation === 'function')
+      return this.c._validateTerrainSystemForActivation();
     // Fall back to the public validator when wrapper is absent
     return this.c.validateTerrainSystemState();
   }
   resetTerrainContainerSafely() {
-    if (typeof this.c._resetTerrainContainerSafely === 'function') return this.c._resetTerrainContainerSafely();
+    if (typeof this.c._resetTerrainContainerSafely === 'function')
+      return this.c._resetTerrainContainerSafely();
     return _resetContainerSafely(this.c);
   }
   validateContainerIntegrity() {
-    if (typeof this.c._validateContainerIntegrity === 'function') return this.c._validateContainerIntegrity();
+    if (typeof this.c._validateContainerIntegrity === 'function')
+      return this.c._validateContainerIntegrity();
     return _validateContainer(this.c);
   }
   activateTerrainMode() {
@@ -32,11 +46,13 @@ export class ActivationHelpers {
     return _activateMode(this.c);
   }
   loadTerrainStateAndDisplay() {
-    if (typeof this.c._loadTerrainStateAndDisplay === 'function') return this.c._loadTerrainStateAndDisplay();
+    if (typeof this.c._loadTerrainStateAndDisplay === 'function')
+      return this.c._loadTerrainStateAndDisplay();
     return _loadStateAndDisplay(this.c);
   }
   handleTerrainModeActivationError(error) {
-    if (typeof this.c._handleTerrainModeActivationError === 'function') return this.c._handleTerrainModeActivationError(error);
+    if (typeof this.c._handleTerrainModeActivationError === 'function')
+      return this.c._handleTerrainModeActivationError(error);
     return _handleActivationError(this.c, error);
   }
 
@@ -50,15 +66,19 @@ export class ActivationHelpers {
       this.activateTerrainMode();
       this.loadTerrainStateAndDisplay();
 
-      logger.info('Terrain mode enabled with enhanced safety checks', {
-        context: 'ActivationHelpers.enableTerrainMode',
-        tool: this.c.brush.tool,
-        brushSize: this.c.brush.brushSize,
-        baseTerrainLoaded: true,
-        terrainManagerReady: !!this.c.terrainManager,
-        containerIntegrity: 'validated',
-        safetyEnhancements: 'applied'
-      }, LOG_CATEGORY.USER);
+      logger.info(
+        'Terrain mode enabled with enhanced safety checks',
+        {
+          context: 'ActivationHelpers.enableTerrainMode',
+          tool: this.c.brush.tool,
+          brushSize: this.c.brush.brushSize,
+          baseTerrainLoaded: true,
+          terrainManagerReady: !!this.c.terrainManager,
+          containerIntegrity: 'validated',
+          safetyEnhancements: 'applied',
+        },
+        LOG_CATEGORY.USER
+      );
     } catch (error) {
       this.handleTerrainModeActivationError(error);
     }
@@ -73,7 +93,7 @@ export class ActivationHelpers {
 
       // Reset any elevation offsets and remove shadows before applying to base grid
       if (this.c.gameManager?.gridContainer?.children) {
-        this.c.gameManager.gridContainer.children.forEach(child => {
+        this.c.gameManager.gridContainer.children.forEach((child) => {
           if (child.isGridTile) {
             const tlc = this.c._tileLifecycle;
             if (tlc && typeof tlc.clearTileArtifacts === 'function') {
@@ -92,16 +112,25 @@ export class ActivationHelpers {
               }
               if (child.depressionOverlay) {
                 try {
-                  if (child.children?.includes(child.depressionOverlay)) child.removeChild(child.depressionOverlay);
-                  if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
+                  if (child.children?.includes(child.depressionOverlay))
+                    child.removeChild(child.depressionOverlay);
+                  if (
+                    typeof child.depressionOverlay.destroy === 'function' &&
+                    !child.depressionOverlay.destroyed
+                  ) {
                     child.depressionOverlay.destroy();
                   }
-                } catch (_) { /* best-effort */ }
+                } catch (_) {
+                  /* best-effort */
+                }
                 child.depressionOverlay = null;
               }
               if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
                 child.parent.removeChild(child.baseSideFaces);
-                if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
+                if (
+                  typeof child.baseSideFaces.destroy === 'function' &&
+                  !child.baseSideFaces.destroyed
+                ) {
                   child.baseSideFaces.destroy();
                 }
                 child.baseSideFaces = null;
@@ -125,17 +154,25 @@ export class ActivationHelpers {
 
       // Apply biome palette immediately if a biome is selected
       if (!this.c.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        try { this.c.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+        try {
+          this.c.applyBiomePaletteToBaseGrid();
+        } catch (_) {
+          /* non-fatal */
+        }
       }
 
-      logger.info('Terrain mode disabled with permanent grid integration', {
-        context: 'ActivationHelpers.disableTerrainMode',
-        permanentIntegration: true
-      }, LOG_CATEGORY.USER);
+      logger.info(
+        'Terrain mode disabled with permanent grid integration',
+        {
+          context: 'ActivationHelpers.disableTerrainMode',
+          permanentIntegration: true,
+        },
+        LOG_CATEGORY.USER
+      );
     } catch (error) {
       GameErrors.gameState(error, {
         stage: 'disableTerrainMode',
-        context: 'ActivationHelpers.disableTerrainMode'
+        context: 'ActivationHelpers.disableTerrainMode',
       });
       throw error;
     }

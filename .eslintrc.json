@@ -1,0 +1,32 @@
+{
+    "root": true,
+    "extends": [
+        "./tools/.eslintrc.json"
+    ],
+    "overrides": [
+        {
+            "files": [
+                "tests/**/*.js"
+            ],
+            "env": {
+                "jest": true,
+                "node": true
+            },
+            "globals": {
+                "global": "readonly"
+            }
+        },
+        {
+            "files": [
+                "tools/**/*.js",
+                "*.config.js",
+                "*.cjs",
+                "check-layering.js",
+                "scripts/**/*.js"
+            ],
+            "env": {
+                "node": true
+            }
+        }
+    ]
+}

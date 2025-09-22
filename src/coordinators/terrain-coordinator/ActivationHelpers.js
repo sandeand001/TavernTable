@@ -1,30 +1,44 @@
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { GameErrors } from '../../utils/ErrorHandler.js';
-import { prepareBaseGridForEditing as _prepareGridForEdit, resetTerrainContainerSafely as _resetContainerSafely, validateContainerIntegrity as _validateContainer } from './internals/container.js';
-import { activateTerrainMode as _activateMode, loadTerrainStateAndDisplay as _loadStateAndDisplay, handleTerrainModeActivationError as _handleActivationError } from './internals/mode.js';
+import {
+  prepareBaseGridForEditing as _prepareGridForEdit,
+  resetTerrainContainerSafely as _resetContainerSafely,
+  validateContainerIntegrity as _validateContainer,
+} from './internals/container.js';
+import {
+  activateTerrainMode as _activateMode,
+  loadTerrainStateAndDisplay as _loadStateAndDisplay,
+  handleTerrainModeActivationError as _handleActivationError,
+} from './internals/mode.js';
 
 /**
  * ActivationHelpers - façade for TerrainCoordinator enable/disable helpers.
  * Pure delegation of existing logic to keep public behavior identical.
  */
 export class ActivationHelpers {
-  constructor(coordinator) { this.c = coordinator; }
+  constructor(coordinator) {
+    this.c = coordinator;
+  }
 
   prepareBaseGridForEditing() {
-    if (typeof this.c._prepareBaseGridForEditing === 'function') return this.c._prepareBaseGridForEditing();
+    if (typeof this.c._prepareBaseGridForEditing === 'function')
+      return this.c._prepareBaseGridForEditing();
     return _prepareGridForEdit(this.c);
   }
   validateTerrainSystemForActivation() {
-    if (typeof this.c._validateTerrainSystemForActivation === 'function') return this.c._validateTerrainSystemForActivation();
+    if (typeof this.c._validateTerrainSystemForActivation === 'function')
+      return this.c._validateTerrainSystemForActivation();
     // Fall back to the public validator when wrapper is absent
     return this.c.validateTerrainSystemState();
   }
   resetTerrainContainerSafely() {
-    if (typeof this.c._resetTerrainContainerSafely === 'function') return this.c._resetTerrainContainerSafely();
+    if (typeof this.c._resetTerrainContainerSafely === 'function')
+      return this.c._resetTerrainContainerSafely();
     return _resetContainerSafely(this.c);
   }
   validateContainerIntegrity() {
-    if (typeof this.c._validateContainerIntegrity === 'function') return this.c._validateContainerIntegrity();
+    if (typeof this.c._validateContainerIntegrity === 'function')
+      return this.c._validateContainerIntegrity();
     return _validateContainer(this.c);
   }
   activateTerrainMode() {
@@ -32,11 +46,13 @@ export class ActivationHelpers {
     return _activateMode(this.c);
   }
   loadTerrainStateAndDisplay() {
-    if (typeof this.c._loadTerrainStateAndDisplay === 'function') return this.c._loadTerrainStateAndDisplay();
+    if (typeof this.c._loadTerrainStateAndDisplay === 'function')
+      return this.c._loadTerrainStateAndDisplay();
     return _loadStateAndDisplay(this.c);
   }
   handleTerrainModeActivationError(error) {
-    if (typeof this.c._handleTerrainModeActivationError === 'function') return this.c._handleTerrainModeActivationError(error);
+    if (typeof this.c._handleTerrainModeActivationError === 'function')
+      return this.c._handleTerrainModeActivationError(error);
     return _handleActivationError(this.c, error);
   }
 
@@ -49,16 +65,27 @@ export class ActivationHelpers {
       this.prepareBaseGridForEditing();
       this.activateTerrainMode();
       this.loadTerrainStateAndDisplay();
+      // Ensure existing placeables (trees/plants) are re-layered above the
+      // elevation overlay immediately when terrain mode turns on.
+      try {
+        this.c.terrainManager?.repositionAllPlaceables?.();
+      } catch (_) {
+        /* non-fatal */
+      }
 
-      logger.info('Terrain mode enabled with enhanced safety checks', {
-        context: 'ActivationHelpers.enableTerrainMode',
-        tool: this.c.brush.tool,
-        brushSize: this.c.brush.brushSize,
-        baseTerrainLoaded: true,
-        terrainManagerReady: !!this.c.terrainManager,
-        containerIntegrity: 'validated',
-        safetyEnhancements: 'applied'
-      }, LOG_CATEGORY.USER);
+      logger.info(
+        'Terrain mode enabled with enhanced safety checks',
+        {
+          context: 'ActivationHelpers.enableTerrainMode',
+          tool: this.c.brush.tool,
+          brushSize: this.c.brush.brushSize,
+          baseTerrainLoaded: true,
+          terrainManagerReady: !!this.c.terrainManager,
+          containerIntegrity: 'validated',
+          safetyEnhancements: 'applied',
+        },
+        LOG_CATEGORY.USER
+      );
     } catch (error) {
       this.handleTerrainModeActivationError(error);
     }
@@ -70,10 +97,16 @@ export class ActivationHelpers {
       this.c.isTerrainModeActive = false;
       this.c.isDragging = false;
       this.c.lastModifiedCell = null;
+      // Clear any lingering brush preview since terrain mode is now off
+      try {
+        this.c.terrainManager?.clearBrushPreview();
+      } catch {
+        /* non-fatal */
+      }
 
       // Reset any elevation offsets and remove shadows before applying to base grid
       if (this.c.gameManager?.gridContainer?.children) {
-        this.c.gameManager.gridContainer.children.forEach(child => {
+        this.c.gameManager.gridContainer.children.forEach((child) => {
           if (child.isGridTile) {
             const tlc = this.c._tileLifecycle;
             if (tlc && typeof tlc.clearTileArtifacts === 'function') {
@@ -92,16 +125,25 @@ export class ActivationHelpers {
               }
               if (child.depressionOverlay) {
                 try {
-                  if (child.children?.includes(child.depressionOverlay)) child.removeChild(child.depressionOverlay);
-                  if (typeof child.depressionOverlay.destroy === 'function' && !child.depressionOverlay.destroyed) {
+                  if (child.children?.includes(child.depressionOverlay))
+                    child.removeChild(child.depressionOverlay);
+                  if (
+                    typeof child.depressionOverlay.destroy === 'function' &&
+                    !child.depressionOverlay.destroyed
+                  ) {
                     child.depressionOverlay.destroy();
                   }
-                } catch (_) { /* best-effort */ }
+                } catch (_) {
+                  /* best-effort */
+                }
                 child.depressionOverlay = null;
               }
               if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
                 child.parent.removeChild(child.baseSideFaces);
-                if (typeof child.baseSideFaces.destroy === 'function' && !child.baseSideFaces.destroyed) {
+                if (
+                  typeof child.baseSideFaces.destroy === 'function' &&
+                  !child.baseSideFaces.destroyed
+                ) {
                   child.baseSideFaces.destroy();
                 }
                 child.baseSideFaces = null;
@@ -114,10 +156,21 @@ export class ActivationHelpers {
       // Apply current terrain modifications permanently to base grid
       this.c.applyTerrainToBaseGrid();
 
-      // Clear terrain overlay system completely
+      // Clear terrain overlay system completely, but preserve placeables
       if (this.c.terrainManager) {
-        this.c.terrainManager.hideAllTerrainTiles();
-        this.c.terrainManager.clearAllTerrainTiles();
+        const m = this.c.terrainManager;
+        // Hide terrain tiles visuals, but if placeables exist we’ll keep container visible
+        m.hideAllTerrainTiles();
+        // clearAllTerrainTiles will now preserve and reattach placeables and only hide
+        // the container when no placeables remain
+        m.clearAllTerrainTiles();
+        // Reposition placeables after overlay is removed so they return to
+        // normal interleaved depth (below overlay bias no longer needed).
+        try {
+          m.repositionAllPlaceables?.();
+        } catch (_) {
+          /* non-fatal */
+        }
       }
 
       // Reset height indicator
@@ -125,17 +178,25 @@ export class ActivationHelpers {
 
       // Apply biome palette immediately if a biome is selected
       if (!this.c.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        try { this.c.applyBiomePaletteToBaseGrid(); } catch (_) { /* non-fatal */ }
+        try {
+          this.c.applyBiomePaletteToBaseGrid();
+        } catch (_) {
+          /* non-fatal */
+        }
       }
 
-      logger.info('Terrain mode disabled with permanent grid integration', {
-        context: 'ActivationHelpers.disableTerrainMode',
-        permanentIntegration: true
-      }, LOG_CATEGORY.USER);
+      logger.info(
+        'Terrain mode disabled with permanent grid integration',
+        {
+          context: 'ActivationHelpers.disableTerrainMode',
+          permanentIntegration: true,
+        },
+        LOG_CATEGORY.USER
+      );
     } catch (error) {
       GameErrors.gameState(error, {
         stage: 'disableTerrainMode',
-        context: 'ActivationHelpers.disableTerrainMode'
+        context: 'ActivationHelpers.disableTerrainMode',
       });
       throw error;
     }

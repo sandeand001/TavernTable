@@ -24,6 +24,27 @@ export class TerrainBrushController {
     this.brushSize = Math.max(this.brushSize - 1, TERRAIN_CONFIG.MIN_BRUSH_SIZE);
   }
 
+  /**
+   * Get the set of grid cells affected by the current brush at a center position.
+   * This is a non-mutating helper used for hover/preview rendering.
+   * @param {number} gridX
+   * @param {number} gridY
+   * @returns {Array<{x:number,y:number}>}
+   */
+  getFootprintCells(gridX, gridY) {
+    const half = Math.floor(this.brushSize / 2);
+    const cells = [];
+    for (let dy = -half; dy <= half; dy++) {
+      for (let dx = -half; dx <= half; dx++) {
+        const x = gridX + dx;
+        const y = gridY + dy;
+        if (x < 0 || y < 0 || y >= this.dataStore.rows || x >= this.dataStore.cols) continue;
+        cells.push({ x, y });
+      }
+    }
+    return cells;
+  }
+
   applyAt(gridX, gridY) {
     const half = Math.floor(this.brushSize / 2);
     for (let dy = -half; dy <= half; dy++) {
@@ -39,8 +60,10 @@ export class TerrainBrushController {
     if (x < 0 || y < 0 || y >= this.dataStore.rows || x >= this.dataStore.cols) return;
     const current = this.dataStore.get(x, y);
     let next = current;
-    if (this.tool === 'raise') next = Math.min(current + this.heightStep, TERRAIN_CONFIG.MAX_HEIGHT);
-    if (this.tool === 'lower') next = Math.max(current - this.heightStep, TERRAIN_CONFIG.MIN_HEIGHT);
+    if (this.tool === 'raise')
+      next = Math.min(current + this.heightStep, TERRAIN_CONFIG.MAX_HEIGHT);
+    if (this.tool === 'lower')
+      next = Math.max(current - this.heightStep, TERRAIN_CONFIG.MIN_HEIGHT);
     if (next !== current) {
       this.dataStore.set(x, y, next);
       logger.log(LOG_LEVEL.TRACE, 'Terrain height modified', LOG_CATEGORY.USER, {
@@ -48,7 +71,7 @@ export class TerrainBrushController {
         from: current,
         to: next,
         tool: this.tool,
-        heightStep: this.heightStep
+        heightStep: this.heightStep,
       });
     }
   }

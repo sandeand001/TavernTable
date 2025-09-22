@@ -1,11 +1,28 @@
 import { GameValidators } from '../../../utils/Validation.js';
-import { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } from '../../../ui/domHelpers.js';
+function getPorts(c) {
+  const dp = (c && c.domPorts) || {};
+  const fb = {
+    getCreatureButtons: () =>
+      typeof document !== 'undefined'
+        ? Array.from(document.querySelectorAll('[data-creature]'))
+        : [],
+    getTokenButtonByType: (type) =>
+      typeof document !== 'undefined' ? document.querySelector(`[data-creature="${type}"]`) : null,
+    getTokenInfoEl: () =>
+      typeof document !== 'undefined' ? document.querySelector('[data-token-info]') : null,
+  };
+  return {
+    getCreatureButtons: dp.getCreatureButtons || fb.getCreatureButtons,
+    getTokenButtonByType: dp.getTokenButtonByType || fb.getTokenButtonByType,
+    getTokenInfoEl: dp.getTokenInfoEl || fb.getTokenInfoEl,
+  };
+}
 
 export function findExistingTokenAt(c, gridX, gridY) {
-  return c.placedTokens.find(token => {
+  return c.placedTokens.find((token) => {
     const diffX = Math.abs(token.gridX - gridX);
     const diffY = Math.abs(token.gridY - gridY);
-    return diffX <= 1 && diffY <= 1 && (diffX + diffY) <= 1;
+    return diffX <= 1 && diffY <= 1 && diffX + diffY <= 1;
   });
 }
 
@@ -19,7 +36,8 @@ export function selectToken(c, tokenType) {
   }
 
   // Update UI selection
-  getCreatureButtons().forEach(btn => {
+  const { getCreatureButtons, getTokenButtonByType, getTokenInfoEl } = getPorts(c);
+  getCreatureButtons().forEach((btn) => {
     btn.classList.remove('selected');
     btn.setAttribute('aria-pressed', 'false');
   });
@@ -39,6 +57,9 @@ export function selectToken(c, tokenType) {
   }
   const infoEl = getTokenInfoEl();
   if (infoEl) {
-    infoEl.textContent = tokenType === 'remove' ? 'Click on tokens to remove them' : `Click on grid to place ${tokenType}`;
+    infoEl.textContent =
+      tokenType === 'remove'
+        ? 'Click on tokens to remove them'
+        : `Click on grid to place ${tokenType}`;
   }
 }

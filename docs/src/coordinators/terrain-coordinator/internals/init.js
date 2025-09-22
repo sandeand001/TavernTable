@@ -13,21 +13,25 @@ export function initializeTerrainData(c) {
 
     c.dataStore.resize(cols, rows);
 
-    logger.debug('Terrain data initialized', {
-      context: 'TerrainCoordinator.initializeTerrainData',
-      stage: 'data_initialization',
-      gridDimensions: { cols, rows },
-      totalCells: cols * rows,
-      defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT,
-      dataStructure: 'complete'
-    }, LOG_CATEGORY.SYSTEM);
+    logger.debug(
+      'Terrain data initialized',
+      {
+        context: 'TerrainCoordinator.initializeTerrainData',
+        stage: 'data_initialization',
+        gridDimensions: { cols, rows },
+        totalCells: cols * rows,
+        defaultHeight: TERRAIN_CONFIG.DEFAULT_HEIGHT,
+        dataStructure: 'complete',
+      },
+      LOG_CATEGORY.SYSTEM
+    );
   } catch (error) {
     GameErrors.initialization(error, {
       stage: 'initializeTerrainData',
       gridDimensions: {
         cols: c.gameManager?.cols,
-        rows: c.gameManager?.rows
-      }
+        rows: c.gameManager?.rows,
+      },
     });
     throw error;
   }

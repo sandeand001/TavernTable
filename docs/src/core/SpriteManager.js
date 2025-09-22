@@ -2,10 +2,10 @@
 
 /**
  * Sprite Manager
- * 
+ *
  * Handles loading, caching, and retrieval of game sprite assets.
  * Provides fallback mechanisms for missing sprites and comprehensive error handling.
- * 
+ *
  * @module SpriteManager
  * @author TavernTable
  * @since 1.0.0
@@ -43,14 +43,14 @@ class SpriteManager {
   getSpriteFiles() {
     // Generate sprite mapping from creature types in GameConstants
     const spriteFiles = {};
-    
+
     // Get all creature types from CREATURE_SCALES
     const creatureTypes = Object.keys(CREATURE_SCALES);
-    
+
     for (const creatureType of creatureTypes) {
       spriteFiles[`${creatureType}-sprite`] = `${creatureType}-sprite.png`;
     }
-    
+
     return spriteFiles;
   }
 
@@ -68,13 +68,13 @@ class SpriteManager {
       logger.log(LOG_LEVEL.DEBUG, 'Registered sprite', LOG_CATEGORY.ASSETS, {
         context: 'SpriteManager.addSprite',
         name,
-        path: fullPath
+        path: fullPath,
       });
     } catch (e) {
       new ErrorHandler().handle(e, ERROR_SEVERITY.LOW, ERROR_CATEGORY.RENDERING, {
         context: 'SpriteManager.addSprite',
         name,
-        path: fullPath
+        path: fullPath,
       });
     }
   }
@@ -85,22 +85,22 @@ class SpriteManager {
       // Track successful and failed loads
       const successfulLoads = [];
       const failedLoads = [];
-      
+
       // Load each registered sprite individually for better error handling
       for (const spriteName of this.registeredSprites) {
         try {
           const texture = await PIXI.Assets.load(spriteName);
-          
+
           if (texture && texture.width && texture.height) {
             successfulLoads.push(spriteName);
-            
+
             // Store reference for quick verification
             this.sprites.set(spriteName, texture);
           } else {
             logger.log(LOG_LEVEL.ERROR, 'Invalid texture', LOG_CATEGORY.ASSETS, {
               context: 'SpriteManager.loadSprites',
               spriteName,
-              textureInfo: texture ? { width: texture.width, height: texture.height } : null
+              textureInfo: texture ? { width: texture.width, height: texture.height } : null,
             });
             failedLoads.push(spriteName);
           }
@@ -108,25 +108,25 @@ class SpriteManager {
           logger.log(LOG_LEVEL.ERROR, 'Failed to load sprite', LOG_CATEGORY.ASSETS, {
             context: 'SpriteManager.loadSprites',
             spriteName,
-            error: spriteError?.message || String(spriteError)
+            error: spriteError?.message || String(spriteError),
           });
           failedLoads.push(spriteName);
         }
       }
-      
+
       if (failedLoads.length > 0) {
         logger.log(LOG_LEVEL.WARN, 'Some sprites failed to load', LOG_CATEGORY.ASSETS, {
           context: 'SpriteManager.loadSprites',
-          failed: failedLoads
+          failed: failedLoads,
         });
       }
-      
+
       this.loaded = true;
       return true;
     } catch (error) {
       logger.log(LOG_LEVEL.ERROR, 'Error loading sprites', LOG_CATEGORY.ASSETS, {
         context: 'SpriteManager.loadSprites',
-        error: error?.message || String(error)
+        error: error?.message || String(error),
       });
       this.loaded = true; // Still set to true to allow fallback graphics
       return false;
@@ -138,16 +138,16 @@ class SpriteManager {
     if (!this.loaded) {
       logger.log(LOG_LEVEL.WARN, 'Sprites not yet loaded', LOG_CATEGORY.ASSETS, {
         context: 'SpriteManager.getSprite',
-        name
+        name,
       });
       return null;
     }
-    
+
     // First try our stored reference
     if (this.sprites.has(name)) {
       return this.sprites.get(name);
     }
-    
+
     // Fallback to PIXI.Assets
     try {
       const sprite = PIXI.Assets.get(name);
@@ -157,7 +157,7 @@ class SpriteManager {
       } else {
         logger.log(LOG_LEVEL.ERROR, 'Sprite not found in PIXI.Assets', LOG_CATEGORY.ASSETS, {
           context: 'SpriteManager.getSprite',
-          name
+          name,
         });
       }
       return sprite;
@@ -165,7 +165,7 @@ class SpriteManager {
       logger.log(LOG_LEVEL.ERROR, 'Error retrieving sprite', LOG_CATEGORY.ASSETS, {
         context: 'SpriteManager.getSprite',
         name,
-        error: error?.message || String(error)
+        error: error?.message || String(error),
       });
       return null;
     }
@@ -182,7 +182,7 @@ class SpriteManager {
     if (this.sprites.has(name)) {
       return true;
     }
-    
+
     // Fallback check PIXI.Assets, but verify it's a valid texture
     try {
       const asset = PIXI.Assets.get(name);
@@ -194,7 +194,7 @@ class SpriteManager {
     } catch (error) {
       // Asset check failed
     }
-    
+
     return false;
   }
 
@@ -206,26 +206,25 @@ class SpriteManager {
     let spriteFiles = null;
     try {
       spriteFiles = this.getSpriteFiles();
-      
+
       // Register all sprites from config
       for (const [spriteName, filename] of Object.entries(spriteFiles)) {
         this.addSprite(spriteName, filename);
       }
-      
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
         context: 'SpriteManager.registerSprites',
         stage: 'sprite_registration',
         spritesRegistered: this.registeredSprites.length,
         fallbackMode: true,
-        configAvailable: !!spriteFiles
+        configAvailable: !!spriteFiles,
       });
-      
+
       // Register minimal sprites as fallback
       logger.log(LOG_LEVEL.WARN, 'Using fallback sprite registration', LOG_CATEGORY.SYSTEM, {
         context: 'SpriteManager.registerSprites',
         fallbackSprites: ['dragon-sprite', 'skeleton-sprite'],
-        originalError: error.message
+        originalError: error.message,
       });
       this.addSprite('dragon-sprite', 'dragon-sprite.png');
       this.addSprite('skeleton-sprite', 'skeleton-sprite.png');
@@ -276,8 +275,8 @@ class SpriteManager {
 
     // Fallback placeholder
     const g = new PIXI.Graphics();
-    g.beginFill(0xAA0000, 0.6);
-    g.lineStyle(2, 0xFFFFFF, 0.9);
+    g.beginFill(0xaa0000, 0.6);
+    g.lineStyle(2, 0xffffff, 0.9);
     g.drawRoundedRect(-16, -16, 32, 32, 6);
     g.endFill();
     g.scale.set(scale);

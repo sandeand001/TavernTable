@@ -24,7 +24,7 @@ export class TileLifecycleController {
     const tilesToRemove = [];
     const gridChildren = this.coordinator.gameManager.gridContainer.children || [];
 
-    gridChildren.forEach(child => {
+    gridChildren.forEach((child) => {
       if (child && child.isGridTile && child.gridX === x && child.gridY === y) {
         if (!child.destroyed) {
           tilesToRemove.push(child);
@@ -42,7 +42,7 @@ export class TileLifecycleController {
    * @param {number} y
    */
   removeGridTilesSafely(tilesToRemove, x, y) {
-    tilesToRemove.forEach(tile => {
+    tilesToRemove.forEach((tile) => {
       try {
         if (this.coordinator.gameManager.gridContainer.children.includes(tile)) {
           this.coordinator.gameManager.gridContainer.removeChild(tile);
@@ -55,7 +55,7 @@ export class TileLifecycleController {
         logger.warn('Error removing individual tile during replacement', {
           context: 'TileLifecycleController.removeGridTilesSafely',
           coordinates: { x, y },
-          error: tileRemovalError.message
+          error: tileRemovalError.message,
         });
       }
     });
@@ -97,7 +97,7 @@ export class TileLifecycleController {
           context: 'TileLifecycleController.applyTileEffectsAndData',
           coordinates: { x, y },
           height,
-          error: effectError.message
+          error: effectError.message,
         });
       }
     }
@@ -110,13 +110,17 @@ export class TileLifecycleController {
    * Log a successful tile replacement (moved from coordinator)
    */
   logTileReplacementSuccess(x, y, height, removedTileCount) {
-    logger.trace('Base grid tile replaced safely', {
-      context: 'TerrainCoordinator.replaceBaseGridTile',
-      coordinates: { x, y },
-      height,
-      removedTiles: removedTileCount,
-      newTileCreated: true
-    }, LOG_CATEGORY.RENDERING);
+    logger.trace(
+      'Base grid tile replaced safely',
+      {
+        context: 'TerrainCoordinator.replaceBaseGridTile',
+        coordinates: { x, y },
+        height,
+        removedTiles: removedTileCount,
+        newTileCreated: true,
+      },
+      LOG_CATEGORY.RENDERING
+    );
   }
 
   /**
@@ -127,7 +131,7 @@ export class TileLifecycleController {
       context: 'TerrainCoordinator.replaceBaseGridTile',
       coordinates: { x, y },
       height,
-      error: error.message
+      error: error.message,
     });
     // no-throw on purpose
   }
@@ -153,13 +157,18 @@ export class TileLifecycleController {
 
       const rows = this.coordinator.dataStore.base.length;
       const cols = this.coordinator.dataStore.base[0]?.length || 0;
-      const getBase = (gx, gy) => (gx >= 0 && gy >= 0 && gy < rows && gx < cols)
-        ? this.coordinator.dataStore.base[gy][gx]
-        : TERRAIN_CONFIG.DEFAULT_HEIGHT;
+      const getBase = (gx, gy) =>
+        gx >= 0 && gy >= 0 && gy < rows && gx < cols
+          ? this.coordinator.dataStore.base[gy][gx]
+          : TERRAIN_CONFIG.DEFAULT_HEIGHT;
 
       this.coordinator.faces.addBaseFaces(tile, x, y, height, getBase);
     } catch (e) {
-      logger.warn('Failed to add base 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
+      logger.warn(
+        'Failed to add base 3D faces',
+        { coordinates: { x, y }, error: e.message },
+        LOG_CATEGORY.RENDERING
+      );
     }
   }
 
@@ -175,12 +184,20 @@ export class TileLifecycleController {
 
       // Reset alpha if requested
       if (resetAlpha) {
-        try { tile.alpha = 1.0; } catch (_) { /* ignore */ }
+        try {
+          tile.alpha = 1.0;
+        } catch (_) {
+          /* ignore */
+        }
       }
 
       // Reset Y position to baseline if requested
       if (resetY && typeof tile.baseIsoY === 'number') {
-        try { tile.y = tile.baseIsoY; } catch (_) { /* ignore */ }
+        try {
+          tile.y = tile.baseIsoY;
+        } catch (_) {
+          /* ignore */
+        }
       }
 
       // Remove shadow tile from parent and destroy
@@ -190,18 +207,26 @@ export class TileLifecycleController {
           if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
             tile.shadowTile.destroy();
           }
-        } catch (_) { /* ignore */ }
+        } catch (_) {
+          /* ignore */
+        }
         tile.shadowTile = null;
       }
 
       // Remove depression overlay from tile children and destroy
       if (tile.depressionOverlay) {
         try {
-          if (tile.children?.includes(tile.depressionOverlay)) tile.removeChild(tile.depressionOverlay);
-          if (typeof tile.depressionOverlay.destroy === 'function' && !tile.depressionOverlay.destroyed) {
+          if (tile.children?.includes(tile.depressionOverlay))
+            tile.removeChild(tile.depressionOverlay);
+          if (
+            typeof tile.depressionOverlay.destroy === 'function' &&
+            !tile.depressionOverlay.destroyed
+          ) {
             tile.depressionOverlay.destroy();
           }
-        } catch (_) { /* ignore */ }
+        } catch (_) {
+          /* ignore */
+        }
         tile.depressionOverlay = null;
       }
 
@@ -212,7 +237,9 @@ export class TileLifecycleController {
           if (typeof tile.baseSideFaces.destroy === 'function' && !tile.baseSideFaces.destroyed) {
             tile.baseSideFaces.destroy();
           }
-        } catch (_) { /* ignore */ }
+        } catch (_) {
+          /* ignore */
+        }
         tile.baseSideFaces = null;
       }
     } catch (e) {

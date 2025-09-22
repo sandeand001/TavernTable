@@ -1,10 +1,25 @@
+/* eslint-disable indent */
 /**
  * SidebarController.js - Manages the right sidebar menu system
- * 
+ *
  * Handles tab switching, dice log management, and sidebar interactions
  * Following clean, modular design principles with single responsibility
  */
-import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl, getTabButtons, getTabPanels, getGridOpacityControl, getAnimationSpeedControl, getBiomeButtons, getBiomeButtonByKey } from './domHelpers.js';
+import {
+  getCreatureButtons,
+  getDiceLogContentEl,
+  getTokenButtonByType,
+  getShadingControls,
+  getBiomeRootEl,
+  getTabButtons,
+  getTabPanels,
+  getGridOpacityControl,
+  getAnimationSpeedControl,
+  getBiomeButtons,
+  getBiomeButtonByKey,
+  getTerrainPlaceablesRoot,
+  createPlaceableButton,
+} from './domHelpers.js';
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 
 class SidebarController {
@@ -44,14 +59,51 @@ class SidebarController {
       window.richShadingSettings = {
         enabled: true,
         intensity: 1.0, // 0..1 multiplier for alpha
-        density: 1.0,   // 0.5..1.5 multiplier for element counts/sizes
+        density: 1.0, // 0.5..1.5 multiplier for element counts/sizes
         performance: false,
-        shorelineSandStrength: 1.0 // 0..2 multiplier for shoreline sand effect
+        shorelineSandStrength: 1.0, // 0..2 multiplier for shoreline sand effect
       };
     }
 
     // Add welcome message to dice log
     this.addDiceLogEntry('Welcome to TavernTable! Roll some dice to see history here.', 'system');
+  }
+
+  /**
+   * Wire tab buttons to show corresponding panels and handle keyboard nav.
+   * Defensive: tolerates missing DOM in test/dom-less environments.
+   */
+  setupTabListeners() {
+    try {
+      const buttons = this._getTabButtons();
+      if (!buttons || buttons.length === 0) return;
+      buttons.forEach((btn) => {
+        // Avoid double-binding
+        if (btn.dataset.boundClick) return;
+        btn.addEventListener('click', () => {
+          const tab = btn.getAttribute('data-tab');
+          if (tab) this.showTab(tab);
+        });
+        // Basic keyboard navigation (left/right)</span>
+        btn.addEventListener('keydown', (ev) => {
+          try {
+            if (ev.key === 'ArrowRight') {
+              // focus next
+              const next = btn.nextElementSibling || buttons[0];
+              next?.focus();
+            } else if (ev.key === 'ArrowLeft') {
+              const prev = btn.previousElementSibling || buttons[buttons.length - 1];
+              prev?.focus();
+            }
+          } catch (_) {
+            /* ignore */
+          }
+        });
+        btn.dataset.boundClick = 'true';
+      });
+    } catch (_) {
+      /* ignore DOM wiring errors */
+    }
   }
 
   setupDiceLogControls() {
@@ -61,126 +113,103 @@ class SidebarController {
         clearBtn.addEventListener('click', () => this.clearDiceLog());
         clearBtn.dataset.boundClick = 'true';
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /**
-   * Set up event listeners for tab navigation
-   */
-  setupTabListeners() {
-    const tabButtons = this._getTabButtons();
-
-    tabButtons.forEach(button => {
-      button.addEventListener('click', (e) => {
-        const tabId = e.target.getAttribute('data-tab');
-        this.showTab(tabId);
-      });
-
-      // Keyboard accessibility
-      button.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          const tabId = e.target.getAttribute('data-tab');
-          this.showTab(tabId);
-        }
-      });
-    });
-  }
-
-  /**
-   * Set up range slider listeners for settings
+   * Wire range/slider controls such as grid opacity, animation speed, and shading controls.
+   * Defensive: checks for element presence and avoids throwing.
    */
   setupRangeSliderListeners() {
-    // Grid opacity slider
-    const { slider: gridOpacitySlider, valueEl: gridOpacityValue } = getGridOpacityControl();
-
-    if (gridOpacitySlider) {
-      gridOpacitySlider.addEventListener('input', (e) => {
-        const value = e.target.value;
-        if (gridOpacityValue) {
-          gridOpacityValue.textContent = `${value}%`;
-        }
-        // TODO: Apply grid opacity to game
-        this.onGridOpacityChange(value / 100);
-      });
-    }
-
-    // Animation speed slider
-    const { slider: animationSpeedSlider, valueEl: animationSpeedValue } = getAnimationSpeedControl();
-
-    if (animationSpeedSlider) {
-      animationSpeedSlider.addEventListener('input', (e) => {
-        const value = parseFloat(e.target.value);
-        if (animationSpeedValue) {
-          animationSpeedValue.textContent = `${value}x`;
-        }
-        // TODO: Apply animation speed to game
-        this.onAnimationSpeedChange(value);
-      });
-    }
-
-    // Biome Rich Shading controls
-    const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = getShadingControls();
-
-    if (shadeToggle) {
-      // Initialize from current settings
-      shadeToggle.checked = !!window.richShadingSettings?.enabled;
-      shadeToggle.addEventListener('change', () => {
-        const enabled = !!shadeToggle.checked;
-        window.richShadingSettings.enabled = enabled;
-        // Prefer coordinator API to manage painter + base grid
-        try {
-          if (window.gameManager?.terrainCoordinator?.setRichShadingEnabled) {
-            window.gameManager.terrainCoordinator.setRichShadingEnabled(enabled);
-          } else {
-            // Fallback: refresh terrain or re-apply palette
-            this._refreshTerrainOverlayIfActive();
+    try {
+      // Grid opacity
+      const { slider: gridSlider } = getGridOpacityControl() || {};
+      if (gridSlider && !gridSlider.dataset.boundInput) {
+        gridSlider.addEventListener('input', () => {
+          const v = Number(gridSlider.value);
+          if (!Number.isFinite(v)) return;
+          try {
+            this.onGridOpacityChange(v);
+          } catch (_) {
+            /* ignore */
           }
-        } catch (_) {
-          this._refreshTerrainOverlayIfActive();
+        });
+        gridSlider.dataset.boundInput = 'true';
+      }
+
+      // Animation speed
+      const { slider: animSlider } = getAnimationSpeedControl() || {};
+      if (animSlider && !animSlider.dataset.boundInput) {
+        animSlider.addEventListener('input', () => {
+          const v = Number(animSlider.value);
+          if (!Number.isFinite(v)) return;
+          try {
+            this.onAnimationSpeedChange(v);
+          } catch (_) {
+            /* ignore */
+          }
+        });
+        animSlider.dataset.boundInput = 'true';
+      }
+
+      // Rich shading controls (intensity/density/shore/perf)
+      try {
+        const { shadeToggle, intensity, density, shore, perf } = getShadingControls();
+        if (shadeToggle && !shadeToggle.dataset.boundChange) {
+          shadeToggle.addEventListener('change', () => {
+            if (!window.richShadingSettings) window.richShadingSettings = {};
+            window.richShadingSettings.enabled = !!shadeToggle.checked;
+            try {
+              window.gameManager?.terrainCoordinator?.setRichShadingEnabled?.(
+                !!shadeToggle.checked
+              );
+            } catch (_) {
+              /* ignore */
+            }
+          });
+          shadeToggle.dataset.boundChange = 'true';
         }
-      });
-    }
-    if (intensity && intensityVal) {
-      const init = Math.round((window.richShadingSettings?.intensity ?? 1) * 100);
-      intensity.value = String(init);
-      intensityVal.textContent = `${init}%`;
-      intensity.addEventListener('input', () => {
-        const pct = parseInt(intensity.value, 10) || 0;
-        window.richShadingSettings.intensity = Math.max(0, Math.min(150, pct)) / 100;
-        intensityVal.textContent = `${pct}%`;
-        this._refreshTerrainOverlayIfActive();
-      });
-    }
-    if (density && densityVal) {
-      const init = Math.round((window.richShadingSettings?.density ?? 1) * 100);
-      density.value = String(init);
-      densityVal.textContent = `${init}%`;
-      density.addEventListener('input', () => {
-        const pct = parseInt(density.value, 10) || 0;
-        window.richShadingSettings.density = Math.max(50, Math.min(150, pct)) / 100; // 0.5..1.5
-        densityVal.textContent = `${pct}%`;
-        this._refreshTerrainOverlayIfActive();
-      });
-    }
-    if (shore && shoreVal) {
-      const init = Math.round((window.richShadingSettings?.shorelineSandStrength ?? 1) * 100);
-      shore.value = String(init);
-      shoreVal.textContent = `${init}%`;
-      shore.addEventListener('input', () => {
-        const pct = parseInt(shore.value, 10) || 0;
-        // allow 0..200% → 0..2 multiplier
-        window.richShadingSettings.shorelineSandStrength = Math.max(0, Math.min(200, pct)) / 100;
-        shoreVal.textContent = `${pct}%`;
-        this._refreshTerrainOverlayIfActive();
-      });
-    }
-    if (perf) {
-      perf.checked = !!window.richShadingSettings?.performance;
-      perf.addEventListener('change', () => {
-        window.richShadingSettings.performance = perf.checked;
-        this._refreshTerrainOverlayIfActive();
-      });
+        if (intensity && !intensity.dataset.boundInput) {
+          intensity.addEventListener('input', () => {
+            const pct = Number(intensity.value);
+            if (!Number.isFinite(pct)) return;
+            if (!window.richShadingSettings) window.richShadingSettings = {};
+            window.richShadingSettings.intensity = pct / 100;
+          });
+          intensity.dataset.boundInput = 'true';
+        }
+        if (density && !density.dataset.boundInput) {
+          density.addEventListener('input', () => {
+            const pct = Number(density.value);
+            if (!Number.isFinite(pct)) return;
+            if (!window.richShadingSettings) window.richShadingSettings = {};
+            window.richShadingSettings.density = pct / 100;
+          });
+          density.dataset.boundInput = 'true';
+        }
+        if (shore && !shore.dataset.boundInput) {
+          shore.addEventListener('input', () => {
+            const pct = Number(shore.value);
+            if (!Number.isFinite(pct)) return;
+            if (!window.richShadingSettings) window.richShadingSettings = {};
+            window.richShadingSettings.shorelineSandStrength = pct / 100;
+          });
+          shore.dataset.boundInput = 'true';
+        }
+        if (perf && !perf.dataset.boundChange) {
+          perf.addEventListener('change', () => {
+            if (!window.richShadingSettings) window.richShadingSettings = {};
+            window.richShadingSettings.performance = !!perf.checked;
+          });
+          perf.dataset.boundChange = 'true';
+        }
+      } catch (_) {
+        /* ignore shading wiring */
+      }
+    } catch (_) {
+      /* ignore overall */
     }
   }
 
@@ -201,7 +230,7 @@ class SidebarController {
 
     // Update tab button states
     const tabButtons = this._getTabButtons();
-    tabButtons.forEach(button => {
+    tabButtons.forEach((button) => {
       const isActive = button.getAttribute('data-tab') === tabId;
       button.classList.toggle('active', isActive);
       button.setAttribute('aria-selected', isActive);
@@ -209,7 +238,7 @@ class SidebarController {
 
     // Update tab panel visibility
     const tabPanels = this._getTabPanels();
-    tabPanels.forEach(panel => {
+    tabPanels.forEach((panel) => {
       const isActive = panel.id === `${tabId}-panel`;
       panel.classList.toggle('active', isActive);
     });
@@ -224,31 +253,267 @@ class SidebarController {
    */
   onTabChange(tabId) {
     switch (tabId) {
-    case 'dice-log':
-      this.refreshDiceLog();
-      break;
-    case 'creatures':
-      // Ensure selected creature token is highlighted
-      this.refreshCreatureSelection();
-      break;
-    case 'terrain':
-      // Future: Initialize terrain tools
-      break;
-    case 'biomes':
-      this.buildBiomeMenuSafely();
-      // Ensure control defaults reflect current settings when switching tabs
-      this._syncRichShadingControlsFromState();
-      break;
-    case 'settings':
-      // Future: Load current game settings
-      break;
+      case 'dice-log':
+        this.refreshDiceLog();
+        break;
+      case 'creatures':
+        // Ensure selected creature token is highlighted
+        this.refreshCreatureSelection();
+        break;
+      case 'terrain':
+        // Future: Initialize terrain tools
+        this.buildTerrainPlaceablesMenuSafely();
+        // Inform the coordinator that the placeables panel is visible so
+        // input handlers will honor placeable selection and allow placement.
+        try {
+          window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(true);
+        } catch (_) {
+          /* ignore */
+        }
+        break;
+      case 'biomes':
+        this.buildBiomeMenuSafely();
+        this._wireGenerateMapButton();
+        // Ensure control defaults reflect current settings when switching tabs
+        this._syncRichShadingControlsFromState();
+        break;
+      case 'settings':
+        // Future: Load current game settings
+        break;
+      default:
+        break;
+    }
+    // If switching away from the terrain tab, ensure the coordinator knows the
+    // placeables panel is no longer visible so placement is blocked when the
+    // UI isn't showing the placeables panel.
+    try {
+      if (tabId !== 'terrain') {
+        window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(false);
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  buildTerrainPlaceablesMenuSafely() {
+    try {
+      // Avoid rebuilding if already populated
+      if (this._placeablesBuilt) return;
+      const root = getTerrainPlaceablesRoot();
+      if (!root) return; // nothing to do in minimal/test env
+
+      // Lazy import of placeables config to avoid early coupling
+      import('../config/TerrainPlaceables.js')
+        .then((mod) => {
+          const { TERRAIN_PLACEABLES } = mod;
+          if (!TERRAIN_PLACEABLES) return;
+          // Clear root
+          root.textContent = '';
+
+          // Build group header
+          const header = document.createElement('div');
+          header.className = 'placeables-header';
+          header.textContent = 'Placeable Plants';
+          root.appendChild(header);
+
+          // For each placeable that looks like a tree (key prefix 'tree-'), create a button
+          Object.keys(TERRAIN_PLACEABLES)
+            .filter((k) => k.startsWith('tree-'))
+            .forEach((key) => {
+              const def = TERRAIN_PLACEABLES[key];
+              const preview = Array.isArray(def.img) ? def.img[0] : def.img;
+              const btn = createPlaceableButton(key, def.label || key, preview);
+
+              // Select action: mark coordinator selected placeable so InputHandlers will paint
+              btn.addEventListener('click', () => {
+                try {
+                  // Toggle selection
+                  const currently =
+                    window.gameManager &&
+                    window.gameManager.terrainCoordinator &&
+                    typeof window.gameManager.terrainCoordinator.getSelectedPlaceable === 'function'
+                      ? window.gameManager.terrainCoordinator.getSelectedPlaceable()
+                      : window.selectedTerrainPlaceable || null;
+                  const toSet = currently === key ? null : key;
+                  // Respect coordinator API but note it was inert in older builds; set global fallback too
+                  try {
+                    if (
+                      window.gameManager &&
+                      window.gameManager.terrainCoordinator &&
+                      typeof window.gameManager.terrainCoordinator.setSelectedPlaceable ===
+                        'function'
+                    ) {
+                      window.gameManager.terrainCoordinator.setSelectedPlaceable(toSet);
+                      // Ensure the coordinator believes the placeables panel is visible while selecting
+                      try {
+                        window.gameManager.terrainCoordinator.setPlaceablesPanelVisible(true);
+                      } catch (_) {
+                        /* ignore */
+                      }
+                    }
+                  } catch (_) {
+                    /* ignore selection errors */
+                  }
+                  window.selectedTerrainPlaceable = toSet;
+                  // Visual state
+                  root
+                    .querySelectorAll('.placeable-btn')
+                    .forEach((b) => b.classList.remove('selected'));
+                  if (toSet) btn.classList.add('selected');
+                } catch (_) {
+                  /* ignore */
+                }
+              });
+
+              // Variant cycle control (small button next to each placeable) - cycles variants in place-mode
+              const cycle = document.createElement('button');
+              cycle.type = 'button';
+              cycle.className = 'placeable-cycle-btn';
+              cycle.title = 'Cycle variant';
+              cycle.textContent = '🔁';
+              cycle.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                try {
+                  // If there's a visible selection on the map, use coordinator to cycle at last hover or centered pos
+                  // Best-effort: use lastGridCoords from input handlers if available
+                  const last =
+                    window.gameManager?.terrainCoordinator?._inputHandlers?.lastGridCoords || null;
+                  const x = last?.x ?? Math.floor((window.gameManager?.cols || 10) / 2);
+                  const y = last?.y ?? Math.floor((window.gameManager?.rows || 10) / 2);
+                  try {
+                    window.gameManager?.terrainManager?.cyclePlaceableVariant(x, y, key);
+                  } catch (_) {
+                    // fallback to directly calling internals if exposed
+                    try {
+                      import('../managers/terrain-manager/internals/placeables.js').then((m) => {
+                        m.cyclePlaceableVariant(window.gameManager.terrainManager, x, y, key);
+                      });
+                    } catch (_) {
+                      void 0;
+                    }
+                  }
+                } catch (_) {
+                  void 0;
+                }
+              });
+
+              const wrapper = document.createElement('div');
+              wrapper.className = 'placeable-entry';
+              wrapper.appendChild(btn);
+              wrapper.appendChild(cycle);
+              root.appendChild(wrapper);
+            });
+
+          this._placeablesBuilt = true;
+        })
+        .catch((err) => {
+          /* noop: sidebar continues without placeables */ void err;
+        });
+    } catch (_) {
+      /* swallow errors to avoid breaking sidebar */
+    }
+  }
+
+  _wireGenerateMapButton() {
+    try {
+      const btn = document.getElementById('generate-map');
+      const lock = document.getElementById('biome-seed-lock');
+      const reseed = document.getElementById('biome-reseed');
+      if (btn && !btn.dataset.boundClick) {
+        btn.addEventListener('click', async () => {
+          const biome = window.selectedBiome;
+          if (!biome) return; // require a selection
+          try {
+            // Guard: prevent re-entry if generation is already running
+            if (
+              !window.gameManager?.terrainCoordinator ||
+              window.gameManager.terrainCoordinator._isGenerating
+            )
+              return;
+            // Disable button to prevent spamming
+            try {
+              btn.disabled = true;
+              btn.classList.add('disabled');
+            } catch (_) {
+              /* ignore */
+            }
+            if (lock && !lock.checked) {
+              const newSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+              try {
+                window.gameManager?.terrainCoordinator?.setBiomeSeed?.(newSeed);
+              } catch (_) {
+                /* ignore */
+              }
+            }
+            let ok = false;
+            try {
+              ok = await window.gameManager?.terrainCoordinator?.generateBiomeElevation?.(biome);
+            } catch (_) {
+              /* ignore */
+            }
+            try {
+              if (ok && window.gameManager?.terrainCoordinator?.applyBiomePaletteToBaseGrid) {
+                window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
+              }
+            } catch (_) {
+              /* ignore */
+            }
+          } catch (_) {
+            /* ignore */
+          } finally {
+            // Re-enable button after generation cycle ends
+            try {
+              btn.disabled = false;
+              btn.classList.remove('disabled');
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        });
+        btn.dataset.boundClick = 'true';
+      }
+      if (lock && !lock.dataset.boundChange) {
+        // reflect current locked state from global settings if present
+        try {
+          const s = window.richShadingSettings || {};
+          if (typeof s.lockSeed === 'boolean') lock.checked = !!s.lockSeed;
+        } catch (_) {
+          /* ignore */
+        }
+        lock.addEventListener('change', () => {
+          if (!window.richShadingSettings) window.richShadingSettings = {};
+          window.richShadingSettings.lockSeed = !!lock.checked;
+        });
+        lock.dataset.boundChange = 'true';
+      }
+      if (reseed && !reseed.dataset.boundClick) {
+        reseed.addEventListener('click', () => {
+          if (!window.gameManager?.terrainCoordinator) return;
+          const newSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+          try {
+            window.gameManager?.terrainCoordinator?.setBiomeSeed?.(newSeed);
+          } catch (_) {
+            /* ignore */
+          }
+          // If a biome is currently selected and outside terrain mode, repaint palette-only
+          try {
+            window.gameManager?.terrainCoordinator?.applyBiomePaletteToBaseGrid?.();
+          } catch (_) {
+            /* ignore */
+          }
+        });
+        reseed.dataset.boundClick = 'true';
+      }
+    } catch (_) {
+      /* ignore */
     }
   }
 
   _syncRichShadingControlsFromState() {
     try {
       const s = window.richShadingSettings || {};
-      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = getShadingControls();
+      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } =
+        getShadingControls();
       if (shadeToggle) shadeToggle.checked = !!s.enabled;
       if (intensity && intensityVal && Number.isFinite(s.intensity)) {
         const pct = Math.round(s.intensity * 100);
@@ -266,7 +531,9 @@ class SidebarController {
         shoreVal.textContent = `${pct}%`;
       }
       if (perf) perf.checked = !!s.performance;
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   _refreshTerrainOverlayIfActive() {
@@ -280,17 +547,25 @@ class SidebarController {
         if (enabled) {
           if (typeof gm.terrainCoordinator.applyBiomePaletteToBaseGrid === 'function') {
             gm.terrainCoordinator.applyBiomePaletteToBaseGrid();
-          } else { /* applyBiomePaletteToBaseGrid not present (older build) */ }
+          } else {
+            /* applyBiomePaletteToBaseGrid not present (older build) */
+          }
         } else {
           // If disabled, ensure painter is cleared and base tiles are visible
           if (typeof gm.terrainCoordinator.setRichShadingEnabled === 'function') {
             gm.terrainCoordinator.setRichShadingEnabled(false);
           } else {
-            try { gm.terrainCoordinator._toggleBaseTileVisibility?.(true); } catch (_) { /* ignore refresh error */ }
+            try {
+              gm.terrainCoordinator._toggleBaseTileVisibility?.(true);
+            } catch (_) {
+              /* ignore refresh error */
+            }
           }
         }
       }
-    } catch (_) { /* non-fatal */ }
+    } catch (_) {
+      /* non-fatal */
+    }
   }
 
   buildBiomeMenuSafely() {
@@ -305,52 +580,62 @@ class SidebarController {
         }
       }
       // Lazy import to avoid blocking initial load
-      import('../config/BiomeConstants.js').then(mod => {
-        const { BIOME_GROUPS } = mod;
-        if (!root) return;
-        root.textContent = '';
-        Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
-          const groupContainer = document.createElement('div');
-          groupContainer.className = 'biome-group';
+      import('../config/BiomeConstants.js')
+        .then((mod) => {
+          const { BIOME_GROUPS } = mod;
+          if (!root) return;
+          root.textContent = '';
+          Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
+            const groupContainer = document.createElement('div');
+            groupContainer.className = 'biome-group';
 
-          const headerBtn = document.createElement('button');
-          headerBtn.className = 'biome-group-toggle';
-          headerBtn.type = 'button';
-          headerBtn.setAttribute('aria-expanded', 'false');
-          headerBtn.textContent = group;
+            const headerBtn = document.createElement('button');
+            headerBtn.className = 'biome-group-toggle';
+            headerBtn.type = 'button';
+            headerBtn.setAttribute('aria-expanded', 'false');
+            headerBtn.textContent = group;
 
-          const listEl = document.createElement('div');
-          listEl.className = 'biome-group-list';
-          listEl.style.display = 'none';
+            const listEl = document.createElement('div');
+            listEl.className = 'biome-group-list';
+            listEl.style.display = 'none';
 
-          headerBtn.addEventListener('click', () => {
-            const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
-            headerBtn.setAttribute('aria-expanded', String(!expanded));
-            listEl.style.display = expanded ? 'none' : 'grid';
+            headerBtn.addEventListener('click', () => {
+              const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
+              headerBtn.setAttribute('aria-expanded', String(!expanded));
+              listEl.style.display = expanded ? 'none' : 'grid';
+            });
+
+            list.forEach((b) => {
+              const bBtn = document.createElement('button');
+              bBtn.className = 'biome-btn';
+              bBtn.type = 'button';
+              bBtn.dataset.biome = b.key;
+              bBtn.title = b.label;
+              bBtn.textContent = (b.emoji || '') + ' ' + b.label;
+              bBtn.addEventListener('click', () => this.selectBiome(b.key));
+              listEl.appendChild(bBtn);
+            });
+
+            groupContainer.appendChild(headerBtn);
+            groupContainer.appendChild(listEl);
+            root.appendChild(groupContainer);
           });
-
-          list.forEach(b => {
-            const bBtn = document.createElement('button');
-            bBtn.className = 'biome-btn';
-            bBtn.type = 'button';
-            bBtn.dataset.biome = b.key;
-            bBtn.title = b.label;
-            bBtn.textContent = (b.emoji || '') + ' ' + b.label;
-            bBtn.addEventListener('click', () => this.selectBiome(b.key));
-            listEl.appendChild(bBtn);
-          });
-
-          groupContainer.appendChild(headerBtn);
-          groupContainer.appendChild(listEl);
-          root.appendChild(groupContainer);
+          this._biomesBuilt = true;
+          // Re-apply selected biome highlight if one was chosen earlier
+          if (window.selectedBiome) {
+            try {
+              this.selectBiome(window.selectedBiome);
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        })
+        .catch((err) => {
+          /* noop: biome menu can be built later */ void err;
         });
-        this._biomesBuilt = true;
-        // Re-apply selected biome highlight if one was chosen earlier
-        if (window.selectedBiome) {
-          try { this.selectBiome(window.selectedBiome); } catch (_) { /* ignore */ }
-        }
-      }).catch(() => { /* ignore dynamic import errors */ });
-    } catch (_) { /* swallow to avoid UI disruption */ }
+    } catch (_) {
+      /* swallow to avoid UI disruption */
+    }
   }
 
   selectBiome(biomeKey) {
@@ -358,24 +643,32 @@ class SidebarController {
     if (window.sidebarController?.activeTab === 'terrain') {
       logger.debug('Biome selected', { biomeKey }, LOG_CATEGORY.UI);
     }
-    // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
+    // If game manager exists and terrain mode is OFF, apply palette only (no auto-generation here)
     try {
-      if (window.gameManager && window.gameManager.terrainCoordinator && !window.gameManager.terrainCoordinator.isTerrainModeActive) {
+      if (
+        window.gameManager &&
+        window.gameManager.terrainCoordinator &&
+        !window.gameManager.terrainCoordinator.isTerrainModeActive
+      ) {
         window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
       }
-    } catch (_) { /* non-fatal */ }
+    } catch (_) {
+      /* non-fatal */
+    }
     // Visual selection state
     try {
       const root = getBiomeRootEl();
       if (root) {
-        getBiomeButtons(root).forEach(btn => btn.classList.remove('selected'));
+        getBiomeButtons(root).forEach((btn) => btn.classList.remove('selected'));
         const newly = getBiomeButtonByKey(biomeKey, root);
         if (newly) {
           newly.classList.add('selected');
           newly.setAttribute('aria-pressed', 'true');
         }
       }
-    } catch (_) { /* silent */ }
+    } catch (_) {
+      /* silent */
+    }
   }
 
   /**
@@ -389,7 +682,7 @@ class SidebarController {
       message,
       type,
       timestamp,
-      id: Date.now() + Math.random() // Simple unique ID
+      id: Date.now() + Math.random(), // Simple unique ID
     };
 
     // Add to beginning of array (newest first)
@@ -476,7 +769,7 @@ class SidebarController {
     // Clear all selections first
     // DRY: use shared helper
     const allTokenButtons = getCreatureButtons();
-    allTokenButtons.forEach(btn => {
+    allTokenButtons.forEach((btn) => {
       btn.classList.remove('selected');
       btn.setAttribute('aria-pressed', 'false');
     });
@@ -512,7 +805,7 @@ class SidebarController {
     // Integrate with GameManager to change grid opacity
     if (window.gameManager && window.gameManager.gridContainer) {
       // Apply opacity to grid tiles while preserving token visibility
-      window.gameManager.gridContainer.children.forEach(child => {
+      window.gameManager.gridContainer.children.forEach((child) => {
         if (child.isGridTile) {
           child.alpha = opacity;
         }
@@ -536,7 +829,6 @@ class SidebarController {
       if (window.gameManager.app.ticker) {
         window.gameManager.app.ticker.speed = speed;
       }
-
     } else {
       logger.debug('GameManager not available for animation speed change', {}, LOG_CATEGORY.UI);
     }
@@ -547,5 +839,9 @@ class SidebarController {
 
 // Create and expose global instance
 window.sidebarController = new SidebarController();
+
+/* NFC NOTE (2025-09-19): SidebarController flagged as orphan; usage is indirect via global
+window.sidebarController for dice system & selection updates. Scheduled for architectural
+review in a later phase. Keep for now (NFC). */
 
 export default SidebarController;

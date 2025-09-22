@@ -32,11 +32,15 @@ export function cleanupExistingTile(m, tileKey) {
     );
 
     if (!cleanupSuccess) {
-      logger.warn('Tile cleanup had partial failures, continuing with creation', {
-        context: 'TerrainManager.createTerrainTile',
-        coordinates: { x: existingTile.gridX, y: existingTile.gridY },
-        tileKey
-      }, LOG_CATEGORY.RENDERING);
+      logger.warn(
+        'Tile cleanup had partial failures, continuing with creation',
+        {
+          context: 'TerrainManager.createTerrainTile',
+          coordinates: { x: existingTile.gridX, y: existingTile.gridY },
+          tileKey,
+        },
+        LOG_CATEGORY.RENDERING
+      );
     }
 
     m.terrainTiles.delete(tileKey);
@@ -58,41 +62,63 @@ export function createBaseTerrainGraphics(m, x, y, height) {
   return terrainTile;
 }
 
-/** Internal: get fill color for height, matching manager logic. */
-export function getColorForHeightInternal(m, height) {
+/** Internal: get fill color for height, matching manager logic (no external export). */
+function getColorForHeightInternal(m, height) {
   try {
-    if (!m.terrainCoordinator?.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
+    if (
+      !m.terrainCoordinator?.isTerrainModeActive &&
+      typeof window !== 'undefined' &&
+      window.selectedBiome
+    ) {
       const gx = 0;
       const gy = 0;
-      const mapFreq = (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
+      const mapFreq =
+        (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
       const seed = (m.terrainCoordinator?._biomeSeed ?? 1337) >>> 0;
-      return getBiomeColorHex(window.selectedBiome, height, gx, gy, { moisture: 0.5, slope: 0, aspectRad: 0, seed, mapFreq });
+      return getBiomeColorHex(window.selectedBiome, height, gx, gy, {
+        moisture: 0.5,
+        slope: 0,
+        aspectRad: 0,
+        seed,
+        mapFreq,
+      });
     }
-  } catch (_) { /* ignore */ }
+  } catch (_) {
+    /* ignore */
+  }
   const colorKey = height.toString();
   return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[colorKey] || TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'];
 }
 
 /** Apply rich shading and stroke styling onto a terrain tile. */
 export function applyTerrainStyling(m, terrainTile, height) {
-  const isDefaultHeight = (height === TERRAIN_CONFIG.DEFAULT_HEIGHT);
+  const isDefaultHeight = height === TERRAIN_CONFIG.DEFAULT_HEIGHT;
   const color = getColorForHeightInternal(m, height);
   try {
     if (terrainTile.paintLayer) {
       terrainTile.removeChild(terrainTile.paintLayer);
-      if (typeof terrainTile.paintLayer.destroy === 'function' && !terrainTile.paintLayer.destroyed) {
+      if (
+        typeof terrainTile.paintLayer.destroy === 'function' &&
+        !terrainTile.paintLayer.destroyed
+      ) {
         terrainTile.paintLayer.destroy({ children: true });
       }
       terrainTile.paintLayer = null;
     }
     if (terrainTile.paintMask) {
-      try { terrainTile.removeChild(terrainTile.paintMask); } catch { /* ignore */ }
+      try {
+        terrainTile.removeChild(terrainTile.paintMask);
+      } catch {
+        /* ignore */
+      }
       if (typeof terrainTile.paintMask.destroy === 'function' && !terrainTile.paintMask.destroyed) {
         terrainTile.paintMask.destroy();
       }
       terrainTile.paintMask = null;
     }
-  } catch (_) { /* best-effort */ }
+  } catch (_) {
+    /* best-effort */
+  }
 
   if (isDefaultHeight) {
     terrainTile.lineStyle(1, 0x666666, 0.3);
@@ -121,7 +147,8 @@ export function applyTerrainStyling(m, terrainTile, height) {
   paint.y = 0;
   const w = m.gameManager.tileWidth;
   const h = m.gameManager.tileHeight;
-  const settings = (typeof window !== 'undefined' && window.richShadingSettings) ? window.richShadingSettings : null;
+  const settings =
+    typeof window !== 'undefined' && window.richShadingSettings ? window.richShadingSettings : null;
   const shadingEnabled = settings ? !!settings.enabled : true;
   const intensityMul = settings && Number.isFinite(settings.intensity) ? settings.intensity : 1.0;
   const densityMul = settings && Number.isFinite(settings.density) ? settings.density : 1.0;
@@ -137,11 +164,17 @@ export function applyTerrainStyling(m, terrainTile, height) {
   mask.lineTo(0, h / 2);
   mask.endFill();
 
-  const biome = (!m.terrainCoordinator?.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome)
-    ? String(window.selectedBiome)
-    : '';
-  const seed = (terrainTile.gridX * 73856093) ^ (terrainTile.gridY * 19349663) ^ ((height || 0) * 83492791);
-  void densityMul; void simplify; void seed;
+  const biome =
+    !m.terrainCoordinator?.isTerrainModeActive &&
+    typeof window !== 'undefined' &&
+    window.selectedBiome
+      ? String(window.selectedBiome)
+      : '';
+  const seed =
+    (terrainTile.gridX * 73856093) ^ (terrainTile.gridY * 19349663) ^ ((height || 0) * 83492791);
+  void densityMul;
+  void simplify;
+  void seed;
 
   if (!shadingEnabled) {
     const center = new PIXI.Graphics();
@@ -230,6 +263,10 @@ export function addVisualEffects(m, terrainTile, height, x, y) {
     const faceBase = getColorForHeightInternal(m, height);
     m.facesRenderer.addOverlayFaces(m.terrainContainer, terrainTile, getH, x, y, height, faceBase);
   } catch (e) {
-    logger.warn('Failed to add 3D faces', { coordinates: { x, y }, error: e.message }, LOG_CATEGORY.RENDERING);
+    logger.warn(
+      'Failed to add 3D faces',
+      { coordinates: { x, y }, error: e.message },
+      LOG_CATEGORY.RENDERING
+    );
   }
 }

@@ -9,11 +9,12 @@ export function strokeBlob(ctx, cx, cy, r, color, alpha, jag = 0.12, steps = 24,
   ctx.beginPath();
   for (let i = 0; i <= steps; i++) {
     const t = (i / steps) * Math.PI * 2;
-    const wob = 1 + (u.valueNoise2D(Math.cos(t) * 3 + cx * 0.01, Math.sin(t) * 3 + cy * 0.01) * jag);
+    const wob = 1 + u.valueNoise2D(Math.cos(t) * 3 + cx * 0.01, Math.sin(t) * 3 + cy * 0.01) * jag;
     const rr = r * wob;
     const x = cx + Math.cos(t) * rr;
     const y = cy + Math.sin(t) * rr;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
   }
   ctx.closePath();
   ctx.fill();
@@ -22,7 +23,8 @@ export function strokeBlob(ctx, cx, cy, r, color, alpha, jag = 0.12, steps = 24,
 
 /** Long ribbon stroke for dunes/waves, following a noisy direction field. */
 export function strokeRibbon(ctx, sx, sy, len, width, color, alpha, orient = 0, u) {
-  let x = sx, y = sy;
+  let x = sx,
+    y = sy;
   const step = Math.max(8, width * 0.6);
   ctx.save();
   ctx.strokeStyle = u.hex(color);
@@ -39,9 +41,9 @@ export function strokeRibbon(ctx, sx, sy, len, width, color, alpha, orient = 0, 
     const sNorm = Math.max(0, Math.min(1, localSlope * 1.5));
     const sW = Math.pow(sNorm, Math.max(0.1, slopeGain));
     const alongFlow = u.ribbonAlongFlow === true;
-    const aspectDir = alongFlow ? (localAspect + Math.PI) : (localAspect + Math.PI / 2);
-    const blended = (1 - 0.5 * sW) * orient + (0.5 * sW) * aspectDir;
-    const noise = (u.valueNoise2D(x * 0.01, y * 0.01) * 0.7);
+    const aspectDir = alongFlow ? localAspect + Math.PI : localAspect + Math.PI / 2;
+    const blended = (1 - 0.5 * sW) * orient + 0.5 * sW * aspectDir;
+    const noise = u.valueNoise2D(x * 0.01, y * 0.01) * 0.7;
     const angle = blended + noise;
     x += Math.cos(angle) * step;
     y += Math.sin(angle) * step * 0.6;
@@ -52,17 +54,27 @@ export function strokeRibbon(ctx, sx, sy, len, width, color, alpha, orient = 0, 
 }
 
 /** Parallel striations across current clip at a given angle. */
-export function globalStriations(ctx, canvas, color, alpha = 0.16, angle = Math.PI / 6, gap = 40, u) {
+export function globalStriations(
+  ctx,
+  canvas,
+  color,
+  alpha = 0.16,
+  angle = Math.PI / 6,
+  gap = 40,
+  u
+) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.strokeStyle = u.hex(u.shadeHex(color, 0.7));
   ctx.lineWidth = Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) * 0.01));
   const diag = Math.hypot(canvas.width, canvas.height);
-  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const cx = canvas.width / 2,
+    cy = canvas.height / 2;
   const count = Math.ceil(diag / gap) + 2;
   for (let i = -count; i <= count; i++) {
     const offset = i * gap;
-    const nx = Math.cos(angle + Math.PI / 2), ny = Math.sin(angle + Math.PI / 2);
+    const nx = Math.cos(angle + Math.PI / 2),
+      ny = Math.sin(angle + Math.PI / 2);
     const px = cx + nx * offset;
     const py = cy + ny * offset;
     const dx = Math.cos(angle) * diag;
@@ -76,7 +88,16 @@ export function globalStriations(ctx, canvas, color, alpha = 0.16, angle = Math.
 }
 
 /** Crack network across current clip. */
-export function globalCracks(ctx, canvas, color, alpha = 0.22, count = 8, step = 48, jitter = 0.25, u) {
+export function globalCracks(
+  ctx,
+  canvas,
+  color,
+  alpha = 0.22,
+  count = 8,
+  step = 48,
+  jitter = 0.25,
+  u
+) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.strokeStyle = u.hex(u.shadeHex(color, 0.4));
@@ -100,7 +121,18 @@ export function globalCracks(ctx, canvas, color, alpha = 0.22, count = 8, step =
 }
 
 /** Scatter soft blobs across the clip. */
-export function scatterBlobsGlobal(ctx, canvas, count, rBase, rVar, color, alpha = 0.16, jag = 0.08, steps = 18, u) {
+export function scatterBlobsGlobal(
+  ctx,
+  canvas,
+  count,
+  rBase,
+  rVar,
+  color,
+  alpha = 0.16,
+  jag = 0.08,
+  steps = 18,
+  u
+) {
   for (let i = 0; i < count; i++) {
     const x = u.randU('blob', i, 1) * canvas.width;
     const y = u.randU('blob', i, 2) * canvas.height;

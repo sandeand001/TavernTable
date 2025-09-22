@@ -1,10 +1,22 @@
 /**
  * SidebarController.js - Manages the right sidebar menu system
- * 
+ *
  * Handles tab switching, dice log management, and sidebar interactions
  * Following clean, modular design principles with single responsibility
  */
-import { getCreatureButtons, getDiceLogContentEl, getTokenButtonByType, getShadingControls, getBiomeRootEl, getTabButtons, getTabPanels, getGridOpacityControl, getAnimationSpeedControl, getBiomeButtons, getBiomeButtonByKey } from './domHelpers.js';
+import {
+  getCreatureButtons,
+  getDiceLogContentEl,
+  getTokenButtonByType,
+  getShadingControls,
+  getBiomeRootEl,
+  getTabButtons,
+  getTabPanels,
+  getGridOpacityControl,
+  getAnimationSpeedControl,
+  getBiomeButtons,
+  getBiomeButtonByKey,
+} from './domHelpers.js';
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 
 class SidebarController {
@@ -44,9 +56,9 @@ class SidebarController {
       window.richShadingSettings = {
         enabled: true,
         intensity: 1.0, // 0..1 multiplier for alpha
-        density: 1.0,   // 0.5..1.5 multiplier for element counts/sizes
+        density: 1.0, // 0.5..1.5 multiplier for element counts/sizes
         performance: false,
-        shorelineSandStrength: 1.0 // 0..2 multiplier for shoreline sand effect
+        shorelineSandStrength: 1.0, // 0..2 multiplier for shoreline sand effect
       };
     }
 
@@ -61,7 +73,9 @@ class SidebarController {
         clearBtn.addEventListener('click', () => this.clearDiceLog());
         clearBtn.dataset.boundClick = 'true';
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /**
@@ -70,7 +84,7 @@ class SidebarController {
   setupTabListeners() {
     const tabButtons = this._getTabButtons();
 
-    tabButtons.forEach(button => {
+    tabButtons.forEach((button) => {
       button.addEventListener('click', (e) => {
         const tabId = e.target.getAttribute('data-tab');
         this.showTab(tabId);
@@ -106,7 +120,8 @@ class SidebarController {
     }
 
     // Animation speed slider
-    const { slider: animationSpeedSlider, valueEl: animationSpeedValue } = getAnimationSpeedControl();
+    const { slider: animationSpeedSlider, valueEl: animationSpeedValue } =
+      getAnimationSpeedControl();
 
     if (animationSpeedSlider) {
       animationSpeedSlider.addEventListener('input', (e) => {
@@ -120,7 +135,8 @@ class SidebarController {
     }
 
     // Biome Rich Shading controls
-    const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = getShadingControls();
+    const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } =
+      getShadingControls();
 
     if (shadeToggle) {
       // Initialize from current settings
@@ -201,7 +217,7 @@ class SidebarController {
 
     // Update tab button states
     const tabButtons = this._getTabButtons();
-    tabButtons.forEach(button => {
+    tabButtons.forEach((button) => {
       const isActive = button.getAttribute('data-tab') === tabId;
       button.classList.toggle('active', isActive);
       button.setAttribute('aria-selected', isActive);
@@ -209,7 +225,7 @@ class SidebarController {
 
     // Update tab panel visibility
     const tabPanels = this._getTabPanels();
-    tabPanels.forEach(panel => {
+    tabPanels.forEach((panel) => {
       const isActive = panel.id === `${tabId}-panel`;
       panel.classList.toggle('active', isActive);
     });
@@ -224,31 +240,56 @@ class SidebarController {
    */
   onTabChange(tabId) {
     switch (tabId) {
-    case 'dice-log':
-      this.refreshDiceLog();
-      break;
-    case 'creatures':
-      // Ensure selected creature token is highlighted
-      this.refreshCreatureSelection();
-      break;
-    case 'terrain':
-      // Future: Initialize terrain tools
-      break;
-    case 'biomes':
-      this.buildBiomeMenuSafely();
-      // Ensure control defaults reflect current settings when switching tabs
-      this._syncRichShadingControlsFromState();
-      break;
-    case 'settings':
-      // Future: Load current game settings
-      break;
+      case 'dice-log':
+        this.refreshDiceLog();
+        break;
+      case 'creatures':
+        // Ensure selected creature token is highlighted
+        this.refreshCreatureSelection();
+        break;
+      case 'terrain':
+        // Future: Initialize terrain tools
+        break;
+      case 'biomes':
+        this.buildBiomeMenuSafely();
+        this._wireGenerateMapButton();
+        // Ensure control defaults reflect current settings when switching tabs
+        this._syncRichShadingControlsFromState();
+        break;
+      case 'settings':
+        // Future: Load current game settings
+        break;
+    }
+  }
+
+  _wireGenerateMapButton() {
+    try {
+      const btn = document.getElementById('generate-map');
+      if (btn && !btn.dataset.boundClick) {
+        btn.addEventListener('click', () => {
+          const biome = window.selectedBiome;
+          if (!biome) return;
+          try {
+            const ok = window.gameManager?.terrainCoordinator?.generateBiomeElevation?.(biome);
+            if (ok && window.gameManager?.terrainCoordinator?.applyBiomePaletteToBaseGrid) {
+              window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
+            }
+          } catch (_) {
+            /* ignore */
+          }
+        });
+        btn.dataset.boundClick = 'true';
+      }
+    } catch (_) {
+      /* ignore */
     }
   }
 
   _syncRichShadingControlsFromState() {
     try {
       const s = window.richShadingSettings || {};
-      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } = getShadingControls();
+      const { shadeToggle, intensity, intensityVal, density, densityVal, shore, shoreVal, perf } =
+        getShadingControls();
       if (shadeToggle) shadeToggle.checked = !!s.enabled;
       if (intensity && intensityVal && Number.isFinite(s.intensity)) {
         const pct = Math.round(s.intensity * 100);
@@ -266,7 +307,9 @@ class SidebarController {
         shoreVal.textContent = `${pct}%`;
       }
       if (perf) perf.checked = !!s.performance;
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   _refreshTerrainOverlayIfActive() {
@@ -280,17 +323,25 @@ class SidebarController {
         if (enabled) {
           if (typeof gm.terrainCoordinator.applyBiomePaletteToBaseGrid === 'function') {
             gm.terrainCoordinator.applyBiomePaletteToBaseGrid();
-          } else { /* applyBiomePaletteToBaseGrid not present (older build) */ }
+          } else {
+            /* applyBiomePaletteToBaseGrid not present (older build) */
+          }
         } else {
           // If disabled, ensure painter is cleared and base tiles are visible
           if (typeof gm.terrainCoordinator.setRichShadingEnabled === 'function') {
             gm.terrainCoordinator.setRichShadingEnabled(false);
           } else {
-            try { gm.terrainCoordinator._toggleBaseTileVisibility?.(true); } catch (_) { /* ignore refresh error */ }
+            try {
+              gm.terrainCoordinator._toggleBaseTileVisibility?.(true);
+            } catch (_) {
+              /* ignore refresh error */
+            }
           }
         }
       }
-    } catch (_) { /* non-fatal */ }
+    } catch (_) {
+      /* non-fatal */
+    }
   }
 
   buildBiomeMenuSafely() {
@@ -305,52 +356,62 @@ class SidebarController {
         }
       }
       // Lazy import to avoid blocking initial load
-      import('../config/BiomeConstants.js').then(mod => {
-        const { BIOME_GROUPS } = mod;
-        if (!root) return;
-        root.textContent = '';
-        Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
-          const groupContainer = document.createElement('div');
-          groupContainer.className = 'biome-group';
+      import('../config/BiomeConstants.js')
+        .then((mod) => {
+          const { BIOME_GROUPS } = mod;
+          if (!root) return;
+          root.textContent = '';
+          Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
+            const groupContainer = document.createElement('div');
+            groupContainer.className = 'biome-group';
 
-          const headerBtn = document.createElement('button');
-          headerBtn.className = 'biome-group-toggle';
-          headerBtn.type = 'button';
-          headerBtn.setAttribute('aria-expanded', 'false');
-          headerBtn.textContent = group;
+            const headerBtn = document.createElement('button');
+            headerBtn.className = 'biome-group-toggle';
+            headerBtn.type = 'button';
+            headerBtn.setAttribute('aria-expanded', 'false');
+            headerBtn.textContent = group;
 
-          const listEl = document.createElement('div');
-          listEl.className = 'biome-group-list';
-          listEl.style.display = 'none';
+            const listEl = document.createElement('div');
+            listEl.className = 'biome-group-list';
+            listEl.style.display = 'none';
 
-          headerBtn.addEventListener('click', () => {
-            const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
-            headerBtn.setAttribute('aria-expanded', String(!expanded));
-            listEl.style.display = expanded ? 'none' : 'grid';
+            headerBtn.addEventListener('click', () => {
+              const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
+              headerBtn.setAttribute('aria-expanded', String(!expanded));
+              listEl.style.display = expanded ? 'none' : 'grid';
+            });
+
+            list.forEach((b) => {
+              const bBtn = document.createElement('button');
+              bBtn.className = 'biome-btn';
+              bBtn.type = 'button';
+              bBtn.dataset.biome = b.key;
+              bBtn.title = b.label;
+              bBtn.textContent = (b.emoji || '') + ' ' + b.label;
+              bBtn.addEventListener('click', () => this.selectBiome(b.key));
+              listEl.appendChild(bBtn);
+            });
+
+            groupContainer.appendChild(headerBtn);
+            groupContainer.appendChild(listEl);
+            root.appendChild(groupContainer);
           });
-
-          list.forEach(b => {
-            const bBtn = document.createElement('button');
-            bBtn.className = 'biome-btn';
-            bBtn.type = 'button';
-            bBtn.dataset.biome = b.key;
-            bBtn.title = b.label;
-            bBtn.textContent = (b.emoji || '') + ' ' + b.label;
-            bBtn.addEventListener('click', () => this.selectBiome(b.key));
-            listEl.appendChild(bBtn);
-          });
-
-          groupContainer.appendChild(headerBtn);
-          groupContainer.appendChild(listEl);
-          root.appendChild(groupContainer);
+          this._biomesBuilt = true;
+          // Re-apply selected biome highlight if one was chosen earlier
+          if (window.selectedBiome) {
+            try {
+              this.selectBiome(window.selectedBiome);
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        })
+        .catch(() => {
+          /* ignore dynamic import errors */
         });
-        this._biomesBuilt = true;
-        // Re-apply selected biome highlight if one was chosen earlier
-        if (window.selectedBiome) {
-          try { this.selectBiome(window.selectedBiome); } catch (_) { /* ignore */ }
-        }
-      }).catch(() => { /* ignore dynamic import errors */ });
-    } catch (_) { /* swallow to avoid UI disruption */ }
+    } catch (_) {
+      /* swallow to avoid UI disruption */
+    }
   }
 
   selectBiome(biomeKey) {
@@ -359,23 +420,32 @@ class SidebarController {
       logger.debug('Biome selected', { biomeKey }, LOG_CATEGORY.UI);
     }
     // If game manager exists and terrain mode is OFF, immediately apply biome palette colors
+    // If game manager exists and terrain mode is OFF, apply palette only (no auto-generation here)
     try {
-      if (window.gameManager && window.gameManager.terrainCoordinator && !window.gameManager.terrainCoordinator.isTerrainModeActive) {
+      if (
+        window.gameManager &&
+        window.gameManager.terrainCoordinator &&
+        !window.gameManager.terrainCoordinator.isTerrainModeActive
+      ) {
         window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid();
       }
-    } catch (_) { /* non-fatal */ }
+    } catch (_) {
+      /* non-fatal */
+    }
     // Visual selection state
     try {
       const root = getBiomeRootEl();
       if (root) {
-        getBiomeButtons(root).forEach(btn => btn.classList.remove('selected'));
+        getBiomeButtons(root).forEach((btn) => btn.classList.remove('selected'));
         const newly = getBiomeButtonByKey(biomeKey, root);
         if (newly) {
           newly.classList.add('selected');
           newly.setAttribute('aria-pressed', 'true');
         }
       }
-    } catch (_) { /* silent */ }
+    } catch (_) {
+      /* silent */
+    }
   }
 
   /**
@@ -389,7 +459,7 @@ class SidebarController {
       message,
       type,
       timestamp,
-      id: Date.now() + Math.random() // Simple unique ID
+      id: Date.now() + Math.random(), // Simple unique ID
     };
 
     // Add to beginning of array (newest first)
@@ -476,7 +546,7 @@ class SidebarController {
     // Clear all selections first
     // DRY: use shared helper
     const allTokenButtons = getCreatureButtons();
-    allTokenButtons.forEach(btn => {
+    allTokenButtons.forEach((btn) => {
       btn.classList.remove('selected');
       btn.setAttribute('aria-pressed', 'false');
     });
@@ -512,7 +582,7 @@ class SidebarController {
     // Integrate with GameManager to change grid opacity
     if (window.gameManager && window.gameManager.gridContainer) {
       // Apply opacity to grid tiles while preserving token visibility
-      window.gameManager.gridContainer.children.forEach(child => {
+      window.gameManager.gridContainer.children.forEach((child) => {
         if (child.isGridTile) {
           child.alpha = opacity;
         }
@@ -536,7 +606,6 @@ class SidebarController {
       if (window.gameManager.app.ticker) {
         window.gameManager.app.ticker.speed = speed;
       }
-
     } else {
       logger.debug('GameManager not available for animation speed change', {}, LOG_CATEGORY.UI);
     }

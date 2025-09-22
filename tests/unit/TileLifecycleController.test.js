@@ -5,24 +5,37 @@ function makeCoordinatorStub() {
   const removed = [];
   const gridContainer = {
     children: [],
-    removeChild: (t) => { removed.push(t); }
+    removeChild: (t) => {
+      removed.push(t);
+    },
   };
   const gameManager = {
     gridContainer,
     gridRenderer: {
-      drawIsometricTile: (x, y, color) => ({ x, y, color, destroyed: false, parent: gridContainer })
-    }
+      drawIsometricTile: (x, y, color) => ({
+        x,
+        y,
+        color,
+        destroyed: false,
+        parent: gridContainer,
+      }),
+    },
   };
   const faces = { addBaseFaces: jest.fn() };
-  const dataStore = { base: [[0,0],[0,0]] };
+  const dataStore = {
+    base: [
+      [0, 0],
+      [0, 0],
+    ],
+  };
   return {
     isTerrainModeActive: true,
-    getColorForHeight: (h) => 0x112233,
-    _getBiomeOrBaseColor: (h) => 0x445566,
+    getColorForHeight: () => 0x112233,
+    _getBiomeOrBaseColor: () => 0x445566,
     addVisualElevationEffect: jest.fn(),
     gameManager,
     faces,
-    dataStore
+    dataStore,
   };
 }
 

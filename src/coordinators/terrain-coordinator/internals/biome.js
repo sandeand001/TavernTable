@@ -46,13 +46,21 @@ export function setRichShadingEnabled(c, enabled) {
  */
 export function setBiomeSeed(c, seed) {
   if (!Number.isFinite(seed)) return;
-  c._biomeSeed = (seed >>> 0);
+  c._biomeSeed = seed >>> 0;
   if (c._biomeCanvas) {
-    try { c._biomeCanvas.setSeed?.(c._biomeSeed); } catch (_) { /* ignore setSeed error */ }
+    try {
+      c._biomeCanvas.setSeed?.(c._biomeSeed);
+    } catch (_) {
+      /* ignore setSeed error */
+    }
   }
   // Repaint if active outside terrain mode and a biome is selected
   if (!c.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-    try { c.applyBiomePaletteToBaseGrid(); } catch (_) { /* ignore repaint error */ }
+    try {
+      c.applyBiomePaletteToBaseGrid();
+    } catch (_) {
+      /* ignore repaint error */
+    }
   }
 }
 
@@ -72,7 +80,11 @@ export function handlePostResetShading(c) {
     } else if (!enabled) {
       c._toggleBaseTileVisibility(true);
       if (c._biomeCanvas) {
-        try { c._biomeCanvas.clear(); } catch (_) { /* ignore clear error */ }
+        try {
+          c._biomeCanvas.clear();
+        } catch (_) {
+          /* ignore clear error */
+        }
       }
     }
   } catch (_) {

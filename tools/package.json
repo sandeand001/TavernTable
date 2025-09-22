@@ -4,10 +4,10 @@
   "description": "An isometric grid-based tabletop game interface",
   "main": "index.html",
   "scripts": {
-    "lint": "eslint ../src/**/*.js && stylelint ../src/**/*.css",
-    "lint:js": "eslint ../src/**/*.js",
-    "lint:css": "stylelint ../src/**/*.css",
-    "lint:fix": "eslint ../src/**/*.js --fix && stylelint ../src/**/*.css --fix",
+    "lint": "eslint -c .eslintrc.json ../src/**/*.js && stylelint -c .stylelintrc.json ../src/**/*.css",
+    "lint:js": "eslint -c .eslintrc.json ../src/**/*.js",
+    "lint:css": "stylelint -c .stylelintrc.json ../src/**/*.css",
+    "lint:fix": "eslint -c .eslintrc.json ../src/**/*.js --fix && stylelint -c .stylelintrc.json ../src/**/*.css --fix",
     "serve": "cd .. && python -m http.server 3000"
   },
   "devDependencies": {
@@ -15,7 +15,12 @@
     "stylelint": "^16.2.1",
     "stylelint-config-standard": "^36.0.0"
   },
-  "keywords": ["game", "tabletop", "isometric", "pixi.js"],
+  "keywords": [
+    "game",
+    "tabletop",
+    "isometric",
+    "pixi.js"
+  ],
   "author": "",
   "license": "MIT"
 }

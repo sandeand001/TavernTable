@@ -2,7 +2,9 @@ import { TerrainHeightUtils } from '../../src/utils/TerrainHeightUtils.js';
 
 describe('TerrainHeightUtils', () => {
   test('createHeightArray builds correct dimensions and clamps default', () => {
-    const rows = 3, cols = 4, def = 999;
+    const rows = 3,
+      cols = 4,
+      def = 999;
     const arr = TerrainHeightUtils.createHeightArray(rows, cols, def);
     expect(arr.length).toBe(rows);
     expect(arr[0].length).toBe(cols);

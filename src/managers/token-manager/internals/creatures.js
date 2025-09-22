@@ -12,7 +12,7 @@ import {
   createTroll,
   createOwlbear,
   createMinotaur,
-  createMindFlayer
+  createMindFlayer,
 } from '../../../entities/creatures/index.js';
 
 export function createCreatureByType(c, type) {
@@ -31,7 +31,7 @@ export function createCreatureByType(c, type) {
       troll: () => createTroll(),
       owlbear: () => createOwlbear(),
       minotaur: () => createMinotaur(),
-      mindflayer: () => createMindFlayer()
+      mindflayer: () => createMindFlayer(),
     };
 
     const createFn = creationFunctions[type];
@@ -44,17 +44,21 @@ export function createCreatureByType(c, type) {
       throw new Error(`Creation function returned null for creature type: ${type}`);
     }
 
-    logger.debug(`Created creature: ${type}`, {
-      creatureType: type,
-      hasSprite: !!creature.sprite
-    }, LOG_CATEGORY.SYSTEM);
+    logger.debug(
+      `Created creature: ${type}`,
+      {
+        creatureType: type,
+        hasSprite: !!creature.sprite,
+      },
+      LOG_CATEGORY.SYSTEM
+    );
 
     return creature;
   } catch (error) {
     const errorHandler = new ErrorHandler();
     errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
       stage: 'createCreatureByType',
-      creatureType: type
+      creatureType: type,
     });
     return null;
   }

@@ -20,7 +20,9 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
     try {
       const height = c.gameManager?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
       elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
 
     if (creature.sprite) {
       creature.sprite.x = iso.x;
@@ -29,7 +31,11 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
 
       if (gridContainer) {
         gridContainer.addChild(creature.sprite);
-        try { gridContainer.sortChildren?.(); } catch (_) { /* ignore sort errors */ }
+        try {
+          gridContainer.sortChildren?.();
+        } catch (_) {
+          /* ignore sort errors */
+        }
       }
     }
 
@@ -38,7 +44,7 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
     const errorHandler = new ErrorHandler();
     errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
       stage: 'placeNewToken',
-      coordinates: { gridX, gridY }
+      coordinates: { gridX, gridY },
     });
   }
 }

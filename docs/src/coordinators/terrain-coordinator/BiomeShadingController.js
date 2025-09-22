@@ -10,7 +10,9 @@ import { traceDiamondPath } from '../../utils/PixiShapeUtils.js';
  * Delegated by TerrainCoordinator to keep behavior identical.
  */
 export class BiomeShadingController {
-  constructor(coordinator) { this.c = coordinator; }
+  constructor(coordinator) {
+    this.c = coordinator;
+  }
 
   /** Re-color existing base grid tiles using currently selected biome palette. */
   applyToBaseGrid() {
@@ -20,30 +22,47 @@ export class BiomeShadingController {
     try {
       // Ensure grid container is available
       if (!this.c?.gameManager?.gridContainer) {
-        logger.debug('Biome shading skipped: gridContainer missing', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey });
+        logger.debug('Biome shading skipped: gridContainer missing', {
+          context: 'BiomeShadingController.applyToBaseGrid',
+          biome: biomeKey,
+        });
         return;
       }
       // Ensure a continuous biome canvas exists and paint it from current heights
       if (!this.c._biomeCanvas) this.c._biomeCanvas = new BiomeCanvasPainter(this.c.gameManager);
       // Keep painter noise deterministic with our coordinator seed
-      try { this.c._biomeCanvas.setSeed?.(this.c._biomeSeed >>> 0); } catch (_) { /* ignore setSeed error */ }
-      const rows = this.c.gameManager.rows, cols = this.c.gameManager.cols;
-      const heights = Array(rows).fill(null).map(() => Array(cols).fill(0));
-      this.c.gameManager.gridContainer.children.forEach(ch => {
+      try {
+        this.c._biomeCanvas.setSeed?.(this.c._biomeSeed >>> 0);
+      } catch (_) {
+        /* ignore setSeed error */
+      }
+      const rows = this.c.gameManager.rows,
+        cols = this.c.gameManager.cols;
+      const heights = Array(rows)
+        .fill(null)
+        .map(() => Array(cols).fill(0));
+      this.c.gameManager.gridContainer.children.forEach((ch) => {
         if (!ch?.isGridTile) return;
-        const gx = ch.gridX, gy = ch.gridY;
-        if (gy >= 0 && gy < rows && gx >= 0 && gx < cols) heights[gy][gx] = Number.isFinite(ch.terrainHeight) ? ch.terrainHeight : 0;
+        const gx = ch.gridX,
+          gy = ch.gridY;
+        if (gy >= 0 && gy < rows && gx >= 0 && gx < cols)
+          heights[gy][gx] = Number.isFinite(ch.terrainHeight) ? ch.terrainHeight : 0;
       });
       // Hide per-tile fills so the canvas shows through
       this.toggleBaseTileVisibility(false);
       try {
         this.c._biomeCanvas.paint(biomeKey, heights, null);
       } catch (pe) {
-        logger.warn('Biome painter paint() failed', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey, error: pe?.message, stack: pe?.stack });
+        logger.warn('Biome painter paint() failed', {
+          context: 'BiomeShadingController.applyToBaseGrid',
+          biome: biomeKey,
+          error: pe?.message,
+          stack: pe?.stack,
+        });
         throw pe;
       }
 
-      this.c.gameManager.gridContainer.children.forEach(child => {
+      this.c.gameManager.gridContainer.children.forEach((child) => {
         if (!child.isGridTile) return;
         const h = typeof child.terrainHeight === 'number' ? child.terrainHeight : 0;
         // Provide coordinates to color function for variation
@@ -68,7 +87,9 @@ export class BiomeShadingController {
             }
             child.paintMask = null;
           }
-        } catch (_) { /* ignore */ }
+        } catch (_) {
+          /* ignore */
+        }
 
         child.clear();
         child.lineStyle(1, borderColor, borderAlpha);
@@ -78,10 +99,19 @@ export class BiomeShadingController {
         if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
         if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.c.addVisualElevationEffect(child, h);
       });
-      logger.debug('Applied biome palette to base grid', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey }, LOG_CATEGORY.USER);
+      logger.debug(
+        'Applied biome palette to base grid',
+        { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey },
+        LOG_CATEGORY.USER
+      );
     } catch (e) {
       // Downgraded to DEBUG to avoid noisy repeats; inner paint() warns on real failures
-      logger.debug('Biome palette application encountered an error', { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey, error: e?.message, stack: e?.stack });
+      logger.debug('Biome palette application encountered an error', {
+        context: 'BiomeShadingController.applyToBaseGrid',
+        biome: biomeKey,
+        error: e?.message,
+        stack: e?.stack,
+      });
     } finally {
       this.c._currentColorEvalX = undefined;
       this.c._currentColorEvalY = undefined;
@@ -91,7 +121,7 @@ export class BiomeShadingController {
   /** Show or hide the base tile fills (keeping borders) */
   toggleBaseTileVisibility(show) {
     try {
-      this.c.gameManager.gridContainer.children.forEach(child => {
+      this.c.gameManager.gridContainer.children.forEach((child) => {
         if (!child?.isGridTile) return;
         child.clear();
         child.lineStyle(1, GRID_CONFIG.TILE_BORDER_COLOR, GRID_CONFIG.TILE_BORDER_ALPHA);
@@ -101,19 +131,30 @@ export class BiomeShadingController {
         traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
         if (show) child.endFill();
       });
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /** Determine base tile color when not editing: biome palette if selected, else neutral. */
   getBiomeOrBaseColor(height, gx = 0, gy = 0) {
     try {
       if (!this.c.isTerrainModeActive && typeof window !== 'undefined' && window.selectedBiome) {
-        const mapFreq = (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
+        const mapFreq =
+          (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
         const seed = (this.c._biomeSeed ?? 1337) >>> 0;
-        const hex = getBiomeColorHex(window.selectedBiome, height, gx, gy, { moisture: 0.5, slope: 0, aspectRad: 0, seed, mapFreq });
+        const hex = getBiomeColorHex(window.selectedBiome, height, gx, gy, {
+          moisture: 0.5,
+          slope: 0,
+          aspectRad: 0,
+          seed,
+          mapFreq,
+        });
         return hex;
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
     return GRID_CONFIG.TILE_COLOR;
   }
 }

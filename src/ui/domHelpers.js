@@ -20,7 +20,7 @@ export function getFacingButton() {
 export function getTerrainToolButtons() {
   return {
     raiseBtn: document.getElementById('terrain-raise-btn'),
-    lowerBtn: document.getElementById('terrain-lower-btn')
+    lowerBtn: document.getElementById('terrain-lower-btn'),
   };
 }
 
@@ -28,7 +28,7 @@ export function getTerrainToolButtons() {
 export function getGridSizeInputs() {
   return {
     widthInput: document.getElementById('grid-width'),
-    heightInput: document.getElementById('grid-height')
+    heightInput: document.getElementById('grid-height'),
   };
 }
 
@@ -41,7 +41,7 @@ export function getTerrainResetButton() {
 export function getElevationScaleControls() {
   return {
     slider: document.getElementById('elevation-scale-range'),
-    valueEl: document.getElementById('elevation-scale-value')
+    valueEl: document.getElementById('elevation-scale-value'),
   };
 }
 
@@ -64,7 +64,7 @@ export function getTokenInfoEl() {
 export function getCreaturePanelEls() {
   return {
     contentEl: document.getElementById('creature-content'),
-    arrowEl: document.getElementById('creature-arrow')
+    arrowEl: document.getElementById('creature-arrow'),
   };
 }
 
@@ -72,7 +72,7 @@ export function getCreaturePanelEls() {
 export function getTerrainModeEls() {
   return {
     toggleEl: document.getElementById('terrain-mode-toggle'),
-    toolsEl: document.getElementById('terrain-tools')
+    toolsEl: document.getElementById('terrain-tools'),
   };
 }
 
@@ -116,7 +116,7 @@ export function getSpriteAdjustButtons() {
     center: document.getElementById('nudge-center'),
     save: document.getElementById('save-offset'),
     reset: document.getElementById('reset-offset'),
-    auto: document.getElementById('toggle-auto-apply')
+    auto: document.getElementById('toggle-auto-apply'),
   };
 }
 
@@ -124,7 +124,7 @@ export function getSpriteAdjustButtons() {
 export function getGridActionButtons() {
   return {
     applySize: document.getElementById('apply-grid-size'),
-    resetZoom: document.getElementById('reset-zoom')
+    resetZoom: document.getElementById('reset-zoom'),
   };
 }
 
@@ -153,7 +153,7 @@ export function getShadingControls() {
     densityVal: document.getElementById('pattern-density-value'),
     shore: document.getElementById('shoreline-sand-strength'),
     shoreVal: document.getElementById('shoreline-sand-strength-value'),
-    perf: document.getElementById('performance-simplify')
+    perf: document.getElementById('performance-simplify'),
   };
 }
 
@@ -199,6 +199,33 @@ export function getBiomeButtons(root = getBiomeRootEl()) {
 export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
   if (!root) return null;
   return root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+}
+
+/** Returns the root element where terrain placeable items should be injected. */
+export function getTerrainPlaceablesRoot() {
+  return document.getElementById('terrain-placeables-root');
+}
+
+/** Helper to create a placeable button by id (used by Sidebar builder) */
+export function createPlaceableButton(id, label, imgSrc) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'placeable-btn';
+  btn.dataset.placeable = id;
+  btn.title = label || id;
+  // Visual: include a small preview image when available
+  if (imgSrc) {
+    const img = document.createElement('img');
+    img.src = imgSrc;
+    img.alt = label || id;
+    img.className = 'placeable-preview';
+    btn.appendChild(img);
+  }
+  const span = document.createElement('span');
+  span.className = 'placeable-label';
+  span.textContent = label || id;
+  btn.appendChild(span);
+  return btn;
 }
 
 /** Error UI helpers */

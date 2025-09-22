@@ -12,14 +12,21 @@ describe('Dice smoke', () => {
       <input id="dice-count" type="number" value="1" />
       <div id="dice-result"></div>
     `;
-  // Make animation complete synchronously so internal isRolling resets
-  global.requestAnimationFrame = (cb) => { cb(); return 0; };
-  jest.useFakeTimers();
+    // Make animation complete synchronously so internal isRolling resets
+    global.requestAnimationFrame = (cb) => {
+      cb();
+      return 0;
+    };
+    jest.useFakeTimers();
   });
 
   afterEach(() => {
     // Flush any pending timeouts from showFinalResult so isRolling resets
-    try { jest.runOnlyPendingTimers(); } catch (_) {}
+    try {
+      jest.runOnlyPendingTimers();
+    } catch (_) {
+      // Ignore if no pending timers; prevents no-empty lint error.
+    }
     jest.useRealTimers();
   });
 

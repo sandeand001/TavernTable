@@ -1,6 +1,9 @@
 // Error notification manager extracted with no behavior changes.
 import { RECOVERY_STRATEGY } from './enums.js';
-import { getErrorContainer, getErrorStylesEl } from '../../ui/domHelpers.js';
+let _errorDomPorts = {};
+export function setErrorDomPorts(p = {}) {
+  _errorDomPorts = p || {};
+}
 
 export class ErrorNotificationManager {
   constructor(config) {
@@ -13,7 +16,8 @@ export class ErrorNotificationManager {
   initialize() {
     if (this.initialized || typeof document === 'undefined') return;
 
-    this.container = getErrorContainer() || document.getElementById('tavern-error-container');
+    if (_errorDomPorts.getErrorContainer) this.container = _errorDomPorts.getErrorContainer();
+    else this.container = document.getElementById('tavern-error-container');
     if (!this.container) {
       this.container = this.createContainer();
       document.body.appendChild(this.container);
@@ -35,6 +39,8 @@ export class ErrorNotificationManager {
   injectStyles() {
     if (getErrorStylesEl()) return;
     if (document.getElementById('tavern-error-styles')) return;
+
+    if (_errorDomPorts.getErrorStylesEl) return _errorDomPorts.getErrorStylesEl();
 
     const styles = document.createElement('style');
     styles.id = 'tavern-error-styles';
@@ -110,22 +116,22 @@ export class ErrorNotificationManager {
     const actions = document.createElement('div');
     actions.className = 'tavern-error-actions';
     switch (strategy) {
-    case RECOVERY_STRATEGY.RETRY: {
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'tavern-error-button';
-      retryBtn.textContent = 'Retry';
-      retryBtn.onclick = () => this.handleRetry(errorEntry);
-      actions.appendChild(retryBtn);
-      break;
-    }
-    case RECOVERY_STRATEGY.RELOAD: {
-      const reloadBtn = document.createElement('button');
-      reloadBtn.className = 'tavern-error-button';
-      reloadBtn.textContent = 'Reload';
-      reloadBtn.onclick = () => window.location.reload();
-      actions.appendChild(reloadBtn);
-      break;
-    }
+      case RECOVERY_STRATEGY.RETRY: {
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'tavern-error-button';
+        retryBtn.textContent = 'Retry';
+        retryBtn.onclick = () => this.handleRetry(errorEntry);
+        actions.appendChild(retryBtn);
+        break;
+      }
+      case RECOVERY_STRATEGY.RELOAD: {
+        const reloadBtn = document.createElement('button');
+        reloadBtn.className = 'tavern-error-button';
+        reloadBtn.textContent = 'Reload';
+        reloadBtn.onclick = () => window.location.reload();
+        actions.appendChild(reloadBtn);
+        break;
+      }
     }
     return actions.children.length > 0 ? actions : null;
   }
@@ -157,7 +163,13 @@ export class ErrorNotificationManager {
   }
 
   getSeverityTitle(severity) {
-    const titles = { debug: 'Debug', info: 'Information', warning: 'Warning', error: 'Error', critical: 'Critical Error' };
+    const titles = {
+      debug: 'Debug',
+      info: 'Information',
+      warning: 'Warning',
+      error: 'Error',
+      critical: 'Critical Error',
+    };
     return titles[severity] || 'Error';
   }
 
@@ -171,11 +183,13 @@ export class ErrorNotificationManager {
       network: 'Network connection issue. Some features may be unavailable.',
       coordinate: 'Grid positioning error. Token placement may be affected.',
       token: 'Token management issue. Some tokens may not behave correctly.',
-      'game_state': 'Game state error. The game may not function as expected.',
+      game_state: 'Game state error. The game may not function as expected.',
       performance: 'Performance issue detected. The game may run slowly.',
       security: 'Security validation failed. Action was blocked for safety.',
-      system: 'System error encountered. Please try again.'
+      system: 'System error encountered. Please try again.',
     };
-    return categoryMessages[errorEntry.category] || errorEntry.message || 'An unexpected error occurred.';
+    return (
+      categoryMessages[errorEntry.category] || errorEntry.message || 'An unexpected error occurred.'
+    );
   }
 }

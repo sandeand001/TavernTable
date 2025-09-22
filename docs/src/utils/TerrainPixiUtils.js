@@ -1,9 +1,9 @@
 /**
  * TerrainPixiUtils.js - Centralized PIXI object lifecycle management for terrain system
- * 
+ *
  * Provides consistent and safe PIXI object creation, cleanup, and container management
  * specifically for terrain tiles and their associated visual effects.
- * 
+ *
  * Eliminates code duplication in TerrainManager cleanup patterns.
  */
 
@@ -35,7 +35,7 @@ export class TerrainPixiUtils {
         context,
         error: error.message,
         hasChild: !!child,
-        hasContainer: !!container
+        hasContainer: !!container,
       });
       return false;
     }
@@ -66,14 +66,14 @@ export class TerrainPixiUtils {
 
       logger.log(LOG_LEVEL.WARN, 'PIXI object has no destroy method', LOG_CATEGORY.SYSTEM, {
         context,
-        objectType: pixiObject.constructor?.name || 'unknown'
+        objectType: pixiObject.constructor?.name || 'unknown',
       });
       return false;
     } catch (error) {
       logger.log(LOG_LEVEL.WARN, 'Error destroying PIXI object', LOG_CATEGORY.SYSTEM, {
         context,
         error: error.message,
-        objectType: pixiObject?.constructor?.name || 'unknown'
+        objectType: pixiObject?.constructor?.name || 'unknown',
       });
       return false;
     }
@@ -97,31 +97,47 @@ export class TerrainPixiUtils {
 
       // Clean up sibling faces (overlay/base) that were added to the container behind the tile
       if (tile.sideFaces) {
-        const facesRemoved = this.safeRemoveFromContainer(tile.sideFaces, container, `${context}.sideFacesCleanup`)
-          || this.safeRemoveFromContainer(tile.sideFaces, tile.parent, `${context}.sideFacesCleanup`);
-        const facesDestroyed = this.safeDestroyPixiObject(tile.sideFaces, `${context}.sideFacesCleanup`);
+        const facesRemoved =
+          this.safeRemoveFromContainer(tile.sideFaces, container, `${context}.sideFacesCleanup`) ||
+          this.safeRemoveFromContainer(tile.sideFaces, tile.parent, `${context}.sideFacesCleanup`);
+        const facesDestroyed = this.safeDestroyPixiObject(
+          tile.sideFaces,
+          `${context}.sideFacesCleanup`
+        );
         tile.sideFaces = null;
         if (!facesRemoved || !facesDestroyed) {
           logger.log(LOG_LEVEL.DEBUG, 'Partial sideFaces cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             facesRemoved,
-            facesDestroyed
+            facesDestroyed,
           });
           cleanupSuccess = false;
         }
       }
       if (tile.baseSideFaces) {
-        const baseFacesRemoved = this.safeRemoveFromContainer(tile.baseSideFaces, container, `${context}.baseFacesCleanup`)
-          || this.safeRemoveFromContainer(tile.baseSideFaces, tile.parent, `${context}.baseFacesCleanup`);
-        const baseFacesDestroyed = this.safeDestroyPixiObject(tile.baseSideFaces, `${context}.baseFacesCleanup`);
+        const baseFacesRemoved =
+          this.safeRemoveFromContainer(
+            tile.baseSideFaces,
+            container,
+            `${context}.baseFacesCleanup`
+          ) ||
+          this.safeRemoveFromContainer(
+            tile.baseSideFaces,
+            tile.parent,
+            `${context}.baseFacesCleanup`
+          );
+        const baseFacesDestroyed = this.safeDestroyPixiObject(
+          tile.baseSideFaces,
+          `${context}.baseFacesCleanup`
+        );
         tile.baseSideFaces = null;
         if (!baseFacesRemoved || !baseFacesDestroyed) {
           logger.log(LOG_LEVEL.DEBUG, 'Partial baseSideFaces cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             baseFacesRemoved,
-            baseFacesDestroyed
+            baseFacesDestroyed,
           });
           cleanupSuccess = false;
         }
@@ -129,15 +145,22 @@ export class TerrainPixiUtils {
 
       // Clean up shadow tile if present
       if (tile.shadowTile) {
-        const shadowRemoved = this.safeRemoveFromContainer(tile.shadowTile, container, `${context}.shadowCleanup`);
-        const shadowDestroyed = this.safeDestroyPixiObject(tile.shadowTile, `${context}.shadowCleanup`);
+        const shadowRemoved = this.safeRemoveFromContainer(
+          tile.shadowTile,
+          container,
+          `${context}.shadowCleanup`
+        );
+        const shadowDestroyed = this.safeDestroyPixiObject(
+          tile.shadowTile,
+          `${context}.shadowCleanup`
+        );
 
         if (!shadowRemoved || !shadowDestroyed) {
           logger.log(LOG_LEVEL.DEBUG, 'Partial shadow tile cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             shadowRemoved,
-            shadowDestroyed
+            shadowDestroyed,
           });
           cleanupSuccess = false;
         }
@@ -145,15 +168,22 @@ export class TerrainPixiUtils {
 
       // Clean up depression overlay if present
       if (tile.depressionOverlay) {
-        const overlayRemoved = this.safeRemoveFromContainer(tile.depressionOverlay, tile, `${context}.overlayCleanup`);
-        const overlayDestroyed = this.safeDestroyPixiObject(tile.depressionOverlay, `${context}.overlayCleanup`);
+        const overlayRemoved = this.safeRemoveFromContainer(
+          tile.depressionOverlay,
+          tile,
+          `${context}.overlayCleanup`
+        );
+        const overlayDestroyed = this.safeDestroyPixiObject(
+          tile.depressionOverlay,
+          `${context}.overlayCleanup`
+        );
 
         if (!overlayRemoved || !overlayDestroyed) {
           logger.log(LOG_LEVEL.DEBUG, 'Partial depression overlay cleanup', LOG_CATEGORY.SYSTEM, {
             context,
             tileKey,
             overlayRemoved,
-            overlayDestroyed
+            overlayDestroyed,
           });
           cleanupSuccess = false;
         }
@@ -177,7 +207,7 @@ export class TerrainPixiUtils {
           context,
           tileKey,
           tileRemoved,
-          tileDestroyed
+          tileDestroyed,
         });
         cleanupSuccess = false;
       }
@@ -185,7 +215,7 @@ export class TerrainPixiUtils {
       if (cleanupSuccess) {
         logger.log(LOG_LEVEL.DEBUG, 'Terrain tile cleaned up successfully', LOG_CATEGORY.SYSTEM, {
           context,
-          tileKey
+          tileKey,
         });
       }
 
@@ -194,7 +224,7 @@ export class TerrainPixiUtils {
       logger.log(LOG_LEVEL.ERROR, 'Error during terrain tile cleanup', LOG_CATEGORY.SYSTEM, {
         context,
         tileKey,
-        error: error.message
+        error: error.message,
       });
 
       // Still try to clean up the main tile as a fallback
@@ -205,7 +235,7 @@ export class TerrainPixiUtils {
         logger.log(LOG_LEVEL.ERROR, 'Fallback cleanup also failed', LOG_CATEGORY.SYSTEM, {
           context,
           tileKey,
-          fallbackError: fallbackError.message
+          fallbackError: fallbackError.message,
         });
       }
 
@@ -220,11 +250,15 @@ export class TerrainPixiUtils {
    * @param {string} context - Context for logging/debugging
    * @returns {boolean} True if container is valid
    */
-  static validatePixiContainer(container, containerName = 'container', context = 'TerrainPixiUtils') {
+  static validatePixiContainer(
+    container,
+    containerName = 'container',
+    context = 'TerrainPixiUtils'
+  ) {
     try {
       if (!container) {
         logger.log(LOG_LEVEL.ERROR, `${containerName} is null or undefined`, LOG_CATEGORY.SYSTEM, {
-          context
+          context,
         });
         return false;
       }
@@ -232,7 +266,7 @@ export class TerrainPixiUtils {
       if (container.destroyed) {
         logger.log(LOG_LEVEL.ERROR, `${containerName} has been destroyed`, LOG_CATEGORY.SYSTEM, {
           context,
-          containerName
+          containerName,
         });
         return false;
       }
@@ -240,7 +274,7 @@ export class TerrainPixiUtils {
       if (!container.children) {
         logger.log(LOG_LEVEL.ERROR, `${containerName} has no children array`, LOG_CATEGORY.SYSTEM, {
           context,
-          containerName
+          containerName,
         });
         return false;
       }
@@ -250,7 +284,7 @@ export class TerrainPixiUtils {
       logger.log(LOG_LEVEL.ERROR, `Error validating ${containerName}`, LOG_CATEGORY.SYSTEM, {
         context,
         containerName,
-        error: error.message
+        error: error.message,
       });
       return false;
     }
@@ -268,12 +302,14 @@ export class TerrainPixiUtils {
       total: 0,
       successful: 0,
       failed: 0,
-      errors: []
+      errors: [],
     };
 
     try {
       if (!terrainTiles || terrainTiles.size === 0) {
-        logger.log(LOG_LEVEL.DEBUG, 'No terrain tiles to clean up', LOG_CATEGORY.SYSTEM, { context });
+        logger.log(LOG_LEVEL.DEBUG, 'No terrain tiles to clean up', LOG_CATEGORY.SYSTEM, {
+          context,
+        });
         return results;
       }
 
@@ -295,7 +331,7 @@ export class TerrainPixiUtils {
           logger.log(LOG_LEVEL.ERROR, 'Individual tile cleanup failed', LOG_CATEGORY.SYSTEM, {
             context: `${context}.batch`,
             tileKey,
-            error: tileError.message
+            error: tileError.message,
           });
         }
       });
@@ -304,14 +340,14 @@ export class TerrainPixiUtils {
         context,
         total: results.total,
         successful: results.successful,
-        failed: results.failed
+        failed: results.failed,
       });
 
       return results;
     } catch (error) {
       logger.log(LOG_LEVEL.ERROR, 'Batch cleanup process failed', LOG_CATEGORY.SYSTEM, {
         context,
-        error: error.message
+        error: error.message,
       });
 
       results.errors.push(`Batch process error: ${error.message}`);
@@ -335,7 +371,9 @@ export class TerrainPixiUtils {
       const childCount = container.children.length;
 
       if (childCount === 0) {
-        logger.log(LOG_LEVEL.DEBUG, `${containerName} is already empty`, LOG_CATEGORY.SYSTEM, { context });
+        logger.log(LOG_LEVEL.DEBUG, `${containerName} is already empty`, LOG_CATEGORY.SYSTEM, {
+          context,
+        });
         return true;
       }
 
@@ -359,7 +397,7 @@ export class TerrainPixiUtils {
         containerName,
         childCount,
         successfulRemovals,
-        success
+        success,
       });
 
       return success;
@@ -367,7 +405,7 @@ export class TerrainPixiUtils {
       logger.log(LOG_LEVEL.ERROR, `Error resetting ${containerName}`, LOG_CATEGORY.SYSTEM, {
         context,
         containerName,
-        error: error.message
+        error: error.message,
       });
       return false;
     }

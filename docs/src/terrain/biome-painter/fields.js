@@ -45,18 +45,30 @@ export function computeDistanceField(gameManager, heights, isSourceFn) {
   const q = [];
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      if (isSourceFn(x, y)) { dist[y][x] = 0; q.push([x, y]); }
+      if (isSourceFn(x, y)) {
+        dist[y][x] = 0;
+        q.push([x, y]);
+      }
     }
   }
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
   for (let i = 0; i < q.length; i++) {
     const [cx, cy] = q[i];
     const cd = dist[cy][cx];
     for (const [dx, dy] of dirs) {
-      const nx = cx + dx, ny = cy + dy;
+      const nx = cx + dx,
+        ny = cy + dy;
       if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
       const nd = cd + 1;
-      if (nd < dist[ny][nx]) { dist[ny][nx] = nd; q.push([nx, ny]); }
+      if (nd < dist[ny][nx]) {
+        dist[ny][nx] = nd;
+        q.push([nx, ny]);
+      }
     }
   }
   return dist;
@@ -71,13 +83,20 @@ export function computeDistanceField(gameManager, heights, isSourceFn) {
 export function computeMoistureField(gameManager, heights) {
   const rows = gameManager.rows;
   const cols = gameManager.cols;
-  const dist = computeDistanceField(gameManager, heights, (x, y) => (Number.isFinite(heights?.[y]?.[x]) ? heights[y][x] : 0) < 0);
+  const dist = computeDistanceField(
+    gameManager,
+    heights,
+    (x, y) => (Number.isFinite(heights?.[y]?.[x]) ? heights[y][x] : 0) < 0
+  );
   const moisture = Array.from({ length: rows }, () => new Array(cols).fill(0));
   const lambda = 0.35; // decay per tile
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const d = dist[y][x];
-      if (!isFinite(d)) { moisture[y][x] = 0; continue; }
+      if (!isFinite(d)) {
+        moisture[y][x] = 0;
+        continue;
+      }
       const m = Math.exp(-lambda * d);
       moisture[y][x] = Math.max(0, Math.min(1, m));
     }

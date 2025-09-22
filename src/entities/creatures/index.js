@@ -49,14 +49,14 @@ function createTroll(x = 0, y = 0) {
 }
 
 // Export all creature creation functions
-export { 
-  createGoblin, 
-  createOrc, 
-  createSkeleton, 
-  createDragon, 
-  createBeholder, 
-  createTroll, 
-  createOwlbear, 
-  createMinotaur, 
-  createMindFlayer 
+export {
+  createGoblin,
+  createOrc,
+  createSkeleton,
+  createDragon,
+  createBeholder,
+  createTroll,
+  createOwlbear,
+  createMinotaur,
+  createMindFlayer,
 };

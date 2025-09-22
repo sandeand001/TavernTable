@@ -1,6 +1,10 @@
 import { GameErrors } from '../../../utils/ErrorHandler.js';
 import { LOG_CATEGORY, LOG_LEVEL, logger } from '../../../utils/Logger.js';
 import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
+import { updatePlaceablesForCell } from './placeables.js';
+import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
 
 /** Enqueue affected cells and trigger processing. */
 export function updateTerrainDisplay(m, centerX, centerY, brushSize) {
@@ -17,7 +21,7 @@ export function updateTerrainDisplay(m, centerX, centerY, brushSize) {
     GameErrors.rendering(error, {
       stage: 'updateTerrainDisplay',
       centerCoordinates: { x: centerX, y: centerY },
-      brushSize
+      brushSize,
     });
   }
 }
@@ -25,7 +29,24 @@ export function updateTerrainDisplay(m, centerX, centerY, brushSize) {
 /** Process queued updates with throttling to maintain frame rate. */
 export function processUpdateQueue(m) {
   const now = Date.now();
-  if (m.isUpdating || (now - m.lastUpdateTime) < TERRAIN_CONFIG.UPDATE_THROTTLE_MS) {
+  // If an update cycle is ongoing, let it continue; it will schedule itself.
+  if (m.isUpdating) return;
+
+  const elapsed = now - m.lastUpdateTime;
+  const throttleMs = TERRAIN_CONFIG.UPDATE_THROTTLE_MS;
+  if (elapsed < throttleMs) {
+    // We're throttled: schedule a single deferred attempt instead of returning silently.
+    const remaining = throttleMs - elapsed;
+    if (!m._throttleTimer) {
+      m._throttleTimer = setTimeout(
+        () => {
+          m._throttleTimer = null;
+          processUpdateQueue(m);
+        },
+        Math.max(0, remaining)
+      );
+      if (typeof m._throttleTimer.unref === 'function') m._throttleTimer.unref();
+    }
     return;
   }
   m.isUpdating = true;
@@ -38,6 +59,46 @@ export function processUpdateQueue(m) {
       if (updatesProcessed >= maxUpdatesPerFrame) break;
       const [x, y] = tileKey.split(',').map(Number);
       m.createTerrainTile(x, y);
+      // After tile visuals are updated, reposition any placeables on this cell
+      try {
+        updatePlaceablesForCell(m, x, y);
+      } catch (_) {
+        /* ignore */
+      }
+      // Also update any tokens on this cell so they follow elevation changes immediately
+      try {
+        const tm = m.gameManager?.tokenManager;
+        const list = Array.isArray(tm?.placedTokens) ? tm.placedTokens : [];
+        for (const t of list) {
+          if (!t || t.gridX !== x || t.gridY !== y) continue;
+          const s = t?.creature?.sprite;
+          if (!s) continue;
+          const iso = CoordinateUtils.gridToIsometric(
+            x,
+            y,
+            m.gameManager.tileWidth,
+            m.gameManager.tileHeight
+          );
+          let elev = 0;
+          try {
+            const h = m.terrainCoordinator?.getTerrainHeight?.(x, y);
+            elev = TerrainHeightUtils.calculateElevationOffset(h ?? 0);
+          } catch (_) {
+            /* ignore */
+          }
+          s.x = iso.x;
+          s.y = iso.y + elev;
+          const depthKey = computeDepthKey(x, y, TYPE_BIAS.token);
+          s.zIndex = withOverlayRaise(m, depthKey);
+        }
+        try {
+          m.gameManager?.gridContainer?.sortChildren?.();
+        } catch (_) {
+          /* ignore */
+        }
+      } catch (_) {
+        /* ignore */
+      }
       m.updateQueue.delete(tileKey);
       updatesProcessed++;
     }
@@ -55,13 +116,88 @@ export function processUpdateQueue(m) {
       context: 'TerrainManager.processUpdateQueue',
       updatesProcessed,
       remainingUpdates: m.updateQueue.size,
-      processingTime: Date.now() - now
+      processingTime: Date.now() - now,
     });
   } catch (error) {
     m.isUpdating = false;
     GameErrors.rendering(error, {
       stage: 'processUpdateQueue',
-      queueSize: m.updateQueue.size
+      queueSize: m.updateQueue.size,
+    });
+  }
+}
+
+/**
+ * Flush all pending terrain updates immediately, bypassing throttle and batching.
+ * Useful to complete any remaining visual updates at the end of a drag so
+ * there is no perceived lingering.
+ */
+export function flushUpdateQueue(m) {
+  try {
+    // Cancel any scheduled throttled attempt
+    if (m._throttleTimer) {
+      try {
+        clearTimeout(m._throttleTimer);
+      } catch {
+        /* ignore */
+      }
+      m._throttleTimer = null;
+    }
+    // If another cycle is running, let it finish; otherwise drain now
+    if (m.isUpdating) return;
+    m.isUpdating = true;
+    const started = Date.now();
+    for (const tileKey of Array.from(m.updateQueue)) {
+      const [x, y] = tileKey.split(',').map(Number);
+      m.createTerrainTile(x, y);
+      try {
+        updatePlaceablesForCell(m, x, y);
+      } catch (_) {
+        /* ignore */
+      }
+      // Update tokens on this cell as well (no throttle in flush)
+      try {
+        const tm = m.gameManager?.tokenManager;
+        const list = Array.isArray(tm?.placedTokens) ? tm.placedTokens : [];
+        for (const t of list) {
+          if (!t || t.gridX !== x || t.gridY !== y) continue;
+          const s = t?.creature?.sprite;
+          if (!s) continue;
+          const iso = CoordinateUtils.gridToIsometric(
+            x,
+            y,
+            m.gameManager.tileWidth,
+            m.gameManager.tileHeight
+          );
+          let elev = 0;
+          try {
+            const h = m.terrainCoordinator?.getTerrainHeight?.(x, y);
+            elev = TerrainHeightUtils.calculateElevationOffset(h ?? 0);
+          } catch (_) {
+            /* ignore */
+          }
+          s.x = iso.x;
+          s.y = iso.y + elev;
+          const depthKey = computeDepthKey(x, y, TYPE_BIAS.token);
+          s.zIndex = withOverlayRaise(m, depthKey);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      m.updateQueue.delete(tileKey);
+    }
+    m.isUpdating = false;
+    m.lastUpdateTime = Date.now();
+    logger.log(LOG_LEVEL.TRACE, 'Terrain display flush complete', LOG_CATEGORY.RENDERING, {
+      context: 'TerrainManager.flushUpdateQueue',
+      remainingUpdates: m.updateQueue.size,
+      processingTime: Date.now() - started,
+    });
+  } catch (error) {
+    m.isUpdating = false;
+    GameErrors.rendering(error, {
+      stage: 'flushUpdateQueue',
+      queueSize: m.updateQueue?.size ?? -1,
     });
   }
 }

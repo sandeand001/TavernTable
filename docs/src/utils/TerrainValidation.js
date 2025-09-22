@@ -1,6 +1,6 @@
 /**
  * TerrainValidation.js - Centralized validation for terrain system components
- * 
+ *
  * Provides consistent validation logic for terrain coordinates, height modifications,
  * system state, and other terrain-related operations. Eliminates scattered validation
  * code and provides standardized error messages.
@@ -22,7 +22,7 @@ export class TerrainValidation {
       isValid: true,
       errors: [],
       warnings: [],
-      details: {}
+      details: {},
     };
 
     try {
@@ -34,13 +34,17 @@ export class TerrainValidation {
         // Check coordinator state
         result.details.coordinatorInitialized = !!terrainCoordinator.isInitialized;
         result.details.terrainModeActive = !!terrainCoordinator.isTerrainModeActive;
-        
+
         // Validate height data structures (support legacy fields and new dataStore)
-        const workingHeights = terrainCoordinator.terrainHeights || terrainCoordinator.dataStore?.working;
-        const baseHeights = terrainCoordinator.baseTerrainHeights || terrainCoordinator.dataStore?.base;
+        const workingHeights =
+          terrainCoordinator.terrainHeights || terrainCoordinator.dataStore?.working;
+        const baseHeights =
+          terrainCoordinator.baseTerrainHeights || terrainCoordinator.dataStore?.base;
 
         if (!workingHeights) {
-          result.errors.push('TerrainCoordinator working heights are missing (terrainHeights or dataStore.working)');
+          result.errors.push(
+            'TerrainCoordinator working heights are missing (terrainHeights or dataStore.working)'
+          );
           result.isValid = false;
         } else if (!TerrainHeightUtils.isValidHeightArray(workingHeights)) {
           result.errors.push('TerrainCoordinator working heights are invalid');
@@ -48,7 +52,9 @@ export class TerrainValidation {
         }
 
         if (!baseHeights) {
-          result.errors.push('TerrainCoordinator base heights are missing (baseTerrainHeights or dataStore.base)');
+          result.errors.push(
+            'TerrainCoordinator base heights are missing (baseTerrainHeights or dataStore.base)'
+          );
           result.isValid = false;
         } else if (!TerrainHeightUtils.isValidHeightArray(baseHeights)) {
           result.errors.push('TerrainCoordinator base heights are invalid');
@@ -69,7 +75,7 @@ export class TerrainValidation {
       } else {
         // Check manager state
         result.details.managerInitialized = !!terrainManager.isInitialized;
-        
+
         // Validate container state
         if (!terrainManager.terrainContainer) {
           result.errors.push('TerrainManager terrainContainer is null');
@@ -103,31 +109,40 @@ export class TerrainValidation {
       // Cross-validate coordinator and manager consistency
       if (terrainCoordinator && terrainManager) {
         if (terrainCoordinator.terrainManager !== terrainManager) {
-          result.warnings.push('TerrainCoordinator and TerrainManager have inconsistent references');
+          result.warnings.push(
+            'TerrainCoordinator and TerrainManager have inconsistent references'
+          );
         }
-        
+
         if (terrainManager.terrainCoordinator !== terrainCoordinator) {
-          result.warnings.push('TerrainManager and TerrainCoordinator have inconsistent references');
+          result.warnings.push(
+            'TerrainManager and TerrainCoordinator have inconsistent references'
+          );
         }
       }
 
-      logger.log(LOG_LEVEL.DEBUG, 'Terrain system state validation completed', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainValidation.validateTerrainSystemState',
-        isValid: result.isValid,
-        errorCount: result.errors.length,
-        warningCount: result.warnings.length
-      });
+      logger.log(
+        LOG_LEVEL.DEBUG,
+        'Terrain system state validation completed',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'TerrainValidation.validateTerrainSystemState',
+          isValid: result.isValid,
+          errorCount: result.errors.length,
+          warningCount: result.warnings.length,
+        }
+      );
 
       return result;
     } catch (error) {
       result.isValid = false;
       result.errors.push(`Validation process error: ${error.message}`);
-      
+
       logger.log(LOG_LEVEL.ERROR, 'Error during terrain system validation', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainValidation.validateTerrainSystemState',
-        error: error.message
+        error: error.message,
       });
-      
+
       return result;
     }
   }
@@ -143,7 +158,7 @@ export class TerrainValidation {
     const result = {
       isValid: true,
       error: null,
-      details: {}
+      details: {},
     };
 
     try {
@@ -196,21 +211,21 @@ export class TerrainValidation {
       result.details = {
         coordinates: { x, y },
         bounds: { cols: bounds.cols, rows: bounds.rows },
-        valid: true
+        valid: true,
       };
 
       return result;
     } catch (error) {
       result.isValid = false;
       result.error = `Coordinate validation error: ${error.message}`;
-      
+
       logger.log(LOG_LEVEL.ERROR, 'Error validating terrain coordinates', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainValidation.validateTerrainCoordinates',
         coordinates: { x, y },
         bounds,
-        error: error.message
+        error: error.message,
       });
-      
+
       return result;
     }
   }
@@ -228,7 +243,7 @@ export class TerrainValidation {
       error: null,
       newHeight: currentHeight,
       canModify: true,
-      details: {}
+      details: {},
     };
 
     try {
@@ -283,7 +298,8 @@ export class TerrainValidation {
       if (normalizedTool === 'raise') {
         newHeight = Math.min(currentHeight + heightStep, maxHeight);
         result.canModify = newHeight > currentHeight;
-      } else { // lower
+      } else {
+        // lower
         newHeight = Math.max(currentHeight - heightStep, minHeight);
         result.canModify = newHeight < currentHeight;
       }
@@ -296,32 +312,37 @@ export class TerrainValidation {
         heightStep,
         bounds: { minHeight, maxHeight },
         wouldChange: newHeight !== currentHeight,
-        atBoundary: !result.canModify
+        atBoundary: !result.canModify,
       };
 
       // Log boundary conditions
       if (!result.canModify) {
         const boundaryType = normalizedTool === 'raise' ? 'maximum' : 'minimum';
-        logger.log(LOG_LEVEL.DEBUG, `Height modification blocked at ${boundaryType} boundary`, LOG_CATEGORY.SYSTEM, {
-          context: 'TerrainValidation.validateHeightModification',
-          currentHeight,
-          tool: normalizedTool,
-          boundary: boundaryType === 'maximum' ? maxHeight : minHeight
-        });
+        logger.log(
+          LOG_LEVEL.DEBUG,
+          `Height modification blocked at ${boundaryType} boundary`,
+          LOG_CATEGORY.SYSTEM,
+          {
+            context: 'TerrainValidation.validateHeightModification',
+            currentHeight,
+            tool: normalizedTool,
+            boundary: boundaryType === 'maximum' ? maxHeight : minHeight,
+          }
+        );
       }
 
       return result;
     } catch (error) {
       result.isValid = false;
       result.error = `Height modification validation error: ${error.message}`;
-      
+
       logger.log(LOG_LEVEL.ERROR, 'Error validating height modification', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainValidation.validateHeightModification',
         currentHeight,
         tool,
-        error: error.message
+        error: error.message,
       });
-      
+
       return result;
     }
   }
@@ -339,7 +360,7 @@ export class TerrainValidation {
       error: null,
       canTransition: true,
       warnings: [],
-      details: {}
+      details: {},
     };
 
     try {
@@ -392,28 +413,33 @@ export class TerrainValidation {
         currentMode,
         targetMode,
         transition: currentMode ? 'exit' : 'enter',
-        warningCount: result.warnings.length
+        warningCount: result.warnings.length,
       };
 
-      logger.log(LOG_LEVEL.DEBUG, 'Terrain mode transition validation completed', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainValidation.validateTerrainModeTransition',
-        transition: result.details.transition,
-        canTransition: result.canTransition,
-        warningCount: result.warnings.length
-      });
+      logger.log(
+        LOG_LEVEL.DEBUG,
+        'Terrain mode transition validation completed',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'TerrainValidation.validateTerrainModeTransition',
+          transition: result.details.transition,
+          canTransition: result.canTransition,
+          warningCount: result.warnings.length,
+        }
+      );
 
       return result;
     } catch (error) {
       result.isValid = false;
       result.error = `Mode transition validation error: ${error.message}`;
-      
+
       logger.log(LOG_LEVEL.ERROR, 'Error validating terrain mode transition', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainValidation.validateTerrainModeTransition',
         currentMode,
         targetMode,
-        error: error.message
+        error: error.message,
       });
-      
+
       return result;
     }
   }
@@ -428,7 +454,7 @@ export class TerrainValidation {
       isValid: true,
       errors: [],
       warnings: [],
-      details: {}
+      details: {},
     };
 
     try {
@@ -452,12 +478,19 @@ export class TerrainValidation {
 
       // Validate height bounds logic
       if (result.isValid && config.MIN_HEIGHT >= config.MAX_HEIGHT) {
-        result.errors.push(`MIN_HEIGHT (${config.MIN_HEIGHT}) must be less than MAX_HEIGHT (${config.MAX_HEIGHT})`);
+        result.errors.push(
+          `MIN_HEIGHT (${config.MIN_HEIGHT}) must be less than MAX_HEIGHT (${config.MAX_HEIGHT})`
+        );
         result.isValid = false;
       }
 
-      if (result.isValid && (config.DEFAULT_HEIGHT < config.MIN_HEIGHT || config.DEFAULT_HEIGHT > config.MAX_HEIGHT)) {
-        result.errors.push(`DEFAULT_HEIGHT (${config.DEFAULT_HEIGHT}) must be between MIN_HEIGHT and MAX_HEIGHT`);
+      if (
+        result.isValid &&
+        (config.DEFAULT_HEIGHT < config.MIN_HEIGHT || config.DEFAULT_HEIGHT > config.MAX_HEIGHT)
+      ) {
+        result.errors.push(
+          `DEFAULT_HEIGHT (${config.DEFAULT_HEIGHT}) must be between MIN_HEIGHT and MAX_HEIGHT`
+        );
         result.isValid = false;
       }
 
@@ -470,7 +503,9 @@ export class TerrainValidation {
       const visualProps = ['HEIGHT_ALPHA', 'HEIGHT_BORDER_ALPHA', 'ELEVATION_SHADOW_OFFSET'];
       for (const prop of visualProps) {
         if (prop in config && !Number.isFinite(config[prop])) {
-          result.warnings.push(`Visual property ${prop} should be a finite number, got: ${config[prop]}`);
+          result.warnings.push(
+            `Visual property ${prop} should be a finite number, got: ${config[prop]}`
+          );
         }
       }
 
@@ -478,29 +513,35 @@ export class TerrainValidation {
       if (result.isValid) {
         const heightRange = config.MAX_HEIGHT - config.MIN_HEIGHT;
         if (heightRange > 1000) {
-          result.warnings.push(`Very large height range (${heightRange}) may cause performance issues`);
+          result.warnings.push(
+            `Very large height range (${heightRange}) may cause performance issues`
+          );
         }
 
         if (config.HEIGHT_STEP > heightRange / 2) {
-          result.warnings.push(`HEIGHT_STEP (${config.HEIGHT_STEP}) is very large relative to height range (${heightRange})`);
+          result.warnings.push(
+            `HEIGHT_STEP (${config.HEIGHT_STEP}) is very large relative to height range (${heightRange})`
+          );
         }
       }
 
       result.details = {
         heightRange: result.isValid ? config.MAX_HEIGHT - config.MIN_HEIGHT : null,
-        stepCount: result.isValid ? Math.ceil((config.MAX_HEIGHT - config.MIN_HEIGHT) / config.HEIGHT_STEP) : null
+        stepCount: result.isValid
+          ? Math.ceil((config.MAX_HEIGHT - config.MIN_HEIGHT) / config.HEIGHT_STEP)
+          : null,
       };
 
       return result;
     } catch (error) {
       result.isValid = false;
       result.errors.push(`Configuration validation error: ${error.message}`);
-      
+
       logger.log(LOG_LEVEL.ERROR, 'Error validating terrain configuration', LOG_CATEGORY.SYSTEM, {
         context: 'TerrainValidation.validateTerrainConfig',
-        error: error.message
+        error: error.message,
       });
-      
+
       return result;
     }
   }

@@ -14,29 +14,37 @@ export function validateTerrainSystemState(c) {
         context: 'validation.validateTerrainSystemState',
         errors: validationResult.errors,
         warnings: validationResult.warnings,
-        details: validationResult.details
+        details: validationResult.details,
       });
       throw new Error(`Terrain system state corrupted: ${errorMessage}`);
     }
 
     const warnings = TerrainValidation.getWarningMessages(validationResult);
     if (warnings.length > 0) {
-      logger.warn('Terrain system validation warnings', {
-        context: 'validation.validateTerrainSystemState',
-        warnings
-      }, LOG_CATEGORY.SYSTEM);
+      logger.warn(
+        'Terrain system validation warnings',
+        {
+          context: 'validation.validateTerrainSystemState',
+          warnings,
+        },
+        LOG_CATEGORY.SYSTEM
+      );
     }
 
-    logger.debug('Terrain system state validation passed', {
-      context: 'validation.validateTerrainSystemState',
-      details: validationResult.details
-    }, LOG_CATEGORY.SYSTEM);
+    logger.debug(
+      'Terrain system state validation passed',
+      {
+        context: 'validation.validateTerrainSystemState',
+        details: validationResult.details,
+      },
+      LOG_CATEGORY.SYSTEM
+    );
 
     return true;
   } catch (error) {
     logger.error('Critical error during terrain system validation', {
       context: 'validation.validateTerrainSystemState',
-      error: error.message
+      error: error.message,
     });
     throw error;
   }
@@ -59,7 +67,10 @@ export function validateTerrainDataConsistency(c) {
     }
 
     for (let i = 0; i < c.dataStore.working.length; i++) {
-      if (!Array.isArray(c.dataStore.working[i]) || c.dataStore.working[i].length !== expectedCols) {
+      if (
+        !Array.isArray(c.dataStore.working[i]) ||
+        c.dataStore.working[i].length !== expectedCols
+      ) {
         return false;
       }
     }
@@ -78,7 +89,7 @@ export function validateTerrainDataConsistency(c) {
   } catch (error) {
     logger.warn('Error validating terrain data consistency', {
       context: 'validation.validateTerrainDataConsistency',
-      error: error.message
+      error: error.message,
     });
     return false;
   }

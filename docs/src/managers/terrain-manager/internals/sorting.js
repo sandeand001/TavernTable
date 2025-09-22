@@ -13,12 +13,22 @@ export function addTileWithDepthSorting(m, terrainTile) {
       if (child.depthValue !== undefined) {
         const childDepth = child.depthValue;
         const childIsShadow = child.isShadowTile;
-        if (childDepth < targetDepth) { insertIndex = i + 1; continue; }
-        if (childDepth === targetDepth) {
-          if (isShadow && !childIsShadow) { insertIndex = i; break; }
-          insertIndex = i + 1; continue;
+        if (childDepth < targetDepth) {
+          insertIndex = i + 1;
+          continue;
         }
-        if (childDepth > targetDepth) { insertIndex = i; break; }
+        if (childDepth === targetDepth) {
+          if (isShadow && !childIsShadow) {
+            insertIndex = i;
+            break;
+          }
+          insertIndex = i + 1;
+          continue;
+        }
+        if (childDepth > targetDepth) {
+          insertIndex = i;
+          break;
+        }
       } else {
         insertIndex = i + 1;
       }
@@ -30,12 +40,12 @@ export function addTileWithDepthSorting(m, terrainTile) {
       depthValue: targetDepth,
       isShadow,
       insertIndex,
-      totalChildren: m.terrainContainer.children.length
+      totalChildren: m.terrainContainer.children.length,
     });
   } catch (error) {
     logger.warn('Depth sorting failed, using fallback addChild', {
       coordinates: { x: terrainTile.gridX, y: terrainTile.gridY },
-      error: error.message
+      error: error.message,
     });
     m.terrainContainer.addChild(terrainTile);
   }
@@ -73,18 +83,21 @@ export function sortAllTerrainTilesByDepth(m) {
       bucket.shadows.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
       bucket.faces.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
       bucket.tiles.sort((a, b) => (a.depthValue || 0) - (b.depthValue || 0));
-      bucket.shadows.forEach(ch => m.terrainContainer.addChild(ch));
-      bucket.faces.forEach(ch => m.terrainContainer.addChild(ch));
-      bucket.tiles.forEach(ch => m.terrainContainer.addChild(ch));
+      bucket.shadows.forEach((ch) => m.terrainContainer.addChild(ch));
+      bucket.faces.forEach((ch) => m.terrainContainer.addChild(ch));
+      bucket.tiles.forEach((ch) => m.terrainContainer.addChild(ch));
     }
-    others.forEach(child => m.terrainContainer.addChild(child));
+    others.forEach((child) => m.terrainContainer.addChild(child));
 
-    const aggregateCounts = [...byDepth.values()].reduce((acc, bucket) => {
-      acc.tiles += bucket.tiles.length;
-      acc.shadows += bucket.shadows.length;
-      acc.faces += bucket.faces.length;
-      return acc;
-    }, { tiles: 0, shadows: 0, faces: 0 });
+    const aggregateCounts = [...byDepth.values()].reduce(
+      (acc, bucket) => {
+        acc.tiles += bucket.tiles.length;
+        acc.shadows += bucket.shadows.length;
+        acc.faces += bucket.faces.length;
+        return acc;
+      },
+      { tiles: 0, shadows: 0, faces: 0 }
+    );
 
     logger.log(LOG_LEVEL.DEBUG, 'All terrain tiles re-sorted by depth', LOG_CATEGORY.RENDERING, {
       context: 'TerrainManager.sortAllTerrainTilesByDepth',
@@ -92,9 +105,11 @@ export function sortAllTerrainTilesByDepth(m) {
       shadowTilesCount: aggregateCounts.shadows,
       facesCount: aggregateCounts.faces,
       otherChildrenCount: others.length,
-      totalChildren: m.terrainContainer.children.length
+      totalChildren: m.terrainContainer.children.length,
     });
   } catch (error) {
-    logger.warn('sortAllTerrainTilesByDepth encountered an error', { error: String(error?.message || error) });
+    logger.warn('sortAllTerrainTilesByDepth encountered an error', {
+      error: String(error?.message || error),
+    });
   }
 }

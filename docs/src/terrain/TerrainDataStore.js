@@ -11,22 +11,37 @@ export class TerrainDataStore {
     const validCols = Number.isInteger(cols) && cols > 0 ? cols : TERRAIN_CONFIG.FALLBACK_COLS || 1;
     const validRows = Number.isInteger(rows) && rows > 0 ? rows : TERRAIN_CONFIG.FALLBACK_ROWS || 1;
     if (validCols !== cols || validRows !== rows) {
-      logger.log(LOG_LEVEL.WARN, 'TerrainDataStore constructed with invalid dimensions; using fallback', LOG_CATEGORY.SYSTEM, {
-        context: 'TerrainDataStore.constructor',
-        provided: { cols, rows },
-        fallback: { cols: validCols, rows: validRows }
-      });
+      logger.log(
+        LOG_LEVEL.WARN,
+        'TerrainDataStore constructed with invalid dimensions; using fallback',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'TerrainDataStore.constructor',
+          provided: { cols, rows },
+          fallback: { cols: validCols, rows: validRows },
+        }
+      );
     }
     this.cols = validCols;
     this.rows = validRows;
-    this.base = baseTerrainHeights || TerrainHeightUtils.createHeightArray(validRows, validCols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
-    this.working = TerrainHeightUtils.createHeightArray(validRows, validCols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
+    this.base =
+      baseTerrainHeights ||
+      TerrainHeightUtils.createHeightArray(validRows, validCols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
+    this.working = TerrainHeightUtils.createHeightArray(
+      validRows,
+      validCols,
+      TERRAIN_CONFIG.DEFAULT_HEIGHT
+    );
   }
 
   resize(cols, rows) {
     const oldBase = this.base;
     const newBase = TerrainHeightUtils.createHeightArray(rows, cols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
-    const newWorking = TerrainHeightUtils.createHeightArray(rows, cols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
+    const newWorking = TerrainHeightUtils.createHeightArray(
+      rows,
+      cols,
+      TERRAIN_CONFIG.DEFAULT_HEIGHT
+    );
 
     const copyRows = Math.min(rows, oldBase.length);
     const copyCols = Math.min(cols, oldBase[0]?.length || 0);
@@ -60,18 +75,23 @@ export class TerrainDataStore {
   }
 
   applyWorkingToBase() {
-    this.base = this.working.map(row => [...row]);
+    this.base = this.working.map((row) => [...row]);
   }
 
   loadBaseIntoWorking() {
-    this.working = this.base.map(row => [...row]);
+    this.working = this.base.map((row) => [...row]);
   }
 
   isConsistent() {
-    const r = this.rows, c = this.cols;
-    return Array.isArray(this.base) && Array.isArray(this.working)
-      && this.base.length === r && this.working.length === r
-      && this.base.every(row => Array.isArray(row) && row.length === c)
-      && this.working.every(row => Array.isArray(row) && row.length === c);
+    const r = this.rows,
+      c = this.cols;
+    return (
+      Array.isArray(this.base) &&
+      Array.isArray(this.working) &&
+      this.base.length === r &&
+      this.working.length === r &&
+      this.base.every((row) => Array.isArray(row) && row.length === c) &&
+      this.working.every((row) => Array.isArray(row) && row.length === c)
+    );
   }
 }

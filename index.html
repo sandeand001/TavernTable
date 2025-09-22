@@ -169,6 +169,7 @@
                 <button id="terrain-lower-btn" class="terrain-tool-btn" aria-label="Lower terrain height">⬇️
                   Lower</button>
               </div>
+              <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center;"></div>
             </div>
 
             <div class="tool-group">
@@ -239,8 +240,17 @@
                 <small>• <strong>[ ]</strong>: Brush size</small>
               </div>
             </div>
+
+            <!-- Placeables were moved outside the toggled tools so they remain reachable
+                 in the Terrain panel without requiring Terrain Mode to be active. The
+                 runtime UI will still inject items into the same `#terrain-placeables-root`. -->
+            <!-- Runtime injection point for terrain placeables (buttons will be added here) -->
+            <div id="terrain-placeables-root" class="placeables-root" aria-label="Terrain placeables menu"></div>
           </div>
         </div>
+
+        <!-- Placeable Tiles UI removed. Placeable assets and runtime managers remain available; the
+       UI elements were intentionally removed to simplify the sidebar. -->
       </div>
 
       <!-- Biomes Panel (sibling to terrain/settings panels) -->
@@ -250,6 +260,18 @@
           <div class="section-title">Select a Biome Palette</div>
           <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
             <!-- Biome group buttons injected at runtime -->
+          </div>
+          <div class="setting-row"
+            style="margin-top:0.75rem; display:flex; gap:0.5rem; align-items:center; flex-wrap: wrap;">
+            <button id="generate-map" type="button" class="primary-button">Generate Map</button>
+            <label class="toggle-switch" for="biome-seed-lock" title="Lock seed to keep maps consistent across clicks">
+              <input type="checkbox" id="biome-seed-lock" />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Lock seed</span>
+            </label>
+            <button id="biome-reseed" type="button" class="action-button" title="Pick a new random seed">Reseed</button>
+            <small class="small-text">Uses the selected biome to generate elevations. Unlock seed to randomize on each
+              click.</small>
           </div>
           <div class="section-subtitle" style="margin-top:1rem;">Rich Tile Shading</div>
           <div id="biome-shading-controls" class="setting-group" role="group" aria-label="Rich tile shading controls">

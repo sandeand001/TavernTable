@@ -1,6 +1,6 @@
 /**
  * StateCoordinator.js - Manages application state and initialization lifecycle
- * 
+ *
  * Extracted from GameManager to follow single responsibility principle
  * Handles application initialization, global state management, and configuration
  */
@@ -25,58 +25,63 @@ export class StateCoordinator {
       logger.log(LOG_LEVEL.INFO, 'Initializing TavernTable GameManager', LOG_CATEGORY.SYSTEM, {
         context: 'StateCoordinator.initializeApplication',
         stage: 'initialization_start',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
-      
+
       // Create PIXI app with validation
       this.gameManager.renderCoordinator.createPixiApp();
-      
+
       // NOW create managers after PIXI app exists
       logger.log(LOG_LEVEL.DEBUG, 'Creating manager instances', LOG_CATEGORY.SYSTEM, {
         context: 'StateCoordinator.initializeApplication',
         stage: 'manager_creation',
-        pixiAppReady: !!(this.gameManager.app)
+        pixiAppReady: !!this.gameManager.app,
       });
       await this.createManagers();
-      
+
       // Set up grid system
       this.gameManager.gridRenderer.setupGrid();
-      
+
       // Configure global variables
       this.setupGlobalVariables();
-      
+
       // Enable grid interaction
       this.gameManager.interactionManager.setupGridInteraction();
-      
+
       // Initialize terrain system
       await this.gameManager.terrainCoordinator.initialize();
-      
+
       // Initialize sprites with error handling
       await this.initializeSprites();
-      
+
       // Fix any existing tokens that might be in wrong container
       this.gameManager.renderCoordinator.fixExistingTokens();
-      
+
       this.initializationComplete = true;
-      logger.log(LOG_LEVEL.INFO, 'GameManager initialization completed successfully', LOG_CATEGORY.SYSTEM, {
-        context: 'StateCoordinator.initializeApplication',
-        stage: 'initialization_complete',
-        gridDimensions: { cols: this.gameManager.cols, rows: this.gameManager.rows },
-        spritesReady: this.gameManager.spritesReady,
-        timestamp: new Date().toISOString()
-      });
+      logger.log(
+        LOG_LEVEL.INFO,
+        'GameManager initialization completed successfully',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'StateCoordinator.initializeApplication',
+          stage: 'initialization_complete',
+          gridDimensions: { cols: this.gameManager.cols, rows: this.gameManager.rows },
+          spritesReady: this.gameManager.spritesReady,
+          timestamp: new Date().toISOString(),
+        }
+      );
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
         context: 'StateCoordinator.initializeApplication',
         stage: 'game_manager_initialization',
         initializationSteps: {
-          pixiApp: !!(this.gameManager.renderCoordinator),
+          pixiApp: !!this.gameManager.renderCoordinator,
           managers: !!(this.gameManager.tokenManager && this.gameManager.interactionManager),
-          grid: !!(this.gameManager.gridRenderer),
+          grid: !!this.gameManager.gridRenderer,
           globalVars: !!window.gameManager,
-          sprites: this.gameManager.spritesReady
+          sprites: this.gameManager.spritesReady,
         },
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
       throw error; // Re-throw to allow caller to handle
     }
@@ -90,7 +95,7 @@ export class StateCoordinator {
     const { TokenManager } = await import('../managers/TokenManager.js');
     const { InteractionManager } = await import('../managers/InteractionManager.js');
     const { GridRenderer } = await import('../managers/GridRenderer.js');
-    
+
     this.gameManager.tokenManager = new TokenManager(this.gameManager);
     this.gameManager.interactionManager = new InteractionManager(this.gameManager);
     this.gameManager.gridRenderer = new GridRenderer(this.gameManager);
@@ -114,7 +119,7 @@ export class StateCoordinator {
       window.tokenFacingRight = this.gameManager.tokenFacingRight;
       window.placedTokens = this.gameManager.placedTokens;
       window.gameManager = this.gameManager;
-      
+
       logger.debug('Global variables initialized for backward compatibility');
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INITIALIZATION, {
@@ -122,10 +127,10 @@ export class StateCoordinator {
         stage: 'global_variable_setup',
         variables: {
           gameManager: !!this.gameManager,
-          gridContainer: !!(this.gameManager.gridContainer),
-          placedTokens: !!(this.gameManager.placedTokens)
+          gridContainer: !!this.gameManager.gridContainer,
+          placedTokens: !!this.gameManager.placedTokens,
         },
-        legacyCompatibility: true
+        legacyCompatibility: true,
       });
     }
   }
@@ -155,7 +160,7 @@ export class StateCoordinator {
         stage: 'sprite_initialization',
         spriteManagers: { spriteManager: !!window.spriteManager },
         fallbackEnabled: true,
-        spritesReady: this.gameManager.spritesReady
+        spritesReady: this.gameManager.spritesReady,
       });
       // Allow fallback to drawn graphics
       this.gameManager.spritesReady = true;
@@ -172,11 +177,11 @@ export class StateCoordinator {
     // Update internal state
     this.gameManager.cols = newCols;
     this.gameManager.rows = newRows;
-    
+
     // Update global variables for backward compatibility
     window.cols = this.gameManager.cols;
     window.rows = this.gameManager.rows;
-    
+
     logger.debug(`Grid dimensions updated to ${newCols}x${newRows}`);
   }
 
@@ -187,10 +192,10 @@ export class StateCoordinator {
   validateTokenPositions() {
     if (this.gameManager.tokenManager) {
       this.gameManager.tokenManager.validateTokenPositions(
-        this.gameManager.cols, 
+        this.gameManager.cols,
         this.gameManager.rows
       );
-      
+
       // Update global token array for backward compatibility
       window.placedTokens = this.gameManager.placedTokens;
     }
@@ -206,13 +211,13 @@ export class StateCoordinator {
       spritesReady: this.gameManager.spritesReady,
       gridDimensions: {
         cols: this.gameManager.cols,
-        rows: this.gameManager.rows
+        rows: this.gameManager.rows,
       },
       tileSize: {
         width: this.gameManager.tileWidth,
-        height: this.gameManager.tileHeight
+        height: this.gameManager.tileHeight,
       },
-      tokensCount: this.gameManager.placedTokens ? this.gameManager.placedTokens.length : 0
+      tokensCount: this.gameManager.placedTokens ? this.gameManager.placedTokens.length : 0,
     };
   }
 
@@ -241,14 +246,14 @@ export class StateCoordinator {
         context: 'StateCoordinator.resetApplication',
         stage: 'application_reset',
         resetSteps: {
-          tokensCleared: !!(this.gameManager.tokenManager),
+          tokensCleared: !!this.gameManager.tokenManager,
           gridReset: true,
-          zoomReset: !!(this.gameManager.renderCoordinator)
+          zoomReset: !!this.gameManager.renderCoordinator,
         },
         targetDimensions: {
           cols: GRID_CONFIG.DEFAULT_COLS,
-          rows: GRID_CONFIG.DEFAULT_ROWS
-        }
+          rows: GRID_CONFIG.DEFAULT_ROWS,
+        },
       });
     }
   }

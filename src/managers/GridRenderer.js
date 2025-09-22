@@ -1,6 +1,6 @@
 /**
  * GridRenderer.js - Handles grid rendering and visual management
- * 
+ *
  * Extracted from GameManager to follow single responsibility principle
  * Manages all grid rendering operations while preserving existing functionality
  */
@@ -9,7 +9,10 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { drawIsometricTile as _drawIsoTile, clearGridTiles as _clearTiles } from './grid-renderer/internals/tiles.js';
+import {
+  drawIsometricTile as _drawIsoTile,
+  clearGridTiles as _clearTiles,
+} from './grid-renderer/internals/tiles.js';
 
 export class GridRenderer {
   constructor(gameManager) {
@@ -29,8 +32,8 @@ export class GridRenderer {
       logger.log(LOG_LEVEL.DEBUG, 'Creating grid container', LOG_CATEGORY.SYSTEM, {
         context: 'GridRenderer.setupGrid',
         stage: 'container_creation',
-        pixiApp: !!(this.gameManager.app),
-        pixiStage: !!(this.gameManager.app?.stage)
+        pixiApp: !!this.gameManager.app,
+        pixiStage: !!this.gameManager.app?.stage,
       });
 
       // Create main grid container
@@ -55,12 +58,12 @@ export class GridRenderer {
         gridDimensions: {
           cols: this.gameManager.cols,
           rows: this.gameManager.rows,
-          totalTiles: this.gameManager.cols * this.gameManager.rows
+          totalTiles: this.gameManager.cols * this.gameManager.rows,
         },
         gridCentered: true,
         performance: {
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       });
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.RENDERING, {
@@ -68,14 +71,14 @@ export class GridRenderer {
         stage: 'grid_initialization',
         gridDimensions: {
           cols: this.gameManager.cols,
-          rows: this.gameManager.rows
+          rows: this.gameManager.rows,
         },
-        pixiAppAvailable: !!(this.gameManager.app),
-        pixiStageAvailable: !!(this.gameManager.app?.stage),
+        pixiAppAvailable: !!this.gameManager.app,
+        pixiStageAvailable: !!this.gameManager.app?.stage,
         gameManagerState: {
           initialized: !!this.gameManager,
-          hasContainer: !!(this.gameManager.gridContainer)
-        }
+          hasContainer: !!this.gameManager.gridContainer,
+        },
       });
       throw error;
     }
@@ -84,7 +87,7 @@ export class GridRenderer {
   /**
    * Draw an isometric tile at the specified grid coordinates
    * @param {number} x - Grid x coordinate
-   * @param {number} y - Grid y coordinate  
+   * @param {number} y - Grid y coordinate
    * @param {number} color - Hex color value (default from config)
    * @returns {PIXI.Graphics} The created tile graphics object
    */
@@ -99,7 +102,7 @@ export class GridRenderer {
       GameErrors.rendering(error, {
         stage: 'drawIsometricTile',
         coordinates: { x, y },
-        color
+        color,
       });
       throw error;
     }

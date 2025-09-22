@@ -1,6 +1,6 @@
 /**
  * InputCoordinator.js - Manages user input handling and token interactions
- * 
+ *
  * Extracted from GameManager to follow single responsibility principle
  * Handles mouse clicks, token placement/removal, and user interaction workflows
  */
@@ -62,7 +62,7 @@ export class InputCoordinator {
       GameErrors.input(error, {
         stage: 'handleTokenInteraction',
         coordinates: { gridX, gridY },
-        selectedTokenType: this.gameManager.selectedTokenType
+        selectedTokenType: this.gameManager.selectedTokenType,
       });
     }
   }
@@ -196,32 +196,32 @@ export class InputCoordinator {
       operations.forEach((operation, index) => {
         try {
           switch (operation.type) {
-          case 'place':
-            this.placeNewToken(operation.gridX, operation.gridY);
-            break;
-          case 'remove': {
-            const token = this.findExistingTokenAt(operation.gridX, operation.gridY);
-            if (token) {
-              this.removeToken(token);
+            case 'place':
+              this.placeNewToken(operation.gridX, operation.gridY);
+              break;
+            case 'remove': {
+              const token = this.findExistingTokenAt(operation.gridX, operation.gridY);
+              if (token) {
+                this.removeToken(token);
+              }
+              break;
             }
-            break;
-          }
-          case 'move': {
-            const moveToken = this.findExistingTokenAt(operation.fromX, operation.fromY);
-            if (moveToken) {
-              this.removeToken(moveToken);
-              this.placeNewToken(operation.toX, operation.toY);
+            case 'move': {
+              const moveToken = this.findExistingTokenAt(operation.fromX, operation.fromY);
+              if (moveToken) {
+                this.removeToken(moveToken);
+                this.placeNewToken(operation.toX, operation.toY);
+              }
+              break;
             }
-            break;
-          }
-          default:
-            logger.warn(`Unknown batch operation type: ${operation.type}`);
+            default:
+              logger.warn(`Unknown batch operation type: ${operation.type}`);
           }
         } catch (operationError) {
           GameErrors.input(operationError, {
             stage: 'batchTokenOperation',
             operationIndex: index,
-            operation
+            operation,
           });
         }
       });
@@ -230,7 +230,7 @@ export class InputCoordinator {
     } catch (error) {
       GameErrors.input(error, {
         stage: 'handleBatchTokenOperations',
-        operationsCount: operations.length
+        operationsCount: operations.length,
       });
     }
   }
@@ -246,8 +246,8 @@ export class InputCoordinator {
       tokenFacingRight: this.gameManager.tokenFacingRight,
       gridDimensions: {
         cols: this.gameManager.cols,
-        rows: this.gameManager.rows
-      }
+        rows: this.gameManager.rows,
+      },
     };
   }
 }
