@@ -1,3 +1,5 @@
+# Allow tests setup custom spacing (intentional alignment) if needed
+tests/setup.js
 node_modules
 coverage
 coverage/**

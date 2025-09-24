@@ -47,7 +47,8 @@ describe('Placeables tree variants', () => {
     const id = Object.keys(TERRAIN_PLACEABLES).find((k) => k.startsWith('tree-'));
     const ok = placeItem(mockM, id, 4, 5);
     expect(ok).toBe(true);
-    const before = mockM.gameManager.gridContainer.children.slice();
+    // Placeables now added to terrainContainer for correct occlusion
+    const before = mockM.terrainContainer.children.slice();
     // ensure variant index exists on placed sprite
     const placed = before.find((p) => p.placeableId === id && p.gridX === 4 && p.gridY === 5);
     expect(placed).toBeDefined();

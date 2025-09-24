@@ -367,6 +367,17 @@ class GameManager {
     return this.terrainCoordinator ? this.terrainCoordinator.isTerrainModeActive : false;
   }
 
+  // === VIEW MODE (Delegated to StateCoordinator) ===
+  getViewMode() {
+    return this.stateCoordinator?.getViewMode() || 'isometric';
+  }
+
+  toggleViewMode() {
+    if (this.stateCoordinator?.toggleViewMode) {
+      this.stateCoordinator.toggleViewMode();
+    }
+  }
+
   // === GRID MANAGEMENT ===
 
   /**

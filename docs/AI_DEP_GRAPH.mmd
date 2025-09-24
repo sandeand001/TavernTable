@@ -21,6 +21,7 @@ flowchart LR
   63316e39278b[src/coordinators/terrain-coordinator/internals/container.js]
   05722cd2c852[src/coordinators/terrain-coordinator/internals/coords.js]
   7a1126fea5a7[src/coordinators/terrain-coordinator/internals/deps.js]
+  67f3090790ba[src/coordinators/terrain-coordinator/internals/flora.js]
   c26ee2f18485[src/coordinators/terrain-coordinator/internals/height.js]
   cc164a98996c[src/coordinators/terrain-coordinator/internals/init.js]
   880c8b513217[src/coordinators/terrain-coordinator/internals/inputs.js]
@@ -78,6 +79,7 @@ flowchart LR
   2452655fdde1[src/ui/domHelpers.js]
   c638c6d2f8cb[src/ui/lib/elevationUtils.js]
   86321edfa84d[src/ui/lib/spriteKeys.js]
+  928c43d0c060[src/ui/SettingsViewToggle.js]
   1ac8779a1633[src/ui/SidebarController.js]
   e8d76d94cd75[src/ui/UIController.js]
   99a674c5082b[src/utils/CanvasShapeUtils.js]
@@ -92,6 +94,8 @@ flowchart LR
   167a76c48bfa[src/utils/logger/enums.js]
   8c711cb2f768[src/utils/Logger.js]
   f65e81872eec[src/utils/PixiShapeUtils.js]
+  02325ab56d00[src/utils/ProjectionUtils.js]
+  f0372f8d2bfd[src/utils/SeededRNG.js]
   37fb05b4943e[src/utils/TerrainHeightUtils.js]
   318571309d3f[src/utils/TerrainPixiUtils.js]
   0f5753f22409[src/utils/TerrainValidation.js]
@@ -183,6 +187,7 @@ flowchart LR
   fb624119ea69[docs/src/utils/CanvasShapeUtils.js]
   c1d0d003d669[docs/src/utils/ColorUtils.js]
   945083ba9bf2[docs/src/utils/CoordinateUtils.js]
+  13b795678295[docs/src/utils/DepthUtils.js]
   70350dacb084[docs/src/utils/DiagnosticTool.js]
   e0052f7647e5[docs/src/utils/env.js]
   5ce32cc035a9[docs/src/utils/error/enums.js]
@@ -201,7 +206,6 @@ flowchart LR
   9024c284e0f8[docs/src/utils/Validation.js]
   618161e21138 --> fc9eff56c2b8
   618161e21138 --> e623a0b6986f
-  618161e21138 --> 8c711cb2f768
   159ccdfb1216 --> 8c711cb2f768
   159ccdfb1216 --> ecbbd71626d8
   159ccdfb1216 --> 68b5dd71185e
@@ -211,10 +215,10 @@ flowchart LR
   418ca7f88f9b --> ecbbd71626d8
   418ca7f88f9b --> 68b5dd71185e
   418ca7f88f9b --> a71c51e1083e
-  418ca7f88f9b --> 2452655fdde1
   711a2b6cf63b --> 8c711cb2f768
   711a2b6cf63b --> ecbbd71626d8
   711a2b6cf63b --> a71c51e1083e
+  711a2b6cf63b --> 02325ab56d00
   711a2b6cf63b --> f3070e4a7ab8
   711a2b6cf63b --> f37a2df4e2f7
   711a2b6cf63b --> d77501f2ea30
@@ -251,6 +255,8 @@ flowchart LR
   05722cd2c852 --> e28bad82c9c7
   7a1126fea5a7 --> 8c711cb2f768
   7a1126fea5a7 --> 68b5dd71185e
+  67f3090790ba --> 58b5d2f1f154
+  67f3090790ba --> f0372f8d2bfd
   c26ee2f18485 --> e623a0b6986f
   cc164a98996c --> e623a0b6986f
   cc164a98996c --> ecbbd71626d8
@@ -271,7 +277,6 @@ flowchart LR
   9ee91910b643 --> e623a0b6986f
   9b6c690742ab --> 8c711cb2f768
   9b6c690742ab --> 0f5753f22409
-  6555d4ac4a16 --> 2452655fdde1
   6555d4ac4a16 --> 86682de8a160
   6555d4ac4a16 --> 8c711cb2f768
   6555d4ac4a16 --> ecbbd71626d8
@@ -295,6 +300,7 @@ flowchart LR
   fb5708d12ec8 --> 880c8b513217
   fb5708d12ec8 --> bb316879cd49
   fb5708d12ec8 --> 321c27b011c5
+  fb5708d12ec8 --> 67f3090790ba
   fb5708d12ec8 --> a0bf4d9c362f
   fb5708d12ec8 --> c26ee2f18485
   fb5708d12ec8 --> 05722cd2c852
@@ -391,22 +397,18 @@ flowchart LR
   3bd99433e3aa --> ecbbd71626d8
   3bd99433e3aa --> 68b5dd71185e
   3bd99433e3aa --> e72111372fe0
-  12b3dff352c4 --> 2452655fdde1
   2e81bed45966 --> 8c711cb2f768
   2e81bed45966 --> e28bad82c9c7
   2e81bed45966 --> 37fb05b4943e
   7d5d44c50dd8 --> e28bad82c9c7
   7d5d44c50dd8 --> 37fb05b4943e
   7d5d44c50dd8 --> 8c711cb2f768
-  7d5d44c50dd8 --> e6d8c51e8084
   7d5d44c50dd8 --> ecbbd71626d8
   7179c1418d2c --> e28bad82c9c7
   7179c1418d2c --> 37fb05b4943e
   7179c1418d2c --> 8c711cb2f768
-  7179c1418d2c --> e6d8c51e8084
   7179c1418d2c --> ecbbd71626d8
   ddab55041ef8 --> 68b5dd71185e
-  ddab55041ef8 --> 2452655fdde1
   80725ccd8f1f --> 8c711cb2f768
   80725ccd8f1f --> e28bad82c9c7
   80725ccd8f1f --> ecbbd71626d8
@@ -425,7 +427,6 @@ flowchart LR
   bbf7ac60bfa8 --> 8c711cb2f768
   bbf7ac60bfa8 --> ecbbd71626d8
   bbf7ac60bfa8 --> a71c51e1083e
-  bbf7ac60bfa8 --> 2452655fdde1
   638a5d693b53 --> 8c711cb2f768
   638a5d693b53 --> ecbbd71626d8
   638a5d693b53 --> 68b5dd71185e
@@ -467,13 +468,13 @@ flowchart LR
   e28bad82c9c7 --> a71c51e1083e
   e28bad82c9c7 --> ecbbd71626d8
   f63a83e71cbd --> 144167c41989
-  f63a83e71cbd --> 2452655fdde1
   ecbbd71626d8 --> 8c711cb2f768
   ecbbd71626d8 --> 144167c41989
   ecbbd71626d8 --> f63a83e71cbd
   ecbbd71626d8 --> 2888baf60279
   8c711cb2f768 --> 8721557a149d
   8c711cb2f768 --> 167a76c48bfa
+  02325ab56d00 --> 8c711cb2f768
   37fb05b4943e --> e623a0b6986f
   37fb05b4943e --> 8c711cb2f768
   318571309d3f --> 8c711cb2f768
@@ -484,7 +485,6 @@ flowchart LR
   68b5dd71185e --> 8c711cb2f768
   c755eabfbeb4 --> d9506bf28717
   c755eabfbeb4 --> d8764c6bd110
-  c755eabfbeb4 --> a182ffb8d986
   d1a00da25b4c --> a182ffb8d986
   d1a00da25b4c --> a3da9b68828b
   d1a00da25b4c --> 9024c284e0f8
@@ -494,7 +494,6 @@ flowchart LR
   a1f877c21e6a --> a3da9b68828b
   a1f877c21e6a --> 9024c284e0f8
   a1f877c21e6a --> 462e58195daf
-  a1f877c21e6a --> 1209ae38acbb
   d4c53787af5c --> a182ffb8d986
   d4c53787af5c --> a3da9b68828b
   d4c53787af5c --> 462e58195daf
@@ -553,7 +552,6 @@ flowchart LR
   5edff0b6971d --> d8764c6bd110
   474585e53e86 --> a182ffb8d986
   474585e53e86 --> fee35146aa6e
-  76acb0f37d96 --> 1209ae38acbb
   76acb0f37d96 --> 965b4d611ec1
   76acb0f37d96 --> a182ffb8d986
   76acb0f37d96 --> a3da9b68828b
@@ -664,7 +662,6 @@ flowchart LR
   521e9bde4aa5 --> a3da9b68828b
   521e9bde4aa5 --> 9024c284e0f8
   521e9bde4aa5 --> 2f803dbf7acd
-  9226339c2e9c --> 1209ae38acbb
   018c9c979fe9 --> a182ffb8d986
   018c9c979fe9 --> 945083ba9bf2
   018c9c979fe9 --> 71a47db1fe32
@@ -676,7 +673,6 @@ flowchart LR
   870874ca72f2 --> a182ffb8d986
   870874ca72f2 --> a3da9b68828b
   372e8374fbd1 --> 9024c284e0f8
-  372e8374fbd1 --> 1209ae38acbb
   64aeb658bcdb --> a182ffb8d986
   64aeb658bcdb --> 945083ba9bf2
   64aeb658bcdb --> a3da9b68828b
@@ -695,7 +691,6 @@ flowchart LR
   bee5237e6c35 --> a182ffb8d986
   bee5237e6c35 --> a3da9b68828b
   bee5237e6c35 --> 462e58195daf
-  bee5237e6c35 --> 1209ae38acbb
   91c4eb9fc5d1 --> a182ffb8d986
   91c4eb9fc5d1 --> a3da9b68828b
   91c4eb9fc5d1 --> 9024c284e0f8
@@ -734,7 +729,6 @@ flowchart LR
   945083ba9bf2 --> 462e58195daf
   945083ba9bf2 --> a3da9b68828b
   6ddf7dfce7c0 --> 5ce32cc035a9
-  6ddf7dfce7c0 --> 1209ae38acbb
   a3da9b68828b --> a182ffb8d986
   a3da9b68828b --> 5ce32cc035a9
   a3da9b68828b --> 6ddf7dfce7c0

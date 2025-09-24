@@ -325,12 +325,8 @@
           <div class="setting-item">
             <label for="grid-opacity">Grid Opacity:</label>
             <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input">
-            <span class="range-value">50%</span>
-          </div>
-          <div class="setting-item">
-            <label for="animation-speed">Animation Speed:</label>
-            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1" class="range-input">
-            <span class="range-value">1x</span>
+            <span cl="2" step="0.1" value="1" class="range-input">
+              <span class="range-value">1x</span>
           </div>
         </div>
 
@@ -388,6 +384,7 @@
   <!-- Main Application Entry Point -->
   <script type="module" src="./src/ui/UIController.js"></script>
   <script type="module" src="./src/ui/SidebarController.js"></script>
+  <script type="module" src="./src/ui/SettingsViewToggle.js"></script>
 
   <style>
     /* Screen reader only class for accessibility */

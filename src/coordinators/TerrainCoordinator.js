@@ -241,6 +241,7 @@ export class TerrainCoordinator {
    * @param {MouseEvent} event - Mouse event
    */
   handleTerrainMouseDown(event) {
+    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     return this._inputHandlers.handleMouseDown(event);
   }
 
@@ -249,6 +250,7 @@ export class TerrainCoordinator {
    * @param {MouseEvent} event - Mouse event
    */
   handleTerrainMouseMove(event) {
+    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     return this._inputHandlers.handleMouseMove(event);
   }
 
@@ -257,6 +259,7 @@ export class TerrainCoordinator {
    * @param {MouseEvent} event - Mouse event
    */
   handleTerrainMouseUp(event) {
+    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     return this._inputHandlers.handleMouseUp(event);
   }
 
@@ -264,6 +267,7 @@ export class TerrainCoordinator {
    * Handle mouse leave events to stop terrain painting
    */
   handleTerrainMouseLeave() {
+    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     return this._inputHandlers.handleMouseLeave();
   }
 
@@ -272,6 +276,7 @@ export class TerrainCoordinator {
    * @param {KeyboardEvent} event - Keyboard event
    */
   handleTerrainKeyDown(event) {
+    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     return this._inputHandlers.handleKeyDown(event);
   }
 
@@ -606,6 +611,7 @@ export class TerrainCoordinator {
    * Only affects base/working data and base tiles; does nothing in terrain edit mode.
    */
   generateBiomeElevationIfFlat(biomeKey, options = {}) {
+    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     try {
       if (this.isTerrainModeActive) return false;
       // Headless/test mode support: if gridContainer is missing (no PIXI app), create a stub
@@ -675,6 +681,7 @@ export class TerrainCoordinator {
    * @returns {boolean} true if generation applied
    */
   generateBiomeElevation(biomeKey, options = {}) {
+    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     try {
       if (this.isTerrainModeActive) return false;
       if (!this.gameManager?.gridContainer) {

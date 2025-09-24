@@ -1,0 +1,2 @@
+# Ignore large generated or transitional view mode files for prettier noise
+src/utils/ViewModeSwitcher.js

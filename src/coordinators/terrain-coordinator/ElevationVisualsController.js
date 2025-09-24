@@ -58,6 +58,8 @@ export class ElevationVisualsController {
         shadow.endFill();
         shadow.x = tile.x + 2;
         shadow.y = tile.y + 2;
+        // Tag as elevation artifact so projection logic can ignore for square overlays
+        shadow.__isElevationArtifact = true;
         if (tile.parent) {
           try {
             const hasGetChildIndex = typeof tile.parent.getChildIndex === 'function';

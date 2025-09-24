@@ -28,6 +28,8 @@ export class BiomeShadingController {
         });
         return;
       }
+      // Mark that biome changed so projection can purge stale overlays if needed
+      this.c.gameManager.__biomeVersion = (this.c.gameManager.__biomeVersion || 0) + 1;
       const richEnabled = !!window?.richShadingSettings?.enabled;
       // Ensure a continuous biome canvas exists and paint it from current heights if rich shading is enabled
       if (richEnabled) {
@@ -121,16 +123,76 @@ export class BiomeShadingController {
             }
           );
           child.beginFill(fillHex, 1.0);
+          // Track current top fill color so top-down projection squares can mirror biome coloration
+          child.__currentFillColor = fillHex;
           traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
           child.endFill();
         } catch (_) {
           // Fallback: draw border only
           traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
+          // Fallback path: ensure at least base color recorded
+          if (typeof child.__currentFillColor === 'undefined') {
+            child.__currentFillColor = GRID_CONFIG.TILE_COLOR;
+          }
         }
 
         if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
         if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.c.addVisualElevationEffect(child, h);
+
+        // If a top-down square already exists for this tile, recolor it immediately
+        try {
+          if (child.__topDownGraphic && child.__topDownGraphic.__isTopDownSquare) {
+            const sq = child.__topDownGraphic;
+            const g = sq; // PIXI.Graphics
+            if (g && typeof g.clear === 'function') {
+              g.clear();
+              // Elevation brightness adjustment will run again when ensureTopDownSquare is called next switch.
+              g.beginFill(
+                child.__currentFillColor || child.__baseColor || GRID_CONFIG.TILE_COLOR,
+                1.0
+              );
+              g.lineStyle({ width: 1, color: 0x000000, alpha: 0.15 });
+              g.drawRect(
+                -this.c.gameManager.tileWidth / 2,
+                -this.c.gameManager.tileWidth / 2,
+                this.c.gameManager.tileWidth,
+                this.c.gameManager.tileWidth
+              );
+              g.endFill();
+            }
+            // Track version so stale squares from older biome passes can be detected if orphaned
+            sq.__biomeVersion = this.c.gameManager.__biomeVersion;
+          }
+        } catch (_) {
+          /* ignore square recolor errors */
+        }
       });
+      // Purge orphaned top-down squares whose parent tiles were removed during map regeneration
+      try {
+        const gc = this.c.gameManager.gridContainer;
+        const toDestroy = [];
+        gc.children.forEach((ch) => {
+          if (ch && ch.__isTopDownSquare) {
+            // If there is no corresponding base tile with same grid coords, mark for destroy
+            const gx = ch.__gridX;
+            const gy = ch.__gridY;
+            const hasBase = gc.children.some(
+              (c2) => c2?.isGridTile && c2.__gridX === gx && c2.__gridY === gy
+            );
+            if (!hasBase) toDestroy.push(ch);
+          }
+        });
+        toDestroy.forEach((sq) => {
+          try {
+            if (gc.children.includes(sq)) gc.removeChild(sq);
+            sq.destroy?.();
+          } catch (_) {
+            /* ignore */
+          }
+        });
+      } catch (_) {
+        /* ignore purge errors */
+      }
       logger.debug(
         'Applied biome palette to base grid',
         { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey },
@@ -159,6 +221,9 @@ export class BiomeShadingController {
         child.lineStyle(1, GRID_CONFIG.TILE_BORDER_COLOR, GRID_CONFIG.TILE_BORDER_ALPHA);
         if (show) {
           child.beginFill(GRID_CONFIG.TILE_COLOR, 1.0);
+          child.__currentFillColor = GRID_CONFIG.TILE_COLOR;
+        } else {
+          // preserve last color reference even when hidden, do not overwrite
         }
         traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
         if (show) child.endFill();

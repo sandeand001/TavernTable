@@ -1045,6 +1045,7 @@ export class BiomeCanvasPainter {
           continue;
         }
         sprite.name = `BiomeCanvasPainterSprite_${d}`;
+        sprite.__biomeLayer = true; // tag for view mode toggle visibility management
         // Place just under the top-face borders for this depth to avoid z-fighting
         sprite.zIndex = d * 100 - 1; // tiles are depth*100; tokens start at +1
         this.gameManager.gridContainer.addChild(sprite);
@@ -1062,6 +1063,7 @@ export class BiomeCanvasPainter {
       if (layer.sprite && !layer.sprite.destroyed) {
         layer.sprite.x = this.bounds.minX;
         layer.sprite.y = this.bounds.minY;
+        layer.sprite.__biomeLayer = true;
       }
       paintedDepths.add(d);
     }

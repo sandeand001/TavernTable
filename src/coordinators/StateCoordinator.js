@@ -13,6 +13,8 @@ export class StateCoordinator {
   constructor(gameManager) {
     this.gameManager = gameManager;
     this.initializationComplete = false;
+    // View mode state: 'isometric' | 'topdown'
+    this.viewMode = 'isometric';
   }
 
   /**
@@ -57,6 +59,9 @@ export class StateCoordinator {
       // Fix any existing tokens that might be in wrong container
       this.gameManager.renderCoordinator.fixExistingTokens();
 
+      // Initialize view mode (after grid + tokens exist)
+      this.initializeViewMode();
+
       this.initializationComplete = true;
       logger.log(
         LOG_LEVEL.INFO,
@@ -85,6 +90,101 @@ export class StateCoordinator {
       });
       throw error; // Re-throw to allow caller to handle
     }
+  }
+
+  /** Initialize view mode from persistent storage (localStorage) */
+  initializeViewMode() {
+    try {
+      this.viewMode = 'isometric'; // hard default
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('taverntable.viewMode');
+        if (stored === 'topdown') {
+          this.viewMode = 'topdown';
+        }
+      }
+      if (this.viewMode === 'topdown') {
+        import('../utils/ProjectionUtils.js')
+          .then((m) => m.reprojectAll(this.gameManager, 'topdown'))
+          .catch(() => {
+            this.viewMode = 'isometric';
+          });
+      }
+    } catch (_) {
+      this.viewMode = 'isometric';
+    }
+  }
+
+  getViewMode() {
+    return this.viewMode;
+  }
+
+  setViewMode(mode) {
+    if (mode !== 'isometric' && mode !== 'topdown') return;
+    if (this.viewMode === mode) return;
+    const previous = this.viewMode;
+    const gm = this.gameManager;
+    // Animation system removed; immediate reprojection only.
+
+    // If entering top-down, disable terrain edit mode + prevent generation during that state
+    try {
+      if (
+        mode === 'topdown' &&
+        gm?.terrainCoordinator?.isTerrainModeActive &&
+        typeof gm.terrainCoordinator.disableTerrainMode === 'function'
+      ) {
+        gm.terrainCoordinator.disableTerrainMode();
+      }
+    } catch (_) {
+      /* non-fatal */
+    }
+
+    const persist = (value) => {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('taverntable.viewMode', value);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    };
+
+    const dispatch = (finalMode, opts = {}) => {
+      window.dispatchEvent(
+        new CustomEvent('viewmode:changed', { detail: { mode: finalMode, previous, ...opts } })
+      );
+    };
+
+    // Optimistically set (so getViewMode reflects target during animation)
+    this.viewMode = mode;
+    persist(mode);
+
+    // Always perform a direct reprojection (transition system removed)
+    import('../utils/ProjectionUtils.js')
+      .then((m) => {
+        const doReproject = () => {
+          try {
+            m.reprojectAll(gm, mode);
+            dispatch(mode);
+          } catch (_) {
+            this.viewMode = previous;
+            persist(previous);
+            dispatch(previous, { error: true });
+          }
+        };
+        // If animate was requested, still yield one tick so UI events (click feedback) paint first
+        // Immediate reprojection (no animation delay)
+        doReproject();
+      })
+      .catch(() => {
+        this.viewMode = previous;
+        persist(previous);
+        dispatch(previous, { error: true });
+      });
+  }
+
+  toggleViewMode() {
+    const next = this.viewMode === 'isometric' ? 'topdown' : 'isometric';
+    this.setViewMode(next);
   }
 
   /**

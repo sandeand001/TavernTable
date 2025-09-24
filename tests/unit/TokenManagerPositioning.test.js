@@ -41,8 +41,8 @@ describe('snapTokenToGrid', () => {
 
     expect(token.x).toBe(iso.x);
     expect(token.y).toBe(iso.y + elev);
-    // unified depth: (gx+gy)*10000 + gx*10 + TYPE_BIAS.token(=9)
-    expect(token.zIndex).toBe((2 + 1) * 10000 + 2 * 10 + 9);
+    // simplified depth band: depth*100 + 70
+    expect(token.zIndex).toBe((2 + 1) * 100 + 70);
 
     expect(placedEntry.gridX).toBe(2);
     expect(placedEntry.gridY).toBe(1);
@@ -94,8 +94,8 @@ describe('snapTokenToGrid', () => {
 
     expect(token.x).toBe(iso.x);
     expect(token.y).toBe(iso.y + elev);
-    // unified depth: (gx+gy)*10000 + gx*10 + TYPE_BIAS.token(=9)
-    expect(token.zIndex).toBe((targetGX + targetGY) * 10000 + targetGX * 10 + 9);
+    // simplified depth band: depth*100 + 70
+    expect(token.zIndex).toBe((targetGX + targetGY) * 100 + 70);
 
     expect(placedEntry.gridX).toBe(targetGX);
     expect(placedEntry.gridY).toBe(targetGY);
