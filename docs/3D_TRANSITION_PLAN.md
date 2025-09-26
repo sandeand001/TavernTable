@@ -121,6 +121,13 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 - [x] Refactor token placement to store `token.world` (grid-derived)
 - [x] Add dev flag `gameManager.renderMode`
 
+### 10A. Early Phase 1 Tasks (Bootstrap)
+- [x] Stub `ThreeSceneManager` (scene, camera, renderer guarded) + unit test
+- [ ] Hook minimal grid plane (future)
+- [ ] Add camera rig abstraction
+- [ ] Expose hybrid toggle UI/dev hook
+- [ ] Metrics: log degraded vs ready init state
+
 ---
 ## 11. Open Questions
 | Question | Notes | Owner |

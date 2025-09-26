@@ -37,6 +37,7 @@ import { InputCoordinator } from '../coordinators/InputCoordinator.js';
 import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 // 3D Transition Phase 0: Spatial coordinator (grid <-> world abstraction)
 import { SpatialCoordinator } from '../scene/SpatialCoordinator.js';
+import { ThreeSceneManager } from '../scene/ThreeSceneManager.js';
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -85,6 +86,7 @@ class GameManager {
 
     // Rendering mode flag: '2d-iso' (legacy) | '3d-hybrid' (in-progress) | future: '3d'
     this.renderMode = '2d-iso';
+    this.threeSceneManager = null; // lazy init when entering hybrid mode
 
     // Initialize error handler
     errorHandler.initialize();
@@ -157,6 +159,20 @@ class GameManager {
   // createManagers() no longer needed here (handled by StateCoordinator.createManagers())
 
   // === RENDERING OPERATIONS (Delegated to RenderCoordinator) ===
+
+  /**
+   * Enable hybrid 2D + 3D rendering. Idempotent.
+   * Initializes ThreeSceneManager and switches renderMode.
+   */
+  async enableHybridRender() {
+    if (this.renderMode === '3d-hybrid') return;
+    if (!this.threeSceneManager) {
+      this.threeSceneManager = new ThreeSceneManager(this);
+      await this.threeSceneManager.initialize();
+    }
+    this.renderMode = '3d-hybrid';
+    return this.threeSceneManager;
+  }
 
   /**
    * Create and configure the PIXI application
