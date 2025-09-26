@@ -123,9 +123,9 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 
 ### 10A. Early Phase 1 Tasks (Bootstrap)
 - [x] Stub `ThreeSceneManager` (scene, camera, renderer guarded) + unit test
-- [ ] Hook minimal grid plane (future)
+- [x] Hook minimal grid plane (base world reference)
 - [ ] Add camera rig abstraction
-- [ ] Expose hybrid toggle UI/dev hook
+- [x] Expose hybrid toggle dev hook (`gameManager.enableHybridRender()`) (UI pending)
 - [ ] Metrics: log degraded vs ready init state
 
 ---
@@ -141,6 +141,8 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 | Date | Change | Author |
 |------|--------|--------|
 | INITIAL | Document created on branch `feature/3d-transition` | system |
+| 2025-09-26 | Phase 0 complete; Phase 1 bootstrap (ThreeSceneManager + world coordinates) | system |
+| 2025-09-26 | Added minimal grid plane & dev hybrid toggle hook | system |
 
 ---
 ## 13. Maintenance Notes

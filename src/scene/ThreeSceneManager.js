@@ -30,6 +30,24 @@ export class ThreeSceneManager {
       // Basic ambient light so future objects are visible
       this.scene.add(new three.AmbientLight(0xffffff, 0.6));
 
+      // Minimal reference grid plane (Phase 1): single flat plane to visualize world origin.
+      try {
+        const gridMaterial = new three.MeshBasicMaterial({
+          color: 0x555555,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.25,
+        });
+        const gridGeometry = new three.PlaneGeometry(40, 40, 20, 20);
+        const gridMesh = new three.Mesh(gridGeometry, gridMaterial);
+        gridMesh.rotation.x = -Math.PI / 2; // make it horizontal (X/Z plane)
+        gridMesh.position.set(20, 0, 20); // center around expected playable region (0..40)
+        gridMesh.name = 'BootstrapGridPlane';
+        this.scene.add(gridMesh);
+      } catch (_) {
+        /* non-fatal */
+      }
+
       // Orthographic camera approximating existing isometric scale (will be tuned later)
       const aspect = 1; // placeholder; updated on resize
       const frustum = 20; // world units half-span

@@ -171,6 +171,14 @@ class GameManager {
       await this.threeSceneManager.initialize();
     }
     this.renderMode = '3d-hybrid';
+    // Dev convenience: expose on window during early phases
+    try {
+      if (typeof window !== 'undefined') {
+        window.__TT_HYBRID_ACTIVE__ = true;
+      }
+    } catch (_) {
+      /* ignore */
+    }
     return this.threeSceneManager;
   }
 
