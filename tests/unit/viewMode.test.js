@@ -113,4 +113,45 @@ describe('View Mode Toggle', () => {
     expect(gridX).toBe(5);
     expect(gridY).toBe(7);
   });
+
+  test('token vertical position remains stable across many projection toggles (no downward drift)', () => {
+    const gm = new GameManager({ cols: 6, rows: 6 });
+    gm.app = new PIXI.Application();
+    gm.gridContainer = new PIXI.Container();
+    gm.renderCoordinator = { centerGrid: () => {}, resetZoom: () => {} };
+    gm.stateCoordinator.initializeViewMode();
+    // Create one mock token sprite at center
+    const sprite = new PIXI.Graphics();
+    const gx = 2;
+    const gy = 2;
+    // Pre-compute isometric coordinates (tileWidth=64, tileHeight=32 defaults from GameManager)
+    const tileW = gm.tileWidth;
+    const tileH = gm.tileHeight;
+    sprite.x = (gx - gy) * (tileW / 2);
+    sprite.y = (gx + gy) * (tileH / 2);
+    sprite.baseIsoY = sprite.y;
+    gm.gridContainer.addChild(sprite);
+    gm.placedTokens = [
+      {
+        gridX: gx,
+        gridY: gy,
+        footprint: { w: 1, h: 1 },
+        creature: { sprite },
+        __originGridX: gx,
+        __originGridY: gy,
+      },
+    ];
+    // Directly use reprojectAll to avoid dependencies on full toggle pipeline
+    const { reprojectAll } = require('../../src/utils/ProjectionUtils.js');
+    reprojectAll(gm, 'isometric');
+    const baselineY = sprite.y;
+    for (let i = 0; i < 25; i++) {
+      reprojectAll(gm, 'topdown');
+      reprojectAll(gm, 'isometric');
+    }
+    const finalY = sprite.y;
+    const drift = Math.abs(finalY - baselineY);
+    expect(Number.isFinite(drift)).toBe(true);
+    expect(drift).toBeLessThan(0.001); // effectively unchanged
+  });
 });

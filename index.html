@@ -8,6 +8,14 @@
   <meta name="description"
     content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling">
   <link rel="stylesheet" href="src/ui/styles.css">
+  <!-- Import map so bare specifier 'three' resolves in native ESM environment (no bundler) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+      }
+    }
+  </script>
 </head>
 
 <body>
@@ -415,6 +423,7 @@
   <script type="module" src="./src/ui/SidebarController.js"></script>
   <script type="module" src="./src/ui/SettingsViewToggle.js"></script>
   <script type="module" src="./src/ui/HybridRenderToggle.js"></script>
+  <script type="module" src="./src/ui/Hybrid3DControls.js"></script>
 
   <style>
     /* Screen reader only class for accessibility */

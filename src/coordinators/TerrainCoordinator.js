@@ -491,7 +491,15 @@ export class TerrainCoordinator {
    * @param {number} newRows
    */
   handleGridResize(newCols, newRows) {
-    return _handleResize(this, newCols, newRows);
+    const result = _handleResize(this, newCols, newRows);
+    try {
+      if (this.gameManager && typeof this.gameManager.notifyTerrainHeightsChanged === 'function') {
+        this.gameManager.notifyTerrainHeightsChanged();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return result;
   }
 
   /**

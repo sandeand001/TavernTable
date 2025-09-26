@@ -41,6 +41,7 @@ import { ThreeSceneManager } from '../scene/ThreeSceneManager.js';
 import { CameraRig } from '../scene/CameraRig.js';
 import { TerrainMeshBuilder } from '../scene/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../scene/TerrainRebuilder.js';
+import { PlaceableMeshPool } from '../scene/PlaceableMeshPool.js';
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -91,6 +92,14 @@ class GameManager {
     this.renderMode = '2d-iso';
     this.threeSceneManager = null; // lazy init when entering hybrid mode
     this.terrainRebuilder = null; // Phase 2: debounced terrain mesh updates
+    this.placeableMeshPool = null; // Phase 4: instanced placeables (scaffold)
+    // Feature flags (incremental enablement of new systems)
+    this.features = {
+      instancedPlaceables: false, // gated until lifecycle wiring complete
+    };
+
+    // Internal: track pending async instancing operations so tests/tools can await completion
+    this._pendingInstancingPromises = [];
 
     // Initialize error handler
     errorHandler.initialize();
@@ -197,17 +206,118 @@ class GameManager {
       } catch (e) {
         /* non-fatal terrain mesh init failure */
       }
+      // Phase 3 (initial scaffold): attach Token3DAdapter for existing tokens
+      try {
+        const { Token3DAdapter } = await import('../scene/Token3DAdapter.js');
+        if (!this.token3DAdapter) {
+          this.token3DAdapter = new Token3DAdapter(this);
+          this.token3DAdapter.attach();
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      // Phase 4 scaffold: initialize placeable instancing pool (no migration yet unless flag enabled)
+      try {
+        if (this.features.instancedPlaceables && !this.placeableMeshPool) {
+          this.placeableMeshPool = new PlaceableMeshPool({ gameManager: this });
+        }
+      } catch (_) {
+        /* non-fatal instancing scaffold failure */
+      }
     }
     this.renderMode = '3d-hybrid';
     // Dev convenience: expose on window during early phases
     try {
       if (typeof window !== 'undefined') {
         window.__TT_HYBRID_ACTIVE__ = true;
+        // Convenience runtime hook for toggling isometric camera once hybrid active
+        if (!window.__TT_SET_ISO_MODE__) {
+          window.__TT_SET_ISO_MODE__ = (v) => {
+            try {
+              return this.setIsometricCamera(!!v);
+            } catch (e) {
+              return false;
+            }
+          };
+        }
       }
     } catch (_) {
       /* ignore */
     }
     return this.threeSceneManager;
+  }
+
+  /**
+   * Convenience wrapper: ensure hybrid mode (if requested) then toggle isometric camera preset.
+   * @param {boolean} enabled whether isometric preset should be active
+   * @param {object} [options]
+   * @param {boolean} [options.autoEnableHybrid=true] automatically enable hybrid if not yet active
+   * @returns {Promise<boolean>} true if applied, false otherwise
+   */
+  async setIsometricCamera(enabled = true, options = {}) {
+    const { autoEnableHybrid = true } = options || {};
+    try {
+      if (!this.threeSceneManager) {
+        if (autoEnableHybrid) {
+          await this.enableHybridRender();
+        } else {
+          return false;
+        }
+      }
+      if (this.threeSceneManager?.setIsometricMode) {
+        this.threeSceneManager.setIsometricMode(!!enabled);
+        return true;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return false;
+  }
+
+  /**
+   * Ensure the instanced placeables mesh pool exists if the feature flag is enabled.
+   * Safe to call repeatedly (idempotent). Returns the pool instance or null if not created.
+   * This allows enabling the flag AFTER hybrid mode was already initialized.
+   */
+  ensureInstancing() {
+    try {
+      if (!this.features.instancedPlaceables) return null; // feature still disabled
+      if (this.renderMode !== '3d-hybrid') return null; // wait until hybrid active
+      if (!this.placeableMeshPool) {
+        this.placeableMeshPool = new PlaceableMeshPool({ gameManager: this });
+        try {
+          if (typeof window !== 'undefined') {
+            (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).placeables = {
+              groups: 0,
+              liveInstances: 0,
+              capacityExpansions: 0,
+            };
+            // Dev aid so console explorers discover the helper
+            window.__TT_ENSURE_INSTANCING__ = () => this.ensureInstancing();
+          }
+        } catch (_) {
+          /* ignore metrics priming errors */
+        }
+        logger.debug(
+          'Instanced placeables pool created (late ensure)',
+          { context: 'GameManager.ensureInstancing', renderMode: this.renderMode },
+          LOG_CATEGORY.SYSTEM
+        );
+      }
+      return this.placeableMeshPool;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Public helper to enable instanced placeables feature at runtime.
+   * If hybrid mode already active, the mesh pool is created immediately.
+   * If not, pool creation will occur automatically during enableHybridRender().
+   */
+  enableInstancedPlaceables() {
+    this.features.instancedPlaceables = true;
+    return this.ensureInstancing();
   }
 
   /**
@@ -407,11 +517,51 @@ class GameManager {
     if (!this.terrainRebuilder || !this.threeSceneManager || this.renderMode !== '3d-hybrid') {
       return;
     }
+    // Synchronous optimistic request so callers (and tests) can observe the call immediately.
+    // A second debounced request with the three namespace (if available) will override args.
     try {
-      // dynamic import may be cached; pass namespace on request flush
-      import('three').then((three) => {
-        this.terrainRebuilder.request({ three });
-      });
+      this.terrainRebuilder.request();
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      import('three')
+        .then((threeNS) => {
+          try {
+            this.terrainRebuilder.request({ three: threeNS });
+            // After scheduling rebuild, resync token heights (placeables future when we store per-instance coords)
+            try {
+              this.token3DAdapter?.resyncHeights?.();
+            } catch (_) {
+              /* ignore */
+            }
+            try {
+              this.placeableMeshPool?.resyncHeights?.();
+            } catch (_) {
+              /* ignore */
+            }
+          } catch (_) {
+            /* ignore */
+          }
+        })
+        .catch(() => {
+          /* ignore dynamic import failure */
+        });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Await all pending asynchronous instancing operations (test/dev utility).
+   * Safe to call when instancing disabled; resolves immediately.
+   */
+  async flushInstancing() {
+    if (!this._pendingInstancingPromises || this._pendingInstancingPromises.length === 0) return;
+    const pending = [...this._pendingInstancingPromises];
+    this._pendingInstancingPromises.length = 0;
+    try {
+      await Promise.allSettled(pending);
     } catch (_) {
       /* ignore */
     }

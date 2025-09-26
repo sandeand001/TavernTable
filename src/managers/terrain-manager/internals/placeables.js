@@ -436,6 +436,47 @@ export function placeItem(m, id, x, y) {
   }
   if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
   m.placeables.get(tileKey).push(sprite);
+  // Phase 4: if instancing enabled and hybrid mode active, register with mesh pool
+  try {
+    const gm = m.gameManager;
+    if (gm?.features?.instancedPlaceables && gm.renderMode === '3d-hybrid') {
+      // Provide minimal shape expected by pool (gridX/gridY/type)
+      const placeableRecord = {
+        gridX: x,
+        gridY: y,
+        type: TERRAIN_PLACEABLES[id]?.type || 'generic',
+      };
+      // Attach handle onto sprite for later removal linkage
+      sprite.__instancedRef = placeableRecord;
+      // Fire and forget; pool handles missing three gracefully
+      // Capture handle so removal can free correct instance index
+      try {
+        const handlePromise = gm.placeableMeshPool?.addPlaceable(placeableRecord);
+        // expose for deterministic tests
+        sprite.__instancingPromise = handlePromise;
+        if (handlePromise && typeof handlePromise.then === 'function') {
+          try {
+            if (Array.isArray(gm._pendingInstancingPromises)) {
+              gm._pendingInstancingPromises.push(handlePromise);
+            }
+          } catch (_) {
+            /* ignore */
+          }
+          handlePromise
+            .then((handle) => {
+              if (handle) placeableRecord.__meshPoolHandle = handle; // maintain symmetry
+            })
+            .catch(() => {
+              /* ignore */
+            });
+        }
+      } catch (_) {
+        /* ignore instancing add failures */
+      }
+    }
+  } catch (_) {
+    /* ignore instancing errors */
+  }
   return true;
 }
 
@@ -492,6 +533,16 @@ export function removeItem(m, x, y, id = null) {
         p.parent?.removeChild(p);
       } catch (_) {
         /* best-effort */
+      }
+      // Phase 4: if instanced, remove from mesh pool
+      try {
+        const gm = m.gameManager;
+        if (gm?.features?.instancedPlaceables && p.__instancedRef) {
+          gm.placeableMeshPool?.removePlaceable(p.__instancedRef);
+          delete p.__instancedRef;
+        }
+      } catch (_) {
+        /* ignore */
       }
       list.splice(i, 1);
       removed = true;

@@ -36,12 +36,34 @@ export class TerrainRebuilder {
     const cols = gm.cols;
     const rows = gm.rows;
     const getHeight = (x, y) => gm.getTerrainHeight(x, y);
+    const t0 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
     const geo = this.builder.build({ cols, rows, getHeight, three });
     // Attach / replace mesh in scene
     const scene = gm.threeSceneManager.scene;
     let mesh = scene.getObjectByName('TerrainMesh');
     if (!mesh) {
-      const material = new three.MeshStandardMaterial({ color: 0x777766, flatShading: false });
+      let material;
+      try {
+        // Use factory indirection so later biome tint logic is isolated.
+        // Dynamic import to stay ESM-compliant.
+        // Note: synchronous path not required; minor race acceptable (first frame builds fallback).
+        material = new three.MeshStandardMaterial({ color: 0x777766, flatShading: false });
+        import('./TerrainMaterialFactory.js')
+          .then((mod) => {
+            try {
+              const upgraded = mod.createTerrainMaterial(three, {});
+              if (upgraded && mesh) {
+                mesh.material.dispose?.();
+                mesh.material = upgraded;
+              }
+            } catch (_) {
+              /* ignore */
+            }
+          })
+          .catch(() => {});
+      } catch (_) {
+        material = new three.MeshStandardMaterial({ color: 0x777766, flatShading: false });
+      }
       mesh = new three.Mesh(geo, material);
       mesh.name = 'TerrainMesh';
       // Center mesh so grid (0,0) aligns near corner; shift half extents
@@ -50,6 +72,22 @@ export class TerrainRebuilder {
     } else {
       mesh.geometry.dispose();
       mesh.geometry = geo;
+    }
+    // Metrics capture
+    try {
+      const t1 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
+      const dt = t1 - t0;
+      if (typeof window !== 'undefined') {
+        window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+        window.__TT_METRICS__.terrain = window.__TT_METRICS__.terrain || {};
+        window.__TT_METRICS__.terrain.lastRebuildMs = dt;
+        window.__TT_METRICS__.terrain.lastRebuildCols = cols;
+        window.__TT_METRICS__.terrain.lastRebuildRows = rows;
+        window.__TT_METRICS__.terrain.rebuildCount =
+          (window.__TT_METRICS__.terrain.rebuildCount || 0) + 1;
+      }
+    } catch (_) {
+      /* ignore metrics errors */
     }
     return mesh;
   }

@@ -69,6 +69,7 @@ export class TerrainBrushController {
         center: { x: gridX, y: gridY },
       });
     }
+    return modifiedCount > 0;
   }
 
   _modifyCell(x, y) {

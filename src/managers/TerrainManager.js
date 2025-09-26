@@ -93,6 +93,22 @@ export class TerrainManager {
   }
 
   /**
+   * Public wrapper for removing a terrain placeable by id at grid coords.
+   * Mirrors placeItem for symmetry in tests and external callers.
+   * @param {string} id placeable id
+   * @param {number} x grid column
+   * @param {number} y grid row
+   * @returns {boolean} true if removed
+   */
+  removeItem(id, x, y) {
+    try {
+      return _removeItem(this, x, y, id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
    * Initialize terrain rendering system
    */
   initialize() {
@@ -305,6 +321,38 @@ export class TerrainManager {
         placeableId,
         success: !!result,
       });
+      // If a plant/structure was placed via biome auto-population BEFORE the mesh pool
+      // existed (late flag enable), attempt a one-time instancing registration now.
+      if (result) {
+        try {
+          const gm = this.gameManager;
+          // Create mesh pool if feature just got enabled late
+          gm?.ensureInstancing?.();
+          if (
+            gm?.features?.instancedPlaceables &&
+            gm.renderMode === '3d-hybrid' &&
+            gm.placeableMeshPool
+          ) {
+            const key = `${x},${y}`;
+            const list = this.placeables?.get(key);
+            const latest = list && list[list.length - 1];
+            if (latest && !latest.__instancedRef) {
+              const placeableRecord = {
+                gridX: x,
+                gridY: y,
+                type: latest.placeableType || 'generic',
+              };
+              latest.__instancedRef = placeableRecord;
+              const p = gm.placeableMeshPool.addPlaceable(placeableRecord);
+              if (p && typeof p.then === 'function') {
+                p.catch(() => {});
+              }
+            }
+          }
+        } catch (_) {
+          /* best-effort instancing retro-fit */
+        }
+      }
       if (!result) {
         // Lightweight diagnostics for common rejection reasons so UI traces are useful
         let reason = 'rejected_by_rules';

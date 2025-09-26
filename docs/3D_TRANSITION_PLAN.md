@@ -1,6 +1,6 @@
 # 3D Transition Plan (Living Document)
 
-Status: INITIATED  
+Status: IN PROGRESS (Phase 3 complete; Phase 4 core scaffolding active; camera alignment + height resync iteration)  
 Branch: `feature/3d-transition`  
 Last Updated: 2025-09-26
 
@@ -38,8 +38,10 @@ Move TavernTable from a 2.5D isometric sprite projection to a true 3D scene usin
 | Tile world size | 1.0 x (sqrt(0.5))? (TBD) | Start simple: 1 unit square; iso visuals later | Phase 2 before mesh |
 | Elevation unit | 0.5 world units per level | Visual separation; tweakable factor | Phase 2 tuning |
 | Camera initial | Orthographic iso-like | Preserve current spatial feel | Could add perspective Phase 5 |
-| Token form (3D) | Billboard Sprite first | Lowest friction migration | Replace with meshes Phase 4/5 |
-| Placeables | Instanced quads initially | Perf; small memory footprint | Upgrade meshes Phase 8 |
+| Token form (3D) | Billboard Sprite first | Lowest friction migration | Replace with meshes Phase 5/8 |
+| Placeables | Instanced quads (InstancedMesh) | Perf; small memory footprint | Upgrade meshes Phase 8 |
+| Camera iso tuning | Yaw + pitch adjustable (orthographic) | Manual alignment vs 2D iso (current matched preset 52° after non-adaptive frustum change) | Revisit for perspective Phase 5 |
+| Vertical offsets | Global token vertical bias | Quick parity for sprite baseline | Per-creature offsets Phase 5 |
 | Lighting model | StandardMaterial + dir + amb | Fast path | Enhance with env map Phase 5 |
 | Fog | Disabled early | Avoid visual confusion | Enable Phase 5 |
 | Physics | Deferred | Not blocking base visuals | Evaluate after Phase 6 |
@@ -128,12 +130,89 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 - [x] Expose hybrid toggle dev hook (`gameManager.enableHybridRender()`) (UI pending)
 - [x] Metrics: log degraded vs ready init state (`getRenderStats`, global snapshot)
 
-### 10B. Phase 2 (Initiation) - Terrain Mesh Scaffolding (In Progress)
+### 10B. Phase 2 (Terrain Mesh) - Progress & Remaining
+Completed:
 - [x] Scaffold `TerrainMeshBuilder` (flat heightfield geometry)
-- [x] Add `TerrainRebuilder` debounced wrapper (not yet wired)
-- [x] Integrate mesh build on hybrid enable (initial flat mesh)
+- [x] Add `TerrainRebuilder` debounced wrapper
+- [x] Integrate mesh build on hybrid enable (initial mesh)
 - [x] Hook rebuild trigger after terrain edits (height change events)
-- [ ] Vertex height test coverage for non-trivial elevation pattern
+- [x] Vertex height propagation test (multi-cell pattern -> geometry Y verification)
+- [x] Rebuild on grid resize hook
+- [x] Rebuild duration metrics (perf timing around builder) -> `window.__TT_METRICS__.terrain.lastRebuildMs`
+- [x] Brush → coordinator change detection (applyAt returns modified flag)
+- [x] Basic material/color pipeline placeholder (`TerrainMaterialFactory` returning MeshStandardMaterial)
+
+### 10C. Phase 3 (Token Billboards) - Progress (COMPLETED)
+Completed:
+- [x] Add `Token3DAdapter` scaffold (creates simple billboard plane per token, dynamic import)
+- [x] Integrate adapter activation in `GameManager.enableHybridRender()` (sync existing tokens)
+- [x] Hook into token placement pipeline to call `token3DAdapter.onTokenAdded` when new tokens placed
+- [x] Add minimal test: creating a token in hybrid mode schedules/creates 3D mesh (mock / injected three stub)
+- [x] Disposal path (removing token removes mesh + GPU resource disposal)
+- [x] Sprite texture → plane material mapping (extract PIXI baseTexture -> Three.Texture with fallback)
+- [x] Facing direction sync (flip billboard horizontally via mesh.scale.x for now)
+- [x] Consolidated per-mesh + facing polling callbacks into a single unified frame callback (performance + simplicity)
+- [x] Added regression test ensuring no vertical drift for token across repeated projection toggles
+ - [x] Terrain rebuild performance guard test (threshold + metrics presence)
+
+In Progress / Next (spun into Phase 5 polish backlog):
+- [ ] Refine token facing implementation (UV flip/shader; event-driven)
+- [ ] Remove DoubleSide materials once facing refined
+- [ ] Expand mesh limitations & smoothing strategy documentation
+
+Deferred:
+- Animation frame extraction / animated textures (Phase 5+ when we revisit lighting & materials)
+- Replace billboard with proper mesh per token model (Phase 5/8)
+- [ ] (Optional) Vertex normal smoothing / interpolation prototype (depends on terrain chunking)
+
+Deferred / Research:
+- Token height influence on mesh tessellation
+- LOD / chunk partition evaluation (quadtree / clipmap vs monolithic mesh)
+- Splat map & biome-driven material layering (Phase 8 candidate)
+
+Mesh Limitations (initial list):
+- Single monolithic geometry; full rebuild on any edit (acceptable for small grids now)
+- No normal smoothing across large elevation deltas (faceted look)
+- Flat color material; no biome tint or texture blending yet
+- No spatial partition for culling (scene size currently trivial)
+- Rebuild debounce (120ms) may feel laggy for rapid strokes; tune later
+
+Future Smoothing Strategy (Draft):
+- Optional smoothing kernel (3x3) applied to a staging buffer when user enables "smooth" mode
+- Preserve original unsmoothed heights for reversibility
+- Manual normal recompute only for affected region (later chunking) to avoid full mesh normal cost
+
+### 10D. Phase 4 (Placeable Instancing) - Progress
+Completed:
+- [x] `PlaceableMeshPool` scaffold (instanced quads grouped by variant key)
+- [x] Metrics via `window.__TT_METRICS__.placeables` (groups, liveInstances)
+- [x] Add/remove lifecycle with free index recycling
+- [x] Unit test: pool add/remove + metrics
+- [x] Feature flag integration (`gameManager.features.instancedPlaceables`) wiring into existing placeable placement/removal path
+- [x] End-to-end integration test (flag-enabled) validating metrics increment/decrement
+- [x] Terrain height sampling -> Y world placement (`worldY = height * elevationUnit`)
+- [x] Height mapping test (`PlaceableMeshPoolHeight.test.js`)
+- [x] Deterministic async handling: tracking pending instancing promises + `gameManager.flushInstancing()` utility for tests
+
+In Progress / Next:
+- [x] Capacity growth (auto-expand: double strategy) + metric (implemented in `_tryExpandGroup`)
+- [ ] Explicit warning/log on capacity expansion & when max reached
+- [ ] Per-variant / per-type material strategy (color tint, alpha from biome/type)
+- [ ] Frustum/visibility hook (skip hidden groups when scene grows)
+- [ ] Refine vertical sampling (corner averaging / interpolation vs center sample) if visual popping observed
+- [ ] Documentation: migrate remaining references to legacy zIndex tuning once meshes fully replace sprites
+- [ ] Per-instance metadata map (index -> {gx, gy}) to enable true height resync
+- [ ] Implement `resyncHeights()` using stored metadata after terrain edits
+
+Deferred:
+- GPU texture atlas for placeable quads (Phase 5/6 candidate)
+- Distance-based LOD swap (Phase 8 polish)
+- Mesh (non-quad) upgrades for larger structures (Phase 8)
+
+Risks / Notes:
+- Current pool still fixed at 256 until growth implemented (silent -1 allocation returns null; will add explicit warning)
+- Height currently sampled at tile center only (may cause sharp steps on steep transitions)
+- Materials still using flat `MeshBasicMaterial` placeholder (no lighting yet)
 
 
 ---
@@ -149,8 +228,38 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 | Date | Change | Author |
 |------|--------|--------|
 | INITIAL | Document created on branch `feature/3d-transition` | system |
-| 2025-09-26 | Phase 0 complete; Phase 1 bootstrap (ThreeSceneManager + world coordinates) | system |
+| 2025-09-25 | Phase 2: terrain mesh integration (rebuild hooks, metrics, vertex test, resize trigger) | system |
+| 2025-09-25 | Added TerrainMaterialFactory placeholder & updated plan with limitations | system |
+| 2025-09-25 | Phase 3 additions: performance guard test & PlaceableMeshPool scaffold (instancing groundwork) | system |
+| 2025-09-25 | Phase 4 integration: feature flag wiring, instanced placement/removal, height-based Y placement, async flush util & tests | system |
+| 2025-09-26 | Phase 3 partial: Token3DAdapter, texture mapping, facing sync, callback consolidation, drift regression test | system |
 | 2025-09-26 | Added minimal grid plane & dev hybrid toggle hook | system |
+| 2025-09-26 | Camera iso yaw/pitch setters + reframe heuristic; token vertical bias & resync integration | system |
+| 2025-09-26 | Capacity growth logic for instanced placeables; plan updated with next metadata & resync tasks | system |
+
+---
+## 14. Immediate Next Step (Execution Focus)
+Objective: Enable accurate placeable height resynchronization after terrain edits.
+
+Tasks:
+1. Extend `PlaceableMeshPool` to store per-instance metadata (index -> { gx, gy }) when adding a placeable.
+2. Update `removePlaceable` to clear metadata entry for freed index.
+3. Implement real `resyncHeights()`:
+	- Iterate active indices (exclude freeIndices) and recompute Y using `getTerrainHeight(gx, gy) * elevationUnit`.
+	- Reuse a single `Object3D` dummy for matrix update to avoid allocations.
+4. Hook `placeableMeshPool.resyncHeights()` into `GameManager.notifyTerrainHeightsChanged()` after token resync (guard if pool exists).
+5. Add metrics counter: `__TT_METRICS__.placeables.lastResyncCount` and optional `lastResyncMs` timing.
+6. Add unit test: create N placeables, mutate terrain heights, invoke notify, assert updated matrix Y values differ accordingly.
+
+Acceptance Criteria:
+- Metadata map persists across capacity expansions (migrate old entries on grow).
+- Height Y of at least two modified placeables changes after terrain edit & notify.
+- No regression in existing instancing metrics (groups, liveInstances, capacityExpansions).
+
+Stretch (optional if time permits):
+- Warn (console.debug) when a resync processed > 500 instances (future perf flag threshold).
+
+After completion, update this plan (Section 10D progress + Change Log) and then proceed to precise frustum fit (project 4 grid corners) as the following step.
 
 ---
 ## 13. Maintenance Notes
