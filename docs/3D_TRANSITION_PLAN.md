@@ -126,7 +126,7 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 - [x] Hook minimal grid plane (base world reference)
 - [x] Add camera rig abstraction
 - [x] Expose hybrid toggle dev hook (`gameManager.enableHybridRender()`) (UI pending)
-- [ ] Metrics: log degraded vs ready init state
+- [x] Metrics: log degraded vs ready init state (`getRenderStats`, global snapshot)
 
 ---
 ## 11. Open Questions

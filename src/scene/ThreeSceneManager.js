@@ -12,6 +12,14 @@ export class ThreeSceneManager {
     this.renderer = null;
     this.canvas = null;
     this._animationHandle = null;
+    // Metrics
+    this._metrics = {
+      startTime: null,
+      frameCount: 0,
+      accumulatedMs: 0,
+      lastFrameTs: null,
+    };
+    this._loggedFirstFrame = false;
   }
 
   async initialize(containerId = 'game-container') {
@@ -82,6 +90,10 @@ export class ThreeSceneManager {
       container.prepend(this.canvas); // place behind existing 2D content
 
       this.initialized = true;
+      if (!this._metrics.startTime) {
+        this._metrics.startTime =
+          (typeof performance !== 'undefined' && performance.now()) || Date.now();
+      }
       this._loop();
     } catch (e) {
       // Fallback to degraded mode (no renderer) but keep scene objects available for logic tests
@@ -124,9 +136,51 @@ export class ThreeSceneManager {
         // stop loop on persistent errors
         return;
       }
+      // Metrics update
+      try {
+        const now = (typeof performance !== 'undefined' && performance.now()) || Date.now();
+        if (this._metrics.lastFrameTs != null) {
+          this._metrics.accumulatedMs += now - this._metrics.lastFrameTs;
+        }
+        this._metrics.lastFrameTs = now;
+        this._metrics.frameCount += 1;
+        if (!this._loggedFirstFrame && this._metrics.frameCount === 1) {
+          this._loggedFirstFrame = true;
+          try {
+            // Lightweight one-time console info for diagnostics
+            // eslint-disable-next-line no-console
+            console.info('[ThreeSceneManager] First frame rendered', {
+              degraded: this.degraded,
+              startTime: this._metrics.startTime,
+            });
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        // Optionally expose metrics globally for quick dev introspection
+        if (typeof window !== 'undefined') {
+          window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+          window.__TT_METRICS__.three = this.getRenderStats();
+        }
+      } catch (_) {
+        /* ignore metrics errors */
+      }
       this._animationHandle = requestAnimationFrame(step);
     };
     this._animationHandle = requestAnimationFrame(step);
+  }
+
+  /** Public: snapshot of render stats */
+  getRenderStats() {
+    const { startTime, frameCount, accumulatedMs } = this._metrics;
+    const avg = frameCount > 0 ? accumulatedMs / frameCount : 0;
+    return {
+      initialized: this.initialized,
+      degraded: this.degraded,
+      startTime,
+      frameCount,
+      averageFrameMs: Number.isFinite(avg) ? +avg.toFixed(3) : 0,
+    };
   }
 
   dispose() {
