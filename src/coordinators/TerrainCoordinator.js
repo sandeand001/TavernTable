@@ -744,6 +744,14 @@ export class TerrainCoordinator {
       } catch (_) {
         /* ignore flora errors */
       }
+      // 3D transition: trigger terrain mesh + token/placeable height resync if hybrid active
+      try {
+        if (this.gameManager?.renderMode === '3d-hybrid') {
+          this.gameManager.notifyTerrainHeightsChanged?.();
+        }
+      } catch (_) {
+        /* ignore notify errors */
+      }
       return true;
     } catch (_) {
       return false;
@@ -837,6 +845,14 @@ export class TerrainCoordinator {
         _autoPopulateBiomeFlora(this, activeBiome, seed);
       } catch (_) {
         /* ignore flora errors */
+      }
+      // 3D transition: ensure fresh mesh rebuild + token/placeable height sync
+      try {
+        if (this.gameManager?.renderMode === '3d-hybrid') {
+          this.gameManager.notifyTerrainHeightsChanged?.();
+        }
+      } catch (_) {
+        /* ignore notify errors */
       }
       return true;
     } catch (_) {

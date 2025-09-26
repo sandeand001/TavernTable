@@ -259,6 +259,89 @@ Acceptance Criteria:
 Stretch (optional if time permits):
 - Warn (console.debug) when a resync processed > 500 instances (future perf flag threshold).
 
+---
+## 15. Upcoming Capability Transfer (2D -> 3D Parity Roadmap)
+The following sub-phases describe migrating remaining 2D-only interactions and features into the hybrid 3D environment.
+
+### A. Core Parity (Already Active / Just Landed)
+- [x] Token billboard creation on placement (`Token3DAdapter.onTokenAdded`).
+- [x] Terrain mesh rebuild + token/instanced placeable height resync on edits (`notifyTerrainHeightsChanged`).
+- [x] Biome generation now triggers 3D rebuild + resync (added hook).
+
+### B. Interaction Layer (Phase 6 Expansion)
+1. 3D Picking & Grid Raycast
+	- Introduce `PickingService` (listed in Module Additions) with methods:
+	  - `raycastGrid(screenX, screenY)` -> { gridX, gridY, hitPoint }
+	  - `raycastTokens(screenX, screenY)` -> token reference list (nearest first)
+	- Basis: unproject NDC -> ray; intersect with XZ plane (y=0) or terrain mesh bounding plane first; clamp to board extents.
+2. Direct Token Placement in 3D
+	- New helper `placeTokenAtPointer(screenX, screenY, creatureType)` bridging to existing token manager.
+	- Preserves 2D pipeline logic (still uses `addTokenToCollection`) ensuring single source of truth.
+3. Token Selection & Hover Highlight
+	- Material tint or additive outline (initial implementation: clone material color multiply; later postprocess outline).
+	- Maintain `gameManager.selectedToken` in sync with 2D selection state.
+4. Drag / Reposition in 3D
+	- On mousedown over token: capture; while moving: continuously raycast ground, update token grid (snap) & mesh position.
+	- Debounce world ↔ grid snapping to avoid jitter (snap only when crossing half-tile threshold).
+5. Camera Interaction Refinements (optional early)
+	- Middle-mouse pan & scroll zoom integrated with existing 2D constraints.
+
+### C. Elevation & Terrain Enhancement
+1. Elevation Exaggeration Slider in 3D
+	- Scales vertex Y after mesh rebuild; token & placeable Y derived from scaled heights (consistent view).
+2. Smooth Height Preview
+	- Optional sampling of 3x3 neighborhood for preview cursor (does not alter stored heights).
+
+### D. Placeable & Instancing Parity
+1. 3D Placement Mirroring 2D Panel
+	- When a placeable is selected in UI, 3D hover ghost mesh / marker at raycast cell.
+2. Removal Mode in 3D
+	- Raycast cell -> remove matching instance(s) (metadata lookup by {gx, gy}).
+3. Metadata Completion
+	- Ensure every instanced index stores { gx, gy, variant } for fast height resync & selection.
+
+### E. Visual Feedback & Polish
+1. Selection Outline (postprocess or simple mesh clone scale *1.05 with emissive color).
+2. Token Elevation Ghost
+	- When dragging across height steps show a subtle vertical line or shadow projection for spatial clarity.
+3. Terrain Cursor in 3D
+	- Single transparent ring or tile wireframe sized to current brush (for future terrain edit-in-3D mode).
+
+### F. Performance & Stability Milestones
+1. Raycast Budget Guard
+	- Track per-frame raycast count; warn if > N (configurable, default N=8).
+2. Token & Placeable Bounds Culling (frustum test once per few frames; hide off-screen groups).
+3. Async Terrain Chunking (future: partition mesh into quads; rebuild only dirty patch on edits).
+
+---
+## 16. Near-Term Implementation Queue (Actionable Tickets)
+Priority order (top = next to implement):
+1. PickingService: grid raycast + basic API.
+2. Token placement via 3D pointer (`placeTokenAtPointer`).
+3. Token hover/selection tint (material color multiply; revert on deselect).
+4. Drag-to-move tokens (snap logic + world/grid sync test).
+5. Instanced placeable metadata map + resyncHeights real implementation (ties into existing Immediate Next Step #14 tasks 1–3).
+6. Height exaggeration slider wiring (updates TerrainMeshBuilder scale factor + rebuild).
+7. Brush / hover ghost for placeable placement (instanced ephemeral preview instance or simple translucent mesh).
+8. Basic performance telemetry: raycasts/frame + selection updates/frame -> `__TT_METRICS__.interaction`.
+
+Acceptance metrics to add:
+- `__TT_METRICS__.interaction.raycastsPerFrame (EMA)`
+- `__TT_METRICS__.interaction.lastPickMs`
+- `__TT_METRICS__.interaction.lastTokenDragGrid` {from,to}
+
+---
+## 17. Definition of Done for 3D Parity (Pre-Polish)
+A session can be run entirely in 3D mode with:
+1. Creating, selecting, dragging, and deleting tokens without switching back to 2D.
+2. Generating a biome-based map that immediately updates 3D terrain & token elevations.
+3. Placing / removing placeables in 3D with correct height and resync after terrain edits.
+4. Camera pitch/yaw adjustable + isometric preset stable (52°) matching 2D grid perception baseline.
+5. All grid/world conversions validated by tests (roundtrip within <= 0.01 world units tolerance).
+6. No critical performance regressions: (a) terrain rebuild under threshold, (b) raycasts/frame under budget.
+
+Post-DoD shifts project from “Transition” to “Enhancement / Polish” (Phase 8).
+
 After completion, update this plan (Section 10D progress + Change Log) and then proceed to precise frustum fit (project 4 grid corners) as the following step.
 
 ---

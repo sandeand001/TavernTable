@@ -16,6 +16,9 @@ export class PlaceableMeshPool {
     this._metrics = { groups: 0, instances: 0, capacityExpansions: 0 };
     this._initialCapacity = Math.max(1, initialCapacity);
     this._maxCapacity = Math.max(this._initialCapacity, maxCapacity);
+    // Preview (hover) single-mesh indicator state (experimental)
+    this._previewMesh = null;
+    this._previewCoords = { gx: null, gy: null };
   }
 
   async _ensureThree() {
@@ -124,7 +127,15 @@ export class PlaceableMeshPool {
       // Geometry selection: plants (flora) use vertical quads (billboards), others remain horizontal footprint.
       let geo;
       if (type === 'plant') {
-        geo = new three.PlaneGeometry(0.9, 1.6); // vertical; origin mid-height
+        // Plant billboard: make it full tile width (1.0) and taller (1.8 world units) then
+        // translate so that the bottom of the sprite sits exactly on y=0 (ground plane).
+        // Without this translation the default plane geometry is centered, causing half
+        // the visual height to sink below ground, producing a noticeable vertical offset.
+        const PLANT_WIDTH = 1.0; // matches grid tileWorldSize for 1:1 footprint
+        const PLANT_HEIGHT = 1.8; // arbitrary; approximate tree sprite aspect
+        geo = new three.PlaneGeometry(PLANT_WIDTH, PLANT_HEIGHT);
+        // Shift geometry upward by half its height so origin (0,0,0) is at the base center.
+        geo.translate(0, PLANT_HEIGHT * 0.5, 0);
         // Leave unrotated (facing +Z) – we'll yaw-align the group each frame.
       } else {
         geo = new three.PlaneGeometry(0.9, 0.9);
@@ -163,24 +174,64 @@ export class PlaceableMeshPool {
       } catch (_) {
         /* ignore scene add failure */
       }
-      // For vertical plant groups, register a shared animation callback once.
+      // For vertical plant groups, register a shared animation callback once that performs
+      // per-instance matrix billboarding WITHOUT rotating the entire instanced mesh (which
+      // would incorrectly orbit instances around world origin).
       if (type === 'plant' && this.gameManager?.threeSceneManager?.addAnimationCallback) {
         if (!this._plantBillboardUpdater) {
+          this._lastBillboardYaw = null;
           this._plantBillboardUpdater = () => {
             try {
-              const cam = this.gameManager.threeSceneManager.camera;
+              const gm = this.gameManager;
+              const cam = gm.threeSceneManager.camera;
               if (!cam) return;
               const yaw = cam.rotation?.y || 0;
-              for (const g of this._groups.values()) {
+              // Skip if yaw hasn't changed appreciably (threshold ~0.1deg) to reduce work
+              if (
+                this._lastBillboardYaw != null &&
+                Math.abs(this._lastBillboardYaw - yaw) < 0.0017
+              ) {
+                return;
+              }
+              this._lastBillboardYaw = yaw;
+              const threeNS = this._three;
+              if (!threeNS) return;
+              const dummy = new threeNS.Object3D();
+              // Recompute matrices for plant groups
+              for (const [gKey, g] of this._groups.entries()) {
                 if (g.type !== 'plant') continue;
+                const inst = g.instancedMesh;
+                if (!inst) continue;
+                const metaMap = this._metadata.get(gKey);
+                if (!metaMap) continue;
+                for (const [index, coords] of metaMap.entries()) {
+                  if (g.freeIndices.includes(index)) continue;
+                  const { gx, gy } = coords || { gx: 0, gy: 0 };
+                  let h = 0;
+                  try {
+                    h = gm.getTerrainHeight?.(gx, gy) || 0;
+                  } catch (_) {
+                    h = 0;
+                  }
+                  const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+                  const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
+                  dummy.position.set(world.x, worldY, world.z);
+                  dummy.rotation.set(0, yaw, 0);
+                  dummy.updateMatrix();
+                  try {
+                    inst.setMatrixAt(index, dummy.matrix);
+                  } catch (_) {
+                    /* ignore setMatrix errors */
+                  }
+                }
                 try {
-                  g.instancedMesh.rotation.y = yaw;
+                  inst.instanceMatrix.needsUpdate = true;
                 } catch (_) {
                   /* ignore */
                 }
               }
             } catch (_) {
-              /* ignore */
+              /* ignore billboard errors */
             }
           };
           this.gameManager.threeSceneManager.addAnimationCallback(this._plantBillboardUpdater);
@@ -365,6 +416,61 @@ export class PlaceableMeshPool {
     if (typeof fn === 'function') this._materialStrategy = fn;
   }
 
+  /**
+   * Experimental: show/update a single preview mesh at grid coords (gx, gy).
+   * Lazy-creates a THREE.Mesh the first time it's invoked. Safe to call frequently.
+   */
+  async setPreview(gx, gy) {
+    try {
+      const gm = this.gameManager;
+      if (!gm || gm.renderMode !== '3d-hybrid') return;
+      const three = await this._ensureThree();
+      if (!three) return;
+      if (gx == null || gy == null || !Number.isFinite(gx) || !Number.isFinite(gy)) return;
+      if (this._previewCoords.gx === gx && this._previewCoords.gy === gy) return;
+      this._previewCoords = { gx, gy };
+      if (!this._previewMesh) {
+        const geo = new three.PlaneGeometry(1, 1);
+        geo.rotateX(-Math.PI / 2);
+        const mat = new three.MeshBasicMaterial({
+          color: 0xffff55,
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+        });
+        this._previewMesh = new three.Mesh(geo, mat);
+        this._previewMesh.name = 'PlaceablePreview';
+        try {
+          gm.threeSceneManager?.scene?.add(this._previewMesh);
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+      let h = 0;
+      try {
+        h = gm.getTerrainHeight?.(gx, gy) || 0;
+      } catch (_) {
+        h = 0;
+      }
+      const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
+      this._previewMesh.position.set(world.x, worldY + 0.01, world.z);
+      this._previewMesh.visible = true;
+    } catch (_) {
+      /* ignore preview errors */
+    }
+  }
+
+  /** Hide the preview indicator if present */
+  hidePreview() {
+    try {
+      if (this._previewMesh) this._previewMesh.visible = false;
+      this._previewCoords = { gx: null, gy: null };
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
   /** Dispose all instanced meshes (phase teardown) */
   dispose() {
     for (const g of this._groups.values()) {
@@ -385,6 +491,15 @@ export class PlaceableMeshPool {
       }
     }
     this._groups.clear();
+    try {
+      if (this._previewMesh) {
+        this.gameManager?.threeSceneManager?.scene?.remove(this._previewMesh);
+        this._previewMesh.geometry?.dispose?.();
+        this._previewMesh.material?.dispose?.();
+      }
+    } catch (_) {
+      /* ignore preview dispose */
+    }
     this._updateMetrics();
   }
 }

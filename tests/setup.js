@@ -186,7 +186,7 @@ if (typeof global.Sanitizers === 'undefined') {
         const total = Object.values(leftovers).reduce((a, b) => a + b, 0);
         if (total > 0) {
           // eslint-disable-next-line no-console
-            console.warn('[TEST_CLEANUP] Residual handles afterAll', leftovers);
+          console.warn('[TEST_CLEANUP] Residual handles afterAll', leftovers);
           try {
             const active =
               typeof process !== 'undefined' && process._getActiveHandles

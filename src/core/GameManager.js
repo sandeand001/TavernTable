@@ -317,7 +317,62 @@ class GameManager {
    */
   enableInstancedPlaceables() {
     this.features.instancedPlaceables = true;
-    return this.ensureInstancing();
+    const pool = this.ensureInstancing();
+    // Attach a lightweight pointer hover listener (once) to drive preview highlighting in 3D
+    try {
+      if (!this._instancingPreviewListener && typeof window !== 'undefined') {
+        const canvas = this.threeSceneManager?.canvas;
+        const targetEl = canvas || document.body;
+        this._instancingPreviewListener = async (evt) => {
+          try {
+            if (!this.features.instancedPlaceables || this.renderMode !== '3d-hybrid') return;
+            if (!this.threeSceneManager || !this.placeableMeshPool) return;
+            // Map client coords -> grid via existing PIXI interaction (coarse) fallback to spatial
+            const rect = targetEl.getBoundingClientRect();
+            const x = evt.clientX - rect.left;
+            const y = evt.clientY - rect.top;
+            // Use spatial projection heuristics (orthographic iso assumption): ray onto XZ plane at y=0.
+            const cam = this.threeSceneManager.camera;
+            let three = this.threeSceneManager._three || window.THREE || null;
+            if (!three) {
+              try {
+                three = await import('three');
+                this.threeSceneManager._three = three; // cache for later
+              } catch (_) {
+                three = null;
+              }
+            }
+            if (cam && three && typeof three.Raycaster === 'function') {
+              try {
+                const ndcX = (x / rect.width) * 2 - 1;
+                const ndcY = -(y / rect.height) * 2 + 1;
+                const raycaster = new three.Raycaster();
+                raycaster.setFromCamera({ x: ndcX, y: ndcY }, cam);
+                const plane = new three.Plane(new three.Vector3(0, 1, 0), 0); // y=0 plane
+                const hitPoint = new three.Vector3();
+                raycaster.ray.intersectPlane(plane, hitPoint);
+                if (Number.isFinite(hitPoint.x) && Number.isFinite(hitPoint.z)) {
+                  const grid = this.spatial.worldToGrid(hitPoint.x, hitPoint.z);
+                  const gx = Math.floor(grid.gridX);
+                  const gy = Math.floor(grid.gridY);
+                  if (Number.isFinite(gx) && Number.isFinite(gy)) {
+                    this.placeableMeshPool.setPreview(gx, gy);
+                  }
+                }
+              } catch (_) {
+                /* ignore ray errors */
+              }
+            }
+          } catch (_) {
+            /* ignore */
+          }
+        };
+        targetEl.addEventListener('pointermove', this._instancingPreviewListener);
+      }
+    } catch (_) {
+      /* ignore listener attach issues */
+    }
+    return pool;
   }
 
   /**
