@@ -132,7 +132,6 @@ export class TerrainCoordinator {
 
     // Currently selected terrain placeable id (managed by coordinator)
     this._selectedPlaceable = null;
-    // (no placeable paint mode flag)
     // Whether the Placeable Tiles panel is visible in the UI. Controlled by UI layer.
     // When false, placeable selection/preview/placement should be inert.
     // Default to hidden (DOM default uses display:none) and let UI sync actual state
@@ -140,6 +139,11 @@ export class TerrainCoordinator {
     // Placeable Tiles brush size (independent from terrain brush)
     // Initialized to current terrain brush size so UI starts consistent but remains independent
     this._ptBrushSize = this.brush?.brushSize || 1;
+
+    // Placeable removal mode flag (UI toggle). When true, clicks remove plant/tree placeables
+    // instead of placing or editing height. Drag removal not yet supported (intentional
+    // to reduce accidental large wipes). Accessors provided below.
+    this._placeableRemovalMode = false;
 
     logger.debug(
       'TerrainCoordinator initialized',
@@ -152,6 +156,65 @@ export class TerrainCoordinator {
       },
       LOG_CATEGORY.SYSTEM
     );
+  }
+
+  // ------------------------------
+  // Placeables UI & Removal Mode API
+  // ------------------------------
+  /** Current selected placeable id (string|null). */
+  getSelectedPlaceable() {
+    return this._selectedPlaceable || null;
+  }
+
+  /** Set or clear the currently selected placeable id. */
+  setSelectedPlaceable(id) {
+    // Block selection changes while removal mode is active
+    if (this._placeableRemovalMode) {
+      return false;
+    }
+    if (id === null || id === undefined || id === '') {
+      this._selectedPlaceable = null;
+      return true;
+    }
+    if (typeof id === 'string') {
+      this._selectedPlaceable = id;
+      // Selecting a placeable implicitly disables placeable removal mode (mutually exclusive UX)
+      this._placeableRemovalMode = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** Whether the placeables panel is currently visible to the user. */
+  isPlaceablesPanelVisible() {
+    return !!this._placeablesPanelVisible;
+  }
+
+  /** Inform coordinator of placeables panel visibility (affects preview + placement). */
+  setPlaceablesPanelVisible(visible) {
+    this._placeablesPanelVisible = !!visible;
+    // If panel is hidden, clear selection to avoid confusing hidden-state placement
+    if (!this._placeablesPanelVisible) {
+      this._selectedPlaceable = null;
+    }
+  }
+
+  /** Enable/disable placeable removal mode (clears selected placeable when enabling). */
+  setPlaceableRemovalMode(enabled) {
+    this._placeableRemovalMode = !!enabled;
+    if (this._placeableRemovalMode) {
+      // Ensure no placeable is selected while removing
+      this._selectedPlaceable = null;
+      // Optionally reflect globally used fallback variable
+      if (typeof window !== 'undefined') {
+        window.selectedTerrainPlaceable = null;
+      }
+    }
+  }
+
+  /** Returns true if placeable removal mode is active. */
+  isPlaceableRemovalMode() {
+    return !!this._placeableRemovalMode;
   }
 
   /**

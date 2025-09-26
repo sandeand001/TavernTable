@@ -18,3 +18,6 @@ AI Glossary — TavernTable
 - Elevation Offset Cache: Stored per-tile vertical pixel offset (`__storedElevationOffset`) plus its originating base iso Y to preserve relative elevation when toggling modes; invalidated when biome version changes.
 - Biome Version Key: Incrementing version (`__biomeVersion`) used to invalidate elevation/visual caches when biome-derived shading or elevation data changes.
 - Legacy Transition System (Deprecated): Removed animated interpolation layer that previously tweened between modes; replaced by deterministic synchronous reprojection for simplicity and test stability.
+
+// Terrain & Placeables Enhancements
+- Placeable Removal Mode: UI toggle in the Terrain panel that converts left-clicks into removal actions for plant/tree placeables (ids starting with `tree-` or placeableType `plant`). Disables drag-based mass deletion and suppresses height editing or new placements while active. Replaces earlier tree-only terminology.

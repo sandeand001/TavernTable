@@ -302,6 +302,69 @@ class SidebarController {
       const root = getTerrainPlaceablesRoot();
       if (!root) return; // nothing to do in minimal/test env
 
+      // Wire collapsible header controls if present
+      try {
+        const header = document.getElementById('placeables-collapse-header');
+        const btn = document.getElementById('placeables-collapse-btn');
+        if (header && btn && !btn.dataset.boundToggle) {
+          const toggle = () => {
+            const expanded = header.getAttribute('aria-expanded') === 'true';
+            const next = !expanded;
+            header.setAttribute('aria-expanded', String(next));
+            root.style.display = next ? '' : 'none';
+            btn.textContent = next ? '▾' : '▸';
+            // Inform coordinator about panel visibility for placement logic
+            try {
+              window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(next);
+            } catch (_) {
+              /* ignore */
+            }
+          };
+          header.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggle();
+          });
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggle();
+          });
+          btn.dataset.boundToggle = 'true';
+        }
+      } catch (_) {
+        /* ignore collapse wiring errors */
+      }
+
+      // Wire placeable removal toggle (mutually exclusive with placeable selection)
+      try {
+        const removalToggle = document.getElementById('placeable-removal-toggle');
+        if (removalToggle && !removalToggle.dataset.boundChange) {
+          removalToggle.addEventListener('change', () => {
+            const enabled = !!removalToggle.checked;
+            try {
+              window.gameManager?.terrainCoordinator?.setPlaceableRemovalMode?.(enabled);
+            } catch (_) {
+              /* ignore */
+            }
+            if (enabled) {
+              // Clear any global fallback selection
+              window.selectedTerrainPlaceable = null;
+              try {
+                // Visually clear selected button highlight
+                const rootEl = getTerrainPlaceablesRoot();
+                rootEl
+                  ?.querySelectorAll?.('.placeable-btn.selected')
+                  ?.forEach((b) => b.classList.remove('selected'));
+              } catch (_) {
+                /* ignore */
+              }
+            }
+          });
+          removalToggle.dataset.boundChange = 'true';
+        }
+      } catch (_) {
+        /* ignore placeable removal toggle wiring errors */
+      }
+
       // Lazy import of placeables config to avoid early coupling
       import('../config/TerrainPlaceables.js')
         .then((mod) => {
@@ -327,6 +390,14 @@ class SidebarController {
               // Select action: mark coordinator selected placeable so InputHandlers will paint
               btn.addEventListener('click', () => {
                 try {
+                  // Suppress selection if removal mode active
+                  try {
+                    if (window.gameManager?.terrainCoordinator?.isPlaceableRemovalMode?.()) {
+                      return;
+                    }
+                  } catch (_) {
+                    /* ignore */
+                  }
                   // Toggle selection
                   const currently =
                     window.gameManager &&
@@ -385,6 +456,26 @@ class SidebarController {
                   } catch (_) {
                     // fallback to directly calling internals if exposed
                     try {
+                      // When removal mode toggles, disable/enable placeable selection/cycle buttons visually
+                      try {
+                        const removalToggle = document.getElementById('placeable-removal-toggle');
+                        if (removalToggle && !removalToggle.dataset.boundDisableSync) {
+                          const syncDisabled = () => {
+                            const disabled = !!removalToggle.checked;
+                            root
+                              .querySelectorAll('.placeable-btn, .placeable-cycle-btn')
+                              .forEach((b) => {
+                                b.disabled = disabled;
+                                b.classList.toggle('disabled', disabled);
+                              });
+                          };
+                          removalToggle.addEventListener('change', syncDisabled);
+                          syncDisabled();
+                          removalToggle.dataset.boundDisableSync = 'true';
+                        }
+                      } catch (_) {
+                        /* ignore */
+                      }
                       import('../managers/terrain-manager/internals/placeables.js').then((m) => {
                         m.cyclePlaceableVariant(window.gameManager.terrainManager, x, y, key);
                       });

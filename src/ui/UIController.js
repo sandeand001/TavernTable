@@ -180,6 +180,16 @@ function toggleTerrainMode() {
         window.gameManager.enableTerrainMode();
       } else {
         window.gameManager.disableTerrainMode();
+        try {
+          // Also force-disable placeable removal mode when leaving terrain mode
+          window.gameManager?.terrainCoordinator?.setPlaceableRemovalMode?.(false);
+          const removalToggle = document.getElementById('placeable-removal-toggle');
+          if (removalToggle) {
+            removalToggle.checked = false;
+          }
+        } catch (_) {
+          /* ignore */
+        }
       }
     }
 

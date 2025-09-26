@@ -1,20 +1,14 @@
 /**
  * ProjectionUtils.js - CLEANED VERSION (incremental transition system removed)
- * ---------------------------------------------------------------------------
  * Provides synchronous reprojection between 'isometric' and 'topdown' modes.
- * Focus: correctness, clarity, minimal side-effects.
+ * Focus: clarity and correctness.
  */
 
 import { logger, LOG_CATEGORY } from './Logger.js';
 
-// Top-down zIndex bases (kept far apart to avoid collisions)
 const TOPDOWN_TILE_BASE = 0;
 const TOPDOWN_PLACEABLE_BASE = 500000;
 const TOPDOWN_CREATURE_BASE = 1000000;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 export function applyIsometricPosition(displayObject, gx, gy, gameManager) {
   if (!displayObject || !gameManager) return;
@@ -59,10 +53,6 @@ export function ensureTopDownSquare(tile, gameManager) {
   gameManager.gridContainer.addChild(g);
   return g;
 }
-
-// ---------------------------------------------------------------------------
-// Main reprojection
-// ---------------------------------------------------------------------------
 
 export function reprojectAll(gameManager, mode) {
   if (!gameManager || !gameManager.gridContainer) return;
@@ -161,31 +151,37 @@ export function reprojectAll(gameManager, mode) {
           if (!Array.isArray(arr)) return;
           arr.forEach((sprite) => {
             if (!sprite) return;
+            if (typeof sprite.visible === 'undefined') sprite.visible = true;
+            if (typeof sprite.renderable === 'undefined') sprite.renderable = true;
             if (!Number.isInteger(sprite.__gridX) || !Number.isInteger(sprite.__gridY)) {
               if (Number.isInteger(sprite.gridX) && Number.isInteger(sprite.gridY)) {
                 sprite.__gridX = sprite.gridX;
                 sprite.__gridY = sprite.gridY;
               }
             }
-            const gx = sprite.__gridX;
-            const gy = sprite.__gridY;
-            if (!Number.isInteger(gx) || !Number.isInteger(gy)) return;
+            const gx2 = sprite.__gridX;
+            const gy2 = sprite.__gridY;
+            if (!Number.isInteger(gx2) || !Number.isInteger(gy2)) return;
             if (!sprite.__originalIsoCaptured && mode === 'topdown') {
               sprite.__originalIsoCaptured = true;
               sprite.__originalIsoX = sprite.x;
               sprite.__originalIsoY = sprite.y;
             }
             if (isTopDown) {
-              applyTopDownPosition(sprite, gx, gy, gameManager);
-              sprite.zIndex = gy * gameManager.cols + gx + TOPDOWN_PLACEABLE_BASE;
+              applyTopDownPosition(sprite, gx2, gy2, gameManager);
+              sprite.zIndex = gy2 * gameManager.cols + gx2 + TOPDOWN_PLACEABLE_BASE;
+              sprite.visible = true;
+              sprite.renderable = true;
             } else {
               if (sprite.__originalIsoCaptured) {
                 sprite.x = sprite.__originalIsoX;
                 sprite.y = sprite.__originalIsoY;
               } else {
-                applyIsometricPosition(sprite, gx, gy, gameManager);
+                applyIsometricPosition(sprite, gx2, gy2, gameManager);
               }
-              sprite.zIndex = (gx + gy) * 100 + 50;
+              sprite.zIndex = (gx2 + gy2) * 100 + 50;
+              sprite.visible = true;
+              sprite.renderable = true;
             }
           });
         });
@@ -194,7 +190,7 @@ export function reprojectAll(gameManager, mode) {
       /* ignore placeable errors */
     }
 
-    // 4. Tokens / creatures
+    // 4. Tokens / creatures (preserve elevation / manual Y adjustments via offset only)
     try {
       const tokens = Array.isArray(gameManager.placedTokens) ? gameManager.placedTokens : [];
       tokens.forEach((t) => {
@@ -203,11 +199,44 @@ export function reprojectAll(gameManager, mode) {
         const fp = t.footprint || { w: 1, h: 1 };
         const centerGX = t.gridX + (fp.w - 1) / 2;
         const centerGY = t.gridY + (fp.h - 1) / 2;
+        const tileW = gameManager.tileWidth;
+        const tileH = gameManager.tileHeight;
+        const computedIsoX = (centerGX - centerGY) * (tileW / 2);
+        const computedIsoY = (centerGX + centerGY) * (tileH / 2);
+
         if (isTopDown) {
+          // Capture anchor & elevation deltas relative to mathematical iso base.
+          // This lets us restore EXACT prior iso placement even if sprite had custom adjustments.
+          const elevationOffset =
+            typeof sprite.baseIsoY === 'number' ? sprite.y - sprite.baseIsoY : 0;
+          // Non-elevated visual Y (remove elevation portion) used to isolate anchor delta.
+          const nonElevatedY = sprite.y - elevationOffset;
+          if (
+            sprite.__tokenIsoAnchorDeltaX === undefined ||
+            sprite.__tokenIsoAnchorDeltaY === undefined ||
+            sprite.__tokenStoredGridX !== centerGX ||
+            sprite.__tokenStoredGridY !== centerGY
+          ) {
+            sprite.__tokenIsoAnchorDeltaX = sprite.x - computedIsoX;
+            sprite.__tokenIsoAnchorDeltaY = nonElevatedY - computedIsoY;
+          }
+          sprite.__tokenStoredGridX = centerGX;
+          sprite.__tokenStoredGridY = centerGY;
+          sprite.__storedElevationOffset = elevationOffset;
+          // Apply topdown placement
           applyTopDownPosition(sprite, centerGX, centerGY, gameManager);
           sprite.zIndex = TOPDOWN_CREATURE_BASE + centerGY * gameManager.cols + centerGX;
         } else {
-          applyIsometricPosition(sprite, centerGX, centerGY, gameManager);
+          // Recompute current iso mathematical base (in case grid changed in topdown mode)
+          sprite.baseIsoY = computedIsoY;
+          let elevationOffset = 0;
+          if (typeof sprite.__storedElevationOffset === 'number') {
+            elevationOffset = sprite.__storedElevationOffset;
+          }
+          const anchorDX = sprite.__tokenIsoAnchorDeltaX || 0;
+          const anchorDY = sprite.__tokenIsoAnchorDeltaY || 0;
+          sprite.x = computedIsoX + anchorDX;
+          sprite.y = computedIsoY + anchorDY + elevationOffset;
           sprite.zIndex = (centerGX + centerGY) * 100 + 90;
         }
       });
@@ -291,10 +320,6 @@ export function reprojectAll(gameManager, mode) {
     throw error;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Deprecated wrapper
-// ---------------------------------------------------------------------------
 
 export function scheduleIncrementalReproject(gameManager, mode) {
   if (typeof window !== 'undefined' && !scheduleIncrementalReproject.__warned) {

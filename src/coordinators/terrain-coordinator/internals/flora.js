@@ -383,7 +383,7 @@ function clearExistingPlants(c) {
         try {
           p.parent?.removeChild?.(p);
         } catch (_) {
-          // ignore tree removal errors
+          // ignore placeable removal errors
         }
         list.splice(i, 1);
       }

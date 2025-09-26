@@ -159,8 +159,16 @@
             </label>
           </div>
 
-          <!-- Terrain Tools -->
+          <!-- Terrain Tools (shown only when Terrain Mode active) -->
           <div id="terrain-tools" class="terrain-tools-container" style="display: none;">
+            <div class="tool-group" style="margin-bottom:0.75rem; display:flex; gap:0.75rem; align-items:center;">
+              <!-- Placeable Removal Mode Toggle (active only within Terrain Mode UI) -->
+              <label class="toggle-switch">
+                <input type="checkbox" id="placeable-removal-toggle">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Remove Placeables</span>
+              </label>
+            </div>
             <div class="tool-group">
               <div class="section-subtitle">Tools</div>
               <div class="tool-buttons">
@@ -244,8 +252,19 @@
             <!-- Placeables were moved outside the toggled tools so they remain reachable
                  in the Terrain panel without requiring Terrain Mode to be active. The
                  runtime UI will still inject items into the same `#terrain-placeables-root`. -->
-            <!-- Runtime injection point for terrain placeables (buttons will be added here) -->
-            <div id="terrain-placeables-root" class="placeables-root" aria-label="Terrain placeables menu"></div>
+            <!-- Collapsible Placeables Panel -->
+            <div class="tool-group">
+              <div class="section-subtitle"
+                style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;"
+                id="placeables-collapse-header" aria-controls="terrain-placeables-root" aria-expanded="true">
+                <span>Placeable Plants</span>
+                <button id="placeables-collapse-btn" type="button" class="action-button small"
+                  aria-label="Collapse placeable plants list"
+                  style="min-width:unset; padding:0.15rem 0.5rem; font-size:0.75rem;">▾</button>
+              </div>
+              <!-- Runtime injection point for terrain placeables (buttons will be added here) -->
+              <div id="terrain-placeables-root" class="placeables-root" aria-label="Terrain placeables menu"></div>
+            </div>
           </div>
         </div>
 
