@@ -17,6 +17,20 @@ export function addTokenToCollection(
     gridX: gridX,
     gridY: gridY,
     type: tokenType,
+    // Phase 0 (3D Transition): canonical world position snapshot
+    // We derive elevation from terrain data store (if present) so future 3D scene can place the mesh/billboard.
+    world: (() => {
+      try {
+        const gm = c.gameManager;
+        const height = gm?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
+        if (gm?.spatial && typeof gm.spatial.gridToWorld === 'function') {
+          return gm.spatial.gridToWorld(gridX, gridY, height);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      return { x: 0, y: 0, z: 0 };
+    })(),
   };
   tokens.push(newTokenData);
 

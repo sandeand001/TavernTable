@@ -19,6 +19,7 @@ describe('addTokenToCollection', () => {
       gridX: 3,
       gridY: 4,
       type: 'goblin',
+      world: { x: 0, y: 0, z: 0 }, // Phase 0: default world snapshot when no spatial present
     });
     expect(setupCalls.length).toBe(1);
     expect(setupCalls[0].sprite).toBe(creature.sprite);
@@ -41,5 +42,7 @@ describe('addTokenToCollection', () => {
     expect(otherTokens[0].type).toBe('dragon');
     expect(otherTokens[0].gridX).toBe(1);
     expect(otherTokens[0].gridY).toBe(2);
+    expect(otherTokens[0].world).toBeDefined();
+    expect(typeof otherTokens[0].world.x).toBe('number');
   });
 });

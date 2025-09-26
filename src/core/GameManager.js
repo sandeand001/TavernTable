@@ -35,6 +35,8 @@ import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
 import { StateCoordinator } from '../coordinators/StateCoordinator.js';
 import { InputCoordinator } from '../coordinators/InputCoordinator.js';
 import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
+// 3D Transition Phase 0: Spatial coordinator (grid <-> world abstraction)
+import { SpatialCoordinator } from '../scene/SpatialCoordinator.js';
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -77,6 +79,12 @@ class GameManager {
     this.tokenManager = null;
     this.interactionManager = null;
     this.gridRenderer = null;
+
+    // 3D Transition: canonical spatial mapping (grid -> world) used by future Three.js scene
+    this.spatial = new SpatialCoordinator();
+
+    // Rendering mode flag: '2d-iso' (legacy) | '3d-hybrid' (in-progress) | future: '3d'
+    this.renderMode = '2d-iso';
 
     // Initialize error handler
     errorHandler.initialize();

@@ -2,7 +2,7 @@
 
 Status: INITIATED  
 Branch: `feature/3d-transition`  
-Last Updated: 2025-09-25
+Last Updated: 2025-09-26
 
 ---
 ## 0. Purpose
@@ -117,9 +117,9 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 ## 10. Immediate Action Items (Phase 0)
 - [x] Decide tile world size constant & elevation world scalar (defaults accepted: 1.0 tile, 0.5 elev)
 - [x] Implement `SpatialCoordinator` skeleton + tests (`SpatialMapping.test.js`)
-- [ ] Inject into `GameManager` (no visual change)
-- [ ] Refactor token placement to store `token.world` (grid-derived)
-- [ ] Add dev flag `gameManager.renderMode`
+- [x] Inject into `GameManager` (no visual change)
+- [x] Refactor token placement to store `token.world` (grid-derived)
+- [x] Add dev flag `gameManager.renderMode`
 
 ---
 ## 11. Open Questions
