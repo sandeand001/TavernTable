@@ -397,7 +397,16 @@ export class TerrainCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   modifyTerrainHeightAtCell(gridX, gridY) {
-    return _modifyAtCell(this, gridX, gridY);
+    const changed = _modifyAtCell(this, gridX, gridY);
+    if (
+      changed &&
+      this.gameManager &&
+      typeof this.gameManager.notifyTerrainHeightsChanged === 'function'
+    ) {
+      // Debounced 3D terrain mesh rebuild
+      this.gameManager.notifyTerrainHeightsChanged();
+    }
+    return changed;
   }
 
   /**

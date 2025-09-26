@@ -39,6 +39,8 @@ import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 import { SpatialCoordinator } from '../scene/SpatialCoordinator.js';
 import { ThreeSceneManager } from '../scene/ThreeSceneManager.js';
 import { CameraRig } from '../scene/CameraRig.js';
+import { TerrainMeshBuilder } from '../scene/TerrainMeshBuilder.js';
+import { TerrainRebuilder } from '../scene/TerrainRebuilder.js';
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -88,6 +90,7 @@ class GameManager {
     // Rendering mode flag: '2d-iso' (legacy) | '3d-hybrid' (in-progress) | future: '3d'
     this.renderMode = '2d-iso';
     this.threeSceneManager = null; // lazy init when entering hybrid mode
+    this.terrainRebuilder = null; // Phase 2: debounced terrain mesh updates
 
     // Initialize error handler
     errorHandler.initialize();
@@ -178,6 +181,21 @@ class GameManager {
         }
       } catch (_) {
         /* ignore */
+      }
+      // Phase 2: initialize terrain mesh pipeline
+      try {
+        if (!this.terrainRebuilder) {
+          const builder = new TerrainMeshBuilder({
+            tileWorldSize: this.spatial.tileWorldSize,
+            elevationUnit: this.spatial.elevationUnit,
+          });
+          this.terrainRebuilder = new TerrainRebuilder({ gameManager: this, builder });
+          // Perform initial build (flat or current heights) if Three initialized
+          const threeNS = (await import('three')).default || (await import('three'));
+          this.terrainRebuilder.rebuild({ three: threeNS });
+        }
+      } catch (e) {
+        /* non-fatal terrain mesh init failure */
       }
     }
     this.renderMode = '3d-hybrid';
@@ -382,6 +400,21 @@ class GameManager {
    */
   getTerrainHeight(gridX, gridY) {
     return this.terrainCoordinator ? this.terrainCoordinator.getTerrainHeight(gridX, gridY) : 0;
+  }
+
+  /** Phase 2 hook: invoked by TerrainCoordinator after height edits to schedule 3D rebuild. */
+  notifyTerrainHeightsChanged() {
+    if (!this.terrainRebuilder || !this.threeSceneManager || this.renderMode !== '3d-hybrid') {
+      return;
+    }
+    try {
+      // dynamic import may be cached; pass namespace on request flush
+      import('three').then((three) => {
+        this.terrainRebuilder.request({ three });
+      });
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /**

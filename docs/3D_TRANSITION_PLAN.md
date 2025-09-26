@@ -131,8 +131,8 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 ### 10B. Phase 2 (Initiation) - Terrain Mesh Scaffolding (In Progress)
 - [x] Scaffold `TerrainMeshBuilder` (flat heightfield geometry)
 - [x] Add `TerrainRebuilder` debounced wrapper (not yet wired)
-- [ ] Integrate mesh build on hybrid enable (initial flat mesh)
-- [ ] Hook rebuild trigger after terrain edits (height change events)
+- [x] Integrate mesh build on hybrid enable (initial flat mesh)
+- [x] Hook rebuild trigger after terrain edits (height change events)
 - [ ] Vertex height test coverage for non-trivial elevation pattern
 
 
