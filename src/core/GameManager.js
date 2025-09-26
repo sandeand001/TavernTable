@@ -38,6 +38,7 @@ import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 // 3D Transition Phase 0: Spatial coordinator (grid <-> world abstraction)
 import { SpatialCoordinator } from '../scene/SpatialCoordinator.js';
 import { ThreeSceneManager } from '../scene/ThreeSceneManager.js';
+import { CameraRig } from '../scene/CameraRig.js';
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -169,6 +170,15 @@ class GameManager {
     if (!this.threeSceneManager) {
       this.threeSceneManager = new ThreeSceneManager(this);
       await this.threeSceneManager.initialize();
+      // Attach camera rig abstraction (Phase 1)
+      try {
+        if (this.threeSceneManager.camera) {
+          this.cameraRig = new CameraRig();
+          this.cameraRig.attach(this.threeSceneManager.camera);
+        }
+      } catch (_) {
+        /* ignore */
+      }
     }
     this.renderMode = '3d-hybrid';
     // Dev convenience: expose on window during early phases

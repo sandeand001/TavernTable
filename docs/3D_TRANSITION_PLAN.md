@@ -124,7 +124,7 @@ Week 4: Phase 5–6 finalize; Phase 7 cleanup; backlog grooming for Phase 8
 ### 10A. Early Phase 1 Tasks (Bootstrap)
 - [x] Stub `ThreeSceneManager` (scene, camera, renderer guarded) + unit test
 - [x] Hook minimal grid plane (base world reference)
-- [ ] Add camera rig abstraction
+- [x] Add camera rig abstraction
 - [x] Expose hybrid toggle dev hook (`gameManager.enableHybridRender()`) (UI pending)
 - [ ] Metrics: log degraded vs ready init state
 
