@@ -321,38 +321,8 @@ export class TerrainManager {
         placeableId,
         success: !!result,
       });
-      // If a plant/structure was placed via biome auto-population BEFORE the mesh pool
-      // existed (late flag enable), attempt a one-time instancing registration now.
-      if (result) {
-        try {
-          const gm = this.gameManager;
-          // Create mesh pool if feature just got enabled late
-          gm?.ensureInstancing?.();
-          if (
-            gm?.features?.instancedPlaceables &&
-            gm.renderMode === '3d-hybrid' &&
-            gm.placeableMeshPool
-          ) {
-            const key = `${x},${y}`;
-            const list = this.placeables?.get(key);
-            const latest = list && list[list.length - 1];
-            if (latest && !latest.__instancedRef) {
-              const placeableRecord = {
-                gridX: x,
-                gridY: y,
-                type: latest.placeableType || 'generic',
-              };
-              latest.__instancedRef = placeableRecord;
-              const p = gm.placeableMeshPool.addPlaceable(placeableRecord);
-              if (p && typeof p.then === 'function') {
-                p.catch(() => {});
-              }
-            }
-          }
-        } catch (_) {
-          /* best-effort instancing retro-fit */
-        }
-      }
+      // Retrofit instancing path disabled (duplicate risk). If ever needed again, guard behind feature flag.
+      // if (result && this.gameManager?.features?.retrofitInstancing) { /* legacy disabled code */ }
       if (!result) {
         // Lightweight diagnostics for common rejection reasons so UI traces are useful
         let reason = 'rejected_by_rules';

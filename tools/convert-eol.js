@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Normalize line endings of provided files to LF.
 const fs = require('fs');
+
 const files = process.argv.slice(2);
 if (!files.length) {
   console.error('Usage: node tools/convert-eol.js <files...>');
   process.exit(1);
 }
+
 let changed = 0;
 for (const f of files) {
   try {
@@ -22,6 +24,7 @@ for (const f of files) {
     console.error('Error processing', f, e.message);
   }
 }
+
 if (changed) {
   console.log(`Converted ${changed} file(s) to LF.`);
 } else {

@@ -396,6 +396,9 @@ function attachDynamicUIHandlers() {
   }
 }
 
+// Expressive/Atlas 3D style controls removed; keep stub for any legacy calls.
+function wireTerrainStyleControls() {}
+
 // Attach after DOM ready & when game manager exists
 document.addEventListener('DOMContentLoaded', () => {
   // In test (Jest) environment, skip UI polling entirely to avoid lingering timers.
@@ -411,6 +414,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (window.gameManager) {
     attachDynamicUIHandlers();
+    try {
+      wireTerrainStyleControls();
+    } catch (_) {
+      /* ignore */
+    }
     return;
   }
   // Poll briefly until gameManager set by StateCoordinator (browser only)
@@ -418,6 +426,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.gameManager) {
       clearInterval(interval);
       attachDynamicUIHandlers();
+      try {
+        wireTerrainStyleControls();
+      } catch (_) {
+        /* ignore */
+      }
     }
   }, 100);
   if (typeof interval?.unref === 'function') interval.unref();

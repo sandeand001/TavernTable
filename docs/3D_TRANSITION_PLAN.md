@@ -1,6 +1,6 @@
 # 3D Transition Plan (Living Document)
 
-Status: IN PROGRESS (Phase 3 complete; Phase 4 core scaffolding active; camera alignment + height resync iteration)  
+Status: IN PROGRESS (Phase 3 complete; Phase 4 core scaffolding active; PickingService integrated for ground hover; camera alignment + height resync iteration)  
 Branch: `feature/3d-transition`  
 Last Updated: 2025-09-26
 
@@ -236,6 +236,7 @@ Risks / Notes:
 | 2025-09-26 | Added minimal grid plane & dev hybrid toggle hook | system |
 | 2025-09-26 | Camera iso yaw/pitch setters + reframe heuristic; token vertical bias & resync integration | system |
 | 2025-09-26 | Capacity growth logic for instanced placeables; plan updated with next metadata & resync tasks | system |
+| 2025-09-26 | Integrated PickingService into GameManager (ground plane hover replaces ad-hoc ray logic) + added PickingService unit test | system |
 
 ---
 ## 14. Immediate Next Step (Execution Focus)
@@ -316,14 +317,14 @@ The following sub-phases describe migrating remaining 2D-only interactions and f
 ---
 ## 16. Near-Term Implementation Queue (Actionable Tickets)
 Priority order (top = next to implement):
-1. PickingService: grid raycast + basic API.
-2. Token placement via 3D pointer (`placeTokenAtPointer`).
-3. Token hover/selection tint (material color multiply; revert on deselect).
-4. Drag-to-move tokens (snap logic + world/grid sync test).
-5. Instanced placeable metadata map + resyncHeights real implementation (ties into existing Immediate Next Step #14 tasks 1–3).
-6. Height exaggeration slider wiring (updates TerrainMeshBuilder scale factor + rebuild).
-7. Brush / hover ghost for placeable placement (instanced ephemeral preview instance or simple translucent mesh).
-8. Basic performance telemetry: raycasts/frame + selection updates/frame -> `__TT_METRICS__.interaction`.
+1. Token placement via 3D pointer (`placeTokenAtPointer`) using PickingService.
+2. Token hover/selection tint (material color multiply; revert on deselect).
+3. Drag-to-move tokens (snap logic + world/grid sync) — IMPLEMENTED (pending dedicated tests).
+4. Instanced placeable metadata map + resyncHeights real implementation (ties into existing Immediate Next Step #14 tasks 1–3).
+5. Height exaggeration slider wiring (updates TerrainMeshBuilder scale factor + rebuild).
+6. Brush / hover ghost for placeable placement (enhance current preview with validity coloring).
+7. Basic performance telemetry: raycasts/frame + selection updates/frame -> `__TT_METRICS__.interaction`.
+8. Register additional pick layers (tokens, placeables) via `pickingService.registerLayer`.
 
 Acceptance metrics to add:
 - `__TT_METRICS__.interaction.raycastsPerFrame (EMA)`

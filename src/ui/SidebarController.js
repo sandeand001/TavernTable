@@ -515,6 +515,14 @@ class SidebarController {
           const biome = window.selectedBiome;
           if (!biome) return; // require a selection
           try {
+            // Clear existing instanced placeables so old trees do not persist into new map
+            try {
+              if (window.gameManager?.placeableMeshPool?.clearAll) {
+                window.gameManager.placeableMeshPool.clearAll();
+              }
+            } catch (_) {
+              /* ignore clear failure */
+            }
             // Guard: prevent re-entry if generation is already running
             if (
               !window.gameManager?.terrainCoordinator ||
@@ -676,6 +684,9 @@ class SidebarController {
           const { BIOME_GROUPS } = mod;
           if (!root) return;
           root.textContent = '';
+
+          // (Color mode selector removed: single unified palette mode)
+
           Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
             const groupContainer = document.createElement('div');
             groupContainer.className = 'biome-group';

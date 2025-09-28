@@ -56,8 +56,8 @@ import {
 } from './terrain-coordinator/internals/baseGridUpdates.js';
 import { resetTerrain as _resetTerrain } from './terrain-coordinator/internals/reset.js';
 import { loadBaseTerrainIntoWorkingState as _loadBaseIntoWorking } from './terrain-coordinator/internals/state.js';
-import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/init.js';
 import { validateDependencies as _validateDeps } from './terrain-coordinator/internals/deps.js';
+import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/init.js';
 import {
   generateBiomeElevationField,
   isAllDefaultHeight,
@@ -273,7 +273,6 @@ export class TerrainCoordinator {
           rows: this.gameManager?.rows,
         },
       });
-      throw error;
     }
   }
 
@@ -300,21 +299,88 @@ export class TerrainCoordinator {
   }
 
   /**
-   * Handle mouse down events for terrain modification
-   * @param {MouseEvent} event - Mouse event
+   * Remove all existing biome flora/placeables from both 2D sprites and 3D instanced mesh pool.
+   * Ensures a fresh slate prior to repopulation on biome regeneration.
+   * @private
    */
-  handleTerrainMouseDown(event) {
-    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
-    return this._inputHandlers.handleMouseDown(event);
+  _clearAllBiomeFlora() {
+    try {
+      const tm = this.terrainManager;
+      if (tm && tm.placeables) {
+        for (const [key, arr] of tm.placeables.entries()) {
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const sprite = arr[i];
+            // Only remove plants (flora) – preserve structures/other categories if later added.
+            if (sprite && sprite.placeableType === 'plant') {
+              // Mark which generation cleared this sprite (defensive breadcrumb)
+              try {
+                sprite.__clearedGeneration = this._generationRunId || 0;
+              } catch (_) {
+                /* ignore */
+              }
+              try {
+                if (sprite.__instancedRef && this.gameManager?.placeableMeshPool) {
+                  this.gameManager.placeableMeshPool.removePlaceable(sprite.__instancedRef);
+                }
+              } catch (_) {
+                /* ignore */
+              }
+              try {
+                sprite.parent?.removeChild?.(sprite);
+              } catch (_) {
+                /* ignore */
+              }
+              arr.splice(i, 1);
+            }
+          }
+          if (arr.length === 0) {
+            try {
+              tm.placeables.delete(key);
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      // Use purgeAll instead of clearAll so meshes are fully removed from the scene (stronger guarantee)
+      if (this.gameManager?.placeableMeshPool) {
+        const pool = this.gameManager.placeableMeshPool;
+        if (typeof pool.purgeAll === 'function') pool.purgeAll();
+        else if (typeof pool.clearAll === 'function') pool.clearAll();
+      }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
-  /**
-   * Handle mouse move events for continuous terrain painting
-   * @param {MouseEvent} event - Mouse event
-   */
-  handleTerrainMouseMove(event) {
-    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
-    return this._inputHandlers.handleMouseMove(event);
+  /** Dev/diagnostic helper: log instanced placeable stats to console. */
+  _logPlaceableInstancingState(stage = 'unknown') {
+    try {
+      const pool = this.gameManager?.placeableMeshPool;
+      if (!pool) return;
+      const stats = pool.getStats ? pool.getStats() : {};
+      // Derive per-group counts for deeper insight
+      const groups = [];
+      try {
+        for (const [key, g] of pool._groups.entries()) {
+          const live = g.count - g.freeIndices.length;
+          groups.push({ key, live, capacity: g.capacity });
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      // eslint-disable-next-line no-console
+      console.debug('[PlaceableInstancing]', stage, { stats, groups });
+      if (typeof window !== 'undefined') {
+        (window.__TT_DEBUG__ = window.__TT_DEBUG__ || {}).placeables = { stage, stats, groups };
+      }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /**
@@ -388,7 +454,8 @@ export class TerrainCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   modifyTerrainAtPosition(gridX, gridY) {
-    return _modifyAtPos(this, gridX, gridY);
+    // Returns boolean indicating if any cell height changed
+    return _modifyAtPos(this, gridX, gridY) || false;
   }
 
   /**
@@ -713,12 +780,23 @@ export class TerrainCoordinator {
       const rows = this.gameManager.rows;
       const cols = this.gameManager.cols;
       const seed = Number.isFinite(options.seed) ? options.seed : this._biomeSeed >>> 0;
+      // Increment generation id before producing new flora
+      this._generationRunId = (this._generationRunId || 0) + 1;
       const field = generateBiomeElevationField(
         biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland',
         rows,
         cols,
         { ...options, seed }
       );
+
+      // Before applying new flora, clear any existing placeable sprites + instanced meshes so trees don't persist.
+      try {
+        this._logPlaceableInstancingState('pre-clear:generateBiomeElevationIfFlat');
+        this._clearAllBiomeFlora?.();
+        this._logPlaceableInstancingState('post-clear:generateBiomeElevationIfFlat');
+      } catch (_) {
+        /* ignore */
+      }
 
       // Update data store
       this.dataStore.base = field.map((r) => [...r]);
@@ -736,11 +814,24 @@ export class TerrainCoordinator {
       }
       // Populate sparse biome flora (trees)
       try {
+        this._logPlaceableInstancingState('pre-populate:generateBiomeElevationIfFlat');
         _autoPopulateBiomeFlora(
           this,
           biomeKey || (typeof window !== 'undefined' && window.selectedBiome),
           seed
         );
+        // Tag newly added plant sprites with current generation id
+        try {
+          const tm2 = this.terrainManager;
+          for (const arr of tm2?.placeables?.values() || []) {
+            for (const s of arr) {
+              if (s?.placeableType === 'plant') s.__generationRunId = this._generationRunId;
+            }
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        this._logPlaceableInstancingState('post-populate:generateBiomeElevationIfFlat');
       } catch (_) {
         /* ignore flora errors */
       }
@@ -787,6 +878,7 @@ export class TerrainCoordinator {
       const seed = Number.isFinite(options.seed) ? options.seed : this._biomeSeed >>> 0;
       const activeBiome =
         biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland';
+      this._generationRunId = (this._generationRunId || 0) + 1;
       // Auto-apply biome-appropriate elevation perception (pixels per level) before generation
       try {
         const hintedUnit = getBiomeElevationScaleHint(activeBiome);
@@ -798,6 +890,16 @@ export class TerrainCoordinator {
         /* non-fatal: fall back to current unit */
       }
       const field = generateBiomeElevationField(activeBiome, rows, cols, { ...options, seed });
+
+      // Clear any existing biome flora (2D sprites + 3D instanced meshes) so old trees don't persist
+      // into the freshly generated map. This mirrors the behavior in generateBiomeElevationIfFlat.
+      try {
+        this._logPlaceableInstancingState('pre-clear:generateBiomeElevation');
+        this._clearAllBiomeFlora?.();
+        this._logPlaceableInstancingState('post-clear:generateBiomeElevation');
+      } catch (_) {
+        /* non-fatal */
+      }
 
       // Update data store
       this.dataStore.base = field.map((r) => [...r]);
@@ -828,6 +930,16 @@ export class TerrainCoordinator {
         } catch (_) {
           /* ignore flora errors */
         }
+        try {
+          const tm3 = this.terrainManager;
+          for (const arr of tm3?.placeables?.values() || []) {
+            for (const s of arr) {
+              if (s?.placeableType === 'plant') s.__generationRunId = this._generationRunId;
+            }
+          }
+        } catch (_) {
+          /* ignore */
+        }
         return true;
       }
 
@@ -842,9 +954,45 @@ export class TerrainCoordinator {
         /* non-fatal */
       }
       try {
+        this._logPlaceableInstancingState('pre-populate:generateBiomeElevation');
         _autoPopulateBiomeFlora(this, activeBiome, seed);
+        this._logPlaceableInstancingState('post-populate:generateBiomeElevation');
       } catch (_) {
         /* ignore flora errors */
+      }
+      try {
+        const tm4 = this.terrainManager;
+        for (const arr of tm4?.placeables?.values() || []) {
+          for (const s of arr) {
+            if (s?.placeableType === 'plant') s.__generationRunId = this._generationRunId;
+          }
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      // Reinstance any newly populated plants into 3D pool
+      try {
+        this.gameManager?.reinstanceExistingPlants?.();
+      } catch (_) {
+        /* ignore */
+      }
+      // If zero plants were placed but instancing enabled, attempt a single retry (defensive)
+      try {
+        const tm = this.terrainManager;
+        const hasPlants = (() => {
+          if (!tm?.placeables) return false;
+          for (const arr of tm.placeables.values()) {
+            if (arr.some((s) => s.placeableType === 'plant')) return true;
+          }
+          return false;
+        })();
+        if (!hasPlants && this.gameManager?.features?.instancedPlaceables) {
+          // Retry once with a salt tweak to avoid identical zero-density edge case
+          _autoPopulateBiomeFlora(this, activeBiome, (seed + 0x9e3779b1) >>> 0);
+          this.gameManager?.reinstanceExistingPlants?.();
+        }
+      } catch (_) {
+        /* ignore retry errors */
       }
       // 3D transition: ensure fresh mesh rebuild + token/placeable height sync
       try {
@@ -862,3 +1010,4 @@ export class TerrainCoordinator {
     }
   }
 }
+// End of TerrainCoordinator

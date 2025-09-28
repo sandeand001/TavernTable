@@ -42,6 +42,8 @@ import { CameraRig } from '../scene/CameraRig.js';
 import { TerrainMeshBuilder } from '../scene/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../scene/TerrainRebuilder.js';
 import { PlaceableMeshPool } from '../scene/PlaceableMeshPool.js';
+// Centralized picking (screen -> world/grid) service (3D transition phase)
+import { PickingService } from '../scene/PickingService.js';
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -93,9 +95,12 @@ class GameManager {
     this.threeSceneManager = null; // lazy init when entering hybrid mode
     this.terrainRebuilder = null; // Phase 2: debounced terrain mesh updates
     this.placeableMeshPool = null; // Phase 4: instanced placeables (scaffold)
+    this.pickingService = null; // Centralized picking abstraction
     // Feature flags (incremental enablement of new systems)
     this.features = {
-      instancedPlaceables: false, // gated until lifecycle wiring complete
+      // Enable instanced placeables by default so the experimental menu reflects ON state.
+      // Hybrid mode will lazily create the mesh pool when first entered.
+      instancedPlaceables: true,
     };
 
     // Internal: track pending async instancing operations so tests/tools can await completion
@@ -191,17 +196,47 @@ class GameManager {
       } catch (_) {
         /* ignore */
       }
+      // Initialize centralized picking service once Three scene & camera exist
+      try {
+        if (!this.pickingService) {
+          this.pickingService = new PickingService({ gameManager: this });
+        }
+      } catch (_) {
+        /* non-fatal picking service init failure */
+      }
       // Phase 2: initialize terrain mesh pipeline
       try {
         if (!this.terrainRebuilder) {
           const builder = new TerrainMeshBuilder({
             tileWorldSize: this.spatial.tileWorldSize,
             elevationUnit: this.spatial.elevationUnit,
+            enableBiomeVertexColors: true, // Phase 2: biome palette drives vertex colors
+            hardEdges: true, // Enforce per-tile isolated quads for exact 1:1 color (no interpolation)
           });
           this.terrainRebuilder = new TerrainRebuilder({ gameManager: this, builder });
           // Perform initial build (flat or current heights) if Three initialized
           const threeNS = (await import('three')).default || (await import('three'));
           this.terrainRebuilder.rebuild({ three: threeNS });
+          // Expose global convenience hook for console & UI controls
+          if (typeof window !== 'undefined') {
+            window.requestTerrain3DRebuild = (reason = 'manual') => {
+              try {
+                const threeRef = this.threeSceneManager?.three || threeNS;
+                this.terrainRebuilder?.rebuild({ three: threeRef });
+                // reason kept for future analytics; referenced to satisfy linter
+                if (reason === '__noop__') {
+                  /* no-op */
+                }
+                return true;
+              } catch (_) {
+                return false;
+              }
+            };
+            // Backwards / user expectation alias for console snippet
+            if (!window.terrainRebuild) {
+              window.terrainRebuild = () => window.requestTerrain3DRebuild('alias');
+            }
+          }
         }
       } catch (e) {
         /* non-fatal terrain mesh init failure */
@@ -212,6 +247,132 @@ class GameManager {
         if (!this.token3DAdapter) {
           this.token3DAdapter = new Token3DAdapter(this);
           this.token3DAdapter.attach();
+          // Attach token hover + selection listeners (3D interaction groundwork)
+          try {
+            if (typeof window !== 'undefined' && !this._tokenHoverListener) {
+              const canvas = this.threeSceneManager?.canvas;
+              const targetEl = canvas || document.body;
+              this._tokenHoverListener = async (evt) => {
+                try {
+                  if (this.renderMode !== '3d-hybrid' || !this.pickingService) return;
+                  const t0 =
+                    (typeof performance !== 'undefined' && performance.now()) || Date.now();
+                  const ground = await this.pickingService.pickGround(
+                    evt.clientX,
+                    evt.clientY,
+                    targetEl
+                  );
+                  let hoverToken = null;
+                  if (ground && ground.grid) {
+                    const gx = Math.round(ground.grid.gx);
+                    const gy = Math.round(ground.grid.gy);
+                    if (Number.isFinite(gx) && Number.isFinite(gy) && this.findExistingTokenAt) {
+                      hoverToken = this.findExistingTokenAt(gx, gy) || null;
+                    }
+                  }
+                  this.token3DAdapter.setHoverToken(hoverToken);
+                  // Metrics
+                  try {
+                    const t1 =
+                      (typeof performance !== 'undefined' && performance.now()) || Date.now();
+                    window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+                    window.__TT_METRICS__.interaction = {
+                      ...(window.__TT_METRICS__.interaction || {}),
+                      lastPickMs: t1 - t0,
+                      hoverTokenId: hoverToken?.id || null,
+                    };
+                  } catch (_) {
+                    /* ignore metrics */
+                  }
+                } catch (_) {
+                  /* ignore hover errors */
+                }
+              };
+              targetEl.addEventListener('pointermove', this._tokenHoverListener);
+              // Selection (pointerdown -> select or clear)
+              this._tokenSelectListener = async (evt) => {
+                try {
+                  if (this.renderMode !== '3d-hybrid' || !this.pickingService) return;
+                  const ground = await this.pickingService.pickGround(
+                    evt.clientX,
+                    evt.clientY,
+                    targetEl
+                  );
+                  let token = null;
+                  if (ground && ground.grid) {
+                    const gx = Math.round(ground.grid.gx);
+                    const gy = Math.round(ground.grid.gy);
+                    if (Number.isFinite(gx) && Number.isFinite(gy) && this.findExistingTokenAt) {
+                      token = this.findExistingTokenAt(gx, gy) || null;
+                    }
+                  }
+                  this.token3DAdapter.setSelectedToken(token);
+                  // If a token was clicked with primary button, begin potential drag
+                  try {
+                    if (evt.button === 0 && token) {
+                      this.startTokenDragByGrid(token.gridX, token.gridY);
+                    }
+                  } catch (_) {
+                    /* ignore drag start issues */
+                  }
+                  try {
+                    window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+                    window.__TT_METRICS__.interaction = {
+                      ...(window.__TT_METRICS__.interaction || {}),
+                      lastSelectedTokenId: token?.id || null,
+                    };
+                  } catch (_) {
+                    /* ignore metrics */
+                  }
+                } catch (_) {
+                  /* ignore select errors */
+                }
+              };
+              targetEl.addEventListener('pointerdown', this._tokenSelectListener);
+              // Pointer up -> commit drag if active
+              this._tokenPointerUpListener = (evt) => {
+                try {
+                  if (evt.button !== 0) return;
+                  if (this._draggingToken) {
+                    this.commitTokenDrag();
+                  }
+                } catch (_) {
+                  /* ignore */
+                }
+              };
+              targetEl.addEventListener('pointerup', this._tokenPointerUpListener);
+              // Augment hover listener to also update drag preview when active
+              const originalHover = this._tokenHoverListener;
+              this._tokenHoverListener = async (evt) => {
+                await originalHover(evt);
+                if (this._draggingToken && this.pickingService) {
+                  try {
+                    const ground = await this.pickingService.pickGround(
+                      evt.clientX,
+                      evt.clientY,
+                      targetEl
+                    );
+                    if (ground?.grid) {
+                      const gx = Math.round(ground.grid.gx);
+                      const gy = Math.round(ground.grid.gy);
+                      this.updateTokenDragToGrid(gx, gy);
+                    }
+                  } catch (_) {
+                    /* ignore */
+                  }
+                }
+              };
+              // Replace listener (remove old, add new)
+              try {
+                targetEl.removeEventListener('pointermove', originalHover);
+              } catch (_) {
+                /* ignore old listener removal failure */
+              }
+              targetEl.addEventListener('pointermove', this._tokenHoverListener);
+            }
+          } catch (_) {
+            /* ignore listener attach */
+          }
         }
       } catch (_) {
         /* ignore */
@@ -275,6 +436,144 @@ class GameManager {
   }
 
   /**
+   * 3D Helper: place currently selected token at pointer screen coords using PickingService.
+   * Fails gracefully if not in hybrid mode or picking unavailable.
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {Promise<boolean>} true if a placement was attempted
+   */
+  async placeTokenAtPointer(clientX, clientY) {
+    try {
+      if (this.renderMode !== '3d-hybrid') return false;
+      if (!this.pickingService) return false;
+      const ground = await this.pickingService.pickGround(clientX, clientY);
+      if (!ground || !ground.grid) return false;
+      const gx = Math.round(ground.grid.gx);
+      const gy = Math.round(ground.grid.gy);
+      if (!Number.isFinite(gx) || !Number.isFinite(gy)) return false;
+      // Delegate to existing 2D pipeline (which handles validation/removal logic)
+      this.handleTokenInteraction(gx, gy);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * 3D Drag API (public for tests): initiate a token drag by its grid coords.
+   * Records original position but does not mutate token grid yet.
+   */
+  startTokenDragByGrid(gx, gy) {
+    if (this.renderMode !== '3d-hybrid') return false;
+    if (this._draggingToken) return false; // already dragging
+    const token = (this.placedTokens || []).find((t) => t.gridX === gx && t.gridY === gy);
+    if (!token) return false;
+    this._draggingToken = token;
+    this._dragStart = { gx, gy };
+    this._dragLastPreview = { gx, gy };
+    try {
+      if (typeof window !== 'undefined') {
+        (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).interaction =
+          window.__TT_METRICS__.interaction || {};
+        window.__TT_METRICS__.interaction.dragActive = true;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return true;
+  }
+
+  /** Update drag preview (token mesh position only) without committing logical grid. */
+  updateTokenDragToGrid(gx, gy) {
+    if (!this._draggingToken) return false;
+    if (!Number.isFinite(gx) || !Number.isFinite(gy)) return false;
+    if (this._dragLastPreview && this._dragLastPreview.gx === gx && this._dragLastPreview.gy === gy)
+      return true; // no change
+    this._dragLastPreview = { gx, gy };
+    // Live-move mesh (visual feedback)
+    try {
+      const t = this._draggingToken;
+      const mesh = t.__threeMesh;
+      if (mesh && this.spatial && typeof this.spatial.gridToWorld === 'function') {
+        const world = this.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+        let terrainH = 0;
+        try {
+          terrainH = (this.getTerrainHeight?.(gx, gy) || 0) * this.spatial.elevationUnit;
+        } catch (_) {
+          /* ignore */
+        }
+        mesh.position.set(world.x, terrainH, world.z);
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return true;
+  }
+
+  /** Commit the drag (apply grid change) */
+  commitTokenDrag() {
+    if (!this._draggingToken) return false;
+    const token = this._draggingToken;
+    const from = { ...(this._dragStart || { gx: token.gridX, gy: token.gridY }) };
+    const to = { ...(this._dragLastPreview || from) };
+    try {
+      token.gridX = to.gx;
+      token.gridY = to.gy;
+      // After committing, ensure mesh Y aligns with terrain bias via adapter (if any)
+      try {
+        this.token3DAdapter?.resyncHeights?.();
+      } catch (_) {
+        /* ignore */
+      }
+      if (typeof window !== 'undefined') {
+        (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).interaction =
+          window.__TT_METRICS__.interaction || {};
+        window.__TT_METRICS__.interaction.lastTokenDragGrid = { from, to };
+        window.__TT_METRICS__.interaction.dragActive = false;
+      }
+    } catch (_) {
+      /* ignore */
+    } finally {
+      this._draggingToken = null;
+      this._dragStart = null;
+      this._dragLastPreview = null;
+    }
+    return true;
+  }
+
+  /** Cancel current drag reverting mesh to original grid (does not change logical token position) */
+  cancelTokenDrag() {
+    if (!this._draggingToken) return false;
+    try {
+      const token = this._draggingToken;
+      const orig = this._dragStart || { gx: token.gridX, gy: token.gridY };
+      const mesh = token.__threeMesh;
+      if (mesh && this.spatial) {
+        const world = this.spatial.gridToWorld(orig.gx + 0.5, orig.gy + 0.5, 0);
+        let terrainH = 0;
+        try {
+          terrainH = (this.getTerrainHeight?.(orig.gx, orig.gy) || 0) * this.spatial.elevationUnit;
+        } catch (_) {
+          /* ignore */
+        }
+        mesh.position.set(world.x, terrainH, world.z);
+      }
+      if (typeof window !== 'undefined') {
+        (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).interaction =
+          window.__TT_METRICS__.interaction || {};
+        window.__TT_METRICS__.interaction.dragActive = false;
+      }
+    } catch (_) {
+      /* ignore */
+    } finally {
+      this._draggingToken = null;
+      this._dragStart = null;
+      this._dragLastPreview = null;
+    }
+    return true;
+  }
+
+  /**
    * Ensure the instanced placeables mesh pool exists if the feature flag is enabled.
    * Safe to call repeatedly (idempotent). Returns the pool instance or null if not created.
    * This allows enabling the flag AFTER hybrid mode was already initialized.
@@ -294,6 +593,29 @@ class GameManager {
             };
             // Dev aid so console explorers discover the helper
             window.__TT_ENSURE_INSTANCING__ = () => this.ensureInstancing();
+            if (!window.__TT_VALIDATE_INSTANCING__) {
+              window.__TT_VALIDATE_INSTANCING__ = () => {
+                try {
+                  const pool = this.placeableMeshPool;
+                  if (!pool) return { ok: false, reason: 'no_pool' };
+                  const snapshot = pool.debugSnapshot ? pool.debugSnapshot() : {};
+                  const hidden = pool.validateHidden ? pool.validateHidden() : { ok: true };
+                  // Count 2D plant sprites
+                  let spritePlants = 0;
+                  try {
+                    const tm = this.terrainCoordinator?.terrainManager;
+                    for (const arr of tm?.placeables?.values() || []) {
+                      for (const s of arr) if (s?.placeableType === 'plant') spritePlants += 1;
+                    }
+                  } catch (_) {
+                    /* ignore */
+                  }
+                  return { snapshot, hidden, spritePlants };
+                } catch (e) {
+                  return { ok: false, error: e?.message };
+                }
+              };
+            }
           }
         } catch (_) {
           /* ignore metrics priming errors */
@@ -318,6 +640,38 @@ class GameManager {
   enableInstancedPlaceables() {
     this.features.instancedPlaceables = true;
     const pool = this.ensureInstancing();
+    // Retro-fit any already placed plant sprites into the pool so they become visible in 3D
+    try {
+      const tm = this.terrainCoordinator?.terrainManager;
+      if (tm?.placeables && pool) {
+        for (const [key, list] of tm.placeables.entries()) {
+          for (const sprite of list) {
+            try {
+              if (!sprite || sprite.__instancedRef) continue;
+              // Only plants
+              if (sprite.placeableType && sprite.placeableType !== 'plant') continue;
+              const [gxStr, gyStr] = key.split(',');
+              const gx = Number(gxStr);
+              const gy = Number(gyStr);
+              if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
+              const rec = {
+                gridX: gx,
+                gridY: gy,
+                type: 'plant',
+                variantKey: sprite.variantKey || sprite.placeableId || 'plant',
+              };
+              sprite.__instancedRef = rec;
+              const p = pool.addPlaceable(rec);
+              if (p && typeof p.then === 'function') p.catch(() => {});
+            } catch (_) {
+              /* ignore per-sprite retrofit issue */
+            }
+          }
+        }
+      }
+    } catch (_) {
+      /* ignore retrofit failures */
+    }
     // Attach a lightweight pointer hover listener (once) to drive preview highlighting in 3D
     try {
       if (!this._instancingPreviewListener && typeof window !== 'undefined') {
@@ -327,40 +681,14 @@ class GameManager {
           try {
             if (!this.features.instancedPlaceables || this.renderMode !== '3d-hybrid') return;
             if (!this.threeSceneManager || !this.placeableMeshPool) return;
-            // Map client coords -> grid via existing PIXI interaction (coarse) fallback to spatial
-            const rect = targetEl.getBoundingClientRect();
-            const x = evt.clientX - rect.left;
-            const y = evt.clientY - rect.top;
-            // Use spatial projection heuristics (orthographic iso assumption): ray onto XZ plane at y=0.
-            const cam = this.threeSceneManager.camera;
-            let three = this.threeSceneManager._three || window.THREE || null;
-            if (!three) {
-              try {
-                three = await import('three');
-                this.threeSceneManager._three = three; // cache for later
-              } catch (_) {
-                three = null;
-              }
-            }
-            if (cam && three && typeof three.Raycaster === 'function') {
-              try {
-                const ndcX = (x / rect.width) * 2 - 1;
-                const ndcY = -(y / rect.height) * 2 + 1;
-                const raycaster = new three.Raycaster();
-                raycaster.setFromCamera({ x: ndcX, y: ndcY }, cam);
-                const plane = new three.Plane(new three.Vector3(0, 1, 0), 0); // y=0 plane
-                const hitPoint = new three.Vector3();
-                raycaster.ray.intersectPlane(plane, hitPoint);
-                if (Number.isFinite(hitPoint.x) && Number.isFinite(hitPoint.z)) {
-                  const grid = this.spatial.worldToGrid(hitPoint.x, hitPoint.z);
-                  const gx = Math.floor(grid.gridX);
-                  const gy = Math.floor(grid.gridY);
-                  if (Number.isFinite(gx) && Number.isFinite(gy)) {
-                    this.placeableMeshPool.setPreview(gx, gy);
-                  }
-                }
-              } catch (_) {
-                /* ignore ray errors */
+            // Use centralized picking service (ground plane) for hover
+            if (!this.pickingService) return;
+            const ground = await this.pickingService.pickGround(evt.clientX, evt.clientY, targetEl);
+            if (ground && ground.grid) {
+              const gx = Math.floor(ground.grid.gx);
+              const gy = Math.floor(ground.grid.gy);
+              if (Number.isFinite(gx) && Number.isFinite(gy)) {
+                this.placeableMeshPool.setPreview(gx, gy);
               }
             }
           } catch (_) {
@@ -373,6 +701,129 @@ class GameManager {
       /* ignore listener attach issues */
     }
     return pool;
+  }
+
+  /** Experimental: disable instanced placeables (tears down pool). */
+  disableInstancedPlaceables() {
+    try {
+      this.features.instancedPlaceables = false;
+      // Do NOT remove 2D sprites; only tear down 3D representation
+      if (this.placeableMeshPool) {
+        try {
+          this.placeableMeshPool.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+        this.placeableMeshPool = null;
+      }
+      if (typeof window !== 'undefined') {
+        try {
+          if (window.__TT_METRICS__) delete window.__TT_METRICS__.placeables;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** Idempotently push all current plant sprites into instancing pool (used after biome repopulation). */
+  reinstanceExistingPlants() {
+    try {
+      if (!this.features.instancedPlaceables) return;
+      const pool = this.ensureInstancing();
+      if (!pool) return;
+      const tm = this.terrainCoordinator?.terrainManager;
+      if (!tm?.placeables) return;
+      const currentGen = this.terrainCoordinator?._generationRunId || 0;
+      for (const [key, list] of tm.placeables.entries()) {
+        for (const sprite of list) {
+          try {
+            if (!sprite) continue;
+            if (sprite.placeableType && sprite.placeableType !== 'plant') continue;
+            // Skip sprites from an earlier generation that somehow survived (defensive)
+            if (sprite.__generationRunId != null && sprite.__generationRunId !== currentGen) {
+              continue;
+            }
+            if (sprite.__instancedRef) continue; // already registered
+            const [gxStr, gyStr] = key.split(',');
+            const gx = Number(gxStr);
+            const gy = Number(gyStr);
+            if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
+            const rec = {
+              gridX: gx,
+              gridY: gy,
+              type: 'plant',
+              variantKey: sprite.variantKey || sprite.placeableId || 'plant',
+            };
+            sprite.__instancedRef = rec;
+            const p = pool.addPlaceable(rec);
+            if (p && typeof p.then === 'function') p.catch(() => {});
+          } catch (_) {
+            /* ignore per-sprite issue */
+          }
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /** Remove 3D interaction (hover/select) listeners (primarily for tests or hot-reload cleanup). */
+  remove3DInteractionListeners() {
+    try {
+      const canvas = this.threeSceneManager?.canvas;
+      const targetEl = canvas || (typeof document !== 'undefined' ? document.body : null);
+      if (targetEl) {
+        if (this._tokenHoverListener) {
+          targetEl.removeEventListener('pointermove', this._tokenHoverListener);
+        }
+        if (this._tokenSelectListener) {
+          targetEl.removeEventListener('pointerdown', this._tokenSelectListener);
+        }
+        if (this._tokenPointerUpListener) {
+          targetEl.removeEventListener('pointerup', this._tokenPointerUpListener);
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    } finally {
+      this._tokenHoverListener = null;
+      this._tokenSelectListener = null;
+      this._tokenPointerUpListener = null;
+    }
+    try {
+      if (typeof window !== 'undefined') {
+        window.__TT_REMOVE_3D_INTERACTIONS__ = () => this.remove3DInteractionListeners();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /** Disable hybrid (dispose three + listeners) mainly for tests / teardown */
+  disableHybridRender() {
+    if (this.renderMode !== '3d-hybrid') return;
+    try {
+      this.remove3DInteractionListeners();
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      this.threeSceneManager?.dispose?.();
+    } catch (_) {
+      /* ignore */
+    }
+    this.threeSceneManager = null;
+    this.pickingService = null;
+    this.renderMode = '2d-iso';
+    try {
+      if (typeof window !== 'undefined') window.__TT_HYBRID_ACTIVE__ = false;
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   /**

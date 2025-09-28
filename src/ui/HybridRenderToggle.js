@@ -31,8 +31,22 @@ function attachHybridToggle() {
   if (!toggle) return;
   // Initialize checkbox state reflecting current mode
   try {
-    if (window.gameManager && window.gameManager.renderMode === '3d-hybrid') {
-      toggle.checked = true;
+    // Always default to checked (feature request: enable 3D Hybrid by default)
+    toggle.checked = true;
+    if (window.gameManager && window.gameManager.renderMode !== '3d-hybrid') {
+      // Kick off hybrid activation immediately (fire & forget)
+      window.gameManager
+        .enableHybridRender()
+        .then(() => {
+          logger.log(
+            LOG_LEVEL.INFO,
+            'Hybrid 3D mode auto-enabled on load (default ON)',
+            LOG_CATEGORY.SYSTEM
+          );
+        })
+        .catch(() => {
+          /* non-fatal */
+        });
     }
   } catch (_) {
     /* ignore */

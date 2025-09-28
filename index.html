@@ -284,21 +284,28 @@
       <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
         <div class="panel-header">🌍 Biomes</div>
         <div class="section">
-          <div class="section-title">Select a Biome Palette</div>
+          <div class="section-title">Biome Palette & Generation</div>
+          <!-- Consolidated toolbar: palette mode, generation & seed controls -->
+          <div class="setting-row biome-toolbar"
+            style="display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:0.75rem;">
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+              <button id="generate-map" type="button" class="primary-button"
+                title="Generate heightmap for selected biome">Generate</button>
+              <label class="toggle-switch" for="biome-seed-lock"
+                title="Lock seed so repeated generate uses same pattern">
+                <input type="checkbox" id="biome-seed-lock" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Lock seed</span>
+              </label>
+              <button id="biome-reseed" type="button" class="action-button"
+                title="Pick a new random seed">Reseed</button>
+            </div>
+            <small class="small-text" style="flex-basis:100%;">Generate creates elevation using the selected biome.
+              Unlock seed to randomize each time. (Single palette mode active)</small>
+          </div>
+          <div class="section-subtitle" style="margin:0 0 0.25rem;">Biomes</div>
           <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
             <!-- Biome group buttons injected at runtime -->
-          </div>
-          <div class="setting-row"
-            style="margin-top:0.75rem; display:flex; gap:0.5rem; align-items:center; flex-wrap: wrap;">
-            <button id="generate-map" type="button" class="primary-button">Generate Map</button>
-            <label class="toggle-switch" for="biome-seed-lock" title="Lock seed to keep maps consistent across clicks">
-              <input type="checkbox" id="biome-seed-lock" />
-              <span class="toggle-slider"></span>
-              <span class="toggle-label">Lock seed</span>
-            </label>
-            <button id="biome-reseed" type="button" class="action-button" title="Pick a new random seed">Reseed</button>
-            <small class="small-text">Uses the selected biome to generate elevations. Unlock seed to randomize on each
-              click.</small>
           </div>
           <div class="section-subtitle" style="margin-top:1rem;">Rich Tile Shading</div>
           <div id="biome-shading-controls" class="setting-group" role="group" aria-label="Rich tile shading controls">
@@ -339,7 +346,8 @@
           </div>
           <div class="section-subtitle" style="margin-top:1rem;">Notes</div>
           <p class="small-text">Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
-            edit heights; exit to view biome coloring.</p>
+            edit heights; exit to view biome coloring. 3D terrain uses the same Color Mode (Baseline or 2D Fidelity).
+            Expressive / Atlas prototypes were removed.</p>
         </div>
       </div>
 

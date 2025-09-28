@@ -1,5 +1,9 @@
 // TerrainRebuilder.js - Debounced orchestrator to rebuild the terrain mesh.
-// Phase 2 scaffold: wires into GameManager / TerrainCoordinator later.
+// Applies elevation + biome-based vertex coloring.
+
+// Simplified: expressive/atlas modes removed. Use 2D biome palette directly.
+import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { getBiomeColorHex } from '../config/BiomePalettes.js';
 
 export class TerrainRebuilder {
   constructor({ gameManager, builder, debounceMs = 120 } = {}) {
@@ -37,43 +41,91 @@ export class TerrainRebuilder {
     const rows = gm.rows;
     const getHeight = (x, y) => gm.getTerrainHeight(x, y);
     const t0 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
-    const geo = this.builder.build({ cols, rows, getHeight, three });
-    // Attach / replace mesh in scene
+    // Biome color selection, falling back to height palette.
+    const gmBiomeGetter = (gx, gy, elev) => {
+      try {
+        if (
+          typeof window !== 'undefined' &&
+          window.selectedBiome &&
+          !gm.terrainCoordinator?.isTerrainModeActive
+        ) {
+          return getBiomeColorHex(window.selectedBiome, elev);
+        }
+      } catch (_) {
+        /* ignore biome path fallthrough */
+      }
+      const key = elev != null ? elev.toString() : '0';
+      if (Object.prototype.hasOwnProperty.call(TERRAIN_CONFIG.HEIGHT_COLOR_SCALE, key)) {
+        return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[key];
+      }
+      return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'] || 0x777766;
+    };
+    // Dark wall color for contrast; only used in advanced geometry path.
+    const wallColor = 0x050505;
+    const wantsWalls = !!(three && three.BufferGeometry);
+    const geo = this.builder.build({
+      cols,
+      rows,
+      getHeight,
+      three,
+      getBiomeColor: gmBiomeGetter,
+      getWallColor: wantsWalls ? () => wallColor : undefined,
+    });
     const scene = gm.threeSceneManager.scene;
     let mesh = scene.getObjectByName('TerrainMesh');
     if (!mesh) {
       let material;
       try {
-        // Use factory indirection so later biome tint logic is isolated.
-        // Dynamic import to stay ESM-compliant.
-        // Note: synchronous path not required; minor race acceptable (first frame builds fallback).
-        material = new three.MeshStandardMaterial({ color: 0x777766, flatShading: false });
-        import('./TerrainMaterialFactory.js')
-          .then((mod) => {
-            try {
-              const upgraded = mod.createTerrainMaterial(three, {});
-              if (upgraded && mesh) {
-                mesh.material.dispose?.();
-                mesh.material = upgraded;
-              }
-            } catch (_) {
-              /* ignore */
-            }
-          })
-          .catch(() => {});
+        material = new three.MeshBasicMaterial({ vertexColors: true });
       } catch (_) {
         material = new three.MeshStandardMaterial({ color: 0x777766, flatShading: false });
       }
+      try {
+        if (geo.getAttribute('color') && material && material.isMaterial) {
+          material.vertexColors = true;
+        }
+        if (material && material.isMaterial && three?.DoubleSide) {
+          material.side = three.DoubleSide;
+        }
+      } catch (_) {
+        /* ignore */
+      }
       mesh = new three.Mesh(geo, material);
       mesh.name = 'TerrainMesh';
-      // Center mesh so grid (0,0) aligns near corner; shift half extents
-      mesh.position.set(cols * 0.5, 0, rows * 0.5);
+      mesh.position.set(0, 0, 0);
       scene.add(mesh);
     } else {
       mesh.geometry.dispose();
       mesh.geometry = geo;
+      try {
+        if (!mesh.material || !mesh.material.isMeshBasicMaterial) {
+          try {
+            mesh.material.dispose?.();
+          } catch (_) {
+            /* ignore dispose */
+          }
+          mesh.material = new three.MeshBasicMaterial({ vertexColors: true });
+        }
+      } catch (_) {
+        /* ignore material swap */
+      }
+      try {
+        if (geo.getAttribute('color') && mesh.material) {
+          mesh.material.vertexColors = true;
+          if (three?.DoubleSide) mesh.material.side = three.DoubleSide;
+          mesh.material.needsUpdate = true;
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        if (mesh.position && (mesh.position.x !== 0 || mesh.position.z !== 0)) {
+          mesh.position.set(0, 0, 0);
+        }
+      } catch (_) {
+        /* ignore reposition */
+      }
     }
-    // Metrics capture
     try {
       const t1 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
       const dt = t1 - t0;

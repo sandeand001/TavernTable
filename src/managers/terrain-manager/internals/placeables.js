@@ -406,6 +406,13 @@ export function placeItem(m, id, x, y) {
   }
 
   const sprite = createPlaceableSprite(m, id, x, y);
+  // Tag with current biome generation id if available so later reinstance passes can filter.
+  try {
+    const gen = m.gameManager?.terrainCoordinator?._generationRunId;
+    if (Number.isFinite(gen)) sprite.__generationRunId = gen;
+  } catch (_) {
+    /* ignore */
+  }
   // Placeables now live inside terrainContainer so they can be occluded by
   // elevated tile faces in front. This allows proper isometric overlap.
   // (Previously they were forced above all terrain by container zIndex.)
@@ -441,11 +448,20 @@ export function placeItem(m, id, x, y) {
     const gm = m.gameManager;
     if (gm?.features?.instancedPlaceables && gm.renderMode === '3d-hybrid') {
       // Provide minimal shape expected by pool (gridX/gridY/type)
+      const texturePath =
+        (sprite &&
+          sprite.texture &&
+          sprite.texture.baseTexture &&
+          (sprite.texture.baseTexture.resource?.url || sprite.texture.baseTexture.image?.src)) ||
+        null;
       const placeableRecord = {
         gridX: x,
         gridY: y,
         type: TERRAIN_PLACEABLES[id]?.type || 'generic',
+        variantKey: texturePath || id, // ensure distinct group per texture variant
       };
+      // Avoid duplicate registration window: mark pending before async add
+      sprite.__instancingPending = true;
       // Attach handle onto sprite for later removal linkage
       sprite.__instancedRef = placeableRecord;
       // Fire and forget; pool handles missing three gracefully
@@ -465,13 +481,28 @@ export function placeItem(m, id, x, y) {
           handlePromise
             .then((handle) => {
               if (handle) placeableRecord.__meshPoolHandle = handle; // maintain symmetry
+              try {
+                delete sprite.__instancingPending;
+              } catch (_) {
+                /* ignore */
+              }
             })
             .catch(() => {
+              try {
+                delete sprite.__instancingPending;
+              } catch (_) {
+                /* ignore */
+              }
               /* ignore */
             });
         }
       } catch (_) {
         /* ignore instancing add failures */
+        try {
+          delete sprite.__instancingPending;
+        } catch (_) {
+          /* ignore */
+        }
       }
     }
   } catch (_) {

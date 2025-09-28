@@ -64,7 +64,7 @@ function attach3DControls() {
     </div>
     <div class="setting-item">
       <label class="toggle-switch" for="instanced-placeables-toggle">
-        <input type="checkbox" id="instanced-placeables-toggle" />
+        <input type="checkbox" id="instanced-placeables-toggle" checked />
         <span class="toggle-slider"></span>
         <span class="toggle-label">Instanced Placeables</span>
       </label>
@@ -72,9 +72,9 @@ function attach3DControls() {
     </div>
     <div class="setting-item" style="margin-top:0.5rem;">
       <label style="display:flex;flex-direction:column;gap:4px;">
-    <span style="font-size:12px;opacity:0.85;">Iso Pitch (deg)</span>
-  <input type="range" id="iso-pitch-slider" min="5" max="80" step="0.25" value="20.5" />
-  <span id="iso-pitch-value" class="small-text">20.5°</span>
+  <span style="font-size:12px;opacity:0.85;">Camera Pitch (0°=Top Down, 90°=Horizon)</span>
+  <input type="range" id="iso-pitch-slider" min="0" max="90" step="0.25" value="30" />
+  <span id="iso-pitch-value" class="small-text">30.00° (internal 60.00°)</span>
   <div class="small-text" id="iso-pitch-ratio" style="opacity:0.75;margin-top:2px;">ratio: (n/a)</div>
       </label>
     </div>
@@ -88,8 +88,9 @@ function attach3DControls() {
     <div class="setting-item" style="margin-top:0.25rem;display:flex;flex-direction:column;gap:4px;">
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button id="iso-match-2d" style="padding:4px 8px;font-size:12px;">Match 2D Grid</button>
+        <button id="pitch-topdown" style="padding:4px 8px;font-size:12px;">Top Down</button>
       </div>
-      <div class="small-text" style="opacity:0.75;">Solver scans pitch range to match 2D ratio</div>
+      <div class="small-text" style="opacity:0.75;">Match 2D = aspect solver, Top Down = ~90° (orthographic overhead)</div>
     </div>
   `;
 
@@ -178,13 +179,14 @@ function attach3DControls() {
         updatePlaceableMetrics();
         logger.log(LOG_LEVEL.INFO, 'Instanced placeables enabled via settings', LOG_CATEGORY.USER);
       } else {
-        // No disable path yet (would require tearing down instanced meshes)
-        instToggle.checked = true; // keep enabled if turned on; reflect current limitation
-        logger.log(
-          LOG_LEVEL.WARN,
-          'Disable not implemented yet for instanced placeables',
-          LOG_CATEGORY.USER
-        );
+        // Disable path: dispose pool and clear metrics
+        try {
+          window.gameManager.disableInstancedPlaceables?.();
+        } catch (_) {
+          /* ignore */
+        }
+        updatePlaceableMetrics();
+        logger.log(LOG_LEVEL.INFO, 'Instanced placeables disabled via settings', LOG_CATEGORY.USER);
       }
     } catch (e) {
       logger.log(LOG_LEVEL.ERROR, 'Failed enabling instanced placeables', LOG_CATEGORY.ERROR, {
@@ -217,8 +219,11 @@ function attach3DControls() {
     return gm.threeSceneManager;
   }
 
-  function updatePitchDisplay(val) {
-    if (pitchValue) pitchValue.textContent = `${Number(val).toFixed(2)}°`;
+  function updatePitchDisplay(uiVal) {
+    const uiNum = Number(uiVal);
+    const internalDeg = 90 - uiNum;
+    if (pitchValue)
+      pitchValue.textContent = `${uiNum.toFixed(2)}° (internal ${internalDeg.toFixed(2)}°)`;
     try {
       const mgr = ensureHybrid();
       if (mgr && mgr.measureTileStepPixels && mgr._isoMode) {
@@ -241,20 +246,22 @@ function attach3DControls() {
 
   let lastAppliedPitch = null;
   const applyPitch = async (val) => {
-    const mgr = await ensureIsoEnabled();
-    if (!mgr) {
-      // If hybrid active but iso not yet, do nothing silently
-      return;
-    }
-    const num = parseFloat(val);
-    if (!Number.isFinite(num)) return;
-    if (lastAppliedPitch !== null && Math.abs(lastAppliedPitch - num) < 0.05) return; // skip tiny duplicate
-    lastAppliedPitch = num;
-    mgr.setIsoPitchDegrees(num);
+    // We allow pitch changes whenever hybrid 3D is active, regardless of iso mode.
+    const mgr = ensureHybrid();
+    if (!mgr) return; // hybrid not active
+    const uiDeg = parseFloat(val);
+    if (!Number.isFinite(uiDeg)) return;
+    if (lastAppliedPitch !== null && Math.abs(lastAppliedPitch - uiDeg) < 0.05) return; // skip tiny duplicate (UI space)
+    lastAppliedPitch = uiDeg;
+    const internalDeg = 90 - uiDeg; // convert to angle above ground plane
+    if (mgr._isoMode) mgr.setIsoPitchDegrees(internalDeg);
+    else if (mgr.setCameraPitchDegrees) mgr.setCameraPitchDegrees(internalDeg);
+    else mgr.setIsoPitchDegrees(internalDeg);
     mgr.reframe();
     try {
       if (window.__TT_PITCH_DEBUG__) {
-        window.__TT_PITCH_DEBUG__.sliderAppliedDeg = num;
+        window.__TT_PITCH_DEBUG__.sliderAppliedUIDeg = uiDeg;
+        window.__TT_PITCH_DEBUG__.sliderAppliedInternalDeg = internalDeg;
         window.__TT_PITCH_DEBUG__.timestamp = performance.now();
       }
     } catch (_) {
@@ -275,6 +282,7 @@ function attach3DControls() {
     }, 40);
   });
   const matchBtn = el('iso-match-2d');
+  const topDownBtn = el('pitch-topdown');
   matchBtn?.addEventListener('click', async () => {
     const mgr = await ensureIsoEnabled();
     if (!mgr) return;
@@ -297,6 +305,17 @@ function attach3DControls() {
     }
   });
 
+  topDownBtn?.addEventListener('click', async () => {
+    const mgr = ensureHybrid();
+    if (!mgr) return;
+    const internal = 89.9; // near top-down internally
+    if (mgr.setCameraPitchDegrees) mgr.setCameraPitchDegrees(internal, { lock: true });
+    else mgr.setIsoPitchDegrees(internal);
+    const uiDeg = 90 - internal;
+    if (pitchSlider) pitchSlider.value = String(uiDeg.toFixed(2));
+    updatePitchDisplay(uiDeg);
+  });
+
   yawSlider?.addEventListener('input', () => updateYawDisplay(yawSlider.value));
   yawSlider?.addEventListener('change', async () => {
     const mgr = await ensureIsoEnabled();
@@ -315,10 +334,11 @@ function attach3DControls() {
   try {
     const mgr = ensureHybrid();
     if (mgr) {
-      const pitchDeg = (mgr._isoPitch * 180) / Math.PI;
+      const internalDeg = (mgr._isoPitch * 180) / Math.PI;
+      const uiDeg = 90 - internalDeg;
       if (pitchSlider) {
-        pitchSlider.value = String(pitchDeg.toFixed(1));
-        updatePitchDisplay(pitchDeg);
+        pitchSlider.value = String(uiDeg.toFixed(1));
+        updatePitchDisplay(uiDeg);
       }
       // raw toggle removed
       if (yawSlider) {

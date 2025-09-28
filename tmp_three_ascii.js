@@ -447,6 +447,7 @@ export class ThreeSceneManager {
       /* ignore */
     }
   }
+
   /** Optional combined setter for yaw/pitch (radians) */
   setIsoAngles({ yaw, pitch }) {
     if (Number.isFinite(yaw)) this._isoYaw = yaw;

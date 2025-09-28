@@ -69,7 +69,7 @@ export class TerrainBrushController {
         center: { x: gridX, y: gridY },
       });
     }
-    return modifiedCount > 0;
+    return modifiedCount > 0; // signal to callers whether a terrain change occurred
   }
 
   _modifyCell(x, y) {

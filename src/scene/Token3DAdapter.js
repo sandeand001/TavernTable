@@ -10,6 +10,9 @@ export class Token3DAdapter {
     this.gameManager = gameManager;
     this._attached = false;
     this._verticalBias = 0; // additional Y offset above terrain height (world units)
+    this._hoverToken = null; // token entry currently hovered (grid-based picking)
+    this._selectedToken = null; // token entry explicitly selected
+    this._originalMaterials = new WeakMap(); // store original material refs for restoration
   }
 
   attach() {
@@ -174,6 +177,9 @@ export class Token3DAdapter {
     if (!tokenEntry || !tokenEntry.__threeMesh) return;
     try {
       const mesh = tokenEntry.__threeMesh;
+      // Clean up any highlight state references
+      if (this._hoverToken === tokenEntry) this._hoverToken = null;
+      if (this._selectedToken === tokenEntry) this._selectedToken = null;
       const gm = this.gameManager;
       const scene = gm?.threeSceneManager?.scene;
       if (scene && typeof scene.remove === 'function') {
@@ -278,6 +284,67 @@ export class Token3DAdapter {
         if (!mesh.scale) mesh.scale = { x: sign, y: 1, z: 1 }; // safety for test doubles
         mesh.scale.x = sign * Math.abs(mesh.scale.x || 1);
       }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /** Apply hover highlight (non-destructive) */
+  setHoverToken(tokenEntry) {
+    if (this._hoverToken === tokenEntry) return;
+    if (this._hoverToken && this._hoverToken.__threeMesh) {
+      this._restoreMaterial(this._hoverToken.__threeMesh);
+    }
+    this._hoverToken = tokenEntry || null;
+    if (tokenEntry && tokenEntry.__threeMesh) {
+      this._applyTint(tokenEntry.__threeMesh, 0x88ccff);
+    }
+  }
+
+  /** Explicit selection highlight (stronger tint) */
+  setSelectedToken(tokenEntry) {
+    if (this._selectedToken === tokenEntry) return;
+    if (this._selectedToken && this._selectedToken.__threeMesh) {
+      this._restoreMaterial(this._selectedToken.__threeMesh);
+    }
+    this._selectedToken = tokenEntry || null;
+    if (tokenEntry && tokenEntry.__threeMesh) {
+      this._applyTint(tokenEntry.__threeMesh, 0xffcc55);
+    }
+  }
+
+  clearHighlights() {
+    this.setHoverToken(null);
+    this.setSelectedToken(null);
+  }
+
+  _applyTint(mesh, colorHex) {
+    const mat = mesh.material;
+    if (!mat) return;
+    if (!this._originalMaterials.has(mat)) {
+      this._originalMaterials.set(mat, {
+        color: mat.color?.clone?.() || null,
+        emissive: mat.emissive?.clone?.() || null,
+      });
+    }
+    try {
+      if (mat.color) mat.color.setHex(colorHex);
+      if (mat.emissive) mat.emissive.setHex(colorHex);
+      mat.needsUpdate = true;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  _restoreMaterial(mesh) {
+    const mat = mesh.material;
+    if (!mat) return;
+    const snap = this._originalMaterials.get(mat);
+    if (!snap) return;
+    try {
+      if (snap.color && mat.color) mat.color.copy(snap.color);
+      if (snap.emissive && mat.emissive) mat.emissive.copy(snap.emissive);
+      mat.needsUpdate = true;
     } catch (_) {
       /* ignore */
     }

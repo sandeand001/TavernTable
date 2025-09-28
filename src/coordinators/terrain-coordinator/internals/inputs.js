@@ -66,10 +66,20 @@ export function modifyTerrainAtPosition(c, gridX, gridY) {
     if (!c.isValidGridPosition(gridX, gridY)) {
       return;
     }
-    c.brush.applyAt(gridX, gridY);
-    if (c.terrainManager) {
-      c.terrainManager.updateTerrainDisplay(gridX, gridY, c.brushSize);
+    const changed = c.brush.applyAt(gridX, gridY);
+    if (changed) {
+      // Update 2D terrain visuals immediately
+      if (c.terrainManager) {
+        c.terrainManager.updateTerrainDisplay(gridX, gridY, c.brushSize);
+      }
+      // NEW: schedule / debounce 3D terrain mesh rebuild & height resync (GameManager handles debouncing)
+      try {
+        c.gameManager?.notifyTerrainHeightsChanged?.();
+      } catch (_) {
+        /* non-fatal */
+      }
     }
+    return changed;
   } catch (error) {
     try {
       GameErrors.input(error, {

@@ -198,6 +198,12 @@ export class BiomeShadingController {
         { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey },
         LOG_CATEGORY.USER
       );
+      // Schedule 3D mesh recolor (rebuild) since biome palette changed.
+      try {
+        this.c.gameManager?.notifyTerrainHeightsChanged?.();
+      } catch (_) {
+        /* non-fatal */
+      }
     } catch (e) {
       // Downgraded to DEBUG to avoid noisy repeats; inner paint() warns on real failures
       logger.debug('Biome palette application encountered an error', {
