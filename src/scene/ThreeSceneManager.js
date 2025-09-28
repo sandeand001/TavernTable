@@ -15,15 +15,21 @@ export class ThreeSceneManager {
     // User-facing toggles
     this.showBootstrapGrid = true;
     this._isoMode = false;
-    this._isoYaw = Math.PI / 4; // default 45° (diagonal)
+    this._isoYaw = Math.PI / 4; // default 45?? (diagonal)
+    this._isoManualLock = false; // set true when user explicitly sets pitch so auto calibration won't override
     // Baseline seed pitch (kept stable so relative math does not drift when searching for a match).
-    // This is NOT the final preset match pitch; the isometric camera preset will override with a calibrated value (currently 12.5°) BEFORE the first frustum lock capture.
+    // This is NOT the final preset match pitch; the isometric camera preset will override with a calibrated value (currently 12.5??) BEFORE the first frustum lock capture.
     // Override the baseline (rarely needed) via: window.__TT_ISO_DEFAULT_PITCH_DEG = <number>
     const overrideDeg =
       (typeof window !== 'undefined' && window.__TT_ISO_DEFAULT_PITCH_DEG) || 20.5;
-    // Calibrated preset pitch (deg) applied when iso mode is enabled; can be overridden via window.__TT_ISO_PRESET_PITCH_DEG.
-    // Updated calibrated preset pitch after adopting non-adaptive frustum sizing.
-    this._isoPresetPitchDeg = 52.0;
+    // Calibrated preset pitch (deg) applied when iso mode is enabled;
+    // can be overridden via window.__TT_ISO_PRESET_PITCH_DEG.
+    // Reverted to classical isometric pitch (~35.264??) so that a single
+    // tile step in +X / +Z projects to near-equal diagonals and vertical
+    // compression matches 2D diamond (2:1 ratio).
+    // If you previously relied on the steeper 52?? value, set:
+    // window.__TT_ISO_PRESET_PITCH_DEG = 52 before enabling iso mode.
+    this._isoPresetPitchDeg = 35.264389682754654; // atan(sin(45??)) in degrees
     this._isoPitch = (overrideDeg * Math.PI) / 180;
     // Simplified implementation: removed legacy vertical persistence, parity scaling, and frustum lock.
     // We keep a constant board-based frustum so pitch directly affects the vertical compression visually.
@@ -61,9 +67,32 @@ export class ThreeSceneManager {
       return;
     }
 
+    // Expose namespace on instance so other systems (UI sliders, rebuilders) can reuse
+    // the already imported Three module instead of doing additional dynamic imports.
+    try {
+      this.three = three;
+    } catch (_) {
+      /* ignore assignment failure */
+    }
+
     try {
       this.scene = new three.Scene();
-      this.scene.add(new three.AmbientLight(0xffffff, 0.6));
+      // Ambient light (boosted vs earlier 0.6). Allow runtime override via window.__TT_AMBIENT_INTENSITY__.
+      try {
+        const ambIntensity =
+          (typeof window !== 'undefined' && window.__TT_AMBIENT_INTENSITY__) || 0.9;
+        this.scene.add(new three.AmbientLight(0xffffff, ambIntensity));
+      } catch (_) {
+        this.scene.add(new three.AmbientLight(0xffffff, 0.9));
+      }
+      // Soft hemisphere fill to reduce dark undertone (sky light + subtle ground bounce)
+      try {
+        const hemi = new three.HemisphereLight(0xf0f4ff, 0x3a2e1a, 0.55);
+        hemi.name = 'TerrainHemiFill';
+        this.scene.add(hemi);
+      } catch (_) {
+        /* ignore hemisphere failure */
+      }
 
       // Bootstrap wireframe grid plane sized to grid dims.
       try {
@@ -123,6 +152,22 @@ export class ThreeSceneManager {
           antialias: true,
           alpha: true,
         });
+        // Ensure correct color management so vertex colors authored in sRGB space are displayed faithfully.
+        try {
+          if (three.ColorManagement) {
+            three.ColorManagement.enabled = true; // r170 still allows explicit enable
+          }
+        } catch (_) {
+          /* ignore color mgmt */
+        }
+        try {
+          // r152+ uses outputColorSpace instead of deprecated outputEncoding
+          if (this.renderer.outputColorSpace !== undefined && three.SRGBColorSpace) {
+            this.renderer.outputColorSpace = three.SRGBColorSpace;
+          }
+        } catch (_) {
+          /* ignore colorspace */
+        }
         this.renderer.setPixelRatio(window.devicePixelRatio || 1);
         this._resize();
         this._boundResize = () => this._resize();
@@ -283,14 +328,67 @@ export class ThreeSceneManager {
     if (this._isoMode) {
       // Apply preset pitch before first reframe
       try {
+        if (!this._isoManualLock) {
+          if (
+            !(typeof window !== 'undefined' && window.__TT_DISABLE_ISO_PRESET_PITCH__) &&
+            Number.isFinite(this._isoPresetPitchDeg)
+          ) {
+            const preset =
+              (typeof window !== 'undefined' && window.__TT_ISO_PRESET_PITCH_DEG) ||
+              this._isoPresetPitchDeg;
+            this._isoPitch = (preset * Math.PI) / 180;
+          }
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      // Optional auto-calibration: derive target vertical:horizontal pixel step ratio from 2D tile aspect (tileHeight / tileWidth) and solve pitch.
+      try {
+        if (typeof window !== 'undefined' && !this._isoManualLock) {
+          const auto = window.__TT_AUTO_ISO_CALIBRATE__;
+          if (auto === true) {
+            // now opt-in instead of implicit
+            // Defer until next frame so renderer & frustum are stable.
+            requestAnimationFrame(() => {
+              try {
+                const tw =
+                  this.gameManager?.tileWidth || this.gameManager?.spatial?.tileWorldSize || 64;
+                const th = this.gameManager?.tileHeight || tw * 0.5;
+                const targetRatio = th / tw; // e.g., 32/64 = 0.5 for classic 2:1 diamond
+                // Use a slightly widened search window to compensate for board scale differences.
+                this.solveIsoPitchForTargetRatio(targetRatio, {
+                  minDeg: 25,
+                  maxDeg: 40,
+                  iterations: 22,
+                });
+                if (window.__TT_PITCH_DEBUG__) {
+                  window.__TT_PITCH_DEBUG__.autoCalibratedFor = { targetRatio, tw, th };
+                }
+              } catch (e) {
+                /* ignore auto-calibration failure */
+              }
+            });
+          }
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      // Precise optional 2D tile aspect pitch matching (explicit opt-in via __TT_ISO_MATCH_2D__)
+      try {
         if (
-          !(typeof window !== 'undefined' && window.__TT_DISABLE_ISO_PRESET_PITCH__) &&
-          Number.isFinite(this._isoPresetPitchDeg)
+          typeof window !== 'undefined' &&
+          window.__TT_ISO_MATCH_2D__ &&
+          !this._isoManualLock &&
+          this.gameManager?.tileWidth &&
+          this.gameManager?.tileHeight
         ) {
-          const preset =
-            (typeof window !== 'undefined' && window.__TT_ISO_PRESET_PITCH_DEG) ||
-            this._isoPresetPitchDeg;
-          this._isoPitch = (preset * Math.PI) / 180;
+          requestAnimationFrame(() => {
+            try {
+              this.calibrateTo2DTileAspect();
+            } catch (_) {
+              /* ignore */
+            }
+          });
         }
       } catch (_) {
         /* ignore */
@@ -306,14 +404,47 @@ export class ThreeSceneManager {
   /** Adjust the isometric pitch (in degrees). Only applied when iso mode active. */
   setIsoPitchDegrees(deg) {
     if (!Number.isFinite(deg)) return;
+    if (deg < 0) deg = 0; // permit true 0 from UI
+    if (deg > 89.9) deg = 89.9; // avoid singularities at 90
     const rad = (deg * Math.PI) / 180;
     this._isoPitch = rad;
+    this._isoManualLock = true; // prevent auto overrides going forward
     if (this._isoMode) {
       const cols = this.gameManager?.cols || 25;
       const rows = this.gameManager?.rows || 25;
       const span = Math.max(cols, rows) * 0.6;
       this._applyCameraBase({ cx: cols * 0.5, cz: rows * 0.5, span });
       this.reframe();
+      try {
+        this.debugIsoCamera();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+
+  /**
+   * General camera pitch setter (degrees) that works regardless of iso preset.
+   * Re-uses the iso pitch backing field so existing math + sliders stay consistent.
+   * Does NOT automatically enable iso mode; simply tilts current camera.
+   */
+  setCameraPitchDegrees(deg, { lock = false } = {}) {
+    if (!Number.isFinite(deg)) return;
+    if (deg < 0) deg = 0;
+    if (deg > 89.9) deg = 89.9;
+    const rad = (deg * Math.PI) / 180;
+    this._isoPitch = rad;
+    if (lock) this._isoManualLock = true;
+    // Apply base orientation using current yaw but do not force iso mode.
+    try {
+      const cols = this.gameManager?.cols || 25;
+      const rows = this.gameManager?.rows || 25;
+      const span = Math.max(cols, rows) * 0.6;
+      this._applyCameraBase({ cx: cols * 0.5, cz: rows * 0.5, span });
+      this.reframe();
+      if (this._isoMode) this.debugIsoCamera();
+    } catch (_) {
+      /* ignore */
     }
   }
 
@@ -333,73 +464,271 @@ export class ThreeSceneManager {
   _applyCameraBase({ cx, cz, span }) {
     if (!this.camera) return;
     if (this._isoMode) {
-      const isoYaw = this._isoYaw;
-      const isoPitch = this._isoPitch; // angle above ground plane (radians)
-      // Compute a radius from the true grid diagonal so switching to iso does not visually "zoom" the board.
-      let debugX, debugY, debugZ, horizDistRef;
+      // Apply isometric camera base (extracted helper)
+      this._applyIsoCameraBase({ cx, cz, span });
+    } else {
+      // Free (non-iso) mode: spherical positioning relative to center
       try {
+        const yaw = this._isoYaw || 0.78539816339;
+        const pitch = this._isoPitch != null ? this._isoPitch : 0.5;
         const cols = this.gameManager?.cols || 25;
         const rows = this.gameManager?.rows || 25;
         const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
         const width = cols * tileSize;
         const depth = rows * tileSize;
         const halfDiag = 0.5 * Math.sqrt(width * width + depth * depth);
-        const horizontal = halfDiag * 1.08; // small margin
-        const x = cx + horizontal * Math.cos(isoYaw);
-        const z = cz + horizontal * Math.sin(isoYaw);
-        let y = horizontal * Math.tan(isoPitch);
-        const minY = halfDiag * 0.15;
+        const radius = halfDiag * 1.08;
+        const cosP = Math.cos(pitch);
+        const sinP = Math.sin(pitch);
+        const x = cx + radius * cosP * Math.cos(yaw);
+        const z = cz + radius * cosP * Math.sin(yaw);
+        let y = radius * sinP;
+        const minFloor = halfDiag * 0.01;
+        const maxMin = halfDiag * 0.15;
+        const pitchNorm = Math.min(Math.max(pitch / (Math.PI * 0.5), 0), 1);
+        const t = pitchNorm;
+        const smooth = t * t * (3 - 2 * t);
+        const minY = minFloor + (maxMin - minFloor) * smooth;
         if (y < minY) y = minY;
         this.camera.position.set(x, y, z);
-        debugX = x;
-        debugY = y;
-        debugZ = z;
-        horizDistRef = horizontal;
-      } catch (_) {
-        const radius = span * 1.8;
-        const horizontal = radius * Math.cos(isoPitch);
-        const x = cx + horizontal * Math.cos(isoYaw);
-        const z = cz + horizontal * Math.sin(isoYaw);
-        const y = radius * Math.tan(isoPitch);
-        this.camera.position.set(x, y, z);
-        debugX = x;
-        debugY = y;
-        debugZ = z;
-        horizDistRef = horizontal;
-      }
-      this.camera.lookAt(cx, 0, cz);
-      try {
+        this.camera.lookAt(cx, 0, cz);
         if (typeof window !== 'undefined') {
-          const dx = cx - debugX;
-          const dz = cz - debugZ;
-          const horizDist = Math.sqrt(dx * dx + dz * dz) || 1;
-          const effectivePitch = Math.atan2(debugY, horizDist);
+          const dx = cx - x;
+          const dz = cz - z;
+          const effectivePitch = Math.asin(y / Math.sqrt(dx * dx + dz * dz + y * y));
           window.__TT_PITCH_DEBUG__ = {
-            requestedPitchDeg: (isoPitch * 180) / Math.PI,
+            requestedPitchDeg: (pitch * 180) / Math.PI,
             effectivePitchDeg: (effectivePitch * 180) / Math.PI,
-            basis: 'halfDiag',
+            basis: 'free-spherical',
             position: this.camera.position.toArray(),
-            horizReference: horizDistRef,
+            isoMode: false,
+            pitchNorm,
+            minY,
           };
         }
       } catch (_) {
-        /* ignore */
+        this.camera.position.set(cx + span, span * 1.4, cz + span);
+        this.camera.lookAt(cx, 0, cz);
       }
-    } else {
-      this.camera.position.set(cx + span, span * 1.4, cz + span);
-      this.camera.lookAt(cx, 0, cz);
     }
     try {
-      if (typeof window !== 'undefined')
+      if (typeof window !== 'undefined') {
         window.__TT_THREE_CAMERA__ = {
           position: this.camera.position.toArray(),
           isoMode: this._isoMode,
         };
+      }
     } catch (_) {
       /* ignore */
     }
   }
 
+  /** Internal: apply isometric camera base placement & debugging */
+  _applyIsoCameraBase({ cx, cz, span }) {
+    const isoYaw = this._isoYaw;
+    // Global hard override (diagnostics) takes precedence
+    try {
+      if (typeof window !== 'undefined' && Number.isFinite(window.__TT_FORCE_ISO_PITCH_DEG)) {
+        this._isoPitch = (window.__TT_FORCE_ISO_PITCH_DEG * Math.PI) / 180;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    const isoPitch = this._isoPitch; // angle above ground plane (radians)
+    let r;
+    try {
+      r = this._computeIsoPosition({ isoPitch, isoYaw, cx, cz });
+    } catch (_) {
+      // Fallback simplified placement if helper fails
+      const radius = span * 1.8;
+      const cosP = Math.cos(isoPitch);
+      const sinP = Math.sin(isoPitch);
+      const x = cx + radius * cosP * Math.cos(isoYaw);
+      const z = cz + radius * cosP * Math.sin(isoYaw);
+      let y = radius * sinP;
+      if (isoPitch > 1.3) {
+        const halfDiag = span; // approximate fallback
+        const dynMin = halfDiag * 0.05;
+        if (y < dynMin) y = dynMin;
+      }
+      r = {
+        x,
+        y,
+        z,
+        horizDistRef: radius * Math.cos(isoPitch),
+        pitchNorm: null,
+        minY: y,
+        minFloor: null,
+        maxMin: null,
+      };
+    }
+    this.camera.position.set(r.x, r.y, r.z);
+    this.camera.lookAt(cx, 0, cz);
+    // Debugging / inspection hooks
+    if (typeof window !== 'undefined') {
+      try {
+        window.__TT_PITCH_DEBUG_EXTRA__ = {
+          mode: 'iso',
+          pitchNorm: r.pitchNorm,
+          minY: r.minY,
+          minFloor: r.minFloor,
+          maxMin: r.maxMin,
+        };
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    try {
+      if (typeof window !== 'undefined') {
+        const dx = cx - r.x;
+        const dz = cz - r.z;
+        const effectivePitch = Math.asin(r.y / Math.sqrt(dx * dx + dz * dz + r.y * r.y));
+        try {
+          if (window.__TT_VERBOSE_ISO_DEBUG__) {
+            console.info('[IsoCamera] applyBase pitch', {
+              requestedDeg: (isoPitch * 180) / Math.PI,
+              effectiveDeg: (effectivePitch * 180) / Math.PI,
+              manualLock: this._isoManualLock,
+            });
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        window.__TT_PITCH_DEBUG__ = {
+          requestedPitchDeg: (isoPitch * 180) / Math.PI,
+          effectivePitchDeg: (effectivePitch * 180) / Math.PI,
+          basis: 'halfDiag',
+          position: this.camera.position.toArray(),
+          horizReference: r.horizDistRef,
+          manualLock: this._isoManualLock,
+        };
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /** Compute iso camera spherical placement and minY easing (extracted for prettier indentation sanity) */
+  _computeIsoPosition({ isoPitch, isoYaw, cx, cz }) {
+    const cols = this.gameManager?.cols || 25;
+    const rows = this.gameManager?.rows || 25;
+    const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+    const width = cols * tileSize;
+    const depth = rows * tileSize;
+    const halfDiag = 0.5 * Math.sqrt(width * width + depth * depth);
+    const radius = halfDiag * 1.08; // constant framing radius
+    const cosP = Math.cos(isoPitch);
+    const sinP = Math.sin(isoPitch);
+    const x = cx + radius * cosP * Math.cos(isoYaw);
+    const z = cz + radius * cosP * Math.sin(isoYaw);
+    let y = radius * sinP;
+    const minFloor = halfDiag * 0.01;
+    const maxMin = halfDiag * 0.15;
+    const pitchNorm = Math.min(Math.max(isoPitch / (Math.PI * 0.5), 0), 1);
+    const t = pitchNorm;
+    const smooth = t * t * (3 - 2 * t);
+    const minY = minFloor + (maxMin - minFloor) * smooth;
+    if (y < minY) y = minY;
+    return { x, y, z, horizDistRef: radius * cosP, pitchNorm, minY, minFloor, maxMin };
+  }
+
+  /** Emit diagnostic info about current isometric pixel step ratio & effective pitch. */
+  debugIsoCamera() {
+    try {
+      if (!this._isoMode) return null;
+      const m = this.measureTileStepPixels();
+      if (typeof window !== 'undefined') {
+        window.__TT_ISO_DEBUG__ = {
+          ratio: m?.ratio,
+          dx: m?.dx,
+          dy: m?.dy,
+          pitchRequestedDeg: (this._isoPitch * 180) / Math.PI,
+          manualLock: this._isoManualLock,
+          camPos: this.camera?.position?.toArray?.(),
+        };
+      }
+      return m;
+    } catch (_) {
+      return null;
+    }
+  }
+  // Projected measurement using Three.js project() for accuracy
+  measureTileStepPixelsProjected() {
+    try {
+      if (!this._isoMode || !this.camera || !this.renderer || !this.three) return null;
+      const three = this.three;
+      const cols = this.gameManager?.cols || 25;
+      const rows = this.gameManager?.rows || 25;
+      const cx = cols * 0.5;
+      const cz = rows * 0.5;
+      const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+      const base = new three.Vector3(cx, 0, cz);
+      const px = base.clone().add(new three.Vector3(tileSize, 0, 0));
+      const pz = base.clone().add(new three.Vector3(0, 0, tileSize));
+      const proj = (v) => {
+        const vv = v.clone();
+        vv.project(this.camera);
+        const w = this.renderer.domElement.width || 1;
+        const h = this.renderer.domElement.height || 1;
+        return { x: (vv.x * 0.5 + 0.5) * w, y: (-vv.y * 0.5 + 0.5) * h };
+      };
+      const b = proj(base);
+      const bx = proj(px);
+      const bz = proj(pz);
+      const dxX = Math.abs(bx.x - b.x);
+      const dyX = Math.abs(bx.y - b.y);
+      const dxZ = Math.abs(bz.x - b.x);
+      const dyZ = Math.abs(bz.y - b.y);
+      const avgDx = (dxX + dxZ) * 0.5;
+      const avgDy = (dyX + dyZ) * 0.5;
+      return { dxX, dyX, dxZ, dyZ, avgDx, avgDy, ratio: avgDy / (avgDx || 1) };
+    } catch (_) {
+      return null;
+    }
+  }
+  calibrateTo2DTileAspect({ iterations = 28, minDeg = 10, maxDeg = 60 } = {}) {
+    if (!this._isoMode) return null;
+    const tw = this.gameManager?.tileWidth;
+    const th = this.gameManager?.tileHeight;
+    if (!(tw && th)) return null;
+    const targetRatio = th / tw;
+    const cols = this.gameManager?.cols || 25;
+    const rows = this.gameManager?.rows || 25;
+    const span = Math.max(cols, rows) * 0.6;
+    const original = this._isoPitch;
+    let best = { err: Infinity, pitch: original, ratio: null, deg: (original * 180) / Math.PI };
+    for (let i = 0; i < iterations; i++) {
+      const t = i / (iterations - 1);
+      const deg = minDeg + (maxDeg - minDeg) * t;
+      this._isoPitch = (deg * Math.PI) / 180;
+      this._applyCameraBase({ cx: cols * 0.5, cz: rows * 0.5, span });
+      this.reframe();
+      const m = this.measureTileStepPixelsProjected() || this.measureTileStepPixels();
+      if (m) {
+        const err = Math.abs(m.ratio - targetRatio);
+        if (err < best.err) best = { err, pitch: this._isoPitch, ratio: m.ratio, deg };
+      }
+    }
+    this._isoPitch = best.pitch;
+    this._isoManualLock = true;
+    this._applyCameraBase({ cx: cols * 0.5, cz: rows * 0.5, span });
+    this.reframe();
+    try {
+      if (typeof window !== 'undefined') {
+        window.__TT_ISO_2D_CALIBRATION__ = {
+          targetRatio,
+          bestDeg: (best.pitch * 180) / Math.PI,
+          bestRatio: best.ratio,
+          err: best.err,
+          iterations,
+          range: [minDeg, maxDeg],
+        };
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return best;
+  }
   /** Recompute orthographic frustum. Simplified: constant board-diagonal based box in iso; aspect-based span otherwise. */
   reframe() {
     if (!this.camera) return;
@@ -639,4 +968,25 @@ export class ThreeSceneManager {
     this.canvas = null;
     this.initialized = false;
   }
+}
+
+// Test environment hook: register instances for automatic cleanup if tracking enabled
+try {
+  if (typeof globalThis !== 'undefined' && !ThreeSceneManager.__TT_REGISTER_PATCHED__) {
+    const origInit = ThreeSceneManager.prototype.initialize;
+    ThreeSceneManager.prototype.initialize = async function patchedInitialize(...args) {
+      const res = await origInit.apply(this, args);
+      try {
+        if (globalThis.__TT_REGISTER_THREE__) {
+          globalThis.__TT_REGISTER_THREE__(this);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      return res;
+    };
+    ThreeSceneManager.__TT_REGISTER_PATCHED__ = true;
+  }
+} catch (_) {
+  /* ignore */
 }

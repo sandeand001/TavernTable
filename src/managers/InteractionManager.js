@@ -1,3 +1,4 @@
+// Prettier enabled: previously disabled for iterative edits; restored for standard formatting
 /**
  * InteractionManager.js - Manages user interactions with the grid
  *
@@ -26,6 +27,7 @@ import {
 
 export class InteractionManager {
   constructor(gameManager) {
+    // Core refs
     this.gameManager = gameManager;
 
     // Grid panning variables
@@ -35,6 +37,15 @@ export class InteractionManager {
     this.gridStartX = 0;
     this.gridStartY = 0;
     this.isSpacePressed = false;
+
+    // 3D rotation (when Three scene active)
+    this.isRotating3D = false;
+    this.rotateStartX = 0;
+    this.rotateStartY = 0;
+    this.startYaw = 0;
+    this.startPitchDeg = 0;
+    this.rotationSensitivity = 0.35; // degrees per pixel vertical
+    this.yawSensitivity = 0.5; // degrees per pixel horizontal
 
     // Grid zoom variables
     this.gridScale = 1.0;
@@ -80,8 +91,13 @@ export class InteractionManager {
       if (event.button === 0) {
         // Left mouse button
         if (this.isSpacePressed) {
-          // Space + left click = panning
-          this.startGridDragging(event);
+          // If 3D manager present, rotate camera instead of panning the 2D grid.
+          const threeMgr = this.gameManager?.threeSceneManager;
+          if (threeMgr && threeMgr.camera) {
+            this.start3DRotation(event, threeMgr);
+          } else {
+            this.startGridDragging(event);
+          }
         } else {
           // Regular left click = token placement
           this.handleLeftClick(event);
@@ -95,7 +111,9 @@ export class InteractionManager {
    */
   setupMouseMove() {
     this.gameManager.app.view.addEventListener('mousemove', (event) => {
-      if (this.isDragging) {
+      if (this.isRotating3D) {
+        this.update3DRotation(event);
+      } else if (this.isDragging) {
         this.updateGridDragPosition(event);
       }
     });
@@ -106,8 +124,12 @@ export class InteractionManager {
    */
   setupMouseUp() {
     this.gameManager.app.view.addEventListener('mouseup', (event) => {
-      if (this.isDragging && event.button === 0) {
-        this.stopGridDragging();
+      if (event.button === 0) {
+        if (this.isRotating3D) {
+          this.stop3DRotation();
+        } else if (this.isDragging) {
+          this.stopGridDragging();
+        }
       }
     });
   }
@@ -117,7 +139,9 @@ export class InteractionManager {
    */
   setupMouseLeave() {
     this.gameManager.app.view.addEventListener('mouseleave', () => {
-      if (this.isDragging) {
+      if (this.isRotating3D) {
+        this.stop3DRotation();
+      } else if (this.isDragging) {
         this.stopGridDragging();
       }
     });
@@ -131,8 +155,8 @@ export class InteractionManager {
     document.addEventListener('keydown', (event) => {
       if (event.code === 'Space' && !event.repeat) {
         this.isSpacePressed = true;
-        if (!this.isDragging) {
-          this.gameManager.app.view.style.cursor = 'grab';
+        if (!this.isDragging && !this.isRotating3D) {
+          this.gameManager.app.view.style.cursor = 'grab'; // initial visual; switches to grabbing when active
         }
         event.preventDefault();
       }
@@ -141,11 +165,65 @@ export class InteractionManager {
     document.addEventListener('keyup', (event) => {
       if (event.code === 'Space') {
         this.isSpacePressed = false;
-        if (!this.isDragging) {
+        if (!this.isDragging && !this.isRotating3D) {
           this.gameManager.app.view.style.cursor = 'default';
         }
       }
     });
+  }
+
+  /** Begin 3D camera rotation (space + drag) */
+  start3DRotation(event, threeMgr) {
+    try {
+      this.isRotating3D = true;
+      this.rotateStartX = event.clientX;
+      this.rotateStartY = event.clientY;
+      // Capture starting yaw/pitch from manager private fields if accessible
+      this.startYaw = threeMgr._isoYaw || 0;
+      const startPitchRad = threeMgr._isoPitch != null ? threeMgr._isoPitch : 0.6;
+      this.startPitchDeg = (startPitchRad * 180) / Math.PI;
+      this.gameManager.app.view.style.cursor = 'grabbing';
+      event.preventDefault();
+      event.stopPropagation();
+    } catch (e) {
+      this.isRotating3D = false;
+    }
+  }
+
+  /** Update 3D rotation given current mouse */
+  update3DRotation(event) {
+    try {
+      if (!this.isRotating3D) return;
+      const threeMgr = this.gameManager?.threeSceneManager;
+      if (!threeMgr) return;
+      const dx = event.clientX - this.rotateStartX;
+      const dy = event.clientY - this.rotateStartY;
+      // Horizontal drag adjusts yaw
+      const yawDeltaDeg = dx * this.yawSensitivity;
+      let newYaw = this.startYaw + (yawDeltaDeg * Math.PI) / 180;
+      // Normalize yaw into [0, 2PI)
+      const TAU = Math.PI * 2;
+      newYaw = ((newYaw % TAU) + TAU) % TAU;
+      // Vertical drag adjusts pitch (dragging up now lowers pitch; dragging down increases pitch)
+      const pitchDeltaDeg = dy * this.rotationSensitivity;
+      let newPitchDeg = this.startPitchDeg + pitchDeltaDeg;
+      if (newPitchDeg < 0) newPitchDeg = 0;
+      if (newPitchDeg > 89.9) newPitchDeg = 89.9;
+      // Apply new spherical orientation
+      threeMgr.setIsoAngles({ yaw: newYaw, pitch: (newPitchDeg * Math.PI) / 180 });
+      if (!threeMgr._isoMode) {
+        // In free mode maintain orientation via general pitch setter
+        threeMgr.setCameraPitchDegrees(newPitchDeg);
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /** End 3D rotation */
+  stop3DRotation() {
+    this.isRotating3D = false;
+    this.gameManager.app.view.style.cursor = this.isSpacePressed ? 'grab' : 'default';
   }
 
   /**
