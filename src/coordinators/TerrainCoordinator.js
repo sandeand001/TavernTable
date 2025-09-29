@@ -325,6 +325,30 @@ export class TerrainCoordinator {
               } catch (_) {
                 /* ignore */
               }
+              // Remove linked 3D model if present
+              try {
+                const model = sprite.__threeModel;
+                if (model && this.gameManager?.threeSceneManager?.scene) {
+                  this.gameManager.threeSceneManager.scene.remove(model);
+                  // Best-effort material/geometry disposal
+                  try {
+                    model.traverse?.((child) => {
+                      if (child.isMesh) {
+                        child.geometry?.dispose?.();
+                        if (Array.isArray(child.material)) {
+                          child.material.forEach((m) => m?.dispose?.());
+                        } else {
+                          child.material?.dispose?.();
+                        }
+                      }
+                    });
+                  } catch (_) {
+                    /* ignore disposal errors */
+                  }
+                }
+              } catch (_) {
+                /* ignore model removal errors */
+              }
               try {
                 sprite.parent?.removeChild?.(sprite);
               } catch (_) {

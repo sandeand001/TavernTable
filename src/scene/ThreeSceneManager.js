@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 // ThreeSceneManager.js
 // Clean implementation with camera mode toggles and debug overlay.
 
@@ -34,6 +35,12 @@ export class ThreeSceneManager {
     // Simplified implementation: removed legacy vertical persistence, parity scaling, and frustum lock.
     // We keep a constant board-based frustum so pitch directly affects the vertical compression visually.
     this._isoBaseFrustum = null; // cached {halfWidth, halfHeight}
+    // Zoom state (orthographic zoom implemented by scaling frustum extents)
+    this._zoom = 1.0; // 1 == baseline
+    this._minZoom = 0.35;
+    this._maxZoom = 3.0;
+    this._zoomEase = 0.18; // smoothing factor (0 == instant)
+    this._targetZoom = this._zoom;
     // Metrics
     this._metrics = {
       startTime: null,
@@ -77,6 +84,7 @@ export class ThreeSceneManager {
 
     try {
       this.scene = new three.Scene();
+
       // Ambient light (boosted vs earlier 0.6). Allow runtime override via window.__TT_AMBIENT_INTENSITY__.
       try {
         const ambIntensity =
@@ -85,6 +93,7 @@ export class ThreeSceneManager {
       } catch (_) {
         this.scene.add(new three.AmbientLight(0xffffff, 0.9));
       }
+
       // Soft hemisphere fill to reduce dark undertone (sky light + subtle ground bounce)
       try {
         const hemi = new three.HemisphereLight(0xf0f4ff, 0x3a2e1a, 0.55);
@@ -94,6 +103,33 @@ export class ThreeSceneManager {
         /* ignore hemisphere failure */
       }
 
+      // Key directional (sun) light for crisp foliage shading. Shadows optional (default on).
+      try {
+        const sunIntensity = (typeof window !== 'undefined' && window.__TT_SUN_INTENSITY__) || 1.15;
+        const sun = new three.DirectionalLight(0xfff2e0, sunIntensity);
+        sun.position.set(-6, 9, 5); // angled key
+        sun.name = 'SunKeyLight';
+        const enableShadows =
+          typeof window === 'undefined' || window.__TT_ENABLE_SHADOWS__ !== false;
+        if (enableShadows) {
+          sun.castShadow = true;
+          // Shadow map tuned to board size later; initial conservative bounds.
+          const sCam = sun.shadow.camera;
+          const span = Math.max(this.gameManager?.cols || 25, this.gameManager?.rows || 25) * 0.6;
+          sCam.left = -span;
+          sCam.right = span;
+          sCam.top = span;
+          sCam.bottom = -span;
+          sCam.near = 0.5;
+          sCam.far = 60;
+          sun.shadow.mapSize.set(1024, 1024);
+          sun.shadow.bias = -0.0005;
+          sun.shadow.normalBias = 0.005;
+        }
+        this.scene.add(sun);
+      } catch (_) {
+        /* ignore sun light */
+      }
       // Bootstrap wireframe grid plane sized to grid dims.
       try {
         const gm = this.gameManager;
@@ -152,6 +188,14 @@ export class ThreeSceneManager {
           antialias: true,
           alpha: true,
         });
+        try {
+          if (typeof window === 'undefined' || window.__TT_ENABLE_SHADOWS__ !== false) {
+            this.renderer.shadowMap.enabled = true;
+            if (three.PCFSoftShadowMap) this.renderer.shadowMap.type = three.PCFSoftShadowMap;
+          }
+        } catch (_) {
+          /* ignore shadow enabling */
+        }
         // Ensure correct color management so vertex colors authored in sRGB space are displayed faithfully.
         try {
           if (three.ColorManagement) {
@@ -189,6 +233,33 @@ export class ThreeSceneManager {
         /* ignore */
       }
 
+      // Wheel (zoom) listener attached to container (canvas has pointerEvents: none)
+      try {
+        if (!this._wheelListener && container) {
+          this._wheelListener = (e) => {
+            try {
+              const dy = e.deltaY;
+              const step = Math.exp(0.2); // ~1.22 per wheel notch
+              // Inverted semantics: larger this._zoom => closer (smaller frustum via 1/zoom)
+              let next = this._targetZoom * (dy > 0 ? 1 / step : step);
+              if (next < this._minZoom) next = this._minZoom;
+              if (next > this._maxZoom) next = this._maxZoom;
+              this._targetZoom = next;
+              if (this._zoomEase === 0) {
+                this._zoom = this._targetZoom;
+                this.reframe();
+              }
+              e.preventDefault();
+            } catch (_) {
+              /* ignore wheel */
+            }
+          };
+          container.addEventListener('wheel', this._wheelListener, { passive: false });
+        }
+      } catch (_) {
+        /* ignore wheel attach */
+      }
+
       this.initialized = true;
       if (!this._metrics.startTime) {
         this._metrics.startTime =
@@ -219,70 +290,79 @@ export class ThreeSceneManager {
 
   _resize() {
     if (!this.renderer || !this.camera) return;
+    const w = (typeof window !== 'undefined' && window.innerWidth) || 800;
+    const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
     try {
-      const w = window.innerWidth || 800;
-      const h = window.innerHeight || 600;
       this.renderer.setSize(w, h, false);
-      const aspect = w / h;
-      const cols = this.gameManager?.cols || 25;
-      const rows = this.gameManager?.rows || 25;
-      const span = Math.max(cols, rows) * 0.6;
-      this.camera.left = -span * aspect;
-      this.camera.right = span * aspect;
-      this.camera.top = span;
-      this.camera.bottom = -span;
+    } catch (_) {
+      /* noop */
+    }
+    const aspect = w / h;
+    const cols = this.gameManager?.cols || 25;
+    const rows = this.gameManager?.rows || 25;
+    const span = Math.max(cols, rows) * 0.6;
+    this.camera.left = -span * aspect;
+    this.camera.right = span * aspect;
+    this.camera.top = span;
+    this.camera.bottom = -span;
+    try {
       this.camera.updateProjectionMatrix();
     } catch (_) {
-      /* ignore resize */
+      /* noop */
     }
   }
 
   _loop() {
     if (!this.renderer || !this.camera) return;
     const step = (ts) => {
+      // timing / frame metrics
+      if (this._metrics.lastFrameTs != null) {
+        this._metrics.accumulatedMs += ts - this._metrics.lastFrameTs;
+      }
+      this._metrics.lastFrameTs = ts;
+      // zoom easing
       try {
-        if (this._metrics.lastFrameTs != null) {
-          this._metrics.accumulatedMs += ts - this._metrics.lastFrameTs;
-        }
-        this._metrics.lastFrameTs = ts;
-        // Render
-        this.renderer.render(this.scene, this.camera);
-        // Anim callbacks
-        if (this._animCallbacks.length) {
-          try {
-            this._animCallbacks.forEach((fn) => {
-              try {
-                fn(ts);
-              } catch (_) {
-                /* ignore */
-              }
-            });
-          } catch (_) {
-            /* ignore */
-          }
-        }
-        this._metrics.frameCount += 1;
-        if (!this._loggedFirstFrame && this._metrics.frameCount === 1) {
-          this._loggedFirstFrame = true;
-          try {
-            console.info('[ThreeSceneManager] First frame rendered', {
-              degraded: this.degraded,
-              startTime: this._metrics.startTime,
-            });
-          } catch (_) {
-            /* ignore */
-          }
-        }
-        if (typeof window !== 'undefined') {
-          try {
-            window.__TT_METRICS__ = window.__TT_METRICS__ || {};
-            window.__TT_METRICS__.three = this.getRenderStats();
-          } catch (_) {
-            /* ignore */
-          }
-        }
+        this._updateZoom(ts - (this._prevZoomTs || ts));
       } catch (_) {
-        /* ignore frame errors */
+        /* noop */
+      }
+      this._prevZoomTs = ts;
+      // render
+      try {
+        this.renderer.render(this.scene, this.camera);
+      } catch (_) {
+        /* noop */
+      }
+      // animation callbacks
+      if (this._animCallbacks.length) {
+        for (const fn of this._animCallbacks) {
+          try {
+            fn(ts);
+          } catch (_) {
+            /* noop */
+          }
+        }
+      }
+      // metrics export
+      this._metrics.frameCount += 1;
+      if (!this._loggedFirstFrame && this._metrics.frameCount === 1) {
+        this._loggedFirstFrame = true;
+        try {
+          console.info('[ThreeSceneManager] First frame rendered', {
+            degraded: this.degraded,
+            startTime: this._metrics.startTime,
+          });
+        } catch (_) {
+          /* noop */
+        }
+      }
+      if (typeof window !== 'undefined') {
+        try {
+          window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+          window.__TT_METRICS__.three = this.getRenderStats();
+        } catch (_) {
+          /* noop */
+        }
       }
       this._animationHandle = requestAnimationFrame(step);
     };
@@ -290,10 +370,11 @@ export class ThreeSceneManager {
   }
 
   _injectDebugOverlay() {
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('three-debug-overlay')) return;
+    let overlay;
     try {
-      if (typeof document === 'undefined') return;
-      if (document.getElementById('three-debug-overlay')) return;
-      const overlay = document.createElement('div');
+      overlay = document.createElement('div');
       overlay.id = 'three-debug-overlay';
       Object.assign(overlay.style, {
         position: 'fixed',
@@ -306,20 +387,22 @@ export class ThreeSceneManager {
         zIndex: '9999',
       });
       document.body.appendChild(overlay);
-      const updateOverlay = () => {
-        try {
-          const stats = this.getRenderStats();
-          const place = (window.__TT_METRICS__ && window.__TT_METRICS__.placeables) || {};
-          overlay.textContent = `3D frames:${stats.frameCount} avg:${stats.averageFrameMs.toFixed(2)}ms placeableGroups:${place.groups || 0} instances:${place.liveInstances || 0}`;
-        } catch (_) {
-          /* ignore */
-        }
-        requestAnimationFrame(updateOverlay);
-      };
-      requestAnimationFrame(updateOverlay);
     } catch (_) {
-      /* ignore overlay errors */
+      /* noop */
     }
+    const updateOverlay = () => {
+      try {
+        const stats = this.getRenderStats();
+        const place = (window.__TT_METRICS__ && window.__TT_METRICS__.placeables) || {};
+        if (overlay) {
+          overlay.textContent = `3D frames:${stats.frameCount} avg:${stats.averageFrameMs.toFixed(2)}ms placeableGroups:${place.groups || 0} instances:${place.liveInstances || 0}`;
+        }
+      } catch (_) {
+        /* noop */
+      }
+      requestAnimationFrame(updateOverlay);
+    };
+    requestAnimationFrame(updateOverlay);
   }
 
   setIsometricMode(enabled = true) {
@@ -743,10 +826,12 @@ export class ThreeSceneManager {
           this._isoBaseFrustum = { halfWidth: halfDiag * 1.05, halfHeight: halfDiag * 1.05 };
         }
         const { halfWidth: hw, halfHeight: hh } = this._isoBaseFrustum;
-        this.camera.left = -hw;
-        this.camera.right = hw;
-        this.camera.top = hh;
-        this.camera.bottom = -hh;
+        const z = this._zoom <= 0 ? 1 : this._zoom;
+        const scale = 1 / z; // bigger zoom value => closer (smaller extents)
+        this.camera.left = -hw * scale;
+        this.camera.right = hw * scale;
+        this.camera.top = hh * scale;
+        this.camera.bottom = -hh * scale;
       } else {
         // Non-iso: simple aspect-based span relative to board size
         const cols = this.gameManager?.cols || 25;
@@ -759,10 +844,12 @@ export class ThreeSceneManager {
         const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
         const aspect = w / h;
         const margin = 1.08;
-        this.camera.left = -baseSpan * aspect * margin;
-        this.camera.right = baseSpan * aspect * margin;
-        this.camera.top = baseSpan * margin;
-        this.camera.bottom = -baseSpan * margin;
+        const z = this._zoom <= 0 ? 1 : this._zoom;
+        const scale = 1 / z;
+        this.camera.left = -baseSpan * aspect * margin * scale;
+        this.camera.right = baseSpan * aspect * margin * scale;
+        this.camera.top = baseSpan * margin * scale;
+        this.camera.bottom = -baseSpan * margin * scale;
       }
       // Diagnostic raw measurement (non-mutating)
       try {
@@ -805,6 +892,30 @@ export class ThreeSceneManager {
         /* ignore */
       }
     }
+  }
+
+  /** Smooth zoom interpolation (called per frame) */
+  _updateZoom(dtMs) {
+    if (this._zoom === this._targetZoom) return;
+    if (this._zoomEase === 0) {
+      this._zoom = this._targetZoom;
+      this.reframe();
+      return;
+    }
+    const t = 1 - Math.pow(1 - this._zoomEase, Math.max(1, dtMs / 16));
+    const before = this._zoom;
+    this._zoom = before + (this._targetZoom - before) * t;
+    if (Math.abs(this._zoom - this._targetZoom) < 0.0005) this._zoom = this._targetZoom;
+    if (this._zoom !== before) this.reframe();
+  }
+
+  setZoom(z) {
+    if (!Number.isFinite(z)) return;
+    const clamped = Math.min(this._maxZoom, Math.max(this._minZoom, z));
+    this._targetZoom = clamped;
+  }
+  getZoom() {
+    return this._zoom;
   }
 
   // Removed legacy calibrateIsoPitch() in favor of explicit solveIsoPitchForTargetRatio() utility.

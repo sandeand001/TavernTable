@@ -380,12 +380,97 @@ class SidebarController {
           root.appendChild(header);
 
           // For each placeable that looks like a tree (key prefix 'tree-'), create a button
+          // Mapping from placeable id -> canonical 3D model key (fall back to legacy translation if missing)
+          const modelKeyMap = {
+            'tree-green-deciduous': 'common-broadleaf-1',
+            'tree-green-conifer': 'pine-conifer-1',
+            'tree-green-willow': 'common-broadleaf-4',
+            'tree-green-oval': 'common-broadleaf-2',
+            'tree-green-columnar': 'pine-conifer-2',
+            'tree-green-small': 'pine-conifer-4',
+            'tree-green-small-oval': 'pine-conifer-5',
+            'tree-green-tall-columnar': 'pine-conifer-3',
+            'tree-orange-deciduous': 'common-broadleaf-3',
+            'tree-yellow-willow': 'common-broadleaf-5',
+            'tree-yellow-conifer': 'pine-conifer-5',
+            'tree-yellow-conifer-alt': 'twisted-bare-2',
+            'tree-bare-deciduous': 'twisted-bare-1',
+          };
+
+          // Simple offscreen thumbnail generator with caching
+          const _thumbCache = {};
+          async function generateModelThumbnail(modelKey) {
+            if (_thumbCache[modelKey]) return _thumbCache[modelKey];
+            try {
+              // Lazy-load ModelAssetCache
+              const modCache = await import('../core/ModelAssetCache.js');
+              const MC = modCache.ModelAssetCache || modCache.default;
+              if (!MC) throw new Error('ModelAssetCache missing');
+              if (!window.__uiModelCache) window.__uiModelCache = new MC();
+              const cache = window.__uiModelCache;
+              const rootObj = await cache.getModel(modelKey);
+              if (!rootObj) throw new Error('No model for ' + modelKey);
+              // Create an offscreen renderer & scene
+              const threeMod = cache._three || (await cache._ensureThreeAndLoader());
+              const scene = new threeMod.Scene();
+              const cam = new threeMod.PerspectiveCamera(35, 1, 0.1, 100);
+              const box = new threeMod.Box3().setFromObject(rootObj);
+              const size = new threeMod.Vector3();
+              box.getSize(size);
+              const center = new threeMod.Vector3();
+              box.getCenter(center);
+              const maxDim = Math.max(size.x, size.y, size.z);
+              const dist = (maxDim * 1.6) / Math.tan((Math.PI * cam.fov) / 360);
+              cam.position.set(center.x + dist * 0.6, center.y + dist * 0.8, center.z + dist * 0.6);
+              cam.lookAt(center);
+              scene.add(rootObj);
+              // Simple lighting
+              scene.add(new threeMod.AmbientLight(0xffffff, 1.0));
+              const dir = new threeMod.DirectionalLight(0xffffff, 0.9);
+              dir.position.set(10, 20, 10);
+              scene.add(dir);
+              const renderer = new threeMod.WebGLRenderer({ antialias: true, alpha: true });
+              renderer.setSize(96, 96); // small square thumbnail
+              renderer.outputColorSpace = threeMod.SRGBColorSpace || renderer.outputColorSpace;
+              renderer.render(scene, cam);
+              const dataUrl = renderer.domElement.toDataURL('image/png');
+              _thumbCache[modelKey] = dataUrl;
+              // Clean up heavy objects (keep rootObj cached internally by ModelAssetCache anyway)
+              renderer.dispose();
+              return dataUrl;
+            } catch (err) {
+              console.warn('[Sidebar] 3D thumbnail generation failed', modelKey, err);
+              return null;
+            }
+          }
+
           Object.keys(TERRAIN_PLACEABLES)
             .filter((k) => k.startsWith('tree-'))
             .forEach((key) => {
               const def = TERRAIN_PLACEABLES[key];
-              const preview = Array.isArray(def.img) ? def.img[0] : def.img;
-              const btn = createPlaceableButton(key, def.label || key, preview);
+              const modelKey = modelKeyMap[key];
+              // Placeholder image (will be replaced asynchronously if modelKey found)
+              const placeholder = Array.isArray(def.img) ? def.img[0] : def.img;
+              const btn = createPlaceableButton(key, def.label || key, placeholder);
+              if (modelKey) {
+                // Mark while loading
+                btn.classList.add('loading-3d-thumb');
+                generateModelThumbnail(modelKey).then((url) => {
+                  try {
+                    if (url) {
+                      const imgEl = btn.querySelector('img.placeable-preview');
+                      if (imgEl) imgEl.src = url;
+                      btn.classList.remove('loading-3d-thumb');
+                      btn.classList.add('thumb-3d-generated');
+                    } else {
+                      btn.classList.remove('loading-3d-thumb');
+                      btn.classList.add('thumb-3d-failed');
+                    }
+                  } catch (_) {
+                    /* ignore UI update errors */
+                  }
+                });
+              }
 
               // Select action: mark coordinator selected placeable so InputHandlers will paint
               btn.addEventListener('click', () => {

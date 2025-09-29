@@ -39,117 +39,117 @@ export default { TERRAIN_PLACEABLES };
 // can be used to rotate through alternatives.
 // These entries are intentionally named with the prefix `tree-` so UI/tooling
 // can distinguish them from single-image placeables.
-const TREE_FRAME_SUFFIXES = [
-  '00000',
-  '10000',
-  '20000',
-  '30000',
-  '40000',
-  '50000',
-  '60000',
-  '70000',
-];
-
-// Helper to build frame paths without multi-line map formatting churn
-const treeFrames = (pattern) => TREE_FRAME_SUFFIXES.map((s) => pattern.replace('{s}', s));
+// Legacy tree frame arrays removed (2D sprites deprecated for plants)
 
 export const TREE_PLACEABLES = {
   'tree-green-deciduous': {
     label: 'Green Deciduous',
-    img: treeFrames('assets/terrain/plants/trees/green_deciduous_trees/_tree_01_{s}.png'),
+    img: null, // 2D legacy removed; use 3D model
+    modelKey: 'common-broadleaf-1',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-green-conifer': {
     label: 'Green Conifer',
-    img: treeFrames('assets/terrain/plants/trees/green_conifer_trees/_tree_02_{s}.png'),
+    img: null,
+    modelKey: 'pine-conifer-1',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-green-willow': {
     label: 'Green Willow',
-    img: treeFrames('assets/terrain/plants/trees/green_willow_trees/_tree_05_{s}.png'),
+    img: null,
+    modelKey: 'common-broadleaf-4',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-single-palm': {
     label: 'Single Palm',
-    img: treeFrames('assets/terrain/plants/trees/single_palm_trees/_tree_03_{s}.png'),
+    img: null,
+    modelKey: 'common-broadleaf-2',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-double-palm': {
     label: 'Double Palm',
-    img: treeFrames('assets/terrain/plants/trees/doulble_palm_trees/_tree_04_{s}.png'),
+    img: null,
+    modelKey: 'common-broadleaf-3',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-green-oval': {
     label: 'Green Oval',
-    img: treeFrames('assets/terrain/plants/trees/green_oval_deciduous_trees/_tree_09_{s}.png'),
+    img: null,
+    modelKey: 'common-broadleaf-2',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-green-columnar': {
     label: 'Green Columnar',
-    img: treeFrames('assets/terrain/plants/trees/green_columnar_deciduouis_trees/_tree_08_{s}.png'),
+    img: null,
+    modelKey: 'pine-conifer-2',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-green-small': {
     label: 'Green Small',
-    img: treeFrames('assets/terrain/plants/trees/green_small_deciduous_trees/_tree_12_{s}.png'),
+    img: null,
+    modelKey: 'pine-conifer-4',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-green-small-oval': {
     label: 'Green Small Oval',
-    img: treeFrames('assets/terrain/plants/trees/green_small_oval_trees/_tree_11_{s}.png'),
+    img: null,
+    modelKey: 'pine-conifer-5',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-green-tall-columnar': {
     label: 'Green Tall Columnar',
-    img: treeFrames(
-      'assets/terrain/plants/trees/green_tall_columnar_deciduous_trees/_tree_13_{s}.png'
-    ),
+    img: null,
+    modelKey: 'pine-conifer-3',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-orange-deciduous': {
     label: 'Orange Deciduous',
-    img: treeFrames('assets/terrain/plants/trees/Orange_decisuous_trees/_tree_14_{s}.png'),
+    img: null,
+    modelKey: 'common-broadleaf-3',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-yellow-willow': {
     label: 'Yellow Willow',
-    img: treeFrames('assets/terrain/plants/trees/yellow_willow_trees/_tree_06_{s}.png'),
+    img: null,
+    modelKey: 'common-broadleaf-5',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-yellow-conifer': {
     label: 'Yellow Conifer',
-    img: treeFrames('assets/terrain/plants/trees/yellow_conifer_trees/_tree_07_{s}.png'),
+    img: null,
+    modelKey: 'pine-conifer-5',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
   'tree-bare-deciduous': {
     label: 'Bare Deciduous',
-    img: treeFrames('assets/terrain/plants/trees/bare_decisuous_trees/_tree_10_{s}.png'),
+    img: null,
+    modelKey: 'twisted-bare-1',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,

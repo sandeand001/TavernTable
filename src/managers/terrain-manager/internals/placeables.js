@@ -16,7 +16,66 @@ import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
 // Optional auto-baseline detection helpers for trees were removed in favor of
 // explicit, per-asset baselineOffsetPx in the config to keep behavior deterministic.
 
-/** Create a PIXI.Sprite for a placeable item and attach metadata. */
+// Central model key mapping for plant/tree placeables (previously duplicated in multiple branches)
+const ID_TO_MODEL_KEY = {
+  // Updated to canonical model keys
+  'tree-green-deciduous': 'common-broadleaf-1',
+  'tree-green-conifer': 'pine-conifer-1',
+  'tree-green-willow': 'common-broadleaf-4',
+  'tree-green-oval': 'common-broadleaf-2',
+  'tree-green-columnar': 'pine-conifer-2',
+  'tree-green-small': 'pine-conifer-4',
+  'tree-green-small-oval': 'pine-conifer-5',
+  'tree-green-tall-columnar': 'pine-conifer-3',
+  'tree-orange-deciduous': 'common-broadleaf-3',
+  'tree-yellow-willow': 'common-broadleaf-5',
+  'tree-yellow-conifer': 'pine-conifer-5',
+  'tree-yellow-conifer-alt': 'twisted-bare-2',
+  'tree-bare-deciduous': 'twisted-bare-1',
+};
+
+async function ensureModelCache(gameManager) {
+  if (gameManager._modelAssetCache !== undefined) {
+    // Upgrade path: legacy instance without hasKey -> recreate
+    if (gameManager._modelAssetCache && typeof gameManager._modelAssetCache.hasKey !== 'function') {
+      try {
+        const mod = await import('../../../core/ModelAssetCache.js');
+        const MC = mod.ModelAssetCache || mod.default;
+        gameManager._modelAssetCache = MC ? new MC() : null;
+        try {
+          const threeRef = gameManager?.threeSceneManager?.three;
+          if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
+            gameManager._modelAssetCache.setThree(threeRef);
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      } catch (_) {
+        /* ignore upgrade failure */
+      }
+    }
+    return gameManager._modelAssetCache;
+  }
+  try {
+    const mod = await import('../../../core/ModelAssetCache.js');
+    const MC = mod.ModelAssetCache || mod.default;
+    gameManager._modelAssetCache = MC ? new MC() : null;
+    // Inject three reference if already initialized
+    try {
+      const threeRef = gameManager?.threeSceneManager?.three;
+      if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
+        gameManager._modelAssetCache.setThree(threeRef);
+      }
+    } catch (_) {
+      /* ignore three inject */
+    }
+  } catch (_) {
+    gameManager._modelAssetCache = null;
+  }
+  return gameManager._modelAssetCache;
+}
+
+/** Create a PIXI.Sprite for a placeable item and attach metadata (non-plant or legacy path). */
 export function createPlaceableSprite(m, id, x, y) {
   const def = TERRAIN_PLACEABLES[id];
   if (!def) throw new Error(`Unknown placeable id: ${id}`);
@@ -405,7 +464,84 @@ export function placeItem(m, id, x, y) {
     if (tokensAt) return false;
   }
 
+  const def = TERRAIN_PLACEABLES[id];
+  const isPlant = def?.type === 'plant';
+  const gm3d = m.gameManager;
+  // Do not snapshot scene reference; it may initialize after placement request.
+
+  // PURE 3D PATH: plants always use models now (legacy 2D removed)
+  if (isPlant) {
+    if (!m.placeables) m.placeables = new Map();
+    if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
+    const record = {
+      gridX: x,
+      gridY: y,
+      placeableId: id,
+      placeableType: def.type,
+      __threeModelPending: true,
+    };
+    m.placeables.get(tileKey).push(record);
+
+    // Async model load & placement
+    ensureModelCache(gm3d).then((cache) => {
+      if (!cache) return;
+      const modelKey = def.modelKey || ID_TO_MODEL_KEY[id];
+      if (!modelKey) return;
+      cache
+        .getModel(modelKey)
+        .then((model) => {
+          if (!model) return;
+          // Guard: item may have been removed before model finished loading.
+          const currentList = m.placeables?.get(tileKey);
+          if (!currentList || !currentList.includes(record)) return;
+
+          let world;
+          let terrainH = 0;
+          try {
+            world = gm3d.spatial.gridToWorld(x + 0.5, y + 0.5, 0);
+            terrainH = (gm3d.getTerrainHeight?.(x, y) || 0) * gm3d.spatial.elevationUnit;
+          } catch (_) {
+            world = { x: 0, z: 0 };
+          }
+          model.position.set(world.x, terrainH, world.z);
+          try {
+            model.rotation.y = Math.random() * Math.PI * 2;
+          } catch (_) {
+            /* ignore */
+          }
+
+          const sceneRef = gm3d?.threeSceneManager?.scene;
+          if (sceneRef) {
+            sceneRef.add(model);
+          } else if (typeof window !== 'undefined') {
+            // Queue for deferred attachment when 3D scene becomes available
+            if (!Array.isArray(gm3d._deferredPlantModels)) gm3d._deferredPlantModels = [];
+            gm3d._deferredPlantModels.push({ model, record });
+            if (window.DEBUG_TREE_MODELS) {
+              console.info('[Placeables] Deferred plant model (scene not ready)', {
+                id,
+                modelKey,
+              });
+            }
+          }
+
+          record.__threeModel = model;
+          delete record.__threeModelPending;
+          if (typeof window !== 'undefined' && window.DEBUG_TREE_MODELS) {
+            console.info('[Placeables] 3D plant placed', { id, modelKey, x, y });
+          }
+        })
+        .catch(() => {
+          /* ignore model load */
+        });
+    });
+
+    return true;
+  }
+
+  // Non-plant fallback: create legacy sprite path (plants never use sprites now)
   const sprite = createPlaceableSprite(m, id, x, y);
+  const replacingWith3D = false; // legacy hidden-sprite path removed (pure 3D now)
   // Tag with current biome generation id if available so later reinstance passes can filter.
   try {
     const gen = m.gameManager?.terrainCoordinator?._generationRunId;
@@ -416,37 +552,40 @@ export function placeItem(m, id, x, y) {
   // Placeables now live inside terrainContainer so they can be occluded by
   // elevated tile faces in front. This allows proper isometric overlap.
   // (Previously they were forced above all terrain by container zIndex.)
+  // Only add sprite to display tree if not fully replacing OR we still need it for layering math.
   try {
-    if (m.terrainContainer) {
-      m.terrainContainer.addChild(sprite);
+    if (!replacingWith3D || !m.terrainContainer) {
+      if (m.terrainContainer) {
+        m.terrainContainer.addChild(sprite);
+      } else {
+        m.gameManager.gridContainer.addChild(sprite);
+      }
     } else {
-      // Fallback to gridContainer if terrainContainer missing (should not happen when active)
-      m.gameManager.gridContainer.addChild(sprite);
+      // In full replacement mode we intentionally DO NOT add the hidden sprite to the stage
+      // to avoid any residual green rectangle artifacts from fallback batching.
     }
   } catch (_) {
+    /* ignore add failures */
+  }
+  if (!replacingWith3D) {
     try {
-      m.gameManager.gridContainer.addChild(sprite);
+      // Sorting within terrainContainer handled by depthValue/zIndex values; ensure sortableChildren.
+      if (m.terrainContainer) {
+        m.terrainContainer.sortableChildren = true;
+        m.terrainContainer.sortChildren?.();
+      } else {
+        m.gameManager.gridContainer.sortChildren?.();
+      }
     } catch (_) {
       /* ignore */
     }
-  }
-  try {
-    // Sorting within terrainContainer handled by depthValue/zIndex values; ensure sortableChildren.
-    if (m.terrainContainer) {
-      m.terrainContainer.sortableChildren = true;
-      m.terrainContainer.sortChildren?.();
-    } else {
-      m.gameManager.gridContainer.sortChildren?.();
-    }
-  } catch (_) {
-    /* ignore */
   }
   if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
   m.placeables.get(tileKey).push(sprite);
   // Phase 4: if instancing enabled and hybrid mode active, register with mesh pool
   try {
     const gm = m.gameManager;
-    if (gm?.features?.instancedPlaceables && gm.renderMode === '3d-hybrid') {
+    if (!replacingWith3D && gm?.features?.instancedPlaceables && gm.renderMode === '3d-hybrid') {
       // Provide minimal shape expected by pool (gridX/gridY/type)
       const texturePath =
         (sprite &&
@@ -460,7 +599,7 @@ export function placeItem(m, id, x, y) {
         type: TERRAIN_PLACEABLES[id]?.type || 'generic',
         variantKey: texturePath || id, // ensure distinct group per texture variant
       };
-      // Avoid duplicate registration window: mark pending before async add
+      // Instancing path retained for non-plant assets only.
       sprite.__instancingPending = true;
       // Attach handle onto sprite for later removal linkage
       sprite.__instancedRef = placeableRecord;
@@ -523,6 +662,8 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
   const list = m.placeables.get(tileKey);
   let changed = false;
   for (const sprite of list) {
+    // Skip pure 3D records (no sprite texture)
+    if (sprite && sprite.__threeModel && !sprite.texture) continue;
     if (!sprite || (id && sprite.placeableId !== id)) continue;
     const def = TERRAIN_PLACEABLES[sprite.placeableId];
     if (!def) continue;
@@ -561,9 +702,60 @@ export function removeItem(m, x, y, id = null) {
     const p = list[i];
     if (!id || p.placeableId === id) {
       try {
-        p.parent?.removeChild(p);
+        // Only attempt Pixi removal if object looks like a sprite
+        if (p && p.parent && typeof p.parent.removeChild === 'function') {
+          p.parent.removeChild(p);
+        }
       } catch (_) {
         /* best-effort */
+      }
+      // Remove any attached 3D model (full replacement mode)
+      try {
+        if (p.__threeModel) {
+          const tm = p.__threeModel;
+          try {
+            tm.parent?.remove(tm);
+          } catch (_) {
+            /* ignore */
+          }
+          // dispose resources
+          try {
+            tm.traverse?.((n) => {
+              if (n.isMesh) {
+                try {
+                  n.geometry?.dispose?.();
+                } catch (_) {
+                  /* ignore */
+                }
+                if (n.material) {
+                  const mats = Array.isArray(n.material) ? n.material : [n.material];
+                  for (const mtl of mats) {
+                    try {
+                      mtl.map?.dispose?.();
+                    } catch (_) {
+                      /* ignore */
+                    }
+                    try {
+                      mtl.alphaMap?.dispose?.();
+                    } catch (_) {
+                      /* ignore */
+                    }
+                    try {
+                      mtl.dispose?.();
+                    } catch (_) {
+                      /* ignore */
+                    }
+                  }
+                }
+              }
+            });
+          } catch (_) {
+            /* ignore */
+          }
+          delete p.__threeModel;
+        }
+      } catch (_) {
+        /* ignore */
       }
       // Phase 4: if instanced, remove from mesh pool
       try {
@@ -597,6 +789,26 @@ function _isoCenterForCell(m, gx, gy) {
  */
 export function repositionPlaceableSprite(m, sprite) {
   if (!sprite) return;
+  // PURE 3D MODEL RECORD (no PIXI sprite texture data)
+  if (sprite.__threeModel && !sprite.texture) {
+    try {
+      const gm = m.gameManager;
+      const model = sprite.__threeModel;
+      const gx = Number(sprite.gridX);
+      const gy = Number(sprite.gridY);
+      let terrainH = 0;
+      try {
+        terrainH = (gm.getTerrainHeight?.(gx, gy) || 0) * gm.spatial.elevationUnit;
+      } catch (_) {
+        /* ignore */
+      }
+      // Preserve existing X/Z (grid center) and only update Y based on new terrain height.
+      model.position.y = terrainH;
+    } catch (_) {
+      /* ignore model reposition */
+    }
+    return;
+  }
   // Ensure parent is the terrainContainer so elevated tile faces can occlude sprites behind them
   try {
     const tContainer = m.terrainContainer;

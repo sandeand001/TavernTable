@@ -387,10 +387,7 @@ export class PlaceableMeshPool {
                 ? camPos.clone()
                 : { x: camPos.x, y: camPos.y, z: camPos.z };
               // Threshold (radians) above which we start introducing pitch-based billboard (camera more top-down)
-              const PITCH_THRESHOLD = 1.05; // ~60 degrees
-              const fullBillboard =
-                (typeof window !== 'undefined' && window.__TT_FULL_BILLBOARD) ||
-                Math.abs(pitch) > PITCH_THRESHOLD;
+              // (Removed previous pitch gating; always yaw-only billboard to keep trees upright)
               // Recompute matrices for plant groups
               for (const [gKey, g] of this._groups.entries()) {
                 if (g.type !== 'plant') continue;
@@ -410,18 +407,16 @@ export class PlaceableMeshPool {
                   const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
                   const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
                   dummy.position.set(world.x, worldY, world.z);
-                  const OVERHEAD_PITCH_LIMIT = 0.08; // ~4.5 degrees, treat as near-zero pitch
-                  if (Math.abs(pitch) < OVERHEAD_PITCH_LIMIT) {
-                    // Overhead mode: orient all trees "north" (default +Z facing) and lift slightly
-                    // so vertical quads are not visually lost against terrain.
-                    const lift = 0.2; // world units above ground
-                    dummy.position.set(world.x, worldY + lift, world.z);
-                    dummy.rotation.set(0, 0, 0); // face north (+Z)
-                  } else if (fullBillboard && dummy.lookAt) {
-                    // Full camera-facing for steep pitch / explicit override.
+                  // Full spherical billboard: always face the camera at any pitch & yaw
+                  // so the tree quad never collapses into a line from overhead or oblique angles.
+                  // NOTE: This introduces pitch tilt (the sprite leans toward the camera) which
+                  // gives a pseudo-3D look. If we later want an upright-only variant that never
+                  // edge-on collapses, we can implement multi-quad (cross) impostors instead.
+                  dummy.position.set(world.x, worldY, world.z);
+                  if (dummy.lookAt) {
                     dummy.lookAt(worldCamPos.x, worldCamPos.y, worldCamPos.z);
                   } else {
-                    // Yaw-only billboard: orient plane normal ( +Z ) toward camera horizontally.
+                    // Fallback: manually compute facing yaw (rare path if lookAt unavailable)
                     const dx = worldCamPos.x - world.x;
                     const dz = worldCamPos.z - world.z;
                     const faceYaw = Math.atan2(dx, dz);

@@ -101,6 +101,11 @@ class GameManager {
       // Enable instanced placeables by default so the experimental menu reflects ON state.
       // Hybrid mode will lazily create the mesh pool when first entered.
       instancedPlaceables: true,
+      // (2025-09 refactor) threePlaceableModels & treeModelsReplaceSprites now permanently enabled
+      // and their separate flags removed from branching logic. Retain shadow keys for backward
+      // compatibility with any UI code that still reads them.
+      threePlaceableModels: true, // deprecated: always true
+      treeModelsReplaceSprites: true, // deprecated: always true
     };
 
     // Internal: track pending async instancing operations so tests/tools can await completion
@@ -187,6 +192,61 @@ class GameManager {
     if (!this.threeSceneManager) {
       this.threeSceneManager = new ThreeSceneManager(this);
       await this.threeSceneManager.initialize();
+      // Hide bootstrap grid plane & legacy Pixi tile grid in hybrid mode for cleaner 3D visuals
+      try {
+        this.threeSceneManager.setBootstrapGridVisible?.(false);
+        this.threeSceneManager.setPixiGridVisible?.(false);
+      } catch (_) {
+        /* ignore */
+      }
+      // Flush any deferred plant models queued before scene was ready
+      try {
+        if (Array.isArray(this._deferredPlantModels) && this._deferredPlantModels.length) {
+          const sceneRef = this.threeSceneManager?.scene;
+          if (sceneRef) {
+            for (const { model, record } of this._deferredPlantModels) {
+              try {
+                sceneRef.add(model);
+                // ensure record still valid (wasn't removed during init)
+                if (record && record.__threeModelPending) delete record.__threeModelPending;
+              } catch (_) {
+                /* ignore add failure */
+              }
+            }
+          }
+          this._deferredPlantModels.length = 0;
+        }
+      } catch (_) {
+        /* ignore deferred flush */
+      }
+      // If we are fully replacing tree sprites with 3D models, proactively clear any pre-created
+      // instanced plant quads so no green rectangles linger from earlier sessions.
+      try {
+        // Always purge legacy instanced plant quads now that 3D plant models are authoritative.
+        if (this.placeableMeshPool) {
+          this.placeableMeshPool._groups?.forEach((grp, key) => {
+            try {
+              if (
+                /plant/i.test(key) ||
+                key.includes('tree') ||
+                key.includes('oak') ||
+                key.includes('pine') ||
+                key.includes('birch') ||
+                key.includes('fir')
+              ) {
+                if (grp.instancedMesh?.parent) grp.instancedMesh.parent.remove(grp.instancedMesh);
+                this.placeableMeshPool._groups.delete(key);
+                this.placeableMeshPool._metadata.delete(key);
+              }
+            } catch (_) {
+              /* ignore per-group */
+            }
+          });
+          this.placeableMeshPool._updateMetrics?.();
+        }
+      } catch (_) {
+        /* ignore cleanup issues */
+      }
       // Attach camera rig abstraction (Phase 1)
       try {
         if (this.threeSceneManager.camera) {
@@ -733,39 +793,9 @@ class GameManager {
   reinstanceExistingPlants() {
     try {
       if (!this.features.instancedPlaceables) return;
-      const pool = this.ensureInstancing();
-      if (!pool) return;
-      const tm = this.terrainCoordinator?.terrainManager;
-      if (!tm?.placeables) return;
-      const currentGen = this.terrainCoordinator?._generationRunId || 0;
-      for (const [key, list] of tm.placeables.entries()) {
-        for (const sprite of list) {
-          try {
-            if (!sprite) continue;
-            if (sprite.placeableType && sprite.placeableType !== 'plant') continue;
-            // Skip sprites from an earlier generation that somehow survived (defensive)
-            if (sprite.__generationRunId != null && sprite.__generationRunId !== currentGen) {
-              continue;
-            }
-            if (sprite.__instancedRef) continue; // already registered
-            const [gxStr, gyStr] = key.split(',');
-            const gx = Number(gxStr);
-            const gy = Number(gyStr);
-            if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
-            const rec = {
-              gridX: gx,
-              gridY: gy,
-              type: 'plant',
-              variantKey: sprite.variantKey || sprite.placeableId || 'plant',
-            };
-            sprite.__instancedRef = rec;
-            const p = pool.addPlaceable(rec);
-            if (p && typeof p.then === 'function') p.catch(() => {});
-          } catch (_) {
-            /* ignore per-sprite issue */
-          }
-        }
-      }
+      // 2025-09 refactor: plant sprites are no longer pushed into the instancing pool because
+      // they are fully superseded by 3D models. Any previous retrofit logic has been removed.
+      return;
     } catch (_) {
       /* ignore */
     }
@@ -853,41 +883,6 @@ class GameManager {
    */
   fixExistingTokens() {
     return this.renderCoordinator.fixExistingTokens();
-  }
-
-  // === STATE MANAGEMENT (Delegated to StateCoordinator) ===
-
-  /**
-   * Set up global variables for backward compatibility
-   * @deprecated - This is maintained for legacy code compatibility
-   */
-  setupGlobalVariables() {
-    return this.stateCoordinator.setupGlobalVariables();
-  }
-
-  /**
-   * Initialize sprite manager and load creature sprites
-   * @returns {Promise<void>} Promise that resolves when sprites are loaded
-   */
-  async initializeSprites() {
-    return this.stateCoordinator.initializeSprites();
-  }
-
-  /**
-   * Validate and remove tokens that are outside grid boundaries
-   */
-  validateTokenPositions() {
-    return this.stateCoordinator.validateTokenPositions();
-  }
-
-  // === INPUT HANDLING (Delegated to InputCoordinator) ===
-
-  /**
-   * Handle left mouse click for token placement
-   * @param {MouseEvent} event - Mouse click event
-   */
-  handleLeftClick(event) {
-    return this.inputCoordinator.handleLeftClick(event);
   }
 
   /**
