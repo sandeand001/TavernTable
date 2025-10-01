@@ -806,12 +806,14 @@ export class TerrainCoordinator {
       const seed = Number.isFinite(options.seed) ? options.seed : this._biomeSeed >>> 0;
       // Increment generation id before producing new flora
       this._generationRunId = (this._generationRunId || 0) + 1;
-      const field = generateBiomeElevationField(
-        biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland',
-        rows,
-        cols,
-        { ...options, seed }
-      );
+      const resolvedBiome =
+        biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland';
+      // Track last generated biome for 3D palette parity
+      this._lastGeneratedBiomeKey = resolvedBiome;
+      if (typeof window !== 'undefined' && !window.selectedBiome) {
+        window.selectedBiome = resolvedBiome; // ensure global reflects active biome for consistency
+      }
+      const field = generateBiomeElevationField(resolvedBiome, rows, cols, { ...options, seed });
 
       // Before applying new flora, clear any existing placeable sprites + instanced meshes so trees don't persist.
       try {
@@ -902,6 +904,10 @@ export class TerrainCoordinator {
       const seed = Number.isFinite(options.seed) ? options.seed : this._biomeSeed >>> 0;
       const activeBiome =
         biomeKey || (typeof window !== 'undefined' && window.selectedBiome) || 'grassland';
+      this._lastGeneratedBiomeKey = activeBiome;
+      if (typeof window !== 'undefined' && !window.selectedBiome) {
+        window.selectedBiome = activeBiome;
+      }
       this._generationRunId = (this._generationRunId || 0) + 1;
       // Auto-apply biome-appropriate elevation perception (pixels per level) before generation
       try {

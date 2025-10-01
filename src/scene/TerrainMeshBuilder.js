@@ -116,20 +116,24 @@ export class TerrainMeshBuilder {
         let r = ((hex >> 16) & 0xff) / 255;
         let g = ((hex >> 8) & 0xff) / 255;
         let b = (hex & 0xff) / 255;
-        if (wantsColors) {
-          try {
-            const linearize =
-              (typeof window !== 'undefined' && window.__TT_LINEARIZE_VERTEX_COLORS__) || false;
-            if (linearize && three?.Color) {
-              const c = new three.Color(r, g, b);
-              if (c.convertSRGBToLinear) c.convertSRGBToLinear();
-              r = c.r;
-              g = c.g;
-              b = c.b;
-            }
-          } catch (_) {
-            /* ignore */
+        // Always linearize vertex colors so the final on-screen appearance matches the 2D sRGB palette.
+        // Three.js expects vertex colors in linear space when output color space is sRGB.
+        try {
+          if (three?.Color) {
+            const c = new three.Color(r, g, b);
+            if (c.convertSRGBToLinear) c.convertSRGBToLinear();
+            r = c.r;
+            g = c.g;
+            b = c.b;
+          } else {
+            // Fallback manual sRGB -> linear conversion
+            const toLin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+            r = toLin(r);
+            g = toLin(g);
+            b = toLin(b);
           }
+        } catch (_) {
+          /* non-fatal */
         }
         // TOP QUAD (order: BL, BR, TR, TL)
         addQuad(

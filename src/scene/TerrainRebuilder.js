@@ -41,24 +41,26 @@ export class TerrainRebuilder {
     const rows = gm.rows;
     const getHeight = (x, y) => gm.getTerrainHeight(x, y);
     const t0 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
-    // Biome color selection, falling back to height palette.
+    // Biome color selection (1:1 with 2D painter grid): ALWAYS sample canonical 2D biome palette
+    // for the active biome + elevation so hybrid 3D matches legacy visuals exactly. Only fall back
+    // to HEIGHT_COLOR_SCALE if no biome is selected (e.g., very early init or missing globals).
     const gmBiomeGetter = (gx, gy, elev) => {
+      const h = Number.isFinite(elev) ? elev : 0;
+      // Resolve biome key in strict priority order
+      const biomeKey =
+        (typeof window !== 'undefined' && window.selectedBiome) ||
+        gm?.terrainCoordinator?._lastGeneratedBiomeKey ||
+        'grassland';
       try {
-        if (
-          typeof window !== 'undefined' &&
-          window.selectedBiome &&
-          !gm.terrainCoordinator?.isTerrainModeActive
-        ) {
-          return getBiomeColorHex(window.selectedBiome, elev);
-        }
+        return getBiomeColorHex(biomeKey, h);
       } catch (_) {
-        /* ignore biome path fallthrough */
+        // Absolute fallback: use height scale only if biome palette lookup somehow fails
+        const key = h.toString();
+        if (Object.prototype.hasOwnProperty.call(TERRAIN_CONFIG.HEIGHT_COLOR_SCALE, key)) {
+          return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[key];
+        }
+        return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'] || 0x777766;
       }
-      const key = elev != null ? elev.toString() : '0';
-      if (Object.prototype.hasOwnProperty.call(TERRAIN_CONFIG.HEIGHT_COLOR_SCALE, key)) {
-        return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[key];
-      }
-      return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'] || 0x777766;
     };
     // Dark wall color for contrast; only used in advanced geometry path.
     const wallColor = 0x050505;
