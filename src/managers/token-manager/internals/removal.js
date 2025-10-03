@@ -5,7 +5,7 @@ export function removeToken(c, token) {
   try {
     const gm = c.gameManager;
     if (
-      gm?.renderMode === '3d-hybrid' &&
+      gm?.is3DModeActive?.() &&
       gm.token3DAdapter &&
       typeof gm.token3DAdapter.onTokenRemoved === 'function'
     ) {

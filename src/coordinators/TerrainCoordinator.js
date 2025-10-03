@@ -863,7 +863,7 @@ export class TerrainCoordinator {
       }
       // 3D transition: trigger terrain mesh + token/placeable height resync if hybrid active
       try {
-        if (this.gameManager?.renderMode === '3d-hybrid') {
+        if (this.gameManager?.is3DModeActive?.()) {
           this.gameManager.notifyTerrainHeightsChanged?.();
         }
       } catch (_) {
@@ -1026,7 +1026,7 @@ export class TerrainCoordinator {
       }
       // 3D transition: ensure fresh mesh rebuild + token/placeable height sync
       try {
-        if (this.gameManager?.renderMode === '3d-hybrid') {
+        if (this.gameManager?.is3DModeActive?.()) {
           this.gameManager.notifyTerrainHeightsChanged?.();
         }
       } catch (_) {

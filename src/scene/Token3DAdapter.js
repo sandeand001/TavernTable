@@ -63,7 +63,7 @@ export class Token3DAdapter {
   /** Iterate existing tokens and ensure a 3D representation exists. */
   syncAll() {
     const gm = this.gameManager;
-    if (!gm || gm.renderMode !== '3d-hybrid') return;
+    if (!gm || !gm.is3DModeActive?.()) return;
     const scene = gm.threeSceneManager?.scene;
     if (!scene) return;
     const tokens = gm.placedTokens || [];
@@ -73,7 +73,7 @@ export class Token3DAdapter {
   /** Public hook: call when a new token is added to collection */
   onTokenAdded(tokenEntry) {
     const gm = this.gameManager;
-    if (!gm || gm.renderMode !== '3d-hybrid') return;
+    if (!gm || !gm.is3DModeActive?.()) return;
     const scene = gm.threeSceneManager?.scene;
     if (!scene) return;
     return this._ensureTokenMesh(tokenEntry, scene);
@@ -152,7 +152,7 @@ export class Token3DAdapter {
   resyncHeights() {
     try {
       const gm = this.gameManager;
-      if (!gm || gm.renderMode !== '3d-hybrid') return;
+      if (!gm || !gm.is3DModeActive?.()) return;
       const tokens = gm.placedTokens || [];
       for (const t of tokens) {
         const mesh = t.__threeMesh;
@@ -259,7 +259,7 @@ export class Token3DAdapter {
   /** Internal: synchronize horizontal facing (flip) for all token meshes if changed. */
   _syncFacingDirection() {
     const gm = this.gameManager;
-    if (!gm || gm.renderMode !== '3d-hybrid') return;
+    if (!gm || !gm.is3DModeActive?.()) return;
     const facingRight = (() => {
       try {
         if (gm.tokenManager?.getTokenFacingRight) {

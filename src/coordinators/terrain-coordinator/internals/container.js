@@ -161,6 +161,13 @@ export function resetTerrainContainerSafely(c) {
         for (const sprite of preservedPlaceables) {
           try {
             if (!sprite) continue;
+            const key = `${sprite.gridX},${sprite.gridY}`;
+            if (!c.terrainManager.placeables.has(key)) c.terrainManager.placeables.set(key, []);
+            c.terrainManager.placeables.get(key).push(sprite);
+            if (sprite.__is3DPlaceable) {
+              // 3D records are rendered by the mesh pool and do not belong in PIXI containers.
+              continue;
+            }
             // Reattach to the main grid container so zIndex sorting interleaves with tokens
             if (
               c.gameManager.gridContainer &&
@@ -168,9 +175,6 @@ export function resetTerrainContainerSafely(c) {
             ) {
               c.gameManager.gridContainer.addChild(sprite);
             }
-            const key = `${sprite.gridX},${sprite.gridY}`;
-            if (!c.terrainManager.placeables.has(key)) c.terrainManager.placeables.set(key, []);
-            c.terrainManager.placeables.get(key).push(sprite);
           } catch (_) {
             /* continue */
           }

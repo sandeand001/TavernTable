@@ -33,7 +33,7 @@ function attachHybridToggle() {
   try {
     // Always default to checked (feature request: enable 3D Hybrid by default)
     toggle.checked = true;
-    if (window.gameManager && window.gameManager.renderMode !== '3d-hybrid') {
+    if (window.gameManager && !window.gameManager.is3DModeActive?.()) {
       // Kick off hybrid activation immediately (fire & forget)
       window.gameManager
         .enableHybridRender()
@@ -54,7 +54,7 @@ function attachHybridToggle() {
   toggle.addEventListener('change', async () => {
     try {
       if (!window.gameManager) return;
-      if (toggle.checked && window.gameManager.renderMode !== '3d-hybrid') {
+      if (toggle.checked && !window.gameManager.is3DModeActive?.()) {
         await window.gameManager.enableHybridRender();
         logger.log(LOG_LEVEL.INFO, 'Hybrid 3D mode enabled via UI toggle', LOG_CATEGORY.USER);
       }

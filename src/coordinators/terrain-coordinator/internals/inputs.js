@@ -12,6 +12,27 @@ import {
  */
 export function getGridCoordinatesFromEvent(c, event) {
   try {
+    if (c.gameManager?.is3DModeActive?.()) {
+      const picking = c.gameManager?.pickingService;
+      if (picking && typeof picking.pickGroundSync === 'function') {
+        const targetElement =
+          c.gameManager?.threeSceneManager?.canvas ||
+          c.gameManager?.app?.view ||
+          (event?.currentTarget ?? null);
+        const ground = picking.pickGroundSync(event.clientX, event.clientY, targetElement);
+        if (ground && ground.grid) {
+          const gridX = Number(ground.grid.gx);
+          const gridY = Number(ground.grid.gy);
+          if (Number.isFinite(gridX) && Number.isFinite(gridY)) {
+            if (c.isValidGridPosition(gridX, gridY)) {
+              return { gridX, gridY };
+            }
+            return null;
+          }
+        }
+      }
+    }
+
     if (
       c.gameManager.interactionManager &&
       typeof c.gameManager.interactionManager.getGridCoordinatesFromClick === 'function'

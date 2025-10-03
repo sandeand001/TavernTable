@@ -92,8 +92,8 @@ class GameManager {
     // 3D Transition: canonical spatial mapping (grid -> world) used by future Three.js scene
     this.spatial = new SpatialCoordinator();
 
-    // Rendering mode flag: '2d-iso' (legacy) | '3d-hybrid' (in-progress) | future: '3d'
-    this.renderMode = '2d-iso';
+    // Rendering mode flag: '2d-iso' (legacy) | '3d-hybrid' (transition) | '3d' (current default)
+    this.renderMode = '3d';
     this.threeSceneManager = null; // lazy init when entering hybrid mode
     this.terrainRebuilder = null; // Phase 2: debounced terrain mesh updates
     this.placeableMeshPool = null; // Phase 4: instanced placeables (scaffold)
@@ -137,7 +137,7 @@ class GameManager {
    */
   sync3DElevationScaling(options = {}) {
     try {
-      if (this.renderMode !== '3d-hybrid') return false;
+      if (!this.is3DModeActive()) return false;
       const tsm = this.threeSceneManager;
       if (!tsm || !tsm.camera || !tsm.renderer) return false;
       const cam = tsm.camera;
@@ -206,6 +206,33 @@ class GameManager {
     } catch (err) {
       return false;
     }
+  }
+
+  /**
+   * Report whether the 3D scene is the authoritative render path.
+   * Treat legacy '3d-hybrid' as equivalent to the new '3d' mode so callers remain backwards compatible.
+   */
+  is3DModeActive() {
+    const modeActive = this.renderMode === '3d' || this.renderMode === '3d-hybrid';
+    if (!modeActive) return false;
+    const manager = this.threeSceneManager;
+    if (!manager) return false;
+    try {
+      if (typeof manager.isReady === 'function') {
+        const ready = manager.isReady();
+        if (ready != null) return !!ready;
+      }
+    } catch (_) {
+      /* ignore readiness check failures */
+    }
+    return !!manager.scene;
+  }
+
+  /**
+   * The legacy isometric grid should only render when we are explicitly in 2D mode.
+   */
+  shouldRenderIsometricGrid() {
+    return this.renderMode === '2d-iso';
   }
 
   // Property getters for backward compatibility with null safety
@@ -278,7 +305,7 @@ class GameManager {
    * Initializes ThreeSceneManager and switches renderMode.
    */
   async enableHybridRender() {
-    if (this.renderMode === '3d-hybrid') return;
+    if (this.is3DModeActive()) return;
     if (!this.threeSceneManager) {
       this.threeSceneManager = new ThreeSceneManager(this);
       await this.threeSceneManager.initialize();
@@ -413,7 +440,7 @@ class GameManager {
               const targetEl = canvas || document.body;
               this._tokenHoverListener = async (evt) => {
                 try {
-                  if (this.renderMode !== '3d-hybrid' || !this.pickingService) return;
+                  if (!this.is3DModeActive() || !this.pickingService) return;
                   const t0 =
                     (typeof performance !== 'undefined' && performance.now()) || Date.now();
                   const ground = await this.pickingService.pickGround(
@@ -451,7 +478,7 @@ class GameManager {
               // Selection (pointerdown -> select or clear)
               this._tokenSelectListener = async (evt) => {
                 try {
-                  if (this.renderMode !== '3d-hybrid' || !this.pickingService) return;
+                  if (!this.is3DModeActive() || !this.pickingService) return;
                   const ground = await this.pickingService.pickGround(
                     evt.clientX,
                     evt.clientY,
@@ -545,11 +572,12 @@ class GameManager {
         /* non-fatal instancing scaffold failure */
       }
     }
-    this.renderMode = '3d-hybrid';
+    this.renderMode = '3d';
     // Dev convenience: expose on window during early phases
     try {
       if (typeof window !== 'undefined') {
         window.__TT_HYBRID_ACTIVE__ = true;
+        window.__TT_3D_ACTIVE__ = true;
         // Convenience runtime hook for toggling isometric camera once hybrid active
         if (!window.__TT_SET_ISO_MODE__) {
           window.__TT_SET_ISO_MODE__ = (v) => {
@@ -603,7 +631,7 @@ class GameManager {
    */
   async placeTokenAtPointer(clientX, clientY) {
     try {
-      if (this.renderMode !== '3d-hybrid') return false;
+      if (!this.is3DModeActive()) return false;
       if (!this.pickingService) return false;
       const ground = await this.pickingService.pickGround(clientX, clientY);
       if (!ground || !ground.grid) return false;
@@ -623,7 +651,7 @@ class GameManager {
    * Records original position but does not mutate token grid yet.
    */
   startTokenDragByGrid(gx, gy) {
-    if (this.renderMode !== '3d-hybrid') return false;
+    if (!this.is3DModeActive()) return false;
     if (this._draggingToken) return false; // already dragging
     const token = (this.placedTokens || []).find((t) => t.gridX === gx && t.gridY === gy);
     if (!token) return false;
@@ -740,7 +768,7 @@ class GameManager {
   ensureInstancing() {
     try {
       if (!this.features.instancedPlaceables) return null; // feature still disabled
-      if (this.renderMode !== '3d-hybrid') return null; // wait until hybrid active
+      if (!this.is3DModeActive()) return null; // wait until 3D active
       if (!this.placeableMeshPool) {
         this.placeableMeshPool = new PlaceableMeshPool({ gameManager: this });
         try {
@@ -807,6 +835,7 @@ class GameManager {
           for (const sprite of list) {
             try {
               if (!sprite || sprite.__instancedRef) continue;
+              if (sprite.__is3DPlaceable) continue;
               // Only plants
               if (sprite.placeableType && sprite.placeableType !== 'plant') continue;
               const [gxStr, gyStr] = key.split(',');
@@ -838,7 +867,7 @@ class GameManager {
         const targetEl = canvas || document.body;
         this._instancingPreviewListener = async (evt) => {
           try {
-            if (!this.features.instancedPlaceables || this.renderMode !== '3d-hybrid') return;
+            if (!this.features.instancedPlaceables || !this.is3DModeActive()) return;
             if (!this.threeSceneManager || !this.placeableMeshPool) return;
             // Use centralized picking service (ground plane) for hover
             if (!this.pickingService) return;
@@ -934,7 +963,7 @@ class GameManager {
 
   /** Disable hybrid (dispose three + listeners) mainly for tests / teardown */
   disableHybridRender() {
-    if (this.renderMode !== '3d-hybrid') return;
+    if (!this.is3DModeActive()) return;
     try {
       this.remove3DInteractionListeners();
     } catch (_) {
@@ -949,7 +978,10 @@ class GameManager {
     this.pickingService = null;
     this.renderMode = '2d-iso';
     try {
-      if (typeof window !== 'undefined') window.__TT_HYBRID_ACTIVE__ = false;
+      if (typeof window !== 'undefined') {
+        window.__TT_HYBRID_ACTIVE__ = false;
+        window.__TT_3D_ACTIVE__ = false;
+      }
     } catch (_) {
       /* ignore */
     }
@@ -1114,7 +1146,7 @@ class GameManager {
 
   /** Phase 2 hook: invoked by TerrainCoordinator after height edits to schedule 3D rebuild. */
   notifyTerrainHeightsChanged() {
-    if (!this.terrainRebuilder || !this.threeSceneManager || this.renderMode !== '3d-hybrid') {
+    if (!this.terrainRebuilder || !this.threeSceneManager || !this.is3DModeActive()) {
       return;
     }
     // Synchronous optimistic request so callers (and tests) can observe the call immediately.

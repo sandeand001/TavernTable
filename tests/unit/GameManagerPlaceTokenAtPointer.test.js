@@ -41,10 +41,12 @@ import { GameManager } from '../../src/core/GameManager.js';
 // Provide minimal token manager & dependencies
 function buildHybridGM() {
   const gm = new GameManager({ cols: 10, rows: 10 });
-  gm.renderMode = '3d-hybrid';
+  gm.renderMode = '3d';
   gm.threeSceneManager = {
     camera: {},
     canvas: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 }) },
+    scene: {},
+    isReady: () => true,
   };
   gm.tokenManager = {
     getSelectedTokenType: () => 'goblin',

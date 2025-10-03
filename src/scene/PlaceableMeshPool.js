@@ -78,10 +78,43 @@ export class PlaceableMeshPool {
     return key || 'default';
   }
 
+  _resolveWorldScale(placeable, profile = 'ground') {
+    try {
+      const gm = this.gameManager;
+      const tileWorld = gm?.spatial?.tileWorldSize ?? 1;
+      const tileWidthPx = gm?.tileWidth ?? 64;
+      const tileHeightPx = gm?.tileHeight ?? 32;
+      const nominalWidthPx = placeable?.__nominalSize?.widthPx ?? tileWidthPx;
+      const nominalHeightPx = placeable?.__nominalSize?.heightPx ?? tileHeightPx;
+
+      if (profile === 'ground') {
+        return {
+          x: tileWorld * (placeable?.tileSpanX ?? 1),
+          y: 1,
+          z: tileWorld * (placeable?.tileSpanZ ?? 1),
+        };
+      }
+
+      if (profile === 'billboard') {
+        const widthRatio = tileWidthPx ? nominalWidthPx / tileWidthPx : 1;
+        const heightRatio = tileHeightPx ? nominalHeightPx / tileHeightPx : 1;
+        return {
+          x: tileWorld * (widthRatio || 1) || tileWorld,
+          y: tileWorld * (heightRatio || 1) || tileWorld,
+          z: 1,
+        };
+      }
+
+      return { x: tileWorld, y: tileWorld, z: tileWorld };
+    } catch (_) {
+      return { x: 1, y: 1, z: 1 };
+    }
+  }
+
   /** Public: add a placeable instance; returns handle with group key + index (or null). */
   async addPlaceable(placeable) {
     const gm = this.gameManager;
-    if (!gm || gm.renderMode !== '3d-hybrid') {
+    if (!gm || !gm.is3DModeActive?.()) {
       return null;
     }
     // Capture epoch so we can detect if a clear happened while awaiting dynamic imports.
@@ -139,6 +172,18 @@ export class PlaceableMeshPool {
       return null;
     }
     const { instancedMesh } = group;
+    const profile =
+      group.profile ||
+      placeable?.renderProfile ||
+      (placeable?.type === 'plant' ? 'billboard' : 'ground');
+    group.profile = profile;
+    const scale = this._resolveWorldScale(placeable, profile);
+    placeable.__worldScale = scale;
+    const heightOffset = Number.isFinite(placeable?.heightOffset)
+      ? placeable.heightOffset
+      : profile === 'ground'
+        ? 0.005
+        : 0;
     // If this placeable is metrics-only (no visual), ensure group stays hidden
     try {
       if (placeable.metricsOnly) {
@@ -170,7 +215,8 @@ export class PlaceableMeshPool {
         h = 0;
       }
       const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-      dummy.position.set(world.x, worldY, world.z);
+      dummy.position.set(world.x, worldY + heightOffset, world.z);
+      dummy.scale.set(scale.x ?? 1, scale.y ?? 1, scale.z ?? 1);
       dummy.updateMatrix();
       instancedMesh.setMatrixAt(index, dummy.matrix);
       instancedMesh.instanceMatrix.needsUpdate = true;
@@ -189,7 +235,13 @@ export class PlaceableMeshPool {
     // Record metadata for reverse mapping
     try {
       const metaGroup = this._metadata.get(key) || new Map();
-      metaGroup.set(index, { gx: placeable.gridX ?? 0, gy: placeable.gridY ?? 0 });
+      metaGroup.set(index, {
+        gx: placeable.gridX ?? 0,
+        gy: placeable.gridY ?? 0,
+        scale,
+        profile,
+        heightOffset,
+      });
       this._metadata.set(key, metaGroup);
     } catch (_) {
       /* ignore metadata errors */
@@ -240,103 +292,87 @@ export class PlaceableMeshPool {
   async _createGroup(key, three, type = 'generic', placeable = null) {
     try {
       const capacity = this._initialCapacity; // initial; grow strategy implemented
-      // Geometry selection: plants (flora) use vertical quads (billboards), others remain horizontal footprint.
+      const profile = placeable?.renderProfile || (type === 'plant' ? 'billboard' : 'ground');
+
+      // Geometry selection driven by render profile (billboard vs ground overlay)
       let geo;
-      if (type === 'plant') {
-        // Plant billboard: make it full tile width (1.0) and taller (1.8 world units) then
-        // translate so that the bottom of the sprite sits exactly on y=0 (ground plane).
-        // Without this translation the default plane geometry is centered, causing half
-        // the visual height to sink below ground, producing a noticeable vertical offset.
-        const PLANT_WIDTH = 1.0; // matches grid tileWorldSize for 1:1 footprint
-        const PLANT_HEIGHT = 1.8; // arbitrary; approximate tree sprite aspect
-        geo = new three.PlaneGeometry(PLANT_WIDTH, PLANT_HEIGHT);
-        // Shift geometry upward by half its height so origin (0,0,0) is at the base center.
-        geo.translate(0, PLANT_HEIGHT * 0.5, 0);
-        // Leave unrotated (facing +Z) – we'll yaw-align the group each frame.
+      if (profile === 'ground') {
+        geo = new three.PlaneGeometry(1, 1);
+        geo.rotateX(-Math.PI / 2); // lie flat on ground plane
       } else {
-        geo = new three.PlaneGeometry(0.9, 0.9);
-        geo.rotateX(-Math.PI / 2); // horizontal footprint
+        geo = new three.PlaneGeometry(1, 1);
+        // Shift geometry upward so origin sits at the base center (avoids sinking below ground)
+        geo.translate(0, 0.5, 0);
       }
-      // Material strategy: allow external override; fallback to per-type tint.
+
+      // Material strategy: allow external override; fallback to texture + simple basic material.
       let mat;
       try {
         if (this._materialStrategy && typeof this._materialStrategy === 'function') {
-          mat = this._materialStrategy({ key, type, three, capacity });
+          mat = this._materialStrategy({ key, type, profile, three, capacity });
         }
       } catch (_) {
         /* ignore strategy errors */
       }
+
       if (!mat) {
-        if (type === 'plant') {
-          // Attempt to treat key (or explicit texturePath override) as texture URL.
-          let texture = null;
-          // Use rawVariantKey if supplied (original full path) for actual texture load; key is canonical group id.
-          const texturePath =
-            (typeof window !== 'undefined' && window.__TT_FORCE_PLACEABLE_TEXTURE) ||
-            (placeable && placeable.__rawVariantKey) ||
-            key;
-          try {
-            if (texturePath && typeof texturePath === 'string' && /\//.test(texturePath)) {
-              texture = new three.TextureLoader().load(texturePath, () => {
-                try {
-                  texture.needsUpdate = true;
-                } catch (_) {
-                  /* ignore */
-                }
-              });
-            }
-          } catch (e) {
-            texture = null;
-            try {
-              console.debug('[PlaceableMeshPool] texture load error', {
-                key,
-                texturePath,
-                err: e?.message,
-              });
-            } catch (_) {
-              /* ignore */
-            }
-          }
-          if (texture) {
-            try {
-              // Ensure correct color space so sprite saturation matches 2D asset appearance.
-              if ('colorSpace' in texture && three.SRGBColorSpace) {
-                texture.colorSpace = three.SRGBColorSpace;
-              } else if ('encoding' in texture && three.sRGBEncoding != null) {
-                texture.encoding = three.sRGBEncoding; // older three.js fallback
+        let texture = null;
+        const texturePath =
+          (typeof window !== 'undefined' && window.__TT_FORCE_PLACEABLE_TEXTURE) ||
+          placeable?.texturePath ||
+          placeable?.__rawVariantKey ||
+          key;
+        try {
+          if (texturePath && typeof texturePath === 'string' && /\//.test(texturePath)) {
+            texture = new three.TextureLoader().load(texturePath, () => {
+              try {
+                texture.needsUpdate = true;
+              } catch (_) {
+                /* ignore */
               }
-            } catch (_) {
-              /* ignore colorSpace set failure */
-            }
-            mat = new three.MeshBasicMaterial({
-              map: texture,
-              transparent: true,
-              alphaTest: 0.01,
-              depthWrite: false,
-              side: three.DoubleSide,
-              toneMapped: false, // prevent renderer tone mapping from muting colors
             });
-            try {
-              console.debug('[PlaceableMeshPool] created textured material', { key, texturePath });
-            } catch (_) {
-              /* ignore */
-            }
-          } else {
-            try {
-              console.debug(
-                '[PlaceableMeshPool] no texture path resolved; using fallback material',
-                { key, texturePath }
-              );
-            } catch (_) {
-              /* ignore */
-            }
+          }
+        } catch (e) {
+          texture = null;
+          try {
+            console.debug('[PlaceableMeshPool] texture load error', {
+              key,
+              texturePath,
+              err: e?.message,
+            });
+          } catch (_) {
+            /* ignore */
           }
         }
-        if (!mat) {
+
+        if (texture) {
+          try {
+            if ('colorSpace' in texture && three.SRGBColorSpace) {
+              texture.colorSpace = three.SRGBColorSpace;
+            } else if ('encoding' in texture && three.sRGBEncoding != null) {
+              texture.encoding = three.sRGBEncoding;
+            }
+          } catch (_) {
+            /* ignore color space alignment */
+          }
+          mat = new three.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            alphaTest: 0.01,
+            depthWrite: false,
+            side: three.DoubleSide,
+            toneMapped: false,
+          });
+          try {
+            console.debug('[PlaceableMeshPool] created textured material', { key, texturePath });
+          } catch (_) {
+            /* ignore */
+          }
+        } else {
           const typeColors = {
-            plant: 0x2d8f28, // fallback green
-            path: 0x8b5a2b, // earthy brown
-            structure: 0x666666, // neutral gray
+            plant: 0x2d8f28,
+            path: 0x8b5a2b,
+            structure: 0x666666,
             generic: 0x00aa55,
           };
           const color = typeColors[type] || typeColors.generic;
@@ -348,6 +384,7 @@ export class PlaceableMeshPool {
           });
         }
       }
+
       const instanced = new three.InstancedMesh(geo, mat, capacity);
       instanced.name = `Placeables:${key}`;
       // Allow instanced meshes to cast shadows (terrain receives). Keep receiveShadow off to avoid dark cards.
@@ -369,15 +406,13 @@ export class PlaceableMeshPool {
       } catch (_) {
         /* ignore scene add failure */
       }
-      // For vertical plant groups, register a shared animation callback once that performs
-      // per-instance matrix billboarding WITHOUT rotating the entire instanced mesh (which
-      // would incorrectly orbit instances around world origin).
-      if (type === 'plant' && this.gameManager?.threeSceneManager?.addAnimationCallback) {
-        if (!this._plantBillboardUpdater) {
+      // Register billboard updater for upright quads so they keep facing the camera.
+      if (profile === 'billboard' && this.gameManager?.threeSceneManager?.addAnimationCallback) {
+        if (!this._billboardUpdater) {
           this._lastBillboardYaw = null;
           this._lastBillboardPitch = null;
           this._lastCamPos = { x: null, z: null };
-          this._plantBillboardUpdater = () => {
+          this._billboardUpdater = () => {
             try {
               const gm = this.gameManager;
               const cam = gm.threeSceneManager.camera;
@@ -407,16 +442,21 @@ export class PlaceableMeshPool {
                 : { x: camPos.x, y: camPos.y, z: camPos.z };
               // Threshold (radians) above which we start introducing pitch-based billboard (camera more top-down)
               // (Removed previous pitch gating; always yaw-only billboard to keep trees upright)
-              // Recompute matrices for plant groups
+              // Recompute matrices for billboard groups
               for (const [gKey, g] of this._groups.entries()) {
-                if (g.type !== 'plant') continue;
+                if (g.profile !== 'billboard') continue;
                 const inst = g.instancedMesh;
                 if (!inst) continue;
                 const metaMap = this._metadata.get(gKey);
                 if (!metaMap) continue;
                 for (const [index, coords] of metaMap.entries()) {
                   if (g.freeIndices.includes(index)) continue;
-                  const { gx, gy } = coords || { gx: 0, gy: 0 };
+                  const { gx, gy, scale, heightOffset } = coords || {
+                    gx: 0,
+                    gy: 0,
+                    scale: { x: 1, y: 1, z: 1 },
+                    heightOffset: 0,
+                  };
                   let h = 0;
                   try {
                     h = gm.getTerrainHeight?.(gx, gy) || 0;
@@ -425,13 +465,12 @@ export class PlaceableMeshPool {
                   }
                   const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
                   const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-                  dummy.position.set(world.x, worldY, world.z);
+                  dummy.position.set(world.x, worldY + (heightOffset || 0), world.z);
                   // Full spherical billboard: always face the camera at any pitch & yaw
                   // so the tree quad never collapses into a line from overhead or oblique angles.
                   // NOTE: This introduces pitch tilt (the sprite leans toward the camera) which
                   // gives a pseudo-3D look. If we later want an upright-only variant that never
                   // edge-on collapses, we can implement multi-quad (cross) impostors instead.
-                  dummy.position.set(world.x, worldY, world.z);
                   if (dummy.lookAt) {
                     dummy.lookAt(worldCamPos.x, worldCamPos.y, worldCamPos.z);
                   } else {
@@ -441,6 +480,8 @@ export class PlaceableMeshPool {
                     const faceYaw = Math.atan2(dx, dz);
                     dummy.rotation.set(0, faceYaw, 0);
                   }
+                  const useScale = scale || { x: 1, y: 1, z: 1 };
+                  dummy.scale.set(useScale.x ?? 1, useScale.y ?? 1, useScale.z ?? 1);
                   dummy.updateMatrix();
                   try {
                     inst.setMatrixAt(index, dummy.matrix);
@@ -458,10 +499,10 @@ export class PlaceableMeshPool {
               /* ignore billboard errors */
             }
           };
-          this.gameManager.threeSceneManager.addAnimationCallback(this._plantBillboardUpdater);
+          this.gameManager.threeSceneManager.addAnimationCallback(this._billboardUpdater);
         }
       }
-      return { key, type, instancedMesh: instanced, capacity, freeIndices: [], count: 0 };
+      return { key, type, profile, instancedMesh: instanced, capacity, freeIndices: [], count: 0 };
     } catch (err) {
       // Capture error for diagnostics and attempt a fallback lightweight group so tests can proceed
       try {
@@ -481,7 +522,15 @@ export class PlaceableMeshPool {
             this._matrices[i] = m;
           },
         };
-        return { key, type, instancedMesh: instanced, capacity, freeIndices: [], count: 0 };
+        return {
+          key,
+          type,
+          profile: placeable?.renderProfile || 'ground',
+          instancedMesh: instanced,
+          capacity,
+          freeIndices: [],
+          count: 0,
+        };
       } catch (_) {
         return null;
       }
@@ -575,7 +624,7 @@ export class PlaceableMeshPool {
     const start = (typeof performance !== 'undefined' && performance.now()) || Date.now();
     try {
       const gm = this.gameManager;
-      if (!gm || gm.renderMode !== '3d-hybrid') return;
+      if (!gm || !gm.is3DModeActive?.()) return;
       const three = await this._ensureThree();
       if (!three) return;
       const dummy = new three.Object3D();
@@ -586,7 +635,12 @@ export class PlaceableMeshPool {
         if (!metaMap) continue;
         for (const [index, coords] of metaMap.entries()) {
           if (group.freeIndices.includes(index)) continue;
-          const { gx, gy } = coords || { gx: 0, gy: 0 };
+          const { gx, gy, scale, heightOffset } = coords || {
+            gx: 0,
+            gy: 0,
+            scale: { x: 1, y: 1, z: 1 },
+            heightOffset: 0,
+          };
           let h = 0;
           try {
             h = gm.getTerrainHeight?.(gx, gy) || 0;
@@ -595,7 +649,9 @@ export class PlaceableMeshPool {
           }
           const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
           const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-          dummy.position.set(world.x, worldY, world.z);
+          dummy.position.set(world.x, worldY + (heightOffset || 0), world.z);
+          const useScale = scale || { x: 1, y: 1, z: 1 };
+          dummy.scale.set(useScale.x ?? 1, useScale.y ?? 1, useScale.z ?? 1);
           dummy.updateMatrix();
           try {
             inst.setMatrixAt(index, dummy.matrix);
@@ -647,7 +703,7 @@ export class PlaceableMeshPool {
   async setPreview(gx, gy) {
     try {
       const gm = this.gameManager;
-      if (!gm || gm.renderMode !== '3d-hybrid') return;
+      if (!gm || !gm.is3DModeActive?.()) return;
       const three = await this._ensureThree();
       if (!three) return;
       if (gx == null || gy == null || !Number.isFinite(gx) || !Number.isFinite(gy)) return;

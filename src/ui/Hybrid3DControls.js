@@ -10,7 +10,7 @@ function el(id) {
 
 function ensureHybrid() {
   if (!window.gameManager) return null;
-  if (window.gameManager.renderMode !== '3d-hybrid') return null;
+  if (!window.gameManager.is3DModeActive?.()) return null;
   return window.gameManager.threeSceneManager || null;
 }
 
@@ -107,7 +107,7 @@ function attach3DControls() {
   isoToggle.addEventListener('change', async () => {
     try {
       if (!window.gameManager) return;
-      if (window.gameManager.renderMode !== '3d-hybrid') {
+      if (!window.gameManager.is3DModeActive?.()) {
         // Do NOT auto enable hybrid; revert checkbox and inform user.
         isoToggle.checked = false;
         const warn = el('iso-warn');
@@ -172,7 +172,7 @@ function attach3DControls() {
       if (!window.gameManager) return;
       if (instToggle.checked) {
         // Ensure hybrid first
-        if (window.gameManager.renderMode !== '3d-hybrid') {
+        if (!window.gameManager.is3DModeActive?.()) {
           await window.gameManager.enableHybridRender();
         }
         window.gameManager.enableInstancedPlaceables();
@@ -213,7 +213,7 @@ function attach3DControls() {
   async function ensureIsoEnabled({ requireIso = true } = {}) {
     const gm = window.gameManager;
     if (!gm) return null;
-    if (gm.renderMode !== '3d-hybrid') return null; // do not auto enable
+    if (!gm.is3DModeActive?.()) return null; // do not auto enable
     if (!gm.threeSceneManager) return null;
     if (requireIso && !gm.threeSceneManager._isoMode) return null;
     return gm.threeSceneManager;

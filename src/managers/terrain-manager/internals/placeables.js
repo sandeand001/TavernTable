@@ -145,12 +145,7 @@ export function createPlaceableSprite(m, id, x, y) {
   // Use the same baseline point as tokens/selection so the preview and final
   // placement line up perfectly. CoordinateUtils.gridToIsometric already applies
   // the TOKEN_PLACEMENT_OFFSET used by input picking, so we do not remove it here.
-  const isoBase = CoordinateUtils.gridToIsometric(
-    x,
-    y,
-    m.gameManager.tileWidth,
-    m.gameManager.tileHeight
-  );
+  const isoBase = CoordinateUtils.gridToIsometric(x, y, tileW, tileH);
   const iso = { x: isoBase.x, y: isoBase.y };
 
   // No longer cache terrain height on the sprite; we will always recompute
@@ -490,6 +485,7 @@ export function placeItem(m, id, x, y) {
     const record = {
       gridX: x,
       gridY: y,
+      id,
       placeableId: id,
       placeableType: def.type,
       __threeModelPending: true,
@@ -498,6 +494,8 @@ export function placeItem(m, id, x, y) {
       placeableVariantIndex: 0,
       // Provide a variant key for potential instancing (canonical id)
       variantKey: id,
+      renderProfile: 'billboard',
+      __is3DPlaceable: true,
     };
     m.placeables.get(tileKey).push(record);
 
@@ -640,7 +638,7 @@ export function placeItem(m, id, x, y) {
     // Immediate metrics-only instancing registration (hidden) so tests & metrics update synchronously.
     try {
       const gm = gm3d;
-      if (gm?.features?.instancedPlaceables && gm.renderMode === '3d-hybrid') {
+      if (gm?.features?.instancedPlaceables && gm?.is3DModeActive?.()) {
         const placeableRecord = {
           gridX: x,
           gridY: y,
@@ -667,7 +665,7 @@ export function placeItem(m, id, x, y) {
     return true;
   }
 
-  // Non-plant fallback: create legacy sprite path (plants never use sprites now)
+  // Non-plant path: prefer native 3D placement when hybrid rendering is active.
   // Guard: if this is still a virtual family entry without resolution to a concrete plant variant
   // (unexpected, but defensive), abort instead of creating a placeholder sprite.
   if (def && def.type === 'plant-family') {
@@ -678,118 +676,105 @@ export function placeItem(m, id, x, y) {
     }
     return false; // cannot place unresolved family directly
   }
+
+  const gm = m.gameManager;
+  const hybridReady =
+    gm?.is3DModeActive?.() &&
+    gm?.features?.instancedPlaceables &&
+    typeof gm.ensureInstancing === 'function';
+  const meshPool = hybridReady ? gm.ensureInstancing() || gm.placeableMeshPool : null;
+
+  // Resolve deterministic variant (mirrors sprite-era hashing so tests remain stable)
+  let variantPath = Array.isArray(def?.img) ? null : def?.img || null;
+  let variantIndex = 0;
+  if (Array.isArray(def?.img) && def.img.length) {
+    const len = def.img.length;
+    const hash = Math.abs(((x * 73856093) ^ (y * 19349663)) >>> 0);
+    variantIndex = hash % len;
+    variantPath = def.img[variantIndex];
+  }
+  const variantKey = variantPath || `${id}:${variantIndex}`;
+
+  if (meshPool) {
+    if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
+    const tileWidthPx = gm?.tileWidth ?? 64;
+    const tileHeightPx = gm?.tileHeight ?? 32;
+    const elevationUnit = gm?.spatial?.elevationUnit ?? 0.5;
+    const isGroundPath = def?.type === 'path' && def.disableGroundLift !== true;
+    const baseLift = isGroundPath ? 0.01 : 0;
+    const baselinePx = Number.isFinite(def?.baselineOffsetPx) ? def.baselineOffsetPx : 0;
+    const baselineWorld = baselinePx !== 0 ? (baselinePx / tileHeightPx) * elevationUnit : 0;
+    const record = {
+      gridX: x,
+      gridY: y,
+      id,
+      placeableId: id,
+      placeableType: def?.type || 'generic',
+      placeableVariantIndex: variantIndex,
+      variantKey,
+      texturePath: variantPath,
+      __rawVariantKey: variantPath,
+      renderProfile: def?.renderProfile || (def?.type === 'path' ? 'ground' : 'billboard'),
+      scaleMode: def?.scaleMode || 'contain',
+      __nominalSize: {
+        widthPx: Number.isFinite(def?.nominalWidthPx) ? def.nominalWidthPx : tileWidthPx,
+        heightPx: Number.isFinite(def?.nominalHeightPx) ? def.nominalHeightPx : tileHeightPx,
+      },
+      heightOffset: baseLift + baselineWorld,
+      __is3DPlaceable: true,
+    };
+    record.__instancedRef = record;
+    if (Number.isFinite(m.gameManager?.terrainCoordinator?._generationRunId)) {
+      record.__generationRunId = m.gameManager.terrainCoordinator._generationRunId;
+    }
+    m.placeables.get(tileKey).push(record);
+
+    try {
+      const handlePromise = meshPool.addPlaceable(record);
+      record.__instancingPromise = handlePromise;
+      if (handlePromise && typeof handlePromise.then === 'function') {
+        if (!Array.isArray(gm._pendingInstancingPromises)) {
+          gm._pendingInstancingPromises = [];
+        }
+        gm._pendingInstancingPromises.push(handlePromise);
+        handlePromise.catch(() => {});
+      }
+    } catch (_) {
+      /* ignore instancing add failures (record remains for bookkeeping) */
+    }
+
+    return true;
+  }
+
+  // Legacy 2D fallback when hybrid renderer/instancing is unavailable (e.g., tests or 2D mode).
   const sprite = createPlaceableSprite(m, id, x, y);
-  const replacingWith3D = false; // legacy hidden-sprite path removed (pure 3D now)
-  // Tag with current biome generation id if available so later reinstance passes can filter.
   try {
     const gen = m.gameManager?.terrainCoordinator?._generationRunId;
     if (Number.isFinite(gen)) sprite.__generationRunId = gen;
   } catch (_) {
     /* ignore */
   }
-  // Placeables now live inside terrainContainer so they can be occluded by
-  // elevated tile faces in front. This allows proper isometric overlap.
-  // (Previously they were forced above all terrain by container zIndex.)
-  // Only add sprite to display tree if not fully replacing OR we still need it for layering math.
   try {
-    if (!replacingWith3D || !m.terrainContainer) {
-      if (m.terrainContainer) {
-        m.terrainContainer.addChild(sprite);
-      } else {
-        m.gameManager.gridContainer.addChild(sprite);
-      }
+    if (m.terrainContainer) {
+      m.terrainContainer.addChild(sprite);
     } else {
-      // In full replacement mode we intentionally DO NOT add the hidden sprite to the stage
-      // to avoid any residual green rectangle artifacts from fallback batching.
+      m.gameManager.gridContainer.addChild(sprite);
     }
   } catch (_) {
     /* ignore add failures */
   }
-  if (!replacingWith3D) {
-    try {
-      // Sorting within terrainContainer handled by depthValue/zIndex values; ensure sortableChildren.
-      if (m.terrainContainer) {
-        m.terrainContainer.sortableChildren = true;
-        m.terrainContainer.sortChildren?.();
-      } else {
-        m.gameManager.gridContainer.sortChildren?.();
-      }
-    } catch (_) {
-      /* ignore */
+  try {
+    if (m.terrainContainer) {
+      m.terrainContainer.sortableChildren = true;
+      m.terrainContainer.sortChildren?.();
+    } else {
+      m.gameManager.gridContainer.sortChildren?.();
     }
+  } catch (_) {
+    /* ignore */
   }
   if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
   m.placeables.get(tileKey).push(sprite);
-  // Phase 4: if instancing enabled and hybrid mode active, register with mesh pool
-  try {
-    const gm = m.gameManager;
-    if (
-      !replacingWith3D &&
-      gm?.features?.instancedPlaceables &&
-      (gm.renderMode === '3d-hybrid' || gm.placeableMeshPool)
-    ) {
-      // Provide minimal shape expected by pool (gridX/gridY/type)
-      const texturePath =
-        (sprite &&
-          sprite.texture &&
-          sprite.texture.baseTexture &&
-          (sprite.texture.baseTexture.resource?.url || sprite.texture.baseTexture.image?.src)) ||
-        null;
-      const placeableRecord = {
-        gridX: x,
-        gridY: y,
-        type: TERRAIN_PLACEABLES[id]?.type || 'generic',
-        variantKey: texturePath || id, // ensure distinct group per texture variant
-      };
-      // Instancing path retained for non-plant assets only.
-      sprite.__instancingPending = true;
-      // Attach handle onto sprite for later removal linkage
-      sprite.__instancedRef = placeableRecord;
-      // Fire and forget; pool handles missing three gracefully
-      // Capture handle so removal can free correct instance index
-      try {
-        const handlePromise = gm.placeableMeshPool?.addPlaceable(placeableRecord);
-        // expose for deterministic tests
-        sprite.__instancingPromise = handlePromise;
-        if (handlePromise && typeof handlePromise.then === 'function') {
-          try {
-            if (!Array.isArray(gm._pendingInstancingPromises)) {
-              gm._pendingInstancingPromises = [];
-            }
-            gm._pendingInstancingPromises.push(handlePromise);
-          } catch (_) {
-            /* ignore */
-          }
-          handlePromise
-            .then((handle) => {
-              if (handle) placeableRecord.__meshPoolHandle = handle; // maintain symmetry
-              try {
-                delete sprite.__instancingPending;
-              } catch (_) {
-                /* ignore */
-              }
-            })
-            .catch(() => {
-              try {
-                delete sprite.__instancingPending;
-              } catch (_) {
-                /* ignore */
-              }
-              /* ignore */
-            });
-        }
-      } catch (_) {
-        /* ignore instancing add failures */
-        try {
-          delete sprite.__instancingPending;
-        } catch (_) {
-          /* ignore */
-        }
-      }
-    }
-  } catch (_) {
-    /* ignore instancing errors */
-  }
   return true;
 }
 
@@ -804,8 +789,67 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
   if (!m.placeables || !m.placeables.has(tileKey)) return false;
   const list = m.placeables.get(tileKey);
   let changed = false;
+  const gm = m.gameManager;
   for (const sprite of list) {
-    // Skip pure 3D records (no sprite texture)
+    if (!sprite || (id && sprite.placeableId !== id)) continue;
+
+    // Handle native 3D instanced placeables
+    if (sprite.__is3DPlaceable && !sprite.__threeModel) {
+      const def = TERRAIN_PLACEABLES[sprite.placeableId];
+      if (!def) continue;
+      const variants = Array.isArray(def.img) ? def.img : def.img ? [def.img] : [];
+      if (variants.length < 2) {
+        const nextIndex = Number.isFinite(index)
+          ? Math.max(0, index) % Math.max(variants.length, 1)
+          : (Number(sprite.placeableVariantIndex) + 1) % Math.max(variants.length, 1);
+        if (nextIndex !== sprite.placeableVariantIndex) {
+          sprite.placeableVariantIndex = nextIndex;
+          changed = true;
+        }
+        continue;
+      }
+      const len = variants.length;
+      const nextIndex = Number.isFinite(index)
+        ? ((index % len) + len) % len
+        : (sprite.placeableVariantIndex + 1) % len;
+      const nextPath = variants[nextIndex];
+      if (!nextPath) continue;
+      try {
+        if (sprite.__instancedRef && gm?.placeableMeshPool) {
+          gm.placeableMeshPool.removePlaceable(sprite.__instancedRef);
+          delete sprite.__meshPoolHandle;
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      sprite.placeableVariantIndex = nextIndex;
+      sprite.variantKey = nextPath;
+      sprite.texturePath = nextPath;
+      sprite.__rawVariantKey = nextPath;
+      const pool =
+        gm?.is3DModeActive?.() && gm?.features?.instancedPlaceables
+          ? gm.ensureInstancing?.() || gm.placeableMeshPool
+          : null;
+      if (pool) {
+        try {
+          const handlePromise = pool.addPlaceable(sprite);
+          sprite.__instancingPromise = handlePromise;
+          if (handlePromise && typeof handlePromise.then === 'function') {
+            if (!Array.isArray(gm._pendingInstancingPromises)) {
+              gm._pendingInstancingPromises = [];
+            }
+            gm._pendingInstancingPromises.push(handlePromise);
+            handlePromise.catch(() => {});
+          }
+        } catch (_) {
+          /* ignore re-add failure */
+        }
+      }
+      changed = true;
+      continue;
+    }
+
+    // Skip pure 3D model records (handled separately)
     if (sprite && sprite.__threeModel && !sprite.texture) continue;
     if (!sprite || (id && sprite.placeableId !== id)) continue;
     const def = TERRAIN_PLACEABLES[sprite.placeableId];
@@ -936,6 +980,10 @@ function _isoCenterForCell(m, gx, gy) {
  */
 export function repositionPlaceableSprite(m, sprite) {
   if (!sprite) return;
+  if (sprite.__is3DPlaceable && !sprite.__threeModel) {
+    // Instanced billboard/ground cards are managed by the mesh pool; height resync handled centrally.
+    return;
+  }
   // PURE 3D MODEL RECORD (no PIXI sprite texture data)
   if (sprite.__threeModel && !sprite.texture) {
     try {
@@ -1043,6 +1091,14 @@ export function updatePlaceablesForCell(m, gx, gy) {
  * Reposition every placeable across the map (used when elevation scale changes).
  */
 export function repositionAllPlaceables(m) {
+  const gm = m?.gameManager;
+  if (gm?.is3DModeActive?.() && gm.placeableMeshPool) {
+    try {
+      gm.placeableMeshPool.resyncHeights?.();
+    } catch (_) {
+      /* ignore */
+    }
+  }
   if (!m.placeables || m.placeables.size === 0) return;
   for (const [, list] of m.placeables) {
     if (!Array.isArray(list)) continue;
