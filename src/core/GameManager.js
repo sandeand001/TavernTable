@@ -309,9 +309,8 @@ class GameManager {
     if (!this.threeSceneManager) {
       this.threeSceneManager = new ThreeSceneManager(this);
       await this.threeSceneManager.initialize();
-      // Hide bootstrap grid plane & legacy Pixi tile grid in hybrid mode for cleaner 3D visuals
+      // Hide the legacy Pixi tile grid once 3D mode is active; keep the Three grid visible by default.
       try {
-        this.threeSceneManager.setBootstrapGridVisible?.(false);
         this.threeSceneManager.setPixiGridVisible?.(false);
       } catch (_) {
         /* ignore */

@@ -4,7 +4,9 @@ import { GRID_CONFIG } from '../../../config/GameConstants.js';
 export function drawIsometricTile(c, x, y, color = GRID_CONFIG.TILE_COLOR) {
   const tile = new PIXI.Graphics();
   tile.lineStyle(1, GRID_CONFIG.TILE_BORDER_COLOR, GRID_CONFIG.TILE_BORDER_ALPHA);
-  tile.beginFill(color);
+  const fillAlpha =
+    typeof GRID_CONFIG?.TILE_FILL_ALPHA === 'number' ? GRID_CONFIG.TILE_FILL_ALPHA : 1;
+  tile.beginFill(color, fillAlpha);
 
   // Diamond shape
   tile.moveTo(0, c.gameManager.tileHeight / 2);

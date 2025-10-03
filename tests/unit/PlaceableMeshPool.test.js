@@ -27,6 +27,7 @@ jest.mock('three', () => {
     constructor() {
       this.matrix = {};
       this.position = { set() {} };
+      this.scale = { set() {} };
     }
     updateMatrix() {}
   }
@@ -41,6 +42,7 @@ describe('PlaceableMeshPool (Phase 4 scaffold)', () => {
       renderMode: '3d-hybrid',
       threeSceneManager: { scene },
       spatial: { gridToWorld: (x, y) => ({ x, y: 0, z: y }) },
+      is3DModeActive: () => true,
     };
     const pool = new PlaceableMeshPool({ gameManager: gm });
     const placeable = { gridX: 1, gridY: 2, type: 'tree' };

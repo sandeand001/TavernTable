@@ -34,6 +34,49 @@ const ID_TO_MODEL_KEY = {
   'tree-bare-deciduous': 'twisted-bare-1',
 };
 
+const PLANT_FAMILY_VARIANTS = (() => {
+  const map = new Map();
+  try {
+    for (const def of Object.values(TERRAIN_PLACEABLES)) {
+      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
+      const variants = def.familyVariants.filter(
+        (variantId) => typeof variantId === 'string' && TERRAIN_PLACEABLES[variantId]
+      );
+      if (variants.length < 2) continue;
+      for (const variantId of variants) {
+        if (!map.has(variantId)) {
+          map.set(variantId, variants);
+        }
+      }
+    }
+  } catch (_) {
+    /* ignore mapping failures */
+  }
+  return map;
+})();
+
+function resolvePlantFamilyVariants(variantId) {
+  if (typeof variantId !== 'string') return null;
+  const cached = PLANT_FAMILY_VARIANTS.get(variantId);
+  if (cached && cached.length >= 2) return cached;
+  try {
+    for (const def of Object.values(TERRAIN_PLACEABLES)) {
+      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
+      if (!def.familyVariants.includes(variantId)) continue;
+      const variants = def.familyVariants.filter(
+        (v) => typeof v === 'string' && TERRAIN_PLACEABLES[v]
+      );
+      if (variants.length >= 2) {
+        PLANT_FAMILY_VARIANTS.set(variantId, variants);
+        return variants;
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return null;
+}
+
 async function ensureModelCache(gameManager) {
   if (gameManager._modelAssetCache !== undefined) {
     // Upgrade path: legacy instance without hasKey -> recreate
@@ -799,6 +842,72 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
       if (!def) continue;
       const variants = Array.isArray(def.img) ? def.img : def.img ? [def.img] : [];
       if (variants.length < 2) {
+        const familyVariants = resolvePlantFamilyVariants(sprite.placeableId);
+        if (familyVariants && familyVariants.length >= 2) {
+          const len = familyVariants.length;
+          const currentIndex = familyVariants.indexOf(sprite.placeableId);
+          const baselineIndex =
+            currentIndex >= 0 ? currentIndex : Number(sprite.placeableVariantIndex) || 0;
+          const nextIndex = Number.isFinite(index)
+            ? ((index % len) + len) % len
+            : (baselineIndex + 1) % len;
+          const nextId = familyVariants[nextIndex];
+          if (nextId && nextId !== sprite.placeableId) {
+            try {
+              if (sprite.__instancedRef && gm?.placeableMeshPool) {
+                gm.placeableMeshPool.removePlaceable(sprite.__instancedRef);
+                delete sprite.__instancedRef;
+              }
+            } catch (_) {
+              /* ignore removal failure */
+            }
+            sprite.placeableId = nextId;
+            sprite.id = nextId;
+            sprite.variantKey = nextId;
+            sprite.texturePath = null;
+            sprite.__rawVariantKey = null;
+            sprite.placeableVariantIndex = nextIndex;
+            const nextDef = TERRAIN_PLACEABLES[nextId];
+            if (nextDef && typeof nextDef.type === 'string') {
+              sprite.placeableType = nextDef.type;
+            }
+            if (nextDef && nextDef.tintVariant) {
+              sprite.tintVariant = nextDef.tintVariant;
+            } else if (sprite.tintVariant) {
+              delete sprite.tintVariant;
+            }
+            sprite.__threeModelPending = true;
+            if (sprite.__threeModel) {
+              try {
+                sprite.__threeModel.parent?.remove(sprite.__threeModel);
+              } catch (_) {
+                /* ignore */
+              }
+              delete sprite.__threeModel;
+            }
+            const pool =
+              gm?.is3DModeActive?.() && gm?.features?.instancedPlaceables
+                ? gm.ensureInstancing?.() || gm.placeableMeshPool
+                : null;
+            if (pool) {
+              try {
+                const handlePromise = pool.addPlaceable(sprite);
+                sprite.__instancingPromise = handlePromise;
+                if (handlePromise && typeof handlePromise.then === 'function') {
+                  if (!Array.isArray(gm._pendingInstancingPromises)) {
+                    gm._pendingInstancingPromises = [];
+                  }
+                  gm._pendingInstancingPromises.push(handlePromise);
+                  handlePromise.catch(() => {});
+                }
+              } catch (_) {
+                /* ignore re-add failure */
+              }
+            }
+            changed = true;
+          }
+          continue;
+        }
         const nextIndex = Number.isFinite(index)
           ? Math.max(0, index) % Math.max(variants.length, 1)
           : (Number(sprite.placeableVariantIndex) + 1) % Math.max(variants.length, 1);

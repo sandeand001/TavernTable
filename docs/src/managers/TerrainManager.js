@@ -586,10 +586,26 @@ export class TerrainManager {
    */
   renderBrushPreview(cells, options = {}) {
     try {
-      if (!this.previewContainer || !this.terrainCoordinator?.isTerrainModeActive) return;
+      const threeMgr = this.gameManager?.threeSceneManager;
+      const use3DPreview = this.gameManager?.is3DModeActive?.() && threeMgr?.setTerrainBrushPreview;
+      const terrainModeActive = !!this.terrainCoordinator?.isTerrainModeActive;
+      const hasCells = Array.isArray(cells) && cells.length > 0;
+      const shouldShow3D = use3DPreview && terrainModeActive && hasCells;
+
+      if (!hasCells || !terrainModeActive) {
+        if (use3DPreview) threeMgr?.clearTerrainBrushPreview?.();
+      } else if (use3DPreview) {
+        try {
+          threeMgr.setTerrainBrushPreview(cells, options);
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      if (!this.previewContainer || !terrainModeActive) return;
       this.ensurePreviewLayerOnTop();
-      this.clearBrushPreview();
-      if (!Array.isArray(cells) || cells.length === 0) return;
+      this.clearBrushPreview({ include3D: !shouldShow3D });
+      if (!hasCells) return;
 
       const w = this.gameManager.tileWidth;
       const h = this.gameManager.tileHeight;
@@ -650,7 +666,15 @@ export class TerrainManager {
   }
 
   /** Clear any existing brush preview graphics. */
-  clearBrushPreview() {
+  clearBrushPreview(options = {}) {
+    const { include3D = true } = options;
+    if (include3D) {
+      try {
+        this.gameManager?.threeSceneManager?.clearTerrainBrushPreview?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }
     try {
       if (!this.previewContainer) return;
       for (const [, g] of this.previewCache) {

@@ -2,6 +2,9 @@
 // ThreeSceneManager.js
 // Clean implementation with camera mode toggles and debug overlay.
 
+import { GRID_CONFIG } from '../config/GameConstants.js';
+import { TerrainBrushOverlay3D } from './TerrainBrushOverlay3D.js';
+
 export class ThreeSceneManager {
   constructor(gameManager) {
     this.gameManager = gameManager;
@@ -13,6 +16,21 @@ export class ThreeSceneManager {
     this.canvas = null;
     this._animationHandle = null;
     this._animCallbacks = [];
+    this._sunLight = null;
+    this._sunTarget = null;
+    this._sunOffset = { x: -12, y: 14, z: 10 };
+    this.brushOverlay = null;
+    this._gridOverlayGroup = null;
+    this._gridOverlayKey = null;
+    this._gridOverlayBaseStyle = {
+      fillColor: GRID_CONFIG.TILE_COLOR,
+      fillAlpha: GRID_CONFIG.TILE_FILL_ALPHA,
+      borderColor: GRID_CONFIG.TILE_BORDER_COLOR,
+      borderAlpha: GRID_CONFIG.TILE_BORDER_ALPHA,
+    };
+    this._gridOverlayStyle = { ...this._gridOverlayBaseStyle };
+    this._gridOverlayStyleStack = [];
+    this._terrainMeshOpacity = 1;
     // User-facing toggles
     this.showBootstrapGrid = true;
     this._isoMode = false;
@@ -107,7 +125,7 @@ export class ThreeSceneManager {
       try {
         const sunIntensity = (typeof window !== 'undefined' && window.__TT_SUN_INTENSITY__) || 1.15;
         const sun = new three.DirectionalLight(0xfff2e0, sunIntensity);
-        sun.position.set(-12, 14, 10); // slightly higher/wider for broader shadow coverage
+        sun.position.set(this._sunOffset.x, this._sunOffset.y, this._sunOffset.z); // relative offset; recentered after scene init
         sun.name = 'SunKeyLight';
         const enableShadows =
           typeof window === 'undefined' || window.__TT_ENABLE_SHADOWS__ !== false;
@@ -152,35 +170,32 @@ export class ThreeSceneManager {
           }
         }
         this.scene.add(sun);
+        try {
+          const target = sun.target || new three.Object3D();
+          const metrics = this._getBoardMetrics();
+          if (metrics) {
+            target.position.set(metrics.centerX, 0, metrics.centerZ);
+          }
+          if (!target.parent && this.scene && typeof this.scene.add === 'function') {
+            this.scene.add(target);
+          }
+          this._sunTarget = target;
+        } catch (_) {
+          this._sunTarget = sun.target;
+        }
+        this._sunLight = sun;
+        this._updateSunCoverage();
       } catch (_) {
         /* ignore sun light */
       }
-      // Bootstrap wireframe grid plane sized to grid dims.
-      try {
-        const gm = this.gameManager;
-        const cols = gm?.cols || 25;
-        const rows = gm?.rows || 25;
-        const gridMaterial = new three.MeshBasicMaterial({
-          color: 0x228833,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.22,
-        });
-        const gridGeometry = new three.PlaneGeometry(
-          cols,
-          rows,
-          Math.min(cols, 50),
-          Math.min(rows, 50)
-        );
-        gridGeometry.rotateX(-Math.PI / 2);
-        const gridMesh = new three.Mesh(gridGeometry, gridMaterial);
-        gridMesh.name = 'BootstrapGridPlane';
-        gridMesh.position.set(cols * 0.5, 0, rows * 0.5);
-        gridMesh.visible = !!this.showBootstrapGrid;
-        this.scene.add(gridMesh);
-      } catch (_) {
-        /* ignore grid creation errors */
-      }
+      this._rebuildGridOverlay();
+      const initialGridVisible =
+        typeof window !== 'undefined' &&
+        typeof window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE === 'boolean'
+          ? !!window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE
+          : true;
+      this.setBootstrapGridVisible(initialGridVisible);
+      this._ensureBrushOverlay();
 
       // Camera
       const cols = this.gameManager?.cols || 25;
@@ -367,6 +382,409 @@ export class ThreeSceneManager {
     } catch (_) {
       /* noop */
     }
+    this._updateSunCoverage();
+  }
+
+  _getBoardMetrics() {
+    try {
+      const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+      const cols = Number.isFinite(this.gameManager?.cols) ? this.gameManager.cols : 25;
+      const rows = Number.isFinite(this.gameManager?.rows) ? this.gameManager.rows : 25;
+      const width = cols * tileSize;
+      const depth = rows * tileSize;
+      return {
+        cols,
+        rows,
+        tileSize,
+        centerX: width * 0.5,
+        centerZ: depth * 0.5,
+        halfWidth: width * 0.5,
+        halfDepth: depth * 0.5,
+        maxHalfSpan: Math.max(width, depth) * 0.5,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _computeTileHeights(cols, rows) {
+    const total = cols * rows;
+    const heights = new Float32Array(total);
+    const gm = this.gameManager;
+    const hasSampler = !!(gm && typeof gm.getTerrainHeight === 'function');
+    const unitRaw = gm?.spatial?.elevationUnit;
+    const elevationUnit = Number.isFinite(unitRaw) ? unitRaw : 0.5;
+
+    let idx = 0;
+    for (let gy = 0; gy < rows; gy += 1) {
+      for (let gx = 0; gx < cols; gx += 1, idx += 1) {
+        let heightLevel = 0;
+        if (hasSampler) {
+          try {
+            const sample = gm.getTerrainHeight(gx, gy);
+            if (Number.isFinite(sample)) heightLevel = sample;
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        heights[idx] = heightLevel * elevationUnit;
+      }
+    }
+
+    return { heights, elevationUnit };
+  }
+
+  _updateSunCoverage() {
+    const sun = this._sunLight;
+    if (!sun || !this.scene) return;
+    const metrics = this._getBoardMetrics();
+    if (!metrics) return;
+    this._rebuildGridOverlay(metrics);
+    const { centerX, centerZ, halfWidth, halfDepth, maxHalfSpan } = metrics;
+    try {
+      const target = this._sunTarget || sun.target;
+      if (target) {
+        target.position.set(centerX, 0, centerZ);
+        if (!target.parent && typeof this.scene.add === 'function') {
+          this.scene.add(target);
+        }
+        target.updateMatrixWorld?.();
+      }
+    } catch (_) {
+      /* ignore target failures */
+    }
+    try {
+      if (sun.position) {
+        sun.position.set(
+          centerX + this._sunOffset.x,
+          this._sunOffset.y,
+          centerZ + this._sunOffset.z
+        );
+      }
+    } catch (_) {
+      /* ignore position failures */
+    }
+    try {
+      const cam = sun.shadow?.camera;
+      if (cam) {
+        const padding = Math.max(halfWidth, halfDepth) * 0.35 + 2;
+        const extent = Math.max(halfWidth, halfDepth) + padding;
+        cam.left = -extent;
+        cam.right = extent;
+        cam.top = extent;
+        cam.bottom = -extent;
+        cam.near = Math.min(cam.near || 0.5, 0.5);
+        const minFar = this._sunOffset.y + maxHalfSpan * 3 + 10;
+        cam.far = Math.max(cam.far || 90, minFar);
+        cam.updateProjectionMatrix?.();
+        try {
+          if (sun.shadow) sun.shadow.needsUpdate = true;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    } catch (_) {
+      /* ignore shadow failures */
+    }
+    try {
+      sun.updateMatrixWorld?.();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  _rebuildGridOverlay(metrics = null, options = {}) {
+    if (!this.scene || !this.three) return;
+    const { force = false } = options;
+    const three = this.three;
+    const data = metrics || this._getBoardMetrics();
+    if (!data) return;
+
+    const { cols, rows, tileSize } = data;
+    const key = `${cols}x${rows}x${tileSize}`;
+    if (!force && this._gridOverlayGroup && this._gridOverlayKey === key) {
+      this._gridOverlayGroup.visible = !!this.showBootstrapGrid;
+      return;
+    }
+
+    if (!this._gridOverlayGroup) {
+      this._gridOverlayGroup = new three.Group();
+      this._gridOverlayGroup.name = 'BootstrapGridPlane';
+      this.scene.add(this._gridOverlayGroup);
+    }
+
+    try {
+      while (this._gridOverlayGroup.children.length) {
+        const child = this._gridOverlayGroup.children.pop();
+        try {
+          child?.geometry?.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          if (Array.isArray(child?.material)) {
+            for (const mat of child.material) mat?.dispose?.();
+          } else {
+            child?.material?.dispose?.();
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
+    this._gridOverlayGroup.visible = !!this.showBootstrapGrid;
+    this._gridOverlayGroup.renderOrder = -5;
+    this._gridOverlayGroup.position.set(0, 0, 0);
+
+    const { heights: tileHeights, elevationUnit } = this._computeTileHeights(cols, rows);
+    const tileCount = cols * rows;
+    const unitAbs = Math.max(Math.abs(elevationUnit), 0.0001);
+    const scaleUnit = Math.max(tileSize, unitAbs);
+    const fillOffset = -scaleUnit * 0.01;
+    const lineOffset = scaleUnit * 0.004;
+
+    const activeStyle = this._gridOverlayStyle || this._gridOverlayBaseStyle;
+    const fillColor =
+      activeStyle.fillColor ?? this._gridOverlayBaseStyle.fillColor ?? GRID_CONFIG.TILE_COLOR;
+    const fillAlphaRaw =
+      typeof activeStyle.fillAlpha === 'number'
+        ? activeStyle.fillAlpha
+        : (this._gridOverlayBaseStyle.fillAlpha ?? GRID_CONFIG.TILE_FILL_ALPHA ?? 0.32);
+    const borderColor =
+      activeStyle.borderColor ??
+      this._gridOverlayBaseStyle.borderColor ??
+      GRID_CONFIG.TILE_BORDER_COLOR;
+    const borderAlpha =
+      typeof activeStyle.borderAlpha === 'number'
+        ? activeStyle.borderAlpha
+        : (this._gridOverlayBaseStyle.borderAlpha ?? GRID_CONFIG.TILE_BORDER_ALPHA);
+    const fillAlpha = Math.max(0, Math.min(1, fillAlphaRaw));
+
+    if (three.PlaneGeometry && three.MeshBasicMaterial) {
+      try {
+        const baseGeometry = new three.PlaneGeometry(tileSize, tileSize, 1, 1);
+        baseGeometry.rotateX(-Math.PI / 2);
+
+        const fillMaterial = new three.MeshBasicMaterial({
+          color: fillColor,
+          transparent: fillAlpha < 1,
+          opacity: fillAlpha,
+          depthWrite: false,
+        });
+        fillMaterial.depthTest = true;
+        fillMaterial.toneMapped = false;
+
+        if (three.InstancedMesh && three.Object3D) {
+          const fillMesh = new three.InstancedMesh(baseGeometry, fillMaterial, tileCount);
+          fillMesh.name = 'GridBaseFill';
+          fillMesh.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
+          fillMesh.frustumCulled = false;
+          fillMesh.renderOrder = -10;
+          fillMesh.castShadow = false;
+          fillMesh.receiveShadow = false;
+          const dummy = new three.Object3D();
+          let idx = 0;
+          for (let gy = 0; gy < rows; gy += 1) {
+            for (let gx = 0; gx < cols; gx += 1) {
+              const tileIdx = gy * cols + gx;
+              const baseHeight = tileHeights[tileIdx] || 0;
+              dummy.position.set(
+                (gx + 0.5) * tileSize,
+                baseHeight + fillOffset,
+                (gy + 0.5) * tileSize
+              );
+              dummy.rotation.set(0, 0, 0);
+              dummy.scale.set(1, 1, 1);
+              dummy.updateMatrix();
+              fillMesh.setMatrixAt(idx, dummy.matrix);
+              idx += 1;
+            }
+          }
+          fillMesh.count = tileCount;
+          fillMesh.instanceMatrix.needsUpdate = true;
+          this._gridOverlayGroup.add(fillMesh);
+        } else {
+          for (let gy = 0; gy < rows; gy += 1) {
+            for (let gx = 0; gx < cols; gx += 1) {
+              const tileIdx = gy * cols + gx;
+              const baseHeight = tileHeights[tileIdx] || 0;
+              const mesh = new three.Mesh(baseGeometry.clone(), fillMaterial.clone());
+              mesh.position.set(
+                (gx + 0.5) * tileSize,
+                baseHeight + fillOffset,
+                (gy + 0.5) * tileSize
+              );
+              mesh.renderOrder = -10;
+              mesh.frustumCulled = false;
+              mesh.castShadow = false;
+              mesh.receiveShadow = false;
+              this._gridOverlayGroup.add(mesh);
+            }
+          }
+        }
+      } catch (_) {
+        /* ignore base fill */
+      }
+    }
+
+    if (three.BufferGeometry && three.LineSegments && three.LineBasicMaterial) {
+      try {
+        const segments = [];
+        const pushSegment = (x1, y1, z1, x2, y2, z2) => {
+          segments.push(x1, y1, z1, x2, y2, z2);
+        };
+
+        for (let gy = 0; gy < rows; gy += 1) {
+          for (let gx = 0; gx < cols; gx += 1) {
+            const baseIdx = gy * cols + gx;
+            const baseHeight = tileHeights[baseIdx] || 0;
+            const h = baseHeight + lineOffset;
+            const x0 = gx * tileSize;
+            const x1 = (gx + 1) * tileSize;
+            const z0 = gy * tileSize;
+            const z1 = (gy + 1) * tileSize;
+            pushSegment(x0, h, z0, x1, h, z0);
+            pushSegment(x1, h, z0, x1, h, z1);
+            pushSegment(x1, h, z1, x0, h, z1);
+            pushSegment(x0, h, z1, x0, h, z0);
+          }
+        }
+
+        if (segments.length) {
+          const lineGeometry = new three.BufferGeometry();
+          const positionArray = new Float32Array(segments);
+          if (three.Float32BufferAttribute) {
+            lineGeometry.setAttribute(
+              'position',
+              new three.Float32BufferAttribute(positionArray, 3)
+            );
+          } else {
+            lineGeometry.setAttribute('position', new three.BufferAttribute(positionArray, 3));
+          }
+          lineGeometry.computeBoundingSphere?.();
+
+          const lineMaterial = new three.LineBasicMaterial({
+            color: borderColor,
+            transparent: true,
+            opacity: borderAlpha,
+          });
+          lineMaterial.depthWrite = false;
+          lineMaterial.depthTest = true;
+          lineMaterial.toneMapped = false;
+          lineMaterial.linewidth = 1;
+          const gridLines = new three.LineSegments(lineGeometry, lineMaterial);
+          gridLines.name = 'GridLineFrame';
+          gridLines.position.set(0, 0, 0);
+          gridLines.renderOrder = -2;
+          gridLines.frustumCulled = false;
+          this._gridOverlayGroup.add(gridLines);
+        }
+      } catch (_) {
+        /* ignore grid line creation */
+      }
+    }
+
+    this._gridOverlayKey = key;
+  }
+
+  _ensureBrushOverlay() {
+    if (this.brushOverlay) return this.brushOverlay;
+    if (!this.three || !this.scene) return null;
+    try {
+      const overlay = new TerrainBrushOverlay3D({
+        three: this.three,
+        scene: this.scene,
+        gameManager: this.gameManager,
+      });
+      if (overlay?.isAvailable) {
+        this.brushOverlay = overlay;
+      } else {
+        this.brushOverlay = null;
+      }
+    } catch (_) {
+      this.brushOverlay = null;
+    }
+    return this.brushOverlay;
+  }
+
+  pushGridOverlayStyle(style = {}) {
+    if (!style) return;
+    this._gridOverlayStyleStack.push({ ...this._gridOverlayStyle });
+    this._gridOverlayStyle = {
+      ...this._gridOverlayStyle,
+      ...this._normalizeGridOverlayStyle(style),
+    };
+    this._rebuildGridOverlay();
+  }
+
+  popGridOverlayStyle() {
+    if (this._gridOverlayStyleStack.length) {
+      this._gridOverlayStyle = this._gridOverlayStyleStack.pop();
+    } else {
+      this._gridOverlayStyle = { ...this._gridOverlayBaseStyle };
+    }
+    this._rebuildGridOverlay();
+  }
+
+  setTerrainBrushPreview(cells = [], style = {}) {
+    if (!this.gameManager?.is3DModeActive?.()) {
+      this.brushOverlay?.clear?.();
+      return;
+    }
+    const overlay = this._ensureBrushOverlay();
+    try {
+      overlay?.setHighlight?.(cells, style);
+    } catch (_) {
+      /* ignore brush overlay errors */
+    }
+  }
+
+  clearTerrainBrushPreview() {
+    try {
+      this.brushOverlay?.clear?.();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  setTerrainMeshOpacity(opacity = 1) {
+    const clamped = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+    this._terrainMeshOpacity = clamped;
+    let mesh = null;
+    try {
+      mesh = this.scene?.getObjectByName?.('TerrainMesh') || null;
+    } catch (_) {
+      mesh = null;
+    }
+    if (!mesh || !mesh.material) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of materials) {
+      if (!mat) continue;
+      if (typeof mat.opacity === 'number') mat.opacity = clamped;
+      if ('transparent' in mat) mat.transparent = clamped < 0.999;
+      if ('depthWrite' in mat) mat.depthWrite = clamped >= 0.999;
+      if ('needsUpdate' in mat) mat.needsUpdate = true;
+    }
+  }
+
+  syncGridOverlayToTerrain() {
+    try {
+      this._rebuildGridOverlay(null, { force: true });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  _normalizeGridOverlayStyle(style = {}) {
+    const normalized = {};
+    if (style.fillColor !== undefined) normalized.fillColor = style.fillColor;
+    if (typeof style.fillAlpha === 'number') normalized.fillAlpha = style.fillAlpha;
+    if (style.borderColor !== undefined) normalized.borderColor = style.borderColor;
+    if (typeof style.borderAlpha === 'number') normalized.borderAlpha = style.borderAlpha;
+    return normalized;
   }
 
   _loop() {
@@ -925,6 +1343,7 @@ export class ThreeSceneManager {
         /* ignore */
       }
       this.camera.updateProjectionMatrix();
+      this._updateSunCoverage();
     } catch (_) {
       // Fallback to previous heuristic if any error occurs
       try {
@@ -946,6 +1365,7 @@ export class ThreeSceneManager {
         this.camera.top = baseSpan * margin;
         this.camera.bottom = -baseSpan * margin;
         this.camera.updateProjectionMatrix();
+        this._updateSunCoverage();
       } catch (_) {
         /* ignore */
       }
@@ -1068,10 +1488,27 @@ export class ThreeSceneManager {
 
   setBootstrapGridVisible(visible) {
     this.showBootstrapGrid = !!visible;
+    if (typeof window !== 'undefined') {
+      window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE = this.showBootstrapGrid;
+      const listeners = window.__TT_GRID_VISIBILITY_LISTENERS__;
+      if (Array.isArray(listeners)) {
+        listeners.forEach((fn) => {
+          try {
+            fn(this.showBootstrapGrid);
+          } catch (_) {
+            /* ignore listener error */
+          }
+        });
+      }
+    }
     if (!this.scene) return;
     try {
-      const g = this.scene.getObjectByName('BootstrapGridPlane');
-      if (g) g.visible = this.showBootstrapGrid;
+      if (this._gridOverlayGroup) {
+        this._gridOverlayGroup.visible = this.showBootstrapGrid;
+      } else {
+        const fallback = this.scene.getObjectByName('BootstrapGridPlane');
+        if (fallback) fallback.visible = this.showBootstrapGrid;
+      }
     } catch (_) {
       /* ignore */
     }
@@ -1080,7 +1517,12 @@ export class ThreeSceneManager {
   setPixiGridVisible(visible) {
     try {
       const gc = this.gameManager?.gridContainer;
-      if (gc) gc.visible = !!visible;
+      if (!gc) return;
+      const enabled = !!visible;
+      gc.visible = enabled;
+      if (typeof gc.renderable === 'boolean') gc.renderable = enabled;
+      if ('interactiveChildren' in gc) gc.interactiveChildren = enabled;
+      if ('alpha' in gc) gc.alpha = enabled ? 1 : 0;
     } catch (_) {
       /* ignore */
     }
@@ -1119,6 +1561,40 @@ export class ThreeSceneManager {
     } catch (_) {
       /* ignore */
     }
+    try {
+      if (this._gridOverlayGroup) {
+        while (this._gridOverlayGroup.children.length) {
+          const child = this._gridOverlayGroup.children.pop();
+          try {
+            child?.geometry?.dispose?.();
+          } catch (_) {
+            /* ignore */
+          }
+          try {
+            if (Array.isArray(child?.material)) {
+              for (const mat of child.material) mat?.dispose?.();
+            } else {
+              child?.material?.dispose?.();
+            }
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        if (this._gridOverlayGroup.parent) {
+          this._gridOverlayGroup.parent.remove(this._gridOverlayGroup);
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      this.brushOverlay?.dispose?.();
+    } catch (_) {
+      /* ignore */
+    }
+    this.brushOverlay = null;
+    this._gridOverlayGroup = null;
+    this._gridOverlayKey = null;
     try {
       if (this.renderer) this.renderer.dispose();
     } catch (_) {

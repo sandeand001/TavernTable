@@ -15,6 +15,7 @@ import {
   getTabPanels,
   getGridOpacityControl,
   getAnimationSpeedControl,
+  getVisualGridToggle,
   getBiomeButtons,
   getBiomeButtonByKey,
   getTerrainPlaceablesRoot,
@@ -48,21 +49,47 @@ class SidebarController {
       // Activate initial tab
       this.switchTab(this.activeTab);
       // Grid + animation controls
-      const gridOpacity = getGridOpacityControl();
-      if (gridOpacity && !gridOpacity.dataset.boundChange) {
-        gridOpacity.addEventListener('input', () => {
-          const val = Number(gridOpacity.value) / 100;
-          this.onGridOpacityChange(val);
-        });
-        gridOpacity.dataset.boundChange = 'true';
+      const { slider: gridOpacitySlider, valueEl: gridOpacityValue } = getGridOpacityControl();
+      if (gridOpacitySlider && !gridOpacitySlider.dataset.boundChange) {
+        const applyGridOpacity = () => {
+          const raw = Number(gridOpacitySlider.value);
+          if (!Number.isFinite(raw)) return;
+          this.onGridOpacityChange(raw / 100);
+          if (gridOpacityValue) gridOpacityValue.textContent = `${Math.round(raw)}%`;
+        };
+        gridOpacitySlider.addEventListener('input', applyGridOpacity);
+        gridOpacitySlider.addEventListener('change', applyGridOpacity);
+        gridOpacitySlider.dataset.boundChange = 'true';
+        applyGridOpacity();
       }
-      const animSpeed = getAnimationSpeedControl();
-      if (animSpeed && !animSpeed.dataset.boundChange) {
-        animSpeed.addEventListener('input', () => {
-          const val = Number(animSpeed.value) / 100;
-          this.onAnimationSpeedChange(val);
+      const { slider: animSpeedSlider, valueEl: animSpeedValue } = getAnimationSpeedControl();
+      if (animSpeedSlider && !animSpeedSlider.dataset.boundChange) {
+        const applyAnimSpeed = () => {
+          const raw = Number(animSpeedSlider.value);
+          if (!Number.isFinite(raw)) return;
+          this.onAnimationSpeedChange(raw);
+          if (animSpeedValue) animSpeedValue.textContent = `${raw.toFixed(1)}x`;
+        };
+        animSpeedSlider.addEventListener('input', applyAnimSpeed);
+        animSpeedSlider.addEventListener('change', applyAnimSpeed);
+        animSpeedSlider.dataset.boundChange = 'true';
+        applyAnimSpeed();
+      }
+      const visualGridToggle = getVisualGridToggle();
+      if (visualGridToggle && !visualGridToggle.dataset.boundChange) {
+        this._syncVisualGridToggleState(visualGridToggle);
+        visualGridToggle.addEventListener('change', () => {
+          this.onVisualGridVisibilityChange(visualGridToggle.checked);
         });
-        animSpeed.dataset.boundChange = 'true';
+        visualGridToggle.dataset.boundChange = 'true';
+        if (typeof window !== 'undefined') {
+          window.__TT_GRID_VISIBILITY_LISTENERS__ = window.__TT_GRID_VISIBILITY_LISTENERS__ || [];
+          if (!visualGridToggle.dataset.gridListenerBound) {
+            const syncFn = (visible) => this._syncVisualGridToggleState(visualGridToggle, visible);
+            window.__TT_GRID_VISIBILITY_LISTENERS__.push(syncFn);
+            visualGridToggle.dataset.gridListenerBound = 'true';
+          }
+        }
       }
       // Panels (show/hide by class)
       panels.forEach((p) => p.classList.remove('active'));
@@ -391,7 +418,10 @@ class SidebarController {
               bBtn.dataset.biome = b.key;
               bBtn.title = b.label;
               bBtn.textContent = (b.emoji || '') + ' ' + b.label;
-              bBtn.addEventListener('click', () => this.selectBiome(b.key));
+              bBtn.addEventListener('click', () => {
+                window.__TT_USER_SELECTED_BIOME__ = true;
+                this.selectBiome(b.key);
+              });
               listEl.appendChild(bBtn);
             });
             groupContainer.appendChild(headerBtn);
@@ -507,6 +537,33 @@ class SidebarController {
       window.selectedTokenType = tokenType;
     }
     this.refreshCreatureSelection();
+  }
+
+  _syncVisualGridToggleState(toggleEl, explicitVisible) {
+    if (!toggleEl) return;
+    let resolved = true;
+    if (typeof explicitVisible === 'boolean') {
+      resolved = explicitVisible;
+    } else if (typeof window !== 'undefined') {
+      if (window.gameManager?.threeSceneManager) {
+        resolved = !!window.gameManager.threeSceneManager.showBootstrapGrid;
+      } else if (typeof window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE === 'boolean') {
+        resolved = !!window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE;
+      }
+    }
+    toggleEl.checked = resolved;
+    toggleEl.disabled = false;
+  }
+
+  onVisualGridVisibilityChange(visible) {
+    const next = !!visible;
+    if (typeof window !== 'undefined') {
+      window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE = next;
+    }
+    const gm = typeof window !== 'undefined' ? window.gameManager : null;
+    if (gm?.threeSceneManager) {
+      gm.threeSceneManager.setBootstrapGridVisible(next);
+    }
   }
 
   onGridOpacityChange(opacity) {

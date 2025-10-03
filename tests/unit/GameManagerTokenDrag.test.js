@@ -11,6 +11,7 @@ function buildHybridGMWithToken() {
     gridToWorld: (gx, gy) => ({ x: gx, y: 0, z: gy }),
   };
   gm.getTerrainHeight = () => 0;
+  gm.threeSceneManager = { scene: {}, isReady: () => true };
   // Seed one token at (5,5)
   const token = {
     id: 't1',

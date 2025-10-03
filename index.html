@@ -349,9 +349,24 @@
           <div class="section-title">Display Options</div>
           <div class="setting-item">
             <label for="grid-opacity">Grid Opacity:</label>
-            <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input">
-            <span cl="2" step="0.1" value="1" class="range-input">
-              <span class="range-value">1x</span>
+            <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input"
+              aria-label="Adjust base grid opacity">
+            <span id="grid-opacity-value" class="range-value">50%</span>
+          </div>
+          <div class="setting-item">
+            <label class="toggle-switch" for="visual-grid-toggle">
+              <input type="checkbox" id="visual-grid-toggle" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Show 3D Grid Overlay</span>
+            </label>
+            <small class="small-text" style="display:block;margin-top:0.25rem;">Applies when Hybrid 3D mode is
+              active.</small>
+          </div>
+          <div class="setting-item">
+            <label for="animation-speed">Animation Speed:</label>
+            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1"
+              class="range-input" aria-label="Adjust animation playback speed">
+            <span id="animation-speed-value" class="range-value">1.0x</span>
           </div>
           <div class="setting-item" style="margin-top:0.75rem;">
             <label class="toggle-switch" for="hybrid-render-toggle">

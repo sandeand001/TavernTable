@@ -388,7 +388,10 @@ class SidebarController {
               bBtn.dataset.biome = b.key;
               bBtn.title = b.label;
               bBtn.textContent = (b.emoji || '') + ' ' + b.label;
-              bBtn.addEventListener('click', () => this.selectBiome(b.key));
+              bBtn.addEventListener('click', () => {
+                window.__TT_USER_SELECTED_BIOME__ = true;
+                this.selectBiome(b.key);
+              });
               listEl.appendChild(bBtn);
             });
 

@@ -14,6 +14,20 @@ function ensureHybrid() {
   return window.gameManager.threeSceneManager || null;
 }
 
+function getStoredGridVisibility(defaultValue = true) {
+  if (typeof window === 'undefined') return defaultValue;
+  if (typeof window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE === 'boolean') {
+    return !!window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE;
+  }
+  return defaultValue;
+}
+
+function setStoredGridVisibility(value) {
+  if (typeof window !== 'undefined') {
+    window.__TT_PENDING_BOOTSTRAP_GRID_VISIBLE = !!value;
+  }
+}
+
 function updatePlaceableMetrics() {
   try {
     const target = el('placeable-metrics');
@@ -151,11 +165,35 @@ function attach3DControls() {
   });
 
   const bootstrapToggle = el('bootstrap-grid-toggle');
-  bootstrapToggle.addEventListener('change', () => {
+  if (bootstrapToggle) {
+    const initialVisible = getStoredGridVisibility(true);
+    bootstrapToggle.checked = initialVisible;
+    setStoredGridVisibility(initialVisible);
     const mgr = ensureHybrid();
-    if (!mgr) return;
-    mgr.setBootstrapGridVisible(bootstrapToggle.checked);
-  });
+    if (mgr) mgr.setBootstrapGridVisible(initialVisible);
+    const settingsToggle = el('visual-grid-toggle');
+    if (settingsToggle) settingsToggle.checked = initialVisible;
+    bootstrapToggle.addEventListener('change', () => {
+      const visible = !!bootstrapToggle.checked;
+      setStoredGridVisibility(visible);
+      const sceneMgr = ensureHybrid();
+      if (sceneMgr) sceneMgr.setBootstrapGridVisible(visible);
+      const settingsToggleEl = el('visual-grid-toggle');
+      if (settingsToggleEl) settingsToggleEl.checked = visible;
+    });
+    if (typeof window !== 'undefined') {
+      window.__TT_GRID_VISIBILITY_LISTENERS__ = window.__TT_GRID_VISIBILITY_LISTENERS__ || [];
+      if (!bootstrapToggle.dataset.gridListenerBound) {
+        const syncFn = (visible) => {
+          bootstrapToggle.checked = !!visible;
+          const settingsToggleEl = el('visual-grid-toggle');
+          if (settingsToggleEl) settingsToggleEl.checked = !!visible;
+        };
+        window.__TT_GRID_VISIBILITY_LISTENERS__.push(syncFn);
+        bootstrapToggle.dataset.gridListenerBound = 'true';
+      }
+    }
+  }
 
   const pixiToggle = el('pixi-grid-toggle');
   pixiToggle.addEventListener('change', () => {

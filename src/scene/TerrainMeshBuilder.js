@@ -2,6 +2,8 @@
 // Responsible for constructing a heightfield mesh (initially flat) from grid elevation data.
 // Future: will incorporate smoothing, normals, materials, biome-driven vertex color.
 
+import { GRID_CONFIG } from '../config/GameConstants.js';
+
 export class TerrainMeshBuilder {
   constructor(opts = {}) {
     this.tileWorldSize = opts.tileWorldSize || 1.0; // world units per tile (X/Z)
@@ -123,7 +125,9 @@ export class TerrainMeshBuilder {
         const elev = heightGrid[gy][gx];
         const topY = elev * this.elevationUnit;
         // Color for tile top
-        const hex = wantsColors ? getBiomeColor(gx, gy, elev) || 0x777766 : 0;
+        const sampleColor = wantsColors ? getBiomeColor(gx, gy, elev) : null;
+        const fallbackColor = GRID_CONFIG?.TILE_COLOR ?? 0x777766;
+        const hex = Number.isFinite(sampleColor) ? sampleColor : fallbackColor;
         let r = ((hex >> 16) & 0xff) / 255;
         let g = ((hex >> 8) & 0xff) / 255;
         let b = (hex & 0xff) / 255;

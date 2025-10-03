@@ -153,7 +153,14 @@ export function applyTerrainStyling(m, terrainTile, height) {
   const intensityMul = settings && Number.isFinite(settings.intensity) ? settings.intensity : 1.0;
   const densityMul = settings && Number.isFinite(settings.density) ? settings.density : 1.0;
   const simplify = settings ? !!settings.performance : false;
-  const baseAlphaRaw = isDefaultHeight ? 0.12 : TERRAIN_CONFIG.HEIGHT_ALPHA;
+  const terrainModeActive = !!m.terrainCoordinator?.isTerrainModeActive;
+  const baseAlphaRaw = terrainModeActive
+    ? isDefaultHeight
+      ? (TERRAIN_CONFIG.TERRAIN_MODE_OVERLAY_BASE_ALPHA ?? 0.12)
+      : (TERRAIN_CONFIG.TERRAIN_MODE_OVERLAY_ALPHA ?? TERRAIN_CONFIG.HEIGHT_ALPHA)
+    : isDefaultHeight
+      ? 0.12
+      : TERRAIN_CONFIG.HEIGHT_ALPHA;
   const baseAlpha = Math.max(0, Math.min(1, baseAlphaRaw * intensityMul));
   const mask = new PIXI.Graphics();
   mask.beginFill(0xffffff, 1);

@@ -117,6 +117,7 @@ export class TerrainCoordinator {
     // UI state
     this.isDragging = false;
     this.lastModifiedCell = null;
+    this._gridTintApplied = false;
 
     // Elevation perception runtime state (pixels per level). Initialized from config default.
     this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
@@ -215,6 +216,33 @@ export class TerrainCoordinator {
   /** Returns true if placeable removal mode is active. */
   isPlaceableRemovalMode() {
     return !!this._placeableRemovalMode;
+  }
+
+  applyTerrainModeGridTint() {
+    const gm = this.gameManager;
+    if (!gm) return;
+    this._gridTintApplied = false;
+    const meshAlpha =
+      typeof TERRAIN_CONFIG.TERRAIN_MODE_MESH_ALPHA === 'number'
+        ? TERRAIN_CONFIG.TERRAIN_MODE_MESH_ALPHA
+        : 0.55;
+    try {
+      gm.threeSceneManager?.setTerrainMeshOpacity?.(meshAlpha);
+    } catch (_) {
+      /* non-fatal */
+    }
+  }
+
+  restoreTerrainModeGridTint() {
+    const gm = this.gameManager;
+    if (!gm) return;
+    const meshAlphaOff = 1;
+    try {
+      gm.threeSceneManager?.setTerrainMeshOpacity?.(meshAlphaOff);
+    } catch (_) {
+      /* non-fatal */
+    }
+    this._gridTintApplied = false;
   }
 
   /**

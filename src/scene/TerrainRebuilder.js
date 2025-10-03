@@ -4,6 +4,7 @@
 
 // Simplified: expressive/atlas modes removed. Use 2D biome palette directly.
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { GRID_CONFIG } from '../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../config/BiomePalettes.js';
 
 export class TerrainRebuilder {
@@ -13,23 +14,57 @@ export class TerrainRebuilder {
     this.debounceMs = debounceMs;
     this._timer = null;
     this._lastArgs = null;
+    this._lastFlushTime = Number.NEGATIVE_INFINITY;
   }
 
   request(args = {}) {
-    this._lastArgs = args;
-    if (this._timer) clearTimeout(this._timer);
-    this._timer = setTimeout(() => this._flush(), this.debounceMs);
-    if (typeof this._timer.unref === 'function') this._timer.unref();
+    this._lastArgs = this._mergeArgs(this._lastArgs, args);
+    const safeDebounce = Number.isFinite(this.debounceMs) ? this.debounceMs : 0;
+    const interval = Math.max(0, safeDebounce || 0);
+    const rawNow = Date.now();
+    const now = Number.isFinite(rawNow) ? rawNow : 0;
+    let elapsed = now - this._lastFlushTime;
+    if (!Number.isFinite(elapsed) || elapsed < 0) {
+      elapsed = Number.POSITIVE_INFINITY;
+    }
+    if (elapsed >= interval) {
+      if (this._timer) {
+        clearTimeout(this._timer);
+        this._timer = null;
+      }
+      this._flush();
+      return;
+    }
+    const remaining = interval - elapsed;
+    const delay = Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
+    if (!this._timer) {
+      this._timer = setTimeout(() => this._flush(), delay);
+      if (typeof this._timer.unref === 'function') this._timer.unref();
+    }
   }
 
   _flush() {
     const args = this._lastArgs || {};
     this._timer = null;
+    this._lastFlushTime = Date.now();
     try {
       this.rebuild(args);
     } catch (_) {
       /* swallow build errors early phase */
     }
+  }
+
+  _mergeArgs(existing, incoming) {
+    const base = existing && typeof existing === 'object' ? { ...existing } : {};
+    if (incoming && typeof incoming === 'object') {
+      Object.keys(incoming).forEach((key) => {
+        const value = incoming[key];
+        if (value !== undefined) {
+          base[key] = value;
+        }
+      });
+    }
+    return base;
   }
 
   rebuild({ three } = {}) {
@@ -45,12 +80,34 @@ export class TerrainRebuilder {
     const rows = gm.rows;
     const getHeight = (x, y) => gm.getTerrainHeight(x, y);
     const t0 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
+    const neutralColor = GRID_CONFIG?.TILE_COLOR ?? 0x444444;
     const gmBiomeGetter = (gx, gy, elev) => {
       const h = Number.isFinite(elev) ? elev : 0;
+      const terrainModeActive =
+        (gm?.terrainCoordinator?.isTerrainModeActive ?? false) ||
+        (typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive());
+      if (terrainModeActive) {
+        const palette = TERRAIN_CONFIG.HEIGHT_COLOR_SCALE || {};
+        const clamped = Math.max(
+          TERRAIN_CONFIG.MIN_HEIGHT ?? -Infinity,
+          Math.min(TERRAIN_CONFIG.MAX_HEIGHT ?? Infinity, Math.round(h))
+        );
+        let color = palette[clamped];
+        if (color == null) color = palette[String(clamped)];
+        if (color == null) color = palette[0];
+        if (color == null) color = palette['0'];
+        if (color == null) color = 0x6b7280;
+        return color;
+      }
       const biomeKey =
         (typeof window !== 'undefined' && window.selectedBiome) ||
         gm?.terrainCoordinator?._lastGeneratedBiomeKey ||
         'grassland';
+      const userSelectedBiome =
+        typeof window !== 'undefined' && window.__TT_USER_SELECTED_BIOME__ === true;
+      if (!userSelectedBiome) {
+        return neutralColor;
+      }
       try {
         // Prefer hydrology-enhanced color if available
         return getBiomeColorWithHydrology(biomeKey, h);
@@ -59,7 +116,7 @@ export class TerrainRebuilder {
         if (Object.prototype.hasOwnProperty.call(TERRAIN_CONFIG.HEIGHT_COLOR_SCALE, key)) {
           return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[key];
         }
-        return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'] || 0x777766;
+        return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'] || neutralColor;
       }
     };
     const wallColor = 0x050505;
@@ -196,6 +253,19 @@ export class TerrainRebuilder {
       } catch (_) {
         /* ignore reposition */
       }
+    }
+    try {
+      const currentOpacity = Number.isFinite(gm?.threeSceneManager?._terrainMeshOpacity)
+        ? gm.threeSceneManager._terrainMeshOpacity
+        : 1;
+      gm?.threeSceneManager?.setTerrainMeshOpacity?.(currentOpacity);
+    } catch (_) {
+      /* ignore opacity sync */
+    }
+    try {
+      gm?.threeSceneManager?.syncGridOverlayToTerrain?.();
+    } catch (_) {
+      /* ignore grid overlay sync */
     }
     try {
       const t1 = (typeof performance !== 'undefined' && performance.now()) || Date.now();

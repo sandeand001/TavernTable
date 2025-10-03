@@ -58,4 +58,35 @@ describe('TerrainRebuildPerformance', () => {
       expect(metrics.lastRebuildMs).toBeLessThan(200);
     }
   });
+
+  test('throttles rebuild requests during continuous painting', () => {
+    jest.useFakeTimers({ now: 0 });
+    const rebuilder = new TerrainRebuilder({ gameManager: {}, builder: {}, debounceMs: 60 });
+    rebuilder.rebuild = jest.fn();
+
+    // First request flushes immediately
+    rebuilder.request();
+    expect(rebuilder.rebuild).toHaveBeenCalledTimes(1);
+
+    // Rapid subsequent requests should defer until the throttle window elapses
+    jest.setSystemTime(10);
+    rebuilder.request();
+    rebuilder.request();
+    expect(rebuilder.rebuild).toHaveBeenCalledTimes(1);
+
+    // Advance near the throttle window; still no rebuild
+    jest.advanceTimersByTime(49);
+    expect(rebuilder.rebuild).toHaveBeenCalledTimes(1);
+
+    // Crossing the threshold triggers a trailing rebuild
+    jest.advanceTimersByTime(1);
+    expect(rebuilder.rebuild).toHaveBeenCalledTimes(2);
+
+    // After the interval, a fresh request should rebuild immediately again
+    jest.setSystemTime(130);
+    rebuilder.request();
+    expect(rebuilder.rebuild).toHaveBeenCalledTimes(3);
+
+    jest.useRealTimers();
+  });
 });

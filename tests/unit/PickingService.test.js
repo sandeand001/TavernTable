@@ -59,6 +59,8 @@ class FakeThreeSceneManager {
     this.canvas = {
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 }),
     };
+    this.scene = {};
+    this.isReady = () => true;
   }
 }
 

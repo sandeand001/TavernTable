@@ -33,6 +33,7 @@ jest.mock('three', () => {
     constructor() {
       this.matrix = {};
       this.position = { set() {} };
+      this.scale = { set() {} };
     }
     updateMatrix() {}
   }
@@ -46,6 +47,7 @@ function buildStubGM() {
     renderMode: '3d-hybrid',
     features: { instancedPlaceables: true },
     threeSceneManager: { scene: { add() {}, remove() {} } },
+    is3DModeActive: () => true,
     spatial: {
       elevationUnit: 0.5,
       gridToWorld(x, y, z) {

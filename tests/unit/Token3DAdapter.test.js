@@ -56,6 +56,7 @@ describe('Token3DAdapter (Phase 3)', () => {
       getTerrainHeight: () => 0,
       placedTokens: [],
       __threeTestDouble: require('three'),
+      is3DModeActive: () => true,
     };
 
     const adapter = new Token3DAdapter(gm);
@@ -94,6 +95,7 @@ describe('Token3DAdapter (Phase 3)', () => {
       getTerrainHeight: () => 0,
       placedTokens: [],
       __threeTestDouble: require('three'),
+      is3DModeActive: () => true,
     };
     const adapter = new Token3DAdapter(gm);
     gm.token3DAdapter = adapter;
@@ -143,6 +145,7 @@ describe('Token3DAdapter (Phase 3)', () => {
           return this.tokenFacingRight;
         },
       },
+      is3DModeActive: () => true,
     };
     const adapter = new Token3DAdapter(gm);
     gm.token3DAdapter = adapter;

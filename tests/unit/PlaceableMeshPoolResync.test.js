@@ -20,6 +20,16 @@ jest.mock('three', () => {
           this.position.z = z;
         },
       };
+      this.scale = {
+        x: 1,
+        y: 1,
+        z: 1,
+        set: (x, y, z) => {
+          this.scale.x = x;
+          this.scale.y = y;
+          this.scale.z = z;
+        },
+      };
     }
     updateMatrix() {
       this.matrix = { position: { ...this.position } };
@@ -46,6 +56,7 @@ function buildGM(heights) {
   return {
     renderMode: '3d-hybrid',
     threeSceneManager: { scene: { add() {}, remove() {} } },
+    is3DModeActive: () => true,
     spatial: { elevationUnit: 0.5, gridToWorld: (x, y) => ({ x, y: 0, z: y }) },
     getTerrainHeight: (gx, gy) => (heights[gy] && heights[gy][gx]) || 0,
   };
@@ -66,8 +77,8 @@ describe('PlaceableMeshPool.resyncHeights', () => {
     const group = [...pool._groups.values()][0];
     const beforeA = group.instancedMesh._matrices[a.__meshPoolHandle.index].position.y;
     const beforeB = group.instancedMesh._matrices[b.__meshPoolHandle.index].position.y;
-    expect(beforeA).toBe(0);
-    expect(beforeB).toBe(0);
+    expect(beforeA).toBeCloseTo(0.005, 6);
+    expect(beforeB).toBeCloseTo(0.005, 6);
 
     // Raise terrain at (1,1) to elevation 4 and (2,1) to elevation 2
     heights[1][1] = 4; // worldY expected 4 * 0.5 = 2
@@ -78,7 +89,7 @@ describe('PlaceableMeshPool.resyncHeights', () => {
 
     const afterA = group.instancedMesh._matrices[a.__meshPoolHandle.index].position.y;
     const afterB = group.instancedMesh._matrices[b.__meshPoolHandle.index].position.y;
-    expect(afterA).toBeCloseTo(2, 5);
-    expect(afterB).toBeCloseTo(1, 5);
+    expect(afterA).toBeCloseTo(2.005, 5);
+    expect(afterB).toBeCloseTo(1.005, 5);
   });
 });

@@ -37,6 +37,16 @@ jest.mock('three', () => {
           this.position.z = z;
         },
       };
+      this.scale = {
+        x: 1,
+        y: 1,
+        z: 1,
+        set: (x, y, z) => {
+          this.scale.x = x;
+          this.scale.y = y;
+          this.scale.z = z;
+        },
+      };
     }
     updateMatrix() {
       this.matrix = { position: { ...this.position } };
@@ -55,6 +65,7 @@ describe('PlaceableMeshPool terrain height Y mapping', () => {
       threeSceneManager: { scene },
       spatial: { gridToWorld: (x, y) => ({ x, y: 0, z: y }), elevationUnit: 0.5 },
       getTerrainHeight: (gx, gy) => (gx === 2 && gy === 3 ? 4 : 0), // elevation levels
+      is3DModeActive: () => true,
     };
     const pool = new PlaceableMeshPool({ gameManager: gm });
     const rec = { gridX: 2, gridY: 3, type: 'tree' };
@@ -63,6 +74,6 @@ describe('PlaceableMeshPool terrain height Y mapping', () => {
     const storedMatrix = group.instancedMesh._matrices[0];
     expect(storedMatrix).toBeTruthy();
     // Expect worldY = height(4) * elevationUnit(0.5) = 2
-    expect(storedMatrix.position.y).toBeCloseTo(2, 5);
+    expect(storedMatrix.position.y).toBeCloseTo(2.005, 5);
   });
 });
