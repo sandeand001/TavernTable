@@ -301,37 +301,11 @@ class SidebarController {
       if (this._placeablesBuilt) return;
       const root = getTerrainPlaceablesRoot();
       if (!root) return; // nothing to do in minimal/test env
-
-      // Wire collapsible header controls if present
+      // Header removed; ensure root has class for left alignment
       try {
-        const header = document.getElementById('placeables-collapse-header');
-        const btn = document.getElementById('placeables-collapse-btn');
-        if (header && btn && !btn.dataset.boundToggle) {
-          const toggle = () => {
-            const expanded = header.getAttribute('aria-expanded') === 'true';
-            const next = !expanded;
-            header.setAttribute('aria-expanded', String(next));
-            root.style.display = next ? '' : 'none';
-            btn.textContent = next ? '▾' : '▸';
-            // Inform coordinator about panel visibility for placement logic
-            try {
-              window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(next);
-            } catch (_) {
-              /* ignore */
-            }
-          };
-          header.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggle();
-          });
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggle();
-          });
-          btn.dataset.boundToggle = 'true';
-        }
+        root.classList.add('placeables-root-stacked');
       } catch (_) {
-        /* ignore collapse wiring errors */
+        /* ignore */
       }
 
       // Wire placeable removal toggle (mutually exclusive with placeable selection)
@@ -373,212 +347,318 @@ class SidebarController {
           // Clear root
           root.textContent = '';
 
-          // Build group header
-          const header = document.createElement('div');
-          header.className = 'placeables-header';
-          header.textContent = 'Placeable Plants';
-          root.appendChild(header);
-
-          // For each placeable that looks like a tree (key prefix 'tree-'), create a button
-          // Mapping from placeable id -> canonical 3D model key (fall back to legacy translation if missing)
-          const modelKeyMap = {
-            'tree-green-deciduous': 'common-broadleaf-1',
-            'tree-green-conifer': 'pine-conifer-1',
-            'tree-green-willow': 'common-broadleaf-4',
-            'tree-green-oval': 'common-broadleaf-2',
-            'tree-green-columnar': 'pine-conifer-2',
-            'tree-green-small': 'pine-conifer-4',
-            'tree-green-small-oval': 'pine-conifer-5',
-            'tree-green-tall-columnar': 'pine-conifer-3',
-            'tree-orange-deciduous': 'common-broadleaf-3',
-            'tree-yellow-willow': 'common-broadleaf-5',
-            'tree-yellow-conifer': 'pine-conifer-5',
-            'tree-yellow-conifer-alt': 'twisted-bare-2',
-            'tree-bare-deciduous': 'twisted-bare-1',
-          };
+          // Category definitions: each provides a title, match predicate, and optional explicit model map overrides
+          const CATEGORY_RULES = [
+            // Order per spec: Trees, Flowers & Plants, Mushrooms, Rocks
+            {
+              title: 'Trees',
+              test: (id) => id.startsWith('tree-'),
+              modelKeyMap: {
+                'tree-green-deciduous': 'common-broadleaf-1',
+                'tree-green-conifer': 'pine-conifer-1',
+                'tree-green-willow': 'common-broadleaf-4',
+                'tree-green-oval': 'common-broadleaf-2',
+                'tree-green-columnar': 'pine-conifer-2',
+                'tree-green-small': 'pine-conifer-4',
+                'tree-green-small-oval': 'pine-conifer-5',
+                'tree-green-tall-columnar': 'pine-conifer-3',
+                'tree-orange-deciduous': 'common-broadleaf-3',
+                'tree-yellow-willow': 'common-broadleaf-5',
+                'tree-yellow-conifer': 'pine-conifer-5',
+                'tree-yellow-conifer-alt': 'twisted-bare-2',
+                'tree-bare-deciduous': 'twisted-bare-1',
+                'tree-single-palm': 'palm-single-a',
+                'tree-double-palm': 'palm-double-a',
+              },
+            },
+            {
+              title: 'Flowers & Plants', // renamed from Flowers & Bushes
+              test: (id) => /flower|bush/i.test(id),
+              modelKeyMap: {
+                // Expand with explicit overrides as 3D plant assets arrive
+              },
+            },
+            {
+              title: 'Mushrooms',
+              test: (id) => /mushroom/i.test(id),
+              modelKeyMap: {
+                'mushroom-common': 'mushroom-common',
+                'mushroom-redcap': 'mushroom-redcap',
+                'mushroom-oyster': 'mushroom-oyster',
+                'mushroom-laetiporus': 'mushroom-laetiporus',
+              },
+            },
+            {
+              title: 'Rocks',
+              test: (id) => /rock|pebble|boulder/i.test(id),
+              modelKeyMap: {},
+            },
+          ];
 
           // Simple offscreen thumbnail generator with caching
           const _thumbCache = {};
+          let _thumbCtx = null; // { renderer, three }
+          const PALM_ALIAS_THUMB = {
+            'palm-single-a': 'common-broadleaf-2',
+            'palm-double-a': 'common-broadleaf-3',
+          };
+          async function _ensureThumbContext(cache) {
+            if (_thumbCtx && _thumbCtx.renderer) return _thumbCtx;
+            const threeMod = cache._three || (await cache._ensureThreeAndLoader());
+            if (!threeMod) return null;
+            const renderer = new threeMod.WebGLRenderer({
+              antialias: true,
+              alpha: true,
+              preserveDrawingBuffer: true,
+            });
+            renderer.setSize(96, 96);
+            if (threeMod.SRGBColorSpace) renderer.outputColorSpace = threeMod.SRGBColorSpace;
+            _thumbCtx = { renderer, three: threeMod };
+            return _thumbCtx;
+          }
+          const _thumbQueue = [];
+          let _thumbBusy = false;
+          async function _drainThumbQueue() {
+            if (_thumbBusy) return;
+            _thumbBusy = true;
+            while (_thumbQueue.length) {
+              const next = _thumbQueue.shift();
+              // eslint-disable-next-line no-await-in-loop
+              await next();
+            }
+            _thumbBusy = false;
+          }
           async function generateModelThumbnail(modelKey) {
             if (_thumbCache[modelKey]) return _thumbCache[modelKey];
-            try {
-              // Lazy-load ModelAssetCache
-              const modCache = await import('../core/ModelAssetCache.js');
-              const MC = modCache.ModelAssetCache || modCache.default;
-              if (!MC) throw new Error('ModelAssetCache missing');
-              if (!window.__uiModelCache) window.__uiModelCache = new MC();
-              const cache = window.__uiModelCache;
-              const rootObj = await cache.getModel(modelKey);
-              if (!rootObj) throw new Error('No model for ' + modelKey);
-              // Create an offscreen renderer & scene
-              const threeMod = cache._three || (await cache._ensureThreeAndLoader());
-              const scene = new threeMod.Scene();
-              const cam = new threeMod.PerspectiveCamera(35, 1, 0.1, 100);
-              const box = new threeMod.Box3().setFromObject(rootObj);
-              const size = new threeMod.Vector3();
-              box.getSize(size);
-              const center = new threeMod.Vector3();
-              box.getCenter(center);
-              const maxDim = Math.max(size.x, size.y, size.z);
-              const dist = (maxDim * 1.6) / Math.tan((Math.PI * cam.fov) / 360);
-              cam.position.set(center.x + dist * 0.6, center.y + dist * 0.8, center.z + dist * 0.6);
-              cam.lookAt(center);
-              scene.add(rootObj);
-              // Simple lighting
-              scene.add(new threeMod.AmbientLight(0xffffff, 1.0));
-              const dir = new threeMod.DirectionalLight(0xffffff, 0.9);
-              dir.position.set(10, 20, 10);
-              scene.add(dir);
-              const renderer = new threeMod.WebGLRenderer({ antialias: true, alpha: true });
-              renderer.setSize(96, 96); // small square thumbnail
-              renderer.outputColorSpace = threeMod.SRGBColorSpace || renderer.outputColorSpace;
-              renderer.render(scene, cam);
-              const dataUrl = renderer.domElement.toDataURL('image/png');
-              _thumbCache[modelKey] = dataUrl;
-              // Clean up heavy objects (keep rootObj cached internally by ModelAssetCache anyway)
-              renderer.dispose();
-              return dataUrl;
-            } catch (err) {
-              console.warn('[Sidebar] 3D thumbnail generation failed', modelKey, err);
-              return null;
-            }
-          }
-
-          Object.keys(TERRAIN_PLACEABLES)
-            .filter((k) => k.startsWith('tree-'))
-            .forEach((key) => {
-              const def = TERRAIN_PLACEABLES[key];
-              const modelKey = modelKeyMap[key];
-              // Placeholder image (will be replaced asynchronously if modelKey found)
-              const placeholder = Array.isArray(def.img) ? def.img[0] : def.img;
-              const btn = createPlaceableButton(key, def.label || key, placeholder);
-              if (modelKey) {
-                // Mark while loading
-                btn.classList.add('loading-3d-thumb');
-                generateModelThumbnail(modelKey).then((url) => {
-                  try {
-                    if (url) {
-                      const imgEl = btn.querySelector('img.placeable-preview');
-                      if (imgEl) imgEl.src = url;
-                      btn.classList.remove('loading-3d-thumb');
-                      btn.classList.add('thumb-3d-generated');
-                    } else {
-                      btn.classList.remove('loading-3d-thumb');
-                      btn.classList.add('thumb-3d-failed');
-                    }
-                  } catch (_) {
-                    /* ignore UI update errors */
-                  }
-                });
-              }
-
-              // Select action: mark coordinator selected placeable so InputHandlers will paint
-              btn.addEventListener('click', () => {
+            // Resolve alias for palms so we still get a preview
+            const resolvedKey = PALM_ALIAS_THUMB[modelKey] || modelKey;
+            return new Promise((resolve) => {
+              _thumbQueue.push(async () => {
+                if (_thumbCache[modelKey]) return resolve(_thumbCache[modelKey]);
                 try {
-                  // Suppress selection if removal mode active
+                  const modCache = await import('../core/ModelAssetCache.js');
+                  const MC = modCache.ModelAssetCache || modCache.default;
+                  if (!MC) return resolve(null);
+                  if (!window.__uiModelCache) window.__uiModelCache = new MC();
+                  const cache = window.__uiModelCache;
+                  const ctx = await _ensureThumbContext(cache);
+                  if (!ctx) return resolve(null);
+                  const rootObj = await cache.getModel(resolvedKey);
+                  if (!rootObj) return resolve(null);
+                  const threeMod = ctx.three;
+                  const scene = new threeMod.Scene();
+                  const cam = new threeMod.PerspectiveCamera(35, 1, 0.1, 100);
+                  const clone = rootObj.clone(true);
+                  const box = new threeMod.Box3().setFromObject(clone);
+                  const size = new threeMod.Vector3();
+                  box.getSize(size);
+                  const center = new threeMod.Vector3();
+                  box.getCenter(center);
+                  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+                  const dist = (maxDim * 1.6) / Math.tan((Math.PI * cam.fov) / 360);
+                  cam.position.set(
+                    center.x + dist * 0.6,
+                    center.y + dist * 0.8,
+                    center.z + dist * 0.6
+                  );
+                  cam.lookAt(center);
+                  scene.add(clone);
+                  scene.add(new threeMod.AmbientLight(0xffffff, 1.05));
+                  const dir = new threeMod.DirectionalLight(0xffffff, 0.9);
+                  dir.position.set(8, 16, 6);
+                  scene.add(dir);
+                  ctx.renderer.render(scene, cam);
+                  const dataUrl = ctx.renderer.domElement.toDataURL('image/png');
+                  _thumbCache[modelKey] = dataUrl;
                   try {
-                    if (window.gameManager?.terrainCoordinator?.isPlaceableRemovalMode?.()) {
-                      return;
-                    }
+                    clone.traverse?.((child) => {
+                      if (child.isMesh) {
+                        child.geometry?.dispose?.();
+                        if (child.material) {
+                          if (Array.isArray(child.material))
+                            child.material.forEach((m) => m.dispose?.());
+                          else child.material.dispose?.();
+                        }
+                      }
+                    });
                   } catch (_) {
                     /* ignore */
                   }
-                  // Toggle selection
-                  const currently =
-                    window.gameManager &&
-                    window.gameManager.terrainCoordinator &&
-                    typeof window.gameManager.terrainCoordinator.getSelectedPlaceable === 'function'
-                      ? window.gameManager.terrainCoordinator.getSelectedPlaceable()
-                      : window.selectedTerrainPlaceable || null;
-                  const toSet = currently === key ? null : key;
-                  // Respect coordinator API but note it was inert in older builds; set global fallback too
-                  try {
-                    if (
-                      window.gameManager &&
-                      window.gameManager.terrainCoordinator &&
-                      typeof window.gameManager.terrainCoordinator.setSelectedPlaceable ===
-                        'function'
-                    ) {
-                      window.gameManager.terrainCoordinator.setSelectedPlaceable(toSet);
-                      // Ensure the coordinator believes the placeables panel is visible while selecting
-                      try {
-                        window.gameManager.terrainCoordinator.setPlaceablesPanelVisible(true);
-                      } catch (_) {
-                        /* ignore */
-                      }
-                    }
-                  } catch (_) {
-                    /* ignore selection errors */
+                  resolve(dataUrl);
+                } catch (_) {
+                  resolve(null);
+                }
+              });
+              _drainThumbQueue();
+            });
+          }
+
+          // Offscreen thumbnail cache is shared across categories
+          // (generateModelThumbnail defined above remains unchanged)
+
+          function addPlaceableEntry(key, def, modelKey) {
+            const placeholder = Array.isArray(def.img) ? def.img[0] : def.img;
+            const btn = createPlaceableButton(key, def.label || key, placeholder);
+            if (modelKey) {
+              btn.classList.add('loading-3d-thumb');
+              generateModelThumbnail(modelKey).then((url) => {
+                try {
+                  const imgEl = btn.querySelector('img.placeable-preview');
+                  if (url && imgEl) {
+                    imgEl.src = url;
+                    btn.classList.add('thumb-3d-generated');
+                  } else {
+                    btn.classList.add('thumb-3d-failed');
                   }
-                  window.selectedTerrainPlaceable = toSet;
-                  // Visual state
-                  root
-                    .querySelectorAll('.placeable-btn')
-                    .forEach((b) => b.classList.remove('selected'));
-                  if (toSet) btn.classList.add('selected');
+                  btn.classList.remove('loading-3d-thumb');
                 } catch (_) {
                   /* ignore */
                 }
               });
+            }
 
-              // Variant cycle control (small button next to each placeable) - cycles variants in place-mode
-              const cycle = document.createElement('button');
-              cycle.type = 'button';
-              cycle.className = 'placeable-cycle-btn';
-              cycle.title = 'Cycle variant';
-              cycle.textContent = '🔁';
-              cycle.addEventListener('click', (ev) => {
-                ev.stopPropagation();
+            btn.addEventListener('click', () => {
+              try {
+                if (window.gameManager?.terrainCoordinator?.isPlaceableRemovalMode?.()) return;
+                const currently =
+                  window.gameManager?.terrainCoordinator?.getSelectedPlaceable?.() ||
+                  window.selectedTerrainPlaceable ||
+                  null;
+                const toSet = currently === key ? null : key;
                 try {
-                  // If there's a visible selection on the map, use coordinator to cycle at last hover or centered pos
-                  // Best-effort: use lastGridCoords from input handlers if available
-                  const last =
-                    window.gameManager?.terrainCoordinator?._inputHandlers?.lastGridCoords || null;
-                  const x = last?.x ?? Math.floor((window.gameManager?.cols || 10) / 2);
-                  const y = last?.y ?? Math.floor((window.gameManager?.rows || 10) / 2);
-                  try {
-                    window.gameManager?.terrainManager?.cyclePlaceableVariant(x, y, key);
-                  } catch (_) {
-                    // fallback to directly calling internals if exposed
-                    try {
-                      // When removal mode toggles, disable/enable placeable selection/cycle buttons visually
-                      try {
-                        const removalToggle = document.getElementById('placeable-removal-toggle');
-                        if (removalToggle && !removalToggle.dataset.boundDisableSync) {
-                          const syncDisabled = () => {
-                            const disabled = !!removalToggle.checked;
-                            root
-                              .querySelectorAll('.placeable-btn, .placeable-cycle-btn')
-                              .forEach((b) => {
-                                b.disabled = disabled;
-                                b.classList.toggle('disabled', disabled);
-                              });
-                          };
-                          removalToggle.addEventListener('change', syncDisabled);
-                          syncDisabled();
-                          removalToggle.dataset.boundDisableSync = 'true';
-                        }
-                      } catch (_) {
-                        /* ignore */
-                      }
-                      import('../managers/terrain-manager/internals/placeables.js').then((m) => {
-                        m.cyclePlaceableVariant(window.gameManager.terrainManager, x, y, key);
-                      });
-                    } catch (_) {
-                      void 0;
-                    }
-                  }
+                  window.gameManager?.terrainCoordinator?.setSelectedPlaceable?.(toSet);
+                  window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(true);
                 } catch (_) {
-                  void 0;
+                  /* ignore */
                 }
-              });
-
-              const wrapper = document.createElement('div');
-              wrapper.className = 'placeable-entry';
-              wrapper.appendChild(btn);
-              wrapper.appendChild(cycle);
-              root.appendChild(wrapper);
+                window.selectedTerrainPlaceable = toSet;
+                root
+                  .querySelectorAll('.placeable-btn')
+                  .forEach((b) => b.classList.remove('selected'));
+                if (toSet) btn.classList.add('selected');
+              } catch (_) {
+                /* ignore */
+              }
             });
+
+            // Variant cycle button
+            const cycle = document.createElement('button');
+            cycle.type = 'button';
+            cycle.className = 'placeable-cycle-btn';
+            cycle.title = 'Cycle variant';
+            cycle.textContent = '🔁';
+            cycle.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              try {
+                const last =
+                  window.gameManager?.terrainCoordinator?._inputHandlers?.lastGridCoords || null;
+                const x = last?.x ?? Math.floor((window.gameManager?.cols || 10) / 2);
+                const y = last?.y ?? Math.floor((window.gameManager?.rows || 10) / 2);
+                try {
+                  window.gameManager?.terrainManager?.cyclePlaceableVariant(x, y, key);
+                } catch (_) {
+                  import('../managers/terrain-manager/internals/placeables.js').then((m) => {
+                    try {
+                      m.cyclePlaceableVariant(window.gameManager.terrainManager, x, y, key);
+                    } catch (_) {
+                      /* ignore */
+                    }
+                  });
+                }
+              } catch (_) {
+                /* ignore */
+              }
+            });
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'placeable-entry';
+            wrapper.appendChild(btn);
+            wrapper.appendChild(cycle);
+            return wrapper;
+          }
+
+          // Top-level header removed per new spec – categories stack directly.
+
+          // Collapsible category builder (lazy thumbnails)
+          const builtCategoryContent = new Set();
+
+          function buildCategoryContent(cat, container, keys) {
+            if (builtCategoryContent.has(cat.title)) return; // already built
+            keys.forEach((key) => {
+              const def = TERRAIN_PLACEABLES[key];
+              const modelKey = cat.modelKeyMap[key] || def.modelKey || null;
+              const entry = addPlaceableEntry(key, def, modelKey);
+              container.appendChild(entry);
+            });
+            builtCategoryContent.add(cat.title);
+          }
+
+          CATEGORY_RULES.forEach((cat) => {
+            const keys = Object.keys(TERRAIN_PLACEABLES).filter(cat.test);
+            if (!keys.length) return;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'tool-group placeables-category';
+            // Per-category terrain-style toggle switch (initially collapsed)
+            const toggleContainer = document.createElement('div');
+            toggleContainer.className = 'terrain-mode placeables-cat-toggle';
+
+            const label = document.createElement('label');
+            label.className = 'toggle-switch';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            // slug id for accessibility
+            const slug = cat.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            input.id = `placeables-cat-${slug}`;
+            input.setAttribute('aria-checked', 'false');
+            input.setAttribute('data-placeables-category', cat.title);
+            const slider = document.createElement('span');
+            slider.className = 'toggle-slider';
+            const text = document.createElement('span');
+            text.className = 'toggle-label';
+            text.textContent = cat.title;
+            label.appendChild(input);
+            label.appendChild(slider);
+            label.appendChild(text);
+            toggleContainer.appendChild(label);
+
+            const body = document.createElement('div');
+            body.className = 'placeables-cat-body';
+            body.style.display = 'none';
+
+            input.addEventListener('change', () => {
+              const enabled = !!input.checked;
+              input.setAttribute('aria-checked', String(enabled));
+              if (enabled) {
+                body.style.display = 'block';
+                buildCategoryContent(cat, body, keys);
+              } else {
+                body.style.display = 'none';
+              }
+            });
+
+            wrapper.appendChild(toggleContainer);
+            wrapper.appendChild(body);
+            root.appendChild(wrapper);
+          });
+
+          // Sync enabled/disabled state with removal toggle (shared across categories)
+          try {
+            const removalToggle = document.getElementById('placeable-removal-toggle');
+            if (removalToggle && !removalToggle.dataset.boundDisableSync) {
+              const syncDisabled = () => {
+                const disabled = !!removalToggle.checked;
+                root.querySelectorAll('.placeable-btn, .placeable-cycle-btn').forEach((b) => {
+                  b.disabled = disabled;
+                  b.classList.toggle('disabled', disabled);
+                });
+              };
+              removalToggle.addEventListener('change', syncDisabled);
+              syncDisabled();
+              removalToggle.dataset.boundDisableSync = 'true';
+            }
+          } catch (_) {
+            /* ignore */
+          }
 
           this._placeablesBuilt = true;
         })

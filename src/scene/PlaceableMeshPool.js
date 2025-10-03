@@ -337,6 +337,12 @@ export class PlaceableMeshPool {
       }
       const instanced = new three.InstancedMesh(geo, mat, capacity);
       instanced.name = `Placeables:${key}`;
+      // Allow instanced meshes to cast shadows (terrain receives). Keep receiveShadow off to avoid dark cards.
+      try {
+        instanced.castShadow = true;
+      } catch (_) {
+        /* ignore */
+      }
       // Start with zero active draw instances; we raise .count as we allocate
       try {
         instanced.count = 0;

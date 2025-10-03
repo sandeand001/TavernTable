@@ -44,6 +44,8 @@ import { TerrainRebuilder } from '../scene/TerrainRebuilder.js';
 import { PlaceableMeshPool } from '../scene/PlaceableMeshPool.js';
 // Centralized picking (screen -> world/grid) service (3D transition phase)
 import { PickingService } from '../scene/PickingService.js';
+// 2D elevation scale utilities (pixels per level) used to map to 3D world Y units
+import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -116,6 +118,94 @@ class GameManager {
 
     // Configure logger context
     logger.pushContext({ component: 'GameManager' });
+  }
+
+  /**
+   * Sync the 3D world elevation unit (world Y per level) so that one elevation level
+   * produces the same on-screen vertical pixel displacement as the 2D isometric elevation effect.
+   *
+   * Contract:
+   *  - 2D uses TerrainHeightUtils.getElevationUnit() pixels per level (default 8).
+   *  - 3D orthographic camera has a vertical world span = (camera.top - camera.bottom).
+   *  - Screen pixels per world unit S = rendererHeightPx / (camera.top - camera.bottom).
+   *  - Camera pitch compresses vertical axis by cos(pitch) after rotation.
+   *  => desired world elevation unit W satisfies: desiredPixels = S * (W * cos(pitch)).
+   *  => W = desiredPixels / (S * cos(pitch)).
+   *
+   * We recompute when: entering hybrid mode, window resize, or 2D elevation scale change.
+   * Defensive: if any value missing, fall back to 0.25 (quarter tile) heuristic.
+   */
+  sync3DElevationScaling(options = {}) {
+    try {
+      if (this.renderMode !== '3d-hybrid') return false;
+      const tsm = this.threeSceneManager;
+      if (!tsm || !tsm.camera || !tsm.renderer) return false;
+      const cam = tsm.camera;
+      const vertSpan = (cam.top ?? 0) - (cam.bottom ?? 0);
+      if (!(vertSpan > 0)) return false;
+      const rendererHeight = tsm.canvas?.clientHeight || tsm.renderer.domElement?.clientHeight || 0;
+      if (!(rendererHeight > 0)) return false;
+      const pixelsPerLevel2D = TerrainHeightUtils.getElevationUnit();
+      let pitch = (35.264389682754654 * Math.PI) / 180; // fallback
+      try {
+        if (typeof tsm._isoPitch === 'number') pitch = tsm._isoPitch;
+      } catch (_) {
+        /* ignore */
+      }
+      const cosPitch = Math.cos(pitch) || 1;
+      const pixelsPerWorldY = rendererHeight / vertSpan;
+      let worldElevationUnit = pixelsPerLevel2D / (pixelsPerWorldY * cosPitch);
+      if (!Number.isFinite(worldElevationUnit) || worldElevationUnit <= 0) {
+        worldElevationUnit = 0.25;
+      }
+      const prev = this.spatial?.elevationUnit;
+      if (Number.isFinite(prev) && prev > 0 && !options.hardSet) {
+        worldElevationUnit = prev * 0.2 + worldElevationUnit * 0.8;
+      }
+      if (Number.isFinite(prev) && Math.abs(worldElevationUnit - prev) / prev < 0.005) {
+        return false;
+      }
+      this.spatial.reconfigure({ elevationUnit: worldElevationUnit });
+      if (this.terrainRebuilder?.builder) {
+        this.terrainRebuilder.builder.elevationUnit = worldElevationUnit;
+      }
+      if (options.rebuild !== false) {
+        try {
+          if (typeof window !== 'undefined' && window.requestTerrain3DRebuild) {
+            window.requestTerrain3DRebuild('elevation-sync');
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      try {
+        this.placeableMeshPool?._markAllDirty?.();
+        this.placeableMeshPool?.refreshAll?.();
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        this.token3DAdapter?.refreshAll?.();
+      } catch (_) {
+        /* ignore */
+      }
+      if (typeof window !== 'undefined') {
+        window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+        window.__TT_METRICS__.elevationSync = {
+          pixelsPerLevel2D,
+          worldElevationUnit,
+          rendererHeight,
+          vertSpan,
+          pitch,
+          timestamp: Date.now(),
+        };
+        window.sync3DElevationScaling = () =>
+          this.sync3DElevationScaling({ rebuild: true, hardSet: true });
+      }
+      return true;
+    } catch (err) {
+      return false;
+    }
   }
 
   // Property getters for backward compatibility with null safety
@@ -277,6 +367,15 @@ class GameManager {
           // Perform initial build (flat or current heights) if Three initialized
           const threeNS = (await import('three')).default || (await import('three'));
           this.terrainRebuilder.rebuild({ three: threeNS });
+          // After first mesh, compute elevation scale parity and rebuild if it changes.
+          try {
+            const updated = this.sync3DElevationScaling?.({ rebuild: false, hardSet: true });
+            if (updated) {
+              this.terrainRebuilder.rebuild({ three: threeNS });
+            }
+          } catch (_) {
+            /* ignore first parity sync */
+          }
           // Expose global convenience hook for console & UI controls
           if (typeof window !== 'undefined') {
             window.requestTerrain3DRebuild = (reason = 'manual') => {

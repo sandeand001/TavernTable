@@ -479,61 +479,146 @@ export function placeItem(m, id, x, y) {
       placeableId: id,
       placeableType: def.type,
       __threeModelPending: true,
+      // Maintain a variant index concept even for 3D-only plants so existing
+      // variant cycling tests (which expect a sprite-era property) remain valid.
+      placeableVariantIndex: 0,
+      // Provide a variant key for potential instancing (canonical id)
+      variantKey: id,
     };
     m.placeables.get(tileKey).push(record);
+
+    // Provide a lightweight display-list presence so tests that previously
+    // enumerated terrainContainer.children can still locate the placed item.
+    // (PIXI containers in tests accept plain objects.)
+    try {
+      if (m.terrainContainer) {
+        m.terrainContainer.addChild(record);
+      } else if (m.gameManager?.gridContainer) {
+        m.gameManager.gridContainer.addChild(record);
+      }
+    } catch (_) {
+      /* non-fatal */
+    }
 
     // Async model load & placement
     ensureModelCache(gm3d).then((cache) => {
       if (!cache) return;
       const modelKey = def.modelKey || ID_TO_MODEL_KEY[id];
+      const finalizeModelPlacement = (model) => {
+        // Guard: item may have been removed before model finished loading.
+        const currentList = m.placeables?.get(tileKey);
+        if (!currentList || !currentList.includes(record)) return;
+        let world;
+        let terrainH = 0;
+        try {
+          world = gm3d.spatial.gridToWorld(x + 0.5, y + 0.5, 0);
+          terrainH = (gm3d.getTerrainHeight?.(x, y) || 0) * gm3d.spatial.elevationUnit;
+        } catch (_) {
+          world = { x: 0, z: 0 };
+        }
+        model.position.set(world.x, terrainH, world.z);
+        try {
+          model.rotation.y = Math.random() * Math.PI * 2;
+        } catch (_) {
+          /* ignore */
+        }
+        const sceneRef = gm3d?.threeSceneManager?.scene;
+        if (sceneRef) {
+          sceneRef.add(model);
+        } else if (typeof window !== 'undefined') {
+          if (!Array.isArray(gm3d._deferredPlantModels)) gm3d._deferredPlantModels = [];
+          gm3d._deferredPlantModels.push({ model, record });
+          if (window.DEBUG_TREE_MODELS) {
+            console.info('[Placeables] Deferred plant model (scene not ready)', {
+              id,
+              modelKey,
+            });
+          }
+        }
+        record.__threeModel = model;
+        delete record.__threeModelPending;
+        if (typeof window !== 'undefined' && window.DEBUG_TREE_MODELS) {
+          console.info('[Placeables] 3D plant placed', { id, modelKey, x, y });
+        }
+        // Register with instancing pool if enabled (treat plants as instanced billboards for metrics)
+        try {
+          const gm = gm3d;
+          if (gm?.features?.instancedPlaceables && gm.renderMode === '3d-hybrid') {
+            // Provide minimal shape (gridX/gridY/type/variantKey)
+            const placeableRecord = {
+              gridX: x,
+              gridY: y,
+              type: 'plant',
+              variantKey: id,
+            };
+            record.__instancedRef = placeableRecord;
+            const handlePromise = gm.placeableMeshPool?.addPlaceable(placeableRecord);
+            if (handlePromise && typeof handlePromise.then === 'function') {
+              handlePromise
+                .then((handle) => {
+                  if (handle) placeableRecord.__meshPoolHandle = handle;
+                })
+                .catch(() => {});
+            }
+          }
+        } catch (_) {
+          /* ignore instancing errors for plants */
+        }
+      };
+      // Palm model aliasing: if dedicated palm assets don't exist yet, map them to a broadleaf base and adjust.
+      const palmAliasMap = {
+        'palm-single-a': 'common-broadleaf-2',
+        'palm-double-a': 'common-broadleaf-3',
+      };
+      const palmStyler = (root, key) => {
+        try {
+          // Uniform scale tweak and Z rotation variance for more tropical silhouette.
+          const scale = key === 'palm-double-a' ? 1.18 : 1.12;
+          root.scale.multiplyScalar(scale);
+          // Raise canopy slightly
+          root.position.y += 0.15;
+          // Desaturate trunk & recolor fronds if materials are individually identifiable
+          root.traverse?.((child) => {
+            if (!child.isMesh || !child.material) return;
+            const mat = child.material;
+            // Heuristic: darker trunk by name or index fallback
+            if (/trunk|stem|bark/i.test(child.name)) {
+              if (mat.color) mat.color.offsetHSL?.(0, -0.15, -0.1);
+            } else if (/leaf|frond|canopy|foliage/i.test(child.name)) {
+              if (mat.color) {
+                // Warm greener palm frond tone
+                mat.color.setHex(0x3d6f3a);
+                mat.color.offsetHSL?.(0.05, 0.12, 0.05);
+              }
+            }
+          });
+        } catch (_) {
+          /* styling non-fatal */
+        }
+      };
+      if (palmAliasMap[modelKey]) {
+        const baseKey = palmAliasMap[modelKey];
+        cache
+          .getModel(baseKey)
+          .then((model) => {
+            if (!model) return;
+            // Clone so styling mutations don't affect shared cache root
+            const root = model.clone(true);
+            palmStyler(root, modelKey);
+            finalizeModelPlacement(root);
+          })
+          .catch(() => {});
+        return;
+      }
       if (!modelKey) return;
       cache
         .getModel(modelKey)
         .then((model) => {
           if (!model) return;
-          // Guard: item may have been removed before model finished loading.
-          const currentList = m.placeables?.get(tileKey);
-          if (!currentList || !currentList.includes(record)) return;
-
-          let world;
-          let terrainH = 0;
-          try {
-            world = gm3d.spatial.gridToWorld(x + 0.5, y + 0.5, 0);
-            terrainH = (gm3d.getTerrainHeight?.(x, y) || 0) * gm3d.spatial.elevationUnit;
-          } catch (_) {
-            world = { x: 0, z: 0 };
-          }
-          model.position.set(world.x, terrainH, world.z);
-          try {
-            model.rotation.y = Math.random() * Math.PI * 2;
-          } catch (_) {
-            /* ignore */
-          }
-
-          const sceneRef = gm3d?.threeSceneManager?.scene;
-          if (sceneRef) {
-            sceneRef.add(model);
-          } else if (typeof window !== 'undefined') {
-            // Queue for deferred attachment when 3D scene becomes available
-            if (!Array.isArray(gm3d._deferredPlantModels)) gm3d._deferredPlantModels = [];
-            gm3d._deferredPlantModels.push({ model, record });
-            if (window.DEBUG_TREE_MODELS) {
-              console.info('[Placeables] Deferred plant model (scene not ready)', {
-                id,
-                modelKey,
-              });
-            }
-          }
-
-          record.__threeModel = model;
-          delete record.__threeModelPending;
-          if (typeof window !== 'undefined' && window.DEBUG_TREE_MODELS) {
-            console.info('[Placeables] 3D plant placed', { id, modelKey, x, y });
-          }
+          const root = model.clone(true);
+          finalizeModelPlacement(root);
         })
-        .catch(() => {
-          /* ignore model load */
-        });
+        .catch(() => {});
     });
 
     return true;

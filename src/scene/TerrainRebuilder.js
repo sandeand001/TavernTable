@@ -1,9 +1,10 @@
+// NOTE: Formatting managed by Prettier via lint:fix script.
 // TerrainRebuilder.js - Debounced orchestrator to rebuild the terrain mesh.
 // Applies elevation + biome-based vertex coloring.
 
 // Simplified: expressive/atlas modes removed. Use 2D biome palette directly.
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-import { getBiomeColorHex } from '../config/BiomePalettes.js';
+import { getBiomeColorWithHydrology } from '../config/BiomePalettes.js';
 
 export class TerrainRebuilder {
   constructor({ gameManager, builder, debounceMs = 120 } = {}) {
@@ -31,30 +32,29 @@ export class TerrainRebuilder {
     }
   }
 
-  rebuild({ three }) {
+  rebuild({ three } = {}) {
     if (!this.gameManager || !this.builder) return null;
     if (!this.gameManager.threeSceneManager || !this.gameManager.threeSceneManager.scene) {
       return null;
     }
+    // Fallback to the globally imported three namespace if caller did not pass it.
+    const threeNs = three || this.gameManager.threeSceneManager.three;
+    const forceStandard = typeof window !== 'undefined' && window.__TT_TERRAIN_STANDARD__;
     const gm = this.gameManager;
     const cols = gm.cols;
     const rows = gm.rows;
     const getHeight = (x, y) => gm.getTerrainHeight(x, y);
     const t0 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
-    // Biome color selection (1:1 with 2D painter grid): ALWAYS sample canonical 2D biome palette
-    // for the active biome + elevation so hybrid 3D matches legacy visuals exactly. Only fall back
-    // to HEIGHT_COLOR_SCALE if no biome is selected (e.g., very early init or missing globals).
     const gmBiomeGetter = (gx, gy, elev) => {
       const h = Number.isFinite(elev) ? elev : 0;
-      // Resolve biome key in strict priority order
       const biomeKey =
         (typeof window !== 'undefined' && window.selectedBiome) ||
         gm?.terrainCoordinator?._lastGeneratedBiomeKey ||
         'grassland';
       try {
-        return getBiomeColorHex(biomeKey, h);
+        // Prefer hydrology-enhanced color if available
+        return getBiomeColorWithHydrology(biomeKey, h);
       } catch (_) {
-        // Absolute fallback: use height scale only if biome palette lookup somehow fails
         const key = h.toString();
         if (Object.prototype.hasOwnProperty.call(TERRAIN_CONFIG.HEIGHT_COLOR_SCALE, key)) {
           return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[key];
@@ -62,51 +62,120 @@ export class TerrainRebuilder {
         return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'] || 0x777766;
       }
     };
-    // Dark wall color for contrast; only used in advanced geometry path.
     const wallColor = 0x050505;
-    const wantsWalls = !!(three && three.BufferGeometry);
+    const wantsWalls = !!(threeNs && threeNs.BufferGeometry);
     const geo = this.builder.build({
       cols,
       rows,
       getHeight,
-      three,
+      three: threeNs,
       getBiomeColor: gmBiomeGetter,
       getWallColor: wantsWalls ? () => wallColor : undefined,
     });
+    // Debug sample of first vertex color to help diagnose "all black" issues.
+    try {
+      if (typeof window !== 'undefined' && !window.__TT_LAST_TERRAIN_COLOR_SAMPLE__) {
+        const colAttr = geo.getAttribute('color');
+        if (colAttr && colAttr.count > 0) {
+          const r = Math.round(colAttr.array[0] * 255);
+          const g2 = Math.round(colAttr.array[1] * 255);
+          const b = Math.round(colAttr.array[2] * 255);
+          const sampleHex = (r << 16) | (g2 << 8) | b;
+          window.__TT_LAST_TERRAIN_COLOR_SAMPLE__ = sampleHex;
+          // eslint-disable-next-line no-console
+          console.info('[TerrainRebuilder] Sample vertex color hex:', sampleHex.toString(16));
+        }
+      }
+    } catch (_) {
+      /* ignore debug sampling */
+    }
     const scene = gm.threeSceneManager.scene;
     let mesh = scene.getObjectByName('TerrainMesh');
     if (!mesh) {
       let material;
+      // Prefer Lambert (simpler diffuse) unless explicitly overridden to Standard via flag.
+      const forceStandard = typeof window !== 'undefined' && window.__TT_TERRAIN_STANDARD__;
       try {
-        material = new three.MeshBasicMaterial({ vertexColors: true });
+        if (!forceStandard && threeNs?.MeshLambertMaterial) {
+          material = new threeNs.MeshLambertMaterial({ vertexColors: true });
+        } else if (threeNs?.MeshStandardMaterial) {
+          material = new threeNs.MeshStandardMaterial({
+            vertexColors: true,
+            flatShading: false,
+            roughness: 0.92,
+            metalness: 0.0,
+          });
+        }
       } catch (_) {
-        material = new three.MeshStandardMaterial({ color: 0x777766, flatShading: false });
+        /* fallback below */
+      }
+      if (!material) {
+        material = new (threeNs?.MeshBasicMaterial || function Dummy() {})({ vertexColors: true });
       }
       try {
         if (geo.getAttribute('color') && material && material.isMaterial) {
           material.vertexColors = true;
         }
-        if (material && material.isMaterial && three?.DoubleSide) {
-          material.side = three.DoubleSide;
+        if (material && material.isMaterial && threeNs?.DoubleSide) {
+          material.side = threeNs.DoubleSide;
         }
       } catch (_) {
         /* ignore */
       }
-      mesh = new three.Mesh(geo, material);
+      mesh = new threeNs.Mesh(geo, material);
       mesh.name = 'TerrainMesh';
       mesh.position.set(0, 0, 0);
+      // Enable ground to receive shadows from directional light (flora, tokens)
+      try {
+        mesh.receiveShadow = true;
+      } catch (_) {
+        /* ignore shadow flag set failure */
+      }
       scene.add(mesh);
     } else {
       mesh.geometry.dispose();
       mesh.geometry = geo;
       try {
-        if (!mesh.material || !mesh.material.isMeshBasicMaterial) {
+        // If current material is Basic, upgrade to Standard once for lighting.
+        if (
+          threeNs?.MeshLambertMaterial &&
+          !forceStandard &&
+          (!mesh.material ||
+            mesh.material.isMeshBasicMaterial ||
+            mesh.material.isMeshStandardMaterial)
+        ) {
           try {
             mesh.material.dispose?.();
           } catch (_) {
-            /* ignore dispose */
+            /* ignore */
           }
-          mesh.material = new three.MeshBasicMaterial({ vertexColors: true });
+          try {
+            mesh.material = new threeNs.MeshLambertMaterial({ vertexColors: true });
+          } catch (_) {
+            /* ignore */
+          }
+        } else if (
+          forceStandard &&
+          threeNs?.MeshStandardMaterial &&
+          (!mesh.material ||
+            mesh.material.isMeshBasicMaterial ||
+            mesh.material.isMeshLambertMaterial)
+        ) {
+          try {
+            mesh.material.dispose?.();
+          } catch (_) {
+            /* ignore */
+          }
+          try {
+            mesh.material = new threeNs.MeshStandardMaterial({
+              vertexColors: true,
+              flatShading: false,
+              roughness: 0.92,
+              metalness: 0.0,
+            });
+          } catch (_) {
+            mesh.material = new threeNs.MeshBasicMaterial({ vertexColors: true });
+          }
         }
       } catch (_) {
         /* ignore material swap */
@@ -114,7 +183,7 @@ export class TerrainRebuilder {
       try {
         if (geo.getAttribute('color') && mesh.material) {
           mesh.material.vertexColors = true;
-          if (three?.DoubleSide) mesh.material.side = three.DoubleSide;
+          if (threeNs?.DoubleSide) mesh.material.side = threeNs.DoubleSide;
           mesh.material.needsUpdate = true;
         }
       } catch (_) {

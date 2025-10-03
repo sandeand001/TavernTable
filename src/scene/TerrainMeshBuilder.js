@@ -43,6 +43,17 @@ export class TerrainMeshBuilder {
         }
       }
       if (pos.needsUpdate !== undefined) pos.needsUpdate = true;
+      // Ensure lighting materials have normals; legacy PlaneGeometry may have outdated normals after height edits.
+      try {
+        if (!plane.getAttribute('normal') || plane.attributes.normal.count !== pos.count) {
+          plane.computeVertexNormals?.();
+        } else if (plane.computeVertexNormals) {
+          // Recompute anyway because heights changed.
+          plane.computeVertexNormals();
+        }
+      } catch (_) {
+        /* ignore normal generation errors */
+      }
       return plane;
     }
 
@@ -212,7 +223,14 @@ export class TerrainMeshBuilder {
     geo.setAttribute('position', new three.BufferAttribute(new Float32Array(positions), 3));
     geo.setIndex(new three.BufferAttribute(new Uint32Array(indices), 1));
     if (colors) geo.setAttribute('color', new three.BufferAttribute(new Float32Array(colors), 3));
-    // Still unlit flat colors -> normals omitted.
+    // Generate normals so lit materials (Standard/Lambert/Phong) shade correctly.
+    try {
+      if (!geo.getAttribute('normal')) {
+        geo.computeVertexNormals?.();
+      }
+    } catch (_) {
+      /* ignore normal generation */
+    }
     return geo;
   }
 }

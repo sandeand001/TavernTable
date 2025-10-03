@@ -107,7 +107,7 @@ export class ThreeSceneManager {
       try {
         const sunIntensity = (typeof window !== 'undefined' && window.__TT_SUN_INTENSITY__) || 1.15;
         const sun = new three.DirectionalLight(0xfff2e0, sunIntensity);
-        sun.position.set(-6, 9, 5); // angled key
+        sun.position.set(-12, 14, 10); // slightly higher/wider for broader shadow coverage
         sun.name = 'SunKeyLight';
         const enableShadows =
           typeof window === 'undefined' || window.__TT_ENABLE_SHADOWS__ !== false;
@@ -115,16 +115,41 @@ export class ThreeSceneManager {
           sun.castShadow = true;
           // Shadow map tuned to board size later; initial conservative bounds.
           const sCam = sun.shadow.camera;
-          const span = Math.max(this.gameManager?.cols || 25, this.gameManager?.rows || 25) * 0.6;
+          const gridW = this.gameManager?.cols || 25;
+          const gridH = this.gameManager?.rows || 25;
+          // Use full dimension *0.75 to reduce clipping at edges while limiting wasted shadow space.
+          const span = Math.max(gridW, gridH) * 0.75;
           sCam.left = -span;
           sCam.right = span;
           sCam.top = span;
           sCam.bottom = -span;
           sCam.near = 0.5;
-          sCam.far = 60;
-          sun.shadow.mapSize.set(1024, 1024);
+          sCam.far = 90;
+          // Nudge update for helper tools if any (no-op in production)
+          sCam.updateProjectionMatrix?.();
+          // Increase map size slightly for sharper mid-board shadows.
+          sun.shadow.mapSize.set(1536, 1536);
           sun.shadow.bias = -0.0005;
           sun.shadow.normalBias = 0.005;
+          try {
+            if (!this.__loggedSunShadow) {
+              this.__loggedSunShadow = true;
+              // eslint-disable-next-line no-console
+              if (!(typeof window !== 'undefined' && window.__TT_QUIET_LOGS__))
+                console.info('[ThreeSceneManager] Sun shadow camera', {
+                  span,
+                  left: sCam.left,
+                  right: sCam.right,
+                  top: sCam.top,
+                  bottom: sCam.bottom,
+                  near: sCam.near,
+                  far: sCam.far,
+                  mapSize: sun.shadow.mapSize?.x,
+                });
+            }
+          } catch (_) {
+            /* ignore */
+          }
         }
         this.scene.add(sun);
       } catch (_) {
@@ -192,6 +217,19 @@ export class ThreeSceneManager {
           if (typeof window === 'undefined' || window.__TT_ENABLE_SHADOWS__ !== false) {
             this.renderer.shadowMap.enabled = true;
             if (three.PCFSoftShadowMap) this.renderer.shadowMap.type = three.PCFSoftShadowMap;
+            try {
+              // Debug: log once to verify shadow system toggled
+              if (!this.__loggedShadowInit) {
+                this.__loggedShadowInit = true;
+                // eslint-disable-next-line no-console
+                if (!(typeof window !== 'undefined' && window.__TT_QUIET_LOGS__))
+                  console.info('[ThreeSceneManager] ShadowMap enabled', {
+                    type: this.renderer.shadowMap.type,
+                  });
+              }
+            } catch (_) {
+              /* ignore */
+            }
           }
         } catch (_) {
           /* ignore shadow enabling */
@@ -216,6 +254,25 @@ export class ThreeSceneManager {
         this._resize();
         this._boundResize = () => this._resize();
         window.addEventListener('resize', this._boundResize);
+        // Also debounce elevation parity sync so 3D height steps continue matching 2D pixel steps after viewport resize.
+        try {
+          if (!this._boundElevSync) {
+            let t = null;
+            this._boundElevSync = () => {
+              if (t) clearTimeout(t);
+              t = setTimeout(() => {
+                try {
+                  this.gameManager?.sync3DElevationScaling?.({ rebuild: false });
+                } catch (_) {
+                  /* ignore */
+                }
+              }, 120);
+            };
+            window.addEventListener('resize', this._boundElevSync);
+          }
+        } catch (_) {
+          /* ignore elevation sync hook errors */
+        }
       } else {
         this.renderer = {
           render: () => {},
@@ -348,10 +405,11 @@ export class ThreeSceneManager {
       if (!this._loggedFirstFrame && this._metrics.frameCount === 1) {
         this._loggedFirstFrame = true;
         try {
-          console.info('[ThreeSceneManager] First frame rendered', {
-            degraded: this.degraded,
-            startTime: this._metrics.startTime,
-          });
+          if (!(typeof window !== 'undefined' && window.__TT_QUIET_LOGS__))
+            console.info('[ThreeSceneManager] First frame rendered', {
+              degraded: this.degraded,
+              startTime: this._metrics.startTime,
+            });
         } catch (_) {
           /* noop */
         }
