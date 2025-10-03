@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { ThreeSceneManager } from '../../src/scene/ThreeSceneManager.js';
 
 describe('ThreeSceneManager sun controls', () => {
@@ -36,5 +37,36 @@ describe('ThreeSceneManager sun controls', () => {
     expect(manager.getSunTimeMinutes()).toBeCloseTo(expectedMinutes, 5);
     expect(window.__TT_PENDING_SUN_TIME_MINUTES).toBeCloseTo(expectedMinutes, 5);
     expect(window.__TT_PENDING_SUN_AZIMUTH_DEG).toBeCloseTo(90, 5);
+  });
+
+  test('time-of-day profile warms terrain during sunrise and cools it at night', () => {
+    const manager = new ThreeSceneManager({});
+    const sunrise = manager.getTimeOfDayProfile(360); // 6:00 AM
+    const midday = manager.getTimeOfDayProfile(780); // 1:00 PM
+    const night = manager.getTimeOfDayProfile(60); // 1:00 AM
+    expect(sunrise.phase).toBe('sunrise');
+    expect(sunrise.terrain.warmMix).toBeGreaterThan(sunrise.terrain.coolMix);
+    expect(sunrise.placeables.plant.warmMix).toBeGreaterThan(sunrise.placeables.structure.warmMix);
+    expect(midday.phase).toBe('day');
+    expect(midday.terrain.warmMix).toBeLessThan(0.05);
+    expect(midday.terrain.coolMix).toBeLessThan(0.05);
+    expect(midday.placeables.plant.warmMix).toBeLessThan(0.06);
+    expect(midday.placeables.plant.coolMix).toBeLessThan(0.06);
+    expect(night.phase).toBe('night');
+    expect(night.terrain.coolMix).toBeGreaterThan(night.terrain.warmMix);
+    expect(night.placeables.plant.coolMix).toBeGreaterThan(night.placeables.plant.warmMix);
+  });
+
+  test('lighting intensity increases with daylight', () => {
+    const manager = new ThreeSceneManager({});
+    const nightProfile = manager.getTimeOfDayProfile(120); // 2:00 AM
+    const dayProfile = manager.getTimeOfDayProfile(780); // 1:00 PM
+    expect(dayProfile.lighting.sunIntensity).toBeGreaterThan(nightProfile.lighting.sunIntensity);
+    expect(dayProfile.lighting.ambientIntensity).toBeGreaterThan(
+      nightProfile.lighting.ambientIntensity
+    );
+    expect(dayProfile.lighting.hemisphereIntensity).toBeGreaterThan(
+      nightProfile.lighting.hemisphereIntensity
+    );
   });
 });

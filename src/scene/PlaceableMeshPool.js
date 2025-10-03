@@ -23,6 +23,11 @@ export class PlaceableMeshPool {
     // Each clearAll() increments this so promises that started before the clear but resolve after
     // will harmlessly no-op instead of re-adding stale trees.
     this._clearEpoch = 0;
+    try {
+      this.gameManager?.threeSceneManager?.registerPlaceablePool?.(this);
+    } catch (_) {
+      /* ignore registration failure */
+    }
   }
 
   async _ensureThree() {
@@ -166,6 +171,14 @@ export class PlaceableMeshPool {
       this._groups.set(key, group);
       this._metadata.set(key, new Map());
       this._updateMetrics();
+      try {
+        const profile = this.gameManager?.threeSceneManager?.getTimeOfDayProfile?.();
+        if (profile && profile.placeables) {
+          this.applyLightingProfile(profile.placeables);
+        }
+      } catch (_) {
+        /* ignore tint bootstrap */
+      }
     }
     // Re-check epoch after potential async _createGroup work (defensive double-guard)
     if (epochAtStart !== this._clearEpoch) {
@@ -502,7 +515,19 @@ export class PlaceableMeshPool {
           this.gameManager.threeSceneManager.addAnimationCallback(this._billboardUpdater);
         }
       }
-      return { key, type, profile, instancedMesh: instanced, capacity, freeIndices: [], count: 0 };
+      const tintCategory = placeable?.type || type || 'generic';
+      const baseColorRef = mat?.color ? { r: mat.color.r, g: mat.color.g, b: mat.color.b } : null;
+      return {
+        key,
+        type,
+        profile,
+        tintCategory,
+        instancedMesh: instanced,
+        capacity,
+        freeIndices: [],
+        count: 0,
+        baseColor: baseColorRef,
+      };
     } catch (err) {
       // Capture error for diagnostics and attempt a fallback lightweight group so tests can proceed
       try {
@@ -616,6 +641,64 @@ export class PlaceableMeshPool {
         liveInstances: this._metrics.instances,
         capacityExpansions: this._metrics.capacityExpansions,
       };
+    }
+  }
+
+  applyLightingProfile(profile = {}) {
+    const clamp = (value, min = 0, max = 1) => {
+      if (!Number.isFinite(value)) return min;
+      if (value < min) return min;
+      if (value > max) return max;
+      return value;
+    };
+    for (const group of this._groups.values()) {
+      const inst = group?.instancedMesh;
+      if (!inst || !inst.material || !inst.material.color) continue;
+      const mat = inst.material;
+      if (!group.__baseColor) {
+        if (group.baseColor) {
+          group.__baseColor = { ...group.baseColor };
+        } else {
+          group.__baseColor = { r: mat.color.r, g: mat.color.g, b: mat.color.b };
+        }
+      }
+      const entry =
+        profile[group.tintCategory] || profile[group.profile] || profile.generic || profile.default;
+      if (!entry) {
+        mat.color.setRGB(group.__baseColor.r, group.__baseColor.g, group.__baseColor.b);
+        mat.needsUpdate = true;
+        continue;
+      }
+      const saturation = clamp(entry.saturation ?? 1, 0, 3);
+      const brightness = clamp(entry.brightness ?? 1, 0, 3);
+      const warmMix = clamp(entry.warmMix ?? 0, 0, 1);
+      const coolMix = clamp(entry.coolMix ?? 0, 0, 1);
+      const warm = entry.warmColor;
+      const cool = entry.coolColor;
+      let r = group.__baseColor.r;
+      let g = group.__baseColor.g;
+      let b = group.__baseColor.b;
+      const avg = (r + g + b) / 3;
+      r = avg + (r - avg) * saturation;
+      g = avg + (g - avg) * saturation;
+      b = avg + (b - avg) * saturation;
+      if (warm && warmMix > 0) {
+        const inv = 1 - warmMix;
+        r = r * inv + warm.r * warmMix;
+        g = g * inv + warm.g * warmMix;
+        b = b * inv + warm.b * warmMix;
+      }
+      if (cool && coolMix > 0) {
+        const inv = 1 - coolMix;
+        r = r * inv + cool.r * coolMix;
+        g = g * inv + cool.g * coolMix;
+        b = b * inv + cool.b * coolMix;
+      }
+      r *= brightness;
+      g *= brightness;
+      b *= brightness;
+      mat.color.setRGB(clamp(r, 0, 1), clamp(g, 0, 1), clamp(b, 0, 1));
+      mat.needsUpdate = true;
     }
   }
 
@@ -779,6 +862,11 @@ export class PlaceableMeshPool {
       }
     } catch (_) {
       /* ignore preview dispose */
+    }
+    try {
+      this.gameManager?.threeSceneManager?.registerPlaceablePool?.(null);
+    } catch (_) {
+      /* ignore unregister errors */
     }
     this._updateMetrics();
   }

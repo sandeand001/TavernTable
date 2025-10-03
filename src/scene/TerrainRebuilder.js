@@ -282,6 +282,11 @@ export class TerrainRebuilder {
     } catch (_) {
       /* ignore metrics errors */
     }
+    try {
+      gm?.threeSceneManager?.registerTerrainGeometryBasis?.(mesh?.geometry);
+    } catch (_) {
+      /* ignore terrain basis registration */
+    }
     return mesh;
   }
 }
