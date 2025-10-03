@@ -213,14 +213,15 @@ export function createPlaceableButton(id, label, imgSrc) {
   btn.className = 'placeable-btn';
   btn.dataset.placeable = id;
   btn.title = label || id;
-  // Visual: include a small preview image when available
-  if (imgSrc) {
-    const img = document.createElement('img');
-    img.src = imgSrc;
-    img.alt = label || id;
-    img.className = 'placeable-preview';
-    btn.appendChild(img);
-  }
+  // Always include an img element so later async thumbnail generation has a target.
+  const img = document.createElement('img');
+  img.className = 'placeable-preview';
+  img.alt = label || id;
+  // Use provided src or a 1x1 transparent pixel placeholder.
+  img.src =
+    imgSrc ||
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YkZyy8AAAAASUVORK5CYII=';
+  btn.appendChild(img);
   const span = document.createElement('span');
   span.className = 'placeable-label';
   span.textContent = label || id;

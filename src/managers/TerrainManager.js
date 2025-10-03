@@ -14,6 +14,7 @@ import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
 import { traceDiamondPath } from '../utils/PixiShapeUtils.js';
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
+import { TERRAIN_PLACEABLES } from '../config/TerrainPlaceables.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 // elevation offset calculation is delegated into internals
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
@@ -314,6 +315,16 @@ export class TerrainManager {
    */
   placeTerrainItem(x, y, placeableId) {
     try {
+      // Family indirection: if a virtual plant-family id is selected, choose a random concrete variant each click.
+      if (typeof placeableId === 'string') {
+        const famDef = TERRAIN_PLACEABLES[placeableId];
+        if (famDef?.type === 'plant-family' && Array.isArray(famDef.familyVariants)) {
+          const variants = famDef.familyVariants.filter(Boolean);
+          if (variants.length) {
+            placeableId = variants[Math.floor(Math.random() * variants.length)];
+          }
+        }
+      }
       const result = _placeItem(this, placeableId, x, y);
       logger.log(LOG_LEVEL.DEBUG, 'placeTerrainItem attempt', LOG_CATEGORY.RENDERING, {
         x,

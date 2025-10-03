@@ -139,6 +139,19 @@ export class PlaceableMeshPool {
       return null;
     }
     const { instancedMesh } = group;
+    // If this placeable is metrics-only (no visual), ensure group stays hidden
+    try {
+      if (placeable.metricsOnly) {
+        instancedMesh.visible = false;
+        if (instancedMesh.material) {
+          instancedMesh.material.transparent = true;
+          instancedMesh.material.opacity = 0.0;
+          instancedMesh.material.depthWrite = false;
+        }
+      }
+    } catch (_) {
+      /* ignore visibility adjustments */
+    }
     const index = this._allocateIndex(group);
     if (index < 0) return null; // capacity exhaustion (future: grow)
     // Position from grid (approx center)

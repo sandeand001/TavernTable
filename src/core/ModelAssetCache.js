@@ -288,6 +288,8 @@ class ModelAssetCache {
               const texBase = 'assets/terrain/3d Assets/Textures';
               const nameLc = (mat.name || '').toLowerCase();
               const pick = () => {
+                if (/leaves_birch|birch_leaves/.test(nameLc)) return 'Leaves_Birch_C.png';
+                if (/bark_birch/.test(nameLc)) return 'Bark_BirchTree.png';
                 if (/leaves_twistedtree/.test(nameLc)) return 'Leaves_TwistedTree_C.png';
                 if (/leaves_normaltree/.test(nameLc)) return 'Leaves_NormalTree_C.png';
                 if (/leaves_giantpine/.test(nameLc)) return 'Leaves_GiantPine_C.png';
@@ -327,8 +329,37 @@ class ModelAssetCache {
                 }
               }
             }
-            if (mat.map && 'colorSpace' in mat.map && three.SRGBColorSpace)
-              mat.map.colorSpace = three.SRGBColorSpace;
+            if (mat.map) {
+              try {
+                // Handle absolute paths like C:/Leaves_NormalTree_C.png by reloading from our local texture folder.
+                const src = mat.map.image?.src || mat.map.source?.data?.src || '';
+                if (/^[a-zA-Z]:\//.test(src)) {
+                  const file = src.split(/[/\\]/).pop();
+                  const texBase = 'assets/terrain/3d Assets/Textures';
+                  const local = `${texBase}/${file}`;
+                  if (!this._textureLoader) this._textureLoader = new three.TextureLoader();
+                  if (!this._textureCache) this._textureCache = new Map();
+                  let tex = this._textureCache.get(local);
+                  if (!tex) {
+                    tex = this._textureLoader.load(local, () => {
+                      if (tex && 'colorSpace' in tex && three.SRGBColorSpace) {
+                        tex.colorSpace = three.SRGBColorSpace;
+                        tex.needsUpdate = true;
+                      }
+                    });
+                    this._textureCache.set(local, tex);
+                  }
+                  if (tex) {
+                    mat.map = tex;
+                    mat.needsUpdate = true;
+                  }
+                } else if ('colorSpace' in mat.map && three.SRGBColorSpace) {
+                  mat.map.colorSpace = three.SRGBColorSpace;
+                }
+              } catch (_) {
+                /* ignore texture rewrite failures */
+              }
+            }
             const tag = (
               (mat.name || '') +
               ' ' +
@@ -340,6 +371,30 @@ class ModelAssetCache {
               /(leaf|leaves|foliage|canopy|crown|autumn|orange|yellow|red)/.test(tag) &&
               !/(bark|trunk|branch|rock|stone|ground|dirt)/.test(tag);
             if (!isLeaf) return;
+            // If this is foliage and STILL no texture map was resolved, apply a generic leaf texture.
+            if (!mat.map) {
+              try {
+                if (!this._textureLoader) this._textureLoader = new three.TextureLoader();
+                const genericLeaf = 'assets/terrain/3d Assets/Textures/Leaves_NormalTree_C.png';
+                let tex = this._textureCache?.get?.(genericLeaf);
+                if (!tex) {
+                  if (!this._textureCache) this._textureCache = new Map();
+                  tex = this._textureLoader.load(genericLeaf, () => {
+                    if (tex && 'colorSpace' in tex && three.SRGBColorSpace) {
+                      tex.colorSpace = three.SRGBColorSpace;
+                      tex.needsUpdate = true;
+                    }
+                  });
+                  this._textureCache.set(genericLeaf, tex);
+                }
+                if (tex) {
+                  mat.map = tex;
+                  mat.needsUpdate = true;
+                }
+              } catch (_) {
+                /* ignore leaf fallback failure */
+              }
+            }
             if (!mat.userData) mat.userData = {};
             mat.userData.__foliageCandidate = true;
             mat.transparent = true;

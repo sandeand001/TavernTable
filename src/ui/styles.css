@@ -1247,50 +1247,97 @@ body {
   font-weight: 600;
 }
 
-/* Placeables menu (trees, shrubs, etc.) - compact thumbnails */
+/* Placeables menu */
 #terrain-placeables-root,
 .placeables-root {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 4px;
   align-items: start;
   padding-right: 4px;
   max-height: 240px;
   overflow-y: auto;
 }
 
+/* Explicit tiled modifier (future-proof for alternative layouts) */
+#terrain-placeables-root.placeables-root-tiled,
+.placeables-root.placeables-root-tiled {
+  grid-auto-rows: minmax(34px, auto);
+}
+
+/* Ensure each expanded category body in tiled mode is a grid */
+#terrain-placeables-root.placeables-root-tiled .placeables-cat-body,
+.placeables-root.placeables-root-tiled .placeables-cat-body {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* Basic category body grid (reverted simpler version) */
+.placeables-cat-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 4px;
+}
+
+/* Strong explicit tiling for trees (fixed track width) */
+.placeables-cat-body.force-tree-grid {
+  display: grid !important;
+  grid-auto-flow: row dense;
+  grid-template-columns: repeat(auto-fill, 72px);
+  place-content: start start;
+  gap: 6px;
+}
+
+.placeables-cat-body.force-tree-grid .placeable-btn {
+  width: 72px !important;
+  min-width: 0;
+  max-width: 72px;
+  flex: 0 0 auto;
+  padding: 4px 2px;
+}
+
+/* Ensure tree grid buttons don't inherit 100% width rule from generic context */
+.force-tree-grid .placeable-btn {
+  width: 72px !important;
+}
+
 .placeable-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  padding: 6px;
+  justify-content: center;
+  padding: 4px;
   background: #333;
   color: #fff;
   border: 1px solid #2b2b2b;
-  border-radius: 6px;
+  border-radius: 5px;
   cursor: pointer;
-  width: 56px;
+  width: auto;
+
+  /* allow grid to pack multiple buttons per row */
+  min-height: 34px;
   box-sizing: border-box;
   text-align: center;
   font-size: 11px;
+  line-height: 1.1;
 }
 
 .placeable-preview {
-  width: 40px;
-  height: 40px;
+  width: 112px;
+  height: 112px;
   object-fit: contain;
   display: block;
   margin: 0 auto;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 .placeable-label {
   font-size: 11px;
   color: #ddd;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
   width: 100%;
 }
 
@@ -1306,21 +1353,78 @@ body {
   border-color: #3a9be6;
 }
 
+/* Text-only variant (no thumbnail) for plant-family buttons */
+.placeable-btn.no-thumb {
+  padding: 4px;
+  min-height: 34px;
+}
+
+.placeable-btn.no-thumb .placeable-label {
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+/* Subtle tint to distinguish plant families */
+.placeable-btn.plant-family {
+  background: #2f3b2f;
+  border-color: #324632;
+}
+
+.placeable-btn.plant-family:hover {
+  background: #3a4a3a;
+}
+
+.placeable-btn.plant-family.selected {
+  background: #4da65a;
+  border-color: #3a9248;
+}
+
+/* Unified placeables grid (all categories merged with headers) */
+.placeables-unified-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  align-items: start;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.placeables-unified-grid .placeable-btn {
+  width: 100%;
+  min-height: 40px;
+}
+
+.placeables-section-header {
+  grid-column: 1 / -1;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #9aa3af;
+  padding: 4px 2px 2px;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #2b2b2b;
+  border-radius: 4px;
+}
+
 @media (width <=768px) {
   #terrain-placeables-root,
   .placeables-root {
-    grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
     max-height: 200px;
+    gap: 6px;
   }
 
   .placeable-btn {
-    width: 48px;
-    padding: 4px;
-    font-size: 10px;
+    width: 92px;
+    padding: 8px 6px 6px;
+    font-size: 11px;
   }
 
   .placeable-preview {
-    width: 34px;
-    height: 34px;
+    width: 84px;
+    height: 84px;
   }
 }
