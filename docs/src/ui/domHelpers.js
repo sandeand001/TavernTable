@@ -189,6 +189,12 @@ export function getAnimationSpeedControl() {
   return { slider, valueEl: slider?.nextElementSibling || null };
 }
 
+/** Returns sun time slider and its value element. */
+export function getSunTimeControl() {
+  const slider = document.getElementById('sun-time-range');
+  return { slider, valueEl: slider?.nextElementSibling || null };
+}
+
 /** Returns all biome button elements under the biome root (or provided root). */
 export function getBiomeButtons(root = getBiomeRootEl()) {
   if (!root) return [];

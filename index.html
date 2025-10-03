@@ -242,6 +242,17 @@
             </div>
 
             <div class="tool-group">
+              <div class="section-subtitle">Sunlight</div>
+              <div class="setting-item">
+                <label for="sun-time-range">Sun Time:</label>
+                <input type="range" id="sun-time-range" min="0" max="1439" step="1" value="720" class="range-input"
+                  aria-label="Adjust sun time of day for 3D lighting">
+                <span id="sun-time-value" class="range-value">12:00</span>
+              </div>
+              <small class="small-text">Scrub through the day-night cycle to reposition sunlight and shadows.</small>
+            </div>
+
+            <div class="tool-group">
               <div class="section-subtitle">Actions</div>
               <button id="terrain-reset-btn" class="action-button terrain-reset"
                 aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
@@ -364,8 +375,8 @@
           </div>
           <div class="setting-item">
             <label for="animation-speed">Animation Speed:</label>
-            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1"
-              class="range-input" aria-label="Adjust animation playback speed">
+            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1" class="range-input"
+              aria-label="Adjust animation playback speed">
             <span id="animation-speed-value" class="range-value">1.0x</span>
           </div>
           <div class="setting-item" style="margin-top:0.75rem;">

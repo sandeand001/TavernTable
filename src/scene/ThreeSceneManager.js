@@ -19,6 +19,17 @@ export class ThreeSceneManager {
     this._sunLight = null;
     this._sunTarget = null;
     this._sunOffset = { x: -12, y: 14, z: 10 };
+    this._sunRadius = Math.hypot(this._sunOffset.x, this._sunOffset.z) || 1;
+    this._sunAzimuthRad = Math.atan2(this._sunOffset.z, this._sunOffset.x);
+    this._targetSunAzimuthRad = this._sunAzimuthRad;
+    this._sunAzimuthOffsetDeg = -40;
+    this._sunTimeMinutes = 720;
+    this._sunMinElevation = 6;
+    this._sunMaxElevation = 14;
+    this._sunAnimActive = false;
+    this._sunAnimFn = null;
+    this._sunLastAnimTs = null;
+    this._sunLerpTauMs = 220;
     this.brushOverlay = null;
     this._gridOverlayGroup = null;
     this._gridOverlayKey = null;
@@ -185,6 +196,8 @@ export class ThreeSceneManager {
         }
         this._sunLight = sun;
         this._updateSunCoverage();
+        this._ensureSunAnimator();
+        this._applyStoredSunTime();
       } catch (_) {
         /* ignore sun light */
       }
@@ -491,6 +504,178 @@ export class ThreeSceneManager {
     } catch (_) {
       /* ignore */
     }
+  }
+
+  _normalizeMinutes(mins) {
+    if (!Number.isFinite(mins)) return 0;
+    let value = mins % 1440;
+    if (value < 0) value += 1440;
+    return value;
+  }
+
+  _minutesToAzimuthDegrees(mins) {
+    const normalized = this._normalizeMinutes(mins);
+    const base = (normalized / 1440) * 360;
+    const offset = Number.isFinite(this._sunAzimuthOffsetDeg) ? this._sunAzimuthOffsetDeg : 0;
+    return this._normalizeDegrees(base + offset);
+  }
+
+  _azimuthDegreesToMinutes(degrees) {
+    const offset = Number.isFinite(this._sunAzimuthOffsetDeg) ? this._sunAzimuthOffsetDeg : 0;
+    const normalized = this._normalizeDegrees(degrees - offset);
+    const minutes = (normalized / 360) * 1440;
+    return this._normalizeMinutes(minutes);
+  }
+
+  _applySunElevationForTime(minutes, options = {}) {
+    const normalized = this._normalizeMinutes(minutes);
+    const span = Math.max(0, (this._sunMaxElevation ?? 14) - (this._sunMinElevation ?? 6));
+    const minElev = Number.isFinite(this._sunMinElevation) ? this._sunMinElevation : 6;
+    const phase = (normalized / 1440) * 2 * Math.PI;
+    const daylight = Math.max(0, Math.sin(phase - Math.PI / 2));
+    const targetY = minElev + span * daylight;
+    if (Number.isFinite(targetY)) {
+      this._sunOffset.y = targetY;
+      if (!options.deferSunCoverage) {
+        this._updateSunCoverage();
+      }
+    }
+  }
+
+  _applyStoredSunTime() {
+    let pendingMinutes = null;
+    let fallbackDegrees = null;
+    try {
+      if (typeof window !== 'undefined') {
+        if (Number.isFinite(window.__TT_PENDING_SUN_TIME_MINUTES)) {
+          pendingMinutes = window.__TT_PENDING_SUN_TIME_MINUTES;
+        } else if (Number.isFinite(window.__TT_PENDING_SUN_AZIMUTH_DEG)) {
+          fallbackDegrees = window.__TT_PENDING_SUN_AZIMUTH_DEG;
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
+    if (Number.isFinite(pendingMinutes)) {
+      this.setSunTimeMinutes(pendingMinutes, { immediate: true, skipPersist: true });
+      return;
+    }
+
+    if (Number.isFinite(fallbackDegrees)) {
+      const derivedMinutes = this._azimuthDegreesToMinutes(fallbackDegrees);
+      this.setSunTimeMinutes(derivedMinutes, { immediate: true, skipPersist: true });
+      return;
+    }
+
+    this.setSunTimeMinutes(this._sunTimeMinutes ?? 720, { immediate: true, skipPersist: true });
+  }
+
+  _ensureSunAnimator() {
+    if (this._sunAnimFn) return;
+    this._sunAnimFn = (ts) => {
+      if (!this._sunAnimActive) return;
+      const lastTs = this._sunLastAnimTs != null ? this._sunLastAnimTs : ts;
+      const elapsed = Math.max(0, ts - lastTs);
+      this._sunLastAnimTs = ts;
+      const current = this._sunAzimuthRad;
+      const target = this._targetSunAzimuthRad;
+      const delta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+      if (Math.abs(delta) < 0.0004) {
+        this._sunAzimuthRad = target;
+        this._sunAnimActive = false;
+        this._applySunAzimuth();
+        return;
+      }
+      const tau = this._sunLerpTauMs || 220;
+      const alpha = 1 - Math.exp(-elapsed / Math.max(1, tau));
+      this._sunAzimuthRad = current + delta * Math.min(1, Math.max(0, alpha));
+      this._applySunAzimuth();
+    };
+    this._animCallbacks.push(this._sunAnimFn);
+  }
+
+  _applySunAzimuth() {
+    if (!Number.isFinite(this._sunRadius) || this._sunRadius <= 0) {
+      this._sunRadius = Math.hypot(this._sunOffset.x, this._sunOffset.z) || 1;
+    }
+    const radius = this._sunRadius;
+    const x = Math.cos(this._sunAzimuthRad) * radius;
+    const z = Math.sin(this._sunAzimuthRad) * radius;
+    if (Number.isFinite(x) && Number.isFinite(z)) {
+      this._sunOffset.x = x;
+      this._sunOffset.z = z;
+    }
+    this._updateSunCoverage();
+  }
+
+  setSunAzimuthDegrees(degrees, options = {}) {
+    if (!Number.isFinite(degrees)) return;
+    const normalized = this._normalizeDegrees(degrees);
+    const rad = (normalized * Math.PI) / 180;
+    this._targetSunAzimuthRad = rad;
+    if (!Number.isFinite(this._sunRadius) || this._sunRadius <= 0) {
+      this._sunRadius = Math.hypot(this._sunOffset.x, this._sunOffset.z) || 1;
+    }
+    if (!options.skipTimeSync) {
+      const derivedMinutes = this._azimuthDegreesToMinutes(normalized);
+      this._sunTimeMinutes = derivedMinutes;
+      this._applySunElevationForTime(derivedMinutes, options);
+      if (typeof window !== 'undefined' && !options.skipPersist) {
+        window.__TT_PENDING_SUN_TIME_MINUTES = derivedMinutes;
+      }
+    }
+    if (typeof window !== 'undefined' && !options.skipPersist) {
+      window.__TT_PENDING_SUN_AZIMUTH_DEG = normalized;
+    }
+    if (options.immediate || !this._sunLight) {
+      this._sunAnimActive = false;
+      this._sunAzimuthRad = rad;
+      this._sunLastAnimTs = null;
+      this._applySunAzimuth();
+      return;
+    }
+    this._sunAnimActive = true;
+    this._ensureSunAnimator();
+  }
+
+  getSunAzimuthDegrees() {
+    return this._normalizeDegrees((this._sunAzimuthRad * 180) / Math.PI);
+  }
+
+  setSunTimeMinutes(minutes, options = {}) {
+    if (!Number.isFinite(minutes)) return;
+    const normalized = this._normalizeMinutes(minutes);
+    this._sunTimeMinutes = normalized;
+    if (typeof window !== 'undefined' && !options.skipPersist) {
+      window.__TT_PENDING_SUN_TIME_MINUTES = normalized;
+    }
+    this._applySunElevationForTime(normalized, options);
+    const targetDegrees = this._minutesToAzimuthDegrees(normalized);
+    this.setSunAzimuthDegrees(targetDegrees, {
+      ...options,
+      skipPersist: true,
+      skipTimeSync: true,
+    });
+    if (typeof window !== 'undefined' && !options.skipPersist) {
+      window.__TT_PENDING_SUN_AZIMUTH_DEG = this.getSunAzimuthDegrees();
+    }
+  }
+
+  getSunTimeMinutes() {
+    if (Number.isFinite(this._sunTimeMinutes)) {
+      return this._normalizeMinutes(this._sunTimeMinutes);
+    }
+    const derived = this._azimuthDegreesToMinutes(this.getSunAzimuthDegrees());
+    this._sunTimeMinutes = derived;
+    return derived;
+  }
+
+  _normalizeDegrees(deg) {
+    if (!Number.isFinite(deg)) return 0;
+    let d = deg % 360;
+    if (d < 0) d += 360;
+    return d;
   }
 
   _rebuildGridOverlay(metrics = null, options = {}) {

@@ -197,6 +197,16 @@ export function getAnimationSpeedControl() {
   return { slider, valueEl };
 }
 
+/** Returns sun time slider and associated value element. */
+export function getSunTimeControl() {
+  const slider = document.getElementById('sun-time-range');
+  let valueEl = document.getElementById('sun-time-value');
+  if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
+    valueEl = slider.nextElementSibling;
+  }
+  return { slider, valueEl };
+}
+
 /** Returns the settings toggle controlling the 3D grid overlay visibility. */
 export function getVisualGridToggle() {
   return document.getElementById('visual-grid-toggle');

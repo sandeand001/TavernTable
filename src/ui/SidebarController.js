@@ -16,6 +16,7 @@ import {
   getGridOpacityControl,
   getAnimationSpeedControl,
   getVisualGridToggle,
+  getSunTimeControl,
   getBiomeButtons,
   getBiomeButtonByKey,
   getTerrainPlaceablesRoot,
@@ -74,6 +75,33 @@ class SidebarController {
         animSpeedSlider.addEventListener('change', applyAnimSpeed);
         animSpeedSlider.dataset.boundChange = 'true';
         applyAnimSpeed();
+      }
+      const { slider: sunTimeSlider, valueEl: sunTimeValue } = getSunTimeControl();
+      if (sunTimeSlider && !sunTimeSlider.dataset.boundSunTime) {
+        this._syncSunTimeSliderState(sunTimeSlider, sunTimeValue);
+        this.onSunTimeChange(Number(sunTimeSlider.value), {
+          immediate: true,
+          skipNotify: true,
+          skipPersist: true,
+        });
+        const applySunTime = () => {
+          const raw = Number(sunTimeSlider.value);
+          if (!Number.isFinite(raw)) return;
+          if (sunTimeValue) sunTimeValue.textContent = this._formatMinutes(raw);
+          this.onSunTimeChange(raw);
+        };
+        sunTimeSlider.addEventListener('input', applySunTime);
+        sunTimeSlider.addEventListener('change', applySunTime);
+        sunTimeSlider.dataset.boundSunTime = 'true';
+        if (typeof window !== 'undefined') {
+          window.__TT_SUN_TIME_LISTENERS__ = window.__TT_SUN_TIME_LISTENERS__ || [];
+          if (!sunTimeSlider.dataset.sunTimeListenerBound) {
+            const syncFn = (mins) =>
+              this._syncSunTimeSliderState(sunTimeSlider, sunTimeValue, mins);
+            window.__TT_SUN_TIME_LISTENERS__.push(syncFn);
+            sunTimeSlider.dataset.sunTimeListenerBound = 'true';
+          }
+        }
       }
       const visualGridToggle = getVisualGridToggle();
       if (visualGridToggle && !visualGridToggle.dataset.boundChange) {
@@ -555,6 +583,31 @@ class SidebarController {
     toggleEl.disabled = false;
   }
 
+  _formatMinutes(mins) {
+    if (!Number.isFinite(mins)) return '00:00';
+    const safe = ((Math.round(mins) % 1440) + 1440) % 1440;
+    const hours = Math.floor(safe / 60);
+    const minutes = safe % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  _syncSunTimeSliderState(sliderEl, valueEl, explicitMinutes) {
+    if (!sliderEl) return;
+    let resolved = Number.isFinite(explicitMinutes) ? explicitMinutes : null;
+    if (!Number.isFinite(resolved) && typeof window !== 'undefined') {
+      const gm = window.gameManager;
+      if (gm?.threeSceneManager?.getSunTimeMinutes) {
+        resolved = gm.threeSceneManager.getSunTimeMinutes();
+      } else if (Number.isFinite(window.__TT_PENDING_SUN_TIME_MINUTES)) {
+        resolved = window.__TT_PENDING_SUN_TIME_MINUTES;
+      }
+    }
+    if (!Number.isFinite(resolved)) resolved = 720;
+    const rounded = Math.round(((resolved % 1440) + 1440) % 1440);
+    sliderEl.value = String(rounded);
+    if (valueEl) valueEl.textContent = this._formatMinutes(rounded);
+  }
+
   onVisualGridVisibilityChange(visible) {
     const next = !!visible;
     if (typeof window !== 'undefined') {
@@ -582,6 +635,30 @@ class SidebarController {
       if (window.gameManager.app.ticker) window.gameManager.app.ticker.speed = speed;
     } else {
       logger.debug('GameManager not available for animation speed change', {}, LOG_CATEGORY.UI);
+    }
+  }
+
+  onSunTimeChange(minutes, options = {}) {
+    if (!Number.isFinite(minutes)) return;
+    const normalized = ((minutes % 1440) + 1440) % 1440;
+    if (typeof window !== 'undefined') {
+      window.__TT_PENDING_SUN_TIME_MINUTES = normalized;
+      if (!options.skipNotify && Array.isArray(window.__TT_SUN_TIME_LISTENERS__)) {
+        window.__TT_SUN_TIME_LISTENERS__.forEach((fn) => {
+          try {
+            fn(normalized);
+          } catch (_) {
+            /* ignore */
+          }
+        });
+      }
+    }
+    const gm = typeof window !== 'undefined' ? window.gameManager : null;
+    if (gm?.threeSceneManager?.setSunTimeMinutes) {
+      gm.threeSceneManager.setSunTimeMinutes(normalized, {
+        immediate: !!options.immediate,
+        skipPersist: !!options.skipPersist,
+      });
     }
   }
 }
