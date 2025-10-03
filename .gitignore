@@ -33,6 +33,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+.eslintcache
 
 # Optional: Exclude archive directory if you don't want to track old development files
 # archive/
