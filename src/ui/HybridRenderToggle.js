@@ -6,9 +6,42 @@ import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
 
 function formatStats(stats) {
   if (!stats) return '';
-  const { degraded, frameCount, averageFrameMs } = stats;
-  if (degraded) return '3D: Degraded (Three.js unavailable)';
+  const { degraded, degradeReason, frameCount, averageFrameMs } = stats;
+  if (degraded) {
+    const reason = degradeReason || 'Three.js unavailable';
+    return `3D: Degraded (${reason})`;
+  }
   return `3D: ${frameCount}f @ ${averageFrameMs.toFixed(2)}ms avg`;
+}
+
+function setHybridUnavailable(reason) {
+  const message = reason || 'WebGL not supported on this device.';
+  try {
+    const statsEl = document.getElementById('hybrid-stats');
+    if (statsEl) statsEl.textContent = `3D unavailable: ${message}`;
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function handleHybridFailure(toggle, error) {
+  try {
+    const reasonFromManager = window.gameManager?.threeSceneManager?.degradeReason;
+    const reason =
+      error?.details?.reason || error?.message || reasonFromManager || 'WebGL not supported.';
+    if (toggle) {
+      toggle.checked = false;
+      toggle.disabled = true;
+      toggle.setAttribute('aria-disabled', 'true');
+      toggle.title = reason;
+    }
+    setHybridUnavailable(reason);
+    logger.log(LOG_LEVEL.WARN, 'Hybrid 3D mode unavailable', LOG_CATEGORY.SYSTEM, {
+      reason,
+    });
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 function updateStats() {
@@ -31,6 +64,12 @@ function attachHybridToggle() {
   if (!toggle) return;
   // Initialize checkbox state reflecting current mode
   try {
+    if (window.gameManager?.threeSceneManager?.degraded) {
+      handleHybridFailure(toggle, {
+        details: { reason: window.gameManager.threeSceneManager.degradeReason },
+      });
+      return;
+    }
     // Always default to checked (feature request: enable 3D Hybrid by default)
     toggle.checked = true;
     if (window.gameManager && !window.gameManager.is3DModeActive?.()) {
@@ -44,8 +83,8 @@ function attachHybridToggle() {
             LOG_CATEGORY.SYSTEM
           );
         })
-        .catch(() => {
-          /* non-fatal */
+        .catch((error) => {
+          handleHybridFailure(toggle, error);
         });
     }
   } catch (_) {
@@ -53,6 +92,7 @@ function attachHybridToggle() {
   }
   toggle.addEventListener('change', async () => {
     try {
+      if (toggle.disabled) return;
       if (!window.gameManager) return;
       if (toggle.checked && !window.gameManager.is3DModeActive?.()) {
         await window.gameManager.enableHybridRender();
@@ -60,6 +100,7 @@ function attachHybridToggle() {
       }
       // (No direct disable yet; full revert path will arrive in later phase.)
     } catch (e) {
+      handleHybridFailure(toggle, e);
       logger.log(LOG_LEVEL.ERROR, 'Failed to enable hybrid render', LOG_CATEGORY.ERROR, {
         error: e?.message,
       });
@@ -82,6 +123,16 @@ function attachHybridToggle() {
 window.addEventListener('load', () => {
   try {
     attachHybridToggle();
+  } catch (_) {
+    /* ignore */
+  }
+});
+
+window.addEventListener('tt-hybrid-degraded', (event) => {
+  try {
+    const toggle = document.getElementById('hybrid-render-toggle');
+    if (!toggle) return;
+    handleHybridFailure(toggle, { details: { reason: event?.detail?.reason } });
   } catch (_) {
     /* ignore */
   }

@@ -315,6 +315,15 @@ export class TerrainManager {
    */
   placeTerrainItem(x, y, placeableId) {
     try {
+      const requestedId = placeableId;
+      const tileKey = `${x},${y}`;
+      const getTileEntries = () => {
+        const map = this.placeables;
+        if (!map || typeof map.get !== 'function') return null;
+        return map.get(tileKey) || null;
+      };
+      const beforeList = getTileEntries();
+      const beforeCount = Array.isArray(beforeList) ? beforeList.length : 0;
       // Family indirection: if a virtual plant-family id is selected, choose a random concrete variant each click.
       if (typeof placeableId === 'string') {
         const famDef = TERRAIN_PLACEABLES[placeableId];
@@ -325,24 +334,65 @@ export class TerrainManager {
           }
         }
       }
+      const preResolvedId = placeableId;
       const result = _placeItem(this, placeableId, x, y);
+      const success = !!result;
+      const afterList = getTileEntries();
+      let resolvedId = preResolvedId;
+      let placedRecord = null;
+      let treePlacement = false;
+      if (success && Array.isArray(afterList) && afterList.length) {
+        const candidate = afterList[afterList.length - 1];
+        if (candidate) {
+          resolvedId =
+            (typeof candidate.placeableId === 'string' && candidate.placeableId) ||
+            (typeof candidate.id === 'string' && candidate.id) ||
+            resolvedId;
+          const candidateType =
+            typeof candidate.placeableType === 'string'
+              ? candidate.placeableType
+              : typeof resolvedId === 'string'
+                ? TERRAIN_PLACEABLES[resolvedId]?.type
+                : null;
+          treePlacement = candidateType === 'plant';
+          placedRecord = candidate;
+          if (treePlacement && typeof candidate === 'object') {
+            try {
+              candidate.__debugTreePlacement = true;
+              candidate.__debugTreeId = resolvedId;
+              candidate.__debugRequestedId = requestedId;
+              candidate.__debugPlacedAt = Date.now();
+            } catch (_) {
+              /* ignore debug flag failures */
+            }
+          }
+        }
+      } else {
+        const fallbackType =
+          typeof resolvedId === 'string' ? TERRAIN_PLACEABLES[resolvedId]?.type : null;
+        treePlacement = fallbackType === 'plant';
+      }
       logger.log(LOG_LEVEL.DEBUG, 'placeTerrainItem attempt', LOG_CATEGORY.RENDERING, {
         x,
         y,
-        placeableId,
-        success: !!result,
+        requestedId,
+        placeableId: resolvedId,
+        resolvedId,
+        success,
+        treePlacement,
+        beforeCount,
+        afterCount: Array.isArray(afterList) ? afterList.length : null,
       });
       // Retrofit instancing path disabled (duplicate risk). If ever needed again, guard behind feature flag.
       // if (result && this.gameManager?.features?.retrofitInstancing) { /* legacy disabled code */ }
-      if (!result) {
+      if (!success) {
         // Lightweight diagnostics for common rejection reasons so UI traces are useful
         let reason = 'rejected_by_rules';
         try {
-          const key = `${x},${y}`;
           if (
             this.placeables &&
-            this.placeables.has(key) &&
-            this.placeables.get(key).some((p) => p.placeableType === 'structure')
+            this.placeables.has(tileKey) &&
+            this.placeables.get(tileKey).some((p) => p.placeableType === 'structure')
           ) {
             reason = 'occupied_by_structure';
           } else if (this.gameManager?.tokenManager?.findExistingTokenAt?.(x, y)) {
@@ -354,11 +404,19 @@ export class TerrainManager {
         logger.log(LOG_LEVEL.INFO, 'placeTerrainItem rejected', LOG_CATEGORY.RENDERING, {
           x,
           y,
-          placeableId,
+          requestedId,
+          placeableId: resolvedId,
           reason,
         });
+        return false;
       }
-      return result;
+      return {
+        success: true,
+        requestedId,
+        resolvedId,
+        treePlacement,
+        record: placedRecord,
+      };
     } catch (e) {
       logger.warn(
         'placeTerrainItem failed',

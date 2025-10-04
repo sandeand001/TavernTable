@@ -211,8 +211,6 @@ class SidebarController {
           list.forEach(([id]) => used.add(id));
           return { ...b, list };
         });
-        const otherList = entries.filter(([id]) => !used.has(id));
-        if (otherList.length) bucketData.push({ key: 'other', title: 'Other', list: otherList });
 
         // Helper to build a button (family vs individual)
         const buildBtn = (id, def) => {

@@ -20,7 +20,7 @@
  * - Integrates with existing manager systems
  */
 
-import { logger, LOG_CATEGORY } from '../utils/Logger.js';
+import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
 import {
   ErrorHandler,
   errorHandler,
@@ -309,6 +309,22 @@ class GameManager {
     if (!this.threeSceneManager) {
       this.threeSceneManager = new ThreeSceneManager(this);
       await this.threeSceneManager.initialize();
+      if (this.threeSceneManager.degraded) {
+        const reason = this.threeSceneManager.degradeReason || 'Three.js renderer unavailable';
+        logger.log(
+          LOG_LEVEL.WARN,
+          'Hybrid 3D renderer unavailable; staying in 2D mode',
+          LOG_CATEGORY.SYSTEM,
+          {
+            context: 'GameManager.enableHybridRender',
+            reason,
+          }
+        );
+        const error = new Error(reason);
+        error.code = 'three_renderer_unavailable';
+        error.details = { reason };
+        throw error;
+      }
       // Hide the legacy Pixi tile grid once 3D mode is active; keep the Three grid visible by default.
       try {
         this.threeSceneManager.setPixiGridVisible?.(false);

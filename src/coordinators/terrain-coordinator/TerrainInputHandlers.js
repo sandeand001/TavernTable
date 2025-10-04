@@ -193,13 +193,36 @@ export class TerrainInputHandlers {
               ? desc.cells
               : [{ x: gridCoords.gridX, y: gridCoords.gridY }];
           let anyPlaced = false;
+          const treePlacements = [];
           for (const c of cells) {
             try {
-              const r = this.c.terrainManager?.placeTerrainItem(c.x, c.y, selected);
-              anyPlaced = anyPlaced || !!r;
+              const placement = this.c.terrainManager?.placeTerrainItem(c.x, c.y, selected);
+              const placementSuccess = !!placement;
+              anyPlaced = anyPlaced || placementSuccess;
+              if (
+                placement &&
+                typeof placement === 'object' &&
+                placement.success &&
+                placement.treePlacement
+              ) {
+                treePlacements.push({
+                  gridX: c.x,
+                  gridY: c.y,
+                  treeId: placement.resolvedId,
+                });
+              }
             } catch (_) {
               /* continue */
             }
+          }
+          if (treePlacements.length) {
+            logger.log(LOG_LEVEL.INFO, 'terrainTreePlacement', LOG_CATEGORY.USER, {
+              requestedId: selected,
+              pointerGridX: gridCoords.gridX,
+              pointerGridY: gridCoords.gridY,
+              treePlacements,
+              brushCellCount: cells.length,
+            });
           }
           logger.trace(
             'Placed terrain item via UI selection (brush footprint)',
@@ -209,6 +232,7 @@ export class TerrainInputHandlers {
               id: selected,
               placedAny: anyPlaced,
               cellCount: cells.length,
+              treePlacements,
             },
             LOG_CATEGORY.USER
           );
