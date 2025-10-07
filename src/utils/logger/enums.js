@@ -25,10 +25,4 @@ export const LOG_CATEGORY = Object.freeze({
   INTEGRATION: 'integration', // Third-party integrations
   AUDIT: 'audit', // Audit trail events
 });
-
-export const LOG_OUTPUT = Object.freeze({
-  CONSOLE: 'console',
-  FILE: 'file',
-  REMOTE: 'remote',
-  MEMORY: 'memory',
-});
+// LOG_OUTPUT previously exported (console/file/remote/memory) but no longer used anywhere.

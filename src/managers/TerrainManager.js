@@ -1011,3 +1011,7 @@ export class TerrainManager {
     }
   }
 }
+
+// NFC NOTE (2025-09-19): TerrainManager marked orphan by heuristic export/import scan.
+// It is instantiated indirectly by coordinators / global setup sequences. Keep as-is until
+// a constructor injection refactor normalizes manager lifecycles.

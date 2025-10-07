@@ -49,15 +49,7 @@ function lerpColor(aHex, bHex, t) {
     b: Math.round(lerp(a.b, b.b, t)),
   });
 }
-function lighten(hex, amount = 0.25) {
-  const { r, g, b } = hexToRgb(hex);
-  return rgbToHex({
-    r: Math.min(255, Math.round(r + (255 - r) * amount)),
-    g: Math.min(255, Math.round(g + (255 - g) * amount)),
-    b: Math.min(255, Math.round(b + (255 - b) * amount)),
-  });
-}
-// darken and desaturate were unused; removed to satisfy linter
+// (lighten helper removed; palette shaping now handled via OKLCH adjustments)
 
 // ------------------------
 // Perceptual color (OKLab / OKLCH) + macro flow (noise)
@@ -527,8 +519,9 @@ const BIOME_STOP_MAP = {
   ],
 };
 
-// Build per-biome height palettes
-export const BIOME_HEIGHT_PALETTES = {};
+// Build per-biome height palettes (internal map; default-exported below for any legacy usage)
+// CLEANUP (2025-09-19): BIOME_HEIGHT_PALETTES kept internal (previously exported indirectly).
+const BIOME_HEIGHT_PALETTES = {};
 const DEFAULT_TRIAD = [0x253035, 0x607078, 0xbfd3e1];
 for (const biome of ALL_BIOMES) {
   let palette;
@@ -538,27 +531,6 @@ for (const biome of ALL_BIOMES) {
     palette = generateHeightGradient(triad[0], triad[1], triad[2]);
   }
   BIOME_HEIGHT_PALETTES[biome.key] = palette;
-}
-
-/**
- * Simple height-indexed color lookup for a biome. Used by legacy paths and as a
- * fallback inside getBiomeColor. Prefer getBiomeColor/getBiomeColorHex for
- * painterly results.
- */
-export function getBiomeHeightColor(biomeKey, height) {
-  const key = normalizeBiomeKey(biomeKey);
-  const h = clampHeight(Math.round(height));
-  // Ensure palette exists (may not be in ALL_BIOMES list if custom key provided)
-  if (!BIOME_HEIGHT_PALETTES[key]) {
-    if (BIOME_STOP_MAP[key]) {
-      BIOME_HEIGHT_PALETTES[key] = generateFromStops(BIOME_STOP_MAP[key]);
-    } else {
-      const triad = BIOME_BASE_TRIADS[key] || DEFAULT_TRIAD;
-      BIOME_HEIGHT_PALETTES[key] = generateHeightGradient(triad[0], triad[1], triad[2]);
-    }
-  }
-  const palette = BIOME_HEIGHT_PALETTES[key];
-  return palette && palette[h] != null ? palette[h] : 0x808080;
 }
 
 // Also prebuild sand palette for shoreline blending
@@ -572,7 +544,15 @@ for (const key of SNOWCAP_BIOMES) {
   if (!pal) continue;
   for (let h = SNOW_START_BASE; h <= MAX_H; h++) {
     const t = (h - SNOW_START_BASE) / (MAX_H - SNOW_START_BASE || 1);
-    pal[h] = lighten(pal[h], 0.18 + 0.18 * t);
+    // simple lighten by blending toward white
+    const base = pal[h];
+    const { r, g, b } = hexToRgb(base);
+    const factor = 0.18 + 0.18 * t;
+    pal[h] = rgbToHex({
+      r: Math.min(255, Math.round(r + (255 - r) * factor)),
+      g: Math.min(255, Math.round(g + (255 - g) * factor)),
+      b: Math.min(255, Math.round(b + (255 - b) * factor)),
+    });
   }
 }
 
@@ -607,167 +587,23 @@ function normalizeBiomeKey(biomeKey) {
 }
 
 /**
- * Legacy fast color — RGB palette with small corrections.
- * Kept for reference. Prefer getBiomeColor()/getBiomeColorHex() below.
+ * Simple height-indexed color lookup for a biome. Used by legacy paths and as a
+ * fallback inside getBiomeColor. Prefer getBiomeColor/getBiomeColorHex for
+ * painterly results.
  */
-export function getBiomeColorLegacy(biomeKey, height, x, y, opts = {}) {
-  const {
-    moisture = 0.5,
-    slope = 0.0,
-    aspectRad = 0.0, // 0=N, π/2=E, π=S, 3π/2=W
-    seed = 1337,
-    mapFreq = 0.05,
-    shorelineSandStrength = typeof window !== 'undefined' &&
-    Number.isFinite(window?.richShadingSettings?.shorelineSandStrength)
-      ? window.richShadingSettings.shorelineSandStrength
-      : 1.0,
-  } = opts;
-
+function getBiomeHeightColor(biomeKey, height) {
   const key = normalizeBiomeKey(biomeKey);
-  const isSubterranean = SUBTERRANEAN_BIOMES.has(key);
-
-  // Effective height: subterranean acts as if below sea level for *all* logic
-  const effHeight = isSubterranean ? Math.min(height, -1) : height;
-  const hIndex = clampHeight(Math.round(effHeight));
-  const belowSea = effHeight < 0;
-
-  // Base hex from curated palette
-  let basePalette = BIOME_HEIGHT_PALETTES[key];
-  if (!basePalette && BIOME_STOP_MAP[key]) {
-    basePalette = generateFromStops(BIOME_STOP_MAP[key]);
-    BIOME_HEIGHT_PALETTES[key] = basePalette;
-  }
-  const baseHex = (basePalette && basePalette[hIndex]) || getBiomeHeightColor(key, hIndex);
-
-  // Macro flow drift in OKLCH
-  const n = fbm2(x * mapFreq, y * mapFreq, seed);
-  const drift = n - 0.5;
-  let lch = hexToOklch(baseHex);
-  lch.L = Math.min(1, Math.max(0, lch.L + 0.02 * drift));
-  lch.C = Math.max(0, lch.C + 0.015 * drift);
-  lch.h = (lch.h + 4 * drift + 360) % 360;
-
-  // Aspect lighting (skip for subterranean)
-  if (!isSubterranean) {
-    const northness = Math.cos(aspectRad || 0); // 1=N, -1=S
-    const southness = -northness;
-    lch.L = Math.min(1, Math.max(0, lch.L + 0.02 * southness - 0.01 * Math.max(0, northness)));
-    lch.h = (lch.h + southness * -2) % 360;
-  }
-
-  // Water implication when below sea level (or subterranean)
-  if (belowSea) {
-    const depth = Math.min(1, Math.max(0, -effHeight / (Math.abs(MIN_H) || 10)));
-    const flatness = 1 - Math.min(1, Math.max(0, slope));
-    const wetness = Math.min(1, Math.max(0, moisture));
-    const waterBlend = Math.min(1, Math.max(0, depth * (0.6 * flatness + 0.4 * wetness)));
-
-    const waterKey =
-      key === 'ocean' || key === 'coast' || key === 'coralReef'
-        ? key
-        : slope < 0.15
-          ? 'riverLake'
-          : 'coast';
-
-    const shallowHex = getBiomeHeightColor(waterKey, Math.max(hIndex, -2));
-    const lchWater = hexToOklch(shallowHex);
-
-    if (waterKey === 'ocean' || waterKey === 'coast') {
-      const hDeep = 220,
-        hShal = 190;
-      const t = depth;
-      lchWater.h = (hShal + (((hDeep - hShal + 540) % 360) - 180) * t + 360) % 360;
-      lchWater.L = Math.min(1, Math.max(0, lchWater.L - 0.18 * depth));
-      lchWater.C = Math.min(1, Math.max(0, lchWater.C + 0.03 * (1 - slope)));
+  const h = clampHeight(Math.round(height));
+  if (!BIOME_HEIGHT_PALETTES[key]) {
+    if (BIOME_STOP_MAP[key]) {
+      BIOME_HEIGHT_PALETTES[key] = generateFromStops(BIOME_STOP_MAP[key]);
     } else {
-      const hDeep = 190,
-        hShal = 155;
-      const t = depth;
-      lchWater.h = (hShal + (((hDeep - hShal + 540) % 360) - 180) * t + 360) % 360;
-      lchWater.L = Math.min(1, Math.max(0, lchWater.L - 0.12 * depth));
-      lchWater.C = Math.min(1, Math.max(0, lchWater.C + 0.04 * (1 - slope)));
-    }
-
-    const tBlend = waterBlend * waterBlend;
-    lch = {
-      L: lch.L + (lchWater.L - lch.L) * tBlend,
-      C: Math.max(0, lch.C + (lchWater.C - lch.C) * tBlend),
-      h: (lch.h + (((lchWater.h - lch.h + 540) % 360) - 180) * tBlend + 360) % 360,
-    };
-  }
-
-  // Shoreline sand band around sea level (uses effective height)
-  const beachCandidates =
-    key === 'coast' ||
-    key === 'beach' ||
-    key === 'riverLake' ||
-    key === 'mangrove' ||
-    key === 'floodplain' ||
-    key === 'coralReef';
-  if (beachCandidates) {
-    const dist = Math.abs(effHeight - 0.6);
-    const band = Math.min(1, Math.max(0, 1 - dist / 2.2));
-    const dryness = 1 - moisture;
-    const flatness = 1 - Math.min(1, Math.max(0, slope));
-    const sandBias = key === 'beach' ? 1.0 : 0.6;
-    let sandT = Math.min(1, Math.max(0, band * flatness * sandBias * (0.6 + 0.4 * dryness)));
-    sandT = Math.min(1, Math.max(0, sandT * shorelineSandStrength));
-    if (sandT > 0) {
-      const sandHex = SAND_PALETTE[clampHeight(Math.round(effHeight))];
-      const lchSand = hexToOklch(sandHex);
-      if (effHeight <= 0) {
-        lchSand.L = Math.min(1, Math.max(0, lchSand.L - 0.06));
-        lchSand.C *= 0.95;
-      }
-      lch = {
-        L: lch.L + (lchSand.L - lch.L) * sandT,
-        C: Math.max(0, lch.C + (lchSand.C - lch.C) * sandT),
-        h: (lch.h + (((lchSand.h - lch.h + 540) % 360) - 180) * sandT + 360) % 360,
-      };
+      const triad = BIOME_BASE_TRIADS[key] || DEFAULT_TRIAD;
+      BIOME_HEIGHT_PALETTES[key] = generateHeightGradient(triad[0], triad[1], triad[2]);
     }
   }
-
-  // Wetlands vs deserts (only if not “below sea”)
-  if (!belowSea) {
-    const isWetlandish =
-      key === 'swamp' || key === 'wetlands' || key === 'mangrove' || key === 'floodplain';
-    const isDesertish =
-      key === 'desertHot' ||
-      key === 'desertCold' ||
-      key === 'sandDunes' ||
-      key === 'saltFlats' ||
-      key === 'thornscrub';
-    if (isWetlandish) {
-      lch.L = Math.min(1, Math.max(0, lch.L - 0.04 * moisture));
-      lch.C = Math.max(0, lch.C - 0.05 * moisture);
-    } else if (isDesertish) {
-      lch.L = Math.min(1, Math.max(0, lch.L + 0.03 * (1 - moisture)));
-      if (slope > 0.4) lch.h = (lch.h + (((250 - lch.h + 540) % 360) - 180) * 0.05 + 360) % 360;
-    }
-  }
-
-  // Snow on cold families (use effHeight)
-  const coldFamily =
-    key === 'mountain' ||
-    key === 'alpine' ||
-    key === 'glacier' ||
-    key === 'tundra' ||
-    key === 'packIce' ||
-    key === 'frozenLake';
-  const SNOW_START = SNOW_START_BASE;
-  if (coldFamily && effHeight >= SNOW_START && !belowSea) {
-    const northness = Math.cos(aspectRad || 0);
-    const slopeScour = Math.min(1, Math.max(0, slope));
-    const snowBias = 0.5 * (1 + northness) * (1 - 0.6 * slopeScour);
-    const snowT = Math.min(
-      1,
-      Math.max(0, ((effHeight - SNOW_START) / (MAX_H - SNOW_START || 1)) * (0.7 + 0.3 * snowBias))
-    );
-    lch.L = Math.min(1, Math.max(0, lch.L + 0.25 * snowT));
-    lch.C = Math.max(0, lch.C - 0.35 * snowT);
-  }
-
-  return { color: oklchToHex(lch), fx: {} };
+  const palette = BIOME_HEIGHT_PALETTES[key];
+  return palette && palette[h] != null ? palette[h] : 0x808080;
 }
 
 /**
@@ -1030,17 +866,8 @@ export function getBiomeColorHex(biomeKey, height, x = 0, y = 0, opts = {}) {
   return getBiomeColor(biomeKey, height, x, y, opts).color;
 }
 
-/** Legacy helper: blend terrain base with biome tint (kept) */
-export function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
-  const biomeHex = getBiomeHeightColor(biomeKey, height);
-  const a = hexToRgb(baseHex);
-  const b = hexToRgb(biomeHex);
-  const mixed = {
-    r: Math.round(lerp(a.r, b.r, weight)),
-    g: Math.round(lerp(a.g, b.g, weight)),
-    b: Math.round(lerp(a.b, b.b, weight)),
-  };
-  return rgbToHex(mixed);
-}
-
-export default BIOME_HEIGHT_PALETTES;
+// CLEANUP NOTE (2025-09-19): Removed unused exports getBiomeColorLegacy & blendWithBiome; internalized
+// BIOME_HEIGHT_PALETTES + getBiomeHeightColor as private helpers after confirming zero external imports.
+// Public API now limited to getBiomeColor / getBiomeColorHex. BIOME_HEIGHT_PALETTES no longer
+// exported (was default) after confirming no dynamic external access. If a regression surfaces,
+// re-export selectively with a narrower read-only facade.

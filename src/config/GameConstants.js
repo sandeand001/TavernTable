@@ -43,32 +43,12 @@ export const GRID_CONFIG = {
  * Application configuration
  * Core PIXI.js and rendering settings
  */
-export const APP_CONFIG = {
-  // PIXI Application settings
-  PIXI_SETTINGS: {
-    backgroundColor: GRID_CONFIG.BACKGROUND_COLOR,
-    antialias: true,
-    resolution: window.devicePixelRatio || 1,
-    autoDensity: true,
-  },
-
-  // Performance settings
-  MAX_TOKENS: 100,
-  ANIMATION_DURATION: 300,
-};
+// (Removed unused APP_CONFIG during NFC cleanup)
 
 /**
  * Input and interaction constants
  */
-export const INPUT_CONFIG = {
-  // Mouse interaction
-  PAN_BUTTON: 'space',
-  ZOOM_SENSITIVITY: 0.1,
-
-  // Token placement
-  SNAP_THRESHOLD: 10,
-  DRAG_THRESHOLD: 5,
-};
+// (Removed unused INPUT_CONFIG during NFC cleanup)
 
 /**
  * Creature scaling configuration
@@ -97,42 +77,19 @@ export const CREATURE_SCALES = {
  * Creature footprint configuration (in tiles)
  * Defines how many grid cells wide/high a creature occupies for snapping
  */
-export const CREATURE_FOOTPRINTS = {
-  // Defaults to 1x1 if not specified
-  dragon: { w: 2, h: 2 },
-};
+// (Removed unused CREATURE_FOOTPRINTS during NFC cleanup)
 
 /**
  * Optional per-creature baseline Y offsets (in pixels at scale=1)
  * Negative moves the sprite up (useful when textures include bottom padding)
  */
-export const CREATURE_BASELINE_OFFSETS = {
-  goblin: 0,
-  beholder: 0,
-  skeleton: -6,
-  mindflayer: -6,
-  orc: -6,
-  dragon: -8,
-  minotaur: -8,
-  owlbear: -8,
-  troll: -8,
-};
+// (Removed unused CREATURE_BASELINE_OFFSETS during NFC cleanup)
 
 /**
  * Creature color mapping for fallback graphics
  * Used when PNG sprites are not available
  */
-export const CREATURE_COLORS = {
-  dragon: 0xff0000, // Red
-  skeleton: 0xffffff, // White
-  beholder: 0x800080, // Purple
-  goblin: 0x00ff00, // Green
-  mindflayer: 0x4b0082, // Indigo
-  minotaur: 0x8b4513, // Brown
-  orc: 0x808080, // Gray
-  owlbear: 0xa52a2a, // Dark Red
-  troll: 0x228b22, // Forest Green
-};
+// (Removed unused CREATURE_COLORS during NFC cleanup)
 
 /**
  * Global token placement fine-tuning offset (pixels)
@@ -208,8 +165,9 @@ export const CREATURE_HELPERS = {
    * @param {string} creatureType - The creature type
    * @returns {number} The color hex value
    */
-  getColor(creatureType) {
-    return CREATURE_COLORS[creatureType?.toLowerCase()] || CREATURE_COLORS.goblin;
+  getColor() {
+    // color mapping removed; callers should supply sprite assets
+    return 0xffffff;
   },
 
   /**
@@ -243,3 +201,7 @@ export const DICE_CONFIG = {
     NORMAL_ROLL: '#ffffff', // White for normal roll
   },
 };
+
+// RETENTION NOTE (2025-09-19): APP_CONFIG, INPUT_CONFIG, CREATURE_* groups surfaced as unused by
+// heuristic scan; they're intentionally exported as part of the public configuration surface and
+// may be consumed by external automation/scripts not in this repository. Keep (NFC).

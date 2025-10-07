@@ -337,8 +337,6 @@ function attachDynamicUIHandlers() {
       terrainToggle.dataset.boundChange = 'true';
     }
 
-    // ...existing code...
-
     // Brush size controls
     const dec = document.getElementById('brush-decrease');
     const inc = document.getElementById('brush-increase');
@@ -749,8 +747,6 @@ function applyElevationOffsetsToTokens() {
   });
 }
 
-// ...
-
 // ---------------- Sprite Offset Persistence & Auto-Apply ----------------
 //
 
@@ -910,3 +906,7 @@ export {
   resetTerrain,
   initializeApplication,
 };
+
+// NFC NOTE (2025-09-19): UIController appears orphaned (few direct imports) because it is
+// primarily bootstrapped via index.html and attaches itself to window for interaction tests / manual
+// exploration. Retain until a formal application bootstrap module supersedes window exposure.
