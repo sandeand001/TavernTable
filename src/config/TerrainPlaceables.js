@@ -41,7 +41,7 @@ export default { TERRAIN_PLACEABLES };
 // can distinguish them from single-image placeables.
 // Legacy tree frame arrays removed (2D sprites deprecated for plants)
 
-export const TREE_PLACEABLES = {
+const TREE_PLACEABLES = {
   'tree-green-deciduous': {
     label: 'Green Deciduous',
     img: null, // 2D legacy removed; use 3D model

@@ -118,7 +118,7 @@ async function ensureModelCache(gameManager) {
   return gameManager._modelAssetCache;
 }
 
-/** Create a PIXI.Sprite for a placeable item and attach metadata (non-plant or legacy path). */
+/** Create a PIXI.Sprite for a placeable item and attach metadata (legacy 2D path). */
 export function createPlaceableSprite(m, id, x, y) {
   const def = TERRAIN_PLACEABLES[id];
   if (!def) throw new Error(`Unknown placeable id: ${id}`);
@@ -300,7 +300,6 @@ export function createPlaceableSprite(m, id, x, y) {
             sy,
           });
         }
-        if (!sprite.scale) sprite.scale = { set: () => {} };
         if (scaleMode === 'stretch') {
           if (typeof id === 'string' && id.startsWith('tree-')) {
             const s = normalizeTreeScale(Math.min(sx, sy), def);
@@ -338,7 +337,6 @@ export function createPlaceableSprite(m, id, x, y) {
       // preserve its isometric aspect ratio and size it to the tile width
       // so it visually sits correctly; avoid forcing it to match tile height
       // which can squash the perspective.
-      if (!sprite.scale) sprite.scale = { set: () => {} };
       if (def.type === 'path' && (scaleMode === 'cover' || scaleMode === 'contain')) {
         const s = clampScale(scaleX, def.type, def);
         sprite.scale.set(s, s);

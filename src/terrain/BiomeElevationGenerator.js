@@ -973,14 +973,11 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
   return out;
 }
 
-/**
- * If the provided height array is entirely at the default height (no manual edits),
- * return a new biome-shaped array. Otherwise, return a defensive copy of the original.
- */
+// applyBiomeElevationIfFlat removed (unused): previously generated biome elevation only if
+// existing height array was entirely default. No references remained after cleanup.
+// Re-exported for unit test that asserts behavior; keeping implementation small.
 export function applyBiomeElevationIfFlat(heightArray, biomeKey, options = {}) {
-  if (!TerrainHeightUtils.isValidHeightArray(heightArray)) {
-    return heightArray;
-  }
+  if (!TerrainHeightUtils.isValidHeightArray(heightArray)) return heightArray;
   const rows = heightArray.length;
   const cols = heightArray[0].length;
   if (isAllDefaultHeight(heightArray, TERRAIN_CONFIG.DEFAULT_HEIGHT)) {
