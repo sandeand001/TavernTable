@@ -77,6 +77,65 @@ export class TerrainInputHandlers {
       // Only handle left mouse button
       if (event.button !== 0) return;
 
+      // Placeable removal mode: intercept first. Removes plant/tree placeables at click footprint.
+      if (
+        this.c.isPlaceableRemovalMode &&
+        (typeof this.c.isPlaceableRemovalMode === 'function'
+          ? this.c.isPlaceableRemovalMode()
+          : this.c._placeableRemovalMode)
+      ) {
+        const gridCoords = this.c.getGridCoordinatesFromEvent(event);
+        if (!gridCoords) return;
+        // Build footprint using placeables brush size for consistency
+        const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
+        const desc = buildBrushHighlightDescriptor({
+          brush: ptBrush,
+          center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
+          terrainModeActive: this.c.isTerrainModeActive,
+        });
+        const cells =
+          desc.cells && desc.cells.length
+            ? desc.cells
+            : [{ x: gridCoords.gridX, y: gridCoords.gridY }];
+        let removedAny = false;
+        for (const c of cells) {
+          try {
+            const key = `${c.x},${c.y}`;
+            const arr = this.c.terrainManager?.placeables?.get(key) || [];
+            // Remove only plant/tree type sprites. Collect their ids first to avoid mutating during iteration.
+            const targets = arr.filter(
+              (s) =>
+                s?.placeableType === 'plant' ||
+                (typeof s?.id === 'string' && s.id.startsWith('tree-'))
+            );
+            for (const sprite of targets) {
+              try {
+                this.c.terrainManager?.removeTerrainItem(
+                  c.x,
+                  c.y,
+                  sprite.id || sprite.placeableId || null
+                );
+                removedAny = true;
+              } catch (_) {
+                /* ignore individual removal errors */
+              }
+            }
+          } catch (_) {
+            /* ignore cell errors */
+          }
+        }
+        if (removedAny) {
+          try {
+            this.c.terrainManager?.flushUpdateQueue?.();
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        return; // Do not fall through to placement/height editing
+      }
+
       // If a terrain placeable is selected in the UI, allow placement even when
       // terrain mode is not active. Read selection from the coordinator-managed API
       // when available so placement can occur outside terrain mode.
@@ -234,7 +293,8 @@ export class TerrainInputHandlers {
         !this.c.isDragging ||
         !(this.c.isTerrainModeActive || (uiSelected && panelVisible)) ||
         !(event.buttons & 1) ||
-        (im && (im.isDragging || im.isSpacePressed))
+        (im && (im.isDragging || im.isSpacePressed)) ||
+        (this.c.isPlaceableRemovalMode && this.c.isPlaceableRemovalMode()) // drag removal not supported
       ) {
         return;
       }

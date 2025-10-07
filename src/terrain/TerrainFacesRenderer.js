@@ -27,6 +27,7 @@ export class TerrainFacesRenderer {
     faces.y = tile.y;
     // Tag for sorting/cleanup
     faces.isOverlayFace = true;
+    faces.__isElevationArtifact = true; // exclude from top-down square overlay generation
     faces.depthValue = tile.depthValue;
     // If parent supports zIndex sorting, set faces between shadows (0) and tiles (100)
     faces.zIndex = (tile.depthValue || 0) * 100 + 5;
@@ -50,6 +51,7 @@ export class TerrainFacesRenderer {
     if (!faces) return;
     faces.x = tile.x;
     faces.y = tile.y;
+    faces.__isElevationArtifact = true; // exclude from top-down square overlay generation
     const parent = tile.parent;
     if (!parent) {
       tile.baseSideFaces = faces;

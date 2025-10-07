@@ -97,7 +97,14 @@ export class GridRenderer {
       if (!coordValidation.isValid) {
         throw new Error(`Invalid tile coordinates: ${coordValidation.getErrorMessage()}`);
       }
-      return _drawIsoTile(this, x, y, color);
+      const tile = _drawIsoTile(this, x, y, color);
+      // Annotate tile for reprojection logic (ProjectionUtils)
+      if (tile) {
+        tile.__gridX = x;
+        tile.__gridY = y;
+        if (typeof tile.__baseColor === 'undefined') tile.__baseColor = color;
+      }
+      return tile;
     } catch (error) {
       GameErrors.rendering(error, {
         stage: 'drawIsometricTile',

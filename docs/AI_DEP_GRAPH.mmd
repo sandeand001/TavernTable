@@ -79,6 +79,7 @@ flowchart LR
   2452655fdde1[src/ui/domHelpers.js]
   c638c6d2f8cb[src/ui/lib/elevationUtils.js]
   86321edfa84d[src/ui/lib/spriteKeys.js]
+  928c43d0c060[src/ui/SettingsViewToggle.js]
   1ac8779a1633[src/ui/SidebarController.js]
   e8d76d94cd75[src/ui/UIController.js]
   99a674c5082b[src/utils/CanvasShapeUtils.js]
@@ -93,6 +94,7 @@ flowchart LR
   167a76c48bfa[src/utils/logger/enums.js]
   8c711cb2f768[src/utils/Logger.js]
   f65e81872eec[src/utils/PixiShapeUtils.js]
+  02325ab56d00[src/utils/ProjectionUtils.js]
   f0372f8d2bfd[src/utils/SeededRNG.js]
   37fb05b4943e[src/utils/TerrainHeightUtils.js]
   318571309d3f[src/utils/TerrainPixiUtils.js]
@@ -216,6 +218,7 @@ flowchart LR
   711a2b6cf63b --> 8c711cb2f768
   711a2b6cf63b --> ecbbd71626d8
   711a2b6cf63b --> a71c51e1083e
+  711a2b6cf63b --> 02325ab56d00
   711a2b6cf63b --> f3070e4a7ab8
   711a2b6cf63b --> f37a2df4e2f7
   711a2b6cf63b --> d77501f2ea30
@@ -400,12 +403,10 @@ flowchart LR
   7d5d44c50dd8 --> e28bad82c9c7
   7d5d44c50dd8 --> 37fb05b4943e
   7d5d44c50dd8 --> 8c711cb2f768
-  7d5d44c50dd8 --> e6d8c51e8084
   7d5d44c50dd8 --> ecbbd71626d8
   7179c1418d2c --> e28bad82c9c7
   7179c1418d2c --> 37fb05b4943e
   7179c1418d2c --> 8c711cb2f768
-  7179c1418d2c --> e6d8c51e8084
   7179c1418d2c --> ecbbd71626d8
   ddab55041ef8 --> 68b5dd71185e
   80725ccd8f1f --> 8c711cb2f768
@@ -471,6 +472,7 @@ flowchart LR
   ecbbd71626d8 --> 2888baf60279
   8c711cb2f768 --> 8721557a149d
   8c711cb2f768 --> 167a76c48bfa
+  02325ab56d00 --> 8c711cb2f768
   37fb05b4943e --> e623a0b6986f
   37fb05b4943e --> 8c711cb2f768
   318571309d3f --> 8c711cb2f768

@@ -6,6 +6,10 @@
  * Handles loading, caching, and retrieval of game sprite assets.
  * Provides fallback mechanisms for missing sprites and comprehensive error handling.
  *
+ * Architectural Note: Depth/zIndex ordering rules live in terrain/token/placement
+ * logic (see managers). For modification guidelines, consult `copilot-instructions.md`
+ * TL;DR section before altering sprite layering or container parenting.
+ *
  * @module SpriteManager
  * @author TavernTable
  * @since 1.0.0

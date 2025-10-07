@@ -1,7 +1,8 @@
 import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
 import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
-import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
+// Depth utilities no longer used for cross-container zIndex raise; we align to tile scheme.
+// import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
 
 // NOTE: previous QA introduced a fixed LEVEL_COMPENSATION which caused
 // consistent downward shifts and incorrect behavior for elevated tiles.
@@ -403,10 +404,31 @@ export function placeItem(m, id, x, y) {
   }
 
   const sprite = createPlaceableSprite(m, id, x, y);
-  // Add to the main grid container so zIndex interleaves with tokens/tiles
-  m.gameManager.gridContainer.addChild(sprite);
+  // Placeables now live inside terrainContainer so they can be occluded by
+  // elevated tile faces in front. This allows proper isometric overlap.
+  // (Previously they were forced above all terrain by container zIndex.)
   try {
-    m.gameManager.gridContainer.sortChildren?.();
+    if (m.terrainContainer) {
+      m.terrainContainer.addChild(sprite);
+    } else {
+      // Fallback to gridContainer if terrainContainer missing (should not happen when active)
+      m.gameManager.gridContainer.addChild(sprite);
+    }
+  } catch (_) {
+    try {
+      m.gameManager.gridContainer.addChild(sprite);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  try {
+    // Sorting within terrainContainer handled by depthValue/zIndex values; ensure sortableChildren.
+    if (m.terrainContainer) {
+      m.terrainContainer.sortableChildren = true;
+      m.terrainContainer.sortChildren?.();
+    } else {
+      m.gameManager.gridContainer.sortChildren?.();
+    }
   } catch (_) {
     /* ignore */
   }
@@ -491,12 +513,12 @@ function _isoCenterForCell(m, gx, gy) {
  */
 function repositionPlaceableSprite(m, sprite) {
   if (!sprite) return;
-  // Ensure parent is the main grid container so interleaving with tokens works
+  // Ensure parent is the terrainContainer so elevated tile faces can occlude sprites behind them
   try {
-    const gridContainer = m.gameManager?.gridContainer;
-    if (gridContainer && sprite.parent !== gridContainer) {
+    const tContainer = m.terrainContainer;
+    if (tContainer && sprite.parent !== tContainer) {
       if (sprite.parent) sprite.parent.removeChild(sprite);
-      gridContainer.addChild(sprite);
+      tContainer.addChild(sprite);
     }
   } catch (_) {
     /* ignore */
@@ -533,33 +555,27 @@ function repositionPlaceableSprite(m, sprite) {
   } catch (_) {
     /* ignore */
   }
-  // Deterministic total ordering via shared utility
-  const type = sprite.placeableType || (TERRAIN_PLACEABLES[sprite.placeableId]?.type ?? 'path');
-  const typeBias =
-    type === 'structure'
-      ? TYPE_BIAS.structure
-      : type === 'plant'
-        ? TYPE_BIAS.plant
-        : TYPE_BIAS.path;
-  // Use grid-based depth with tie-breaker to keep ordering deterministic
-  const depthKey = computeDepthKey(gx, gy, typeBias);
-  sprite.zIndex = withOverlayRaise(m, depthKey);
-
-  // When elevation overlay/preview exists, raise placeables above it BUT preserve
-  // the diagonal interleaving and per-type bias so tokens vs. trees order remains correct.
+  // Assign depthValue (same metric tiles use) and a zIndex band that sits ABOVE the tile surface
+  // but BELOW elevation side faces (faces typically added later with higher offsets).
   try {
-    // Ensure parent is sorting by zIndex and apply sort after change
-    const parent = m.gameManager?.gridContainer;
-    if (parent) {
-      parent.sortableChildren = true;
-      try {
-        parent.sortChildren?.();
-      } catch (_) {
-        /* ignore */
-      }
+    sprite.depthValue = gx + gy;
+    // Base tile zIndex pattern: depth*100 + 20 (see createBaseTerrainGraphics)
+    // Reserve 30-49 for placeables, 50+ for faces/overlays.
+    const base = sprite.depthValue * 100;
+    const type = sprite.placeableType || (TERRAIN_PLACEABLES[sprite.placeableId]?.type ?? 'path');
+    const typeOffset = type === 'structure' ? 45 : type === 'plant' ? 38 : 32; // path/default
+    sprite.zIndex = base + typeOffset;
+  } catch (_) {
+    /* ignore */
+  }
+  // Ensure sorting applies within terrainContainer
+  try {
+    if (sprite.parent) {
+      sprite.parent.sortableChildren = true;
+      sprite.parent.sortChildren?.();
     }
   } catch (_) {
-    /* best-effort */
+    /* ignore */
   }
 }
 

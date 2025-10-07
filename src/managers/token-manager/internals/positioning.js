@@ -1,7 +1,7 @@
 import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
-import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
+// Depth utils no longer used for token layering; use tile depth bands instead.
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
 export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = null) {
@@ -222,16 +222,23 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
     }
     token.x = finalIso.x;
     token.y = finalIso.y + elevationOffset;
-    const depthKey = computeDepthKey(target.gridX, target.gridY, TYPE_BIAS.token);
-    token.zIndex = withOverlayRaise(c.gameManager?.terrainManager, depthKey);
-    const parent = c.gameManager?.gridContainer;
-    if (parent) {
-      parent.sortableChildren = true;
-      try {
-        parent.sortChildren?.();
-      } catch (_) {
-        /* ignore */
+    const depth = target.gridX + target.gridY;
+    token.depthValue = depth;
+    token.zIndex = depth * 100 + 70;
+    // Ensure parent is terrainContainer for correct occlusion
+    try {
+      const tContainer =
+        c.gameManager?.terrainManager?.terrainContainer || c.gameManager?.gridContainer;
+      if (tContainer && token.parent !== tContainer) {
+        if (token.parent) token.parent.removeChild(token);
+        tContainer.addChild(token);
       }
+      if (tContainer) {
+        tContainer.sortableChildren = true;
+        tContainer.sortChildren?.();
+      }
+    } catch (_) {
+      /* ignore */
     }
 
     if (tokenEntry) {

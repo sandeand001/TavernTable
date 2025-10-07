@@ -364,9 +364,15 @@ export class InteractionManager {
    * @returns {Object} Grid coordinates
    */
   convertToGridCoordinates({ localX, localY }) {
-    // Convert to continuous (fractional) grid coordinates first. This avoids
-    // premature rounding which can flip tiles when the pointer is near diamond
-    // boundaries. Callers can still round as needed.
+    // If in top-down view mode, apply orthographic inversion (center-aligned)
+    if (this.gameManager.getViewMode && this.gameManager.getViewMode() === 'topdown') {
+      const gx = Math.round(localX / this.gameManager.tileWidth - 0.5);
+      const gy = Math.round(localY / this.gameManager.tileHeight - 0.5);
+      return { gridX: gx, gridY: gy };
+    }
+
+    // Isometric path: Convert to continuous (fractional) grid coordinates first. This avoids
+    // premature rounding which can flip tiles when the pointer is near diamond boundaries.
     let gridCoords = CoordinateUtils.isometricToGrid(
       localX,
       localY,

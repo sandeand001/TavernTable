@@ -12,6 +12,15 @@ AI Glossary — TavernTable
 - Token: A placed creature or object on the grid, controlled by TokenManager.
 - UIController: Main UI entry controlling DOM, panels, and GameManager initialization.
 
+// View Mode / Projection Refactor Terms
+- Synchronous Reprojection: Immediate, single-pass recalculation of all display object positions and z-indexes when switching between isometric and top-down modes (`reprojectAll`). Replaces the former animated transition system.
+- Top-Down Overlay (Square Overlay): Lightweight PIXI `Graphics` square generated per tile for top-down mode to represent tile footprint; toggled instead of re-rendering isometric diamond.
+- Elevation Offset Cache: Stored per-tile vertical pixel offset (`__storedElevationOffset`) plus its originating base iso Y to preserve relative elevation when toggling modes; invalidated when biome version changes.
+- Biome Version Key: Incrementing version (`__biomeVersion`) used to invalidate elevation/visual caches when biome-derived shading or elevation data changes.
+- Legacy Transition System (Deprecated): Removed animated interpolation layer that previously tweened between modes; replaced by deterministic synchronous reprojection for simplicity and test stability.
+
+// Terrain & Placeables Enhancements
+- Placeable Removal Mode: UI toggle in the Terrain panel that converts left-clicks into removal actions for plant/tree placeables (ids starting with `tree-` or placeableType `plant`). Disables drag-based mass deletion and suppresses height editing or new placements while active. Replaces earlier tree-only terminology.
 Cleanup Notes (2025-09-19):
 - Logger surface minimized: internal handler classes and wrapper HOFs removed; only enums + core Logger exposed.
 - Terrain tool/shortcut/validation constants removed (unused); retain only TERRAIN_CONFIG.

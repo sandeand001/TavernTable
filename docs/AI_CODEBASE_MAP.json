@@ -1,6 +1,7 @@
 {
   "meta": {
     "project": "TavernTable",
+    "generated_at": "2025-09-24T21:11:17.019Z",
     "generated_at": "2025-09-22T03:32:30.245Z",
     "languages": [
       "JavaScript",
@@ -394,6 +395,8 @@
           "../utils/Logger.js",
           "../utils/ErrorHandler.js",
           "../config/GameConstants.js",
+          "../utils/ProjectionUtils.js",
+          "../utils/ProjectionUtils.js",
           "../managers/TokenManager.js",
           "../managers/InteractionManager.js",
           "../managers/GridRenderer.js"
@@ -403,6 +406,7 @@
           "8c711cb2f768",
           "ecbbd71626d8",
           "a71c51e1083e",
+          "02325ab56d00",
           "f3070e4a7ab8",
           "f37a2df4e2f7",
           "d77501f2ea30"
@@ -1036,8 +1040,10 @@
         "logging": "none",
         "config": [],
         "tests": {
-          "files": [],
-          "coverage_hint": "none"
+          "files": [
+            "tests/unit/viewMode.test.js"
+          ],
+          "coverage_hint": "ok"
         },
         "smells": [],
         "todo": []
@@ -2270,7 +2276,6 @@
           "../../../utils/CoordinateUtils.js",
           "../../../utils/TerrainHeightUtils.js",
           "../../../utils/Logger.js",
-          "../../../utils/DepthUtils.js",
           "../../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
@@ -2278,7 +2283,6 @@
           "e28bad82c9c7",
           "37fb05b4943e",
           "8c711cb2f768",
-          "e6d8c51e8084",
           "ecbbd71626d8"
         ],
         "used_by": [
@@ -2311,7 +2315,6 @@
           "../../../utils/CoordinateUtils.js",
           "../../../utils/TerrainHeightUtils.js",
           "../../../utils/Logger.js",
-          "../../../utils/DepthUtils.js",
           "../../../utils/ErrorHandler.js"
         ],
         "imports_external": [],
@@ -2319,7 +2322,6 @@
           "e28bad82c9c7",
           "37fb05b4943e",
           "8c711cb2f768",
-          "e6d8c51e8084",
           "ecbbd71626d8"
         ],
         "used_by": [
@@ -3025,6 +3027,29 @@
         "todo": []
       },
       {
+        "id": "928c43d0c060",
+        "path": "src/ui/SettingsViewToggle.js",
+        "layer": "app",
+        "exports": [],
+        "imports_internal": [],
+        "imports_external": [],
+        "depends_on": [],
+        "used_by": [],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "none",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
         "id": "1ac8779a1633",
         "path": "src/ui/SidebarController.js",
         "layer": "app",
@@ -3234,9 +3259,7 @@
         "depends_on": [],
         "used_by": [
           "59a26aa556a6",
-          "14922d4b3d04",
-          "7d5d44c50dd8",
-          "7179c1418d2c"
+          "14922d4b3d04"
         ],
         "public_api": false,
         "responsibilities": [],
@@ -3550,6 +3573,7 @@
           "e8d76d94cd75",
           "e28bad82c9c7",
           "ecbbd71626d8",
+          "02325ab56d00",
           "37fb05b4943e",
           "318571309d3f",
           "0f5753f22409",
@@ -3597,6 +3621,41 @@
             "tests/unit/PixiShapeUtils.test.js"
           ],
           "coverage_hint": "ok"
+        },
+        "smells": [],
+        "todo": []
+      },
+      {
+        "id": "02325ab56d00",
+        "path": "src/utils/ProjectionUtils.js",
+        "layer": "app",
+        "exports": [
+          "applyIsometricPosition",
+          "applyTopDownPosition",
+          "ensureTopDownSquare",
+          "reprojectAll",
+          "scheduleIncrementalReproject"
+        ],
+        "imports_internal": [
+          "./Logger.js"
+        ],
+        "imports_external": [],
+        "depends_on": [
+          "8c711cb2f768"
+        ],
+        "used_by": [
+          "711a2b6cf63b"
+        ],
+        "public_api": false,
+        "responsibilities": [],
+        "invariants": [],
+        "data_models": [],
+        "errors": [],
+        "logging": "Logger",
+        "config": [],
+        "tests": {
+          "files": [],
+          "coverage_hint": "none"
         },
         "smells": [],
         "todo": []
@@ -4691,8 +4750,10 @@
         "logging": "none",
         "config": [],
         "tests": {
-          "files": [],
-          "coverage_hint": "none"
+          "files": [
+            "tests/unit/viewMode.test.js"
+          ],
+          "coverage_hint": "ok"
         },
         "smells": [],
         "todo": []

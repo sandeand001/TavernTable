@@ -28,14 +28,31 @@ try {
 // Mock PIXI if not available in test environment
 if (typeof global.PIXI === 'undefined') {
   global.PIXI = {
+    Application: class {
+      constructor() {
+        this.stage = { addChild: () => { } };
+        // Simple ticker with addOnce executing immediately
+        this.ticker = {
+          addOnce: (fn) => {
+            // Execute immediately in test environment to bypass animation frames
+            try {
+              fn(performance.now());
+            } catch (_) {
+              /* ignore */
+            }
+          },
+        };
+        this.renderer = { resize() { } };
+      }
+    },
     Container: class {
       constructor() {
         this.children = [];
         this.visible = true;
       }
-      addChild() {}
-      addChildAt() {}
-      removeChild() {}
+      addChild() { }
+      addChildAt() { }
+      removeChild() { }
       removeChildren() {
         this.children = [];
       }
@@ -45,13 +62,13 @@ if (typeof global.PIXI === 'undefined') {
         this.children = [];
         this.destroyed = false;
       }
-      lineStyle() {}
-      beginFill() {}
-      endFill() {}
-      moveTo() {}
-      lineTo() {}
-      closePath() {}
-      addChild() {}
+      lineStyle() { }
+      beginFill() { }
+      endFill() { }
+      moveTo() { }
+      lineTo() { }
+      closePath() { }
+      addChild() { }
       destroy() {
         this.destroyed = true;
       }
@@ -71,6 +88,12 @@ if (typeof global.PIXI === 'undefined') {
     },
   };
 }
+
+// Disable animated view mode transitions in all tests for deterministic behavior
+if (typeof global.window === 'undefined') {
+  global.window = {};
+}
+global.window.viewModeAnimation = false;
 
 // Provide minimal global validators/sanitizers expected by TerrainCoordinator.validateDependencies
 if (typeof global.GameValidators === 'undefined') {

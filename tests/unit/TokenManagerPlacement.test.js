@@ -46,8 +46,8 @@ describe('placeNewToken', () => {
 
     expect(sprite.x).toBe(iso.x);
     expect(sprite.y).toBe(iso.y + elev);
-    // depth uses unified key: (gx+gy)*10000 + gx*10 + TYPE_BIAS.token(=9)
-    expect(sprite.zIndex).toBe((gridX + gridY) * 10000 + gridX * 10 + 9);
+    // depth now uses simplified band: depth*100 + 70 (token band)
+    expect(sprite.zIndex).toBe((gridX + gridY) * 100 + 70);
 
     // container interactions
     expect(gridContainer.addChild).toHaveBeenCalledWith(sprite);
