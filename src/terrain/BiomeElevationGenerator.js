@@ -74,9 +74,6 @@ function ridge(x, y, seed = 1337, octaves = 5) {
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
-function mix(a, b, t) {
-  return a + (b - a) * t;
-}
 
 // Deterministic PRNG helper for seeded variation
 function randFromSeed(seed, k1 = 0, k2 = 0) {
@@ -186,17 +183,51 @@ function shapeTundra(x, y, nx, ny, seed, opts) {
 }
 
 function shapeCoast(x, y, nx, ny, seed, opts) {
-  const r = opts.relief ?? 3.5;
-  // Oriented shoreline across axis t; default random by seed when not provided
+  const r = opts.relief ?? 3.0;
+  // Oriented shoreline axis; pick seeded orientation if not provided.
   const theta = Number.isFinite(opts.orientation)
     ? (opts.orientation * Math.PI) / 180
     : randFromSeed(seed, 71) * Math.PI * 2;
-  const ax = Math.cos(theta),
-    ay = Math.sin(theta);
-  const t = nx * ax + ny * ay; // projection
-  const gradient = mix(-1.0, 1.0, t + 0.25);
-  const n = fbm2(nx * 3.0, ny * 3.0, seed, 4, 2.0, 0.55) - 0.5;
-  return (gradient * 0.9 + n * 0.7) * r;
+  const ax = Math.cos(theta);
+  const ay = Math.sin(theta);
+  // Signed distance along shoreline normal.
+  const t = nx * ax + ny * ay; // ~0..1 across board projected onto axis
+  // Recenter t around 0: t0 < 0 water side, t0 > 0 land side.
+  const t0 = t - 0.5;
+  // Base broad slope: push land positive, water negative.
+  let slope = t0 * (r * 1.1);
+  // Add moderate noise so coast line meanders but stays monotonic overall.
+  const n = fbm2(nx * 2.5, ny * 2.5, seed, 3, 2.0, 0.55) - 0.5;
+  slope += n * (r * 0.6);
+  // Define a controlled shore transition band around height ~0 to avoid water->sand->water artifacts.
+  // We'll remap a clamp of slope into a gentle S-curve near zero.
+  const shoreWidth = 0.25; // distance band (in t0 units) around 0 for transition
+  const dist = t0 / shoreWidth; // normalized distance from shoreline
+  // Soft step shaping so only one crossing of 0 occurs.
+  const soft = 0.5 + 0.5 * Math.tanh(dist * 1.5); // 0..1 across shore band
+  // Compose final height: deep water side capped, land rises smoothly.
+  // Negative side: allow some depth but clamp extremes.
+  let h = 0;
+  if (t0 < -shoreWidth) {
+    // deeper water farther out
+    h = slope * 0.6 - 0.4; // keep negative
+  } else if (t0 > shoreWidth) {
+    // inland: slope + mild uplift
+    h = slope * 0.7 + 0.3;
+  } else {
+    // within shore band: interpolate between slightly negative and slightly positive sand shelf
+    const shoreFloor = -0.12; // shallow water just before shore
+    const shoreCrest = 0.18; // dry sand height
+    h = shoreFloor + (shoreCrest - shoreFloor) * soft;
+    // Light micro undulations only on sand side (soft > 0.5)
+    if (soft > 0.5) {
+      const micro = fbm2(nx * 6.0, ny * 6.0, seed + 311, 2, 2.0, 0.6) - 0.5;
+      h += micro * 0.05 * (soft - 0.5) * 2; // fades in from shoreline
+    }
+  }
+  // Ensure monotonic transition: clamp tiny accidental negatives just after crest.
+  if (t0 > shoreWidth && h < 0.05) h = 0.05 + h * 0.25;
+  return h;
 }
 
 function shapeRiverLake(x, y, nx, ny, seed, opts) {
@@ -242,54 +273,47 @@ function shapeDesertCold(x, y, nx, ny, seed, opts) {
 }
 
 function shapeOasis(x, y, nx, ny, seed, opts) {
-  // Enhanced oasis: guaranteed central water bowl with blending sand ring
-  // 1. Start from a low-relief desert base for subtle dunes
-  let base = shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 1.2 });
-  // 2. Compute radial distance from center (nx,ny already normalized 0..1)
+  // Reworked oasis: single central pool (roughly circular) and predominantly dry sand elsewhere.
+  // 1. Base desert floor (flattened) to keep dunes subtle.
+  const desert = shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: 0.8, roughness: 0.6 });
   const cx = nx - 0.5;
   const cy = ny - 0.5;
-  const d = Math.sqrt(cx * cx + cy * cy); // 0 at center, ~0.707 at corner
-  // 3. Define bowl radius and inner water depress
-  const rnd = fbm2(nx * 3.0, ny * 3.0, seed + 501, 2, 2.0, 0.55) * 0.06; // subtle irregularity
-  const radius = 0.32 + ((seed & 0xff) / 255) * 0.04; // 0.32 - 0.36
-  const rimStart = radius * 0.92;
-  // 4. Water depression profile: smooth curve staying negative inside radius
+  const d = Math.sqrt(cx * cx + cy * cy);
+  // 2. Fixed controlled pool radius (slightly jittered for variation) -> smaller than before.
+  const jitter = (fbm2(nx * 4.0, ny * 4.0, seed + 502, 2, 2.0, 0.55) - 0.5) * 0.04;
+  const radius = 0.22 + jitter; // ~0.20 - 0.24
+  const rimRadius = radius * 1.15; // sand ring edge
+  // 3. Water bowl depth curve (only inside radius).
   let bowl = 0;
   if (d < radius) {
-    const t = d / radius; // 0..1
-    // invert smoothstep for deeper center: center ~ -1, edge ~0
-    const smooth = 1 - t * t * (3 - 2 * t);
-    bowl = -smooth * 1.4; // scale depth
+    const t = d / radius;
+    const inv = 1 - t * t * (3 - 2 * t); // smooth inverted step
+    bowl = -inv * 1.2; // shallower than previous version
   }
-  // 5. Slight raised rim just outside bowl for visual accent (dry sand ring)
-  let rim = 0;
-  if (d >= rimStart && d < radius * 1.15) {
-    const rt = (d - rimStart) / (radius * 1.15 - rimStart); // 0..1 across rim band
-    rim = Math.sin(rt * Math.PI) * 0.25; // rise then fall
-  }
-  // 6. Blend irregularity
-  // Outside the bowl push the base up so most oasis tiles are dry sand (> 0 height)
+  // 4. Sand uplift outside pool ensuring positive heights (dry). Gradual rise.
+  let uplift = 0;
   if (d >= radius) {
-    // Gradual lift that increases a little farther from water so outer desert is clearly above sea level
-    const liftT = Math.min(1, (d - radius) / (0.7 - radius)); // radius..corner
-    base += 0.32 + liftT * 0.15; // 0.32..~0.47 lift
-  } else if (d >= rimStart) {
-    // Transitional lift within rim band so edge waterline sits slightly below surrounding sand
-    const t = (d - rimStart) / (radius - rimStart);
-    base += t * 0.15;
+    const t = Math.min(1, (d - radius) / (0.7 - radius));
+    uplift = 0.38 + t * 0.25; // 0.38 .. 0.63
   }
-  let height = base + bowl + rim + rnd;
-  // 7. Target: only inner bowl below 0, rim neutral-positive forming sand ring.
-  // Apply water bias only to deeper center; shallower edge gets tapered bias.
-  // eslint-disable-next-line prettier/prettier
-  if (bowl < 0) {
-    height += (opts.waterBias ?? -0.2) * (0.6 + 0.4 * Math.min(1, Math.max(0, -bowl / 1.4)));
+  // 5. Rim accent (slight mound) just outside water for readable boundary.
+  let rim = 0;
+  if (d >= radius && d < rimRadius) {
+    const rt = (d - radius) / (rimRadius - radius);
+    rim = Math.sin(rt * Math.PI) * 0.18;
   }
-  // Nudge rim positive if it dipped slightly
-  if (rim > 0 && height < 0.05 && d > rimStart) height += 0.08;
-  // Guarantee dry sand just outside bowl (avoid accidental water bleed from negative noise)
-  if (d >= radius && height < 0.05) height = 0.05 + height * 0.25;
-  return height;
+  // 6. Fine sand ripples only outside pool.
+  let ripples = 0;
+  if (d >= radius) {
+    const micro = fbm2(nx * 10.0, ny * 10.0, seed + 503, 2, 2.0, 0.55) - 0.5;
+    ripples = micro * 0.06;
+  }
+  // 7. Compose final height. Force dryness (>=0.05) outside water bowl.
+  let h = desert * 0.3 + bowl + uplift + rim + ripples;
+  if (d >= radius && h < 0.05) h = 0.05 + h * 0.2;
+  // Ensure bowl remains negative; cap shallows.
+  if (d < radius && h > -0.02) h = -0.02;
+  return h;
 }
 
 function shapeSaltFlats(x, y, nx, ny, seed, opts) {

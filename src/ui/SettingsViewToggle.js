@@ -54,12 +54,23 @@
 
     let attempts = 0;
     const MAX = 200; // ~20s
-    const timer = setInterval(() => {
-      if (inject() || ++attempts >= MAX) {
-        clearInterval(timer);
-        if (attempts >= MAX)
-          console.warn('[SettingsViewToggle] Unable to find gameManager/settings-panel');
-      }
-    }, 100);
+    // Skip polling loop entirely in Jest to avoid lingering timers
+    const isTest =
+      typeof globalThis !== 'undefined' &&
+      globalThis.process &&
+      globalThis.process.env &&
+      globalThis.process.env.JEST_WORKER_ID != null;
+    if (!isTest) {
+      const timer = setInterval(() => {
+        if (inject() || ++attempts >= MAX) {
+          clearInterval(timer);
+          if (attempts >= MAX)
+            console.warn('[SettingsViewToggle] Unable to find gameManager/settings-panel');
+        }
+      }, 100);
+    } else {
+      // Single attempt in test mode (no timers)
+      inject();
+    }
   });
 })();

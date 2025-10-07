@@ -8,6 +8,15 @@
   <meta name="description"
     content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling">
   <link rel="stylesheet" href="src/ui/styles.css">
+  <!-- Import map so bare specifier 'three' resolves in native ESM environment (no bundler) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/examples/jsm/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js"
+      }
+    }
+  </script>
 </head>
 
 <body>
@@ -233,6 +242,17 @@
             </div>
 
             <div class="tool-group">
+              <div class="section-subtitle">Sunlight</div>
+              <div class="setting-item">
+                <label for="sun-time-range">Sun Time:</label>
+                <input type="range" id="sun-time-range" min="0" max="1439" step="1" value="720" class="range-input"
+                  aria-label="Adjust sun time of day for 3D lighting">
+                <span id="sun-time-value" class="range-value">12:00</span>
+              </div>
+              <small class="small-text">Scrub through the day-night cycle to reposition sunlight and shadows.</small>
+            </div>
+
+            <div class="tool-group">
               <div class="section-subtitle">Actions</div>
               <button id="terrain-reset-btn" class="action-button terrain-reset"
                 aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
@@ -252,19 +272,8 @@
             <!-- Placeables were moved outside the toggled tools so they remain reachable
                  in the Terrain panel without requiring Terrain Mode to be active. The
                  runtime UI will still inject items into the same `#terrain-placeables-root`. -->
-            <!-- Collapsible Placeables Panel -->
-            <div class="tool-group">
-              <div class="section-subtitle"
-                style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;"
-                id="placeables-collapse-header" aria-controls="terrain-placeables-root" aria-expanded="true">
-                <span>Placeable Plants</span>
-                <button id="placeables-collapse-btn" type="button" class="action-button small"
-                  aria-label="Collapse placeable plants list"
-                  style="min-width:unset; padding:0.15rem 0.5rem; font-size:0.75rem;">▾</button>
-              </div>
-              <!-- Runtime injection point for terrain placeables (buttons will be added here) -->
-              <div id="terrain-placeables-root" class="placeables-root" aria-label="Terrain placeables menu"></div>
-            </div>
+            <!-- Placeables categories root (header removed per new spec; categories stack directly) -->
+            <div id="terrain-placeables-root" class="placeables-root" aria-label="Terrain placeables menu"></div>
           </div>
         </div>
 
@@ -276,21 +285,28 @@
       <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
         <div class="panel-header">🌍 Biomes</div>
         <div class="section">
-          <div class="section-title">Select a Biome Palette</div>
+          <div class="section-title">Biome Palette & Generation</div>
+          <!-- Consolidated toolbar: palette mode, generation & seed controls -->
+          <div class="setting-row biome-toolbar"
+            style="display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:0.75rem;">
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+              <button id="generate-map" type="button" class="primary-button"
+                title="Generate heightmap for selected biome">Generate</button>
+              <label class="toggle-switch" for="biome-seed-lock"
+                title="Lock seed so repeated generate uses same pattern">
+                <input type="checkbox" id="biome-seed-lock" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Lock seed</span>
+              </label>
+              <button id="biome-reseed" type="button" class="action-button"
+                title="Pick a new random seed">Reseed</button>
+            </div>
+            <small class="small-text" style="flex-basis:100%;">Generate creates elevation using the selected biome.
+              Unlock seed to randomize each time. (Single palette mode active)</small>
+          </div>
+          <div class="section-subtitle" style="margin:0 0 0.25rem;">Biomes</div>
           <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
             <!-- Biome group buttons injected at runtime -->
-          </div>
-          <div class="setting-row"
-            style="margin-top:0.75rem; display:flex; gap:0.5rem; align-items:center; flex-wrap: wrap;">
-            <button id="generate-map" type="button" class="primary-button">Generate Map</button>
-            <label class="toggle-switch" for="biome-seed-lock" title="Lock seed to keep maps consistent across clicks">
-              <input type="checkbox" id="biome-seed-lock" />
-              <span class="toggle-slider"></span>
-              <span class="toggle-label">Lock seed</span>
-            </label>
-            <button id="biome-reseed" type="button" class="action-button" title="Pick a new random seed">Reseed</button>
-            <small class="small-text">Uses the selected biome to generate elevations. Unlock seed to randomize on each
-              click.</small>
           </div>
           <div class="section-subtitle" style="margin-top:1rem;">Rich Tile Shading</div>
           <div id="biome-shading-controls" class="setting-group" role="group" aria-label="Rich tile shading controls">
@@ -331,7 +347,8 @@
           </div>
           <div class="section-subtitle" style="margin-top:1rem;">Notes</div>
           <p class="small-text">Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
-            edit heights; exit to view biome coloring.</p>
+            edit heights; exit to view biome coloring. 3D terrain uses the same Color Mode (Baseline or 2D Fidelity).
+            Expressive / Atlas prototypes were removed.</p>
         </div>
       </div>
 
@@ -343,9 +360,34 @@
           <div class="section-title">Display Options</div>
           <div class="setting-item">
             <label for="grid-opacity">Grid Opacity:</label>
-            <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input">
-            <span cl="2" step="0.1" value="1" class="range-input">
-              <span class="range-value">1x</span>
+            <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input"
+              aria-label="Adjust base grid opacity">
+            <span id="grid-opacity-value" class="range-value">50%</span>
+          </div>
+          <div class="setting-item">
+            <label class="toggle-switch" for="visual-grid-toggle">
+              <input type="checkbox" id="visual-grid-toggle" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Show 3D Grid Overlay</span>
+            </label>
+            <small class="small-text" style="display:block;margin-top:0.25rem;">Applies when Hybrid 3D mode is
+              active.</small>
+          </div>
+          <div class="setting-item">
+            <label for="animation-speed">Animation Speed:</label>
+            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1" class="range-input"
+              aria-label="Adjust animation playback speed">
+            <span id="animation-speed-value" class="range-value">1.0x</span>
+          </div>
+          <div class="setting-item" style="margin-top:0.75rem;">
+            <label class="toggle-switch" for="hybrid-render-toggle">
+              <input type="checkbox" id="hybrid-render-toggle" />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Enable 3D Hybrid (Experimental)</span>
+            </label>
+            <div id="hybrid-stats" class="small-text" aria-live="polite" style="margin-top:0.35rem; min-height:1.1rem;">
+              <!-- 3D stats populated when enabled -->
+            </div>
           </div>
         </div>
 
@@ -404,6 +446,8 @@
   <script type="module" src="./src/ui/UIController.js"></script>
   <script type="module" src="./src/ui/SidebarController.js"></script>
   <script type="module" src="./src/ui/SettingsViewToggle.js"></script>
+  <script type="module" src="./src/ui/HybridRenderToggle.js"></script>
+  <script type="module" src="./src/ui/Hybrid3DControls.js"></script>
 
   <style>
     /* Screen reader only class for accessibility */

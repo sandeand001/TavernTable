@@ -197,47 +197,47 @@ export function reprojectAll(gameManager, mode) {
         const sprite = t?.creature?.sprite;
         if (!sprite) return;
         const fp = t.footprint || { w: 1, h: 1 };
-        const centerGX = t.gridX + (fp.w - 1) / 2;
-        const centerGY = t.gridY + (fp.h - 1) / 2;
+        // Prefer stable original grid (from creation) if available
+        const gBaseX = Number.isInteger(t.__originGridX) ? t.__originGridX : t.gridX;
+        const gBaseY = Number.isInteger(t.__originGridY) ? t.__originGridY : t.gridY;
+        const centerGX = gBaseX + (fp.w - 1) / 2;
+        const centerGY = gBaseY + (fp.h - 1) / 2;
         const tileW = gameManager.tileWidth;
         const tileH = gameManager.tileHeight;
         const computedIsoX = (centerGX - centerGY) * (tileW / 2);
         const computedIsoY = (centerGX + centerGY) * (tileH / 2);
 
         if (isTopDown) {
-          // Capture anchor & elevation deltas relative to mathematical iso base.
-          // This lets us restore EXACT prior iso placement even if sprite had custom adjustments.
+          // Capture anchor + elevation relative to current mathematical iso base *once per iso->topdown transition*.
           const elevationOffset =
             typeof sprite.baseIsoY === 'number' ? sprite.y - sprite.baseIsoY : 0;
-          // Non-elevated visual Y (remove elevation portion) used to isolate anchor delta.
-          const nonElevatedY = sprite.y - elevationOffset;
-          if (
-            sprite.__tokenIsoAnchorDeltaX === undefined ||
-            sprite.__tokenIsoAnchorDeltaY === undefined ||
-            sprite.__tokenStoredGridX !== centerGX ||
-            sprite.__tokenStoredGridY !== centerGY
-          ) {
+          const alreadyCaptured = sprite.__tokenProjectionCaptured === true;
+          const gridChanged =
+            sprite.__tokenStoredGridX !== centerGX || sprite.__tokenStoredGridY !== centerGY;
+          if (!alreadyCaptured || gridChanged) {
+            // Anchor deltas exclude elevation: treat the iso base as (computedIsoX/Y) and remove elevation component.
+            const nonElevatedY = sprite.y - elevationOffset;
             sprite.__tokenIsoAnchorDeltaX = sprite.x - computedIsoX;
             sprite.__tokenIsoAnchorDeltaY = nonElevatedY - computedIsoY;
+            sprite.__storedElevationOffset = elevationOffset;
+            sprite.__tokenProjectionCaptured = true;
           }
           sprite.__tokenStoredGridX = centerGX;
           sprite.__tokenStoredGridY = centerGY;
-          sprite.__storedElevationOffset = elevationOffset;
-          // Apply topdown placement
+          // Apply topdown placement AFTER capturing
           applyTopDownPosition(sprite, centerGX, centerGY, gameManager);
           sprite.zIndex = TOPDOWN_CREATURE_BASE + centerGY * gameManager.cols + centerGX;
         } else {
-          // Recompute current iso mathematical base (in case grid changed in topdown mode)
-          sprite.baseIsoY = computedIsoY;
-          let elevationOffset = 0;
-          if (typeof sprite.__storedElevationOffset === 'number') {
-            elevationOffset = sprite.__storedElevationOffset;
-          }
+          // Restore iso using stored components (safe if missing: defaults to 0)
           const anchorDX = sprite.__tokenIsoAnchorDeltaX || 0;
           const anchorDY = sprite.__tokenIsoAnchorDeltaY || 0;
+          const elevationOffset = sprite.__storedElevationOffset || 0;
+          sprite.baseIsoY = computedIsoY; // baseline for future elevation diff
           sprite.x = computedIsoX + anchorDX;
           sprite.y = computedIsoY + anchorDY + elevationOffset;
           sprite.zIndex = (centerGX + centerGY) * 100 + 90;
+          // Mark ready for next capture on next iso->topdown cycle
+          sprite.__tokenProjectionCaptured = false;
         }
       });
     } catch (_) {

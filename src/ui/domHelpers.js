@@ -180,13 +180,36 @@ export function getTabPanels() {
 /** Returns grid opacity slider and its value element (next sibling). */
 export function getGridOpacityControl() {
   const slider = document.getElementById('grid-opacity');
-  return { slider, valueEl: slider?.nextElementSibling || null };
+  let valueEl = document.getElementById('grid-opacity-value');
+  if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
+    valueEl = slider.nextElementSibling;
+  }
+  return { slider, valueEl };
 }
 
 /** Returns animation speed slider and its value element (next sibling). */
 export function getAnimationSpeedControl() {
   const slider = document.getElementById('animation-speed');
-  return { slider, valueEl: slider?.nextElementSibling || null };
+  let valueEl = document.getElementById('animation-speed-value');
+  if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
+    valueEl = slider.nextElementSibling;
+  }
+  return { slider, valueEl };
+}
+
+/** Returns sun time slider and associated value element. */
+export function getSunTimeControl() {
+  const slider = document.getElementById('sun-time-range');
+  let valueEl = document.getElementById('sun-time-value');
+  if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
+    valueEl = slider.nextElementSibling;
+  }
+  return { slider, valueEl };
+}
+
+/** Returns the settings toggle controlling the 3D grid overlay visibility. */
+export function getVisualGridToggle() {
+  return document.getElementById('visual-grid-toggle');
 }
 
 /** Returns all biome button elements under the biome root (or provided root). */
@@ -213,14 +236,15 @@ export function createPlaceableButton(id, label, imgSrc) {
   btn.className = 'placeable-btn';
   btn.dataset.placeable = id;
   btn.title = label || id;
-  // Visual: include a small preview image when available
-  if (imgSrc) {
-    const img = document.createElement('img');
-    img.src = imgSrc;
-    img.alt = label || id;
-    img.className = 'placeable-preview';
-    btn.appendChild(img);
-  }
+  // Always include an img element so later async thumbnail generation has a target.
+  const img = document.createElement('img');
+  img.className = 'placeable-preview';
+  img.alt = label || id;
+  // Use provided src or a 1x1 transparent pixel placeholder.
+  img.src =
+    imgSrc ||
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YkZyy8AAAAASUVORK5CYII=';
+  btn.appendChild(img);
   const span = document.createElement('span');
   span.className = 'placeable-label';
   span.textContent = label || id;

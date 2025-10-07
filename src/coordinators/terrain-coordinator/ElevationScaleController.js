@@ -156,6 +156,14 @@ export class ElevationScaleController {
         },
         LOG_CATEGORY.USER
       );
+      // Trigger 3D elevation parity recalculation if hybrid mode active.
+      try {
+        if (this.c?.gameManager?.sync3DElevationScaling) {
+          this.c.gameManager.sync3DElevationScaling({ rebuild: true });
+        }
+      } catch (_) {
+        /* ignore parity sync errors */
+      }
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
         context: 'ElevationScaleController.apply',

@@ -14,6 +14,7 @@ import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
 import { traceDiamondPath } from '../utils/PixiShapeUtils.js';
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
+import { TERRAIN_PLACEABLES } from '../config/TerrainPlaceables.js';
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
 // elevation offset calculation is delegated into internals
 import { CoordinateUtils } from '../utils/CoordinateUtils.js';
@@ -87,6 +88,22 @@ export class TerrainManager {
   placeItem(id, x, y) {
     try {
       return _placeItem(this, id, x, y);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Public wrapper for removing a terrain placeable by id at grid coords.
+   * Mirrors placeItem for symmetry in tests and external callers.
+   * @param {string} id placeable id
+   * @param {number} x grid column
+   * @param {number} y grid row
+   * @returns {boolean} true if removed
+   */
+  removeItem(id, x, y) {
+    try {
+      return _removeItem(this, x, y, id);
     } catch (_) {
       return false;
     }
@@ -298,6 +315,16 @@ export class TerrainManager {
    */
   placeTerrainItem(x, y, placeableId) {
     try {
+      // Family indirection: if a virtual plant-family id is selected, choose a random concrete variant each click.
+      if (typeof placeableId === 'string') {
+        const famDef = TERRAIN_PLACEABLES[placeableId];
+        if (famDef?.type === 'plant-family' && Array.isArray(famDef.familyVariants)) {
+          const variants = famDef.familyVariants.filter(Boolean);
+          if (variants.length) {
+            placeableId = variants[Math.floor(Math.random() * variants.length)];
+          }
+        }
+      }
       const result = _placeItem(this, placeableId, x, y);
       logger.log(LOG_LEVEL.DEBUG, 'placeTerrainItem attempt', LOG_CATEGORY.RENDERING, {
         x,
@@ -305,6 +332,8 @@ export class TerrainManager {
         placeableId,
         success: !!result,
       });
+      // Retrofit instancing path disabled (duplicate risk). If ever needed again, guard behind feature flag.
+      // if (result && this.gameManager?.features?.retrofitInstancing) { /* legacy disabled code */ }
       if (!result) {
         // Lightweight diagnostics for common rejection reasons so UI traces are useful
         let reason = 'rejected_by_rules';
@@ -773,11 +802,27 @@ export class TerrainManager {
    */
   renderBrushPreview(cells, options = {}) {
     try {
-      if (!this.previewContainer || !this.terrainCoordinator?.isTerrainModeActive) return;
+      const threeMgr = this.gameManager?.threeSceneManager;
+      const use3DPreview = this.gameManager?.is3DModeActive?.() && threeMgr?.setTerrainBrushPreview;
+      const terrainModeActive = !!this.terrainCoordinator?.isTerrainModeActive;
+      const hasCells = Array.isArray(cells) && cells.length > 0;
+      const shouldShow3D = use3DPreview && terrainModeActive && hasCells;
+
+      if (!hasCells || !terrainModeActive) {
+        if (use3DPreview) threeMgr?.clearTerrainBrushPreview?.();
+      } else if (use3DPreview) {
+        try {
+          threeMgr.setTerrainBrushPreview(cells, options);
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      if (!this.previewContainer || !terrainModeActive) return;
       // Ensure the preview layer is on top and visible before drawing
       this.ensurePreviewLayerOnTop();
-      // Clear previous preview before drawing new
-      this.clearBrushPreview();
+      // Clear previous preview before drawing new (preserve 3D overlay when redrawing)
+      this.clearBrushPreview({ include3D: !shouldShow3D });
       try {
         if (this.previewContainer && this.previewContainer.visible === false) {
           this.previewContainer.visible = true;
@@ -851,7 +896,15 @@ export class TerrainManager {
   }
 
   /** Clear any existing brush preview graphics. */
-  clearBrushPreview() {
+  clearBrushPreview(options = {}) {
+    const { include3D = true } = options;
+    if (include3D) {
+      try {
+        this.gameManager?.threeSceneManager?.clearTerrainBrushPreview?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }
     try {
       if (!this.previewContainer) return;
       for (const [, g] of this.previewCache) {

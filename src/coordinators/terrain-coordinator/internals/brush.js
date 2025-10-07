@@ -3,5 +3,5 @@
  */
 export function modifyTerrainHeightAtCell(c, gridX, gridY) {
   // Delegate directly to the brush controller
-  c.brush.applyAt(gridX, gridY);
+  return c.brush.applyAt(gridX, gridY);
 }

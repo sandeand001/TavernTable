@@ -394,24 +394,47 @@ function attachDynamicUIHandlers() {
   }
 }
 
+// Expressive/Atlas 3D style controls removed; keep stub for any legacy calls.
+function wireTerrainStyleControls() {}
+
 // Attach after DOM ready & when game manager exists
 document.addEventListener('DOMContentLoaded', () => {
+  // In test (Jest) environment, skip UI polling entirely to avoid lingering timers.
+  if (isJest && isJest()) {
+    if (window.gameManager) {
+      try {
+        attachDynamicUIHandlers();
+      } catch (e) {
+        /* ignore in tests */
+      }
+    }
+    return;
+  }
   if (window.gameManager) {
     attachDynamicUIHandlers();
-  } else {
-    // Poll briefly until gameManager set by StateCoordinator
-    const interval = setInterval(() => {
-      if (window.gameManager) {
-        clearInterval(interval);
-        attachDynamicUIHandlers();
-      }
-    }, 100);
-    // In Node/Jest environments, prevent timers from keeping the process alive
-    if (typeof interval?.unref === 'function') interval.unref();
-    const stopAfterMs = isJest() ? 1000 : 5000;
-    const stopper = setTimeout(() => clearInterval(interval), stopAfterMs);
-    if (typeof stopper?.unref === 'function') stopper.unref();
+    try {
+      wireTerrainStyleControls();
+    } catch (_) {
+      /* ignore */
+    }
+    return;
   }
+  // Poll briefly until gameManager set by StateCoordinator (browser only)
+  const interval = setInterval(() => {
+    if (window.gameManager) {
+      clearInterval(interval);
+      attachDynamicUIHandlers();
+      try {
+        wireTerrainStyleControls();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }, 100);
+  if (typeof interval?.unref === 'function') interval.unref();
+  const stopAfterMs = 5000;
+  const stopper = setTimeout(() => clearInterval(interval), stopAfterMs);
+  if (typeof stopper?.unref === 'function') stopper.unref();
 });
 
 /**

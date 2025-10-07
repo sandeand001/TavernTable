@@ -12,6 +12,27 @@ import {
  */
 export function getGridCoordinatesFromEvent(c, event) {
   try {
+    if (c.gameManager?.is3DModeActive?.()) {
+      const picking = c.gameManager?.pickingService;
+      if (picking && typeof picking.pickGroundSync === 'function') {
+        const targetElement =
+          c.gameManager?.threeSceneManager?.canvas ||
+          c.gameManager?.app?.view ||
+          (event?.currentTarget ?? null);
+        const ground = picking.pickGroundSync(event.clientX, event.clientY, targetElement);
+        if (ground && ground.grid) {
+          const gridX = Number(ground.grid.gx);
+          const gridY = Number(ground.grid.gy);
+          if (Number.isFinite(gridX) && Number.isFinite(gridY)) {
+            if (c.isValidGridPosition(gridX, gridY)) {
+              return { gridX, gridY };
+            }
+            return null;
+          }
+        }
+      }
+    }
+
     if (
       c.gameManager.interactionManager &&
       typeof c.gameManager.interactionManager.getGridCoordinatesFromClick === 'function'
@@ -66,10 +87,20 @@ export function modifyTerrainAtPosition(c, gridX, gridY) {
     if (!c.isValidGridPosition(gridX, gridY)) {
       return;
     }
-    c.brush.applyAt(gridX, gridY);
-    if (c.terrainManager) {
-      c.terrainManager.updateTerrainDisplay(gridX, gridY, c.brushSize);
+    const changed = c.brush.applyAt(gridX, gridY);
+    if (changed) {
+      // Update 2D terrain visuals immediately
+      if (c.terrainManager) {
+        c.terrainManager.updateTerrainDisplay(gridX, gridY, c.brushSize);
+      }
+      // NEW: schedule / debounce 3D terrain mesh rebuild & height resync (GameManager handles debouncing)
+      try {
+        c.gameManager?.notifyTerrainHeightsChanged?.();
+      } catch (_) {
+        /* non-fatal */
+      }
     }
+    return changed;
   } catch (error) {
     try {
       GameErrors.input(error, {

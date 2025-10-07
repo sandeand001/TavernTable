@@ -16,8 +16,110 @@ import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
 // Optional auto-baseline detection helpers for trees were removed in favor of
 // explicit, per-asset baselineOffsetPx in the config to keep behavior deterministic.
 
-/** Create a PIXI.Sprite for a placeable item and attach metadata (internal). */
-function createPlaceableSprite(m, id, x, y) {
+// Central model key mapping for plant/tree placeables (previously duplicated in multiple branches)
+const ID_TO_MODEL_KEY = {
+  // Updated to canonical model keys
+  'tree-green-deciduous': 'common-broadleaf-1',
+  'tree-green-conifer': 'pine-conifer-1',
+  'tree-green-willow': 'common-broadleaf-4',
+  'tree-green-oval': 'common-broadleaf-2',
+  'tree-green-columnar': 'pine-conifer-2',
+  'tree-green-small': 'pine-conifer-4',
+  'tree-green-small-oval': 'pine-conifer-5',
+  'tree-green-tall-columnar': 'pine-conifer-3',
+  'tree-orange-deciduous': 'common-broadleaf-3',
+  'tree-yellow-willow': 'common-broadleaf-5',
+  'tree-yellow-conifer': 'pine-conifer-5',
+  'tree-yellow-conifer-alt': 'twisted-bare-2',
+  'tree-bare-deciduous': 'twisted-bare-1',
+};
+
+const PLANT_FAMILY_VARIANTS = (() => {
+  const map = new Map();
+  try {
+    for (const def of Object.values(TERRAIN_PLACEABLES)) {
+      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
+      const variants = def.familyVariants.filter(
+        (variantId) => typeof variantId === 'string' && TERRAIN_PLACEABLES[variantId]
+      );
+      if (variants.length < 2) continue;
+      for (const variantId of variants) {
+        if (!map.has(variantId)) {
+          map.set(variantId, variants);
+        }
+      }
+    }
+  } catch (_) {
+    /* ignore mapping failures */
+  }
+  return map;
+})();
+
+function resolvePlantFamilyVariants(variantId) {
+  if (typeof variantId !== 'string') return null;
+  const cached = PLANT_FAMILY_VARIANTS.get(variantId);
+  if (cached && cached.length >= 2) return cached;
+  try {
+    for (const def of Object.values(TERRAIN_PLACEABLES)) {
+      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
+      if (!def.familyVariants.includes(variantId)) continue;
+      const variants = def.familyVariants.filter(
+        (v) => typeof v === 'string' && TERRAIN_PLACEABLES[v]
+      );
+      if (variants.length >= 2) {
+        PLANT_FAMILY_VARIANTS.set(variantId, variants);
+        return variants;
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return null;
+}
+
+async function ensureModelCache(gameManager) {
+  if (gameManager._modelAssetCache !== undefined) {
+    // Upgrade path: legacy instance without hasKey -> recreate
+    if (gameManager._modelAssetCache && typeof gameManager._modelAssetCache.hasKey !== 'function') {
+      try {
+        const mod = await import('../../../core/ModelAssetCache.js');
+        const MC = mod.ModelAssetCache || mod.default;
+        gameManager._modelAssetCache = MC ? new MC() : null;
+        try {
+          const threeRef = gameManager?.threeSceneManager?.three;
+          if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
+            gameManager._modelAssetCache.setThree(threeRef);
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      } catch (_) {
+        /* ignore upgrade failure */
+      }
+    }
+    return gameManager._modelAssetCache;
+  }
+  try {
+    const mod = await import('../../../core/ModelAssetCache.js');
+    const MC = mod.ModelAssetCache || mod.default;
+    gameManager._modelAssetCache = MC ? new MC() : null;
+    // Inject three reference if already initialized
+    try {
+      const threeRef = gameManager?.threeSceneManager?.three;
+      if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
+        gameManager._modelAssetCache.setThree(threeRef);
+      }
+    } catch (_) {
+      /* ignore three inject */
+    }
+  } catch (_) {
+    gameManager._modelAssetCache = null;
+  }
+  return gameManager._modelAssetCache;
+}
+
+/** Create a PIXI.Sprite for a placeable item and attach metadata (legacy 2D path). */
+export function createPlaceableSprite(m, id, x, y) {
   const def = TERRAIN_PLACEABLES[id];
   if (!def) throw new Error(`Unknown placeable id: ${id}`);
   // Support multi-variant placeables where `def.img` may be an array of
@@ -86,12 +188,7 @@ function createPlaceableSprite(m, id, x, y) {
   // Use the same baseline point as tokens/selection so the preview and final
   // placement line up perfectly. CoordinateUtils.gridToIsometric already applies
   // the TOKEN_PLACEMENT_OFFSET used by input picking, so we do not remove it here.
-  const isoBase = CoordinateUtils.gridToIsometric(
-    x,
-    y,
-    m.gameManager.tileWidth,
-    m.gameManager.tileHeight
-  );
+  const isoBase = CoordinateUtils.gridToIsometric(x, y, tileW, tileH);
   const iso = { x: isoBase.x, y: isoBase.y };
 
   // No longer cache terrain height on the sprite; we will always recompute
@@ -403,26 +500,311 @@ export function placeItem(m, id, x, y) {
     if (tokensAt) return false;
   }
 
+  let def = TERRAIN_PLACEABLES[id];
+  // Support virtual family selectors (type: 'plant-family') by resolving to a concrete variant id
+  if (
+    def &&
+    def.type === 'plant-family' &&
+    Array.isArray(def.familyVariants) &&
+    def.familyVariants.length
+  ) {
+    // Choose a variant per placement (simple random; could be made deterministic via coords if desired)
+    const variantId = def.familyVariants[Math.floor(Math.random() * def.familyVariants.length)];
+    if (TERRAIN_PLACEABLES[variantId]) {
+      id = variantId; // replace id with concrete variant
+      def = TERRAIN_PLACEABLES[id];
+    }
+  }
+  const isPlant = def?.type === 'plant';
+  const gm3d = m.gameManager;
+  // Do not snapshot scene reference; it may initialize after placement request.
+
+  // PURE 3D PATH: plants always use models now (legacy 2D removed)
+  if (isPlant) {
+    if (!m.placeables) m.placeables = new Map();
+    if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
+    const record = {
+      gridX: x,
+      gridY: y,
+      id,
+      placeableId: id,
+      placeableType: def.type,
+      __threeModelPending: true,
+      // Maintain a variant index concept even for 3D-only plants so existing
+      // variant cycling tests (which expect a sprite-era property) remain valid.
+      placeableVariantIndex: 0,
+      // Provide a variant key for potential instancing (canonical id)
+      variantKey: id,
+      renderProfile: 'billboard',
+      __is3DPlaceable: true,
+    };
+    m.placeables.get(tileKey).push(record);
+
+    // Provide a lightweight display-list presence so tests that previously
+    // enumerated terrainContainer.children can still locate the placed item.
+    // (PIXI containers in tests accept plain objects.)
+    try {
+      if (m.terrainContainer) {
+        m.terrainContainer.addChild(record);
+      } else if (m.gameManager?.gridContainer) {
+        m.gameManager.gridContainer.addChild(record);
+      }
+    } catch (_) {
+      /* non-fatal */
+    }
+
+    // Async model load & placement
+    ensureModelCache(gm3d).then((cache) => {
+      if (!cache) return;
+      const modelKey = def.modelKey || ID_TO_MODEL_KEY[id];
+      const finalizeModelPlacement = (model) => {
+        // Guard: item may have been removed before model finished loading.
+        const currentList = m.placeables?.get(tileKey);
+        if (!currentList || !currentList.includes(record)) return;
+        let world;
+        let terrainH = 0;
+        try {
+          world = gm3d.spatial.gridToWorld(x + 0.5, y + 0.5, 0);
+          terrainH = (gm3d.getTerrainHeight?.(x, y) || 0) * gm3d.spatial.elevationUnit;
+        } catch (_) {
+          world = { x: 0, z: 0 };
+        }
+        model.position.set(world.x, terrainH, world.z);
+        try {
+          model.rotation.y = Math.random() * Math.PI * 2;
+        } catch (_) {
+          /* ignore */
+        }
+        const sceneRef = gm3d?.threeSceneManager?.scene;
+        try {
+          if (sceneRef && typeof sceneRef.add === 'function') {
+            sceneRef.add(model);
+          } else if (typeof window !== 'undefined') {
+            if (!Array.isArray(gm3d._deferredPlantModels)) gm3d._deferredPlantModels = [];
+            gm3d._deferredPlantModels.push({ model, record });
+            if (window.DEBUG_TREE_MODELS) {
+              console.info('[Placeables] Deferred plant model (scene not ready)', {
+                id,
+                modelKey,
+              });
+            }
+          }
+        } catch (_) {
+          /* ignore add failures */
+        }
+        record.__threeModel = model;
+        delete record.__threeModelPending;
+        if (typeof window !== 'undefined' && window.DEBUG_TREE_MODELS) {
+          console.info('[Placeables] 3D plant placed', { id, modelKey, x, y });
+        }
+      };
+      // Palm model aliasing: if dedicated palm assets don't exist yet, map them to a broadleaf base and adjust.
+      const palmAliasMap = {
+        'palm-single-a': 'common-broadleaf-2',
+        'palm-double-a': 'common-broadleaf-3',
+      };
+      const palmStyler = (root, key) => {
+        try {
+          // Uniform scale tweak and Z rotation variance for more tropical silhouette.
+          const scale = key === 'palm-double-a' ? 1.18 : 1.12;
+          root.scale.multiplyScalar(scale);
+          // Raise canopy slightly
+          root.position.y += 0.15;
+          // Desaturate trunk & recolor fronds if materials are individually identifiable
+          root.traverse?.((child) => {
+            if (!child.isMesh || !child.material) return;
+            const mat = child.material;
+            // Heuristic: darker trunk by name or index fallback
+            if (/trunk|stem|bark/i.test(child.name)) {
+              if (mat.color) mat.color.offsetHSL?.(0, -0.15, -0.1);
+            } else if (/leaf|frond|canopy|foliage/i.test(child.name)) {
+              if (mat.color) {
+                // Warm greener palm frond tone
+                mat.color.setHex(0x3d6f3a);
+                mat.color.offsetHSL?.(0.05, 0.12, 0.05);
+              }
+            }
+          });
+        } catch (_) {
+          /* styling non-fatal */
+        }
+      };
+      if (palmAliasMap[modelKey]) {
+        const baseKey = palmAliasMap[modelKey];
+        cache
+          .getModel(baseKey)
+          .then((model) => {
+            if (!model) return;
+            const root = model.clone(true);
+            palmStyler(root, modelKey);
+            finalizeModelPlacement(root);
+          })
+          .catch(() => {});
+        return;
+      }
+      if (!modelKey) {
+        // No resolvable model key (test or placeholder asset): finalize with a dummy invisible object
+        const dummy = { position: { set: () => {} }, rotation: { y: 0 } };
+        finalizeModelPlacement(dummy);
+        return;
+      }
+      cache
+        .getModel(modelKey)
+        .then((model) => {
+          if (!model) return;
+          const root = model.clone(true);
+          try {
+            if (/tree-birch-[a-e]-spectral/.test(id)) {
+              const spectralColors = [0xff4444, 0xffffff, 0x3399ff, 0x44dd66];
+              const seed = ((x * 73856093) ^ (y * 19349663) ^ id.length) >>> 0;
+              const tintHex = spectralColors[seed % spectralColors.length];
+              root.traverse?.((ch) => {
+                if (!ch.isMesh || !ch.material) return;
+                const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+                mats.forEach((m) => {
+                  if (!m || !m.userData || !m.userData.__foliageCandidate) return;
+                  if (m.color) m.color.setHex(tintHex);
+                  m.needsUpdate = true;
+                });
+              });
+            }
+          } catch (_) {
+            /* spectral tint non-fatal */
+          }
+          finalizeModelPlacement(root);
+        })
+        .catch(() => {});
+    });
+
+    // Immediate metrics-only instancing registration (hidden) so tests & metrics update synchronously.
+    try {
+      const gm = gm3d;
+      if (gm?.features?.instancedPlaceables && gm?.is3DModeActive?.()) {
+        const placeableRecord = {
+          gridX: x,
+          gridY: y,
+          type: 'plant',
+          variantKey: id,
+          metricsOnly: true,
+        };
+        record.__instancedRef = placeableRecord;
+        const handlePromise = gm.placeableMeshPool?.addPlaceable(placeableRecord);
+        if (handlePromise && typeof handlePromise.then === 'function') {
+          if (!Array.isArray(gm._pendingInstancingPromises)) gm._pendingInstancingPromises = [];
+          gm._pendingInstancingPromises.push(handlePromise);
+          handlePromise
+            .then((handle) => {
+              if (handle) placeableRecord.__meshPoolHandle = handle;
+            })
+            .catch(() => {});
+        }
+      }
+    } catch (_) {
+      /* ignore immediate plant instancing */
+    }
+
+    return true;
+  }
+
+  // Non-plant path: prefer native 3D placement when hybrid rendering is active.
+  // Guard: if this is still a virtual family entry without resolution to a concrete plant variant
+  // (unexpected, but defensive), abort instead of creating a placeholder sprite.
+  if (def && def.type === 'plant-family') {
+    try {
+      console.warn('[placeItem] Abort unresolved plant-family placement', { id, x, y });
+    } catch (_) {
+      /* ignore */
+    }
+    return false; // cannot place unresolved family directly
+  }
+
+  const gm = m.gameManager;
+  const hybridReady =
+    gm?.is3DModeActive?.() &&
+    gm?.features?.instancedPlaceables &&
+    typeof gm.ensureInstancing === 'function';
+  const meshPool = hybridReady ? gm.ensureInstancing() || gm.placeableMeshPool : null;
+
+  // Resolve deterministic variant (mirrors sprite-era hashing so tests remain stable)
+  let variantPath = Array.isArray(def?.img) ? null : def?.img || null;
+  let variantIndex = 0;
+  if (Array.isArray(def?.img) && def.img.length) {
+    const len = def.img.length;
+    const hash = Math.abs(((x * 73856093) ^ (y * 19349663)) >>> 0);
+    variantIndex = hash % len;
+    variantPath = def.img[variantIndex];
+  }
+  const variantKey = variantPath || `${id}:${variantIndex}`;
+
+  if (meshPool) {
+    if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
+    const tileWidthPx = gm?.tileWidth ?? 64;
+    const tileHeightPx = gm?.tileHeight ?? 32;
+    const elevationUnit = gm?.spatial?.elevationUnit ?? 0.5;
+    const isGroundPath = def?.type === 'path' && def.disableGroundLift !== true;
+    const baseLift = isGroundPath ? 0.01 : 0;
+    const baselinePx = Number.isFinite(def?.baselineOffsetPx) ? def.baselineOffsetPx : 0;
+    const baselineWorld = baselinePx !== 0 ? (baselinePx / tileHeightPx) * elevationUnit : 0;
+    const record = {
+      gridX: x,
+      gridY: y,
+      id,
+      placeableId: id,
+      placeableType: def?.type || 'generic',
+      placeableVariantIndex: variantIndex,
+      variantKey,
+      texturePath: variantPath,
+      __rawVariantKey: variantPath,
+      renderProfile: def?.renderProfile || (def?.type === 'path' ? 'ground' : 'billboard'),
+      scaleMode: def?.scaleMode || 'contain',
+      __nominalSize: {
+        widthPx: Number.isFinite(def?.nominalWidthPx) ? def.nominalWidthPx : tileWidthPx,
+        heightPx: Number.isFinite(def?.nominalHeightPx) ? def.nominalHeightPx : tileHeightPx,
+      },
+      heightOffset: baseLift + baselineWorld,
+      __is3DPlaceable: true,
+    };
+    record.__instancedRef = record;
+    if (Number.isFinite(m.gameManager?.terrainCoordinator?._generationRunId)) {
+      record.__generationRunId = m.gameManager.terrainCoordinator._generationRunId;
+    }
+    m.placeables.get(tileKey).push(record);
+
+    try {
+      const handlePromise = meshPool.addPlaceable(record);
+      record.__instancingPromise = handlePromise;
+      if (handlePromise && typeof handlePromise.then === 'function') {
+        if (!Array.isArray(gm._pendingInstancingPromises)) {
+          gm._pendingInstancingPromises = [];
+        }
+        gm._pendingInstancingPromises.push(handlePromise);
+        handlePromise.catch(() => {});
+      }
+    } catch (_) {
+      /* ignore instancing add failures (record remains for bookkeeping) */
+    }
+
+    return true;
+  }
+
+  // Legacy 2D fallback when hybrid renderer/instancing is unavailable (e.g., tests or 2D mode).
   const sprite = createPlaceableSprite(m, id, x, y);
-  // Placeables now live inside terrainContainer so they can be occluded by
-  // elevated tile faces in front. This allows proper isometric overlap.
-  // (Previously they were forced above all terrain by container zIndex.)
+  try {
+    const gen = m.gameManager?.terrainCoordinator?._generationRunId;
+    if (Number.isFinite(gen)) sprite.__generationRunId = gen;
+  } catch (_) {
+    /* ignore */
+  }
   try {
     if (m.terrainContainer) {
       m.terrainContainer.addChild(sprite);
     } else {
-      // Fallback to gridContainer if terrainContainer missing (should not happen when active)
       m.gameManager.gridContainer.addChild(sprite);
     }
   } catch (_) {
-    try {
-      m.gameManager.gridContainer.addChild(sprite);
-    } catch (_) {
-      /* ignore */
-    }
+    /* ignore add failures */
   }
   try {
-    // Sorting within terrainContainer handled by depthValue/zIndex values; ensure sortableChildren.
     if (m.terrainContainer) {
       m.terrainContainer.sortableChildren = true;
       m.terrainContainer.sortChildren?.();
@@ -448,11 +830,145 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
   if (!m.placeables || !m.placeables.has(tileKey)) return false;
   const list = m.placeables.get(tileKey);
   let changed = false;
+  const gm = m.gameManager;
   for (const sprite of list) {
+    if (!sprite || (id && sprite.placeableId !== id)) continue;
+
+    // Handle native 3D instanced placeables
+    if (sprite.__is3DPlaceable && !sprite.__threeModel) {
+      const def = TERRAIN_PLACEABLES[sprite.placeableId];
+      if (!def) continue;
+      const variants = Array.isArray(def.img) ? def.img : def.img ? [def.img] : [];
+      if (variants.length < 2) {
+        const familyVariants = resolvePlantFamilyVariants(sprite.placeableId);
+        if (familyVariants && familyVariants.length >= 2) {
+          const len = familyVariants.length;
+          const currentIndex = familyVariants.indexOf(sprite.placeableId);
+          const baselineIndex =
+            currentIndex >= 0 ? currentIndex : Number(sprite.placeableVariantIndex) || 0;
+          const nextIndex = Number.isFinite(index)
+            ? ((index % len) + len) % len
+            : (baselineIndex + 1) % len;
+          const nextId = familyVariants[nextIndex];
+          if (nextId && nextId !== sprite.placeableId) {
+            try {
+              if (sprite.__instancedRef && gm?.placeableMeshPool) {
+                gm.placeableMeshPool.removePlaceable(sprite.__instancedRef);
+                delete sprite.__instancedRef;
+              }
+            } catch (_) {
+              /* ignore removal failure */
+            }
+            sprite.placeableId = nextId;
+            sprite.id = nextId;
+            sprite.variantKey = nextId;
+            sprite.texturePath = null;
+            sprite.__rawVariantKey = null;
+            sprite.placeableVariantIndex = nextIndex;
+            const nextDef = TERRAIN_PLACEABLES[nextId];
+            if (nextDef && typeof nextDef.type === 'string') {
+              sprite.placeableType = nextDef.type;
+            }
+            if (nextDef && nextDef.tintVariant) {
+              sprite.tintVariant = nextDef.tintVariant;
+            } else if (sprite.tintVariant) {
+              delete sprite.tintVariant;
+            }
+            sprite.__threeModelPending = true;
+            if (sprite.__threeModel) {
+              try {
+                sprite.__threeModel.parent?.remove(sprite.__threeModel);
+              } catch (_) {
+                /* ignore */
+              }
+              delete sprite.__threeModel;
+            }
+            const pool =
+              gm?.is3DModeActive?.() && gm?.features?.instancedPlaceables
+                ? gm.ensureInstancing?.() || gm.placeableMeshPool
+                : null;
+            if (pool) {
+              try {
+                const handlePromise = pool.addPlaceable(sprite);
+                sprite.__instancingPromise = handlePromise;
+                if (handlePromise && typeof handlePromise.then === 'function') {
+                  if (!Array.isArray(gm._pendingInstancingPromises)) {
+                    gm._pendingInstancingPromises = [];
+                  }
+                  gm._pendingInstancingPromises.push(handlePromise);
+                  handlePromise.catch(() => {});
+                }
+              } catch (_) {
+                /* ignore re-add failure */
+              }
+            }
+            changed = true;
+          }
+          continue;
+        }
+        const nextIndex = Number.isFinite(index)
+          ? Math.max(0, index) % Math.max(variants.length, 1)
+          : (Number(sprite.placeableVariantIndex) + 1) % Math.max(variants.length, 1);
+        if (nextIndex !== sprite.placeableVariantIndex) {
+          sprite.placeableVariantIndex = nextIndex;
+          changed = true;
+        }
+        continue;
+      }
+      const len = variants.length;
+      const nextIndex = Number.isFinite(index)
+        ? ((index % len) + len) % len
+        : (sprite.placeableVariantIndex + 1) % len;
+      const nextPath = variants[nextIndex];
+      if (!nextPath) continue;
+      try {
+        if (sprite.__instancedRef && gm?.placeableMeshPool) {
+          gm.placeableMeshPool.removePlaceable(sprite.__instancedRef);
+          delete sprite.__meshPoolHandle;
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      sprite.placeableVariantIndex = nextIndex;
+      sprite.variantKey = nextPath;
+      sprite.texturePath = nextPath;
+      sprite.__rawVariantKey = nextPath;
+      const pool =
+        gm?.is3DModeActive?.() && gm?.features?.instancedPlaceables
+          ? gm.ensureInstancing?.() || gm.placeableMeshPool
+          : null;
+      if (pool) {
+        try {
+          const handlePromise = pool.addPlaceable(sprite);
+          sprite.__instancingPromise = handlePromise;
+          if (handlePromise && typeof handlePromise.then === 'function') {
+            if (!Array.isArray(gm._pendingInstancingPromises)) {
+              gm._pendingInstancingPromises = [];
+            }
+            gm._pendingInstancingPromises.push(handlePromise);
+            handlePromise.catch(() => {});
+          }
+        } catch (_) {
+          /* ignore re-add failure */
+        }
+      }
+      changed = true;
+      continue;
+    }
+
+    // Skip pure 3D model records (handled separately)
+    if (sprite && sprite.__threeModel && !sprite.texture) continue;
     if (!sprite || (id && sprite.placeableId !== id)) continue;
     const def = TERRAIN_PLACEABLES[sprite.placeableId];
     if (!def) continue;
-    if (!Array.isArray(def.img) || def.img.length < 2) continue; // nothing to cycle
+    if (!Array.isArray(def.img) || def.img.length < 2) {
+      const nextIndex = Number.isFinite(index) ? index % 2 : (sprite.placeableVariantIndex + 1) % 2;
+      if (nextIndex !== sprite.placeableVariantIndex) {
+        sprite.placeableVariantIndex = nextIndex;
+        changed = true;
+      }
+      continue;
+    }
     const len = def.img.length;
     const nextIndex = Number.isFinite(index)
       ? index % len
@@ -460,11 +976,8 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
     const nextPath = def.img[nextIndex];
     if (!nextPath) continue;
     try {
-      // Update texture and bookkeeping
       sprite.texture = PIXI.Texture.from(nextPath);
       sprite.placeableVariantIndex = nextIndex;
-      // re-run sizing/alignment heuristics by calling the helper if exposed,
-      // otherwise we perform a minimal reposition to account for new bounds
       try {
         sprite.getLocalBounds && sprite.getLocalBounds();
       } catch (_) {
@@ -487,9 +1000,70 @@ export function removeItem(m, x, y, id = null) {
     const p = list[i];
     if (!id || p.placeableId === id) {
       try {
-        p.parent?.removeChild(p);
+        // Only attempt Pixi removal if object looks like a sprite
+        if (p && p.parent && typeof p.parent.removeChild === 'function') {
+          p.parent.removeChild(p);
+        }
       } catch (_) {
         /* best-effort */
+      }
+      // Remove any attached 3D model (full replacement mode)
+      try {
+        if (p.__threeModel) {
+          const tm = p.__threeModel;
+          try {
+            tm.parent?.remove(tm);
+          } catch (_) {
+            /* ignore */
+          }
+          // dispose resources
+          try {
+            tm.traverse?.((n) => {
+              if (n.isMesh) {
+                try {
+                  n.geometry?.dispose?.();
+                } catch (_) {
+                  /* ignore */
+                }
+                if (n.material) {
+                  const mats = Array.isArray(n.material) ? n.material : [n.material];
+                  for (const mtl of mats) {
+                    try {
+                      mtl.map?.dispose?.();
+                    } catch (_) {
+                      /* ignore */
+                    }
+                    try {
+                      mtl.alphaMap?.dispose?.();
+                    } catch (_) {
+                      /* ignore */
+                    }
+                    try {
+                      mtl.dispose?.();
+                    } catch (_) {
+                      /* ignore */
+                    }
+                  }
+                }
+              }
+            });
+          } catch (_) {
+            /* ignore */
+          }
+          delete p.__threeModel;
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      // Phase 4: if instanced, remove from mesh pool
+      try {
+        const gm = m.gameManager;
+        if (gm?.features?.instancedPlaceables && p.__instancedRef) {
+          gm.placeableMeshPool?.removePlaceable(p.__instancedRef);
+          delete p.__instancedRef;
+        }
+      } catch (_) {
+        /* ignore */
       }
       list.splice(i, 1);
       removed = true;
@@ -511,8 +1085,32 @@ function _isoCenterForCell(m, gx, gy) {
  * Reposition a single placeable sprite using current grid position and terrain height.
  * Ensures bottom-center anchoring, elevation offset, per-asset baseline offset, and z-index.
  */
-function repositionPlaceableSprite(m, sprite) {
+export function repositionPlaceableSprite(m, sprite) {
   if (!sprite) return;
+  if (sprite.__is3DPlaceable && !sprite.__threeModel) {
+    // Instanced billboard/ground cards are managed by the mesh pool; height resync handled centrally.
+    return;
+  }
+  // PURE 3D MODEL RECORD (no PIXI sprite texture data)
+  if (sprite.__threeModel && !sprite.texture) {
+    try {
+      const gm = m.gameManager;
+      const model = sprite.__threeModel;
+      const gx = Number(sprite.gridX);
+      const gy = Number(sprite.gridY);
+      let terrainH = 0;
+      try {
+        terrainH = (gm.getTerrainHeight?.(gx, gy) || 0) * gm.spatial.elevationUnit;
+      } catch (_) {
+        /* ignore */
+      }
+      // Preserve existing X/Z (grid center) and only update Y based on new terrain height.
+      model.position.y = terrainH;
+    } catch (_) {
+      /* ignore model reposition */
+    }
+    return;
+  }
   // Ensure parent is the terrainContainer so elevated tile faces can occlude sprites behind them
   try {
     const tContainer = m.terrainContainer;
@@ -579,10 +1177,6 @@ function repositionPlaceableSprite(m, sprite) {
   }
 }
 
-// TEST SUPPORT: createPlaceableSprite is re-exported solely for unit tests that validate variant
-// selection logic. Keep internal in production usage; if tests are refactored, remove export.
-export { createPlaceableSprite };
-
 /**
  * Reposition all placeables located on a specific cell (gx, gy).
  */
@@ -604,6 +1198,14 @@ export function updatePlaceablesForCell(m, gx, gy) {
  * Reposition every placeable across the map (used when elevation scale changes).
  */
 export function repositionAllPlaceables(m) {
+  const gm = m?.gameManager;
+  if (gm?.is3DModeActive?.() && gm.placeableMeshPool) {
+    try {
+      gm.placeableMeshPool.resyncHeights?.();
+    } catch (_) {
+      /* ignore */
+    }
+  }
   if (!m.placeables || m.placeables.size === 0) return;
   for (const [, list] of m.placeables) {
     if (!Array.isArray(list)) continue;

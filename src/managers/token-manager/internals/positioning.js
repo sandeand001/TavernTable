@@ -244,6 +244,16 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
     if (tokenEntry) {
       tokenEntry.gridX = target.gridX;
       tokenEntry.gridY = target.gridY;
+      // Maintain world position snapshot (Phase 0). Use terrain height for elevation if available.
+      try {
+        const gm = c.gameManager;
+        const height = gm?.terrainCoordinator?.dataStore?.get(target.gridX, target.gridY) ?? 0;
+        if (gm?.spatial && typeof gm.spatial.gridToWorld === 'function') {
+          tokenEntry.world = gm.spatial.gridToWorld(target.gridX, target.gridY, height);
+        }
+      } catch (_) {
+        /* ignore */
+      }
       logger.debug(
         `Token snapped to grid (${target.gridX}, ${target.gridY})`,
         {

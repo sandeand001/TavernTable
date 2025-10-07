@@ -65,6 +65,11 @@ export class ActivationHelpers {
       this.prepareBaseGridForEditing();
       this.activateTerrainMode();
       this.loadTerrainStateAndDisplay();
+      try {
+        this.c.applyTerrainModeGridTint?.();
+      } catch (_) {
+        /* non-fatal */
+      }
       // Ensure existing placeables (trees/plants) are re-layered above the
       // elevation overlay immediately when terrain mode turns on.
       try {
@@ -97,6 +102,11 @@ export class ActivationHelpers {
       this.c.isTerrainModeActive = false;
       this.c.isDragging = false;
       this.c.lastModifiedCell = null;
+      try {
+        this.c.restoreTerrainModeGridTint?.();
+      } catch (_) {
+        /* non-fatal */
+      }
       // Clear any lingering brush preview since terrain mode is now off
       try {
         this.c.terrainManager?.clearBrushPreview();
