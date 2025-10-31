@@ -1,48 +1,92 @@
-// Token3DAdapter.js - Phase 3 scaffold
+// Token3DAdapter.js - Phase 3 enhanced scaffold
 // Bridges existing 2D token data structures to emerging 3D scene.
-// Current responsibilities:
-//  - On token added, create a Three.js plane (billboard) positioned via SpatialCoordinator
-//  - Keep plane reference attached to token entry for future sync (facing, selection highlighting)
-// Degraded gracefully if Three or hybrid scene unavailable.
+// Responsibilities:
+//  - Create either billboard planes (legacy sprites) or true 3D models per token entry
+//  - Keep Three.js representation synchronized with grid placement / terrain height
+//  - Manage hover/selection highlighting and facing direction parity with 2D tokens
+
+const TOKEN_3D_MODELS = {
+  'defeated-doll': {
+    path: 'assets/animated-sprites/Defeated.fbx',
+    tileSpan: 1,
+    margin: 0.92,
+    baseRotation: { x: 0, y: Math.PI / 2, z: 0 },
+    animation: {
+      autoplay: true,
+      loop: true,
+      clampWhenFinished: false,
+    },
+    shadows: {
+      cast: true,
+      receive: true,
+    },
+    verticalOffset: 0,
+  },
+};
+
+const DEFAULT_BILLBOARD_SIZE = 0.9;
 
 export class Token3DAdapter {
   constructor(gameManager) {
     this.gameManager = gameManager;
     this._attached = false;
-    this._verticalBias = 0; // additional Y offset above terrain height (world units)
-    this._hoverToken = null; // token entry currently hovered (grid-based picking)
-    this._selectedToken = null; // token entry explicitly selected
-    this._originalMaterials = new WeakMap(); // store original material refs for restoration
+    this._verticalBias = 0;
+    this._hoverToken = null;
+    this._selectedToken = null;
+    this._originalMaterials = new WeakMap();
+    this._threePromise = null;
+    this._fbxCtorPromise = null;
+    this._skeletonUtilsPromise = null;
+    this._modelCache = new Map();
+    this._animationMixers = new Map();
+    this._lastFrameTime = null;
   }
 
   attach() {
     if (this._attached) return;
     this._attached = true;
-    // Initial sync for already placed tokens
     try {
       this.syncAll();
     } catch (_) {
       /* ignore */
     }
-    // Register unified per-frame callback (facing sync + billboard orientation) once.
     try {
       const gm = this.gameManager;
       if (gm?.threeSceneManager?.addAnimationCallback && !this._frameCallback) {
         this._frameCallback = () => {
-          // Facing sync (only mutates if changed)
+          const gmRef = this.gameManager;
+          const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+          let delta = 0;
+          if (this._lastFrameTime != null) {
+            delta = Math.max(0, (now - this._lastFrameTime) / 1000);
+            if (delta > 0.1) delta = 0.1;
+          }
+          this._lastFrameTime = now;
+
+          if (delta > 0 && this._animationMixers.size) {
+            for (const mixer of this._animationMixers.values()) {
+              try {
+                mixer.update(delta);
+              } catch (_) {
+                /* ignore mixer update */
+              }
+            }
+          }
+
           try {
             this._syncFacingDirection();
           } catch (_) {
             /* ignore */
           }
-          // Billboard orientation for all token meshes
+
           try {
-            const camera = gm.threeSceneManager?.camera;
+            const camera = gmRef?.threeSceneManager?.camera;
             if (!camera) return;
-            const tokens = gm.placedTokens || [];
+            const tokens = gmRef?.placedTokens || [];
             for (const t of tokens) {
               const mesh = t.__threeMesh;
               if (!mesh || typeof mesh.lookAt !== 'function') continue;
+              if (mesh.userData?.__ttBillboard === false) continue;
               try {
                 mesh.lookAt(camera.position);
               } catch (_) {
@@ -60,7 +104,6 @@ export class Token3DAdapter {
     }
   }
 
-  /** Iterate existing tokens and ensure a 3D representation exists. */
   syncAll() {
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) return;
@@ -70,7 +113,6 @@ export class Token3DAdapter {
     for (const t of tokens) this._ensureTokenMesh(t, scene);
   }
 
-  /** Public hook: call when a new token is added to collection */
   onTokenAdded(tokenEntry) {
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) return;
@@ -82,22 +124,15 @@ export class Token3DAdapter {
   _ensureTokenMesh(tokenEntry, scene) {
     if (!tokenEntry || tokenEntry.__threeMesh) return;
     const gm = this.gameManager;
-    // Test override: allow injecting three stub synchronously (used by unit tests)
+
     if (gm && gm.__threeTestDouble) {
       try {
         const three = gm.__threeTestDouble;
-        const size = 0.9;
-        const geo = new three.PlaneGeometry(size, size);
+        const geo = new three.PlaneGeometry(DEFAULT_BILLBOARD_SIZE, DEFAULT_BILLBOARD_SIZE);
         const mat = this._createMaterialForToken(three, tokenEntry);
         const mesh = new three.Mesh(geo, mat);
-        mesh.name = `Token3D:${tokenEntry.id || tokenEntry.creature?.type || 'unk'}`;
-        const gx = tokenEntry.gridX ?? 0;
-        const gy = tokenEntry.gridY ?? 0;
-        const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
-        const terrainH = (gm.getTerrainHeight?.(gx, gy) || 0) * gm.spatial.elevationUnit;
-        mesh.position.set(world.x, terrainH + this._verticalBias, world.z);
-        // orientation handled in unified frame callback
-        // Billboard orientation handled by unified frame callback now.
+        this._applyCommonMetadata(mesh, tokenEntry, { billboard: true, verticalOffset: 0 });
+        this._positionMesh(mesh, tokenEntry);
         scene.add(mesh);
         tokenEntry.__threeMesh = mesh;
         return Promise.resolve(mesh);
@@ -105,50 +140,125 @@ export class Token3DAdapter {
         return Promise.resolve(null);
       }
     }
-    // Dynamic import inside method to avoid upfront three cost if degraded.
-    const p = import('three')
-      .then((three) => {
-        try {
-          const size = 0.9; // plane size in world units (placeholder)
-          const geo = new three.PlaneGeometry(size, size);
-          const mat = this._createMaterialForToken(three, tokenEntry);
-          const mesh = new three.Mesh(geo, mat);
-          mesh.name = `Token3D:${tokenEntry.id || tokenEntry.creature?.type || 'unk'}`;
-          // Position: center of grid cell in world space (Y from terrain height)
-          const gx = tokenEntry.gridX ?? 0;
-          const gy = tokenEntry.gridY ?? 0;
-          const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
-          const terrainH = (gm.getTerrainHeight?.(gx, gy) || 0) * gm.spatial.elevationUnit;
-          mesh.position.set(world.x, terrainH + this._verticalBias, world.z);
-          // Billboard behavior: rotate to face camera on each frame (simple hook)
-          // orientation handled in unified frame callback
-          // Billboard handled by unified frame callback
-          scene.add(mesh);
-          tokenEntry.__threeMesh = mesh;
-          return mesh;
-        } catch (_) {
-          /* ignore token mesh creation errors */
-          return null;
-        }
-      })
-      .catch(() => null);
-    // Expose promise for test harness / diagnostics (non-enumerable to avoid pollution)
-    try {
-      Object.defineProperty(tokenEntry, '__threeMeshPromise', { value: p, enumerable: false });
-    } catch (_) {
-      tokenEntry.__threeMeshPromise = p; // fallback
+
+    const typeKey = (tokenEntry.type || tokenEntry.creature?.type || '').toLowerCase();
+    const config = TOKEN_3D_MODELS[typeKey] || null;
+
+    if (config) {
+      const promise = this._create3DToken(tokenEntry, scene, config);
+      this._attachPromise(tokenEntry, promise);
+      return promise;
     }
-    return p;
+
+    const promise = this._createBillboardToken(tokenEntry, scene);
+    this._attachPromise(tokenEntry, promise);
+    return promise;
   }
 
-  /** Adjust extra vertical bias (world units) applied to all token billboards */
+  _attachPromise(tokenEntry, promise) {
+    if (!promise || typeof promise.then !== 'function') return;
+    try {
+      Object.defineProperty(tokenEntry, '__threeMeshPromise', {
+        value: promise,
+        enumerable: false,
+      });
+    } catch (_) {
+      tokenEntry.__threeMeshPromise = promise;
+    }
+  }
+
+  async _createBillboardToken(tokenEntry, scene) {
+    const three = await this._getThree();
+    if (!three) return null;
+    try {
+      const geo = new three.PlaneGeometry(DEFAULT_BILLBOARD_SIZE, DEFAULT_BILLBOARD_SIZE);
+      const mat = this._createMaterialForToken(three, tokenEntry);
+      const mesh = new three.Mesh(geo, mat);
+      this._applyCommonMetadata(mesh, tokenEntry, { billboard: true, verticalOffset: 0 });
+      this._positionMesh(mesh, tokenEntry);
+      scene.add(mesh);
+      tokenEntry.__threeMesh = mesh;
+      return mesh;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async _create3DToken(tokenEntry, scene, config) {
+    try {
+      const typeKey = (tokenEntry.type || tokenEntry.creature?.type || '').toLowerCase();
+      const templateBundle = await this._loadModelTemplate(typeKey, config);
+      if (!templateBundle) return null;
+      const clone = await this._cloneTemplate(templateBundle.template);
+      if (!clone) return null;
+      const three = await this._getThree();
+      if (!three) return null;
+
+      const container = new three.Group();
+      const baseName = tokenEntry.id || tokenEntry.creature?.type || typeKey || 'unk';
+      container.name = `Token3D:${baseName}`;
+      container.add(clone);
+
+      if (config.baseRotation) {
+        container.rotation.set(
+          config.baseRotation.x || 0,
+          config.baseRotation.y || 0,
+          config.baseRotation.z || 0
+        );
+      }
+
+      clone.traverse?.((child) => {
+        if (child.isMesh || child.isSkinnedMesh) {
+          const cast = config.shadows?.cast ?? true;
+          const receive = config.shadows?.receive ?? true;
+          child.castShadow = cast;
+          child.receiveShadow = receive;
+        }
+      });
+
+      this._applyCommonMetadata(container, tokenEntry, {
+        billboard: false,
+        is3D: true,
+        verticalOffset: Number.isFinite(config.verticalOffset) ? config.verticalOffset : 0,
+        baseYaw: config.baseRotation?.y || 0,
+      });
+
+      container.userData.__ttTintMaterials = this._collectTintTargets(container);
+      this._positionMesh(container, tokenEntry);
+      scene.add(container);
+      tokenEntry.__threeMesh = container;
+
+      if (templateBundle.animations?.length) {
+        const mixer = new three.AnimationMixer(container);
+        const clip = templateBundle.animations[0];
+        const action = mixer.clipAction(clip);
+        if (action) {
+          if (config.animation?.loop === false) {
+            action.setLoop(three.LoopOnce, 0);
+          }
+          if (config.animation?.clampWhenFinished) {
+            action.clampWhenFinished = true;
+          }
+          if (config.animation?.autoplay !== false) {
+            action.play();
+          }
+        }
+        this._animationMixers.set(tokenEntry, mixer);
+      }
+
+      this._syncFacingDirection();
+      return container;
+    } catch (_) {
+      return null;
+    }
+  }
+
   setVerticalBias(v) {
     if (!Number.isFinite(v)) return;
     this._verticalBias = v;
     this.resyncHeights();
   }
 
-  /** Recompute Y for all token meshes based on current terrain + bias (call after terrain change). */
   resyncHeights() {
     try {
       const gm = this.gameManager;
@@ -157,61 +267,77 @@ export class Token3DAdapter {
       for (const t of tokens) {
         const mesh = t.__threeMesh;
         if (!mesh) continue;
-        const gx = t.gridX ?? 0;
-        const gy = t.gridY ?? 0;
-        let terrainH = 0;
-        try {
-          terrainH = (gm.getTerrainHeight?.(gx, gy) || 0) * gm.spatial.elevationUnit;
-        } catch (_) {
-          /* ignore */
-        }
-        mesh.position.y = terrainH + this._verticalBias;
+        this._positionMesh(mesh, t);
       }
     } catch (_) {
       /* ignore */
     }
   }
 
-  /** Public hook: call when a token is removed from collection */
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry || !tokenEntry.__threeMesh) return;
-    try {
-      const mesh = tokenEntry.__threeMesh;
-      // Clean up any highlight state references
-      if (this._hoverToken === tokenEntry) this._hoverToken = null;
-      if (this._selectedToken === tokenEntry) this._selectedToken = null;
-      const gm = this.gameManager;
-      const scene = gm?.threeSceneManager?.scene;
-      if (scene && typeof scene.remove === 'function') {
-        try {
-          scene.remove(mesh);
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      // Dispose GPU resources
+    const mesh = tokenEntry.__threeMesh;
+    if (this._hoverToken === tokenEntry) this._hoverToken = null;
+    if (this._selectedToken === tokenEntry) this._selectedToken = null;
+
+    const mixer = this._animationMixers.get(tokenEntry);
+    if (mixer) {
       try {
-        mesh.geometry && typeof mesh.geometry.dispose === 'function' && mesh.geometry.dispose();
+        mixer.stopAllAction();
       } catch (_) {
         /* ignore */
       }
-      try {
-        mesh.material && typeof mesh.material.dispose === 'function' && mesh.material.dispose();
-      } catch (_) {
-        /* ignore */
-      }
-    } finally {
-      delete tokenEntry.__threeMesh;
+      this._animationMixers.delete(tokenEntry);
     }
+
+    const gm = this.gameManager;
+    const scene = gm?.threeSceneManager?.scene;
+    if (scene && typeof scene.remove === 'function') {
+      try {
+        scene.remove(mesh);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    try {
+      mesh.traverse?.((child) => {
+        if (child.geometry && typeof child.geometry.dispose === 'function') {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach((mat) => {
+            if (mat && typeof mat.dispose === 'function') {
+              mat.dispose();
+            }
+          });
+        }
+      });
+    } catch (_) {
+      /* ignore */
+    }
+
+    try {
+      mesh.geometry && typeof mesh.geometry.dispose === 'function' && mesh.geometry.dispose();
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      mesh.material && typeof mesh.material.dispose === 'function' && mesh.material.dispose();
+    } catch (_) {
+      /* ignore */
+    }
+
+    delete tokenEntry.__threeMesh;
+    delete tokenEntry.__threeMeshPromise;
   }
 
-  /** Attempt to derive a texture from the 2D sprite; falls back to flat color. */
   _createMaterialForToken(three, tokenEntry) {
     try {
       const sprite = tokenEntry?.creature?.sprite;
-      // If PIXI sprite present with a baseTexture (common in PIXI), extract its resource.
       const bt = sprite?.texture?.baseTexture;
-      const src = bt?.resource?.source || bt?.resource; // handle different PIXI versions
+      const src = bt?.resource?.source || bt?.resource;
       if (src && (src instanceof HTMLImageElement || src instanceof HTMLCanvasElement)) {
         const tex = new three.Texture(src);
         tex.needsUpdate = true;
@@ -223,7 +349,6 @@ export class Token3DAdapter {
           side: three.DoubleSide,
         });
       }
-      // Fallback: if we can render sprite to an offscreen canvas (e.g., if has `render`), attempt minimal capture
       if (sprite && typeof document !== 'undefined') {
         const w = Math.max(1, sprite.width || 64);
         const h = Math.max(1, sprite.height || 64);
@@ -256,7 +381,6 @@ export class Token3DAdapter {
     });
   }
 
-  /** Internal: synchronize horizontal facing (flip) for all token meshes if changed. */
   _syncFacingDirection() {
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) return;
@@ -271,7 +395,7 @@ export class Token3DAdapter {
       } catch (_) {
         /* ignore */
       }
-      return true; // default
+      return true;
     })();
     if (facingRight === this._lastFacingRight) return;
     this._lastFacingRight = facingRight;
@@ -281,15 +405,24 @@ export class Token3DAdapter {
       for (const t of tokens) {
         const mesh = t.__threeMesh;
         if (!mesh) continue;
-        if (!mesh.scale) mesh.scale = { x: sign, y: 1, z: 1 }; // safety for test doubles
-        mesh.scale.x = sign * Math.abs(mesh.scale.x || 1);
+        if (mesh.userData?.__tt3DToken) {
+          const baseYaw = mesh.userData.__ttBaseYaw || 0;
+          const yaw = facingRight ? baseYaw : baseYaw + Math.PI;
+          try {
+            mesh.rotation.y = yaw;
+          } catch (_) {
+            mesh.rotation.y = yaw;
+          }
+        } else {
+          if (!mesh.scale) mesh.scale = { x: sign, y: 1, z: 1 };
+          mesh.scale.x = sign * Math.abs(mesh.scale.x || 1);
+        }
       }
     } catch (_) {
       /* ignore */
     }
   }
 
-  /** Apply hover highlight (non-destructive) */
   setHoverToken(tokenEntry) {
     if (this._hoverToken === tokenEntry) return;
     if (this._hoverToken && this._hoverToken.__threeMesh) {
@@ -301,7 +434,6 @@ export class Token3DAdapter {
     }
   }
 
-  /** Explicit selection highlight (stronger tint) */
   setSelectedToken(tokenEntry) {
     if (this._selectedToken === tokenEntry) return;
     if (this._selectedToken && this._selectedToken.__threeMesh) {
@@ -319,32 +451,256 @@ export class Token3DAdapter {
   }
 
   _applyTint(mesh, colorHex) {
-    const mat = mesh.material;
-    if (!mat) return;
-    if (!this._originalMaterials.has(mat)) {
-      this._originalMaterials.set(mat, {
-        color: mat.color?.clone?.() || null,
-        emissive: mat.emissive?.clone?.() || null,
-      });
-    }
-    try {
-      if (mat.color) mat.color.setHex(colorHex);
-      if (mat.emissive) mat.emissive.setHex(colorHex);
-      mat.needsUpdate = true;
-    } catch (_) {
-      /* ignore */
+    if (!mesh) return;
+    const mats = mesh.userData?.__ttTintMaterials || this._collectTintTargets(mesh);
+    mesh.userData = mesh.userData || {};
+    mesh.userData.__ttTintMaterials = mats;
+    if (!mats || !mats.length) return;
+    for (const mat of mats) {
+      if (!mat) continue;
+      if (!this._originalMaterials.has(mat)) {
+        this._originalMaterials.set(mat, {
+          color: mat.color?.clone?.() || null,
+          emissive: mat.emissive?.clone?.() || null,
+        });
+      }
+      try {
+        if (mat.color) mat.color.setHex(colorHex);
+        if (mat.emissive) mat.emissive.setHex(colorHex);
+        mat.needsUpdate = true;
+      } catch (_) {
+        /* ignore */
+      }
     }
   }
 
   _restoreMaterial(mesh) {
-    const mat = mesh.material;
-    if (!mat) return;
-    const snap = this._originalMaterials.get(mat);
-    if (!snap) return;
+    if (!mesh) return;
+    const mats = mesh.userData?.__ttTintMaterials || [];
+    for (const mat of mats) {
+      if (!mat) continue;
+      const snap = this._originalMaterials.get(mat);
+      if (!snap) continue;
+      try {
+        if (snap.color && mat.color) mat.color.copy(snap.color);
+        if (snap.emissive && mat.emissive) mat.emissive.copy(snap.emissive);
+        mat.needsUpdate = true;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+
+  _collectTintTargets(mesh) {
+    const materials = [];
+    if (!mesh) return materials;
+    const push = (mat) => {
+      if (!mat) return;
+      if (Array.isArray(mat)) {
+        mat.forEach(push);
+      } else {
+        materials.push(mat);
+      }
+    };
+    if (typeof mesh.traverse === 'function') {
+      mesh.traverse((child) => {
+        if (child.material) push(child.material);
+      });
+    } else if (mesh.material) {
+      push(mesh.material);
+    }
+    return materials;
+  }
+
+  async _getThree() {
+    if (this._threePromise) return this._threePromise;
+    if (this.gameManager?.threeSceneManager?.three) {
+      this._threePromise = Promise.resolve(this.gameManager.threeSceneManager.three);
+      return this._threePromise;
+    }
+    this._threePromise = import('three').then((mod) => mod.default || mod).catch(() => null);
+    return this._threePromise;
+  }
+
+  async _getFBXLoaderCtor() {
+    if (!this._fbxCtorPromise) {
+      this._fbxCtorPromise = (async () => {
+        try {
+          const mod = await import('three/examples/jsm/loaders/FBXLoader.js');
+          return mod.FBXLoader || mod.default || null;
+        } catch (_) {
+          if (typeof window !== 'undefined' && window.FBXLoader) return window.FBXLoader;
+          if (typeof globalThis !== 'undefined' && globalThis.FBXLoader) {
+            return globalThis.FBXLoader;
+          }
+          return null;
+        }
+      })();
+    }
+    return this._fbxCtorPromise;
+  }
+
+  async _getSkeletonUtils() {
+    if (!this._skeletonUtilsPromise) {
+      this._skeletonUtilsPromise = (async () => {
+        try {
+          const mod = await import('three/examples/jsm/utils/SkeletonUtils.js');
+          if (mod.SkeletonUtils) return mod.SkeletonUtils;
+          if (typeof mod.clone === 'function') return mod;
+          if (mod.default && typeof mod.default.clone === 'function') return mod.default;
+        } catch (_) {
+          /* ignore */
+        }
+        return null;
+      })();
+    }
+    return this._skeletonUtilsPromise;
+  }
+
+  _buildPathVariants(path) {
+    const base = String(path || '').replace(/\\/g, '/');
+    const variants = [];
+    const push = (p) => {
+      if (!p || variants.includes(p)) return;
+      variants.push(p);
+    };
+    push(base);
+    if (!base.startsWith('./')) push(`./${base}`);
+    if (!base.startsWith('/')) push(`/${base}`);
+    if (base.includes(' ')) push(base.replace(/ /g, '%20'));
+    variants.slice().forEach((v) => {
+      if (v.includes(' ')) push(v.replace(/ /g, '%20'));
+    });
+    return variants;
+  }
+
+  async _loadModelTemplate(typeKey, config) {
+    const key = typeKey?.toLowerCase?.();
+    if (!key) return null;
+    if (!this._modelCache.has(key)) {
+      const promise = (async () => {
+        const three = await this._getThree();
+        const FBXLoaderCtor = await this._getFBXLoaderCtor();
+        if (!three || !FBXLoaderCtor) return null;
+        const variants = this._buildPathVariants(config.path);
+        let loaded = null;
+        for (const url of variants) {
+          try {
+            const loader = new FBXLoaderCtor();
+            loaded = await this._loadFBX(loader, url);
+            if (loaded) break;
+          } catch (_) {
+            /* try next */
+          }
+        }
+        if (!loaded) return null;
+        const templateRoot = new three.Group();
+        templateRoot.name = `TokenTemplate:${key}`;
+        templateRoot.add(loaded);
+
+        const centerBox = new three.Box3().setFromObject(templateRoot);
+        const center = new three.Vector3();
+        centerBox.getCenter(center);
+        loaded.position.sub(center);
+
+        const groundedBox = new three.Box3().setFromObject(templateRoot);
+        const minY = groundedBox.min.y;
+        loaded.position.y -= minY;
+
+        const sizeBox = new three.Box3().setFromObject(templateRoot);
+        const size = new three.Vector3();
+        sizeBox.getSize(size);
+        const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+        const span = (config.tileSpan ?? 1) * tileSize;
+        const margin = Number.isFinite(config.margin) ? config.margin : 0.92;
+        const desired = span * margin;
+        const maxXZ = Math.max(size.x, size.z, 0.0001);
+        let scaleFactor = config.scale;
+        if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+          scaleFactor = desired / maxXZ;
+        }
+        templateRoot.scale.setScalar(scaleFactor);
+        templateRoot.updateMatrixWorld(true);
+
+        return {
+          template: templateRoot,
+          animations: Array.isArray(loaded.animations) ? loaded.animations : [],
+        };
+      })();
+      this._modelCache.set(key, promise);
+    }
+    return this._modelCache.get(key);
+  }
+
+  _loadFBX(loader, url) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (obj) => {
+        if (settled) return;
+        settled = true;
+        resolve(obj || null);
+      };
+      try {
+        loader.load(
+          url,
+          (object) => finish(object),
+          undefined,
+          () => finish(null)
+        );
+      } catch (_) {
+        finish(null);
+      }
+    });
+  }
+
+  async _cloneTemplate(template) {
+    if (!template) return null;
     try {
-      if (snap.color && mat.color) mat.color.copy(snap.color);
-      if (snap.emissive && mat.emissive) mat.emissive.copy(snap.emissive);
-      mat.needsUpdate = true;
+      const SkeletonUtils = await this._getSkeletonUtils();
+      if (SkeletonUtils?.clone) {
+        return SkeletonUtils.clone(template);
+      }
+    } catch (_) {
+      /* fall through */
+    }
+    try {
+      return template.clone(true);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _applyCommonMetadata(mesh, tokenEntry, options = {}) {
+    const type = tokenEntry?.type || tokenEntry?.creature?.type || 'unk';
+    mesh.name = mesh.name || `Token3D:${tokenEntry?.id || type}`;
+    mesh.userData = mesh.userData || {};
+    const billboard = options.billboard !== false;
+    mesh.userData.__ttBillboard = billboard;
+    mesh.userData.__tt3DToken = !!options.is3D;
+    mesh.userData.__ttVerticalBase = Number.isFinite(options.verticalOffset)
+      ? options.verticalOffset
+      : 0;
+    mesh.userData.__ttBaseYaw = Number.isFinite(options.baseYaw) ? options.baseYaw : 0;
+    mesh.userData.__ttTokenType = type;
+    mesh.userData.__ttTintMaterials = this._collectTintTargets(mesh);
+    return mesh;
+  }
+
+  _positionMesh(mesh, tokenEntry) {
+    try {
+      const gm = this.gameManager;
+      if (!gm || !gm.spatial) return;
+      const gx = tokenEntry.gridX ?? 0;
+      const gy = tokenEntry.gridY ?? 0;
+      const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+      let terrainH = 0;
+      try {
+        terrainH = (gm.getTerrainHeight?.(gx, gy) || 0) * gm.spatial.elevationUnit;
+      } catch (_) {
+        /* ignore */
+      }
+      const baseOffset = mesh.userData?.__ttVerticalBase || 0;
+      mesh.position.set(world.x, terrainH + this._verticalBias + baseOffset, world.z);
     } catch (_) {
       /* ignore */
     }

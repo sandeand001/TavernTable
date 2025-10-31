@@ -48,6 +48,11 @@ function createTroll(x = 0, y = 0) {
   return CreatureFactory.createCreature('troll', x, y, facingRight);
 }
 
+function createDefeatedDoll(x = 0, y = 0) {
+  const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
+  return CreatureFactory.createCreature('defeated-doll', x, y, facingRight);
+}
+
 // Export all creature creation functions
 export {
   createGoblin,
@@ -59,4 +64,5 @@ export {
   createOwlbear,
   createMinotaur,
   createMindFlayer,
+  createDefeatedDoll,
 };

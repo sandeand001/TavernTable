@@ -93,6 +93,7 @@ export const CREATURE_SCALES = {
   skeleton: 0.06,
   mindflayer: 0.06,
   orc: 0.06,
+  'defeated-doll': 0.06,
 
   // Small creatures
   goblin: 0.05,
@@ -121,6 +122,7 @@ export const CREATURE_BASELINE_OFFSETS = {
   minotaur: -8,
   owlbear: -8,
   troll: -8,
+  'defeated-doll': -4,
 };
 
 /**
@@ -137,6 +139,7 @@ export const CREATURE_COLORS = {
   orc: 0x808080, // Gray
   owlbear: 0xa52a2a, // Dark Red
   troll: 0x228b22, // Forest Green
+  'defeated-doll': 0xcb99ff, // Lavender
 };
 
 /**
