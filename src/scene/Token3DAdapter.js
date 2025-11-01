@@ -5,23 +5,27 @@
 //  - Keep Three.js representation synchronized with grid placement / terrain height
 //  - Manage hover/selection highlighting and facing direction parity with 2D tokens
 
-const TOKEN_3D_MODELS = {
-  'defeated-doll': {
-    path: 'assets/animated-sprites/Defeated.fbx',
-    tileSpan: 1,
-    margin: 0.92,
-    baseRotation: { x: 0, y: Math.PI / 2, z: 0 },
-    animation: {
-      autoplay: true,
-      loop: true,
-      clampWhenFinished: false,
-    },
-    shadows: {
-      cast: true,
-      receive: true,
-    },
-    verticalOffset: 0,
+const FEMALE_HUMANOID_MODEL = {
+  path: 'assets/animated-sprites/Standing Idle.fbx',
+  tileSpan: 1,
+  margin: 0.92,
+  baseRotation: { x: 0, y: Math.PI / 2, z: 0 },
+  animation: {
+    autoplay: true,
+    loop: true,
+    clampWhenFinished: false,
   },
+  shadows: {
+    cast: true,
+    receive: true,
+  },
+  verticalOffset: 0,
+};
+
+const TOKEN_3D_MODELS = {
+  'female-humanoid': FEMALE_HUMANOID_MODEL,
+  // Preserve legacy saves that still reference the defeated doll identifier.
+  'defeated-doll': FEMALE_HUMANOID_MODEL,
 };
 
 const DEFAULT_BILLBOARD_SIZE = 0.9;
@@ -847,17 +851,48 @@ export class Token3DAdapter {
     try {
       const gm = this.gameManager;
       if (!gm || !gm.spatial) return;
+      const storedWorld = tokenEntry?.world;
       const gx = tokenEntry.gridX ?? 0;
       const gy = tokenEntry.gridY ?? 0;
-      const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
-      let terrainH = 0;
-      try {
-        terrainH = (gm.getTerrainHeight?.(gx, gy) || 0) * gm.spatial.elevationUnit;
-      } catch (_) {
-        /* ignore */
+      let worldX;
+      let worldZ;
+      let worldY;
+
+      if (
+        storedWorld &&
+        Number.isFinite(storedWorld.x) &&
+        Number.isFinite(storedWorld.y) &&
+        Number.isFinite(storedWorld.z)
+      ) {
+        worldX = storedWorld.x;
+        worldY = storedWorld.y;
+        worldZ = storedWorld.z;
+      } else {
+        const fallback = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+        worldX = fallback.x;
+        worldZ = fallback.z;
       }
+
+      let terrainWorldY;
+      try {
+        const elevation = gm.getTerrainHeight?.(gx, gy);
+        if (Number.isFinite(elevation)) {
+          terrainWorldY = elevation * gm.spatial.elevationUnit;
+        }
+      } catch (_) {
+        terrainWorldY = undefined;
+      }
+
+      if (Number.isFinite(terrainWorldY)) {
+        worldY = terrainWorldY;
+      }
+
+      if (!Number.isFinite(worldY)) {
+        worldY = 0;
+      }
+
       const baseOffset = mesh.userData?.__ttVerticalBase || 0;
-      mesh.position.set(world.x, terrainH + this._verticalBias + baseOffset, world.z);
+      mesh.position.set(worldX, worldY + this._verticalBias + baseOffset, worldZ);
     } catch (_) {
       /* ignore */
     }

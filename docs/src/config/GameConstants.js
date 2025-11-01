@@ -93,6 +93,7 @@ export const CREATURE_SCALES = {
   skeleton: 0.06,
   mindflayer: 0.06,
   orc: 0.06,
+  'female-humanoid': 0.06,
 
   // Small creatures
   goblin: 0.05,
@@ -121,6 +122,7 @@ export const CREATURE_BASELINE_OFFSETS = {
   minotaur: -8,
   owlbear: -8,
   troll: -8,
+  'female-humanoid': -4,
 };
 
 /**
@@ -137,7 +139,27 @@ export const CREATURE_COLORS = {
   orc: 0x808080, // Gray
   owlbear: 0xa52a2a, // Dark Red
   troll: 0x228b22, // Forest Green
+  'female-humanoid': 0xcb99ff, // Lavender
 };
+
+/**
+ * Optional per-creature sprite filename overrides
+ * Allows multiple creature types to share a single underlying asset
+ */
+export const CREATURE_SPRITE_FILE_OVERRIDES = {
+  'female-humanoid': 'defeated-doll-sprite.png',
+  'defeated-doll': 'defeated-doll-sprite.png',
+};
+
+export const CREATURE_TYPE_ALIASES = {
+  'defeated-doll': 'female-humanoid',
+};
+
+function normalizeCreatureType(creatureType) {
+  if (typeof creatureType !== 'string' || creatureType.length === 0) return '';
+  const lower = creatureType.toLowerCase();
+  return CREATURE_TYPE_ALIASES[lower] || lower;
+}
 
 /**
  * Global token placement fine-tuning offset (pixels)
@@ -187,10 +209,11 @@ export const VALIDATION = {
    * @returns {boolean} True if valid
    */
   isValidCreatureType(type) {
+    const normalized = normalizeCreatureType(type);
     return (
-      typeof type === 'string' &&
-      type.length > 0 &&
-      Object.hasOwnProperty.call(CREATURE_SCALES, type.toLowerCase())
+      typeof normalized === 'string' &&
+      normalized.length > 0 &&
+      Object.hasOwnProperty.call(CREATURE_SCALES, normalized)
     );
   },
 };
@@ -205,7 +228,8 @@ export const CREATURE_HELPERS = {
    * @returns {number} The scale multiplier
    */
   getScale(creatureType) {
-    return CREATURE_SCALES[creatureType?.toLowerCase()] || CREATURE_SCALES.goblin;
+    const normalized = normalizeCreatureType(creatureType);
+    return CREATURE_SCALES[normalized] || CREATURE_SCALES.goblin;
   },
 
   /**
@@ -214,7 +238,8 @@ export const CREATURE_HELPERS = {
    * @returns {number} The color hex value
    */
   getColor(creatureType) {
-    return CREATURE_COLORS[creatureType?.toLowerCase()] || CREATURE_COLORS.goblin;
+    const normalized = normalizeCreatureType(creatureType);
+    return CREATURE_COLORS[normalized] || CREATURE_COLORS.goblin;
   },
 
   /**

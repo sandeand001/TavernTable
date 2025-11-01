@@ -1,522 +1,386 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TavernTable - Isometric D&D Grid</title>
-    <meta
-      name="description"
-      content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling"
-    />
-    <link rel="stylesheet" href="src/ui/styles.css" />
-  </head>
 
-  <body>
-    <!-- Main Game Canvas Container -->
-    <div id="game-container" aria-label="Game canvas for TavernTable grid"></div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TavernTable - Isometric D&D Grid</title>
+  <meta name="description"
+    content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling" />
+  <link rel="stylesheet" href="src/ui/styles.css" />
+</head>
 
-    <!-- 3D Dice Container -->
-    <div id="dice-3d-container" aria-label="3D dice rolling area"></div>
+<body>
+  <!-- Main Game Canvas Container -->
+  <div id="game-container" aria-label="Game canvas for TavernTable grid"></div>
 
-    <!-- Dice Rolling Panel -->
-    <div id="dice-panel" role="complementary" aria-label="Dice rolling controls">
-      <div>🎲 Roll Dice:</div>
-      <div class="dice-count-container">
-        <label for="dice-count" class="dice-count-label">Count:</label>
-        <input
-          type="number"
-          id="dice-count"
-          min="1"
-          max="10"
-          value="1"
-          aria-describedby="dice-help"
-        />
-      </div>
-      <button data-sides="4" aria-label="Roll 4-sided die">d4</button>
-      <button data-sides="6" aria-label="Roll 6-sided die">d6</button>
-      <button data-sides="8" aria-label="Roll 8-sided die">d8</button>
-      <button data-sides="10" aria-label="Roll 10-sided die">d10</button>
-      <button data-sides="12" aria-label="Roll 12-sided die">d12</button>
-      <button data-sides="20" aria-label="Roll 20-sided die">d20</button>
-      <div id="dice-result" aria-live="polite">Result: -</div>
-      <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
+  <!-- 3D Dice Container -->
+  <div id="dice-3d-container" aria-label="3D dice rolling area"></div>
+
+  <!-- Dice Rolling Panel -->
+  <div id="dice-panel" role="complementary" aria-label="Dice rolling controls">
+    <div>🎲 Roll Dice:</div>
+    <div class="dice-count-container">
+      <label for="dice-count" class="dice-count-label">Count:</label>
+      <input type="number" id="dice-count" min="1" max="10" value="1" aria-describedby="dice-help" />
+    </div>
+    <button data-sides="4" aria-label="Roll 4-sided die">d4</button>
+    <button data-sides="6" aria-label="Roll 6-sided die">d6</button>
+    <button data-sides="8" aria-label="Roll 8-sided die">d8</button>
+    <button data-sides="10" aria-label="Roll 10-sided die">d10</button>
+    <button data-sides="12" aria-label="Roll 12-sided die">d12</button>
+    <button data-sides="20" aria-label="Roll 20-sided die">d20</button>
+    <div id="dice-result" aria-live="polite">Result: -</div>
+    <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
+  </div>
+
+  <!-- Token and Game Controls Panel -->
+  <div id="token-panel" role="complementary" aria-label="Game controls and creature tokens">
+    <!-- This panel will be moved to the right sidebar -->
+  </div>
+
+  <!-- Right Sidebar Menu System -->
+  <div id="right-sidebar" role="complementary" aria-label="Game management sidebar">
+    <!-- Tab Navigation -->
+    <div id="sidebar-tabs" role="tablist" aria-label="Game menu tabs">
+      <button class="tab-button active" data-tab="dice-log" role="tab" aria-selected="true"
+        aria-controls="dice-log-panel">
+        🎲 Dice Log
+      </button>
+      <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false" aria-controls="creatures-panel">
+        🗡️ Creatures
+      </button>
+      <button class="tab-button" data-tab="terrain" role="tab" aria-selected="false" aria-controls="terrain-panel">
+        🏔️ Terrain
+      </button>
+      <button class="tab-button" data-tab="biomes" role="tab" aria-selected="false" aria-controls="biomes-panel">
+        🌍 Biomes
+      </button>
+      <button class="tab-button" data-tab="settings" role="tab" aria-selected="false" aria-controls="settings-panel">
+        ⚙️ Settings
+      </button>
     </div>
 
-    <!-- Token and Game Controls Panel -->
-    <div id="token-panel" role="complementary" aria-label="Game controls and creature tokens">
-      <!-- This panel will be moved to the right sidebar -->
-    </div>
-
-    <!-- Right Sidebar Menu System -->
-    <div id="right-sidebar" role="complementary" aria-label="Game management sidebar">
-      <!-- Tab Navigation -->
-      <div id="sidebar-tabs" role="tablist" aria-label="Game menu tabs">
-        <button
-          class="tab-button active"
-          data-tab="dice-log"
-          role="tab"
-          aria-selected="true"
-          aria-controls="dice-log-panel"
-        >
-          🎲 Dice Log
-        </button>
-        <button
-          class="tab-button"
-          data-tab="creatures"
-          role="tab"
-          aria-selected="false"
-          aria-controls="creatures-panel"
-        >
-          🗡️ Creatures
-        </button>
-        <button
-          class="tab-button"
-          data-tab="terrain"
-          role="tab"
-          aria-selected="false"
-          aria-controls="terrain-panel"
-        >
-          🏔️ Terrain
-        </button>
-        <button
-          class="tab-button"
-          data-tab="biomes"
-          role="tab"
-          aria-selected="false"
-          aria-controls="biomes-panel"
-        >
-          🌍 Biomes
-        </button>
-        <button
-          class="tab-button"
-          data-tab="settings"
-          role="tab"
-          aria-selected="false"
-          aria-controls="settings-panel"
-        >
-          ⚙️ Settings
-        </button>
+    <!-- Tab Content Panels -->
+    <div id="sidebar-content">
+      <!-- Dice Log Panel -->
+      <div id="dice-log-panel" class="tab-panel active" role="tabpanel" aria-labelledby="dice-log-tab">
+        <div class="panel-header">🎲 Dice Roll History</div>
+        <div id="dice-log-content">
+          <div class="dice-log-entry">Welcome! Roll some dice to see history here.</div>
+        </div>
+        <div class="panel-footer">
+          <button class="clear-button">Clear History</button>
+        </div>
       </div>
 
-      <!-- Tab Content Panels -->
-      <div id="sidebar-content">
-        <!-- Dice Log Panel -->
-        <div
-          id="dice-log-panel"
-          class="tab-panel active"
-          role="tabpanel"
-          aria-labelledby="dice-log-tab"
-        >
-          <div class="panel-header">🎲 Dice Roll History</div>
-          <div id="dice-log-content">
-            <div class="dice-log-entry">Welcome! Roll some dice to see history here.</div>
-          </div>
-          <div class="panel-footer">
-            <button class="clear-button">Clear History</button>
+      <!-- Creatures Panel -->
+      <div id="creatures-panel" class="tab-panel" role="tabpanel" aria-labelledby="creatures-tab">
+        <div class="panel-header">🗡️ Creature Management</div>
+        <div class="section">
+          <div class="section-title">Token Selection</div>
+          <div id="creature-content" role="group" aria-label="Creature token selection">
+            <button id="token-beholder" aria-label="Select Beholder token">👁️ Beholder</button>
+            <button id="token-female-humanoid" aria-label="Select Female Humanoid token">
+              🧝‍♀️ Female Humanoid
+            </button>
+            <button id="token-dragon" aria-label="Select Dragon token">🐉 Dragon</button>
+            <button id="token-goblin" aria-label="Select Goblin token">🧌 Goblin</button>
+            <button id="token-mindflayer" aria-label="Select Mind Flayer token">
+              🦑 Mind Flayer
+            </button>
+            <button id="token-minotaur" aria-label="Select Minotaur token">🐂 Minotaur</button>
+            <button id="token-orc" aria-label="Select Orc token">🧟 Orc</button>
+            <button id="token-owlbear" aria-label="Select Owlbear token">🐻 Owlbear</button>
+            <button id="token-skeleton" aria-label="Select Skeleton token">💀 Skeleton</button>
+            <button id="token-troll" aria-label="Select Troll token">🧟‍♂️ Troll</button>
           </div>
         </div>
-
-        <!-- Creatures Panel -->
-        <div id="creatures-panel" class="tab-panel" role="tabpanel" aria-labelledby="creatures-tab">
-          <div class="panel-header">🗡️ Creature Management</div>
-          <div class="section">
-            <div class="section-title">Token Selection</div>
-            <div id="creature-content" role="group" aria-label="Creature token selection">
-              <button id="token-beholder" aria-label="Select Beholder token">👁️ Beholder</button>
-              <button id="token-defeated-doll" aria-label="Select Defeated Doll token">
-                � Defeated Doll
-              </button>
-              <button id="token-dragon" aria-label="Select Dragon token">🐉 Dragon</button>
-              <button id="token-goblin" aria-label="Select Goblin token">🧌 Goblin</button>
-              <button id="token-mindflayer" aria-label="Select Mind Flayer token">
-                🦑 Mind Flayer
-              </button>
-              <button id="token-minotaur" aria-label="Select Minotaur token">🐂 Minotaur</button>
-              <button id="token-orc" aria-label="Select Orc token">🧟 Orc</button>
-              <button id="token-owlbear" aria-label="Select Owlbear token">🐻 Owlbear</button>
-              <button id="token-skeleton" aria-label="Select Skeleton token">💀 Skeleton</button>
-              <button id="token-troll" aria-label="Select Troll token">🧟‍♂️ Troll</button>
-            </div>
-          </div>
-          <div class="section">
-            <div class="section-title">Token Actions</div>
-            <button
-              id="token-remove"
-              class="action-button"
-              aria-label="Select remove mode to delete tokens"
-            >
-              🚫 Remove
-            </button>
-          </div>
-          <div class="section">
-            <div class="section-title">Facing Direction</div>
-            <button
-              id="facing-right"
-              class="action-button selected"
-              aria-pressed="true"
-              aria-label="Toggle token facing direction"
-            >
-              ➡️ Right
-            </button>
-          </div>
-          <div class="section">
-            <div class="section-title">Sprite Adjust</div>
-            <div class="nudge-grid">
-              <button id="nudge-up" aria-label="Nudge sprite up">⬆️</button>
-              <div class="nudge-middle-row">
-                <button id="nudge-left" aria-label="Nudge sprite left">⬅️</button>
-                <button id="nudge-center" aria-label="Capture current sprite baseline">🎯</button>
-                <button id="nudge-right" aria-label="Nudge sprite right">➡️</button>
-              </div>
-              <button id="nudge-down" aria-label="Nudge sprite down">⬇️</button>
-            </div>
-            <div class="adjust-actions">
-              <button
-                id="save-offset"
-                aria-label="Save current sprite offset for this creature type"
-              >
-                💾 Save Offset
-              </button>
-              <button id="toggle-auto-apply" aria-label="Toggle auto apply saved offsets">
-                ⚡ Auto Apply: Off
-              </button>
-              <button id="reset-offset" aria-label="Reset saved offset for this creature type">
-                ♻️ Reset Offset
-              </button>
-            </div>
-            <div id="sprite-adjust-log" class="adjust-log" aria-live="polite"></div>
-          </div>
+        <div class="section">
+          <div class="section-title">Token Actions</div>
+          <button id="token-remove" class="action-button" aria-label="Select remove mode to delete tokens">
+            🚫 Remove
+          </button>
         </div>
-
-        <!-- Terrain Panel -->
-        <div id="terrain-panel" class="tab-panel" role="tabpanel" aria-labelledby="terrain-tab">
-          <div class="panel-header">🏔️ Terrain & Grid</div>
-          <div class="section">
-            <div class="section-title">Grid Configuration</div>
-            <div class="grid-controls-row">
-              <label class="grid-label" for="grid-width">Width:</label>
-              <input
-                type="number"
-                id="grid-width"
-                min="5"
-                max="50"
-                value="25"
-                class="grid-input"
-                aria-describedby="grid-help"
-              />
-              <label class="grid-label" for="grid-height">Height:</label>
-              <input
-                type="number"
-                id="grid-height"
-                min="5"
-                max="50"
-                value="25"
-                class="grid-input"
-                aria-describedby="grid-help"
-              />
+        <div class="section">
+          <div class="section-title">Facing Direction</div>
+          <button id="facing-right" class="action-button selected" aria-pressed="true"
+            aria-label="Toggle token facing direction">
+            ➡️ Right
+          </button>
+        </div>
+        <div class="section">
+          <div class="section-title">Sprite Adjust</div>
+          <div class="nudge-grid">
+            <button id="nudge-up" aria-label="Nudge sprite up">⬆️</button>
+            <div class="nudge-middle-row">
+              <button id="nudge-left" aria-label="Nudge sprite left">⬅️</button>
+              <button id="nudge-center" aria-label="Capture current sprite baseline">🎯</button>
+              <button id="nudge-right" aria-label="Nudge sprite right">➡️</button>
             </div>
-            <button
-              id="apply-grid-size"
-              class="action-button"
-              aria-label="Apply new grid dimensions"
-            >
-              🔄 Resize Grid
+            <button id="nudge-down" aria-label="Nudge sprite down">⬇️</button>
+          </div>
+          <div class="adjust-actions">
+            <button id="save-offset" aria-label="Save current sprite offset for this creature type">
+              💾 Save Offset
             </button>
-            <button id="reset-zoom" class="action-button" aria-label="Reset zoom level to default">
-              🔍 Reset Zoom
+            <button id="toggle-auto-apply" aria-label="Toggle auto apply saved offsets">
+              ⚡ Auto Apply: Off
+            </button>
+            <button id="reset-offset" aria-label="Reset saved offset for this creature type">
+              ♻️ Reset Offset
             </button>
           </div>
-          <div class="section">
-            <div class="section-title">Terrain Tools</div>
-            <div class="terrain-mode">
-              <label class="toggle-switch">
-                <input type="checkbox" id="terrain-mode-toggle" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Terrain Mode</span>
-              </label>
-            </div>
-            <div id="terrain-tools" class="terrain-tools-container" style="display: none">
-              <div class="tool-group">
-                <div class="section-subtitle">Tools</div>
-                <div class="tool-buttons">
-                  <button
-                    id="terrain-raise-btn"
-                    class="terrain-tool-btn active"
-                    aria-label="Raise terrain height"
-                  >
-                    ⬆️ Raise
-                  </button>
-                  <button
-                    id="terrain-lower-btn"
-                    class="terrain-tool-btn"
-                    aria-label="Lower terrain height"
-                  >
-                    ⬇️ Lower
-                  </button>
-                </div>
-              </div>
-              <div class="tool-group">
-                <div class="section-subtitle">Brush Size</div>
-                <div class="brush-controls">
-                  <button id="brush-decrease" class="brush-btn" aria-label="Decrease brush size">
-                    ➖
-                  </button>
-                  <span id="brush-size-display" class="brush-size">1x1</span>
-                  <button id="brush-increase" class="brush-btn" aria-label="Increase brush size">
-                    ➕
-                  </button>
-                </div>
-              </div>
-              <div class="tool-group">
-                <div class="section-subtitle">Height Indicator</div>
-                <div class="height-indicator">
-                  <span class="height-label">Current Level:</span>
-                  <span id="terrain-height-display" class="height-value">0</span>
-                  <div class="height-scale" aria-label="Terrain height scale -10 to 10">
-                    <span class="scale-mark" data-height="-10">-10</span>
-                    <span class="scale-mark" data-height="-9">-9</span>
-                    <span class="scale-mark" data-height="-8">-8</span>
-                    <span class="scale-mark" data-height="-7">-7</span>
-                    <span class="scale-mark" data-height="-6">-6</span>
-                    <span class="scale-mark" data-height="-5">-5</span>
-                    <span class="scale-mark" data-height="-4">-4</span>
-                    <span class="scale-mark" data-height="-3">-3</span>
-                    <span class="scale-mark" data-height="-2">-2</span>
-                    <span class="scale-mark" data-height="-1">-1</span>
-                    <span class="scale-mark current" data-height="0">0</span>
-                    <span class="scale-mark" data-height="1">1</span>
-                    <span class="scale-mark" data-height="2">2</span>
-                    <span class="scale-mark" data-height="3">3</span>
-                    <span class="scale-mark" data-height="4">4</span>
-                    <span class="scale-mark" data-height="5">5</span>
-                    <span class="scale-mark" data-height="6">6</span>
-                    <span class="scale-mark" data-height="7">7</span>
-                    <span class="scale-mark" data-height="8">8</span>
-                    <span class="scale-mark" data-height="9">9</span>
-                    <span class="scale-mark" data-height="10">10</span>
-                  </div>
-                </div>
-              </div>
-              <div class="tool-group">
-                <div class="section-subtitle">Elevation Perception</div>
-                <div class="setting-item">
-                  <label for="elevation-scale-range">Pixels per level:</label>
-                  <input
-                    type="range"
-                    id="elevation-scale-range"
-                    min="0"
-                    max="20"
-                    step="1"
-                    value="8"
-                    class="range-input"
-                    aria-label="Adjust elevation visual scale"
-                  />
-                  <span id="elevation-scale-value" class="range-value">8 px/level</span>
-                </div>
-                <small class="small-text"
-                  >Adjusts how dramatic vertical differences appear; affects terrain overlays and
-                  token vertical placement.</small
-                >
-              </div>
-              <div class="tool-group">
-                <div class="section-subtitle">Actions</div>
-                <button
-                  id="terrain-reset-btn"
-                  class="action-button terrain-reset"
-                  aria-label="Reset all terrain to default height"
-                >
-                  🔄 Reset Terrain
+          <div id="sprite-adjust-log" class="adjust-log" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <!-- Terrain Panel -->
+      <div id="terrain-panel" class="tab-panel" role="tabpanel" aria-labelledby="terrain-tab">
+        <div class="panel-header">🏔️ Terrain & Grid</div>
+        <div class="section">
+          <div class="section-title">Grid Configuration</div>
+          <div class="grid-controls-row">
+            <label class="grid-label" for="grid-width">Width:</label>
+            <input type="number" id="grid-width" min="5" max="50" value="25" class="grid-input"
+              aria-describedby="grid-help" />
+            <label class="grid-label" for="grid-height">Height:</label>
+            <input type="number" id="grid-height" min="5" max="50" value="25" class="grid-input"
+              aria-describedby="grid-help" />
+          </div>
+          <button id="apply-grid-size" class="action-button" aria-label="Apply new grid dimensions">
+            🔄 Resize Grid
+          </button>
+          <button id="reset-zoom" class="action-button" aria-label="Reset zoom level to default">
+            🔍 Reset Zoom
+          </button>
+        </div>
+        <div class="section">
+          <div class="section-title">Terrain Tools</div>
+          <div class="terrain-mode">
+            <label class="toggle-switch">
+              <input type="checkbox" id="terrain-mode-toggle" />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Terrain Mode</span>
+            </label>
+          </div>
+          <div id="terrain-tools" class="terrain-tools-container" style="display: none">
+            <div class="tool-group">
+              <div class="section-subtitle">Tools</div>
+              <div class="tool-buttons">
+                <button id="terrain-raise-btn" class="terrain-tool-btn active" aria-label="Raise terrain height">
+                  ⬆️ Raise
+                </button>
+                <button id="terrain-lower-btn" class="terrain-tool-btn" aria-label="Lower terrain height">
+                  ⬇️ Lower
                 </button>
               </div>
-              <div class="tool-group">
-                <div class="section-subtitle">Shortcuts</div>
-                <div class="shortcuts-text">
-                  <small>• <strong>R</strong>: Raise tool</small><br />
-                  <small>• <strong>L</strong>: Lower tool</small><br />
-                  <small>• <strong>[ ]</strong>: Brush size</small>
+            </div>
+            <div class="tool-group">
+              <div class="section-subtitle">Brush Size</div>
+              <div class="brush-controls">
+                <button id="brush-decrease" class="brush-btn" aria-label="Decrease brush size">
+                  ➖
+                </button>
+                <span id="brush-size-display" class="brush-size">1x1</span>
+                <button id="brush-increase" class="brush-btn" aria-label="Increase brush size">
+                  ➕
+                </button>
+              </div>
+            </div>
+            <div class="tool-group">
+              <div class="section-subtitle">Height Indicator</div>
+              <div class="height-indicator">
+                <span class="height-label">Current Level:</span>
+                <span id="terrain-height-display" class="height-value">0</span>
+                <div class="height-scale" aria-label="Terrain height scale -10 to 10">
+                  <span class="scale-mark" data-height="-10">-10</span>
+                  <span class="scale-mark" data-height="-9">-9</span>
+                  <span class="scale-mark" data-height="-8">-8</span>
+                  <span class="scale-mark" data-height="-7">-7</span>
+                  <span class="scale-mark" data-height="-6">-6</span>
+                  <span class="scale-mark" data-height="-5">-5</span>
+                  <span class="scale-mark" data-height="-4">-4</span>
+                  <span class="scale-mark" data-height="-3">-3</span>
+                  <span class="scale-mark" data-height="-2">-2</span>
+                  <span class="scale-mark" data-height="-1">-1</span>
+                  <span class="scale-mark current" data-height="0">0</span>
+                  <span class="scale-mark" data-height="1">1</span>
+                  <span class="scale-mark" data-height="2">2</span>
+                  <span class="scale-mark" data-height="3">3</span>
+                  <span class="scale-mark" data-height="4">4</span>
+                  <span class="scale-mark" data-height="5">5</span>
+                  <span class="scale-mark" data-height="6">6</span>
+                  <span class="scale-mark" data-height="7">7</span>
+                  <span class="scale-mark" data-height="8">8</span>
+                  <span class="scale-mark" data-height="9">9</span>
+                  <span class="scale-mark" data-height="10">10</span>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        <!-- Biomes Panel -->
-        <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
-          <div class="panel-header">🌍 Biomes</div>
-          <div class="section">
-            <div class="section-title">Select a Biome Palette</div>
-            <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu"></div>
-            <div class="section-subtitle" style="margin-top: 1rem">Rich Tile Shading</div>
-            <div
-              id="biome-shading-controls"
-              class="setting-group"
-              role="group"
-              aria-label="Rich tile shading controls"
-            >
+            <div class="tool-group">
+              <div class="section-subtitle">Elevation Perception</div>
               <div class="setting-item">
-                <label class="toggle-switch" for="rich-shading-toggle">
-                  <input type="checkbox" id="rich-shading-toggle" />
-                  <span class="toggle-slider"></span>
-                  <span class="toggle-label">Enable rich tile shading</span>
-                </label>
+                <label for="elevation-scale-range">Pixels per level:</label>
+                <input type="range" id="elevation-scale-range" min="0" max="20" step="1" value="8" class="range-input"
+                  aria-label="Adjust elevation visual scale" />
+                <span id="elevation-scale-value" class="range-value">8 px/level</span>
               </div>
-              <div class="setting-item">
-                <label for="shading-intensity">Shading Intensity:</label>
-                <input
-                  type="range"
-                  id="shading-intensity"
-                  min="0"
-                  max="150"
-                  step="5"
-                  value="100"
-                  class="range-input"
-                  aria-label="Adjust shading opacity/intensity"
-                />
-                <span id="shading-intensity-value" class="range-value">100%</span>
-              </div>
-              <div class="setting-item">
-                <label for="pattern-density">Pattern Density:</label>
-                <input
-                  type="range"
-                  id="pattern-density"
-                  min="50"
-                  max="150"
-                  step="5"
-                  value="100"
-                  class="range-input"
-                  aria-label="Adjust pattern density/detail"
-                />
-                <span id="pattern-density-value" class="range-value">100%</span>
-              </div>
-              <div class="setting-item">
-                <label for="shoreline-sand-strength">Shoreline Sand Strength:</label>
-                <input
-                  type="range"
-                  id="shoreline-sand-strength"
-                  min="0"
-                  max="200"
-                  step="5"
-                  value="100"
-                  class="range-input"
-                  aria-label="Adjust shoreline sand visibility"
-                />
-                <span id="shoreline-sand-strength-value" class="range-value">100%</span>
-              </div>
-              <div class="setting-item">
-                <label class="toggle-switch" for="performance-simplify">
-                  <input type="checkbox" id="performance-simplify" />
-                  <span class="toggle-slider"></span>
-                  <span class="toggle-label">Performance saver (simplify patterns)</span>
-                </label>
-              </div>
-              <small class="small-text"
-                >Shading is most visible in Terrain mode. Intensity adjusts opacity; Density changes
-                how many pattern elements are drawn.</small
-              >
+              <small class="small-text">Adjusts how dramatic vertical differences appear; affects terrain overlays and
+                token vertical placement.</small>
             </div>
-            <div class="section-subtitle" style="margin-top: 1rem">Notes</div>
-            <p class="small-text">
-              Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
-              edit heights; exit to view biome coloring.
-            </p>
-          </div>
-        </div>
-
-        <!-- Settings Panel -->
-        <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
-          <div class="panel-header">⚙️ Game Settings</div>
-          <div class="section">
-            <div class="section-title">Display Options</div>
-            <div class="setting-item">
-              <label for="grid-opacity">Grid Opacity:</label>
-              <input
-                type="range"
-                id="grid-opacity"
-                min="0"
-                max="100"
-                value="50"
-                class="range-input"
-              />
-              <span class="range-value">50%</span>
+            <div class="tool-group">
+              <div class="section-subtitle">Actions</div>
+              <button id="terrain-reset-btn" class="action-button terrain-reset"
+                aria-label="Reset all terrain to default height">
+                🔄 Reset Terrain
+              </button>
             </div>
-            <div class="setting-item">
-              <label for="animation-speed">Animation Speed:</label>
-              <input
-                type="range"
-                id="animation-speed"
-                min="0.5"
-                max="2"
-                step="0.1"
-                value="1"
-                class="range-input"
-              />
-              <span class="range-value">1x</span>
-            </div>
-          </div>
-          <div class="section">
-            <div class="section-title">Game Info</div>
-            <div id="token-info" aria-live="polite">Click on grid to place selected token</div>
-            <div class="help-section">
-              <div class="section-title">🎮 Controls:</div>
-              <div class="help-text">• <strong>Space + Drag</strong>: Pan grid</div>
-              <div class="help-text">• <strong>Right-click + Drag Token</strong>: Move token</div>
-              <div class="help-text">• <strong>Mouse Wheel</strong>: Zoom in/out</div>
+            <div class="tool-group">
+              <div class="section-subtitle">Shortcuts</div>
+              <div class="shortcuts-text">
+                <small>• <strong>R</strong>: Raise tool</small><br />
+                <small>• <strong>L</strong>: Lower tool</small><br />
+                <small>• <strong>[ ]</strong>: Brush size</small>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Biomes Panel -->
+      <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
+        <div class="panel-header">🌍 Biomes</div>
+        <div class="section">
+          <div class="section-title">Select a Biome Palette</div>
+          <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu"></div>
+          <div class="section-subtitle" style="margin-top: 1rem">Rich Tile Shading</div>
+          <div id="biome-shading-controls" class="setting-group" role="group" aria-label="Rich tile shading controls">
+            <div class="setting-item">
+              <label class="toggle-switch" for="rich-shading-toggle">
+                <input type="checkbox" id="rich-shading-toggle" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Enable rich tile shading</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label for="shading-intensity">Shading Intensity:</label>
+              <input type="range" id="shading-intensity" min="0" max="150" step="5" value="100" class="range-input"
+                aria-label="Adjust shading opacity/intensity" />
+              <span id="shading-intensity-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label for="pattern-density">Pattern Density:</label>
+              <input type="range" id="pattern-density" min="50" max="150" step="5" value="100" class="range-input"
+                aria-label="Adjust pattern density/detail" />
+              <span id="pattern-density-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label for="shoreline-sand-strength">Shoreline Sand Strength:</label>
+              <input type="range" id="shoreline-sand-strength" min="0" max="200" step="5" value="100"
+                class="range-input" aria-label="Adjust shoreline sand visibility" />
+              <span id="shoreline-sand-strength-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label class="toggle-switch" for="performance-simplify">
+                <input type="checkbox" id="performance-simplify" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Performance saver (simplify patterns)</span>
+              </label>
+            </div>
+            <small class="small-text">Shading is most visible in Terrain mode. Intensity adjusts opacity; Density
+              changes
+              how many pattern elements are drawn.</small>
+          </div>
+          <div class="section-subtitle" style="margin-top: 1rem">Notes</div>
+          <p class="small-text">
+            Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
+            edit heights; exit to view biome coloring.
+          </p>
+        </div>
+      </div>
+
+      <!-- Settings Panel -->
+      <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
+        <div class="panel-header">⚙️ Game Settings</div>
+        <div class="section">
+          <div class="section-title">Display Options</div>
+          <div class="setting-item">
+            <label for="grid-opacity">Grid Opacity:</label>
+            <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input" />
+            <span class="range-value">50%</span>
+          </div>
+          <div class="setting-item">
+            <label for="animation-speed">Animation Speed:</label>
+            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1" class="range-input" />
+            <span class="range-value">1x</span>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">Game Info</div>
+          <div id="token-info" aria-live="polite">Click on grid to place selected token</div>
+          <div class="help-section">
+            <div class="section-title">🎮 Controls:</div>
+            <div class="help-text">• <strong>Space + Drag</strong>: Pan grid</div>
+            <div class="help-text">• <strong>Right-click + Drag Token</strong>: Move token</div>
+            <div class="help-text">• <strong>Mouse Wheel</strong>: Zoom in/out</div>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <!-- Error Display Container (created by ErrorHandler) -->
-    <div id="error-display" aria-live="assertive"></div>
+  <!-- Error Display Container (created by ErrorHandler) -->
+  <div id="error-display" aria-live="assertive"></div>
 
-    <!-- External Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+  <!-- External Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
 
-    <!-- Core Configuration and Utilities (ES6) -->
-    <script type="module" src="src/config/GameConstants.js"></script>
-    <script type="module" src="src/config/BiomeConstants.js"></script>
-    <script type="module" src="src/utils/ErrorHandler.js"></script>
-    <script type="module" src="src/utils/Validation.js"></script>
-    <script type="module" src="src/utils/Logger.js"></script>
-    <script type="module" src="src/utils/CoordinateUtils.js"></script>
+  <!-- Core Configuration and Utilities (ES6) -->
+  <script type="module" src="src/config/GameConstants.js"></script>
+  <script type="module" src="src/config/BiomeConstants.js"></script>
+  <script type="module" src="src/utils/ErrorHandler.js"></script>
+  <script type="module" src="src/utils/Validation.js"></script>
+  <script type="module" src="src/utils/Logger.js"></script>
+  <script type="module" src="src/utils/CoordinateUtils.js"></script>
 
-    <!-- Manager Classes (ES6) -->
-    <script type="module" src="src/config/SpriteOffsets.js"></script>
-    <script type="module" src="src/managers/TokenManager.js"></script>
-    <script type="module" src="src/managers/InteractionManager.js"></script>
-    <script type="module" src="src/managers/GridRenderer.js"></script>
+  <!-- Manager Classes (ES6) -->
+  <script type="module" src="src/config/SpriteOffsets.js"></script>
+  <script type="module" src="src/managers/TokenManager.js"></script>
+  <script type="module" src="src/managers/InteractionManager.js"></script>
+  <script type="module" src="src/managers/GridRenderer.js"></script>
 
-    <!-- Core Game Modules (ES6) -->
-    <script type="module" src="src/core/SpriteManager.js"></script>
-    <script type="module" src="src/core/GameManager.js"></script>
+  <!-- Core Game Modules (ES6) -->
+  <script type="module" src="src/core/SpriteManager.js"></script>
+  <script type="module" src="src/core/GameManager.js"></script>
 
-    <!-- Creature System (ES6) -->
-    <script type="module" src="src/entities/creatures/CreatureToken.js"></script>
-    <script type="module" src="src/entities/creatures/CreatureFactory.js"></script>
-    <script type="module" src="src/entities/creatures/index.js"></script>
+  <!-- Creature System (ES6) -->
+  <script type="module" src="src/entities/creatures/CreatureToken.js"></script>
+  <script type="module" src="src/entities/creatures/CreatureFactory.js"></script>
+  <script type="module" src="src/entities/creatures/index.js"></script>
 
-    <!-- Game Systems (ES6) -->
-    <script type="module" src="src/systems/DragController.js"></script>
-    <script type="module" src="src/systems/dice/dice.js"></script>
+  <!-- Game Systems (ES6) -->
+  <script type="module" src="src/systems/DragController.js"></script>
+  <script type="module" src="src/systems/dice/dice.js"></script>
 
-    <!-- Main Application Entry Point -->
-    <script type="module" src="src/ui/UIController.js"></script>
-    <script type="module" src="src/ui/SidebarController.js"></script>
+  <!-- Main Application Entry Point -->
+  <script type="module" src="src/ui/UIController.js"></script>
+  <script type="module" src="src/ui/SidebarController.js"></script>
 
-    <style>
-      /* Screen reader only class for accessibility */
-      .sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-    </style>
-  </body>
+  <style>
+    /* Screen reader only class for accessibility */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
+</body>
+
 </html>

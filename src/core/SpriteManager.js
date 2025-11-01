@@ -15,7 +15,7 @@
  * @since 1.0.0
  */
 
-import { CREATURE_SCALES } from '../config/GameConstants.js';
+import { CREATURE_SCALES, CREATURE_SPRITE_FILE_OVERRIDES } from '../config/GameConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 
@@ -54,7 +54,17 @@ class SpriteManager {
     const creatureTypes = Object.keys(CREATURE_SCALES);
 
     for (const creatureType of creatureTypes) {
-      spriteFiles[`${creatureType}-sprite`] = `${creatureType}-sprite.png`;
+      const spriteName = `${creatureType}-sprite`;
+      const overrideFilename = CREATURE_SPRITE_FILE_OVERRIDES?.[creatureType];
+      spriteFiles[spriteName] = overrideFilename || `${creatureType}-sprite.png`;
+    }
+
+    // Register explicit overrides even if the creature type is not part of CREATURE_SCALES
+    if (CREATURE_SPRITE_FILE_OVERRIDES) {
+      for (const [creatureType, filename] of Object.entries(CREATURE_SPRITE_FILE_OVERRIDES)) {
+        const spriteName = `${creatureType}-sprite`;
+        spriteFiles[spriteName] = filename;
+      }
     }
 
     return spriteFiles;

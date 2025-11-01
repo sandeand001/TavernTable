@@ -48,9 +48,14 @@ function createTroll(x = 0, y = 0) {
   return CreatureFactory.createCreature('troll', x, y, facingRight);
 }
 
-function createDefeatedDoll(x = 0, y = 0) {
+function createFemaleHumanoid(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
-  return CreatureFactory.createCreature('defeated-doll', x, y, facingRight);
+  return CreatureFactory.createCreature('female-humanoid', x, y, facingRight);
+}
+
+// Legacy alias retained for saved states or external scripts not yet migrated.
+function createDefeatedDoll(x = 0, y = 0) {
+  return createFemaleHumanoid(x, y);
 }
 
 // Export all creature creation functions
@@ -64,5 +69,6 @@ export {
   createOwlbear,
   createMinotaur,
   createMindFlayer,
+  createFemaleHumanoid,
   createDefeatedDoll,
 };
