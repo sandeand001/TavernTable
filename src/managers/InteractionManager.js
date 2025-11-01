@@ -337,22 +337,49 @@ export class InteractionManager {
         return;
       }
 
-      const gridCoords = this.getGridCoordinatesFromClick(event);
-      if (!gridCoords) {
-        const errorHandler = new ErrorHandler();
-        errorHandler.handle(
-          new Error('Click outside valid grid area'),
-          ERROR_SEVERITY.INFO,
-          ERROR_CATEGORY.VALIDATION,
-          {
-            event: { x: event.clientX, y: event.clientY },
-          }
-        );
+      const attempt2DPlacement = () => {
+        const gridCoords = this.getGridCoordinatesFromClick(event);
+        if (!gridCoords) {
+          const errorHandler = new ErrorHandler();
+          errorHandler.handle(
+            new Error('Click outside valid grid area'),
+            ERROR_SEVERITY.INFO,
+            ERROR_CATEGORY.VALIDATION,
+            {
+              event: { x: event.clientX, y: event.clientY },
+            }
+          );
+          return;
+        }
+
+        const { gridX, gridY } = gridCoords;
+        this.gameManager.handleTokenInteraction(gridX, gridY);
+      };
+
+      const canUse3D =
+        typeof this.gameManager?.is3DModeActive === 'function' &&
+        this.gameManager.is3DModeActive() &&
+        this.gameManager.pickingService &&
+        typeof this.gameManager.placeTokenAtPointer === 'function';
+
+      if (canUse3D) {
+        try {
+          Promise.resolve(this.gameManager.placeTokenAtPointer(event.clientX, event.clientY))
+            .then((placed) => {
+              if (!placed) {
+                attempt2DPlacement();
+              }
+            })
+            .catch(() => {
+              attempt2DPlacement();
+            });
+        } catch (_) {
+          attempt2DPlacement();
+        }
         return;
       }
 
-      const { gridX, gridY } = gridCoords;
-      this.gameManager.handleTokenInteraction(gridX, gridY);
+      attempt2DPlacement();
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {

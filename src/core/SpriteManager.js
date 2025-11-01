@@ -29,6 +29,9 @@ class SpriteManager {
     this.registeredSprites = []; // Track registered sprite names
     // Initialization promise for consumers that need to await readiness
     this._initPromise = null;
+    this.spriteSources = new Map();
+    this._useAssetsApi = !!(typeof globalThis !== 'undefined' && globalThis.PIXI?.Assets?.load);
+    this._assetsInitAttempted = false;
   }
 
   /**
@@ -65,13 +68,18 @@ class SpriteManager {
   addSprite(name, filename) {
     const fullPath = this.getBasePath() + filename;
 
+    this.spriteSources.set(name, fullPath);
+
     try {
-      PIXI.Assets.add(name, fullPath);
+      if (this._useAssetsApi && PIXI?.Assets?.add) {
+        PIXI.Assets.add(name, fullPath);
+      }
       this.registeredSprites.push(name);
       logger.log(LOG_LEVEL.DEBUG, 'Registered sprite', LOG_CATEGORY.ASSETS, {
         context: 'SpriteManager.addSprite',
         name,
         path: fullPath,
+        mode: this._useAssetsApi ? 'assets_api' : 'texture_from',
       });
     } catch (e) {
       new ErrorHandler().handle(e, ERROR_SEVERITY.LOW, ERROR_CATEGORY.RENDERING, {
@@ -79,6 +87,7 @@ class SpriteManager {
         name,
         path: fullPath,
       });
+      this._useAssetsApi = false;
     }
   }
 
@@ -92,7 +101,7 @@ class SpriteManager {
       // Load each registered sprite individually for better error handling
       for (const spriteName of this.registeredSprites) {
         try {
-          const texture = await PIXI.Assets.load(spriteName);
+          const texture = await this._loadTexture(spriteName);
 
           if (texture && texture.width && texture.height) {
             successfulLoads.push(spriteName);
@@ -151,21 +160,34 @@ class SpriteManager {
       return this.sprites.get(name);
     }
 
-    // Fallback to PIXI.Assets
-    try {
-      const sprite = PIXI.Assets.get(name);
-      if (sprite) {
-        // Store for future reference
-        this.sprites.set(name, sprite);
-      } else {
+    if (this._useAssetsApi && PIXI?.Assets?.get) {
+      try {
+        const sprite = PIXI.Assets.get(name);
+        if (sprite) {
+          this.sprites.set(name, sprite);
+          return sprite;
+        }
         logger.log(LOG_LEVEL.ERROR, 'Sprite not found in PIXI.Assets', LOG_CATEGORY.ASSETS, {
           context: 'SpriteManager.getSprite',
           name,
         });
+      } catch (error) {
+        logger.log(LOG_LEVEL.ERROR, 'Error retrieving sprite', LOG_CATEGORY.ASSETS, {
+          context: 'SpriteManager.getSprite',
+          name,
+          error: error?.message || String(error),
+        });
       }
-      return sprite;
+    }
+
+    const path = this.spriteSources.get(name);
+    if (!path) return null;
+    try {
+      const texture = PIXI.Texture.from(path);
+      this.sprites.set(name, texture);
+      return texture;
     } catch (error) {
-      logger.log(LOG_LEVEL.ERROR, 'Error retrieving sprite', LOG_CATEGORY.ASSETS, {
+      logger.log(LOG_LEVEL.ERROR, 'Error retrieving sprite texture', LOG_CATEGORY.ASSETS, {
         context: 'SpriteManager.getSprite',
         name,
         error: error?.message || String(error),
@@ -186,16 +208,25 @@ class SpriteManager {
       return true;
     }
 
-    // Fallback check PIXI.Assets, but verify it's a valid texture
-    try {
-      const asset = PIXI.Assets.get(name);
-      if (asset && asset.width && asset.height) {
-        // Store it in our cache for future reference
-        this.sprites.set(name, asset);
-        return true;
+    if (this._useAssetsApi && PIXI?.Assets?.get) {
+      try {
+        const asset = PIXI.Assets.get(name);
+        if (asset && asset.width && asset.height) {
+          this.sprites.set(name, asset);
+          return true;
+        }
+      } catch (_) {
+        /* ignore */
       }
-    } catch (error) {
-      // Asset check failed
+    } else {
+      const path = this.spriteSources.get(name);
+      if (path) {
+        const cached = PIXI.utils?.TextureCache?.[path];
+        if (cached && cached.baseTexture?.valid) {
+          this.sprites.set(name, cached);
+          return true;
+        }
+      }
     }
 
     return false;
@@ -252,6 +283,88 @@ class SpriteManager {
       }
     })();
     return this._initPromise;
+  }
+
+  async _ensureAssetsInit() {
+    if (!this._useAssetsApi || this._assetsInitAttempted) return;
+    try {
+      if (PIXI?.Assets?.init) {
+        await PIXI.Assets.init();
+      }
+    } catch (error) {
+      logger.log(LOG_LEVEL.WARN, 'PIXI Assets init failed; falling back', LOG_CATEGORY.ASSETS, {
+        context: 'SpriteManager._ensureAssetsInit',
+        error: error?.message || String(error),
+      });
+      this._useAssetsApi = false;
+    } finally {
+      this._assetsInitAttempted = true;
+    }
+  }
+
+  async _loadTexture(name) {
+    const path = this.spriteSources.get(name);
+    if (!path) {
+      logger.log(LOG_LEVEL.ERROR, 'Sprite path missing', LOG_CATEGORY.ASSETS, {
+        context: 'SpriteManager._loadTexture',
+        name,
+      });
+      return null;
+    }
+
+    if (this._useAssetsApi && PIXI?.Assets?.load) {
+      try {
+        await this._ensureAssetsInit();
+        if (this._useAssetsApi) {
+          return await PIXI.Assets.load(name);
+        }
+      } catch (error) {
+        logger.log(LOG_LEVEL.WARN, 'Falling back to legacy texture loading', LOG_CATEGORY.ASSETS, {
+          context: 'SpriteManager._loadTexture',
+          name,
+          error: error?.message || String(error),
+        });
+        this._useAssetsApi = false;
+      }
+    }
+
+    return this._loadTextureViaBase(path);
+  }
+
+  _loadTextureViaBase(path) {
+    return new Promise((resolve, reject) => {
+      try {
+        const texture = PIXI.Texture.from(path);
+        if (texture.baseTexture?.valid) {
+          resolve(texture);
+          return;
+        }
+
+        const cleanup = () => {
+          try {
+            texture.baseTexture?.off('loaded', onLoaded);
+            texture.baseTexture?.off('error', onError);
+          } catch (_) {
+            /* ignore */
+          }
+        };
+
+        const onLoaded = () => {
+          cleanup();
+          resolve(texture);
+        };
+
+        const onError = (err) => {
+          cleanup();
+          reject(err || new Error('Texture load failed'));
+        };
+
+        texture.baseTexture?.on('loaded', onLoaded);
+        texture.baseTexture?.on('error', onError);
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   /**

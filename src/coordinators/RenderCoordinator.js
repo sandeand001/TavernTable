@@ -35,11 +35,41 @@ export class RenderCoordinator {
     try {
       if (typeof PIXI === 'undefined') throw new Error('PIXI.js library is not loaded');
 
-      this.gameManager.app = new PIXI.Application({
-        width: window.innerWidth,
-        height: window.innerHeight,
+      const width = typeof window !== 'undefined' ? window.innerWidth || 1024 : 1024;
+      const height = typeof window !== 'undefined' ? window.innerHeight || 768 : 768;
+      const hasPixiUtils = typeof PIXI.utils !== 'undefined';
+      const supportsWebGL = hasPixiUtils ? PIXI.utils.isWebGLSupported?.() !== false : true;
+      const baseOptions = {
+        width,
+        height,
         backgroundColor: GRID_CONFIG.BACKGROUND_COLOR,
-      });
+        antialias: true,
+        resolution: (typeof window !== 'undefined' && window.devicePixelRatio) || 1,
+      };
+
+      const attemptCreateApp = (options) => {
+        try {
+          return new PIXI.Application(options);
+        } catch (err) {
+          return { __error: err };
+        }
+      };
+
+      const primaryOptions = supportsWebGL ? baseOptions : { ...baseOptions, forceCanvas: true };
+      let app = attemptCreateApp(primaryOptions);
+      if (app && app.__error) {
+        if (!primaryOptions.forceCanvas) {
+          const fallbackOptions = { ...baseOptions, forceCanvas: true };
+          app = attemptCreateApp(fallbackOptions);
+          if (!app || app.__error) {
+            throw app?.__error || new Error('Failed to create PIXI application');
+          }
+        } else {
+          throw app.__error;
+        }
+      }
+
+      this.gameManager.app = app;
 
       const appValidation = GameValidators.pixiApp(this.gameManager.app);
       if (!appValidation.isValid) {
@@ -63,6 +93,34 @@ export class RenderCoordinator {
 
       window.app = this.gameManager.app; // debug convenience
 
+      const rendererType = this.gameManager.app?.renderer?.type;
+      const rendererName = (() => {
+        try {
+          if (typeof PIXI.RENDERER_TYPE !== 'undefined') {
+            const entries = Object.entries(PIXI.RENDERER_TYPE);
+            const match = entries.find(([, value]) => value === rendererType);
+            return match ? match[0].toLowerCase() : rendererType;
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        return rendererType;
+      })();
+
+      if (rendererName && /canvas/i.test(String(rendererName))) {
+        logger.log(
+          LOG_LEVEL.WARN,
+          'PIXI WebGL unavailable, using canvas renderer',
+          LOG_CATEGORY.SYSTEM,
+          {
+            context: 'RenderCoordinator.createPixiApp',
+            stage: 'pixi_initialization_complete',
+            renderer: rendererName,
+            webglSupported: supportsWebGL,
+          }
+        );
+      }
+
       logger.log(LOG_LEVEL.DEBUG, 'PIXI application created successfully', LOG_CATEGORY.SYSTEM, {
         context: 'RenderCoordinator.createPixiApp',
         stage: 'pixi_initialization_complete',
@@ -70,7 +128,7 @@ export class RenderCoordinator {
           width: this.gameManager.app.screen.width,
           height: this.gameManager.app.screen.height,
         },
-        renderer: this.gameManager.app.renderer.type,
+        renderer: rendererName,
         globallyAvailable: !!window.app,
       });
     } catch (error) {

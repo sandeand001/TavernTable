@@ -184,14 +184,7 @@ const TREE_PLACEABLES = {
   'family-dead': {
     label: 'Dead Tree',
     type: 'plant-family',
-    familyVariants: [
-      'tree-dead-a',
-      'tree-dead-b',
-      'tree-dead-c',
-      'tree-dead-d',
-      'tree-dead-e',
-      'tree-bare-deciduous',
-    ],
+    familyVariants: ['tree-dead-a', 'tree-dead-b', 'tree-dead-c', 'tree-dead-d'],
     representativeModelKey: 'dead-tree-2',
   },
   'family-giant-pine': {
@@ -231,11 +224,11 @@ const TREE_PLACEABLES = {
     ],
     representativeModelKey: 'common-broadleaf-2',
   },
-  'family-twisted': {
-    label: 'Twisted',
+  'family-crimson-remnant': {
+    label: 'Crimson Remnant',
     type: 'plant-family',
-    familyVariants: ['tree-dead-a', 'tree-dead-b', 'tree-dead-c', 'tree-dead-d', 'tree-dead-e'],
-    representativeModelKey: 'dead-tree-3',
+    familyVariants: ['tree-dead-e'],
+    representativeModelKey: 'twisted-bare-1',
   },
   'family-thick-trunk': {
     label: 'Thick Trunk',
@@ -466,9 +459,9 @@ const TREE_PLACEABLES = {
     baselineOffsetPx: 16,
   },
   'tree-dead-e': {
-    label: 'Dead Tree E',
+    label: 'Crimson Remnant',
     img: null,
-    modelKey: 'dead-tree-5',
+    modelKey: 'twisted-bare-1',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,

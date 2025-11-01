@@ -13,7 +13,9 @@
     {
       "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/examples/jsm/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js"
+        "three/examples/jsm/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js",
+        "three/examples/jsm/loaders/FBXLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js",
+        "three/examples/jsm/utils/SkeletonUtils.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/SkeletonUtils.js"
       }
     }
   </script>
@@ -87,7 +89,7 @@
           <div id="creature-content" role="group" aria-label="Creature token selection">
             <!-- Only tokens with existing sprites -->
             <button id="token-beholder" aria-label="Select Beholder token">👁️ Beholder</button>
-            <button id="token-defeated-doll" aria-label="Select Defeated Doll token">� Defeated Doll</button>
+            <button id="token-defeated-doll" aria-label="Select Defeated Doll token">🪦 Defeated Doll</button>
             <button id="token-dragon" aria-label="Select Dragon token">🐉 Dragon</button>
             <button id="token-goblin" aria-label="Select Goblin token">🧌 Goblin</button>
             <button id="token-mindflayer" aria-label="Select Mind Flayer token">🦑 Mind Flayer</button>
@@ -411,7 +413,8 @@
   <div id="error-display" aria-live="assertive"></div>
 
   <!-- External Libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js-legacy@7.4.0/dist/pixi-legacy.min.js" crossorigin="anonymous"
+    onerror="console.error('Failed to load pixi.js legacy bundle');"></script>
 
   <!-- Module load status is managed by UIController; no inline safety stubs needed -->
 

@@ -167,7 +167,8 @@ export class TerrainRebuilder {
         /* fallback below */
       }
       if (!material) {
-        material = new (threeNs?.MeshBasicMaterial || function Dummy() {})({ vertexColors: true });
+        const FallbackMaterial = threeNs?.MeshBasicMaterial || function Dummy() {};
+        material = new FallbackMaterial({ vertexColors: true });
       }
       try {
         if (geo.getAttribute('color') && material && material.isMaterial) {

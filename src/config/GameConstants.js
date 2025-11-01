@@ -73,6 +73,7 @@ export const CREATURE_SCALES = {
   skeleton: 0.06,
   mindflayer: 0.06,
   orc: 0.06,
+  'defeated-doll': 0.06,
 
   // Small creatures
   goblin: 0.05,

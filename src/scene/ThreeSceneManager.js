@@ -3,6 +3,8 @@
 // Clean implementation with camera mode toggles and debug overlay.
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { TerrainBrushOverlay3D } from './TerrainBrushOverlay3D.js';
 
 export class ThreeSceneManager {
@@ -10,6 +12,7 @@ export class ThreeSceneManager {
     this.gameManager = gameManager;
     this.initialized = false;
     this.degraded = false;
+    this.degradeReason = null;
     this.scene = null;
     this.camera = null;
     this.renderer = null;
@@ -87,6 +90,7 @@ export class ThreeSceneManager {
       lastFrameTs: null,
     };
     this._loggedFirstFrame = false;
+    this._degradeNotified = false;
     try {
       if (typeof globalThis !== 'undefined' && globalThis.__TT_REGISTER_THREE__) {
         globalThis.__TT_REGISTER_THREE__(this);
@@ -108,7 +112,7 @@ export class ThreeSceneManager {
     try {
       three = await import('three');
     } catch (e) {
-      this.degraded = true;
+      this._handleDegraded('Three.js failed to load', { errorType: e?.constructor?.name });
       return;
     }
 
@@ -121,6 +125,13 @@ export class ThreeSceneManager {
     }
 
     try {
+      if (!this._hasUsableWebGLContext()) {
+        this._handleDegraded('WebGL not available in this environment', {
+          reason: 'webgl_unavailable',
+        });
+        return;
+      }
+
       this.scene = new three.Scene();
 
       // Ambient light (boosted vs earlier 0.6). Allow runtime override via window.__TT_AMBIENT_INTENSITY__.
@@ -276,11 +287,19 @@ export class ThreeSceneManager {
         zIndex: '0',
       });
       if (!this._testMode) {
-        this.renderer = new three.WebGLRenderer({
-          canvas: this.canvas,
-          antialias: true,
-          alpha: true,
-        });
+        try {
+          this.renderer = new three.WebGLRenderer({
+            canvas: this.canvas,
+            antialias: true,
+            alpha: true,
+          });
+        } catch (rendererError) {
+          this._handleDegraded('Failed to create WebGL renderer', {
+            reason: 'renderer_creation_failed',
+            errorType: rendererError?.constructor?.name,
+          });
+          return;
+        }
         try {
           if (typeof window === 'undefined' || window.__TT_ENABLE_SHADOWS__ !== false) {
             this.renderer.shadowMap.enabled = true;
@@ -403,13 +422,120 @@ export class ThreeSceneManager {
 
       this._injectDebugOverlay();
     } catch (e) {
-      this.degraded = true;
+      this._handleDegraded(e?.message || 'Three.js initialization failed', {
+        errorType: e?.constructor?.name,
+      });
+    }
+  }
+
+  _hasUsableWebGLContext() {
+    try {
+      if (typeof document === 'undefined') return false;
+      const canvas = document.createElement('canvas');
+      const attrs = { failIfMajorPerformanceCaveat: true };
+      const gl =
+        canvas.getContext('webgl2', attrs) ||
+        canvas.getContext('webgl', attrs) ||
+        canvas.getContext('experimental-webgl', attrs);
+      if (gl && typeof gl.getExtension === 'function') {
+        try {
+          const lose = gl.getExtension('WEBGL_lose_context');
+          lose?.loseContext?.();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      return !!gl;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _handleDegraded(message, extra = {}) {
+    this.degraded = true;
+    if (message) {
+      this.degradeReason = message;
+    } else if (!this.degradeReason) {
+      this.degradeReason = 'Three.js unavailable';
+    }
+    this.initialized = false;
+    try {
+      if (this._animationHandle) {
+        try {
+          cancelAnimationFrame(this._animationHandle);
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      this._animationHandle = null;
+      if (this._boundResize && typeof window !== 'undefined') {
+        window.removeEventListener('resize', this._boundResize);
+      }
+      this._boundResize = null;
+      if (this._boundElevSync && typeof window !== 'undefined') {
+        window.removeEventListener('resize', this._boundElevSync);
+      }
+      this._boundElevSync = null;
+      this.scene = null;
+      this.camera = null;
+      if (this.renderer?.dispose) {
+        try {
+          this.renderer.dispose();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      this.renderer = null;
       try {
-        this.scene = this.scene || { stub: true };
-        this.camera = this.camera || { stub: true };
+        if (this.canvas?.parentNode) {
+          this.canvas.parentNode.removeChild(this.canvas);
+        }
       } catch (_) {
         /* ignore */
       }
+      this.canvas = null;
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      logger.log(
+        LOG_LEVEL.WARN,
+        '3D renderer unavailable; continuing in 2D mode',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'ThreeSceneManager.initialize',
+          message: this.degradeReason,
+          ...extra,
+        }
+      );
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        const detail = { reason: this.degradeReason, meta: { ...extra } };
+        window.dispatchEvent(new CustomEvent('tt-hybrid-degraded', { detail }));
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      if (!this._degradeNotified && errorHandler) {
+        errorHandler.handle(
+          new Error(this.degradeReason),
+          ERROR_SEVERITY.WARNING,
+          ERROR_CATEGORY.RENDERING,
+          {
+            context: 'ThreeSceneManager.initialize',
+            reason: this.degradeReason,
+            suggestion:
+              'Enable hardware acceleration (WebGL) in your browser settings to use the 3D renderer.',
+          }
+        );
+        this._degradeNotified = true;
+      }
+    } catch (_) {
+      /* ignore */
     }
   }
 
@@ -2295,6 +2421,7 @@ export class ThreeSceneManager {
     return {
       initialized: this.initialized,
       degraded: this.degraded,
+      degradeReason: this.degradeReason,
       startTime,
       frameCount,
       averageFrameMs: Number.isFinite(avg) ? +avg.toFixed(3) : 0,

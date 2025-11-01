@@ -13,6 +13,7 @@ import {
   createOwlbear,
   createMinotaur,
   createMindFlayer,
+  createDefeatedDoll,
 } from '../../../entities/creatures/index.js';
 
 export function createCreatureByType(c, type) {
@@ -32,6 +33,7 @@ export function createCreatureByType(c, type) {
       owlbear: () => createOwlbear(),
       minotaur: () => createMinotaur(),
       mindflayer: () => createMindFlayer(),
+      'defeated-doll': () => createDefeatedDoll(),
     };
 
     const createFn = creationFunctions[type];
