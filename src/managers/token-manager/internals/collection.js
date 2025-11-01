@@ -17,6 +17,7 @@ export function addTokenToCollection(
     gridX: gridX,
     gridY: gridY,
     type: tokenType,
+    facingAngle: 0,
     // Persist original placement grid (for stable reprojection cycles)
     __originGridX: gridX,
     __originGridY: gridY,
@@ -56,6 +57,9 @@ export function addTokenToCollection(
       typeof gm.token3DAdapter.onTokenAdded === 'function'
     ) {
       gm.token3DAdapter.onTokenAdded(newTokenData);
+      if (typeof gm.token3DAdapter.setSelectedToken === 'function') {
+        gm.token3DAdapter.setSelectedToken(newTokenData);
+      }
     }
   } catch (_) {
     /* non-fatal */

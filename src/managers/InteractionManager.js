@@ -153,6 +153,10 @@ export class InteractionManager {
   setupKeyboardInteractions() {
     // Space bar for panning
     document.addEventListener('keydown', (event) => {
+      if (this._handleTokenRotationKey(event)) {
+        event.preventDefault();
+        return;
+      }
       if (event.code === 'Space' && !event.repeat) {
         this.isSpacePressed = true;
         if (!this.isDragging && !this.isRotating3D) {
@@ -247,6 +251,48 @@ export class InteractionManager {
    */
   stopGridDragging() {
     return _stopDrag(this);
+  }
+
+  _handleTokenRotationKey(event) {
+    try {
+      if (!event || (event.code !== 'ArrowLeft' && event.code !== 'ArrowRight')) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      if (this._shouldIgnoreKeyTarget(event.target)) {
+        return false;
+      }
+
+      const gm = this.gameManager;
+      if (!gm?.tokenManager) return false;
+      const adapter = gm.token3DAdapter;
+      const selectedToken = adapter?.getSelectedToken?.();
+      if (!selectedToken) return false;
+
+      const direction = event.code === 'ArrowRight' ? 1 : -1;
+      const step = Math.PI / 4;
+      const delta = direction * step;
+      gm.tokenManager.rotateToken(selectedToken, delta);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _shouldIgnoreKeyTarget(target) {
+    if (!target) return false;
+    try {
+      if (target.isContentEditable) return true;
+      const tag = (target.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        return true;
+      }
+    } catch (_) {
+      /* ignore target introspection errors */
+    }
+    return false;
   }
 
   /**

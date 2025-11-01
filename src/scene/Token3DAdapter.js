@@ -40,6 +40,8 @@ export class Token3DAdapter {
     this._modelCache = new Map();
     this._animationMixers = new Map();
     this._lastFrameTime = null;
+    this._lastFacingRight = null;
+    this._selectionColor = 0xffcc55;
   }
 
   attach() {
@@ -178,6 +180,8 @@ export class Token3DAdapter {
       this._positionMesh(mesh, tokenEntry);
       scene.add(mesh);
       tokenEntry.__threeMesh = mesh;
+      this.updateTokenOrientation(tokenEntry);
+      this._refreshVisualState(tokenEntry);
       return mesh;
     } catch (error) {
       return null;
@@ -227,6 +231,8 @@ export class Token3DAdapter {
       this._positionMesh(container, tokenEntry);
       scene.add(container);
       tokenEntry.__threeMesh = container;
+      this.updateTokenOrientation(tokenEntry);
+      this._refreshVisualState(tokenEntry);
 
       if (templateBundle.animations?.length) {
         const mixer = new three.AnimationMixer(container);
@@ -246,7 +252,6 @@ export class Token3DAdapter {
         this._animationMixers.set(tokenEntry, mixer);
       }
 
-      this._syncFacingDirection();
       return container;
     } catch (_) {
       return null;
@@ -279,6 +284,7 @@ export class Token3DAdapter {
     const mesh = tokenEntry.__threeMesh;
     if (this._hoverToken === tokenEntry) this._hoverToken = null;
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
+    this._discardSelectionIndicator(tokenEntry);
 
     const mixer = this._animationMixers.get(tokenEntry);
     if (mixer) {
@@ -384,70 +390,221 @@ export class Token3DAdapter {
   _syncFacingDirection() {
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) return;
-    const facingRight = (() => {
-      try {
-        if (gm.tokenManager?.getTokenFacingRight) {
-          return gm.tokenManager.getTokenFacingRight();
-        }
-        if (typeof gm.tokenManager?.tokenFacingRight === 'boolean') {
-          return gm.tokenManager.tokenFacingRight;
-        }
-      } catch (_) {
-        /* ignore */
-      }
-      return true;
-    })();
+    const facingRight = this._getGlobalFacingRight();
     if (facingRight === this._lastFacingRight) return;
     this._lastFacingRight = facingRight;
-    const sign = facingRight ? 1 : -1;
     try {
       const tokens = gm.placedTokens || [];
-      for (const t of tokens) {
-        const mesh = t.__threeMesh;
-        if (!mesh) continue;
-        if (mesh.userData?.__tt3DToken) {
-          const baseYaw = mesh.userData.__ttBaseYaw || 0;
-          const yaw = facingRight ? baseYaw : baseYaw + Math.PI;
-          try {
-            mesh.rotation.y = yaw;
-          } catch (_) {
-            mesh.rotation.y = yaw;
-          }
-        } else {
-          if (!mesh.scale) mesh.scale = { x: sign, y: 1, z: 1 };
-          mesh.scale.x = sign * Math.abs(mesh.scale.x || 1);
-        }
+      for (const token of tokens) {
+        this.updateTokenOrientation(token);
       }
     } catch (_) {
       /* ignore */
     }
   }
 
+  getSelectedToken() {
+    return this._selectedToken || null;
+  }
+
   setHoverToken(tokenEntry) {
     if (this._hoverToken === tokenEntry) return;
-    if (this._hoverToken && this._hoverToken.__threeMesh) {
-      this._restoreMaterial(this._hoverToken.__threeMesh);
-    }
+    const previous = this._hoverToken;
     this._hoverToken = tokenEntry || null;
-    if (tokenEntry && tokenEntry.__threeMesh) {
-      this._applyTint(tokenEntry.__threeMesh, 0x88ccff);
-    }
+    if (previous) this._refreshVisualState(previous);
+    if (tokenEntry) this._refreshVisualState(tokenEntry);
   }
 
   setSelectedToken(tokenEntry) {
     if (this._selectedToken === tokenEntry) return;
-    if (this._selectedToken && this._selectedToken.__threeMesh) {
-      this._restoreMaterial(this._selectedToken.__threeMesh);
-    }
+    const previous = this._selectedToken;
     this._selectedToken = tokenEntry || null;
-    if (tokenEntry && tokenEntry.__threeMesh) {
-      this._applyTint(tokenEntry.__threeMesh, 0xffcc55);
+    if (previous) {
+      this._refreshVisualState(previous);
     }
+    if (tokenEntry) {
+      this._refreshVisualState(tokenEntry);
+    }
+  }
+
+  updateTokenOrientation(tokenEntry) {
+    if (!tokenEntry) return;
+    const normalized = this._normalizeAngle(
+      Number.isFinite(tokenEntry.facingAngle) ? tokenEntry.facingAngle : 0
+    );
+    tokenEntry.facingAngle = normalized;
+
+    const mesh = tokenEntry.__threeMesh;
+    const globalFlip = this._getGlobalFacingRight() ? 0 : Math.PI;
+
+    if (mesh && mesh.userData?.__tt3DToken) {
+      const baseYaw = mesh.userData.__ttBaseYaw || 0;
+      const yaw = baseYaw + globalFlip + normalized;
+      try {
+        if (mesh.rotation) {
+          mesh.rotation.y = yaw;
+        } else {
+          mesh.rotation = { y: yaw };
+        }
+      } catch (_) {
+        /* ignore mesh rotation errors */
+      }
+      return;
+    }
+
+    if (mesh) {
+      this._applyBillboardFacing(mesh, globalFlip);
+    }
+
+    try {
+      const sprite = tokenEntry?.creature?.sprite;
+      if (sprite) {
+        const sign = globalFlip === 0 ? 1 : -1;
+        if (sprite.scale && typeof sprite.scale.x === 'number') {
+          const absX = Math.abs(sprite.scale.x || 1);
+          sprite.scale.x = sign * absX;
+        }
+        if (typeof sprite.rotation === 'number') {
+          sprite.rotation = normalized;
+        }
+      }
+    } catch (_) {
+      /* ignore sprite orientation errors */
+    }
+  }
+
+  _applyBillboardFacing(mesh, globalFlip) {
+    if (!mesh) return;
+    const facingRight = globalFlip === 0;
+    const sign = facingRight ? 1 : -1;
+    if (!mesh.scale) mesh.scale = { x: sign, y: 1, z: 1 };
+    mesh.scale.x = sign * Math.abs(mesh.scale.x || 1);
+  }
+
+  _getGlobalFacingRight() {
+    const gm = this.gameManager;
+    try {
+      if (gm?.tokenManager?.getTokenFacingRight) {
+        return !!gm.tokenManager.getTokenFacingRight();
+      }
+      if (typeof gm?.tokenManager?.tokenFacingRight === 'boolean') {
+        return !!gm.tokenManager.tokenFacingRight;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return true;
+  }
+
+  _normalizeAngle(angle) {
+    if (!Number.isFinite(angle)) return 0;
+    const tau = Math.PI * 2;
+    let normalized = angle;
+    while (normalized <= -Math.PI) normalized += tau;
+    while (normalized > Math.PI) normalized -= tau;
+    return normalized;
   }
 
   clearHighlights() {
     this.setHoverToken(null);
     this.setSelectedToken(null);
+  }
+
+  async _showSelectionIndicator(tokenEntry) {
+    try {
+      const marker = await this._ensureSelectionIndicator(tokenEntry);
+      if (marker) marker.visible = true;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  _hideSelectionIndicator(tokenEntry) {
+    try {
+      const marker = tokenEntry?.__ttSelectionIndicator;
+      if (marker) marker.visible = false;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  _discardSelectionIndicator(tokenEntry) {
+    try {
+      const marker = tokenEntry?.__ttSelectionIndicator;
+      if (marker) {
+        marker.visible = false;
+        if (marker.parent && typeof marker.parent.remove === 'function') {
+          marker.parent.remove(marker);
+        }
+        if (marker.geometry?.dispose) marker.geometry.dispose();
+        if (marker.material?.dispose) marker.material.dispose();
+      }
+      delete tokenEntry.__ttSelectionIndicator;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  async _ensureSelectionIndicator(tokenEntry) {
+    if (!tokenEntry || !tokenEntry.__threeMesh) return null;
+    if (!tokenEntry.__threeMesh.userData?.__tt3DToken) return null;
+    if (tokenEntry.__ttSelectionIndicator) return tokenEntry.__ttSelectionIndicator;
+    const three = await this._getThree();
+    if (!three) return null;
+    try {
+      const inner = 0.34;
+      const outer = 0.47;
+      const geometry = new three.RingGeometry(inner, outer, 48);
+      const material = new three.MeshBasicMaterial({
+        color: this._selectionColor,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+        side: three.DoubleSide,
+      });
+      const ring = new three.Mesh(geometry, material);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.02;
+      ring.name = 'TokenSelectionIndicator';
+      if (typeof tokenEntry.__threeMesh.add === 'function') {
+        tokenEntry.__threeMesh.add(ring);
+      }
+      tokenEntry.__ttSelectionIndicator = ring;
+      return ring;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _refreshVisualState(tokenEntry) {
+    const mesh = tokenEntry?.__threeMesh;
+    if (!mesh) return;
+    const is3DToken = !!mesh.userData?.__tt3DToken;
+
+    if (this._selectedToken === tokenEntry) {
+      this._restoreMaterial(mesh);
+      if (is3DToken) {
+        void this._showSelectionIndicator(tokenEntry);
+      } else {
+        this._hideSelectionIndicator(tokenEntry);
+        this._applyTint(mesh, this._selectionColor);
+      }
+      return;
+    }
+
+    if (this._hoverToken === tokenEntry) {
+      this._restoreMaterial(mesh);
+      if (is3DToken) {
+        this._hideSelectionIndicator(tokenEntry);
+      } else {
+        this._applyTint(mesh, 0x88ccff);
+        this._hideSelectionIndicator(tokenEntry);
+      }
+      return;
+    }
+
+    this._restoreMaterial(mesh);
+    this._hideSelectionIndicator(tokenEntry);
   }
 
   _applyTint(mesh, colorHex) {

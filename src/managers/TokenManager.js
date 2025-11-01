@@ -28,6 +28,8 @@ import { toggleFacing as _toggleFacing } from './token-manager/internals/facing.
 import { removeToken as _removeToken } from './token-manager/internals/removal.js';
 // Internals for placement
 import { placeNewToken as _placeNewToken } from './token-manager/internals/placement.js';
+// Orientation helpers
+import { rotateToken as _rotateToken } from './token-manager/internals/orientation.js';
 
 export class TokenManager {
   constructor(gameManager) {
@@ -106,6 +108,10 @@ export class TokenManager {
    */
   toggleFacing() {
     return _toggleFacing(this);
+  }
+
+  rotateToken(tokenEntry, deltaRadians) {
+    return _rotateToken(this, tokenEntry, deltaRadians);
   }
 
   /**
