@@ -21,3 +21,6 @@ AI Glossary — TavernTable
 
 // Terrain & Placeables Enhancements
 - Placeable Removal Mode: UI toggle in the Terrain panel that converts left-clicks into removal actions for plant/tree placeables (ids starting with `tree-` or placeableType `plant`). Disables drag-based mass deletion and suppresses height editing or new placements while active. Replaces earlier tree-only terminology.
+Cleanup Notes (2025-09-19):
+- Logger surface minimized: internal handler classes and wrapper HOFs removed; only enums + core Logger exposed.
+- Terrain tool/shortcut/validation constants removed (unused); retain only TERRAIN_CONFIG.

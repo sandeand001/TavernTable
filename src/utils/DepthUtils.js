@@ -1,7 +1,7 @@
 // DepthUtils.js - Consistent depth ordering for isometric diagonal + tie-breakers
 
-export const DIAG_WEIGHT = 10000; // primary: diagonal depth (gx + gy)
-export const X_TIE_WEIGHT = 10; // tie-breaker across a diagonal: higher gx in front
+const DIAG_WEIGHT = 10000; // primary: diagonal depth (gx + gy)
+const X_TIE_WEIGHT = 10; // tie-breaker across a diagonal: higher gx in front
 
 // Type biases: small integers; larger means drawn on top if all spatial keys are equal
 export const TYPE_BIAS = {
@@ -29,3 +29,5 @@ export function withOverlayRaise(terrainManager, depthKey) {
     return depthKey;
   }
 }
+
+// CLEANUP NOTE (2025-09-19): Made DIAG_WEIGHT & X_TIE_WEIGHT internal (no external imports found).

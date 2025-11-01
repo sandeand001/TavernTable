@@ -75,42 +75,4 @@ export const TERRAIN_CONFIG = {
  * Terrain tool definitions
  * Available tools for terrain modification
  */
-export const TERRAIN_TOOLS = {
-  RAISE: 'raise',
-  LOWER: 'lower',
-  LEVEL: 'level', // Future: flatten to specific height
-  SMOOTH: 'smooth', // Future: smooth height transitions
-};
-
-/**
- * Terrain keyboard shortcuts
- * Key bindings for terrain tools and operations
- */
-export const TERRAIN_SHORTCUTS = {
-  RAISE_TOOL: 'KeyR',
-  LOWER_TOOL: 'KeyL',
-  INCREASE_BRUSH: 'BracketRight', // ]
-  DECREASE_BRUSH: 'BracketLeft', // [
-  RESET_TERRAIN: 'KeyT', // T (with modifiers)
-  TOGGLE_TERRAIN_MODE: 'KeyG', // G for "ground" mode
-};
-
-/**
- * Terrain validation constraints
- * Used for input validation and sanitization
- */
-export const TERRAIN_VALIDATION = {
-  HEIGHT_RANGE: {
-    min: TERRAIN_CONFIG.MIN_HEIGHT,
-    max: TERRAIN_CONFIG.MAX_HEIGHT,
-  },
-  BRUSH_SIZE_RANGE: {
-    min: TERRAIN_CONFIG.MIN_BRUSH_SIZE,
-    max: TERRAIN_CONFIG.MAX_BRUSH_SIZE,
-  },
-  VALID_TOOLS: Object.values(TERRAIN_TOOLS),
-  COORDINATE_VALIDATION: {
-    requireInteger: true,
-    requireNonNegative: true,
-  },
-};
+// CLEANUP (2025-09-19): Removed unused exports TERRAIN_TOOLS, TERRAIN_SHORTCUTS, TERRAIN_VALIDATION.

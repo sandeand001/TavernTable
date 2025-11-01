@@ -477,4 +477,8 @@ const animatedSpriteManager = new AnimatedSpriteManager();
 // Make available globally for compatibility
 window.animatedSpriteManager = animatedSpriteManager;
 
+// NFC NOTE (2025-09-19): Flagged as orphan by heuristic scan; retained because animated sprite
+// management may be initialized dynamically via window/global access or future feature toggles.
+// Removing now risks subtle runtime regressions. Reevaluate in a later phase with runtime usage metrics.
+
 export default animatedSpriteManager;

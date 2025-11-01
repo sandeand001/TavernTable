@@ -2,6 +2,7 @@
   "meta": {
     "project": "TavernTable",
     "generated_at": "2025-09-24T21:11:17.019Z",
+    "generated_at": "2025-09-22T03:32:30.245Z",
     "languages": [
       "JavaScript",
       "HTML",
@@ -99,8 +100,7 @@
         "layer": "app",
         "exports": [
           "BIOME_GROUPS",
-          "ALL_BIOMES",
-          "findBiome"
+          "ALL_BIOMES"
         ],
         "imports_internal": [],
         "imports_external": [],
@@ -128,13 +128,8 @@
         "path": "src/config/BiomePalettes.js",
         "layer": "app",
         "exports": [
-          "BIOME_HEIGHT_PALETTES",
-          "getBiomeHeightColor",
-          "getBiomeColorLegacy",
           "getBiomeColor",
-          "getBiomeColorHex",
-          "blendWithBiome",
-          "BIOME_HEIGHT_PALETTES"
+          "getBiomeColorHex"
         ],
         "imports_internal": [
           "./BiomeConstants.js",
@@ -173,12 +168,7 @@
         "layer": "app",
         "exports": [
           "GRID_CONFIG",
-          "APP_CONFIG",
-          "INPUT_CONFIG",
           "CREATURE_SCALES",
-          "CREATURE_FOOTPRINTS",
-          "CREATURE_BASELINE_OFFSETS",
-          "CREATURE_COLORS",
           "TOKEN_PLACEMENT_OFFSET",
           "VALIDATION",
           "CREATURE_HELPERS",
@@ -249,10 +239,7 @@
         "path": "src/config/TerrainConstants.js",
         "layer": "app",
         "exports": [
-          "TERRAIN_CONFIG",
-          "TERRAIN_TOOLS",
-          "TERRAIN_SHORTCUTS",
-          "TERRAIN_VALIDATION"
+          "TERRAIN_CONFIG"
         ],
         "imports_internal": [],
         "imports_external": [],
@@ -297,8 +284,7 @@
         "path": "src/config/TerrainPlaceables.js",
         "layer": "app",
         "exports": [
-          "TERRAIN_PLACEABLES",
-          "TREE_PLACEABLES"
+          "TERRAIN_PLACEABLES"
         ],
         "imports_internal": [],
         "imports_external": [],
@@ -712,6 +698,7 @@
             "tests/terrain/biome-painter/fields.test.js",
             "tests/unit/BiomeCanvasPainterSmoke.test.js",
             "tests/unit/BiomeElevationGenerator.test.js",
+            "tests/unit/BiomeGroupsExport.test.js",
             "tests/unit/BiomePalettes.test.js",
             "tests/unit/TerrainBiomeAutoGenIntegration.test.js"
           ],
@@ -1917,11 +1904,9 @@
         "path": "src/managers/terrain-manager/internals/placeables.js",
         "layer": "app",
         "exports": [
-          "createPlaceableSprite",
           "placeItem",
           "cyclePlaceableVariant",
           "removeItem",
-          "repositionPlaceableSprite",
           "updatePlaceablesForCell",
           "repositionAllPlaceables"
         ],
@@ -2001,7 +1986,6 @@
           "validateTileCreationInputs",
           "cleanupExistingTile",
           "createBaseTerrainGraphics",
-          "getColorForHeightInternal",
           "applyTerrainStyling",
           "positionTerrainTile",
           "finalizeTerrainTile",
@@ -2593,7 +2577,6 @@
         "layer": "app",
         "exports": [
           "computeSlopeAspect",
-          "computeDistanceField",
           "computeMoistureField"
         ],
         "imports_internal": [],
@@ -2677,16 +2660,11 @@
         "id": "22cfad36046c",
         "path": "src/terrain/biome-painter/style.js",
         "layer": "app",
-        "exports": [
-          "styleForBiome",
-          "styleForBiome"
-        ],
+        "exports": [],
         "imports_internal": [],
         "imports_external": [],
         "depends_on": [],
-        "used_by": [
-          "f652e70c5169"
-        ],
+        "used_by": [],
         "public_api": false,
         "responsibilities": [],
         "invariants": [],
@@ -2713,7 +2691,6 @@
           "../config/BiomePalettes.js",
           "../utils/ColorUtils.js",
           "../utils/TerrainHeightUtils.js",
-          "./biome-painter/style.js",
           "./biome-painter/motifs.js",
           "./biome-painter/fields.js",
           "../utils/CanvasShapeUtils.js"
@@ -2723,7 +2700,6 @@
           "618161e21138",
           "7b9405bf0f18",
           "37fb05b4943e",
-          "22cfad36046c",
           "3a636c5df59e",
           "c02de18f9171",
           "99a674c5082b"
@@ -2789,23 +2765,10 @@
         "id": "71322f2892b9",
         "path": "src/terrain/ShadingHelpers.js",
         "layer": "app",
-        "exports": [
-          "shadeRand",
-          "drawShadeDesertBands",
-          "drawShadeForestDapples",
-          "drawShadeSwampMottling",
-          "drawShadeIcyFacets",
-          "drawShadeWaterWaves",
-          "drawShadeVolcanicVeins",
-          "drawShadeRuinGrid"
-        ],
-        "imports_internal": [
-          "../utils/ColorUtils.js"
-        ],
+        "exports": [],
+        "imports_internal": [],
         "imports_external": [],
-        "depends_on": [
-          "7b9405bf0f18"
-        ],
+        "depends_on": [],
         "used_by": [],
         "public_api": false,
         "responsibilities": [],
@@ -3216,7 +3179,6 @@
           "aaa5a6230090",
           "39ae79cd6016",
           "f652e70c5169",
-          "71322f2892b9",
           "5164ab1ee5db"
         ],
         "public_api": false,
@@ -3288,8 +3250,6 @@
         "path": "src/utils/DepthUtils.js",
         "layer": "app",
         "exports": [
-          "DIAG_WEIGHT",
-          "X_TIE_WEIGHT",
           "TYPE_BIAS",
           "computeDepthKey",
           "withOverlayRaise"
@@ -3521,8 +3481,7 @@
         "layer": "app",
         "exports": [
           "LOG_LEVEL",
-          "LOG_CATEGORY",
-          "LOG_OUTPUT"
+          "LOG_CATEGORY"
         ],
         "imports_internal": [],
         "imports_external": [],
@@ -3549,17 +3508,9 @@
         "path": "src/utils/Logger.js",
         "layer": "app",
         "exports": [
-          "LoggerConfig",
-          "LogEntry",
-          "ConsoleOutputHandler",
-          "MemoryOutputHandler",
-          "RemoteOutputHandler",
           "PerformanceMonitor",
           "Logger",
           "logger",
-          "GameLogger",
-          "withPerformanceLogging",
-          "withLoggingContext",
           "logger"
         ],
         "imports_internal": [
@@ -3716,7 +3667,6 @@
         "exports": [
           "createSeededRNG",
           "rngInt",
-          "rngPick",
           "makeWeightedPicker"
         ],
         "imports_internal": [],
@@ -4495,6 +4445,7 @@
             "tests/terrain/biome-painter/fields.test.js",
             "tests/unit/BiomeCanvasPainterSmoke.test.js",
             "tests/unit/BiomeElevationGenerator.test.js",
+            "tests/unit/BiomeGroupsExport.test.js",
             "tests/unit/BiomePalettes.test.js",
             "tests/unit/TerrainBiomeAutoGenIntegration.test.js"
           ],

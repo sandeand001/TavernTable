@@ -19,11 +19,6 @@ export function rngInt(rng, max) {
   return Math.floor(rng() * max);
 }
 
-export function rngPick(rng, arr) {
-  if (!arr || !arr.length) return undefined;
-  return arr[rngInt(rng, arr.length)];
-}
-
 export function makeWeightedPicker(weights, rng) {
   const entries = Object.entries(weights || {});
   const total = entries.reduce((a, [, w]) => a + w, 0) || 1;
@@ -37,4 +32,4 @@ export function makeWeightedPicker(weights, rng) {
   };
 }
 
-export default { createSeededRNG, rngInt, rngPick, makeWeightedPicker };
+export default { createSeededRNG, rngInt, makeWeightedPicker };

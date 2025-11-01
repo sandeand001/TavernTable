@@ -62,8 +62,8 @@ export function createBaseTerrainGraphics(m, x, y, height) {
   return terrainTile;
 }
 
-/** Internal: get fill color for height, matching manager logic. */
-export function getColorForHeightInternal(m, height) {
+/** Internal: get fill color for height, matching manager logic (no external export). */
+function getColorForHeightInternal(m, height) {
   try {
     if (
       !m.terrainCoordinator?.isTerrainModeActive &&
