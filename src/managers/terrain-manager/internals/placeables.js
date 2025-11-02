@@ -654,16 +654,114 @@ export function placeItem(m, id, x, y) {
           if (!model) return;
           const root = model.clone(true);
           try {
-            if (/tree-birch-[a-e]-spectral/.test(id)) {
-              const spectralColors = [0xff4444, 0xffffff, 0x3399ff, 0x44dd66];
+            const tintVariant = def?.tintVariant || TERRAIN_PLACEABLES[id]?.tintVariant;
+            if (tintVariant === 'spectral' || /-spectral$/i.test(id)) {
+              const spectralPalettes = [
+                {
+                  foliage: 0xbd4bff,
+                  trunk: 0x261047,
+                  glow: 0x61f7ff,
+                  foliageOpacity: 0.62,
+                  trunkOpacity: 0.34,
+                },
+                {
+                  foliage: 0x64ffe1,
+                  trunk: 0x033f3b,
+                  glow: 0x7ea4ff,
+                  foliageOpacity: 0.6,
+                  trunkOpacity: 0.32,
+                },
+                {
+                  foliage: 0xff5bd8,
+                  trunk: 0x5c103c,
+                  glow: 0xffc26e,
+                  foliageOpacity: 0.61,
+                  trunkOpacity: 0.35,
+                },
+                {
+                  foliage: 0x6d8bff,
+                  trunk: 0x1a256e,
+                  glow: 0x9d5dff,
+                  foliageOpacity: 0.58,
+                  trunkOpacity: 0.33,
+                },
+                {
+                  foliage: 0x9dff5c,
+                  trunk: 0x1f440d,
+                  glow: 0x67d6ff,
+                  foliageOpacity: 0.6,
+                  trunkOpacity: 0.32,
+                },
+              ];
               const seed = ((x * 73856093) ^ (y * 19349663) ^ id.length) >>> 0;
-              const tintHex = spectralColors[seed % spectralColors.length];
+              const palette = spectralPalettes[seed % spectralPalettes.length];
+              const hueJitter = (((seed >> 7) & 0x1f) / 31 - 0.5) * 0.12; // +/- ~0.06 hue shift
               root.traverse?.((ch) => {
+                if (ch?.isMesh) {
+                  try {
+                    if (ch.castShadow !== false) ch.castShadow = false;
+                  } catch (_) {
+                    /* shadow tweak non-fatal */
+                  }
+                  try {
+                    if (ch.receiveShadow !== false) ch.receiveShadow = false;
+                  } catch (_) {
+                    /* shadow tweak non-fatal */
+                  }
+                }
                 if (!ch.isMesh || !ch.material) return;
                 const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+                const nodeLabel = `${ch.name || ''}`.toLowerCase();
                 mats.forEach((m) => {
-                  if (!m || !m.userData || !m.userData.__foliageCandidate) return;
-                  if (m.color) m.color.setHex(tintHex);
+                  if (!m || !m.color) return;
+                  const matLabel = `${nodeLabel} ${(m.name || '').toLowerCase()}`;
+                  const mapName = `${m.map?.name || ''}`.toLowerCase();
+                  const mapSrc = `${m.map?.image?.src || ''}`.toLowerCase();
+                  const mapLabel = `${mapName} ${mapSrc}`;
+                  const isFoliageCandidate = !!(m.userData && m.userData.__foliageCandidate);
+                  const heurFoliage = /leaf|foliage|petal|flower|canopy|crown|blossom/.test(
+                    `${matLabel} ${mapLabel}`
+                  );
+                  const isFoliage = isFoliageCandidate || heurFoliage;
+                  const isTrunk = /trunk|bark|branch|wood|stem/.test(matLabel);
+                  if (!isFoliage && !isTrunk) return;
+                  try {
+                    const targetHex = isFoliage ? palette.foliage : palette.trunk;
+                    m.color.setHex(targetHex);
+                    if (typeof m.color.offsetHSL === 'function') {
+                      const baseSat = isFoliage ? 0.24 : -0.18;
+                      const baseLight = isFoliage ? 0.16 : -0.2;
+                      m.color.offsetHSL(hueJitter, baseSat, baseLight);
+                    }
+                  } catch (_) {
+                    /* tint apply fallback */
+                  }
+                  const targetOpacity = isFoliage
+                    ? (palette.foliageOpacity ?? 0.58)
+                    : (palette.trunkOpacity ?? 0.34);
+                  try {
+                    if (typeof m.opacity !== 'number' || m.opacity > targetOpacity) {
+                      m.opacity = targetOpacity;
+                    }
+                  } catch (_) {
+                    /* ignore opacity failure */
+                  }
+                  if (m.emissive && typeof m.emissive.setHex === 'function' && palette.glow) {
+                    try {
+                      m.emissive.setHex(palette.glow);
+                      const desired = isFoliage ? 0.48 : 0.28;
+                      m.emissiveIntensity = Math.max(m.emissiveIntensity ?? 0, desired);
+                    } catch (_) {
+                      /* emissive optional */
+                    }
+                  }
+                  try {
+                    m.transparent = true;
+                    if (m.depthWrite !== false) m.depthWrite = false;
+                    if (typeof m.alphaHash === 'boolean') m.alphaHash = false;
+                  } catch (_) {
+                    /* transparency setup non-fatal */
+                  }
                   m.needsUpdate = true;
                 });
               });

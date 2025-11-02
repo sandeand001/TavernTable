@@ -7,9 +7,10 @@
 import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
 import { createSeededRNG, rngInt, makeWeightedPicker } from '../../../utils/SeededRNG.js';
 
-const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter(
-  (k) => TERRAIN_PLACEABLES[k].type === 'plant'
-);
+const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter((k) => {
+  const type = TERRAIN_PLACEABLES[k].type;
+  return type === 'plant' || type === 'plant-family';
+});
 
 // Simple deterministic 32-bit hash (Jenkins-like mix) used for seed salting
 function hash32(str) {
@@ -34,6 +35,43 @@ function makeWeights(map) {
   const out = {};
   for (const [id, w] of Object.entries(map)) if (ALL_PLANTS.includes(id)) out[id] = w;
   return out;
+}
+
+const SPECTRAL_VARIANTS = {
+  'tree-birch-a': 'tree-birch-a-spectral',
+  'tree-birch-b': 'tree-birch-b-spectral',
+  'tree-birch-c': 'tree-birch-c-spectral',
+  'tree-birch-d': 'tree-birch-d-spectral',
+  'tree-birch-e': 'tree-birch-e-spectral',
+  'tree-thick-a': 'tree-thick-a-spectral',
+  'tree-thick-b': 'tree-thick-b-spectral',
+  'tree-thick-c': 'tree-thick-c-spectral',
+  'tree-thick-d': 'tree-thick-d-spectral',
+  'tree-thick-e': 'tree-thick-e-spectral',
+  'bush-common-flowers': 'bush-common-flowers-spectral',
+  'bush-large-flowers': 'bush-large-flowers-spectral',
+  'flower-1-group': 'flower-1-group-spectral',
+  'flower-2-group': 'flower-2-group-spectral',
+  'flower-3-group': 'flower-3-group-spectral',
+  'flower-4-group': 'flower-4-group-spectral',
+  'flower-6': 'flower-6-spectral',
+  'flower-6-2': 'flower-6-2-spectral',
+  'mushroom-oyster': 'mushroom-oyster-spectral',
+  'mushroom-laetiporus': 'mushroom-laetiporus-spectral',
+  'grass-wispy-short': 'grass-wispy-short-spectral',
+  'grass-wispy-tall': 'grass-wispy-tall-spectral',
+  'rock-medium-4': 'rock-medium-4-spectral',
+  'pebble-round-3': 'pebble-round-3-spectral',
+  'pebble-square-3': 'pebble-square-3-spectral',
+};
+
+function withSpectralVariants(weightMap) {
+  const transformed = {};
+  for (const [id, weight] of Object.entries(weightMap)) {
+    const targetId = SPECTRAL_VARIANTS[id] || id;
+    transformed[targetId] = (transformed[targetId] || 0) + weight;
+  }
+  return transformed;
 }
 
 // Candidate filters / strategies --------------------------------------------
@@ -286,29 +324,37 @@ const BIOME_FLORA_PROFILES = [
     re: /(mysticGrove|feywildBloom)/i,
     density: 0.38,
     spacing: 1,
-    // emphasize non-green colors & cherry blossoms (fantastical purple/pink/orange tones)
-    weights: makeWeights({
-      'tree-cherry-a': 6,
-      'tree-cherry-b': 5,
-      'tree-cherry-c': 4,
-      'tree-cherry-d': 3,
-      'tree-cherry-e': 2,
-      'tree-dead-e': 0.8,
-      'tree-orange-deciduous': 4,
-      'tree-yellow-willow': 3,
-      'tree-yellow-conifer': 2.5,
-      'tree-green-willow': 1.5,
-      'tree-bare-deciduous': 1,
-      'tree-green-small': 0.5,
-      'flower-1-group': 1.2,
-      'flower-2-group': 1,
-      'flower-3-group': 0.9,
-      'flower-4-group': 0.8,
-      'mushroom-laetiporus': 0.4,
-      'bush-common-flowers': 0.6,
-      'bush-large-flowers': 0.4,
-      'pebble-round-3': 0.2,
-    }),
+    // Spectral groves: restrict to spectral families and tinted birches
+    weights: makeWeights(
+      withSpectralVariants({
+        'family-spectral': 6,
+        'tree-thick-a': 5,
+        'tree-thick-b': 4,
+        'tree-thick-c': 3.5,
+        'tree-thick-d': 3,
+        'tree-thick-e': 2.5,
+        'tree-birch-a': 3,
+        'tree-birch-b': 2.6,
+        'tree-birch-c': 2.2,
+        'tree-birch-d': 1.8,
+        'tree-birch-e': 1.4,
+        'bush-common-flowers': 1.2,
+        'bush-large-flowers': 1,
+        'flower-1-group': 0.9,
+        'flower-2-group': 0.8,
+        'flower-3-group': 0.7,
+        'flower-4-group': 0.6,
+        'flower-6': 0.6,
+        'flower-6-2': 0.5,
+        'mushroom-oyster': 0.4,
+        'mushroom-laetiporus': 0.35,
+        'grass-wispy-short': 0.6,
+        'grass-wispy-tall': 0.5,
+        'rock-medium-4': 0.4,
+        'pebble-round-3': 0.35,
+        'pebble-square-3': 0.3,
+      })
+    ),
   },
   {
     re: /(orchard)/i,
@@ -501,31 +547,71 @@ const BIOME_FLORA_PROFILES = [
     re: /(astralPlateau)/i,
     density: 0.06,
     spacing: 3,
-    weights: pickIds(/columnar|tall|conifer/),
+    weights: makeWeights(
+      withSpectralVariants({
+        'family-spectral': 5,
+        'tree-thick-a': 3.5,
+        'tree-thick-b': 3,
+        'tree-thick-c': 2.5,
+        'tree-thick-d': 2,
+        'tree-thick-e': 1.6,
+        'tree-birch-a': 3,
+        'tree-birch-b': 2.4,
+        'tree-birch-c': 1.9,
+        'tree-birch-d': 1.5,
+        'tree-birch-e': 1.1,
+        'bush-common-flowers': 0.8,
+        'bush-large-flowers': 0.6,
+        'flower-1-group': 0.6,
+        'flower-2-group': 0.5,
+        'flower-3-group': 0.45,
+        'flower-4-group': 0.4,
+        'flower-6': 0.4,
+        'flower-6-2': 0.35,
+        'mushroom-oyster': 0.3,
+        'mushroom-laetiporus': 0.25,
+        'grass-wispy-short': 0.4,
+        'grass-wispy-tall': 0.35,
+        'rock-medium-4': 0.3,
+        'pebble-round-3': 0.28,
+        'pebble-square-3': 0.25,
+      })
+    ),
   },
   {
     re: /(arcaneLeyNexus)/i,
     density: 0.12,
     spacing: 2,
-    weights: makeWeights({
-      'tree-cherry-a': 5,
-      'tree-cherry-b': 4,
-      'tree-cherry-c': 3,
-      'tree-yellow-conifer': 3,
-      'tree-orange-deciduous': 3,
-      'tree-yellow-willow': 2.5,
-      'tree-green-willow': 1.5,
-      'tree-green-columnar': 1.2,
-      'tree-dead-e': 1,
-      'tree-birch-a': 1,
-      'flower-1-group': 1.2,
-      'flower-2-group': 1,
-      'flower-6': 0.9,
-      'flower-6-2': 0.8,
-      'mushroom-laetiporus': 0.5,
-      'bush-common-flowers': 0.6,
-      'bush-large-flowers': 0.4,
-    }),
+    weights: makeWeights(
+      withSpectralVariants({
+        'family-spectral': 4,
+        'tree-thick-a': 3,
+        'tree-thick-b': 2.6,
+        'tree-thick-c': 2.2,
+        'tree-thick-d': 1.8,
+        'tree-thick-e': 1.4,
+        'tree-birch-a': 2.4,
+        'tree-birch-b': 2,
+        'tree-birch-c': 1.6,
+        'tree-birch-d': 1.2,
+        'tree-birch-e': 0.8,
+        'bush-common-flowers': 1,
+        'bush-large-flowers': 0.8,
+        'flower-1-group': 0.75,
+        'flower-2-group': 0.65,
+        'flower-3-group': 0.6,
+        'flower-4-group': 0.55,
+        'flower-6': 0.55,
+        'flower-6-2': 0.5,
+        'mushroom-oyster': 0.4,
+        'mushroom-laetiporus': 0.35,
+        'grass-wispy-short': 0.55,
+        'grass-wispy-tall': 0.5,
+        'rock-medium-4': 0.35,
+        'pebble-round-3': 0.32,
+        'pebble-square-3': 0.3,
+      })
+    ),
   },
 ];
 
