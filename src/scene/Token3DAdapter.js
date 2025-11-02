@@ -38,6 +38,7 @@ const FEMALE_HUMANOID_MODEL = {
     },
   },
   movementProfile: {
+    startMoveDelay: 1,
     startToWalkBlendLead: 0.12,
     stopTravelPortion: 0.58,
     stopBlendLead: 0.14,
@@ -609,7 +610,7 @@ export class Token3DAdapter {
       const configuredDelay = Number.isFinite(profile.startMoveDelay)
         ? Math.max(profile.startMoveDelay, 0)
         : defaultDelay;
-      profile.startMoveDelay = Math.min(Math.max(configuredDelay, defaultDelay), maxDelay);
+      profile.startMoveDelay = Math.min(configuredDelay, maxDelay);
       profile.startToWalkBlendLead = lead;
     } else {
       profile.startMoveDelay = 0;
@@ -753,6 +754,17 @@ export class Token3DAdapter {
     const profile = state.profile;
     if (!state.intentHold) {
       state.pendingStop = true;
+    }
+
+    if (state.stepFinalized && state.intentHold && !state.pendingStop) {
+      const nextStep = this._createForwardMovementStep(state.token, state.mesh);
+      if (nextStep) {
+        state.activeStep = nextStep;
+        state.stepFinalized = false;
+        state.phaseElapsed = 0;
+      } else {
+        state.pendingStop = true;
+      }
     }
 
     this._advanceMovementStep(state, profile.walkSpeed * delta);
