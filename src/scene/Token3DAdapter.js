@@ -762,6 +762,7 @@ export class Token3DAdapter {
         state.activeStep = nextStep;
         state.stepFinalized = false;
         state.phaseElapsed = 0;
+        this._applyPendingOrientation(state);
       } else {
         state.pendingStop = true;
       }
@@ -828,6 +829,7 @@ export class Token3DAdapter {
           state.stepFinalized = false;
           state.phase = 'walk';
           state.phaseElapsed = 0;
+          this._applyPendingOrientation(state);
           return false;
         }
       }
@@ -914,6 +916,7 @@ export class Token3DAdapter {
   }
 
   _finishWalkState(state) {
+    this._applyPendingOrientation(state);
     this._movementStates.delete(state.token);
     this._setAnimation(state.token, 'idle', {
       fadeIn: state.profile.idleFadeIn,
@@ -922,6 +925,7 @@ export class Token3DAdapter {
   }
 
   _finishStopState(state) {
+    this._applyPendingOrientation(state);
     this._movementStates.delete(state.token);
     if (!state.stopBlendedToIdle) {
       this._setAnimation(state.token, 'idle', {
@@ -1235,12 +1239,39 @@ export class Token3DAdapter {
     );
     tokenEntry.facingAngle = normalized;
 
-    const mesh = tokenEntry.__threeMesh;
+    const state = this._movementStates.get(tokenEntry);
+    if (this._shouldDeferOrientation(state)) {
+      state.pendingFacingAngle = normalized;
+      return;
+    }
+
+    this._applyOrientationImmediate(tokenEntry, normalized);
+    if (state) {
+      state.pendingFacingAngle = undefined;
+    }
+  }
+
+  _shouldDeferOrientation(state) {
+    if (!state) return false;
+    if (state.phase === 'stop') return false;
+    if (!state.activeStep) return false;
+    if (state.stepFinalized) return false;
+    return true;
+  }
+
+  _applyPendingOrientation(state) {
+    if (!state || state.pendingFacingAngle == null) return;
+    this._applyOrientationImmediate(state.token, state.pendingFacingAngle);
+    state.pendingFacingAngle = undefined;
+  }
+
+  _applyOrientationImmediate(tokenEntry, angle) {
+    const mesh = tokenEntry?.__threeMesh;
     const globalFlip = this._getGlobalFacingRight() ? 0 : Math.PI;
 
     if (mesh && mesh.userData?.__tt3DToken) {
       const baseYaw = mesh.userData.__ttBaseYaw || 0;
-      const yaw = baseYaw + globalFlip + normalized;
+      const yaw = baseYaw + globalFlip + angle;
       try {
         if (mesh.rotation) {
           mesh.rotation.y = yaw;
@@ -1266,7 +1297,7 @@ export class Token3DAdapter {
           sprite.scale.x = sign * absX;
         }
         if (typeof sprite.rotation === 'number') {
-          sprite.rotation = normalized;
+          sprite.rotation = angle;
         }
       }
     } catch (_) {
