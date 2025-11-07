@@ -30,6 +30,7 @@ import {
   getGridSizeInputs,
   getTerrainResetButton,
   getElevationScaleControls,
+  getTreeDensityControls,
   getBrushSizeDisplay,
   getSpriteAdjustLogEl,
   getCreaturePanelEls,
@@ -299,6 +300,51 @@ function attachDynamicUIHandlers() {
         /* ignore getElevationScale failure */
       }
       elevSlider.dataset.boundElevHandler = 'true';
+    }
+
+    const { slider: treeSlider, valueEl: treeValue } = getTreeDensityControls();
+    if (treeSlider && !treeSlider.dataset.boundTreeDensity) {
+      const clampPercent = (raw) => {
+        const num = Number(raw);
+        if (!Number.isFinite(num)) return 100;
+        return Math.min(200, Math.max(0, Math.round(num)));
+      };
+      const updateDisplay = (pct) => {
+        if (treeValue) treeValue.textContent = `${pct}%`;
+      };
+      const applyMultiplier = (pct) => {
+        const multiplier = clampPercent(pct) / 100;
+        window.treeDensityMultiplier = multiplier;
+        window.gameManager?.terrainCoordinator?.setTreeDensityMultiplier?.(multiplier);
+      };
+      treeSlider.addEventListener('input', (e) => {
+        const pct = clampPercent(e.target.value);
+        updateDisplay(pct);
+        applyMultiplier(pct);
+      });
+      treeSlider.addEventListener('change', (e) => {
+        const pct = clampPercent(e.target.value);
+        updateDisplay(pct);
+        applyMultiplier(pct);
+      });
+      try {
+        const current = window.gameManager?.terrainCoordinator?.getTreeDensityMultiplier?.();
+        if (Number.isFinite(current)) {
+          const pct = clampPercent(current * 100);
+          treeSlider.value = String(pct);
+          updateDisplay(pct);
+          applyMultiplier(pct);
+        } else {
+          const pct = clampPercent(treeSlider.value);
+          updateDisplay(pct);
+          applyMultiplier(pct);
+        }
+      } catch (_) {
+        const pct = clampPercent(treeSlider.value);
+        updateDisplay(pct);
+        applyMultiplier(pct);
+      }
+      treeSlider.dataset.boundTreeDensity = 'true';
     }
 
     // Ensure brush size label reflects current state on load

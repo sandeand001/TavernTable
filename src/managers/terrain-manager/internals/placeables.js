@@ -34,6 +34,8 @@ const ID_TO_MODEL_KEY = {
   'tree-bare-deciduous': 'twisted-bare-1',
 };
 
+const TREE_ID_PATTERN = /^tree-/i;
+
 const PLANT_FAMILY_VARIANTS = (() => {
   const map = new Map();
   try {
@@ -54,6 +56,61 @@ const PLANT_FAMILY_VARIANTS = (() => {
   }
   return map;
 })();
+
+function isTreePlaceableId(id, def = TERRAIN_PLACEABLES[id]) {
+  if (!id) return false;
+  if (TREE_ID_PATTERN.test(id)) return true;
+  if (def?.type === 'plant-family' && Array.isArray(def.familyVariants)) {
+    return def.familyVariants.some((variantId) => TREE_ID_PATTERN.test(variantId));
+  }
+  return false;
+}
+
+function resolveFamilyVariant(def, x, y) {
+  if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) return null;
+  const variants = def.familyVariants.filter((variantId) => TERRAIN_PLACEABLES[variantId]);
+  if (!variants.length) return null;
+  if (variants.length === 1) return variants[0];
+  const seed = ((x * 73856093) ^ (y * 19349663) ^ variants.length) >>> 0;
+  const idx = seed % variants.length;
+  return variants[idx];
+}
+
+function clearExistingTreesAtTile(m, tileKey, x, y) {
+  if (!m?.placeables || !m.placeables.has(tileKey)) return false;
+  const list = m.placeables.get(tileKey);
+  if (!Array.isArray(list) || !list.length) return false;
+  let removed = false;
+  const snapshot = list.slice();
+  for (const entry of snapshot) {
+    const existingId = entry?.placeableId;
+    if (!existingId || !isTreePlaceableId(existingId)) continue;
+    removeItem(m, x, y, existingId);
+    removed = true;
+  }
+  return removed;
+}
+
+function cloneMeshMaterials(root) {
+  if (!root?.traverse) return;
+  root.traverse((child) => {
+    if (!child?.isMesh || !child.material) return;
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map((mat) => {
+        if (!mat || typeof mat.clone !== 'function') return mat;
+        const clone = mat.clone();
+        clone.needsUpdate = true;
+        return clone;
+      });
+      return;
+    }
+    const mat = child.material;
+    if (mat && typeof mat.clone === 'function') {
+      child.material = mat.clone();
+      child.material.needsUpdate = true;
+    }
+  });
+}
 
 function resolvePlantFamilyVariants(variantId) {
   if (typeof variantId !== 'string') return null;
@@ -502,16 +559,10 @@ export function placeItem(m, id, x, y) {
 
   let def = TERRAIN_PLACEABLES[id];
   // Support virtual family selectors (type: 'plant-family') by resolving to a concrete variant id
-  if (
-    def &&
-    def.type === 'plant-family' &&
-    Array.isArray(def.familyVariants) &&
-    def.familyVariants.length
-  ) {
-    // Choose a variant per placement (simple random; could be made deterministic via coords if desired)
-    const variantId = def.familyVariants[Math.floor(Math.random() * def.familyVariants.length)];
-    if (TERRAIN_PLACEABLES[variantId]) {
-      id = variantId; // replace id with concrete variant
+  if (def?.type === 'plant-family') {
+    const variantId = resolveFamilyVariant(def, x, y);
+    if (variantId && TERRAIN_PLACEABLES[variantId]) {
+      id = variantId;
       def = TERRAIN_PLACEABLES[id];
     }
   }
@@ -522,6 +573,9 @@ export function placeItem(m, id, x, y) {
   // PURE 3D PATH: plants always use models now (legacy 2D removed)
   if (isPlant) {
     if (!m.placeables) m.placeables = new Map();
+    if (isTreePlaceableId(id, def)) {
+      clearExistingTreesAtTile(m, tileKey, x, y);
+    }
     if (!m.placeables.has(tileKey)) m.placeables.set(tileKey, []);
     const record = {
       gridX: x,
@@ -600,8 +654,8 @@ export function placeItem(m, id, x, y) {
       };
       // Palm model aliasing: if dedicated palm assets don't exist yet, map them to a broadleaf base and adjust.
       const palmAliasMap = {
-        'palm-single-a': 'common-broadleaf-2',
-        'palm-double-a': 'common-broadleaf-3',
+        'tropical-palm-a': 'common-broadleaf-2',
+        'tropical-palm-b': 'common-broadleaf-3',
       };
       const palmStyler = (root, key) => {
         try {
@@ -629,13 +683,14 @@ export function placeItem(m, id, x, y) {
           /* styling non-fatal */
         }
       };
-      if (palmAliasMap[modelKey]) {
+      if (palmAliasMap[modelKey] && !cache.hasKey(modelKey)) {
         const baseKey = palmAliasMap[modelKey];
         cache
           .getModel(baseKey)
           .then((model) => {
             if (!model) return;
             const root = model.clone(true);
+            cloneMeshMaterials(root);
             palmStyler(root, modelKey);
             finalizeModelPlacement(root);
           })
@@ -653,9 +708,11 @@ export function placeItem(m, id, x, y) {
         .then((model) => {
           if (!model) return;
           const root = model.clone(true);
+          cloneMeshMaterials(root);
           try {
             const tintVariant = def?.tintVariant || TERRAIN_PLACEABLES[id]?.tintVariant;
-            if (tintVariant === 'spectral' || /-spectral$/i.test(id)) {
+            const isSpectralTint = tintVariant === 'spectral' || /-spectral$/i.test(id);
+            if (isSpectralTint) {
               const spectralPalettes = [
                 {
                   foliage: 0xbd4bff,
@@ -719,6 +776,7 @@ export function placeItem(m, id, x, y) {
                   const mapSrc = `${m.map?.image?.src || ''}`.toLowerCase();
                   const mapLabel = `${mapName} ${mapSrc}`;
                   const isFoliageCandidate = !!(m.userData && m.userData.__foliageCandidate);
+                  const usesCutout = m.userData?.__foliageStrategy === 'cutout-lite';
                   const heurFoliage = /leaf|foliage|petal|flower|canopy|crown|blossom/.test(
                     `${matLabel} ${mapLabel}`
                   );
@@ -740,7 +798,10 @@ export function placeItem(m, id, x, y) {
                     ? (palette.foliageOpacity ?? 0.58)
                     : (palette.trunkOpacity ?? 0.34);
                   try {
-                    if (typeof m.opacity !== 'number' || m.opacity > targetOpacity) {
+                    if (usesCutout) {
+                      m.opacity = 1;
+                      m.alphaTest = Math.min(0.35, Math.max(0.02, m.alphaTest ?? 0.05));
+                    } else if (typeof m.opacity !== 'number' || m.opacity > targetOpacity) {
                       m.opacity = targetOpacity;
                     }
                   } catch (_) {
@@ -756,11 +817,84 @@ export function placeItem(m, id, x, y) {
                     }
                   }
                   try {
-                    m.transparent = true;
-                    if (m.depthWrite !== false) m.depthWrite = false;
+                    if (usesCutout) {
+                      m.transparent = false;
+                      if (typeof m.depthWrite === 'boolean') m.depthWrite = true;
+                      if (typeof m.depthTest === 'boolean') m.depthTest = true;
+                    } else {
+                      m.transparent = true;
+                      if (m.depthWrite !== false) m.depthWrite = false;
+                    }
                     if (typeof m.alphaHash === 'boolean') m.alphaHash = false;
                   } catch (_) {
                     /* transparency setup non-fatal */
+                  }
+                  m.needsUpdate = true;
+                });
+              });
+            } else if (/^tree-thick-[a-e]$/i.test(id)) {
+              root.traverse?.((ch) => {
+                if (!ch?.isMesh || !ch.material) return;
+                const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+                const nodeLabel = `${ch.name || ''}`.toLowerCase();
+                mats.forEach((m) => {
+                  if (!m) return;
+                  const matLabel = `${nodeLabel} ${(m.name || '').toLowerCase()}`;
+                  const mapName = `${m.map?.name || ''}`.toLowerCase();
+                  const mapSrc = `${m.map?.image?.src || ''}`.toLowerCase();
+                  const mapLabel = `${mapName} ${mapSrc}`;
+                  const isFoliageCandidate = !!(m.userData && m.userData.__foliageCandidate);
+                  const usesCutout = m.userData?.__foliageStrategy === 'cutout-lite';
+                  const heurFoliage = /leaf|foliage|needl|canopy|crown|pine/.test(
+                    `${matLabel} ${mapLabel}`
+                  );
+                  const isFoliage = isFoliageCandidate || heurFoliage;
+                  const isTrunk = /trunk|bark|branch|wood|stem/.test(matLabel);
+                  if (!isFoliage && !isTrunk) return;
+                  try {
+                    if (m.color) {
+                      // Restore neutral multiplier so baked textures define the palette.
+                      if (m.color.setRGB) {
+                        m.color.setRGB(1, 1, 1);
+                      } else if ('r' in m.color && 'g' in m.color && 'b' in m.color) {
+                        m.color.r = 1;
+                        m.color.g = 1;
+                        m.color.b = 1;
+                      }
+                    }
+                  } catch (_) {
+                    /* natural tint reset fallback */
+                  }
+                  try {
+                    if (typeof m.opacity === 'number') {
+                      if (usesCutout && isFoliage) {
+                        m.opacity = 1;
+                        m.alphaTest = Math.min(0.35, Math.max(0.02, m.alphaTest ?? 0.05));
+                      } else {
+                        m.opacity = isFoliage ? 0.98 : 1;
+                      }
+                    }
+                    if (typeof m.transparent === 'boolean') {
+                      m.transparent = usesCutout ? false : !!isFoliage;
+                    }
+                    if (typeof m.depthWrite === 'boolean') {
+                      m.depthWrite = usesCutout ? true : !isFoliage;
+                    }
+                    if (usesCutout && typeof m.depthTest === 'boolean') {
+                      m.depthTest = true;
+                    }
+                  } catch (_) {
+                    /* transparency reset non-fatal */
+                  }
+                  if (m.emissive && typeof m.emissive.setHex === 'function') {
+                    try {
+                      m.emissive.setHex(0x000000);
+                      if (typeof m.emissiveIntensity === 'number') {
+                        m.emissiveIntensity = 0;
+                      }
+                    } catch (_) {
+                      /* emissive reset optional */
+                    }
                   }
                   m.needsUpdate = true;
                 });

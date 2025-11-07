@@ -45,6 +45,13 @@ export function getElevationScaleControls() {
   };
 }
 
+export function getTreeDensityControls() {
+  return {
+    slider: document.getElementById('tree-density-slider'),
+    valueEl: document.getElementById('tree-density-value'),
+  };
+}
+
 /** Returns the brush size display element. */
 export function getBrushSizeDisplay() {
   return document.getElementById('brush-size-display');

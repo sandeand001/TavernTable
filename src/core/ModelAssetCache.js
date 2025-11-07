@@ -1,9 +1,65 @@
 // Clean minimal ModelAssetCache implementation (readable + properly indented)
+const DEFAULT_TEXTURE_BASE = 'assets/terrain/3d Assets/Textures';
+const TROPICAL_FBX_SOURCE = 'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx';
+const TROPICAL_TEXTURE_BASE = 'assets/terrain/3d Assets/Tropical/textures';
+
+const KNOWN_ALPHA_TEXTURES = new Set(
+  [
+    'MI_MZRa_Monstera_B07a1_BC.png',
+    'MI_MZRa_Monstera_B07a2_BC.png',
+    'T_MZRa_Banana_B09a_BC.png',
+    'T_MZRa_Fern_B051_BC.png',
+    'T_MZRa_Fern_B052_BC.png',
+    'T_MZRa_Fern_B053_BC.png',
+    'T_MZRa_Palm_B08a_BC.png',
+  ].map((name) => name.toLowerCase())
+);
+
+const clampAlphaTest = (value) => Math.min(0.45, Math.max(0.01, value ?? 0.05));
+
+const makeTropicalEntry = (node, textures = {}, options = {}) => {
+  const entry = {
+    path: TROPICAL_FBX_SOURCE,
+    format: 'fbx',
+    node,
+    textures,
+    textureBase: options.textureBase || TROPICAL_TEXTURE_BASE,
+  };
+  const resourceBase = options.resourcePath || entry.textureBase;
+  if (resourceBase) entry.resourcePath = resourceBase;
+  if (options.centerAndGround === undefined) {
+    entry.centerAndGround = { alignXZ: true, alignY: true };
+  } else if (options.centerAndGround) {
+    entry.centerAndGround = options.centerAndGround;
+  }
+  if (options.prune) entry.prune = options.prune;
+  if (options.foliageAlphaTest !== undefined) entry.foliageAlphaTest = options.foliageAlphaTest;
+  const foliageHints = [];
+  if (textures?.baseColor) foliageHints.push(textures.baseColor);
+  if (textures?.opacity) foliageHints.push(textures.opacity);
+  if (Array.isArray(options.foliageTextureHints)) foliageHints.push(...options.foliageTextureHints);
+  if (foliageHints.length) {
+    const unique = [];
+    const seen = new Set();
+    foliageHints.forEach((hint) => {
+      const key = String(hint || '').trim();
+      if (!key || seen.has(key.toLowerCase())) return;
+      seen.add(key.toLowerCase());
+      unique.push(key);
+    });
+    if (unique.length) entry.foliageTextureHints = unique;
+  }
+  return entry;
+};
+
 class ModelAssetCache {
   constructor() {
     this._three = null;
     this._cache = new Map();
     this._loading = new Map();
+    this._textureLoader = null;
+    this._textureCache = null;
+    this._fbxLoaderCtorPromise = null;
     const base = 'assets/terrain/3d Assets/OBJ';
     this._registry = {
       'common-broadleaf-1': [`${base}/CommonTree_1.obj`],
@@ -118,6 +174,100 @@ class ModelAssetCache {
       'pebble-square-5': [`${base}/Pebble_Square_5.obj`],
       'pebble-square-6': [`${base}/Pebble_Square_6.obj`],
     };
+    Object.assign(this._registry, {
+      'tropical-palm-a': makeTropicalEntry(
+        'Palm_B08a',
+        {
+          baseColor: 'T_MZRa_Palm_B08a_BC.png',
+        },
+        {
+          foliageAlphaTest: 0.05,
+        }
+      ),
+      'tropical-palm-b': makeTropicalEntry(
+        'Palm_B08b',
+        {
+          baseColor: 'T_MZRa_Palm_B08b_BC.png',
+          normal: 'T_MZRa_Palm_B08b_N.png',
+          roughness: 'T_MZRa_Palm_B08b_R.png',
+        },
+        {
+          foliageAlphaTest: 0.05,
+        }
+      ),
+      'tropical-banana-a': makeTropicalEntry(
+        'Banana_B09a',
+        {
+          baseColor: 'T_MZRa_Banana_B09a_BC.png',
+          normal: 'T_MZRa_Banana_B09_N.png',
+          roughness: 'T_MZRa_Banana_B09_M.png',
+        },
+        {
+          foliageAlphaTest: 0.32,
+        }
+      ),
+      'tropical-banana-b': makeTropicalEntry(
+        'Banana_B09b',
+        {
+          baseColor: 'T_MZRa_Banana_B09_BC.png',
+          normal: 'T_MZRa_Banana_B09_N.png',
+          roughness: 'T_MZRa_Banana_B09_M.png',
+        },
+        {
+          foliageAlphaTest: 0.32,
+        }
+      ),
+      'tropical-monstera-a': makeTropicalEntry(
+        'Monstera_B07a1',
+        {
+          baseColor: 'MI_MZRa_Monstera_B07a1_BC.png',
+        },
+        {
+          foliageAlphaTest: 0.05,
+        }
+      ),
+      'tropical-monstera-b': makeTropicalEntry(
+        'Monstera_B07b',
+        {
+          baseColor: 'T_MZRa_Monstera_B07b_BC.png',
+          normal: 'T_MZRa_Monstera_B07b_N.png',
+          roughness: 'T_MZRa_Monstera_B07b_R.png',
+        },
+        {
+          foliageAlphaTest: 0.05,
+        }
+      ),
+      'tropical-fern-a': makeTropicalEntry(
+        'Fern_B051',
+        {
+          baseColor: 'T_MZRa_Fern_B051_BC.png',
+          opacity: 'T_MZRa_Fern_B051_O.png',
+        },
+        {
+          foliageAlphaTest: 0.06,
+        }
+      ),
+      'tropical-fern-b': makeTropicalEntry(
+        'Fern_B052',
+        {
+          baseColor: 'T_MZRa_Fern_B052_BC.png',
+          opacity: 'T_MZRa_Fern_B052_O.png',
+        },
+        {
+          foliageAlphaTest: 0.06,
+        }
+      ),
+      'tropical-fern-c': makeTropicalEntry(
+        'Fern_B053',
+        {
+          baseColor: 'T_MZRa_Fern_B053_BC.png',
+          opacity: 'T_MZRa_Fern_B053_O.png',
+        },
+        {
+          foliageAlphaTest: 0.06,
+        }
+      ),
+    });
     this._legacyToCanonical = {
       'tree-oak-1': 'common-broadleaf-1',
       'tree-oak-2': 'common-broadleaf-2',
@@ -139,6 +289,10 @@ class ModelAssetCache {
       'rock-2': 'rock-medium-2',
       'rock-3': 'rock-medium-3',
     };
+    Object.assign(this._legacyToCanonical, {
+      'palm-single-a': 'tropical-palm-a',
+      'palm-double-a': 'tropical-palm-b',
+    });
   }
 
   setThree(three) {
@@ -151,6 +305,54 @@ class ModelAssetCache {
 
   _resolveKey(key) {
     return this._legacyToCanonical[key] || key;
+  }
+
+  _buildPathVariants(basePath, format = 'OBJ') {
+    if (!basePath) return [];
+    const normalizedFormat = String(format || 'OBJ').toUpperCase();
+    const encodableFormats = normalizedFormat === 'OBJ' || normalizedFormat === 'FBX';
+    const variants = new Set();
+    const push = (candidate) => {
+      if (!candidate) return;
+      variants.add(candidate);
+      if (encodableFormats && candidate.includes('3d Assets'))
+        variants.add(candidate.replace('3d Assets', '3d%20Assets'));
+    };
+    push(basePath);
+    if (!basePath.startsWith('./')) push(`./${basePath}`);
+    if (!basePath.startsWith('/')) push(`/${basePath}`);
+    // re-run space encoding on newly added variants
+    [...variants].forEach((candidate) => {
+      if (encodableFormats && candidate.includes('3d Assets'))
+        variants.add(candidate.replace('3d Assets', '3d%20Assets'));
+    });
+    return [...variants];
+  }
+
+  _loadRegistryEntry(key) {
+    const raw = this._registry[key];
+    if (!raw) return null;
+    if (Array.isArray(raw)) {
+      const path = raw[0];
+      if (!path) return null;
+      return {
+        key,
+        format: 'OBJ',
+        path,
+        variants: this._buildPathVariants(path, 'OBJ'),
+        textures: null,
+        textureBase: DEFAULT_TEXTURE_BASE,
+      };
+    }
+    if (typeof raw !== 'object') return null;
+    const entry = { ...raw };
+    const format = String(entry.format || 'OBJ').toUpperCase();
+    entry.format = format;
+    entry.textureBase = entry.textureBase || DEFAULT_TEXTURE_BASE;
+    if (entry.foliageAlphaTest !== undefined)
+      entry.foliageAlphaTest = clampAlphaTest(entry.foliageAlphaTest);
+    entry.variants = this._buildPathVariants(entry.path, format);
+    return entry;
   }
 
   async _ensureThreeAndLoader() {
@@ -168,10 +370,16 @@ class ModelAssetCache {
     key = this._resolveKey(key);
     if (this._cache.has(key)) return this._cache.get(key).clone(true);
     if (this._loading.has(key)) return (await this._loading.get(key)).clone(true);
-    const paths = this._registry[key];
-    if (!paths || !paths.length) return null;
+    const descriptor = this._loadRegistryEntry(key);
+    if (!descriptor || !descriptor.path) return null;
     if (!this._three) await this._ensureThreeAndLoader();
-    const promise = this._loadOBJ(this._three, key, paths[0]);
+    let promise;
+    if (descriptor.format === 'FBX') {
+      promise = this._loadFBX(this._three, key, descriptor);
+    } else {
+      const primaryPath = descriptor.variants?.[0] || descriptor.path;
+      promise = this._loadOBJ(this._three, key, primaryPath, descriptor);
+    }
     this._loading.set(key, promise);
     const obj = await promise;
     this._loading.delete(key);
@@ -179,13 +387,13 @@ class ModelAssetCache {
     else if (typeof console !== 'undefined') {
       console.warn('[ModelAssetCache] Failed to load', {
         key,
-        path: paths[0],
+        path: descriptor.path,
       });
     }
     return obj ? obj.clone(true) : null;
   }
 
-  async _loadOBJ(three, key, path) {
+  async _loadOBJ(three, key, path, descriptor) {
     if (!three) return null;
     let OBJLoaderMod = null;
     const VERBOSE = !!(typeof window !== 'undefined' && window.DEBUG_MODEL_CACHE_VERBOSE);
@@ -210,17 +418,10 @@ class ModelAssetCache {
     const OBJLoader = OBJLoaderMod.OBJLoader || OBJLoaderMod.default;
     if (!OBJLoader) return null;
     const attempted = new Set();
-    const buildVariants = (p) => {
-      const out = [p];
-      if (p.includes('3d Assets')) out.push(p.replace('3d Assets', '3d%20Assets'));
-      if (!p.startsWith('./')) out.push('./' + p);
-      if (!p.startsWith('/')) out.push('/' + p);
-      out.slice().forEach((v) => {
-        if (v.includes('3d Assets')) out.push(v.replace('3d Assets', '3d%20Assets'));
-      });
-      return [...new Set(out)];
-    };
-    const variants = buildVariants(path);
+    const variants =
+      (descriptor && descriptor.variants && descriptor.variants.length
+        ? descriptor.variants
+        : this._buildPathVariants(path, 'OBJ')) || [];
     const tryLoad = (i) =>
       new Promise((resolve) => {
         if (i >= variants.length) return resolve(null);
@@ -243,7 +444,7 @@ class ModelAssetCache {
             url,
             (root) => {
               try {
-                this._postProcess(three, root, key, url, 'OBJ');
+                this._postProcess(three, root, key, url, 'OBJ', descriptor);
               } catch (postErr) {
                 // ignore post-process error for individual variant
               }
@@ -274,8 +475,269 @@ class ModelAssetCache {
     return result;
   }
 
-  _postProcess(three, root, key, path, kind) {
+  async _ensureFBXLoaderCtor() {
+    if (this._fbxLoaderCtorPromise) return this._fbxLoaderCtorPromise;
+    this._fbxLoaderCtorPromise = (async () => {
+      try {
+        const mod = await import('three/examples/jsm/loaders/FBXLoader.js');
+        return mod.FBXLoader || mod.default || null;
+      } catch (err) {
+        try {
+          const fallback = await import(
+            'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js'
+          );
+          if (typeof console !== 'undefined') {
+            console.info('[ModelAssetCache] FBXLoader CDN fallback');
+          }
+          return fallback.FBXLoader || fallback.default || null;
+        } catch (err2) {
+          if (typeof console !== 'undefined') {
+            console.error('[ModelAssetCache] FBXLoader import failed', err, err2);
+          }
+          return null;
+        }
+      }
+    })();
+    return this._fbxLoaderCtorPromise;
+  }
+
+  async _loadFBX(three, key, descriptor) {
+    if (!three || !descriptor?.path) return null;
+    const FBXLoaderCtor = await this._ensureFBXLoaderCtor();
+    if (!FBXLoaderCtor) return null;
+    const variants =
+      (descriptor.variants && descriptor.variants.length
+        ? descriptor.variants
+        : this._buildPathVariants(descriptor.path, 'FBX')) || [];
+    const attempted = new Set();
+    const VERBOSE = !!(typeof window !== 'undefined' && window.DEBUG_MODEL_CACHE_VERBOSE);
+    const tryLoad = (index) =>
+      new Promise((resolve) => {
+        if (index >= variants.length) return resolve(null);
+        const url = variants[index];
+        attempted.add(url);
+        let loader;
+        try {
+          loader = new FBXLoaderCtor();
+        } catch {
+          return resolve(null);
+        }
+        try {
+          const resource = descriptor.resourcePath || descriptor.textureBase;
+          if (resource && loader.setResourcePath) {
+            const normalized = resource.endsWith('/') ? resource : `${resource}/`;
+            loader.setResourcePath(normalized);
+          }
+        } catch (_) {
+          /* ignore resource path normalization issues */
+        }
+        let settled = false;
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+        try {
+          loader.load(
+            url,
+            (root) => {
+              let result = root;
+              try {
+                result = this._selectFBXNode(three, root, descriptor, key) || root;
+              } catch (_) {
+                result = root;
+              }
+              try {
+                this._pruneFBXArtifacts(result, descriptor);
+              } catch (_) {
+                /* pruning best-effort */
+              }
+              try {
+                this._postProcess(three, result, key, url, 'FBX', descriptor);
+              } catch (_) {
+                /* post-processing errors are non-fatal */
+              }
+              if (descriptor?.centerAndGround) {
+                try {
+                  this._centerAndGround(three, result, descriptor.centerAndGround);
+                } catch (_) {
+                  /* align optional */
+                }
+              }
+              if (VERBOSE && typeof console !== 'undefined' && url !== descriptor.path) {
+                console.info('[ModelAssetCache] FBX fallback path', { key, url });
+              }
+              finish(result);
+            },
+            undefined,
+            () => {
+              tryLoad(index + 1).then(finish);
+            }
+          );
+        } catch (loadErr) {
+          tryLoad(index + 1).then(finish);
+        }
+      });
+    const result = await tryLoad(0);
+    if (!result && typeof console !== 'undefined') {
+      console.error('[ModelAssetCache] All FBX load variants failed', {
+        key,
+        variants: [...attempted],
+      });
+    }
+    return result;
+  }
+
+  _selectFBXNode(three, root, descriptor, key) {
+    if (!root || !descriptor?.node) return root;
+    const target = String(descriptor.node || '').toLowerCase();
+    const matches = [];
     try {
+      root.traverse?.((child) => {
+        const name = String(child?.name || '').toLowerCase();
+        if (!name) return;
+        if (name === target || name.startsWith(`${target}_`) || name.includes(target)) {
+          matches.push(child);
+        }
+      });
+    } catch (_) {
+      /* traversal failure falls back to full root */
+    }
+    if (!matches.length) return root;
+    const group = new three.Group();
+    group.name = `FBX:${key}:${descriptor.node}`;
+    const seen = new Set();
+    matches.forEach((node) => {
+      if (!node) return;
+      let parent = node.parent;
+      while (parent) {
+        if (matches.includes(parent)) return;
+        parent = parent.parent;
+      }
+      const clone = node.clone(true);
+      if (clone && !seen.has(clone.uuid)) {
+        seen.add(clone.uuid);
+        group.add(clone);
+      }
+    });
+    return group.children.length ? group : root;
+  }
+
+  _pruneFBXArtifacts(root, descriptor) {
+    if (!root) return;
+    const patterns = [];
+    if (Array.isArray(descriptor?.prune)) {
+      descriptor.prune.forEach((pat) => {
+        if (!pat) return;
+        if (pat instanceof RegExp) {
+          patterns.push(pat);
+        } else if (typeof pat === 'string') {
+          const trimmed = pat.trim();
+          if (!trimmed) return;
+          const escaped = trimmed.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+          patterns.push(new RegExp(escaped, 'i'));
+        }
+      });
+    }
+    if (!patterns.length) {
+      patterns.push(/\bbg\b/i, /background/i, /gradient/i, /plane/i, /circle/i);
+    }
+    const removals = [];
+    root.traverse?.((child) => {
+      if (!child || child === root) return;
+      const name = String(child.name || '');
+      if (!name) return;
+      const lower = name.toLowerCase();
+      if (patterns.some((re) => re.test(lower))) removals.push(child);
+    });
+    removals.forEach((node) => {
+      try {
+        node.parent?.remove(node);
+      } catch (_) {
+        /* ignore detach failure */
+      }
+    });
+  }
+
+  _centerAndGround(three, root, options = {}) {
+    if (!three || !root) return;
+    try {
+      const box = new three.Box3().setFromObject(root);
+      if (!box) return;
+      const center = new three.Vector3();
+      box.getCenter(center);
+      const alignXZ = options.alignXZ !== false;
+      const alignY = options.alignY !== false;
+      const nextPosition = root.position.clone?.() || new three.Vector3();
+      if (alignXZ) {
+        nextPosition.x -= center.x;
+        nextPosition.z -= center.z;
+      }
+      if (alignY) nextPosition.y -= box.min.y;
+      root.position.copy(nextPosition);
+      root.updateMatrixWorld?.(true);
+    } catch (_) {
+      /* positioning best effort */
+    }
+  }
+
+  _postProcess(three, root, key, path, kind, descriptor) {
+    try {
+      const entry = descriptor || {};
+      const textureBases = [];
+      if (entry.textureBase) textureBases.push(entry.textureBase);
+      if (!textureBases.includes(DEFAULT_TEXTURE_BASE)) textureBases.push(DEFAULT_TEXTURE_BASE);
+      const uniqueBases = textureBases.filter((base, idx) => textureBases.indexOf(base) === idx);
+      const ensureTexture = (file, opts = {}) => {
+        if (!file) return null;
+        if (!this._textureLoader) this._textureLoader = new three.TextureLoader();
+        if (!this._textureCache) this._textureCache = new Map();
+        const { colorSpace = 'srgb' } = opts;
+        for (const base of uniqueBases) {
+          const full = `${base}/${file}`;
+          let tex = this._textureCache.get(full);
+          if (!tex) {
+            try {
+              tex = this._textureLoader.load(full, () => {
+                if (tex && 'colorSpace' in tex) {
+                  if (colorSpace === 'srgb' && three.SRGBColorSpace) {
+                    tex.colorSpace = three.SRGBColorSpace;
+                  } else if (colorSpace === 'linear' && three.LinearSRGBColorSpace) {
+                    tex.colorSpace = three.LinearSRGBColorSpace;
+                  }
+                  tex.needsUpdate = true;
+                }
+              });
+              if (tex && !tex.name) tex.name = file;
+              this._textureCache.set(full, tex);
+            } catch (_) {
+              tex = null;
+            }
+          }
+          if (tex) return tex;
+        }
+        return null;
+      };
+      const entryTextures = entry.textures || {};
+      const entryTextureCache = new Map();
+      const getEntryTexture = (purpose, opts) => {
+        if (!entryTextures[purpose]) return null;
+        if (!entryTextureCache.has(purpose)) {
+          entryTextureCache.set(purpose, ensureTexture(entryTextures[purpose], opts));
+        }
+        return entryTextureCache.get(purpose);
+      };
+      const foliageAlpha =
+        entry.foliageAlphaTest !== undefined ? clampAlphaTest(entry.foliageAlphaTest) : null;
+      const foliageHintsLc = Array.isArray(entry.foliageTextureHints)
+        ? entry.foliageTextureHints.map((hint) => String(hint || '').toLowerCase())
+        : [];
+      const matchesKnownAlphaTexture = (value) => {
+        if (!value) return false;
+        const lc = String(value || '').toLowerCase();
+        const leaf = lc.split(/[\\/]/).pop() || lc;
+        return KNOWN_ALPHA_TEXTURES.has(leaf);
+      };
       root.traverse((child) => {
         if (!child.isMesh) return;
         const mats = Array.isArray(child.material) ? child.material : [child.material];
@@ -283,9 +745,13 @@ class ModelAssetCache {
           if (!mat) return;
           try {
             if (!mat.map) {
-              if (!this._textureLoader) this._textureLoader = new three.TextureLoader();
-              if (!this._textureCache) this._textureCache = new Map();
-              const texBase = 'assets/terrain/3d Assets/Textures';
+              const direct = getEntryTexture('baseColor', { colorSpace: 'srgb' });
+              if (direct) {
+                mat.map = direct;
+                mat.needsUpdate = true;
+              }
+            }
+            if (!mat.map) {
               const nameLc = (mat.name || '').toLowerCase();
               const pick = () => {
                 if (/leaves_birch|birch_leaves/.test(nameLc)) return 'Leaves_Birch_C.png';
@@ -293,7 +759,6 @@ class ModelAssetCache {
                 if (/leaves_twistedtree/.test(nameLc)) return 'Leaves_TwistedTree_C.png';
                 if (/leaves_normaltree/.test(nameLc)) return 'Leaves_NormalTree_C.png';
                 if (/leaves_giantpine/.test(nameLc)) return 'Leaves_GiantPine_C.png';
-                // Explicit cherry blossom detection (some source OBJ materials may have generic names like 'leaves' or color variants)
                 if (/cherry|sakura|blossom/.test(nameLc)) return 'Leaves_CherryBlossom_C.png';
                 if (/(leaves_pine|leaf_pine)/.test(nameLc)) return 'Leaf_Pine_C.png';
                 if (/leaves/.test(nameLc)) return 'Leaves.png';
@@ -308,21 +773,7 @@ class ModelAssetCache {
               };
               const file = pick();
               if (file) {
-                const full = `${texBase}/${file}`;
-                let tex = this._textureCache.get(full);
-                if (!tex) {
-                  try {
-                    tex = this._textureLoader.load(full, () => {
-                      if (tex && 'colorSpace' in tex && three.SRGBColorSpace) {
-                        tex.colorSpace = three.SRGBColorSpace;
-                        tex.needsUpdate = true;
-                      }
-                    });
-                    this._textureCache.set(full, tex);
-                  } catch (textureErr) {
-                    // ignore individual texture load error
-                  }
-                }
+                const tex = ensureTexture(file, { colorSpace: 'srgb' });
                 if (tex) {
                   mat.map = tex;
                   mat.needsUpdate = true;
@@ -331,24 +782,10 @@ class ModelAssetCache {
             }
             if (mat.map) {
               try {
-                // Handle absolute paths like C:/Leaves_NormalTree_C.png by reloading from our local texture folder.
                 const src = mat.map.image?.src || mat.map.source?.data?.src || '';
-                if (/^[a-zA-Z]:\//.test(src)) {
+                if (/^[a-zA-Z]:[\\/]/.test(src)) {
                   const file = src.split(/[/\\]/).pop();
-                  const texBase = 'assets/terrain/3d Assets/Textures';
-                  const local = `${texBase}/${file}`;
-                  if (!this._textureLoader) this._textureLoader = new three.TextureLoader();
-                  if (!this._textureCache) this._textureCache = new Map();
-                  let tex = this._textureCache.get(local);
-                  if (!tex) {
-                    tex = this._textureLoader.load(local, () => {
-                      if (tex && 'colorSpace' in tex && three.SRGBColorSpace) {
-                        tex.colorSpace = three.SRGBColorSpace;
-                        tex.needsUpdate = true;
-                      }
-                    });
-                    this._textureCache.set(local, tex);
-                  }
+                  const tex = ensureTexture(file, { colorSpace: 'srgb' });
                   if (tex) {
                     mat.map = tex;
                     mat.needsUpdate = true;
@@ -360,33 +797,67 @@ class ModelAssetCache {
                 /* ignore texture rewrite failures */
               }
             }
-            const tag = (
-              (mat.name || '') +
-              ' ' +
-              (mat.map?.name || '') +
-              ' ' +
-              (mat.map?.image?.src || '')
+            const nodeLabel = `${child.name || ''}`.toLowerCase();
+            const matLabelLc = `${mat.name || ''}`.toLowerCase();
+            const mapNameLc = `${mat.map?.name || ''}`.toLowerCase();
+            const mapSrcLc = (
+              mat.map?.image?.src ||
+              mat.map?.source?.data?.src ||
+              ''
             ).toLowerCase();
-            const isLeaf =
-              /(leaf|leaves|foliage|canopy|crown|autumn|orange|yellow|red)/.test(tag) &&
-              !/(bark|trunk|branch|rock|stone|ground|dirt)/.test(tag);
-            if (!isLeaf) return;
-            // If this is foliage and STILL no texture map was resolved, apply a generic leaf texture.
+            const mapFileLc = mapSrcLc.split(/[\\/]/).pop() || '';
+            const mapNameFileLc = mapNameLc.split(/[\\/]/).pop() || '';
+            const alphaSrcLc = (
+              mat.alphaMap?.image?.src ||
+              mat.alphaMap?.source?.data?.src ||
+              ''
+            ).toLowerCase();
+            const alphaFileLc = alphaSrcLc.split(/[\\/]/).pop() || '';
+            const combinedLabel = `${nodeLabel} ${matLabelLc} ${mapNameLc} ${mapSrcLc}`;
+            const heurFoliage =
+              /(leaf|leaves|foliage|canopy|crown|autumn|orange|yellow|red|frond|palm|banana|monstera|fern)/.test(
+                combinedLabel
+              );
+            const heurTrunk = /(bark|trunk|branch|wood|stem|log)/.test(combinedLabel);
+            const matchesHint =
+              foliageHintsLc.length > 0 &&
+              foliageHintsLc.some(
+                (hint) =>
+                  hint &&
+                  (mapNameLc.includes(hint) ||
+                    mapSrcLc.includes(hint) ||
+                    mapFileLc.includes(hint) ||
+                    mapNameFileLc.includes(hint) ||
+                    alphaSrcLc.includes(hint) ||
+                    alphaFileLc.includes(hint))
+              );
+            const hasKnownAlpha =
+              matchesKnownAlphaTexture(mapNameLc) ||
+              matchesKnownAlphaTexture(mapNameFileLc) ||
+              matchesKnownAlphaTexture(mapSrcLc) ||
+              matchesKnownAlphaTexture(mapFileLc) ||
+              matchesKnownAlphaTexture(alphaSrcLc) ||
+              matchesKnownAlphaTexture(alphaFileLc);
+            const isFoliage = !heurTrunk && (heurFoliage || matchesHint || hasKnownAlpha);
+            if (!mat.userData) mat.userData = {};
+            if (!isFoliage) {
+              mat.userData.__foliageCandidate = false;
+              const normalTex = getEntryTexture('normal', { colorSpace: 'linear' });
+              if (normalTex && !mat.normalMap) {
+                mat.normalMap = normalTex;
+                mat.needsUpdate = true;
+              }
+              const roughnessTex = getEntryTexture('roughness', { colorSpace: 'linear' });
+              if (roughnessTex && !mat.roughnessMap) {
+                mat.roughnessMap = roughnessTex;
+                mat.needsUpdate = true;
+              }
+              return;
+            }
+            mat.userData.__foliageCandidate = true;
             if (!mat.map) {
               try {
-                if (!this._textureLoader) this._textureLoader = new three.TextureLoader();
-                const genericLeaf = 'assets/terrain/3d Assets/Textures/Leaves_NormalTree_C.png';
-                let tex = this._textureCache?.get?.(genericLeaf);
-                if (!tex) {
-                  if (!this._textureCache) this._textureCache = new Map();
-                  tex = this._textureLoader.load(genericLeaf, () => {
-                    if (tex && 'colorSpace' in tex && three.SRGBColorSpace) {
-                      tex.colorSpace = three.SRGBColorSpace;
-                      tex.needsUpdate = true;
-                    }
-                  });
-                  this._textureCache.set(genericLeaf, tex);
-                }
+                const tex = ensureTexture('Leaves_NormalTree_C.png', { colorSpace: 'srgb' });
                 if (tex) {
                   mat.map = tex;
                   mat.needsUpdate = true;
@@ -395,24 +866,40 @@ class ModelAssetCache {
                 /* ignore leaf fallback failure */
               }
             }
-            if (!mat.userData) mat.userData = {};
-            mat.userData.__foliageCandidate = true;
-            mat.transparent = true;
-            // Cherry blossom color correction: if the selected texture is NOT the dedicated cherry texture
-            // but the key suggests a cherry asset, apply a soft pink tint multiplier.
+            const normalTex = getEntryTexture('normal', { colorSpace: 'linear' });
+            if (normalTex && !mat.normalMap) {
+              mat.normalMap = normalTex;
+              mat.needsUpdate = true;
+            }
+            const roughnessTex = getEntryTexture('roughness', { colorSpace: 'linear' });
+            if (roughnessTex && !mat.roughnessMap) {
+              mat.roughnessMap = roughnessTex;
+              mat.needsUpdate = true;
+            }
+            const opacityTex = getEntryTexture('opacity', { colorSpace: 'linear' });
+            if (opacityTex) {
+              mat.alphaMap = opacityTex;
+              mat.needsUpdate = true;
+            }
+            mat.transparent = false;
             if (
               /cherry/.test(key) &&
               mat.map &&
               /leaves_(normal|twisted|tallthick|giantpine)/.test(mat.map.image?.src || '')
             ) {
-              // Apply a material color tint only if it's still default white (to avoid compounding user tints)
               if (mat.color && mat.color.r === 1 && mat.color.g === 1 && mat.color.b === 1) {
-                mat.color.setRGB(1.0, 0.78, 0.92); // gentle sakura pink
+                mat.color.setRGB(1.0, 0.78, 0.92);
               }
             }
-            if (typeof mat.alphaTest !== 'number' || mat.alphaTest < 0.05) mat.alphaTest = 0.12;
-            if (mat.alphaTest > 0.4) mat.alphaTest = 0.4;
-            mat.depthWrite = false;
+            if (foliageAlpha !== null) {
+              mat.alphaTest = clampAlphaTest(foliageAlpha);
+            } else {
+              if (typeof mat.alphaTest !== 'number' || mat.alphaTest < 0.02) mat.alphaTest = 0.05;
+              if (mat.alphaTest > 0.4) mat.alphaTest = 0.4;
+            }
+            mat.opacity = 1;
+            mat.depthWrite = true;
+            if (typeof mat.depthTest === 'boolean') mat.depthTest = true;
             mat.side = three.DoubleSide;
             mat.userData.__foliageStrategy = 'cutout-lite';
             mat.needsUpdate = true;
@@ -454,6 +941,10 @@ class ModelAssetCache {
     // Large canopy & special tall forms
     if (/^giant-pine-/.test(key)) return 9.5; // towering giants
     if (/^tall-thick-/.test(key)) return 7.5; // massive thick trunks
+    if (/^tropical-palm-/.test(key)) return 6.4;
+    if (/^tropical-banana-/.test(key)) return 3.6;
+    if (/^tropical-monstera-/.test(key)) return 2.4;
+    if (/^tropical-fern-/.test(key)) return 1.1;
     // Standard mature trees (baseline)
     if (/^(common-broadleaf-|pine-conifer-|birch-|cherry-|dead-tree-|twisted-bare-)/.test(key))
       return 6.2;

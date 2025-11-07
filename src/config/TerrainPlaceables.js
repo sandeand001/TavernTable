@@ -69,8 +69,7 @@ const TREE_PLACEABLES = {
   'tree-single-palm': {
     label: 'Single Palm',
     img: null,
-    // Use palm-specific virtual model key; loader will alias to an existing base + apply transforms.
-    modelKey: 'palm-single-a',
+    modelKey: 'tropical-palm-a',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
@@ -78,7 +77,7 @@ const TREE_PLACEABLES = {
   'tree-double-palm': {
     label: 'Double Palm',
     img: null,
-    modelKey: 'palm-double-a',
+    modelKey: 'tropical-palm-b',
     type: 'plant',
     scaleMode: 'contain',
     baselineOffsetPx: 16,
@@ -618,6 +617,63 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 10,
     tintVariant: 'spectral',
+  },
+  // Tropical understory and foliage
+  'plant-tropical-monstera-a': {
+    label: 'Monstera A',
+    img: null,
+    modelKey: 'tropical-monstera-a',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 6,
+  },
+  'plant-tropical-monstera-b': {
+    label: 'Monstera B',
+    img: null,
+    modelKey: 'tropical-monstera-b',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 6,
+  },
+  'plant-tropical-banana-a': {
+    label: 'Banana Cluster A',
+    img: null,
+    modelKey: 'tropical-banana-a',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 10,
+  },
+  'plant-tropical-banana-b': {
+    label: 'Banana Cluster B',
+    img: null,
+    modelKey: 'tropical-banana-b',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 10,
+  },
+  'plant-tropical-fern-a': {
+    label: 'Tropical Fern A',
+    img: null,
+    modelKey: 'tropical-fern-a',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 2,
+  },
+  'plant-tropical-fern-b': {
+    label: 'Tropical Fern B',
+    img: null,
+    modelKey: 'tropical-fern-b',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 2,
+  },
+  'plant-tropical-fern-c': {
+    label: 'Tropical Fern C',
+    img: null,
+    modelKey: 'tropical-fern-c',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 2,
   },
   // Flowers (can be used for mystical / meadow biomes)
   'flower-1-group': {
