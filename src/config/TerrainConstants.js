@@ -57,7 +57,7 @@ export const TERRAIN_CONFIG = {
   ELEVATION_SHADOW_OFFSET: 8, // Pixel offset per height level for 3D elevation effect (slightly exaggerated)
   TERRAIN_MODE_OVERLAY_ALPHA: 0.45, // Fill alpha for non-neutral tiles while terrain mode is active
   TERRAIN_MODE_OVERLAY_BASE_ALPHA: 0.18, // Fill alpha for neutral tiles while terrain mode is active
-  TERRAIN_MODE_MESH_ALPHA: 0.55, // Opacity for 3D terrain mesh while terrain mode is active
+  TERRAIN_MODE_MESH_ALPHA: 1, // Opacity for 3D terrain mesh while terrain mode is active
 
   // Performance settings
   BATCH_UPDATE_SIZE: 10, // Maximum cells to update per frame

@@ -58,11 +58,6 @@ import { loadBaseTerrainIntoWorkingState as _loadBaseIntoWorking } from './terra
 import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/init.js';
 import { validateDependencies as _validateDeps } from './terrain-coordinator/internals/deps.js';
 import {
-  validateApplicationRequirements as _validateApplyReqs,
-  processAllGridTiles as _processAllTiles,
-  logCompletion as _logApplyComplete,
-} from './terrain-coordinator/internals/apply.js';
-import {
   generateBiomeElevationField,
   isAllDefaultHeight,
 } from '../../src/terrain/BiomeElevationGenerator.js';
@@ -102,6 +97,15 @@ export class TerrainCoordinator {
       typeof window !== 'undefined' && Number.isFinite(window.richShadingSettings?.seed)
         ? window.richShadingSettings.seed >>> 0
         : Math.floor(Math.random() * 1e9) >>> 0;
+
+    const initialTreeDensity =
+      typeof window !== 'undefined' && Number.isFinite(window.treeDensityMultiplier)
+        ? Math.max(0, window.treeDensityMultiplier)
+        : 1;
+    this._treeDensityMultiplier = initialTreeDensity;
+    if (typeof window !== 'undefined') {
+      window.treeDensityMultiplier = this._treeDensityMultiplier;
+    }
 
     logger.debug(
       'TerrainCoordinator initialized',
@@ -265,6 +269,20 @@ export class TerrainCoordinator {
    */
   setElevationScale(unit) {
     return this._elevationScaleController.apply(unit);
+  }
+
+  getTreeDensityMultiplier() {
+    return Number.isFinite(this._treeDensityMultiplier) ? this._treeDensityMultiplier : 1;
+  }
+
+  setTreeDensityMultiplier(multiplier) {
+    const numeric = Number(multiplier);
+    const clamped = Number.isFinite(numeric) && numeric >= 0 ? numeric : 1;
+    this._treeDensityMultiplier = clamped;
+    if (typeof window !== 'undefined') {
+      window.treeDensityMultiplier = clamped;
+    }
+    return this._treeDensityMultiplier;
   }
 
   /**

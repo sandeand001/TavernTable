@@ -185,7 +185,8 @@ class SidebarController {
           {
             key: 'trees',
             title: 'Trees',
-            filter: ([id, def]) => def.type === 'plant-family' || /^family-/.test(id),
+            filter: ([id, def]) =>
+              def.type === 'plant-family' || /^family-/.test(id) || /^tree-/i.test(id),
           },
           {
             key: 'plants',

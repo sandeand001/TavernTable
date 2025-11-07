@@ -13,6 +13,9 @@ export class PickingService {
     this._v2 = null;
     this._hitPoint = null;
     this._plane = null; // ground plane
+    this._scratchNormal = null;
+    this._normalMatrix = null;
+    this._terrainIntersections = [];
     this._layers = [];
     this._metrics = { raycasts: 0, lastMs: 0 };
   }
@@ -51,12 +54,31 @@ export class PickingService {
         this._v2 = new three.Vector2();
         this._hitPoint = new three.Vector3();
         this._plane = new three.Plane(new three.Vector3(0, 1, 0), 0);
+        this._scratchNormal = new three.Vector3();
+        this._normalMatrix = new three.Matrix3();
       } catch (_) {
         this._raycaster = null;
         this._v2 = null;
         this._hitPoint = null;
         this._plane = null;
+        this._scratchNormal = null;
+        this._normalMatrix = null;
         return false;
+      }
+    } else {
+      if (!this._scratchNormal) {
+        try {
+          this._scratchNormal = new three.Vector3();
+        } catch (_) {
+          this._scratchNormal = null;
+        }
+      }
+      if (!this._normalMatrix) {
+        try {
+          this._normalMatrix = new three.Matrix3();
+        } catch (_) {
+          this._normalMatrix = null;
+        }
       }
     }
     return true;
@@ -88,7 +110,51 @@ export class PickingService {
     } catch (_) {
       return null;
     }
-    if (!this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) return null;
+
+    let source = 'plane';
+    let hasHit = false;
+    if (gm.threeSceneManager?.scene) {
+      const terrainMesh = gm.threeSceneManager.scene.getObjectByName?.('TerrainMesh') || null;
+      if (terrainMesh) {
+        try {
+          const cache = this._terrainIntersections;
+          if (Array.isArray(cache)) cache.length = 0;
+          const hits = this._raycaster.intersectObject(terrainMesh, false, cache);
+          if (hits && hits.length) {
+            const hit = hits[0];
+            this._hitPoint.copy(hit.point);
+            if (
+              hit.face &&
+              this._scratchNormal &&
+              this._normalMatrix &&
+              typeof hit.object?.matrixWorld === 'object' &&
+              this._normalMatrix.getNormalMatrix
+            ) {
+              try {
+                this._scratchNormal.copy(hit.face.normal);
+                this._normalMatrix.getNormalMatrix(hit.object.matrixWorld);
+                this._scratchNormal.applyMatrix3(this._normalMatrix).normalize();
+                if (Math.abs(this._scratchNormal.y) < 0.75) {
+                  const tileSize = gm.spatial?.tileWorldSize || 1;
+                  const epsilon = tileSize * 1e-4;
+                  this._hitPoint.addScaledVector(this._scratchNormal, -epsilon);
+                }
+              } catch (_) {
+                /* ignore normal adjustments */
+              }
+            }
+            source = 'terrain';
+            hasHit = true;
+          }
+        } catch (_) {
+          /* ignore terrain raycast errors */
+        }
+      }
+    }
+
+    if (!hasHit) {
+      if (!this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) return null;
+    }
 
     const { x, y, z } = this._hitPoint;
     let grid;
@@ -98,19 +164,20 @@ export class PickingService {
       grid = null;
     }
     if (!grid) {
-      const tileSize = gm?.spatial?.tileWorldSize || 1;
+      const tileSize = gm.spatial?.tileWorldSize || 1;
       grid = {
         gridX: Math.round(x / tileSize),
         gridY: Math.round(z / tileSize),
       };
     }
+
     return {
       world: { x, y, z },
       grid: { gx: grid.gridX, gy: grid.gridY },
+      source,
       metrics: { raycasts: this._metrics.raycasts },
     };
   }
-
   _recordPickMetrics(start) {
     const end = (typeof performance !== 'undefined' && performance.now()) || Date.now();
     this._metrics.raycasts += 1;

@@ -19,6 +19,14 @@ export class TerrainBrushOverlay3D {
     this._activeOutlineCount = 0;
     this._lineAlpha = 0.9;
     this._lineWidth = 2;
+    this._wallMeshX = null;
+    this._wallMeshZ = null;
+    this._wallCapacityX = 0;
+    this._wallCapacityZ = 0;
+    this._wallOpacity = 0.32;
+    this._fillMesh = null;
+    this._fillCapacity = 0;
+    this._fillOpacity = 0.28;
 
     try {
       if (!three || !scene || !three.Group || !three.InstancedMesh) {
@@ -58,6 +66,63 @@ export class TerrainBrushOverlay3D {
           /* ignore */
         }
       }
+      if (this._wallMeshX) {
+        try {
+          if (this._wallMeshX.parent) {
+            this._wallMeshX.parent.remove(this._wallMeshX);
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          this._wallMeshX.geometry?.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          this._wallMeshX.material?.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      if (this._wallMeshZ) {
+        try {
+          if (this._wallMeshZ.parent) {
+            this._wallMeshZ.parent.remove(this._wallMeshZ);
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          this._wallMeshZ.geometry?.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          this._wallMeshZ.material?.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      if (this._fillMesh) {
+        try {
+          if (this._fillMesh.parent) {
+            this._fillMesh.parent.remove(this._fillMesh);
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          this._fillMesh.geometry?.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          this._fillMesh.material?.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+      }
       if (this._group && this._group.parent) {
         this._group.parent.remove(this._group);
       }
@@ -92,6 +157,12 @@ export class TerrainBrushOverlay3D {
       this._outlinePool = [];
       this._outlineMaterial = null;
       this._activeOutlineCount = 0;
+      this._wallMeshX = null;
+      this._wallMeshZ = null;
+      this._wallCapacityX = 0;
+      this._wallCapacityZ = 0;
+      this._fillMesh = null;
+      this._fillCapacity = 0;
     }
   }
 
@@ -101,6 +172,21 @@ export class TerrainBrushOverlay3D {
       if (this._instanced) {
         this._instanced.count = 0;
         this._instanced.instanceMatrix.needsUpdate = true;
+      }
+      if (this._wallMeshX) {
+        this._wallMeshX.count = 0;
+        this._wallMeshX.instanceMatrix.needsUpdate = true;
+        this._wallMeshX.visible = false;
+      }
+      if (this._wallMeshZ) {
+        this._wallMeshZ.count = 0;
+        this._wallMeshZ.instanceMatrix.needsUpdate = true;
+        this._wallMeshZ.visible = false;
+      }
+      if (this._fillMesh) {
+        this._fillMesh.count = 0;
+        this._fillMesh.instanceMatrix.needsUpdate = true;
+        this._fillMesh.visible = false;
       }
       if (Array.isArray(this._outlinePool)) {
         for (const line of this._outlinePool) {
@@ -123,19 +209,29 @@ export class TerrainBrushOverlay3D {
 
     const validCells = [];
     for (const cell of cells) {
-      const gx = cell?.x;
-      const gy = cell?.y;
+      const gx = cell?.x ?? cell?.gridX;
+      const gy = cell?.y ?? cell?.gridY;
       if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
-      validCells.push({ gx, gy });
+      const currentHeight = Number.isFinite(cell?.currentHeight) ? cell.currentHeight : null;
+      const previewHeight = Number.isFinite(cell?.previewHeight) ? cell.previewHeight : null;
+      validCells.push({ gx, gy, currentHeight, previewHeight });
     }
 
     if (!validCells.length) {
       this.clear();
       return;
     }
-
     this._ensureCapacity(validCells.length);
     if (!this._instanced) return;
+
+    const selectedKeys = new Set();
+    for (const entry of validCells) {
+      selectedKeys.add(`${entry.gx},${entry.gy}`);
+    }
+
+    const wallEntriesX = [];
+    const wallEntriesZ = [];
+    const fillEntries = [];
 
     const tileSize = this._getTileWorldSize();
     const elevationUnit = this._getElevationUnit();
@@ -163,6 +259,14 @@ export class TerrainBrushOverlay3D {
       /* ignore */
     }
 
+    const wallAlphaRaw = typeof style.wallAlpha === 'number' ? style.wallAlpha : this._wallOpacity;
+    const wallOpacity = Math.max(0, Math.min(1, wallAlphaRaw));
+    this._wallOpacity = wallOpacity;
+    const fillAlphaRaw =
+      typeof style.volumeAlpha === 'number' ? style.volumeAlpha : this._fillOpacity;
+    const fillOpacity = Math.max(0, Math.min(1, fillAlphaRaw));
+    this._fillOpacity = fillOpacity;
+
     this._lineAlpha = lineAlpha;
     this._lineWidth = lineWidth;
     const wantsOutline = lineAlpha > 0.001;
@@ -181,14 +285,20 @@ export class TerrainBrushOverlay3D {
     let instanceIndex = 0;
 
     for (const entry of validCells) {
-      const { gx, gy } = entry;
-      const heightLevel =
-        terrainCoordinator?.getTerrainHeight?.(gx, gy) ?? gm?.getTerrainHeight?.(gx, gy) ?? 0;
+      const { gx, gy, currentHeight, previewHeight } = entry;
+      const baseHeight = Number.isFinite(currentHeight)
+        ? currentHeight
+        : (terrainCoordinator?.getTerrainHeight?.(gx, gy) ?? gm?.getTerrainHeight?.(gx, gy) ?? 0);
+      const targetHeight = Number.isFinite(previewHeight) ? previewHeight : baseHeight;
+      const baseWorld = baseHeight * elevationUnit;
+      const previewWorld = targetHeight * elevationUnit;
+      const deltaLevels = targetHeight - baseHeight;
+      const deltaWorld = deltaLevels * elevationUnit;
       const x = (gx + 0.5) * tileSize;
       const z = (gy + 0.5) * tileSize;
-      const y = heightLevel * elevationUnit + hoverOffset;
-      dummy.position.set(x, y, z);
-      dummy.rotation.set(-Math.PI * 0.5, 0, 0);
+      const worldTop = previewWorld + hoverOffset;
+      dummy.position.set(x, worldTop, z);
+      dummy.rotation.set(0, 0, 0);
       dummy.scale.set(tileSize, 1, tileSize);
       dummy.updateMatrix();
       this._instanced.setMatrixAt(instanceIndex, dummy.matrix);
@@ -197,7 +307,7 @@ export class TerrainBrushOverlay3D {
         const outline = this._outlinePool[instanceIndex];
         if (outline) {
           outline.visible = true;
-          outline.position.set(x, y + hoverOffset * 0.35, z);
+          outline.position.set(x, worldTop + hoverOffset * 0.35, z);
           outline.scale.set(tileSize, 1, tileSize);
         }
       }
@@ -207,14 +317,162 @@ export class TerrainBrushOverlay3D {
         gy,
         centerX: x,
         centerZ: z,
-        worldTop: y,
+        worldTop,
+        baseWorld,
+        previewWorld,
+        deltaWorld,
       });
+
+      if (deltaWorld > 1e-6) {
+        const topWorld = worldTop;
+        const bottomWorld = baseWorld;
+        const height = Math.max(Math.abs(topWorld - bottomWorld), hoverOffset * 0.25);
+        const centerY = (topWorld + bottomWorld) * 0.5;
+        fillEntries.push({
+          position: { x, y: centerY, z },
+          scale: { x: tileSize, y: height, z: tileSize },
+        });
+      }
 
       instanceIndex += 1;
     }
 
     this._instanced.count = instanceIndex;
     this._instanced.instanceMatrix.needsUpdate = true;
+
+    if (fillEntries.length > 0) {
+      this._ensureFillCapacity(fillEntries.length);
+    }
+
+    if (this._fillMesh) {
+      if (fillEntries.length > 0) {
+        this._syncFillMaterial(this._fillMesh, hex, fillOpacity);
+        let fillIndex = 0;
+        for (const entry of fillEntries) {
+          dummy.position.set(entry.position.x, entry.position.y, entry.position.z);
+          dummy.rotation.set(0, 0, 0);
+          dummy.scale.set(entry.scale.x, entry.scale.y, entry.scale.z);
+          dummy.updateMatrix();
+          this._fillMesh.setMatrixAt(fillIndex, dummy.matrix);
+          fillIndex += 1;
+        }
+        this._fillMesh.count = fillIndex;
+        this._fillMesh.instanceMatrix.needsUpdate = true;
+        this._fillMesh.visible = true;
+      } else {
+        this._fillMesh.count = 0;
+        this._fillMesh.visible = false;
+        this._fillMesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    const halfTile = tileSize * 0.5;
+    const wallThickness = Math.min(tileSize * 0.25, Math.max(tileSize * 0.08, hoverOffset * 6));
+    const edgeOffset = Math.max(halfTile - wallThickness * 0.5, tileSize * 0.02);
+
+    const neighborOffsets = [
+      { dx: 0, dy: -1, axis: 'x', dir: -1 },
+      { dx: 0, dy: 1, axis: 'x', dir: 1 },
+      { dx: -1, dy: 0, axis: 'z', dir: -1 },
+      { dx: 1, dy: 0, axis: 'z', dir: 1 },
+    ];
+
+    for (const cell of drawnCells) {
+      if (Math.abs(cell.deltaWorld) <= 1e-6) continue;
+
+      const planeHeight = cell.previewWorld + hoverOffset;
+      const paddedBase = cell.baseWorld + hoverOffset * 0.2;
+      const isRaise = cell.deltaWorld >= 0;
+      const topWorld = isRaise ? planeHeight : paddedBase;
+      const bottomWorld = isRaise ? cell.baseWorld : planeHeight;
+      const height = Math.abs(topWorld - bottomWorld);
+      if (height <= 1e-6) continue;
+      const centerY = (topWorld + bottomWorld) * 0.5;
+
+      for (const edge of neighborOffsets) {
+        const neighborKey = `${cell.gx + edge.dx},${cell.gy + edge.dy}`;
+        if (selectedKeys.has(neighborKey)) continue;
+
+        if (edge.axis === 'x') {
+          wallEntriesX.push({
+            position: {
+              x: cell.centerX,
+              y: centerY,
+              z: cell.centerZ + edge.dir * edgeOffset,
+            },
+            scale: {
+              x: tileSize,
+              y: height,
+              z: wallThickness,
+            },
+          });
+        } else {
+          wallEntriesZ.push({
+            position: {
+              x: cell.centerX + edge.dir * edgeOffset,
+              y: centerY,
+              z: cell.centerZ,
+            },
+            scale: {
+              x: wallThickness,
+              y: height,
+              z: tileSize,
+            },
+          });
+        }
+      }
+    }
+
+    if (wallEntriesX.length > 0) {
+      this._ensureWallCapacityX(wallEntriesX.length);
+    }
+    if (wallEntriesZ.length > 0) {
+      this._ensureWallCapacityZ(wallEntriesZ.length);
+    }
+
+    if (this._wallMeshX) {
+      if (wallEntriesX.length > 0) {
+        this._syncWallMaterial(this._wallMeshX, hex, wallOpacity);
+        let wallIndex = 0;
+        for (const entry of wallEntriesX) {
+          dummy.position.set(entry.position.x, entry.position.y, entry.position.z);
+          dummy.rotation.set(0, 0, 0);
+          dummy.scale.set(entry.scale.x, entry.scale.y, entry.scale.z);
+          dummy.updateMatrix();
+          this._wallMeshX.setMatrixAt(wallIndex, dummy.matrix);
+          wallIndex += 1;
+        }
+        this._wallMeshX.count = wallIndex;
+        this._wallMeshX.instanceMatrix.needsUpdate = true;
+        this._wallMeshX.visible = true;
+      } else {
+        this._wallMeshX.count = 0;
+        this._wallMeshX.visible = false;
+        this._wallMeshX.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    if (this._wallMeshZ) {
+      if (wallEntriesZ.length > 0) {
+        this._syncWallMaterial(this._wallMeshZ, hex, wallOpacity);
+        let wallIndex = 0;
+        for (const entry of wallEntriesZ) {
+          dummy.position.set(entry.position.x, entry.position.y, entry.position.z);
+          dummy.rotation.set(0, 0, 0);
+          dummy.scale.set(entry.scale.x, entry.scale.y, entry.scale.z);
+          dummy.updateMatrix();
+          this._wallMeshZ.setMatrixAt(wallIndex, dummy.matrix);
+          wallIndex += 1;
+        }
+        this._wallMeshZ.count = wallIndex;
+        this._wallMeshZ.instanceMatrix.needsUpdate = true;
+        this._wallMeshZ.visible = true;
+      } else {
+        this._wallMeshZ.count = 0;
+        this._wallMeshZ.visible = false;
+        this._wallMeshZ.instanceMatrix.needsUpdate = true;
+      }
+    }
 
     if (wantsOutline) {
       this._activeOutlineCount = instanceIndex;
@@ -274,6 +532,172 @@ export class TerrainBrushOverlay3D {
     this._group.add(instanced);
     this._instanced = instanced;
     this._capacity = newCapacity;
+  }
+
+  _ensureWallCapacityX(required) {
+    if (!this.isAvailable) return;
+    if (this._wallMeshX && this._wallCapacityX >= required) {
+      return;
+    }
+
+    const three = this.three;
+    if (!three?.InstancedMesh || !three?.BoxGeometry || !three?.MeshBasicMaterial) return;
+
+    const newCapacity = Math.max(required, this._wallCapacityX > 0 ? this._wallCapacityX * 2 : 16);
+
+    if (this._wallMeshX) {
+      try {
+        this._group.remove(this._wallMeshX);
+        this._wallMeshX.geometry?.dispose?.();
+        this._wallMeshX.material?.dispose?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    const geometry = new three.BoxGeometry(1, 1, 1);
+    const material = new three.MeshBasicMaterial({
+      color: this._color || new three.Color(DEFAULT_BRUSH_COLOR),
+      transparent: true,
+      opacity: this._wallOpacity,
+      depthWrite: false,
+      depthTest: false,
+      side: three.DoubleSide,
+    });
+    material.toneMapped = false;
+
+    const instanced = new three.InstancedMesh(geometry, material, newCapacity);
+    instanced.name = 'TerrainBrushOverlay3DWallX';
+    instanced.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
+    instanced.frustumCulled = false;
+    instanced.count = 0;
+    instanced.renderOrder = 11;
+
+    this._group.add(instanced);
+    this._wallMeshX = instanced;
+    this._wallCapacityX = newCapacity;
+  }
+
+  _ensureWallCapacityZ(required) {
+    if (!this.isAvailable) return;
+    if (this._wallMeshZ && this._wallCapacityZ >= required) {
+      return;
+    }
+
+    const three = this.three;
+    if (!three?.InstancedMesh || !three?.BoxGeometry || !three?.MeshBasicMaterial) return;
+
+    const newCapacity = Math.max(required, this._wallCapacityZ > 0 ? this._wallCapacityZ * 2 : 16);
+
+    if (this._wallMeshZ) {
+      try {
+        this._group.remove(this._wallMeshZ);
+        this._wallMeshZ.geometry?.dispose?.();
+        this._wallMeshZ.material?.dispose?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    const geometry = new three.BoxGeometry(1, 1, 1);
+    const material = new three.MeshBasicMaterial({
+      color: this._color || new three.Color(DEFAULT_BRUSH_COLOR),
+      transparent: true,
+      opacity: this._wallOpacity,
+      depthWrite: false,
+      depthTest: false,
+      side: three.DoubleSide,
+    });
+    material.toneMapped = false;
+
+    const instanced = new three.InstancedMesh(geometry, material, newCapacity);
+    instanced.name = 'TerrainBrushOverlay3DWallZ';
+    instanced.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
+    instanced.frustumCulled = false;
+    instanced.count = 0;
+    instanced.renderOrder = 11;
+
+    this._group.add(instanced);
+    this._wallMeshZ = instanced;
+    this._wallCapacityZ = newCapacity;
+  }
+
+  _ensureFillCapacity(required) {
+    if (!this.isAvailable) return;
+    if (this._fillMesh && this._fillCapacity >= required) {
+      return;
+    }
+
+    const three = this.three;
+    if (!three?.InstancedMesh || !three?.BoxGeometry || !three?.MeshBasicMaterial) return;
+
+    const newCapacity = Math.max(required, this._fillCapacity > 0 ? this._fillCapacity * 2 : 16);
+
+    if (this._fillMesh) {
+      try {
+        this._group.remove(this._fillMesh);
+        this._fillMesh.geometry?.dispose?.();
+        this._fillMesh.material?.dispose?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    const geometry = new three.BoxGeometry(1, 1, 1);
+    const material = new three.MeshBasicMaterial({
+      color: this._color || new three.Color(DEFAULT_BRUSH_COLOR),
+      transparent: true,
+      opacity: this._fillOpacity,
+      depthWrite: false,
+      depthTest: false,
+      side: three.DoubleSide,
+    });
+    material.toneMapped = false;
+
+    const instanced = new three.InstancedMesh(geometry, material, newCapacity);
+    instanced.name = 'TerrainBrushOverlay3DFill';
+    instanced.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
+    instanced.frustumCulled = false;
+    instanced.count = 0;
+    instanced.renderOrder = 10;
+
+    this._group.add(instanced);
+    this._fillMesh = instanced;
+    this._fillCapacity = newCapacity;
+  }
+
+  _syncWallMaterial(mesh, colorHex, opacity) {
+    if (!mesh?.material) return;
+    const material = mesh.material;
+    try {
+      if (material.color && typeof colorHex === 'number') {
+        material.color.set(colorHex);
+      }
+      if (Number.isFinite(opacity)) {
+        material.opacity = opacity;
+        material.transparent = opacity < 1;
+      }
+      material.needsUpdate = true;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  _syncFillMaterial(mesh, colorHex, opacity) {
+    if (!mesh?.material) return;
+    const material = mesh.material;
+    try {
+      if (material.color && typeof colorHex === 'number') {
+        material.color.set(colorHex);
+      }
+      if (Number.isFinite(opacity)) {
+        material.opacity = opacity;
+        material.transparent = opacity < 1;
+      }
+      material.needsUpdate = true;
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   _ensureOutlinePool(required, baseColor) {
