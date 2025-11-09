@@ -24,6 +24,90 @@ const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter((k) => {
   return type === 'plant' || type === 'plant-family';
 });
 
+const TROPICAL_HEIGHT_VARIANCE = 1.5;
+const TROPICAL_RELOCATION_RADIUS = 2;
+const TROPICAL_DENSITY_THRESHOLDS = [
+  { ratio: 0.7, modifier: 0.6 },
+  { ratio: 0.5, modifier: 0.75 },
+  { ratio: 0.35, modifier: 0.9 },
+];
+
+const RING_OFFSETS = (() => {
+  const offsets = [];
+  for (let r = 1; r <= TROPICAL_RELOCATION_RADIUS; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        offsets.push([dx, dy, r]);
+      }
+    }
+  }
+  return offsets;
+})();
+
+function isTropicalCluster(id) {
+  if (!id) return false;
+  if (/^plant-tropical-/i.test(id)) return true;
+  if (/tropical/i.test(id)) return true;
+  const def = TERRAIN_PLACEABLES[id];
+  if (!def) return false;
+  const label = def.label || '';
+  const model = def.modelKey || '';
+  return /tropical/i.test(label) || /tropical/i.test(model);
+}
+
+function getTropicalDensityModifier(weightMap) {
+  if (!weightMap) return 1;
+  let total = 0;
+  let tropical = 0;
+  for (const [id, weight] of Object.entries(weightMap)) {
+    const w = Number(weight) || 0;
+    if (w <= 0) continue;
+    total += w;
+    if (isTropicalCluster(id)) {
+      tropical += w;
+    }
+  }
+  if (!tropical || !total) return 1;
+  const ratio = tropical / total;
+  for (const { ratio: cutoff, modifier } of TROPICAL_DENSITY_THRESHOLDS) {
+    if (ratio >= cutoff) return modifier;
+  }
+  return 1;
+}
+
+function isFlatEnoughForTropical(c, x, y, baseHeight) {
+  if (!c || typeof c.getTerrainHeight !== 'function') return true;
+  const gm = c.gameManager;
+  const rows = gm?.rows ?? 0;
+  const cols = gm?.cols ?? 0;
+  const reference = Number.isFinite(baseHeight) ? baseHeight : c.getTerrainHeight?.(x, y);
+  if (!Number.isFinite(reference)) return true;
+  const offsets = [
+    [0, 0],
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [-1, 1],
+    [1, -1],
+    [-1, -1],
+  ];
+  for (const [dx, dy] of offsets) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+    const neighborHeight = c.getTerrainHeight?.(nx, ny);
+    if (!Number.isFinite(neighborHeight)) continue;
+    if (neighborHeight <= 0) continue;
+    if (Math.abs(neighborHeight - reference) > TROPICAL_HEIGHT_VARIANCE) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Simple deterministic 32-bit hash (Jenkins-like mix) used for seed salting
 function hash32(str) {
   let h = 0x811c9dc5;
@@ -53,6 +137,26 @@ function makeWeights(map, { allowSpectral = false } = {}) {
     out[id] = w;
   }
   return out;
+}
+
+function relocateTropicalCandidate(c, x, y, baseHeight) {
+  if (!c || typeof c.getTerrainHeight !== 'function') return null;
+  if (isFlatEnoughForTropical(c, x, y, baseHeight)) {
+    return { x, y, height: baseHeight };
+  }
+  const gm = c.gameManager;
+  const rows = gm?.rows ?? 0;
+  const cols = gm?.cols ?? 0;
+  for (const [dx, dy] of RING_OFFSETS) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+    const nh = c.getTerrainHeight?.(nx, ny);
+    if (!Number.isFinite(nh) || nh <= 0) continue;
+    if (!isFlatEnoughForTropical(c, nx, ny, nh)) continue;
+    return { x: nx, y: ny, height: nh };
+  }
+  return null;
 }
 
 const SPECTRAL_VARIANTS = {
@@ -108,6 +212,14 @@ function stripSpectralWeights(weightMap) {
 
 // Candidate filters / strategies --------------------------------------------
 const candidateFilters = {
+  oasisSetback(c, x, y) {
+    const h = c.getTerrainHeight?.(x, y) ?? 0;
+    if (h <= 0.8) return false;
+    if (!hasWaterWithinRadius(c, x, y, 4)) return false;
+    if (hasWaterWithinRadius(c, x, y, 2)) return false;
+    if (!isFlatEnoughForTropical(c, x, y, h)) return false;
+    return true;
+  },
   adjacentWater(c, x, y) {
     const dirs = [
       [1, 0],
@@ -199,6 +311,25 @@ const candidateFilters = {
     return false;
   },
 };
+
+function hasWaterWithinRadius(c, x, y, radius) {
+  if (!c || typeof c.getTerrainHeight !== 'function') return false;
+  const gm = c.gameManager;
+  const rows = gm?.rows ?? 0;
+  const cols = gm?.cols ?? 0;
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dy = -radius; dy <= radius; dy++) {
+      const dist = Math.abs(dx) + Math.abs(dy);
+      if (dist === 0 || dist > radius) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const nh = c.getTerrainHeight?.(nx, ny) ?? 0;
+      if (nh <= 0) return true;
+    }
+  }
+  return false;
+}
 
 const BIOME_FLORA_PROFILES = [
   { re: /(sandDunes|saltFlats|desertHot|desertCold)/i, density: 0, spacing: 0 },
@@ -461,9 +592,9 @@ const BIOME_FLORA_PROFILES = [
   },
   {
     re: /(oasis)/i,
-    density: 0.28,
+    density: 0.22,
     spacing: 2,
-    candidateFilter: 'adjacentWater', // palms hug the pool edge
+    candidateFilter: 'oasisSetback', // palms ring the pool but leave the shoreline clear
     // Palm-only composition for thematic clarity.
     weights: makeWeights({
       'tree-single-palm': 8,
@@ -855,7 +986,19 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               if (elevationFilter && !elevationFilter(c, h)) continue;
               const id = pick();
               if (!allowSpectral && isSpectralPlaceable(id)) continue;
-              tm.placeTerrainItem(x, y, id);
+              let placeX = x;
+              let placeY = y;
+              let placeHeight = h;
+              if (isTropicalCluster(id)) {
+                const relocated = relocateTropicalCandidate(c, x, y, h);
+                if (!relocated) continue;
+                placeX = relocated.x;
+                placeY = relocated.y;
+                placeHeight = relocated.height;
+                if (placeHeight <= 0) continue;
+                if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
+              }
+              tm.placeTerrainItem(placeX, placeY, id);
             }
             const span = Math.abs(maxSpace - minSpace);
             const jitter = span > 0 ? Math.floor(rowRng() * (span + 1)) : 0;
@@ -879,7 +1022,19 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
             if (elevationFilter && !elevationFilter(c, h)) continue;
             const id = pick();
             if (!allowSpectral && isSpectralPlaceable(id)) continue;
-            tm.placeTerrainItem(x, y, id);
+            let placeX = x;
+            let placeY = y;
+            let placeHeight = h;
+            if (isTropicalCluster(id)) {
+              const relocated = relocateTropicalCandidate(c, x, y, h);
+              if (!relocated) continue;
+              placeX = relocated.x;
+              placeY = relocated.y;
+              placeHeight = relocated.height;
+              if (placeHeight <= 0) continue;
+              if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
+            }
+            tm.placeTerrainItem(placeX, placeY, id);
           }
           const spacing = rowSpacings[rowIndex % rowSpacings.length];
           y += spacing;
@@ -912,7 +1067,15 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       }
     }
     if (!candidates.length) return;
-    const target = Math.max(1, Math.floor(candidates.length * effectiveDensity));
+    const baseTargetRaw = candidates.length * effectiveDensity;
+    const tropicalModifier = getTropicalDensityModifier(weights);
+    const adjustedTargetRaw =
+      tropicalModifier === 1 ? baseTargetRaw : baseTargetRaw * tropicalModifier;
+    let target = Math.floor(adjustedTargetRaw);
+    if (tropicalModifier === 1 && baseTargetRaw > 0 && target === 0) {
+      target = 1;
+    }
+    if (target <= 0) return;
     const placed = [];
     let attempts = 0;
     const maxAttempts = target * 20;
@@ -922,17 +1085,19 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       attempts++;
       const cand = candidates[rngInt(rng, candidates.length)];
       if (!cand) continue;
-      const [x, y] = cand;
-      if (spacing > 0 && placed.some((p) => manhattan(p, cand) < spacing)) continue;
+      const [baseX, baseY, baseHeight] = cand;
+      let placeX = baseX;
+      let placeY = baseY;
+      let placeHeight = baseHeight;
       let chosenWeights = weights;
       if (coastlinePalms) {
-        const onCoast = isCoastlineTile(c, x, y);
+        const onCoast = isCoastlineTile(c, baseX, baseY);
         chosenWeights = boostPalmWeights(weights, onCoast ? 3 : 0.4);
       }
       // If coastline palm boost applied we need a new picker for that variation (deterministic via coordinate salt)
       let id;
       if (chosenWeights !== weights) {
-        const coordSalt = (x * 73856093) ^ (y * 19349663);
+        const coordSalt = (baseX * 73856093) ^ (baseY * 19349663);
         const localPick = makeWeightedPicker(
           chosenWeights,
           getBiomeRNG(seed || c._biomeSeed || 0, biomeKey, 300 + (coordSalt & 0xff))
@@ -943,8 +1108,18 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       }
       if (!id) continue;
       if (!allowSpectral && isSpectralPlaceable(id)) continue;
-      const ok = tm.placeTerrainItem(x, y, id);
-      if (ok) placed.push([x, y]);
+      if (isTropicalCluster(id)) {
+        const relocated = relocateTropicalCandidate(c, placeX, placeY, placeHeight);
+        if (!relocated) continue;
+        placeX = relocated.x;
+        placeY = relocated.y;
+        placeHeight = relocated.height;
+        if (placeHeight <= 0) continue;
+        if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
+      }
+      if (spacing > 0 && placed.some((p) => manhattan(p, [placeX, placeY]) < spacing)) continue;
+      const ok = tm.placeTerrainItem(placeX, placeY, id);
+      if (ok) placed.push([placeX, placeY]);
     }
   } catch (_) {
     /* best effort */
