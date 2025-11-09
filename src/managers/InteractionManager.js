@@ -25,6 +25,11 @@ import {
   resetZoom as _resetZoom,
 } from './interaction-manager/internals/zoom.js';
 
+const MOVE_FORWARD_CODES = new Set(['ArrowUp', 'KeyW']);
+const MOVE_BACKWARD_CODES = new Set(['ArrowDown', 'KeyS']);
+const ROTATE_LEFT_CODES = new Set(['ArrowLeft', 'KeyA']);
+const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
+
 export class InteractionManager {
   constructor(gameManager) {
     // Core refs
@@ -153,7 +158,15 @@ export class InteractionManager {
   setupKeyboardInteractions() {
     // Space bar for panning
     document.addEventListener('keydown', (event) => {
-      if (this._handleTokenRotationKey(event)) {
+      if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+        this.gameManager?.token3DAdapter?.setShiftModifier?.(true);
+        return;
+      }
+      if (this._handleTokenMovementKeyDown(event)) {
+        event.preventDefault();
+        return;
+      }
+      if (this._handleTokenRotationKeyDown(event)) {
         event.preventDefault();
         return;
       }
@@ -167,6 +180,18 @@ export class InteractionManager {
     });
 
     document.addEventListener('keyup', (event) => {
+      if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+        this.gameManager?.token3DAdapter?.setShiftModifier?.(false);
+        return;
+      }
+      if (this._handleTokenMovementKeyUp(event)) {
+        event.preventDefault();
+        return;
+      }
+      if (this._handleTokenRotationKeyUp(event)) {
+        event.preventDefault();
+        return;
+      }
       if (event.code === 'Space') {
         this.isSpacePressed = false;
         if (!this.isDragging && !this.isRotating3D) {
@@ -253,9 +278,9 @@ export class InteractionManager {
     return _stopDrag(this);
   }
 
-  _handleTokenRotationKey(event) {
+  _handleTokenRotationKeyDown(event) {
     try {
-      if (!event || (event.code !== 'ArrowLeft' && event.code !== 'ArrowRight')) {
+      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
         return false;
       }
       if (event.altKey || event.ctrlKey || event.metaKey) {
@@ -271,11 +296,99 @@ export class InteractionManager {
       const selectedToken = adapter?.getSelectedToken?.();
       if (!selectedToken) return false;
 
-      const direction = event.code === 'ArrowRight' ? 1 : -1;
-      const step = Math.PI / 4;
-      const delta = direction * step;
-      gm.tokenManager.rotateToken(selectedToken, delta);
+      if (event.repeat) {
+        return true;
+      }
+
+      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
+      if (adapter?.beginRotation) {
+        adapter.beginRotation(selectedToken, direction, event.code);
+        return true;
+      }
       return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _handleTokenRotationKeyUp(event) {
+    try {
+      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      const adapter = this.gameManager?.token3DAdapter;
+      if (!adapter?.endRotation) return false;
+      const selectedToken = adapter.getSelectedToken?.();
+      if (!selectedToken) return false;
+      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
+      adapter.endRotation(selectedToken, direction, event.code);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _handleTokenMovementKeyDown(event) {
+    try {
+      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
+        return false;
+      }
+      if (event.repeat) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      if (this._shouldIgnoreKeyTarget(event.target)) {
+        return false;
+      }
+
+      const adapter = this.gameManager?.token3DAdapter;
+      if (!adapter?.beginForwardMovement) return false;
+      if (typeof adapter.setShiftModifier === 'function') {
+        adapter.setShiftModifier(!!event.shiftKey);
+      }
+      const selectedToken = adapter.getSelectedToken?.();
+      if (!selectedToken) return false;
+      const direction = MOVE_BACKWARD_CODES.has(event.code) ? -1 : 1;
+      if (direction > 0 && adapter.beginForwardMovement) {
+        adapter.beginForwardMovement(selectedToken, event.code);
+        return true;
+      }
+      if (direction < 0 && adapter.beginBackwardMovement) {
+        adapter.beginBackwardMovement(selectedToken, event.code);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _handleTokenMovementKeyUp(event) {
+    try {
+      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      const adapter = this.gameManager?.token3DAdapter;
+      if (!adapter) return false;
+      const selectedToken = adapter.getSelectedToken?.();
+      if (!selectedToken) return false;
+      if (MOVE_FORWARD_CODES.has(event.code) && adapter.endForwardMovement) {
+        adapter.endForwardMovement(selectedToken, event.code);
+        return true;
+      }
+      if (MOVE_BACKWARD_CODES.has(event.code) && adapter.endBackwardMovement) {
+        adapter.endBackwardMovement(selectedToken, event.code);
+        return true;
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -344,17 +457,14 @@ export class InteractionManager {
       const terrainActive =
         this.gameManager.isTerrainModeActive && this.gameManager.isTerrainModeActive();
       // Only treat placeables as blocking when a placeable is actually selected AND the Placeable Tiles panel is visible.
+      const terrainCoordinator = this.gameManager?.terrainCoordinator;
       const placeableSelected =
-        this.gameManager &&
-        this.gameManager.terrainCoordinator &&
-        typeof this.gameManager.terrainCoordinator.getSelectedPlaceable === 'function'
-          ? !!this.gameManager.terrainCoordinator.getSelectedPlaceable()
+        typeof terrainCoordinator?.getSelectedPlaceable === 'function'
+          ? !!terrainCoordinator.getSelectedPlaceable()
           : false;
       const panelVisible =
-        this.gameManager &&
-        this.gameManager.terrainCoordinator &&
-        typeof this.gameManager.terrainCoordinator.isPlaceablesPanelVisible === 'function'
-          ? !!this.gameManager.terrainCoordinator.isPlaceablesPanelVisible()
+        typeof terrainCoordinator?.isPlaceablesPanelVisible === 'function'
+          ? !!terrainCoordinator.isPlaceablesPanelVisible()
           : false;
 
       if (terrainActive || (placeableSelected && panelVisible)) {

@@ -26,15 +26,45 @@ const FEMALE_HUMANOID_MODEL = {
       loop: 'repeat',
       clampWhenFinished: false,
     },
-    walkStart: {
-      path: 'assets/animated-sprites/Female Start Walking.fbx',
+    walkBackward: {
+      path: 'assets/animated-sprites/Walk Backward.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    run: {
+      path: 'assets/animated-sprites/running.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    runBackward: {
+      path: 'assets/animated-sprites/Run Backward.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    runStop: {
+      path: 'assets/animated-sprites/run to stop.fbx',
       loop: 'once',
       clampWhenFinished: true,
     },
-    walkStop: {
-      path: 'assets/animated-sprites/Female Stop Walking.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
+    drunkWalk: {
+      path: 'assets/animated-sprites/drunk walk.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    drunkWalkBackward: {
+      path: 'assets/animated-sprites/drunk walk backwards.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    drunkRunForward: {
+      path: 'assets/animated-sprites/drunk run forward.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    drunkRunBackward: {
+      path: 'assets/animated-sprites/drunk run backward.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
     },
     fall: {
       path: 'assets/animated-sprites/Falling To Landing.fbx',
@@ -73,6 +103,9 @@ const FEMALE_HUMANOID_MODEL = {
     fallLoopMinDuration: 0.24,
     fallLoopMaxDuration: 1.2,
     fallLoopTimeScale: 4.5,
+    runSpeedMultiplier: 1.7,
+    drunkWalkSpeedMultiplier: 0.65,
+    drunkRunSpeedMultiplier: 1.35,
   },
   shadows: {
     cast: true,
@@ -114,6 +147,7 @@ const DEFAULT_MOVEMENT_PROFILE = {
 const DEFAULT_FALL_TRIGGER_PROGRESS = 0.38;
 const DEFAULT_HEIGHT_SNAP_PROGRESS = 0.62;
 const HARD_LANDING_HEIGHT_THRESHOLD = 8;
+const CONTINUOUS_ROTATION_SPEED = Math.PI;
 
 export class Token3DAdapter {
   constructor(gameManager) {
@@ -135,6 +169,7 @@ export class Token3DAdapter {
     this._lastFrameTime = null;
     this._lastFacingRight = null;
     this._selectionColor = 0xffcc55;
+    this._modifiers = { shift: false };
   }
 
   attach() {
@@ -359,7 +394,8 @@ export class Token3DAdapter {
         const parentIsBone = child.parent && child.parent.isBone;
         if (parentIsBone) return;
         const basePosition = child.position?.clone?.() || null;
-        roots.push({ bone: child, basePosition });
+        const baseQuaternion = child.quaternion?.clone?.() || null;
+        roots.push({ bone: child, basePosition, baseQuaternion });
       });
       if (roots.length) {
         container.userData = container.userData || {};
@@ -385,41 +421,46 @@ export class Token3DAdapter {
         bone.position.x = 0;
         bone.position.z = 0;
       }
+      const baseQuat = info.baseQuaternion;
+      if (baseQuat && bone.quaternion && typeof bone.quaternion.copy === 'function') {
+        bone.quaternion.copy(baseQuat);
+      } else if (
+        baseQuat &&
+        bone.rotation &&
+        typeof bone.rotation.setFromQuaternion === 'function'
+      ) {
+        bone.rotation.setFromQuaternion(baseQuat);
+      }
     }
   }
 
-  beginForwardMovement(tokenEntry) {
-    try {
-      if (!tokenEntry) return;
-      const gm = this.gameManager;
-      if (!gm || !gm.is3DModeActive?.()) return;
-      const mesh = tokenEntry.__threeMesh;
-      if (!mesh) return;
-      const animationData = this._tokenAnimationData.get(tokenEntry);
-      if (!animationData) return;
-
-      const existing = this._movementStates.get(tokenEntry);
-      if (existing) {
-        existing.intentHold = true;
-        existing.pendingStop = false;
-        return;
-      }
-
-      const step = this._createForwardMovementStep(tokenEntry, mesh);
-      if (!step) return;
-
-      const profile = animationData.profile || DEFAULT_MOVEMENT_PROFILE;
-      const hasStartPhase =
-        !!animationData.actions?.walkStart && (profile.startClipDuration || 0) > 0.01;
-
-      const state = {
+  _ensureMovementState(tokenEntry) {
+    if (!tokenEntry) return null;
+    let state = this._movementStates.get(tokenEntry);
+    const mesh = tokenEntry.__threeMesh;
+    const animationData = this._tokenAnimationData.get(tokenEntry);
+    if (state && (!mesh || state.mesh !== mesh)) {
+      state = null;
+    }
+    if (!state) {
+      if (!mesh || !animationData) return null;
+      state = {
         token: tokenEntry,
         mesh,
-        profile,
-        activeStep: step,
-        phase: hasStartPhase ? 'start' : 'walk',
+        profile: animationData.profile || DEFAULT_MOVEMENT_PROFILE,
+        phase: 'idle',
         phaseElapsed: 0,
-        intentHold: true,
+        activeStep: null,
+        stepFinalized: true,
+        hasLoopStarted: false,
+        pendingFacingAngle: undefined,
+        forwardKeys: new Set(),
+        backwardKeys: new Set(),
+        rotationLeftKeys: new Set(),
+        rotationRightKeys: new Set(),
+        movementSign: 0,
+        lastMoveSign: 0,
+        intentHold: false,
         pendingStop: false,
         stopTriggered: false,
         stopElapsed: 0,
@@ -427,42 +468,616 @@ export class Token3DAdapter {
         stopMovementTime: 0,
         stopSpeed: 0,
         stopBlendedToIdle: false,
-        stepFinalized: false,
-        hasLoopStarted: !hasStartPhase,
-        pendingFacingAngle: undefined,
-        fallDuration: 0,
-        fallSpeed: 0,
+        stopMovementDuration: 0,
+        freeStartWorld: null,
+        freeLastWorld: null,
+        freeDistance: 0,
+        lastMoveSpeed: 0,
+        rotationDirection: 0,
+        rotationSpeed: CONTINUOUS_ROTATION_SPEED,
         fallMode: null,
+        fallSpeed: 0,
+        fallDuration: 0,
+        fallLandingKey: null,
+        fallLandingDuration: 0,
         fallLandingThreshold: 0,
+        movementStyle: 'standard',
+        isRunning: false,
+        loopActionKey: 'walk',
+        startActionKey: null,
+        stopActionKey: null,
+        startDuration: 0,
+        loopDuration: 0,
+        stopDuration: 0,
+        startMoveDelay:
+          animationData.profile?.startMoveDelay ?? DEFAULT_MOVEMENT_PROFILE.startMoveDelay,
+        startBlendLead:
+          animationData.profile?.startToWalkBlendLead ??
+          DEFAULT_MOVEMENT_PROFILE.startToWalkBlendLead,
+        stopBlendLead:
+          animationData.profile?.stopBlendLead ?? DEFAULT_MOVEMENT_PROFILE.stopBlendLead,
+        activeSpeed: animationData.profile?.walkSpeed ?? DEFAULT_MOVEMENT_PROFILE.walkSpeed,
+        activeDirectionSign: 1,
+        stopTravelPortionCurrent:
+          animationData.profile?.stopTravelPortion ?? DEFAULT_MOVEMENT_PROFILE.stopTravelPortion,
       };
-
       this._movementStates.set(tokenEntry, state);
+    } else if (!state.profile || state.profile === DEFAULT_MOVEMENT_PROFILE) {
+      state.profile = animationData.profile || DEFAULT_MOVEMENT_PROFILE;
+    }
+    return state;
+  }
 
-      if (state.phase === 'start') {
-        this._setAnimation(tokenEntry, 'walkStart', {
-          fadeIn: profile.startFadeIn,
-          fadeOut: profile.startFadeOut,
-        });
-      } else {
-        this._setAnimation(tokenEntry, 'walk', {
-          fadeIn: profile.walkFadeIn,
-          fadeOut: profile.walkFadeOut,
-        });
-        state.hasLoopStarted = true;
-      }
+  _recalculateMovementIntent(state) {
+    if (!state) return 0;
+    const forwardActive = state.forwardKeys?.size > 0;
+    const backwardActive = state.backwardKeys?.size > 0;
+    if (forwardActive && backwardActive) return 0;
+    if (forwardActive) return 1;
+    if (backwardActive) return -1;
+    return 0;
+  }
+
+  _computeRotationIntent(state) {
+    if (!state) return 0;
+    const rightActive = state.rotationRightKeys?.size > 0;
+    const leftActive = state.rotationLeftKeys?.size > 0;
+    if (rightActive && leftActive) return 0;
+    if (rightActive) return 1;
+    if (leftActive) return -1;
+    return 0;
+  }
+
+  _captureMovementStyleSnapshot(state) {
+    if (!state) return null;
+    return {
+      loop: state.loopActionKey,
+      start: state.startActionKey,
+      stop: state.stopActionKey,
+      speed: state.activeSpeed,
+      style: state.movementStyle,
+      running: state.isRunning,
+      direction: state.activeDirectionSign,
+    };
+  }
+
+  _movementStyleSnapshotEquals(previous, state) {
+    if (!previous || !state) return false;
+    const epsilon = 1e-5;
+    return (
+      previous.loop === state.loopActionKey &&
+      previous.start === state.startActionKey &&
+      previous.stop === state.stopActionKey &&
+      Math.abs((previous.speed || 0) - (state.activeSpeed || 0)) < epsilon &&
+      previous.style === state.movementStyle &&
+      previous.running === state.isRunning &&
+      previous.direction === state.activeDirectionSign
+    );
+  }
+
+  _resolveAvailableActionKey(tokenEntry, key, fallback) {
+    const data = this._tokenAnimationData.get(tokenEntry);
+    if (key && data?.actions?.[key]) return key;
+    if (fallback && data?.actions?.[fallback]) return fallback;
+    return null;
+  }
+
+  _getActionDuration(tokenEntry, actionKey) {
+    if (!actionKey) return 0;
+    const data = this._tokenAnimationData.get(tokenEntry);
+    if (!data?.actions?.[actionKey]) return 0;
+    return this._extractClipDuration(data.actions[actionKey]) || 0;
+  }
+
+  _playLoopAnimation(state, options = {}) {
+    if (!state) return;
+    const key = state.loopActionKey || 'walk';
+    const data = this._tokenAnimationData.get(state.token);
+    if (!data?.actions?.[key]) return;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    this._setAnimation(state.token, key, {
+      fadeIn: options.fadeIn ?? profile.walkFadeIn,
+      fadeOut: options.fadeOut ?? profile.walkFadeOut,
+      force: options.force ?? false,
+    });
+  }
+
+  _setHasKey(set, key) {
+    if (!set || !key) return false;
+    try {
+      return set.has(key);
     } catch (_) {
-      /* ignore begin movement errors */
+      return false;
     }
   }
 
-  endForwardMovement(tokenEntry) {
+  _updateMovementFlags(state, directionOverride) {
+    if (!state) return;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    let sign = directionOverride;
+    if (!sign) {
+      sign = state.movementSign || state.lastMoveSign || 1;
+    }
+    sign = sign >= 0 ? 1 : -1;
+    state.activeDirectionSign = sign;
+
+    const forwardSet = state.forwardKeys || new Set();
+    const backwardSet = state.backwardKeys || new Set();
+    const drunkDrives = sign >= 0 ? forwardSet : backwardSet;
+    const drunkKey = sign >= 0 ? 'KeyW' : 'KeyS';
+    const styleIsDrunk = this._setHasKey(drunkDrives, drunkKey);
+
+    state.movementStyle = styleIsDrunk ? 'drunk' : 'standard';
+    state.isRunning = !!this._modifiers?.shift;
+
+    let loopKey = null;
+    let startKey = null;
+    let stopKey = null;
+
+    if (state.movementStyle === 'drunk') {
+      loopKey = sign > 0 ? 'drunkRunForward' : 'drunkRunBackward';
+      if (!state.isRunning) {
+        loopKey = sign > 0 ? 'drunkWalk' : 'drunkWalkBackward';
+      }
+      startKey = null;
+      stopKey = null;
+    } else if (state.isRunning) {
+      loopKey = sign > 0 ? 'run' : 'runBackward';
+      startKey = null;
+      stopKey = sign > 0 ? 'runStop' : null;
+    } else {
+      loopKey = sign > 0 ? 'walk' : 'walkBackward';
+      startKey = null;
+      stopKey = null;
+    }
+
+    loopKey = this._resolveAvailableActionKey(state.token, loopKey, 'walk') || 'walk';
+    startKey = this._resolveAvailableActionKey(state.token, startKey, null);
+    stopKey = this._resolveAvailableActionKey(state.token, stopKey, null);
+
+    state.loopActionKey = loopKey;
+    state.startActionKey = startKey;
+    state.stopActionKey = stopKey;
+
+    state.startDuration = this._getActionDuration(state.token, startKey);
+    state.loopDuration = this._getActionDuration(state.token, loopKey);
+    state.stopDuration = this._getActionDuration(state.token, stopKey);
+
+    if (startKey) {
+      state.startMoveDelay = Math.max(profile.startMoveDelay || 0, 0);
+      state.startBlendLead = Math.max(
+        Math.min(profile.startToWalkBlendLead || 0, state.startDuration || 0),
+        0
+      );
+    } else {
+      state.startMoveDelay = 0;
+      state.startBlendLead = 0;
+    }
+
+    const stopPortion = Math.min(
+      Math.max(profile.stopTravelPortion ?? DEFAULT_MOVEMENT_PROFILE.stopTravelPortion, 0),
+      1
+    );
+    state.stopTravelPortionCurrent = stopPortion;
+
+    if (stopKey) {
+      state.stopMovementDuration = Math.max((state.stopDuration || 0) * stopPortion, 0);
+      state.stopBlendLead = Math.max(
+        Math.min(profile.stopBlendLead || 0, state.stopDuration || 0),
+        0
+      );
+    } else {
+      state.stopMovementDuration = 0;
+      state.stopBlendLead = 0;
+    }
+
+    const walkSpeed = Math.max(profile.walkSpeed || DEFAULT_MOVEMENT_PROFILE.walkSpeed || 1, 0);
+    const runSpeed = Math.max(profile.runSpeed || walkSpeed * 1.6, walkSpeed);
+    const drunkWalkSpeed = Math.max(profile.drunkWalkSpeed || walkSpeed * 0.85, 0.1);
+    const drunkRunSpeed = Math.max(profile.drunkRunSpeed || drunkWalkSpeed * 1.6, drunkWalkSpeed);
+
+    if (state.isRunning) {
+      state.activeSpeed = state.movementStyle === 'drunk' ? drunkRunSpeed : runSpeed;
+    } else {
+      state.activeSpeed = state.movementStyle === 'drunk' ? drunkWalkSpeed : walkSpeed;
+    }
+  }
+
+  _handleMovementStyleChange(state, previousSnapshot, options = {}) {
+    if (!state) return;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const styleChanged =
+      options.force || !this._movementStyleSnapshotEquals(previousSnapshot, state);
+    if (!styleChanged) return;
+
+    switch (state.phase) {
+      case 'start': {
+        if (!state.startActionKey) {
+          state.phase = 'walk';
+          state.phaseElapsed = 0;
+          state.hasLoopStarted = true;
+          this._playLoopAnimation(state, { force: true });
+        } else if (
+          !previousSnapshot ||
+          previousSnapshot.start !== state.startActionKey ||
+          options.force
+        ) {
+          this._setAnimation(state.token, state.startActionKey, {
+            fadeIn: profile.startFadeIn,
+            fadeOut: profile.startFadeOut,
+            force: true,
+          });
+          state.phaseElapsed = 0;
+          state.hasLoopStarted = false;
+        }
+        break;
+      }
+      case 'walk': {
+        if (!previousSnapshot || previousSnapshot.loop !== state.loopActionKey || options.force) {
+          this._playLoopAnimation(state, { force: true });
+        }
+        break;
+      }
+      case 'stop': {
+        if (
+          state.stopActionKey &&
+          (!previousSnapshot || previousSnapshot.stop !== state.stopActionKey)
+        ) {
+          this._setAnimation(state.token, state.stopActionKey, {
+            fadeIn: profile.stopFadeIn,
+            fadeOut: profile.stopFadeOut,
+            force: true,
+          });
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  _syncMovementVariant(state, directionOverride, options = {}) {
+    if (!state) return;
+    const snapshot = this._captureMovementStyleSnapshot(state);
+    this._updateMovementFlags(state, directionOverride);
+    this._handleMovementStyleChange(state, snapshot, options);
+  }
+
+  _startMovementPhase(state, newSign) {
+    if (!state || !newSign) return;
+    const tokenEntry = state.token;
+    const data = this._tokenAnimationData.get(tokenEntry);
+    const profile = data?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
+    state.profile = profile;
+
+    if (state.phase === 'stop') {
+      this._abortStopPhase(state);
+    }
+
+    state.movementSign = newSign;
+    state.lastMoveSign = newSign;
+    state.intentHold = true;
+    state.pendingStop = false;
+    state.stopTriggered = false;
+    state.stepFinalized = false;
+    state.activeStep = null;
+    state.stopBlendedToIdle = false;
+    state.phaseElapsed = 0;
+    state.freeStartWorld = this._resolveTokenWorldPosition(tokenEntry);
+    state.freeLastWorld = state.freeStartWorld ? { ...state.freeStartWorld } : null;
+    state.freeDistance = 0;
+
+    this._updateMovementFlags(state, newSign);
+
+    const hasStartClip = !!state.startActionKey && (state.startDuration || 0) > 0.01;
+    state.hasLoopStarted = !hasStartClip;
+    state.phase = hasStartClip ? 'start' : 'walk';
+
+    if (hasStartClip) {
+      this._setAnimation(tokenEntry, state.startActionKey, {
+        fadeIn: profile.startFadeIn,
+        fadeOut: profile.startFadeOut,
+        force: true,
+      });
+    } else {
+      state.hasLoopStarted = true;
+      this._playLoopAnimation(state, { force: true });
+    }
+  }
+
+  _abortStopPhase(state) {
+    if (!state || state.phase !== 'stop') return;
+    state.phase = 'walk';
+    state.activeStep = null;
+    state.stopTriggered = false;
+    state.pendingStop = false;
+    state.stepFinalized = false;
+    state.stopBlendedToIdle = false;
+  }
+
+  _resolveTokenWorldPosition(tokenEntry) {
+    if (!tokenEntry) return { x: 0, y: 0, z: 0 };
+    try {
+      const world = tokenEntry.world;
+      if (world && Number.isFinite(world.x) && Number.isFinite(world.z)) {
+        const y = Number.isFinite(world.y) ? world.y : 0;
+        return { x: world.x, y, z: world.z };
+      }
+      const gm = this.gameManager;
+      const rawX = Number.isFinite(tokenEntry.gridX) ? tokenEntry.gridX : 0;
+      const rawY = Number.isFinite(tokenEntry.gridY) ? tokenEntry.gridY : 0;
+      const gx = Math.round(rawX);
+      const gy = Math.round(rawY);
+      const height = this._getTerrainHeight(gx, gy);
+      if (gm?.spatial?.gridToWorld) {
+        return gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, height);
+      }
+      return { x: gx, y: height, z: gy };
+    } catch (_) {
+      return { x: 0, y: 0, z: 0 };
+    }
+  }
+
+  _computeMovementBounds() {
+    try {
+      const gm = this.gameManager;
+      const tile = gm?.spatial?.tileWorldSize || 1;
+      const cols = Number.isFinite(gm?.cols) ? gm.cols : null;
+      const rows = Number.isFinite(gm?.rows) ? gm.rows : null;
+      const minX = cols != null ? tile * 0.5 : -Infinity;
+      const maxX = cols != null ? tile * (cols - 0.5) : Infinity;
+      const minZ = rows != null ? tile * 0.5 : -Infinity;
+      const maxZ = rows != null ? tile * (rows - 0.5) : Infinity;
+      return { minX, maxX, minZ, maxZ, tileSize: tile };
+    } catch (_) {
+      return { minX: -Infinity, maxX: Infinity, minZ: -Infinity, maxZ: Infinity, tileSize: 1 };
+    }
+  }
+
+  _getDirectionalVectorFromYaw(yaw, directionSign = 1) {
+    if (!Number.isFinite(yaw) || directionSign === 0) {
+      return { x: 0, z: 0 };
+    }
+    const sign = directionSign >= 0 ? 1 : -1;
+    const x = Math.sin(yaw) * sign;
+    const z = -Math.cos(yaw) * sign;
+    const mag = Math.hypot(x, z) || 1;
+    return { x: x / mag, z: z / mag };
+  }
+
+  _sampleWorldHeight(x, z, fallbackY = 0) {
+    try {
+      const gm = this.gameManager;
+      const spatial = gm?.spatial;
+      if (!spatial?.worldToGrid) return fallbackY;
+      const grid = spatial.worldToGrid(x, z);
+      const heightLevel = this._getTerrainHeight(grid.gridX, grid.gridY);
+      if (Number.isFinite(heightLevel)) {
+        if (typeof spatial.elevationToWorldY === 'function') {
+          return spatial.elevationToWorldY(heightLevel);
+        }
+        const unit = Number.isFinite(spatial.elevationUnit) ? spatial.elevationUnit : 1;
+        return heightLevel * unit;
+      }
+      return fallbackY;
+    } catch (_) {
+      return fallbackY;
+    }
+  }
+
+  _estimateHeightFromWorld(worldY, gridX, gridY) {
+    if (Number.isFinite(worldY)) {
+      try {
+        const gm = this.gameManager;
+        const unit = Number.isFinite(gm?.spatial?.elevationUnit) ? gm.spatial.elevationUnit : 1;
+        if (unit > 0) {
+          return worldY / unit;
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    return this._getTerrainHeight(gridX, gridY);
+  }
+
+  _isGridWithinBounds(gx, gy) {
+    const gm = this.gameManager;
+    if (Number.isFinite(gm?.cols) && (gx < 0 || gx >= gm.cols)) return false;
+    if (Number.isFinite(gm?.rows) && (gy < 0 || gy >= gm.rows)) return false;
+    return true;
+  }
+
+  _advanceRotationState(state, delta) {
+    if (!state || !(delta > 0)) return;
+    const intent = this._computeRotationIntent(state);
+    if (intent === 0) {
+      state.rotationDirection = 0;
+      if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+        this._movementStates.delete(state.token);
+      }
+      return;
+    }
+
+    state.rotationDirection = intent;
+    const speed =
+      Number.isFinite(state.rotationSpeed) && state.rotationSpeed > 0
+        ? state.rotationSpeed
+        : CONTINUOUS_ROTATION_SPEED;
+    const deltaAngle = -speed * delta * intent;
+    const token = state.token;
+    const current = Number.isFinite(token?.facingAngle) ? token.facingAngle : 0;
+    token.facingAngle = this._normalizeAngle(current + deltaAngle);
+    this.updateTokenOrientation(token);
+  }
+
+  _hasActiveIntents(state) {
+    if (!state) return false;
+    const movementActive =
+      (state.forwardKeys?.size || 0) > 0 || (state.backwardKeys?.size || 0) > 0;
+    const rotationActive =
+      (state.rotationLeftKeys?.size || 0) > 0 || (state.rotationRightKeys?.size || 0) > 0;
+    return movementActive || rotationActive;
+  }
+
+  beginForwardMovement(tokenEntry, sourceKey = '__forward') {
+    this._beginDirectionalMovement(tokenEntry, 1, sourceKey);
+  }
+
+  endForwardMovement(tokenEntry, sourceKey = '__forward') {
+    this._endDirectionalMovement(tokenEntry, 1, sourceKey);
+  }
+
+  beginBackwardMovement(tokenEntry, sourceKey = '__backward') {
+    this._beginDirectionalMovement(tokenEntry, -1, sourceKey);
+  }
+
+  endBackwardMovement(tokenEntry, sourceKey = '__backward') {
+    this._endDirectionalMovement(tokenEntry, -1, sourceKey);
+  }
+
+  setShiftModifier(isActive) {
+    if (!this._modifiers) {
+      this._modifiers = { shift: false };
+    }
+    const active = !!isActive;
+    if (this._modifiers.shift === active) return;
+    this._modifiers.shift = active;
+    for (const state of this._movementStates.values()) {
+      if (!state) continue;
+      const direction = state.movementSign || state.lastMoveSign || state.activeDirectionSign || 1;
+      this._syncMovementVariant(state, direction, { force: false });
+    }
+  }
+
+  beginRotation(tokenEntry, direction = 1, sourceKey = '__rotate') {
+    try {
+      if (!tokenEntry) return;
+      const gm = this.gameManager;
+      if (!gm || !gm.is3DModeActive?.()) return;
+      const state = this._ensureMovementState(tokenEntry);
+      if (!state) return;
+      const key = sourceKey || `rotate_${direction}`;
+      if (direction >= 0) {
+        state.rotationRightKeys.add(key);
+      } else {
+        state.rotationLeftKeys.add(key);
+      }
+      state.rotationDirection = this._computeRotationIntent(state);
+    } catch (_) {
+      /* ignore rotation begin errors */
+    }
+  }
+
+  endRotation(tokenEntry, direction = 1, sourceKey = '__rotate') {
     try {
       const state = this._movementStates.get(tokenEntry);
       if (!state) return;
-      state.intentHold = false;
-      state.pendingStop = true;
+      const key = sourceKey || `rotate_${direction}`;
+      if (direction >= 0) {
+        state.rotationRightKeys.delete(key);
+      } else {
+        state.rotationLeftKeys.delete(key);
+      }
+      state.rotationDirection = this._computeRotationIntent(state);
+      if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+        this._movementStates.delete(tokenEntry);
+      }
     } catch (_) {
-      /* ignore end movement errors */
+      /* ignore rotation end errors */
+    }
+  }
+
+  _beginDirectionalMovement(tokenEntry, directionSign, sourceKey) {
+    try {
+      if (!tokenEntry || !directionSign) return;
+      const gm = this.gameManager;
+      if (!gm || !gm.is3DModeActive?.()) return;
+      const mesh = tokenEntry.__threeMesh;
+      if (!mesh) return;
+      const animationData = this._tokenAnimationData.get(tokenEntry);
+      if (!animationData) return;
+
+      const state = this._ensureMovementState(tokenEntry);
+      if (!state) return;
+
+      const key = sourceKey || `move_${directionSign}`;
+      if (directionSign > 0) {
+        state.forwardKeys.add(key);
+      } else {
+        state.backwardKeys.add(key);
+      }
+
+      if (state.phase && state.phase !== 'idle') {
+        this._syncMovementVariant(state, directionSign);
+      }
+
+      const netIntent = this._recalculateMovementIntent(state);
+      if (netIntent === 0) return;
+
+      if (state.phase === 'idle') {
+        this._startMovementPhase(state, netIntent);
+        return;
+      }
+
+      if (state.phase === 'stop') {
+        this._abortStopPhase(state);
+        this._startMovementPhase(state, netIntent);
+        return;
+      }
+
+      state.movementSign = netIntent;
+      state.lastMoveSign = netIntent;
+      state.intentHold = true;
+      state.pendingStop = false;
+      state.stopTriggered = false;
+    } catch (_) {
+      /* ignore directional begin errors */
+    }
+  }
+
+  _endDirectionalMovement(tokenEntry, directionSign, sourceKey) {
+    try {
+      const state = this._movementStates.get(tokenEntry);
+      if (!state) return;
+      const key = sourceKey || `move_${directionSign}`;
+      if (directionSign > 0) {
+        state.forwardKeys.delete(key);
+      } else {
+        state.backwardKeys.delete(key);
+      }
+
+      if (state.phase && state.phase !== 'idle') {
+        this._syncMovementVariant(state, directionSign);
+      }
+
+      const netIntent = this._recalculateMovementIntent(state);
+      if (netIntent === 0) {
+        state.intentHold = false;
+        state.pendingStop = true;
+        state.movementSign = 0;
+        if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+          this._movementStates.delete(tokenEntry);
+        }
+        return;
+      }
+
+      if (state.phase === 'stop') {
+        this._abortStopPhase(state);
+      }
+
+      if (netIntent !== state.movementSign) {
+        state.freeStartWorld = this._resolveTokenWorldPosition(tokenEntry);
+        state.freeLastWorld = state.freeStartWorld ? { ...state.freeStartWorld } : null;
+        state.freeDistance = 0;
+        state.phaseElapsed = 0;
+      }
+
+      state.movementSign = netIntent;
+      state.lastMoveSign = netIntent;
+      state.intentHold = true;
+      state.pendingStop = false;
+    } catch (_) {
+      /* ignore directional end errors */
     }
   }
 
@@ -494,20 +1109,84 @@ export class Token3DAdapter {
         clips.walk = walkClip.duration || 0;
       }
 
-      const walkStartClip = await this._resolveAnimationClip(animationsConfig.walkStart, null);
-      if (walkStartClip) {
-        const action = mixer.clipAction(walkStartClip);
-        this._configureAction(action, animationsConfig.walkStart, three, { loop: 'once' });
-        actions.walkStart = action;
-        clips.walkStart = walkStartClip.duration || 0;
+      const walkBackwardClip = await this._resolveAnimationClip(
+        animationsConfig.walkBackward,
+        null
+      );
+      if (walkBackwardClip) {
+        const action = mixer.clipAction(walkBackwardClip);
+        this._configureAction(action, animationsConfig.walkBackward, three, { loop: 'repeat' });
+        actions.walkBackward = action;
+        clips.walkBackward = walkBackwardClip.duration || 0;
       }
 
-      const walkStopClip = await this._resolveAnimationClip(animationsConfig.walkStop, null);
-      if (walkStopClip) {
-        const action = mixer.clipAction(walkStopClip);
-        this._configureAction(action, animationsConfig.walkStop, three, { loop: 'once' });
-        actions.walkStop = action;
-        clips.walkStop = walkStopClip.duration || 0;
+      const runClip = await this._resolveAnimationClip(animationsConfig.run, null);
+      if (runClip) {
+        const action = mixer.clipAction(runClip);
+        this._configureAction(action, animationsConfig.run, three, { loop: 'repeat' });
+        actions.run = action;
+        clips.run = runClip.duration || 0;
+      }
+
+      const runBackwardClip = await this._resolveAnimationClip(animationsConfig.runBackward, null);
+      if (runBackwardClip) {
+        const action = mixer.clipAction(runBackwardClip);
+        this._configureAction(action, animationsConfig.runBackward, three, { loop: 'repeat' });
+        actions.runBackward = action;
+        clips.runBackward = runBackwardClip.duration || 0;
+      }
+
+      const runStopClip = await this._resolveAnimationClip(animationsConfig.runStop, null);
+      if (runStopClip) {
+        const action = mixer.clipAction(runStopClip);
+        this._configureAction(action, animationsConfig.runStop, three, { loop: 'once' });
+        actions.runStop = action;
+        clips.runStop = runStopClip.duration || 0;
+      }
+
+      const drunkWalkClip = await this._resolveAnimationClip(animationsConfig.drunkWalk, null);
+      if (drunkWalkClip) {
+        const action = mixer.clipAction(drunkWalkClip);
+        this._configureAction(action, animationsConfig.drunkWalk, three, { loop: 'repeat' });
+        actions.drunkWalk = action;
+        clips.drunkWalk = drunkWalkClip.duration || 0;
+      }
+
+      const drunkWalkBackwardClip = await this._resolveAnimationClip(
+        animationsConfig.drunkWalkBackward,
+        null
+      );
+      if (drunkWalkBackwardClip) {
+        const action = mixer.clipAction(drunkWalkBackwardClip);
+        this._configureAction(action, animationsConfig.drunkWalkBackward, three, {
+          loop: 'repeat',
+        });
+        actions.drunkWalkBackward = action;
+        clips.drunkWalkBackward = drunkWalkBackwardClip.duration || 0;
+      }
+
+      const drunkRunForwardClip = await this._resolveAnimationClip(
+        animationsConfig.drunkRunForward,
+        null
+      );
+      if (drunkRunForwardClip) {
+        const action = mixer.clipAction(drunkRunForwardClip);
+        this._configureAction(action, animationsConfig.drunkRunForward, three, { loop: 'repeat' });
+        actions.drunkRunForward = action;
+        clips.drunkRunForward = drunkRunForwardClip.duration || 0;
+      }
+
+      const drunkRunBackwardClip = await this._resolveAnimationClip(
+        animationsConfig.drunkRunBackward,
+        null
+      );
+      if (drunkRunBackwardClip) {
+        const action = mixer.clipAction(drunkRunBackwardClip);
+        this._configureAction(action, animationsConfig.drunkRunBackward, three, {
+          loop: 'repeat',
+        });
+        actions.drunkRunBackward = action;
+        clips.drunkRunBackward = drunkRunBackwardClip.duration || 0;
       }
 
       const fallClip = await this._resolveAnimationClip(animationsConfig.fall, null);
@@ -653,11 +1332,24 @@ export class Token3DAdapter {
       ...(movementOverrides || {}),
     };
 
-    profile.startClipDuration =
-      this._extractClipDuration(actions.walkStart) || clips.walkStart || 0;
+    profile.startClipDuration = 0;
     profile.walkClipDuration = this._extractClipDuration(actions.walk) || clips.walk || 0;
-    profile.stopClipDuration = this._extractClipDuration(actions.walkStop) || clips.walkStop || 0;
+    profile.walkBackwardClipDuration =
+      this._extractClipDuration(actions.walkBackward) || clips.walkBackward || 0;
+    profile.stopClipDuration = 0;
     profile.idleClipDuration = this._extractClipDuration(actions.idle) || clips.idle || 0;
+    profile.runClipDuration = this._extractClipDuration(actions.run) || clips.run || 0;
+    profile.runBackwardClipDuration =
+      this._extractClipDuration(actions.runBackward) || clips.runBackward || 0;
+    profile.runStopClipDuration = this._extractClipDuration(actions.runStop) || clips.runStop || 0;
+    profile.drunkWalkClipDuration =
+      this._extractClipDuration(actions.drunkWalk) || clips.drunkWalk || 0;
+    profile.drunkWalkBackwardClipDuration =
+      this._extractClipDuration(actions.drunkWalkBackward) || clips.drunkWalkBackward || 0;
+    profile.drunkRunForwardClipDuration =
+      this._extractClipDuration(actions.drunkRunForward) || clips.drunkRunForward || 0;
+    profile.drunkRunBackwardClipDuration =
+      this._extractClipDuration(actions.drunkRunBackward) || clips.drunkRunBackward || 0;
     profile.fallClipDuration = this._extractClipDuration(actions.fall) || clips.fall || 0;
     profile.hardLandingClipDuration =
       this._extractClipDuration(actions.hardLanding) || clips.hardLanding || 0;
@@ -695,6 +1387,62 @@ export class Token3DAdapter {
       0
     );
     profile.stopMovementDuration = profile.stopClipDuration * profile.stopTravelPortion;
+
+    const runMultiplier = Number.isFinite(profile.runSpeedMultiplier)
+      ? Math.max(profile.runSpeedMultiplier, 0.1)
+      : 1.6;
+    const drunkWalkMultiplier = Number.isFinite(profile.drunkWalkSpeedMultiplier)
+      ? Math.max(profile.drunkWalkSpeedMultiplier, 0.1)
+      : 0.65;
+    const drunkRunMultiplier = Number.isFinite(profile.drunkRunSpeedMultiplier)
+      ? Math.max(profile.drunkRunSpeedMultiplier, 0.1)
+      : runMultiplier;
+
+    if (!Number.isFinite(profile.runSpeed) || profile.runSpeed <= 0) {
+      const runDuration = Math.max(profile.runClipDuration || profile.walkClipDuration || 0, 0);
+      if (runDuration > 1e-3) {
+        profile.runSpeed = tileWorldSize / runDuration;
+      } else {
+        profile.runSpeed = Math.max(profile.walkSpeed * runMultiplier, profile.walkSpeed);
+      }
+    }
+
+    if (!Number.isFinite(profile.drunkWalkSpeed) || profile.drunkWalkSpeed <= 0) {
+      const drunkWalkDuration = Math.max(
+        profile.drunkWalkClipDuration || profile.walkClipDuration || 0,
+        0
+      );
+      if (drunkWalkDuration > 1e-3) {
+        profile.drunkWalkSpeed = tileWorldSize / drunkWalkDuration;
+      } else {
+        profile.drunkWalkSpeed = Math.max(profile.walkSpeed * drunkWalkMultiplier, 0.1);
+      }
+    }
+
+    if (profile.drunkWalkSpeed > profile.walkSpeed) {
+      profile.drunkWalkSpeed = Math.max(profile.walkSpeed * drunkWalkMultiplier, 0.1);
+    }
+
+    if (!Number.isFinite(profile.drunkRunSpeed) || profile.drunkRunSpeed <= 0) {
+      const drunkRunDuration = Math.max(
+        profile.drunkRunForwardClipDuration ||
+          profile.drunkRunBackwardClipDuration ||
+          profile.runClipDuration ||
+          profile.walkClipDuration ||
+          0,
+        0
+      );
+      const base = Math.max(profile.drunkWalkSpeed, 0.1);
+      const fallback = Math.max(base * drunkRunMultiplier, base);
+      const runBaseline = Math.max(profile.runSpeed || fallback, fallback);
+      const speedFloor = Math.max(runBaseline * 0.95, fallback);
+      if (drunkRunDuration > 1e-3) {
+        const durationSpeed = tileWorldSize / drunkRunDuration;
+        profile.drunkRunSpeed = Math.max(durationSpeed, speedFloor);
+      } else {
+        profile.drunkRunSpeed = speedFloor;
+      }
+    }
 
     return profile;
   }
@@ -758,29 +1506,55 @@ export class Token3DAdapter {
 
   _updateForwardMovements(delta) {
     if (!this._movementStates.size) return;
+    const bounds = this._computeMovementBounds();
     const entries = Array.from(this._movementStates.entries());
     for (const [tokenEntry, state] of entries) {
-      if (!state || !state.activeStep) {
+      if (!state) {
         this._movementStates.delete(tokenEntry);
         continue;
       }
+
+      const mesh = tokenEntry?.__threeMesh;
+      if (!mesh) {
+        this._movementStates.delete(tokenEntry);
+        continue;
+      }
+      state.mesh = mesh;
+
       try {
+        this._advanceRotationState(state, delta);
+
         switch (state.phase) {
           case 'start':
-            this._advanceStartPhase(state, delta);
-            break;
-          case 'fall':
-            this._advanceFallPhase(state, delta);
+            this._advanceStartPhase(state, delta, bounds);
             break;
           case 'walk':
-            this._advanceWalkPhase(state, delta);
+            this._advanceWalkPhase(state, delta, bounds);
             break;
           case 'stop':
             this._advanceStopPhase(state, delta);
             break;
-          default:
-            this._movementStates.delete(tokenEntry);
+          case 'fall':
+            this._advanceFallPhase(state, delta);
             break;
+          case 'idle':
+          default: {
+            const netIntent = this._recalculateMovementIntent(state);
+            if (netIntent !== 0) {
+              this._startMovementPhase(state, netIntent);
+            } else if (!this._hasActiveIntents(state)) {
+              this._movementStates.delete(tokenEntry);
+            }
+            break;
+          }
+        }
+
+        if (state.pendingStop && state.phase !== 'stop' && state.phase !== 'fall') {
+          this._initiateStopPhase(state);
+        }
+
+        if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+          this._movementStates.delete(tokenEntry);
         }
       } catch (_) {
         this._movementStates.delete(tokenEntry);
@@ -788,26 +1562,27 @@ export class Token3DAdapter {
     }
   }
 
-  _advanceStartPhase(state, delta) {
+  _advanceStartPhase(state, delta, bounds) {
+    if (!state) return;
+    this._syncMovementVariant(state, state.movementSign || state.lastMoveSign || 1);
     state.phaseElapsed += delta;
-    const profile = state.profile;
-    const moveDelay = profile.startMoveDelay || 0;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const moveDelay = Math.max(state.startMoveDelay || 0, 0);
 
-    if (state.phaseElapsed > moveDelay) {
-      const prevElapsed = Math.max(0, state.phaseElapsed - delta - moveDelay);
-      const currentElapsed = Math.max(0, state.phaseElapsed - moveDelay);
-      const moveDelta = currentElapsed - prevElapsed;
+    if (state.phaseElapsed > moveDelay && state.movementSign !== 0) {
+      const previous = Math.max(0, state.phaseElapsed - delta - moveDelay);
+      const current = Math.max(0, state.phaseElapsed - moveDelay);
+      const moveDelta = current - previous;
       if (moveDelta > 0) {
-        this._advanceMovementStep(state, profile.walkSpeed * moveDelta);
-        if (state.phase !== 'start') return;
+        this._advanceFreeMovement(state, moveDelta, bounds);
       }
     }
 
-    const clipDuration = profile.startClipDuration || 0;
+    const clipDuration = Math.max(state.startDuration || 0, 0);
     if (!state.hasLoopStarted && clipDuration > 0) {
-      const lead = Math.min(profile.startToWalkBlendLead || 0, clipDuration);
+      const lead = Math.min(Math.max(state.startBlendLead || 0, 0), clipDuration);
       if (state.phaseElapsed >= Math.max(clipDuration - lead, 0)) {
-        this._setAnimation(state.token, 'walk', {
+        this._playLoopAnimation(state, {
           fadeIn: profile.walkFadeIn,
           fadeOut: profile.walkFadeOut,
         });
@@ -815,11 +1590,11 @@ export class Token3DAdapter {
       }
     }
 
-    if (clipDuration === 0 || state.phaseElapsed >= clipDuration) {
+    if (clipDuration === 0 || state.phaseElapsed >= clipDuration - 1e-4) {
       state.phase = 'walk';
       state.phaseElapsed = 0;
       if (!state.hasLoopStarted) {
-        this._setAnimation(state.token, 'walk', {
+        this._playLoopAnimation(state, {
           fadeIn: profile.walkFadeIn,
           fadeOut: profile.walkFadeOut,
         });
@@ -828,60 +1603,119 @@ export class Token3DAdapter {
     }
   }
 
-  _advanceWalkPhase(state, delta) {
-    const profile = state.profile;
-    if (!state.intentHold) {
+  _advanceWalkPhase(state, delta, bounds) {
+    if (!state) return;
+    const netIntent = this._recalculateMovementIntent(state);
+    if (netIntent === 0) {
+      state.intentHold = false;
       state.pendingStop = true;
+      return;
     }
 
-    if (state.stepFinalized && state.intentHold && !state.pendingStop) {
-      const nextStep = this._createForwardMovementStep(state.token, state.mesh);
-      if (nextStep) {
-        state.activeStep = nextStep;
+    if (netIntent !== state.movementSign) {
+      state.freeStartWorld = this._resolveTokenWorldPosition(state.token);
+      state.freeLastWorld = state.freeStartWorld ? { ...state.freeStartWorld } : null;
+      state.freeDistance = 0;
+      state.phaseElapsed = 0;
+    }
+
+    state.movementSign = netIntent;
+    state.lastMoveSign = netIntent;
+    state.intentHold = true;
+    state.pendingStop = false;
+
+    this._syncMovementVariant(state, netIntent);
+
+    if (delta > 0) {
+      this._advanceFreeMovement(state, delta, bounds);
+    }
+  }
+
+  _initiateStopPhase(state) {
+    if (!state || state.phase === 'stop') return;
+    state.activeStep = null;
+    state.stepFinalized = true;
+    state.phase = 'stop';
+    state.stopTriggered = true;
+    state.pendingStop = false;
+    state.intentHold = false;
+    state.movementSign = 0;
+    state.stopElapsed = 0;
+    state.stopMovementElapsed = 0;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    state.stopMovementTime = 0;
+    state.stopSpeed = 0;
+    state.stopBlendedToIdle = false;
+
+    const data = this._tokenAnimationData.get(state.token);
+    const snapshot = this._captureMovementStyleSnapshot(state);
+    this._updateMovementFlags(state, state.lastMoveSign || state.activeDirectionSign || -1);
+    this._handleMovementStyleChange(state, snapshot);
+    const stopActionKey = state.stopActionKey;
+    const hasStopAction = !!(stopActionKey && data?.actions?.[stopActionKey]);
+    let glideStep = null;
+    if (hasStopAction) {
+      glideStep = this._createStopGlideStep(state, profile);
+      if (glideStep) {
+        state.activeStep = glideStep;
         state.stepFinalized = false;
-        state.phaseElapsed = 0;
-        state.phase = 'walk';
-        this._applyPendingOrientation(state);
-        state.hasLoopStarted = true;
-      } else {
-        state.pendingStop = true;
-      }
-    }
-
-    this._advanceMovementStep(state, profile.walkSpeed * delta);
-
-    if (!state.stopTriggered && state.pendingStop) {
-      const step = state.activeStep;
-      if (step) {
-        const remaining = Math.max(0, step.totalDistance - step.traveled);
-        const speed = Math.max(profile.walkSpeed || 0.01, 0.01);
-        const timeRemaining = remaining / speed;
-        const stopDuration = Math.max(profile.stopMovementDuration || 0, 0);
-        const buffer = 0.05;
-        if (timeRemaining <= stopDuration + buffer || remaining <= 0.05) {
-          this._triggerStop(state);
-          return;
+        const duration = Math.max(
+          state.stopMovementDuration ?? profile.stopMovementDuration ?? 0,
+          0
+        );
+        state.stopMovementTime = duration;
+        if (state.stopMovementTime > 1e-4) {
+          state.stopSpeed = glideStep.totalDistance / state.stopMovementTime;
+        } else {
+          const fallbackSpeed = Math.max(
+            state.lastMoveSpeed || profile.walkSpeed || DEFAULT_MOVEMENT_PROFILE.walkSpeed || 0,
+            0
+          );
+          state.stopSpeed = fallbackSpeed;
+          state.stopMovementTime =
+            state.stopSpeed > 1e-4 ? glideStep.totalDistance / state.stopSpeed : 0;
         }
       }
+    }
+
+    if (hasStopAction) {
+      this._setAnimation(state.token, stopActionKey, {
+        fadeIn: profile.stopFadeIn,
+        fadeOut: profile.stopFadeOut,
+        force: true,
+      });
+      if (!glideStep) {
+        state.stopMovementTime = 0;
+        state.stopSpeed = 0;
+      }
+    } else {
+      this._setAnimation(state.token, 'idle', {
+        fadeIn: profile.idleFadeIn,
+        fadeOut: profile.walkFadeOut,
+        force: true,
+      });
+      this._finishStopState(state);
     }
   }
 
   _advanceStopPhase(state, delta) {
-    const profile = state.profile;
+    if (!state) return;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const step = state.activeStep;
     state.stopElapsed += delta;
 
-    if (state.stopMovementTime > 0 && state.stopMovementElapsed < state.stopMovementTime) {
+    if (step && state.stopMovementTime > 0 && state.stopMovementElapsed < state.stopMovementTime) {
       const remainingTime = state.stopMovementTime - state.stopMovementElapsed;
       const timeSlice = Math.min(delta, remainingTime);
       this._advanceMovementStep(state, state.stopSpeed * timeSlice, { clamp: true });
       state.stopMovementElapsed += timeSlice;
-    } else if (!state.stepFinalized) {
+    } else if (step && !state.stepFinalized) {
       this._lockStepAtTarget(state);
     }
 
-    const clipDuration = profile.stopClipDuration || 0;
+    const clipDuration = state.stopDuration ?? profile.stopClipDuration ?? 0;
     if (!state.stopBlendedToIdle && clipDuration > 0) {
-      const lead = Math.min(profile.stopBlendLead || 0, clipDuration);
+      const lead = Math.min(state.stopBlendLead ?? profile.stopBlendLead ?? 0, clipDuration);
       if (state.stopElapsed >= Math.max(clipDuration - lead, 0)) {
         this._setAnimation(state.token, 'idle', {
           fadeIn: profile.idleFadeIn,
@@ -947,19 +1781,19 @@ export class Token3DAdapter {
     if (!state.stepFinalized) {
       this._lockStepAtTarget(state);
     }
-
     this._applyPendingOrientation(state);
-
     this._movementStates.delete(state.token);
-    state.intentHold = false;
-    state.pendingStop = false;
-    state.stopTriggered = false;
-    state.fallDuration = 0;
-    state.fallSpeed = 0;
-    state.fallMode = null;
-    state.fallLandingThreshold = 0;
-    state.fallLandingKey = null;
-    state.fallLandingDuration = 0;
+    Object.assign(state, {
+      intentHold: false,
+      pendingStop: false,
+      stopTriggered: false,
+      fallDuration: 0,
+      fallSpeed: 0,
+      fallMode: null,
+      fallLandingThreshold: 0,
+      fallLandingKey: null,
+      fallLandingDuration: 0,
+    });
 
     this._setAnimation(state.token, 'idle', {
       fadeIn: profile.idleFadeIn,
@@ -1288,6 +2122,64 @@ export class Token3DAdapter {
     return completed;
   }
 
+  _advanceFreeMovement(state, delta, bounds) {
+    if (!state || !(delta > 0)) return;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const speed = Math.max(
+      state.activeSpeed ?? profile.walkSpeed ?? DEFAULT_MOVEMENT_PROFILE.walkSpeed ?? 1,
+      0
+    );
+    if (!(speed > 0)) return;
+
+    const sign = state.movementSign || 0;
+    if (sign === 0) return;
+
+    const yaw = this._getMovementYaw(state.token);
+    const direction = this._getDirectionalVectorFromYaw(yaw, sign);
+    if (!direction || (Math.abs(direction.x) < 1e-6 && Math.abs(direction.z) < 1e-6)) {
+      return;
+    }
+
+    const distance = speed * delta;
+    if (!(distance > 0)) return;
+
+    const currentWorld = this._resolveTokenWorldPosition(state.token);
+    const nextWorld = {
+      x: currentWorld.x + direction.x * distance,
+      y: currentWorld.y,
+      z: currentWorld.z + direction.z * distance,
+    };
+
+    if (bounds) {
+      if (Number.isFinite(bounds.minX)) nextWorld.x = Math.max(nextWorld.x, bounds.minX);
+      if (Number.isFinite(bounds.maxX)) nextWorld.x = Math.min(nextWorld.x, bounds.maxX);
+      if (Number.isFinite(bounds.minZ)) nextWorld.z = Math.max(nextWorld.z, bounds.minZ);
+      if (Number.isFinite(bounds.maxZ)) nextWorld.z = Math.min(nextWorld.z, bounds.maxZ);
+    }
+
+    nextWorld.y = this._sampleWorldHeight(nextWorld.x, nextWorld.z, currentWorld.y);
+
+    const composed = this._composeMeshPosition(nextWorld, state.mesh);
+    if (state.mesh?.position?.set) {
+      state.mesh.position.set(composed.x, composed.y, composed.z);
+    }
+
+    this._updateTokenWorldDuringMovement(state.token, nextWorld);
+
+    const actualDistance = Math.hypot(nextWorld.x - currentWorld.x, nextWorld.z - currentWorld.z);
+    if (delta > 1e-4 && actualDistance > 0) {
+      state.lastMoveSpeed = actualDistance / delta;
+    }
+
+    if (!state.freeStartWorld) {
+      state.freeStartWorld = { ...currentWorld };
+    }
+    state.freeLastWorld = { ...nextWorld };
+    state.freeDistance += Math.hypot(nextWorld.x - currentWorld.x, nextWorld.z - currentWorld.z);
+    state.activeStep = null;
+    state.stepFinalized = false;
+  }
+
   _applyStepProgress(step, distance, state, options = {}) {
     const remaining = Math.max(0, step.totalDistance - step.traveled);
     const move = Math.min(distance, remaining);
@@ -1359,63 +2251,154 @@ export class Token3DAdapter {
     token.world = { ...step.targetWorld };
   }
 
-  _triggerStop(state) {
-    if (state.stopTriggered) return;
-    state.intentHold = false;
-    state.pendingStop = false;
-    state.stopTriggered = true;
-    state.phase = 'stop';
-    state.stopElapsed = 0;
-    state.stopMovementElapsed = 0;
+  _createStopGlideStep(state, profile) {
+    try {
+      const tokenEntry = state?.token;
+      if (!tokenEntry) return null;
+      const mesh = state?.mesh || tokenEntry.__threeMesh;
+      if (!mesh) return null;
 
-    const step = state.activeStep;
-    const remainingDistance = step ? Math.max(0, step.totalDistance - step.traveled) : 0;
-    state.stopMovementTime = Math.min(
-      Math.max(state.profile.stopMovementDuration || 0, 0),
-      state.profile.stopClipDuration || 0
-    );
-    if (state.stopMovementTime > 0 && remainingDistance > 0) {
-      state.stopSpeed = remainingDistance / state.stopMovementTime;
-    } else {
-      state.stopSpeed = 0;
-      if (step && !state.stepFinalized) {
-        this._lockStepAtTarget(state);
+      const lastSign = state?.lastMoveSign || state?.movementSign || 0;
+      if (lastSign === 0) return null;
+
+      const duration = Math.max(
+        state?.stopMovementDuration ?? profile?.stopMovementDuration ?? 0,
+        0
+      );
+      if (!(duration > 0)) return null;
+
+      const baseWalk = Math.max(
+        state?.activeSpeed ?? profile?.walkSpeed ?? DEFAULT_MOVEMENT_PROFILE.walkSpeed ?? 0,
+        0
+      );
+      const recentSpeed = Math.max(state?.lastMoveSpeed || 0, 0);
+      const glideSpeed = Math.max(recentSpeed, baseWalk);
+      if (!(glideSpeed > 0)) return null;
+
+      const yaw = this._getMovementYaw(tokenEntry);
+      const direction = this._getDirectionalVectorFromYaw(yaw, lastSign);
+      if (!direction || (Math.abs(direction.x) < 1e-6 && Math.abs(direction.z) < 1e-6)) {
+        return null;
       }
-    }
 
-    const animationData = this._tokenAnimationData.get(state.token);
-    if (!animationData?.actions?.walkStop) {
+      const distance = glideSpeed * duration;
+      if (!(distance > 0)) return null;
+
+      const currentWorld = this._resolveTokenWorldPosition(tokenEntry);
+      const bounds = this._computeMovementBounds();
+      const targetWorld = {
+        x: currentWorld.x + direction.x * distance,
+        y: currentWorld.y,
+        z: currentWorld.z + direction.z * distance,
+      };
+
+      if (bounds) {
+        if (Number.isFinite(bounds.minX)) targetWorld.x = Math.max(targetWorld.x, bounds.minX);
+        if (Number.isFinite(bounds.maxX)) targetWorld.x = Math.min(targetWorld.x, bounds.maxX);
+        if (Number.isFinite(bounds.minZ)) targetWorld.z = Math.max(targetWorld.z, bounds.minZ);
+        if (Number.isFinite(bounds.maxZ)) targetWorld.z = Math.min(targetWorld.z, bounds.maxZ);
+      }
+
+      targetWorld.y = this._sampleWorldHeight(targetWorld.x, targetWorld.z, currentWorld.y);
+
+      const startPosition = this._composeMeshPosition(currentWorld, mesh);
+      const targetPosition = this._composeMeshPosition(targetWorld, mesh);
+      const dx = targetPosition.x - startPosition.x;
+      const dy = targetPosition.y - startPosition.y;
+      const dz = targetPosition.z - startPosition.z;
+      const totalDistance = Math.hypot(dx, dy, dz);
+      if (!(totalDistance > 1e-4)) return null;
+
+      const horizontalDistance = Math.hypot(dx, dz);
+
+      let gridStartX = Number(tokenEntry.gridX);
+      let gridStartY = Number(tokenEntry.gridY);
+      if (!Number.isFinite(gridStartX)) gridStartX = 0;
+      if (!Number.isFinite(gridStartY)) gridStartY = 0;
+
+      let gridTargetX = gridStartX;
+      let gridTargetY = gridStartY;
+      try {
+        const spatial = this.gameManager?.spatial;
+        if (spatial?.worldToGrid) {
+          const mapped = spatial.worldToGrid(targetWorld.x, targetWorld.z);
+          if (Number.isFinite(mapped?.gridX)) gridTargetX = mapped.gridX;
+          if (Number.isFinite(mapped?.gridY)) gridTargetY = mapped.gridY;
+        }
+      } catch (_) {
+        gridTargetX = gridStartX;
+        gridTargetY = gridStartY;
+      }
+
+      return {
+        tokenEntry,
+        mesh,
+        startWorld: { ...currentWorld },
+        targetWorld,
+        startPosition,
+        targetPosition,
+        totalDistance,
+        traveled: 0,
+        gridStartX,
+        gridStartY,
+        gridTargetX,
+        gridTargetY,
+        startHeight: currentWorld.y,
+        targetHeight: targetWorld.y,
+        heightDrop: (currentWorld.y ?? 0) - (targetWorld.y ?? currentWorld.y),
+        requiresFall: false,
+        fallTriggerProgress: 1,
+        fallTriggered: false,
+        horizontalDistance,
+        horizontalTraveled: 0,
+        verticalSnapProgress: 1,
+        landingVariant: null,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _triggerStop(state) {
+    if (!state || state.phase === 'stop') return;
+    this._initiateStopPhase(state);
+  }
+
+  _finishWalkState(state) {
+    if (!state) return;
+    this._applyPendingOrientation(state);
+    state.phase = 'idle';
+    state.activeStep = null;
+    state.stepFinalized = true;
+    state.intentHold = false;
+    if (!state.stopBlendedToIdle) {
       this._setAnimation(state.token, 'idle', {
         fadeIn: state.profile.idleFadeIn,
         fadeOut: state.profile.walkFadeOut,
       });
-      this._finishStopState(state);
-      return;
     }
-
-    this._setAnimation(state.token, 'walkStop', {
-      fadeIn: state.profile.stopFadeIn,
-      fadeOut: state.profile.stopFadeOut,
-    });
-  }
-
-  _finishWalkState(state) {
-    this._applyPendingOrientation(state);
-    this._movementStates.delete(state.token);
-    this._setAnimation(state.token, 'idle', {
-      fadeIn: state.profile.idleFadeIn,
-      fadeOut: state.profile.walkFadeOut,
-    });
+    if (!this._hasActiveIntents(state)) {
+      this._movementStates.delete(state.token);
+    }
   }
 
   _finishStopState(state) {
+    if (!state) return;
     this._applyPendingOrientation(state);
-    this._movementStates.delete(state.token);
+    state.phase = 'idle';
+    state.activeStep = null;
+    state.stepFinalized = true;
+    state.stopTriggered = false;
+    state.pendingStop = false;
+    state.intentHold = false;
     if (!state.stopBlendedToIdle) {
       this._setAnimation(state.token, 'idle', {
         fadeIn: state.profile.idleFadeIn,
         fadeOut: state.profile.stopFadeOut,
       });
+    }
+    if (!this._hasActiveIntents(state)) {
+      this._movementStates.delete(state.token);
     }
   }
 

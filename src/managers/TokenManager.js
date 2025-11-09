@@ -34,7 +34,7 @@ import { rotateToken as _rotateToken } from './token-manager/internals/orientati
 export class TokenManager {
   constructor(gameManager) {
     this.gameManager = gameManager;
-    this.selectedTokenType = 'goblin';
+    this.selectedTokenType = 'female-humanoid';
     this.tokenFacingRight = true;
     this.placedTokens = [];
   }
