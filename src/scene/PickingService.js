@@ -13,9 +13,6 @@ export class PickingService {
     this._v2 = null;
     this._hitPoint = null;
     this._plane = null; // ground plane
-    this._scratchNormal = null;
-    this._normalMatrix = null;
-    this._terrainIntersections = [];
     this._layers = [];
     this._metrics = { raycasts: 0, lastMs: 0 };
   }
@@ -54,31 +51,12 @@ export class PickingService {
         this._v2 = new three.Vector2();
         this._hitPoint = new three.Vector3();
         this._plane = new three.Plane(new three.Vector3(0, 1, 0), 0);
-        this._scratchNormal = new three.Vector3();
-        this._normalMatrix = new three.Matrix3();
       } catch (_) {
         this._raycaster = null;
         this._v2 = null;
         this._hitPoint = null;
         this._plane = null;
-        this._scratchNormal = null;
-        this._normalMatrix = null;
         return false;
-      }
-    } else {
-      if (!this._scratchNormal) {
-        try {
-          this._scratchNormal = new three.Vector3();
-        } catch (_) {
-          this._scratchNormal = null;
-        }
-      }
-      if (!this._normalMatrix) {
-        try {
-          this._normalMatrix = new three.Matrix3();
-        } catch (_) {
-          this._normalMatrix = null;
-        }
       }
     }
     return true;
@@ -98,86 +76,98 @@ export class PickingService {
     if (!cam || !canvas || typeof canvas.getBoundingClientRect !== 'function') return null;
 
     const rect = canvas.getBoundingClientRect();
-    const width = rect?.width || 0;
-    const height = rect?.height || 0;
+    const scaleX = canvas.width ? canvas.width / rect.width : 1;
+    const scaleY = canvas.height ? canvas.height / rect.height : 1;
+    const width = canvas.width || rect.width || 0;
+    const height = canvas.height || rect.height || 0;
     if (!width || !height) return null;
 
-    const ndcX = ((clientX - rect.left) / width) * 2 - 1;
-    const ndcY = -((clientY - rect.top) / height) * 2 + 1;
+    const canvasX = (clientX - rect.left) * scaleX;
+    const canvasY = (clientY - rect.top) * scaleY;
+
+    const ndcX = (canvasX / width) * 2 - 1;
+    const ndcY = -(canvasY / height) * 2 + 1;
     this._v2.set(ndcX, ndcY);
     try {
       this._raycaster.setFromCamera(this._v2, cam);
     } catch (_) {
       return null;
     }
+    if (!this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) return null;
 
-    let source = 'plane';
-    let hasHit = false;
-    if (gm.threeSceneManager?.scene) {
-      const terrainMesh = gm.threeSceneManager.scene.getObjectByName?.('TerrainMesh') || null;
-      if (terrainMesh) {
-        try {
-          const cache = this._terrainIntersections;
-          if (Array.isArray(cache)) cache.length = 0;
-          const hits = this._raycaster.intersectObject(terrainMesh, false, cache);
-          if (hits && hits.length) {
-            const hit = hits[0];
-            this._hitPoint.copy(hit.point);
-            if (
-              hit.face &&
-              this._scratchNormal &&
-              this._normalMatrix &&
-              typeof hit.object?.matrixWorld === 'object' &&
-              this._normalMatrix.getNormalMatrix
-            ) {
-              try {
-                this._scratchNormal.copy(hit.face.normal);
-                this._normalMatrix.getNormalMatrix(hit.object.matrixWorld);
-                this._scratchNormal.applyMatrix3(this._normalMatrix).normalize();
-                if (Math.abs(this._scratchNormal.y) < 0.75) {
-                  const tileSize = gm.spatial?.tileWorldSize || 1;
-                  const epsilon = tileSize * 1e-4;
-                  this._hitPoint.addScaledVector(this._scratchNormal, -epsilon);
-                }
-              } catch (_) {
-                /* ignore normal adjustments */
-              }
-            }
-            source = 'terrain';
-            hasHit = true;
-          }
-        } catch (_) {
-          /* ignore terrain raycast errors */
-        }
-      }
-    }
+    let worldX = this._hitPoint.x;
+    let worldY = this._hitPoint.y;
+    let worldZ = this._hitPoint.z;
 
-    if (!hasHit) {
-      if (!this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) return null;
-    }
+    const tileSize = gm?.spatial?.tileWorldSize || 1;
+    const safeTileSize = tileSize > 0 ? tileSize : 1;
 
-    const { x, y, z } = this._hitPoint;
-    let grid;
+    const computeGridIndex = (value) => {
+      if (!Number.isFinite(value)) return 0;
+      return Math.floor(value / safeTileSize);
+    };
+
+    let grid = null;
     try {
-      grid = gm.spatial?.worldToGrid ? gm.spatial.worldToGrid(x, z) : null;
+      const base = gm.spatial?.worldToGrid ? gm.spatial.worldToGrid(worldX, worldZ) : null;
+      if (base && Number.isFinite(base.gridX) && Number.isFinite(base.gridY)) {
+        grid = { gridX: base.gridX, gridY: base.gridY };
+      }
     } catch (_) {
       grid = null;
     }
-    if (!grid) {
-      const tileSize = gm.spatial?.tileWorldSize || 1;
-      grid = {
-        gridX: Math.round(x / tileSize),
-        gridY: Math.round(z / tileSize),
-      };
+
+    let gx = computeGridIndex(worldX);
+    let gy = computeGridIndex(worldZ);
+    if (!grid) grid = { gridX: gx, gridY: gy };
+    grid.gridX = gx;
+    grid.gridY = gy;
+
+    const clampIndex = (value, maxInclusive) => {
+      let result = Number.isFinite(value) ? value : 0;
+      if (result < 0) result = 0;
+      if (Number.isFinite(maxInclusive) && result > maxInclusive) {
+        result = maxInclusive;
+      }
+      return result;
+    };
+
+    const maxCols = Number.isFinite(gm?.cols) ? gm.cols - 1 : null;
+    const maxRows = Number.isFinite(gm?.rows) ? gm.rows - 1 : null;
+    grid.gridX = gx = clampIndex(grid.gridX, maxCols);
+    grid.gridY = gy = clampIndex(grid.gridY, maxRows);
+
+    try {
+      const elevationLevels = gm.getTerrainHeight?.(gx, gy);
+      const elevationUnit = gm?.spatial?.elevationUnit || 0;
+      if (Number.isFinite(elevationLevels) && Number.isFinite(elevationUnit)) {
+        const targetWorldY = elevationLevels * elevationUnit;
+        if (Math.abs(targetWorldY - worldY) > 1e-5 && this._plane) {
+          const originalConstant = this._plane.constant;
+          this._plane.constant = -targetWorldY;
+          if (this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) {
+            worldX = this._hitPoint.x;
+            worldY = this._hitPoint.y;
+            worldZ = this._hitPoint.z;
+            gx = computeGridIndex(worldX);
+            gy = computeGridIndex(worldZ);
+            grid.gridX = gx = clampIndex(gx, maxCols);
+            grid.gridY = gy = clampIndex(gy, maxRows);
+          }
+          this._plane.constant = originalConstant;
+        }
+      }
+    } catch (_) {
+      /* ignore */
     }
 
     return {
-      world: { x, y, z },
+      world: { x: worldX, y: worldY, z: worldZ },
       grid: { gx: grid.gridX, gy: grid.gridY },
-      source,
       metrics: { raycasts: this._metrics.raycasts },
     };
   }
+
   _recordPickMetrics(start) {
     const end = (typeof performance !== 'undefined' && performance.now()) || Date.now();
     this._metrics.raycasts += 1;

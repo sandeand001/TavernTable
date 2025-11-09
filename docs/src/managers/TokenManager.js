@@ -32,7 +32,7 @@ import { placeNewToken as _placeNewToken } from './token-manager/internals/place
 export class TokenManager {
   constructor(gameManager) {
     this.gameManager = gameManager;
-    this.selectedTokenType = 'goblin';
+    this.selectedTokenType = 'female-humanoid';
     this.tokenFacingRight = true;
     this.placedTokens = [];
   }

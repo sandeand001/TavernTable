@@ -249,7 +249,7 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
         const gm = c.gameManager;
         const height = gm?.terrainCoordinator?.dataStore?.get(target.gridX, target.gridY) ?? 0;
         if (gm?.spatial && typeof gm.spatial.gridToWorld === 'function') {
-          tokenEntry.world = gm.spatial.gridToWorld(target.gridX, target.gridY, height);
+          tokenEntry.world = gm.spatial.gridToWorld(target.gridX + 0.5, target.gridY + 0.5, height);
         }
       } catch (_) {
         /* ignore */

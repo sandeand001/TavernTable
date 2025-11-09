@@ -17,6 +17,7 @@ export function addTokenToCollection(
     gridX: gridX,
     gridY: gridY,
     type: tokenType,
+    facingAngle: 0,
     // Persist original placement grid (for stable reprojection cycles)
     __originGridX: gridX,
     __originGridY: gridY,
@@ -27,7 +28,7 @@ export function addTokenToCollection(
         const gm = c.gameManager;
         const height = gm?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
         if (gm?.spatial && typeof gm.spatial.gridToWorld === 'function') {
-          return gm.spatial.gridToWorld(gridX, gridY, height);
+          return gm.spatial.gridToWorld(gridX + 0.5, gridY + 0.5, height);
         }
       } catch (_) {
         /* ignore */
@@ -56,6 +57,9 @@ export function addTokenToCollection(
       typeof gm.token3DAdapter.onTokenAdded === 'function'
     ) {
       gm.token3DAdapter.onTokenAdded(newTokenData);
+      if (typeof gm.token3DAdapter.setSelectedToken === 'function') {
+        gm.token3DAdapter.setSelectedToken(newTokenData);
+      }
     }
   } catch (_) {
     /* non-fatal */

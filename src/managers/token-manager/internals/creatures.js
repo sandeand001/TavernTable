@@ -13,6 +13,7 @@ import {
   createOwlbear,
   createMinotaur,
   createMindFlayer,
+  createFemaleHumanoid,
   createDefeatedDoll,
 } from '../../../entities/creatures/index.js';
 
@@ -33,6 +34,8 @@ export function createCreatureByType(c, type) {
       owlbear: () => createOwlbear(),
       minotaur: () => createMinotaur(),
       mindflayer: () => createMindFlayer(),
+      'female-humanoid': () => createFemaleHumanoid(),
+      // Legacy alias maintained for users loading pre-migration save data.
       'defeated-doll': () => createDefeatedDoll(),
     };
 

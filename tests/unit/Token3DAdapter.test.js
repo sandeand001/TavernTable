@@ -20,10 +20,24 @@ jest.mock('three', () => {
       this.h = h;
     }
   }
+  class RingGeometry extends Geometry {
+    constructor(inner, outer, segments) {
+      super();
+      this.inner = inner;
+      this.outer = outer;
+      this.segments = segments;
+    }
+  }
   class MeshBasicMaterial extends Material {
     constructor(opts) {
       super();
       this.opts = opts;
+      this.color = opts?.color
+        ? { setHex: jest.fn(), clone: jest.fn(() => ({ setHex: jest.fn(), copy: jest.fn() })) }
+        : null;
+      this.emissive = opts?.color
+        ? { setHex: jest.fn(), clone: jest.fn(() => ({ setHex: jest.fn(), copy: jest.fn() })) }
+        : null;
     }
   }
   class Mesh {
@@ -32,10 +46,28 @@ jest.mock('three', () => {
       this.material = mat;
       this.position = { set: jest.fn() };
       this.name = '';
+      this.userData = {};
+      this.rotation = { y: 0 };
+      this.scale = { x: 1, y: 1, z: 1 };
+      this.children = [];
     }
     lookAt() {}
+    add(child) {
+      this.children.push(child);
+      child.parent = this;
+    }
+    remove(child) {
+      this.children = this.children.filter((c) => c !== child);
+      if (child.parent === this) child.parent = null;
+    }
   }
-  return { PlaneGeometry, MeshBasicMaterial, Mesh };
+  return {
+    PlaneGeometry,
+    RingGeometry,
+    MeshBasicMaterial,
+    Mesh,
+    DoubleSide: 2,
+  };
 });
 
 // We import after mocking
@@ -177,5 +209,79 @@ describe('Token3DAdapter (Phase 3)', () => {
     gm.tokenManager.tokenFacingRight = true;
     addedCallbacks.forEach((cb) => cb());
     expect(mesh.scale.x).toBe(1);
+  });
+
+  test('updateTokenOrientation applies yaw offset and global flip', () => {
+    const gm = {
+      is3DModeActive: () => true,
+      tokenManager: {
+        tokenFacingRight: true,
+        getTokenFacingRight() {
+          return this.tokenFacingRight;
+        },
+      },
+      placedTokens: [],
+    };
+
+    const adapter = new Token3DAdapter(gm);
+    gm.token3DAdapter = adapter;
+
+    const sprite = { scale: { x: 1 }, rotation: 0 };
+    const mesh = {
+      userData: { __tt3DToken: true, __ttBaseYaw: Math.PI / 2 },
+      rotation: { y: 0 },
+    };
+
+    const token = { facingAngle: 0, creature: { sprite }, __threeMesh: mesh };
+    gm.placedTokens.push(token);
+
+    adapter.updateTokenOrientation(token);
+    expect(mesh.rotation.y).toBeCloseTo(Math.PI / 2);
+    expect(sprite.scale.x).toBeCloseTo(1);
+    expect(sprite.rotation).toBeCloseTo(0);
+
+    token.facingAngle = Math.PI / 4;
+    adapter.updateTokenOrientation(token);
+    expect(mesh.rotation.y).toBeCloseTo(Math.PI / 2 + Math.PI / 4);
+    expect(sprite.rotation).toBeCloseTo(Math.PI / 4);
+
+    gm.tokenManager.tokenFacingRight = false;
+    adapter._lastFacingRight = null;
+    adapter._syncFacingDirection();
+    expect(mesh.rotation.y).toBeCloseTo(Math.PI / 2 + Math.PI / 4 + Math.PI);
+    expect(sprite.scale.x).toBeLessThan(0);
+  });
+
+  test('selection indicator attaches when token selected', async () => {
+    const three = require('three');
+    const gm = {
+      is3DModeActive: () => true,
+      placedTokens: [],
+      tokenManager: {
+        tokenFacingRight: true,
+        getTokenFacingRight() {
+          return this.tokenFacingRight;
+        },
+      },
+    };
+
+    const adapter = new Token3DAdapter(gm);
+    adapter._threePromise = Promise.resolve(three);
+
+    const mesh = new three.Mesh(new three.PlaneGeometry(1, 1), new three.MeshBasicMaterial());
+    const token = { creature: { sprite: { scale: { x: 1 } } }, __threeMesh: mesh };
+
+    adapter.setSelectedToken(token);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(token.__ttSelectionIndicator).toBeDefined();
+    expect(token.__ttSelectionIndicator.visible).toBe(true);
+    expect(mesh.children.includes(token.__ttSelectionIndicator)).toBe(true);
+    expect(adapter._originalMaterials.size).toBe(0);
+
+    adapter.setSelectedToken(null);
+    expect(token.__ttSelectionIndicator.visible).toBe(false);
+    expect(adapter._originalMaterials.size).toBe(0);
   });
 });

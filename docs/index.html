@@ -82,7 +82,10 @@
           <div id="creature-content" role="group" aria-label="Creature token selection">
             <button id="token-beholder" aria-label="Select Beholder token">👁️ Beholder</button>
             <button id="token-defeated-doll" aria-label="Select Defeated Doll token">
-              � Defeated Doll
+              🪆 Defeated Doll
+            </button>
+            <button id="token-female-humanoid" aria-label="Select Female Humanoid token">
+              🧝‍♀️ Female Humanoid
             </button>
             <button id="token-dragon" aria-label="Select Dragon token">🐉 Dragon</button>
             <button id="token-goblin" aria-label="Select Goblin token">🧌 Goblin</button>
@@ -254,53 +257,90 @@
         <div class="section">
           <div class="section-title">Select a Biome Palette</div>
           <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu"></div>
+          <div class="section-subtitle" style="margin-top: 1rem">Rich Tile Shading</div>
+          <div id="biome-shading-controls" class="setting-group" role="group" aria-label="Rich tile shading controls">
+            <div class="setting-item">
+              <label class="toggle-switch" for="rich-shading-toggle">
+                <input type="checkbox" id="rich-shading-toggle" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Enable rich tile shading</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label for="shading-intensity">Shading Intensity:</label>
+              <input type="range" id="shading-intensity" min="0" max="150" step="5" value="100" class="range-input"
+                aria-label="Adjust shading opacity/intensity" />
+              <span id="shading-intensity-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label for="pattern-density">Pattern Density:</label>
+              <input type="range" id="pattern-density" min="50" max="150" step="5" value="100" class="range-input"
+                aria-label="Adjust pattern density/detail" />
+              <span id="pattern-density-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label for="shoreline-sand-strength">Shoreline Sand Strength:</label>
+              <input type="range" id="shoreline-sand-strength" min="0" max="200" step="5" value="100"
+                class="range-input" aria-label="Adjust shoreline sand visibility" />
+              <span id="shoreline-sand-strength-value" class="range-value">100%</span>
+            </div>
+            <div class="setting-item">
+              <label class="toggle-switch" for="performance-simplify">
+                <input type="checkbox" id="performance-simplify" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Performance saver (simplify patterns)</span>
+              </label>
+            </div>
+            <small class="small-text">Shading is most visible in Terrain mode. Intensity adjusts opacity; Density
+              changes
+              how many pattern elements are drawn.</small>
+          </div>
           <div class="section-subtitle" style="margin-top: 1rem">Tree Density</div>
           <div id="tree-density-controls" class="setting-group" role="group" aria-label="Tree density controls">
             <div class="setting-item">
               <label for="tree-density-slider">Tree Density:</label>
-              <input type="range" id="tree-density-slider" min="0" max="200" step="5" value="100" class="range-input"
-                aria-label="Adjust tree density prior to biome generation">
+              <input type="range" id="tree-density-slider" min="0" max="200" step="5" value="100"
+                class="range-input" aria-label="Adjust tree density prior to biome generation" />
               <span id="tree-density-value" class="range-value">100%</span>
             </div>
             <small class="small-text">Adjust before generating: 0% removes trees, 200% doubles biome density.</small>
           </div>
+          <div class="section-subtitle" style="margin-top: 1rem">Notes</div>
+          <p class="small-text">
+            Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
+            edit heights; exit to view biome coloring.
+          </p>
         </div>
-        <div class="section-subtitle" style="margin-top: 1rem">Notes</div>
-        <p class="small-text">
-          Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
-          edit heights; exit to view biome coloring.
-        </p>
       </div>
-    </div>
 
-    <!-- Settings Panel -->
-    <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
-      <div class="panel-header">⚙️ Game Settings</div>
-      <div class="section">
-        <div class="section-title">Display Options</div>
-        <div class="setting-item">
-          <label for="grid-opacity">Grid Opacity:</label>
-          <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input" />
-          <span class="range-value">50%</span>
+      <!-- Settings Panel -->
+      <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
+        <div class="panel-header">⚙️ Game Settings</div>
+        <div class="section">
+          <div class="section-title">Display Options</div>
+          <div class="setting-item">
+            <label for="grid-opacity">Grid Opacity:</label>
+            <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input" />
+            <span class="range-value">50%</span>
+          </div>
+          <div class="setting-item">
+            <label for="animation-speed">Animation Speed:</label>
+            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1" class="range-input" />
+            <span class="range-value">1x</span>
+          </div>
         </div>
-        <div class="setting-item">
-          <label for="animation-speed">Animation Speed:</label>
-          <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1" class="range-input" />
-          <span class="range-value">1x</span>
-        </div>
-      </div>
-      <div class="section">
-        <div class="section-title">Game Info</div>
-        <div id="token-info" aria-live="polite">Click on grid to place selected token</div>
-        <div class="help-section">
-          <div class="section-title">🎮 Controls:</div>
-          <div class="help-text">• <strong>Space + Drag</strong>: Pan grid</div>
-          <div class="help-text">• <strong>Right-click + Drag Token</strong>: Move token</div>
-          <div class="help-text">• <strong>Mouse Wheel</strong>: Zoom in/out</div>
+        <div class="section">
+          <div class="section-title">Game Info</div>
+          <div id="token-info" aria-live="polite">Click on grid to place selected token</div>
+          <div class="help-section">
+            <div class="section-title">🎮 Controls:</div>
+            <div class="help-text">• <strong>Space + Drag</strong>: Pan grid</div>
+            <div class="help-text">• <strong>Right-click + Drag Token</strong>: Move token</div>
+            <div class="help-text">• <strong>Mouse Wheel</strong>: Zoom in/out</div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
   </div>
 
   <!-- Error Display Container (created by ErrorHandler) -->
