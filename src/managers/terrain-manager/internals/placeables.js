@@ -36,6 +36,38 @@ const ID_TO_MODEL_KEY = {
 
 const TREE_ID_PATTERN = /^tree-/i;
 
+const MODEL_BASELINE_OFFSETS = new Map();
+
+function resolveModelBaselineOffset(gameManager, cacheKey, root) {
+  const key = cacheKey || null;
+  if (key && MODEL_BASELINE_OFFSETS.has(key)) {
+    return MODEL_BASELINE_OFFSETS.get(key);
+  }
+  let baseline = 0;
+  try {
+    const threeNS = gameManager?.threeSceneManager?.three;
+    const Box3Ctor = threeNS?.Box3;
+    if (typeof Box3Ctor === 'function' && root) {
+      const bounds = new Box3Ctor();
+      try {
+        root.updateMatrixWorld?.(true);
+      } catch (_) {
+        /* ignore matrix sync */
+      }
+      bounds.setFromObject(root);
+      if (Number.isFinite(bounds?.min?.y)) {
+        baseline = bounds.min.y;
+      }
+    }
+  } catch (_) {
+    baseline = 0;
+  }
+  if (key) {
+    MODEL_BASELINE_OFFSETS.set(key, baseline);
+  }
+  return baseline;
+}
+
 const PLANT_FAMILY_VARIANTS = (() => {
   const map = new Map();
   try {
@@ -623,7 +655,16 @@ export function placeItem(m, id, x, y) {
         } catch (_) {
           world = { x: 0, z: 0 };
         }
-        model.position.set(world.x, terrainH, world.z);
+        const baselineKey = modelKey || id;
+        const baseline = resolveModelBaselineOffset(gm3d, baselineKey, model);
+        const manualOffset = Number.isFinite(def?.modelGroundOffset) ? def.modelGroundOffset : 0;
+        const groundOffset = -baseline + manualOffset;
+        const finalX = Number.isFinite(world?.x) ? world.x : 0;
+        const finalZ = Number.isFinite(world?.z) ? world.z : 0;
+        model.position.set(finalX, terrainH + groundOffset, finalZ);
+        record.__groundOffset = groundOffset;
+        record.__baselineOffset = baseline;
+        record.__manualGroundOffset = manualOffset;
         try {
           model.rotation.y = Math.random() * Math.PI * 2;
         } catch (_) {
@@ -694,7 +735,9 @@ export function placeItem(m, id, x, y) {
             palmStyler(root, modelKey);
             finalizeModelPlacement(root);
           })
-          .catch(() => {});
+          .catch(() => {
+            /* optional coastal palm variant missing; fall back gracefully */
+          });
         return;
       }
       if (!modelKey) {
@@ -905,7 +948,9 @@ export function placeItem(m, id, x, y) {
           }
           finalizeModelPlacement(root);
         })
-        .catch(() => {});
+        .catch(() => {
+          /* asset missing at runtime; sprite fallback already covers this */
+        });
     });
 
     // Immediate metrics-only instancing registration (hidden) so tests & metrics update synchronously.
@@ -928,7 +973,9 @@ export function placeItem(m, id, x, y) {
             .then((handle) => {
               if (handle) placeableRecord.__meshPoolHandle = handle;
             })
-            .catch(() => {});
+            .catch(() => {
+              /* instancing handle is optional for metrics path */
+            });
         }
       }
     } catch (_) {
@@ -1010,7 +1057,9 @@ export function placeItem(m, id, x, y) {
           gm._pendingInstancingPromises = [];
         }
         gm._pendingInstancingPromises.push(handlePromise);
-        handlePromise.catch(() => {});
+        handlePromise.catch(() => {
+          /* instancing handle is optional; bookkeeping already recorded */
+        });
       }
     } catch (_) {
       /* ignore instancing add failures (record remains for bookkeeping) */
@@ -1128,7 +1177,9 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
                     gm._pendingInstancingPromises = [];
                   }
                   gm._pendingInstancingPromises.push(handlePromise);
-                  handlePromise.catch(() => {});
+                  handlePromise.catch(() => {
+                    /* instancing re-add failure falls back to sprite rendering */
+                  });
                 }
               } catch (_) {
                 /* ignore re-add failure */
@@ -1178,7 +1229,9 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
               gm._pendingInstancingPromises = [];
             }
             gm._pendingInstancingPromises.push(handlePromise);
-            handlePromise.catch(() => {});
+            handlePromise.catch(() => {
+              /* instancing re-add failure falls back to sprite rendering */
+            });
           }
         } catch (_) {
           /* ignore re-add failure */
@@ -1336,8 +1389,8 @@ export function repositionPlaceableSprite(m, sprite) {
       } catch (_) {
         /* ignore */
       }
-      // Preserve existing X/Z (grid center) and only update Y based on new terrain height.
-      model.position.y = terrainH;
+      const offset = Number.isFinite(sprite.__groundOffset) ? sprite.__groundOffset : 0;
+      model.position.y = terrainH + offset;
     } catch (_) {
       /* ignore model reposition */
     }

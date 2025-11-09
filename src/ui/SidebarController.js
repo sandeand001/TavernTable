@@ -189,6 +189,14 @@ class SidebarController {
               def.type === 'plant-family' || /^family-/.test(id) || /^tree-/i.test(id),
           },
           {
+            key: 'tropical',
+            title: 'Tropical Plants',
+            filter: ([id, def]) =>
+              /tropical/i.test(id) ||
+              /tropical/i.test(def?.label || '') ||
+              /tropical/i.test(def?.modelKey || ''),
+          },
+          {
             key: 'plants',
             title: 'Flowers & Plants',
             filter: ([id]) => /flower|bush|plant/i.test(id),
@@ -208,8 +216,13 @@ class SidebarController {
         // Collect matched ids to compute remaining 'Other'
         const used = new Set();
         const bucketData = buckets.map((b) => {
-          const list = entries.filter((e) => b.filter(e));
-          list.forEach(([id]) => used.add(id));
+          const list = entries.filter((entry) => {
+            const id = entry[0];
+            if (used.has(id)) return false;
+            if (!b.filter(entry)) return false;
+            used.add(id);
+            return true;
+          });
           return { ...b, list };
         });
 
