@@ -131,6 +131,15 @@ export class TerrainCoordinator {
         ? window.richShadingSettings.seed >>> 0
         : Math.floor(Math.random() * 1e9) >>> 0;
 
+    const initialTreeDensity =
+      typeof window !== 'undefined' && Number.isFinite(window.treeDensityMultiplier)
+        ? Math.max(0, window.treeDensityMultiplier)
+        : 1;
+    this._treeDensityMultiplier = initialTreeDensity;
+    if (typeof window !== 'undefined') {
+      window.treeDensityMultiplier = this._treeDensityMultiplier;
+    }
+
     // Currently selected terrain placeable id (managed by coordinator)
     this._selectedPlaceable = null;
     // Whether the Placeable Tiles panel is visible in the UI. Controlled by UI layer.
@@ -489,6 +498,20 @@ export class TerrainCoordinator {
    */
   setElevationScale(unit, options = {}) {
     return this._elevationScaleController.apply(unit, options);
+  }
+
+  getTreeDensityMultiplier() {
+    return Number.isFinite(this._treeDensityMultiplier) ? this._treeDensityMultiplier : 1;
+  }
+
+  setTreeDensityMultiplier(multiplier) {
+    const numeric = Number(multiplier);
+    const clamped = Number.isFinite(numeric) && numeric >= 0 ? numeric : 1;
+    this._treeDensityMultiplier = clamped;
+    if (typeof window !== 'undefined') {
+      window.treeDensityMultiplier = clamped;
+    }
+    return this._treeDensityMultiplier;
   }
 
   /**

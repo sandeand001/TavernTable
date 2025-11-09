@@ -866,11 +866,54 @@ export class TerrainManager {
       const hasCells = Array.isArray(cells) && cells.length > 0;
       const shouldShow3D = use3DPreview && terrainModeActive && hasCells;
 
+      let previewCells3D = cells;
+      let previewStyle3D = options;
+      if (shouldShow3D && Array.isArray(cells) && cells.length) {
+        const brush = this.terrainCoordinator?.brush;
+        const getHeight = this.terrainCoordinator?.getTerrainHeight?.bind?.(
+          this.terrainCoordinator
+        );
+        if (brush && typeof getHeight === 'function') {
+          const maxH = Number.isFinite(TERRAIN_CONFIG?.MAX_HEIGHT)
+            ? TERRAIN_CONFIG.MAX_HEIGHT
+            : Infinity;
+          const minH = Number.isFinite(TERRAIN_CONFIG?.MIN_HEIGHT)
+            ? TERRAIN_CONFIG.MIN_HEIGHT
+            : -Infinity;
+          const stepRaw = Number.isFinite(brush.heightStep) ? Math.abs(brush.heightStep) : 1;
+          const delta = stepRaw > 0 ? stepRaw : 1;
+          const isLower = brush.tool === 'lower';
+          previewCells3D = cells.map((cell) => {
+            const cx = cell?.x ?? cell?.gridX ?? 0;
+            const cy = cell?.y ?? cell?.gridY ?? 0;
+            const currentHeight = getHeight(cx, cy) ?? 0;
+            let previewHeight = currentHeight;
+            if (isLower) {
+              previewHeight = Math.max(currentHeight - delta, minH);
+            } else {
+              previewHeight = Math.min(currentHeight + delta, maxH);
+            }
+            return {
+              x: cx,
+              y: cy,
+              currentHeight,
+              previewHeight,
+            };
+          });
+          previewStyle3D = {
+            ...options,
+            previewMode: 'terrain-height',
+            brushTool: brush.tool || 'raise',
+            heightStep: delta,
+          };
+        }
+      }
+
       if (!hasCells || !terrainModeActive) {
         if (use3DPreview) threeMgr?.clearTerrainBrushPreview?.();
       } else if (use3DPreview) {
         try {
-          threeMgr.setTerrainBrushPreview(cells, options);
+          threeMgr.setTerrainBrushPreview(previewCells3D, previewStyle3D);
         } catch (_) {
           /* ignore */
         }

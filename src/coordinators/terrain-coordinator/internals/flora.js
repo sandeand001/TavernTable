@@ -7,9 +7,22 @@
 import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
 import { createSeededRNG, rngInt, makeWeightedPicker } from '../../../utils/SeededRNG.js';
 
-const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter(
-  (k) => TERRAIN_PLACEABLES[k].type === 'plant'
-);
+function isSpectralPlaceable(id) {
+  if (!id) return false;
+  if (/-spectral$/i.test(id)) return true;
+  const def = TERRAIN_PLACEABLES[id];
+  if (!def) return false;
+  if (def.tintVariant === 'spectral' || def.spectral === true) return true;
+  if (def.type === 'plant-family' && Array.isArray(def.familyVariants)) {
+    return def.familyVariants.some((variant) => isSpectralPlaceable(variant));
+  }
+  return false;
+}
+
+const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter((k) => {
+  const type = TERRAIN_PLACEABLES[k].type;
+  return type === 'plant' || type === 'plant-family';
+});
 
 // Simple deterministic 32-bit hash (Jenkins-like mix) used for seed salting
 function hash32(str) {
@@ -23,17 +36,74 @@ function hash32(str) {
 }
 
 // Utility weight helpers ----------------------------------------------------
-function pickIds(regex) {
-  const list = ALL_PLANTS.filter((id) => regex.test(id));
+function pickIds(regex, { allowSpectral = false } = {}) {
+  const list = ALL_PLANTS.filter(
+    (id) => regex.test(id) && (allowSpectral || !isSpectralPlaceable(id))
+  );
   const w = {};
   list.forEach((id) => (w[id] = 1));
   return w;
 }
 
-function makeWeights(map) {
+function makeWeights(map, { allowSpectral = false } = {}) {
   const out = {};
-  for (const [id, w] of Object.entries(map)) if (ALL_PLANTS.includes(id)) out[id] = w;
+  for (const [id, w] of Object.entries(map)) {
+    if (!ALL_PLANTS.includes(id)) continue;
+    if (!allowSpectral && isSpectralPlaceable(id)) continue;
+    out[id] = w;
+  }
   return out;
+}
+
+const SPECTRAL_VARIANTS = {
+  'tree-birch-a': 'tree-birch-a-spectral',
+  'tree-birch-b': 'tree-birch-b-spectral',
+  'tree-birch-c': 'tree-birch-c-spectral',
+  'tree-birch-d': 'tree-birch-d-spectral',
+  'tree-birch-e': 'tree-birch-e-spectral',
+  'tree-thick-a': 'tree-thick-a-spectral',
+  'tree-thick-b': 'tree-thick-b-spectral',
+  'tree-thick-c': 'tree-thick-c-spectral',
+  'tree-thick-d': 'tree-thick-d-spectral',
+  'tree-thick-e': 'tree-thick-e-spectral',
+  'bush-common-flowers': 'bush-common-flowers-spectral',
+  'bush-large-flowers': 'bush-large-flowers-spectral',
+  'flower-1-group': 'flower-1-group-spectral',
+  'flower-2-group': 'flower-2-group-spectral',
+  'flower-3-group': 'flower-3-group-spectral',
+  'flower-4-group': 'flower-4-group-spectral',
+  'flower-6': 'flower-6-spectral',
+  'flower-6-2': 'flower-6-2-spectral',
+  'mushroom-oyster': 'mushroom-oyster-spectral',
+  'mushroom-laetiporus': 'mushroom-laetiporus-spectral',
+  'grass-wispy-short': 'grass-wispy-short-spectral',
+  'grass-wispy-tall': 'grass-wispy-tall-spectral',
+  'rock-medium-4': 'rock-medium-4-spectral',
+  'pebble-round-3': 'pebble-round-3-spectral',
+  'pebble-square-3': 'pebble-square-3-spectral',
+};
+
+function withSpectralVariants(weightMap) {
+  const transformed = {};
+  for (const [id, weight] of Object.entries(weightMap)) {
+    const targetId = SPECTRAL_VARIANTS[id] || id;
+    transformed[targetId] = (transformed[targetId] || 0) + weight;
+  }
+  return transformed;
+}
+
+function stripSpectralWeights(weightMap) {
+  if (!weightMap) return weightMap;
+  let removed = false;
+  const filtered = {};
+  for (const [id, weight] of Object.entries(weightMap)) {
+    if (isSpectralPlaceable(id)) {
+      removed = true;
+      continue;
+    }
+    filtered[id] = weight;
+  }
+  return removed ? filtered : weightMap;
 }
 
 // Candidate filters / strategies --------------------------------------------
@@ -241,6 +311,23 @@ const BIOME_FLORA_PROFILES = [
       'pebble-round-1': 0.2,
     }),
   },
+  {
+    re: /(rainforest|tropicalForest|jungle)/i,
+    density: 0.34,
+    spacing: 1,
+    weights: makeWeights({
+      'tree-single-palm': 5,
+      'tree-double-palm': 4,
+      'tree-green-willow': 2.5,
+      'plant-tropical-banana-a': 5,
+      'plant-tropical-banana-b': 4.5,
+      'plant-tropical-monstera-a': 6,
+      'plant-tropical-monstera-b': 5.5,
+      'plant-tropical-fern-a': 4.5,
+      'plant-tropical-fern-b': 4.2,
+      'plant-tropical-fern-c': 3.8,
+    }),
+  },
   // Dead / shadow / petrified refinements
   {
     re: /(deadForest|shadowfellForest)/i,
@@ -286,29 +373,39 @@ const BIOME_FLORA_PROFILES = [
     re: /(mysticGrove|feywildBloom)/i,
     density: 0.38,
     spacing: 1,
-    // emphasize non-green colors & cherry blossoms (fantastical purple/pink/orange tones)
-    weights: makeWeights({
-      'tree-cherry-a': 6,
-      'tree-cherry-b': 5,
-      'tree-cherry-c': 4,
-      'tree-cherry-d': 3,
-      'tree-cherry-e': 2,
-      'tree-dead-e': 0.8,
-      'tree-orange-deciduous': 4,
-      'tree-yellow-willow': 3,
-      'tree-yellow-conifer': 2.5,
-      'tree-green-willow': 1.5,
-      'tree-bare-deciduous': 1,
-      'tree-green-small': 0.5,
-      'flower-1-group': 1.2,
-      'flower-2-group': 1,
-      'flower-3-group': 0.9,
-      'flower-4-group': 0.8,
-      'mushroom-laetiporus': 0.4,
-      'bush-common-flowers': 0.6,
-      'bush-large-flowers': 0.4,
-      'pebble-round-3': 0.2,
-    }),
+    // Spectral groves: restrict to spectral families and tinted birches
+    weights: makeWeights(
+      withSpectralVariants({
+        'family-spectral': 6,
+        'tree-thick-a': 5,
+        'tree-thick-b': 4,
+        'tree-thick-c': 3.5,
+        'tree-thick-d': 3,
+        'tree-thick-e': 2.5,
+        'tree-birch-a': 3,
+        'tree-birch-b': 2.6,
+        'tree-birch-c': 2.2,
+        'tree-birch-d': 1.8,
+        'tree-birch-e': 1.4,
+        'bush-common-flowers': 1.2,
+        'bush-large-flowers': 1,
+        'flower-1-group': 0.9,
+        'flower-2-group': 0.8,
+        'flower-3-group': 0.7,
+        'flower-4-group': 0.6,
+        'flower-6': 0.6,
+        'flower-6-2': 0.5,
+        'mushroom-oyster': 0.4,
+        'mushroom-laetiporus': 0.35,
+        'grass-wispy-short': 0.6,
+        'grass-wispy-tall': 0.5,
+        'rock-medium-4': 0.4,
+        'pebble-round-3': 0.35,
+        'pebble-square-3': 0.3,
+      }),
+      { allowSpectral: true }
+    ),
+    allowSpectral: true,
   },
   {
     re: /(orchard)/i,
@@ -364,13 +461,20 @@ const BIOME_FLORA_PROFILES = [
   },
   {
     re: /(oasis)/i,
-    density: 0.24,
+    density: 0.28,
     spacing: 2,
     candidateFilter: 'adjacentWater', // palms hug the pool edge
     // Palm-only composition for thematic clarity.
     weights: makeWeights({
       'tree-single-palm': 8,
       'tree-double-palm': 5,
+      'plant-tropical-banana-a': 4,
+      'plant-tropical-banana-b': 3,
+      'plant-tropical-monstera-a': 3,
+      'plant-tropical-monstera-b': 2.5,
+      'plant-tropical-fern-a': 2,
+      'plant-tropical-fern-b': 1.8,
+      'plant-tropical-fern-c': 1.6,
     }),
   },
   // Cavern biome: introduce sparse rocks & a few dead stumps for subterranean feel.
@@ -494,6 +598,10 @@ const BIOME_FLORA_PROFILES = [
     weights: makeWeights({
       'tree-single-palm': 7,
       'tree-double-palm': 4,
+      'plant-tropical-banana-a': 2.5,
+      'plant-tropical-monstera-a': 2,
+      'plant-tropical-fern-a': 2,
+      'plant-tropical-fern-b': 1.6,
     }),
     coastlinePalms: true,
   },
@@ -501,31 +609,75 @@ const BIOME_FLORA_PROFILES = [
     re: /(astralPlateau)/i,
     density: 0.06,
     spacing: 3,
-    weights: pickIds(/columnar|tall|conifer/),
+    weights: makeWeights(
+      withSpectralVariants({
+        'family-spectral': 5,
+        'tree-thick-a': 3.5,
+        'tree-thick-b': 3,
+        'tree-thick-c': 2.5,
+        'tree-thick-d': 2,
+        'tree-thick-e': 1.6,
+        'tree-birch-a': 3,
+        'tree-birch-b': 2.4,
+        'tree-birch-c': 1.9,
+        'tree-birch-d': 1.5,
+        'tree-birch-e': 1.1,
+        'bush-common-flowers': 0.8,
+        'bush-large-flowers': 0.6,
+        'flower-1-group': 0.6,
+        'flower-2-group': 0.5,
+        'flower-3-group': 0.45,
+        'flower-4-group': 0.4,
+        'flower-6': 0.4,
+        'flower-6-2': 0.35,
+        'mushroom-oyster': 0.3,
+        'mushroom-laetiporus': 0.25,
+        'grass-wispy-short': 0.4,
+        'grass-wispy-tall': 0.35,
+        'rock-medium-4': 0.3,
+        'pebble-round-3': 0.28,
+        'pebble-square-3': 0.25,
+      }),
+      { allowSpectral: true }
+    ),
+    allowSpectral: true,
   },
   {
     re: /(arcaneLeyNexus)/i,
     density: 0.12,
     spacing: 2,
-    weights: makeWeights({
-      'tree-cherry-a': 5,
-      'tree-cherry-b': 4,
-      'tree-cherry-c': 3,
-      'tree-yellow-conifer': 3,
-      'tree-orange-deciduous': 3,
-      'tree-yellow-willow': 2.5,
-      'tree-green-willow': 1.5,
-      'tree-green-columnar': 1.2,
-      'tree-dead-e': 1,
-      'tree-birch-a': 1,
-      'flower-1-group': 1.2,
-      'flower-2-group': 1,
-      'flower-6': 0.9,
-      'flower-6-2': 0.8,
-      'mushroom-laetiporus': 0.5,
-      'bush-common-flowers': 0.6,
-      'bush-large-flowers': 0.4,
-    }),
+    weights: makeWeights(
+      withSpectralVariants({
+        'family-spectral': 4,
+        'tree-thick-a': 3,
+        'tree-thick-b': 2.6,
+        'tree-thick-c': 2.2,
+        'tree-thick-d': 1.8,
+        'tree-thick-e': 1.4,
+        'tree-birch-a': 2.4,
+        'tree-birch-b': 2,
+        'tree-birch-c': 1.6,
+        'tree-birch-d': 1.2,
+        'tree-birch-e': 0.8,
+        'bush-common-flowers': 1,
+        'bush-large-flowers': 0.8,
+        'flower-1-group': 0.75,
+        'flower-2-group': 0.65,
+        'flower-3-group': 0.6,
+        'flower-4-group': 0.55,
+        'flower-6': 0.55,
+        'flower-6-2': 0.5,
+        'mushroom-oyster': 0.4,
+        'mushroom-laetiporus': 0.35,
+        'grass-wispy-short': 0.55,
+        'grass-wispy-tall': 0.5,
+        'rock-medium-4': 0.35,
+        'pebble-round-3': 0.32,
+        'pebble-square-3': 0.3,
+      }),
+      { allowSpectral: true }
+    ),
+    allowSpectral: true,
   },
 ];
 
@@ -607,18 +759,46 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
     clearExistingPlants(c);
     const profile = resolveProfile(biomeKey);
     const {
-      density,
+      density: profileDensity,
       spacing,
-      weights,
+      weights: profileWeights,
       elevationFilter,
       coastlinePalms,
       candidateFilter,
       strategy,
       grid,
     } = profile;
-    if (!density || density <= 0) return;
+
+    const allowSpectral = profile.allowSpectral === true;
+    const weights = allowSpectral ? profileWeights : stripSpectralWeights(profileWeights);
+
+    let densityMultiplier = 1;
+    try {
+      if (c && typeof c.getTreeDensityMultiplier === 'function') {
+        const val = c.getTreeDensityMultiplier();
+        if (Number.isFinite(val) && val >= 0) densityMultiplier = val;
+      } else if (Number.isFinite(c?.treeDensityMultiplier) && c.treeDensityMultiplier >= 0) {
+        densityMultiplier = c.treeDensityMultiplier;
+      } else if (
+        typeof window !== 'undefined' &&
+        Number.isFinite(window.treeDensityMultiplier) &&
+        window.treeDensityMultiplier >= 0
+      ) {
+        densityMultiplier = window.treeDensityMultiplier;
+      }
+    } catch (_) {
+      /* ignore multiplier resolution failure */
+    }
+    if (!Number.isFinite(densityMultiplier) || densityMultiplier < 0) {
+      densityMultiplier = 1;
+    }
+
+    const baseDensity = Number.isFinite(profileDensity) ? profileDensity : 0;
+    const effectiveDensity = Math.max(0, baseDensity * densityMultiplier);
+    if (!effectiveDensity) return;
     const rows = c.gameManager.rows;
     const cols = c.gameManager.cols;
+    const densityScale = densityMultiplier;
     // Strategy: grid (orchard deterministic rows)
     if (strategy === 'grid' && grid) {
       const gx = Math.max(2, grid.x | 0);
@@ -660,6 +840,10 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
             for (let ci = 0; ci < colsAvailable; ci++) {
               let x = offX + ci * gx;
               if (x >= cols) break;
+              if (densityScale < 1) {
+                const sliderRand = rowRng();
+                if (sliderRand > densityScale) continue;
+              }
               if (jitterX > 0) {
                 // Jitter scaled inversely by densityFactor so sparser rows look more irregular.
                 const scale = densityFactor < 1 ? 1 + (1 - densityFactor) : 1;
@@ -670,6 +854,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               if (h <= 0) continue;
               if (elevationFilter && !elevationFilter(c, h)) continue;
               const id = pick();
+              if (!allowSpectral && isSpectralPlaceable(id)) continue;
               tm.placeTerrainItem(x, y, id);
             }
             const span = Math.abs(maxSpace - minSpace);
@@ -684,11 +869,16 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
         while (y < rows) {
           const densityFactor = rowDensity[rowIndex % rowDensity.length];
           for (let x = offX; x < cols; x += gx) {
+            if (densityScale < 1) {
+              const sliderRand = plantRng();
+              if (sliderRand > densityScale) continue;
+            }
             if (densityFactor < 1 && plantRng() > densityFactor) continue; // thin within row
             const h = c.getTerrainHeight?.(x, y) ?? 0;
             if (h <= 0) continue;
             if (elevationFilter && !elevationFilter(c, h)) continue;
             const id = pick();
+            if (!allowSpectral && isSpectralPlaceable(id)) continue;
             tm.placeTerrainItem(x, y, id);
           }
           const spacing = rowSpacings[rowIndex % rowSpacings.length];
@@ -722,7 +912,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       }
     }
     if (!candidates.length) return;
-    const target = Math.max(1, Math.floor(candidates.length * density));
+    const target = Math.max(1, Math.floor(candidates.length * effectiveDensity));
     const placed = [];
     let attempts = 0;
     const maxAttempts = target * 20;
@@ -752,6 +942,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
         id = pick();
       }
       if (!id) continue;
+      if (!allowSpectral && isSpectralPlaceable(id)) continue;
       const ok = tm.placeTerrainItem(x, y, id);
       if (ok) placed.push([x, y]);
     }

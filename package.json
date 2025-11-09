@@ -18,6 +18,7 @@
     "lint:layers": "node tools/check-layering.js",
     "lint:all": "npm run lint && npm run lint:layers",
     "serve": "python -m http.server 3000",
+    "serve:alt": "python -m http.server 3001",
     "start": "npm run serve",
     "serve:open": "start \"\" http://localhost:3000 && npm run serve",
     "prepare": "husky",
