@@ -15,6 +15,7 @@ export class PickingService {
     this._plane = null; // ground plane
     this._layers = [];
     this._metrics = { raycasts: 0, lastMs: 0 };
+    this._terrainIntersections = [];
   }
 
   async _ensureThree() {
@@ -93,35 +94,48 @@ export class PickingService {
     } catch (_) {
       return null;
     }
-    if (!this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) return null;
 
-    let worldX = this._hitPoint.x;
-    let worldY = this._hitPoint.y;
-    let worldZ = this._hitPoint.z;
+    let worldX;
+    let worldY;
+    let worldZ;
+    let usedTerrainMesh = false;
+    const terrainMesh = (() => {
+      try {
+        return gm.threeSceneManager?.scene?.getObjectByName?.('TerrainMesh') || null;
+      } catch (_) {
+        return null;
+      }
+    })();
+
+    if (terrainMesh) {
+      this._terrainIntersections.length = 0;
+      try {
+        this._raycaster.intersectObject(terrainMesh, true, this._terrainIntersections);
+      } catch (_) {
+        this._terrainIntersections.length = 0;
+      }
+      if (this._terrainIntersections.length) {
+        const firstHit = this._terrainIntersections[0];
+        if (firstHit?.point) {
+          this._hitPoint.copy(firstHit.point);
+          worldX = this._hitPoint.x;
+          worldY = this._hitPoint.y;
+          worldZ = this._hitPoint.z;
+          usedTerrainMesh = true;
+        }
+      }
+      this._terrainIntersections.length = 0;
+    }
+
+    if (!usedTerrainMesh) {
+      if (!this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) return null;
+      worldX = this._hitPoint.x;
+      worldY = this._hitPoint.y;
+      worldZ = this._hitPoint.z;
+    }
 
     const tileSize = gm?.spatial?.tileWorldSize || 1;
     const safeTileSize = tileSize > 0 ? tileSize : 1;
-
-    const computeGridIndex = (value) => {
-      if (!Number.isFinite(value)) return 0;
-      return Math.floor(value / safeTileSize);
-    };
-
-    let grid = null;
-    try {
-      const base = gm.spatial?.worldToGrid ? gm.spatial.worldToGrid(worldX, worldZ) : null;
-      if (base && Number.isFinite(base.gridX) && Number.isFinite(base.gridY)) {
-        grid = { gridX: base.gridX, gridY: base.gridY };
-      }
-    } catch (_) {
-      grid = null;
-    }
-
-    let gx = computeGridIndex(worldX);
-    let gy = computeGridIndex(worldZ);
-    if (!grid) grid = { gridX: gx, gridY: gy };
-    grid.gridX = gx;
-    grid.gridY = gy;
 
     const clampIndex = (value, maxInclusive) => {
       let result = Number.isFinite(value) ? value : 0;
@@ -134,31 +148,55 @@ export class PickingService {
 
     const maxCols = Number.isFinite(gm?.cols) ? gm.cols - 1 : null;
     const maxRows = Number.isFinite(gm?.rows) ? gm.rows - 1 : null;
-    grid.gridX = gx = clampIndex(grid.gridX, maxCols);
-    grid.gridY = gy = clampIndex(grid.gridY, maxRows);
+    const fallbackIndex = (value) => {
+      if (!Number.isFinite(value)) return 0;
+      return Math.round(value / safeTileSize);
+    };
 
-    try {
-      const elevationLevels = gm.getTerrainHeight?.(gx, gy);
-      const elevationUnit = gm?.spatial?.elevationUnit || 0;
-      if (Number.isFinite(elevationLevels) && Number.isFinite(elevationUnit)) {
-        const targetWorldY = elevationLevels * elevationUnit;
-        if (Math.abs(targetWorldY - worldY) > 1e-5 && this._plane) {
-          const originalConstant = this._plane.constant;
-          this._plane.constant = -targetWorldY;
-          if (this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) {
-            worldX = this._hitPoint.x;
-            worldY = this._hitPoint.y;
-            worldZ = this._hitPoint.z;
-            gx = computeGridIndex(worldX);
-            gy = computeGridIndex(worldZ);
-            grid.gridX = gx = clampIndex(gx, maxCols);
-            grid.gridY = gy = clampIndex(gy, maxRows);
-          }
-          this._plane.constant = originalConstant;
+    const computeGridFromWorld = () => {
+      let gx;
+      let gy;
+      try {
+        const base = gm.spatial?.worldToGrid ? gm.spatial.worldToGrid(worldX, worldZ) : null;
+        if (base && Number.isFinite(base.gridX) && Number.isFinite(base.gridY)) {
+          gx = base.gridX;
+          gy = base.gridY;
         }
+      } catch (_) {
+        gx = undefined;
+        gy = undefined;
       }
-    } catch (_) {
-      /* ignore */
+      if (!Number.isFinite(gx)) gx = fallbackIndex(worldX);
+      if (!Number.isFinite(gy)) gy = fallbackIndex(worldZ);
+      return {
+        gridX: clampIndex(gx, maxCols),
+        gridY: clampIndex(gy, maxRows),
+      };
+    };
+
+    let grid = computeGridFromWorld();
+
+    if (!usedTerrainMesh) {
+      try {
+        const elevationLevels = gm.getTerrainHeight?.(grid.gridX, grid.gridY);
+        const elevationUnit = gm?.spatial?.elevationUnit || 0;
+        if (Number.isFinite(elevationLevels) && Number.isFinite(elevationUnit) && this._plane) {
+          const targetWorldY = elevationLevels * elevationUnit;
+          if (Math.abs(targetWorldY - worldY) > 1e-5) {
+            const originalConstant = this._plane.constant;
+            this._plane.constant = -targetWorldY;
+            if (this._raycaster.ray.intersectPlane(this._plane, this._hitPoint)) {
+              worldX = this._hitPoint.x;
+              worldY = this._hitPoint.y;
+              worldZ = this._hitPoint.z;
+              grid = computeGridFromWorld();
+            }
+            this._plane.constant = originalConstant;
+          }
+        }
+      } catch (_) {
+        /* ignore */
+      }
     }
 
     return {
