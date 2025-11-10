@@ -25,6 +25,11 @@ import {
   resetZoom as _resetZoom,
 } from './interaction-manager/internals/zoom.js';
 
+const MOVE_FORWARD_CODES = new Set(['ArrowUp', 'KeyW']);
+const MOVE_BACKWARD_CODES = new Set(['ArrowDown', 'KeyS']);
+const ROTATE_LEFT_CODES = new Set(['ArrowLeft', 'KeyA']);
+const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
+
 export class InteractionManager {
   constructor(gameManager) {
     // Core refs
@@ -90,6 +95,7 @@ export class InteractionManager {
     this.setupMouseDown();
     this.setupMouseMove();
     this.setupMouseUp();
+    this.setupMouseLeave();
   }
 
   /**
@@ -115,6 +121,7 @@ export class InteractionManager {
         return;
       }
 
+      // Regular left click = token placement
       this.handleLeftClick(event);
     });
   }
@@ -139,7 +146,6 @@ export class InteractionManager {
           }
         }
       }
-
       if (this.isRotating3D) {
         this.update3DRotation(event);
         return;
@@ -203,11 +209,19 @@ export class InteractionManager {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(true);
       }
+
+      if (this._handleTokenRotationKeyDown(event) || this._handleTokenMovementKeyDown(event)) {
+        event.preventDefault();
+      }
     });
 
     document.addEventListener('keyup', (event) => {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(false);
+      }
+
+      if (this._handleTokenRotationKeyUp(event) || this._handleTokenMovementKeyUp(event)) {
+        event.preventDefault();
       }
     });
   }
@@ -380,6 +394,122 @@ export class InteractionManager {
     if (this._globalMouseUpListening) {
       document.removeEventListener('mouseup', this._boundGlobalMouseUp);
       this._globalMouseUpListening = false;
+    }
+  }
+
+  _handleTokenRotationKeyDown(event) {
+    try {
+      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      if (this._shouldIgnoreKeyTarget(event.target)) {
+        return false;
+      }
+
+      const gm = this.gameManager;
+      if (!gm?.tokenManager) return false;
+      const adapter = gm.token3DAdapter;
+      const selectedToken = adapter?.getSelectedToken?.();
+      if (!selectedToken) return false;
+
+      if (event.repeat) {
+        return true;
+      }
+
+      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
+      if (adapter?.beginRotation) {
+        adapter.beginRotation(selectedToken, direction, event.code);
+        return true;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _handleTokenRotationKeyUp(event) {
+    try {
+      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      const adapter = this.gameManager?.token3DAdapter;
+      if (!adapter?.endRotation) return false;
+      const selectedToken = adapter.getSelectedToken?.();
+      if (!selectedToken) return false;
+      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
+      adapter.endRotation(selectedToken, direction, event.code);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _handleTokenMovementKeyDown(event) {
+    try {
+      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
+        return false;
+      }
+      if (event.repeat) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      if (this._shouldIgnoreKeyTarget(event.target)) {
+        return false;
+      }
+
+      const adapter = this.gameManager?.token3DAdapter;
+      if (!adapter?.beginForwardMovement) return false;
+      if (typeof adapter.setShiftModifier === 'function') {
+        adapter.setShiftModifier(!!event.shiftKey);
+      }
+      const selectedToken = adapter.getSelectedToken?.();
+      if (!selectedToken) return false;
+      const direction = MOVE_BACKWARD_CODES.has(event.code) ? -1 : 1;
+      if (direction > 0 && adapter.beginForwardMovement) {
+        adapter.beginForwardMovement(selectedToken, event.code);
+        return true;
+      }
+      if (direction < 0 && adapter.beginBackwardMovement) {
+        adapter.beginBackwardMovement(selectedToken, event.code);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _handleTokenMovementKeyUp(event) {
+    try {
+      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
+        return false;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      const adapter = this.gameManager?.token3DAdapter;
+      if (!adapter) return false;
+      const selectedToken = adapter.getSelectedToken?.();
+      if (!selectedToken) return false;
+      if (MOVE_FORWARD_CODES.has(event.code) && adapter.endForwardMovement) {
+        adapter.endForwardMovement(selectedToken, event.code);
+        return true;
+      }
+      if (MOVE_BACKWARD_CODES.has(event.code) && adapter.endBackwardMovement) {
+        adapter.endBackwardMovement(selectedToken, event.code);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -746,12 +876,25 @@ export class InteractionManager {
 
     const threeTarget = this._pick3DTarget(event);
     if (threeTarget) {
-      token = threeTarget.token || null;
+      token = threeTarget.token || token;
       if (Number.isFinite(threeTarget.gridX)) {
         gridX = threeTarget.gridX;
       }
       if (Number.isFinite(threeTarget.gridY)) {
         gridY = threeTarget.gridY;
+      }
+    }
+
+    const spriteToken = this._pickTokenBySprite(event);
+    if (spriteToken) {
+      if (!token) {
+        token = spriteToken;
+      }
+      if (!Number.isFinite(gridX) && Number.isFinite(spriteToken.gridX)) {
+        gridX = spriteToken.gridX;
+      }
+      if (!Number.isFinite(gridY) && Number.isFinite(spriteToken.gridY)) {
+        gridY = spriteToken.gridY;
       }
     }
 
@@ -815,6 +958,98 @@ export class InteractionManager {
     };
   }
 
+  _pickTokenBySprite(event) {
+    try {
+      const gm = this.gameManager;
+      const tokens = gm?.placedTokens;
+      if (!tokens || !tokens.length) {
+        return null;
+      }
+
+      const renderer = gm?.app?.renderer;
+      const interaction = renderer?.plugins?.interaction;
+      if (!interaction || typeof interaction.mapPositionToPoint !== 'function') {
+        return null;
+      }
+
+      const point = this._pointerScratch;
+      point.x = 0;
+      point.y = 0;
+      interaction.mapPositionToPoint(point, event.clientX, event.clientY);
+
+      const spriteMap = new WeakMap();
+      const register = (displayObject, tokenEntry) => {
+        if (!displayObject) return;
+        spriteMap.set(displayObject, tokenEntry);
+        const children = displayObject.children;
+        if (Array.isArray(children)) {
+          for (const child of children) {
+            register(child, tokenEntry);
+          }
+        }
+      };
+
+      for (const token of tokens) {
+        const sprite = token?.creature?.sprite;
+        if (sprite) {
+          register(sprite, token);
+        }
+      }
+
+      const stage = gm?.app?.stage;
+      if (stage && typeof interaction.hitTest === 'function') {
+        const hit = interaction.hitTest(point, stage, event);
+        let current = hit;
+        while (current) {
+          const tokenEntry = spriteMap.get(current) || current.tokenData || null;
+          if (tokenEntry) {
+            return tokenEntry;
+          }
+          current = current.parent;
+        }
+      }
+
+      let bestToken = null;
+      let bestScore = -Infinity;
+
+      for (const tokenEntry of tokens) {
+        const sprite = tokenEntry?.creature?.sprite;
+        if (!sprite || !sprite.parent || !sprite.visible) {
+          continue;
+        }
+        if (sprite.worldAlpha <= 0 || sprite.renderable === false) {
+          continue;
+        }
+        if (typeof sprite.getBounds !== 'function') {
+          continue;
+        }
+
+        let bounds;
+        try {
+          bounds = sprite.getBounds(false);
+        } catch (_) {
+          bounds = null;
+        }
+        if (!bounds || !bounds.contains(point.x, point.y)) {
+          continue;
+        }
+
+        const score = Number.isFinite(sprite.zIndex)
+          ? sprite.zIndex
+          : Number.isFinite(sprite.y)
+            ? sprite.y
+            : 0;
+        if (bestToken == null || score >= bestScore) {
+          bestToken = tokenEntry;
+          bestScore = score;
+        }
+      }
+
+      return bestToken;
+    } catch (_) {
+      return null;
+    }
+  }
   _selectTokenEntry(tokenEntry) {
     if (!tokenEntry) return;
     const adapter = this.gameManager?.token3DAdapter;
