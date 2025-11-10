@@ -28,6 +28,70 @@ export class InputCoordinator {
     }
   }
 
+  async handleTokenDrop(tokenType, clientX, clientY) {
+    try {
+      const gm = this.gameManager;
+      if (!gm) {
+        return false;
+      }
+
+      const terrainActive =
+        typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive();
+      const terrainCoordinator = gm.terrainCoordinator;
+      const placeableSelected =
+        typeof terrainCoordinator?.getSelectedPlaceable === 'function'
+          ? !!terrainCoordinator.getSelectedPlaceable()
+          : false;
+      const panelVisible =
+        typeof terrainCoordinator?.isPlaceablesPanelVisible === 'function'
+          ? !!terrainCoordinator.isPlaceablesPanelVisible()
+          : false;
+
+      if (terrainActive || (placeableSelected && panelVisible)) {
+        return false;
+      }
+
+      let targetCoords = null;
+      const canUse3D =
+        typeof gm.is3DModeActive === 'function' &&
+        gm.is3DModeActive() &&
+        gm.pickingService &&
+        typeof gm.pickingService.pickGround === 'function';
+
+      if (canUse3D) {
+        try {
+          const ground = await gm.pickingService.pickGround(clientX, clientY);
+          if (ground?.grid) {
+            const gx = Math.round(ground.grid.gx);
+            const gy = Math.round(ground.grid.gy);
+            if (Number.isFinite(gx) && Number.isFinite(gy)) {
+              targetCoords = { gridX: gx, gridY: gy };
+            }
+          }
+        } catch (_) {
+          /* fallback to 2D */
+        }
+      }
+
+      if (!targetCoords && gm.interactionManager?.getGridCoordinatesFromClick) {
+        targetCoords = gm.interactionManager.getGridCoordinatesFromClick({ clientX, clientY });
+      }
+
+      if (!targetCoords) {
+        return false;
+      }
+
+      return this._placeDraggedToken(tokenType, targetCoords.gridX, targetCoords.gridY);
+    } catch (error) {
+      GameErrors.input(error, {
+        stage: 'handleTokenDrop',
+        tokenType,
+        pointer: { clientX, clientY },
+      });
+      return false;
+    }
+  }
+
   /**
    * Handle token placement or removal at grid coordinates
    * @param {number} gridX - Grid X coordinate
@@ -127,6 +191,59 @@ export class InputCoordinator {
     } else {
       logger.debug('Cannot place token: TokenManager or gridContainer not available');
     }
+  }
+
+  _placeDraggedToken(tokenType, gridX, gridY) {
+    const coordValidation = GameValidators.coordinates(gridX, gridY);
+    if (!coordValidation.isValid) {
+      throw new Error(`Invalid coordinates: ${coordValidation.errors.join(', ')}`);
+    }
+
+    const existingToken = this.findExistingTokenAt(gridX, gridY);
+    if (existingToken) {
+      this.removeToken(existingToken);
+    }
+
+    if (tokenType === 'remove') {
+      return true;
+    }
+
+    const creatureValidation = GameValidators.creatureType(tokenType);
+    if (!creatureValidation.isValid) {
+      throw new Error(`Invalid creature type: ${creatureValidation.errors.join(', ')}`);
+    }
+
+    const tm = this.gameManager.tokenManager;
+    if (!tm || !this.gameManager.gridContainer) {
+      logger.debug('Cannot place token via drag: TokenManager or gridContainer missing');
+      return false;
+    }
+
+    if (typeof tm.placeTokenOfType === 'function') {
+      tm.placeTokenOfType(tokenType, gridX, gridY, this.gameManager.gridContainer);
+    } else {
+      const previousType =
+        typeof tm.getSelectedTokenType === 'function'
+          ? tm.getSelectedTokenType()
+          : this.gameManager.selectedTokenType;
+      if (typeof tm.setSelectedTokenType === 'function') {
+        tm.setSelectedTokenType(tokenType);
+      } else {
+        this.gameManager.selectedTokenType = tokenType;
+      }
+      this.placeNewToken(gridX, gridY);
+      if (typeof tm.setSelectedTokenType === 'function') {
+        tm.setSelectedTokenType(previousType);
+      } else {
+        this.gameManager.selectedTokenType = previousType;
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.placedTokens = this.gameManager.placedTokens;
+    }
+
+    return true;
   }
 
   /**

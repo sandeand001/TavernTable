@@ -142,6 +142,26 @@ export class TokenManager {
     return _placeNewToken(this, gridX, gridY, gridContainer);
   }
 
+  placeTokenOfType(tokenType, gridX, gridY, gridContainer) {
+    const previousType = this.selectedTokenType;
+    const hadWindow = typeof window !== 'undefined';
+    const previousWindowType = hadWindow ? window.selectedTokenType : undefined;
+
+    this.selectedTokenType = tokenType;
+    if (hadWindow) {
+      window.selectedTokenType = tokenType;
+    }
+
+    try {
+      return _placeNewToken(this, gridX, gridY, gridContainer);
+    } finally {
+      this.selectedTokenType = previousType;
+      if (hadWindow) {
+        window.selectedTokenType = previousWindowType;
+      }
+    }
+  }
+
   createCreatureByType(type) {
     return _createCreatureByType(this, type);
   }

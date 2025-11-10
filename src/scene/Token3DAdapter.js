@@ -41,6 +41,11 @@ const FEMALE_HUMANOID_MODEL = {
       loop: 'repeat',
       clampWhenFinished: false,
     },
+    sprint: {
+      path: 'assets/animated-sprites/Sprint.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
     runStop: {
       path: 'assets/animated-sprites/run to stop.fbx',
       loop: 'once',
@@ -148,6 +153,9 @@ const DEFAULT_FALL_TRIGGER_PROGRESS = 0.38;
 const DEFAULT_HEIGHT_SNAP_PROGRESS = 0.62;
 const HARD_LANDING_HEIGHT_THRESHOLD = 8;
 const CONTINUOUS_ROTATION_SPEED = Math.PI;
+const SPRINT_THRESHOLD_SECONDS = 3;
+const SPRINT_SPEED_MULTIPLIER = 1.15;
+const SPRINT_LEAN_RADIANS = 0;
 
 export class Token3DAdapter {
   constructor(gameManager) {
@@ -170,6 +178,7 @@ export class Token3DAdapter {
     this._lastFacingRight = null;
     this._selectionColor = 0xffcc55;
     this._modifiers = { shift: false };
+    this._raycastScratch = [];
   }
 
   attach() {
@@ -352,6 +361,19 @@ export class Token3DAdapter {
         );
       }
 
+      container.userData = container.userData || {};
+      container.userData.__ttBaseRotation = {
+        x: container.rotation.x,
+        y: container.rotation.y,
+        z: container.rotation.z,
+      };
+
+      container.userData.__ttBaseRotation = {
+        x: container.rotation.x,
+        y: container.rotation.y,
+        z: container.rotation.z,
+      };
+
       clone.traverse?.((child) => {
         if (child.isMesh || child.isSkinnedMesh) {
           const cast = config.shadows?.cast ?? true;
@@ -481,6 +503,8 @@ export class Token3DAdapter {
         fallLandingKey: null,
         fallLandingDuration: 0,
         fallLandingThreshold: 0,
+        runDuration: 0,
+        isSprinting: false,
         movementStyle: 'standard',
         isRunning: false,
         loopActionKey: 'walk',
@@ -591,6 +615,74 @@ export class Token3DAdapter {
     }
   }
 
+  _findFirstSkinnedMesh(root) {
+    if (!root) return null;
+    if (root.isSkinnedMesh) return root;
+    if (Array.isArray(root.children)) {
+      for (const child of root.children) {
+        const found = this._findFirstSkinnedMesh(child);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  _applySprintLean(state) {
+    const mesh = state?.mesh;
+    if (!mesh) return;
+    const baseRotation = mesh.userData?.__ttBaseRotation;
+    const baseX = Number.isFinite(baseRotation?.x) ? baseRotation.x : 0;
+    const shouldLean =
+      state?.isSprinting &&
+      state?.movementStyle === 'standard' &&
+      (state?.activeDirectionSign ?? 1) > 0;
+    const targetX = shouldLean ? baseX + SPRINT_LEAN_RADIANS : baseX;
+    if (Math.abs((mesh.rotation?.x ?? 0) - targetX) > 1e-4) {
+      if (mesh.rotation) {
+        mesh.rotation.x = targetX;
+      }
+    }
+  }
+
+  _isSprintEligible(state) {
+    if (!state?.token) return false;
+    const typeKey = (state.token.type || state.token.creature?.type || '').toLowerCase();
+    if (typeKey !== 'female-humanoid' && typeKey !== 'defeated-doll') return false;
+    const data = this._tokenAnimationData.get(state.token);
+    if (!data?.actions?.sprint) return false;
+    return state.movementStyle === 'standard';
+  }
+
+  _resetSprintState(state) {
+    if (!state) return;
+    state.runDuration = 0;
+    state.isSprinting = false;
+    if (state.mesh) {
+      this._applySprintLean(state);
+    }
+  }
+
+  _updateRunningDuration(state, delta, directionSign) {
+    if (!state) return;
+    const sign = Number.isFinite(directionSign) ? directionSign : state.movementSign || 0;
+    const runningForward = state.isRunning && sign > 0 && this._isSprintEligible(state);
+    if (!runningForward) {
+      if (state.runDuration !== 0 || state.isSprinting) {
+        this._resetSprintState(state);
+      }
+      return;
+    }
+    if (delta > 0) {
+      const ceiling = SPRINT_THRESHOLD_SECONDS * 4;
+      state.runDuration = Math.min(state.runDuration + delta, ceiling);
+    }
+    if (!state.isSprinting && state.runDuration >= SPRINT_THRESHOLD_SECONDS) {
+      state.isSprinting = true;
+    }
+
+    this._applySprintLean(state);
+  }
+
   _updateMovementFlags(state, directionOverride) {
     if (!state) return;
     const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
@@ -613,6 +705,7 @@ export class Token3DAdapter {
     let loopKey = null;
     let startKey = null;
     let stopKey = null;
+    let loopFallback = 'walk';
 
     if (state.movementStyle === 'drunk') {
       loopKey = sign > 0 ? 'drunkRunForward' : 'drunkRunBackward';
@@ -621,17 +714,27 @@ export class Token3DAdapter {
       }
       startKey = null;
       stopKey = null;
+      loopFallback = sign > 0 ? 'drunkWalk' : 'drunkWalkBackward';
     } else if (state.isRunning) {
       loopKey = sign > 0 ? 'run' : 'runBackward';
       startKey = null;
       stopKey = sign > 0 ? 'runStop' : null;
+      loopFallback = sign > 0 ? 'walk' : 'walkBackward';
+      if (sign > 0 && state.isSprinting) {
+        loopKey = 'sprint';
+        loopFallback = 'run';
+      }
     } else {
       loopKey = sign > 0 ? 'walk' : 'walkBackward';
       startKey = null;
       stopKey = null;
+      loopFallback = loopKey;
     }
 
-    loopKey = this._resolveAvailableActionKey(state.token, loopKey, 'walk') || 'walk';
+    loopKey = this._resolveAvailableActionKey(state.token, loopKey, loopFallback) || loopFallback;
+    if (loopKey !== 'sprint' && state.isSprinting) {
+      state.isSprinting = false;
+    }
     startKey = this._resolveAvailableActionKey(state.token, startKey, null);
     stopKey = this._resolveAvailableActionKey(state.token, stopKey, null);
 
@@ -681,6 +784,17 @@ export class Token3DAdapter {
     } else {
       state.activeSpeed = state.movementStyle === 'drunk' ? drunkWalkSpeed : walkSpeed;
     }
+
+    if (
+      state.isSprinting &&
+      state.movementStyle === 'standard' &&
+      state.activeDirectionSign > 0 &&
+      state.activeSpeed > 0
+    ) {
+      state.activeSpeed *= SPRINT_SPEED_MULTIPLIER;
+    }
+
+    this._applySprintLean(state);
   }
 
   _handleMovementStyleChange(state, previousSnapshot, options = {}) {
@@ -753,6 +867,8 @@ export class Token3DAdapter {
     if (state.phase === 'stop') {
       this._abortStopPhase(state);
     }
+
+    this._resetSprintState(state);
 
     state.movementSign = newSign;
     state.lastMoveSign = newSign;
@@ -1090,9 +1206,21 @@ export class Token3DAdapter {
       const actions = {};
       const clips = {};
 
+      const targetCacheKey = (
+        tokenEntry.type ||
+        tokenEntry.creature?.type ||
+        tokenEntry.id ||
+        'default'
+      )
+        .toString()
+        .toLowerCase();
+      const clipOptions = { targetRoot: container, targetCacheKey };
+      const templateFallbackClip = this._selectPrimaryClip(templateBundle?.animations);
+
       const idleClip = await this._resolveAnimationClip(
         animationsConfig.idle,
-        templateBundle?.animations?.[0] || null
+        templateFallbackClip,
+        clipOptions
       );
       if (idleClip) {
         const action = mixer.clipAction(idleClip);
@@ -1101,7 +1229,7 @@ export class Token3DAdapter {
         clips.idle = idleClip.duration || 0;
       }
 
-      const walkClip = await this._resolveAnimationClip(animationsConfig.walk, null);
+      const walkClip = await this._resolveAnimationClip(animationsConfig.walk, null, clipOptions);
       if (walkClip) {
         const action = mixer.clipAction(walkClip);
         this._configureAction(action, animationsConfig.walk, three, { loop: 'repeat' });
@@ -1111,7 +1239,8 @@ export class Token3DAdapter {
 
       const walkBackwardClip = await this._resolveAnimationClip(
         animationsConfig.walkBackward,
-        null
+        null,
+        clipOptions
       );
       if (walkBackwardClip) {
         const action = mixer.clipAction(walkBackwardClip);
@@ -1120,7 +1249,7 @@ export class Token3DAdapter {
         clips.walkBackward = walkBackwardClip.duration || 0;
       }
 
-      const runClip = await this._resolveAnimationClip(animationsConfig.run, null);
+      const runClip = await this._resolveAnimationClip(animationsConfig.run, null, clipOptions);
       if (runClip) {
         const action = mixer.clipAction(runClip);
         this._configureAction(action, animationsConfig.run, three, { loop: 'repeat' });
@@ -1128,7 +1257,11 @@ export class Token3DAdapter {
         clips.run = runClip.duration || 0;
       }
 
-      const runBackwardClip = await this._resolveAnimationClip(animationsConfig.runBackward, null);
+      const runBackwardClip = await this._resolveAnimationClip(
+        animationsConfig.runBackward,
+        null,
+        clipOptions
+      );
       if (runBackwardClip) {
         const action = mixer.clipAction(runBackwardClip);
         this._configureAction(action, animationsConfig.runBackward, three, { loop: 'repeat' });
@@ -1136,7 +1269,23 @@ export class Token3DAdapter {
         clips.runBackward = runBackwardClip.duration || 0;
       }
 
-      const runStopClip = await this._resolveAnimationClip(animationsConfig.runStop, null);
+      const sprintClip = await this._resolveAnimationClip(
+        animationsConfig.sprint,
+        null,
+        clipOptions
+      );
+      if (sprintClip) {
+        const action = mixer.clipAction(sprintClip);
+        this._configureAction(action, animationsConfig.sprint, three, { loop: 'repeat' });
+        actions.sprint = action;
+        clips.sprint = sprintClip.duration || 0;
+      }
+
+      const runStopClip = await this._resolveAnimationClip(
+        animationsConfig.runStop,
+        null,
+        clipOptions
+      );
       if (runStopClip) {
         const action = mixer.clipAction(runStopClip);
         this._configureAction(action, animationsConfig.runStop, three, { loop: 'once' });
@@ -1144,7 +1293,11 @@ export class Token3DAdapter {
         clips.runStop = runStopClip.duration || 0;
       }
 
-      const drunkWalkClip = await this._resolveAnimationClip(animationsConfig.drunkWalk, null);
+      const drunkWalkClip = await this._resolveAnimationClip(
+        animationsConfig.drunkWalk,
+        null,
+        clipOptions
+      );
       if (drunkWalkClip) {
         const action = mixer.clipAction(drunkWalkClip);
         this._configureAction(action, animationsConfig.drunkWalk, three, { loop: 'repeat' });
@@ -1154,7 +1307,8 @@ export class Token3DAdapter {
 
       const drunkWalkBackwardClip = await this._resolveAnimationClip(
         animationsConfig.drunkWalkBackward,
-        null
+        null,
+        clipOptions
       );
       if (drunkWalkBackwardClip) {
         const action = mixer.clipAction(drunkWalkBackwardClip);
@@ -1167,7 +1321,8 @@ export class Token3DAdapter {
 
       const drunkRunForwardClip = await this._resolveAnimationClip(
         animationsConfig.drunkRunForward,
-        null
+        null,
+        clipOptions
       );
       if (drunkRunForwardClip) {
         const action = mixer.clipAction(drunkRunForwardClip);
@@ -1178,7 +1333,8 @@ export class Token3DAdapter {
 
       const drunkRunBackwardClip = await this._resolveAnimationClip(
         animationsConfig.drunkRunBackward,
-        null
+        null,
+        clipOptions
       );
       if (drunkRunBackwardClip) {
         const action = mixer.clipAction(drunkRunBackwardClip);
@@ -1189,7 +1345,7 @@ export class Token3DAdapter {
         clips.drunkRunBackward = drunkRunBackwardClip.duration || 0;
       }
 
-      const fallClip = await this._resolveAnimationClip(animationsConfig.fall, null);
+      const fallClip = await this._resolveAnimationClip(animationsConfig.fall, null, clipOptions);
       if (fallClip) {
         const action = mixer.clipAction(fallClip);
         this._configureAction(action, animationsConfig.fall, three, { loop: 'once' });
@@ -1197,7 +1353,11 @@ export class Token3DAdapter {
         clips.fall = fallClip.duration || 0;
       }
 
-      const hardLandingClip = await this._resolveAnimationClip(animationsConfig.hardLanding, null);
+      const hardLandingClip = await this._resolveAnimationClip(
+        animationsConfig.hardLanding,
+        null,
+        clipOptions
+      );
       if (hardLandingClip) {
         const action = mixer.clipAction(hardLandingClip);
         this._configureAction(action, animationsConfig.hardLanding, three, { loop: 'once' });
@@ -1205,7 +1365,11 @@ export class Token3DAdapter {
         clips.hardLanding = hardLandingClip.duration || 0;
       }
 
-      const fallLoopClip = await this._resolveAnimationClip(animationsConfig.fallLoop, null);
+      const fallLoopClip = await this._resolveAnimationClip(
+        animationsConfig.fallLoop,
+        null,
+        clipOptions
+      );
       if (fallLoopClip) {
         const action = mixer.clipAction(fallLoopClip);
         this._configureAction(action, animationsConfig.fallLoop, three, { loop: 'repeat' });
@@ -1233,27 +1397,27 @@ export class Token3DAdapter {
     }
   }
 
-  async _resolveAnimationClip(descriptor, fallbackClip) {
+  async _resolveAnimationClip(descriptor, fallbackClip, options = {}) {
     if (!descriptor) {
       return this._cloneClip(fallbackClip);
     }
 
     if (typeof descriptor === 'string') {
-      const clip = await this._loadAnimationClip(descriptor);
+      const clip = await this._loadAnimationClip(descriptor, options);
       return clip || this._cloneClip(fallbackClip);
     }
 
     if (descriptor?.path) {
-      const clip = await this._loadAnimationClip(descriptor.path);
+      const clip = await this._loadAnimationClip(descriptor.path, options);
       return clip || this._cloneClip(fallbackClip);
     }
 
     return this._cloneClip(fallbackClip);
   }
 
-  async _loadAnimationClip(path) {
+  async _loadAnimationClip(path, options = {}) {
     if (!path) return null;
-    const cacheKey = path.toLowerCase?.() || path;
+    const cacheKey = this._buildAnimationCacheKey(path, options.targetCacheKey);
     if (this._animationClipCache.has(cacheKey)) {
       const cached = this._animationClipCache.get(cacheKey);
       return cached ? cached.clone() : null;
@@ -1268,17 +1432,22 @@ export class Token3DAdapter {
       }
       const variants = this._buildPathVariants(path);
       let clip = null;
+      let sourceRoot = null;
       for (const url of variants) {
         try {
           const loader = new FBXLoaderCtor();
           const object = await this._loadFBX(loader, url);
           if (object?.animations?.length) {
-            clip = object.animations[0];
+            clip = this._selectPrimaryClip(object.animations);
+            sourceRoot = object;
             break;
           }
         } catch (_) {
           /* try next */
         }
+      }
+      if (clip && options.targetRoot) {
+        clip = await this._retargetAnimationClip(clip, sourceRoot, options.targetRoot);
       }
       if (clip) {
         this._animationClipCache.set(cacheKey, clip);
@@ -1292,6 +1461,41 @@ export class Token3DAdapter {
     }
   }
 
+  _buildAnimationCacheKey(path, targetKey) {
+    const base = path?.toLowerCase?.() || String(path || '');
+    if (!targetKey) return base;
+    return `${base}::${targetKey}`;
+  }
+
+  async _retargetAnimationClip(clip, sourceRoot, targetRoot) {
+    if (!clip || !targetRoot || !sourceRoot) return clip;
+    try {
+      const SkeletonUtils = await this._getSkeletonUtils();
+      if (SkeletonUtils?.retargetClip) {
+        const targetMesh = this._findFirstSkinnedMesh(targetRoot) || targetRoot;
+        const sourceMesh = this._findFirstSkinnedMesh(sourceRoot) || sourceRoot;
+        if (targetMesh && sourceMesh) {
+          const targetClone = SkeletonUtils.clone ? SkeletonUtils.clone(targetMesh) : null;
+          const sourceClone = SkeletonUtils.clone ? SkeletonUtils.clone(sourceMesh) : null;
+          const targetForRetarget = targetClone || targetMesh.clone?.(true) || targetMesh;
+          const sourceForRetarget = sourceClone || sourceMesh.clone?.(true) || sourceMesh;
+          const retargeted = SkeletonUtils.retargetClip(
+            targetForRetarget,
+            sourceForRetarget,
+            clip,
+            {
+              useFirstFramePosition: true,
+            }
+          );
+          if (retargeted) return retargeted;
+        }
+      }
+    } catch (_) {
+      /* ignore retarget errors */
+    }
+    return clip;
+  }
+
   _cloneClip(clip) {
     if (!clip) return null;
     try {
@@ -1299,6 +1503,31 @@ export class Token3DAdapter {
     } catch (_) {
       return clip;
     }
+  }
+
+  _scoreAnimationClip(clip) {
+    if (!clip) return -Infinity;
+    const trackCount = Array.isArray(clip.tracks) ? clip.tracks.length : 0;
+    const duration = Number.isFinite(clip.duration) ? clip.duration : 0;
+    if (trackCount <= 0 || duration <= 1e-4) {
+      return duration > 0 ? duration : -Infinity;
+    }
+    return trackCount * duration;
+  }
+
+  _selectPrimaryClip(clips) {
+    if (!Array.isArray(clips) || !clips.length) return null;
+    let best = null;
+    let bestScore = -Infinity;
+    for (const clip of clips) {
+      if (!clip) continue;
+      const score = this._scoreAnimationClip(clip);
+      if (score > bestScore) {
+        best = clip;
+        bestScore = score;
+      }
+    }
+    return best || clips[0] || null;
   }
 
   _configureAction(action, descriptor, three, defaults = {}) {
@@ -1565,6 +1794,7 @@ export class Token3DAdapter {
   _advanceStartPhase(state, delta, bounds) {
     if (!state) return;
     this._syncMovementVariant(state, state.movementSign || state.lastMoveSign || 1);
+    this._updateRunningDuration(state, delta, state.movementSign || state.lastMoveSign || 1);
     state.phaseElapsed += delta;
     const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
     const moveDelay = Math.max(state.startMoveDelay || 0, 0);
@@ -1607,6 +1837,7 @@ export class Token3DAdapter {
     if (!state) return;
     const netIntent = this._recalculateMovementIntent(state);
     if (netIntent === 0) {
+      this._updateRunningDuration(state, delta, netIntent);
       state.intentHold = false;
       state.pendingStop = true;
       return;
@@ -1625,6 +1856,7 @@ export class Token3DAdapter {
     state.pendingStop = false;
 
     this._syncMovementVariant(state, netIntent);
+    this._updateRunningDuration(state, delta, netIntent);
 
     if (delta > 0) {
       this._advanceFreeMovement(state, delta, bounds);
@@ -1646,6 +1878,7 @@ export class Token3DAdapter {
     state.stopMovementTime = 0;
     state.stopSpeed = 0;
     state.stopBlendedToIdle = false;
+    this._resetSprintState(state);
 
     const data = this._tokenAnimationData.get(state.token);
     const snapshot = this._captureMovementStyleSnapshot(state);
@@ -1783,6 +2016,7 @@ export class Token3DAdapter {
     }
     this._applyPendingOrientation(state);
     this._movementStates.delete(state.token);
+    this._resetSprintState(state);
     Object.assign(state, {
       intentHold: false,
       pendingStop: false,
@@ -2366,6 +2600,7 @@ export class Token3DAdapter {
 
   _finishWalkState(state) {
     if (!state) return;
+    this._resetSprintState(state);
     this._applyPendingOrientation(state);
     state.phase = 'idle';
     state.activeStep = null;
@@ -2384,6 +2619,7 @@ export class Token3DAdapter {
 
   _finishStopState(state) {
     if (!state) return;
+    this._resetSprintState(state);
     this._applyPendingOrientation(state);
     state.phase = 'idle';
     state.activeStep = null;
@@ -2929,6 +3165,52 @@ export class Token3DAdapter {
 
     this._restoreMaterial(mesh);
     this._hideSelectionIndicator(tokenEntry);
+  }
+
+  pickTokenByRay(raycaster) {
+    try {
+      if (!raycaster) return null;
+      const gm = this.gameManager;
+      const tokens = gm?.placedTokens || [];
+      if (!tokens.length) return null;
+      const scratch = this._raycastScratch || (this._raycastScratch = []);
+      let closest = null;
+      let minDistance = Infinity;
+
+      for (const tokenEntry of tokens) {
+        const mesh = tokenEntry?.__threeMesh;
+        if (!mesh || mesh.visible === false) {
+          continue;
+        }
+        scratch.length = 0;
+        let intersections = null;
+        try {
+          intersections = raycaster.intersectObject(mesh, true, scratch);
+        } catch (_) {
+          intersections = scratch;
+        }
+        if (!intersections || !intersections.length) {
+          continue;
+        }
+        const hit = intersections[0];
+        const distance = typeof hit?.distance === 'number' ? hit.distance : Infinity;
+        if (distance >= minDistance) {
+          continue;
+        }
+        const point = hit?.point;
+        closest = {
+          token: tokenEntry,
+          distance,
+          point: point && typeof point.clone === 'function' ? point.clone() : point || null,
+        };
+        minDistance = distance;
+      }
+
+      scratch.length = 0;
+      return closest;
+    } catch (_) {
+      return null;
+    }
   }
 
   _applyTint(mesh, colorHex) {

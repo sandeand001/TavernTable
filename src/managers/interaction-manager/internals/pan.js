@@ -27,5 +27,5 @@ export function updateGridDragPosition(c, event) {
 
 export function stopGridDragging(c) {
   c.isDragging = false;
-  c.gameManager.app.view.style.cursor = c.isSpacePressed ? 'grab' : 'default';
+  c.gameManager.app.view.style.cursor = 'default';
 }

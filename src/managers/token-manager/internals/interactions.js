@@ -20,7 +20,10 @@ export function setupTokenInteractions(c, sprite, tokenData) {
 
   // Right mouse button down - start dragging immediately
   sprite.on('pointerdown', function (event) {
-    if (event.data.originalEvent.button === 2) {
+    const originalEvent = event?.data?.originalEvent || {};
+    const button = typeof originalEvent.button === 'number' ? originalEvent.button : 0;
+
+    if (button === 2) {
       // Right click
       logger.debug(`Right-drag started on ${this.tokenData.type}`);
 
@@ -36,6 +39,22 @@ export function setupTokenInteractions(c, sprite, tokenData) {
 
       event.stopPropagation();
       event.preventDefault();
+      return;
+    }
+
+    if (button === 0) {
+      const gmRef = c?.gameManager;
+      const removeMode = gmRef?.selectedTokenType === 'remove';
+      if (!removeMode) {
+        try {
+          gmRef?.token3DAdapter?.setSelectedToken?.(this.tokenData);
+        } catch (_) {
+          /* ignore selection errors */
+        }
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
     }
   });
 
