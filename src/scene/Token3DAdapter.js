@@ -1823,7 +1823,6 @@ export class Token3DAdapter {
         actions.climbRecover = action;
         clips.climbRecover = climbRecoverClip.duration || 0;
       }
-
       const hardLandingClip = await this._resolveAnimationClip(
         animationsConfig.hardLanding,
         null,
