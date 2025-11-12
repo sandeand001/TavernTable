@@ -1356,26 +1356,40 @@ export class Token3DAdapter {
           ? targetHeightLevel - startHeightLevel
           : 0;
 
-      const targetCenterWorld = spatial.gridToWorld(
-        targetGridX + 0.5,
-        targetGridY + 0.5,
-        targetHeightLevel
-      );
-
       const currentWorld = this._resolveTokenWorldPosition(tokenEntry);
+      const fallbackHeight = Number.isFinite(options.elevation)
+        ? options.elevation
+        : (currentWorld?.y ?? 0);
 
-      const sampledTargetY = this._sampleWorldHeight(
-        targetCenterWorld.x,
-        targetCenterWorld.z,
-        targetCenterWorld.y
+      const targetCenterX = targetGridX + 0.5;
+      const targetCenterY = targetGridY + 0.5;
+      let targetCenterWorld = null;
+      try {
+        targetCenterWorld = spatial.gridToWorld(
+          targetCenterX,
+          targetCenterY,
+          Number.isFinite(targetHeightLevel) ? targetHeightLevel : fallbackHeight
+        );
+      } catch (_) {
+        targetCenterWorld = null;
+      }
+
+      const resolvedTargetX = Number.isFinite(targetCenterWorld?.x)
+        ? targetCenterWorld.x
+        : targetCenterX;
+      const resolvedTargetZ = Number.isFinite(targetCenterWorld?.z)
+        ? targetCenterWorld.z
+        : targetCenterY;
+      const resolvedTargetY = this._sampleWorldHeight(
+        resolvedTargetX,
+        resolvedTargetZ,
+        Number.isFinite(targetCenterWorld?.y) ? targetCenterWorld.y : fallbackHeight
       );
       const targetWorld = {
-        x: targetCenterWorld.x,
-        z: targetCenterWorld.z,
-        y: sampledTargetY,
+        x: resolvedTargetX,
+        z: resolvedTargetZ,
+        y: resolvedTargetY,
       };
-
-      const climbEligible = heightDelta >= 4 && heightDelta <= 5;
 
       const toleranceBase =
         Number.isFinite(options.tolerance) && options.tolerance > 0
@@ -1387,6 +1401,7 @@ export class Token3DAdapter {
       let pathGoalWorld = targetWorld;
       let pathTolerance = toleranceBase;
 
+      const climbEligible = heightDelta >= 4 && heightDelta <= 5;
       if (climbEligible) {
         speedMode = PATH_SPEED_MODES.WALK;
         const stepX = Math.sign(targetGridX - currentGridX);
@@ -1409,28 +1424,36 @@ export class Token3DAdapter {
         }
 
         const approachHeightLevel = this._getTerrainHeight(approachGridX, approachGridY);
-        const approachCenterWorld = spatial.gridToWorld(
-          approachGridX + 0.5,
-          approachGridY + 0.5,
-          approachHeightLevel
+        let approachCenterWorld = null;
+        try {
+          approachCenterWorld = spatial.gridToWorld(
+            approachGridX + 0.5,
+            approachGridY + 0.5,
+            Number.isFinite(approachHeightLevel) ? approachHeightLevel : fallbackHeight
+          );
+        } catch (_) {
+          approachCenterWorld = null;
+        }
+        const approachX = Number.isFinite(approachCenterWorld?.x)
+          ? approachCenterWorld.x
+          : approachGridX + 0.5;
+        const approachZ = Number.isFinite(approachCenterWorld?.z)
+          ? approachCenterWorld.z
+          : approachGridY + 0.5;
+        const approachY = this._sampleWorldHeight(
+          approachX,
+          approachZ,
+          Number.isFinite(approachCenterWorld?.y) ? approachCenterWorld.y : fallbackHeight
         );
-        const approachWorld = {
-          x: approachCenterWorld.x,
-          z: approachCenterWorld.z,
-          y: this._sampleWorldHeight(
-            approachCenterWorld.x,
-            approachCenterWorld.z,
-            approachCenterWorld.y
-          ),
-        };
+        const approachWorld = { x: approachX, z: approachZ, y: approachY };
 
         const tileHalf =
           Number.isFinite(spatial?.tileWorldSize) && spatial.tileWorldSize > 0
             ? spatial.tileWorldSize * 0.5
             : 0.5;
 
-        const dirX = targetCenterWorld.x - approachWorld.x;
-        const dirZ = targetCenterWorld.z - approachWorld.z;
+        const dirX = targetWorld.x - approachWorld.x;
+        const dirZ = targetWorld.z - approachWorld.z;
         const dirLen = Math.hypot(dirX, dirZ);
         const footWorld = { ...approachWorld };
         if (dirLen > 1e-4) {
@@ -1464,7 +1487,7 @@ export class Token3DAdapter {
         state.climbQueued = null;
       }
 
-      const orientationWorld = climbEligible ? pathGoalWorld : targetWorld;
+      const orientationWorld = state.climbQueued ? pathGoalWorld : targetWorld;
       this._orientTokenTowardsWorld(tokenEntry, orientationWorld);
 
       this._clearPathState(state);
@@ -2979,7 +3002,6 @@ export class Token3DAdapter {
     state.climbAdvanceActive = false;
     state.climbAdvanceTargetWorld = null;
   }
-
   _completePath(state) {
     if (!state) return;
     const goal = state.pathGoal;
