@@ -156,6 +156,15 @@ const CONTINUOUS_ROTATION_SPEED = Math.PI;
 const SPRINT_THRESHOLD_SECONDS = 3;
 const SPRINT_SPEED_MULTIPLIER = 1.15;
 const SPRINT_LEAN_RADIANS = 0;
+const PATH_NAVIGATION_KEY = '__path_nav';
+const PATH_SPEED_WALK_MAX = 3;
+const PATH_SPEED_RUN_MAX = 6;
+const PATH_SPEED_DEFAULT_TOLERANCE = 0.35;
+const PATH_SPEED_MODES = {
+  WALK: 'walk',
+  RUN: 'run',
+  SPRINT: 'sprint',
+};
 
 export class Token3DAdapter {
   constructor(gameManager) {
@@ -524,6 +533,12 @@ export class Token3DAdapter {
         activeDirectionSign: 1,
         stopTravelPortionCurrent:
           animationData.profile?.stopTravelPortion ?? DEFAULT_MOVEMENT_PROFILE.stopTravelPortion,
+        pathActive: false,
+        pathGoal: null,
+        pathSpeedMode: null,
+        pathKey: null,
+        pathTolerance: 0,
+        pathReached: false,
       };
       this._movementStates.set(tokenEntry, state);
     } else if (!state.profile || state.profile === DEFAULT_MOVEMENT_PROFILE) {
@@ -700,7 +715,32 @@ export class Token3DAdapter {
     const styleIsDrunk = this._setHasKey(drunkDrives, drunkKey);
 
     state.movementStyle = styleIsDrunk ? 'drunk' : 'standard';
-    state.isRunning = !!this._modifiers?.shift;
+
+    const pathMode = state.pathActive ? state.pathSpeedMode : null;
+    if (pathMode === 'walk') {
+      state.isRunning = false;
+      this._resetSprintState(state);
+    } else if (pathMode === 'run' || pathMode === 'sprint') {
+      state.isRunning = true;
+      if (pathMode === 'sprint') {
+        if (this._isSprintEligible(state)) {
+          state.isSprinting = true;
+          state.runDuration = Math.max(state.runDuration, SPRINT_THRESHOLD_SECONDS);
+        } else {
+          state.isSprinting = false;
+          state.runDuration = 0;
+        }
+      } else {
+        state.isSprinting = false;
+        state.runDuration = 0;
+      }
+      this._applySprintLean(state);
+    } else {
+      state.isRunning = !!this._modifiers?.shift;
+      if (!state.isRunning) {
+        this._resetSprintState(state);
+      }
+    }
 
     let loopKey = null;
     let startKey = null;
@@ -965,17 +1005,26 @@ export class Token3DAdapter {
     try {
       const gm = this.gameManager;
       const spatial = gm?.spatial;
-      if (!spatial?.worldToGrid) return fallbackY;
-      const grid = spatial.worldToGrid(x, z);
-      const heightLevel = this._getTerrainHeight(grid.gridX, grid.gridY);
-      if (Number.isFinite(heightLevel)) {
-        if (typeof spatial.elevationToWorldY === 'function') {
-          return spatial.elevationToWorldY(heightLevel);
-        }
-        const unit = Number.isFinite(spatial.elevationUnit) ? spatial.elevationUnit : 1;
-        return heightLevel * unit;
+      if (!spatial) return fallbackY;
+
+      const tileSize =
+        Number.isFinite(spatial.tileWorldSize) && spatial.tileWorldSize > 0
+          ? spatial.tileWorldSize
+          : 1;
+
+      const gridX = Math.floor(x / tileSize);
+      const gridY = Math.floor(z / tileSize);
+      const heightLevel = this._getTerrainHeight(gridX, gridY);
+      if (!Number.isFinite(heightLevel)) {
+        return fallbackY;
       }
-      return fallbackY;
+
+      if (typeof spatial.elevationToWorldY === 'function') {
+        return spatial.elevationToWorldY(heightLevel);
+      }
+
+      const unit = Number.isFinite(spatial.elevationUnit) ? spatial.elevationUnit : 1;
+      return heightLevel * unit;
     } catch (_) {
       return fallbackY;
     }
@@ -1062,6 +1111,131 @@ export class Token3DAdapter {
       if (!state) continue;
       const direction = state.movementSign || state.lastMoveSign || state.activeDirectionSign || 1;
       this._syncMovementVariant(state, direction, { force: false });
+    }
+  }
+
+  navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
+    try {
+      if (!tokenEntry) return null;
+      const gm = this.gameManager;
+      if (!gm?.is3DModeActive?.()) return null;
+      const spatial = gm.spatial;
+      if (!spatial || typeof spatial.gridToWorld !== 'function') return null;
+
+      const state = this._ensureMovementState(tokenEntry);
+      if (!state) return null;
+
+      const currentGridX = Number.isFinite(tokenEntry.gridX) ? Math.round(tokenEntry.gridX) : 0;
+      const currentGridY = Number.isFinite(tokenEntry.gridY) ? Math.round(tokenEntry.gridY) : 0;
+
+      const targetGridX = Number.isFinite(gridX) ? Math.round(gridX) : currentGridX;
+      const targetGridY = Number.isFinite(gridY) ? Math.round(gridY) : currentGridY;
+
+      const sameTile = currentGridX === targetGridX && currentGridY === targetGridY;
+      if (sameTile) {
+        this._clearPathState(state);
+        if (state.phase !== 'idle') {
+          state.pendingStop = true;
+        }
+        return { goal: null, speedMode: null, distance: 0 };
+      }
+
+      const walkThreshold =
+        Number.isFinite(options.walkThreshold) && options.walkThreshold >= 0
+          ? options.walkThreshold
+          : PATH_SPEED_WALK_MAX;
+      const runThreshold =
+        Number.isFinite(options.runThreshold) && options.runThreshold >= walkThreshold
+          ? options.runThreshold
+          : PATH_SPEED_RUN_MAX;
+
+      const distance = this._computeGridDistance(
+        currentGridX,
+        currentGridY,
+        targetGridX,
+        targetGridY
+      );
+
+      let speedMode = PATH_SPEED_MODES.WALK;
+      if (distance > runThreshold) {
+        speedMode = PATH_SPEED_MODES.SPRINT;
+      } else if (distance > walkThreshold) {
+        speedMode = PATH_SPEED_MODES.RUN;
+      }
+
+      const baseHeight = Number.isFinite(options.elevation)
+        ? options.elevation
+        : (tokenEntry.world?.y ?? 0);
+      const gridCenterX = targetGridX + 0.5;
+      const gridCenterY = targetGridY + 0.5;
+      let rawWorld = null;
+      try {
+        rawWorld = spatial.gridToWorld(gridCenterX, gridCenterY, baseHeight);
+      } catch (_) {
+        rawWorld = null;
+      }
+      const currentWorld = this._resolveTokenWorldPosition(tokenEntry);
+      const targetWorld = {
+        x: Number.isFinite(rawWorld?.x) ? rawWorld.x : gridCenterX,
+        z: Number.isFinite(rawWorld?.z) ? rawWorld.z : gridCenterY,
+        y: this._sampleWorldHeight(
+          Number.isFinite(rawWorld?.x) ? rawWorld.x : gridCenterX,
+          Number.isFinite(rawWorld?.z) ? rawWorld.z : gridCenterY,
+          Number.isFinite(rawWorld?.y) ? rawWorld.y : (currentWorld?.y ?? baseHeight)
+        ),
+      };
+
+      const tolerance =
+        Number.isFinite(options.tolerance) && options.tolerance > 0
+          ? options.tolerance
+          : PATH_SPEED_DEFAULT_TOLERANCE;
+
+      this._orientTokenTowardsWorld(tokenEntry, targetWorld);
+
+      this._clearPathState(state);
+      state.pathActive = true;
+      state.pathGoal = { gridX: targetGridX, gridY: targetGridY, world: targetWorld };
+      state.pathSpeedMode = speedMode;
+      state.pathTolerance = tolerance;
+      state.pathReached = false;
+      state.pathKey = PATH_NAVIGATION_KEY;
+
+      if (state.forwardKeys && typeof state.forwardKeys.clear === 'function') {
+        state.forwardKeys.clear();
+      }
+      if (state.backwardKeys && typeof state.backwardKeys.clear === 'function') {
+        state.backwardKeys.clear();
+      }
+      state.forwardKeys.add(PATH_NAVIGATION_KEY);
+
+      state.freeStartWorld = currentWorld ? { ...currentWorld } : null;
+      state.freeLastWorld = currentWorld ? { ...currentWorld } : null;
+      state.freeDistance = 0;
+
+      state.movementSign = 1;
+      state.lastMoveSign = 1;
+      state.intentHold = true;
+      state.pendingStop = false;
+      state.stopTriggered = false;
+
+      if (state.phase === 'stop') {
+        this._abortStopPhase(state);
+      }
+
+      const netIntent = this._recalculateMovementIntent(state) || 1;
+      if (state.phase === 'idle') {
+        this._startMovementPhase(state, netIntent);
+      } else {
+        state.movementSign = netIntent;
+        state.lastMoveSign = netIntent;
+        this._syncMovementVariant(state, netIntent);
+      }
+
+      this._updateMovementFlags(state, netIntent);
+
+      return { goal: state.pathGoal, speedMode, distance };
+    } catch (_) {
+      return null;
     }
   }
 
@@ -1778,6 +1952,11 @@ export class Token3DAdapter {
           }
         }
 
+        if (state.pathActive && state.pathReached) {
+          this._completePath(state);
+          continue;
+        }
+
         if (state.pendingStop && state.phase !== 'stop' && state.phase !== 'fall') {
           this._initiateStopPhase(state);
         }
@@ -2369,15 +2548,50 @@ export class Token3DAdapter {
     if (sign === 0) return;
 
     const yaw = this._getMovementYaw(state.token);
-    const direction = this._getDirectionalVectorFromYaw(yaw, sign);
+    let direction = this._getDirectionalVectorFromYaw(yaw, sign);
     if (!direction || (Math.abs(direction.x) < 1e-6 && Math.abs(direction.z) < 1e-6)) {
       return;
     }
 
-    const distance = speed * delta;
+    let distance = speed * delta;
     if (!(distance > 0)) return;
 
     const currentWorld = this._resolveTokenWorldPosition(state.token);
+    const pathGoal = state.pathActive ? state.pathGoal : null;
+    const goalWorld = pathGoal?.world || null;
+    let clampToGoal = false;
+    let tolerance = 0;
+
+    if (goalWorld) {
+      const toGoalX = goalWorld.x - currentWorld.x;
+      const toGoalZ = goalWorld.z - currentWorld.z;
+      const remaining = Math.hypot(toGoalX, toGoalZ);
+      const tileSize = bounds?.tileSize || this.gameManager?.spatial?.tileWorldSize || 1;
+      tolerance = Math.max(state.pathTolerance || tileSize * 0.1, 0.05);
+
+      if (remaining > 1e-6) {
+        direction = { x: toGoalX / remaining, z: toGoalZ / remaining };
+      }
+
+      if (!(remaining > tolerance)) {
+        distance = remaining;
+        clampToGoal = true;
+      } else {
+        const projected = toGoalX * direction.x + toGoalZ * direction.z;
+        if (projected <= tolerance) {
+          distance = Math.max(remaining - tolerance, 0);
+          clampToGoal = true;
+        } else if (distance >= projected) {
+          distance = Math.max(projected, 0);
+          clampToGoal = true;
+        }
+      }
+    }
+
+    if (!(distance > 0) && !clampToGoal) {
+      return;
+    }
+
     const nextWorld = {
       x: currentWorld.x + direction.x * distance,
       y: currentWorld.y,
@@ -2391,7 +2605,13 @@ export class Token3DAdapter {
       if (Number.isFinite(bounds.maxZ)) nextWorld.z = Math.min(nextWorld.z, bounds.maxZ);
     }
 
-    nextWorld.y = this._sampleWorldHeight(nextWorld.x, nextWorld.z, currentWorld.y);
+    if (goalWorld && clampToGoal) {
+      nextWorld.x = goalWorld.x;
+      nextWorld.z = goalWorld.z;
+      nextWorld.y = goalWorld.y;
+    } else {
+      nextWorld.y = this._sampleWorldHeight(nextWorld.x, nextWorld.z, currentWorld.y);
+    }
 
     const composed = this._composeMeshPosition(nextWorld, state.mesh);
     if (state.mesh?.position?.set) {
@@ -2409,9 +2629,78 @@ export class Token3DAdapter {
       state.freeStartWorld = { ...currentWorld };
     }
     state.freeLastWorld = { ...nextWorld };
-    state.freeDistance += Math.hypot(nextWorld.x - currentWorld.x, nextWorld.z - currentWorld.z);
+    state.freeDistance += actualDistance;
     state.activeStep = null;
     state.stepFinalized = false;
+
+    if (goalWorld) {
+      const remainingAfter = Math.hypot(goalWorld.x - nextWorld.x, goalWorld.z - nextWorld.z);
+      state.pathReached = remainingAfter <= Math.max(tolerance, 0.05);
+    } else {
+      state.pathReached = false;
+    }
+  }
+
+  _clearPathState(state) {
+    if (!state) return;
+    if (state.pathKey && state.forwardKeys?.has(state.pathKey)) {
+      state.forwardKeys.delete(state.pathKey);
+    }
+    state.pathActive = false;
+    state.pathGoal = null;
+    state.pathSpeedMode = null;
+    state.pathKey = null;
+    state.pathTolerance = 0;
+    state.pathReached = false;
+  }
+
+  _completePath(state) {
+    if (!state) return;
+    const goal = state.pathGoal;
+    const tokenEntry = state.token;
+    const mesh = state.mesh;
+
+    this._clearPathState(state);
+    state.intentHold = false;
+    state.pendingStop = false;
+    state.movementSign = 0;
+    state.lastMoveSign = 0;
+
+    if (goal) {
+      if (Number.isFinite(goal.gridX)) tokenEntry.gridX = goal.gridX;
+      if (Number.isFinite(goal.gridY)) tokenEntry.gridY = goal.gridY;
+      if (goal.world) {
+        tokenEntry.world = { ...goal.world };
+        if (mesh?.position) {
+          const composed = this._composeMeshPosition(goal.world, mesh);
+          mesh.position.set(composed.x, composed.y, composed.z);
+        }
+      }
+    }
+
+    this._finishWalkState(state);
+  }
+
+  _orientTokenTowardsWorld(tokenEntry, targetWorld) {
+    if (!tokenEntry || !targetWorld) return;
+    const current = this._resolveTokenWorldPosition(tokenEntry);
+    const dx = targetWorld.x - current.x;
+    const dz = targetWorld.z - current.z;
+    if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) {
+      return;
+    }
+    const yaw = Math.atan2(dx, -dz);
+    const facing = this._normalizeAngle(Math.PI / 2 - yaw);
+    tokenEntry.facingAngle = facing;
+    this.updateTokenOrientation(tokenEntry);
+  }
+
+  _computeGridDistance(ax, ay, bx, by) {
+    const fromX = Number.isFinite(ax) ? Math.round(ax) : 0;
+    const fromY = Number.isFinite(ay) ? Math.round(ay) : 0;
+    const toX = Number.isFinite(bx) ? Math.round(bx) : 0;
+    const toY = Number.isFinite(by) ? Math.round(by) : 0;
+    return Math.abs(fromX - toX) + Math.abs(fromY - toY);
   }
 
   _applyStepProgress(step, distance, state, options = {}) {
@@ -2600,6 +2889,7 @@ export class Token3DAdapter {
 
   _finishWalkState(state) {
     if (!state) return;
+    this._clearPathState(state);
     this._resetSprintState(state);
     this._applyPendingOrientation(state);
     state.phase = 'idle';
@@ -2619,6 +2909,7 @@ export class Token3DAdapter {
 
   _finishStopState(state) {
     if (!state) return;
+    this._clearPathState(state);
     this._resetSprintState(state);
     this._applyPendingOrientation(state);
     state.phase = 'idle';

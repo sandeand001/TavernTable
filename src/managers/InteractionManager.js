@@ -25,11 +25,6 @@ import {
   resetZoom as _resetZoom,
 } from './interaction-manager/internals/zoom.js';
 
-const MOVE_FORWARD_CODES = new Set(['ArrowUp', 'KeyW']);
-const MOVE_BACKWARD_CODES = new Set(['ArrowDown', 'KeyS']);
-const ROTATE_LEFT_CODES = new Set(['ArrowLeft', 'KeyA']);
-const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
-
 export class InteractionManager {
   constructor(gameManager) {
     // Core refs
@@ -186,19 +181,11 @@ export class InteractionManager {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(true);
       }
-
-      if (this._handleTokenRotationKeyDown(event) || this._handleTokenMovementKeyDown(event)) {
-        event.preventDefault();
-      }
     });
 
     document.addEventListener('keyup', (event) => {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(false);
-      }
-
-      if (this._handleTokenRotationKeyUp(event) || this._handleTokenMovementKeyUp(event)) {
-        event.preventDefault();
       }
     });
   }
@@ -355,122 +342,6 @@ export class InteractionManager {
     }
   }
 
-  _handleTokenRotationKeyDown(event) {
-    try {
-      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
-        return false;
-      }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      if (this._shouldIgnoreKeyTarget(event.target)) {
-        return false;
-      }
-
-      const gm = this.gameManager;
-      if (!gm?.tokenManager) return false;
-      const adapter = gm.token3DAdapter;
-      const selectedToken = adapter?.getSelectedToken?.();
-      if (!selectedToken) return false;
-
-      if (event.repeat) {
-        return true;
-      }
-
-      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
-      if (adapter?.beginRotation) {
-        adapter.beginRotation(selectedToken, direction, event.code);
-        return true;
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  _handleTokenRotationKeyUp(event) {
-    try {
-      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
-        return false;
-      }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      const adapter = this.gameManager?.token3DAdapter;
-      if (!adapter?.endRotation) return false;
-      const selectedToken = adapter.getSelectedToken?.();
-      if (!selectedToken) return false;
-      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
-      adapter.endRotation(selectedToken, direction, event.code);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  _handleTokenMovementKeyDown(event) {
-    try {
-      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
-        return false;
-      }
-      if (event.repeat) {
-        return false;
-      }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      if (this._shouldIgnoreKeyTarget(event.target)) {
-        return false;
-      }
-
-      const adapter = this.gameManager?.token3DAdapter;
-      if (!adapter?.beginForwardMovement) return false;
-      if (typeof adapter.setShiftModifier === 'function') {
-        adapter.setShiftModifier(!!event.shiftKey);
-      }
-      const selectedToken = adapter.getSelectedToken?.();
-      if (!selectedToken) return false;
-      const direction = MOVE_BACKWARD_CODES.has(event.code) ? -1 : 1;
-      if (direction > 0 && adapter.beginForwardMovement) {
-        adapter.beginForwardMovement(selectedToken, event.code);
-        return true;
-      }
-      if (direction < 0 && adapter.beginBackwardMovement) {
-        adapter.beginBackwardMovement(selectedToken, event.code);
-        return true;
-      }
-      return false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  _handleTokenMovementKeyUp(event) {
-    try {
-      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
-        return false;
-      }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      const adapter = this.gameManager?.token3DAdapter;
-      if (!adapter) return false;
-      const selectedToken = adapter.getSelectedToken?.();
-      if (!selectedToken) return false;
-      if (MOVE_FORWARD_CODES.has(event.code) && adapter.endForwardMovement) {
-        adapter.endForwardMovement(selectedToken, event.code);
-        return true;
-      }
-      if (MOVE_BACKWARD_CODES.has(event.code) && adapter.endBackwardMovement) {
-        adapter.endBackwardMovement(selectedToken, event.code);
-        return true;
-      }
-      return false;
-    } catch (_) {
-      return false;
-    }
-  }
-
   _shouldIgnoreKeyTarget(target) {
     if (!target) return false;
     try {
@@ -588,9 +459,27 @@ export class InteractionManager {
 
           if (tokenEntry) {
             this._selectTokenEntry(tokenEntry);
-          } else {
-            this._clearTokenSelection();
+            return;
           }
+
+          const adapter = gm?.token3DAdapter;
+          const selectedToken = adapter?.getSelectedToken?.() || null;
+          const canNavigate =
+            selectedToken &&
+            adapter?.navigateToGrid &&
+            typeof adapter.navigateToGrid === 'function' &&
+            gm?.is3DModeActive?.() &&
+            gridX != null &&
+            gridY != null;
+
+          if (canNavigate) {
+            const result = adapter.navigateToGrid(selectedToken, gridX, gridY);
+            if (result) {
+              return;
+            }
+          }
+
+          this._clearTokenSelection();
         })
         .catch((error) => {
           try {
