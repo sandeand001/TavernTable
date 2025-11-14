@@ -29,6 +29,7 @@ import {
 } from '../utils/ErrorHandler.js';
 import { Sanitizers } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
+import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 
 // Import coordinators
 import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
@@ -110,6 +111,23 @@ class GameManager {
       treeModelsReplaceSprites: true, // deprecated: always true
     };
 
+    this._defaultElevationPixelsPerLevel = Number.isFinite(TERRAIN_CONFIG?.ELEVATION_SHADOW_OFFSET)
+      ? Math.max(1, TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET)
+      : 8;
+    const initialPixelsPerLevel = TerrainHeightUtils.getElevationUnit();
+    const baselinePixels =
+      Number.isFinite(initialPixelsPerLevel) && initialPixelsPerLevel > 0
+        ? initialPixelsPerLevel
+        : this._defaultElevationPixelsPerLevel;
+    const baseWorldUnit = Number.isFinite(this.spatial?.elevationUnit)
+      ? this.spatial.elevationUnit
+      : 0.5;
+    this._baselineWorldElevationUnit =
+      Number.isFinite(baseWorldUnit) && baseWorldUnit > 0 ? baseWorldUnit : 0.5;
+    this._lastAppliedWorldElevationUnit = this._baselineWorldElevationUnit;
+    this._lastPixelsPerLevelApplied = baselinePixels;
+    this._worldElevationAttenuation = 0.6; // dial back 3D elevation exaggeration
+
     // Internal: track pending async instancing operations so tests/tools can await completion
     this._pendingInstancingPromises = [];
 
@@ -139,33 +157,54 @@ class GameManager {
     try {
       if (!this.is3DModeActive()) return false;
       const tsm = this.threeSceneManager;
-      if (!tsm || !tsm.camera || !tsm.renderer) return false;
-      const cam = tsm.camera;
-      const vertSpan = (cam.top ?? 0) - (cam.bottom ?? 0);
-      if (!(vertSpan > 0)) return false;
-      const rendererHeight = tsm.canvas?.clientHeight || tsm.renderer.domElement?.clientHeight || 0;
-      if (!(rendererHeight > 0)) return false;
-      const pixelsPerLevel2D = TerrainHeightUtils.getElevationUnit();
-      let pitch = (35.264389682754654 * Math.PI) / 180; // fallback
-      try {
-        if (typeof tsm._isoPitch === 'number') pitch = tsm._isoPitch;
-      } catch (_) {
-        /* ignore */
+      if (!tsm) return false;
+
+      const rawPixelsPerLevel = TerrainHeightUtils.getElevationUnit();
+      const pixelsPerLevel2D =
+        Number.isFinite(rawPixelsPerLevel) && rawPixelsPerLevel >= 0
+          ? rawPixelsPerLevel
+          : this._defaultElevationPixelsPerLevel;
+
+      const defaultPixels = this._defaultElevationPixelsPerLevel || 1;
+      const baselineWorldUnit =
+        Number.isFinite(this._baselineWorldElevationUnit) && this._baselineWorldElevationUnit > 0
+          ? this._baselineWorldElevationUnit
+          : Number.isFinite(this.spatial?.elevationUnit)
+            ? this.spatial.elevationUnit
+            : 0.5;
+      const attenuation =
+        Number.isFinite(this._worldElevationAttenuation) && this._worldElevationAttenuation > 0
+          ? this._worldElevationAttenuation
+          : 1;
+
+      let worldElevationUnit =
+        defaultPixels > 0 ? (baselineWorldUnit * pixelsPerLevel2D) / defaultPixels : 0;
+      worldElevationUnit *= attenuation;
+
+      if (!Number.isFinite(worldElevationUnit)) {
+        worldElevationUnit = baselineWorldUnit;
+      } else if (worldElevationUnit < 0) {
+        worldElevationUnit = 0;
       }
-      const cosPitch = Math.cos(pitch) || 1;
-      const pixelsPerWorldY = rendererHeight / vertSpan;
-      let worldElevationUnit = pixelsPerLevel2D / (pixelsPerWorldY * cosPitch);
-      if (!Number.isFinite(worldElevationUnit) || worldElevationUnit <= 0) {
-        worldElevationUnit = 0.25;
-      }
-      const prev = this.spatial?.elevationUnit;
+
+      const prevUnit = this.spatial?.elevationUnit;
+      const prev = Number.isFinite(prevUnit) ? prevUnit : null;
       if (Number.isFinite(prev) && prev > 0 && !options.hardSet) {
         worldElevationUnit = prev * 0.2 + worldElevationUnit * 0.8;
       }
-      if (Number.isFinite(prev) && Math.abs(worldElevationUnit - prev) / prev < 0.005) {
+
+      if (
+        Number.isFinite(prev) &&
+        prev > 0 &&
+        Number.isFinite(worldElevationUnit) &&
+        Math.abs(worldElevationUnit - prev) / Math.abs(prev) < 0.005
+      ) {
         return false;
       }
+
       this.spatial.reconfigure({ elevationUnit: worldElevationUnit });
+      this._lastAppliedWorldElevationUnit = worldElevationUnit;
+      this._lastPixelsPerLevelApplied = pixelsPerLevel2D;
       if (this.terrainRebuilder?.builder) {
         this.terrainRebuilder.builder.elevationUnit = worldElevationUnit;
       }
@@ -194,9 +233,13 @@ class GameManager {
         window.__TT_METRICS__.elevationSync = {
           pixelsPerLevel2D,
           worldElevationUnit,
-          rendererHeight,
-          vertSpan,
-          pitch,
+          baselineWorldUnit,
+          defaultPixels,
+          attenuation,
+          relativeScale:
+            Number.isFinite(pixelsPerLevel2D) && defaultPixels > 0
+              ? pixelsPerLevel2D / defaultPixels
+              : null,
           timestamp: Date.now(),
         };
         window.sync3DElevationScaling = () =>
