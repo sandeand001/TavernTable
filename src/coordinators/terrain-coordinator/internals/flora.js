@@ -234,15 +234,16 @@ function isAdjacentToWater(c, x, y) {
 const candidateFilters = {
   oasisSetback(c, x, y, h, rng) {
     const height = Number.isFinite(h) ? h : (c.getTerrainHeight?.(x, y) ?? 0);
-    if (height <= 0.6) return false;
-    const adjacent = isAdjacentToWater(c, x, y);
-    if (!adjacent) {
-      if (!hasWaterWithinRadius(c, x, y, 3)) return false;
-      const bias = typeof rng === 'function' ? rng() : Math.random();
-      if (bias >= 0.1) return false;
-    }
+    if (height <= 0.3) return false; // keep slightly above waterline
+    if (!hasWaterWithinRadius(c, x, y, 3)) return false;
     if (!isFlatEnoughForTropical(c, x, y, height)) return false;
-    return true;
+    if (candidateFilters.adjacentWater(c, x, y)) {
+      return true; // directly hug the shoreline
+    }
+    // For tiles one step back from water, allow a small deterministic fraction to keep density variety.
+    if (!hasWaterWithinRadius(c, x, y, 2)) return false;
+    const roll = typeof rng === 'function' ? rng() : Math.random();
+    return roll < 0.15;
   },
   adjacentWater(c, x, y) {
     return isAdjacentToWater(c, x, y);
