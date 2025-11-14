@@ -718,6 +718,7 @@ export class Token3DAdapter {
         climbRecoverElapsed: 0,
         climbRecoverDuration: 0,
         climbRecoverStartWorld: null,
+        climbRecoverAnchorPosition: null,
         climbLastWorld: null,
         climbAdvanceActive: false,
         climbAdvanceTargetWorld: null,
@@ -2971,6 +2972,7 @@ export class Token3DAdapter {
     state.climbRecoverElapsed = 0;
     state.climbRecoverDuration = 0;
     state.climbRecoverStartWorld = null;
+    state.climbRecoverAnchorPosition = null;
     state.climbLastWorld = null;
     state.climbAdvanceActive = false;
     state.climbAdvanceTargetWorld = null;
@@ -3115,13 +3117,35 @@ export class Token3DAdapter {
       this._resolveTokenWorldPosition(state.token);
 
     if (recoverStartWorld) {
+      this._transferRootMotionToWorld(state, recoverStartWorld);
+    } else {
+      this._transferRootMotionToWorld(state);
+    }
+
+    const adjustedWorld = this._resolveTokenWorldPosition(state.token);
+    if (adjustedWorld) {
+      state.climbRecoverStartWorld = { ...adjustedWorld };
+      state.climbLastWorld = { ...adjustedWorld };
+    } else if (recoverStartWorld) {
       state.climbRecoverStartWorld = { ...recoverStartWorld };
       state.climbLastWorld = { ...recoverStartWorld };
-      this._transferRootMotionToWorld(state, recoverStartWorld);
     } else {
       state.climbRecoverStartWorld = null;
       state.climbLastWorld = null;
-      this._transferRootMotionToWorld(state);
+    }
+
+    if (state.climbRecoverStartWorld && state.mesh?.position?.set) {
+      const composed = this._composeMeshPosition(state.climbRecoverStartWorld, state.mesh);
+      state.mesh.position.set(composed.x, composed.y, composed.z);
+      state.climbRecoverAnchorPosition = { x: composed.x, y: composed.y, z: composed.z };
+    } else if (state.mesh?.position) {
+      state.climbRecoverAnchorPosition = {
+        x: Number(state.mesh.position.x) || 0,
+        y: Number(state.mesh.position.y) || 0,
+        z: Number(state.mesh.position.z) || 0,
+      };
+    } else {
+      state.climbRecoverAnchorPosition = null;
     }
 
     const animationData = this._tokenAnimationData.get(state.token);
@@ -3177,8 +3201,18 @@ export class Token3DAdapter {
     if (startWorld) {
       this._updateTokenWorldDuringMovement(state.token, startWorld);
       if (state.mesh?.position?.set) {
-        const composed = this._composeMeshPosition(startWorld, state.mesh);
-        state.mesh.position.set(composed.x, composed.y, composed.z);
+        const anchor = state.climbRecoverAnchorPosition;
+        if (
+          anchor &&
+          Number.isFinite(anchor.x) &&
+          Number.isFinite(anchor.y) &&
+          Number.isFinite(anchor.z)
+        ) {
+          state.mesh.position.set(anchor.x, anchor.y, anchor.z);
+        } else {
+          const composed = this._composeMeshPosition(startWorld, state.mesh);
+          state.mesh.position.set(composed.x, composed.y, composed.z);
+        }
       }
       state.climbLastWorld = { ...startWorld };
     }

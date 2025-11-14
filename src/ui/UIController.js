@@ -34,7 +34,6 @@ import {
   getBrushSizeDisplay,
   getCreaturePanelEls,
   getTerrainModeEls,
-  getAutoApplyButton,
   getGameContainer,
 } from './domHelpers.js';
 import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
