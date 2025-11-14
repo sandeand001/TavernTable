@@ -19,6 +19,7 @@ import {
   getBiomeButtons,
   getBiomeButtonByKey,
   getTerrainPlaceablesRoot,
+  getTerrainModeEls,
 } from './domHelpers.js';
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 
@@ -146,6 +147,42 @@ class SidebarController {
       } catch (_) {
         /* ignore */
       }
+      this._ensureTerrainModeToggleOff();
+    }
+  }
+
+  _ensureTerrainModeToggleOff() {
+    try {
+      const { toggleEl, toolsEl } = getTerrainModeEls();
+      if (!toggleEl || !toggleEl.checked) return;
+
+      toggleEl.checked = false;
+      const handlerBound = toggleEl.dataset.boundChange === 'true';
+      toggleEl.dispatchEvent(new Event('change', { bubbles: true }));
+
+      if (!handlerBound) {
+        if (toolsEl) toolsEl.style.display = 'none';
+        try {
+          window.gameManager?.disableTerrainMode?.();
+          window.gameManager?.terrainCoordinator?.setPlaceableRemovalMode?.(false);
+        } catch (_) {
+          /* ignore */
+        }
+        const removalToggle = document.getElementById('placeable-removal-toggle');
+        if (removalToggle) removalToggle.checked = false;
+      }
+
+      logger.debug(
+        'Terrain mode auto-disabled via tab switch',
+        { tabId: this.activeTab },
+        LOG_CATEGORY.UI
+      );
+    } catch (error) {
+      logger.debug(
+        'Failed to auto-disable terrain mode',
+        { error: error?.message },
+        LOG_CATEGORY.UI
+      );
     }
   }
 
