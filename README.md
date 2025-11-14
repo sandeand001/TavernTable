@@ -28,8 +28,8 @@ PRs should include the checklist in `.github/PULL_REQUEST_TEMPLATE.md`.
 ## Windows PowerShell
 ```powershell
 npm install
-npm run serve
-# Open http://localhost:3000
+npm run serve        # http://localhost:3000
+# or npm run serve:alt1 # http://localhost:3001
 ```
 ## Bash
 ```bash
@@ -68,14 +68,23 @@ Taverntable/
 | Package     | npm        |
 
 # Build / Run / Test / Lint
-| Action   | PowerShell Command                        | Bash Command                  |
-|----------|-------------------------------------------|-------------------------------|
-| Install  | npm install                               | npm install                   |
-| Serve    | npm run serve                             | npm run serve                 |
-| Lint     | npm run lint                              | npm run lint                  |
-| Test     | npm test                                  | npm test                      |
-| Lint Fix | npm run lint:fix                          | npm run lint:fix              |
- 
+| Action         | PowerShell Command        | Bash Command            |
+|----------------|---------------------------|-------------------------|
+| Install        | npm install               | npm install             |
+| Serve (3000)   | npm run serve             | npm run serve           |
+| Serve (3001)   | npm run serve:alt1        | npm run serve:alt1      |
+| Serve (3002)   | npm run serve:alt2        | npm run serve:alt2      |
+| Serve (3003)   | npm run serve:alt3        | npm run serve:alt3      |
+| Serve (3004)   | npm run serve:alt4        | npm run serve:alt4      |
+| Lint           | npm run lint              | npm run lint            |
+| Test           | npm test                  | npm test                |
+| Lint Fix       | npm run lint:fix          | npm run lint:fix        |
+
+## Running multiple branches concurrently
+- Assign each branch to a different serve script (`serve`, `serve:alt1`, ..., `serve:alt4`) so every instance runs on its own port.
+- Open matching URLs (`http://localhost:3000`-`3004`) in separate browser windows to compare implementations side by side.
+- Keep the working tree clean before switching branches in a terminal; use separate clones if you need persistent parallel edits.
+
 
 # Configuration & Environment Variables
 <!-- @updatable:env_vars -->
@@ -132,7 +141,7 @@ No ADRs found. See `src/config/` for game/terrain/biome architecture.
 | UI not loading       | Server not running  | Run `npm run serve`         |
 | Lint errors          | Code style issues   | Run `npm run lint:fix`      |
 | Test failures        | Code/test bug       | Check test output, fix code |
-| Port 3000 busy       | Another process     | Kill process or change port |
+| Port 3000 busy       | Another process     | Run `npm run serve:alt[1-4]` |
 | Browser errors       | JS runtime error    | Check console, fix code     |
 
 # Roadmap / Known Limitations
