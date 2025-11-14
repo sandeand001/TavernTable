@@ -82,6 +82,27 @@ export class TerrainDataStore {
     this.working = this.base.map((row) => [...row]);
   }
 
+  resetAll(height = TERRAIN_CONFIG.DEFAULT_HEIGHT) {
+    const rows = Number.isInteger(this.rows) && this.rows > 0 ? this.rows : 0;
+    const cols = Number.isInteger(this.cols) && this.cols > 0 ? this.cols : 0;
+    const value = Number.isFinite(height) ? height : TERRAIN_CONFIG.DEFAULT_HEIGHT;
+    if (!rows || !cols) {
+      const fallbackRows = Array.isArray(this.base) ? this.base.length : 0;
+      const fallbackCols = Array.isArray(this.base?.[0]) ? this.base[0].length : 0;
+      if (fallbackRows > 0 && fallbackCols > 0) {
+        this.rows = fallbackRows;
+        this.cols = fallbackCols;
+        return this.resetAll(value);
+      }
+      this.rows = TERRAIN_CONFIG.FALLBACK_ROWS || 1;
+      this.cols = TERRAIN_CONFIG.FALLBACK_COLS || 1;
+      return this.resetAll(value);
+    }
+
+    this.base = TerrainHeightUtils.createHeightArray(rows, cols, value);
+    this.working = TerrainHeightUtils.createHeightArray(rows, cols, value);
+  }
+
   isConsistent() {
     const r = this.rows,
       c = this.cols;

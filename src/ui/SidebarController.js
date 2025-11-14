@@ -14,7 +14,6 @@ import {
   getTabButtons,
   getTabPanels,
   getGridOpacityControl,
-  getAnimationSpeedControl,
   getVisualGridToggle,
   getSunTimeControl,
   getBiomeButtons,
@@ -49,7 +48,7 @@ class SidebarController {
       });
       // Activate initial tab
       this.switchTab(this.activeTab);
-      // Grid + animation controls
+      // Grid controls
       const { slider: gridOpacitySlider, valueEl: gridOpacityValue } = getGridOpacityControl();
       if (gridOpacitySlider && !gridOpacitySlider.dataset.boundChange) {
         const applyGridOpacity = () => {
@@ -62,19 +61,6 @@ class SidebarController {
         gridOpacitySlider.addEventListener('change', applyGridOpacity);
         gridOpacitySlider.dataset.boundChange = 'true';
         applyGridOpacity();
-      }
-      const { slider: animSpeedSlider, valueEl: animSpeedValue } = getAnimationSpeedControl();
-      if (animSpeedSlider && !animSpeedSlider.dataset.boundChange) {
-        const applyAnimSpeed = () => {
-          const raw = Number(animSpeedSlider.value);
-          if (!Number.isFinite(raw)) return;
-          this.onAnimationSpeedChange(raw);
-          if (animSpeedValue) animSpeedValue.textContent = `${raw.toFixed(1)}x`;
-        };
-        animSpeedSlider.addEventListener('input', applyAnimSpeed);
-        animSpeedSlider.addEventListener('change', applyAnimSpeed);
-        animSpeedSlider.dataset.boundChange = 'true';
-        applyAnimSpeed();
       }
       const { slider: sunTimeSlider, valueEl: sunTimeValue } = getSunTimeControl();
       if (sunTimeSlider && !sunTimeSlider.dataset.boundSunTime) {
@@ -638,15 +624,6 @@ class SidebarController {
       });
     } else {
       logger.debug('GameManager not available for grid opacity change', {}, LOG_CATEGORY.UI);
-    }
-  }
-
-  onAnimationSpeedChange(speed) {
-    if (window.gameManager?.app) {
-      window.gameManager.app.animationSpeedMultiplier = speed;
-      if (window.gameManager.app.ticker) window.gameManager.app.ticker.speed = speed;
-    } else {
-      logger.debug('GameManager not available for animation speed change', {}, LOG_CATEGORY.UI);
     }
   }
 

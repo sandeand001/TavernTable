@@ -110,13 +110,51 @@ body {
   /* Increased from 320px to show more creatures */
   opacity: 1 !important;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #2b2b2b;
+  border-radius: 8px;
+  background: linear-gradient(160deg, rgba(32, 32, 32, 0.7), rgba(18, 18, 18, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(4px);
 
-  /* Responsive grid layout */
+  /* Smooth layout breathing room for the creature token cards */
+}
 
+#creature-content button {
+  background: linear-gradient(180deg, rgba(88, 88, 88, 0.55), rgba(52, 52, 52, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #f4f4f4;
+  padding: 12px 14px;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.1px;
+  white-space: normal;
+  overflow: hidden;
   text-overflow: ellipsis;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
 
-  /* Show ... if text is too long */
+#creature-content button:focus-visible {
+  outline: none;
+  border-color: rgba(77, 166, 255, 0.85);
+  box-shadow:
+    0 0 0 2px rgba(77, 166, 255, 0.35),
+    0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
 /* Placeables category toggle refinement (slightly smaller variant) */
@@ -145,13 +183,17 @@ body {
 
 /* Creature button hover/selected states */
 #creature-content button:hover {
-  background-color: #555;
-  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(101, 101, 101, 0.75), rgba(58, 58, 58, 0.95));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  border-color: rgba(77, 166, 255, 0.45);
 }
 
 #creature-content button.selected {
-  background-color: #4da6ff;
-  color: white;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.95), rgba(37, 96, 170, 0.95));
+  color: #ffffff;
+  border-color: rgba(123, 196, 255, 0.9);
+  box-shadow: 0 8px 20px rgba(77, 166, 255, 0.45);
   font-weight: 600;
 }
 
@@ -163,21 +205,25 @@ body {
 }
 
 #token-panel button {
-  margin: 2px 0;
-
-  /* Only vertical margin, horizontal handled by grid gap */
-  padding: 8px 12px;
-  background-color: #444;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  margin: 4px 0;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, rgba(72, 84, 110, 0.85), rgba(32, 37, 48, 0.94));
+  color: #f3f7ff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
   cursor: pointer;
   display: block;
   width: 100%;
   font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
   box-sizing: border-box;
-
-  /* Include border in width calculations */
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+  box-shadow: 0 10px 24px rgba(10, 16, 28, 0.45);
 }
 
 /* Token section styling improvements */
@@ -193,49 +239,83 @@ body {
 }
 
 #token-panel button:hover {
-  background-color: #666;
+  background: linear-gradient(180deg, rgba(94, 108, 146, 0.9), rgba(40, 48, 62, 0.96));
+  transform: translateY(-2px);
+  border-color: rgba(77, 166, 255, 0.45);
+  box-shadow: 0 14px 26px rgba(12, 20, 34, 0.55);
 }
 
 #token-panel button.selected {
-  background-color: #0066cc;
-  border: 2px solid #4da6ff;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.95), rgba(36, 88, 168, 0.96));
+  border: 1px solid rgba(123, 196, 255, 0.85);
+  color: #ffffff;
+  box-shadow: 0 16px 30px rgba(77, 166, 255, 0.45);
 }
 
 .facing-button {
-  margin: 2px;
-  padding: 6px 10px !important;
-  background-color: #555 !important;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  margin: 4px;
+  padding: 10px 14px !important;
+  background: linear-gradient(180deg, rgba(78, 88, 118, 0.88), rgba(30, 34, 44, 0.92)) !important;
+  color: #f5f7ff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
   cursor: pointer;
-  display: inline-block !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
   width: auto !important;
   font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  box-shadow: 0 10px 20px rgba(10, 16, 28, 0.45);
 }
 
 .facing-button:hover {
-  background-color: #777 !important;
+  background: linear-gradient(180deg, rgba(98, 112, 148, 0.92), rgba(40, 48, 62, 0.96)) !important;
+  transform: translateY(-2px);
+  border-color: rgba(77, 166, 255, 0.45) !important;
+  box-shadow: 0 14px 26px rgba(12, 20, 34, 0.55);
 }
 
 .facing-button.selected {
-  background-color: #228b22 !important;
-  border: 2px solid #32cd32 !important;
+  background: linear-gradient(180deg, rgba(64, 201, 122, 0.95), rgba(30, 126, 75, 0.95)) !important;
+  border-color: rgba(134, 241, 181, 0.85) !important;
+  color: #012b16 !important;
+  box-shadow: 0 16px 28px rgba(50, 170, 110, 0.45);
 }
 
 /* Special styling for action buttons (remove) */
 #token-remove.facing-button {
-  background-color: #dc143c !important;
+  background: linear-gradient(180deg, rgba(247, 99, 122, 0.95), rgba(163, 9, 41, 0.95)) !important;
+  border: 2px solid rgba(255, 138, 155, 0.75) !important;
   width: 100% !important;
+  color: #fff8f8 !important;
+  box-shadow: 0 14px 26px rgba(182, 34, 68, 0.5);
 }
 
 #token-remove.facing-button:hover {
-  background-color: #f54c6b !important;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 121, 143, 0.98),
+    rgba(189, 15, 52, 0.98)
+  ) !important;
+  border-color: rgba(255, 170, 184, 0.85) !important;
+  box-shadow: 0 16px 30px rgba(189, 25, 61, 0.58);
 }
 
 #token-remove.facing-button.selected {
-  background-color: #ff4500 !important;
-  border: 2px solid #ff6347 !important;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 150, 127, 0.96),
+    rgba(219, 61, 36, 0.96)
+  ) !important;
+  border-color: rgba(255, 196, 180, 0.95) !important;
+  color: #2d0406 !important;
+  box-shadow: 0 18px 32px rgba(214, 66, 53, 0.5);
 }
 
 #token-info {
@@ -365,26 +445,41 @@ body {
 }
 
 .panel-header {
-  font-size: 16px;
-  font-weight: bold;
-  color: #4da6ff;
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #333;
+  font-size: 18px;
+  font-weight: 700;
+  color: #e5f2ff;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-bottom: none;
+  background: linear-gradient(120deg, rgba(77, 166, 255, 0.35), rgba(18, 28, 52, 0.65));
+  border-radius: 10px;
+  padding-bottom: 10px;
+  box-shadow: 0 10px 24px rgba(15, 30, 60, 0.35);
 }
 
 /* Sections within panels */
 .section {
   margin-bottom: 20px;
+  padding: 16px 18px;
+  background: linear-gradient(155deg, rgba(28, 32, 44, 0.85), rgba(14, 16, 24, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 14px;
+  box-shadow:
+    0 18px 30px rgba(9, 13, 26, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  backdrop-filter: blur(6px);
 }
 
 .section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #ccc;
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #444;
+  font-size: 15px;
+  font-weight: 700;
+  color: #f4f8ff;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
 }
 
 /* Dice Log Specific Styles */
@@ -510,51 +605,85 @@ body {
 
 /* Action Buttons */
 .action-button {
-  padding: 10px 16px;
-  background-color: #444;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  padding: 12px 18px;
+  background: linear-gradient(180deg, rgba(74, 84, 112, 0.85), rgba(36, 42, 58, 0.95));
+  color: #f5f7ff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
   width: 100%;
   margin-bottom: 6px;
-  transition: all 0.2s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+  box-shadow: 0 10px 24px rgba(10, 16, 28, 0.45);
 }
 
 .action-button:hover {
-  background-color: #555;
-  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(94, 108, 146, 0.9), rgba(44, 52, 72, 0.96));
+  transform: translateY(-2px);
+  border-color: rgba(77, 166, 255, 0.45);
+  box-shadow: 0 14px 28px rgba(12, 20, 36, 0.55);
 }
 
 .action-button.selected {
-  background-color: #4da6ff;
-  color: white;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.95), rgba(37, 96, 170, 0.95));
+  color: #ffffff;
+  border-color: rgba(123, 196, 255, 0.8);
+  box-shadow: 0 16px 30px rgba(77, 166, 255, 0.45);
+}
+
+.action-button:focus-visible {
+  outline: none;
+  border-color: rgba(134, 199, 255, 0.9);
+  box-shadow:
+    0 0 0 2px rgba(77, 166, 255, 0.35),
+    0 12px 24px rgba(18, 28, 52, 0.6);
 }
 
 /* Primary button style (matches action-button aesthetics) */
 .primary-button {
-  padding: 10px 16px;
-  background-color: #4da6ff;
+  padding: 12px 20px;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.95), rgba(35, 86, 170, 0.96));
   color: white;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid rgba(123, 196, 255, 0.85);
+  border-radius: 14px;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   width: auto;
-  transition: all 0.2s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  box-shadow: 0 12px 28px rgba(33, 87, 160, 0.5);
 }
 
 .primary-button:hover {
-  background-color: #318ce7;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  border-color: rgba(173, 216, 255, 0.95);
+  box-shadow: 0 16px 32px rgba(33, 87, 160, 0.6);
 }
 
 .primary-button:disabled {
-  background-color: #2a2a2a;
-  color: #999;
+  background: linear-gradient(180deg, rgba(28, 32, 44, 0.85), rgba(18, 20, 30, 0.92));
+  color: #8a93a5;
   cursor: not-allowed;
+  border-color: rgba(100, 114, 134, 0.35);
+  box-shadow: none;
+}
+
+.primary-button:focus-visible {
+  outline: none;
+  border-color: rgba(192, 228, 255, 0.9);
+  box-shadow:
+    0 0 0 2px rgba(126, 196, 255, 0.4),
+    0 14px 28px rgba(33, 87, 160, 0.65);
 }
 
 /* Small helper text under controls */
@@ -823,19 +952,30 @@ body {
 /* Terrain tools container */
 .terrain-tools-container {
   margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .tool-group {
-  margin-bottom: 20px;
+  margin: 0;
+  padding: 14px;
+  background: linear-gradient(160deg, rgba(22, 24, 32, 0.9), rgba(12, 13, 22, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .section-subtitle {
-  font-size: 12px;
-  color: #b0b0b0;
+  font-size: 13px;
+  color: #d6deff;
   font-weight: 600;
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
 }
 
 /* Tool buttons */
@@ -846,32 +986,48 @@ body {
 
 .terrain-tool-btn {
   flex: 1;
-  padding: 8px 12px;
-  background-color: #4a4a4a;
-  color: #e0e0e0;
-  border: 2px solid transparent;
-  border-radius: 6px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(72, 84, 110, 0.85), rgba(32, 37, 48, 0.92));
+  color: #ecf0ff;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
   text-align: center;
+  box-shadow: 0 10px 22px rgba(10, 16, 28, 0.45);
 }
 
 .terrain-tool-btn:hover {
-  background-color: #5a5a5a;
-  color: white;
+  background: linear-gradient(180deg, rgba(95, 110, 142, 0.88), rgba(40, 48, 62, 0.95));
+  transform: translateY(-2px);
+  border-color: rgba(77, 166, 255, 0.45);
+  box-shadow: 0 14px 26px rgba(12, 20, 34, 0.55);
 }
 
 .terrain-tool-btn.active {
-  background-color: #4caf50;
-  color: white;
-  border-color: #45a049;
-  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+  background: linear-gradient(180deg, rgba(110, 212, 147, 0.95), rgba(44, 140, 85, 0.95));
+  color: #0b1b0f;
+  border-color: rgba(148, 242, 189, 0.85);
+  box-shadow: 0 16px 28px rgba(56, 170, 110, 0.45);
 }
 
 .terrain-tool-btn.active:hover {
-  background-color: #45a049;
+  transform: translateY(-2px);
+  border-color: rgba(173, 255, 206, 0.9);
+}
+
+.terrain-tool-btn:focus-visible {
+  outline: none;
+  border-color: rgba(123, 196, 255, 0.8);
+  box-shadow:
+    0 0 0 2px rgba(77, 166, 255, 0.35),
+    0 14px 28px rgba(10, 16, 28, 0.55);
 }
 
 /* Brush controls */
@@ -883,22 +1039,37 @@ body {
 }
 
 .brush-btn {
-  width: 32px;
-  height: 32px;
-  background-color: #4a4a4a;
-  color: #e0e0e0;
-  border: none;
-  border-radius: 4px;
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(180deg, rgba(68, 78, 104, 0.85), rgba(30, 34, 44, 0.9));
+  color: #eaf1ff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
   cursor: pointer;
   font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  box-shadow: 0 8px 18px rgba(10, 16, 28, 0.45);
 }
 
 .brush-btn:hover {
-  background-color: #5a5a5a;
+  background: linear-gradient(180deg, rgba(86, 98, 128, 0.9), rgba(36, 42, 56, 0.96));
+  transform: translateY(-2px);
+  border-color: rgba(77, 166, 255, 0.45);
+  box-shadow: 0 12px 24px rgba(10, 16, 28, 0.55);
+}
+
+.brush-btn:focus-visible {
+  outline: none;
+  border-color: rgba(123, 196, 255, 0.85);
+  box-shadow:
+    0 0 0 2px rgba(77, 166, 255, 0.35),
+    0 10px 22px rgba(10, 16, 28, 0.55);
 }
 
 .brush-btn:active {
@@ -961,23 +1132,28 @@ body {
 }
 
 .height-scale {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(21, minmax(0, 1fr));
   margin-top: 8px;
-  padding: 4px 0;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  overflow: hidden;
+  padding: 2px 0;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .scale-mark {
-  flex: 1;
-  padding: 4px 2px;
-  font-size: 10px;
+  padding: 2px 0;
+  font-size: 9px;
+  line-height: 1.2;
   text-align: center;
-  color: #666;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.2s ease;
+  color: #c0c6d8;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+  min-width: 0;
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .scale-mark:last-child {
@@ -985,10 +1161,11 @@ body {
 }
 
 .scale-mark.current {
-  background: #4caf50;
-  color: white;
-  font-weight: bold;
-  transform: scale(1.1);
+  background: linear-gradient(180deg, rgba(76, 175, 80, 0.95), rgba(44, 121, 57, 0.95));
+  color: #f3fff2;
+  font-weight: 600;
+  transform: scale(1.05);
+  box-shadow: inset 0 0 10px rgba(30, 90, 40, 0.35);
 }
 
 /* Height indicator colors (-10..10) aligned with TERRAIN_CONFIG.HEIGHT_COLOR_SCALE */
@@ -1120,7 +1297,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 300px;
+  max-height: clamp(320px, 65vh, 560px);
   overflow-y: auto;
   padding-right: 4px;
 }
