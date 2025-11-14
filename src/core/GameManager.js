@@ -353,6 +353,20 @@ class GameManager {
     if (!this.threeSceneManager) {
       this.threeSceneManager = new ThreeSceneManager(this);
       await this.threeSceneManager.initialize();
+      if (this.threeSceneManager.degraded) {
+        const reason = this.threeSceneManager.degradeReason || 'Three.js renderer unavailable';
+        logger.log(
+          LOG_LEVEL.WARN,
+          'Hybrid 3D renderer unavailable; staying in 2D mode',
+          LOG_CATEGORY.SYSTEM,
+          {
+            context: 'GameManager.enableHybridRender',
+            reason,
+          }
+        );
+        this.threeSceneManager.ensureFallbackSurface?.();
+        return false;
+      }
     }
 
     const degraded = !!this.threeSceneManager?.degraded;
@@ -369,6 +383,7 @@ class GameManager {
         }
       );
       this.threeSceneManager.ensureFallbackSurface?.();
+      return false;
     }
 
     if (!degraded) {

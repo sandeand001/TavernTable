@@ -81,6 +81,11 @@ const MANNEQUIN_MODEL = {
       loop: 'once',
       clampWhenFinished: true,
     },
+    climbWall: {
+      path: 'assets/animated-sprites/Climbing Up Wall.fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
     climbRecover: {
       path: 'assets/animated-sprites/Crouched To Standing.fbx',
       loop: 'once',
@@ -178,6 +183,9 @@ const PATH_SPEED_MODES = {
 };
 const DEFAULT_CLIMB_DURATION = 1.2;
 const DEFAULT_CLIMB_RECOVER_DURATION = 0.95;
+const MAX_STANDARD_CLIMB_LEVELS = 5;
+const HIGH_WALL_SEGMENT_LEVELS = 4;
+const DEFAULT_CLIMB_WALL_DURATION = 1.2;
 
 export class Token3DAdapter {
   constructor(gameManager) {
@@ -455,7 +463,11 @@ export class Token3DAdapter {
     const roots = this._rootBones.get(tokenEntry);
     if (!roots || !roots.length) return;
     const state = this._movementStates.get(tokenEntry);
-    const climbTranslationActive = state?.phase === 'climb' || state?.climbActive;
+    const climbTranslationActive =
+      state?.phase === 'climb' ||
+      state?.climbActive ||
+      state?.phase === 'climb-wall' ||
+      state?.climbWallActive;
     const climbRotationActive =
       climbTranslationActive || state?.phase === 'climb-recover' || state?.climbRecoverActive;
     const preserveForFall = state?.phase === 'fall';
@@ -708,6 +720,7 @@ export class Token3DAdapter {
         pathTolerance: 0,
         pathReached: false,
         climbQueued: null,
+        climbPendingInfo: null,
         climbActive: false,
         climbElapsed: 0,
         climbDuration: 0,
@@ -715,6 +728,14 @@ export class Token3DAdapter {
         climbTargetWorld: null,
         climbFinalWorld: null,
         climbData: null,
+        climbWallQueue: null,
+        climbWallActive: false,
+        climbWallElapsed: 0,
+        climbWallDuration: 0,
+        climbWallStartWorld: null,
+        climbWallTargetWorld: null,
+        climbWallBaseDuration: 0,
+        climbWallAnimationPlaying: false,
         climbRecoverActive: false,
         climbRecoverElapsed: 0,
         climbRecoverDuration: 0,
@@ -1391,6 +1412,11 @@ export class Token3DAdapter {
         y: resolvedTargetY,
       };
 
+      const climbEligible = heightDelta >= 4;
+      const elevationUnit =
+        Number.isFinite(spatial?.elevationUnit) && spatial.elevationUnit > 0
+          ? spatial.elevationUnit
+          : 0.5;
       const toleranceBase =
         Number.isFinite(options.tolerance) && options.tolerance > 0
           ? options.tolerance
@@ -1401,7 +1427,6 @@ export class Token3DAdapter {
       let pathGoalWorld = targetWorld;
       let pathTolerance = toleranceBase;
 
-      const climbEligible = heightDelta >= 4 && heightDelta <= 5;
       if (climbEligible) {
         speedMode = PATH_SPEED_MODES.WALK;
         const stepX = Math.sign(targetGridX - currentGridX);
@@ -1469,6 +1494,11 @@ export class Token3DAdapter {
           y: targetWorld.y,
         };
 
+        const availableWallHeight = Math.max((edgeTopWorld.y ?? 0) - (footWorld.y ?? 0), 0);
+        const maxStandardWorldHeight = MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
+        const wallWorldTravel = Math.max(0, availableWallHeight - maxStandardWorldHeight);
+        const extraWallLevels = Math.max(0, heightDelta - MAX_STANDARD_CLIMB_LEVELS);
+
         state.climbQueued = {
           targetGridX,
           targetGridY,
@@ -1477,6 +1507,9 @@ export class Token3DAdapter {
           edgeWorld: edgeTopWorld,
           finalWorld: targetWorld,
           heightDelta,
+          elevationUnit,
+          extraWallLevels,
+          wallWorldTravel,
         };
 
         pathGoalGridX = approachGridX;
@@ -1834,6 +1867,18 @@ export class Token3DAdapter {
         clips.climb = climbClip.duration || 0;
       }
 
+      const climbWallClip = await this._resolveAnimationClip(
+        animationsConfig.climbWall,
+        null,
+        clipOptions
+      );
+      if (climbWallClip) {
+        const action = mixer.clipAction(climbWallClip);
+        this._configureAction(action, animationsConfig.climbWall, three, { loop: 'repeat' });
+        actions.climbWall = action;
+        clips.climbWall = climbWallClip.duration || 0;
+      }
+
       const climbRecoverClip = await this._resolveAnimationClip(
         animationsConfig.climbRecover,
         null,
@@ -2074,6 +2119,8 @@ export class Token3DAdapter {
       this._extractClipDuration(actions.drunkRunBackward) || clips.drunkRunBackward || 0;
     profile.fallClipDuration = this._extractClipDuration(actions.fall) || clips.fall || 0;
     profile.climbClipDuration = this._extractClipDuration(actions.climb) || clips.climb || 0;
+    profile.climbWallClipDuration =
+      this._extractClipDuration(actions.climbWall) || clips.climbWall || profile.climbClipDuration;
     profile.hardLandingClipDuration =
       this._extractClipDuration(actions.hardLanding) || clips.hardLanding || 0;
     profile.fallLoopClipDuration =
@@ -2253,6 +2300,9 @@ export class Token3DAdapter {
             break;
           case 'walk':
             this._advanceWalkPhase(state, delta, bounds);
+            break;
+          case 'climb-wall':
+            this._advanceClimbWallPhase(state, delta);
             break;
           case 'climb':
             this._advanceClimbPhase(state, delta);
@@ -2986,6 +3036,7 @@ export class Token3DAdapter {
   _clearClimbState(state) {
     if (!state) return;
     state.climbQueued = null;
+    state.climbPendingInfo = null;
     state.climbActive = false;
     state.climbElapsed = 0;
     state.climbDuration = 0;
@@ -2993,6 +3044,14 @@ export class Token3DAdapter {
     state.climbTargetWorld = null;
     state.climbFinalWorld = null;
     state.climbData = null;
+    state.climbWallQueue = null;
+    state.climbWallActive = false;
+    state.climbWallElapsed = 0;
+    state.climbWallDuration = 0;
+    state.climbWallStartWorld = null;
+    state.climbWallTargetWorld = null;
+    state.climbWallBaseDuration = 0;
+    state.climbWallAnimationPlaying = false;
     state.climbRecoverActive = false;
     state.climbRecoverElapsed = 0;
     state.climbRecoverDuration = 0;
@@ -3035,13 +3094,21 @@ export class Token3DAdapter {
     this._finishWalkState(state);
   }
 
-  _startClimbPhase(state, climbInfo) {
+  _startClimbPhase(state, climbInfo, options = {}) {
     if (!state || !climbInfo) {
       this._finishWalkState(state);
       return;
     }
 
     const animationData = this._tokenAnimationData.get(state.token);
+
+    if (!options?.skipWallPlan) {
+      const planned = this._maybeStartClimbWallSequence(state, climbInfo, animationData);
+      if (planned) {
+        return;
+      }
+    }
+
     const climbAction = animationData?.actions?.climb || null;
     const profile = animationData?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
     let duration = this._extractClipDuration(climbAction) || profile?.climbClipDuration || 0;
@@ -3092,6 +3159,245 @@ export class Token3DAdapter {
     } else {
       this._completeClimbInstant(state);
     }
+  }
+
+  _maybeStartClimbWallSequence(state, climbInfo, animationData) {
+    if (!state || !climbInfo) return false;
+    const plan = this._planClimbWallSegments(state, climbInfo, animationData);
+    if (!plan || !plan.segments?.length) {
+      return false;
+    }
+
+    const queue = plan.segments.map((segment) => ({
+      startWorld: segment.startWorld ? { ...segment.startWorld } : null,
+      targetWorld: segment.targetWorld ? { ...segment.targetWorld } : null,
+      ratio: Number.isFinite(segment.ratio) ? segment.ratio : 1,
+    }));
+
+    if (!queue.length) {
+      return false;
+    }
+
+    const clampedDelta = Math.min(
+      MAX_STANDARD_CLIMB_LEVELS,
+      Math.max(Number(climbInfo.heightDelta) || 0, 0)
+    );
+    const pendingInfo = {
+      ...climbInfo,
+      footWorld: plan.finalStartWorld ? { ...plan.finalStartWorld } : climbInfo.footWorld,
+      heightDelta: clampedDelta,
+      extraWallLevels: 0,
+      wallWorldTravel: 0,
+    };
+
+    state.climbPendingInfo = pendingInfo;
+    state.climbWallQueue = queue;
+    state.climbWallBaseDuration = plan.baseDuration;
+    state.climbWallActive = false;
+    state.climbWallElapsed = 0;
+    state.climbWallDuration = 0;
+    state.climbWallStartWorld = null;
+    state.climbWallTargetWorld = null;
+    state.climbWallAnimationPlaying = false;
+
+    return this._startNextClimbWallSegment(state, animationData);
+  }
+
+  _planClimbWallSegments(state, climbInfo, animationData) {
+    if (!state || !climbInfo) return null;
+    const totalHeight = Number.isFinite(climbInfo.heightDelta) ? climbInfo.heightDelta : 0;
+    if (!(totalHeight > MAX_STANDARD_CLIMB_LEVELS)) return null;
+    if (!animationData?.actions?.climbWall) return null;
+
+    const footWorld =
+      climbInfo.footWorld || state.climbLastWorld || this._resolveTokenWorldPosition(state.token);
+    const edgeWorld = climbInfo.edgeWorld || climbInfo.finalWorld;
+    if (!footWorld || !edgeWorld) return null;
+
+    const elevationUnit =
+      Number.isFinite(climbInfo.elevationUnit) && climbInfo.elevationUnit > 0
+        ? climbInfo.elevationUnit
+        : this.gameManager?.spatial?.elevationUnit || 0.5;
+    const referenceHeight = Math.max(HIGH_WALL_SEGMENT_LEVELS * elevationUnit, 1e-4);
+    const baseDuration =
+      this._extractClipDuration(animationData.actions.climbWall) ||
+      animationData?.profile?.climbWallClipDuration ||
+      animationData?.profile?.climbClipDuration ||
+      DEFAULT_CLIMB_WALL_DURATION;
+
+    const availableWallHeight = Math.max((edgeWorld.y ?? 0) - (footWorld.y ?? 0), 0);
+    const maxStandardWorldHeight = MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
+    const defaultWallTravel = Math.max(availableWallHeight - maxStandardWorldHeight, 0);
+    const requestedWallTravel = Number.isFinite(climbInfo.wallWorldTravel)
+      ? Math.max(climbInfo.wallWorldTravel, 0)
+      : defaultWallTravel;
+    const travelWorld = Math.min(Math.max(requestedWallTravel, 0), defaultWallTravel);
+    if (!(travelWorld > 1e-4)) {
+      return null;
+    }
+
+    const segments = [];
+    let remaining = travelWorld;
+    let cursor = { ...footWorld };
+    let guard = 0;
+
+    while (remaining > 1e-4 && guard < 32) {
+      const portion = Math.min(referenceHeight, remaining);
+      const target = {
+        x: cursor.x,
+        z: cursor.z,
+        y: cursor.y + portion,
+      };
+      const ratio = referenceHeight > 1e-4 ? portion / referenceHeight : 1;
+      segments.push({
+        startWorld: { ...cursor },
+        targetWorld: target,
+        ratio,
+      });
+      cursor = { ...target };
+      remaining -= portion;
+      guard += 1;
+    }
+
+    if (!segments.length) {
+      return null;
+    }
+
+    return {
+      segments,
+      finalStartWorld: cursor,
+      baseDuration,
+      referenceHeight,
+    };
+  }
+
+  _startNextClimbWallSegment(state, animationData) {
+    if (!state) return false;
+    if (!Array.isArray(state.climbWallQueue) || state.climbWallQueue.length === 0) {
+      this._resumeStandardClimbAfterWall(state);
+      return false;
+    }
+
+    const segment = state.climbWallQueue.shift();
+    if (!segment?.startWorld || !segment?.targetWorld) {
+      this._resumeStandardClimbAfterWall(state);
+      return false;
+    }
+
+    const data = animationData || this._tokenAnimationData.get(state.token);
+    const profile = data?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const baseDuration =
+      state.climbWallBaseDuration && state.climbWallBaseDuration > 1e-4
+        ? state.climbWallBaseDuration
+        : profile?.climbWallClipDuration || DEFAULT_CLIMB_WALL_DURATION;
+    const ratio = Number.isFinite(segment.ratio) && segment.ratio > 1e-4 ? segment.ratio : 1;
+
+    state.phase = 'climb-wall';
+    state.climbWallActive = true;
+    state.climbWallElapsed = 0;
+    state.climbWallDuration = Math.max(baseDuration * ratio, 1e-4);
+    state.climbWallStartWorld = { ...segment.startWorld };
+    state.climbWallTargetWorld = { ...segment.targetWorld };
+    state.climbLastWorld = { ...segment.startWorld };
+    state.phaseElapsed = 0;
+
+    const fadeIn = profile?.climbWallFadeIn ?? profile.walkFadeIn ?? 0.18;
+    const fadeOut = profile?.climbWallFadeOut ?? profile.walkFadeOut ?? 0.18;
+    if (!state.climbWallAnimationPlaying) {
+      this._setAnimation(state.token, 'climbWall', { fadeIn, fadeOut, force: true });
+      state.climbWallAnimationPlaying = true;
+    }
+
+    return true;
+  }
+
+  _advanceClimbWallPhase(state, delta) {
+    if (!state?.climbWallActive) {
+      this._resumeStandardClimbAfterWall(state);
+      return;
+    }
+
+    const duration = state.climbWallDuration || this._resolveClimbWallDuration(state);
+    if (!(duration > 1e-4)) {
+      state.climbWallActive = false;
+      this._resumeStandardClimbAfterWall(state);
+      return;
+    }
+
+    state.climbWallElapsed = Math.min(state.climbWallElapsed + Math.max(delta, 0), duration);
+    const anchorWorld =
+      state.climbWallStartWorld ||
+      state.climbLastWorld ||
+      this._resolveTokenWorldPosition(state.token);
+    const targetWorld = state.climbWallTargetWorld || anchorWorld;
+
+    if (anchorWorld && state.mesh?.position?.set) {
+      const composed = this._composeMeshPosition(anchorWorld, state.mesh);
+      state.mesh.position.set(composed.x, composed.y, composed.z);
+    }
+
+    if (anchorWorld && targetWorld) {
+      const progress = duration > 1e-4 ? state.climbWallElapsed / duration : 1;
+      const currentWorld = this._lerp3(anchorWorld, targetWorld, progress);
+      this._updateTokenWorldDuringMovement(state.token, currentWorld);
+      state.climbLastWorld = { ...currentWorld };
+    }
+
+    if (state.climbWallElapsed >= duration - 1e-4) {
+      state.climbWallActive = false;
+      const animationData = this._tokenAnimationData.get(state.token);
+      this._startNextClimbWallSegment(state, animationData);
+    }
+  }
+
+  _resumeStandardClimbAfterWall(state) {
+    if (!state) return;
+    const pending = state.climbPendingInfo
+      ? {
+          ...state.climbPendingInfo,
+          footWorld: state.climbPendingInfo.footWorld
+            ? { ...state.climbPendingInfo.footWorld }
+            : null,
+          edgeWorld: state.climbPendingInfo.edgeWorld
+            ? { ...state.climbPendingInfo.edgeWorld }
+            : null,
+          finalWorld: state.climbPendingInfo.finalWorld
+            ? { ...state.climbPendingInfo.finalWorld }
+            : null,
+        }
+      : null;
+
+    state.climbWallQueue = null;
+    state.climbWallActive = false;
+    state.climbWallElapsed = 0;
+    state.climbWallDuration = 0;
+    state.climbWallStartWorld = null;
+    state.climbWallTargetWorld = null;
+    state.climbWallAnimationPlaying = false;
+
+    if (pending) {
+      state.climbPendingInfo = null;
+      this._startClimbPhase(state, pending, { skipWallPlan: true });
+    } else if (!state.climbActive && !state.climbRecoverActive) {
+      this._finishWalkState(state);
+    }
+  }
+
+  _resolveClimbWallDuration(state) {
+    if (!state) return DEFAULT_CLIMB_WALL_DURATION;
+    if (state.climbWallBaseDuration && state.climbWallBaseDuration > 1e-4) {
+      return state.climbWallBaseDuration;
+    }
+    const animationData = this._tokenAnimationData.get(state.token);
+    const actionDuration = this._extractClipDuration(animationData?.actions?.climbWall) || 0;
+    if (actionDuration > 1e-4) {
+      return actionDuration;
+    }
+    const profileDuration = animationData?.profile?.climbWallClipDuration;
+    if (profileDuration > 1e-4) {
+      return profileDuration;
+    }
+    return DEFAULT_CLIMB_WALL_DURATION;
   }
 
   _advanceClimbPhase(state, delta) {
@@ -4038,7 +4344,9 @@ export class Token3DAdapter {
     const mesh = tokenEntry?.__threeMesh;
     const globalFlip = this._getGlobalFacingRight() ? 0 : Math.PI;
 
-    if (mesh && mesh.userData?.__tt3DToken) {
+    const is3DToken = !!mesh?.userData?.__tt3DToken;
+
+    if (mesh && is3DToken) {
       const baseYaw = mesh.userData.__ttBaseYaw || 0;
       const yaw = baseYaw + globalFlip + angle;
       try {
@@ -4050,10 +4358,7 @@ export class Token3DAdapter {
       } catch (_) {
         /* ignore mesh rotation errors */
       }
-      return;
-    }
-
-    if (mesh) {
+    } else if (mesh) {
       this._applyBillboardFacing(mesh, globalFlip);
     }
 
@@ -4148,6 +4453,7 @@ export class Token3DAdapter {
 
   async _ensureSelectionIndicator(tokenEntry) {
     if (!tokenEntry || !tokenEntry.__threeMesh) return null;
+    if (tokenEntry.__threeMesh.userData?.__tt3DToken === false) return null;
     if (tokenEntry.__ttSelectionIndicator) return tokenEntry.__ttSelectionIndicator;
     const three = await this._getThree();
     if (!three) return null;
@@ -4179,7 +4485,7 @@ export class Token3DAdapter {
   _refreshVisualState(tokenEntry) {
     const mesh = tokenEntry?.__threeMesh;
     if (!mesh) return;
-    const is3DToken = !!mesh.userData?.__tt3DToken;
+    const is3DToken = mesh.userData?.__tt3DToken !== false;
 
     if (this._selectedToken === tokenEntry) {
       this._restoreMaterial(mesh);

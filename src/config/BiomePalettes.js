@@ -523,6 +523,15 @@ const SUBTERRANEAN_BIOMES = new Set([
   'eldritchRift',
 ]);
 
+function resolveRichShadingSetting(key, fallback) {
+  if (typeof window === 'undefined') return fallback;
+  const value = window?.richShadingSettings?.[key];
+  return Number.isFinite(value) ? value : fallback;
+}
+
+const DEFAULT_SHORELINE_SAND_STRENGTH = resolveRichShadingSetting('shorelineSandStrength', 1.0);
+const DEFAULT_RICH_SHADING_INTENSITY = resolveRichShadingSetting('intensity', 1.0);
+
 function normalizeBiomeKey(biomeKey) {
   const raw = String(biomeKey || '');
   const lc = raw.toLowerCase().replace(/\s+/g, '');
@@ -608,14 +617,8 @@ function computePainterlyColor(biomeKey, height, x = 0, y = 0, opts = {}) {
     aspectRad = 0.0,
     seed = 1337,
     mapFreq = 0.05,
-    shorelineSandStrength = typeof window !== 'undefined' &&
-    Number.isFinite(window?.richShadingSettings?.shorelineSandStrength)
-      ? window.richShadingSettings.shorelineSandStrength
-      : 1.0,
-    intensity = typeof window !== 'undefined' &&
-    Number.isFinite(window?.richShadingSettings?.intensity)
-      ? window.richShadingSettings.intensity
-      : 1.0,
+    shorelineSandStrength = DEFAULT_SHORELINE_SAND_STRENGTH,
+    intensity = DEFAULT_RICH_SHADING_INTENSITY,
   } = opts;
 
   const key = normalizeBiomeKey(biomeKey);

@@ -497,6 +497,12 @@ export class ThreeSceneManager {
     } catch (_) {
       /* ignore */
     }
+    if (!this.scene) {
+      this.scene = { children: [], isPlaceholderScene: true };
+    }
+    if (!this.camera) {
+      this.camera = { isPlaceholderCamera: true };
+    }
     try {
       logger.log(
         LOG_LEVEL.WARN,
