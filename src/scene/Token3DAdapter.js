@@ -3226,17 +3226,13 @@ export class Token3DAdapter {
       this._updateTokenWorldDuringMovement(state.token, startWorld);
       if (state.mesh?.position?.set) {
         const anchor = state.climbRecoverAnchorPosition;
-        if (
+        const hasAnchor =
           anchor &&
           Number.isFinite(anchor.x) &&
           Number.isFinite(anchor.y) &&
-          Number.isFinite(anchor.z)
-        ) {
-          state.mesh.position.set(anchor.x, anchor.y, anchor.z);
-        } else {
-          const composed = this._composeMeshPosition(startWorld, state.mesh);
-          state.mesh.position.set(composed.x, composed.y, composed.z);
-        }
+          Number.isFinite(anchor.z);
+        const composed = hasAnchor ? anchor : this._composeMeshPosition(startWorld, state.mesh);
+        state.mesh.position.set(composed.x, composed.y, composed.z);
       }
       state.climbLastWorld = { ...startWorld };
     }
