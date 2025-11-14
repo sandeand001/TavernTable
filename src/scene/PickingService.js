@@ -199,9 +199,22 @@ export class PickingService {
       }
     }
 
+    let tokenResult = null;
+    try {
+      const adapter = gm?.token3DAdapter;
+      if (adapter?.pickTokenByRay) {
+        tokenResult = adapter.pickTokenByRay(this._raycaster) || null;
+      }
+    } catch (_) {
+      tokenResult = null;
+    }
+
     return {
       world: { x: worldX, y: worldY, z: worldZ },
       grid: { gx: grid.gridX, gy: grid.gridY },
+      token: tokenResult?.token || null,
+      tokenHitPoint: tokenResult?.point || null,
+      tokenDistance: Number.isFinite(tokenResult?.distance) ? tokenResult.distance : null,
       metrics: { raycasts: this._metrics.raycasts },
     };
   }

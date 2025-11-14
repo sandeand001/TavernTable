@@ -25,11 +25,6 @@ import {
   resetZoom as _resetZoom,
 } from './interaction-manager/internals/zoom.js';
 
-const MOVE_FORWARD_CODES = new Set(['ArrowUp', 'KeyW']);
-const MOVE_BACKWARD_CODES = new Set(['ArrowDown', 'KeyS']);
-const ROTATE_LEFT_CODES = new Set(['ArrowLeft', 'KeyA']);
-const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
-
 export class InteractionManager {
   constructor(gameManager) {
     // Core refs
@@ -57,6 +52,14 @@ export class InteractionManager {
     this.minScale = 0.2;
     this.maxScale = 3.0;
     this.zoomSpeed = 0.1;
+
+    // Track active pointer drag state so right-drag panning persists outside the canvas
+    this._activeDragButton = null;
+    this._globalMouseMoveListening = false;
+    this._globalMouseUpListening = false;
+    this._boundGlobalMouseMove = this._handleGlobalMouseMove.bind(this);
+    this._boundGlobalMouseUp = this._handleGlobalMouseUp.bind(this);
+    this._pointerScratch = { x: 0, y: 0 };
   }
 
   /**
@@ -68,13 +71,12 @@ export class InteractionManager {
     this.setupKeyboardInteractions();
     this.setupZoomInteraction();
   }
-
   /**
    * Disable browser context menu
    */
   setupContextMenu() {
-    this.gameManager.app.view.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
+    this.gameManager.app.view.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
     });
   }
 
@@ -92,22 +94,27 @@ export class InteractionManager {
    * Handle mouse down events
    */
   setupMouseDown() {
-    this.gameManager.app.view.addEventListener('mousedown', (event) => {
-      if (event.button === 0) {
-        // Left mouse button
-        if (this.isSpacePressed) {
-          // If 3D manager present, rotate camera instead of panning the 2D grid.
-          const threeMgr = this.gameManager?.threeSceneManager;
-          if (threeMgr && threeMgr.camera) {
-            this.start3DRotation(event, threeMgr);
-          } else {
-            this.startGridDragging(event);
-          }
+    const view = this.gameManager.app.view;
+    view.addEventListener('mousedown', (event) => {
+      if (event.button === 2) {
+        // Right mouse button mirrors space+left behavior for panning/rotation
+        this._activeDragButton = 2;
+        const threeMgr = this.gameManager?.threeSceneManager;
+        if (threeMgr && threeMgr.camera) {
+          this.start3DRotation(event, threeMgr);
         } else {
-          // Regular left click = token placement
-          this.handleLeftClick(event);
+          this.startGridDragging(event);
         }
+        this._ensureGlobalDragListeners();
+        return;
       }
+
+      if (event.button !== 0) {
+        return;
+      }
+
+      // Regular left click = token placement
+      this.handleLeftClick(event);
     });
   }
 
@@ -115,10 +122,14 @@ export class InteractionManager {
    * Handle mouse move events
    */
   setupMouseMove() {
-    this.gameManager.app.view.addEventListener('mousemove', (event) => {
+    const view = this.gameManager.app.view;
+    view.addEventListener('mousemove', (event) => {
       if (this.isRotating3D) {
         this.update3DRotation(event);
-      } else if (this.isDragging) {
+        return;
+      }
+
+      if (this.isDragging) {
         this.updateGridDragPosition(event);
       }
     });
@@ -128,7 +139,18 @@ export class InteractionManager {
    * Handle mouse up events
    */
   setupMouseUp() {
-    this.gameManager.app.view.addEventListener('mouseup', (event) => {
+    const view = this.gameManager.app.view;
+    view.addEventListener('mouseup', (event) => {
+      if (event.button === 2) {
+        if (this.isRotating3D) {
+          this.stop3DRotation();
+        } else if (this.isDragging) {
+          this.stopGridDragging();
+        }
+        event.preventDefault();
+        return;
+      }
+
       if (event.button === 0) {
         if (this.isRotating3D) {
           this.stop3DRotation();
@@ -143,11 +165,10 @@ export class InteractionManager {
    * Handle mouse leave events
    */
   setupMouseLeave() {
-    this.gameManager.app.view.addEventListener('mouseleave', () => {
-      if (this.isRotating3D) {
-        this.stop3DRotation();
-      } else if (this.isDragging) {
-        this.stopGridDragging();
+    const view = this.gameManager.app.view;
+    view.addEventListener('mouseleave', () => {
+      if (this.isDragging || this.isRotating3D) {
+        this._ensureGlobalDragListeners();
       }
     });
   }
@@ -156,52 +177,20 @@ export class InteractionManager {
    * Set up keyboard interactions
    */
   setupKeyboardInteractions() {
-    // Space bar for panning
     document.addEventListener('keydown', (event) => {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(true);
-        return;
-      }
-      if (this._handleTokenMovementKeyDown(event)) {
-        event.preventDefault();
-        return;
-      }
-      if (this._handleTokenRotationKeyDown(event)) {
-        event.preventDefault();
-        return;
-      }
-      if (event.code === 'Space' && !event.repeat) {
-        this.isSpacePressed = true;
-        if (!this.isDragging && !this.isRotating3D) {
-          this.gameManager.app.view.style.cursor = 'grab'; // initial visual; switches to grabbing when active
-        }
-        event.preventDefault();
       }
     });
 
     document.addEventListener('keyup', (event) => {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(false);
-        return;
-      }
-      if (this._handleTokenMovementKeyUp(event)) {
-        event.preventDefault();
-        return;
-      }
-      if (this._handleTokenRotationKeyUp(event)) {
-        event.preventDefault();
-        return;
-      }
-      if (event.code === 'Space') {
-        this.isSpacePressed = false;
-        if (!this.isDragging && !this.isRotating3D) {
-          this.gameManager.app.view.style.cursor = 'default';
-        }
       }
     });
   }
 
-  /** Begin 3D camera rotation (space + drag) */
+  /** Begin 3D camera rotation (right mouse drag) */
   start3DRotation(event, threeMgr) {
     try {
       this.isRotating3D = true;
@@ -252,7 +241,9 @@ export class InteractionManager {
   /** End 3D rotation */
   stop3DRotation() {
     this.isRotating3D = false;
-    this.gameManager.app.view.style.cursor = this.isSpacePressed ? 'grab' : 'default';
+    this._activeDragButton = null;
+    this._removeGlobalDragListeners();
+    this.gameManager.app.view.style.cursor = 'default';
   }
 
   /**
@@ -275,122 +266,79 @@ export class InteractionManager {
    * Stop grid dragging interaction
    */
   stopGridDragging() {
-    return _stopDrag(this);
+    const result = _stopDrag(this);
+    this._activeDragButton = null;
+    this._removeGlobalDragListeners();
+    return result;
   }
 
-  _handleTokenRotationKeyDown(event) {
-    try {
-      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
-        return false;
-      }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      if (this._shouldIgnoreKeyTarget(event.target)) {
-        return false;
-      }
-
-      const gm = this.gameManager;
-      if (!gm?.tokenManager) return false;
-      const adapter = gm.token3DAdapter;
-      const selectedToken = adapter?.getSelectedToken?.();
-      if (!selectedToken) return false;
-
-      if (event.repeat) {
-        return true;
-      }
-
-      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
-      if (adapter?.beginRotation) {
-        adapter.beginRotation(selectedToken, direction, event.code);
-        return true;
-      }
-      return true;
-    } catch (_) {
-      return false;
+  _handleGlobalMouseMove(event) {
+    if (this.isRotating3D) {
+      this.update3DRotation(event);
+      return;
+    }
+    if (this.isDragging) {
+      this.updateGridDragPosition(event);
     }
   }
 
-  _handleTokenRotationKeyUp(event) {
-    try {
-      if (!event || (!ROTATE_LEFT_CODES.has(event.code) && !ROTATE_RIGHT_CODES.has(event.code))) {
-        return false;
+  _handleGlobalMouseUp(event) {
+    if (this._activeDragButton === null) {
+      this._removeGlobalDragListeners();
+      return;
+    }
+
+    const matchingButton = event.button === this._activeDragButton;
+    const noButtonsPressed = event.buttons === 0;
+    if (!matchingButton && !noButtonsPressed) {
+      return;
+    }
+
+    if (this._activeDragButton === 0) {
+      if (this.isRotating3D) {
+        this.stop3DRotation();
+      } else if (this.isDragging) {
+        this.stopGridDragging();
+      } else {
+        this._activeDragButton = null;
+        this._removeGlobalDragListeners();
       }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      const adapter = this.gameManager?.token3DAdapter;
-      if (!adapter?.endRotation) return false;
-      const selectedToken = adapter.getSelectedToken?.();
-      if (!selectedToken) return false;
-      const direction = ROTATE_RIGHT_CODES.has(event.code) ? 1 : -1;
-      adapter.endRotation(selectedToken, direction, event.code);
-      return true;
-    } catch (_) {
-      return false;
+      return;
+    }
+
+    if (this._activeDragButton === 2 && this.isDragging) {
+      this.stopGridDragging();
+      return;
+    }
+
+    if (this._activeDragButton === 2 && this.isRotating3D) {
+      this.stop3DRotation();
+      return;
+    }
+
+    this._activeDragButton = null;
+    this._removeGlobalDragListeners();
+  }
+
+  _ensureGlobalDragListeners() {
+    if (!this._globalMouseMoveListening) {
+      document.addEventListener('mousemove', this._boundGlobalMouseMove);
+      this._globalMouseMoveListening = true;
+    }
+    if (!this._globalMouseUpListening) {
+      document.addEventListener('mouseup', this._boundGlobalMouseUp);
+      this._globalMouseUpListening = true;
     }
   }
 
-  _handleTokenMovementKeyDown(event) {
-    try {
-      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
-        return false;
-      }
-      if (event.repeat) {
-        return false;
-      }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      if (this._shouldIgnoreKeyTarget(event.target)) {
-        return false;
-      }
-
-      const adapter = this.gameManager?.token3DAdapter;
-      if (!adapter?.beginForwardMovement) return false;
-      if (typeof adapter.setShiftModifier === 'function') {
-        adapter.setShiftModifier(!!event.shiftKey);
-      }
-      const selectedToken = adapter.getSelectedToken?.();
-      if (!selectedToken) return false;
-      const direction = MOVE_BACKWARD_CODES.has(event.code) ? -1 : 1;
-      if (direction > 0 && adapter.beginForwardMovement) {
-        adapter.beginForwardMovement(selectedToken, event.code);
-        return true;
-      }
-      if (direction < 0 && adapter.beginBackwardMovement) {
-        adapter.beginBackwardMovement(selectedToken, event.code);
-        return true;
-      }
-      return false;
-    } catch (_) {
-      return false;
+  _removeGlobalDragListeners() {
+    if (this._globalMouseMoveListening) {
+      document.removeEventListener('mousemove', this._boundGlobalMouseMove);
+      this._globalMouseMoveListening = false;
     }
-  }
-
-  _handleTokenMovementKeyUp(event) {
-    try {
-      if (!event || (!MOVE_FORWARD_CODES.has(event.code) && !MOVE_BACKWARD_CODES.has(event.code))) {
-        return false;
-      }
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      const adapter = this.gameManager?.token3DAdapter;
-      if (!adapter) return false;
-      const selectedToken = adapter.getSelectedToken?.();
-      if (!selectedToken) return false;
-      if (MOVE_FORWARD_CODES.has(event.code) && adapter.endForwardMovement) {
-        adapter.endForwardMovement(selectedToken, event.code);
-        return true;
-      }
-      if (MOVE_BACKWARD_CODES.has(event.code) && adapter.endBackwardMovement) {
-        adapter.endBackwardMovement(selectedToken, event.code);
-        return true;
-      }
-      return false;
-    } catch (_) {
-      return false;
+    if (this._globalMouseUpListening) {
+      document.removeEventListener('mouseup', this._boundGlobalMouseUp);
+      this._globalMouseUpListening = false;
     }
   }
 
@@ -474,12 +422,10 @@ export class InteractionManager {
           placeableSelected: !!placeableSelected,
           placeablesPanelVisible: !!panelVisible,
         });
-
-        // Provide visual feedback through cursor change or similar
         try {
           this.gameManager.app.view.style.cursor = 'not-allowed';
         } catch (_) {
-          /* ignore UI failures */
+          /* ignore */
         }
         const t = setTimeout(() => {
           try {
@@ -489,53 +435,62 @@ export class InteractionManager {
           }
         }, 200);
         if (typeof t?.unref === 'function') t.unref();
-
         return;
       }
 
-      const attempt2DPlacement = () => {
-        const gridCoords = this.getGridCoordinatesFromClick(event);
-        if (!gridCoords) {
-          const errorHandler = new ErrorHandler();
-          errorHandler.handle(
-            new Error('Click outside valid grid area'),
-            ERROR_SEVERITY.INFO,
-            ERROR_CATEGORY.VALIDATION,
-            {
-              event: { x: event.clientX, y: event.clientY },
+      const gm = this.gameManager;
+      const selectedTokenType =
+        typeof gm?.selectedTokenType === 'string' ? gm.selectedTokenType : null;
+      const isRemoveMode = selectedTokenType === 'remove';
+
+      Promise.resolve(this._resolvePointerTarget(event))
+        .then((target) => {
+          const safeTarget = target || {};
+          const gridX = Number.isFinite(safeTarget.gridX) ? safeTarget.gridX : null;
+          const gridY = Number.isFinite(safeTarget.gridY) ? safeTarget.gridY : null;
+          const tokenEntry = safeTarget.token || null;
+
+          if (isRemoveMode) {
+            if (gridX != null && gridY != null) {
+              gm.handleTokenInteraction(gridX, gridY);
             }
-          );
-          return;
-        }
+            return;
+          }
 
-        const { gridX, gridY } = gridCoords;
-        this.gameManager.handleTokenInteraction(gridX, gridY);
-      };
+          if (tokenEntry) {
+            this._selectTokenEntry(tokenEntry);
+            return;
+          }
 
-      const canUse3D =
-        typeof this.gameManager?.is3DModeActive === 'function' &&
-        this.gameManager.is3DModeActive() &&
-        this.gameManager.pickingService &&
-        typeof this.gameManager.placeTokenAtPointer === 'function';
+          const adapter = gm?.token3DAdapter;
+          const selectedToken = adapter?.getSelectedToken?.() || null;
+          const canNavigate =
+            selectedToken &&
+            adapter?.navigateToGrid &&
+            typeof adapter.navigateToGrid === 'function' &&
+            gm?.is3DModeActive?.() &&
+            gridX != null &&
+            gridY != null;
 
-      if (canUse3D) {
-        try {
-          Promise.resolve(this.gameManager.placeTokenAtPointer(event.clientX, event.clientY))
-            .then((placed) => {
-              if (!placed) {
-                attempt2DPlacement();
-              }
-            })
-            .catch(() => {
-              attempt2DPlacement();
+          if (canNavigate) {
+            const result = adapter.navigateToGrid(selectedToken, gridX, gridY);
+            if (result) {
+              return;
+            }
+          }
+
+          this._clearTokenSelection();
+        })
+        .catch((error) => {
+          try {
+            new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
+              stage: 'resolvePointerTarget',
+              event: { button: event.button, x: event.clientX, y: event.clientY },
             });
-        } catch (_) {
-          attempt2DPlacement();
-        }
-        return;
-      }
-
-      attempt2DPlacement();
+          } catch (_) {
+            /* ignore secondary errors */
+          }
+        });
     } catch (error) {
       const errorHandler = new ErrorHandler();
       errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
@@ -572,6 +527,191 @@ export class InteractionManager {
         event: event ? { x: event.clientX, y: event.clientY } : null,
       });
       return null;
+    }
+  }
+
+  async _resolvePointerTarget(event) {
+    const gm = this.gameManager;
+    let gridX = null;
+    let gridY = null;
+    let token = null;
+
+    const spriteToken = this._pickTokenBySprite(event);
+    if (spriteToken) {
+      token = spriteToken;
+      if (Number.isFinite(spriteToken.gridX)) {
+        gridX = spriteToken.gridX;
+      }
+      if (Number.isFinite(spriteToken.gridY)) {
+        gridY = spriteToken.gridY;
+      }
+    }
+
+    const canUse3D =
+      typeof gm?.is3DModeActive === 'function' &&
+      gm.is3DModeActive() &&
+      gm.pickingService &&
+      typeof gm.pickingService.pickGround === 'function';
+
+    let groundPick = null;
+    if (canUse3D) {
+      try {
+        groundPick = await gm.pickingService.pickGround(event.clientX, event.clientY);
+      } catch (_) {
+        groundPick = null;
+      }
+
+      if (groundPick?.token && !token) {
+        token = groundPick.token;
+      }
+
+      if (groundPick?.grid) {
+        const gx = Math.round(groundPick.grid.gx);
+        const gy = Math.round(groundPick.grid.gy);
+        if (Number.isFinite(gx) && Number.isFinite(gy)) {
+          gridX = gx;
+          gridY = gy;
+        }
+      }
+    }
+
+    if ((!Number.isFinite(gridX) || !Number.isFinite(gridY)) && token) {
+      if (Number.isFinite(token.gridX)) {
+        gridX = token.gridX;
+      }
+      if (Number.isFinite(token.gridY)) {
+        gridY = token.gridY;
+      }
+    }
+
+    if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
+      const gridCoords = this.getGridCoordinatesFromClick(event);
+      if (gridCoords) {
+        gridX = gridCoords.gridX;
+        gridY = gridCoords.gridY;
+      }
+    }
+
+    if (!token && Number.isFinite(gridX) && Number.isFinite(gridY)) {
+      try {
+        token = gm?.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
+      } catch (_) {
+        token = null;
+      }
+    }
+
+    return {
+      gridX: Number.isFinite(gridX) ? gridX : null,
+      gridY: Number.isFinite(gridY) ? gridY : null,
+      token,
+    };
+  }
+
+  _pickTokenBySprite(event) {
+    try {
+      const gm = this.gameManager;
+      const tokens = gm?.placedTokens;
+      if (!tokens || !tokens.length) {
+        return null;
+      }
+
+      const renderer = gm?.app?.renderer;
+      const interaction = renderer?.plugins?.interaction;
+      if (!interaction || typeof interaction.mapPositionToPoint !== 'function') {
+        return null;
+      }
+
+      const point = this._pointerScratch;
+      point.x = 0;
+      point.y = 0;
+      interaction.mapPositionToPoint(point, event.clientX, event.clientY);
+
+      const spriteMap = new WeakMap();
+      const register = (displayObject, tokenEntry) => {
+        if (!displayObject) return;
+        spriteMap.set(displayObject, tokenEntry);
+        const children = displayObject.children;
+        if (Array.isArray(children)) {
+          for (const child of children) {
+            register(child, tokenEntry);
+          }
+        }
+      };
+
+      for (const token of tokens) {
+        const sprite = token?.creature?.sprite;
+        if (sprite) {
+          register(sprite, token);
+        }
+      }
+
+      const stage = gm?.app?.stage;
+      if (stage && typeof interaction.hitTest === 'function') {
+        const hit = interaction.hitTest(point, stage, event);
+        let current = hit;
+        while (current) {
+          const tokenEntry = spriteMap.get(current) || current.tokenData || null;
+          if (tokenEntry) {
+            return tokenEntry;
+          }
+          current = current.parent;
+        }
+      }
+
+      let bestToken = null;
+      let bestScore = -Infinity;
+
+      for (const tokenEntry of tokens) {
+        const sprite = tokenEntry?.creature?.sprite;
+        if (!sprite || !sprite.parent || !sprite.visible) {
+          continue;
+        }
+        if (sprite.worldAlpha <= 0 || sprite.renderable === false) {
+          continue;
+        }
+        if (typeof sprite.getBounds !== 'function') {
+          continue;
+        }
+
+        let bounds;
+        try {
+          bounds = sprite.getBounds(false);
+        } catch (_) {
+          bounds = null;
+        }
+        if (!bounds || !bounds.contains(point.x, point.y)) {
+          continue;
+        }
+
+        const score = Number.isFinite(sprite.zIndex)
+          ? sprite.zIndex
+          : Number.isFinite(sprite.y)
+            ? sprite.y
+            : 0;
+        if (bestToken == null || score >= bestScore) {
+          bestToken = tokenEntry;
+          bestScore = score;
+        }
+      }
+
+      return bestToken;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _selectTokenEntry(tokenEntry) {
+    if (!tokenEntry) return;
+    const adapter = this.gameManager?.token3DAdapter;
+    if (adapter?.setSelectedToken) {
+      adapter.setSelectedToken(tokenEntry);
+    }
+  }
+
+  _clearTokenSelection() {
+    const adapter = this.gameManager?.token3DAdapter;
+    if (adapter?.setSelectedToken) {
+      adapter.setSelectedToken(null);
     }
   }
 

@@ -34,9 +34,103 @@ import {
   getBrushSizeDisplay,
   getCreaturePanelEls,
   getTerrainModeEls,
+  getGameContainer,
 } from './domHelpers.js';
 import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
 import { rollDice } from '../systems/dice/dice.js';
+
+const TOKEN_DRAG_MIME = 'application/taverntable-token';
+
+function hasTokenDragPayload(event) {
+  const dt = event?.dataTransfer;
+  if (!dt) return false;
+  try {
+    if (dt.types && typeof dt.types.includes === 'function') {
+      return dt.types.includes(TOKEN_DRAG_MIME) || dt.types.includes('text/plain');
+    }
+    if (Array.isArray(dt.types)) {
+      return dt.types.includes(TOKEN_DRAG_MIME) || dt.types.includes('text/plain');
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    return !!(dt.getData(TOKEN_DRAG_MIME) || dt.getData('text/plain'));
+  } catch (_) {
+    return false;
+  }
+}
+
+function getTokenDragType(event) {
+  const dt = event?.dataTransfer;
+  if (!dt) return '';
+  try {
+    return dt.getData(TOKEN_DRAG_MIME) || dt.getData('text/plain') || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function setupTokenDrag(button, tokenType) {
+  if (!button || button.dataset.boundTokenDrag) return;
+  button.setAttribute('draggable', 'true');
+  button.addEventListener('dragstart', (event) => {
+    if (!event?.dataTransfer) return;
+    event.dataTransfer.effectAllowed = 'copy';
+    try {
+      event.dataTransfer.setData(TOKEN_DRAG_MIME, tokenType);
+      event.dataTransfer.setData('text/plain', tokenType);
+    } catch (_) {
+      /* ignore */
+    }
+    button.classList.add('token-dragging');
+  });
+  button.addEventListener('dragend', () => {
+    button.classList.remove('token-dragging');
+  });
+  button.dataset.boundTokenDrag = 'true';
+}
+
+function ensureTokenDropTargets() {
+  const gm = window.gameManager;
+  if (!gm) return;
+
+  const bindTarget = (target) => {
+    if (!target || target.dataset?.boundTokenDrop) return;
+    target.addEventListener('dragover', (event) => {
+      if (!hasTokenDragPayload(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'copy';
+      }
+    });
+    target.addEventListener('drop', (event) => {
+      if (!hasTokenDragPayload(event)) return;
+      event.preventDefault();
+      const tokenType = getTokenDragType(event);
+      if (!tokenType) return;
+      const coordinator = window.gameManager?.inputCoordinator;
+      if (!coordinator?.handleTokenDrop) return;
+      const result = coordinator.handleTokenDrop(tokenType, event.clientX, event.clientY);
+      if (result && typeof result.catch === 'function') {
+        result.catch((error) => {
+          logger.warn(
+            'Token drop failed',
+            { error: error?.message || String(error) },
+            LOG_CATEGORY.INTERACTION
+          );
+        });
+      }
+    });
+    target.dataset.boundTokenDrop = 'true';
+  };
+
+  bindTarget(gm.app?.view || null);
+  const container = getGameContainer();
+  if (container) {
+    bindTarget(container);
+  }
+}
 
 /**
  * Toggle the visibility of the creature tokens panel
@@ -225,7 +319,12 @@ function attachDynamicUIHandlers() {
         }
       });
       btn.dataset.boundTokenHandler = 'true';
+      if (id !== 'remove') {
+        setupTokenDrag(btn, id);
+      }
     });
+
+    ensureTokenDropTargets();
 
     // Facing button
     const facingBtn = getFacingButton();
