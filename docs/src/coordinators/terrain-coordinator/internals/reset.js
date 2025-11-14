@@ -11,6 +11,9 @@ import * as biomeInternals from './biome.js';
 export function resetTerrain(c) {
   try {
     c.initializeTerrainData();
+    if (c.dataStore?.resetAll) {
+      c.dataStore.resetAll(TERRAIN_CONFIG.DEFAULT_HEIGHT);
+    }
 
     if (c.terrainManager) {
       c.terrainManager.refreshAllTerrainDisplay();

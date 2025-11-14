@@ -13,7 +13,6 @@ import {
   getTabButtons,
   getTabPanels,
   getGridOpacityControl,
-  getAnimationSpeedControl,
   getSunTimeControl,
   getBiomeButtons,
   getBiomeButtonByKey,
@@ -117,21 +116,6 @@ class SidebarController {
         }
         // TODO: Apply grid opacity to game
         this.onGridOpacityChange(value / 100);
-      });
-    }
-
-    // Animation speed slider
-    const { slider: animationSpeedSlider, valueEl: animationSpeedValue } =
-      getAnimationSpeedControl();
-
-    if (animationSpeedSlider) {
-      animationSpeedSlider.addEventListener('input', (e) => {
-        const value = parseFloat(e.target.value);
-        if (animationSpeedValue) {
-          animationSpeedValue.textContent = `${value}x`;
-        }
-        // TODO: Apply animation speed to game
-        this.onAnimationSpeedChange(value);
       });
     }
 
@@ -647,25 +631,6 @@ class SidebarController {
       });
     } else {
       logger.debug('GameManager not available for grid opacity change', {}, LOG_CATEGORY.UI);
-    }
-  }
-
-  /**
-   * Handle animation speed change
-   * @param {number} speed - Speed multiplier
-   */
-  onAnimationSpeedChange(speed) {
-    // Integrate with GameManager to change animation speed
-    if (window.gameManager && window.gameManager.app) {
-      // Store animation speed in app for use by animation systems
-      window.gameManager.app.animationSpeedMultiplier = speed;
-
-      // Update any existing PIXI ticker speed if available
-      if (window.gameManager.app.ticker) {
-        window.gameManager.app.ticker.speed = speed;
-      }
-    } else {
-      logger.debug('GameManager not available for animation speed change', {}, LOG_CATEGORY.UI);
     }
   }
 

@@ -58,11 +58,6 @@ export function getBrushSizeDisplay() {
   return document.getElementById('brush-size-display');
 }
 
-/** Returns the sprite adjust log element. */
-export function getSpriteAdjustLogEl() {
-  return document.getElementById('sprite-adjust-log');
-}
-
 /** Returns the token info element used for UI hints. */
 export function getTokenInfoEl() {
   return document.getElementById('token-info');
@@ -89,11 +84,6 @@ export function getTokenButtonByType(tokenType) {
   return document.getElementById(`token-${tokenType}`);
 }
 
-/** Returns the auto-apply offsets toggle button. */
-export function getAutoApplyButton() {
-  return document.getElementById('toggle-auto-apply');
-}
-
 /** Returns dice UI elements. */
 export function getDiceCountEl() {
   return document.getElementById('dice-count');
@@ -114,25 +104,10 @@ export function getDiceClearButton() {
   return document.querySelector('#dice-log-panel .panel-footer .clear-button');
 }
 
-/** Returns sprite nudge and adjust buttons. */
-export function getSpriteAdjustButtons() {
-  return {
-    up: document.getElementById('nudge-up'),
-    down: document.getElementById('nudge-down'),
-    left: document.getElementById('nudge-left'),
-    right: document.getElementById('nudge-right'),
-    center: document.getElementById('nudge-center'),
-    save: document.getElementById('save-offset'),
-    reset: document.getElementById('reset-offset'),
-    auto: document.getElementById('toggle-auto-apply'),
-  };
-}
-
 /** Returns grid apply/reset zoom buttons. */
 export function getGridActionButtons() {
   return {
     applySize: document.getElementById('apply-grid-size'),
-    resetZoom: document.getElementById('reset-zoom'),
   };
 }
 
@@ -189,16 +164,6 @@ export function getTabPanels() {
 export function getGridOpacityControl() {
   const slider = document.getElementById('grid-opacity');
   let valueEl = document.getElementById('grid-opacity-value');
-  if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
-    valueEl = slider.nextElementSibling;
-  }
-  return { slider, valueEl };
-}
-
-/** Returns animation speed slider and its value element (next sibling). */
-export function getAnimationSpeedControl() {
-  const slider = document.getElementById('animation-speed');
-  let valueEl = document.getElementById('animation-speed-value');
   if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
     valueEl = slider.nextElementSibling;
   }

@@ -45,6 +45,7 @@ export function getElevationScaleControls() {
   };
 }
 
+/** Returns the tree density slider and display span. */
 export function getTreeDensityControls() {
   return {
     slider: document.getElementById('tree-density-slider'),
@@ -55,11 +56,6 @@ export function getTreeDensityControls() {
 /** Returns the brush size display element. */
 export function getBrushSizeDisplay() {
   return document.getElementById('brush-size-display');
-}
-
-/** Returns the sprite adjust log element. */
-export function getSpriteAdjustLogEl() {
-  return document.getElementById('sprite-adjust-log');
 }
 
 /** Returns the token info element used for UI hints. */
@@ -88,11 +84,6 @@ export function getTokenButtonByType(tokenType) {
   return document.getElementById(`token-${tokenType}`);
 }
 
-/** Returns the auto-apply offsets toggle button. */
-export function getAutoApplyButton() {
-  return document.getElementById('toggle-auto-apply');
-}
-
 /** Returns dice UI elements. */
 export function getDiceCountEl() {
   return document.getElementById('dice-count');
@@ -113,25 +104,10 @@ export function getDiceClearButton() {
   return document.querySelector('#dice-log-panel .panel-footer .clear-button');
 }
 
-/** Returns sprite nudge and adjust buttons. */
-export function getSpriteAdjustButtons() {
-  return {
-    up: document.getElementById('nudge-up'),
-    down: document.getElementById('nudge-down'),
-    left: document.getElementById('nudge-left'),
-    right: document.getElementById('nudge-right'),
-    center: document.getElementById('nudge-center'),
-    save: document.getElementById('save-offset'),
-    reset: document.getElementById('reset-offset'),
-    auto: document.getElementById('toggle-auto-apply'),
-  };
-}
-
 /** Returns grid apply/reset zoom buttons. */
 export function getGridActionButtons() {
   return {
     applySize: document.getElementById('apply-grid-size'),
-    resetZoom: document.getElementById('reset-zoom'),
   };
 }
 
@@ -187,19 +163,26 @@ export function getTabPanels() {
 /** Returns grid opacity slider and its value element (next sibling). */
 export function getGridOpacityControl() {
   const slider = document.getElementById('grid-opacity');
-  return { slider, valueEl: slider?.nextElementSibling || null };
+  let valueEl = document.getElementById('grid-opacity-value');
+  if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
+    valueEl = slider.nextElementSibling;
+  }
+  return { slider, valueEl };
 }
 
-/** Returns animation speed slider and its value element (next sibling). */
-export function getAnimationSpeedControl() {
-  const slider = document.getElementById('animation-speed');
-  return { slider, valueEl: slider?.nextElementSibling || null };
-}
-
-/** Returns sun time slider and its value element. */
+/** Returns sun time slider and associated value element. */
 export function getSunTimeControl() {
   const slider = document.getElementById('sun-time-range');
-  return { slider, valueEl: slider?.nextElementSibling || null };
+  let valueEl = document.getElementById('sun-time-value');
+  if (!valueEl && slider?.nextElementSibling?.classList?.contains('range-value')) {
+    valueEl = slider.nextElementSibling;
+  }
+  return { slider, valueEl };
+}
+
+/** Returns the settings toggle controlling the 3D grid overlay visibility. */
+export function getVisualGridToggle() {
+  return document.getElementById('visual-grid-toggle');
 }
 
 /** Returns all biome button elements under the biome root (or provided root). */
@@ -212,6 +195,34 @@ export function getBiomeButtons(root = getBiomeRootEl()) {
 export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
   if (!root) return null;
   return root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+}
+
+/** Returns the root element where terrain placeable items should be injected. */
+export function getTerrainPlaceablesRoot() {
+  return document.getElementById('terrain-placeables-root');
+}
+
+/** Helper to create a placeable button by id (used by Sidebar builder) */
+export function createPlaceableButton(id, label, imgSrc) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'placeable-btn';
+  btn.dataset.placeable = id;
+  btn.title = label || id;
+  // Always include an img element so later async thumbnail generation has a target.
+  const img = document.createElement('img');
+  img.className = 'placeable-preview';
+  img.alt = label || id;
+  // Use provided src or a 1x1 transparent pixel placeholder.
+  img.src =
+    imgSrc ||
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YkZyy8AAAAASUVORK5CYII=';
+  btn.appendChild(img);
+  const span = document.createElement('span');
+  span.className = 'placeable-label';
+  span.textContent = label || id;
+  btn.appendChild(span);
+  return btn;
 }
 
 /** Error UI helpers */

@@ -59,9 +59,47 @@ function updateStats() {
   }
 }
 
+function autoEnableHybridWithoutToggle(retries = 5) {
+  try {
+    if (!window.gameManager) {
+      if (retries > 0) {
+        setTimeout(() => autoEnableHybridWithoutToggle(retries - 1), 200);
+      }
+      return;
+    }
+    if (window.gameManager?.threeSceneManager?.degraded) {
+      setHybridUnavailable(window.gameManager.threeSceneManager.degradeReason);
+      return;
+    }
+    if (!window.gameManager.is3DModeActive?.()) {
+      window.gameManager
+        .enableHybridRender()
+        .then(() => {
+          logger.log(
+            LOG_LEVEL.INFO,
+            'Hybrid 3D mode auto-enabled (no toggle present)',
+            LOG_CATEGORY.SYSTEM
+          );
+        })
+        .catch((error) => {
+          setHybridUnavailable(error?.message);
+          logger.log(LOG_LEVEL.ERROR, 'Failed to enable hybrid render', LOG_CATEGORY.ERROR, {
+            error: error?.message,
+            source: 'autoEnableHybridWithoutToggle',
+          });
+        });
+    }
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 function attachHybridToggle() {
   const toggle = document.getElementById('hybrid-render-toggle');
-  if (!toggle) return;
+  if (!toggle) {
+    autoEnableHybridWithoutToggle();
+    return;
+  }
   // Initialize checkbox state reflecting current mode
   try {
     if (window.gameManager?.threeSceneManager?.degraded) {

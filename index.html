@@ -81,65 +81,29 @@
 
       <!-- Creatures Panel -->
       <div id="creatures-panel" class="tab-panel" role="tabpanel" aria-labelledby="creatures-tab">
-        <div class="panel-header">🗡️ Creature Management</div>
+        <div class="panel-header">🧙 Tokens</div>
 
         <!-- Creature Token Selection -->
         <div class="section">
-          <div class="section-title">Token Selection</div>
+          <div class="section-title">Creature Token</div>
           <div id="creature-content" role="group" aria-label="Creature token selection">
-            <!-- Only tokens with existing sprites -->
-            <button id="token-beholder" aria-label="Select Beholder token">👁️ Beholder</button>
-            <button id="token-female-humanoid" aria-label="Select Female Humanoid token">�‍♀️ Female Humanoid</button>
-            <button id="token-dragon" aria-label="Select Dragon token">🐉 Dragon</button>
-            <button id="token-goblin" aria-label="Select Goblin token">🧌 Goblin</button>
-            <button id="token-mindflayer" aria-label="Select Mind Flayer token">🦑 Mind Flayer</button>
-            <button id="token-minotaur" aria-label="Select Minotaur token">🐂 Minotaur</button>
-            <button id="token-orc" aria-label="Select Orc token">🧟 Orc</button>
-            <button id="token-owlbear" aria-label="Select Owlbear token">🐻 Owlbear</button>
-            <button id="token-skeleton" aria-label="Select Skeleton token">💀 Skeleton</button>
-            <button id="token-troll" aria-label="Select Troll token">🧟‍♂️ Troll</button>
+            <button id="token-female-humanoid" aria-label="Select Female Humanoid token">🧝‍♀️ Female Humanoid</button>
           </div>
         </div>
 
-        <!-- Token Actions -->
+        <!-- Token Removal -->
         <div class="section">
-          <div class="section-title">Token Actions</div>
-          <button id="token-remove" class="action-button" aria-label="Select remove mode to delete tokens">🚫
+          <div class="section-title">Placement Mode</div>
+          <button id="token-remove" class="action-button facing-button"
+            aria-label="Enable remove mode to delete tokens">🚫
             Remove</button>
         </div>
 
-        <!-- Facing Direction Controls -->
-        <div class="section">
-          <div class="section-title">Facing Direction</div>
-          <button id="facing-right" class="action-button selected" aria-pressed="true"
-            aria-label="Toggle token facing direction">➡️ Right</button>
-        </div>
-
-        <!-- Sprite Position Adjuster -->
-        <div class="section">
-          <div class="section-title">Sprite Adjust</div>
-          <div class="nudge-grid">
-            <button id="nudge-up" aria-label="Nudge sprite up">⬆️</button>
-            <div class="nudge-middle-row">
-              <button id="nudge-left" aria-label="Nudge sprite left">⬅️</button>
-              <button id="nudge-center" aria-label="Capture current sprite baseline">🎯</button>
-              <button id="nudge-right" aria-label="Nudge sprite right">➡️</button>
-            </div>
-            <button id="nudge-down" aria-label="Nudge sprite down">⬇️</button>
-          </div>
-          <div class="adjust-actions">
-            <button id="save-offset" aria-label="Save current sprite offset for this creature type">💾 Save
-              Offset</button>
-            <button id="toggle-auto-apply" aria-label="Toggle auto apply saved offsets">⚡ Auto Apply: Off</button>
-            <button id="reset-offset" aria-label="Reset saved offset for this creature type">♻️ Reset Offset</button>
-          </div>
-          <div id="sprite-adjust-log" class="adjust-log" aria-live="polite"></div>
-        </div>
       </div>
 
       <!-- Terrain Panel -->
       <div id="terrain-panel" class="tab-panel" role="tabpanel" aria-labelledby="terrain-tab">
-        <div class="panel-header">🏔️ Terrain & Grid</div>
+        <div class="panel-header">🏔️ Terrain Tools</div>
 
         <!-- Grid Configuration -->
         <div class="section">
@@ -154,7 +118,6 @@
           </div>
           <button id="apply-grid-size" class="action-button" aria-label="Apply new grid dimensions">🔄 Resize
             Grid</button>
-          <button id="reset-zoom" class="action-button" aria-label="Reset zoom level to default">🔍 Reset Zoom</button>
         </div>
 
         <!-- Terrain Tools -->
@@ -262,15 +225,6 @@
 
             <!-- Biome selection moved to dedicated Biomes tab (panel relocated outside terrain panel) -->
 
-            <div class="tool-group">
-              <div class="section-subtitle">Shortcuts</div>
-              <div class="shortcuts-text">
-                <small>• <strong>R</strong>: Raise tool</small><br>
-                <small>• <strong>L</strong>: Lower tool</small><br>
-                <small>• <strong>[ ]</strong>: Brush size</small>
-              </div>
-            </div>
-
             <!-- Placeables were moved outside the toggled tools so they remain reachable
                  in the Terrain panel without requiring Terrain Mode to be active. The
                  runtime UI will still inject items into the same `#terrain-placeables-root`. -->
@@ -331,53 +285,7 @@
       <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
         <div class="panel-header">⚙️ Game Settings</div>
 
-        <div class="section">
-          <div class="section-title">Display Options</div>
-          <div class="setting-item">
-            <label for="grid-opacity">Grid Opacity:</label>
-            <input type="range" id="grid-opacity" min="0" max="100" value="50" class="range-input"
-              aria-label="Adjust base grid opacity">
-            <span id="grid-opacity-value" class="range-value">50%</span>
-          </div>
-          <div class="setting-item">
-            <label class="toggle-switch" for="visual-grid-toggle">
-              <input type="checkbox" id="visual-grid-toggle" checked />
-              <span class="toggle-slider"></span>
-              <span class="toggle-label">Show 3D Grid Overlay</span>
-            </label>
-            <small class="small-text" style="display:block;margin-top:0.25rem;">Applies when Hybrid 3D mode is
-              active.</small>
-          </div>
-          <div class="setting-item">
-            <label for="animation-speed">Animation Speed:</label>
-            <input type="range" id="animation-speed" min="0.5" max="2" step="0.1" value="1" class="range-input"
-              aria-label="Adjust animation playback speed">
-            <span id="animation-speed-value" class="range-value">1.0x</span>
-          </div>
-          <div class="setting-item" style="margin-top:0.75rem;">
-            <label class="toggle-switch" for="hybrid-render-toggle">
-              <input type="checkbox" id="hybrid-render-toggle" />
-              <span class="toggle-slider"></span>
-              <span class="toggle-label">Enable 3D Hybrid (Experimental)</span>
-            </label>
-            <div id="hybrid-stats" class="small-text" aria-live="polite" style="margin-top:0.35rem; min-height:1.1rem;">
-              <!-- 3D stats populated when enabled -->
-            </div>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Game Info</div>
-          <div id="token-info" aria-live="polite">Click on grid to place selected token</div>
-
-          <!-- Help Section -->
-          <div class="help-section">
-            <div class="section-title">🎮 Controls:</div>
-            <div class="help-text">• <strong>Space + Drag</strong>: Pan grid</div>
-            <div class="help-text">• <strong>Right-click + Drag Token</strong>: Move token</div>
-            <div class="help-text">• <strong>Mouse Wheel</strong>: Zoom in/out</div>
-          </div>
-        </div>
+        <!-- Settings content moved into injected Hybrid3DControls; legacy display and help sections removed intentionally. -->
       </div>
     </div>
   </div>

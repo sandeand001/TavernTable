@@ -103,55 +103,67 @@ body {
     opacity 0.3s ease;
   overflow: hidden;
   max-height: 400px;
-
-  /* Increased from 320px to show more creatures */
   opacity: 1 !important;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-
-  /* Responsive grid layout */
-  gap: 4px;
-
-  /* Small gap between buttons */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 12px;
   margin-bottom: 16px;
+  border: 1px solid #2b2b2b;
+  border-radius: 8px;
+  background: linear-gradient(160deg, rgba(32, 32, 32, 0.7), rgba(18, 18, 18, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(4px);
 
-  /* Merged from later duplicate */
+  /* Smooth layout breathing room for the creature token cards */
 }
 
-/* Ensure creature buttons work well in grid layout */
 #creature-content button {
-  margin: 0;
-
-  /* Remove margin since we're using gap */
-  padding: 8px 4px;
-
-  /* Use consistent padding */
-  background-color: #444;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  text-align: center;
-  white-space: nowrap;
-
-  /* Prevent text wrapping */
+  background: linear-gradient(180deg, rgba(88, 88, 88, 0.55), rgba(52, 52, 52, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #f4f4f4;
+  padding: 12px 14px;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.1px;
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
 
-  /* Show ... if text is too long */
-  transition: all 0.2s ease;
+#creature-content button:focus-visible {
+  outline: none;
+  border-color: rgba(77, 166, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(77, 166, 255, 0.35), 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
 /* Creature button hover/selected states */
 #creature-content button:hover {
-  background-color: #555;
-  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(101, 101, 101, 0.75), rgba(58, 58, 58, 0.95));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  border-color: rgba(77, 166, 255, 0.45);
 }
 
 #creature-content button.selected {
-  background-color: #4da6ff;
-  color: white;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.95), rgba(37, 96, 170, 0.95));
+  color: #ffffff;
+  border-color: rgba(123, 196, 255, 0.9);
+  box-shadow: 0 8px 20px rgba(77, 166, 255, 0.45);
   font-weight: 600;
 }
 
@@ -187,7 +199,7 @@ body {
   border-top: 1px solid #444;
 }
 
-.token-section > div:first-child {
+.token-section>div:first-child {
   margin-bottom: 6px;
   font-weight: bold;
 }
@@ -225,17 +237,24 @@ body {
 
 /* Special styling for action buttons (remove) */
 #token-remove.facing-button {
-  background-color: #dc143c !important;
+  background: linear-gradient(180deg, rgba(247, 99, 122, 0.95), rgba(163, 9, 41, 0.95)) !important;
+  border: 2px solid rgba(255, 138, 155, 0.75) !important;
   width: 100% !important;
+  color: #fff8f8 !important;
+  box-shadow: 0 14px 26px rgba(182, 34, 68, 0.5);
 }
 
 #token-remove.facing-button:hover {
-  background-color: #f54c6b !important;
+  background: linear-gradient(180deg, rgba(255, 121, 143, 0.98), rgba(189, 15, 52, 0.98)) !important;
+  border-color: rgba(255, 170, 184, 0.85) !important;
+  box-shadow: 0 16px 30px rgba(189, 25, 61, 0.58);
 }
 
 #token-remove.facing-button.selected {
-  background-color: #ff4500 !important;
-  border: 2px solid #ff6347 !important;
+  background: linear-gradient(180deg, rgba(255, 150, 127, 0.96), rgba(219, 61, 36, 0.96)) !important;
+  border-color: rgba(255, 196, 180, 0.95) !important;
+  color: #2d0406 !important;
+  box-shadow: 0 18px 32px rgba(214, 66, 53, 0.5);
 }
 
 #token-info {
@@ -763,11 +782,11 @@ body {
   transition: transform 0.3s ease;
 }
 
-.toggle-switch input[type='checkbox']:checked + .toggle-slider {
+.toggle-switch input[type='checkbox']:checked+.toggle-slider {
   background-color: #4caf50;
 }
 
-.toggle-switch input[type='checkbox']:checked + .toggle-slider::before {
+.toggle-switch input[type='checkbox']:checked+.toggle-slider::before {
   transform: translateX(26px);
 }
 
@@ -918,23 +937,25 @@ body {
 }
 
 .height-scale {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(21, minmax(0, 1fr));
   margin-top: 8px;
-  padding: 4px 0;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  overflow: hidden;
+  padding: 2px 0;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .scale-mark {
-  flex: 1;
-  padding: 4px 2px;
-  font-size: 10px;
+  padding: 2px 0;
+  font-size: 9px;
+  line-height: 1.2;
   text-align: center;
-  color: #666;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.2s ease;
+  color: #c0c6d8;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+  min-width: 0;
+  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
 }
 
 .scale-mark:last-child {
@@ -942,10 +963,11 @@ body {
 }
 
 .scale-mark.current {
-  background: #4caf50;
-  color: white;
-  font-weight: bold;
-  transform: scale(1.1);
+  background: linear-gradient(180deg, rgba(76, 175, 80, 0.95), rgba(44, 121, 57, 0.95));
+  color: #f3fff2;
+  font-weight: 600;
+  transform: scale(1.05);
+  box-shadow: inset 0 0 10px rgba(30, 90, 40, 0.35);
 }
 
 /* Height indicator colors (-10..10) aligned with TERRAIN_CONFIG.HEIGHT_COLOR_SCALE */
@@ -1077,7 +1099,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 300px;
+  max-height: clamp(320px, 65vh, 560px);
   overflow-y: auto;
   padding-right: 4px;
 }

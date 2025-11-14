@@ -32,15 +32,11 @@ import {
   getElevationScaleControls,
   getTreeDensityControls,
   getBrushSizeDisplay,
-  getSpriteAdjustLogEl,
   getCreaturePanelEls,
   getTerrainModeEls,
-  getAutoApplyButton,
 } from './domHelpers.js';
-import { getDiceButtons, getGridActionButtons, getSpriteAdjustButtons } from './domHelpers.js';
+import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
 import { rollDice } from '../systems/dice/dice.js';
-import { getCurrentSpriteKey } from './lib/spriteKeys.js';
-import { computeElevationVisualOffset } from './lib/elevationUtils.js';
 
 /**
  * Toggle the visibility of the creature tokens panel
@@ -269,30 +265,42 @@ function attachDynamicUIHandlers() {
     if (elevSlider && !elevSlider.dataset.boundElevHandler) {
       const DEBOUNCE_MS = 120;
       let debounceId = null;
+      const clampElevationUnit = (raw) => {
+        const numeric = Number.parseFloat(raw);
+        if (!Number.isFinite(numeric)) return null;
+        return Math.max(0, Math.min(20, Math.round(numeric)));
+      };
       const updateDisplay = (val) => {
         if (elevValue) elevValue.textContent = `${val} px/level`;
       };
       const applyScale = (val) => {
+        const unit = clampElevationUnit(val);
+        if (unit == null) return;
         if (window.gameManager?.terrainCoordinator?.setElevationScale) {
-          window.gameManager.terrainCoordinator.setElevationScale(Number(val));
+          window.gameManager.terrainCoordinator.setElevationScale(unit);
         }
       };
       elevSlider.addEventListener('input', (e) => {
-        const val = e.target.value;
-        updateDisplay(val);
+        const unit = clampElevationUnit(e.target.value);
+        if (unit == null) return;
+        updateDisplay(unit);
         if (debounceId) clearTimeout(debounceId);
-        debounceId = setTimeout(() => applyScale(val), DEBOUNCE_MS);
+        debounceId = setTimeout(() => applyScale(unit), DEBOUNCE_MS);
       });
       elevSlider.addEventListener('change', (e) => {
-        const val = e.target.value;
-        updateDisplay(val);
+        const unit = clampElevationUnit(e.target.value);
+        if (unit == null) return;
+        updateDisplay(unit);
         if (debounceId) clearTimeout(debounceId);
-        applyScale(val);
+        applyScale(unit);
+        elevSlider.value = String(unit);
       });
       // Initialize from current config if available
       try {
-        const current = window.gameManager?.terrainCoordinator?.getElevationScale?.();
-        if (Number.isFinite(current)) {
+        const current = clampElevationUnit(
+          window.gameManager?.terrainCoordinator?.getElevationScale?.()
+        );
+        if (current != null) {
           elevSlider.value = String(current);
           updateDisplay(current);
         }
@@ -365,15 +373,11 @@ function attachDynamicUIHandlers() {
       btn.dataset.boundDiceHandler = 'true';
     });
 
-    // Grid apply/reset buttons
-    const { applySize, resetZoom: resetZoomBtn } = getGridActionButtons();
+    // Grid apply button
+    const { applySize } = getGridActionButtons();
     if (applySize && !applySize.dataset.boundClick) {
       applySize.addEventListener('click', resizeGrid);
       applySize.dataset.boundClick = 'true';
-    }
-    if (resetZoomBtn && !resetZoomBtn.dataset.boundClick) {
-      resetZoomBtn.addEventListener('click', resetZoom);
-      resetZoomBtn.dataset.boundClick = 'true';
     }
 
     // Terrain mode toggle
@@ -396,41 +400,6 @@ function attachDynamicUIHandlers() {
     }
 
     // Placeable Tiles UI handlers removed — placeables menu and PT brush are deprecated.
-
-    // Sprite adjust buttons
-    const spr = getSpriteAdjustButtons();
-    if (spr.up && !spr.up.dataset.boundClick) {
-      spr.up.addEventListener('click', () => nudgeSelectedSprite(0, -1));
-      spr.up.dataset.boundClick = 'true';
-    }
-    if (spr.down && !spr.down.dataset.boundClick) {
-      spr.down.addEventListener('click', () => nudgeSelectedSprite(0, 1));
-      spr.down.dataset.boundClick = 'true';
-    }
-    if (spr.left && !spr.left.dataset.boundClick) {
-      spr.left.addEventListener('click', () => nudgeSelectedSprite(-1, 0));
-      spr.left.dataset.boundClick = 'true';
-    }
-    if (spr.right && !spr.right.dataset.boundClick) {
-      spr.right.addEventListener('click', () => nudgeSelectedSprite(1, 0));
-      spr.right.dataset.boundClick = 'true';
-    }
-    if (spr.center && !spr.center.dataset.boundClick) {
-      spr.center.addEventListener('click', captureSpriteBaseline);
-      spr.center.dataset.boundClick = 'true';
-    }
-    if (spr.save && !spr.save.dataset.boundClick) {
-      spr.save.addEventListener('click', saveSpriteOffset);
-      spr.save.dataset.boundClick = 'true';
-    }
-    if (spr.reset && !spr.reset.dataset.boundClick) {
-      spr.reset.addEventListener('click', resetSpriteOffset);
-      spr.reset.dataset.boundClick = 'true';
-    }
-    if (spr.auto && !spr.auto.dataset.boundClick) {
-      spr.auto.addEventListener('click', toggleAutoApplyOffsets);
-      spr.auto.dataset.boundClick = 'true';
-    }
 
     logger.debug('Dynamic UI handlers attached');
   } catch (error) {
@@ -712,244 +681,6 @@ logger.log(LOG_LEVEL.DEBUG, 'GameManager created successfully', LOG_CATEGORY.SYS
 });
 
 // No global UI function exposure needed; events are wired via modules
-
-// === SPRITE ADJUSTMENT SYSTEM ===
-const spriteAdjustState = {
-  baselineCaptured: false,
-  baseline: { x: 0, y: 0 },
-  totalOffset: { x: 0, y: 0 },
-  appliedElevationOffset: 0,
-  initialPlacementLogged: false,
-  lastSpriteId: null,
-};
-
-function getSelectedCreatureSprite() {
-  if (!window.gameManager) return null;
-  const tokens = window.gameManager.placedTokens;
-  if (!tokens || tokens.length === 0) return null;
-  const selectedType = window.gameManager.selectedTokenType;
-  let candidate = [...tokens].reverse().find((t) => t.type === selectedType);
-  if (!candidate) candidate = tokens[tokens.length - 1];
-  if (candidate && candidate.creature && candidate.creature.sprite) {
-    const sprite = candidate.creature.sprite;
-    sprite._gridRef = { gridX: candidate.gridX, gridY: candidate.gridY };
-    if (!sprite._spriteAdjustId) sprite._spriteAdjustId = Math.random().toString(36).slice(2);
-    // If new sprite selected, reset state (log preserved until explicitly cleared)
-    if (spriteAdjustState.lastSpriteId !== sprite._spriteAdjustId) {
-      spriteAdjustState.baselineCaptured = false;
-      spriteAdjustState.totalOffset = { x: 0, y: 0 };
-      spriteAdjustState.initialPlacementLogged = false;
-      spriteAdjustState.lastSpriteId = sprite._spriteAdjustId;
-    }
-  }
-  return candidate?.creature?.sprite || null;
-}
-
-function captureSpriteBaseline() {
-  const sprite = getSelectedCreatureSprite();
-  const logEl = getSpriteAdjustLogEl();
-  if (!sprite || !logEl) return;
-  if (!spriteAdjustState.initialPlacementLogged) {
-    logEl.textContent += `Original placement at (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)})\n`;
-    spriteAdjustState.initialPlacementLogged = true;
-  }
-  spriteAdjustState.baselineCaptured = true;
-  spriteAdjustState.baseline = { x: sprite.x, y: sprite.y };
-  spriteAdjustState.totalOffset = { x: 0, y: 0 };
-  const elev = getSpriteElevation(sprite);
-  spriteAdjustState.appliedElevationOffset = computeElevationVisualOffset(elev);
-  logEl.textContent += `Baseline captured at (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)}) elevation=${elev} elevOffset=${spriteAdjustState.appliedElevationOffset}\n`;
-}
-
-function nudgeSelectedSprite(dx, dy) {
-  const sprite = getSelectedCreatureSprite();
-  const logEl = getSpriteAdjustLogEl();
-  if (!sprite || !logEl) return;
-  if (!spriteAdjustState.initialPlacementLogged) {
-    logEl.textContent += `Original placement at (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)})\n`;
-    spriteAdjustState.initialPlacementLogged = true;
-  }
-  if (!spriteAdjustState.baselineCaptured) {
-    captureSpriteBaseline();
-  }
-  sprite.x += dx;
-  sprite.y += dy;
-  spriteAdjustState.totalOffset.x += dx;
-  spriteAdjustState.totalOffset.y += dy;
-  const off = spriteAdjustState.totalOffset;
-  const elev = getSpriteElevation(sprite);
-  const base = spriteAdjustState.baseline;
-  logEl.textContent += `Nudge (${dx},${dy}) => now (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)}) totalΔ=(${off.x},${off.y}) from baseline (${base.x.toFixed(1)}, ${base.y.toFixed(1)}) elev=${elev}\n`;
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
-// Elevation utilities (simple height-based vertical adjustment preview)
-function getSpriteElevation(sprite) {
-  try {
-    if (!sprite || !sprite._gridRef || !window.gameManager) return 0;
-    const { gridX, gridY } = sprite._gridRef;
-    return window.gameManager.getTerrainHeight
-      ? window.gameManager.getTerrainHeight(gridX, gridY)
-      : 0;
-  } catch {
-    return 0;
-  }
-}
-
-//
-
-// API to auto-adjust all sprites after terrain tweaks (future extension)
-// Dev-only helper: intentionally unused in production wiring
-// eslint-disable-next-line no-unused-vars
-function applyElevationOffsetsToTokens() {
-  if (!window.gameManager) return;
-  const tokens = window.gameManager.placedTokens || [];
-  tokens.forEach((t) => {
-    const sprite = t.creature?.sprite;
-    if (!sprite) return;
-    const elev = window.gameManager.getTerrainHeight
-      ? window.gameManager.getTerrainHeight(t.gridX, t.gridY)
-      : 0;
-    const offset = computeElevationVisualOffset(elev);
-    // Only adjust Y to avoid lateral drift
-    sprite.y = sprite.y + offset;
-  });
-}
-
-// ---------------- Sprite Offset Persistence & Auto-Apply ----------------
-//
-
-function ensureSpriteAdjustExtendedState() {
-  // Extend existing state object without needing to locate original declaration
-  spriteAdjustState.savedOffsets = spriteAdjustState.savedOffsets || {}; // key -> {x,y}
-  if (typeof spriteAdjustState.autoApply !== 'boolean') spriteAdjustState.autoApply = false;
-}
-// Also update Placeable Tiles brush display if present
-try {
-  updatePTBrushSizeDisplay();
-} catch (e) {
-  /* ignore */
-}
-function saveSpriteOffset() {
-  const sprite = getSelectedCreatureSprite();
-  const logEl = getSpriteAdjustLogEl();
-  if (!sprite || !logEl) return;
-  ensureSpriteAdjustExtendedState();
-  if (!spriteAdjustState.baselineCaptured) {
-    // Capture baseline implicitly so totalOffset is meaningful
-    captureSpriteBaseline();
-  }
-  const key = getCurrentSpriteKey(sprite);
-  if (!key) return;
-  const off = { ...spriteAdjustState.totalOffset };
-  spriteAdjustState.savedOffsets[key] = off;
-  logEl.textContent += `Saved offset for [${key}] Δ=(${off.x},${off.y})\n`;
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
-function resetSpriteOffset() {
-  const sprite = getSelectedCreatureSprite();
-  const logEl = getSpriteAdjustLogEl();
-  if (!sprite || !logEl) return;
-  ensureSpriteAdjustExtendedState();
-  const key = getCurrentSpriteKey(sprite);
-  if (!key) return;
-  if (spriteAdjustState.savedOffsets[key]) {
-    delete spriteAdjustState.savedOffsets[key];
-    logEl.textContent += `Reset saved offset for [${key}]\n`;
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-}
-
-function toggleAutoApplyOffsets() {
-  ensureSpriteAdjustExtendedState();
-  spriteAdjustState.autoApply = !spriteAdjustState.autoApply;
-  const btn = getAutoApplyButton();
-  if (btn) btn.textContent = `⚡ Auto Apply: ${spriteAdjustState.autoApply ? 'On' : 'Off'}`;
-  const logEl = getSpriteAdjustLogEl();
-  if (logEl) {
-    logEl.textContent += `Auto-Apply ${spriteAdjustState.autoApply ? 'ENABLED' : 'DISABLED'}\n`;
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-}
-
-function applySavedOffsetToSprite(sprite, silent = false) {
-  ensureSpriteAdjustExtendedState();
-  if (!sprite) return;
-  const key = getCurrentSpriteKey(sprite);
-  if (!key) return;
-  const saved = spriteAdjustState.savedOffsets && spriteAdjustState.savedOffsets[key];
-  if (saved) {
-    sprite.x += saved.x;
-    sprite.y += saved.y;
-    if (!silent) {
-      const logEl = getSpriteAdjustLogEl();
-      if (logEl) {
-        logEl.textContent += `Applied saved offset for [${key}] Δ=(${saved.x},${saved.y}) now=(${sprite.x.toFixed(1)},${sprite.y.toFixed(1)})\n`;
-        logEl.scrollTop = logEl.scrollHeight;
-      }
-    }
-  }
-}
-
-function installSpriteOffsetAutoApplyHook() {
-  ensureSpriteAdjustExtendedState();
-  if (spriteAdjustState._autoApplyHookInstalled) return;
-  if (!window.gameManager || !window.gameManager.tokenManager) return;
-  const tm = window.gameManager.tokenManager;
-  // Heuristic: wrap a common placement method if it exists
-  const candidateFnName = ['placeToken', 'finalizeTokenPlacement', 'addPlacedToken'].find(
-    (n) => typeof tm[n] === 'function'
-  );
-  if (!candidateFnName) return;
-  const original = tm[candidateFnName];
-  if (original._wrappedForAutoApply) return; // already wrapped
-  tm[candidateFnName] = function (...args) {
-    const result = original.apply(this, args);
-    try {
-      if (spriteAdjustState.autoApply) {
-        // Attempt to locate sprite from result or args
-        let token = result;
-        if (!token) {
-          // search last placed token list
-          const list = window.gameManager.placedTokens || [];
-          token = list[list.length - 1];
-        }
-        const sprite = token?.creature?.sprite;
-        if (sprite) applySavedOffsetToSprite(sprite, true);
-      }
-    } catch (_) {
-      /* ignore auto-apply errors */
-    }
-    return result;
-  };
-  tm[candidateFnName]._wrappedForAutoApply = true;
-  spriteAdjustState._autoApplyHookInstalled = true;
-  const logEl = getSpriteAdjustLogEl();
-  if (logEl) {
-    logEl.textContent += `Installed auto-apply hook on TokenManager.${candidateFnName}\n`;
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-}
-
-// Attempt hook installation repeatedly until tokenManager exists
-// Bound retries under Jest to avoid leaking timers in tests
-const __isJest = isJest();
-const __retryLimit = __isJest ? 3 : Infinity;
-let __retryCount = 0;
-const __first = setTimeout(function retryHook() {
-  try {
-    installSpriteOffsetAutoApplyHook();
-  } catch (_) {
-    /* ignore install errors */
-  }
-  if (!spriteAdjustState._autoApplyHookInstalled && __retryCount < __retryLimit) {
-    __retryCount++;
-    const t = setTimeout(retryHook, 800);
-    if (typeof t?.unref === 'function') t.unref();
-  }
-}, 800);
-if (typeof __first?.unref === 'function') __first.unref();
 
 logger.log(LOG_LEVEL.DEBUG, 'UI functions exposed globally', LOG_CATEGORY.SYSTEM, {
   exposedFunctions: [],

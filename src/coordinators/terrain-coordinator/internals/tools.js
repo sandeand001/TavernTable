@@ -3,6 +3,19 @@ import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { Sanitizers } from '../../../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
 
+const clampToOddBrushSize = (value) => {
+  const min = Number.isFinite(TERRAIN_CONFIG.MIN_BRUSH_SIZE) ? TERRAIN_CONFIG.MIN_BRUSH_SIZE : 1;
+  const max = Number.isFinite(TERRAIN_CONFIG.MAX_BRUSH_SIZE) ? TERRAIN_CONFIG.MAX_BRUSH_SIZE : min;
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  let clamped = Math.max(min, Math.min(max, Math.round(value)));
+  if (clamped % 2 === 0) {
+    clamped = clamped >= max ? Math.max(min, clamped - 1) : Math.min(max, clamped + 1);
+  }
+  return clamped;
+};
+
 export function setTerrainTool(c, tool) {
   let sanitizedTool;
   if (typeof Sanitizers?.enum === 'function') {
@@ -48,12 +61,11 @@ export function getBrushSize(c) {
 }
 
 export function setBrushSize(c, value) {
-  if (!Number.isFinite(value)) return;
-  const clamped = Math.max(
-    TERRAIN_CONFIG.MIN_BRUSH_SIZE,
-    Math.min(TERRAIN_CONFIG.MAX_BRUSH_SIZE, Math.floor(value))
-  );
-  if (c.brush) c.brush.brushSize = clamped;
+  if (!Number.isFinite(value) || !c?.brush) return;
+  const clamped = clampToOddBrushSize(value);
+  if (clamped != null) {
+    c.brush.brushSize = clamped;
+  }
 }
 
 export function increaseBrushSize(c) {
