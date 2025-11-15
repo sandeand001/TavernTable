@@ -515,7 +515,13 @@ for (const key of SNOWCAP_BIOMES) {
   }
 }
 
-const SUBTERRANEAN_BIOMES = new Set(['cavern', 'fungalGrove', 'crystalFields', 'crystalSpires', 'eldritchRift']);
+const SUBTERRANEAN_BIOMES = new Set([
+  'cavern',
+  'fungalGrove',
+  'crystalFields',
+  'crystalSpires',
+  'eldritchRift',
+]);
 
 function normalizeBiomeKey(biomeKey) {
   const raw = String(biomeKey || '');
@@ -606,7 +612,8 @@ function computePainterlyColor(biomeKey, height, x = 0, y = 0, opts = {}) {
     Number.isFinite(window?.richShadingSettings?.shorelineSandStrength)
       ? window.richShadingSettings.shorelineSandStrength
       : 1.0,
-    intensity = typeof window !== 'undefined' && Number.isFinite(window?.richShadingSettings?.intensity)
+    intensity = typeof window !== 'undefined' &&
+    Number.isFinite(window?.richShadingSettings?.intensity)
       ? window.richShadingSettings.intensity
       : 1.0,
   } = opts;
@@ -748,7 +755,9 @@ function computePainterlyColor(biomeKey, height, x = 0, y = 0, opts = {}) {
     const northness = Math.cos(aspectRad || 0);
     const slopeScour = clamp01(slope);
     const snowBias = 0.5 * (1 + northness) * (1 - 0.6 * slopeScour);
-    const snowT = clamp01(((height - SNOW_START_BASE) / (MAX_H - SNOW_START_BASE || 1)) * (0.7 + 0.3 * snowBias));
+    const snowT = clamp01(
+      ((height - SNOW_START_BASE) / (MAX_H - SNOW_START_BASE || 1)) * (0.7 + 0.3 * snowBias)
+    );
     lch.L = clamp01(lch.L + 0.25 * snowT);
     lch.C = Math.max(0, lch.C - 0.35 * snowT);
   }
@@ -770,7 +779,12 @@ function computePainterlyColor(biomeKey, height, x = 0, y = 0, opts = {}) {
   } else if (key === 'swamp' || key === 'wetlands' || key === 'mangrove' || key === 'floodplain') {
     fx.fog = clamp01(0.2 + 0.5 * moisture);
     fx.mottle = clamp01(0.25 + 0.5 * (1 - slope));
-  } else if (key === 'volcanic' || key === 'ashWastes' || key === 'obsidianPlain' || key === 'lavaFields') {
+  } else if (
+    key === 'volcanic' ||
+    key === 'ashWastes' ||
+    key === 'obsidianPlain' ||
+    key === 'lavaFields'
+  ) {
     fx.embers = clamp01(0.15 + 0.35 * (1 - moisture));
     fx.grain = 0.2;
   } else if (coldFamily) {

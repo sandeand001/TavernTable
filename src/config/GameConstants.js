@@ -249,6 +249,11 @@ export const DICE_CONFIG = {
     MIN_ROLL: '#f44336', // Red for minimum roll
     NORMAL_ROLL: '#ffffff', // White for normal roll
   },
+
+  // Optional tuning for the 3D dice animation
+  D20_3D: {
+    REST_HEIGHT: -0.05,
+  },
 };
 
 // RETENTION NOTE (2025-09-19): APP_CONFIG, INPUT_CONFIG, CREATURE_* groups surfaced as unused by
