@@ -15,6 +15,7 @@
         "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
         "three/examples/jsm/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js",
         "three/examples/jsm/loaders/FBXLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js",
+        "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js",
         "three/examples/jsm/utils/SkeletonUtils.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/SkeletonUtils.js"
       }
     }
@@ -33,15 +34,15 @@
     <div>🎲 Roll Dice:</div>
     <div class="dice-count-container">
       <label for="dice-count" class="dice-count-label">Count:</label>
-      <input type="number" id="dice-count" min="1" max="10" value="1" aria-describedby="dice-help">
+      <input type="number" id="dice-count" min="1" max="10" value="1" aria-describedby="dice-help" data-dice-count>
     </div>
-    <button data-sides="4" aria-label="Roll 4-sided die">d4</button>
-    <button data-sides="6" aria-label="Roll 6-sided die">d6</button>
-    <button data-sides="8" aria-label="Roll 8-sided die">d8</button>
-    <button data-sides="10" aria-label="Roll 10-sided die">d10</button>
-    <button data-sides="12" aria-label="Roll 12-sided die">d12</button>
-    <button data-sides="20" aria-label="Roll 20-sided die">d20</button>
-    <div id="dice-result" aria-live="polite">Result: -</div>
+    <button data-dice data-sides="4" aria-label="Roll 4-sided die">d4</button>
+    <button data-dice data-sides="6" aria-label="Roll 6-sided die">d6</button>
+    <button data-dice data-sides="8" aria-label="Roll 8-sided die">d8</button>
+    <button data-dice data-sides="10" aria-label="Roll 10-sided die">d10</button>
+    <button data-dice data-sides="12" aria-label="Roll 12-sided die">d12</button>
+    <button data-dice data-sides="20" aria-label="Roll 20-sided die">d20</button>
+    <div id="dice-result" aria-live="polite" data-dice-result>Result: -</div>
     <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
   </div>
 

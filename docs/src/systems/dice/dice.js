@@ -25,6 +25,7 @@ import { GameValidators } from '../../utils/Validation.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 import { DICE_CONFIG } from '../../config/GameConstants.js';
+import { playD20RollOnGrid } from './dice3d.js';
 let _diceDomPorts = {};
 export function setDiceDomPorts(p = {}) {
   _diceDomPorts = p || {};
@@ -47,6 +48,16 @@ function getDiceResultEl() {
 
 // Dice rolling functionality with animation
 let isRolling = false;
+
+function maybePlay3DDice({ sides, diceCount, value }) {
+  if (sides !== 20 || diceCount !== 1 || typeof value !== 'number') return;
+  try {
+    const result = playD20RollOnGrid({ value });
+    if (result?.catch) result.catch(() => { });
+  } catch (_) {
+    /* ignore animation errors */
+  }
+}
 
 /**
  * Rolls dice with animation and validation
@@ -221,6 +232,8 @@ export function rollDice(sides) {
               : 'multiple_dice',
           timestamp: new Date().toISOString(),
         });
+
+        maybePlay3DDice({ sides, diceCount, value: results[0] });
 
         // Determine result color based on roll quality
         let resultColor = DICE_CONFIG.COLORS.NORMAL_ROLL;
