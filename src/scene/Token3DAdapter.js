@@ -183,9 +183,25 @@ const PATH_SPEED_MODES = {
 };
 const DEFAULT_CLIMB_DURATION = 1.2;
 const DEFAULT_CLIMB_RECOVER_DURATION = 0.95;
-const MAX_STANDARD_CLIMB_LEVELS = 5;
+const MAX_STANDARD_CLIMB_LEVELS = 4;
 const HIGH_WALL_SEGMENT_LEVELS = 4;
 const DEFAULT_CLIMB_WALL_DURATION = 1.2;
+const CLIMB_WALL_BLEND_LEAD = 0.2;
+const CLIMB_WALL_PROGRESS_EXPONENT = 1.35;
+const CLIMB_WALL_PROGRESS_SCALE = 0.5;
+const CLIMB_WALL_ENTRY_TILE_HALF_RATIO = 0.68;
+const MAX_INTERMEDIATE_CLIMB_CHAIN = 4;
+const PATH_STALL_REPATH_DELAY = 0.35;
+const SELECTION_COLLIDER_HEIGHT = 2.3;
+const SELECTION_COLLIDER_RADIUS_RATIO = 0.46;
+const CLIMB_RECOVER_DEFAULT_CROUCH_DROP = 0.05;
+const CLIMB_RECOVER_MIN_CROUCH_DROP = 0.01;
+const CLIMB_RECOVER_MAX_CROUCH_DROP = 0.25;
+const CLIMB_RECOVER_CROUCH_HOLD = 0.24;
+const CLIMB_RECOVER_STAND_RELEASE = 0.78;
+const PATHING_LOG_LOCAL_STORAGE_KEY = 'tt:pathingLogs';
+const PATHING_LOG_ENV_FLAG = 'TT_PATHING_LOGS';
+const PATHING_LOG_PREFIX = '[Token3DAdapter]';
 
 export class Token3DAdapter {
   constructor(gameManager) {
@@ -209,6 +225,242 @@ export class Token3DAdapter {
     this._selectionColor = 0xffcc55;
     this._modifiers = { shift: false };
     this._raycastScratch = [];
+    this._pathingLoggingEnabledOverride = undefined;
+  }
+
+  setPathingLoggingEnabled(isEnabled) {
+    if (typeof isEnabled === 'boolean') {
+      this._pathingLoggingEnabledOverride = isEnabled;
+    } else {
+      this._pathingLoggingEnabledOverride = undefined;
+    }
+  }
+
+  _isPathingLoggingEnabled() {
+    if (this._pathingLoggingEnabledOverride !== undefined) {
+      return this._pathingLoggingEnabledOverride;
+    }
+
+    let enabled = true;
+    let overrideApplied = false;
+    try {
+      if (typeof window !== 'undefined') {
+        if (window.__TT_DEBUG && 'pathing' in window.__TT_DEBUG) {
+          enabled = !!window.__TT_DEBUG.pathing;
+          overrideApplied = true;
+        } else if (window.localStorage) {
+          const stored = window.localStorage.getItem(PATHING_LOG_LOCAL_STORAGE_KEY);
+          if (stored != null) {
+            enabled = stored !== '0' && stored !== 'false';
+            overrideApplied = true;
+          }
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
+    try {
+      const env =
+        typeof globalThis !== 'undefined' && globalThis.process
+          ? globalThis.process.env
+          : undefined;
+      if (env) {
+        const envValue = env[PATHING_LOG_ENV_FLAG];
+        if (envValue !== undefined) {
+          enabled = envValue !== '0' && envValue !== 'false';
+          overrideApplied = true;
+        } else if (!overrideApplied && env.NODE_ENV === 'production') {
+          enabled = false;
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
+    return enabled;
+  }
+
+  _describeTokenForLogs(tokenEntry) {
+    if (!tokenEntry) {
+      return { id: null, label: null, type: null };
+    }
+    const typeKey =
+      (tokenEntry.type || tokenEntry.creature?.type || tokenEntry.kind || '').toLowerCase() || null;
+    return {
+      id: tokenEntry.id ?? tokenEntry.creature?.id ?? null,
+      label: tokenEntry.name ?? tokenEntry.label ?? tokenEntry.creature?.name ?? null,
+      type: typeKey,
+    };
+  }
+
+  _logPathing(event, payload = {}, level = 'info') {
+    if (!this._isPathingLoggingEnabled()) return;
+    if (typeof console === 'undefined') return;
+    let resolvedLevel = level;
+    try {
+      if (typeof window !== 'undefined' && window.__TT_DEBUG?.pathingLevel) {
+        resolvedLevel = window.__TT_DEBUG.pathingLevel;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    const logger = console[resolvedLevel] || console.info || console.log;
+    if (!logger) return;
+    try {
+      logger.call(console, `${PATHING_LOG_PREFIX} ${event}`, payload || {});
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  _logPathingOnce(state, flag, event, payload = {}, level = 'info') {
+    if (!state) {
+      this._logPathing(event, payload, level);
+      return;
+    }
+    if (!state.__pathingLogFlags) {
+      state.__pathingLogFlags = new Set();
+    }
+    if (state.__pathingLogFlags.has(flag)) {
+      return;
+    }
+    state.__pathingLogFlags.add(flag);
+    this._logPathing(event, payload, level);
+  }
+
+  _getPathingTimestamp() {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
+  _armResumeProbe(state, payload = {}) {
+    if (!state) return;
+    const now = this._getPathingTimestamp();
+    const goal = payload.goal || null;
+    let normalizedGoal = null;
+    if (goal && (Number.isFinite(goal.gridX) || Number.isFinite(goal.gridY))) {
+      normalizedGoal = {
+        gridX: Number.isFinite(goal.gridX) ? Math.round(goal.gridX) : null,
+        gridY: Number.isFinite(goal.gridY) ? Math.round(goal.gridY) : null,
+        options: goal.options ? { ...goal.options } : undefined,
+      };
+    }
+    state.__resumeProbe = {
+      startedAt: now,
+      resumeSource: payload.resumeSource || null,
+      baselineDistance: state.freeDistance || 0,
+      goal: normalizedGoal,
+      retries: 0,
+    };
+  }
+
+  _clearResumeProbe(state) {
+    if (!state) return;
+    state.__resumeProbe = null;
+  }
+
+  _abortResumeProbe(state, reason = 'unknown', extra = {}) {
+    if (!state?.__resumeProbe) return;
+    const probe = state.__resumeProbe;
+    this._logPathing('movement:resume-aborted', {
+      token: this._describeTokenForLogs(state.token),
+      resumeSource: probe.resumeSource,
+      reason,
+      retries: probe.retries || 0,
+      ...extra,
+    });
+    state.__resumeProbe = null;
+  }
+
+  _handleResumeProbeProgress(state) {
+    if (!state?.__resumeProbe) return;
+    const probe = state.__resumeProbe;
+    const distanceDelta = Math.abs((state.freeDistance || 0) - (probe.baselineDistance || 0));
+    if (distanceDelta <= 1e-4) {
+      return;
+    }
+    this._logPathing('movement:resume-progress', {
+      token: this._describeTokenForLogs(state.token),
+      resumeSource: probe.resumeSource,
+      distanceDelta,
+    });
+    state.__resumeProbe = null;
+  }
+
+  _checkResumeProbe(state) {
+    if (!state?.__resumeProbe) return;
+    const probe = state.__resumeProbe;
+    const now = this._getPathingTimestamp();
+    const elapsed = now - (probe.startedAt || 0);
+    const distanceDelta = Math.abs((state.freeDistance || 0) - (probe.baselineDistance || 0));
+
+    if (distanceDelta > 1e-4) {
+      this._logPathing('movement:resume-progress-delayed', {
+        token: this._describeTokenForLogs(state.token),
+        resumeSource: probe.resumeSource,
+        elapsed,
+        distanceDelta,
+      });
+      state.__resumeProbe = null;
+      return;
+    }
+
+    const pathActive = !!state.pathActive;
+    const intentsActive = !!state.intentHold && state.movementSign !== 0;
+
+    if (elapsed < 600) {
+      return;
+    }
+
+    const pathInactive = !pathActive || !intentsActive;
+    const retryTarget = probe.goal || state.lastRequestedGoal || null;
+    if (!retryTarget || probe.retries >= 1) {
+      let reason;
+      if (probe.retries >= 1) {
+        reason = 'no-progress-after-retry';
+      } else if (pathInactive) {
+        reason = 'path-inactive';
+      } else {
+        reason = 'no-target';
+      }
+      this._logPathing('movement:resume-stalled', {
+        token: this._describeTokenForLogs(state.token),
+        resumeSource: probe.resumeSource,
+        reason,
+      });
+      state.__resumeProbe = null;
+      return;
+    }
+
+    if (!probe.goal && retryTarget) {
+      probe.goal = {
+        gridX: retryTarget.gridX ?? null,
+        gridY: retryTarget.gridY ?? null,
+        options: retryTarget.options ? { ...retryTarget.options } : undefined,
+      };
+    }
+
+    const retried = this._reissueMaintainedGoal(state, retryTarget, { allowSameTile: true });
+    this._logPathing('movement:resume-retry', {
+      token: this._describeTokenForLogs(state.token),
+      resumeSource: probe.resumeSource,
+      goal: retryTarget
+        ? { gridX: retryTarget.gridX ?? null, gridY: retryTarget.gridY ?? null }
+        : null,
+      retried,
+      reason: pathInactive ? 'path-inactive' : 'no-progress',
+    });
+
+    if (retried) {
+      probe.retries += 1;
+      probe.startedAt = now;
+      probe.baselineDistance = state.freeDistance || 0;
+    } else {
+      state.__resumeProbe = null;
+    }
   }
 
   attach() {
@@ -383,6 +635,8 @@ export class Token3DAdapter {
       container.name = `Token3D:${baseName}`;
       container.add(clone);
 
+      this._attachSelectionCollider(container, three, config);
+
       if (config.baseRotation) {
         container.rotation.set(
           config.baseRotation.x || 0,
@@ -473,6 +727,8 @@ export class Token3DAdapter {
     const preserveForFall = state?.phase === 'fall';
     const allowRootRotation = climbRotationActive || preserveForFall;
     const allowRootTranslation = climbTranslationActive;
+    const clampClimbWallPlanarOffset =
+      state?.phase === 'climb-wall' || state?.climbWallActive ? true : false;
     for (const info of roots) {
       const bone = info?.bone;
       if (!bone || !bone.position) continue;
@@ -485,6 +741,14 @@ export class Token3DAdapter {
         } else {
           bone.position.x = 0;
           bone.position.y = 0;
+          bone.position.z = 0;
+        }
+      } else if (clampClimbWallPlanarOffset) {
+        if (base) {
+          bone.position.x = base.x;
+          bone.position.z = base.z;
+        } else {
+          bone.position.x = 0;
           bone.position.z = 0;
         }
       }
@@ -600,9 +864,9 @@ export class Token3DAdapter {
     this._updateTokenWorldDuringMovement(state.token, updatedWorld);
   }
 
-  _transferRootMotionToWorld(state, targetWorld = null) {
-    if (!state) return;
-    const transfer = this._extractRootMotionOffset(state);
+  _transferRootMotionToWorld(state, targetWorld = null, precomputedTransfer = null) {
+    if (!state) return null;
+    const transfer = precomputedTransfer || this._extractRootMotionOffset(state);
     const currentWorld = this._resolveTokenWorldPosition(state.token);
     let combinedOffset = null;
 
@@ -643,6 +907,8 @@ export class Token3DAdapter {
     if (transfer) {
       this._resetRootBonePose(transfer.rootInfo);
     }
+
+    return transfer || null;
   }
 
   _ensureMovementState(tokenEntry) {
@@ -719,6 +985,8 @@ export class Token3DAdapter {
         pathKey: null,
         pathTolerance: 0,
         pathReached: false,
+        pathStallTime: 0,
+        lastRequestedGoal: null,
         climbQueued: null,
         climbPendingInfo: null,
         climbActive: false,
@@ -741,14 +1009,29 @@ export class Token3DAdapter {
         climbRecoverDuration: 0,
         climbRecoverStartWorld: null,
         climbRecoverAnchorPosition: null,
+        climbRecoverCrouchWorld: null,
+        climbRecoverCrouchDrop: 1.0,
+        climbRecoverRiseHold: CLIMB_RECOVER_CROUCH_HOLD,
+        climbRecoverStandRelease: CLIMB_RECOVER_STAND_RELEASE,
         climbLastWorld: null,
         climbAdvanceActive: false,
         climbAdvanceTargetWorld: null,
+        climbContinuationGoal: null,
+        __pathingLogFlags: new Set(),
+        __resumeProbe: null,
       };
       this._movementStates.set(tokenEntry, state);
     } else if (!state.profile || state.profile === DEFAULT_MOVEMENT_PROFILE) {
       state.profile = animationData.profile || DEFAULT_MOVEMENT_PROFILE;
     }
+
+    if (typeof state.pathStallTime !== 'number') {
+      state.pathStallTime = 0;
+    }
+    if (!Object.prototype.hasOwnProperty.call(state, 'lastRequestedGoal')) {
+      state.lastRequestedGoal = null;
+    }
+
     return state;
   }
 
@@ -1127,7 +1410,7 @@ export class Token3DAdapter {
     state.stopBlendedToIdle = false;
     state.phaseElapsed = 0;
     state.freeStartWorld = this._resolveTokenWorldPosition(tokenEntry);
-    state.freeLastWorld = state.freeStartWorld ? { ...state.freeStartWorld } : null;
+    state.freeLastWorld = this._cloneWorld(state.freeStartWorld);
     state.freeDistance = 0;
 
     this._updateMovementFlags(state, newSign);
@@ -1146,6 +1429,16 @@ export class Token3DAdapter {
       state.hasLoopStarted = true;
       this._playLoopAnimation(state, { force: true });
     }
+
+    this._logPathing('movement:phase-start', {
+      token: this._describeTokenForLogs(state.token),
+      phase: state.phase,
+      pathActive: state.pathActive,
+      pathGoal: state.pathGoal
+        ? { gridX: state.pathGoal.gridX, gridY: state.pathGoal.gridY }
+        : null,
+      movementSign: state.movementSign,
+    });
   }
 
   _abortStopPhase(state) {
@@ -1264,7 +1557,11 @@ export class Token3DAdapter {
     const intent = this._computeRotationIntent(state);
     if (intent === 0) {
       state.rotationDirection = 0;
-      if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+      if (
+        state.phase === 'idle' &&
+        !this._hasActiveIntents(state) &&
+        !this._shouldHoldMovementState(state)
+      ) {
         this._movementStates.delete(state.token);
       }
       return;
@@ -1289,6 +1586,10 @@ export class Token3DAdapter {
     const rotationActive =
       (state.rotationLeftKeys?.size || 0) > 0 || (state.rotationRightKeys?.size || 0) > 0;
     return movementActive || rotationActive;
+  }
+
+  _shouldHoldMovementState(state) {
+    return Boolean(state?.__resumeProbe);
   }
 
   beginForwardMovement(tokenEntry, sourceKey = '__forward') {
@@ -1329,31 +1630,68 @@ export class Token3DAdapter {
       const spatial = gm.spatial;
       if (!spatial || typeof spatial.gridToWorld !== 'function') return null;
 
+      const requestOptions = { ...options };
+      const preserveLastGoal = !!requestOptions.__maintainLastRequestedGoal;
+      if (preserveLastGoal) {
+        delete requestOptions.__maintainLastRequestedGoal;
+      }
+
       const state = this._ensureMovementState(tokenEntry);
       if (!state) return null;
+      if (!preserveLastGoal) {
+        this._clearResumeProbe(state);
+        state.climbContinuationGoal = null;
+      }
+      state.pathStallTime = 0;
+      const tokenDescriptor = this._describeTokenForLogs(tokenEntry);
 
       const currentGridX = Number.isFinite(tokenEntry.gridX) ? Math.round(tokenEntry.gridX) : 0;
       const currentGridY = Number.isFinite(tokenEntry.gridY) ? Math.round(tokenEntry.gridY) : 0;
 
-      const targetGridX = Number.isFinite(gridX) ? Math.round(gridX) : currentGridX;
-      const targetGridY = Number.isFinite(gridY) ? Math.round(gridY) : currentGridY;
+      let targetGridX = Number.isFinite(gridX) ? Math.round(gridX) : currentGridX;
+      let targetGridY = Number.isFinite(gridY) ? Math.round(gridY) : currentGridY;
+      const requestedTargetGridX = targetGridX;
+      const requestedTargetGridY = targetGridY;
+
+      this._logPathing('navigate:start', {
+        token: tokenDescriptor,
+        from: { gridX: currentGridX, gridY: currentGridY },
+        requested: { gridX: requestedTargetGridX, gridY: requestedTargetGridY },
+        preserveLastGoal,
+        options: { ...requestOptions },
+      });
+
+      if (!preserveLastGoal) {
+        state.lastRequestedGoal = {
+          gridX: requestedTargetGridX,
+          gridY: requestedTargetGridY,
+          options: { ...requestOptions },
+        };
+      }
 
       const sameTile = currentGridX === targetGridX && currentGridY === targetGridY;
       if (sameTile) {
-        this._clearPathState(state);
+        if (!preserveLastGoal) {
+          state.lastRequestedGoal = null;
+        }
+        this._clearPathState(state, { silentResumeProbe: true });
         if (state.phase !== 'idle') {
           state.pendingStop = true;
         }
+        this._logPathing('navigate:already-at-target', {
+          token: tokenDescriptor,
+          grid: { gridX: currentGridX, gridY: currentGridY },
+        });
         return { goal: null, speedMode: null, distance: 0 };
       }
 
       const walkThreshold =
-        Number.isFinite(options.walkThreshold) && options.walkThreshold >= 0
-          ? options.walkThreshold
+        Number.isFinite(requestOptions.walkThreshold) && requestOptions.walkThreshold >= 0
+          ? requestOptions.walkThreshold
           : PATH_SPEED_WALK_MAX;
       const runThreshold =
-        Number.isFinite(options.runThreshold) && options.runThreshold >= walkThreshold
-          ? options.runThreshold
+        Number.isFinite(requestOptions.runThreshold) && requestOptions.runThreshold >= walkThreshold
+          ? requestOptions.runThreshold
           : PATH_SPEED_RUN_MAX;
 
       const distance = this._computeGridDistance(
@@ -1370,13 +1708,62 @@ export class Token3DAdapter {
         speedMode = PATH_SPEED_MODES.RUN;
       }
 
-      const startHeightLevel = this._getTerrainHeight(currentGridX, currentGridY);
-      const targetHeightLevel = this._getTerrainHeight(targetGridX, targetGridY);
-      const heightDelta =
+      let startHeightLevel = this._getTerrainHeight(currentGridX, currentGridY);
+      let targetHeightLevel = this._getTerrainHeight(targetGridX, targetGridY);
+      let heightDelta =
         Number.isFinite(startHeightLevel) && Number.isFinite(targetHeightLevel)
           ? targetHeightLevel - startHeightLevel
           : 0;
 
+      const climbChainDepth = Number.isFinite(requestOptions.__intermediateClimbDepth)
+        ? Math.max(0, requestOptions.__intermediateClimbDepth)
+        : 0;
+      let continuationGoal = state.climbContinuationGoal || null;
+
+      if (climbChainDepth < MAX_INTERMEDIATE_CLIMB_CHAIN) {
+        const intermediatePlan = this._planIntermediateClimbTraversal(
+          currentGridX,
+          currentGridY,
+          targetGridX,
+          targetGridY
+        );
+        if (intermediatePlan) {
+          const planDiffersFromOriginal =
+            intermediatePlan.climbGridX !== requestedTargetGridX ||
+            intermediatePlan.climbGridY !== requestedTargetGridY;
+
+          if (planDiffersFromOriginal) {
+            continuationGoal = {
+              gridX: requestedTargetGridX,
+              gridY: requestedTargetGridY,
+              options: {
+                ...requestOptions,
+                __intermediateClimbDepth: climbChainDepth + 1,
+              },
+            };
+          }
+          this._logPathing('navigate:intermediate-climb', {
+            token: tokenDescriptor,
+            intermediate: {
+              approachGridX: intermediatePlan.approachGridX,
+              approachGridY: intermediatePlan.approachGridY,
+              climbGridX: intermediatePlan.climbGridX,
+              climbGridY: intermediatePlan.climbGridY,
+              heightDelta: intermediatePlan.heightDelta,
+            },
+            continuationGoal: continuationGoal
+              ? { gridX: continuationGoal.gridX, gridY: continuationGoal.gridY }
+              : null,
+          });
+          targetGridX = intermediatePlan.climbGridX;
+          targetGridY = intermediatePlan.climbGridY;
+          targetHeightLevel = this._getTerrainHeight(targetGridX, targetGridY);
+          heightDelta =
+            Number.isFinite(startHeightLevel) && Number.isFinite(targetHeightLevel)
+              ? targetHeightLevel - startHeightLevel
+              : heightDelta;
+        }
+      }
       const currentWorld = this._resolveTokenWorldPosition(tokenEntry);
       const fallbackHeight = Number.isFinite(options.elevation)
         ? options.elevation
@@ -1412,14 +1799,60 @@ export class Token3DAdapter {
         y: resolvedTargetY,
       };
 
-      const climbEligible = heightDelta >= 4;
+      const startWorldY = currentWorld?.y;
+      const targetWorldReferenceY = Number.isFinite(targetCenterWorld?.y)
+        ? targetCenterWorld.y
+        : targetWorld?.y;
+
+      const derivedStartHeightLevel = this._estimateHeightFromWorld(
+        startWorldY,
+        currentGridX,
+        currentGridY
+      );
+      let resolvedStartHeightLevel = Number.isFinite(startHeightLevel)
+        ? startHeightLevel
+        : derivedStartHeightLevel;
+      if (!Number.isFinite(resolvedStartHeightLevel)) {
+        resolvedStartHeightLevel = 0;
+      } else if (
+        Number.isFinite(derivedStartHeightLevel) &&
+        Math.abs(derivedStartHeightLevel - resolvedStartHeightLevel) > 1e-3
+      ) {
+        resolvedStartHeightLevel = derivedStartHeightLevel;
+      }
+
+      const derivedTargetHeightLevel = this._estimateHeightFromWorld(
+        targetWorldReferenceY,
+        targetGridX,
+        targetGridY
+      );
+      let resolvedTargetHeightLevel = Number.isFinite(targetHeightLevel)
+        ? targetHeightLevel
+        : derivedTargetHeightLevel;
+      if (!Number.isFinite(resolvedTargetHeightLevel)) {
+        resolvedTargetHeightLevel = resolvedStartHeightLevel;
+      } else if (
+        Number.isFinite(derivedTargetHeightLevel) &&
+        Math.abs(derivedTargetHeightLevel - resolvedTargetHeightLevel) > 1e-3
+      ) {
+        resolvedTargetHeightLevel = derivedTargetHeightLevel;
+      }
+
+      startHeightLevel = resolvedStartHeightLevel;
+      targetHeightLevel = resolvedTargetHeightLevel;
+      heightDelta =
+        Number.isFinite(targetHeightLevel) && Number.isFinite(startHeightLevel)
+          ? targetHeightLevel - startHeightLevel
+          : 0;
+
+      const climbEligible = heightDelta >= MAX_STANDARD_CLIMB_LEVELS;
       const elevationUnit =
         Number.isFinite(spatial?.elevationUnit) && spatial.elevationUnit > 0
           ? spatial.elevationUnit
           : 0.5;
       const toleranceBase =
-        Number.isFinite(options.tolerance) && options.tolerance > 0
-          ? options.tolerance
+        Number.isFinite(requestOptions.tolerance) && requestOptions.tolerance > 0
+          ? requestOptions.tolerance
           : PATH_SPEED_DEFAULT_TOLERANCE;
 
       let pathGoalGridX = targetGridX;
@@ -1480,9 +1913,11 @@ export class Token3DAdapter {
         const dirX = targetWorld.x - approachWorld.x;
         const dirZ = targetWorld.z - approachWorld.z;
         const dirLen = Math.hypot(dirX, dirZ);
-        const footWorld = { ...approachWorld };
+        const footWorld = this._cloneWorld(approachWorld) || approachWorld;
         if (dirLen > 1e-4) {
-          const offset = Math.min(tileHalf, dirLen);
+          const entryRatio = Math.min(Math.max(CLIMB_WALL_ENTRY_TILE_HALF_RATIO, 0.05), 1);
+          const maxEntryDepth = tileHalf * entryRatio;
+          const offset = Math.min(maxEntryDepth, dirLen);
           const scale = offset / dirLen;
           footWorld.x += dirX * scale;
           footWorld.z += dirZ * scale;
@@ -1503,14 +1938,27 @@ export class Token3DAdapter {
           targetGridX,
           targetGridY,
           targetHeight: targetHeightLevel,
-          footWorld,
-          edgeWorld: edgeTopWorld,
-          finalWorld: targetWorld,
+          footWorld: this._cloneWorld(footWorld) || footWorld,
+          edgeWorld: this._cloneWorld(edgeTopWorld) || edgeTopWorld,
+          finalWorld: this._cloneWorld(targetWorld) || targetWorld,
           heightDelta,
           elevationUnit,
           extraWallLevels,
           wallWorldTravel,
         };
+
+        this._logPathing('climb:queued', {
+          token: tokenDescriptor,
+          target: {
+            gridX: targetGridX,
+            gridY: targetGridY,
+            heightDelta,
+            extraWallLevels,
+          },
+          continuationGoal: continuationGoal
+            ? { gridX: continuationGoal.gridX, gridY: continuationGoal.gridY }
+            : null,
+        });
 
         pathGoalGridX = approachGridX;
         pathGoalGridY = approachGridY;
@@ -1520,10 +1968,18 @@ export class Token3DAdapter {
         state.climbQueued = null;
       }
 
-      const orientationWorld = state.climbQueued ? pathGoalWorld : targetWorld;
+      if (continuationGoal) {
+        state.climbContinuationGoal = continuationGoal;
+      }
+
+      const orientationWorld = climbEligible ? pathGoalWorld : targetWorld;
       this._orientTokenTowardsWorld(tokenEntry, orientationWorld);
 
-      this._clearPathState(state);
+      const clearOptions = { silentResumeProbe: true };
+      if (state.__resumeProbe) {
+        clearOptions.preserveResumeProbe = true;
+      }
+      this._clearPathState(state, clearOptions);
       state.pathActive = true;
       state.pathGoal = { gridX: pathGoalGridX, gridY: pathGoalGridY, world: pathGoalWorld };
       state.pathSpeedMode = speedMode;
@@ -1539,8 +1995,8 @@ export class Token3DAdapter {
       }
       state.forwardKeys.add(PATH_NAVIGATION_KEY);
 
-      state.freeStartWorld = currentWorld ? { ...currentWorld } : null;
-      state.freeLastWorld = currentWorld ? { ...currentWorld } : null;
+      state.freeStartWorld = this._cloneWorld(currentWorld);
+      state.freeLastWorld = this._cloneWorld(currentWorld);
       state.freeDistance = 0;
 
       state.movementSign = 1;
@@ -1563,6 +2019,31 @@ export class Token3DAdapter {
       }
 
       this._updateMovementFlags(state, netIntent);
+
+      this._logPathing('navigate:path-issued', {
+        token: tokenDescriptor,
+        goal: state.pathGoal
+          ? {
+              gridX: state.pathGoal.gridX,
+              gridY: state.pathGoal.gridY,
+              world: state.pathGoal.world
+                ? {
+                    x: state.pathGoal.world.x,
+                    y: state.pathGoal.world.y,
+                    z: state.pathGoal.world.z,
+                  }
+                : null,
+            }
+          : null,
+        speedMode,
+        hasClimbQueued: Boolean(state.climbQueued),
+        continuationGoal: state.climbContinuationGoal
+          ? {
+              gridX: state.climbContinuationGoal.gridX,
+              gridY: state.climbContinuationGoal.gridY,
+            }
+          : null,
+      });
 
       return { goal: state.pathGoal, speedMode, distance };
     } catch (_) {
@@ -1600,7 +2081,11 @@ export class Token3DAdapter {
         state.rotationLeftKeys.delete(key);
       }
       state.rotationDirection = this._computeRotationIntent(state);
-      if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+      if (
+        state.phase === 'idle' &&
+        !this._hasActiveIntents(state) &&
+        !this._shouldHoldMovementState(state)
+      ) {
         this._movementStates.delete(tokenEntry);
       }
     } catch (_) {
@@ -1676,7 +2161,11 @@ export class Token3DAdapter {
         state.intentHold = false;
         state.pendingStop = true;
         state.movementSign = 0;
-        if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+        if (
+          state.phase === 'idle' &&
+          !this._hasActiveIntents(state) &&
+          !this._shouldHoldMovementState(state)
+        ) {
           this._movementStates.delete(tokenEntry);
         }
         return;
@@ -1688,7 +2177,7 @@ export class Token3DAdapter {
 
       if (netIntent !== state.movementSign) {
         state.freeStartWorld = this._resolveTokenWorldPosition(tokenEntry);
-        state.freeLastWorld = state.freeStartWorld ? { ...state.freeStartWorld } : null;
+        state.freeLastWorld = this._cloneWorld(state.freeStartWorld);
         state.freeDistance = 0;
         state.phaseElapsed = 0;
       }
@@ -2324,7 +2813,7 @@ export class Token3DAdapter {
             const netIntent = this._recalculateMovementIntent(state);
             if (netIntent !== 0) {
               this._startMovementPhase(state, netIntent);
-            } else if (!this._hasActiveIntents(state)) {
+            } else if (!this._hasActiveIntents(state) && !this._shouldHoldMovementState(state)) {
               this._movementStates.delete(tokenEntry);
             }
             break;
@@ -2340,7 +2829,13 @@ export class Token3DAdapter {
           this._initiateStopPhase(state);
         }
 
-        if (state.phase === 'idle' && !this._hasActiveIntents(state)) {
+        this._checkResumeProbe(state);
+
+        if (
+          state.phase === 'idle' &&
+          !this._hasActiveIntents(state) &&
+          !this._shouldHoldMovementState(state)
+        ) {
           this._movementStates.delete(tokenEntry);
         }
       } catch (_) {
@@ -2403,7 +2898,7 @@ export class Token3DAdapter {
 
     if (netIntent !== state.movementSign) {
       state.freeStartWorld = this._resolveTokenWorldPosition(state.token);
-      state.freeLastWorld = state.freeStartWorld ? { ...state.freeStartWorld } : null;
+      state.freeLastWorld = this._cloneWorld(state.freeStartWorld);
       state.freeDistance = 0;
       state.phaseElapsed = 0;
     }
@@ -2485,7 +2980,7 @@ export class Token3DAdapter {
         fadeOut: profile.walkFadeOut,
         force: true,
       });
-      this._finishStopState(state);
+      this._resetMovementState(state, { useStopBlend: true, clearStopFlags: true });
     }
   }
 
@@ -2517,7 +3012,7 @@ export class Token3DAdapter {
     }
 
     if (clipDuration === 0 || state.stopElapsed >= clipDuration - 1e-4) {
-      this._finishStopState(state);
+      this._resetMovementState(state, { useStopBlend: true, clearStopFlags: true });
     }
   }
 
@@ -2573,7 +3068,9 @@ export class Token3DAdapter {
       this._lockStepAtTarget(state);
     }
     this._applyPendingOrientation(state);
-    this._movementStates.delete(state.token);
+    if (!this._shouldHoldMovementState(state)) {
+      this._movementStates.delete(state.token);
+    }
     this._resetSprintState(state);
     Object.assign(state, {
       intentHold: false,
@@ -2760,9 +3257,9 @@ export class Token3DAdapter {
         step.fallStartPosition = this._lerp3(step.startPosition, step.targetPosition, travelRatio);
       }
 
-      const worldRef = step.tokenEntry?.world
-        ? { ...step.tokenEntry.world }
-        : this._lerp3(step.startWorld, step.targetWorld, travelRatio);
+      const worldRef =
+        this._cloneWorld(step.tokenEntry?.world) ||
+        this._lerp3(step.startWorld, step.targetWorld, travelRatio);
       step.fallStartWorld = worldRef;
       step.fallStartCaptured = true;
     }
@@ -2867,7 +3364,64 @@ export class Token3DAdapter {
   _advanceMovementStep(state, distance, options = {}) {
     const step = state.activeStep;
     if (!step || distance <= 0) return false;
-    const completed = this._applyStepProgress(step, distance, state, options);
+
+    const remaining = Math.max(0, step.totalDistance - step.traveled);
+    const move = Math.min(distance, remaining);
+    if (move <= 0) {
+      return remaining <= 1e-5;
+    }
+
+    step.traveled += move;
+    const ratio = step.totalDistance > 0 ? Math.min(step.traveled / step.totalDistance, 1) : 1;
+    const pos = this._lerp3(step.startPosition, step.targetPosition, ratio);
+    const world = this._lerp3(step.startWorld, step.targetWorld, ratio);
+
+    const isFallPhase = state?.phase === 'fall';
+    const requiresFall = !!step.requiresFall;
+    const verticalDelta = Math.abs((step.startPosition?.y ?? 0) - (step.targetPosition?.y ?? 0));
+
+    if (requiresFall) {
+      if (isFallPhase) {
+        const fallStartRatio = Number.isFinite(step.fallStartRatio) ? step.fallStartRatio : 0;
+        const fallStartPositionY = Number.isFinite(step.fallStartPosition?.y)
+          ? step.fallStartPosition.y
+          : (step.startPosition?.y ?? pos.y);
+        const fallStartWorldY = Number.isFinite(step.fallStartWorld?.y)
+          ? step.fallStartWorld.y
+          : (step.startWorld?.y ?? world.y);
+
+        let fallProgress = 0;
+        if (ratio > fallStartRatio) {
+          const denom = Math.max(1 - fallStartRatio, 1e-6);
+          fallProgress = Math.min((ratio - fallStartRatio) / denom, 1);
+        }
+
+        const targetPositionY = step.targetPosition?.y ?? fallStartPositionY;
+        const targetWorldY = step.targetWorld?.y ?? fallStartWorldY;
+        pos.y = fallStartPositionY + (targetPositionY - fallStartPositionY) * fallProgress;
+        world.y = fallStartWorldY + (targetWorldY - fallStartWorldY) * fallProgress;
+      } else {
+        pos.y = step.startPosition?.y ?? pos.y;
+        world.y = step.startWorld?.y ?? world.y;
+      }
+    } else if (verticalDelta > 1e-4) {
+      const snapProgress = step.verticalSnapProgress || DEFAULT_HEIGHT_SNAP_PROGRESS;
+      const useTarget = ratio >= snapProgress || options?.clamp;
+      pos.y = useTarget ? step.targetPosition.y : step.startPosition.y;
+      world.y = useTarget ? step.targetWorld.y : step.startWorld.y;
+    }
+
+    step.horizontalTraveled = Math.hypot(
+      pos.x - step.startPosition.x,
+      pos.z - step.startPosition.z
+    );
+    this._syncTokenAndMeshWorld(state, world, {
+      token: step.tokenEntry,
+      mesh: step.mesh,
+    });
+
+    const completed = step.traveled >= step.totalDistance - 1e-5;
+
     if (state.phase !== 'fall' && step.requiresFall && !step.fallTriggered) {
       let ratio = 1;
       if (step.horizontalDistance > 0) {
@@ -2908,7 +3462,7 @@ export class Token3DAdapter {
       }
 
       if (state.phase !== 'stop' && !state.pendingStop && !state.intentHold) {
-        this._finishWalkState(state);
+        this._resetMovementState(state);
       }
     }
     return completed;
@@ -2921,19 +3475,61 @@ export class Token3DAdapter {
       state.activeSpeed ?? profile.walkSpeed ?? DEFAULT_MOVEMENT_PROFILE.walkSpeed ?? 1,
       0
     );
-    if (!(speed > 0)) return;
+    if (!(speed > 0)) {
+      if (state.pathActive) {
+        this._logPathingOnce(state, 'free-no-speed', 'movement:advance-skipped', {
+          token: this._describeTokenForLogs(state.token),
+          reason: 'no-speed',
+          phase: state.phase,
+          movementSign: state.movementSign,
+          intentHold: state.intentHold,
+        });
+      }
+      return;
+    }
 
     const sign = state.movementSign || 0;
-    if (sign === 0) return;
+    if (sign === 0) {
+      if (state.pathActive) {
+        this._logPathingOnce(state, 'free-no-sign', 'movement:advance-skipped', {
+          token: this._describeTokenForLogs(state.token),
+          reason: 'no-direction',
+          phase: state.phase,
+          pathActive: state.pathActive,
+          intentHold: state.intentHold,
+          forwardKeys: state.forwardKeys ? Array.from(state.forwardKeys) : [],
+        });
+      }
+      return;
+    }
 
     const yaw = this._getMovementYaw(state.token);
     let direction = this._getDirectionalVectorFromYaw(yaw, sign);
     if (!direction || (Math.abs(direction.x) < 1e-6 && Math.abs(direction.z) < 1e-6)) {
+      if (state.pathActive) {
+        this._logPathingOnce(state, 'free-bad-direction', 'movement:advance-skipped', {
+          token: this._describeTokenForLogs(state.token),
+          reason: 'no-direction-vector',
+          phase: state.phase,
+          yaw,
+        });
+      }
       return;
     }
 
     let distance = speed * delta;
-    if (!(distance > 0)) return;
+    if (!(distance > 0)) {
+      if (state.pathActive) {
+        this._logPathingOnce(state, 'free-no-distance', 'movement:advance-skipped', {
+          token: this._describeTokenForLogs(state.token),
+          reason: 'zero-distance',
+          phase: state.phase,
+          speed,
+          delta,
+        });
+      }
+      return;
+    }
 
     const currentWorld = this._resolveTokenWorldPosition(state.token);
     const pathGoal = state.pathActive ? state.pathGoal : null;
@@ -2992,23 +3588,72 @@ export class Token3DAdapter {
       nextWorld.y = this._sampleWorldHeight(nextWorld.x, nextWorld.z, currentWorld.y);
     }
 
-    const composed = this._composeMeshPosition(nextWorld, state.mesh);
-    if (state.mesh?.position?.set) {
-      state.mesh.position.set(composed.x, composed.y, composed.z);
-    }
-
-    this._updateTokenWorldDuringMovement(state.token, nextWorld);
+    this._syncTokenAndMeshWorld(state, nextWorld);
 
     const actualDistance = Math.hypot(nextWorld.x - currentWorld.x, nextWorld.z - currentWorld.z);
     if (delta > 1e-4 && actualDistance > 0) {
       state.lastMoveSpeed = actualDistance / delta;
     }
 
-    if (!state.freeStartWorld) {
-      state.freeStartWorld = { ...currentWorld };
+    if (state.pathActive && goalWorld) {
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      const lastLog = state.__pathAdvanceLogAt || 0;
+      if (!lastLog || now - lastLog >= 200) {
+        state.__pathAdvanceLogAt = now;
+        const remainingAfter = Math.hypot(goalWorld.x - nextWorld.x, goalWorld.z - nextWorld.z);
+        this._logPathing('movement:advance', {
+          token: this._describeTokenForLogs(state.token),
+          phase: state.phase,
+          actualDistance,
+          remainingAfter,
+          tolerance,
+          movementSign: state.movementSign,
+          intentHold: state.intentHold,
+        });
+      }
     }
-    state.freeLastWorld = { ...nextWorld };
+
+    if (goalWorld) {
+      if (actualDistance <= 1e-4) {
+        state.pathStallTime = (state.pathStallTime || 0) + delta;
+        if (state.pathStallTime >= PATH_STALL_REPATH_DELAY) {
+          const tokenDescriptor = this._describeTokenForLogs(state.token);
+          const worldDistanceToGoal = Math.hypot(
+            goalWorld.x - currentWorld.x,
+            goalWorld.z - currentWorld.z
+          );
+          this._logPathing('path:stall-detected', {
+            token: tokenDescriptor,
+            worldDistanceToGoal,
+            tolerance,
+            stallTime: state.pathStallTime,
+          });
+          const rerouted = this._attemptIntermediateClimbRedirect(state);
+          this._logPathing('path:stall-reroute', {
+            token: tokenDescriptor,
+            rerouted,
+          });
+          state.pathStallTime = 0;
+          if (rerouted) {
+            return;
+          }
+        }
+      } else {
+        state.pathStallTime = 0;
+      }
+    } else {
+      state.pathStallTime = 0;
+    }
+
+    if (!state.freeStartWorld) {
+      state.freeStartWorld = this._cloneWorld(currentWorld);
+    }
+    state.freeLastWorld = this._cloneWorld(nextWorld);
     state.freeDistance += actualDistance;
+    this._handleResumeProbeProgress(state);
     state.activeStep = null;
     state.stepFinalized = false;
 
@@ -3020,8 +3665,14 @@ export class Token3DAdapter {
     }
   }
 
-  _clearPathState(state) {
+  _clearPathState(state, options = {}) {
     if (!state) return;
+    const {
+      silentResumeProbe = false,
+      resumeProbeReason = 'path-cleared',
+      resumeProbeDetails = {},
+      preserveResumeProbe = false,
+    } = options;
     if (state.pathKey && state.forwardKeys?.has(state.pathKey)) {
       state.forwardKeys.delete(state.pathKey);
     }
@@ -3031,10 +3682,51 @@ export class Token3DAdapter {
     state.pathKey = null;
     state.pathTolerance = 0;
     state.pathReached = false;
+    state.__pathAdvanceLogAt = 0;
+    if (!preserveResumeProbe) {
+      if (silentResumeProbe) {
+        this._clearResumeProbe(state);
+      } else {
+        this._abortResumeProbe(state, resumeProbeReason, resumeProbeDetails);
+      }
+    }
+    if (state.__pathingLogFlags && typeof state.__pathingLogFlags.clear === 'function') {
+      state.__pathingLogFlags.clear();
+    }
+  }
+
+  _resetClimbWallState(state, options = {}) {
+    if (!state) return;
+    state.climbWallQueue = null;
+    state.climbWallActive = false;
+    state.climbWallElapsed = 0;
+    state.climbWallDuration = 0;
+    state.climbWallStartWorld = null;
+    state.climbWallTargetWorld = null;
+    state.climbWallBaseDuration = 0;
+    state.climbWallAnimationPlaying = false;
+    if (!options?.preservePrestart) {
+      state.climbAnimationPrestarted = false;
+      state.climbPrestartFootWorld = null;
+    }
+  }
+
+  _resetClimbRecoverState(state) {
+    if (!state) return;
+    state.climbRecoverActive = false;
+    state.climbRecoverElapsed = 0;
+    state.climbRecoverDuration = 0;
+    state.climbRecoverStartWorld = null;
+    state.climbRecoverAnchorPosition = null;
+    state.climbRecoverCrouchWorld = null;
+    state.climbRecoverCrouchDrop = 0;
+    state.climbRecoverRiseHold = CLIMB_RECOVER_CROUCH_HOLD;
+    state.climbRecoverStandRelease = CLIMB_RECOVER_STAND_RELEASE;
   }
 
   _clearClimbState(state) {
     if (!state) return;
+    this._setSelectionIndicatorSuppressed(state, false);
     state.climbQueued = null;
     state.climbPendingInfo = null;
     state.climbActive = false;
@@ -3044,29 +3736,219 @@ export class Token3DAdapter {
     state.climbTargetWorld = null;
     state.climbFinalWorld = null;
     state.climbData = null;
-    state.climbWallQueue = null;
-    state.climbWallActive = false;
-    state.climbWallElapsed = 0;
-    state.climbWallDuration = 0;
-    state.climbWallStartWorld = null;
-    state.climbWallTargetWorld = null;
-    state.climbWallBaseDuration = 0;
-    state.climbWallAnimationPlaying = false;
-    state.climbRecoverActive = false;
-    state.climbRecoverElapsed = 0;
-    state.climbRecoverDuration = 0;
-    state.climbRecoverStartWorld = null;
-    state.climbRecoverAnchorPosition = null;
+    this._resetClimbWallState(state);
+    this._resetClimbRecoverState(state);
     state.climbLastWorld = null;
     state.climbAdvanceActive = false;
     state.climbAdvanceTargetWorld = null;
+  }
+
+  _resolveClimbLandingWorld(state) {
+    if (!state) return null;
+    const finalWorld = this._cloneWorld(this._resolveClimbFinalWorld(state));
+    if (finalWorld) {
+      return finalWorld;
+    }
+    return this._cloneWorldWithFallback(
+      state.climbAdvanceTargetWorld,
+      state.climbLastWorld,
+      state.climbRecoverStartWorld,
+      state.climbTargetWorld,
+      state.climbStartWorld,
+      this._resolveTokenWorldPosition(state.token)
+    );
+  }
+
+  _resolveClimbRecoverWorld(state) {
+    if (!state) return null;
+    return this._cloneWorldWithFallback(
+      state.climbRecoverStartWorld,
+      state.climbLastWorld,
+      state.climbTargetWorld,
+      state.climbStartWorld
+    );
+  }
+
+  _finalizeClimbLanding(state, options = {}) {
+    if (!state) return true;
+    const allowAdvance = options.allowAdvance !== false;
+    const landingWorld =
+      options.landingWorld !== undefined
+        ? options.landingWorld
+        : this._resolveClimbLandingWorld(state);
+    const recoverWorld =
+      options.recoverWorld !== undefined
+        ? options.recoverWorld
+        : this._resolveClimbRecoverWorld(state);
+
+    const tokenDescriptor = this._describeTokenForLogs(state.token);
+    this._logPathing('climb:finalize-begin', {
+      token: tokenDescriptor,
+      allowAdvance,
+      hasLandingWorld: Boolean(landingWorld),
+      hasRecoverWorld: Boolean(recoverWorld),
+    });
+
+    if (allowAdvance && this._shouldStartClimbAdvance(state, recoverWorld, landingWorld)) {
+      const started = this._startClimbAdvancePhase(state, recoverWorld, landingWorld);
+      if (started) {
+        this._logPathing('climb:finalize-advance', {
+          token: tokenDescriptor,
+        });
+        return true;
+      }
+    }
+
+    this._logPathing('climb:finalize-reset', {
+      token: tokenDescriptor,
+    });
+    this._resetClimbLandingState(state, { landingWorld });
+    return true;
+  }
+
+  _resetClimbLandingState(state, options = {}) {
+    if (!state) return;
+    const info = state.climbData || state.climbQueued || {};
+    const landingWorld = options.landingWorld ?? this._resolveClimbLandingWorld(state);
+    const tokenDescriptor = this._describeTokenForLogs(state.token);
+
+    this._logPathing('climb:reset-landing', {
+      token: tokenDescriptor,
+      hasLandingWorld: Boolean(landingWorld),
+      hadContinuationGoal: Boolean(state.climbContinuationGoal),
+      hadCachedGoal: Boolean(state.lastRequestedGoal),
+    });
+
+    const tokenEntry = state.token;
+    if (tokenEntry) {
+      if (landingWorld) {
+        this._transferRootMotionToWorld(state, landingWorld);
+      } else {
+        this._transferRootMotionToWorld(state);
+      }
+
+      const targetGridX = Number.isFinite(info?.targetGridX) ? Math.round(info.targetGridX) : null;
+      const targetGridY = Number.isFinite(info?.targetGridY) ? Math.round(info.targetGridY) : null;
+
+      if (targetGridX != null) tokenEntry.gridX = targetGridX;
+      if (targetGridY != null) tokenEntry.gridY = targetGridY;
+
+      if (landingWorld) {
+        this._syncTokenAndMeshWorld(state, landingWorld, { token: tokenEntry });
+      }
+    }
+
+    const continuationGoal = this._cloneClimbContinuationGoal(state.climbContinuationGoal);
+    let resumeSource = null;
+
+    state.climbContinuationGoal = null;
+    state.intentHold = false;
+    state.pendingStop = false;
+    state.stopTriggered = false;
+    state.stopBlendedToIdle = false;
+    state.activeStep = null;
+    state.stepFinalized = true;
+    state.climbAdvanceActive = false;
+    state.climbRecoverActive = false;
+    state.phase = 'idle';
+
+    this._clearClimbState(state);
+
+    const hadSyntheticPath = Boolean(state.forwardKeys?.has(PATH_NAVIGATION_KEY));
+    let resumed = false;
+
+    if (continuationGoal) {
+      resumed = this._reissueMaintainedGoal(state, continuationGoal, {
+        allowSameTile: true,
+      });
+      if (resumed) {
+        resumeSource = 'continuation-maintained';
+      }
+
+      if (!resumed && state?.token) {
+        const directOptions = { ...(continuationGoal.options || {}) };
+        const directResult = this.navigateToGrid(
+          state.token,
+          continuationGoal.gridX,
+          continuationGoal.gridY,
+          directOptions
+        );
+        resumed = !!directResult;
+        if (resumed) {
+          resumeSource = 'continuation-direct';
+        }
+      }
+    }
+
+    if (!resumed && state.lastRequestedGoal) {
+      resumed = this._resumeCachedPostClimbGoal(state);
+      if (resumed) {
+        resumeSource = 'cached-maintained';
+      }
+
+      if (!resumed && state?.token) {
+        const cachedOptions = { ...(state.lastRequestedGoal.options || {}) };
+        const cachedResult = this.navigateToGrid(
+          state.token,
+          state.lastRequestedGoal.gridX,
+          state.lastRequestedGoal.gridY,
+          cachedOptions
+        );
+        resumed = !!cachedResult;
+        if (resumed) {
+          resumeSource = 'cached-direct';
+        }
+      }
+    }
+
+    if (!resumed && hadSyntheticPath && state.forwardKeys) {
+      state.forwardKeys.delete(PATH_NAVIGATION_KEY);
+      this._logPathing('climb:synthetic-path-cleared', {
+        token: tokenDescriptor,
+      });
+    }
+
+    if (resumed) {
+      this._logPathing('climb:resume-success', {
+        token: tokenDescriptor,
+        resumeSource,
+      });
+      const probeGoal = continuationGoal || state.lastRequestedGoal || state.pathGoal || null;
+      this._armResumeProbe(state, {
+        goal: probeGoal,
+        resumeSource,
+      });
+      return;
+    }
+
+    if (this._hasActiveIntents(state)) {
+      return;
+    }
+
+    this._logPathing('climb:resume-failed', {
+      token: tokenDescriptor,
+    });
+    this._clearResumeProbe(state);
+    this._resetMovementState(state);
   }
   _completePath(state) {
     if (!state) return;
     const goal = state.pathGoal;
     const tokenEntry = state.token;
     const mesh = state.mesh;
-    const climbInfo = state.climbQueued ? { ...state.climbQueued } : null;
+    const climbInfo = this._cloneClimbWorldInfo(state.climbQueued);
+
+    const tokenDescriptor = this._describeTokenForLogs(tokenEntry);
+    this._logPathing('path:complete', {
+      token: tokenDescriptor,
+      goal: goal
+        ? {
+            gridX: goal.gridX,
+            gridY: goal.gridY,
+          }
+        : null,
+      hadClimbQueued: Boolean(climbInfo),
+    });
 
     this._clearPathState(state);
     state.intentHold = false;
@@ -3077,28 +3959,44 @@ export class Token3DAdapter {
     if (goal) {
       if (Number.isFinite(goal.gridX)) tokenEntry.gridX = goal.gridX;
       if (Number.isFinite(goal.gridY)) tokenEntry.gridY = goal.gridY;
-      if (goal.world) {
-        tokenEntry.world = { ...goal.world };
-        if (mesh?.position) {
-          const composed = this._composeMeshPosition(goal.world, mesh);
-          mesh.position.set(composed.x, composed.y, composed.z);
-        }
+      const goalWorld = this._cloneWorld(goal.world);
+      if (goalWorld) {
+        this._syncTokenAndMeshWorld(state, goalWorld, { token: tokenEntry, mesh });
       }
     }
 
     if (climbInfo) {
+      this._logPathing('path:complete-start-climb', {
+        token: tokenDescriptor,
+        target: {
+          gridX: climbInfo.targetGridX,
+          gridY: climbInfo.targetGridY,
+          heightDelta: climbInfo.heightDelta,
+        },
+      });
       this._startClimbPhase(state, climbInfo);
       return;
     }
 
-    this._finishWalkState(state);
+    this._resetMovementState(state);
   }
 
   _startClimbPhase(state, climbInfo, options = {}) {
     if (!state || !climbInfo) {
-      this._finishWalkState(state);
+      this._resetMovementState(state);
       return;
     }
+
+    const tokenDescriptor = this._describeTokenForLogs(state.token);
+    this._logPathing('climb:phase-start', {
+      token: tokenDescriptor,
+      target: {
+        gridX: climbInfo.targetGridX,
+        gridY: climbInfo.targetGridY,
+        heightDelta: climbInfo.heightDelta,
+      },
+      skipWallPlan: !!options?.skipWallPlan,
+    });
 
     const animationData = this._tokenAnimationData.get(state.token);
 
@@ -3116,11 +4014,10 @@ export class Token3DAdapter {
       duration = DEFAULT_CLIMB_DURATION;
     }
 
-    const startWorld = climbInfo.footWorld ? { ...climbInfo.footWorld } : { ...state.token.world };
-    const targetEdge = climbInfo.edgeWorld
-      ? { ...climbInfo.edgeWorld }
-      : { ...climbInfo.finalWorld };
-    const finalWorld = climbInfo.finalWorld ? { ...climbInfo.finalWorld } : { ...targetEdge };
+    const startWorld = this._cloneWorldWithFallback(climbInfo.footWorld, state.token?.world) || {};
+    const targetEdge =
+      this._cloneWorldWithFallback(climbInfo.edgeWorld, climbInfo.finalWorld) || {};
+    const finalWorld = this._cloneWorldWithFallback(climbInfo.finalWorld, targetEdge) || {};
 
     state.phase = 'climb';
     state.climbActive = true;
@@ -3134,12 +4031,8 @@ export class Token3DAdapter {
       targetGridY: climbInfo.targetGridY,
       targetHeight: climbInfo.targetHeight,
     };
-    state.climbRecoverActive = false;
-    state.climbRecoverElapsed = 0;
-    state.climbRecoverDuration = 0;
-    state.climbRecoverStartWorld = null;
-    state.climbLastWorld = startWorld ? { ...startWorld } : null;
-    state.climbQueued = null;
+    this._resetClimbRecoverState(state);
+    state.climbLastWorld = this._cloneWorld(startWorld);
     state.intentHold = false;
     state.pendingStop = false;
     state.movementSign = 0;
@@ -3147,18 +4040,28 @@ export class Token3DAdapter {
     state.phaseElapsed = 0;
     state.activeStep = null;
     state.stepFinalized = true;
+    this._setSelectionIndicatorSuppressed(state, true);
 
     if (climbAction) {
       const fadeIn = profile?.climbFadeIn ?? profile.walkFadeIn ?? 0.18;
       const fadeOut = profile?.climbFadeOut ?? profile.walkFadeOut ?? 0.18;
-      this._setAnimation(state.token, 'climb', {
-        fadeIn,
-        fadeOut,
-        force: true,
-      });
+      const shouldRestart = animationData?.current !== 'climb';
+      if (shouldRestart) {
+        this._setAnimation(state.token, 'climb', {
+          fadeIn,
+          fadeOut,
+          force: true,
+        });
+      }
     } else {
-      this._completeClimbInstant(state);
+      this._finalizeClimbLanding(state, { allowAdvance: false });
+      state.climbAnimationPrestarted = false;
+      state.climbPrestartFootWorld = null;
+      return;
     }
+
+    state.climbAnimationPrestarted = false;
+    state.climbPrestartFootWorld = null;
   }
 
   _maybeStartClimbWallSequence(state, climbInfo, animationData) {
@@ -3169,8 +4072,8 @@ export class Token3DAdapter {
     }
 
     const queue = plan.segments.map((segment) => ({
-      startWorld: segment.startWorld ? { ...segment.startWorld } : null,
-      targetWorld: segment.targetWorld ? { ...segment.targetWorld } : null,
+      startWorld: this._cloneWorld(segment.startWorld),
+      targetWorld: this._cloneWorld(segment.targetWorld),
       ratio: Number.isFinite(segment.ratio) ? segment.ratio : 1,
     }));
 
@@ -3182,23 +4085,25 @@ export class Token3DAdapter {
       MAX_STANDARD_CLIMB_LEVELS,
       Math.max(Number(climbInfo.heightDelta) || 0, 0)
     );
-    const pendingInfo = {
-      ...climbInfo,
-      footWorld: plan.finalStartWorld ? { ...plan.finalStartWorld } : climbInfo.footWorld,
-      heightDelta: clampedDelta,
-      extraWallLevels: 0,
-      wallWorldTravel: 0,
-    };
+    const pendingInfo = this._cloneClimbWorldInfo(climbInfo) || {};
+    pendingInfo.footWorld = this._cloneWorld(plan.finalStartWorld) || pendingInfo.footWorld;
+    pendingInfo.heightDelta = clampedDelta;
+    pendingInfo.extraWallLevels = 0;
+    pendingInfo.wallWorldTravel = 0;
 
     state.climbPendingInfo = pendingInfo;
+    this._resetClimbWallState(state, { preservePrestart: true });
     state.climbWallQueue = queue;
     state.climbWallBaseDuration = plan.baseDuration;
-    state.climbWallActive = false;
-    state.climbWallElapsed = 0;
-    state.climbWallDuration = 0;
-    state.climbWallStartWorld = null;
-    state.climbWallTargetWorld = null;
-    state.climbWallAnimationPlaying = false;
+
+    this._setSelectionIndicatorSuppressed(state, true);
+
+    this._logPathing('climbWall:plan', {
+      token: this._describeTokenForLogs(state.token),
+      segments: queue.length,
+      baseDuration: state.climbWallBaseDuration,
+      pendingHeightDelta: pendingInfo.heightDelta,
+    });
 
     return this._startNextClimbWallSegment(state, animationData);
   }
@@ -3238,7 +4143,7 @@ export class Token3DAdapter {
 
     const segments = [];
     let remaining = travelWorld;
-    let cursor = { ...footWorld };
+    let cursor = this._cloneWorld(footWorld) || {};
     let guard = 0;
 
     while (remaining > 1e-4 && guard < 32) {
@@ -3250,11 +4155,11 @@ export class Token3DAdapter {
       };
       const ratio = referenceHeight > 1e-4 ? portion / referenceHeight : 1;
       segments.push({
-        startWorld: { ...cursor },
+        startWorld: this._cloneWorld(cursor),
         targetWorld: target,
         ratio,
       });
-      cursor = { ...target };
+      cursor = this._cloneWorld(target) || target;
       remaining -= portion;
       guard += 1;
     }
@@ -3296,10 +4201,11 @@ export class Token3DAdapter {
     state.climbWallActive = true;
     state.climbWallElapsed = 0;
     state.climbWallDuration = Math.max(baseDuration * ratio, 1e-4);
-    state.climbWallStartWorld = { ...segment.startWorld };
-    state.climbWallTargetWorld = { ...segment.targetWorld };
-    state.climbLastWorld = { ...segment.startWorld };
+    state.climbWallStartWorld = this._cloneWorld(segment.startWorld);
+    state.climbWallTargetWorld = this._cloneWorld(segment.targetWorld);
+    state.climbLastWorld = this._cloneWorld(segment.startWorld);
     state.phaseElapsed = 0;
+    this._setSelectionIndicatorSuppressed(state, true);
 
     const fadeIn = profile?.climbWallFadeIn ?? profile.walkFadeIn ?? 0.18;
     const fadeOut = profile?.climbWallFadeOut ?? profile.walkFadeOut ?? 0.18;
@@ -3307,6 +4213,13 @@ export class Token3DAdapter {
       this._setAnimation(state.token, 'climbWall', { fadeIn, fadeOut, force: true });
       state.climbWallAnimationPlaying = true;
     }
+
+    this._logPathing('climbWall:segment-start', {
+      token: this._describeTokenForLogs(state.token),
+      duration: state.climbWallDuration,
+      startWorld: state.climbWallStartWorld,
+      targetWorld: state.climbWallTargetWorld,
+    });
 
     return true;
   }
@@ -3331,19 +4244,37 @@ export class Token3DAdapter {
       this._resolveTokenWorldPosition(state.token);
     const targetWorld = state.climbWallTargetWorld || anchorWorld;
 
-    if (anchorWorld && state.mesh?.position?.set) {
-      const composed = this._composeMeshPosition(anchorWorld, state.mesh);
-      state.mesh.position.set(composed.x, composed.y, composed.z);
-    }
-
+    let currentWorld = this._cloneWorld(anchorWorld);
+    let appliedWithHelper = false;
     if (anchorWorld && targetWorld) {
       const progress = duration > 1e-4 ? state.climbWallElapsed / duration : 1;
-      const currentWorld = this._lerp3(anchorWorld, targetWorld, progress);
-      this._updateTokenWorldDuringMovement(state.token, currentWorld);
-      state.climbLastWorld = { ...currentWorld };
+      let easedProgress = progress;
+      if (progress > 0 && progress < 1 - 1e-4) {
+        easedProgress = Math.pow(progress, CLIMB_WALL_PROGRESS_EXPONENT);
+        easedProgress = Math.min(easedProgress, progress * CLIMB_WALL_PROGRESS_SCALE);
+      } else if (progress >= 1 - 1e-4) {
+        easedProgress = 1;
+      }
+      currentWorld = this._lerp3(anchorWorld, targetWorld, easedProgress);
+      this._syncTokenAndMeshWorld(state, currentWorld);
+      appliedWithHelper = true;
+      state.climbLastWorld = this._cloneWorld(currentWorld);
+      if (state.climbAnimationPrestarted) {
+        state.climbPrestartFootWorld = this._cloneWorld(currentWorld);
+      }
     }
 
+    if (!appliedWithHelper && currentWorld) {
+      this._applyMeshWorldPosition(state.mesh, currentWorld);
+    }
+
+    this._maybePrestartClimbAnimation(state, duration);
+
     if (state.climbWallElapsed >= duration - 1e-4) {
+      this._logPathing('climbWall:segment-complete', {
+        token: this._describeTokenForLogs(state.token),
+        remainingQueue: Array.isArray(state.climbWallQueue) ? state.climbWallQueue.length : 0,
+      });
       state.climbWallActive = false;
       const animationData = this._tokenAnimationData.get(state.token);
       this._startNextClimbWallSegment(state, animationData);
@@ -3352,35 +4283,73 @@ export class Token3DAdapter {
 
   _resumeStandardClimbAfterWall(state) {
     if (!state) return;
-    const pending = state.climbPendingInfo
-      ? {
-          ...state.climbPendingInfo,
-          footWorld: state.climbPendingInfo.footWorld
-            ? { ...state.climbPendingInfo.footWorld }
-            : null,
-          edgeWorld: state.climbPendingInfo.edgeWorld
-            ? { ...state.climbPendingInfo.edgeWorld }
-            : null,
-          finalWorld: state.climbPendingInfo.finalWorld
-            ? { ...state.climbPendingInfo.finalWorld }
-            : null,
-        }
-      : null;
+    const pending = this._cloneClimbWorldInfo(state.climbPendingInfo);
 
-    state.climbWallQueue = null;
-    state.climbWallActive = false;
-    state.climbWallElapsed = 0;
-    state.climbWallDuration = 0;
-    state.climbWallStartWorld = null;
-    state.climbWallTargetWorld = null;
-    state.climbWallAnimationPlaying = false;
+    this._logPathing('climbWall:resume-standard', {
+      token: this._describeTokenForLogs(state.token),
+      hasPending: Boolean(pending),
+    });
+
+    this._resetClimbWallState(state, { preservePrestart: true });
 
     if (pending) {
+      if (state.climbPrestartFootWorld) {
+        pending.footWorld = this._cloneWorld(state.climbPrestartFootWorld);
+      } else if (state.climbLastWorld) {
+        pending.footWorld = this._cloneWorld(state.climbLastWorld);
+      }
       state.climbPendingInfo = null;
+      this._commitClimbWallPose(state, pending.footWorld);
+      state.climbPrestartFootWorld = null;
       this._startClimbPhase(state, pending, { skipWallPlan: true });
     } else if (!state.climbActive && !state.climbRecoverActive) {
-      this._finishWalkState(state);
+      this._resetMovementState(state);
     }
+
+    state.climbAnimationPrestarted = false;
+    if (!pending) {
+      state.climbPrestartFootWorld = null;
+    }
+  }
+
+  _commitClimbWallPose(state, anchorWorld) {
+    if (!state) return;
+    const target =
+      anchorWorld ||
+      state.climbLastWorld ||
+      state.climbWallTargetWorld ||
+      state.climbWallStartWorld ||
+      this._resolveTokenWorldPosition(state.token);
+    if (!target) return;
+
+    this._transferRootMotionToWorld(state, target);
+    this._syncTokenAndMeshWorld(state, target);
+    state.climbLastWorld = this._cloneWorld(target);
+  }
+
+  _maybePrestartClimbAnimation(state, duration) {
+    if (!state || state.climbAnimationPrestarted) return;
+    if (!state.climbPendingInfo) return;
+    if (Array.isArray(state.climbWallQueue) && state.climbWallQueue.length) return;
+    if (!(duration > 0)) return;
+
+    const remaining = duration - (state.climbWallElapsed || 0);
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const lead = profile?.climbWallTransitionLead ?? CLIMB_WALL_BLEND_LEAD;
+    if (!(lead > 0) || remaining > lead) return;
+
+    const animationData = this._tokenAnimationData.get(state.token);
+    if (!animationData?.actions?.climb) return;
+
+    const fadeIn = profile?.climbFadeIn ?? profile.walkFadeIn ?? 0.18;
+    const fadeOut = profile?.climbWallFadeOut ?? profile.walkFadeOut ?? 0.18;
+    state.climbAnimationPrestarted = true;
+    state.climbPrestartFootWorld = this._cloneWorld(state.climbLastWorld);
+    this._setAnimation(state.token, 'climb', {
+      fadeIn,
+      fadeOut,
+      force: true,
+    });
   }
 
   _resolveClimbWallDuration(state) {
@@ -3407,28 +4376,30 @@ export class Token3DAdapter {
 
     const duration = state.climbDuration || DEFAULT_CLIMB_DURATION;
     if (!(duration > 1e-4)) {
-      this._completeClimbInstant(state);
+      this._finalizeClimbLanding(state, { allowAdvance: false });
       return;
     }
 
     state.climbElapsed = Math.min(state.climbElapsed + Math.max(delta, 0), duration);
     const anchorWorld = state.climbStartWorld || this._resolveTokenWorldPosition(state.token);
     if (anchorWorld) {
-      const composed = this._composeMeshPosition(anchorWorld, state.mesh);
-      if (state.mesh?.position?.set) {
-        state.mesh.position.set(composed.x, composed.y, composed.z);
-      }
+      this._applyMeshWorldPosition(state.mesh, anchorWorld);
     }
 
     const targetWorld = state.climbTargetWorld || state.climbFinalWorld || anchorWorld;
+    let appliedWorld = null;
     if (anchorWorld && targetWorld) {
       const progress = duration > 1e-4 ? state.climbElapsed / duration : 1;
       const currentWorld = this._lerp3(anchorWorld, targetWorld, progress);
-      this._updateTokenWorldDuringMovement(state.token, currentWorld);
-      state.climbLastWorld = { ...currentWorld };
+      this._syncTokenAndMeshWorld(state, currentWorld, { mesh: null });
+      appliedWorld = currentWorld;
     } else if (anchorWorld) {
-      this._updateTokenWorldDuringMovement(state.token, anchorWorld);
-      state.climbLastWorld = { ...anchorWorld };
+      this._syncTokenAndMeshWorld(state, anchorWorld, { mesh: null });
+      appliedWorld = anchorWorld;
+    }
+
+    if (appliedWorld) {
+      state.climbLastWorld = this._cloneWorld(appliedWorld);
     }
 
     if (state.climbElapsed >= duration - 1e-4) {
@@ -3439,6 +4410,10 @@ export class Token3DAdapter {
   _startClimbRecoverPhase(state) {
     if (!state) return;
 
+    this._resetClimbRecoverState(state);
+
+    const tokenDescriptor = this._describeTokenForLogs(state.token);
+
     const recoverStartWorld =
       state.climbLastWorld ||
       state.climbTargetWorld ||
@@ -3446,36 +4421,61 @@ export class Token3DAdapter {
       state.climbStartWorld ||
       this._resolveTokenWorldPosition(state.token);
 
-    if (recoverStartWorld) {
-      this._transferRootMotionToWorld(state, recoverStartWorld);
-    } else {
-      this._transferRootMotionToWorld(state);
-    }
+    this._logPathing('climb:recover-start', {
+      token: tokenDescriptor,
+      recoverStartWorld,
+    });
 
-    const adjustedWorld = this._resolveTokenWorldPosition(state.token);
+    const rootTransfer = this._transferRootMotionToWorld(state) || null;
+
+    let adjustedWorld = this._cloneWorld(recoverStartWorld);
+    if (!adjustedWorld) {
+      adjustedWorld = this._resolveTokenWorldPosition(state.token);
+    }
     if (adjustedWorld) {
-      state.climbRecoverStartWorld = { ...adjustedWorld };
-      state.climbLastWorld = { ...adjustedWorld };
-    } else if (recoverStartWorld) {
-      state.climbRecoverStartWorld = { ...recoverStartWorld };
-      state.climbLastWorld = { ...recoverStartWorld };
+      state.climbRecoverStartWorld = this._cloneWorld(adjustedWorld);
+      this._syncTokenAndMeshWorld(state, adjustedWorld, { mesh: null });
     } else {
       state.climbRecoverStartWorld = null;
-      state.climbLastWorld = null;
     }
 
-    if (state.climbRecoverStartWorld && state.mesh?.position?.set) {
-      const composed = this._composeMeshPosition(state.climbRecoverStartWorld, state.mesh);
-      state.mesh.position.set(composed.x, composed.y, composed.z);
-      state.climbRecoverAnchorPosition = { x: composed.x, y: composed.y, z: composed.z };
-    } else if (state.mesh?.position) {
-      state.climbRecoverAnchorPosition = {
-        x: Number(state.mesh.position.x) || 0,
-        y: Number(state.mesh.position.y) || 0,
-        z: Number(state.mesh.position.z) || 0,
+    const crouchDrop = this._resolveClimbRecoverCrouchDrop(state, rootTransfer);
+    state.climbRecoverCrouchDrop = crouchDrop;
+    if (state.climbRecoverStartWorld && crouchDrop > 1e-4) {
+      state.climbRecoverCrouchWorld = {
+        x: state.climbRecoverStartWorld.x,
+        y: state.climbRecoverStartWorld.y - crouchDrop,
+        z: state.climbRecoverStartWorld.z,
       };
+    } else if (state.climbRecoverStartWorld) {
+      state.climbRecoverCrouchWorld = this._cloneWorld(state.climbRecoverStartWorld);
     } else {
-      state.climbRecoverAnchorPosition = null;
+      state.climbRecoverCrouchWorld = null;
+    }
+
+    const riseWindow = this._resolveClimbRecoverRiseWindow(state);
+    state.climbRecoverRiseHold = riseWindow.hold;
+    state.climbRecoverStandRelease = riseWindow.release;
+
+    const meshAnchorWorld =
+      state.climbRecoverCrouchWorld || state.climbRecoverStartWorld || recoverStartWorld;
+
+    if (state.climbRecoverCrouchWorld) {
+      this._syncTokenAndMeshWorld(state, state.climbRecoverCrouchWorld, { mesh: null });
+    }
+
+    if (meshAnchorWorld) {
+      this._assignClimbRecoverAnchorPosition(state, meshAnchorWorld);
+    } else {
+      this._assignClimbRecoverAnchorPosition(state, null);
+    }
+
+    if (meshAnchorWorld) {
+      state.climbLastWorld = this._cloneWorld(meshAnchorWorld);
+    } else if (state.climbRecoverStartWorld) {
+      state.climbLastWorld = this._cloneWorld(state.climbRecoverStartWorld);
+    } else {
+      state.climbLastWorld = null;
     }
 
     const animationData = this._tokenAnimationData.get(state.token);
@@ -3489,7 +4489,11 @@ export class Token3DAdapter {
 
     state.climbActive = false;
     if (!recoverAction || !(duration > 1e-4)) {
-      this._completeClimbPhase(state);
+      this._finalizeClimbLanding(state, {
+        landingWorld: state.climbRecoverStartWorld || state.climbLastWorld,
+        recoverWorld: state.climbRecoverStartWorld,
+        allowAdvance: false,
+      });
       return;
     }
 
@@ -3510,15 +4514,22 @@ export class Token3DAdapter {
   }
 
   _advanceClimbRecoverPhase(state, delta) {
+    const finalizeRecover = () => {
+      if (!state) return;
+      const landingWorld = this._resolveClimbLandingWorld(state);
+      const recoverWorld = this._resolveClimbRecoverWorld(state);
+      this._finalizeClimbLanding(state, { landingWorld, recoverWorld });
+    };
+
     if (!state?.climbRecoverActive) {
-      this._completeClimbPhase(state);
+      finalizeRecover();
       return;
     }
 
     const duration = state.climbRecoverDuration || DEFAULT_CLIMB_RECOVER_DURATION;
     if (!(duration > 1e-4)) {
       state.climbRecoverActive = false;
-      this._completeClimbPhase(state);
+      finalizeRecover();
       return;
     }
 
@@ -3528,34 +4539,96 @@ export class Token3DAdapter {
       state.climbTargetWorld ||
       state.climbStartWorld ||
       this._resolveTokenWorldPosition(state.token);
-    if (startWorld) {
-      this._updateTokenWorldDuringMovement(state.token, startWorld);
-      if (state.mesh?.position?.set) {
-        const anchor = state.climbRecoverAnchorPosition;
-        if (
-          anchor &&
-          Number.isFinite(anchor.x) &&
-          Number.isFinite(anchor.y) &&
-          Number.isFinite(anchor.z)
-        ) {
-          state.mesh.position.set(anchor.x, anchor.y, anchor.z);
-        } else {
-          const composed = this._composeMeshPosition(startWorld, state.mesh);
-          state.mesh.position.set(composed.x, composed.y, composed.z);
-        }
+    const crouchWorld = state.climbRecoverCrouchWorld || startWorld;
+    const progress = duration > 1e-4 ? state.climbRecoverElapsed / duration : 1;
+    const riseRatio = this._resolveClimbRecoverRiseRatio(state, progress);
+
+    let currentWorld = null;
+    if (startWorld && crouchWorld) {
+      currentWorld = this._lerp3(crouchWorld, startWorld, riseRatio);
+    } else {
+      currentWorld = startWorld || crouchWorld || null;
+    }
+
+    if (currentWorld) {
+      const composed = this._syncTokenAndMeshWorld(state, currentWorld);
+      if (composed) {
+        state.climbRecoverAnchorPosition = { x: composed.x, y: composed.y, z: composed.z };
       }
-      state.climbLastWorld = { ...startWorld };
+      state.climbLastWorld = this._cloneWorld(currentWorld);
     }
 
     if (state.climbRecoverElapsed >= duration - 1e-4) {
       state.climbRecoverActive = false;
-      this._completeClimbPhase(state);
+      finalizeRecover();
     }
   }
 
+  _resolveClimbRecoverCrouchDrop(state, rootTransfer) {
+    const profile = state?.profile || DEFAULT_MOVEMENT_PROFILE;
+    const minDrop = Math.max(
+      profile?.climbRecoverCrouchMinDrop ?? CLIMB_RECOVER_MIN_CROUCH_DROP,
+      0
+    );
+    const maxDrop = Math.max(
+      profile?.climbRecoverCrouchMaxDrop ?? CLIMB_RECOVER_MAX_CROUCH_DROP,
+      minDrop
+    );
+    const configuredDrop = profile?.climbRecoverCrouchDrop;
+    if (Number.isFinite(configuredDrop)) {
+      return Math.min(Math.max(configuredDrop, minDrop), maxDrop);
+    }
+    if (Number.isFinite(rootTransfer?.offsetWorld?.y) && rootTransfer.offsetWorld.y < -1e-4) {
+      const measured = Math.abs(rootTransfer.offsetWorld.y);
+      return Math.min(Math.max(measured, minDrop), maxDrop);
+    }
+    return Math.min(Math.max(CLIMB_RECOVER_DEFAULT_CROUCH_DROP, minDrop), maxDrop);
+  }
+
+  _resolveClimbRecoverRiseWindow(state) {
+    const profile = state?.profile || DEFAULT_MOVEMENT_PROFILE;
+    const holdRaw = profile?.climbRecoverCrouchHold;
+    const releaseRaw = profile?.climbRecoverStandRelease;
+    const hold = Number.isFinite(holdRaw)
+      ? Math.min(Math.max(holdRaw, 0), 0.6)
+      : CLIMB_RECOVER_CROUCH_HOLD;
+    const releaseDefault = Math.max(CLIMB_RECOVER_STAND_RELEASE, hold + 0.1);
+    let release = Number.isFinite(releaseRaw)
+      ? Math.min(Math.max(releaseRaw, hold + 0.05), 0.95)
+      : releaseDefault;
+    release = Math.max(release, hold + 0.05);
+    return { hold, release };
+  }
+
+  _resolveClimbRecoverRiseRatio(state, progress) {
+    const hold = Number.isFinite(state?.climbRecoverRiseHold)
+      ? state.climbRecoverRiseHold
+      : CLIMB_RECOVER_CROUCH_HOLD;
+    const release = Number.isFinite(state?.climbRecoverStandRelease)
+      ? state.climbRecoverStandRelease
+      : CLIMB_RECOVER_STAND_RELEASE;
+    if (!(release > hold + 1e-4)) {
+      return progress >= release ? 1 : 0;
+    }
+    if (progress <= hold + 1e-4) {
+      return 0;
+    }
+    if (progress >= release - 1e-4) {
+      return 1;
+    }
+    const span = Math.max(release - hold, 1e-4);
+    const local = Math.min(Math.max((progress - hold) / span, 0), 1);
+    return local * local * (3 - 2 * local);
+  }
+
   _advanceClimbAdvancePhase(state, delta) {
+    const finalizeAdvance = () => {
+      if (!state) return;
+      this._finalizeClimbLanding(state, { allowAdvance: false });
+    };
+
     if (!state?.climbAdvanceActive || !state.activeStep) {
-      this._finishClimbAdvancePhase(state);
+      finalizeAdvance();
       return;
     }
 
@@ -3570,25 +4643,17 @@ export class Token3DAdapter {
     state.climbLastWorld = this._resolveTokenWorldPosition(state.token);
 
     if (completed || state.stepFinalized) {
-      this._finishClimbAdvancePhase(state);
+      this._logPathing('climb:advance-complete', {
+        token: this._describeTokenForLogs(state.token),
+        step: state.activeStep
+          ? {
+              gridTargetX: state.activeStep.gridTargetX,
+              gridTargetY: state.activeStep.gridTargetY,
+            }
+          : null,
+      });
+      finalizeAdvance();
     }
-  }
-
-  _finishClimbAdvancePhase(state) {
-    if (!state) return;
-    if (state.activeStep && !state.stepFinalized) {
-      this._lockStepAtTarget(state);
-    }
-
-    const info = state.climbData || {};
-    const finalWorld = this._resolveClimbFinalWorld(state);
-
-    state.activeStep = null;
-    state.stepFinalized = true;
-    state.climbAdvanceActive = false;
-    state.phase = 'idle';
-
-    this._finalizeClimbLanding(state, info, finalWorld);
   }
 
   _startClimbAdvancePhase(state, startWorld, finalWorld) {
@@ -3601,7 +4666,7 @@ export class Token3DAdapter {
     state.activeStep = step;
     state.stepFinalized = false;
     state.phaseElapsed = 0;
-    state.climbAdvanceTargetWorld = { ...finalWorld };
+    state.climbAdvanceTargetWorld = this._cloneWorld(finalWorld);
 
     state.movementSign = 1;
     state.lastMoveSign = 1;
@@ -3610,6 +4675,12 @@ export class Token3DAdapter {
 
     this._orientTokenTowardsWorld(state.token, finalWorld);
     this._playLoopAnimation(state, { force: true });
+
+    this._logPathing('climb:advance-start', {
+      token: this._describeTokenForLogs(state.token),
+      startWorld,
+      finalWorld,
+    });
     return true;
   }
 
@@ -3640,8 +4711,8 @@ export class Token3DAdapter {
     return {
       tokenEntry,
       mesh,
-      startWorld: { ...startWorld },
-      targetWorld: { ...finalWorld },
+      startWorld: this._cloneWorld(startWorld) || startWorld,
+      targetWorld: this._cloneWorld(finalWorld) || finalWorld,
       startPosition,
       targetPosition,
       totalDistance,
@@ -3685,56 +4756,56 @@ export class Token3DAdapter {
     );
   }
 
-  _finalizeClimbLanding(state, info, finalWorld) {
-    if (!state) return;
-    if (finalWorld) {
-      this._transferRootMotionToWorld(state, finalWorld);
-    } else {
-      this._transferRootMotionToWorld(state);
+  _reissueMaintainedGoal(state, goal, options = {}) {
+    if (!state?.token || !goal) return false;
+    const gm = this.gameManager;
+    if (!gm?.is3DModeActive?.()) return false;
+
+    const tokenDescriptor = this._describeTokenForLogs(state.token);
+
+    const targetGridX = Number.isFinite(goal.gridX) ? Math.round(goal.gridX) : null;
+    const targetGridY = Number.isFinite(goal.gridY) ? Math.round(goal.gridY) : null;
+    if (targetGridX == null || targetGridY == null) {
+      return false;
     }
 
-    if (Number.isFinite(info?.targetGridX)) state.token.gridX = info.targetGridX;
-    if (Number.isFinite(info?.targetGridY)) state.token.gridY = info.targetGridY;
+    this._logPathing('path:reissue-goal:attempt', {
+      token: tokenDescriptor,
+      goal: { gridX: targetGridX, gridY: targetGridY },
+      allowSameTile: !!options?.allowSameTile,
+    });
 
-    if (finalWorld) {
-      this._updateTokenWorldDuringMovement(state.token, finalWorld);
-      if (state.mesh?.position?.set) {
-        const composed = this._composeMeshPosition(finalWorld, state.mesh);
-        state.mesh.position.set(composed.x, composed.y, composed.z);
+    if (!options?.allowSameTile) {
+      const currentGridX = Number.isFinite(state.token.gridX)
+        ? Math.round(state.token.gridX)
+        : null;
+      const currentGridY = Number.isFinite(state.token.gridY)
+        ? Math.round(state.token.gridY)
+        : null;
+      if (currentGridX != null && currentGridY != null) {
+        if (currentGridX === targetGridX && currentGridY === targetGridY) {
+          return false;
+        }
       }
     }
 
-    this._clearClimbState(state);
-    this._finishWalkState(state);
+    const requestOptions = {
+      ...(goal.options || {}),
+      __maintainLastRequestedGoal: true,
+    };
+
+    const result = this.navigateToGrid(state.token, targetGridX, targetGridY, requestOptions);
+    const succeeded = !!result;
+    this._logPathing('path:reissue-goal:result', {
+      token: tokenDescriptor,
+      goal: { gridX: targetGridX, gridY: targetGridY },
+      succeeded,
+    });
+    return succeeded;
   }
 
-  _completeClimbInstant(state) {
-    if (!state) return;
-    const info = state.climbQueued || state.climbData || {};
-    const finalWorld = info?.finalWorld
-      ? { ...info.finalWorld }
-      : this._resolveClimbFinalWorld(state) || this._resolveTokenWorldPosition(state.token);
-    this._finalizeClimbLanding(state, info, finalWorld);
-  }
-
-  _completeClimbPhase(state) {
-    if (!state) return;
-    const info = state.climbData || {};
-    const finalWorld = this._resolveClimbFinalWorld(state);
-    const recoverWorld =
-      state.climbRecoverStartWorld ||
-      state.climbLastWorld ||
-      state.climbTargetWorld ||
-      state.climbStartWorld;
-
-    if (this._shouldStartClimbAdvance(state, recoverWorld, finalWorld)) {
-      const started = this._startClimbAdvancePhase(state, recoverWorld, finalWorld);
-      if (started) {
-        return;
-      }
-    }
-
-    this._finalizeClimbLanding(state, info, finalWorld);
+  _resumeCachedPostClimbGoal(state) {
+    return this._reissueMaintainedGoal(state, state?.lastRequestedGoal);
   }
 
   _orientTokenTowardsWorld(tokenEntry, targetWorld) {
@@ -3759,75 +4830,167 @@ export class Token3DAdapter {
     return Math.abs(fromX - toX) + Math.abs(fromY - toY);
   }
 
-  _applyStepProgress(step, distance, state, options = {}) {
-    const remaining = Math.max(0, step.totalDistance - step.traveled);
-    const move = Math.min(distance, remaining);
-    if (move <= 0) return remaining <= 1e-5;
-    step.traveled += move;
-    const ratio = step.totalDistance > 0 ? Math.min(step.traveled / step.totalDistance, 1) : 1;
-    const pos = this._lerp3(step.startPosition, step.targetPosition, ratio);
-    const world = this._lerp3(step.startWorld, step.targetWorld, ratio);
+  _planIntermediateClimbTraversal(startGridX, startGridY, targetGridX, targetGridY) {
+    if (startGridX === targetGridX && startGridY === targetGridY) return null;
+    const gm = this.gameManager;
+    if (!gm?.spatial) return null;
 
-    const isFallPhase = state?.phase === 'fall';
-    const requiresFall = !!step.requiresFall;
-    const verticalDelta = Math.abs((step.startPosition?.y ?? 0) - (step.targetPosition?.y ?? 0));
-
-    if (requiresFall) {
-      if (isFallPhase) {
-        const fallStartRatio = Number.isFinite(step.fallStartRatio) ? step.fallStartRatio : 0;
-        const fallStartPositionY = Number.isFinite(step.fallStartPosition?.y)
-          ? step.fallStartPosition.y
-          : (step.startPosition?.y ?? pos.y);
-        const fallStartWorldY = Number.isFinite(step.fallStartWorld?.y)
-          ? step.fallStartWorld.y
-          : (step.startWorld?.y ?? world.y);
-
-        let fallProgress = 0;
-        if (ratio > fallStartRatio) {
-          const denom = Math.max(1 - fallStartRatio, 1e-6);
-          fallProgress = Math.min((ratio - fallStartRatio) / denom, 1);
-        }
-
-        const targetPositionY = step.targetPosition?.y ?? fallStartPositionY;
-        const targetWorldY = step.targetWorld?.y ?? fallStartWorldY;
-        pos.y = fallStartPositionY + (targetPositionY - fallStartPositionY) * fallProgress;
-        world.y = fallStartWorldY + (targetWorldY - fallStartWorldY) * fallProgress;
-      } else {
-        pos.y = step.startPosition?.y ?? pos.y;
-        world.y = step.startWorld?.y ?? world.y;
+    const evaluateStep = (fromX, fromY, toX, toY, stepIndex) => {
+      if (!this._isGridWithinBounds(toX, toY)) {
+        return null;
       }
-    } else if (verticalDelta > 1e-4) {
-      const snapProgress = step.verticalSnapProgress || DEFAULT_HEIGHT_SNAP_PROGRESS;
-      const useTarget = ratio >= snapProgress || options?.clamp;
-      pos.y = useTarget ? step.targetPosition.y : step.startPosition.y;
-      world.y = useTarget ? step.targetWorld.y : step.startWorld.y;
+      const prevHeight = this._getTerrainHeight(fromX, fromY);
+      const nextHeight = this._getTerrainHeight(toX, toY);
+      const heightDelta =
+        Number.isFinite(prevHeight) && Number.isFinite(nextHeight) ? nextHeight - prevHeight : 0;
+      if (heightDelta >= MAX_STANDARD_CLIMB_LEVELS) {
+        return {
+          approachGridX: fromX,
+          approachGridY: fromY,
+          climbGridX: toX,
+          climbGridY: toY,
+          heightDelta,
+          stepIndex,
+        };
+      }
+      return null;
+    };
+
+    const evaluateLineTraversal = () => {
+      const dx = targetGridX - startGridX;
+      const dy = targetGridY - startGridY;
+      if (dx === 0 && dy === 0) return null;
+      const stepX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+      const stepY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      let cursorX = startGridX;
+      let cursorY = startGridY;
+      let err = absDx - absDy;
+      let stepIndex = 0;
+      while (cursorX !== targetGridX || cursorY !== targetGridY) {
+        const prevX = cursorX;
+        const prevY = cursorY;
+        const err2 = err * 2;
+        if (err2 > -absDy) {
+          err -= absDy;
+          cursorX += stepX;
+        }
+        if (err2 < absDx) {
+          err += absDx;
+          cursorY += stepY;
+        }
+        const plan = evaluateStep(prevX, prevY, cursorX, cursorY, stepIndex);
+        if (plan) {
+          return plan;
+        }
+        stepIndex += 1;
+      }
+      return null;
+    };
+
+    const linePlan = evaluateLineTraversal();
+    if (linePlan) {
+      return linePlan;
     }
 
-    if (step.mesh?.position) {
-      step.mesh.position.set(pos.x, pos.y, pos.z);
+    const evaluateOrder = (axesOrder) => {
+      let cursorX = startGridX;
+      let cursorY = startGridY;
+      let stepIndex = 0;
+      for (const axis of axesOrder) {
+        const targetValue = axis === 'x' ? targetGridX : targetGridY;
+        const delta = (axis === 'x' ? targetValue - cursorX : targetValue - cursorY) || 0;
+        const step = Math.sign(delta);
+        if (step === 0) continue;
+        while ((axis === 'x' ? cursorX : cursorY) !== targetValue) {
+          const nextX = axis === 'x' ? cursorX + step : cursorX;
+          const nextY = axis === 'y' ? cursorY + step : cursorY;
+          const plan = evaluateStep(cursorX, cursorY, nextX, nextY, stepIndex);
+          if (plan) {
+            return plan;
+          }
+          cursorX = nextX;
+          cursorY = nextY;
+          stepIndex += 1;
+        }
+      }
+      return null;
+    };
+
+    const plans = [];
+    const axisOrders = [
+      ['x', 'y'],
+      ['y', 'x'],
+    ];
+    for (const order of axisOrders) {
+      const plan = evaluateOrder(order);
+      if (plan) {
+        plans.push(plan);
+      }
     }
-    step.horizontalTraveled = Math.hypot(
-      pos.x - step.startPosition.x,
-      pos.z - step.startPosition.z
-    );
-    this._updateTokenWorldDuringMovement(step.tokenEntry, world);
-    return step.traveled >= step.totalDistance - 1e-5;
+
+    if (!plans.length) return null;
+    plans.sort((a, b) => a.stepIndex - b.stepIndex);
+    const best = plans[0];
+    if (!best) return null;
+    return {
+      approachGridX: best.approachGridX,
+      approachGridY: best.approachGridY,
+      climbGridX: best.climbGridX,
+      climbGridY: best.climbGridY,
+      heightDelta: best.heightDelta,
+    };
+  }
+
+  _attemptIntermediateClimbRedirect(state) {
+    if (!state || !state.token) return false;
+    const continuationGoal = state.climbContinuationGoal;
+    const fallbackGoal = state.lastRequestedGoal;
+    const targetGoal = continuationGoal || fallbackGoal;
+    if (!targetGoal) {
+      return false;
+    }
+
+    const tokenDescriptor = this._describeTokenForLogs(state.token);
+    this._logPathing('path:attempt-intermediate-redirect', {
+      token: tokenDescriptor,
+      targetGoal: {
+        gridX: targetGoal.gridX,
+        gridY: targetGoal.gridY,
+      },
+      source: continuationGoal ? 'continuation' : 'fallback',
+    });
+
+    const resumed = this._reissueMaintainedGoal(state, targetGoal, {
+      allowSameTile: true,
+    });
+
+    if (resumed && targetGoal) {
+      state.climbContinuationGoal = this._cloneClimbContinuationGoal(targetGoal);
+    }
+
+    this._logPathing('path:attempt-intermediate-redirect:result', {
+      token: tokenDescriptor,
+      resumed,
+    });
+
+    return resumed;
   }
 
   _lockStepAtTarget(state) {
     const step = state.activeStep;
     if (!step) return;
-    if (step.mesh?.position) {
-      step.mesh.position.set(step.targetPosition.x, step.targetPosition.y, step.targetPosition.z);
-    }
-    this._updateTokenWorldDuringMovement(step.tokenEntry, step.targetWorld);
+    this._syncTokenAndMeshWorld(state, step.targetWorld, {
+      token: step.tokenEntry,
+      mesh: step.mesh,
+    });
     step.traveled = step.totalDistance;
     step.horizontalTraveled = step.horizontalDistance;
     state.stepFinalized = true;
     const token = step.tokenEntry;
     token.gridX = step.gridTargetX;
     token.gridY = step.gridTargetY;
-    token.world = { ...step.targetWorld };
   }
 
   _createStopGlideStep(state, profile) {
@@ -3909,11 +5072,14 @@ export class Token3DAdapter {
         gridTargetY = gridStartY;
       }
 
+      const startWorldClone = this._cloneWorld(currentWorld) || currentWorld;
+      const targetWorldClone = this._cloneWorld(targetWorld) || targetWorld;
+
       return {
         tokenEntry,
         mesh,
-        startWorld: { ...currentWorld },
-        targetWorld,
+        startWorld: startWorldClone,
+        targetWorld: targetWorldClone,
         startPosition,
         targetPosition,
         totalDistance,
@@ -3943,44 +5109,33 @@ export class Token3DAdapter {
     this._initiateStopPhase(state);
   }
 
-  _finishWalkState(state) {
+  _resetMovementState(state, options = {}) {
     if (!state) return;
-    this._clearPathState(state);
-    this._resetSprintState(state);
-    this._applyPendingOrientation(state);
-    state.phase = 'idle';
-    state.activeStep = null;
-    state.stepFinalized = true;
-    state.intentHold = false;
-    if (!state.stopBlendedToIdle) {
-      this._setAnimation(state.token, 'idle', {
-        fadeIn: state.profile.idleFadeIn,
-        fadeOut: state.profile.walkFadeOut,
-      });
-    }
-    if (!this._hasActiveIntents(state)) {
-      this._movementStates.delete(state.token);
-    }
-  }
+    const { useStopBlend = false, clearStopFlags = false } = options;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
 
-  _finishStopState(state) {
-    if (!state) return;
     this._clearPathState(state);
     this._resetSprintState(state);
     this._applyPendingOrientation(state);
+
     state.phase = 'idle';
     state.activeStep = null;
     state.stepFinalized = true;
-    state.stopTriggered = false;
-    state.pendingStop = false;
     state.intentHold = false;
+
+    if (clearStopFlags) {
+      state.stopTriggered = false;
+      state.pendingStop = false;
+    }
+
     if (!state.stopBlendedToIdle) {
       this._setAnimation(state.token, 'idle', {
-        fadeIn: state.profile.idleFadeIn,
-        fadeOut: state.profile.stopFadeOut,
+        fadeIn: profile.idleFadeIn,
+        fadeOut: useStopBlend ? profile.stopFadeOut : profile.walkFadeOut,
       });
     }
-    if (!this._hasActiveIntents(state)) {
+
+    if (!this._hasActiveIntents(state) && !this._shouldHoldMovementState(state)) {
       this._movementStates.delete(state.token);
     }
   }
@@ -4007,9 +5162,9 @@ export class Token3DAdapter {
           ? startHeight - targetHeight
           : 0;
 
-      const startWorld = tokenEntry.world
-        ? { ...tokenEntry.world }
-        : gm.spatial.gridToWorld(startGridX + 0.5, startGridY + 0.5, startHeight);
+      const startWorld =
+        this._cloneWorld(tokenEntry.world) ||
+        gm.spatial.gridToWorld(startGridX + 0.5, startGridY + 0.5, startHeight);
       const targetWorld = gm.spatial.gridToWorld(
         targetGridX + 0.5,
         targetGridY + 0.5,
@@ -4069,6 +5224,58 @@ export class Token3DAdapter {
     }
   }
 
+  _cloneWorld(world) {
+    return world ? { ...world } : null;
+  }
+
+  _cloneClimbWorldInfo(info) {
+    if (!info) return null;
+    return {
+      ...info,
+      footWorld: this._cloneWorld(info.footWorld),
+      edgeWorld: this._cloneWorld(info.edgeWorld),
+      finalWorld: this._cloneWorld(info.finalWorld),
+    };
+  }
+
+  _cloneWorldWithFallback(...worlds) {
+    for (const world of worlds) {
+      const cloned = this._cloneWorld(world);
+      if (cloned) return cloned;
+    }
+    return null;
+  }
+
+  _cloneClimbContinuationGoal(goal) {
+    if (!goal) return null;
+    return {
+      gridX: goal.gridX,
+      gridY: goal.gridY,
+      options: goal.options ? { ...goal.options } : undefined,
+    };
+  }
+
+  _assignClimbRecoverAnchorPosition(state, anchorWorld) {
+    if (!state) return;
+    const mesh = state.mesh;
+    if (anchorWorld) {
+      const composed = this._applyMeshWorldPosition(mesh, anchorWorld);
+      if (composed) {
+        state.climbRecoverAnchorPosition = { x: composed.x, y: composed.y, z: composed.z };
+        return;
+      }
+    }
+    if (mesh?.position) {
+      state.climbRecoverAnchorPosition = {
+        x: Number(mesh.position.x) || 0,
+        y: Number(mesh.position.y) || 0,
+        z: Number(mesh.position.z) || 0,
+      };
+    } else {
+      state.climbRecoverAnchorPosition = null;
+    }
+  }
+
   _composeMeshPosition(world, mesh) {
     const baseOffset = mesh?.userData?.__ttVerticalBase || 0;
     return {
@@ -4076,6 +5283,26 @@ export class Token3DAdapter {
       y: (world?.y ?? 0) + this._verticalBias + baseOffset,
       z: world?.z ?? 0,
     };
+  }
+
+  _applyMeshWorldPosition(mesh, world) {
+    if (!mesh?.position?.set) return null;
+    const composed = this._composeMeshPosition(world, mesh);
+    mesh.position.set(composed.x, composed.y, composed.z);
+    return composed;
+  }
+
+  _syncTokenAndMeshWorld(state, world, options = {}) {
+    if (!state || !world) return null;
+    const tokenEntry = options.token ?? state.token;
+    if (!tokenEntry) return null;
+    const meshOption = options.mesh;
+    const mesh = meshOption === undefined ? state.mesh || tokenEntry.__threeMesh : meshOption;
+    this._updateTokenWorldDuringMovement(tokenEntry, world);
+    if (!mesh) {
+      return null;
+    }
+    return this._applyMeshWorldPosition(mesh, world);
   }
 
   _getMovementYaw(tokenEntry) {
@@ -4291,19 +5518,19 @@ export class Token3DAdapter {
     if (this._hoverToken === tokenEntry) return;
     const previous = this._hoverToken;
     this._hoverToken = tokenEntry || null;
-    if (previous) this._refreshVisualState(previous);
-    if (tokenEntry) this._refreshVisualState(tokenEntry);
+    if (previous) void this._refreshVisualState(previous);
+    if (tokenEntry) void this._refreshVisualState(tokenEntry);
   }
 
-  setSelectedToken(tokenEntry) {
+  async setSelectedToken(tokenEntry) {
     if (this._selectedToken === tokenEntry) return;
     const previous = this._selectedToken;
     this._selectedToken = tokenEntry || null;
     if (previous) {
-      this._refreshVisualState(previous);
+      await this._refreshVisualState(previous);
     }
     if (tokenEntry) {
-      this._refreshVisualState(tokenEntry);
+      await this._refreshVisualState(tokenEntry);
     }
   }
 
@@ -4337,7 +5564,6 @@ export class Token3DAdapter {
   _applyPendingOrientation(state) {
     if (!state || state.pendingFacingAngle == null) return;
     this._applyOrientationImmediate(state.token, state.pendingFacingAngle);
-    state.pendingFacingAngle = undefined;
   }
 
   _applyOrientationImmediate(tokenEntry, angle) {
@@ -4345,7 +5571,6 @@ export class Token3DAdapter {
     const globalFlip = this._getGlobalFacingRight() ? 0 : Math.PI;
 
     const is3DToken = !!mesh?.userData?.__tt3DToken;
-
     if (mesh && is3DToken) {
       const baseYaw = mesh.userData.__ttBaseYaw || 0;
       const yaw = baseYaw + globalFlip + angle;
@@ -4482,20 +5707,39 @@ export class Token3DAdapter {
     }
   }
 
+  _setSelectionIndicatorSuppressed(state, suppressed) {
+    if (!state) return;
+    const next = !!suppressed;
+    if (state.selectionIndicatorSuppressed === next) return;
+    state.selectionIndicatorSuppressed = next;
+    if (next) {
+      this._hideSelectionIndicator(state.token);
+    } else if (this._selectedToken === state.token) {
+      this._refreshVisualState(state.token);
+    }
+  }
+
   _refreshVisualState(tokenEntry) {
     const mesh = tokenEntry?.__threeMesh;
-    if (!mesh) return;
+    if (!mesh) return null;
     const is3DToken = mesh.userData?.__tt3DToken !== false;
+    const state = this._movementStates.get(tokenEntry);
+    const indicatorSuppressed = !!state?.selectionIndicatorSuppressed;
+    const canShowSelectionIndicator = is3DToken && !indicatorSuppressed;
 
     if (this._selectedToken === tokenEntry) {
       this._restoreMaterial(mesh);
       if (is3DToken) {
-        void this._showSelectionIndicator(tokenEntry);
+        if (canShowSelectionIndicator) {
+          return this._showSelectionIndicator(tokenEntry);
+        } else {
+          this._hideSelectionIndicator(tokenEntry);
+        }
       } else {
         this._hideSelectionIndicator(tokenEntry);
         this._applyTint(mesh, this._selectionColor);
       }
-      return;
+      return null;
     }
 
     if (this._hoverToken === tokenEntry) {
@@ -4506,11 +5750,12 @@ export class Token3DAdapter {
         this._applyTint(mesh, 0x88ccff);
         this._hideSelectionIndicator(tokenEntry);
       }
-      return;
+      return null;
     }
 
     this._restoreMaterial(mesh);
     this._hideSelectionIndicator(tokenEntry);
+    return null;
   }
 
   pickTokenByRay(raycaster) {
@@ -4793,6 +6038,41 @@ export class Token3DAdapter {
     mesh.userData.__ttTokenType = type;
     mesh.userData.__ttTintMaterials = this._collectTintTargets(mesh);
     return mesh;
+  }
+
+  _attachSelectionCollider(container, three, config = {}) {
+    if (!container || !three) return;
+    if (!container.userData) container.userData = {};
+    if (container.userData.__ttSelectionCollider) return;
+
+    try {
+      const tileSize = Math.max(this.gameManager?.spatial?.tileWorldSize || 1, 1e-4);
+      const radiusSetting = Number.isFinite(config.selectionColliderRadius)
+        ? config.selectionColliderRadius
+        : tileSize * SELECTION_COLLIDER_RADIUS_RATIO;
+      const heightSetting = Number.isFinite(config.selectionColliderHeight)
+        ? config.selectionColliderHeight
+        : SELECTION_COLLIDER_HEIGHT;
+      const radius = Math.max(radiusSetting, tileSize * 0.3);
+      const height = Math.max(heightSetting, tileSize * 0.8);
+
+      const geometry = new three.CylinderGeometry(radius, radius, height, 14, 1, false);
+      const material = new three.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        depthTest: false,
+      });
+      const collider = new three.Mesh(geometry, material);
+      collider.name = 'TokenSelectionCollider';
+      collider.position.y = height * 0.5;
+      collider.renderOrder = -10;
+      container.add(collider);
+      container.userData.__ttSelectionCollider = collider;
+    } catch (_) {
+      /* ignore collider issues */
+    }
   }
 
   _positionMesh(mesh, tokenEntry) {

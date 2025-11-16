@@ -811,10 +811,31 @@ export class InteractionManager {
             gridY != null;
 
           if (canNavigate) {
+            const tokenDescriptor = this._describeTokenForLogs(selectedToken);
+            logger.log('Token navigation requested', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
+              source: 'grid-click',
+              token: tokenDescriptor,
+              target: { gridX, gridY },
+            });
+
             const result = adapter.navigateToGrid(selectedToken, gridX, gridY);
             if (result) {
+              logger.log('Token navigation accepted', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
+                source: 'grid-click',
+                token: tokenDescriptor,
+                target: { gridX, gridY },
+                goal: result.goal ? { gridX: result.goal.gridX, gridY: result.goal.gridY } : null,
+                speedMode: result.speedMode || null,
+                distance: Number.isFinite(result.distance) ? result.distance : null,
+              });
               return;
             }
+
+            logger.log('Token navigation rejected', LOG_LEVEL.WARN, LOG_CATEGORY.INTERACTION, {
+              source: 'grid-click',
+              token: tokenDescriptor,
+              target: { gridX, gridY },
+            });
           }
 
           this._clearTokenSelection();
@@ -1191,5 +1212,20 @@ export class InteractionManager {
 
   getIsSpacePressed() {
     return this.isSpacePressed;
+  }
+
+  _describeTokenForLogs(tokenEntry) {
+    if (!tokenEntry) {
+      return { id: null, label: null, type: null };
+    }
+    const typeKey =
+      (tokenEntry.type || tokenEntry.creature?.type || tokenEntry.kind || '').toLowerCase() || null;
+    const label =
+      tokenEntry.name ?? tokenEntry.label ?? tokenEntry.creature?.name ?? tokenEntry.kind ?? null;
+    return {
+      id: tokenEntry.id ?? tokenEntry.creature?.id ?? null,
+      label,
+      type: typeKey,
+    };
   }
 }
