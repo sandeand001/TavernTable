@@ -272,4 +272,8 @@ export const DICE_CONFIG = {
     MIN_ROLL: '#f44336', // Red for minimum roll
     NORMAL_ROLL: '#ffffff', // White for normal roll
   },
+
+  D20_3D: {
+    REST_HEIGHT: -5,
+  },
 };
