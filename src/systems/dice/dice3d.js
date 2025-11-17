@@ -2,9 +2,9 @@ import { DICE_CONFIG } from '../../config/GameConstants.js';
 
 const D20_MODEL_PATH = 'assets/Items/d20-gold.glb';
 const DEFAULT_SCALE = 3.6;
-const TRAVEL_DURATION_MS = 1800;
-const TRAVEL_DISTANCE_MULTIPLIER = 4; // 300% more distance => 4x total travel
-const SNAP_DURATION_MS = 320;
+const TRAVEL_DURATION_MS = 850;
+const TRAVEL_DISTANCE_MULTIPLIER = 3; // shorter, tighter travel arc
+const SNAP_DURATION_MS = 220;
 const D20_3D_SETTINGS = DICE_CONFIG?.D20_3D || {};
 const DEFAULT_REST_HEIGHT =
   typeof D20_3D_SETTINGS.REST_HEIGHT === 'number' ? D20_3D_SETTINGS.REST_HEIGHT : 0;
@@ -14,35 +14,55 @@ const DEFAULT_RICOCHET_SETTINGS = {
   clearanceTiles: 0.35,
   obstacleLimit: 256,
 };
+const CRIT_FAILURE_COLOR_HEX = 0xb3261e;
+const CRIT_SUCCESS_COLOR_HEX = 0x1f8f3a;
 let threeNamespace;
 let gltfLoaderCtor;
 let blueprintPromise;
 let diceBlueprint;
 let blueprintGroundLift = 0;
 let activeDieState;
+let faceCalibrationState;
 
 const D20_NUMBER_TO_FACE_INDEX = Object.freeze({
-  1: 712,
-  2: 695,
-  3: 188,
-  4: 604,
-  5: 615,
-  6: 179,
-  7: 709,
-  8: 238,
-  9: 2093,
-  10: 270,
-  11: 476,
-  12: 697,
-  13: 717,
-  14: 699,
-  15: 3623,
-  16: 229,
-  17: 280,
-  18: 638,
-  19: 254,
-  20: 265,
+  1: 35,
+  2: 30,
+  3: 0,
+  4: 31,
+  5: 20,
+  6: 11,
+  7: 23,
+  8: 10,
+  9: 6,
+  10: 14,
+  11: 26,
+  12: 34,
+  13: 21,
+  14: 25,
+  15: 29,
+  16: 7,
+  17: 9,
+  18: 27,
+  19: 1,
+  20: 2,
 });
+
+const FACE_INDEX_TO_NUMBER = Object.freeze(
+  Object.entries(D20_NUMBER_TO_FACE_INDEX).reduce((acc, [value, faceIndex]) => {
+    acc[faceIndex] = Number(value);
+    return acc;
+  }, {})
+);
+
+const D20_FACE_CALIBRATION_SEQUENCE = Object.freeze(
+  Object.entries(D20_NUMBER_TO_FACE_INDEX)
+    .map(([value, faceIndex]) => ({
+      value: Number(value),
+      faceIndex,
+    }))
+    .filter((entry) => Number.isFinite(entry.faceIndex))
+    .sort((a, b) => a.value - b.value)
+);
 
 const getFaceIndexForValue = (value) => {
   if (!Number.isInteger(value)) return null;
@@ -54,14 +74,26 @@ const randomBetween = (min, max) => min + Math.random() * (max - min);
 
 function clearActiveDie() {
   if (!activeDieState) return;
+  const state = activeDieState;
+  activeDieState = null;
+  const mesh = state.mesh;
   try {
-    activeDieState.dispose?.();
+    state.interactionCleanup?.();
   } catch (_) {
-    if (activeDieState.mesh?.parent) {
-      activeDieState.mesh.parent.remove(activeDieState.mesh);
+    /* ignore */
+  }
+  try {
+    resetDiceMaterialColors(mesh);
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    state.dispose?.();
+  } catch (_) {
+    if (mesh?.parent) {
+      mesh.parent.remove(mesh);
     }
   }
-  activeDieState = null;
 }
 
 const hasWindow = () => typeof window !== 'undefined';
@@ -141,6 +173,7 @@ function cloneDice(base) {
   });
   if (!clone.userData) clone.userData = {};
   clone.userData.groundLiftBase = blueprintGroundLift;
+  recordDiceBaseMaterialState(clone);
   return clone;
 }
 
@@ -169,6 +202,77 @@ function applyDiceMaterialTuning(material) {
   }
 }
 
+function recordDiceBaseMaterialState(mesh) {
+  if (!mesh) return;
+  const materialState = [];
+  mesh.traverse((child) => {
+    if (!child?.isMesh || !child.material) return;
+    const material = child.material;
+    materialState.push({
+      material,
+      colorHex: material.color?.getHex ? material.color.getHex() : null,
+      emissiveHex: material.emissive?.getHex ? material.emissive.getHex() : null,
+      emissiveIntensity:
+        typeof material.emissiveIntensity === 'number' ? material.emissiveIntensity : null,
+    });
+  });
+  if (!mesh.userData) mesh.userData = {};
+  mesh.userData.d20BaseMaterialState = materialState;
+}
+
+function resetDiceMaterialColors(mesh) {
+  const state = mesh?.userData?.d20BaseMaterialState;
+  if (!Array.isArray(state)) return;
+  state.forEach((entry) => {
+    const material = entry.material;
+    if (!material) return;
+    if (entry.colorHex != null && material.color?.setHex) {
+      material.color.setHex(entry.colorHex);
+    }
+    if (entry.emissiveHex != null && material.emissive?.setHex) {
+      material.emissive.setHex(entry.emissiveHex);
+    }
+    if (entry.emissiveIntensity != null && typeof material.emissiveIntensity === 'number') {
+      material.emissiveIntensity = entry.emissiveIntensity;
+    }
+  });
+}
+
+function tintDiceMaterial(mesh, colorHex) {
+  if (!mesh || !Number.isFinite(colorHex)) return;
+  mesh.traverse((child) => {
+    if (!child?.isMesh || !child.material) return;
+    if (child.material.color?.setHex) {
+      child.material.color.setHex(colorHex);
+    }
+    if (child.material.emissive?.setHex) {
+      child.material.emissive.setHex(colorHex);
+      if (typeof child.material.emissiveIntensity === 'number') {
+        child.material.emissiveIntensity = Math.max(child.material.emissiveIntensity, 1.05);
+      } else {
+        child.material.emissiveIntensity = 1.05;
+      }
+    }
+  });
+}
+
+function applyCriticalRollTint(mesh, rollValue) {
+  if (!mesh) return;
+  const normalized = Number(rollValue);
+  const resolvedValue = Number.isFinite(normalized) ? Math.trunc(normalized) : null;
+  if (resolvedValue === 1) {
+    resetDiceMaterialColors(mesh);
+    tintDiceMaterial(mesh, CRIT_FAILURE_COLOR_HEX);
+    return;
+  }
+  if (resolvedValue === 20) {
+    resetDiceMaterialColors(mesh);
+    tintDiceMaterial(mesh, CRIT_SUCCESS_COLOR_HEX);
+    return;
+  }
+  resetDiceMaterialColors(mesh);
+}
+
 function attachDiceAccentLights(mesh, three, tileSize) {
   if (!three?.PointLight) return;
   const primary = new three.PointLight(0xfff1c0, 1.65, tileSize * 9, 2);
@@ -180,6 +284,106 @@ function attachDiceAccentLights(mesh, three, tileSize) {
   rim.position.set(tileSize * 0.45, tileSize * 0.6, tileSize * 0.45);
   rim.castShadow = false;
   mesh.add(rim);
+}
+
+function resolvePrimaryCamera(manager) {
+  return (
+    manager?.camera ||
+    manager?.activeCamera ||
+    manager?.mainCamera ||
+    manager?.renderCoordinator?.camera ||
+    manager?.gameManager?.camera ||
+    manager?.scene?.camera ||
+    null
+  );
+}
+
+function resolvePrimaryDomElement(manager) {
+  return (
+    manager?.renderer?.domElement ||
+    manager?.gameManager?.renderer?.domElement ||
+    manager?.renderCoordinator?.renderer?.domElement ||
+    (hasWindow() ? window.document?.body : null) ||
+    null
+  );
+}
+
+function attachDieDismissOnClick(manager, mesh) {
+  if (!hasWindow() || !mesh || !manager) return null;
+  if (!threeNamespace?.Raycaster || !threeNamespace?.Vector2) return null;
+  const camera = resolvePrimaryCamera(manager);
+  if (!camera) return null;
+  const pointer = new threeNamespace.Vector2();
+  const raycaster = new threeNamespace.Raycaster();
+  const pointerTargets = [];
+  const registerTarget = (target) => {
+    if (!target || typeof target.addEventListener !== 'function') return;
+    if (pointerTargets.includes(target)) return;
+    pointerTargets.push(target);
+  };
+  const primaryTarget = resolvePrimaryDomElement(manager) || window;
+  registerTarget(primaryTarget);
+  if (hasWindow()) {
+    registerTarget(window);
+    registerTarget(window.document);
+  }
+  if (!pointerTargets.length) return null;
+
+  const pointerEvents = ['pointerdown'];
+  if (!(hasWindow() && 'PointerEvent' in window)) {
+    pointerEvents.push('mousedown', 'click');
+  }
+
+  const updatePointerFromEvent = (event) => {
+    const clientX = event?.clientX ?? 0;
+    const clientY = event?.clientY ?? 0;
+    const rect =
+      event?.currentTarget?.getBoundingClientRect?.() || primaryTarget?.getBoundingClientRect?.();
+    if (rect && rect.width && rect.height) {
+      pointer.set(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      return true;
+    }
+    if (hasWindow() && window.innerWidth && window.innerHeight) {
+      pointer.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+      return true;
+    }
+    return false;
+  };
+
+  const handler = (event) => {
+    if (!activeDieState || activeDieState.mesh !== mesh) return;
+    if (event?.button != null && event.button !== 0) return;
+    if (!updatePointerFromEvent(event)) return;
+    raycaster.setFromCamera(pointer, camera);
+    const intersections = raycaster.intersectObject(mesh, true);
+    if (!intersections?.length) return;
+    clearActiveDie();
+  };
+
+  pointerTargets.forEach((target) => {
+    pointerEvents.forEach((type) => {
+      try {
+        target.addEventListener(type, handler, { passive: true });
+      } catch (_) {
+        target.addEventListener(type, handler);
+      }
+    });
+  });
+
+  return () => {
+    pointerTargets.forEach((target) => {
+      pointerEvents.forEach((type) => {
+        try {
+          target.removeEventListener(type, handler);
+        } catch (_) {
+          /* ignore */
+        }
+      });
+    });
+  };
 }
 
 function pickEdgePosition(metrics) {
@@ -784,6 +988,34 @@ function collectWorldFaceData(mesh, three) {
   return faces;
 }
 
+function resolveUpFacingFace(mesh, three, facesOverride = null) {
+  if (!mesh || !three?.Vector3) return null;
+  const faces = Array.isArray(facesOverride) ? facesOverride : collectWorldFaceData(mesh, three);
+  if (!faces.length) return null;
+  const up = new three.Vector3(0, 1, 0);
+  let best = null;
+  for (const face of faces) {
+    const alignment = face.normal.dot(up);
+    if (!(alignment > 0)) continue;
+    const areaScore = Number.isFinite(face.area) ? face.area : 0;
+    const heightScore = Number.isFinite(face.centroidY) ? face.centroidY * 0.1 : 0;
+    const score = alignment * 10 + areaScore + heightScore;
+    if (!best || score > best.score) {
+      best = {
+        ...face,
+        score,
+      };
+    }
+  }
+  if (!best) {
+    best = faces[0];
+  }
+  return {
+    ...best,
+    value: FACE_INDEX_TO_NUMBER[best.faceIndex] ?? null,
+  };
+}
+
 function orientMeshToFaceIndex(mesh, faceIndex, three) {
   if (!mesh || !three?.Vector3 || !three?.Quaternion) return false;
   if (!Number.isFinite(faceIndex)) return false;
@@ -844,7 +1076,7 @@ function snapDieToBoard(mesh, three, groundY) {
 }
 
 function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
-  const baseTravelMs = options.travelMs ?? TRAVEL_DURATION_MS;
+  const baseTravelMs = TRAVEL_DURATION_MS;
   const settleDurationMs = options.settleDurationMs ?? 650;
   const snapDurationMs = options.snapDurationMs ?? SNAP_DURATION_MS;
   const forcedFaceIndex = Number.isFinite(options.forceFaceIndex) ? options.forceFaceIndex : null;
@@ -964,6 +1196,29 @@ function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
   let rafHandle = null;
   let hasSnappedFlat = false;
   let snapState = null;
+  let settleCallbackFired = false;
+
+  const fireSettleCallback = () => {
+    if (settleCallbackFired || typeof options.onSettle !== 'function') return;
+    let faceInfo = null;
+    try {
+      faceInfo = resolveUpFacingFace(mesh, threeNamespace);
+    } catch (_) {
+      faceInfo = null;
+    }
+    if (!faceInfo && Number.isFinite(forcedFaceIndex)) {
+      faceInfo = {
+        faceIndex: forcedFaceIndex,
+        value: FACE_INDEX_TO_NUMBER[forcedFaceIndex] ?? null,
+      };
+    }
+    try {
+      options.onSettle({ mesh, faceInfo: faceInfo || null });
+    } catch (callbackError) {
+      console.warn('[dice3d] onSettle callback failed', callbackError);
+    }
+    settleCallbackFired = true;
+  };
 
   const stopAnimation = () => {
     if (stopped) return;
@@ -1049,6 +1304,7 @@ function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
             };
           } else {
             hasSnappedFlat = true;
+            fireSettleCallback();
             stopAnimation();
             return;
           }
@@ -1070,12 +1326,14 @@ function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
               forcedFaceAligned = orientMeshToFaceIndex(mesh, forcedFaceIndex, threeNamespace);
               ensureGroundContact();
             }
+            fireSettleCallback();
             stopAnimation();
           }
           return;
         }
       }
 
+      fireSettleCallback();
       stopAnimation();
     }
   };
@@ -1106,6 +1364,272 @@ function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
   };
 }
 
+function getCalibrationSequence() {
+  return D20_FACE_CALIBRATION_SEQUENCE.map((entry) => ({ ...entry }));
+}
+
+function cycleCalibrationFace(direction = 0) {
+  if (!faceCalibrationState?.mesh || !threeNamespace) return null;
+  const sequence = faceCalibrationState.sequence || [];
+  if (!sequence.length) return null;
+  if (direction !== 0) {
+    const nextIndex =
+      (faceCalibrationState.sequenceIndex + direction + sequence.length) % sequence.length;
+    faceCalibrationState.sequenceIndex = nextIndex;
+  }
+  const entry = sequence[faceCalibrationState.sequenceIndex];
+  if (!entry) return null;
+  orientMeshToFaceIndex(faceCalibrationState.mesh, entry.faceIndex, threeNamespace);
+  faceCalibrationState.mesh.updateMatrixWorld(true);
+  const faces = collectWorldFaceData(faceCalibrationState.mesh, threeNamespace);
+  const fallbackInfo = {
+    faceIndex: entry.faceIndex,
+    value: entry.value,
+  };
+  const resolved = resolveUpFacingFace(faceCalibrationState.mesh, threeNamespace, faces);
+  if (resolved) {
+    faceCalibrationState.currentFaceInfo = {
+      ...resolved,
+      faceIndex: Number.isFinite(resolved.faceIndex) ? resolved.faceIndex : fallbackInfo.faceIndex,
+      value: resolved.value ?? fallbackInfo.value ?? null,
+    };
+  } else {
+    faceCalibrationState.currentFaceInfo = { ...fallbackInfo };
+  }
+  if (hasWindow()) {
+    const info = faceCalibrationState.currentFaceInfo || entry;
+    console.info(
+      `[dice3d] Calibration face ready: value=${info?.value ?? 'unknown'} (faceIndex=${info?.faceIndex ?? 'n/a'})`
+    );
+  }
+  return faceCalibrationState.currentFaceInfo;
+}
+
+function handleCalibrationPointer(event) {
+  if (!faceCalibrationState?.mesh || !threeNamespace?.Raycaster || !threeNamespace?.Vector2) return;
+  const { mesh, raycaster, pointer, camera, domElement } = faceCalibrationState;
+  if (!raycaster || !pointer || !camera) return;
+  const rect = domElement?.getBoundingClientRect?.();
+  const clientX = event.clientX ?? 0;
+  const clientY = event.clientY ?? 0;
+  if (rect && rect.width && rect.height) {
+    pointer.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+  } else if (hasWindow()) {
+    pointer.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+  } else {
+    return;
+  }
+  raycaster.setFromCamera(pointer, camera);
+  const intersections = raycaster.intersectObject(mesh, true);
+  if (!intersections?.length) return;
+  const hit = intersections[0];
+  if (!hit?.point) return;
+  const worldPoint = hit.point.clone();
+  const localPoint = mesh.worldToLocal(worldPoint.clone());
+  const faceInfo = faceCalibrationState.currentFaceInfo || {};
+  const record = {
+    faceValue: faceInfo.value ?? null,
+    faceIndex: faceInfo.faceIndex ?? null,
+    local: [
+      Number(localPoint.x.toFixed(6)),
+      Number(localPoint.y.toFixed(6)),
+      Number(localPoint.z.toFixed(6)),
+    ],
+    world: [
+      Number(worldPoint.x.toFixed(6)),
+      Number(worldPoint.y.toFixed(6)),
+      Number(worldPoint.z.toFixed(6)),
+    ],
+    timestamp: new Date().toISOString(),
+  };
+  faceCalibrationState.records.push(record);
+  console.info('[dice3d] Recorded face center', record);
+  if (faceCalibrationState.autoAdvance) {
+    cycleCalibrationFace(1);
+  }
+}
+
+export async function startD20FaceCalibration(options = {}) {
+  if (!hasWindow()) return null;
+  const manager = getSceneManager();
+  if (!manager?.scene) {
+    console.warn('[dice3d] Unable to start calibration: missing scene manager.');
+    return null;
+  }
+  await ensureThreeNamespace();
+  await ensureBlueprint();
+  stopD20FaceCalibration();
+  clearActiveDie();
+
+  const mesh = cloneDice(diceBlueprint);
+  const metrics = getBoardMetrics(manager);
+  const tileSize = metrics.tileSize || 1;
+  const scale = tileSize * (options.scale ?? DEFAULT_SCALE);
+  mesh.scale.setScalar(scale);
+  const restHeight =
+    typeof options.restHeight === 'number' ? options.restHeight : DEFAULT_REST_HEIGHT;
+  const sampleGround = createGroundSampler(manager, metrics, restHeight);
+  const worldX = Number.isFinite(options.worldX) ? options.worldX : (metrics.centerX ?? 0);
+  const worldZ = Number.isFinite(options.worldZ) ? options.worldZ : (metrics.centerZ ?? 0);
+  const groundY = sampleGround(worldX, worldZ, restHeight);
+  mesh.position.set(worldX, groundY + (mesh.userData?.groundLiftBase ?? 0) * scale, worldZ);
+  mesh.rotation.set(0, 0, 0);
+  mesh.updateMatrixWorld(true);
+  manager.scene.add(mesh);
+
+  const camera =
+    options.camera ||
+    manager.camera ||
+    manager.activeCamera ||
+    manager.mainCamera ||
+    manager.scene?.camera ||
+    manager.gameManager?.camera ||
+    null;
+  const domElement =
+    options.domElement ||
+    manager.renderer?.domElement ||
+    manager.gameManager?.renderer?.domElement ||
+    window;
+
+  if (!camera || !threeNamespace?.Raycaster || !threeNamespace?.Vector2) {
+    console.warn('[dice3d] Unable to start calibration: missing camera or raycasting support.');
+    if (mesh.parent) {
+      mesh.parent.remove(mesh);
+    }
+    return null;
+  }
+
+  faceCalibrationState = {
+    mesh,
+    manager,
+    camera,
+    domElement,
+    pointerTarget: domElement || window,
+    raycaster: new threeNamespace.Raycaster(),
+    pointer: new threeNamespace.Vector2(),
+    records: [],
+    sequence: getCalibrationSequence(),
+    sequenceIndex: 0,
+    autoAdvance: options.autoAdvance !== false,
+    currentFaceInfo: null,
+  };
+
+  if (!faceCalibrationState.sequence.length) {
+    console.warn('[dice3d] Unable to start calibration: missing face order.');
+    stopD20FaceCalibration();
+    return null;
+  }
+
+  const pointerTargets = [];
+  const registerTarget = (target) => {
+    if (!target || typeof target.addEventListener !== 'function') return;
+    if (pointerTargets.includes(target)) return;
+    pointerTargets.push(target);
+  };
+  registerTarget(faceCalibrationState.pointerTarget);
+  if (hasWindow()) {
+    registerTarget(window);
+    registerTarget(window.document);
+  }
+  if (!pointerTargets.length && hasWindow()) {
+    registerTarget(window);
+  }
+
+  const pointerEvents = ['pointerdown'];
+  if (!(hasWindow() && 'PointerEvent' in window)) {
+    pointerEvents.push('mousedown', 'click');
+  }
+
+  const processedPointerEvents = new WeakSet();
+  const pointerHandler = (event) => {
+    if (!event) return;
+    if (event.button != null && event.button !== 0) return;
+    if (processedPointerEvents.has(event)) return;
+    processedPointerEvents.add(event);
+    handleCalibrationPointer(event);
+  };
+
+  pointerTargets.forEach((target) => {
+    pointerEvents.forEach((type) => {
+      target?.addEventListener(type, pointerHandler);
+    });
+  });
+
+  faceCalibrationState.pointerListener = pointerHandler;
+  faceCalibrationState.pointerTargets = pointerTargets;
+  faceCalibrationState.pointerEvents = pointerEvents;
+
+  cycleCalibrationFace(0);
+
+  const controls = {
+    next: () => cycleCalibrationFace(1),
+    prev: () => cycleCalibrationFace(-1),
+    jumpToValue: (value) => {
+      if (!faceCalibrationState) return null;
+      const idx = faceCalibrationState.sequence.findIndex((entry) => entry.value === value);
+      if (idx >= 0) {
+        faceCalibrationState.sequenceIndex = idx;
+        return cycleCalibrationFace(0);
+      }
+      return null;
+    },
+    jumpToFaceIndex: (faceIndex) => {
+      if (!faceCalibrationState) return null;
+      const idx = faceCalibrationState.sequence.findIndex((entry) => entry.faceIndex === faceIndex);
+      if (idx >= 0) {
+        faceCalibrationState.sequenceIndex = idx;
+        return cycleCalibrationFace(0);
+      }
+      return null;
+    },
+    current: () => ({ ...(faceCalibrationState?.currentFaceInfo || {}) }),
+    records: () => [...(faceCalibrationState?.records || [])],
+    export: () => JSON.stringify(faceCalibrationState?.records || [], null, 2),
+    stop: () => stopD20FaceCalibration(),
+  };
+
+  faceCalibrationState.controls = controls;
+  if (hasWindow()) {
+    window.__TT_D20_CALIBRATION = controls;
+    console.info(
+      '[dice3d] D20 calibration ready. Use window.__TT_D20_CALIBRATION.next() / prev() to cycle faces and click the die to log centers.'
+    );
+  }
+
+  return controls;
+}
+
+export function stopD20FaceCalibration() {
+  if (!faceCalibrationState) return [];
+  const records = [...faceCalibrationState.records];
+  if (faceCalibrationState.pointerTargets?.length && faceCalibrationState.pointerListener) {
+    const events = faceCalibrationState.pointerEvents?.length
+      ? faceCalibrationState.pointerEvents
+      : ['pointerdown'];
+    faceCalibrationState.pointerTargets.forEach((target) => {
+      events.forEach((type) => {
+        target?.removeEventListener(type, faceCalibrationState.pointerListener);
+      });
+    });
+  } else if (faceCalibrationState.pointerTarget && faceCalibrationState.pointerListener) {
+    faceCalibrationState.pointerTarget.removeEventListener(
+      'pointerdown',
+      faceCalibrationState.pointerListener
+    );
+  }
+  if (faceCalibrationState.mesh?.parent) {
+    faceCalibrationState.mesh.parent.remove(faceCalibrationState.mesh);
+  }
+  if (hasWindow() && window.__TT_D20_CALIBRATION) {
+    delete window.__TT_D20_CALIBRATION;
+  }
+  faceCalibrationState = null;
+  return records;
+}
+
 export async function playD20RollOnGrid(options = {}) {
   if (!hasWindow()) return false;
   const manager = getSceneManager();
@@ -1122,7 +1646,10 @@ export async function playD20RollOnGrid(options = {}) {
     clone.scale.setScalar(scale);
     attachDiceAccentLights(clone, three, tileSize);
     manager.scene.add(clone);
+    resetDiceMaterialColors(clone);
     const animationOptions = { ...options };
+    const upstreamOnSettle =
+      typeof animationOptions.onSettle === 'function' ? animationOptions.onSettle : null;
     const valueNumber = Number(animationOptions.value);
     const resolvedRollValue =
       Number.isInteger(valueNumber) && valueNumber >= 1 && valueNumber <= 20 ? valueNumber : null;
@@ -1136,10 +1663,35 @@ export async function playD20RollOnGrid(options = {}) {
     if (typeof animationOptions.restHeight !== 'number') {
       animationOptions.restHeight = DEFAULT_REST_HEIGHT;
     }
+    let clickDismissCleanup = null;
+    if (animationOptions.dismissOnClick !== false) {
+      try {
+        clickDismissCleanup = attachDieDismissOnClick(manager, clone);
+      } catch (_) {
+        clickDismissCleanup = null;
+      }
+    }
+    const forcedFaceValueHint = Number.isFinite(animationOptions.forceFaceIndex)
+      ? (FACE_INDEX_TO_NUMBER[animationOptions.forceFaceIndex] ?? null)
+      : null;
+    animationOptions.onSettle = (payload) => {
+      const faceValue = Number.isInteger(payload?.faceInfo?.value) ? payload.faceInfo.value : null;
+      const resolvedValue =
+        faceValue ?? resolvedRollValue ?? forcedFaceValueHint ?? payload?.faceInfo?.value ?? null;
+      applyCriticalRollTint(clone, resolvedValue);
+      if (upstreamOnSettle) {
+        try {
+          upstreamOnSettle(payload);
+        } catch (callbackError) {
+          console.warn('[dice3d] upstream onSettle callback failed', callbackError);
+        }
+      }
+    };
     const animationState = scheduleRollAnimation(manager, clone, metrics, animationOptions);
     activeDieState = {
       mesh: clone,
       dispose: animationState.dispose,
+      interactionCleanup: clickDismissCleanup,
     };
     return true;
   } catch (error) {
@@ -1158,5 +1710,8 @@ export function preloadD20Asset() {
 if (hasWindow()) {
   window.addEventListener('beforeunload', () => {
     clearActiveDie();
+    stopD20FaceCalibration();
   });
+  window.__TT_START_D20_CALIBRATION = (options) => startD20FaceCalibration(options);
+  window.__TT_STOP_D20_CALIBRATION = () => stopD20FaceCalibration();
 }
