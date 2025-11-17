@@ -519,4 +519,133 @@ describe('Token3DAdapter (Phase 3)', () => {
       expect.objectContaining({ tolerance: 0.15 })
     );
   });
+
+  test('_logPathing archives entries without writing to console', () => {
+    const adapter = new Token3DAdapter({});
+    adapter.setPathingLoggingEnabled(true);
+
+    const spies = ['log', 'info', 'warn', 'error'].map((method) =>
+      jest.spyOn(console, method).mockImplementation(() => {})
+    );
+
+    adapter._logPathing('diagnostic:test', { foo: 'bar' });
+
+    const archive = adapter.getPathingLogArchive();
+    expect(archive.length).toBeGreaterThan(0);
+    expect(archive[archive.length - 1]).toEqual(
+      expect.objectContaining({
+        event: 'diagnostic:test',
+        payload: expect.objectContaining({ foo: 'bar' }),
+      })
+    );
+
+    spies.forEach((spy) => expect(spy).not.toHaveBeenCalled());
+    spies.forEach((spy) => spy.mockRestore());
+  });
+
+  test('clearPathingLogArchive removes archived entries', () => {
+    const adapter = new Token3DAdapter({});
+    adapter.setPathingLoggingEnabled(true);
+
+    adapter._logPathing('foo', {});
+    adapter._logPathing('bar', {});
+    expect(adapter.getPathingLogArchive().length).toBeGreaterThanOrEqual(2);
+
+    adapter.clearPathingLogArchive();
+    expect(adapter.getPathingLogArchive().length).toBe(0);
+  });
+
+  const buildClimbNavigationHarness = (targetGridY) => {
+    const gm = {
+      is3DModeActive: () => true,
+      spatial: {
+        tileWorldSize: 1,
+        elevationUnit: 0.5,
+        gridToWorld: (gridX, gridY, heightLevel = 0) => ({
+          x: gridX,
+          y: (heightLevel ?? 0) * 0.5,
+          z: gridY,
+        }),
+      },
+      getTerrainHeight: (gridX, gridY) => (gridX === 0 && gridY === targetGridY ? 6 : 0),
+    };
+
+    const adapter = new Token3DAdapter(gm);
+    const token = { id: 'hero', gridX: 0, gridY: 0, world: { x: 0.5, y: 0, z: 0.5 } };
+    const state = {
+      token,
+      mesh: {},
+      phase: 'idle',
+      climbContinuationGoal: null,
+      pathStallTime: 0,
+      lastRequestedGoal: null,
+      forwardKeys: new Set(),
+      backwardKeys: new Set(),
+      movementSign: 0,
+      lastMoveSign: 0,
+      intentHold: false,
+      pendingStop: false,
+      stopTriggered: false,
+      pathActive: false,
+      pathGoal: null,
+      pathSpeedMode: null,
+      freeStartWorld: null,
+      freeLastWorld: null,
+      freeDistance: 0,
+      __resumeProbe: null,
+      climbQueued: null,
+    };
+
+    jest.spyOn(adapter, '_ensureMovementState').mockReturnValue(state);
+    jest.spyOn(adapter, '_planIntermediateClimbTraversal').mockReturnValue(null);
+    jest.spyOn(adapter, '_isGridWithinBounds').mockReturnValue(true);
+    jest.spyOn(adapter, '_clearResumeProbe').mockImplementation(() => {});
+    jest.spyOn(adapter, '_clearPathState').mockImplementation(() => {});
+    jest.spyOn(adapter, '_orientTokenTowardsWorld').mockImplementation(() => {});
+    jest.spyOn(adapter, '_recalculateMovementIntent').mockReturnValue(1);
+    jest.spyOn(adapter, '_startMovementPhase').mockImplementation(() => {});
+    jest.spyOn(adapter, '_syncMovementVariant').mockImplementation(() => {});
+    jest.spyOn(adapter, '_updateMovementFlags').mockImplementation(() => {});
+    jest.spyOn(adapter, '_logPathing').mockImplementation(() => {});
+    jest.spyOn(adapter, '_abortStopPhase').mockImplementation(() => {});
+
+    return { adapter, token, state };
+  };
+
+  test('navigateToGrid adjusts climb approach for walk, run, and sprint speeds', () => {
+    const slowTargetY = 2;
+    const runTargetY = 5;
+    const sprintTargetY = 8;
+
+    const slow = buildClimbNavigationHarness(slowTargetY);
+    const run = buildClimbNavigationHarness(runTargetY);
+    const sprint = buildClimbNavigationHarness(sprintTargetY);
+
+    const slowResult = slow.adapter.navigateToGrid(slow.token, 0, slowTargetY);
+    const runResult = run.adapter.navigateToGrid(run.token, 0, runTargetY);
+    const sprintResult = sprint.adapter.navigateToGrid(sprint.token, 0, sprintTargetY);
+
+    expect(slowResult.speedMode).toBe('walk');
+    expect(runResult.speedMode).toBe('run');
+    expect(sprintResult.speedMode).toBe('sprint');
+
+    const wallClearance = (state, targetY) => targetY - state.pathGoal.world.z;
+
+    const slowClearance = wallClearance(slow.state, slowTargetY);
+    const runClearance = wallClearance(run.state, runTargetY);
+    const sprintClearance = wallClearance(sprint.state, sprintTargetY);
+
+    expect(runClearance).toBeGreaterThan(slowClearance);
+    expect(sprintClearance).toBeGreaterThan(runClearance);
+    expect(runClearance).toBeGreaterThan(0.25);
+    expect(runClearance).toBeLessThan(0.45);
+    expect(sprintClearance).toBeGreaterThan(0.65);
+    expect(sprintClearance).toBeLessThan(0.85);
+
+    expect(run.state.pathTolerance).toBeLessThan(slow.state.pathTolerance);
+    expect(sprint.state.pathTolerance).toBeLessThan(run.state.pathTolerance);
+
+    expect(run.state.climbQueued).toBeTruthy();
+    expect(sprint.state.climbQueued).toBeTruthy();
+  });
 });

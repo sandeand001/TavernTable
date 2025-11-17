@@ -190,6 +190,12 @@ const CLIMB_WALL_BLEND_LEAD = 0.2;
 const CLIMB_WALL_PROGRESS_EXPONENT = 1.35;
 const CLIMB_WALL_PROGRESS_SCALE = 0.5;
 const CLIMB_WALL_ENTRY_TILE_HALF_RATIO = 0.68;
+const CLIMB_WALL_ENTRY_MIN_RATIO = -0.45; // allow sprint stop point to retreat slightly into approach tile
+const CLIMB_WALL_ENTRY_RUN_BACKOFF_RATIO = 0.32;
+const CLIMB_WALL_ENTRY_SPRINT_BACKOFF_RATIO = 1.1;
+const CLIMB_APPROACH_TOLERANCE_MIN = 0.04;
+const CLIMB_APPROACH_TOLERANCE_RUN_SCALE = 0.65;
+const CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE = 0.45;
 const MAX_INTERMEDIATE_CLIMB_CHAIN = 4;
 const PATH_STALL_REPATH_DELAY = 0.35;
 const SELECTION_COLLIDER_HEIGHT = 2.3;
@@ -202,6 +208,7 @@ const CLIMB_RECOVER_STAND_RELEASE = 0.78;
 const PATHING_LOG_LOCAL_STORAGE_KEY = 'tt:pathingLogs';
 const PATHING_LOG_ENV_FLAG = 'TT_PATHING_LOGS';
 const PATHING_LOG_PREFIX = '[Token3DAdapter]';
+const PATHING_LOG_ARCHIVE_LIMIT = 300;
 
 export class Token3DAdapter {
   constructor(gameManager) {
@@ -226,6 +233,7 @@ export class Token3DAdapter {
     this._modifiers = { shift: false };
     this._raycastScratch = [];
     this._pathingLoggingEnabledOverride = undefined;
+    this._pathingLogArchive = [];
   }
 
   setPathingLoggingEnabled(isEnabled) {
@@ -296,21 +304,59 @@ export class Token3DAdapter {
 
   _logPathing(event, payload = {}, level = 'info') {
     if (!this._isPathingLoggingEnabled()) return;
-    if (typeof console === 'undefined') return;
-    let resolvedLevel = level;
+    const entry = {
+      source: PATHING_LOG_PREFIX,
+      event,
+      payload: payload ? { ...payload } : undefined,
+      level,
+      timestamp: this._getPathingTimestamp(),
+    };
+    this._archivePathingLog(entry);
+  }
+
+  _archivePathingLog(entry) {
+    if (!entry) return;
+    if (!this._pathingLogArchive) {
+      this._pathingLogArchive = [];
+    }
+    this._pathingLogArchive.push(entry);
+    if (this._pathingLogArchive.length > PATHING_LOG_ARCHIVE_LIMIT) {
+      this._pathingLogArchive.splice(
+        0,
+        Math.max(this._pathingLogArchive.length - PATHING_LOG_ARCHIVE_LIMIT, 0)
+      );
+    }
     try {
-      if (typeof window !== 'undefined' && window.__TT_DEBUG?.pathingLevel) {
-        resolvedLevel = window.__TT_DEBUG.pathingLevel;
+      if (typeof window !== 'undefined' && window.__TT_DEBUG) {
+        const sink = window.__TT_DEBUG.onPathingLog || window.__TT_DEBUG.pathingSink;
+        if (typeof sink === 'function') {
+          sink(entry);
+        } else if (Array.isArray(window.__TT_DEBUG.pathingHistory)) {
+          window.__TT_DEBUG.pathingHistory.push(entry);
+        }
       }
     } catch (_) {
       /* ignore */
     }
-    const logger = console[resolvedLevel] || console.info || console.log;
-    if (!logger) return;
-    try {
-      logger.call(console, `${PATHING_LOG_PREFIX} ${event}`, payload || {});
-    } catch (_) {
-      /* ignore */
+  }
+
+  getPathingLogArchive(limit = PATHING_LOG_ARCHIVE_LIMIT) {
+    if (!this._pathingLogArchive || !this._pathingLogArchive.length) {
+      return [];
+    }
+    const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : null;
+    const startIndex = normalizedLimit
+      ? Math.max(this._pathingLogArchive.length - normalizedLimit, 0)
+      : 0;
+    return this._pathingLogArchive.slice(startIndex).map((entry) => ({
+      ...entry,
+      payload: entry?.payload ? { ...entry.payload } : undefined,
+    }));
+  }
+
+  clearPathingLogArchive() {
+    if (this._pathingLogArchive) {
+      this._pathingLogArchive.length = 0;
     }
   }
 
@@ -1861,7 +1907,6 @@ export class Token3DAdapter {
       let pathTolerance = toleranceBase;
 
       if (climbEligible) {
-        speedMode = PATH_SPEED_MODES.WALK;
         const stepX = Math.sign(targetGridX - currentGridX);
         const stepY = Math.sign(targetGridY - currentGridY);
 
@@ -1913,23 +1958,48 @@ export class Token3DAdapter {
         const dirX = targetWorld.x - approachWorld.x;
         const dirZ = targetWorld.z - approachWorld.z;
         const dirLen = Math.hypot(dirX, dirZ);
-        const footWorld = this._cloneWorld(approachWorld) || approachWorld;
+        const baseEntryRatio = Math.min(Math.max(CLIMB_WALL_ENTRY_TILE_HALF_RATIO, 0.05), 1);
+        const entryVector = dirLen > 1e-4 ? { x: dirX / dirLen, z: dirZ / dirLen } : { x: 0, z: 0 };
+
+        let wallEntryDepth = tileHalf * baseEntryRatio;
         if (dirLen > 1e-4) {
-          const entryRatio = Math.min(Math.max(CLIMB_WALL_ENTRY_TILE_HALF_RATIO, 0.05), 1);
-          const maxEntryDepth = tileHalf * entryRatio;
-          const offset = Math.min(maxEntryDepth, dirLen);
-          const scale = offset / dirLen;
-          footWorld.x += dirX * scale;
-          footWorld.z += dirZ * scale;
+          wallEntryDepth = Math.min(Math.max(wallEntryDepth, 0), dirLen);
+        } else {
+          wallEntryDepth = 0;
         }
 
+        const wallEntryWorld = this._cloneWorld(approachWorld) || approachWorld;
+        wallEntryWorld.x += entryVector.x * wallEntryDepth;
+        wallEntryWorld.z += entryVector.z * wallEntryDepth;
+
+        let stopDepth = wallEntryDepth;
+        const extraBackoff = (() => {
+          if (speedMode === PATH_SPEED_MODES.RUN) {
+            return tileHalf * CLIMB_WALL_ENTRY_RUN_BACKOFF_RATIO;
+          }
+          if (speedMode === PATH_SPEED_MODES.SPRINT) {
+            return tileHalf * CLIMB_WALL_ENTRY_SPRINT_BACKOFF_RATIO;
+          }
+          return 0;
+        })();
+        stopDepth = Math.max(wallEntryDepth - extraBackoff, CLIMB_WALL_ENTRY_MIN_RATIO * tileHalf);
+        if (dirLen > 1e-4) {
+          stopDepth = Math.min(Math.max(stopDepth, 0), dirLen);
+        } else {
+          stopDepth = 0;
+        }
+
+        const stopWorld = this._cloneWorld(approachWorld) || approachWorld;
+        stopWorld.x += entryVector.x * stopDepth;
+        stopWorld.z += entryVector.z * stopDepth;
+
         const edgeTopWorld = {
-          x: footWorld.x,
-          z: footWorld.z,
+          x: wallEntryWorld.x,
+          z: wallEntryWorld.z,
           y: targetWorld.y,
         };
 
-        const availableWallHeight = Math.max((edgeTopWorld.y ?? 0) - (footWorld.y ?? 0), 0);
+        const availableWallHeight = Math.max((edgeTopWorld.y ?? 0) - (wallEntryWorld.y ?? 0), 0);
         const maxStandardWorldHeight = MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
         const wallWorldTravel = Math.max(0, availableWallHeight - maxStandardWorldHeight);
         const extraWallLevels = Math.max(0, heightDelta - MAX_STANDARD_CLIMB_LEVELS);
@@ -1938,7 +2008,7 @@ export class Token3DAdapter {
           targetGridX,
           targetGridY,
           targetHeight: targetHeightLevel,
-          footWorld: this._cloneWorld(footWorld) || footWorld,
+          footWorld: this._cloneWorld(wallEntryWorld) || wallEntryWorld,
           edgeWorld: this._cloneWorld(edgeTopWorld) || edgeTopWorld,
           finalWorld: this._cloneWorld(targetWorld) || targetWorld,
           heightDelta,
@@ -1962,8 +2032,19 @@ export class Token3DAdapter {
 
         pathGoalGridX = approachGridX;
         pathGoalGridY = approachGridY;
-        pathGoalWorld = footWorld;
+        pathGoalWorld = stopWorld;
         pathTolerance = Math.min(toleranceBase, PATH_SPEED_DEFAULT_TOLERANCE * 0.5);
+        if (speedMode === PATH_SPEED_MODES.RUN) {
+          pathTolerance = Math.max(
+            pathTolerance * CLIMB_APPROACH_TOLERANCE_RUN_SCALE,
+            CLIMB_APPROACH_TOLERANCE_MIN
+          );
+        } else if (speedMode === PATH_SPEED_MODES.SPRINT) {
+          pathTolerance = Math.max(
+            pathTolerance * CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE,
+            CLIMB_APPROACH_TOLERANCE_MIN
+          );
+        }
       } else {
         state.climbQueued = null;
       }
