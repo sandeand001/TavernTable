@@ -210,31 +210,42 @@ function stripSpectralWeights(weightMap) {
   return removed ? filtered : weightMap;
 }
 
+function isAdjacentToWater(c, x, y) {
+  if (!c?.gameManager) return false;
+  const cols = c.gameManager.cols || 0;
+  const rows = c.gameManager.rows || 0;
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  for (const [dx, dy] of dirs) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+    const nh = c.getTerrainHeight?.(nx, ny) ?? 0;
+    if (nh <= 0) return true;
+  }
+  return false;
+}
+
 // Candidate filters / strategies --------------------------------------------
 const candidateFilters = {
-  oasisSetback(c, x, y) {
-    const h = c.getTerrainHeight?.(x, y) ?? 0;
-    if (h <= 0.8) return false;
-    if (!hasWaterWithinRadius(c, x, y, 4)) return false;
-    if (hasWaterWithinRadius(c, x, y, 2)) return false;
-    if (!isFlatEnoughForTropical(c, x, y, h)) return false;
+  oasisSetback(c, x, y, h, rng) {
+    const height = Number.isFinite(h) ? h : (c.getTerrainHeight?.(x, y) ?? 0);
+    if (height <= 0.6) return false;
+    const adjacent = isAdjacentToWater(c, x, y);
+    if (!adjacent) {
+      if (!hasWaterWithinRadius(c, x, y, 3)) return false;
+      const bias = typeof rng === 'function' ? rng() : Math.random();
+      if (bias >= 0.1) return false;
+    }
+    if (!isFlatEnoughForTropical(c, x, y, height)) return false;
     return true;
   },
   adjacentWater(c, x, y) {
-    const dirs = [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ];
-    for (const [dx, dy] of dirs) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= c.gameManager.cols || ny >= c.gameManager.rows) continue;
-      const nh = c.getTerrainHeight?.(nx, ny) ?? 0;
-      if (nh <= 0) return true; // neighbor water
-    }
-    return false;
+    return isAdjacentToWater(c, x, y);
   },
   coastlineOnly(c, x, y) {
     return isCoastlineTile(c, x, y);

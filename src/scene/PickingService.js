@@ -13,6 +13,8 @@ export class PickingService {
     this._v2 = null;
     this._hitPoint = null;
     this._plane = null; // ground plane
+    this._tmpNormal = null;
+    this._normalMatrix = null;
     this._layers = [];
     this._metrics = { raycasts: 0, lastMs: 0 };
     this._terrainIntersections = [];
@@ -26,9 +28,10 @@ export class PickingService {
       return existing;
     }
     try {
-      const three = await import('three');
-      this._three = three;
-      return three;
+      const mod = await import('three');
+      const resolved = mod?.default || mod;
+      this._three = resolved;
+      return resolved;
     } catch (_) {
       return null;
     }
@@ -59,8 +62,22 @@ export class PickingService {
         this._plane = null;
         return false;
       }
+      try {
+        this._tmpNormal = new three.Vector3();
+      } catch (_) {
+        this._tmpNormal = null;
+      }
+      try {
+        if (typeof three.Matrix3 === 'function') {
+          this._normalMatrix = new three.Matrix3();
+        } else {
+          this._normalMatrix = null;
+        }
+      } catch (_) {
+        this._normalMatrix = null;
+      }
     }
-    return true;
+    return !!this._raycaster && !!this._v2 && !!this._hitPoint && !!this._plane;
   }
 
   _executeGroundPick(three, clientX, clientY, targetElement = null) {
@@ -99,6 +116,8 @@ export class PickingService {
     let worldY;
     let worldZ;
     let usedTerrainMesh = false;
+    const tileSize = gm?.spatial?.tileWorldSize || 1;
+    const safeTileSize = tileSize > 0 ? tileSize : 1;
     const terrainMesh = (() => {
       try {
         return gm.threeSceneManager?.scene?.getObjectByName?.('TerrainMesh') || null;
@@ -121,6 +140,13 @@ export class PickingService {
           worldX = this._hitPoint.x;
           worldY = this._hitPoint.y;
           worldZ = this._hitPoint.z;
+          const wallNormal = this._extractWorldFaceNormal(firstHit);
+          if (wallNormal && Math.abs(wallNormal.y) < 0.45) {
+            const insetRaw = tileSize * 0.1;
+            const inset = Math.min(Math.max(insetRaw, 0.01), tileSize * 0.25);
+            worldX -= wallNormal.x * inset;
+            worldZ -= wallNormal.z * inset;
+          }
           usedTerrainMesh = true;
         }
       }
@@ -133,9 +159,6 @@ export class PickingService {
       worldY = this._hitPoint.y;
       worldZ = this._hitPoint.z;
     }
-
-    const tileSize = gm?.spatial?.tileWorldSize || 1;
-    const safeTileSize = tileSize > 0 ? tileSize : 1;
 
     const clampIndex = (value, maxInclusive) => {
       let result = Number.isFinite(value) ? value : 0;
@@ -150,7 +173,7 @@ export class PickingService {
     const maxRows = Number.isFinite(gm?.rows) ? gm.rows - 1 : null;
     const fallbackIndex = (value) => {
       if (!Number.isFinite(value)) return 0;
-      return Math.round(value / safeTileSize);
+      return Math.floor(value / safeTileSize);
     };
 
     const computeGridFromWorld = () => {
@@ -301,5 +324,23 @@ export class PickingService {
   async pickFirstToken(clientX, clientY, opts = {}) {
     const list = await this.pickTokens(clientX, clientY, opts);
     return list.length ? list[0] : null;
+  }
+
+  _extractWorldFaceNormal(intersection) {
+    try {
+      const base = intersection?.face?.normal;
+      if (!base || !this._tmpNormal) return null;
+      const normal = this._tmpNormal.copy(base);
+      const object = intersection.object;
+      if (object?.matrixWorld && this._normalMatrix) {
+        this._normalMatrix.getNormalMatrix(object.matrixWorld);
+        normal.applyMatrix3(this._normalMatrix).normalize();
+      } else {
+        normal.normalize();
+      }
+      return normal;
+    } catch (_) {
+      return null;
+    }
   }
 }

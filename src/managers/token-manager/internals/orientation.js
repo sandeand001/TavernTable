@@ -3,7 +3,7 @@ const TAU = Math.PI * 2;
 function normalizeAngleInternal(angle) {
   if (!Number.isFinite(angle)) return 0;
   let normalized = angle;
-  while (normalized <= -Math.PI) normalized += TAU;
+  while (normalized < -Math.PI) normalized += TAU;
   while (normalized > Math.PI) normalized -= TAU;
   return normalized;
 }

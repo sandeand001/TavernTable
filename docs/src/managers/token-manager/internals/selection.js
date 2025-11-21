@@ -1,4 +1,5 @@
 import { GameValidators } from '../../../utils/Validation.js';
+import { normalizeCreatureType } from '../../../config/GameConstants.js';
 function getPorts(c) {
   const dp = (c && c.domPorts) || {};
   const fb = {
@@ -27,12 +28,18 @@ export function findExistingTokenAt(c, gridX, gridY) {
 }
 
 export function selectToken(c, tokenType) {
+  let canonicalType = tokenType;
   // Validate token type (except 'remove')
   if (tokenType !== 'remove') {
     const typeValidation = GameValidators.creatureType(tokenType);
     if (!typeValidation.isValid) {
       throw new Error(`Invalid token type: ${typeValidation.getErrorMessage()}`);
     }
+    canonicalType = typeValidation.normalizedType || normalizeCreatureType(tokenType);
+  }
+
+  if (canonicalType !== 'remove') {
+    canonicalType = normalizeCreatureType(canonicalType);
   }
 
   // Update UI selection
@@ -41,25 +48,29 @@ export function selectToken(c, tokenType) {
     btn.classList.remove('selected');
     btn.setAttribute('aria-pressed', 'false');
   });
-  const tokenButton = getTokenButtonByType(tokenType);
+  const tokenButton = getTokenButtonByType(canonicalType);
   if (tokenButton) {
     tokenButton.classList.add('selected');
     tokenButton.setAttribute('aria-pressed', 'true');
   }
 
-  c.selectedTokenType = tokenType;
-  if (typeof window !== 'undefined') {
-    window.selectedTokenType = tokenType;
+  if (typeof c.setSelectedTokenType === 'function') {
+    c.setSelectedTokenType(canonicalType);
+  } else {
+    c.selectedTokenType = canonicalType;
+    if (typeof window !== 'undefined') {
+      window.selectedTokenType = canonicalType;
+    }
   }
 
   if (window.sidebarController) {
-    window.sidebarController.updateTokenSelection(tokenType);
+    window.sidebarController.updateTokenSelection(canonicalType);
   }
   const infoEl = getTokenInfoEl();
   if (infoEl) {
     infoEl.textContent =
-      tokenType === 'remove'
+      canonicalType === 'remove'
         ? 'Click on tokens to remove them'
-        : `Click on grid to place ${tokenType}`;
+        : `Click on grid to place ${canonicalType}`;
   }
 }

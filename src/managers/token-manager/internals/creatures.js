@@ -13,13 +13,15 @@ import {
   createOwlbear,
   createMinotaur,
   createMindFlayer,
+  createMannequin,
   createFemaleHumanoid,
   createDefeatedDoll,
 } from '../../../entities/creatures/index.js';
 
 export function createCreatureByType(c, type) {
+  const normalizedType = typeof type === 'string' ? type.toLowerCase() : type;
   try {
-    const typeValidation = GameValidators.creatureType(type);
+    const typeValidation = GameValidators.creatureType(normalizedType);
     if (!typeValidation.isValid) {
       throw new Error(`Invalid creature type: ${typeValidation.getErrorMessage()}`);
     }
@@ -34,12 +36,13 @@ export function createCreatureByType(c, type) {
       owlbear: () => createOwlbear(),
       minotaur: () => createMinotaur(),
       mindflayer: () => createMindFlayer(),
+      mannequin: () => createMannequin(),
+      // Legacy aliases maintained for users loading pre-migration save data.
       'female-humanoid': () => createFemaleHumanoid(),
-      // Legacy alias maintained for users loading pre-migration save data.
       'defeated-doll': () => createDefeatedDoll(),
     };
 
-    const createFn = creationFunctions[type];
+    const createFn = creationFunctions[normalizedType];
     if (!createFn) {
       throw new Error(`No creation function found for creature type: ${type}`);
     }
@@ -50,9 +53,9 @@ export function createCreatureByType(c, type) {
     }
 
     logger.debug(
-      `Created creature: ${type}`,
+      `Created creature: ${normalizedType}`,
       {
-        creatureType: type,
+        creatureType: normalizedType,
         hasSprite: !!creature.sprite,
       },
       LOG_CATEGORY.SYSTEM
@@ -63,7 +66,7 @@ export function createCreatureByType(c, type) {
     const errorHandler = new ErrorHandler();
     errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.TOKEN, {
       stage: 'createCreatureByType',
-      creatureType: type,
+      creatureType: normalizedType,
     });
     return null;
   }

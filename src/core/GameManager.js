@@ -349,31 +349,36 @@ class GameManager {
    */
   async enableHybridRender() {
     if (this.is3DModeActive()) return;
+
     if (!this.threeSceneManager) {
       this.threeSceneManager = new ThreeSceneManager(this);
       await this.threeSceneManager.initialize();
-      if (this.threeSceneManager.degraded) {
-        const reason = this.threeSceneManager.degradeReason || 'Three.js renderer unavailable';
-        logger.log(
-          LOG_LEVEL.WARN,
-          'Hybrid 3D renderer unavailable; staying in 2D mode',
-          LOG_CATEGORY.SYSTEM,
-          {
-            context: 'GameManager.enableHybridRender',
-            reason,
-          }
-        );
-        const error = new Error(reason);
-        error.code = 'three_renderer_unavailable';
-        error.details = { reason };
-        throw error;
-      }
+    }
+
+    const degraded = !!this.threeSceneManager?.degraded;
+
+    if (degraded) {
+      const reason = this.threeSceneManager.degradeReason || 'Three.js renderer unavailable';
+      logger.log(
+        LOG_LEVEL.WARN,
+        'Hybrid 3D renderer unavailable; staying in 2D mode',
+        LOG_CATEGORY.SYSTEM,
+        {
+          context: 'GameManager.enableHybridRender',
+          reason,
+        }
+      );
+      this.threeSceneManager.ensureFallbackSurface?.();
+    }
+
+    if (!degraded) {
       // Hide the legacy Pixi tile grid once 3D mode is active; keep the Three grid visible by default.
       try {
         this.threeSceneManager.setPixiGridVisible?.(false);
       } catch (_) {
         /* ignore */
       }
+
       // Flush any deferred plant models queued before scene was ready
       try {
         if (Array.isArray(this._deferredPlantModels) && this._deferredPlantModels.length) {
@@ -382,7 +387,6 @@ class GameManager {
             for (const { model, record } of this._deferredPlantModels) {
               try {
                 sceneRef.add(model);
-                // ensure record still valid (wasn't removed during init)
                 if (record && record.__threeModelPending) delete record.__threeModelPending;
               } catch (_) {
                 /* ignore add failure */
@@ -394,10 +398,10 @@ class GameManager {
       } catch (_) {
         /* ignore deferred flush */
       }
+
       // If we are fully replacing tree sprites with 3D models, proactively clear any pre-created
       // instanced plant quads so no green rectangles linger from earlier sessions.
       try {
-        // Always purge legacy instanced plant quads now that 3D plant models are authoritative.
         if (this.placeableMeshPool) {
           this.placeableMeshPool._groups?.forEach((grp, key) => {
             try {
@@ -422,6 +426,7 @@ class GameManager {
       } catch (_) {
         /* ignore cleanup issues */
       }
+
       // Attach camera rig abstraction (Phase 1)
       try {
         if (this.threeSceneManager.camera) {
@@ -431,28 +436,30 @@ class GameManager {
       } catch (_) {
         /* ignore */
       }
-      // Initialize centralized picking service once Three scene & camera exist
-      try {
-        if (!this.pickingService) {
-          this.pickingService = new PickingService({ gameManager: this });
-        }
-      } catch (_) {
-        /* non-fatal picking service init failure */
+    }
+
+    // Initialize centralized picking service once Three scene & camera exist (degraded-safe)
+    try {
+      if (!this.pickingService) {
+        this.pickingService = new PickingService({ gameManager: this });
       }
+    } catch (_) {
+      /* non-fatal picking service init failure */
+    }
+
+    if (!degraded) {
       // Phase 2: initialize terrain mesh pipeline
       try {
         if (!this.terrainRebuilder) {
           const builder = new TerrainMeshBuilder({
             tileWorldSize: this.spatial.tileWorldSize,
             elevationUnit: this.spatial.elevationUnit,
-            enableBiomeVertexColors: true, // Phase 2: biome palette drives vertex colors
-            hardEdges: true, // Enforce per-tile isolated quads for exact 1:1 color (no interpolation)
+            enableBiomeVertexColors: true,
+            hardEdges: true,
           });
           this.terrainRebuilder = new TerrainRebuilder({ gameManager: this, builder });
-          // Perform initial build (flat or current heights) if Three initialized
           const threeNS = (await import('three')).default || (await import('three'));
           this.terrainRebuilder.rebuild({ three: threeNS });
-          // After first mesh, compute elevation scale parity and rebuild if it changes.
           try {
             const updated = this.sync3DElevationScaling?.({ rebuild: false, hardSet: true });
             if (updated) {
@@ -461,13 +468,12 @@ class GameManager {
           } catch (_) {
             /* ignore first parity sync */
           }
-          // Expose global convenience hook for console & UI controls
+
           if (typeof window !== 'undefined') {
             window.requestTerrain3DRebuild = (reason = 'manual') => {
               try {
                 const threeRef = this.threeSceneManager?.three || threeNS;
                 this.terrainRebuilder?.rebuild({ three: threeRef });
-                // reason kept for future analytics; referenced to satisfy linter
                 if (reason === '__noop__') {
                   /* no-op */
                 }
@@ -476,7 +482,6 @@ class GameManager {
                 return false;
               }
             };
-            // Backwards / user expectation alias for console snippet
             if (!window.terrainRebuild) {
               window.terrainRebuild = () => window.requestTerrain3DRebuild('alias');
             }
@@ -485,17 +490,20 @@ class GameManager {
       } catch (e) {
         /* non-fatal terrain mesh init failure */
       }
+
       // Phase 3 (initial scaffold): attach Token3DAdapter for existing tokens
       try {
         const { Token3DAdapter } = await import('../scene/Token3DAdapter.js');
         if (!this.token3DAdapter) {
           this.token3DAdapter = new Token3DAdapter(this);
           this.token3DAdapter.attach();
+
           // Attach token hover + selection listeners (3D interaction groundwork)
           try {
             if (typeof window !== 'undefined' && !this._tokenHoverListener) {
               const canvas = this.threeSceneManager?.canvas;
               const targetEl = canvas || document.body;
+
               this._tokenHoverListener = async (evt) => {
                 try {
                   if (!this.is3DModeActive() || !this.pickingService) return;
@@ -507,7 +515,7 @@ class GameManager {
                     targetEl
                   );
                   let hoverToken = null;
-                  if (ground && ground.grid) {
+                  if (ground?.grid) {
                     const gx = Math.round(ground.grid.gx);
                     const gy = Math.round(ground.grid.gy);
                     if (Number.isFinite(gx) && Number.isFinite(gy) && this.findExistingTokenAt) {
@@ -515,7 +523,6 @@ class GameManager {
                     }
                   }
                   this.token3DAdapter.setHoverToken(hoverToken);
-                  // Metrics
                   try {
                     const t1 =
                       (typeof performance !== 'undefined' && performance.now()) || Date.now();
@@ -533,7 +540,7 @@ class GameManager {
                 }
               };
               targetEl.addEventListener('pointermove', this._tokenHoverListener);
-              // Selection (pointerdown -> select or clear)
+
               this._tokenSelectListener = async (evt) => {
                 try {
                   if (!this.is3DModeActive() || !this.pickingService) return;
@@ -543,7 +550,7 @@ class GameManager {
                     targetEl
                   );
                   let token = null;
-                  if (ground && ground.grid) {
+                  if (ground?.grid) {
                     const gx = Math.round(ground.grid.gx);
                     const gy = Math.round(ground.grid.gy);
                     if (Number.isFinite(gx) && Number.isFinite(gy) && this.findExistingTokenAt) {
@@ -551,7 +558,6 @@ class GameManager {
                     }
                   }
                   this.token3DAdapter.setSelectedToken(token);
-                  // If a token was clicked with primary button, begin potential drag
                   try {
                     if (evt.button === 0 && token) {
                       this.startTokenDragByGrid(token.gridX, token.gridY);
@@ -573,7 +579,7 @@ class GameManager {
                 }
               };
               targetEl.addEventListener('pointerdown', this._tokenSelectListener);
-              // Pointer up -> commit drag if active
+
               this._tokenPointerUpListener = (evt) => {
                 try {
                   if (evt.button !== 0) return;
@@ -585,7 +591,7 @@ class GameManager {
                 }
               };
               targetEl.addEventListener('pointerup', this._tokenPointerUpListener);
-              // Augment hover listener to also update drag preview when active
+
               const originalHover = this._tokenHoverListener;
               this._tokenHoverListener = async (evt) => {
                 await originalHover(evt);
@@ -606,7 +612,7 @@ class GameManager {
                   }
                 }
               };
-              // Replace listener (remove old, add new)
+
               try {
                 targetEl.removeEventListener('pointermove', originalHover);
               } catch (_) {
@@ -619,8 +625,9 @@ class GameManager {
           }
         }
       } catch (_) {
-        /* ignore */
+        /* ignore Token3DAdapter init */
       }
+
       // Phase 4 scaffold: initialize placeable instancing pool (no migration yet unless flag enabled)
       try {
         if (this.features.instancedPlaceables && !this.placeableMeshPool) {
