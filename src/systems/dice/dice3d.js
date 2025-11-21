@@ -64,11 +64,6 @@ const D20_FACE_CALIBRATION_SEQUENCE = Object.freeze(
     .sort((a, b) => a.value - b.value)
 );
 
-const getFaceIndexForValue = (value) => {
-  if (!Number.isInteger(value)) return null;
-  return D20_NUMBER_TO_FACE_INDEX[value] ?? null;
-};
-
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 const randomBetween = (min, max) => min + Math.random() * (max - min);
 
@@ -1631,9 +1626,11 @@ export function stopD20FaceCalibration() {
 }
 
 export async function playD20RollOnGrid(options = {}) {
-  if (!hasWindow()) return false;
+  if (!hasWindow()) return { success: false, value: null, reason: 'no-window' };
   const manager = getSceneManager();
-  if (!manager || manager.degraded || !manager.scene) return false;
+  if (!manager || manager.degraded || !manager.scene) {
+    return { success: false, value: null, reason: 'no-manager' };
+  }
 
   try {
     clearActiveDie();
@@ -1650,16 +1647,6 @@ export async function playD20RollOnGrid(options = {}) {
     const animationOptions = { ...options };
     const upstreamOnSettle =
       typeof animationOptions.onSettle === 'function' ? animationOptions.onSettle : null;
-    const valueNumber = Number(animationOptions.value);
-    const resolvedRollValue =
-      Number.isInteger(valueNumber) && valueNumber >= 1 && valueNumber <= 20 ? valueNumber : null;
-    if (
-      resolvedRollValue != null &&
-      !Number.isFinite(animationOptions.forceFaceIndex) &&
-      getFaceIndexForValue(resolvedRollValue) != null
-    ) {
-      animationOptions.forceFaceIndex = getFaceIndexForValue(resolvedRollValue);
-    }
     if (typeof animationOptions.restHeight !== 'number') {
       animationOptions.restHeight = DEFAULT_REST_HEIGHT;
     }
@@ -1671,14 +1658,18 @@ export async function playD20RollOnGrid(options = {}) {
         clickDismissCleanup = null;
       }
     }
-    const forcedFaceValueHint = Number.isFinite(animationOptions.forceFaceIndex)
-      ? (FACE_INDEX_TO_NUMBER[animationOptions.forceFaceIndex] ?? null)
-      : null;
+
+    let settled = false;
+    let settleResolver;
+    const settlePromise = new Promise((resolve) => {
+      settleResolver = resolve;
+    });
+
     animationOptions.onSettle = (payload) => {
+      if (settled) return;
+      settled = true;
       const faceValue = Number.isInteger(payload?.faceInfo?.value) ? payload.faceInfo.value : null;
-      const resolvedValue =
-        faceValue ?? resolvedRollValue ?? forcedFaceValueHint ?? payload?.faceInfo?.value ?? null;
-      applyCriticalRollTint(clone, resolvedValue);
+      applyCriticalRollTint(clone, faceValue);
       if (upstreamOnSettle) {
         try {
           upstreamOnSettle(payload);
@@ -1686,17 +1677,29 @@ export async function playD20RollOnGrid(options = {}) {
           console.warn('[dice3d] upstream onSettle callback failed', callbackError);
         }
       }
+      settleResolver({
+        success: true,
+        value: faceValue,
+        faceInfo: payload?.faceInfo || null,
+      });
     };
+
     const animationState = scheduleRollAnimation(manager, clone, metrics, animationOptions);
     activeDieState = {
       mesh: clone,
       dispose: animationState.dispose,
       interactionCleanup: clickDismissCleanup,
     };
-    return true;
+
+    return await settlePromise;
   } catch (error) {
     console.warn('[dice3d] Unable to play d20 animation', error);
-    return false;
+    return {
+      success: false,
+      value: null,
+      reason: 'exception',
+      error,
+    };
   }
 }
 

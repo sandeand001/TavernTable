@@ -50,14 +50,21 @@ function getDiceResultEl() {
 // Dice rolling functionality with animation
 let isRolling = false;
 
-function maybePlay3DDice({ sides, diceCount, value }) {
-  if (sides !== 20 || diceCount !== 1 || typeof value !== 'number') return;
+function maybePlay3DDice({ sides, diceCount } = {}) {
+  if (sides !== 20 || diceCount !== 1) {
+    return Promise.resolve(null);
+  }
   try {
-    const result = playD20RollOnGrid({ value });
-    if (result?.catch) result.catch(() => {});
+    const rollPromise = playD20RollOnGrid({ dismissOnClick: true });
+    if (rollPromise?.then) {
+      return rollPromise
+        .then((result) => (Number.isInteger(result?.value) ? result.value : null))
+        .catch(() => null);
+    }
   } catch (_) {
     /* ignore animation errors */
   }
+  return Promise.resolve(null);
 }
 
 /**
@@ -145,6 +152,9 @@ export function rollDice(sides) {
 
     isRolling = true;
 
+    const isSingleD20 = sides === 20 && diceCount === 1;
+    const d20PhysicalRollPromise = isSingleD20 ? maybePlay3DDice({ sides, diceCount }) : null;
+
     // Soft-disable dice buttons to avoid rapid re-clicks during animation
     const diceButtons = getDiceButtons();
     diceButtons.forEach((btn) => {
@@ -165,17 +175,9 @@ export function rollDice(sides) {
       try {
         animationFrame++;
 
-        // Show random numbers during animation
-        const tempResults = [];
-        for (let i = 0; i < diceCount; i++) {
-          tempResults.push(Math.floor(Math.random() * sides) + 1);
-        }
-
-        if (diceCount === 1) {
-          resultEl.textContent = `Rolling... ${tempResults[0]}`;
-        } else {
-          const tempTotal = tempResults.reduce((sum, val) => sum + val, 0);
-          resultEl.textContent = `Rolling... [${tempResults.join(', ')}] = ${tempTotal}`;
+        // Show a consistent status message during animation to avoid implying a final result
+        if (resultEl.textContent !== 'Rolling...') {
+          resultEl.textContent = 'Rolling...';
         }
 
         if (animationFrame < animationDuration) {
@@ -208,77 +210,106 @@ export function rollDice(sides) {
     };
 
     const showFinalResult = () => {
-      const results = [];
-      let total = 0;
+      const finalize = async () => {
+        const results = [];
+        let total = 0;
 
-      try {
-        for (let i = 0; i < diceCount; i++) {
-          results.push(Math.floor(Math.random() * sides) + 1);
-        }
-
-        total = results.reduce((sum, val) => sum + val, 0);
-
-        logger.log(LOG_LEVEL.INFO, 'Dice roll completed', LOG_CATEGORY.USER, {
-          diceType: `d${sides}`,
-          diceCount: diceCount,
-          results: results,
-          total: total,
-          rollQuality:
-            diceCount === 1
-              ? results[0] === sides
-                ? 'maximum'
-                : results[0] === 1
-                  ? 'minimum'
-                  : 'normal'
-              : 'multiple_dice',
-          timestamp: new Date().toISOString(),
-        });
-
-        maybePlay3DDice({ sides, diceCount, value: results[0] });
-
-        // Determine result color based on roll quality
-        let resultColor = DICE_CONFIG.COLORS.NORMAL_ROLL;
-        if (diceCount === 1) {
-          if (results[0] === sides) {
-            resultColor = DICE_CONFIG.COLORS.MAX_ROLL;
-          } else if (results[0] === 1) {
-            resultColor = DICE_CONFIG.COLORS.MIN_ROLL;
+        try {
+          if (isSingleD20 && d20PhysicalRollPromise) {
+            const physicalValue = await d20PhysicalRollPromise;
+            const resolvedValue = Number.isInteger(physicalValue)
+              ? physicalValue
+              : Math.floor(Math.random() * sides) + 1;
+            results.push(resolvedValue);
+          } else {
+            for (let i = 0; i < diceCount; i++) {
+              results.push(Math.floor(Math.random() * sides) + 1);
+            }
           }
-        } else {
-          const maxPossible = diceCount * sides;
-          const minPossible = diceCount;
 
-          if (total === maxPossible) {
-            resultColor = DICE_CONFIG.COLORS.MAX_ROLL;
-          } else if (total === minPossible) {
-            resultColor = DICE_CONFIG.COLORS.MIN_ROLL;
+          total = results.reduce((sum, val) => sum + val, 0);
+
+          logger.log(LOG_LEVEL.INFO, 'Dice roll completed', LOG_CATEGORY.USER, {
+            diceType: `d${sides}`,
+            diceCount: diceCount,
+            results: results,
+            total: total,
+            rollQuality:
+              diceCount === 1
+                ? results[0] === sides
+                  ? 'maximum'
+                  : results[0] === 1
+                    ? 'minimum'
+                    : 'normal'
+                : 'multiple_dice',
+            timestamp: new Date().toISOString(),
+          });
+
+          // Determine result color based on roll quality
+          let resultColor = DICE_CONFIG.COLORS.NORMAL_ROLL;
+          if (diceCount === 1) {
+            if (results[0] === sides) {
+              resultColor = DICE_CONFIG.COLORS.MAX_ROLL;
+            } else if (results[0] === 1) {
+              resultColor = DICE_CONFIG.COLORS.MIN_ROLL;
+            }
+          } else {
+            const maxPossible = diceCount * sides;
+            const minPossible = diceCount;
+
+            if (total === maxPossible) {
+              resultColor = DICE_CONFIG.COLORS.MAX_ROLL;
+            } else if (total === minPossible) {
+              resultColor = DICE_CONFIG.COLORS.MIN_ROLL;
+            }
           }
-        }
 
-        if (diceCount === 1) {
-          resultEl.textContent = `Result: d${sides} → ${results[0]}`;
-        } else {
-          resultEl.textContent = `Result: ${diceCount}d${sides} → [${results.join(', ')}] = ${total}`;
-        }
+          if (diceCount === 1) {
+            resultEl.textContent = `Result: d${sides} → ${results[0]}`;
+          } else {
+            resultEl.textContent = `Result: ${diceCount}d${sides} → [${results.join(', ')}] = ${total}`;
+          }
 
-        // Apply color coding
-        resultEl.style.color = resultColor;
-        resultEl.style.textShadow = `0 0 5px ${resultColor}`;
+          // Apply color coding
+          resultEl.style.color = resultColor;
+          resultEl.style.textShadow = `0 0 5px ${resultColor}`;
 
-        // Log to sidebar dice log
-        if (window.sidebarController) {
-          const logMessage =
-            diceCount === 1
-              ? `Rolled d${sides}: ${results[0]}`
-              : `Rolled ${diceCount}d${sides}: [${results.join(', ')}] = ${total}`;
-          window.sidebarController.addDiceLogEntry(logMessage, 'roll');
-        }
+          // Log to sidebar dice log
+          if (window.sidebarController) {
+            const logMessage =
+              diceCount === 1
+                ? `Rolled d${sides}: ${results[0]}`
+                : `Rolled ${diceCount}d${sides}: [${results.join(', ')}] = ${total}`;
+            window.sidebarController.addDiceLogEntry(logMessage, 'roll');
+          }
 
-        const t = setTimeout(() => {
-          resultEl.style.color = DICE_CONFIG.COLORS.NORMAL_ROLL;
-          resultEl.style.textShadow = 'none';
+          const t = setTimeout(() => {
+            resultEl.style.color = DICE_CONFIG.COLORS.NORMAL_ROLL;
+            resultEl.style.textShadow = 'none';
+            isRolling = false;
+            // Re-enable dice buttons after successful roll concludes
+            const diceBtns = getDiceButtons();
+            diceBtns.forEach((btn) => {
+              const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
+              btn.disabled = wasDisabled;
+              btn.classList.toggle('disabled', wasDisabled);
+              btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
+              btn.removeAttribute('data-prev-disabled');
+            });
+          }, DICE_CONFIG.RESULT_DISPLAY_DURATION);
+          if (typeof t?.unref === 'function') t.unref();
+        } catch (error) {
+          new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
+            context: 'rollDice',
+            stage: 'result_display_error',
+            results: results || [],
+            total: total || 0,
+            diceType: `d${sides}`,
+            diceCount: diceCount,
+            sidebarAvailable: !!window.sidebarController,
+          });
           isRolling = false;
-          // Re-enable dice buttons after successful roll concludes
+          // Re-enable dice buttons after result shows
           const diceBtns = getDiceButtons();
           diceBtns.forEach((btn) => {
             const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
@@ -287,29 +318,10 @@ export function rollDice(sides) {
             btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
             btn.removeAttribute('data-prev-disabled');
           });
-        }, DICE_CONFIG.RESULT_DISPLAY_DURATION);
-        if (typeof t?.unref === 'function') t.unref();
-      } catch (error) {
-        new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
-          context: 'rollDice',
-          stage: 'result_display_error',
-          results: results || [],
-          total: total || 0,
-          diceType: `d${sides}`,
-          diceCount: diceCount,
-          sidebarAvailable: !!window.sidebarController,
-        });
-        isRolling = false;
-        // Re-enable dice buttons after result shows
-        const diceBtns = getDiceButtons();
-        diceBtns.forEach((btn) => {
-          const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
-          btn.disabled = wasDisabled;
-          btn.classList.toggle('disabled', wasDisabled);
-          btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
-          btn.removeAttribute('data-prev-disabled');
-        });
-      }
+        }
+      };
+
+      finalize();
     };
 
     // Start animation
