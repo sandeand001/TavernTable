@@ -5,7 +5,12 @@
  * Provides consistent input validation, type checking, and data sanitization
  */
 
-import { GRID_CONFIG, CREATURE_SCALES, DICE_CONFIG } from '../config/GameConstants.js';
+import {
+  GRID_CONFIG,
+  CREATURE_SCALES,
+  DICE_CONFIG,
+  normalizeCreatureType,
+} from '../config/GameConstants.js';
 import { logger } from './Logger.js';
 
 /**
@@ -120,12 +125,16 @@ export const GameValidators = {
       return result;
     }
 
-    if (!validTypes.includes(creatureType)) {
+    const normalized = normalizeCreatureType(creatureType);
+
+    if (!validTypes.includes(normalized)) {
       result.isValid = false;
       result.errors.push(
         `Invalid creature type: ${creatureType}. Valid types: ${validTypes.join(', ')}`
       );
     }
+
+    result.normalizedType = normalized;
 
     return result;
   },

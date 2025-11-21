@@ -23,6 +23,7 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
+import { TOKEN_COMMANDS } from '../config/TokenCommandConfig.js';
 import {
   getCreatureButtons,
   getFacingButton,
@@ -38,8 +39,44 @@ import {
 } from './domHelpers.js';
 import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
 import { rollDice } from '../systems/dice/dice.js';
+import { RadialMenu } from './components/RadialMenu.js';
 
 const TOKEN_DRAG_MIME = 'application/taverntable-token';
+
+let radialMenuInstance = null;
+
+function getRadialMenuInstance() {
+  if (!radialMenuInstance) {
+    radialMenuInstance = new RadialMenu({ actions: TOKEN_COMMANDS });
+    const mountTarget = document.body || document.documentElement;
+    if (mountTarget) {
+      radialMenuInstance.attach(mountTarget);
+    }
+    radialMenuInstance.onAction(({ actionId, token }) => {
+      handleRadialCommand(actionId, token);
+    });
+  }
+  return radialMenuInstance;
+}
+
+function handleRadialCommand(actionId, token) {
+  if (!actionId) {
+    return;
+  }
+  const normalized = actionId === 'clear' ? null : actionId;
+  const gm = window.gameManager;
+  if (gm && typeof gm.applyTokenCommand === 'function') {
+    gm.applyTokenCommand(token, actionId);
+  }
+  getRadialMenuInstance().setActiveCommand(normalized);
+}
+
+function showRadialMenu(detail = {}) {
+  const radial = getRadialMenuInstance();
+  radial.show(detail);
+  const activeCommand = detail.token?.quickCommand || null;
+  radial.setActiveCommand(activeCommand);
+}
 
 function hasTokenDragPayload(event) {
   const dt = event?.dataTransfer;
@@ -510,6 +547,16 @@ function attachDynamicUIHandlers() {
 
 // Expressive/Atlas 3D style controls removed; keep stub for any legacy calls.
 function wireTerrainStyleControls() {}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('taverntable:tokenRadial', (event) => {
+    try {
+      showRadialMenu(event?.detail || {});
+    } catch (error) {
+      logger.debug('Failed to show radial menu', { error: error?.message }, LOG_CATEGORY.UI);
+    }
+  });
+}
 
 // Attach after DOM ready & when game manager exists
 document.addEventListener('DOMContentLoaded', () => {

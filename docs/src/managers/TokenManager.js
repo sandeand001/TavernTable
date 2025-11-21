@@ -29,12 +29,32 @@ import { removeToken as _removeToken } from './token-manager/internals/removal.j
 // Internals for placement
 import { placeNewToken as _placeNewToken } from './token-manager/internals/placement.js';
 
+const DEFAULT_TOKEN_TYPE = 'mannequin';
+const LEGACY_TOKEN_ALIASES = {
+  'female-humanoid': DEFAULT_TOKEN_TYPE,
+  'defeated-doll': DEFAULT_TOKEN_TYPE,
+};
+
+function normalizeTokenType(tokenType) {
+  if (tokenType === 'remove') return 'remove';
+  if (typeof tokenType !== 'string') return DEFAULT_TOKEN_TYPE;
+  const trimmed = tokenType.trim();
+  if (!trimmed) return DEFAULT_TOKEN_TYPE;
+  const lowered = trimmed.toLowerCase();
+  if (lowered === 'remove') return 'remove';
+  return LEGACY_TOKEN_ALIASES[lowered] || lowered;
+}
+
 export class TokenManager {
   constructor(gameManager) {
     this.gameManager = gameManager;
-    this.selectedTokenType = 'female-humanoid';
+    this.selectedTokenType = DEFAULT_TOKEN_TYPE;
     this.tokenFacingRight = true;
     this.placedTokens = [];
+
+    if (typeof window !== 'undefined') {
+      window.selectedTokenType = this.selectedTokenType;
+    }
   }
 
   // Getters for backward compatibility
@@ -52,10 +72,11 @@ export class TokenManager {
 
   // Setters for proper state management
   setSelectedTokenType(tokenType) {
-    this.selectedTokenType = tokenType;
+    const normalizedType = normalizeTokenType(tokenType);
+    this.selectedTokenType = normalizedType;
     // Sync with global variable for backward compatibility
     if (typeof window !== 'undefined') {
-      window.selectedTokenType = tokenType;
+      window.selectedTokenType = normalizedType;
     }
   }
 

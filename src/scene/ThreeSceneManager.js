@@ -537,6 +537,91 @@ export class ThreeSceneManager {
     } catch (_) {
       /* ignore */
     }
+    this._ensureDegradedPlaceholders();
+  }
+
+  ensureFallbackSurface() {
+    if (!this.degraded) return;
+    this._ensureDegradedPlaceholders();
+  }
+
+  _ensureDegradedPlaceholders() {
+    const rect = (width = 1024, height = 768) => ({
+      left: 0,
+      top: 0,
+      width,
+      height,
+      right: width,
+      bottom: height,
+    });
+
+    try {
+      const three = this.three;
+      if (three) {
+        if (!this.scene) {
+          try {
+            this.scene = new three.Scene();
+          } catch (_) {
+            this.scene = { isDegradedPlaceholder: true };
+          }
+        }
+        if (!this.camera && three.OrthographicCamera) {
+          try {
+            const cols = this.gameManager?.cols || 25;
+            const rows = this.gameManager?.rows || 25;
+            const span = Math.max(cols, rows) * 0.6;
+            const aspect = 1;
+            this.camera = new three.OrthographicCamera(
+              -span * aspect,
+              span * aspect,
+              span,
+              -span,
+              -100,
+              500
+            );
+            this._applyCameraBase?.({ cx: cols * 0.5, cz: rows * 0.5, span });
+          } catch (_) {
+            this.camera = this.camera || { isDegradedPlaceholder: true };
+          }
+        }
+      }
+    } catch (_) {
+      if (!this.scene) this.scene = { isDegradedPlaceholder: true };
+      if (!this.camera) this.camera = { isDegradedPlaceholder: true };
+    }
+
+    if (!this.canvas) {
+      if (typeof document !== 'undefined' && document.createElement) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.width || 1024;
+          canvas.height = canvas.height || 768;
+          canvas.style = canvas.style || {};
+          if (typeof canvas.getBoundingClientRect !== 'function') {
+            canvas.getBoundingClientRect = () => rect(canvas.width, canvas.height);
+          }
+          this.canvas = canvas;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      if (!this.canvas) {
+        const width = 1024;
+        const height = 768;
+        this.canvas = {
+          width,
+          height,
+          style: {},
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          getBoundingClientRect: () => rect(width, height),
+        };
+      }
+    } else if (typeof this.canvas.getBoundingClientRect !== 'function') {
+      const width = this.canvas.width || 1024;
+      const height = this.canvas.height || 768;
+      this.canvas.getBoundingClientRect = () => rect(width, height);
+    }
   }
 
   _resize() {

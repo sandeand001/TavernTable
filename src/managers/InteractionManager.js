@@ -60,6 +60,9 @@ export class InteractionManager {
     this._boundGlobalMouseMove = this._handleGlobalMouseMove.bind(this);
     this._boundGlobalMouseUp = this._handleGlobalMouseUp.bind(this);
     this._pointerScratch = { x: 0, y: 0 };
+    this._pendingRadialContext = null;
+    this._radialDragThresholdSq = 81; // ~9px of pointer travel cancels radial capture
+    this._radialProjectVector = null;
   }
 
   /**
@@ -87,25 +90,19 @@ export class InteractionManager {
     this.setupMouseDown();
     this.setupMouseMove();
     this.setupMouseUp();
-    this.setupMouseLeave();
   }
 
   /**
-   * Handle mouse down events
+   * Handle mouse down events with 3D-aware context menu logic
    */
   setupMouseDown() {
     const view = this.gameManager.app.view;
     view.addEventListener('mousedown', (event) => {
       if (event.button === 2) {
-        // Right mouse button mirrors space+left behavior for panning/rotation
-        this._activeDragButton = 2;
-        const threeMgr = this.gameManager?.threeSceneManager;
-        if (threeMgr && threeMgr.camera) {
-          this.start3DRotation(event, threeMgr);
-        } else {
-          this.startGridDragging(event);
+        if (this._tryCaptureRadialTrigger(event)) {
+          return;
         }
-        this._ensureGlobalDragListeners();
+        this._startRightButtonDrag(event);
         return;
       }
 
@@ -113,7 +110,11 @@ export class InteractionManager {
         return;
       }
 
-      // Regular left click = token placement
+      if (this.isSpacePressed) {
+        this.startGridDragging(event);
+        return;
+      }
+
       this.handleLeftClick(event);
     });
   }
@@ -124,6 +125,21 @@ export class InteractionManager {
   setupMouseMove() {
     const view = this.gameManager.app.view;
     view.addEventListener('mousemove', (event) => {
+      if (this._pendingRadialContext) {
+        this._pendingRadialContext.lastScreenX = event.clientX;
+        this._pendingRadialContext.lastScreenY = event.clientY;
+        if (event.buttons === 2) {
+          const dx = event.clientX - this._pendingRadialContext.originX;
+          const dy = event.clientY - this._pendingRadialContext.originY;
+          if (dx * dx + dy * dy > this._radialDragThresholdSq) {
+            const resumeEvent = this._pendingRadialContext.initialEvent || event;
+            this._pendingRadialContext = null;
+            this._startRightButtonDrag(resumeEvent);
+            return;
+          }
+        }
+      }
+
       if (this.isRotating3D) {
         this.update3DRotation(event);
         return;
@@ -142,6 +158,12 @@ export class InteractionManager {
     const view = this.gameManager.app.view;
     view.addEventListener('mouseup', (event) => {
       if (event.button === 2) {
+        if (this._pendingRadialContext) {
+          this._dispatchRadialMenuRequest(this._pendingRadialContext);
+          this._pendingRadialContext = null;
+          event.preventDefault();
+          return;
+        }
         if (this.isRotating3D) {
           this.stop3DRotation();
         } else if (this.isDragging) {
@@ -206,6 +228,17 @@ export class InteractionManager {
     } catch (e) {
       this.isRotating3D = false;
     }
+  }
+
+  _startRightButtonDrag(event) {
+    this._activeDragButton = 2;
+    const threeMgr = this.gameManager?.threeSceneManager;
+    if (threeMgr && threeMgr.camera) {
+      this.start3DRotation(event, threeMgr);
+    } else {
+      this.startGridDragging(event);
+    }
+    this._ensureGlobalDragListeners();
   }
 
   /** Update 3D rotation given current mouse */
@@ -283,6 +316,14 @@ export class InteractionManager {
   }
 
   _handleGlobalMouseUp(event) {
+    if (this._pendingRadialContext && event.button === 2) {
+      this._dispatchRadialMenuRequest(this._pendingRadialContext);
+      this._pendingRadialContext = null;
+      if (typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      return;
+    }
     if (this._activeDragButton === null) {
       this._removeGlobalDragListeners();
       return;
@@ -339,6 +380,173 @@ export class InteractionManager {
     if (this._globalMouseUpListening) {
       document.removeEventListener('mouseup', this._boundGlobalMouseUp);
       this._globalMouseUpListening = false;
+    }
+  }
+
+  _tryCaptureRadialTrigger(event) {
+    try {
+      const capture = this._pick3DTarget(event) || this._pickSpriteTarget(event);
+      if (!capture || !capture.token) {
+        this._pendingRadialContext = null;
+        return false;
+      }
+      this._pendingRadialContext = {
+        token: capture.token,
+        gridX: Number.isFinite(capture.gridX) ? capture.gridX : null,
+        gridY: Number.isFinite(capture.gridY) ? capture.gridY : null,
+        originX: event.clientX,
+        originY: event.clientY,
+        lastScreenX: capture.screenPosition?.x ?? event.clientX,
+        lastScreenY: capture.screenPosition?.y ?? event.clientY,
+        screenPosition: capture.screenPosition || { x: event.clientX, y: event.clientY },
+        initialEvent: event,
+      };
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    } catch (_) {
+      this._pendingRadialContext = null;
+      return false;
+    }
+  }
+
+  _dispatchRadialMenuRequest(context) {
+    if (typeof window === 'undefined' || !context?.token) {
+      return;
+    }
+    try {
+      const computedScreen =
+        this._get3DTokenScreenPosition(context.token) ||
+        context.screenPosition ||
+        (context.lastScreenX && context.lastScreenY
+          ? { x: context.lastScreenX, y: context.lastScreenY }
+          : null);
+
+      window.dispatchEvent(
+        new CustomEvent('taverntable:tokenRadial', {
+          detail: {
+            token: context.token,
+            tokenId: context.token?.id || null,
+            gridX:
+              Number.isFinite(context.gridX) || Number.isFinite(context.token?.gridX)
+                ? (context.gridX ?? context.token?.gridX ?? null)
+                : null,
+            gridY:
+              Number.isFinite(context.gridY) || Number.isFinite(context.token?.gridY)
+                ? (context.gridY ?? context.token?.gridY ?? null)
+                : null,
+            screenX: computedScreen?.x ?? context.lastScreenX ?? context.originX,
+            screenY: computedScreen?.y ?? context.lastScreenY ?? context.originY,
+            screenPosition: computedScreen || {
+              x: context.lastScreenX ?? context.originX,
+              y: context.lastScreenY ?? context.originY,
+            },
+          },
+        })
+      );
+    } catch (_) {
+      /* ignore dispatch errors */
+    }
+  }
+
+  _pick3DTarget(event) {
+    try {
+      const gm = this.gameManager;
+      if (!gm?.is3DModeActive?.()) {
+        return null;
+      }
+      const picking = gm.pickingService;
+      if (!picking || typeof picking.pickGroundSync !== 'function') {
+        return null;
+      }
+      const targetElement = gm.threeSceneManager?.renderer?.domElement || gm.app?.view;
+      const ground = picking.pickGroundSync(event.clientX, event.clientY, targetElement);
+      if (!ground) {
+        return null;
+      }
+      let gridX = Number.isFinite(ground?.grid?.gx) ? Math.round(ground.grid.gx) : null;
+      let gridY = Number.isFinite(ground?.grid?.gy) ? Math.round(ground.grid.gy) : null;
+      let token = ground.token || null;
+      if (!token && gridX != null && gridY != null) {
+        token = gm.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
+      }
+      if (!token) {
+        return null;
+      }
+      if (!Number.isFinite(gridX) && Number.isFinite(token.gridX)) {
+        gridX = token.gridX;
+      }
+      if (!Number.isFinite(gridY) && Number.isFinite(token.gridY)) {
+        gridY = token.gridY;
+      }
+      const screenPosition = this._get3DTokenScreenPosition(token) || {
+        x: event.clientX,
+        y: event.clientY,
+      };
+      return { token, gridX, gridY, screenPosition };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _pickSpriteTarget(event) {
+    try {
+      const gm = this.gameManager;
+      if (!gm) {
+        return null;
+      }
+      const gridCoords = this.getGridCoordinatesFromClick(event);
+      if (!gridCoords) {
+        return null;
+      }
+      const gridX = Number.isFinite(gridCoords.gridX) ? gridCoords.gridX : null;
+      const gridY = Number.isFinite(gridCoords.gridY) ? gridCoords.gridY : null;
+      if (gridX == null || gridY == null) {
+        return null;
+      }
+      const token =
+        (typeof gm.findExistingTokenAt === 'function'
+          ? gm.findExistingTokenAt(gridX, gridY)
+          : null) ||
+        gm.tokenManager?.findExistingTokenAt?.(gridX, gridY) ||
+        null;
+      if (!token) {
+        return null;
+      }
+      return {
+        token,
+        gridX,
+        gridY,
+        screenPosition: { x: event.clientX, y: event.clientY },
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _get3DTokenScreenPosition(tokenEntry) {
+    try {
+      const gm = this.gameManager;
+      const threeMgr = gm?.threeSceneManager;
+      const mesh = tokenEntry?.__threeMesh;
+      if (!mesh || !threeMgr?.camera || !threeMgr?.renderer || !threeMgr?.three) {
+        return null;
+      }
+      this._radialProjectVector = this._radialProjectVector || new threeMgr.three.Vector3();
+      const vector = this._radialProjectVector;
+      mesh.getWorldPosition(vector);
+      vector.project(threeMgr.camera);
+      const dom = threeMgr.renderer.domElement;
+      if (!dom) {
+        return null;
+      }
+      const rect = dom.getBoundingClientRect();
+      return {
+        x: rect.left + ((vector.x + 1) / 2) * rect.width,
+        y: rect.top + ((-vector.y + 1) / 2) * rect.height,
+      };
+    } catch (_) {
+      return null;
     }
   }
 
@@ -536,14 +744,14 @@ export class InteractionManager {
     let gridY = null;
     let token = null;
 
-    const spriteToken = this._pickTokenBySprite(event);
-    if (spriteToken) {
-      token = spriteToken;
-      if (Number.isFinite(spriteToken.gridX)) {
-        gridX = spriteToken.gridX;
+    const threeTarget = this._pick3DTarget(event);
+    if (threeTarget) {
+      token = threeTarget.token || null;
+      if (Number.isFinite(threeTarget.gridX)) {
+        gridX = threeTarget.gridX;
       }
-      if (Number.isFinite(spriteToken.gridY)) {
-        gridY = spriteToken.gridY;
+      if (Number.isFinite(threeTarget.gridY)) {
+        gridY = threeTarget.gridY;
       }
     }
 
@@ -605,99 +813,6 @@ export class InteractionManager {
       gridY: Number.isFinite(gridY) ? gridY : null,
       token,
     };
-  }
-
-  _pickTokenBySprite(event) {
-    try {
-      const gm = this.gameManager;
-      const tokens = gm?.placedTokens;
-      if (!tokens || !tokens.length) {
-        return null;
-      }
-
-      const renderer = gm?.app?.renderer;
-      const interaction = renderer?.plugins?.interaction;
-      if (!interaction || typeof interaction.mapPositionToPoint !== 'function') {
-        return null;
-      }
-
-      const point = this._pointerScratch;
-      point.x = 0;
-      point.y = 0;
-      interaction.mapPositionToPoint(point, event.clientX, event.clientY);
-
-      const spriteMap = new WeakMap();
-      const register = (displayObject, tokenEntry) => {
-        if (!displayObject) return;
-        spriteMap.set(displayObject, tokenEntry);
-        const children = displayObject.children;
-        if (Array.isArray(children)) {
-          for (const child of children) {
-            register(child, tokenEntry);
-          }
-        }
-      };
-
-      for (const token of tokens) {
-        const sprite = token?.creature?.sprite;
-        if (sprite) {
-          register(sprite, token);
-        }
-      }
-
-      const stage = gm?.app?.stage;
-      if (stage && typeof interaction.hitTest === 'function') {
-        const hit = interaction.hitTest(point, stage, event);
-        let current = hit;
-        while (current) {
-          const tokenEntry = spriteMap.get(current) || current.tokenData || null;
-          if (tokenEntry) {
-            return tokenEntry;
-          }
-          current = current.parent;
-        }
-      }
-
-      let bestToken = null;
-      let bestScore = -Infinity;
-
-      for (const tokenEntry of tokens) {
-        const sprite = tokenEntry?.creature?.sprite;
-        if (!sprite || !sprite.parent || !sprite.visible) {
-          continue;
-        }
-        if (sprite.worldAlpha <= 0 || sprite.renderable === false) {
-          continue;
-        }
-        if (typeof sprite.getBounds !== 'function') {
-          continue;
-        }
-
-        let bounds;
-        try {
-          bounds = sprite.getBounds(false);
-        } catch (_) {
-          bounds = null;
-        }
-        if (!bounds || !bounds.contains(point.x, point.y)) {
-          continue;
-        }
-
-        const score = Number.isFinite(sprite.zIndex)
-          ? sprite.zIndex
-          : Number.isFinite(sprite.y)
-            ? sprite.y
-            : 0;
-        if (bestToken == null || score >= bestScore) {
-          bestToken = tokenEntry;
-          bestScore = score;
-        }
-      }
-
-      return bestToken;
-    } catch (_) {
-      return null;
-    }
   }
 
   _selectTokenEntry(tokenEntry) {

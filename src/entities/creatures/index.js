@@ -48,14 +48,18 @@ function createTroll(x = 0, y = 0) {
   return CreatureFactory.createCreature('troll', x, y, facingRight);
 }
 
-function createFemaleHumanoid(x = 0, y = 0) {
+function createMannequin(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
-  return CreatureFactory.createCreature('female-humanoid', x, y, facingRight);
+  return CreatureFactory.createCreature('mannequin', x, y, facingRight);
 }
 
-// Legacy alias retained for saved states or external scripts not yet migrated.
+// Legacy aliases retained for saved states or external scripts not yet migrated.
+function createFemaleHumanoid(x = 0, y = 0) {
+  return createMannequin(x, y);
+}
+
 function createDefeatedDoll(x = 0, y = 0) {
-  return createFemaleHumanoid(x, y);
+  return createMannequin(x, y);
 }
 
 // Export all creature creation functions
@@ -69,6 +73,7 @@ export {
   createOwlbear,
   createMinotaur,
   createMindFlayer,
+  createMannequin,
   createFemaleHumanoid,
   createDefeatedDoll,
 };

@@ -5,7 +5,7 @@
 //  - Keep Three.js representation synchronized with grid placement / terrain height
 //  - Manage hover/selection highlighting and facing direction parity with 2D tokens
 
-const FEMALE_HUMANOID_MODEL = {
+const MANNEQUIN_MODEL = {
   path: 'assets/animated-sprites/Standing Idle.fbx',
   tileSpan: 1,
   margin: 0.92,
@@ -130,9 +130,10 @@ const FEMALE_HUMANOID_MODEL = {
 };
 
 const TOKEN_3D_MODELS = {
-  'female-humanoid': FEMALE_HUMANOID_MODEL,
+  mannequin: MANNEQUIN_MODEL,
   // Preserve legacy saves that still reference the defeated doll identifier.
-  'defeated-doll': FEMALE_HUMANOID_MODEL,
+  'defeated-doll': MANNEQUIN_MODEL,
+  'female-humanoid': MANNEQUIN_MODEL,
 };
 
 const DEFAULT_BILLBOARD_SIZE = 0.9;
@@ -845,7 +846,9 @@ export class Token3DAdapter {
   _isSprintEligible(state) {
     if (!state?.token) return false;
     const typeKey = (state.token.type || state.token.creature?.type || '').toLowerCase();
-    if (typeKey !== 'female-humanoid' && typeKey !== 'defeated-doll') return false;
+    if (typeKey !== 'mannequin' && typeKey !== 'female-humanoid' && typeKey !== 'defeated-doll') {
+      return false;
+    }
     const data = this._tokenAnimationData.get(state.token);
     if (!data?.actions?.sprint) return false;
     return state.movementStyle === 'standard';
@@ -4077,7 +4080,7 @@ export class Token3DAdapter {
     if (!Number.isFinite(angle)) return 0;
     const tau = Math.PI * 2;
     let normalized = angle;
-    while (normalized <= -Math.PI) normalized += tau;
+    while (normalized < -Math.PI) normalized += tau;
     while (normalized > Math.PI) normalized -= tau;
     return normalized;
   }
@@ -4124,7 +4127,6 @@ export class Token3DAdapter {
 
   async _ensureSelectionIndicator(tokenEntry) {
     if (!tokenEntry || !tokenEntry.__threeMesh) return null;
-    if (!tokenEntry.__threeMesh.userData?.__tt3DToken) return null;
     if (tokenEntry.__ttSelectionIndicator) return tokenEntry.__ttSelectionIndicator;
     const three = await this._getThree();
     if (!three) return null;

@@ -82,7 +82,7 @@ class GameManager {
 
   // Property getters for backward compatibility with null safety
   get selectedTokenType() {
-    return this.tokenManager?.getSelectedTokenType() || 'female-humanoid';
+    return this.tokenManager?.getSelectedTokenType() || 'mannequin';
   }
 
   set selectedTokenType(value) {

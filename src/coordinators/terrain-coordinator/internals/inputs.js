@@ -5,6 +5,7 @@ import {
   ERROR_SEVERITY,
   GameErrors,
 } from '../../../utils/ErrorHandler.js';
+import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 
 /**
  * Get grid coordinates from mouse event using interaction manager when available.
@@ -21,9 +22,20 @@ export function getGridCoordinatesFromEvent(c, event) {
           (event?.currentTarget ?? null);
         const ground = picking.pickGroundSync(event.clientX, event.clientY, targetElement);
         if (ground && ground.grid) {
-          const gridX = Number(ground.grid.gx);
-          const gridY = Number(ground.grid.gy);
-          if (Number.isFinite(gridX) && Number.isFinite(gridY)) {
+          const gridXf = Number(ground.grid.gx);
+          const gridYf = Number(ground.grid.gy);
+          if (Number.isFinite(gridXf) && Number.isFinite(gridYf)) {
+            let gridX = Math.round(gridXf);
+            let gridY = Math.round(gridYf);
+            if (!c.isValidGridPosition(gridX, gridY)) {
+              const cols = Number.isInteger(c?.gameManager?.cols) ? c.gameManager.cols : null;
+              const rows = Number.isInteger(c?.gameManager?.rows) ? c.gameManager.rows : null;
+              if (Number.isInteger(cols) && Number.isInteger(rows)) {
+                const clamped = CoordinateUtils.clampToGrid(gridX, gridY, cols, rows);
+                gridX = clamped.gridX;
+                gridY = clamped.gridY;
+              }
+            }
             if (c.isValidGridPosition(gridX, gridY)) {
               return { gridX, gridY };
             }

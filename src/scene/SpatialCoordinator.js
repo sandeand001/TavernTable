@@ -37,8 +37,10 @@ export class SpatialCoordinator {
    * @returns {{gridX:number, gridY:number}}
    */
   worldToGrid(x, z) {
-    const gridX = Math.round(x / this.tileWorldSize);
-    const gridY = Math.round(z / this.tileWorldSize);
+    const size = this.tileWorldSize || 1;
+    const invSize = 1 / size;
+    const gridX = Math.floor(x * invSize);
+    const gridY = Math.floor(z * invSize);
     return { gridX, gridY };
   }
 

@@ -108,6 +108,7 @@ export function getDiceClearButton() {
 export function getGridActionButtons() {
   return {
     applySize: document.getElementById('apply-grid-size'),
+    resetZoom: document.getElementById('reset-zoom'),
   };
 }
 
