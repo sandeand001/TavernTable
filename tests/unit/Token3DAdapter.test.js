@@ -686,7 +686,7 @@ describe('Token3DAdapter (Phase 3)', () => {
             z: gridY,
           }),
         },
-        getTerrainHeight: (_x, gy) => (gy === 0 ? startHeight : startHeight - drop),
+        getTerrainHeight: (gx) => (gx === 0 ? startHeight : startHeight - drop),
       };
       const adapter = new Token3DAdapter(gm);
       const token = {

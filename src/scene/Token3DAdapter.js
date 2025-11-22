@@ -1263,9 +1263,7 @@ export class Token3DAdapter {
     );
 
     let clampedY;
-    if (landingVariant === 'fallToRoll') {
-      clampedY = 0;
-    } else if (verticalLimit > 0) {
+    if (verticalLimit > 0) {
       const verticalClamp = Math.min(Math.max(offsetY, -verticalLimit), verticalLimit);
       clampedY = verticalClamp;
     } else {
@@ -1358,15 +1356,14 @@ export class Token3DAdapter {
     let state = this._movementStates.get(tokenEntry);
     const mesh = tokenEntry.__threeMesh;
     const animationData = this._tokenAnimationData.get(tokenEntry);
-    if (state && (!mesh || state.mesh !== mesh)) {
+    if (state && mesh && state.mesh !== mesh) {
       state = null;
     }
     if (!state) {
-      if (!mesh || !animationData) return null;
       state = {
         token: tokenEntry,
-        mesh,
-        profile: animationData.profile || DEFAULT_MOVEMENT_PROFILE,
+        mesh: mesh || null,
+        profile: animationData?.profile || DEFAULT_MOVEMENT_PROFILE,
         phase: 'idle',
         phaseElapsed: 0,
         activeStep: null,
@@ -1411,16 +1408,16 @@ export class Token3DAdapter {
         loopDuration: 0,
         stopDuration: 0,
         startMoveDelay:
-          animationData.profile?.startMoveDelay ?? DEFAULT_MOVEMENT_PROFILE.startMoveDelay,
+          animationData?.profile?.startMoveDelay ?? DEFAULT_MOVEMENT_PROFILE.startMoveDelay,
         startBlendLead:
-          animationData.profile?.startToWalkBlendLead ??
+          animationData?.profile?.startToWalkBlendLead ??
           DEFAULT_MOVEMENT_PROFILE.startToWalkBlendLead,
         stopBlendLead:
-          animationData.profile?.stopBlendLead ?? DEFAULT_MOVEMENT_PROFILE.stopBlendLead,
-        activeSpeed: animationData.profile?.walkSpeed ?? DEFAULT_MOVEMENT_PROFILE.walkSpeed,
+          animationData?.profile?.stopBlendLead ?? DEFAULT_MOVEMENT_PROFILE.stopBlendLead,
+        activeSpeed: animationData?.profile?.walkSpeed ?? DEFAULT_MOVEMENT_PROFILE.walkSpeed,
         activeDirectionSign: 1,
         stopTravelPortionCurrent:
-          animationData.profile?.stopTravelPortion ?? DEFAULT_MOVEMENT_PROFILE.stopTravelPortion,
+          animationData?.profile?.stopTravelPortion ?? DEFAULT_MOVEMENT_PROFILE.stopTravelPortion,
         pathActive: false,
         pathGoal: null,
         pathSpeedMode: null,
@@ -1467,8 +1464,13 @@ export class Token3DAdapter {
         __resumeProbe: null,
       };
       this._movementStates.set(tokenEntry, state);
-    } else if (!state.profile || state.profile === DEFAULT_MOVEMENT_PROFILE) {
-      state.profile = animationData.profile || DEFAULT_MOVEMENT_PROFILE;
+    } else {
+      if (!state.mesh && mesh) {
+        state.mesh = mesh;
+      }
+      if (!state.profile || state.profile === DEFAULT_MOVEMENT_PROFILE) {
+        state.profile = animationData?.profile || DEFAULT_MOVEMENT_PROFILE;
+      }
     }
 
     if (typeof state.pathStallTime !== 'number') {
@@ -2390,9 +2392,10 @@ export class Token3DAdapter {
           }
           return 0;
         })();
-        stopDepth = Math.max(wallEntryDepth - extraBackoff, CLIMB_WALL_ENTRY_MIN_RATIO * tileHalf);
+        const minStopDepth = CLIMB_WALL_ENTRY_MIN_RATIO * tileHalf;
+        stopDepth = Math.max(wallEntryDepth - extraBackoff, minStopDepth);
         if (dirLen > 1e-4) {
-          stopDepth = Math.min(Math.max(stopDepth, 0), dirLen);
+          stopDepth = Math.min(stopDepth, dirLen);
         } else {
           stopDepth = 0;
         }
@@ -3678,14 +3681,9 @@ export class Token3DAdapter {
 
     this._clearFallStepState(state, { force: true });
 
-    if (landingVariantKey === 'fallToRoll') {
-      // Skip climb-style roll recovery for fall-to-roll landings so the token can
-      // transition directly into locomotion without freezing the torso mid-air.
-    } else {
-      const recoverStarted = this._initiateRollRecover(state, finalizedLandingWorld);
-      if (recoverStarted) {
-        return;
-      }
+    const recoverStarted = this._initiateRollRecover(state, finalizedLandingWorld);
+    if (recoverStarted) {
+      return;
     }
 
     const resumed = this._resumeMovementAfterFall(state);
