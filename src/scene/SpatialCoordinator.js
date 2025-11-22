@@ -37,10 +37,14 @@ export class SpatialCoordinator {
    * @returns {{gridX:number, gridY:number}}
    */
   worldToGrid(x, z) {
-    const size = this.tileWorldSize || 1;
-    const invSize = 1 / size;
-    const gridX = Math.floor(x * invSize);
-    const gridY = Math.floor(z * invSize);
+    const unit =
+      Number.isFinite(this.tileWorldSize) && this.tileWorldSize !== 0 ? this.tileWorldSize : 1;
+    const normalize = (value) => {
+      if (!Number.isFinite(value)) return 0;
+      return Math.floor(value / unit);
+    };
+    const gridX = normalize(x);
+    const gridY = normalize(z);
     return { gridX, gridY };
   }
 

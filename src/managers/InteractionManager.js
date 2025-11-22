@@ -866,6 +866,32 @@ export class InteractionManager {
    */
   getGridCoordinatesFromClick(event) {
     try {
+      const gm = this.gameManager;
+      const canUse3D =
+        !!gm?.pickingService?.pickGroundSync &&
+        typeof gm?.is3DModeActive === 'function' &&
+        gm.is3DModeActive();
+      const clientX = event?.clientX ?? event?.x ?? null;
+      const clientY = event?.clientY ?? event?.y ?? null;
+      if (canUse3D && clientX != null && clientY != null) {
+        try {
+          const targetElement = event?.target || null;
+          const ground = gm.pickingService.pickGroundSync(clientX, clientY, targetElement);
+          if (ground?.grid) {
+            const gx = Math.round(ground.grid.gx);
+            const gy = Math.round(ground.grid.gy);
+            if (Number.isFinite(gx) && Number.isFinite(gy)) {
+              const candidate = { gridX: gx, gridY: gy };
+              if (this.isValidGridPosition(candidate)) {
+                return candidate;
+              }
+            }
+          }
+        } catch (_) {
+          /* fallback to 2D conversion */
+        }
+      }
+
       const mouseCoords = this.getMousePosition(event);
       const localCoords = this.convertToLocalCoordinates(mouseCoords);
 

@@ -96,6 +96,11 @@ const MANNEQUIN_MODEL = {
       loop: 'once',
       clampWhenFinished: true,
     },
+    fallToRoll: {
+      path: 'assets/animated-sprites/falling to roll.fbx',
+      loop: 'once',
+      clampWhenFinished: true,
+    },
     fallLoop: {
       path: 'assets/animated-sprites/falling idle.fbx',
       loop: 'repeat',
@@ -123,6 +128,7 @@ const MANNEQUIN_MODEL = {
     fallLoopMinDuration: 0.24,
     fallLoopMaxDuration: 1.2,
     fallLoopTimeScale: 4.5,
+    fallLoopMinDrop: 4.5,
     runSpeedMultiplier: 1.7,
     drunkWalkSpeedMultiplier: 0.65,
     drunkRunSpeedMultiplier: 1.35,
@@ -163,11 +169,14 @@ const DEFAULT_MOVEMENT_PROFILE = {
   fallLoopMinDuration: 0.27,
   fallLoopMaxDuration: 1.33,
   fallLoopTimeScale: 4.5,
+  fallLoopMinDrop: 4.5,
 };
 
 const DEFAULT_FALL_TRIGGER_PROGRESS = 0.38;
 const DEFAULT_HEIGHT_SNAP_PROGRESS = 0.62;
-const HARD_LANDING_HEIGHT_THRESHOLD = 8;
+const HARD_LANDING_HEIGHT_THRESHOLD = 5;
+const ROLLING_LANDING_HEIGHT_THRESHOLD = 8;
+const FALL_MIN_HEIGHT_THRESHOLD = 3;
 const CONTINUOUS_ROTATION_SPEED = Math.PI;
 const SPRINT_THRESHOLD_SECONDS = 3;
 const SPRINT_SPEED_MULTIPLIER = 1.15;
@@ -193,6 +202,36 @@ const CLIMB_WALL_ENTRY_TILE_HALF_RATIO = 0.68;
 const CLIMB_WALL_ENTRY_MIN_RATIO = -0.45; // allow sprint stop point to retreat slightly into approach tile
 const CLIMB_WALL_ENTRY_RUN_BACKOFF_RATIO = 0.32;
 const CLIMB_WALL_ENTRY_SPRINT_BACKOFF_RATIO = 1.1;
+const FALL_EDGE_TRIGGER_TILE_RATIO = 1 - CLIMB_WALL_ENTRY_TILE_HALF_RATIO * 0.5;
+const FALL_LANDING_THRESHOLD_CONFIG = {
+  fall: { slope: 0.05, bias: 0.24, lower: 0.35, upper: 0.85 },
+  hardLanding: { slope: 0.045, bias: 0.18, lower: 0.32, upper: 0.65 },
+  fallToRoll: { slope: 0.06, bias: 0.3, lower: 0.45, upper: 1.0 },
+};
+const FALL_LOOP_MIN_DROP = 4.5;
+const LANDING_VARIANTS_ALLOW_TILE_EXIT = new Set(['fallToRoll']);
+const LANDING_OFFSET_SANITIZE_LIMITS = {
+  default: {
+    horizontalMultiplier: 2.1,
+    horizontalBonusTiles: 0.45,
+    horizontalMaxTiles: 4,
+  },
+  fall: {
+    horizontalMultiplier: 2.1,
+    horizontalBonusTiles: 0.45,
+    horizontalMaxTiles: 4,
+  },
+  hardLanding: {
+    horizontalMultiplier: 1.35,
+    horizontalBonusTiles: 0.35,
+    horizontalMaxTiles: 2,
+  },
+  fallToRoll: {
+    horizontalMultiplier: 1.55,
+    horizontalBonusTiles: 0.4,
+    horizontalMaxTiles: 2,
+  },
+};
 const CLIMB_APPROACH_TOLERANCE_MIN = 0.04;
 const CLIMB_APPROACH_TOLERANCE_RUN_SCALE = 0.65;
 const CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE = 0.45;
@@ -209,6 +248,8 @@ const PATHING_LOG_LOCAL_STORAGE_KEY = 'tt:pathingLogs';
 const PATHING_LOG_ENV_FLAG = 'TT_PATHING_LOGS';
 const PATHING_LOG_PREFIX = '[Token3DAdapter]';
 const PATHING_LOG_ARCHIVE_LIMIT = 300;
+const FALL_HEIGHT_VERBOSE_STORAGE_KEYS = ['tt:fallHeightVerbose', 'ttFallHeightVerbose'];
+const TOKEN_WORLD_LOCK_PROP = '__ttWorldLock';
 
 export class Token3DAdapter {
   constructor(gameManager) {
@@ -326,17 +367,34 @@ export class Token3DAdapter {
         Math.max(this._pathingLogArchive.length - PATHING_LOG_ARCHIVE_LIMIT, 0)
       );
     }
+    let handledByDebugSink = false;
     try {
       if (typeof window !== 'undefined' && window.__TT_DEBUG) {
         const sink = window.__TT_DEBUG.onPathingLog || window.__TT_DEBUG.pathingSink;
         if (typeof sink === 'function') {
           sink(entry);
+          handledByDebugSink = true;
         } else if (Array.isArray(window.__TT_DEBUG.pathingHistory)) {
           window.__TT_DEBUG.pathingHistory.push(entry);
+          handledByDebugSink = true;
         }
       }
     } catch (_) {
       /* ignore */
+    }
+    if (
+      !handledByDebugSink &&
+      typeof entry?.event === 'string' &&
+      entry.event.startsWith('fall:height') &&
+      this._isFallHeightLoggingEnabled()
+    ) {
+      try {
+        if (typeof console !== 'undefined' && console.log) {
+          console.log(`${PATHING_LOG_PREFIX} ${entry.event}`, entry.payload || {});
+        }
+      } catch (_) {
+        /* ignore */
+      }
     }
   }
 
@@ -373,6 +431,176 @@ export class Token3DAdapter {
     }
     state.__pathingLogFlags.add(flag);
     this._logPathing(event, payload, level);
+  }
+
+  _isFallHeightLoggingEnabled() {
+    const now = this._getPathingTimestamp();
+    const lastCheck = this._fallHeightLoggingCheckTime || 0;
+    if (
+      this._fallHeightLoggingEnabled === undefined ||
+      !Number.isFinite(lastCheck) ||
+      now - lastCheck > 1000
+    ) {
+      this._fallHeightLoggingEnabled = this._resolveFallHeightLoggingEnabled();
+      this._fallHeightLoggingCheckTime = now;
+    }
+    return !!this._fallHeightLoggingEnabled;
+  }
+
+  _resolveFallHeightLoggingEnabled() {
+    try {
+      if (typeof window !== 'undefined') {
+        if (window.__TT_DEBUG?.fallHeightLogging) {
+          return true;
+        }
+        const stored =
+          window.localStorage?.getItem?.('tt:fallHeightLogging') ??
+          window.localStorage?.getItem?.('ttFallHeightLogging');
+        if (stored && stored !== '0' && stored.toLowerCase?.() !== 'false') {
+          return true;
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return false;
+  }
+
+  _isFallHeightVerboseMode() {
+    const now = this._getPathingTimestamp();
+    const lastCheck = this._fallHeightVerboseCheckTime || 0;
+    if (
+      this._fallHeightVerboseEnabled === undefined ||
+      !Number.isFinite(lastCheck) ||
+      now - lastCheck > 1000
+    ) {
+      this._fallHeightVerboseEnabled = this._resolveFallHeightVerboseMode();
+      this._fallHeightVerboseCheckTime = now;
+    }
+    return !!this._fallHeightVerboseEnabled;
+  }
+
+  _resolveFallHeightVerboseMode() {
+    try {
+      if (typeof window !== 'undefined') {
+        if (window.__TT_DEBUG && 'fallHeightVerbose' in window.__TT_DEBUG) {
+          return !!window.__TT_DEBUG.fallHeightVerbose;
+        }
+        const storage = window.localStorage;
+        if (storage) {
+          for (const key of FALL_HEIGHT_VERBOSE_STORAGE_KEYS) {
+            const stored = storage.getItem?.(key);
+            if (stored != null) {
+              return stored !== '0' && stored.toLowerCase?.() !== 'false';
+            }
+          }
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return false;
+  }
+
+  _logFallHeightSample(state, label, step = null, extra = {}) {
+    if (!state || !this._isFallHeightLoggingEnabled()) return;
+    const isStepLabel = label === 'fall-step' || label === 'landing-step';
+    const verboseMode = this._isFallHeightVerboseMode();
+    if (isStepLabel && !verboseMode) {
+      const phaseElapsed = Number.isFinite(state.phaseElapsed) ? state.phaseElapsed : 0;
+      const bucketSize = label === 'landing-step' ? 0.2 : 0.3;
+      const bucketIndex = Math.floor(phaseElapsed / bucketSize);
+      if (!state.__fallHeightLogBuckets) {
+        state.__fallHeightLogBuckets = Object.create(null);
+      }
+      const bucketKey = label;
+      if (!extra?.stepFinished && state.__fallHeightLogBuckets[bucketKey] === bucketIndex) {
+        return;
+      }
+      state.__fallHeightLogBuckets[bucketKey] = bucketIndex;
+    }
+    const now = this._getPathingTimestamp();
+    const throttleMs = isStepLabel ? (verboseMode ? 80 : 250) : 0;
+    const last = state.__fallHeightLogTimestamp || 0;
+    if (throttleMs > 0 && now - last < throttleMs) {
+      return;
+    }
+    state.__fallHeightLogTimestamp = now;
+
+    const tokenEntry = state.token;
+    const mesh = state.mesh;
+    const meshPos = mesh?.position;
+    const world = tokenEntry?.world;
+    const animationData = this._tokenAnimationData?.get?.(tokenEntry) || null;
+    const animationKey =
+      extra?.animationKey ||
+      animationData?.current ||
+      (state?.fallMode === 'loop' ? 'fallLoop' : state?.fallLandingKey) ||
+      null;
+    const baseOffset = mesh?.userData?.__ttVerticalBase || 0;
+    const worldY = Number.isFinite(world?.y) ? world.y : null;
+    const meshY = Number.isFinite(meshPos?.y) ? meshPos.y : null;
+    const computedMeshY = worldY !== null ? worldY + this._verticalBias + baseOffset : null;
+    const offsetY = meshY !== null && computedMeshY !== null ? meshY - computedMeshY : null;
+    let stepInfo;
+    if (step) {
+      stepInfo = {
+        startWorldY: Number.isFinite(step.startWorld?.y) ? step.startWorld.y : null,
+        targetWorldY: Number.isFinite(step.targetWorld?.y) ? step.targetWorld.y : null,
+        traveled: step.traveled ?? null,
+        totalDistance: step.totalDistance ?? null,
+        requiresFall: !!step.requiresFall,
+        fallTriggered: !!step.fallTriggered,
+      };
+    }
+
+    const payload = {
+      tokenId: tokenEntry?.id,
+      label,
+      phase: state.phase,
+      fallMode: state.fallMode,
+      landingKey: state.fallLandingKey,
+      phaseElapsed: Number.isFinite(state.phaseElapsed)
+        ? Number(state.phaseElapsed.toFixed(3))
+        : null,
+      meshY,
+      worldY,
+      verticalBias: this._verticalBias,
+      baseOffset,
+      measuredOffsetY: offsetY,
+      fallSpeed: state.fallSpeed ?? null,
+      animation: animationKey,
+      extra,
+    };
+    if (stepInfo) payload.step = stepInfo;
+
+    this._emitConsoleFallHeightSample(payload);
+    this._logPathing('fall:height', payload, 'debug');
+  }
+
+  _emitConsoleFallHeightSample(payload) {
+    if (!payload || !this._isFallHeightLoggingEnabled()) return;
+    try {
+      if (typeof console === 'undefined' || typeof console.log !== 'function') {
+        return;
+      }
+      const format = (value) =>
+        Number.isFinite(value) ? Number(value).toFixed(3) : value === null ? '—' : String(value);
+      const summaryParts = [
+        `${payload.label || 'fall'}`,
+        `meshY=${format(payload.meshY)}`,
+        `worldY=${format(payload.worldY)}`,
+        `offset=${format(payload.measuredOffsetY)}`,
+        `phase=${payload.phase || 'unknown'}`,
+        `anim=${payload.animation || 'n/a'}`,
+      ];
+      if (Number.isFinite(payload.phaseElapsed)) {
+        summaryParts.push(`t=${format(payload.phaseElapsed)}s`);
+      }
+      console.log(`${PATHING_LOG_PREFIX} fall-sample :: ${summaryParts.join(' | ')}`, payload);
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   _getPathingTimestamp() {
@@ -770,9 +998,10 @@ export class Token3DAdapter {
       state?.climbWallActive;
     const climbRotationActive =
       climbTranslationActive || state?.phase === 'climb-recover' || state?.climbRecoverActive;
-    const preserveForFall = state?.phase === 'fall';
-    const allowRootRotation = climbRotationActive || preserveForFall;
-    const allowRootTranslation = climbTranslationActive;
+    const isFallPhase = state?.phase === 'fall';
+    const preserveRootTranslation = isFallPhase;
+    const allowRootRotation = climbRotationActive || isFallPhase;
+    const allowRootTranslation = climbTranslationActive || preserveRootTranslation;
     const clampClimbWallPlanarOffset =
       state?.phase === 'climb-wall' || state?.climbWallActive ? true : false;
     for (const info of roots) {
@@ -910,6 +1139,35 @@ export class Token3DAdapter {
     this._updateTokenWorldDuringMovement(state.token, updatedWorld);
   }
 
+  _lockTokenWorldAuthority(state) {
+    if (!state || !state.token || state.__worldLockActive) return;
+    const token = state.token;
+    const current = Number(token[TOKEN_WORLD_LOCK_PROP]) || 0;
+    token[TOKEN_WORLD_LOCK_PROP] = current + 1;
+    state.__worldLockActive = true;
+  }
+
+  _unlockTokenWorldAuthority(state) {
+    if (!state || !state.token || !state.__worldLockActive) return;
+    const token = state.token;
+    const current = Number(token[TOKEN_WORLD_LOCK_PROP]) || 0;
+    const next = current - 1;
+    if (next > 0) {
+      token[TOKEN_WORLD_LOCK_PROP] = next;
+      state.__worldLockActive = true;
+      return;
+    }
+
+    delete token[TOKEN_WORLD_LOCK_PROP];
+    state.__worldLockActive = false;
+
+    if (state.__pendingMovementResetOptions) {
+      const pendingOptions = state.__pendingMovementResetOptions;
+      state.__pendingMovementResetOptions = null;
+      this._applyMovementResetCore(state, pendingOptions);
+    }
+  }
+
   _transferRootMotionToWorld(state, targetWorld = null, precomputedTransfer = null) {
     if (!state) return null;
     const transfer = precomputedTransfer || this._extractRootMotionOffset(state);
@@ -955,6 +1213,144 @@ export class Token3DAdapter {
     }
 
     return transfer || null;
+  }
+
+  _sanitizeLandingRootOffset(step, offsetWorld, landingKey = null) {
+    if (!offsetWorld) return null;
+    const tileSize = Math.max(this.gameManager?.spatial?.tileWorldSize || 1, 0.25);
+    const offsetX = Number.isFinite(offsetWorld.x) ? offsetWorld.x : 0;
+    const offsetY = Number.isFinite(offsetWorld.y) ? offsetWorld.y : 0;
+    const offsetZ = Number.isFinite(offsetWorld.z) ? offsetWorld.z : 0;
+    if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY) || !Number.isFinite(offsetZ)) {
+      return null;
+    }
+
+    const landingVariant = landingKey || step?.landingVariant || null;
+    const variantConfig =
+      LANDING_OFFSET_SANITIZE_LIMITS[landingVariant] || LANDING_OFFSET_SANITIZE_LIMITS.default;
+    const horizontalMultiplier = Math.max(Number(variantConfig?.horizontalMultiplier) || 1.5, 0.25);
+    const horizontalBonusTiles = Math.max(Number(variantConfig?.horizontalBonusTiles) || 0, 0);
+    const horizontalMaxTiles = Math.max(Number(variantConfig?.horizontalMaxTiles) || 0, 0) || 4;
+
+    const horizontalMagnitude = Math.hypot(offsetX, offsetZ);
+    const stepHorizontal = Math.max(step?.horizontalDistance || 0, 0);
+    const horizontalLimitBase = stepHorizontal > 0 ? stepHorizontal : tileSize * 0.85;
+    const configuredMax = horizontalMaxTiles > 0 ? horizontalMaxTiles : 6;
+    const horizontalLimit = Math.max(
+      Math.min(
+        horizontalLimitBase * horizontalMultiplier + tileSize * horizontalBonusTiles,
+        tileSize * configuredMax
+      ),
+      tileSize * 0.25
+    );
+    let clampedX = offsetX;
+    let clampedZ = offsetZ;
+    if (horizontalLimit > 0 && horizontalMagnitude > horizontalLimit + 1e-4) {
+      const scale = horizontalLimit / horizontalMagnitude;
+      clampedX *= scale;
+      clampedZ *= scale;
+    }
+
+    const startWorldY = Number.isFinite(step?.startWorld?.y) ? step.startWorld.y : null;
+    const targetWorldY = Number.isFinite(step?.targetWorld?.y) ? step.targetWorld.y : null;
+    const verticalDelta =
+      startWorldY != null && targetWorldY != null ? Math.abs(targetWorldY - startWorldY) : 0;
+    const heightDrop = Math.max(Math.abs(step?.heightDrop || 0), verticalDelta);
+    const verticalLimitBase = Math.max(heightDrop, tileSize * 0.35);
+    const verticalLimit = Math.max(
+      Math.min(verticalLimitBase * 1.5 + 0.35, tileSize * 5),
+      tileSize * 0.2
+    );
+
+    let clampedY;
+    if (landingVariant === 'fallToRoll') {
+      clampedY = 0;
+    } else if (verticalLimit > 0) {
+      const verticalClamp = Math.min(Math.max(offsetY, -verticalLimit), verticalLimit);
+      clampedY = verticalClamp;
+    } else {
+      clampedY = offsetY;
+    }
+
+    const epsilon = 1e-4;
+    if (
+      Math.abs(clampedX) < epsilon &&
+      Math.abs(clampedY) < epsilon &&
+      Math.abs(clampedZ) < epsilon
+    ) {
+      return null;
+    }
+
+    return { x: clampedX, y: clampedY, z: clampedZ };
+  }
+
+  _clampLandingOffsetToTargetTile(step, landingWorld, offset, landingKey = null) {
+    if (!step || !landingWorld || !offset) return offset;
+    const landingVariant = landingKey || step?.landingVariant || null;
+    if (landingVariant && LANDING_VARIANTS_ALLOW_TILE_EXIT.has(landingVariant)) {
+      return offset;
+    }
+    const targetGridX = Number.isFinite(step.gridTargetX) ? step.gridTargetX : null;
+    const targetGridY = Number.isFinite(step.gridTargetY) ? step.gridTargetY : null;
+    if (targetGridX == null && targetGridY == null) {
+      return offset;
+    }
+
+    const withinTargetTile = (world) => {
+      if (!world) return true;
+      const mapped = this._mapWorldToGrid(world);
+      if (!mapped) return true;
+      if (targetGridX != null && mapped.gridX !== targetGridX) return false;
+      if (targetGridY != null && mapped.gridY !== targetGridY) return false;
+      return true;
+    };
+
+    const composeWorld = (baseWorld, appliedOffset) => ({
+      x: (baseWorld?.x || 0) + (appliedOffset?.x || 0),
+      y: (baseWorld?.y || 0) + (appliedOffset?.y || 0),
+      z: (baseWorld?.z || 0) + (appliedOffset?.z || 0),
+    });
+
+    const initialWorld = composeWorld(landingWorld, offset);
+    if (withinTargetTile(initialWorld)) {
+      return offset;
+    }
+
+    let lo = 0;
+    let hi = 1;
+    let bestOffset = null;
+    for (let i = 0; i < 15; i += 1) {
+      const mid = (lo + hi) / 2;
+      const scaledOffset = {
+        x: offset.x * mid,
+        y: offset.y * mid,
+        z: offset.z * mid,
+      };
+      const scaledWorld = composeWorld(landingWorld, scaledOffset);
+      if (withinTargetTile(scaledWorld)) {
+        bestOffset = scaledOffset;
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+      if (hi - lo < 1e-3) {
+        break;
+      }
+    }
+
+    if (!bestOffset) {
+      return null;
+    }
+
+    const epsilon = 1e-4;
+    if (
+      Math.abs(bestOffset.x) < epsilon &&
+      Math.abs(bestOffset.y) < epsilon &&
+      Math.abs(bestOffset.z) < epsilon
+    ) {
+      return null;
+    }
+    return bestOffset;
   }
 
   _ensureMovementState(tokenEntry) {
@@ -1059,6 +1455,10 @@ export class Token3DAdapter {
         climbRecoverCrouchDrop: 1.0,
         climbRecoverRiseHold: CLIMB_RECOVER_CROUCH_HOLD,
         climbRecoverStandRelease: CLIMB_RECOVER_STAND_RELEASE,
+        rollRecoverActive: false,
+        rollRecoverElapsed: 0,
+        rollRecoverDuration: 0,
+        rollRecoverAnchorWorld: null,
         climbLastWorld: null,
         climbAdvanceActive: false,
         climbAdvanceTargetWorld: null,
@@ -1677,6 +2077,7 @@ export class Token3DAdapter {
       if (!spatial || typeof spatial.gridToWorld !== 'function') return null;
 
       const requestOptions = { ...options };
+      const preferredSpeedMode = this._normalizePathSpeedMode(requestOptions.__preferredSpeedMode);
       const preserveLastGoal = !!requestOptions.__maintainLastRequestedGoal;
       if (preserveLastGoal) {
         delete requestOptions.__maintainLastRequestedGoal;
@@ -1753,6 +2154,12 @@ export class Token3DAdapter {
       } else if (distance > walkThreshold) {
         speedMode = PATH_SPEED_MODES.RUN;
       }
+      if (preferredSpeedMode) {
+        speedMode = preferredSpeedMode;
+      }
+      if (state.lastRequestedGoal?.options) {
+        state.lastRequestedGoal.options.__preferredSpeedMode = speedMode;
+      }
 
       let startHeightLevel = this._getTerrainHeight(currentGridX, currentGridY);
       let targetHeightLevel = this._getTerrainHeight(targetGridX, targetGridY);
@@ -1785,6 +2192,7 @@ export class Token3DAdapter {
               options: {
                 ...requestOptions,
                 __intermediateClimbDepth: climbChainDepth + 1,
+                __preferredSpeedMode: speedMode,
               },
             };
           }
@@ -2473,6 +2881,18 @@ export class Token3DAdapter {
         clips.hardLanding = hardLandingClip.duration || 0;
       }
 
+      const fallToRollClip = await this._resolveAnimationClip(
+        animationsConfig.fallToRoll,
+        null,
+        clipOptions
+      );
+      if (fallToRollClip) {
+        const action = mixer.clipAction(fallToRollClip);
+        this._configureAction(action, animationsConfig.fallToRoll, three, { loop: 'once' });
+        actions.fallToRoll = action;
+        clips.fallToRoll = fallToRollClip.duration || 0;
+      }
+
       const fallLoopClip = await this._resolveAnimationClip(
         animationsConfig.fallLoop,
         null,
@@ -2693,6 +3113,8 @@ export class Token3DAdapter {
       this._extractClipDuration(actions.climbWall) || clips.climbWall || profile.climbClipDuration;
     profile.hardLandingClipDuration =
       this._extractClipDuration(actions.hardLanding) || clips.hardLanding || 0;
+    profile.fallToRollClipDuration =
+      this._extractClipDuration(actions.fallToRoll) || clips.fallToRoll || 0;
     profile.fallLoopClipDuration =
       this._extractClipDuration(actions.fallLoop) ||
       clips.fallLoop ||
@@ -2880,6 +3302,9 @@ export class Token3DAdapter {
           case 'climb-recover':
             this._advanceClimbRecoverPhase(state, delta);
             break;
+          case 'roll-recover':
+            this._advanceRollRecoverPhase(state, delta);
+            break;
           case 'climb-advance':
             this._advanceClimbAdvancePhase(state, delta);
             break;
@@ -2969,6 +3394,7 @@ export class Token3DAdapter {
 
   _advanceWalkPhase(state, delta, bounds) {
     if (!state) return;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
     const netIntent = this._recalculateMovementIntent(state);
     if (netIntent === 0) {
       this._updateRunningDuration(state, delta, netIntent);
@@ -2991,6 +3417,25 @@ export class Token3DAdapter {
 
     this._syncMovementVariant(state, netIntent);
     this._updateRunningDuration(state, delta, netIntent);
+
+    const fallStepActive = this._ensureFallStepActive(state);
+    if (fallStepActive) {
+      const baseSpeed = Math.max(
+        state.activeSpeed ?? profile.walkSpeed ?? DEFAULT_MOVEMENT_PROFILE.walkSpeed ?? 1,
+        0
+      );
+      const speed = Math.max(baseSpeed, Number(state.lastMoveSpeed) || 0);
+      if (delta > 0 && speed > 0) {
+        const completed = this._advanceMovementStep(state, speed * delta);
+        if (state.phase === 'fall') {
+          return;
+        }
+        if (completed && state.__fallStepActive) {
+          this._clearFallStepState(state, { force: true });
+        }
+      }
+      return;
+    }
 
     if (delta > 0) {
       this._advanceFreeMovement(state, delta, bounds);
@@ -3121,6 +3566,12 @@ export class Token3DAdapter {
       completed = this._advanceMovementStep(state, speed * delta);
     }
     this._checkFallTransitions(state);
+    const logLabel = state.fallMode === 'landing' ? 'landing-step' : 'fall-step';
+    this._logFallHeightSample(state, logLabel, step, {
+      delta,
+      speed,
+      stepFinished,
+    });
 
     let shouldFinish = false;
     if (state.fallMode === 'landing') {
@@ -3144,10 +3595,115 @@ export class Token3DAdapter {
     if (!state || state.phase !== 'fall') return;
     const animationData = this._tokenAnimationData.get(state.token);
     const profile = animationData?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
+    this._logFallHeightSample(state, 'fall-complete', state.activeStep);
+    state.__fallHeightLogTimestamp = 0;
+    state.__fallHeightLogBuckets = null;
+
+    const step = state.activeStep;
+    let landingWorld = step?.targetWorld ? this._cloneWorld(step.targetWorld) : null;
+    if (!landingWorld) {
+      landingWorld = this._resolveTokenWorldPosition(state.token);
+    }
+
+    const landingVariantKey = state.fallLandingKey || step?.landingVariant || null;
+    const landingVariantAllowsTileExit = !!(
+      landingVariantKey && LANDING_VARIANTS_ALLOW_TILE_EXIT.has(landingVariantKey)
+    );
+    const retainLandingGrid = landingVariantAllowsTileExit && !!step;
+    const rootTransfer = this._extractRootMotionOffset(state);
+    let landingOffset = null;
+    if (rootTransfer) {
+      if (rootTransfer.offsetWorld) {
+        landingOffset = this._sanitizeLandingRootOffset(
+          step,
+          rootTransfer.offsetWorld,
+          state.fallLandingKey
+        );
+        if (!landingVariantAllowsTileExit && landingOffset && landingWorld) {
+          landingOffset = this._clampLandingOffsetToTargetTile(
+            step,
+            landingWorld,
+            landingOffset,
+            landingVariantKey
+          );
+        }
+        rootTransfer.offsetWorld = landingOffset || null;
+      } else {
+        rootTransfer.offsetWorld = null;
+      }
+    }
+
+    let adjustedLandingWorld = landingWorld;
+    if (landingWorld && landingOffset) {
+      const offsetX = Number.isFinite(landingOffset.x) ? landingOffset.x : 0;
+      const offsetY = Number.isFinite(landingOffset.y) ? landingOffset.y : 0;
+      const offsetZ = Number.isFinite(landingOffset.z) ? landingOffset.z : 0;
+      adjustedLandingWorld = {
+        x: landingWorld.x + offsetX,
+        y: landingWorld.y + offsetY,
+        z: landingWorld.z + offsetZ,
+      };
+    }
+
+    const transferTargetWorld = adjustedLandingWorld || landingWorld || null;
+    this._transferRootMotionToWorld(state, transferTargetWorld, rootTransfer || undefined);
+
+    const finalizedLandingWorld =
+      transferTargetWorld || this._resolveTokenWorldPosition(state.token);
+    if (step && finalizedLandingWorld) {
+      step.targetWorld = finalizedLandingWorld;
+      const meshForStep = step.mesh || state.mesh;
+      if (meshForStep) {
+        step.targetPosition = this._composeMeshPosition(finalizedLandingWorld, meshForStep);
+      }
+      if (!retainLandingGrid) {
+        this._applyStepGridFromWorld(step, finalizedLandingWorld);
+      }
+    }
 
     if (!state.stepFinalized) {
       this._lockStepAtTarget(state);
     }
+
+    if (finalizedLandingWorld) {
+      if (retainLandingGrid) {
+        const targetGridX = Number.isFinite(step?.gridTargetX) ? step.gridTargetX : null;
+        const targetGridY = Number.isFinite(step?.gridTargetY) ? step.gridTargetY : null;
+        if (targetGridX != null) state.token.gridX = targetGridX;
+        if (targetGridY != null) state.token.gridY = targetGridY;
+      } else {
+        this._applyTokenGridFromWorld(state.token, finalizedLandingWorld);
+      }
+    }
+
+    this._clearFallStepState(state, { force: true });
+
+    if (landingVariantKey === 'fallToRoll') {
+      // Skip climb-style roll recovery for fall-to-roll landings so the token can
+      // transition directly into locomotion without freezing the torso mid-air.
+    } else {
+      const recoverStarted = this._initiateRollRecover(state, finalizedLandingWorld);
+      if (recoverStarted) {
+        return;
+      }
+    }
+
+    const resumed = this._resumeMovementAfterFall(state);
+    if (resumed) {
+      return;
+    }
+
+    this._finalizePostFallState(state, profile);
+  }
+
+  _finalizePostFallState(state, profileOverride = null) {
+    if (!state) return;
+    const profile = profileOverride || state.profile || DEFAULT_MOVEMENT_PROFILE;
+    state.phase = 'idle';
+    state.rollRecoverActive = false;
+    state.rollRecoverElapsed = 0;
+    state.rollRecoverDuration = 0;
+    state.rollRecoverAnchorWorld = null;
     this._applyPendingOrientation(state);
     if (!this._shouldHoldMovementState(state)) {
       this._movementStates.delete(state.token);
@@ -3170,6 +3726,96 @@ export class Token3DAdapter {
       fadeOut: profile.fallFadeOut ?? profile.idleFadeOut,
       force: true,
     });
+
+    this._unlockTokenWorldAuthority(state);
+  }
+
+  _initiateRollRecover(state, anchorWorld) {
+    if (!state) return false;
+    const animationData = this._tokenAnimationData.get(state.token);
+    const recoverAction = animationData?.actions?.climbRecover;
+    if (!recoverAction) return false;
+    const profile = animationData?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const duration =
+      this._extractClipDuration(recoverAction) ||
+      animationData?.clips?.climbRecover ||
+      profile?.climbRecoverDuration ||
+      DEFAULT_CLIMB_RECOVER_DURATION;
+    if (!(duration > 1e-4)) {
+      return false;
+    }
+
+    const anchor = anchorWorld
+      ? this._cloneWorld(anchorWorld)
+      : this._resolveTokenWorldPosition(state.token);
+    if (anchor) {
+      this._syncTokenAndMeshWorld(state, anchor);
+    }
+
+    state.phase = 'roll-recover';
+    state.rollRecoverActive = true;
+    state.rollRecoverElapsed = 0;
+    state.rollRecoverDuration = duration;
+    state.rollRecoverAnchorWorld = anchor;
+    state.intentHold = false;
+    state.pendingStop = false;
+    state.stopTriggered = false;
+
+    const fadeIn = profile?.climbRecoverFadeIn ?? profile.walkFadeIn ?? 0.18;
+    const fadeOut = profile?.climbRecoverFadeOut ?? profile.walkFadeOut ?? 0.18;
+    this._setAnimation(state.token, 'climbRecover', {
+      fadeIn,
+      fadeOut,
+      force: true,
+    });
+    return true;
+  }
+
+  _advanceRollRecoverPhase(state, delta) {
+    if (!state) return;
+    if (!state.rollRecoverActive) {
+      this._completeRollRecover(state);
+      return;
+    }
+
+    const duration = state.rollRecoverDuration || DEFAULT_CLIMB_RECOVER_DURATION;
+    if (!(duration > 1e-4)) {
+      state.rollRecoverActive = false;
+      this._completeRollRecover(state);
+      return;
+    }
+
+    state.rollRecoverElapsed = Math.min(state.rollRecoverElapsed + Math.max(delta, 0), duration);
+    const anchor = state.rollRecoverAnchorWorld;
+    if (anchor) {
+      this._syncTokenAndMeshWorld(state, anchor);
+    }
+
+    if (state.rollRecoverElapsed >= duration - 1e-4) {
+      state.rollRecoverActive = false;
+      this._completeRollRecover(state);
+    }
+  }
+
+  _completeRollRecover(state) {
+    if (!state) return;
+    const anchorWorld = state.rollRecoverAnchorWorld
+      ? this._cloneWorld(state.rollRecoverAnchorWorld)
+      : null;
+    if (anchorWorld) {
+      this._syncTokenAndMeshWorld(state, anchorWorld);
+      this._applyTokenGridFromWorld(state.token, anchorWorld);
+    }
+    state.rollRecoverActive = false;
+    state.rollRecoverDuration = 0;
+    state.rollRecoverElapsed = 0;
+    state.rollRecoverAnchorWorld = null;
+    state.phase = 'idle';
+    const resumed = this._resumeMovementAfterFall(state);
+    if (resumed) {
+      return;
+    }
+    this._finalizePostFallState(state);
   }
 
   _checkFallTransitions(state) {
@@ -3226,10 +3872,16 @@ export class Token3DAdapter {
       state.fallSpeed = Math.max(profile.walkSpeed || 0, 0);
     }
 
+    const verticalDistance = Math.max(state.activeStep?.heightDrop || 0, 0);
+
     this._setAnimation(state.token, landingKey, {
       fadeIn: profile.fallFadeIn,
       fadeOut: profile.fallFadeOut,
       force: true,
+    });
+    this._logFallHeightSample(state, 'landing-transition', state.activeStep, {
+      landingKey,
+      verticalDistance,
     });
     return true;
   }
@@ -3275,10 +3927,12 @@ export class Token3DAdapter {
 
   _selectLandingAnimation(actions, preferredKey) {
     if (!actions) return null;
+    if (preferredKey === 'fallToRoll' && actions.fallToRoll) return 'fallToRoll';
     if (preferredKey === 'hardLanding' && actions.hardLanding) return 'hardLanding';
     if (preferredKey === 'fall' && actions.fall) return 'fall';
-    if (actions.fall) return 'fall';
+    if (actions.fallToRoll) return 'fallToRoll';
     if (actions.hardLanding) return 'hardLanding';
+    if (actions.fall) return 'fall';
     return null;
   }
 
@@ -3287,6 +3941,15 @@ export class Token3DAdapter {
     if (landingKey === 'hardLanding') {
       return (
         base.hardLandingClipDuration || base.fallClipDuration || base.fallLoopClipDuration || 0
+      );
+    }
+    if (landingKey === 'fallToRoll') {
+      return (
+        base.fallToRollClipDuration ||
+        base.hardLandingClipDuration ||
+        base.fallClipDuration ||
+        base.fallLoopClipDuration ||
+        0
       );
     }
     if (landingKey === 'fall') {
@@ -3300,12 +3963,16 @@ export class Token3DAdapter {
   _computeLandingThreshold(distance, landingKey) {
     if (!(distance > 0)) return 0;
     const effectiveDistance = Math.max(distance, 0);
-    const base = Math.max(effectiveDistance * 0.05, 0.2);
-    const landingBias = landingKey === 'hardLanding' ? 0.18 : 0.24;
-    const lowerBound = landingKey === 'hardLanding' ? 0.32 : 0.35;
-    const upperBound = landingKey === 'hardLanding' ? 0.65 : 0.85;
-    const threshold = base + landingBias;
-    return Math.max(Math.min(threshold, upperBound), lowerBound);
+    const params = FALL_LANDING_THRESHOLD_CONFIG[landingKey] || FALL_LANDING_THRESHOLD_CONFIG.fall;
+    const slope = Number.isFinite(params?.slope) ? params.slope : 0.05;
+    const bias = Number.isFinite(params?.bias) ? params.bias : 0.24;
+    const lowerBound = Number.isFinite(params?.lower) ? params.lower : 0.35;
+    const upperBound = Number.isFinite(params?.upper) ? params.upper : 0.85;
+    const base = Math.max(effectiveDistance * slope, 0.2);
+    const threshold = base + bias;
+    const clampMin = Math.min(lowerBound, effectiveDistance);
+    const clampMax = Math.max(Math.min(upperBound, effectiveDistance), clampMin);
+    return Math.max(Math.min(threshold, clampMax), clampMin);
   }
 
   _maybeEnterFallPhase(state, animationData) {
@@ -3317,6 +3984,10 @@ export class Token3DAdapter {
     if (!actions?.fall && !actions?.fallLoop) return false;
     const profile = data?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
 
+    if (!state.__fallResumeContext) {
+      state.__fallResumeContext = this._captureFallResumeContext(state);
+    }
+
     step.fallTriggered = true;
     state.phase = 'fall';
     state.phaseElapsed = 0;
@@ -3324,6 +3995,9 @@ export class Token3DAdapter {
     state.stopTriggered = false;
     state.intentHold = false;
     state.hasLoopStarted = false;
+    state.__fallStepActive = false;
+    state.__fallHeightLogBuckets = Object.create(null);
+    this._lockTokenWorldAuthority(state);
     if (!step.fallStartCaptured) {
       const travelRatio =
         step.totalDistance > 0 ? Math.min(step.traveled / step.totalDistance, 1) : 0;
@@ -3346,7 +4020,10 @@ export class Token3DAdapter {
     }
 
     const verticalDistance = Math.max(step.heightDrop || 0, 0);
-    const preferredLanding = step.landingVariant === 'hardLanding' ? 'hardLanding' : 'fall';
+    const fallLoopMinDrop = Number.isFinite(profile?.fallLoopMinDrop)
+      ? profile.fallLoopMinDrop
+      : FALL_LOOP_MIN_DROP;
+    const preferredLanding = step.landingVariant || 'fall';
     let landingKey = this._selectLandingAnimation(actions, preferredLanding);
     if (!landingKey) {
       landingKey = this._selectLandingAnimation(actions, 'fall');
@@ -3354,10 +4031,11 @@ export class Token3DAdapter {
 
     state.fallLandingKey = landingKey;
     state.fallLandingDuration = this._getLandingClipDuration(profile, landingKey);
-    state.fallMode = actions?.fallLoop ? 'loop' : 'landing';
+    const fallLoopEligible = actions?.fallLoop && verticalDistance >= fallLoopMinDrop;
+    state.fallMode = fallLoopEligible ? 'loop' : 'landing';
 
     let animationKey = null;
-    if (state.fallMode === 'loop' && actions?.fallLoop) {
+    if (fallLoopEligible) {
       animationKey = 'fallLoop';
     } else if (landingKey) {
       animationKey = landingKey;
@@ -3420,6 +4098,14 @@ export class Token3DAdapter {
     if (!(state.fallSpeed > 0)) {
       state.fallSpeed = Math.max(profile.walkSpeed || 0, 0);
     }
+    const priorSpeed = Math.max(
+      Number(state.lastMoveSpeed) || 0,
+      Number(state.activeSpeed) || 0,
+      profile.walkSpeed || 0
+    );
+    if (priorSpeed > 0 && priorSpeed > state.fallSpeed) {
+      state.fallSpeed = priorSpeed;
+    }
 
     const fadeIn =
       animationKey === 'fallLoop'
@@ -3439,12 +4125,17 @@ export class Token3DAdapter {
       force: true,
       timeScale,
     });
+    this._logFallHeightSample(state, 'fall-enter', step, {
+      landingKey: state.fallLandingKey,
+      verticalDistance,
+    });
     return true;
   }
 
   _advanceMovementStep(state, distance, options = {}) {
     const step = state.activeStep;
     if (!step || distance <= 0) return false;
+    const fallSingleUse = !!step.__fallSingleUse;
 
     const remaining = Math.max(0, step.totalDistance - step.traveled);
     const move = Math.min(distance, remaining);
@@ -3526,7 +4217,7 @@ export class Token3DAdapter {
       if (state.phase === 'fall') {
         return true;
       }
-      if (state.phase === 'walk' && state.intentHold && !state.pendingStop) {
+      if (state.phase === 'walk' && state.intentHold && !state.pendingStop && !fallSingleUse) {
         const nextStep = this._createForwardMovementStep(state.token, state.mesh);
         if (nextStep) {
           state.activeStep = nextStep;
@@ -3545,6 +4236,9 @@ export class Token3DAdapter {
       if (state.phase !== 'stop' && !state.pendingStop && !state.intentHold) {
         this._resetMovementState(state);
       }
+    }
+    if (completed && fallSingleUse && state.phase !== 'fall') {
+      this._clearFallStepState(state, { force: true });
     }
     return completed;
   }
@@ -3613,6 +4307,11 @@ export class Token3DAdapter {
     }
 
     const currentWorld = this._resolveTokenWorldPosition(state.token);
+    const sampledCurrentY = this._sampleWorldHeight(currentWorld.x, currentWorld.z, currentWorld.y);
+    const worldYOffset =
+      Number.isFinite(currentWorld.y) && Number.isFinite(sampledCurrentY)
+        ? currentWorld.y - sampledCurrentY
+        : 0;
     const pathGoal = state.pathActive ? state.pathGoal : null;
     const goalWorld = pathGoal?.world || null;
     let clampToGoal = false;
@@ -3664,9 +4363,12 @@ export class Token3DAdapter {
     if (goalWorld && clampToGoal) {
       nextWorld.x = goalWorld.x;
       nextWorld.z = goalWorld.z;
-      nextWorld.y = goalWorld.y;
+      const baseGoalY = Number.isFinite(goalWorld.y) ? goalWorld.y : currentWorld.y;
+      nextWorld.y = baseGoalY + worldYOffset;
     } else {
-      nextWorld.y = this._sampleWorldHeight(nextWorld.x, nextWorld.z, currentWorld.y);
+      const sampledNextY = this._sampleWorldHeight(nextWorld.x, nextWorld.z, currentWorld.y);
+      const baseNextY = Number.isFinite(sampledNextY) ? sampledNextY : currentWorld.y;
+      nextWorld.y = baseNextY + worldYOffset;
     }
 
     this._syncTokenAndMeshWorld(state, nextWorld);
@@ -4903,6 +5605,15 @@ export class Token3DAdapter {
     this.updateTokenOrientation(tokenEntry);
   }
 
+  _normalizePathSpeedMode(mode) {
+    if (!mode) return null;
+    const value = typeof mode === 'string' ? mode.toLowerCase() : mode;
+    if (value === PATH_SPEED_MODES.WALK) return PATH_SPEED_MODES.WALK;
+    if (value === PATH_SPEED_MODES.RUN) return PATH_SPEED_MODES.RUN;
+    if (value === PATH_SPEED_MODES.SPRINT) return PATH_SPEED_MODES.SPRINT;
+    return null;
+  }
+
   _computeGridDistance(ax, ay, bx, by) {
     const fromX = Number.isFinite(ax) ? Math.round(ax) : 0;
     const fromY = Number.isFinite(ay) ? Math.round(ay) : 0;
@@ -5192,17 +5903,47 @@ export class Token3DAdapter {
 
   _resetMovementState(state, options = {}) {
     if (!state) return;
-    const { useStopBlend = false, clearStopFlags = false } = options;
-    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+    const normalizedOptions = {
+      useStopBlend: Boolean(options.useStopBlend),
+      clearStopFlags: Boolean(options.clearStopFlags),
+    };
 
     this._clearPathState(state);
     this._resetSprintState(state);
     this._applyPendingOrientation(state);
 
+    if (state.__worldLockActive) {
+      this._mergePendingMovementResetOptions(state, normalizedOptions);
+      return;
+    }
+
+    this._unlockTokenWorldAuthority(state);
+    this._applyMovementResetCore(state, normalizedOptions);
+  }
+
+  _mergePendingMovementResetOptions(state, options = {}) {
+    if (!state) return;
+    const pending = state.__pendingMovementResetOptions || {};
+    state.__pendingMovementResetOptions = {
+      useStopBlend: pending.useStopBlend || Boolean(options.useStopBlend),
+      clearStopFlags: pending.clearStopFlags || Boolean(options.clearStopFlags),
+    };
+  }
+
+  _applyMovementResetCore(state, options = {}) {
+    if (!state) return;
+    const { useStopBlend = false, clearStopFlags = false } = options;
+    const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
+
+    state.__pendingMovementResetOptions = null;
     state.phase = 'idle';
     state.activeStep = null;
     state.stepFinalized = true;
     state.intentHold = false;
+    state.rollRecoverActive = false;
+    state.rollRecoverElapsed = 0;
+    state.rollRecoverDuration = 0;
+    state.rollRecoverAnchorWorld = null;
 
     if (clearStopFlags) {
       state.stopTriggered = false;
@@ -5263,14 +6004,26 @@ export class Token3DAdapter {
 
       const horizontalDistance = Math.hypot(dx, dz);
       const tileSize = gm.spatial?.tileWorldSize || 1;
-      const edgeDistance = Math.min(horizontalDistance, tileSize * 0.52);
+      const edgeDistance = Math.min(
+        horizontalDistance,
+        tileSize * Math.max(Math.min(FALL_EDGE_TRIGGER_TILE_RATIO, 0.95), 0.4)
+      );
       const fallTriggerProgress = horizontalDistance > 0 ? edgeDistance / horizontalDistance : 1;
       const normalizedTrigger = Math.min(
-        Math.max(fallTriggerProgress || DEFAULT_FALL_TRIGGER_PROGRESS, 0.35),
+        Math.max(fallTriggerProgress || DEFAULT_FALL_TRIGGER_PROGRESS, 0.4),
         0.98
       );
-      const requiresFall = heightDrop >= 3;
-      const landingVariant = heightDrop > HARD_LANDING_HEIGHT_THRESHOLD ? 'hardLanding' : 'fall';
+      const requiresFall = heightDrop > FALL_MIN_HEIGHT_THRESHOLD;
+      let landingVariant = null;
+      if (requiresFall) {
+        if (heightDrop > ROLLING_LANDING_HEIGHT_THRESHOLD) {
+          landingVariant = 'fallToRoll';
+        } else if (heightDrop > HARD_LANDING_HEIGHT_THRESHOLD) {
+          landingVariant = 'hardLanding';
+        } else {
+          landingVariant = 'fall';
+        }
+      }
 
       if (mesh?.position) {
         mesh.position.set(startPosition.x, startPosition.y, startPosition.z);
@@ -5303,6 +6056,93 @@ export class Token3DAdapter {
     } catch (_) {
       return null;
     }
+  }
+
+  _ensureFallStepActive(state) {
+    if (!state || state.phase !== 'walk') return false;
+    if (state.activeStep && !state.activeStep.__fallSingleUse) return false;
+    if (state.__fallStepActive && state.activeStep?.__fallSingleUse) {
+      return true;
+    }
+    const step = this._createForwardMovementStep(state.token, state.mesh);
+    if (!step || !step.requiresFall) {
+      return false;
+    }
+    step.__fallSingleUse = true;
+    state.activeStep = step;
+    state.stepFinalized = false;
+    state.__fallStepActive = true;
+    return true;
+  }
+
+  _clearFallStepState(state, options = {}) {
+    if (!state) return;
+    const force = options.force === true;
+    state.__fallStepActive = false;
+    if (state.activeStep?.__fallSingleUse && (force || state.stepFinalized)) {
+      state.activeStep = null;
+    }
+  }
+
+  _captureFallResumeContext(state) {
+    if (!state) return null;
+    const pathKeyHeld = state.pathKey ? state.forwardKeys?.has(state.pathKey) : false;
+    return {
+      movementSign: state.movementSign || state.lastMoveSign || 1,
+      intentHold: !!state.intentHold,
+      pathActive: !!state.pathActive,
+      pathSpeedMode: state.pathSpeedMode || null,
+      pathKeyActive: pathKeyHeld,
+      runDuration: state.runDuration || 0,
+      wasSprinting: !!state.isSprinting,
+    };
+  }
+
+  _resumeMovementAfterFall(state) {
+    if (!state) return false;
+    const resume = state.__fallResumeContext;
+    state.__fallResumeContext = null;
+    if (!resume) return false;
+
+    const pathStillValid = resume.pathActive && state.pathActive && state.pathGoal;
+    const shouldResume = resume.intentHold || pathStillValid;
+    if (!shouldResume) {
+      return false;
+    }
+
+    const movementSign = resume.movementSign || state.movementSign || 1;
+    state.phase = 'walk';
+    state.phaseElapsed = 0;
+    state.intentHold = true;
+    state.pendingStop = false;
+    state.stopTriggered = false;
+    state.stepFinalized = true;
+    state.activeStep = null;
+    state.movementSign = movementSign;
+    state.lastMoveSign = movementSign;
+
+    if (pathStillValid && resume.pathKeyActive && state.pathKey && state.forwardKeys) {
+      state.forwardKeys.add(state.pathKey);
+    }
+
+    if (!state.pathSpeedMode && resume.pathSpeedMode) {
+      state.pathSpeedMode = resume.pathSpeedMode;
+    }
+
+    this._applyPendingOrientation(state);
+    this._syncMovementVariant(state, movementSign, { force: true });
+    this._playLoopAnimation(state, { force: true });
+    state.runDuration = resume.runDuration || state.runDuration || 0;
+    if (resume.wasSprinting && this._isSprintEligible(state)) {
+      state.isSprinting = true;
+      state.runDuration = Math.max(state.runDuration, SPRINT_THRESHOLD_SECONDS);
+    }
+    state.hasLoopStarted = true;
+    state.freeStartWorld = this._resolveTokenWorldPosition(state.token);
+    state.freeLastWorld = this._cloneWorld(state.freeStartWorld);
+    state.freeDistance = 0;
+
+    return true;
   }
 
   _cloneWorld(world) {
@@ -5428,6 +6268,39 @@ export class Token3DAdapter {
     return 0;
   }
 
+  _mapWorldToGrid(world) {
+    if (!world) return null;
+    const spatial = this.gameManager?.spatial;
+    if (!spatial?.worldToGrid) return null;
+    try {
+      const mapped = spatial.worldToGrid(world.x, world.z);
+      const gridX = Number.isFinite(mapped?.gridX) ? Math.round(mapped.gridX) : null;
+      const gridY = Number.isFinite(mapped?.gridY) ? Math.round(mapped.gridY) : null;
+      if (gridX == null && gridY == null) {
+        return null;
+      }
+      return { gridX, gridY };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _applyTokenGridFromWorld(tokenEntry, world) {
+    if (!tokenEntry || !world) return;
+    const mapped = this._mapWorldToGrid(world);
+    if (!mapped) return;
+    if (mapped.gridX != null) tokenEntry.gridX = mapped.gridX;
+    if (mapped.gridY != null) tokenEntry.gridY = mapped.gridY;
+  }
+
+  _applyStepGridFromWorld(step, world) {
+    if (!step || !world) return;
+    const mapped = this._mapWorldToGrid(world);
+    if (!mapped) return;
+    if (mapped.gridX != null) step.gridTargetX = mapped.gridX;
+    if (mapped.gridY != null) step.gridTargetY = mapped.gridY;
+  }
+
   _lerp3(a, b, t) {
     const ratio = Math.min(Math.max(t, 0), 1);
     return {
@@ -5525,6 +6398,7 @@ export class Token3DAdapter {
 
     delete tokenEntry.__threeMesh;
     delete tokenEntry.__threeMeshPromise;
+    delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
   }
 
   _createMaterialForToken(three, tokenEntry) {

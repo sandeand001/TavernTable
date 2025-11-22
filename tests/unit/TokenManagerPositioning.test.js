@@ -100,4 +100,39 @@ describe('snapTokenToGrid', () => {
     expect(placedEntry.gridX).toBe(targetGX);
     expect(placedEntry.gridY).toBe(targetGY);
   });
+
+  test('preserves existing world snapshot when world lock is active', () => {
+    const token = { x: 0, y: 0, zIndex: 0 };
+    const originalWorld = { x: 0.25, y: 1, z: -0.25 };
+    const placedEntry = {
+      creature: { sprite: token },
+      gridX: 1,
+      gridY: 1,
+      world: { ...originalWorld },
+      __ttWorldLock: 1,
+    };
+
+    const gm = {
+      tileWidth: 64,
+      tileHeight: 32,
+      cols: 10,
+      rows: 10,
+      interactionManager: {
+        pickTopmostGridCellAt: jest.fn(() => ({ gridX: 3, gridY: 4 })),
+      },
+      terrainCoordinator: {
+        dataStore: {
+          get: jest.fn(() => 0),
+        },
+      },
+      spatial: {
+        gridToWorld: jest.fn(() => ({ x: 3.5, y: 0.5, z: 4.5 })),
+      },
+    };
+
+    snapTokenToGrid({ gameManager: gm, placedTokens: [placedEntry] }, token, 10, 20);
+
+    expect(gm.spatial.gridToWorld).not.toHaveBeenCalled();
+    expect(placedEntry.world).toEqual(originalWorld);
+  });
 });
