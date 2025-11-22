@@ -862,7 +862,14 @@ describe('Token3DAdapter (Phase 3)', () => {
       { x: 0.5, y: -0.5, z: 0.25 },
       'fallToRoll'
     );
-    expect(valid).toEqual({ x: 0.5, y: -0.5, z: 0.25 });
+    expect(valid).toEqual({ x: 0.5, y: 0, z: 0.25 });
+
+    const fallOffset = adapter._sanitizeLandingRootOffset(
+      step,
+      { x: 0.15, y: 1.2, z: -0.1 },
+      'fall'
+    );
+    expect(fallOffset).toEqual({ x: 0.15, y: 0, z: -0.1 });
 
     const tooWide = adapter._sanitizeLandingRootOffset(step, { x: 5, y: 0, z: 0 }, 'fallToRoll');
     expect(tooWide.y).toBe(0);
@@ -874,7 +881,7 @@ describe('Token3DAdapter (Phase 3)', () => {
       { x: 0.2, y: -5, z: 0.1 },
       'fallToRoll'
     );
-    expect(tooHigh).toEqual({ x: 0.2, y: -3.35, z: 0.1 });
+    expect(tooHigh).toEqual({ x: 0.2, y: 0, z: 0.1 });
 
     const hardLandingWide = adapter._sanitizeLandingRootOffset(
       step,
@@ -883,6 +890,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     );
     expect(hardLandingWide.x).toBeLessThan(2);
     expect(hardLandingWide.x).toBeGreaterThan(1);
+    expect(hardLandingWide.y).toBe(0);
 
     const hardLandingClamp = adapter._sanitizeLandingRootOffset(
       step,
@@ -891,6 +899,55 @@ describe('Token3DAdapter (Phase 3)', () => {
     );
     expect(hardLandingClamp.x).toBeLessThanOrEqual(2);
     expect(hardLandingClamp.x).toBeGreaterThan(1);
+    expect(hardLandingClamp.y).toBe(0);
+  });
+
+  test('walk animation resumes once clips are ready', () => {
+    const gm = {
+      is3DModeActive: () => true,
+      spatial: {
+        tileWorldSize: 1,
+        gridToWorld: (gridX, gridY) => ({ x: gridX, y: 0, z: gridY }),
+      },
+      getTerrainHeight: () => 0,
+    };
+
+    const adapter = new Token3DAdapter(gm);
+    jest.spyOn(adapter, '_logPathing').mockImplementation(() => {});
+    const token = { gridX: 0, gridY: 0, world: { x: 0.5, y: 0, z: 0.5 } };
+    const state = adapter._ensureMovementState(token);
+    state.pathActive = true;
+    state.pathSpeedMode = 'walk';
+    state.forwardKeys.add('KeyW');
+    jest.spyOn(adapter, '_setAnimation').mockImplementation(() => {});
+
+    adapter._startMovementPhase(state, 1);
+
+    expect(state.__pendingLoopKey).toBe('walk');
+    expect(adapter._setAnimation).not.toHaveBeenCalled();
+
+    const fakeAction = {
+      setEffectiveTimeScale: jest.fn(),
+      reset: jest.fn(),
+      setEffectiveWeight: jest.fn(),
+      fadeIn: jest.fn().mockReturnThis(),
+      play: jest.fn().mockReturnThis(),
+      stop: jest.fn(),
+    };
+    adapter._tokenAnimationData.set(token, {
+      actions: { walk: fakeAction },
+      profile: {},
+      current: null,
+    });
+
+    adapter._resumeMovementAnimations(token);
+
+    expect(adapter._setAnimation).toHaveBeenCalledWith(
+      token,
+      'walk',
+      expect.objectContaining({ force: true })
+    );
+    expect(state.__pendingLoopKey).toBeNull();
   });
 
   test('_maybeEnterFallPhase skips fall loop for shallow drops', () => {
@@ -1084,7 +1141,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     expect(scale).toBeLessThan(0.9);
   });
 
-  test('_finishFallPhase queues roll recover before resuming after fall-to-roll', () => {
+  test('_finishFallPhase resumes fall-to-roll landings without a recover phase', () => {
     const gm = {
       is3DModeActive: () => true,
       spatial: {
@@ -1097,6 +1154,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     adapter._logFallHeightSample = jest.fn();
     adapter._setAnimation = jest.fn();
     adapter._syncTokenAndMeshWorld = jest.fn();
+    const finalizeSpy = jest.spyOn(adapter, '_finalizePostFallState').mockImplementation(() => {});
 
     const token = { gridX: 0, gridY: 0 };
     const step = {
@@ -1139,10 +1197,9 @@ describe('Token3DAdapter (Phase 3)', () => {
 
     adapter._finishFallPhase(state);
 
-    expect(state.phase).toBe('roll-recover');
-    expect(state.rollRecoverActive).toBe(true);
-    expect(adapter._resumeMovementAfterFall).not.toHaveBeenCalled();
-    expect(adapter._setAnimation).toHaveBeenCalledWith(token, 'climbRecover', expect.any(Object));
+    expect(adapter._resumeMovementAfterFall).toHaveBeenCalledWith(state);
+    expect(finalizeSpy).toHaveBeenCalledWith(state, state.profile);
+    expect(state.phase).toBe('idle');
   });
 
   test('_finishFallPhase preserves fall-to-roll landing offset even if it exits the tile', () => {
@@ -1280,67 +1337,6 @@ describe('Token3DAdapter (Phase 3)', () => {
       'fallToRoll'
     );
     expect(state.activeStep.targetWorld.x).toBeCloseTo(landingWorld.x + (expectedOffset?.x || 0));
-  });
-
-  test('_advanceRollRecoverPhase resumes queued movement after crouch-to-stand completes', () => {
-    const gm = { spatial: { tileWorldSize: 1 } };
-    const adapter = new Token3DAdapter(gm);
-    const token = { gridX: 0, gridY: 0 };
-    const state = {
-      token,
-      mesh: {},
-      phase: 'roll-recover',
-      rollRecoverActive: true,
-      rollRecoverElapsed: 0,
-      rollRecoverDuration: 0.2,
-      rollRecoverAnchorWorld: { x: 1, y: 0, z: 2 },
-      profile: {},
-    };
-
-    adapter._setAnimation = jest.fn();
-    adapter._resumeMovementAfterFall = jest.fn().mockReturnValue(false);
-    const finalizeSpy = jest.spyOn(adapter, '_finalizePostFallState').mockImplementation(() => {});
-    jest.spyOn(adapter, '_syncTokenAndMeshWorld').mockImplementation(() => {});
-
-    adapter._advanceRollRecoverPhase(state, 0.15);
-    expect(state.rollRecoverActive).toBe(true);
-
-    adapter._advanceRollRecoverPhase(state, 0.15);
-    expect(adapter._resumeMovementAfterFall).toHaveBeenCalledTimes(1);
-    expect(finalizeSpy).toHaveBeenCalled();
-  });
-
-  test('_completeRollRecover snaps grid to landing anchor for fall-to-roll recoveries', () => {
-    const gm = {
-      spatial: {
-        tileWorldSize: 1,
-        worldToGrid: jest.fn(() => ({ gridX: 7, gridY: -2 })),
-      },
-    };
-    const adapter = new Token3DAdapter(gm);
-    const token = { gridX: 0, gridY: 0 };
-    const state = {
-      token,
-      mesh: {},
-      phase: 'roll-recover',
-      rollRecoverActive: true,
-      rollRecoverDuration: 0.4,
-      rollRecoverElapsed: 0.4,
-      rollRecoverAnchorWorld: { x: 3.4, y: 1.1, z: -1.2 },
-      profile: {},
-      fallLandingKey: 'fallToRoll',
-    };
-
-    adapter._syncTokenAndMeshWorld = jest.fn();
-    adapter._resumeMovementAfterFall = jest.fn().mockReturnValue(false);
-    const finalizeSpy = jest.spyOn(adapter, '_finalizePostFallState').mockImplementation(() => {});
-
-    adapter._completeRollRecover(state);
-
-    expect(gm.spatial.worldToGrid).toHaveBeenCalledWith(3.4, -1.2);
-    expect(token.gridX).toBe(7);
-    expect(token.gridY).toBe(-2);
-    expect(finalizeSpy).toHaveBeenCalled();
   });
 
   test('_finishFallPhase anchors hard landing to the landing tile', () => {

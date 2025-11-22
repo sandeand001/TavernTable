@@ -210,6 +210,7 @@ const FALL_LANDING_THRESHOLD_CONFIG = {
 };
 const FALL_LOOP_MIN_DROP = 4.5;
 const LANDING_VARIANTS_ALLOW_TILE_EXIT = new Set(['fallToRoll']);
+const LANDING_VARIANTS_FORCE_ZERO_ELEVATION = new Set(['fallToRoll', 'fall', 'hardLanding']);
 const LANDING_OFFSET_SANITIZE_LIMITS = {
   default: {
     horizontalMultiplier: 2.1,
@@ -1262,8 +1263,11 @@ export class Token3DAdapter {
       tileSize * 0.2
     );
 
+    const forceZeroY = landingVariant && LANDING_VARIANTS_FORCE_ZERO_ELEVATION.has(landingVariant);
     let clampedY;
-    if (verticalLimit > 0) {
+    if (forceZeroY) {
+      clampedY = 0;
+    } else if (verticalLimit > 0) {
       const verticalClamp = Math.min(Math.max(offsetY, -verticalLimit), verticalLimit);
       clampedY = verticalClamp;
     } else {
@@ -1452,10 +1456,6 @@ export class Token3DAdapter {
         climbRecoverCrouchDrop: 1.0,
         climbRecoverRiseHold: CLIMB_RECOVER_CROUCH_HOLD,
         climbRecoverStandRelease: CLIMB_RECOVER_STAND_RELEASE,
-        rollRecoverActive: false,
-        rollRecoverElapsed: 0,
-        rollRecoverDuration: 0,
-        rollRecoverAnchorWorld: null,
         climbLastWorld: null,
         climbAdvanceActive: false,
         climbAdvanceTargetWorld: null,
@@ -1548,7 +1548,13 @@ export class Token3DAdapter {
     if (!state) return;
     const key = state.loopActionKey || 'walk';
     const data = this._tokenAnimationData.get(state.token);
-    if (!data?.actions?.[key]) return;
+    if (!data?.actions?.[key]) {
+      state.__pendingLoopKey = key;
+      state.__pendingLoopOptions = { ...options };
+      return;
+    }
+    state.__pendingLoopKey = null;
+    state.__pendingLoopOptions = null;
     const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
     this._setAnimation(state.token, key, {
       fadeIn: options.fadeIn ?? profile.walkFadeIn,
@@ -1563,6 +1569,19 @@ export class Token3DAdapter {
       return set.has(key);
     } catch (_) {
       return false;
+    }
+  }
+
+  _resumeMovementAnimations(tokenEntry) {
+    const state = this._movementStates.get(tokenEntry);
+    if (!state) return;
+    if (state.__pendingLoopKey) {
+      const pendingOptions = state.__pendingLoopOptions || {};
+      this._playLoopAnimation(state, { ...pendingOptions, force: true });
+      return;
+    }
+    if (state.phase === 'walk' && state.loopActionKey) {
+      this._playLoopAnimation(state, { force: true });
     }
   }
 
@@ -2923,6 +2942,8 @@ export class Token3DAdapter {
       if (actions.idle) {
         this._setAnimation(tokenEntry, 'idle', { immediate: true });
       }
+
+      this._resumeMovementAnimations(tokenEntry);
     } catch (_) {
       /* ignore animation setup errors */
     }
@@ -3305,9 +3326,6 @@ export class Token3DAdapter {
           case 'climb-recover':
             this._advanceClimbRecoverPhase(state, delta);
             break;
-          case 'roll-recover':
-            this._advanceRollRecoverPhase(state, delta);
-            break;
           case 'climb-advance':
             this._advanceClimbAdvancePhase(state, delta);
             break;
@@ -3681,11 +3699,6 @@ export class Token3DAdapter {
 
     this._clearFallStepState(state, { force: true });
 
-    const recoverStarted = this._initiateRollRecover(state, finalizedLandingWorld);
-    if (recoverStarted) {
-      return;
-    }
-
     const resumed = this._resumeMovementAfterFall(state);
     if (resumed) {
       return;
@@ -3698,10 +3711,6 @@ export class Token3DAdapter {
     if (!state) return;
     const profile = profileOverride || state.profile || DEFAULT_MOVEMENT_PROFILE;
     state.phase = 'idle';
-    state.rollRecoverActive = false;
-    state.rollRecoverElapsed = 0;
-    state.rollRecoverDuration = 0;
-    state.rollRecoverAnchorWorld = null;
     this._applyPendingOrientation(state);
     if (!this._shouldHoldMovementState(state)) {
       this._movementStates.delete(state.token);
@@ -3726,94 +3735,6 @@ export class Token3DAdapter {
     });
 
     this._unlockTokenWorldAuthority(state);
-  }
-
-  _initiateRollRecover(state, anchorWorld) {
-    if (!state) return false;
-    const animationData = this._tokenAnimationData.get(state.token);
-    const recoverAction = animationData?.actions?.climbRecover;
-    if (!recoverAction) return false;
-    const profile = animationData?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
-    const duration =
-      this._extractClipDuration(recoverAction) ||
-      animationData?.clips?.climbRecover ||
-      profile?.climbRecoverDuration ||
-      DEFAULT_CLIMB_RECOVER_DURATION;
-    if (!(duration > 1e-4)) {
-      return false;
-    }
-
-    const anchor = anchorWorld
-      ? this._cloneWorld(anchorWorld)
-      : this._resolveTokenWorldPosition(state.token);
-    if (anchor) {
-      this._syncTokenAndMeshWorld(state, anchor);
-    }
-
-    state.phase = 'roll-recover';
-    state.rollRecoverActive = true;
-    state.rollRecoverElapsed = 0;
-    state.rollRecoverDuration = duration;
-    state.rollRecoverAnchorWorld = anchor;
-    state.intentHold = false;
-    state.pendingStop = false;
-    state.stopTriggered = false;
-
-    const fadeIn = profile?.climbRecoverFadeIn ?? profile.walkFadeIn ?? 0.18;
-    const fadeOut = profile?.climbRecoverFadeOut ?? profile.walkFadeOut ?? 0.18;
-    this._setAnimation(state.token, 'climbRecover', {
-      fadeIn,
-      fadeOut,
-      force: true,
-    });
-    return true;
-  }
-
-  _advanceRollRecoverPhase(state, delta) {
-    if (!state) return;
-    if (!state.rollRecoverActive) {
-      this._completeRollRecover(state);
-      return;
-    }
-
-    const duration = state.rollRecoverDuration || DEFAULT_CLIMB_RECOVER_DURATION;
-    if (!(duration > 1e-4)) {
-      state.rollRecoverActive = false;
-      this._completeRollRecover(state);
-      return;
-    }
-
-    state.rollRecoverElapsed = Math.min(state.rollRecoverElapsed + Math.max(delta, 0), duration);
-    const anchor = state.rollRecoverAnchorWorld;
-    if (anchor) {
-      this._syncTokenAndMeshWorld(state, anchor);
-    }
-
-    if (state.rollRecoverElapsed >= duration - 1e-4) {
-      state.rollRecoverActive = false;
-      this._completeRollRecover(state);
-    }
-  }
-
-  _completeRollRecover(state) {
-    if (!state) return;
-    const anchorWorld = state.rollRecoverAnchorWorld
-      ? this._cloneWorld(state.rollRecoverAnchorWorld)
-      : null;
-    if (anchorWorld) {
-      this._syncTokenAndMeshWorld(state, anchorWorld);
-      this._applyTokenGridFromWorld(state.token, anchorWorld);
-    }
-    state.rollRecoverActive = false;
-    state.rollRecoverDuration = 0;
-    state.rollRecoverElapsed = 0;
-    state.rollRecoverAnchorWorld = null;
-    state.phase = 'idle';
-    const resumed = this._resumeMovementAfterFall(state);
-    if (resumed) {
-      return;
-    }
-    this._finalizePostFallState(state);
   }
 
   _checkFallTransitions(state) {
@@ -5938,10 +5859,6 @@ export class Token3DAdapter {
     state.activeStep = null;
     state.stepFinalized = true;
     state.intentHold = false;
-    state.rollRecoverActive = false;
-    state.rollRecoverElapsed = 0;
-    state.rollRecoverDuration = 0;
-    state.rollRecoverAnchorWorld = null;
 
     if (clearStopFlags) {
       state.stopTriggered = false;
