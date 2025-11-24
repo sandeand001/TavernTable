@@ -27,4 +27,19 @@ describe('SpatialCoordinator', () => {
     expect(w.z).toBe(6);
     expect(w.y).toBe(4);
   });
+
+  test('worldToGrid floors fractional world coordinates inside a tile', () => {
+    const sc = new SpatialCoordinator();
+    const samples = [
+      { x: 0.99, z: 0.01, gx: 0, gy: 0 },
+      { x: 1.01, z: 0.45, gx: 1, gy: 0 },
+      { x: 4.75, z: 7.25, gx: 4, gy: 7 },
+      { x: -0.01, z: 3.2, gx: -1, gy: 3 },
+    ];
+    for (const sample of samples) {
+      const grid = sc.worldToGrid(sample.x, sample.z);
+      expect(grid.gridX).toBe(sample.gx);
+      expect(grid.gridY).toBe(sample.gy);
+    }
+  });
 });

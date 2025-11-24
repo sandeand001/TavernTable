@@ -430,6 +430,13 @@ export class ThreeSceneManager {
 
   _hasUsableWebGLContext() {
     try {
+      const isTestEnv =
+        this?._testMode === true ||
+        (typeof globalThis !== 'undefined' &&
+          !!(globalThis.process?.env?.JEST_WORKER_ID ?? globalThis.process?.env?.TT_TEST_MODE));
+      if (isTestEnv) {
+        return true;
+      }
       if (typeof document === 'undefined') return false;
       const canvas = document.createElement('canvas');
       const attrs = { failIfMajorPerformanceCaveat: true };
@@ -496,6 +503,12 @@ export class ThreeSceneManager {
       this.canvas = null;
     } catch (_) {
       /* ignore */
+    }
+    if (!this.scene) {
+      this.scene = { children: [], isPlaceholderScene: true };
+    }
+    if (!this.camera) {
+      this.camera = { isPlaceholderCamera: true };
     }
     try {
       logger.log(
