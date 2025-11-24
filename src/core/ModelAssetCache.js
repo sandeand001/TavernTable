@@ -1,3 +1,23 @@
+import logger, { LOG_CATEGORY } from '../utils/Logger.js';
+
+const MODEL_LOG_CATEGORY = LOG_CATEGORY.CACHE;
+const isVerboseFlagEnabled = () =>
+  typeof window !== 'undefined' && !!window.DEBUG_MODEL_CACHE_VERBOSE;
+const canLogModelDebug = () => logger.isDebugEnabled() && isVerboseFlagEnabled();
+const logModelDebug = (message, data = {}) => {
+  if (canLogModelDebug()) {
+    logger.debug(message, data, MODEL_LOG_CATEGORY);
+  }
+};
+const toErrorPayload = (error) =>
+  error
+    ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      }
+    : undefined;
+
 // Clean minimal ModelAssetCache implementation (readable + properly indented)
 const DEFAULT_TEXTURE_BASE = 'assets/terrain/3d Assets/Textures';
 const TROPICAL_FBX_SOURCE = 'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx';
@@ -384,11 +404,11 @@ class ModelAssetCache {
     const obj = await promise;
     this._loading.delete(key);
     if (obj) this._cache.set(key, obj);
-    else if (typeof console !== 'undefined') {
-      console.warn('[ModelAssetCache] Failed to load', {
+    else {
+      logger.warn('Model asset failed to load', {
         key,
         path: descriptor.path,
-      });
+      }, MODEL_LOG_CATEGORY);
     }
     return obj ? obj.clone(true) : null;
   }
@@ -396,7 +416,6 @@ class ModelAssetCache {
   async _loadOBJ(three, key, path, descriptor) {
     if (!three) return null;
     let OBJLoaderMod = null;
-    const VERBOSE = !!(typeof window !== 'undefined' && window.DEBUG_MODEL_CACHE_VERBOSE);
     try {
       OBJLoaderMod = await import('three/examples/jsm/loaders/OBJLoader.js');
     } catch (e) {
@@ -404,14 +423,16 @@ class ModelAssetCache {
         OBJLoaderMod = await import(
           'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js'
         );
-        if (VERBOSE && typeof console !== 'undefined') {
-          console.info('[ModelAssetCache] OBJLoader CDN fallback');
-        }
+        logModelDebug('OBJLoader CDN fallback used');
       } catch (e2) {
-        if (typeof console !== 'undefined') {
-          // Always report hard failure (rare)
-          console.error('[ModelAssetCache] OBJLoader import failed', e, e2);
-        }
+        logger.error(
+          'OBJLoader import failed',
+          {
+            error: toErrorPayload(e),
+            fallbackError: toErrorPayload(e2),
+          },
+          MODEL_LOG_CATEGORY
+        );
         return null;
       }
     }
@@ -448,14 +469,14 @@ class ModelAssetCache {
               } catch (postErr) {
                 // ignore post-process error for individual variant
               }
-              if (VERBOSE && typeof console !== 'undefined' && url !== path)
-                console.info('[ModelAssetCache] Fallback path', { key, url });
+              if (url !== path) {
+                logModelDebug('OBJ fallback path succeeded', { key, url });
+              }
               finish(root);
             },
             undefined,
             () => {
-              if (VERBOSE && typeof console !== 'undefined')
-                console.warn('[ModelAssetCache] OBJ fail', { key, url });
+              logModelDebug('OBJ variant failed to load', { key, url });
               tryLoad(i + 1).then(finish);
             }
           );
@@ -465,12 +486,15 @@ class ModelAssetCache {
         }
       });
     const result = await tryLoad(0);
-    if (!result && typeof console !== 'undefined') {
-      // Keep as error (model truly missing)
-      console.error('[ModelAssetCache] All load variants failed', {
-        key,
-        variants: [...attempted],
-      });
+    if (!result) {
+      logger.error(
+        'All OBJ load variants failed',
+        {
+          key,
+          variants: [...attempted],
+        },
+        MODEL_LOG_CATEGORY
+      );
     }
     return result;
   }
@@ -486,14 +510,19 @@ class ModelAssetCache {
           const fallback = await import(
             'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js'
           );
-          if (typeof console !== 'undefined') {
-            console.info('[ModelAssetCache] FBXLoader CDN fallback');
+          if (logger.isInfoEnabled()) {
+            logger.info('FBXLoader CDN fallback used', {}, MODEL_LOG_CATEGORY);
           }
           return fallback.FBXLoader || fallback.default || null;
         } catch (err2) {
-          if (typeof console !== 'undefined') {
-            console.error('[ModelAssetCache] FBXLoader import failed', err, err2);
-          }
+          logger.error(
+            'FBXLoader import failed',
+            {
+              error: toErrorPayload(err),
+              fallbackError: toErrorPayload(err2),
+            },
+            MODEL_LOG_CATEGORY
+          );
           return null;
         }
       }
@@ -510,7 +539,6 @@ class ModelAssetCache {
         ? descriptor.variants
         : this._buildPathVariants(descriptor.path, 'FBX')) || [];
     const attempted = new Set();
-    const VERBOSE = !!(typeof window !== 'undefined' && window.DEBUG_MODEL_CACHE_VERBOSE);
     const tryLoad = (index) =>
       new Promise((resolve) => {
         if (index >= variants.length) return resolve(null);
@@ -564,8 +592,8 @@ class ModelAssetCache {
                   /* align optional */
                 }
               }
-              if (VERBOSE && typeof console !== 'undefined' && url !== descriptor.path) {
-                console.info('[ModelAssetCache] FBX fallback path', { key, url });
+              if (url !== descriptor.path) {
+                logModelDebug('FBX fallback path succeeded', { key, url });
               }
               finish(result);
             },
@@ -579,11 +607,15 @@ class ModelAssetCache {
         }
       });
     const result = await tryLoad(0);
-    if (!result && typeof console !== 'undefined') {
-      console.error('[ModelAssetCache] All FBX load variants failed', {
-        key,
-        variants: [...attempted],
-      });
+    if (!result) {
+      logger.error(
+        'All FBX load variants failed',
+        {
+          key,
+          variants: [...attempted],
+        },
+        MODEL_LOG_CATEGORY
+      );
     }
     return result;
   }
@@ -926,7 +958,13 @@ class ModelAssetCache {
       if (!this.__loggedKeys.has(key)) {
         this.__loggedKeys.add(key);
         const fileName = (path || '').split('/')?.pop() || path;
-        console.info('[ModelAssetCache] Loaded', { key, resolvedFile: fileName, path, kind });
+        if (logger.isInfoEnabled()) {
+          logger.info(
+            'Model asset cached',
+            { key, resolvedFile: fileName, path, kind },
+            MODEL_LOG_CATEGORY
+          );
+        }
       }
     } catch (logErr) {
       // ignore logging error

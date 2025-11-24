@@ -1,6 +1,7 @@
 import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
 import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import logger, { LOG_CATEGORY } from '../../../utils/Logger.js';
 // Depth utilities no longer used for cross-container zIndex raise; we align to tile scheme.
 // import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
 
@@ -37,6 +38,10 @@ const ID_TO_MODEL_KEY = {
 const TREE_ID_PATTERN = /^tree-/i;
 
 const MODEL_BASELINE_OFFSETS = new Map();
+
+const PLACEABLE_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
+const shouldLogTreeModelInfo = () =>
+  logger.isInfoEnabled() && typeof window !== 'undefined' && !!window.DEBUG_TREE_MODELS;
 
 function resolveModelBaselineOffset(gameManager, cacheKey, root) {
   const key = cacheKey || null;
@@ -273,6 +278,7 @@ export function createPlaceableSprite(m, id, x, y) {
   const scaleMode = def.scaleMode || 'contain';
   // Enable runtime debug logging by setting `window.DEBUG_PLACEABLES = true`
   const __dbg = !!(typeof window !== 'undefined' && window.DEBUG_PLACEABLES);
+  const debugLoggingEnabled = __dbg && logger.isDebugEnabled();
   // Position using coordinate util so behavior matches other systems
   // Use the same baseline point as tokens/selection so the preview and final
   // placement line up perfectly. CoordinateUtils.gridToIsometric already applies
@@ -307,7 +313,12 @@ export function createPlaceableSprite(m, id, x, y) {
       // Elevation offset will be applied by the shared reposition helper so
       // this align helper only sets the baseline iso position.
     } catch (err) {
-      if (__dbg) console.debug('[placeable:alignBottomCenter] failed', { id, err });
+      if (debugLoggingEnabled)
+        logger.debug(
+          '[placeable:alignBottomCenter] failed',
+          { id, error: err?.message },
+          PLACEABLE_LOG_CATEGORY
+        );
       try {
         s.x = targetX;
         s.y = targetY;
@@ -376,18 +387,22 @@ export function createPlaceableSprite(m, id, x, y) {
         // Apply type-aware clamp to avoid outliers
         sx = clampScale(sx, def.type, def);
         sy = clampScale(sy, def.type, def);
-        if (__dbg) {
-          console.debug('[placeable:setSize] initial/fallback', {
-            id,
-            type: def.type,
-            scaleMode,
-            tileW,
-            tileH,
-            texW,
-            texH,
-            sx,
-            sy,
-          });
+        if (debugLoggingEnabled) {
+          logger.debug(
+            '[placeable:setSize] initial/fallback',
+            {
+              id,
+              type: def.type,
+              scaleMode,
+              tileW,
+              tileH,
+              texW,
+              texH,
+              sx,
+              sy,
+            },
+            PLACEABLE_LOG_CATEGORY
+          );
         }
         if (scaleMode === 'stretch') {
           if (typeof id === 'string' && id.startsWith('tree-')) {
@@ -429,69 +444,85 @@ export function createPlaceableSprite(m, id, x, y) {
       if (def.type === 'path' && (scaleMode === 'cover' || scaleMode === 'contain')) {
         const s = clampScale(scaleX, def.type, def);
         sprite.scale.set(s, s);
-        if (__dbg) {
-          console.debug('[placeable:setSize] path-preserve-width', {
-            id,
-            type: def.type,
-            scaleMode,
-            tileW,
-            tileH,
-            texW,
-            texH,
-            scaleX,
-            scaleY,
-            finalScale: s,
-          });
+        if (debugLoggingEnabled) {
+          logger.debug(
+            '[placeable:setSize] path-preserve-width',
+            {
+              id,
+              type: def.type,
+              scaleMode,
+              tileW,
+              tileH,
+              texW,
+              texH,
+              scaleX,
+              scaleY,
+              finalScale: s,
+            },
+            PLACEABLE_LOG_CATEGORY
+          );
         }
       } else if (scaleMode === 'stretch') {
         const sx = clampScale(scaleX, def.type, def);
         const sy = clampScale(scaleY, def.type, def);
         sprite.scale.set(sx, sy);
-        if (__dbg) {
-          console.debug('[placeable:setSize] stretch', {
-            id,
-            type: def.type,
-            scaleMode,
-            tileW,
-            tileH,
-            texW,
-            texH,
-            sx,
-            sy,
-          });
+        if (debugLoggingEnabled) {
+          logger.debug(
+            '[placeable:setSize] stretch',
+            {
+              id,
+              type: def.type,
+              scaleMode,
+              tileW,
+              tileH,
+              texW,
+              texH,
+              sx,
+              sy,
+            },
+            PLACEABLE_LOG_CATEGORY
+          );
         }
       } else if (scaleMode === 'cover') {
         const s = clampScale(Math.max(scaleX, scaleY), def.type, def);
         const clamped = s;
         sprite.scale.set(clamped, clamped);
-        if (__dbg) {
-          console.debug('[placeable:setSize] cover', {
-            id,
-            type: def.type,
-            scaleMode,
-            tileW,
-            tileH,
-            texW,
-            texH,
-            finalScale: clamped,
-          });
+        if (debugLoggingEnabled) {
+          logger.debug(
+            '[placeable:setSize] cover',
+            {
+              id,
+              type: def.type,
+              scaleMode,
+              tileW,
+              tileH,
+              texW,
+              texH,
+              finalScale: clamped,
+            },
+            PLACEABLE_LOG_CATEGORY
+          );
         }
       } else {
         // contain
         const s = clampScale(Math.min(scaleX, scaleY), def.type, def);
         const clamped = s;
         sprite.scale.set(clamped, clamped);
-        if (__dbg) {
-          console.debug('[placeable:setSize] contain', {
-            id,
-            type: def.type,
-            scaleMode,
-            tileW,
-            tileH,
-            texW,
-            texH,
-            finalScale: clamped,
-          });
+        if (debugLoggingEnabled) {
+          logger.debug(
+            '[placeable:setSize] contain',
+            {
+              id,
+              type: def.type,
+              scaleMode,
+              tileW,
+              tileH,
+              texW,
+              texH,
+              finalScale: clamped,
+            },
+            PLACEABLE_LOG_CATEGORY
+          );
         }
       }
       // After any scale change, re-align to ensure pivot/anchor reflect new bounds
@@ -541,19 +572,23 @@ export function createPlaceableSprite(m, id, x, y) {
   } catch (_) {
     /* ignore */
   }
-  if (__dbg) {
+  if (debugLoggingEnabled) {
     const dbgBounds = sprite.getLocalBounds ? sprite.getLocalBounds() : null;
-    console.debug('[placeable:create] positioned', {
-      id,
-      type: def.type,
-      x,
-      y,
-      isoX: iso.x,
-      isoY: iso.y,
-      anchor: sprite.anchor,
-      scale: { x: sprite.scale.x, y: sprite.scale.y },
-      bounds: dbgBounds,
-    });
+    logger.debug(
+      '[placeable:create] positioned',
+      {
+        id,
+        type: def.type,
+        x,
+        y,
+        isoX: iso.x,
+        isoY: iso.y,
+        anchor: sprite.anchor,
+        scale: { x: sprite.scale.x, y: sprite.scale.y },
+        bounds: dbgBounds,
+      },
+      PLACEABLE_LOG_CATEGORY
+    );
   }
   // Apply final positioning including elevation and per-asset baseline tweaks
   try {
@@ -677,11 +712,12 @@ export function placeItem(m, id, x, y) {
           } else if (typeof window !== 'undefined') {
             if (!Array.isArray(gm3d._deferredPlantModels)) gm3d._deferredPlantModels = [];
             gm3d._deferredPlantModels.push({ model, record });
-            if (window.DEBUG_TREE_MODELS) {
-              console.info('[Placeables] Deferred plant model (scene not ready)', {
-                id,
-                modelKey,
-              });
+            if (shouldLogTreeModelInfo()) {
+              logger.info(
+                '[Placeables] Deferred plant model (scene not ready)',
+                { id, modelKey },
+                PLACEABLE_LOG_CATEGORY
+              );
             }
           }
         } catch (_) {
@@ -689,8 +725,12 @@ export function placeItem(m, id, x, y) {
         }
         record.__threeModel = model;
         delete record.__threeModelPending;
-        if (typeof window !== 'undefined' && window.DEBUG_TREE_MODELS) {
-          console.info('[Placeables] 3D plant placed', { id, modelKey, x, y });
+        if (shouldLogTreeModelInfo()) {
+          logger.info(
+            '[Placeables] 3D plant placed',
+            { id, modelKey, x, y },
+            PLACEABLE_LOG_CATEGORY
+          );
         }
       };
       // Palm model aliasing: if dedicated palm assets don't exist yet, map them to a broadleaf base and adjust.
@@ -990,7 +1030,11 @@ export function placeItem(m, id, x, y) {
   // (unexpected, but defensive), abort instead of creating a placeholder sprite.
   if (def && def.type === 'plant-family') {
     try {
-      console.warn('[placeItem] Abort unresolved plant-family placement', { id, x, y });
+      logger.warn(
+        '[placeItem] Abort unresolved plant-family placement',
+        { id, x, y },
+        PLACEABLE_LOG_CATEGORY
+      );
     } catch (_) {
       /* ignore */
     }

@@ -25,6 +25,87 @@ import { LOG_LEVEL, LOG_CATEGORY } from './logger/enums.js';
 // Narrowed public logging surface: consumers only need level & category.
 export { LOG_LEVEL, LOG_CATEGORY };
 
+const LOG_LEVEL_VALUES = new Set(Object.values(LOG_LEVEL));
+const LOG_LEVEL_NAME_LOOKUP = Object.keys(LOG_LEVEL).reduce((map, key) => {
+  map[key] = LOG_LEVEL[key];
+  map[key.toLowerCase()] = LOG_LEVEL[key];
+  return map;
+}, {});
+
+const isValidLogLevel = (level) => LOG_LEVEL_VALUES.has(level);
+
+const normalizeLevelInput = (value) => {
+  if (typeof value === 'number' && isValidLogLevel(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const upper = trimmed.toUpperCase();
+    if (LOG_LEVEL_NAME_LOOKUP[upper] != null) return LOG_LEVEL_NAME_LOOKUP[upper];
+    const lower = trimmed.toLowerCase();
+    if (LOG_LEVEL_NAME_LOOKUP[lower] != null) return LOG_LEVEL_NAME_LOOKUP[lower];
+  }
+  return null;
+};
+
+const readFromProcessEnv = (keys = []) => {
+  for (const key of keys) {
+    try {
+      const envValue = globalThis?.process?.env?.[key];
+      if (typeof envValue === 'string' && envValue.trim()) return envValue;
+    } catch (_) {
+      /* ignore env access issues */
+    }
+  }
+  return null;
+};
+
+const readFromGlobalFlags = (keys = []) => {
+  for (const key of keys) {
+    try {
+      if (typeof window !== 'undefined' && window[key] != null) return window[key];
+    } catch (_) {
+      /* ignore window access */
+    }
+    try {
+      if (typeof globalThis !== 'undefined' && key in globalThis && globalThis[key] != null) {
+        return globalThis[key];
+      }
+    } catch (_) {
+      /* ignore global access */
+    }
+  }
+  return null;
+};
+
+const resolveLevelOverride = ({ envKeys = [], globalKeys = [] } = {}) => {
+  const raw = readFromProcessEnv(envKeys) ?? readFromGlobalFlags(globalKeys);
+  return normalizeLevelInput(raw);
+};
+
+const resolveConsoleThreshold = (config) => {
+  if (config && isValidLogLevel(config.consoleLevel)) return config.consoleLevel;
+  return LOG_LEVEL.WARN;
+};
+
+const shouldEmitToConsole = (config, level) => {
+  if (!config?.enableConsole || !isValidLogLevel(level)) return false;
+  const threshold = resolveConsoleThreshold(config);
+  return level >= threshold;
+};
+
+const emitConsoleFallback = (config, level, ...args) => {
+  if (!shouldEmitToConsole(config, level)) return;
+  const method =
+    level >= LOG_LEVEL.ERROR ? 'error' : level >= LOG_LEVEL.WARN ? 'warn' : 'log';
+  try {
+    if (typeof console?.[method] === 'function') {
+      console[method](...args);
+    }
+  } catch (_) {
+    /* ignore fallback console errors */
+  }
+};
+
 /**
  * Configuration class for logger behavior
  */
@@ -33,7 +114,8 @@ export { LOG_LEVEL, LOG_CATEGORY };
 // withLoggingContext / GameLogger also unexported (no consumers). Enums kept for any external usage.
 class LoggerConfig {
   constructor(options = {}) {
-    this.level = options.level || LOG_LEVEL.INFO;
+    const normalizedLevel = normalizeLevelInput(options.level);
+    this.level = normalizedLevel ?? LOG_LEVEL.INFO;
     this.enableConsole = options.enableConsole ?? true;
     this.enableFile = options.enableFile ?? false;
     this.enableRemote = options.enableRemote ?? false;
@@ -49,6 +131,9 @@ class LoggerConfig {
     this.environment = options.environment || 'development';
     this.applicationName = options.applicationName || 'TavernTable';
     this.correlationIdHeader = options.correlationIdHeader || 'x-correlation-id';
+    const normalizedConsoleLevel = normalizeLevelInput(options.consoleLevel);
+    this.consoleLevel =
+      normalizedConsoleLevel ?? Math.max(this.level, LOG_LEVEL.WARN);
   }
 }
 
@@ -194,7 +279,7 @@ class ConsoleOutputHandler {
   }
 
   output(logEntry) {
-    if (!this.config.enableConsole) return;
+    if (!shouldEmitToConsole(this.config, logEntry.level)) return;
 
     const levelName =
       Object.keys(LOG_LEVEL).find((key) => LOG_LEVEL[key] === logEntry.level) || 'UNKNOWN';
@@ -373,7 +458,7 @@ class RemoteOutputHandler {
       if (this.buffer.length < 100) {
         this.buffer.unshift(...logs.slice(-50)); // Only keep recent logs
       }
-      console.error('Failed to send logs to remote endpoint:', error);
+      emitConsoleFallback(this.config, LOG_LEVEL.ERROR, 'Failed to send logs to remote endpoint:', error);
     }
   }
 
@@ -543,7 +628,6 @@ export class Logger {
     // 1) log(level:number, category:string, message:string, ...)
     // 2) legacy: log(level:number, message:string, category:string, ...)
     // 3) legacy alt: log(message:string, level:number, category:string, ...)
-    const validLevels = new Set(Object.values(LOG_LEVEL));
     const validCategories = new Set(Object.values(LOG_CATEGORY));
 
     let normLevel = level;
@@ -553,12 +637,12 @@ export class Logger {
     const normContext = context;
 
     // Pattern 3: (message, level, category)
-    if (!validLevels.has(level) && validLevels.has(category) && typeof message === 'string') {
+    if (!isValidLogLevel(level) && isValidLogLevel(category) && typeof message === 'string') {
       normLevel = category;
       normCategory = validCategories.has(message) ? message : LOG_CATEGORY.SYSTEM;
       normMessage = typeof level === 'string' ? level : String(level ?? '');
     } else if (
-      validLevels.has(level) &&
+      isValidLogLevel(level) &&
       typeof category === 'string' &&
       typeof message === 'string'
     ) {
@@ -590,7 +674,7 @@ export class Logger {
     }
 
     // Check if logging is enabled for this level
-    if (!validLevels.has(normLevel) || normLevel < this.config.level) return;
+    if (!isValidLogLevel(normLevel) || !this.isLevelEnabled(normLevel)) return;
 
     // Merge context from stack
     const mergedContext = {
@@ -606,11 +690,42 @@ export class Logger {
       try {
         handler.output(logEntry);
       } catch (error) {
-        console.error('Log output handler failed:', error);
+        emitConsoleFallback(this.config, LOG_LEVEL.ERROR, 'Log output handler failed:', error);
       }
     }
 
     return logEntry.id;
+  }
+
+  isLevelEnabled(level) {
+    if (!isValidLogLevel(level)) return false;
+    if (!isValidLogLevel(this.config.level)) return false;
+    if (this.config.level === LOG_LEVEL.OFF) return false;
+    return level >= this.config.level;
+  }
+
+  isTraceEnabled() {
+    return this.isLevelEnabled(LOG_LEVEL.TRACE);
+  }
+
+  isDebugEnabled() {
+    return this.isLevelEnabled(LOG_LEVEL.DEBUG);
+  }
+
+  isInfoEnabled() {
+    return this.isLevelEnabled(LOG_LEVEL.INFO);
+  }
+
+  isWarnEnabled() {
+    return this.isLevelEnabled(LOG_LEVEL.WARN);
+  }
+
+  isErrorEnabled() {
+    return this.isLevelEnabled(LOG_LEVEL.ERROR);
+  }
+
+  isFatalEnabled() {
+    return this.isLevelEnabled(LOG_LEVEL.FATAL);
   }
 
   /**
@@ -770,10 +885,33 @@ const isProduction = environment === 'production';
 const isDevelopment = environment === 'development';
 const runningInJest = typeof isJest === 'function' ? isJest() : false;
 
+const envLevelOverride = resolveLevelOverride({
+  envKeys: ['TT_LOG_LEVEL', 'LOG_LEVEL'],
+  globalKeys: ['__TT_LOG_LEVEL'],
+});
+const defaultLevel = runningInJest
+  ? LOG_LEVEL.WARN
+  : isProduction
+    ? LOG_LEVEL.INFO
+    : LOG_LEVEL.DEBUG;
+const resolvedLevel = envLevelOverride ?? defaultLevel;
+
+const envConsoleLevelOverride = resolveLevelOverride({
+  envKeys: ['TT_CONSOLE_LOG_LEVEL', 'TT_CONSOLE_LEVEL', 'CONSOLE_LOG_LEVEL'],
+  globalKeys: ['__TT_CONSOLE_LEVEL'],
+});
+const defaultConsoleLevel = runningInJest
+  ? LOG_LEVEL.OFF
+  : isProduction
+    ? LOG_LEVEL.ERROR
+    : LOG_LEVEL.WARN;
+const resolvedConsoleLevel = envConsoleLevelOverride ?? Math.max(defaultConsoleLevel, resolvedLevel);
+
 // Global logger instance with environment-specific configuration
 export const logger = new Logger({
   // Quieter during tests to reduce noise and avoid any console-driven timeouts
-  level: runningInJest ? LOG_LEVEL.WARN : isProduction ? LOG_LEVEL.INFO : LOG_LEVEL.DEBUG,
+  level: resolvedLevel,
+  consoleLevel: resolvedConsoleLevel,
   environment: environment,
   enableConsole: !runningInJest,
   enableMemory: true,

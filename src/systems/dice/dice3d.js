@@ -1,4 +1,5 @@
 import { DICE_CONFIG } from '../../config/GameConstants.js';
+import logger, { LOG_CATEGORY } from '../../utils/Logger.js';
 
 const D20_MODEL_PATH = 'assets/Items/d20-gold.glb';
 const DEFAULT_SCALE = 3.6;
@@ -53,6 +54,16 @@ const FACE_INDEX_TO_NUMBER = Object.freeze(
     return acc;
   }, {})
 );
+
+const DICE_LOG_CATEGORY = LOG_CATEGORY.INTERACTION;
+const toErrorPayload = (error) =>
+  error
+    ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      }
+    : undefined;
 
 const D20_FACE_CALIBRATION_SEQUENCE = Object.freeze(
   Object.entries(D20_NUMBER_TO_FACE_INDEX)
@@ -1210,7 +1221,11 @@ function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
     try {
       options.onSettle({ mesh, faceInfo: faceInfo || null });
     } catch (callbackError) {
-      console.warn('[dice3d] onSettle callback failed', callbackError);
+      logger.warn(
+        'Dice settle callback failed',
+        { error: toErrorPayload(callbackError) },
+        DICE_LOG_CATEGORY
+      );
     }
     settleCallbackFired = true;
   };
@@ -1272,7 +1287,11 @@ function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
         if (forcedFaceIndex != null && !forcedFaceAligned) {
           forcedFaceAligned = orientMeshToFaceIndex(mesh, forcedFaceIndex, threeNamespace);
           if (!forcedFaceAligned && options.debugFaceIndex !== false) {
-            console.warn('[dice3d] unable to align die to requested faceIndex', forcedFaceIndex);
+            logger.warn(
+              'Unable to align die to requested faceIndex',
+              { faceIndex: forcedFaceIndex },
+              DICE_LOG_CATEGORY
+            );
           }
           ensureGroundContact();
         }
@@ -1391,10 +1410,15 @@ function cycleCalibrationFace(direction = 0) {
   } else {
     faceCalibrationState.currentFaceInfo = { ...fallbackInfo };
   }
-  if (hasWindow()) {
+  if (hasWindow() && logger.isInfoEnabled()) {
     const info = faceCalibrationState.currentFaceInfo || entry;
-    console.info(
-      `[dice3d] Calibration face ready: value=${info?.value ?? 'unknown'} (faceIndex=${info?.faceIndex ?? 'n/a'})`
+    logger.info(
+      'D20 calibration face ready',
+      {
+        value: info?.value ?? 'unknown',
+        faceIndex: info?.faceIndex ?? 'n/a',
+      },
+      DICE_LOG_CATEGORY
     );
   }
   return faceCalibrationState.currentFaceInfo;
@@ -1441,7 +1465,9 @@ function handleCalibrationPointer(event) {
     timestamp: new Date().toISOString(),
   };
   faceCalibrationState.records.push(record);
-  console.info('[dice3d] Recorded face center', record);
+  if (logger.isInfoEnabled()) {
+    logger.info('[dice3d] Recorded face center', record, DICE_LOG_CATEGORY);
+  }
   if (faceCalibrationState.autoAdvance) {
     cycleCalibrationFace(1);
   }
@@ -1451,7 +1477,11 @@ export async function startD20FaceCalibration(options = {}) {
   if (!hasWindow()) return null;
   const manager = getSceneManager();
   if (!manager?.scene) {
-    console.warn('[dice3d] Unable to start calibration: missing scene manager.');
+    logger.warn(
+      '[dice3d] Unable to start calibration: missing scene manager.',
+      {},
+      DICE_LOG_CATEGORY
+    );
     return null;
   }
   await ensureThreeNamespace();
@@ -1490,7 +1520,11 @@ export async function startD20FaceCalibration(options = {}) {
     window;
 
   if (!camera || !threeNamespace?.Raycaster || !threeNamespace?.Vector2) {
-    console.warn('[dice3d] Unable to start calibration: missing camera or raycasting support.');
+    logger.warn(
+      '[dice3d] Unable to start calibration: missing camera or raycasting support.',
+      {},
+      DICE_LOG_CATEGORY
+    );
     if (mesh.parent) {
       mesh.parent.remove(mesh);
     }
@@ -1513,7 +1547,11 @@ export async function startD20FaceCalibration(options = {}) {
   };
 
   if (!faceCalibrationState.sequence.length) {
-    console.warn('[dice3d] Unable to start calibration: missing face order.');
+    logger.warn(
+      '[dice3d] Unable to start calibration: missing face order.',
+      {},
+      DICE_LOG_CATEGORY
+    );
     stopD20FaceCalibration();
     return null;
   }
@@ -1589,9 +1627,13 @@ export async function startD20FaceCalibration(options = {}) {
   faceCalibrationState.controls = controls;
   if (hasWindow()) {
     window.__TT_D20_CALIBRATION = controls;
-    console.info(
-      '[dice3d] D20 calibration ready. Use window.__TT_D20_CALIBRATION.next() / prev() to cycle faces and click the die to log centers.'
-    );
+    if (logger.isInfoEnabled()) {
+      logger.info(
+        'D20 calibration ready. Use window.__TT_D20_CALIBRATION.next() / prev() to cycle faces and click the die to log centers.',
+        {},
+        DICE_LOG_CATEGORY
+      );
+    }
   }
 
   return controls;
@@ -1674,7 +1716,11 @@ export async function playD20RollOnGrid(options = {}) {
         try {
           upstreamOnSettle(payload);
         } catch (callbackError) {
-          console.warn('[dice3d] upstream onSettle callback failed', callbackError);
+          logger.warn(
+            '[dice3d] upstream onSettle callback failed',
+            { error: toErrorPayload(callbackError) },
+            DICE_LOG_CATEGORY
+          );
         }
       }
       settleResolver({
@@ -1693,7 +1739,11 @@ export async function playD20RollOnGrid(options = {}) {
 
     return await settlePromise;
   } catch (error) {
-    console.warn('[dice3d] Unable to play d20 animation', error);
+    logger.error(
+      '[dice3d] Unable to play d20 animation',
+      { error: toErrorPayload(error) },
+      DICE_LOG_CATEGORY
+    );
     return {
       success: false,
       value: null,

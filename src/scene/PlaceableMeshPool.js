@@ -1,3 +1,5 @@
+import logger, { LOG_CATEGORY } from '../utils/Logger.js';
+
 // PlaceableMeshPool.js - Phase 4 scaffold
 // Manages instanced meshes for static placeables (trees, rocks, etc.).
 // Initial goals:
@@ -5,6 +7,13 @@
 //  - Provide add/update/remove API that defers GPU allocation until first use
 //  - Expose lightweight metrics for dev inspection
 //  - Fail gracefully if Three.js not available
+
+const PLACEABLE_POOL_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
+const logMeshPoolDebug = (message, data = {}) => {
+  if (logger.isDebugEnabled()) {
+    logger.debug(message, data, PLACEABLE_POOL_LOG_CATEGORY);
+  }
+};
 
 export class PlaceableMeshPool {
   constructor({ gameManager, initialCapacity = 256, maxCapacity = 4096 } = {}) {
@@ -156,14 +165,7 @@ export class PlaceableMeshPool {
     } catch (_) {
       /* ignore */
     }
-    try {
-      if (typeof window !== 'undefined') {
-        // eslint-disable-next-line no-console
-        console.debug('[PlaceableMeshPool] addPlaceable start', { key, epochAtStart });
-      }
-    } catch (_) {
-      /* ignore */
-    }
+    logMeshPoolDebug('[PlaceableMeshPool] addPlaceable start', { key, epochAtStart });
     let group = this._groups.get(key);
     if (!group || !group.instancedMesh) {
       group = await this._createGroup(key, three, placeable?.type || 'generic', placeable);
@@ -261,15 +263,8 @@ export class PlaceableMeshPool {
     }
     // Update metrics to reflect new live instance
     this._updateMetrics();
-    try {
-      if (typeof window !== 'undefined') {
-        const live = group.count - group.freeIndices.length;
-        // eslint-disable-next-line no-console
-        console.debug('[PlaceableMeshPool] addPlaceable done', { key, index, live });
-      }
-    } catch (_) {
-      /* ignore */
-    }
+    const live = group.count - group.freeIndices.length;
+    logMeshPoolDebug('[PlaceableMeshPool] addPlaceable done', { key, index, live });
     return placeable.__meshPoolHandle;
   }
 
@@ -347,15 +342,11 @@ export class PlaceableMeshPool {
           }
         } catch (e) {
           texture = null;
-          try {
-            console.debug('[PlaceableMeshPool] texture load error', {
-              key,
-              texturePath,
-              err: e?.message,
-            });
-          } catch (_) {
-            /* ignore */
-          }
+          logMeshPoolDebug('[PlaceableMeshPool] texture load error', {
+            key,
+            texturePath,
+            err: e?.message,
+          });
         }
 
         if (texture) {
@@ -376,11 +367,7 @@ export class PlaceableMeshPool {
             side: three.DoubleSide,
             toneMapped: false,
           });
-          try {
-            console.debug('[PlaceableMeshPool] created textured material', { key, texturePath });
-          } catch (_) {
-            /* ignore */
-          }
+          logMeshPoolDebug('[PlaceableMeshPool] created textured material', { key, texturePath });
         } else {
           const typeColors = {
             plant: 0x2d8f28,
@@ -880,17 +867,10 @@ export class PlaceableMeshPool {
       // Increment epoch so any in-flight async addPlaceable operations originating from the
       // previous generation abort on resume, preventing stale tree reappearance.
       this._clearEpoch += 1;
-      try {
-        if (typeof window !== 'undefined') {
-          // eslint-disable-next-line no-console
-          console.debug('[PlaceableMeshPool] clearAll begin', {
-            epoch: this._clearEpoch,
-            groups: Array.from(this._groups.keys()),
-          });
-        }
-      } catch (_) {
-        /* ignore */
-      }
+      logMeshPoolDebug('[PlaceableMeshPool] clearAll begin', {
+        epoch: this._clearEpoch,
+        groups: Array.from(this._groups.keys()),
+      });
       for (const [key, group] of this._groups.entries()) {
         group.freeIndices = [];
         group.count = 0;
@@ -935,17 +915,10 @@ export class PlaceableMeshPool {
       // Force a one-time billboard refresh next frame by invalidating last cached yaw/pitch
       this._lastBillboardYaw = null;
       this._lastBillboardPitch = null;
-      try {
-        if (typeof window !== 'undefined') {
-          // eslint-disable-next-line no-console
-          console.debug('[PlaceableMeshPool] clearAll end', {
-            epoch: this._clearEpoch,
-            metrics: this.getStats?.(),
-          });
-        }
-      } catch (_) {
-        /* ignore */
-      }
+      logMeshPoolDebug('[PlaceableMeshPool] clearAll end', {
+        epoch: this._clearEpoch,
+        metrics: this.getStats?.(),
+      });
     } catch (_) {
       /* ignore clear errors */
     }
@@ -1080,8 +1053,7 @@ export class PlaceableMeshPool {
             }
           }
           if (leftovers.length && typeof window !== 'undefined') {
-            // eslint-disable-next-line no-console
-            console.debug('[PlaceableMeshPool] purgeAll removed stray meshes', { leftovers });
+            logMeshPoolDebug('[PlaceableMeshPool] purgeAll removed stray meshes', { leftovers });
           }
         }
       } catch (_) {
