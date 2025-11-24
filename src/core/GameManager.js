@@ -30,6 +30,7 @@ import {
 import { Sanitizers } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { getTokenCommand } from '../config/TokenCommandConfig.js';
 
 // Import coordinators
 import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
@@ -47,6 +48,9 @@ import { PlaceableMeshPool } from '../scene/PlaceableMeshPool.js';
 import { PickingService } from '../scene/PickingService.js';
 // 2D elevation scale utilities (pixels per level) used to map to 3D world Y units
 import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+
+const EMOTE_COMMAND_PREFIX = 'emote-';
+const EMOTE_IDLE_ACTIONS = ['idle', 'idleVariant2', 'idleVariant3', 'idleVariant4', 'idleVariant5'];
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -845,6 +849,158 @@ class GameManager {
       this._dragLastPreview = null;
     }
     return true;
+  }
+
+  /** Apply a quick command selected from the radial menu. */
+  applyTokenCommand(tokenEntry, commandId) {
+    if (!commandId) return false;
+    const command = getTokenCommand(commandId);
+    if (!command) {
+      logger.warn('Unknown token command', { commandId }, LOG_CATEGORY.INTERACTION);
+      return false;
+    }
+
+    const targetToken = this._resolveTokenEntry(tokenEntry);
+
+    if (commandId === 'clear') {
+      this._setTokenQuickCommand(targetToken, null);
+      try {
+        this.token3DAdapter?.playTokenAnimation?.(targetToken, 'idle', { force: true });
+      } catch (_) {
+        /* ignore */
+      }
+      return true;
+    }
+
+    if (targetToken) {
+      this._setTokenQuickCommand(targetToken, commandId);
+    }
+
+    if (commandId.startsWith(EMOTE_COMMAND_PREFIX)) {
+      return this._handleEmoteCommand(targetToken, commandId);
+    }
+
+    return true;
+  }
+
+  _setTokenQuickCommand(tokenEntry, commandId) {
+    if (!tokenEntry) return;
+    if (commandId) {
+      tokenEntry.quickCommand = commandId;
+    } else {
+      delete tokenEntry.quickCommand;
+    }
+  }
+
+  _resolveTokenEntry(tokenLike) {
+    if (!tokenLike) return null;
+    const tokens = this.placedTokens || [];
+    if (tokens.includes(tokenLike)) {
+      return tokenLike;
+    }
+
+    const targetId = this._extractTokenId(tokenLike);
+    if (targetId != null) {
+      const byId = tokens.find((token) => this._extractTokenId(token) === targetId);
+      if (byId) {
+        return byId;
+      }
+    }
+
+    const gx = Number.isFinite(tokenLike.gridX) ? tokenLike.gridX : null;
+    const gy = Number.isFinite(tokenLike.gridY) ? tokenLike.gridY : null;
+    if (gx != null && gy != null) {
+      const byGrid = tokens.find((token) => token.gridX === gx && token.gridY === gy);
+      if (byGrid) {
+        return byGrid;
+      }
+    }
+
+    return null;
+  }
+
+  _extractTokenId(tokenLike) {
+    if (tokenLike == null) return null;
+    if (typeof tokenLike === 'string' || typeof tokenLike === 'number') {
+      return tokenLike;
+    }
+    return tokenLike.id ?? tokenLike.creature?.id ?? null;
+  }
+
+  _handleEmoteCommand(tokenEntry, commandId) {
+    const token = this._resolveTokenEntry(tokenEntry);
+    if (!token) {
+      return false;
+    }
+    const adapter = this.token3DAdapter;
+    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
+      logger.warn(
+        'Emote command requested before Token3DAdapter was ready',
+        { commandId },
+        LOG_CATEGORY.INTERACTION
+      );
+      return false;
+    }
+
+    switch (commandId) {
+      case 'emote-defeated':
+        return adapter.playTokenAnimation(token, 'defeated', {
+          force: true,
+          fadeIn: 0.22,
+          fadeOut: 0.35,
+          allowRootMotion: true,
+          releaseOnMovement: true,
+        });
+      case 'emote-rumba':
+      case 'emote-jump':
+        return adapter.playTokenAnimation(token, 'jump', {
+          force: true,
+          fadeIn: 0.2,
+          fadeOut: 0.3,
+          allowRootMotion: true,
+          movementLockMs: Infinity,
+          autoRevert: false,
+          releaseOnMovement: true,
+        });
+
+      case 'emote-fancy-pose':
+        return adapter.playTokenAnimation(token, 'fancyPose', {
+          force: true,
+          fadeIn: 0.25,
+          fadeOut: 0.35,
+          autoRevert: false,
+          movementLockMs: Infinity,
+          allowRootMotion: true,
+          releaseOnMovement: true,
+        });
+      case 'emote-dynamic-pose':
+        return adapter.playTokenAnimation(token, 'dynamicPose', {
+          force: true,
+          fadeIn: 0.25,
+          fadeOut: 0.35,
+          autoRevert: false,
+          movementLockMs: Infinity,
+          allowRootMotion: true,
+          releaseOnMovement: true,
+        });
+      case 'emote-idle':
+        return this._playIdleEmote(token);
+      default:
+        return false;
+    }
+  }
+
+  _playIdleEmote(tokenEntry) {
+    const token = this._resolveTokenEntry(tokenEntry);
+    if (!token) return false;
+    const adapter = this.token3DAdapter;
+    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
+      return false;
+    }
+    const available = EMOTE_IDLE_ACTIONS.filter((key) => adapter.hasAnimation?.(token, key));
+    const pool = available.length ? available : ['idle'];
+    const choice = pool[Math.floor(Math.random() * pool.length)];
+    return adapter.playTokenAnimation(token, choice, { force: true });
   }
 
   /**

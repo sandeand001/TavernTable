@@ -21,6 +21,26 @@ const MANNEQUIN_MODEL = {
       loop: 'repeat',
       clampWhenFinished: false,
     },
+    idleVariant2: {
+      path: 'assets/animated-sprites/idle (2).fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    idleVariant3: {
+      path: 'assets/animated-sprites/idle (3).fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    idleVariant4: {
+      path: 'assets/animated-sprites/idle (4).fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
+    idleVariant5: {
+      path: 'assets/animated-sprites/idle (5).fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+    },
     walk: {
       path: 'assets/animated-sprites/Walking.fbx',
       loop: 'repeat',
@@ -105,6 +125,27 @@ const MANNEQUIN_MODEL = {
       path: 'assets/animated-sprites/falling idle.fbx',
       loop: 'repeat',
       clampWhenFinished: false,
+    },
+    defeated: {
+      path: 'assets/animated-sprites/Defeated.fbx',
+      loop: 'once',
+      clampWhenFinished: true,
+    },
+    jump: {
+      path: 'assets/animated-sprites/Rumba Dancing (1).fbx',
+      loop: 'repeat',
+      clampWhenFinished: false,
+      preserveRootMotion: true,
+    },
+    fancyPose: {
+      path: 'assets/animated-sprites/Female Standing Pose.fbx',
+      loop: 'once',
+      clampWhenFinished: true,
+    },
+    dynamicPose: {
+      path: 'assets/animated-sprites/Female Dynamic Pose.fbx',
+      loop: 'once',
+      clampWhenFinished: true,
     },
   },
   movementProfile: {
@@ -276,6 +317,8 @@ export class Token3DAdapter {
     this._raycastScratch = [];
     this._pathingLoggingEnabledOverride = undefined;
     this._pathingLogArchive = [];
+    this._manualAnimationRevertTimers = new WeakMap();
+    this._manualAnimationStates = new WeakMap();
   }
 
   setPathingLoggingEnabled(isEnabled) {
@@ -538,7 +581,7 @@ export class Token3DAdapter {
       animationData?.current ||
       (state?.fallMode === 'loop' ? 'fallLoop' : state?.fallLandingKey) ||
       null;
-    const baseOffset = mesh?.userData?.__ttVerticalBase || 0;
+    const baseOffset = this._getMeshVerticalOffset(mesh);
     const worldY = Number.isFinite(world?.y) ? world.y : null;
     const meshY = Number.isFinite(meshPos?.y) ? meshPos.y : null;
     const computedMeshY = worldY !== null ? worldY + this._verticalBias + baseOffset : null;
@@ -991,6 +1034,10 @@ export class Token3DAdapter {
   _neutralizeRootMotion(tokenEntry) {
     const roots = this._rootBones.get(tokenEntry);
     if (!roots || !roots.length) return;
+    const manualState = this._getManualAnimationState(tokenEntry);
+    if (manualState?.allowRootMotion) {
+      return;
+    }
     const state = this._movementStates.get(tokenEntry);
     const climbTranslationActive =
       state?.phase === 'climb' ||
@@ -2060,6 +2107,7 @@ export class Token3DAdapter {
   }
 
   beginForwardMovement(tokenEntry, sourceKey = '__forward') {
+    this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, 1, sourceKey);
   }
 
@@ -2068,6 +2116,7 @@ export class Token3DAdapter {
   }
 
   beginBackwardMovement(tokenEntry, sourceKey = '__backward') {
+    this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, -1, sourceKey);
   }
 
@@ -2092,6 +2141,7 @@ export class Token3DAdapter {
   navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
     try {
       if (!tokenEntry) return null;
+      this._releaseManualAnimationForMovement(tokenEntry);
       const gm = this.gameManager;
       if (!gm?.is3DModeActive?.()) return null;
       const spatial = gm.spatial;
@@ -2565,6 +2615,7 @@ export class Token3DAdapter {
   beginRotation(tokenEntry, direction = 1, sourceKey = '__rotate') {
     try {
       if (!tokenEntry) return;
+      this._releaseManualAnimationForMovement(tokenEntry);
       const gm = this.gameManager;
       if (!gm || !gm.is3DModeActive?.()) return;
       const state = this._ensureMovementState(tokenEntry);
@@ -2710,6 +2761,22 @@ export class Token3DAdapter {
       const animationsConfig = config.animations || {};
       const actions = {};
       const clips = {};
+
+      const loadOptionalAnimation = async (key, options = {}) => {
+        if (!key || actions[key]) return;
+        const descriptor = animationsConfig[key];
+        if (!descriptor) return;
+        const clip = await this._resolveAnimationClip(descriptor, null, clipOptions);
+        if (!clip) return;
+        const action = mixer.clipAction(clip);
+        const loopMode = options.loop || 'repeat';
+        this._configureAction(action, descriptor, three, { loop: loopMode });
+        if (options.clamp === true) {
+          action.clampWhenFinished = true;
+        }
+        actions[key] = action;
+        clips[key] = clip.duration || 0;
+      };
 
       const targetCacheKey = (
         tokenEntry.type ||
@@ -2927,6 +2994,16 @@ export class Token3DAdapter {
         clips.fallLoop = fallLoopClip.duration || 0;
       }
 
+      const idleVariantKeys = ['idleVariant2', 'idleVariant3', 'idleVariant4', 'idleVariant5'];
+      for (const variantKey of idleVariantKeys) {
+        await loadOptionalAnimation(variantKey, { loop: 'repeat' });
+      }
+
+      await loadOptionalAnimation('jump', { loop: 'repeat' });
+      await loadOptionalAnimation('fancyPose', { loop: 'once', clamp: true });
+      await loadOptionalAnimation('dynamicPose', { loop: 'once', clamp: true });
+      await loadOptionalAnimation('defeated', { loop: 'once', clamp: true });
+
       this._animationMixers.set(tokenEntry, mixer);
 
       const profile = this._buildMovementProfile(config.movementProfile, actions, clips);
@@ -2954,13 +3031,18 @@ export class Token3DAdapter {
       return this._cloneClip(fallbackClip);
     }
 
+    const mergedOptions =
+      descriptor && typeof descriptor === 'object'
+        ? { ...options, preserveRootMotion: descriptor.preserveRootMotion === true }
+        : options;
+
     if (typeof descriptor === 'string') {
-      const clip = await this._loadAnimationClip(descriptor, options);
+      const clip = await this._loadAnimationClip(descriptor, mergedOptions);
       return clip || this._cloneClip(fallbackClip);
     }
 
     if (descriptor?.path) {
-      const clip = await this._loadAnimationClip(descriptor.path, options);
+      const clip = await this._loadAnimationClip(descriptor.path, mergedOptions);
       return clip || this._cloneClip(fallbackClip);
     }
 
@@ -2999,7 +3081,7 @@ export class Token3DAdapter {
         }
       }
       if (clip && options.targetRoot) {
-        clip = await this._retargetAnimationClip(clip, sourceRoot, options.targetRoot);
+        clip = await this._retargetAnimationClip(clip, sourceRoot, options.targetRoot, options);
       }
       if (clip) {
         this._animationClipCache.set(cacheKey, clip);
@@ -3019,7 +3101,7 @@ export class Token3DAdapter {
     return `${base}::${targetKey}`;
   }
 
-  async _retargetAnimationClip(clip, sourceRoot, targetRoot) {
+  async _retargetAnimationClip(clip, sourceRoot, targetRoot, options = {}) {
     if (!clip || !targetRoot || !sourceRoot) return clip;
     try {
       const SkeletonUtils = await this._getSkeletonUtils();
@@ -3036,7 +3118,7 @@ export class Token3DAdapter {
             sourceForRetarget,
             clip,
             {
-              useFirstFramePosition: true,
+              useFirstFramePosition: options.preserveRootMotion ? false : true,
             }
           );
           if (retargeted) return retargeted;
@@ -3255,6 +3337,19 @@ export class Token3DAdapter {
     if (!data.actions[key]) return;
     if (!options.force && data.current === key) return;
 
+    const manualState = this._getManualAnimationState(tokenEntry);
+    const manualActive = !!manualState;
+    const isManualOverride = options.__manualOverride === true;
+    const releaseManual = options.__releaseManual === true;
+
+    if (manualActive && !isManualOverride && !releaseManual) {
+      return;
+    }
+
+    if (releaseManual || !isManualOverride) {
+      this._clearManualAnimationState(tokenEntry);
+    }
+
     const fadeIn = options.immediate ? 0 : (options.fadeIn ?? 0.2);
     const fadeOut = options.immediate ? 0 : (options.fadeOut ?? 0.2);
     const timeScale =
@@ -3288,6 +3383,163 @@ export class Token3DAdapter {
     } catch (_) {
       /* ignore */
     }
+  }
+
+  hasAnimation(tokenEntry, key) {
+    if (!tokenEntry || !key) return false;
+    const data = this._tokenAnimationData.get(tokenEntry);
+    return !!data?.actions?.[key];
+  }
+
+  playTokenAnimation(tokenEntry, animationKey, options = {}) {
+    if (!tokenEntry || !animationKey) return false;
+    const data = this._tokenAnimationData.get(tokenEntry);
+    if (!data || !data.actions?.[animationKey]) {
+      return false;
+    }
+
+    const fadeOptions = {
+      fadeIn: options.fadeIn,
+      fadeOut: options.fadeOut,
+      immediate: options.immediate,
+      timeScale: options.timeScale,
+      force: options.force !== false,
+    };
+    fadeOptions.__manualOverride = true;
+
+    this._clearManualAnimationRevert(tokenEntry);
+    const clipDurationMs = Math.max((data.clips?.[animationKey] || 0) * 1000, 0);
+    const defaultLockMs = clipDurationMs > 0 ? clipDurationMs + 120 : 900;
+    const movementLockMsRaw = options.movementLockMs;
+    const movementLockMs =
+      movementLockMsRaw === Infinity
+        ? Infinity
+        : movementLockMsRaw != null
+          ? Math.max(movementLockMsRaw, 0)
+          : defaultLockMs;
+    let lockUntil = null;
+    if (movementLockMs === Infinity) {
+      lockUntil = Infinity;
+    } else if (movementLockMs > 0) {
+      lockUntil = Date.now() + movementLockMs;
+    }
+
+    this._clearManualAnimationState(tokenEntry);
+    this._setAnimation(tokenEntry, animationKey, fadeOptions);
+    this._setManualAnimationState(tokenEntry, {
+      key: animationKey,
+      allowRootMotion: !!options.allowRootMotion,
+      lockUntil,
+      releaseOnMovement: options.releaseOnMovement === true,
+    });
+
+    if (options.autoRevert) {
+      const revertDelayMs = Number.isFinite(options.revertDelayMs)
+        ? Math.max(options.revertDelayMs, 0)
+        : clipDurationMs;
+      const revertKey = options.revertAnimationKey || 'idle';
+      const revertOptions = options.revertOptions || {};
+      if (revertDelayMs > 0) {
+        this._scheduleManualAnimationRevert(tokenEntry, revertDelayMs, revertKey, revertOptions);
+      } else {
+        this._clearManualAnimationState(tokenEntry);
+        this._setAnimation(tokenEntry, revertKey, {
+          ...revertOptions,
+          __releaseManual: true,
+        });
+      }
+    }
+
+    return true;
+  }
+
+  _clearManualAnimationRevert(tokenEntry) {
+    if (!tokenEntry) return;
+    const handle = this._manualAnimationRevertTimers.get(tokenEntry);
+    if (handle) {
+      clearTimeout(handle);
+      this._manualAnimationRevertTimers.delete(tokenEntry);
+    }
+  }
+
+  _setManualAnimationState(tokenEntry, state) {
+    if (!tokenEntry) return;
+    if (state) {
+      this._manualAnimationStates.set(tokenEntry, state);
+    } else {
+      this._manualAnimationStates.delete(tokenEntry);
+    }
+    this._applyManualHeightOffset(tokenEntry, state);
+  }
+
+  _clearManualAnimationState(tokenEntry) {
+    if (!tokenEntry) return;
+    this._manualAnimationStates.delete(tokenEntry);
+    this._applyManualHeightOffset(tokenEntry, null);
+  }
+
+  _applyManualHeightOffset(tokenEntry, manualState) {
+    const mesh = tokenEntry?.__threeMesh;
+    if (!mesh || !mesh.userData) return;
+    const previous = Number.isFinite(mesh.userData.__ttManualVerticalOffset)
+      ? mesh.userData.__ttManualVerticalOffset
+      : 0;
+    const gm = this.gameManager;
+    const elevationUnitRaw = gm?.spatial?.elevationUnit;
+    const elevationUnit = Number.isFinite(elevationUnitRaw) ? elevationUnitRaw : 1;
+    let lift = 0;
+    if (manualState?.key === 'dynamicPose') {
+      lift = elevationUnit * 3;
+    }
+    if (previous === lift) return;
+    mesh.userData.__ttManualVerticalOffset = lift;
+    try {
+      const updated = this._positionMesh(mesh, tokenEntry);
+      if (!updated && mesh.position && Number.isFinite(previous) && Number.isFinite(lift)) {
+        mesh.position.y += lift - previous;
+      }
+      this._updateSelectionColliderHeight(mesh);
+      this._updateSelectionIndicatorHeight(tokenEntry);
+    } catch (_) {
+      /* ignore position adjustments */
+    }
+  }
+
+  _getManualAnimationState(tokenEntry) {
+    if (!tokenEntry) return null;
+    const state = this._manualAnimationStates.get(tokenEntry);
+    if (!state) return null;
+    if (Number.isFinite(state.lockUntil) && state.lockUntil <= Date.now()) {
+      this._manualAnimationStates.delete(tokenEntry);
+      return null;
+    }
+    return state;
+  }
+
+  _releaseManualAnimationForMovement(tokenEntry) {
+    if (!tokenEntry) return;
+    const state = this._getManualAnimationState(tokenEntry);
+    if (!state) return;
+    if (state.releaseOnMovement) {
+      this._clearManualAnimationState(tokenEntry);
+    }
+  }
+
+  _scheduleManualAnimationRevert(tokenEntry, delayMs, revertKey, revertOptions = {}) {
+    if (!tokenEntry || !(delayMs > 0)) return;
+    const handle = setTimeout(() => {
+      this._manualAnimationRevertTimers.delete(tokenEntry);
+      try {
+        this._clearManualAnimationState(tokenEntry);
+        this._setAnimation(tokenEntry, revertKey, {
+          ...revertOptions,
+          __releaseManual: true,
+        });
+      } catch (_) {
+        /* ignore */
+      }
+    }, delayMs);
+    this._manualAnimationRevertTimers.set(tokenEntry, handle);
   }
 
   _updateForwardMovements(delta) {
@@ -6113,7 +6365,7 @@ export class Token3DAdapter {
   }
 
   _composeMeshPosition(world, mesh) {
-    const baseOffset = mesh?.userData?.__ttVerticalBase || 0;
+    const baseOffset = this._getMeshVerticalOffset(mesh);
     return {
       x: world?.x ?? 0,
       y: (world?.y ?? 0) + this._verticalBias + baseOffset,
@@ -6256,6 +6508,8 @@ export class Token3DAdapter {
     const mesh = tokenEntry.__threeMesh;
     if (this._hoverToken === tokenEntry) this._hoverToken = null;
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
+    this._clearManualAnimationRevert(tokenEntry);
+    this._clearManualAnimationState(tokenEntry);
     this._discardSelectionIndicator(tokenEntry);
 
     const mixer = this._animationMixers.get(tokenEntry);
@@ -6566,11 +6820,14 @@ export class Token3DAdapter {
       const ring = new three.Mesh(geometry, material);
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = 0.02;
+      ring.userData = ring.userData || {};
+      ring.userData.__ttBaseY = ring.position.y;
       ring.name = 'TokenSelectionIndicator';
       if (typeof tokenEntry.__threeMesh.add === 'function') {
         tokenEntry.__threeMesh.add(ring);
       }
       tokenEntry.__ttSelectionIndicator = ring;
+      this._updateSelectionIndicatorHeight(tokenEntry);
       return ring;
     } catch (_) {
       return null;
@@ -6904,10 +7161,22 @@ export class Token3DAdapter {
     mesh.userData.__ttVerticalBase = Number.isFinite(options.verticalOffset)
       ? options.verticalOffset
       : 0;
+    mesh.userData.__ttManualVerticalOffset = 0;
     mesh.userData.__ttBaseYaw = Number.isFinite(options.baseYaw) ? options.baseYaw : 0;
     mesh.userData.__ttTokenType = type;
     mesh.userData.__ttTintMaterials = this._collectTintTargets(mesh);
     return mesh;
+  }
+
+  _getMeshVerticalOffset(mesh) {
+    if (!mesh?.userData) return 0;
+    const base = Number.isFinite(mesh.userData.__ttVerticalBase)
+      ? mesh.userData.__ttVerticalBase
+      : 0;
+    const manual = Number.isFinite(mesh.userData.__ttManualVerticalOffset)
+      ? mesh.userData.__ttManualVerticalOffset
+      : 0;
+    return base + manual;
   }
 
   _attachSelectionCollider(container, three, config = {}) {
@@ -6940,18 +7209,52 @@ export class Token3DAdapter {
       collider.renderOrder = -10;
       container.add(collider);
       container.userData.__ttSelectionCollider = collider;
+      container.userData.__ttSelectionColliderBaseY = collider.position.y;
+      this._updateSelectionColliderHeight(container);
     } catch (_) {
       /* ignore collider issues */
+    }
+  }
+
+  _updateSelectionColliderHeight(container) {
+    if (!container?.userData) return;
+    const collider = container.userData.__ttSelectionCollider;
+    if (!collider || !collider.position) return;
+    const baseY = Number.isFinite(container.userData.__ttSelectionColliderBaseY)
+      ? container.userData.__ttSelectionColliderBaseY
+      : collider.position.y;
+    const manualOffset = Number.isFinite(container.userData.__ttManualVerticalOffset)
+      ? container.userData.__ttManualVerticalOffset
+      : 0;
+    const nextY = baseY - manualOffset;
+    if (collider.position.y !== nextY) {
+      collider.position.y = nextY;
+    }
+  }
+
+  _updateSelectionIndicatorHeight(tokenEntry) {
+    const mesh = tokenEntry?.__threeMesh;
+    const indicator = tokenEntry?.__ttSelectionIndicator;
+    if (!mesh || !indicator || !indicator.position) return;
+    const manualOffset = Number.isFinite(mesh.userData?.__ttManualVerticalOffset)
+      ? mesh.userData.__ttManualVerticalOffset
+      : 0;
+    const baseY = Number.isFinite(indicator.userData?.__ttBaseY)
+      ? indicator.userData.__ttBaseY
+      : indicator.position.y;
+    const nextY = baseY - manualOffset;
+    if (indicator.position.y !== nextY) {
+      indicator.position.y = nextY;
     }
   }
 
   _positionMesh(mesh, tokenEntry) {
     try {
       const gm = this.gameManager;
-      if (!gm || !gm.spatial) return;
+      if (!gm || !gm.spatial) return false;
       const activeState = this._movementStates?.get?.(tokenEntry);
       if (activeState?.activeStep && !activeState.stepFinalized) {
-        return;
+        return false;
       }
       const storedWorld = tokenEntry?.world;
       const gx = tokenEntry.gridX ?? 0;
@@ -6993,10 +7296,12 @@ export class Token3DAdapter {
         worldY = 0;
       }
 
-      const baseOffset = mesh.userData?.__ttVerticalBase || 0;
+      const baseOffset = this._getMeshVerticalOffset(mesh);
       mesh.position.set(worldX, worldY + this._verticalBias + baseOffset, worldZ);
+      return true;
     } catch (_) {
       /* ignore */
     }
+    return false;
   }
 }
