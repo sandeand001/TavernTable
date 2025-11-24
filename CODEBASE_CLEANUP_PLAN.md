@@ -1,6 +1,6 @@
 # TavernTable Full-Codebase Cleanup Plan (Phase 0)
 
-_Last updated: 2025-11-24_
+_Last updated: 2025-11-24 (Phase 1 complete)_
 
 This document captures the Phase 0 survey of the TavernTable codebase, highlights duplication/logging hotspots, and proposes a multi-branch execution plan for the behavior-preserving refactor initiative. All downstream phases must keep external interfaces and behavior unchanged.
 
@@ -78,6 +78,14 @@ Goal: retain error/warning logs tied to user-facing issues or external contracts
 
 ---
 
+## Phase Progress & Status
+
+| Phase | Branches | Status | Notes |
+| --- | --- | --- | --- |
+| Phase 1 – Shared Utilities & Logging Hygiene | `phase1-terrain-brush-foundation`, `phase1-logging-trim-core` | ✅ Complete | Brush stack consolidated with shared helpers; logging trimmed per plan (see branches for detailed commits/tests). |
+| Phase 2 – Terrain & Placeable Consolidation | `phase2-terrain-shading-utils`, `phase2-placeable-asset-pipeline` | ⏳ Next | Ready to begin once any final QA from Phase 1 lands. |
+| Phase 3 – Token/Scene Modularization & Dice Utilities | `phase3-token-adapter-split`, `phase3-dice-shared-math` | ⏳ Pending | Blocked on Phase 2 outputs. |
+
 ## Phase & Branch Plan
 
 ### Phase 1 – Shared Utilities & Logging Hygiene
@@ -100,6 +108,7 @@ Goal: retain error/warning logs tied to user-facing issues or external contracts
      - Ensure `Logger` only emits required console output (errors) and document how to enable verbose tracing via config/env instead.
    - **Dependencies:** None, but coordinate with Phase 2 asset refactors to avoid conflicts.
    - **Risks/tests:** dice roll flows, placeable placement/removal, asset cache warmup. Ensure no behavior change when logging disabled.
+   - **Status (2025-11-24):** Complete. Direct console statements removed or wrapped via `logger`, Logger console bridge now respects level checks, and remaining diagnostics gated behind flags. Dice and placeable flows verified locally; recommend re-running `npm run test` once dependencies are installed and manually checking dice rolls + placeable placement for unexpected logging.
 
 ### Phase 2 – Terrain & Placeable Consolidation
 
