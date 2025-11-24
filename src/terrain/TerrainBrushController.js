@@ -3,16 +3,10 @@
 
 import { LOG_LEVEL, LOG_CATEGORY, logger } from '../utils/Logger.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-
-const normalizeBrushSize = (value) => {
-  const min = Number.isFinite(TERRAIN_CONFIG.MIN_BRUSH_SIZE) ? TERRAIN_CONFIG.MIN_BRUSH_SIZE : 1;
-  const max = Number.isFinite(TERRAIN_CONFIG.MAX_BRUSH_SIZE) ? TERRAIN_CONFIG.MAX_BRUSH_SIZE : min;
-  if (!Number.isFinite(value)) {
-    return min;
-  }
-  const rounded = Math.round(value);
-  return Math.max(min, Math.min(max, rounded));
-};
+import {
+  normalizeBrushSize,
+  computeBrushFootprint,
+} from './brush/BrushCommon.js';
 
 export class TerrainBrushController {
   constructor(dataStore) {
@@ -42,30 +36,14 @@ export class TerrainBrushController {
    * @returns {Array<{x:number,y:number}>}
    */
   getFootprintCells(gridX, gridY) {
-    const negativeRadius = Math.floor((this.brushSize - 1) / 2);
-    const positiveRadius = this.brushSize - negativeRadius - 1;
-    const cells = [];
-    for (let dy = -negativeRadius; dy <= positiveRadius; dy++) {
-      for (let dx = -negativeRadius; dx <= positiveRadius; dx++) {
-        const x = gridX + dx;
-        const y = gridY + dy;
-        if (x < 0 || y < 0 || y >= this.dataStore.rows || x >= this.dataStore.cols) continue;
-        cells.push({ x, y });
-      }
-    }
-    return cells;
+    return computeBrushFootprint(gridX, gridY, this.brushSize, this._getBounds());
   }
 
   applyAt(gridX, gridY) {
-    const negativeRadius = Math.floor((this.brushSize - 1) / 2);
-    const positiveRadius = this.brushSize - negativeRadius - 1;
+    const footprint = computeBrushFootprint(gridX, gridY, this.brushSize, this._getBounds());
     let modifiedCount = 0;
-    for (let dy = -negativeRadius; dy <= positiveRadius; dy++) {
-      for (let dx = -negativeRadius; dx <= positiveRadius; dx++) {
-        const x = gridX + dx;
-        const y = gridY + dy;
-        if (this._modifyCell(x, y)) modifiedCount++;
-      }
+    for (const cell of footprint) {
+      if (this._modifyCell(cell.x, cell.y)) modifiedCount += 1;
     }
     // Aggregate logging instead of per-cell to reduce overhead (perf optimization)
     if (modifiedCount > 0) {
@@ -97,5 +75,11 @@ export class TerrainBrushController {
       return true; // signal modification took place
     }
     return false;
+  }
+
+  _getBounds() {
+    const cols = Number.isFinite(this.dataStore?.cols) ? this.dataStore.cols : undefined;
+    const rows = Number.isFinite(this.dataStore?.rows) ? this.dataStore.rows : undefined;
+    return { cols, rows, minX: 0, minY: 0 };
   }
 }

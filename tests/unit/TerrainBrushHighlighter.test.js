@@ -1,4 +1,5 @@
 import { buildBrushHighlightDescriptor } from '../../src/terrain/TerrainBrushHighlighter.js';
+import { BRUSH_COLORS } from '../../src/terrain/brush/BrushCommon.js';
 
 function makeBrush(size = 1) {
   return {
@@ -46,7 +47,7 @@ describe('TerrainBrushHighlighter', () => {
       center: { gridX: 0, gridY: 0 },
       terrainModeActive: true,
     });
-    expect(desc.style.color).toBe(0x22d3ee);
+    expect(desc.style.color).toBe(BRUSH_COLORS.preview);
     expect(desc.style.fillAlpha).toBeGreaterThan(0);
     expect(desc.style.lineWidth).toBeGreaterThan(0);
   });

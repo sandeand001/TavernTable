@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TerrainBrushOverlay3D } from '../../src/scene/TerrainBrushOverlay3D.js';
+import { BRUSH_COLORS } from '../../src/terrain/brush/BrushCommon.js';
 
 describe('TerrainBrushOverlay3D', () => {
   const buildOverlay = (heights = {}) => {
@@ -26,7 +27,7 @@ describe('TerrainBrushOverlay3D', () => {
     overlay.setHighlight([{ x: 0, y: 0 }], {});
 
     expect(overlay._instanced?.count).toBe(1);
-    expect(overlay._instanced.material.color.getHex()).toBe(0x22d3ee);
+    expect(overlay._instanced.material.color.getHex()).toBe(BRUSH_COLORS.preview);
     expect(overlay._instanced.material.opacity).toBeCloseTo(0.12);
     expect(overlay._outlinePool.length).toBeGreaterThan(0);
     expect(overlay._outlinePool[0].visible).toBe(true);

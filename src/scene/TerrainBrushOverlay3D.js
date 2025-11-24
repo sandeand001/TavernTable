@@ -1,7 +1,16 @@
 // TerrainBrushOverlay3D.js
 // Renders the terrain brush footprint directly in the Three.js scene so editing happens in the 3D grid.
 
-const DEFAULT_BRUSH_COLOR = 0x22d3ee;
+import { BRUSH_COLORS } from '../terrain/brush/BrushCommon.js';
+import {
+  ensurePlaneMesh,
+  ensureBoxMesh,
+  syncMeshMaterial,
+} from './terrain-brush/OverlayMeshPool.js';
+import {
+  ensureOutlinePool,
+  syncOutlineStyle,
+} from './terrain-brush/OverlayOutlinePool.js';
 
 export class TerrainBrushOverlay3D {
   constructor({ three, scene, gameManager } = {}) {
@@ -38,7 +47,7 @@ export class TerrainBrushOverlay3D {
       this._group.renderOrder = 10; // render above terrain mesh, below tokens/placeables
       scene.add(this._group);
       this._dummy = new three.Object3D();
-      this._color = new three.Color(DEFAULT_BRUSH_COLOR);
+      this._color = new three.Color(BRUSH_COLORS.preview);
     } catch (_) {
       // Fail gracefully – overlay not available but editing continues.
       this._group = null;
@@ -221,7 +230,19 @@ export class TerrainBrushOverlay3D {
       this.clear();
       return;
     }
-    this._ensureCapacity(validCells.length);
+    const baseColorHex =
+      typeof this._color?.getHex === 'function' ? this._color.getHex() : BRUSH_COLORS.preview;
+    const planeResult = ensurePlaneMesh({
+      three: this.three,
+      group: this._group,
+      mesh: this._instanced,
+      capacity: this._capacity,
+      required: validCells.length,
+      colorHex: baseColorHex,
+      opacity: this._currentOpacity,
+    });
+    this._instanced = planeResult.mesh;
+    this._capacity = planeResult.capacity;
     if (!this._instanced) return;
 
     const selectedKeys = new Set();
@@ -237,7 +258,7 @@ export class TerrainBrushOverlay3D {
     const elevationUnit = this._getElevationUnit();
     const hoverOffset = Math.max(Math.abs(elevationUnit) * 0.025, tileSize * 0.005, 0.012);
 
-    const hex = typeof style.color === 'number' ? style.color : DEFAULT_BRUSH_COLOR;
+    const hex = typeof style.color === 'number' ? style.color : BRUSH_COLORS.preview;
     const fillAlpha = typeof style.fillAlpha === 'number' ? style.fillAlpha : 0.12;
     const lineAlphaRaw = typeof style.lineAlpha === 'number' ? style.lineAlpha : 0.9;
     const lineAlpha = Math.max(0, Math.min(1, lineAlphaRaw));
@@ -271,8 +292,19 @@ export class TerrainBrushOverlay3D {
     this._lineWidth = lineWidth;
     const wantsOutline = lineAlpha > 0.001;
     if (wantsOutline) {
-      this._ensureOutlinePool(validCells.length, hex);
-      this._syncOutlineStyle(hex, lineAlpha, lineWidth);
+      const outlineResult = ensureOutlinePool({
+        three: this.three,
+        group: this._group,
+        pool: this._outlinePool,
+        material: this._outlineMaterial,
+        required: validCells.length,
+        baseColor: hex,
+        lineAlpha,
+        lineWidth,
+      });
+      this._outlinePool = outlineResult.pool;
+      this._outlineMaterial = outlineResult.material;
+      syncOutlineStyle(this._outlineMaterial, hex, lineAlpha, lineWidth);
     }
 
     const dummy = this._dummy;
@@ -341,12 +373,24 @@ export class TerrainBrushOverlay3D {
     this._instanced.instanceMatrix.needsUpdate = true;
 
     if (fillEntries.length > 0) {
-      this._ensureFillCapacity(fillEntries.length);
+      const fillResult = ensureBoxMesh({
+        three: this.three,
+        group: this._group,
+        mesh: this._fillMesh,
+        capacity: this._fillCapacity,
+        required: fillEntries.length,
+        colorHex: hex,
+        opacity: fillOpacity,
+        name: 'TerrainBrushOverlay3DFill',
+        renderOrder: 10,
+      });
+      this._fillMesh = fillResult.mesh;
+      this._fillCapacity = fillResult.capacity;
     }
 
     if (this._fillMesh) {
       if (fillEntries.length > 0) {
-        this._syncFillMaterial(this._fillMesh, hex, fillOpacity);
+        syncMeshMaterial(this._fillMesh, hex, fillOpacity);
         let fillIndex = 0;
         for (const entry of fillEntries) {
           dummy.position.set(entry.position.x, entry.position.y, entry.position.z);
@@ -424,15 +468,39 @@ export class TerrainBrushOverlay3D {
     }
 
     if (wallEntriesX.length > 0) {
-      this._ensureWallCapacityX(wallEntriesX.length);
+      const wallXResult = ensureBoxMesh({
+        three: this.three,
+        group: this._group,
+        mesh: this._wallMeshX,
+        capacity: this._wallCapacityX,
+        required: wallEntriesX.length,
+        colorHex: hex,
+        opacity: wallOpacity,
+        name: 'TerrainBrushOverlay3DWallX',
+        renderOrder: 11,
+      });
+      this._wallMeshX = wallXResult.mesh;
+      this._wallCapacityX = wallXResult.capacity;
     }
     if (wallEntriesZ.length > 0) {
-      this._ensureWallCapacityZ(wallEntriesZ.length);
+      const wallZResult = ensureBoxMesh({
+        three: this.three,
+        group: this._group,
+        mesh: this._wallMeshZ,
+        capacity: this._wallCapacityZ,
+        required: wallEntriesZ.length,
+        colorHex: hex,
+        opacity: wallOpacity,
+        name: 'TerrainBrushOverlay3DWallZ',
+        renderOrder: 11,
+      });
+      this._wallMeshZ = wallZResult.mesh;
+      this._wallCapacityZ = wallZResult.capacity;
     }
 
     if (this._wallMeshX) {
       if (wallEntriesX.length > 0) {
-        this._syncWallMaterial(this._wallMeshX, hex, wallOpacity);
+        syncMeshMaterial(this._wallMeshX, hex, wallOpacity);
         let wallIndex = 0;
         for (const entry of wallEntriesX) {
           dummy.position.set(entry.position.x, entry.position.y, entry.position.z);
@@ -454,7 +522,7 @@ export class TerrainBrushOverlay3D {
 
     if (this._wallMeshZ) {
       if (wallEntriesZ.length > 0) {
-        this._syncWallMaterial(this._wallMeshZ, hex, wallOpacity);
+        syncMeshMaterial(this._wallMeshZ, hex, wallOpacity);
         let wallIndex = 0;
         for (const entry of wallEntriesZ) {
           dummy.position.set(entry.position.x, entry.position.y, entry.position.z);
@@ -488,294 +556,6 @@ export class TerrainBrushOverlay3D {
     }
 
     this._group.visible = true;
-  }
-
-  _ensureCapacity(required) {
-    if (!this.isAvailable) return;
-    if (this._instanced && this._capacity >= required) {
-      return;
-    }
-
-    const three = this.three;
-    if (!three?.InstancedMesh || !three?.PlaneGeometry || !three?.MeshBasicMaterial) return;
-
-    const newCapacity = Math.max(required, this._capacity > 0 ? this._capacity * 2 : 32);
-
-    if (this._instanced) {
-      try {
-        this._group.remove(this._instanced);
-        this._instanced.geometry?.dispose?.();
-        this._instanced.material?.dispose?.();
-      } catch (_) {
-        /* ignore */
-      }
-    }
-
-    const geometry = new three.PlaneGeometry(1, 1);
-    geometry.rotateX(-Math.PI * 0.5);
-    const material = new three.MeshBasicMaterial({
-      color: this._color || new three.Color(DEFAULT_BRUSH_COLOR),
-      transparent: true,
-      opacity: this._currentOpacity,
-      depthWrite: false,
-      side: three.FrontSide,
-    });
-    material.toneMapped = false;
-    material.depthTest = false;
-
-    const instanced = new three.InstancedMesh(geometry, material, newCapacity);
-    instanced.name = 'TerrainBrushOverlay3DMesh';
-    instanced.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
-    instanced.frustumCulled = false;
-    instanced.count = 0;
-
-    this._group.add(instanced);
-    this._instanced = instanced;
-    this._capacity = newCapacity;
-  }
-
-  _ensureWallCapacityX(required) {
-    if (!this.isAvailable) return;
-    if (this._wallMeshX && this._wallCapacityX >= required) {
-      return;
-    }
-
-    const three = this.three;
-    if (!three?.InstancedMesh || !three?.BoxGeometry || !three?.MeshBasicMaterial) return;
-
-    const newCapacity = Math.max(required, this._wallCapacityX > 0 ? this._wallCapacityX * 2 : 16);
-
-    if (this._wallMeshX) {
-      try {
-        this._group.remove(this._wallMeshX);
-        this._wallMeshX.geometry?.dispose?.();
-        this._wallMeshX.material?.dispose?.();
-      } catch (_) {
-        /* ignore */
-      }
-    }
-
-    const geometry = new three.BoxGeometry(1, 1, 1);
-    const material = new three.MeshBasicMaterial({
-      color: this._color || new three.Color(DEFAULT_BRUSH_COLOR),
-      transparent: true,
-      opacity: this._wallOpacity,
-      depthWrite: false,
-      depthTest: false,
-      side: three.DoubleSide,
-    });
-    material.toneMapped = false;
-
-    const instanced = new three.InstancedMesh(geometry, material, newCapacity);
-    instanced.name = 'TerrainBrushOverlay3DWallX';
-    instanced.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
-    instanced.frustumCulled = false;
-    instanced.count = 0;
-    instanced.renderOrder = 11;
-
-    this._group.add(instanced);
-    this._wallMeshX = instanced;
-    this._wallCapacityX = newCapacity;
-  }
-
-  _ensureWallCapacityZ(required) {
-    if (!this.isAvailable) return;
-    if (this._wallMeshZ && this._wallCapacityZ >= required) {
-      return;
-    }
-
-    const three = this.three;
-    if (!three?.InstancedMesh || !three?.BoxGeometry || !three?.MeshBasicMaterial) return;
-
-    const newCapacity = Math.max(required, this._wallCapacityZ > 0 ? this._wallCapacityZ * 2 : 16);
-
-    if (this._wallMeshZ) {
-      try {
-        this._group.remove(this._wallMeshZ);
-        this._wallMeshZ.geometry?.dispose?.();
-        this._wallMeshZ.material?.dispose?.();
-      } catch (_) {
-        /* ignore */
-      }
-    }
-
-    const geometry = new three.BoxGeometry(1, 1, 1);
-    const material = new three.MeshBasicMaterial({
-      color: this._color || new three.Color(DEFAULT_BRUSH_COLOR),
-      transparent: true,
-      opacity: this._wallOpacity,
-      depthWrite: false,
-      depthTest: false,
-      side: three.DoubleSide,
-    });
-    material.toneMapped = false;
-
-    const instanced = new three.InstancedMesh(geometry, material, newCapacity);
-    instanced.name = 'TerrainBrushOverlay3DWallZ';
-    instanced.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
-    instanced.frustumCulled = false;
-    instanced.count = 0;
-    instanced.renderOrder = 11;
-
-    this._group.add(instanced);
-    this._wallMeshZ = instanced;
-    this._wallCapacityZ = newCapacity;
-  }
-
-  _ensureFillCapacity(required) {
-    if (!this.isAvailable) return;
-    if (this._fillMesh && this._fillCapacity >= required) {
-      return;
-    }
-
-    const three = this.three;
-    if (!three?.InstancedMesh || !three?.BoxGeometry || !three?.MeshBasicMaterial) return;
-
-    const newCapacity = Math.max(required, this._fillCapacity > 0 ? this._fillCapacity * 2 : 16);
-
-    if (this._fillMesh) {
-      try {
-        this._group.remove(this._fillMesh);
-        this._fillMesh.geometry?.dispose?.();
-        this._fillMesh.material?.dispose?.();
-      } catch (_) {
-        /* ignore */
-      }
-    }
-
-    const geometry = new three.BoxGeometry(1, 1, 1);
-    const material = new three.MeshBasicMaterial({
-      color: this._color || new three.Color(DEFAULT_BRUSH_COLOR),
-      transparent: true,
-      opacity: this._fillOpacity,
-      depthWrite: false,
-      depthTest: false,
-      side: three.DoubleSide,
-    });
-    material.toneMapped = false;
-
-    const instanced = new three.InstancedMesh(geometry, material, newCapacity);
-    instanced.name = 'TerrainBrushOverlay3DFill';
-    instanced.instanceMatrix.setUsage?.(three.DynamicDrawUsage || three.StreamDrawUsage);
-    instanced.frustumCulled = false;
-    instanced.count = 0;
-    instanced.renderOrder = 10;
-
-    this._group.add(instanced);
-    this._fillMesh = instanced;
-    this._fillCapacity = newCapacity;
-  }
-
-  _syncWallMaterial(mesh, colorHex, opacity) {
-    if (!mesh?.material) return;
-    const material = mesh.material;
-    try {
-      if (material.color && typeof colorHex === 'number') {
-        material.color.set(colorHex);
-      }
-      if (Number.isFinite(opacity)) {
-        material.opacity = opacity;
-        material.transparent = opacity < 1;
-      }
-      material.needsUpdate = true;
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  _syncFillMaterial(mesh, colorHex, opacity) {
-    if (!mesh?.material) return;
-    const material = mesh.material;
-    try {
-      if (material.color && typeof colorHex === 'number') {
-        material.color.set(colorHex);
-      }
-      if (Number.isFinite(opacity)) {
-        material.opacity = opacity;
-        material.transparent = opacity < 1;
-      }
-      material.needsUpdate = true;
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  _ensureOutlinePool(required, baseColor) {
-    if (!this.isAvailable || !this.three?.LineSegments) return;
-    if (!Array.isArray(this._outlinePool)) this._outlinePool = [];
-
-    const three = this.three;
-    if (!this._outlineMaterial || !(this._outlineMaterial instanceof three.LineBasicMaterial)) {
-      this._outlineMaterial = new three.LineBasicMaterial({
-        color: baseColor ?? DEFAULT_BRUSH_COLOR,
-        transparent: true,
-        opacity: this._lineAlpha,
-        linewidth: this._lineWidth,
-      });
-      this._outlineMaterial.toneMapped = false;
-      this._outlineMaterial.depthWrite = false;
-      this._outlineMaterial.depthTest = false;
-    }
-
-    while (this._outlinePool.length < required) {
-      let geometry;
-      if (three.EdgesGeometry && three.PlaneGeometry) {
-        const plane = new three.PlaneGeometry(1, 1);
-        plane.rotateX(-Math.PI * 0.5);
-        geometry = new three.EdgesGeometry(plane);
-        plane.dispose?.();
-      }
-      if (!geometry) {
-        const fallbackPlane = new three.PlaneGeometry(1, 1);
-        fallbackPlane.rotateX(-Math.PI * 0.5);
-        if (three.EdgesGeometry) {
-          geometry = new three.EdgesGeometry(fallbackPlane);
-          fallbackPlane.dispose?.();
-        } else {
-          const manual = new three.BufferGeometry();
-          const corners = [
-            [-0.5, 0, -0.5],
-            [0.5, 0, -0.5],
-            [0.5, 0, 0.5],
-            [-0.5, 0, 0.5],
-          ];
-          const pts = [];
-          for (let i = 0; i < corners.length; i += 1) {
-            const a = corners[i];
-            const b = corners[(i + 1) % corners.length];
-            pts.push(a[0], a[1], a[2], b[0], b[1], b[2]);
-          }
-          const arr = new Float32Array(pts);
-          if (three.Float32BufferAttribute) {
-            manual.setAttribute('position', new three.Float32BufferAttribute(arr, 3));
-          } else {
-            manual.setAttribute('position', new three.BufferAttribute(arr, 3));
-          }
-          geometry = manual;
-          fallbackPlane.dispose?.();
-        }
-      }
-      geometry.computeBoundingSphere?.();
-      const line = new three.LineSegments(geometry, this._outlineMaterial);
-      line.name = `TerrainBrushOutline_${this._outlinePool.length}`;
-      line.visible = false;
-      line.frustumCulled = false;
-      line.renderOrder = 12;
-      this._group.add(line);
-      this._outlinePool.push(line);
-    }
-  }
-
-  _syncOutlineStyle(colorHex, lineAlpha, lineWidth) {
-    if (!this._outlineMaterial) return;
-    try {
-      this._outlineMaterial.color.set(colorHex ?? DEFAULT_BRUSH_COLOR);
-      this._outlineMaterial.opacity = lineAlpha;
-      if (Number.isFinite(lineWidth)) this._outlineMaterial.linewidth = lineWidth;
-      this._outlineMaterial.needsUpdate = true;
-    } catch (_) {
-      /* ignore */
-    }
   }
 
   _getTileWorldSize() {

@@ -90,6 +90,7 @@ Goal: retain error/warning logs tied to user-facing issues or external contracts
      - Ensure both 2D highlighter + 3D overlay consume same helper to remove duplicated constants.
    - **Can run parallel with:** logging cleanup branch.
    - **Risks/tests:** manual terrain editing at multiple brush sizes, regression on hover previews, verify render order vs. tokens.
+   - **Status (2025-11-24):** Complete. Shared helper added under `src/terrain/brush`, controller/highlighter/overlay refactored to consume it, overlay pooling split into `scene/terrain-brush/*`. `npm run lint` / `npm run test` blocked locally because `eslint`/`jest` binaries are unavailable; rerun after dependencies are installed. Manual terrain hover/3D overlay checks still recommended before release.
 
 2. **Branch `phase1-logging-trim-core`**
    - **Scope:** `core/ModelAssetCache.js`, `managers/terrain-manager/internals/placeables.js`, `systems/dice/dice3d.js`, `scene/PlaceableMeshPool.js`, `utils/Logger.js` (console bridging only).

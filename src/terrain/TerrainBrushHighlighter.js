@@ -3,6 +3,12 @@
 // Pure data, no PIXI/UI imports. App layer renders based on the returned descriptor.
 
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
+import {
+  BRUSH_LAYER_HINT,
+  BRUSH_COLORS,
+  resolveHighlightStyle,
+  getDefaultHighlightStyle,
+} from './brush/BrushCommon.js';
 
 /**
  * @typedef {Object} Brush
@@ -40,20 +46,21 @@ export function buildBrushHighlightDescriptor(params) {
   const { brush, center, terrainModeActive } = params || {};
 
   if (!terrainModeActive || !brush || typeof brush.getFootprintCells !== 'function' || !center) {
-    return { cells: [], style: defaultHighlightStyle(), zHint: 'aboveFacesBelowTokens' };
+    return { cells: [], style: getDefaultHighlightStyle(), zHint: BRUSH_LAYER_HINT };
   }
 
   try {
     const cells = brush.getFootprintCells(center.gridX, center.gridY) || [];
-    // Use a neutral/cyan highlight distinct from green/purple raise/lower colors.
-    // Tailwind-esque cyan-400: 0x22d3ee
-    const style = /** @type {HighlightStyle} */ ({
-      color: 0x22d3ee,
-      fillAlpha: 0.14,
-      lineAlpha: 0.95,
-      lineWidth: 2,
-    });
-    return { cells, style, zHint: 'aboveFacesBelowTokens' };
+    const style = /** @type {HighlightStyle} */ (
+      resolveHighlightStyle({
+        // Slightly brighter alpha than default to distinguish hover state.
+        color: BRUSH_COLORS.preview,
+        fillAlpha: 0.14,
+        lineAlpha: 0.95,
+        lineWidth: 2,
+      })
+    );
+    return { cells, style, zHint: BRUSH_LAYER_HINT };
   } catch (error) {
     // Non-fatal: return empty descriptor
     logger.warn(
@@ -61,12 +68,8 @@ export function buildBrushHighlightDescriptor(params) {
       { error: error?.message },
       LOG_CATEGORY.RENDERING
     );
-    return { cells: [], style: defaultHighlightStyle(), zHint: 'aboveFacesBelowTokens' };
+    return { cells: [], style: getDefaultHighlightStyle(), zHint: BRUSH_LAYER_HINT };
   }
-}
-
-function defaultHighlightStyle() {
-  return { color: 0x22d3ee, fillAlpha: 0.12, lineAlpha: 0.9, lineWidth: 2 };
 }
 
 export default { buildBrushHighlightDescriptor };
