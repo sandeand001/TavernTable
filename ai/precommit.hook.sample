@@ -1,8 +1,0 @@
-#!/bin/sh
-# Sample pre-commit hook to refresh AI codebase map (non-blocking)
-# Install: copy to .git/hooks/pre-commit and make executable
-
-if command -v node >/dev/null 2>&1; then
-  echo "[ai] Updating codebase map..."
-  node ai/update_codebase_map.js || echo "[ai] Map update failed (non-blocking)"
-fi
