@@ -1,4 +1,5 @@
 import { DICE_CONFIG } from '../../config/GameConstants.js';
+import { easeOutCubic, randomBetween, clampToRange, clampGridCoordinate } from './utils.js';
 
 const D20_MODEL_PATH = 'assets/Items/d20-gold.glb';
 const DEFAULT_SCALE = 3.6;
@@ -63,9 +64,6 @@ const D20_FACE_CALIBRATION_SEQUENCE = Object.freeze(
     .filter((entry) => Number.isFinite(entry.faceIndex))
     .sort((a, b) => a.value - b.value)
 );
-
-const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-const randomBetween = (min, max) => min + Math.random() * (max - min);
 
 function clearActiveDie() {
   if (!activeDieState) return;
@@ -427,13 +425,6 @@ function getBoardMetrics(manager) {
   };
 }
 
-function clampGridCoordinate(value, maxExclusive) {
-  if (!Number.isFinite(value) || !Number.isFinite(maxExclusive)) return value;
-  if (value < 0) return 0;
-  if (value >= maxExclusive) return maxExclusive - 1;
-  return value;
-}
-
 function createGroundSampler(manager, metrics, fallbackHeight = DEFAULT_REST_HEIGHT) {
   const gm = manager?.gameManager;
   const spatial = gm?.spatial;
@@ -487,13 +478,6 @@ function createGroundSampler(manager, metrics, fallbackHeight = DEFAULT_REST_HEI
       return fallback;
     }
   };
-}
-
-function clampToRange(value, min, max) {
-  if (!Number.isFinite(value)) return value;
-  if (Number.isFinite(min) && value < min) return min;
-  if (Number.isFinite(max) && value > max) return max;
-  return value;
 }
 
 function normalize2D(vec) {
