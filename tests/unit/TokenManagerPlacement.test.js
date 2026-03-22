@@ -20,7 +20,7 @@ describe('placeNewToken', () => {
 
     // tokenManager-like context
     const c = {
-      selectedTokenType: 'goblin',
+      selectedTokenType: 'mannequin',
       gameManager: {
         tileWidth,
         tileHeight,
@@ -37,7 +37,7 @@ describe('placeNewToken', () => {
     placeNewToken(c, gridX, gridY, gridContainer);
 
     // ensure creature was created with selected type
-    expect(c.createCreatureByType).toHaveBeenCalledWith('goblin');
+    expect(c.createCreatureByType).toHaveBeenCalledWith('mannequin');
 
     // verify position and elevation
     const iso = CoordinateUtils.gridToIsometric(gridX, gridY, tileWidth, tileHeight);
@@ -62,7 +62,7 @@ describe('placeNewToken', () => {
 
   test('returns early when creature creation fails', () => {
     const c = {
-      selectedTokenType: 'dragon',
+      selectedTokenType: 'mannequin',
       gameManager: {
         tileWidth: 64,
         tileHeight: 32,

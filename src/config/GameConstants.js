@@ -60,23 +60,7 @@ export const GRID_CONFIG = {
  * Defines size multipliers for different creature types
  */
 export const CREATURE_SCALES = {
-  // Large creatures (2x2 grid coverage)
-  dragon: 0.125,
-
-  // Medium-large creatures
-  beholder: 0.08,
-  minotaur: 0.08,
-  owlbear: 0.08,
-  troll: 0.08,
-
-  // Medium creatures (single grid coverage)
-  skeleton: 0.06,
-  mindflayer: 0.06,
-  orc: 0.06,
   mannequin: 0.06,
-
-  // Small creatures
-  goblin: 0.05,
 };
 
 /**
@@ -90,15 +74,6 @@ export const CREATURE_SCALES = {
  * Negative moves the sprite up (useful when textures include bottom padding)
  */
 export const CREATURE_BASELINE_OFFSETS = {
-  goblin: 0,
-  beholder: 0,
-  skeleton: -6,
-  mindflayer: -6,
-  orc: -6,
-  dragon: -8,
-  minotaur: -8,
-  owlbear: -8,
-  troll: -8,
   mannequin: -4,
 };
 
@@ -107,15 +82,6 @@ export const CREATURE_BASELINE_OFFSETS = {
  * Used when PNG sprites are not available
  */
 export const CREATURE_COLORS = {
-  dragon: 0xff0000, // Red
-  skeleton: 0xffffff, // White
-  beholder: 0x800080, // Purple
-  goblin: 0x00ff00, // Green
-  mindflayer: 0x4b0082, // Indigo
-  minotaur: 0x8b4513, // Brown
-  orc: 0x808080, // Gray
-  owlbear: 0xa52a2a, // Dark Red
-  troll: 0x228b22, // Forest Green
   mannequin: 0xcb99ff, // Lavender
 };
 
@@ -207,7 +173,7 @@ export const CREATURE_HELPERS = {
    */
   getScale(creatureType) {
     const normalized = normalizeCreatureType(creatureType);
-    return CREATURE_SCALES[normalized] || CREATURE_SCALES.goblin;
+    return CREATURE_SCALES[normalized] || CREATURE_SCALES.mannequin;
   },
 
   /**
@@ -217,7 +183,7 @@ export const CREATURE_HELPERS = {
    */
   getColor(creatureType) {
     const normalized = normalizeCreatureType(creatureType);
-    return CREATURE_COLORS[normalized] || CREATURE_COLORS.goblin;
+    return CREATURE_COLORS[normalized] || CREATURE_COLORS.mannequin;
   },
 
   /**

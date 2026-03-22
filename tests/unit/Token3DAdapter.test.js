@@ -96,7 +96,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     adapter.attach();
 
     const c = {
-      selectedTokenType: 'goblin',
+      selectedTokenType: 'mannequin',
       placedTokens: gm.placedTokens,
       setupTokenInteractions: () => {},
       gameManager: gm,
@@ -134,7 +134,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     adapter.attach();
 
     const c = {
-      selectedTokenType: 'orc',
+      selectedTokenType: 'mannequin',
       placedTokens: gm.placedTokens,
       setupTokenInteractions: () => {},
       gameManager: gm,
@@ -184,7 +184,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     adapter.attach();
 
     const c = {
-      selectedTokenType: 'goblin',
+      selectedTokenType: 'mannequin',
       placedTokens: gm.placedTokens,
       setupTokenInteractions: () => {},
       gameManager: gm,

@@ -144,7 +144,7 @@ class CreatureToken {
         { type: this.type },
         LOG_CATEGORY.SYSTEM
       );
-      return CREATURE_SCALES.goblin || 0.06;
+      return CREATURE_SCALES.mannequin || 0.06;
     } catch (error) {
       GameErrors.validation(error, {
         stage: 'getCreatureScale',
@@ -196,15 +196,7 @@ class CreatureToken {
     try {
       // Color-coded fallback circles for different creature types
       const colorMap = {
-        dragon: 0xff0000, // Red
-        skeleton: 0xffffff, // White
-        beholder: 0x800080, // Purple
-        goblin: 0x00ff00, // Green
-        mindflayer: 0x4b0082, // Indigo
-        minotaur: 0x8b4513, // Brown
-        orc: 0x808080, // Gray
-        owlbear: 0xa52a2a, // Dark Red
-        troll: 0x228b22, // Forest Green
+        mannequin: 0xcb99ff, // Lavender
       };
 
       const color = colorMap[this.type] || 0x808080; // Default to gray

@@ -5,7 +5,7 @@ describe('addTokenToCollection', () => {
     const placedTokens = [];
     const setupCalls = [];
     const c = {
-      selectedTokenType: 'goblin',
+      selectedTokenType: 'mannequin',
       placedTokens,
       setupTokenInteractions: (sprite, data) => setupCalls.push({ sprite, data }),
     };
@@ -18,7 +18,7 @@ describe('addTokenToCollection', () => {
     expect(token.creature).toBe(creature);
     expect(token.gridX).toBe(3);
     expect(token.gridY).toBe(4);
-    expect(token.type).toBe('goblin');
+    expect(token.type).toBe('mannequin');
     expect(token.world).toEqual({ x: 0, y: 0, z: 0 });
     // New fields added for stability across projections
     expect(token.__originGridX).toBe(3);
@@ -33,17 +33,17 @@ describe('addTokenToCollection', () => {
   test('uses provided overrides for token type and tokens array', () => {
     const otherTokens = [];
     const c = {
-      selectedTokenType: 'goblin',
+      selectedTokenType: 'mannequin',
       placedTokens: [],
       setupTokenInteractions: () => {},
     };
     const creature = { sprite: {} };
 
-    addTokenToCollection(c, creature, 1, 2, 'dragon', otherTokens);
+    addTokenToCollection(c, creature, 1, 2, 'mannequin', otherTokens);
 
     expect(c.placedTokens.length).toBe(0); // unchanged
     expect(otherTokens.length).toBe(1);
-    expect(otherTokens[0].type).toBe('dragon');
+    expect(otherTokens[0].type).toBe('mannequin');
     expect(otherTokens[0].gridX).toBe(1);
     expect(otherTokens[0].gridY).toBe(2);
     expect(otherTokens[0].world).toBeDefined();

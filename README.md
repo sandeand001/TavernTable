@@ -1,167 +1,190 @@
----
-name: taverntable
-version: 1.0.0 (5a2447a-dirty)
-languages: ["JavaScript"]
-primary_frameworks: ["Pixi.js"]
-package_managers: ["npm"]
-entry_points: ["index.html", "src/ui/UIController.js"]
----
+# TavernTable
 
-# Overview
-Taverntable is an isometric grid-based tabletop game interface, designed for browser-based play and extensible terrain/creature management. It features a modular terrain system, biome painter, and token management for digital tabletop experiences.
+> **Status: Active Development** — TavernTable is being transitioned from a 2D/Pixi.js engine to a fully 3D Three.js renderer. Some legacy 2D code remains in the codebase and is being incrementally removed. See [Legacy / Roadmap](#legacy--roadmap) below.
 
-## AI & Contribution Guidance
-This repository is AI-assistant aware. Before large changes, read:
-- `copilot-instructions.md` (TL;DR + architecture & depth rules)
-- `CONTRIBUTING.md` (workflow & checklist)
-- `docs/AI_CODEBASE_MAP.json` & `docs/AI_DEP_GRAPH.mmd` (module inventory & dependencies)
+An interactive, browser-based virtual tabletop for D&D and other tabletop RPGs. TavernTable renders an isometric grid with 3D terrain, placeable flora, procedural biomes, and a physics-based d20 — all running client-side with zero build step.
 
-Key rules (summary):
-1. Layering: Lower layers must not import from `src/ui` (enforced by `npm run lint:layers`).
-2. Depth: Use `zIndex = (gridX + gridY) * 100 + bandOffset`; keep all tokens/placeables in the unified terrain container and call `sortChildren()` after changes.
-3. Structural changes: Update AI docs (code map / dep graph / glossary) in the same PR.
-4. Favor minimal, reversible diffs; reuse existing utilities (see `ai-index.json`).
+<!--
+TODO: Add a screenshot here once available
+![TavernTable Screenshot](docs/screenshot.png)
+-->
 
-PRs should include the checklist in `.github/PULL_REQUEST_TEMPLATE.md`.
+## Features
 
-# Quickstart
-## Windows PowerShell
-```powershell
-npm install
-npm run serve        # http://localhost:3000
-# or npm run serve:alt1 # http://localhost:3001
-```
-## Bash
+### Isometric Grid
+- Configurable grid from 5×5 up to 50×50 tiles (default 25×25)
+- Diamond-tile isometric projection (64×32 px tiles)
+- Smooth zoom (0.35×–3.0×) and pan controls
+- Switchable camera: **Isometric** (35.26° classic) or **Top-Down** (overhead)
+
+### Tokens
+- **Mannequin** — the current token model, a humanoid figure with an extensive FBX animation library (60+ animations including idle, walk, run, climb, jump, combat stances, and more)
+- Click to place, drag to reposition
+- Removal mode for clearing tokens
+- Animated via Three.js; intended to serve as the base for all future character tokens
+
+### Terrain System
+- **Elevation** from -10 to +10 height levels with visual depth
+- Raise/Lower brush tools with configurable brush size (1×1 to 5×5)
+- Adjustable elevation perception slider
+- **Placeable 3D flora**: trees (birch, cherry blossom, common, dead, giant pine, pine, twisted, tall thick), bushes, ferns, flowers, grass, mushrooms, clovers, pebbles, rocks, and tropical plants
+- Placeable removal mode
+
+### 50+ Procedural Biomes
+Biomes across 10 environment groups — each with unique color palettes and auto-generated flora:
+
+| Group | Biomes |
+|---|---|
+| **Common** | Grassland, Hills, Temperate Forest, Conifer Forest, Savanna, Steppe |
+| **Desert** | Hot Desert, Cold Desert, Sand Dunes, Oasis, Salt Flats, Thornscrub |
+| **Arctic** | Tundra, Glacier, Frozen Lake, Pack Ice |
+| **Mountain** | Mountain, Alpine, Scree Slope, Cedar Highlands, Geyser Basin |
+| **Wetlands** | Swamp, Wetlands, Floodplain, Blood Marsh, Mangrove |
+| **Aquatic** | Coast, River/Lake, Ocean, Coral Reef |
+| **Forest Variants** | Dead Forest, Petrified Forest, Bamboo Thicket, Orchard, Mystic Grove, Feywild Bloom, Shadowfell Forest |
+| **Underground** | Cavern, Fungal Grove, Crystal Fields, Crystal Spires, Eldritch Rift |
+| **Volcanic** | Volcanic, Obsidian Plain, Ash Wastes, Lava Fields |
+| **Exotic** | Wasteland, Ruined Urban, Graveyard, Astral Plateau, Arcane Ley Nexus |
+
+### 3D Dice (Work in Progress)
+- **d20** — the only functional die, rendered as a gold GLB model with ricochet physics (up to 4 bounces), deterministic face mapping, and critical hit/fail tinting (green for nat 20, red for nat 1)
+- Dice roll history log with clear function
+- UI buttons for d4–d100 exist but only the d20 has a 3D implementation; remaining dice are planned
+
+### 3D Rendering
+- Three.js orthographic scene with dynamic lighting
+- **Day/night sun cycle** via time-of-day slider (full 24h range)
+- Ambient + hemisphere + directional lighting with shadow maps
+- Optional wireframe grid overlay
+- Live FPS and frame-time stats display
+
+### Accessibility
+- Semantic HTML with ARIA labels on all interactive elements
+- Keyboard-navigable controls
+- Screen-reader-friendly dice results (`aria-live` regions)
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| 3D Rendering | [Three.js](https://threejs.org/) v0.170 |
+| Language | Vanilla JavaScript (ES Modules) |
+| Module Loading | Native `<script type="importmap">` — no bundler |
+| Testing | [Jest](https://jestjs.io/) 30 + jsdom |
+| Linting | ESLint 8 + Stylelint 16 + Prettier 3 |
+| Git Hooks | Husky + lint-staged |
+| Dev Server | Python `http.server` (static files) |
+
+**No build step.** The app runs directly in the browser via native ES module imports with an import map pointing to CDN-hosted Three.js.
+
+## Getting Started
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (for tooling and tests)
+- [Python 3](https://www.python.org/) (for the dev server)
+
+### Install & Run
+
 ```bash
+# Clone the repository
+git clone https://github.com/<your-username>/taverntable.git
+cd taverntable
+
+# Install dev dependencies
 npm install
-npm run serve
-# Open http://localhost:3000
+
+# Start the dev server
+npm start
+# → http://localhost:3000
 ```
 
-# Project Structure
+### Open in Browser
+Navigate to `http://localhost:3000`. No build needed — the app loads directly.
+
+## Scripts
+
+| Command | Description |
+|---|---|
+| `npm start` | Start dev server on port 3000 |
+| `npm test` | Run full Jest test suite |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run lint` | Lint JS (ESLint) and CSS (Stylelint) |
+| `npm run lint:fix` | Auto-fix lint issues |
+| `npm run lint:layers` | Enforce architecture layering rules |
+| `npm run format` | Auto-format with Prettier |
+
+## Architecture
+
+TavernTable uses a **coordinator pattern** to keep the codebase modular without a framework:
+
+```
+src/
+├── config/          # Game constants, biome definitions, terrain placeables
+├── coordinators/    # High-level orchestrators (Render, State, Input, Terrain, Spatial)
+├── core/            # GameManager — central bootstrap and lifecycle
+├── entities/        # Creature definitions and factory
+├── managers/        # TokenManager, InteractionManager, GridRenderer, BiomeCanvasPainter
+├── scene/           # Three.js scene setup, camera rig, lighting
+├── systems/         # DragController, dice rolling engine, 3D dice physics
+├── terrain/         # Terrain state, mesh building, brush tools, height utilities
+├── ui/              # Sidebar, settings panel, DOM controllers
+└── utils/           # Coordinate math, validation, logging, error handling
+```
+
+### Key Design Decisions
+- **Enforced layering**: A pre-commit hook (`lint:layers`) ensures non-UI code never imports UI modules
+- **No framework**: Vanilla JS with a clear coordinator/manager/system hierarchy
+- **No bundler**: Import maps resolve bare specifiers to CDN — keeps iteration instant
+- **60% coverage floor**: Jest coverage thresholds enforced on branches, functions, lines, and statements
+
+## Testing
+
+70+ unit tests across the full stack:
+
+```bash
+npm test
+```
+
+Tests cover terrain mesh building, token placement and dragging, coordinate math, biome generation, dice rolling, camera modes, UI controllers, elevation systems, placeable persistence, and more.
+
+Coverage reports are generated to `coverage/` when running `npm run test:coverage`.
+
+## Project Structure
+
 ```
 Taverntable/
-├── index.html                # Main entry point
-├── package.json              # Project manifest
-├── src/
-│   ├── config/               # Game, terrain, biome constants
-│   ├── core/                 # Game/animation managers
-│   ├── entities/             # Creature tokens
-│   ├── managers/             # Token, terrain, interaction managers
-│   ├── systems/              # Drag, dice, terrain controllers
-│   ├── terrain/              # Biome painter, style helpers
-│   ├── ui/                   # UI controllers, sidebar, styles
-│   └── utils/                # Validation, error, logger, env helpers
-├── tests/                    # Unit and terrain tests
-├── coverage/                 # Test coverage output
-├── tools/                    # Lint configs, secondary package.json
-└── .attic/                   # Archived docs/policies
+├── index.html              # Single-page app entry point
+├── package.json            # Dependencies and scripts
+├── jest.config.js          # Test configuration
+├── assets/
+│   ├── animated-sprites/   # Mannequin FBX animations (60+)
+│   ├── Items/              # 3D models (d20-gold.glb)
+│   ├── sprites/            # Legacy 2D creature sprites (pending removal)
+│   └── terrain/
+│       ├── 3d Assets/      # glTF/FBX flora models (trees, bushes, rocks, flowers, etc.)
+│       ├── paths/          # Legacy 2D path tiles
+│       ├── plants/         # Legacy 2D plant sprites
+│       └── structures/     # Legacy 2D structure tiles
+├── src/                    # Application source (ES modules)
+├── tests/                  # Jest unit tests
+└── tools/                  # Dev utilities (layering checker, cycle scanner, unused export finder)
 ```
 
-# Tech Stack & Services
-| Language    | JavaScript |
-| Framework   | Pixi.js    |
-| UI          | HTML/CSS   |
-| Server      | Python (http.server for local dev) |
-| Test        | Jest       |
-| Lint        | ESLint, Stylelint |
-| Package     | npm        |
+## Legacy / Roadmap
 
-# Build / Run / Test / Lint
-| Action         | PowerShell Command        | Bash Command            |
-|----------------|---------------------------|-------------------------|
-| Install        | npm install               | npm install             |
-| Serve (3000)   | npm run serve             | npm run serve           |
-| Serve (3001)   | npm run serve:alt1        | npm run serve:alt1      |
-| Serve (3002)   | npm run serve:alt2        | npm run serve:alt2      |
-| Serve (3003)   | npm run serve:alt3        | npm run serve:alt3      |
-| Serve (3004)   | npm run serve:alt4        | npm run serve:alt4      |
-| Lint           | npm run lint              | npm run lint            |
-| Test           | npm test                  | npm test                |
-| Lint Fix       | npm run lint:fix          | npm run lint:fix        |
+TavernTable originally used Pixi.js for 2D isometric rendering. It is being migrated to a fully 3D Three.js engine. The following legacy code remains and is tagged for removal or rework:
 
-## Running multiple branches concurrently
-- Assign each branch to a different serve script (`serve`, `serve:alt1`, ..., `serve:alt4`) so every instance runs on its own port.
-- Open matching URLs (`http://localhost:3000`-`3004`) in separate browser windows to compare implementations side by side.
-- Keep the working tree clean before switching branches in a terminal; use separate clones if you need persistent parallel edits.
+| Area | Legacy Remnant | Status |
+|---|---|---|
+| **Creature sprites** | 9 old 2D creature types (dragon, beholder, etc.) in `GameConstants.js`, factory functions, and `assets/sprites/` | Pending removal — Mannequin is the only active token |
+| **SpriteManager** | `src/core/SpriteManager.js` — Pixi.js sprite loading | Pending replacement with 3D model loader |
+| **AnimatedSpriteManager** | `src/core/AnimatedSpriteManager.js` — Pixi animated sprites | Pending replacement |
+| **RenderCoordinator** | Creates a `PIXI.Application` instance | Pending 3D-only rewrite |
+| **Pixi utilities** | `TerrainPixiUtils.js`, `PixiShapeUtils.js` | Pending removal |
+| **2D terrain placeables** | Paths (dirt, stone) and structures (brick walls) in `TerrainPlaceables.js` | Pending 3D model replacements |
+| **Dice (d4–d12, d100)** | UI buttons exist but no 3D implementations | Planned |
 
+## License
 
-# Configuration & Environment Variables
-<!-- @updatable:env_vars -->
-| NAME        | Required | Default      | Description                | Source           |
-|-------------|----------|--------------|----------------------------|------------------|
-| NODE_ENV    | No       | development  | Node environment           | src/utils/env.js |
-| JEST_WORKER_ID | No    | (none)       | Jest test worker id        | src/utils/env.js |
-
-.env.example
-```
-# Example environment variables
-NODE_ENV=development
-```
-<!-- /@updatable:env_vars -->
-
-# APIs & Endpoints / CLI
-<!-- @updatable:endpoints -->
-No OpenAPI/GraphQL schemas detected. All interaction is via browser UI at http://localhost:3000.
-<!-- /@updatable:endpoints -->
-
-# Data & Migrations
-No database or migration system detected. All data is in-memory or browser-local.
-
-# Observability
-- Logging: Structured logger via `src/utils/Logger.js`
-- Health: No explicit health endpoint; check browser console for errors.
-- Metrics/Traces: Not present.
-
-# Security Notes
-- No secrets or sensitive config detected in codebase.
-- Auth: Not implemented.
-- SBOM/dep scan: Lint and test gates only.
-
-# CI/CD
-No CI/CD config detected (no .github/workflows, Jenkinsfile, etc). Lint and test must be run locally before commit.
-
-# Operational Runbook
-- Start: `npm run serve` (PowerShell/Bash)
-- Stop: Ctrl+C in terminal
-- Logs: Browser console
-- Incidents: UI not loading → check server, browser console, lint/test output
-
-# Architecture Notes & ADRs
-No ADRs found. See `src/config/` for game/terrain/biome architecture.
-
-# Contributing & Coding Standards
-- Format: ESLint, Stylelint, lint-staged
-- Commit: No conventional commit hooks detected
-- PR: Run lint and test before submitting
-
-# Troubleshooting
-| Issue                | Cause                | Resolution                  |
-|----------------------|---------------------|-----------------------------|
-| UI not loading       | Server not running  | Run `npm run serve`         |
-| Lint errors          | Code style issues   | Run `npm run lint:fix`      |
-| Test failures        | Code/test bug       | Check test output, fix code |
-| Port 3000 busy       | Another process     | Run `npm run serve:alt[1-4]` |
-| Browser errors       | JS runtime error    | Check console, fix code     |
-
-# Roadmap / Known Limitations
-<!-- @updatable:release_notes -->
-Recent changes (from git log):
-- Step 8-10: painter smoke extended, dice smoke stabilized; add .attic archive policy; fix UIController lint; remove attic readme/index
-- Step 7: convenience run scripts, add DOM helpers selectors test, and fix terrain tool button wiring to update active state
-- Step 6: remove global UI/dice exposures; migrate to module-only event wiring; clean dev helpers; fix linting; update HTML wiring and tests; add env helpers and tests
-- test(validation): add TerrainValidation boundary tests and TerrainCoordinator validation wrapper tests; suites green
-- test(terrain/ui): add smoke tests for TerrainCoordinator public surface and elevation slider UI; all tests passing
- 
-
-<!-- Forest billboard generation feature removed: scripts and assets no longer present. -->
-<!-- /@updatable:release_notes -->
-
-# License
 MIT
-
-# Changelog (high-level)
-- Modular terrain/biome system
-- Token manager for creatures
-- UI controllers for elevation, grid, sidebar
-- Full test and lint coverage

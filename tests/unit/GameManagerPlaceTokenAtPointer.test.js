@@ -49,7 +49,7 @@ function buildHybridGM() {
     isReady: () => true,
   };
   gm.tokenManager = {
-    getSelectedTokenType: () => 'goblin',
+    getSelectedTokenType: () => 'mannequin',
     getTokenFacingRight: () => true,
     getPlacedTokens: () => [],
     findExistingTokenAt: () => null,

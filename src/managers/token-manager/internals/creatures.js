@@ -4,15 +4,6 @@ import { GameValidators } from '../../../utils/Validation.js';
 
 // Creature creation functions
 import {
-  createGoblin,
-  createOrc,
-  createSkeleton,
-  createDragon,
-  createBeholder,
-  createTroll,
-  createOwlbear,
-  createMinotaur,
-  createMindFlayer,
   createMannequin,
   createFemaleHumanoid,
   createDefeatedDoll,
@@ -27,15 +18,6 @@ export function createCreatureByType(c, type) {
     }
 
     const creationFunctions = {
-      goblin: () => createGoblin(),
-      orc: () => createOrc(),
-      skeleton: () => createSkeleton(),
-      dragon: () => createDragon(),
-      beholder: () => createBeholder(),
-      troll: () => createTroll(),
-      owlbear: () => createOwlbear(),
-      minotaur: () => createMinotaur(),
-      mindflayer: () => createMindFlayer(),
       mannequin: () => createMannequin(),
       // Legacy aliases maintained for users loading pre-migration save data.
       'female-humanoid': () => createFemaleHumanoid(),
