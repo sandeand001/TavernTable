@@ -34,7 +34,7 @@
 
 **GATE**: `npm test` passes · mannequin token works in browser
 
-- [ ] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `4f4fd6e`
 
 ---
 
@@ -42,11 +42,11 @@
 
 **Goal**: Delete legacy 2D image assets and their config references.
 
-- [ ] Delete creature sprite PNGs from `assets/sprites/` (keep `X Bot.fbx`)
-- [ ] Delete legacy 2D plant/tree PNG directories from `assets/terrain/plants/trees/` (14 subdirectories)
-- [ ] Remove `path-dirt`, `path-stone`, `structure-crumbling-brick` entries from `TerrainPlaceables.js`
-- [ ] Remove `assets/terrain/paths/` directory (2D path tiles)
-- [ ] Remove `assets/terrain/structures/` directory (2D structure tiles)
+- [x] Delete creature sprite PNGs from `assets/sprites/` (keep `X Bot.fbx`)
+- [x] Delete legacy 2D plant/tree PNG directories from `assets/terrain/plants/trees/` (14 subdirectories)
+- [x] Remove `path-dirt`, `path-stone`, `structure-crumbling-brick` entries from `TerrainPlaceables.js`
+- [x] Remove `assets/terrain/paths/` directory (2D path tiles)
+- [x] Remove `assets/terrain/structures/` directory (2D structure tiles)
 
 **GATE**: `npm test` passes · biome generation works · 3D placeables render
 
