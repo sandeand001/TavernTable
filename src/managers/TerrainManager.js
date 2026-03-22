@@ -11,7 +11,7 @@ import { GameErrors } from '../utils/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
 // import { GRID_CONFIG } from '../config/GameConstants.js';
 import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
-import { traceDiamondPath } from '../utils/PixiShapeUtils.js';
+import { traceDiamondPath } from '../utils/GeometryUtils.js';
 import { getBiomeColorHex } from '../config/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TERRAIN_PLACEABLES } from '../config/TerrainPlaceables.js';

@@ -1,5 +1,5 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
-import { TerrainPixiUtils } from '../../../utils/TerrainPixiUtils.js';
+import { ContainerUtils } from '../../../utils/ContainerUtils.js';
 
 /**
  * Prepare base grid tiles for editing overlay: reset elevation visuals and remove faces/shadows.
@@ -150,7 +150,7 @@ export function resetTerrainContainerSafely(c) {
         /* best-effort preserve */
       }
 
-      TerrainPixiUtils.resetContainer(
+      ContainerUtils.resetContainer(
         c.terrainManager.terrainContainer,
         'terrainContainer',
         'container.reset'

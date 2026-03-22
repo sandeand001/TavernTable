@@ -1,7 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { TERRAIN_CONFIG } from '../../config/TerrainConstants.js';
 import { TerrainHeightUtils } from '../../utils/TerrainHeightUtils.js';
-import { traceDiamondPath } from '../../utils/PixiShapeUtils.js';
+import { traceDiamondPath } from '../../utils/GeometryUtils.js';
 
 /**
  * ElevationVisualsController - Encapsulates height-based visual effects on tiles.

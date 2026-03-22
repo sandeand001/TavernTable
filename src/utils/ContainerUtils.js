@@ -1,7 +1,7 @@
 /**
- * TerrainPixiUtils.js - Centralized PIXI object lifecycle management for terrain system
+ * ContainerUtils.js - Centralized container lifecycle management for terrain system
  *
- * Provides consistent and safe PIXI object creation, cleanup, and container management
+ * Provides consistent and safe object creation, cleanup, and container management
  * specifically for terrain tiles and their associated visual effects.
  *
  * Eliminates code duplication in TerrainManager cleanup patterns.
@@ -9,15 +9,15 @@
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 
-export class TerrainPixiUtils {
+export class ContainerUtils {
   /**
-   * Safely remove a child from a PIXI container with proper validation
-   * @param {PIXI.DisplayObject} child - The child object to remove
-   * @param {PIXI.Container} container - The container to remove from
+   * Safely remove a child from a container with proper validation
+   * @param {object} child - The child object to remove
+   * @param {object} container - The container to remove from
    * @param {string} context - Context for logging/debugging
    * @returns {boolean} True if removal was successful
    */
-  static safeRemoveFromContainer(child, container, context = 'TerrainPixiUtils') {
+  static safeRemoveFromContainer(child, container, context = 'ContainerUtils') {
     try {
       if (!child || !container) {
         return false;
@@ -42,38 +42,38 @@ export class TerrainPixiUtils {
   }
 
   /**
-   * Safely destroy a PIXI object with proper validation
-   * @param {PIXI.DisplayObject} pixiObject - The PIXI object to destroy
+   * Safely destroy a display object with proper validation
+   * @param {object} displayObject - The object to destroy
    * @param {string} context - Context for logging/debugging
    * @returns {boolean} True if destruction was successful
    */
-  static safeDestroyPixiObject(pixiObject, context = 'TerrainPixiUtils') {
+  static safeDestroyObject(displayObject, context = 'ContainerUtils') {
     try {
-      if (!pixiObject) {
+      if (!displayObject) {
         return false;
       }
 
       // Check if object is already destroyed
-      if (pixiObject.destroyed) {
+      if (displayObject.destroyed) {
         return true;
       }
 
       // Check if object has destroy method
-      if (typeof pixiObject.destroy === 'function') {
-        pixiObject.destroy();
+      if (typeof displayObject.destroy === 'function') {
+        displayObject.destroy();
         return true;
       }
 
-      logger.log(LOG_LEVEL.WARN, 'PIXI object has no destroy method', LOG_CATEGORY.SYSTEM, {
+      logger.log(LOG_LEVEL.WARN, 'Object has no destroy method', LOG_CATEGORY.SYSTEM, {
         context,
-        objectType: pixiObject.constructor?.name || 'unknown',
+        objectType: displayObject.constructor?.name || 'unknown',
       });
       return false;
     } catch (error) {
-      logger.log(LOG_LEVEL.WARN, 'Error destroying PIXI object', LOG_CATEGORY.SYSTEM, {
+      logger.log(LOG_LEVEL.WARN, 'Error destroying object', LOG_CATEGORY.SYSTEM, {
         context,
         error: error.message,
-        objectType: pixiObject?.constructor?.name || 'unknown',
+        objectType: displayObject?.constructor?.name || 'unknown',
       });
       return false;
     }
@@ -81,13 +81,13 @@ export class TerrainPixiUtils {
 
   /**
    * Comprehensive cleanup of a terrain tile and all its visual effects
-   * @param {PIXI.Graphics} tile - The terrain tile to clean up
-   * @param {PIXI.Container} container - The container holding the tile
+   * @param {object} tile - The terrain tile to clean up
+   * @param {object} container - The container holding the tile
    * @param {string} tileKey - The tile key for logging (optional)
    * @param {string} context - Context for logging/debugging
    * @returns {boolean} True if cleanup was successful
    */
-  static cleanupTerrainTile(tile, container, tileKey = 'unknown', context = 'TerrainPixiUtils') {
+  static cleanupTerrainTile(tile, container, tileKey = 'unknown', context = 'ContainerUtils') {
     try {
       if (!tile) {
         return true; // Nothing to clean up
@@ -100,7 +100,7 @@ export class TerrainPixiUtils {
         const facesRemoved =
           this.safeRemoveFromContainer(tile.sideFaces, container, `${context}.sideFacesCleanup`) ||
           this.safeRemoveFromContainer(tile.sideFaces, tile.parent, `${context}.sideFacesCleanup`);
-        const facesDestroyed = this.safeDestroyPixiObject(
+        const facesDestroyed = this.safeDestroyObject(
           tile.sideFaces,
           `${context}.sideFacesCleanup`
         );
@@ -127,7 +127,7 @@ export class TerrainPixiUtils {
             tile.parent,
             `${context}.baseFacesCleanup`
           );
-        const baseFacesDestroyed = this.safeDestroyPixiObject(
+        const baseFacesDestroyed = this.safeDestroyObject(
           tile.baseSideFaces,
           `${context}.baseFacesCleanup`
         );
@@ -150,10 +150,7 @@ export class TerrainPixiUtils {
           container,
           `${context}.shadowCleanup`
         );
-        const shadowDestroyed = this.safeDestroyPixiObject(
-          tile.shadowTile,
-          `${context}.shadowCleanup`
-        );
+        const shadowDestroyed = this.safeDestroyObject(tile.shadowTile, `${context}.shadowCleanup`);
 
         if (!shadowRemoved || !shadowDestroyed) {
           logger.log(LOG_LEVEL.DEBUG, 'Partial shadow tile cleanup', LOG_CATEGORY.SYSTEM, {
@@ -173,7 +170,7 @@ export class TerrainPixiUtils {
           tile,
           `${context}.overlayCleanup`
         );
-        const overlayDestroyed = this.safeDestroyPixiObject(
+        const overlayDestroyed = this.safeDestroyObject(
           tile.depressionOverlay,
           `${context}.overlayCleanup`
         );
@@ -194,13 +191,13 @@ export class TerrainPixiUtils {
         const childrenCopy = [...tile.children]; // Copy to avoid modification during iteration
         for (const child of childrenCopy) {
           this.safeRemoveFromContainer(child, tile, `${context}.childCleanup`);
-          this.safeDestroyPixiObject(child, `${context}.childCleanup`);
+          this.safeDestroyObject(child, `${context}.childCleanup`);
         }
       }
 
       // Remove and destroy the main tile
       const tileRemoved = this.safeRemoveFromContainer(tile, container, `${context}.tileCleanup`);
-      const tileDestroyed = this.safeDestroyPixiObject(tile, `${context}.tileCleanup`);
+      const tileDestroyed = this.safeDestroyObject(tile, `${context}.tileCleanup`);
 
       if (!tileRemoved || !tileDestroyed) {
         logger.log(LOG_LEVEL.DEBUG, 'Partial main tile cleanup', LOG_CATEGORY.SYSTEM, {
@@ -230,7 +227,7 @@ export class TerrainPixiUtils {
       // Still try to clean up the main tile as a fallback
       try {
         this.safeRemoveFromContainer(tile, container, `${context}.fallback`);
-        this.safeDestroyPixiObject(tile, `${context}.fallback`);
+        this.safeDestroyObject(tile, `${context}.fallback`);
       } catch (fallbackError) {
         logger.log(LOG_LEVEL.ERROR, 'Fallback cleanup also failed', LOG_CATEGORY.SYSTEM, {
           context,
@@ -244,17 +241,13 @@ export class TerrainPixiUtils {
   }
 
   /**
-   * Validate that a PIXI container is in a usable state
-   * @param {PIXI.Container} container - The container to validate
+   * Validate that a container is in a usable state
+   * @param {object} container - The container to validate
    * @param {string} containerName - Name of the container for logging
    * @param {string} context - Context for logging/debugging
    * @returns {boolean} True if container is valid
    */
-  static validatePixiContainer(
-    container,
-    containerName = 'container',
-    context = 'TerrainPixiUtils'
-  ) {
+  static validateContainer(container, containerName = 'container', context = 'ContainerUtils') {
     try {
       if (!container) {
         logger.log(LOG_LEVEL.ERROR, `${containerName} is null or undefined`, LOG_CATEGORY.SYSTEM, {
@@ -293,11 +286,11 @@ export class TerrainPixiUtils {
   /**
    * Batch cleanup of multiple terrain tiles with error isolation
    * @param {Map} terrainTiles - Map of terrain tiles to clean up
-   * @param {PIXI.Container} container - The container holding the tiles
+   * @param {object} container - The container holding the tiles
    * @param {string} context - Context for logging/debugging
    * @returns {Object} Cleanup results with success/failure counts
    */
-  static batchCleanupTerrainTiles(terrainTiles, container, context = 'TerrainPixiUtils') {
+  static batchCleanupTerrainTiles(terrainTiles, container, context = 'ContainerUtils') {
     const results = {
       total: 0,
       successful: 0,
@@ -357,14 +350,14 @@ export class TerrainPixiUtils {
 
   /**
    * Reset a container by clearing all children safely
-   * @param {PIXI.Container} container - The container to reset
+   * @param {object} container - The container to reset
    * @param {string} containerName - Name of the container for logging
    * @param {string} context - Context for logging/debugging
    * @returns {boolean} True if reset was successful
    */
-  static resetContainer(container, containerName = 'container', context = 'TerrainPixiUtils') {
+  static resetContainer(container, containerName = 'container', context = 'ContainerUtils') {
     try {
-      if (!this.validatePixiContainer(container, containerName, context)) {
+      if (!this.validateContainer(container, containerName, context)) {
         return false;
       }
 
@@ -383,7 +376,7 @@ export class TerrainPixiUtils {
 
       for (const child of children) {
         const removed = this.safeRemoveFromContainer(child, container, `${context}.reset`);
-        const destroyed = this.safeDestroyPixiObject(child, `${context}.reset`);
+        const destroyed = this.safeDestroyObject(child, `${context}.reset`);
 
         if (removed && destroyed) {
           successfulRemovals++;
@@ -411,3 +404,6 @@ export class TerrainPixiUtils {
     }
   }
 }
+
+// Backward-compatible alias for callers still referencing the old name
+export { ContainerUtils as TerrainPixiUtils };

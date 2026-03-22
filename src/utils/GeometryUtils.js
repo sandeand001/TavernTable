@@ -1,7 +1,7 @@
 /**
- * traceDiamondPath - traces an isometric diamond path on a PIXI.Graphics-like object.
+ * traceDiamondPath - traces an isometric diamond path on a graphics-like object.
  * Does not call beginFill or endFill; callers control styling/fill lifecycle.
- * @param {object} g - PIXI.Graphics-like with moveTo/lineTo methods
+ * @param {object} g - Graphics-like object with moveTo/lineTo methods
  * @param {number} w - tile width
  * @param {number} h - tile height
  */

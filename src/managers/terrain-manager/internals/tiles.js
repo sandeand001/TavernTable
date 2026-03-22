@@ -1,6 +1,6 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameValidators } from '../../../utils/Validation.js';
-import { TerrainPixiUtils } from '../../../utils/TerrainPixiUtils.js';
+import { ContainerUtils } from '../../../utils/ContainerUtils.js';
 import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
 import { lightenColor, darkenColor } from '../../../utils/ColorUtils.js';
 import { getBiomeColorHex } from '../../../config/BiomePalettes.js';
@@ -24,7 +24,7 @@ export function cleanupExistingTile(m, tileKey) {
     const existingTile = m.terrainTiles.get(tileKey);
 
     // Use centralized cleanup utility for consistency
-    const cleanupSuccess = TerrainPixiUtils.cleanupTerrainTile(
+    const cleanupSuccess = ContainerUtils.cleanupTerrainTile(
       existingTile,
       m.terrainContainer,
       tileKey,

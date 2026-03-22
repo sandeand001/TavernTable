@@ -1,5 +1,5 @@
 import { clearAllTerrainTiles } from '../../src/managers/terrain-manager/internals/container.js';
-import { TerrainPixiUtils } from '../../src/utils/TerrainPixiUtils.js';
+import { ContainerUtils } from '../../src/utils/ContainerUtils.js';
 
 describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
   let originalSafeRemove;
@@ -7,18 +7,18 @@ describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
 
   beforeAll(() => {
     // keep originals if needed
-    originalSafeRemove = TerrainPixiUtils.safeRemoveFromContainer;
-    originalBatchCleanup = TerrainPixiUtils.batchCleanupTerrainTiles;
+    originalSafeRemove = ContainerUtils.safeRemoveFromContainer;
+    originalBatchCleanup = ContainerUtils.batchCleanupTerrainTiles;
   });
 
   afterAll(() => {
-    TerrainPixiUtils.safeRemoveFromContainer = originalSafeRemove;
-    TerrainPixiUtils.batchCleanupTerrainTiles = originalBatchCleanup;
+    ContainerUtils.safeRemoveFromContainer = originalSafeRemove;
+    ContainerUtils.batchCleanupTerrainTiles = originalBatchCleanup;
   });
 
   test('preserves placeables across clearAllTerrainTiles', () => {
     // Mock safeRemoveFromContainer to actually remove from our fake container
-    TerrainPixiUtils.safeRemoveFromContainer = (child, container) => {
+    ContainerUtils.safeRemoveFromContainer = (child, container) => {
       if (!container || !container.children) return false;
       const idx = container.children.indexOf(child);
       if (idx >= 0) {
@@ -30,7 +30,7 @@ describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
     };
 
     // Mock batch cleanup to be a no-op successful response
-    TerrainPixiUtils.batchCleanupTerrainTiles = (terrainTiles) => ({
+    ContainerUtils.batchCleanupTerrainTiles = (terrainTiles) => ({
       total: terrainTiles.size,
       successful: terrainTiles.size,
       failed: 0,

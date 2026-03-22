@@ -1,12 +1,12 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameErrors } from '../../../utils/ErrorHandler.js';
-import { TerrainPixiUtils } from '../../../utils/TerrainPixiUtils.js';
+import { ContainerUtils } from '../../../utils/ContainerUtils.js';
 
 /** Validate terrain container state before operations. */
 export function validateContainerState(m) {
   try {
     if (
-      !TerrainPixiUtils.validatePixiContainer(
+      !ContainerUtils.validateContainer(
         m.terrainContainer,
         'terrainContainer',
         'TerrainManager.validateContainerState'
@@ -15,7 +15,7 @@ export function validateContainerState(m) {
       throw new Error('Terrain container validation failed');
     }
     if (
-      !TerrainPixiUtils.validatePixiContainer(
+      !ContainerUtils.validateContainer(
         m.gameManager?.gridContainer,
         'gridContainer',
         'TerrainManager.validateContainerState'
@@ -170,7 +170,7 @@ export function clearAllTerrainTiles(m) {
             try {
               if (sprite && sprite.parent === m.terrainContainer) {
                 // Remove without destroying so cleanup won't touch it
-                TerrainPixiUtils.safeRemoveFromContainer(
+                ContainerUtils.safeRemoveFromContainer(
                   sprite,
                   m.terrainContainer,
                   'clearAllTerrainTiles.preserve'
@@ -196,7 +196,7 @@ export function clearAllTerrainTiles(m) {
       /* best-effort preserve */
     }
 
-    const cleanupResults = TerrainPixiUtils.batchCleanupTerrainTiles(
+    const cleanupResults = ContainerUtils.batchCleanupTerrainTiles(
       m.terrainTiles,
       m.terrainContainer,
       'TerrainManager.clearAllTerrainTiles'

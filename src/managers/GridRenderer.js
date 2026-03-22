@@ -13,7 +13,7 @@ import {
   drawIsometricTile as _drawIsoTile,
   clearGridTiles as _clearTiles,
 } from './grid-renderer/internals/tiles.js';
-import { traceDiamondPath } from '../utils/PixiShapeUtils.js';
+import { traceDiamondPath } from '../utils/GeometryUtils.js';
 
 export class GridRenderer {
   constructor(gameManager) {

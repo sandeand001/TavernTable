@@ -1,4 +1,4 @@
-import { traceDiamondPath } from '../../src/utils/PixiShapeUtils.js';
+import { traceDiamondPath } from '../../src/utils/GeometryUtils.js';
 
 function makeGraphicsRecorder() {
   const calls = [];

@@ -1,7 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GRID_CONFIG } from '../../../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
-import { traceDiamondPath } from '../../../utils/PixiShapeUtils.js';
+import { traceDiamondPath } from '../../../utils/GeometryUtils.js';
 
 /**
  * Update base grid tile in-place without destruction (safer), extracted from TerrainCoordinator.

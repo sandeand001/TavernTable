@@ -50,7 +50,7 @@
 
 **GATE**: `npm test` passes · biome generation works · 3D placeables render
 
-- [ ] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `eec3eaa`
 
 ---
 
@@ -58,18 +58,18 @@
 
 **Goal**: Remove pure-Pixi utility files and replace their usages.
 
-- [ ] Delete `src/utils/PixiShapeUtils.js`
-- [ ] Replace `traceDiamondPath()` calls in:
-  - [ ] `managers/GridRenderer.js`
-  - [ ] `managers/TerrainManager.js`
-  - [ ] `coordinators/terrain-coordinator/BiomeShadingController.js`
-  - [ ] `coordinators/terrain-coordinator/ElevationVisualsController.js`
-  - [ ] `coordinators/terrain-coordinator/internals/baseGridUpdates.js`
-- [ ] Delete `src/utils/TerrainPixiUtils.js`
-- [ ] Replace `safeRemoveFromContainer()` / `safeDestroyPixiObject()` / `resetContainer()` calls in:
-  - [ ] `managers/terrain-manager/internals/tiles.js`
-  - [ ] `managers/terrain-manager/internals/container.js`
-  - [ ] `coordinators/terrain-coordinator/internals/container.js`
+- [x] Delete `src/utils/PixiShapeUtils.js`
+- [x] Replace `traceDiamondPath()` calls in:
+  - [x] `managers/GridRenderer.js`
+  - [x] `managers/TerrainManager.js`
+  - [x] `coordinators/terrain-coordinator/BiomeShadingController.js`
+  - [x] `coordinators/terrain-coordinator/ElevationVisualsController.js`
+  - [x] `coordinators/terrain-coordinator/internals/baseGridUpdates.js`
+- [x] Delete `src/utils/TerrainPixiUtils.js`
+- [x] Replace `safeRemoveFromContainer()` / `safeDestroyPixiObject()` / `resetContainer()` calls in:
+  - [x] `managers/terrain-manager/internals/tiles.js`
+  - [x] `managers/terrain-manager/internals/container.js`
+  - [x] `coordinators/terrain-coordinator/internals/container.js`
 
 **GATE**: `npm test` passes · grid rendering works · terrain tile lifecycle intact
 
