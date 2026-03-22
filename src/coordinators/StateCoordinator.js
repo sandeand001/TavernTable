@@ -236,36 +236,11 @@ export class StateCoordinator {
   }
 
   /**
-   * Initialize sprite manager and load creature sprites
-   * @returns {Promise<void>} Promise that resolves when sprites are loaded
+   * Mark sprites as ready (3D models loaded via Token3DAdapter; legacy SpriteManager removed)
    */
   async initializeSprites() {
-    try {
-      if (window.spriteManager) {
-        logger.debug('Sprite manager found, initializing...');
-        await window.spriteManager.initialize();
-        logger.debug('Sprites loaded successfully');
-        this.gameManager.spritesReady = true;
-        window.spritesReady = true;
-      } else {
-        logger.debug('No sprite manager found, using drawn graphics');
-        this.gameManager.spritesReady = true;
-        window.spritesReady = true;
-      }
-
-      // Animated sprite system removed (2025-08 cleanup) – static sprites only.
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.RENDERING, {
-        context: 'StateCoordinator.initializeSprites',
-        stage: 'sprite_initialization',
-        spriteManagers: { spriteManager: !!window.spriteManager },
-        fallbackEnabled: true,
-        spritesReady: this.gameManager.spritesReady,
-      });
-      // Allow fallback to drawn graphics
-      this.gameManager.spritesReady = true;
-      window.spritesReady = true;
-    }
+    this.gameManager.spritesReady = true;
+    window.spritesReady = true;
   }
 
   /**

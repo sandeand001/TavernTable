@@ -13,12 +13,13 @@ import { GameValidators, Sanitizers } from '../../utils/Validation.js';
 /**
  * Base class for all creature tokens in the TavernTable game
  *
- * Provides common functionality for creature sprite creation, positioning,
- * scaling, and interaction management. Supports both sprite-based and
- * fallback graphics rendering.
+ * Provides common functionality for creature positioning, scaling,
+ * and interaction management. Visual rendering is handled by
+ * Token3DAdapter (3D FBX models); the PIXI Graphics fallback
+ * serves as a position/state handle in the container tree.
  *
  * @class CreatureToken
- * @version 1.0.0
+ * @version 2.0.0
  */
 class CreatureToken {
   /**
@@ -56,70 +57,17 @@ class CreatureToken {
   }
 
   /**
-   * Create the sprite representation for this creature
-   * Attempts sprite loading first, falls back to drawn graphics if needed
+   * Create the sprite representation for this creature.
+   * Uses PIXI.Graphics as a position/state handle; 3D rendering
+   * is handled by Token3DAdapter.
    */
   createSprite() {
     try {
-      // Try to create sprite from asset first
-      this.createCreatureSprite();
-
-      // Apply facing direction after sprite creation
+      this.createFallbackGraphics();
       this.applyFacing();
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'createSprite',
-        creatureType: this.type,
-      });
-      // Attempt fallback graphics creation
-      this.createFallbackGraphics();
-    }
-  }
-
-  /**
-   * Create creature sprite from loaded assets
-   * Falls back to drawn graphics if sprites are not available
-   */
-  createCreatureSprite() {
-    try {
-      // Check if sprite manager is ready
-      if (!window.spriteManager || !window.spriteManager.isLoaded()) {
-        this.createFallbackGraphics();
-        return;
-      }
-
-      const spriteKey = `${this.type}-sprite`;
-
-      // Try to build sprite via SpriteManager helper (handles fallback)
-      const scale = this.getCreatureScale();
-      const built = window.spriteManager.createSprite(spriteKey, {
-        anchor: { x: 0.5, y: 1.0 },
-        scale,
-      });
-      this.sprite = built;
-      // Always enforce bottom-center anchor/pivot
-      if (this.sprite instanceof PIXI.Sprite) {
-        this.sprite.anchor.set(0.5, 1.0);
-        window.logger?.debug?.('Sprite anchor set', {
-          anchor: this.sprite.anchor,
-          type: this.type,
-        });
-      } else if (this.sprite instanceof PIXI.Graphics) {
-        try {
-          const b = this.sprite.getLocalBounds();
-          this.sprite.pivot.set(b.x + b.width / 2, b.y + b.height);
-          window.logger?.debug?.('Graphics pivot set', {
-            pivot: this.sprite.pivot,
-            bounds: b,
-            type: this.type,
-          });
-        } catch {
-          /* ignore bounds error */
-        }
-      }
-    } catch (error) {
-      GameErrors.sprites(error, {
-        stage: 'createCreatureSprite',
         creatureType: this.type,
       });
       this.createFallbackGraphics();
@@ -222,7 +170,6 @@ class CreatureToken {
 
   /**
    * Apply the facing direction to the sprite
-   * Uses different techniques for sprites vs graphics
    */
   applyFacing() {
     if (!this.sprite) return;
@@ -231,16 +178,8 @@ class CreatureToken {
       const absScaleX = Math.abs(this.sprite.scale.x);
       const absScaleY = Math.abs(this.sprite.scale.y);
 
-      if (this.sprite instanceof PIXI.Sprite) {
-        // For PNG sprites, use skew to avoid vertical flipping
-        this.sprite.scale.x = absScaleX;
-        this.sprite.scale.y = absScaleY;
-        this.sprite.skew.y = this.facingRight ? 0 : Math.PI;
-      } else {
-        // For Graphics objects, simple scale works fine
-        this.sprite.scale.x = this.facingRight ? absScaleX : -absScaleX;
-        this.sprite.scale.y = absScaleY;
-      }
+      this.sprite.scale.x = this.facingRight ? absScaleX : -absScaleX;
+      this.sprite.scale.y = absScaleY;
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'applyFacing',
@@ -359,59 +298,6 @@ class CreatureToken {
         stage: 'recreateSprite',
         creatureType: this.type,
       });
-    }
-  }
-
-  /**
-   * Replace fallback graphics with sprite texture
-   * Used when sprite becomes available after initial creation
-   */
-  replaceWithSprite() {
-    try {
-      const spriteKey = `${this.type}-sprite`;
-      if (!window.spriteManager || !window.spriteManager.hasSpriteLoaded?.(spriteKey)) {
-        logger.debug(
-          'Texture not available; cannot replace sprite',
-          { type: this.type },
-          LOG_CATEGORY.SYSTEM
-        );
-        return;
-      }
-
-      // Store current position and parent
-      const currentX = this.sprite?.x || 0;
-      const currentY = this.sprite?.y || 0;
-      const parent = this.sprite?.parent;
-
-      // Remove old sprite
-      if (this.sprite && this.sprite.parent) {
-        this.sprite.parent.removeChild(this.sprite);
-      }
-
-      // Create new sprite using manager helper
-      const scale = this.getCreatureScale();
-      this.sprite = window.spriteManager.createSprite(spriteKey, {
-        anchor: { x: 0.5, y: 1.0 },
-        scale,
-      });
-      if (this.sprite instanceof PIXI.Sprite) {
-        this.sprite.anchor.set(0.5, 1.0);
-      }
-      this.applyFacing();
-
-      // Restore position and add to parent
-      this.sprite.x = currentX;
-      this.sprite.y = currentY;
-
-      if (parent) {
-        parent.addChild(this.sprite);
-      }
-    } catch (error) {
-      logger.error(
-        'Failed to replace sprite',
-        { type: this.type, error: error?.message, stack: error?.stack },
-        LOG_CATEGORY.SYSTEM
-      );
     }
   }
 }

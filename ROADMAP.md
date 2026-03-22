@@ -73,22 +73,30 @@
 
 **GATE**: `npm test` passes · grid rendering works · terrain tile lifecycle intact
 
-- [ ] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `131abd9`
 
 ---
 
-## Phase 4 — Pixi.js Divorce: Core Systems · `HIGH RISK`
+## Phase 4 — Pixi.js Divorce: Dead Sprite Systems · `HIGH RISK`
 
-**Goal**: Remove Pixi.js dependency from the rendering pipeline entirely.
+**Goal**: Remove dead PIXI sprite-loading systems; simplify creature token pipeline.
 
-- [ ] Refactor `coordinators/RenderCoordinator.js` — remove `PIXI.Application`, Three.js-only init
-- [ ] Refactor `core/SpriteManager.js` — replace `PIXI.Assets`/`PIXI.Texture` with Three.js loading
-- [ ] Refactor `core/AnimatedSpriteManager.js` — replace `PIXI.AnimatedSprite` with Three.js `AnimationMixer`
-- [ ] Refactor `entities/creatures/CreatureToken.js` — remove PIXI.Sprite fallback paths
-- [ ] Refactor `managers/GridRenderer.js` — replace PIXI diamond drawing
-- [ ] Refactor `managers/TerrainManager.js` — remove PIXI-specific tile creation
-- [ ] Refactor `managers/terrain-manager/internals/placeables.js` — remove PIXI.Sprite fallback
-- [ ] Remove Pixi.js from `package.json` if present, or CDN import from `index.html`
+> **Scope adjusted**: Deep analysis revealed PIXI is still the active rendering engine
+> for the 2D isometric grid, terrain tiles, containers, and overlays. Three.js renders
+> 3D models (creatures, plants, terrain mesh) on top. Full PIXI removal requires
+> replacing the entire grid/terrain rendering pipeline — deferred to a future phase.
+> This phase removes confirmed-dead sprite managers and simplifies creature tokens.
+
+- [x] Delete `core/SpriteManager.js` — zero callers; creature sprites bypassed by Token3DAdapter
+- [x] Delete `core/AnimatedSpriteManager.js` — zero callers; dragon removed in Phase 1
+- [x] Simplify `coordinators/StateCoordinator.js` — remove spriteManager init logic
+- [x] Refactor `entities/creatures/CreatureToken.js` — remove PIXI.Sprite paths, use fallback graphics only
+- [x] Remove SpriteManager `<script>` tag from `index.html`
+- [ ] ~~Refactor `coordinators/RenderCoordinator.js`~~ — **deferred** (PIXI.Application still creates the 2D canvas)
+- [ ] ~~Refactor `managers/GridRenderer.js`~~ — **deferred** (PIXI grid is the active 2D renderer)
+- [ ] ~~Refactor `managers/TerrainManager.js`~~ — **deferred** (PIXI tiles still render terrain overlays)
+- [ ] ~~Refactor `managers/terrain-manager/internals/placeables.js`~~ — **deferred** (legacy 2D fallback only)
+- [ ] ~~Remove Pixi.js CDN from `index.html`~~ — **deferred** (still needed for grid/terrain/containers)
 
 **GATE**: Full `npm test` · manual browser regression (grid, terrain, tokens, biomes)
 
