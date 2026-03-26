@@ -100,24 +100,34 @@
 
 **GATE**: Full `npm test` · manual browser regression (grid, terrain, tokens, biomes)
 
-- [ ] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `932b93c`
 
 ---
 
-## Phase 5 — Segment `Token3DAdapter.js` (6,619 lines → ~5 files) · `MEDIUM RISK`
+## Phase 5 — Segment `Token3DAdapter.js` (6,619 lines → 5 files) · `MEDIUM RISK`
 
 **Goal**: Break the largest file into focused modules.
 
-- [ ] Extract `scene/token-adapter/MannequinConfig.js` (~800 lines) — model constants + animation library
-- [ ] Extract `scene/token-adapter/AnimationManager.js` (~900 lines) — mixer management, play/stop/transition, goal state
-- [ ] Extract `scene/token-adapter/SelectionEffects.js` (~600 lines) — hover/selection indicators, visual effects
-- [ ] Extract `scene/token-adapter/MeshFactory.js` (~900 lines) — billboard plane, 3D model, skeletal mesh creation
-- [ ] Slim `Token3DAdapter.js` to orchestrator (~400 lines) importing above modules
-- [ ] Verify all existing imports of `Token3DAdapter` still work
+> **Pre-existing bug fixed**: `_createForwardMovementStep` used stale `gridX/gridY` to
+> determine the token's current tile for fall detection. During free movement `gridX/gridY`
+> is never updated, so tokens 2+ tiles from the cliff edge would check the wrong tile and
+> skip the fall animation. Fixed by deriving the current tile from `tokenEntry.world` (which
+> IS updated during free movement) and falling back to `gridX/gridY` when world is unavailable.
+> Bug predated all refactor phases (reproduced on pre-refactor baseline `714643c`).
 
-**GATE**: `npm test` passes · token placement, animation, selection work in browser
+- [x] **Fix pre-existing fall detection bug** — derive current tile from world position in `_createForwardMovementStep`
+- [x] Extract `scene/token-adapter/MannequinConfig.js` (298 lines) — model defs, animation library, constants
+- [x] Extract `scene/token-adapter/AnimationController.js` (864 lines) — clip loading, retargeting, mixer control
+- [x] Extract `scene/token-adapter/SelectionEffects.js` (349 lines) — hover/selection indicators, orientation, facing
+- [x] Extract `scene/token-adapter/MeshFactory.js` (540 lines) — billboard/3D token creation, FBX loading, tinting
+- [x] Slim `Token3DAdapter.js` to orchestrator (5,484 lines) importing above via mixin pattern
+- [x] Verify all existing imports of `Token3DAdapter` still work (re-exports preserve API)
 
-- [ ] **GATE PASSED** — committed as: _______________
+> Remaining movement polish items tracked in `TODO.md`.
+
+**GATE**: `npm test` passes · token placement, animation, selection work in browser · **fall animations trigger reliably on all elevation drops**
+
+- [x] **GATE PASSED** — committed as: _______________
 
 ---
 
@@ -203,8 +213,38 @@
 
 ---
 
+## Phase 11 — Full PIXI Removal / Renderer Unification · `HIGH RISK`
+
+**Goal**: Migrate all remaining PIXI.js rendering to Three.js, making Three.js the sole renderer.
+
+> Deferred from Phase 4 — PIXI is still the active 2D rendering engine for the
+> isometric grid, terrain tiles, containers, and overlays. This phase replaces
+> the entire 2D pipeline with Three.js equivalents.
+
+- [ ] Refactor `coordinators/RenderCoordinator.js` — remove `PIXI.Application`, Three.js-only canvas init
+- [ ] Refactor `managers/GridRenderer.js` — replace PIXI.Graphics diamond tiles with Three.js plane geometry
+- [ ] Refactor `managers/TerrainManager.js` — remove PIXI-specific tile/container creation
+- [ ] Refactor `managers/terrain-manager/internals/tiles.js` — replace PIXI.Graphics tile factory with Three.js
+- [ ] Refactor `terrain/BiomeCanvasPainter.js` — remove PIXI.Texture/Sprite canvas conversion
+- [ ] Refactor `coordinators/terrain-coordinator/ElevationVisualsController.js` — replace PIXI.Graphics shadows
+- [ ] Refactor `coordinators/terrain-coordinator/BiomeShadingController.js` — replace PIXI fill/draw calls
+- [ ] Refactor `utils/ProjectionUtils.js` — replace PIXI.Graphics overlay
+- [ ] Refactor `managers/terrain-manager/internals/placeables.js` — remove PIXI.Sprite legacy 2D fallback
+- [ ] Refactor `entities/creatures/CreatureToken.js` — replace PIXI.Graphics handle with Three.js Object3D
+- [ ] Refactor `utils/Validation.js` — remove `pixiApp()` validator
+- [ ] Update `managers/InteractionManager.js` — replace any PIXI stage event delegation
+- [ ] Remove PIXI.js CDN `<script>` from `index.html`
+- [ ] Remove PIXI mock stubs from `tests/setup.js` and test files
+- [ ] Full regression: grid, terrain, tokens, biomes, dice, camera, drag — all via Three.js only
+
+**GATE**: Full `npm test` + complete manual browser regression
+
+- [ ] **GATE PASSED** — committed as: _______________
+
+---
+
 ## Completion
 
-- [ ] **All 10 phases complete**
+- [ ] **All 11 phases complete**
 - Date completed: _______________
 - Final test suite: ___ suites, ___ tests passing
