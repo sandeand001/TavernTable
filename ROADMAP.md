@@ -127,7 +127,7 @@
 
 **GATE**: `npm test` passes · token placement, animation, selection work in browser · **fall animations trigger reliably on all elevation drops**
 
-- [x] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `b764d55`
 
 ---
 
