@@ -2,8 +2,8 @@
 // Renders the terrain brush footprint directly in the Three.js scene so editing happens in the 3D grid.
 
 import { BRUSH_COLORS } from '../../terrain/brush/BrushCommon.js';
-import { ensurePlaneMesh, ensureBoxMesh, syncMeshMaterial } from './OverlayMeshPool.js';
-import { ensureOutlinePool, syncOutlineStyle } from './OverlayOutlinePool.js';
+import { ensurePlaneMesh, ensureBoxMesh, syncMeshMaterial } from './brush/OverlayMeshPool.js';
+import { ensureOutlinePool, syncOutlineStyle } from './brush/OverlayOutlinePool.js';
 
 export class TerrainBrushOverlay3D {
   // ── Constructor ───────────────────────────────────────────────────
