@@ -20,11 +20,11 @@ import {
 import { ensureThreeNamespace, ensureBlueprint, cloneDice } from './DiceModelManager.js';
 
 // ── Calibration Sequence & Face Cycling ─────────────────────────
-function getCalibrationSequence() {
+function _getCalibrationSequence() {
   return D20_FACE_CALIBRATION_SEQUENCE.map((entry) => ({ ...entry }));
 }
 
-function cycleCalibrationFace(direction = 0) {
+function _cycleCalibrationFace(direction = 0) {
   if (!diceState.faceCalibrationState?.mesh || !diceState.threeNamespace) return null;
   const sequence = diceState.faceCalibrationState.sequence || [];
   if (!sequence.length) return null;
@@ -76,7 +76,7 @@ function cycleCalibrationFace(direction = 0) {
 }
 
 // ── Pointer Handling ───────────────────────────────────────────
-function handleCalibrationPointer(event) {
+function _handleCalibrationPointer(event) {
   if (
     !diceState.faceCalibrationState?.mesh ||
     !diceState.threeNamespace?.Raycaster ||
@@ -126,7 +126,7 @@ function handleCalibrationPointer(event) {
     logger.info('[dice3d] Recorded face center', record, DICE_LOG_CATEGORY);
   }
   if (diceState.faceCalibrationState.autoAdvance) {
-    cycleCalibrationFace(1);
+    _cycleCalibrationFace(1);
   }
 }
 
@@ -213,7 +213,7 @@ export async function startD20FaceCalibration(options = {}) {
     raycaster: new diceState.threeNamespace.Raycaster(),
     pointer: new diceState.threeNamespace.Vector2(),
     records: [],
-    sequence: getCalibrationSequence(),
+    sequence: _getCalibrationSequence(),
     sequenceIndex: 0,
     autoAdvance: options.autoAdvance !== false,
     currentFaceInfo: null,
@@ -251,7 +251,7 @@ export async function startD20FaceCalibration(options = {}) {
     if (event.button != null && event.button !== 0) return;
     if (processedPointerEvents.has(event)) return;
     processedPointerEvents.add(event);
-    handleCalibrationPointer(event);
+    _handleCalibrationPointer(event);
   };
 
   pointerTargets.forEach((target) => {
@@ -264,11 +264,11 @@ export async function startD20FaceCalibration(options = {}) {
   diceState.faceCalibrationState.pointerTargets = pointerTargets;
   diceState.faceCalibrationState.pointerEvents = pointerEvents;
 
-  cycleCalibrationFace(0);
+  _cycleCalibrationFace(0);
 
   const controls = {
-    next: () => cycleCalibrationFace(1),
-    prev: () => cycleCalibrationFace(-1),
+    next: () => _cycleCalibrationFace(1),
+    prev: () => _cycleCalibrationFace(-1),
     jumpToValue: (value) => {
       if (!diceState.faceCalibrationState) return null;
       const idx = diceState.faceCalibrationState.sequence.findIndex(
@@ -276,7 +276,7 @@ export async function startD20FaceCalibration(options = {}) {
       );
       if (idx >= 0) {
         diceState.faceCalibrationState.sequenceIndex = idx;
-        return cycleCalibrationFace(0);
+        return _cycleCalibrationFace(0);
       }
       return null;
     },
@@ -287,7 +287,7 @@ export async function startD20FaceCalibration(options = {}) {
       );
       if (idx >= 0) {
         diceState.faceCalibrationState.sequenceIndex = idx;
-        return cycleCalibrationFace(0);
+        return _cycleCalibrationFace(0);
       }
       return null;
     },

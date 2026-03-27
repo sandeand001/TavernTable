@@ -17,15 +17,15 @@ function clampToRange(value, min, max) {
   return value;
 }
 
-function normalize2D(vec) {
+function _normalize2D(vec) {
   if (!vec) return null;
   const mag = Math.hypot(vec.x || 0, vec.z || vec.y || 0);
   if (!Number.isFinite(mag) || mag === 0) return null;
   return { x: (vec.x || 0) / mag, z: (vec.z ?? vec.y ?? 0) / mag };
 }
 
-function reflectVector2D(vector, normal) {
-  const norm = normalize2D(normal);
+function _reflectVector2D(vector, normal) {
+  const norm = _normalize2D(normal);
   if (!vector || !norm) return null;
   const dot = (vector.x || 0) * norm.x + (vector.z || 0) * norm.z;
   return {
@@ -35,7 +35,7 @@ function reflectVector2D(vector, normal) {
 }
 
 // ── Collision Detection ────────────────────────────────────────
-function deriveBounceIntensity(obstacle) {
+function _deriveBounceIntensity(obstacle) {
   const type = obstacle?.type || obstacle?.placeableType;
   if (!type) return 0.6;
   if (type === 'structure' || type === 'rock' || type === 'wall') return 0.95;
@@ -123,7 +123,7 @@ function collectCollisionObstacles(
   return obstacles.filter((obs) => Number.isFinite(obs.x) && Number.isFinite(obs.z));
 }
 
-function findPathCollision(start, target, obstacles, clearance = 0) {
+function _findPathCollision(start, target, obstacles, clearance = 0) {
   if (!Array.isArray(obstacles) || !obstacles.length) return null;
   const dir = { x: (target.x || 0) - (start.x || 0), z: (target.z || 0) - (start.z || 0) };
   const a = dir.x * dir.x + dir.z * dir.z;
@@ -152,7 +152,7 @@ function findPathCollision(start, target, obstacles, clearance = 0) {
       x: (start.x || 0) + dir.x * t,
       z: (start.z || 0) + dir.z * t,
     };
-    const normal = normalize2D({ x: point.x - obstacle.x, z: point.z - obstacle.z });
+    const normal = _normalize2D({ x: point.x - obstacle.x, z: point.z - obstacle.z });
     if (!normal) continue;
     best = { t, point, obstacle, normal };
   }
@@ -181,7 +181,7 @@ function buildRicochetPath(start, target, metrics, options = {}) {
   const obstacles = Array.isArray(options.obstacles) ? options.obstacles.slice(0) : [];
 
   for (let i = 0; i < maxBounces; i += 1) {
-    const collision = findPathCollision(currentStart, currentTarget, obstacles, clearanceWorld);
+    const collision = _findPathCollision(currentStart, currentTarget, obstacles, clearanceWorld);
     if (!collision) break;
     const bouncePoint = clampPoint({ ...collision.point });
     waypoints.push(bouncePoint);
@@ -191,8 +191,8 @@ function buildRicochetPath(start, target, metrics, options = {}) {
       z: currentTarget.z - currentStart.z,
     };
     const remainingDistance = Math.hypot(dir.x, dir.z) * (1 - collision.t);
-    const reflected = reflectVector2D(dir, collision.normal);
-    const normalized = normalize2D(reflected);
+    const reflected = _reflectVector2D(dir, collision.normal);
+    const normalized = _normalize2D(reflected);
     if (!normalized) break;
     currentStart = clampPoint({
       x: bouncePoint.x + normalized.x * clearanceWorld,
@@ -229,7 +229,7 @@ function buildRicochetPath(start, target, metrics, options = {}) {
     }
     return {
       progress: totalLength ? accumulated / totalLength : 0,
-      intensity: deriveBounceIntensity(entry.obstacle),
+      intensity: _deriveBounceIntensity(entry.obstacle),
       obstacleType: entry.obstacle?.type || entry.obstacle?.placeableType || 'generic',
     };
   });
@@ -273,7 +273,7 @@ const clonePoint = (point) => ({
   z: Number.isFinite(point?.z) ? point.z : 0,
 });
 
-function createLinearPath(startPoint, endPoint, metrics) {
+function _createLinearPath(startPoint, endPoint, metrics) {
   const from = clonePoint(startPoint);
   const to = clonePoint(endPoint);
   const deltaX = to.x - from.x;
@@ -305,7 +305,7 @@ function createLinearPath(startPoint, endPoint, metrics) {
 }
 
 // ── Path Merging & Extension ───────────────────────────────────
-function mergePathInfos(paths) {
+function _mergePathInfos(paths) {
   if (!Array.isArray(paths) || !paths.length) return null;
   const waypoints = [];
   const segments = [];
@@ -427,13 +427,13 @@ function extendPathDistance(basePath, additionalTargets, metrics, options = {}) 
     const nextTarget = clonePoint(target);
     let subPath = buildRicochetPath(currentPoint, nextTarget, metrics, ricochetOptions);
     if (!subPath?.segments?.length) {
-      subPath = createLinearPath(currentPoint, nextTarget, metrics);
+      subPath = _createLinearPath(currentPoint, nextTarget, metrics);
     }
     paths.push(subPath);
     currentPoint = clonePoint(subPath.finalWaypoint || nextTarget);
   }
 
-  const combined = mergePathInfos(paths);
+  const combined = _mergePathInfos(paths);
   return combined || basePath;
 }
 

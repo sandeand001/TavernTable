@@ -35,9 +35,9 @@ const DEFAULT_RICOCHET_SETTINGS = {
   obstacleLimit: 256,
 };
 
-const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-const randomBetween = (min, max) => min + Math.random() * (max - min);
-const hasWindow = () => typeof window !== 'undefined';
+const _easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+const _randomBetween = (min, max) => min + Math.random() * (max - min);
+const _hasWindow = () => typeof window !== 'undefined';
 
 // ── Snap Computation ───────────────────────────────────────────
 export function computeSnapSolution(mesh, three, groundY) {
@@ -196,9 +196,9 @@ export function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
   const startAngles = { x: mesh.rotation.x, y: mesh.rotation.y, z: mesh.rotation.z };
   const spinScale = Math.max(1, travelDistanceScale);
   const endAngles = {
-    x: startAngles.x + randomBetween(Math.PI * 3 * spinScale, Math.PI * 5 * spinScale),
-    y: startAngles.y + randomBetween(Math.PI * 2 * spinScale, Math.PI * 4 * spinScale),
-    z: startAngles.z + randomBetween(Math.PI * 2 * spinScale, Math.PI * 4 * spinScale),
+    x: startAngles.x + _randomBetween(Math.PI * 3 * spinScale, Math.PI * 5 * spinScale),
+    y: startAngles.y + _randomBetween(Math.PI * 2 * spinScale, Math.PI * 4 * spinScale),
+    z: startAngles.z + _randomBetween(Math.PI * 2 * spinScale, Math.PI * 4 * spinScale),
   };
 
   let startTs = null;
@@ -246,7 +246,7 @@ export function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
         /* ignore */
       }
     }
-    if (rafHandle && hasWindow()) {
+    if (rafHandle && _hasWindow()) {
       try {
         window.cancelAnimationFrame(rafHandle);
       } catch (_) {
@@ -269,7 +269,7 @@ export function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
     if (startTs == null) startTs = ts;
     const elapsed = ts - startTs;
     const travelT = Math.min(Math.max(elapsed / travelDurationMs, 0), 1);
-    const eased = easeOutCubic(travelT);
+    const eased = _easeOutCubic(travelT);
     const pathPoint = pathResolver(eased) || target;
     mesh.position.x = pathPoint.x;
     mesh.position.z = pathPoint.z;
@@ -279,7 +279,7 @@ export function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
       const groundY = sampleGroundHeight(mesh.position.x, mesh.position.z, resolvedGroundY);
       resolvedGroundY = groundY;
       mesh.position.y = groundY + groundLift + arcHeight + Math.max(bounce, 0);
-      const spinT = easeOutCubic(travelT);
+      const spinT = _easeOutCubic(travelT);
       mesh.rotation.set(
         startAngles.x + (endAngles.x - startAngles.x) * spinT,
         startAngles.y + (endAngles.y - startAngles.y) * spinT,
@@ -369,7 +369,7 @@ export function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
   const managerCallback = manager?.addAnimationCallback;
   if (typeof managerCallback === 'function') {
     removeCallback = managerCallback.call(manager, step);
-  } else if (hasWindow()) {
+  } else if (_hasWindow()) {
     const loop = (ts) => {
       if (stopped) return;
       step(ts || performance.now());

@@ -24,7 +24,7 @@ import './FaceCalibrationUI.js';
 import logger from '../../utils/Logger.js';
 
 // ── Core lifecycle ───────────────────────────────────────────────────────────
-function clearActiveDie() {
+function _clearActiveDie() {
   if (!diceState.activeDieState) return;
   const state = diceState.activeDieState;
   diceState.activeDieState = null;
@@ -49,7 +49,7 @@ function clearActiveDie() {
 }
 
 // ── Scene helpers (only used within this file) ──────────────────────────────
-function resolvePrimaryCamera(manager) {
+function _resolvePrimaryCamera(manager) {
   return (
     manager?.camera ||
     manager?.activeCamera ||
@@ -61,7 +61,7 @@ function resolvePrimaryCamera(manager) {
   );
 }
 
-function resolvePrimaryDomElement(manager) {
+function _resolvePrimaryDomElement(manager) {
   return (
     manager?.renderer?.domElement ||
     manager?.gameManager?.renderer?.domElement ||
@@ -71,7 +71,7 @@ function resolvePrimaryDomElement(manager) {
   );
 }
 
-function attachDiceAccentLights(mesh, three, tileSize) {
+function _attachDiceAccentLights(mesh, three, tileSize) {
   if (!three?.PointLight) return;
   const primary = new three.PointLight(0xfff1c0, 1.65, tileSize * 9, 2);
   primary.position.set(0, tileSize * 0.9, 0);
@@ -84,10 +84,10 @@ function attachDiceAccentLights(mesh, three, tileSize) {
   mesh.add(rim);
 }
 
-function attachDieDismissOnClick(manager, mesh) {
+function _attachDieDismissOnClick(manager, mesh) {
   if (!hasWindow() || !mesh || !manager) return null;
   if (!diceState.threeNamespace?.Raycaster || !diceState.threeNamespace?.Vector2) return null;
-  const camera = resolvePrimaryCamera(manager);
+  const camera = _resolvePrimaryCamera(manager);
   if (!camera) return null;
   const pointer = new diceState.threeNamespace.Vector2();
   const raycaster = new diceState.threeNamespace.Raycaster();
@@ -97,7 +97,7 @@ function attachDieDismissOnClick(manager, mesh) {
     if (pointerTargets.includes(target)) return;
     pointerTargets.push(target);
   };
-  const primaryTarget = resolvePrimaryDomElement(manager) || window;
+  const primaryTarget = _resolvePrimaryDomElement(manager) || window;
   registerTarget(primaryTarget);
   if (hasWindow()) {
     registerTarget(window);
@@ -136,7 +136,7 @@ function attachDieDismissOnClick(manager, mesh) {
     raycaster.setFromCamera(pointer, camera);
     const intersections = raycaster.intersectObject(mesh, true);
     if (!intersections?.length) return;
-    clearActiveDie();
+    _clearActiveDie();
   };
 
   pointerTargets.forEach((target) => {
@@ -171,7 +171,7 @@ export async function playD20RollOnGrid(options = {}) {
   }
 
   try {
-    clearActiveDie();
+    _clearActiveDie();
     const three = await ensureThreeNamespace();
     const blueprint = await ensureBlueprint();
     const clone = cloneDice(blueprint);
@@ -179,7 +179,7 @@ export async function playD20RollOnGrid(options = {}) {
     const tileSize = metrics.tileSize || 1;
     const scale = tileSize * (options.scale ?? DEFAULT_SCALE);
     clone.scale.setScalar(scale);
-    attachDiceAccentLights(clone, three, tileSize);
+    _attachDiceAccentLights(clone, three, tileSize);
     manager.scene.add(clone);
     resetDiceMaterialColors(clone);
     const animationOptions = { ...options };
@@ -191,7 +191,7 @@ export async function playD20RollOnGrid(options = {}) {
     let clickDismissCleanup = null;
     if (animationOptions.dismissOnClick !== false) {
       try {
-        clickDismissCleanup = attachDieDismissOnClick(manager, clone);
+        clickDismissCleanup = _attachDieDismissOnClick(manager, clone);
       } catch (_) {
         clickDismissCleanup = null;
       }
@@ -252,6 +252,6 @@ export async function playD20RollOnGrid(options = {}) {
 // ── Cleanup on page unload ──────────────────────────────────────────────────
 if (hasWindow()) {
   window.addEventListener('beforeunload', () => {
-    clearActiveDie();
+    _clearActiveDie();
   });
 }

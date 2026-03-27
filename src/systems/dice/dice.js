@@ -35,17 +35,17 @@ let _diceDomPorts = {};
 export function setDiceDomPorts(ports = {}) {
   _diceDomPorts = ports || {};
 }
-function getDiceButtons() {
+function _getDiceButtons() {
   if (_diceDomPorts.getDiceButtons) return _diceDomPorts.getDiceButtons();
   if (typeof document === 'undefined') return [];
   return Array.from(document.querySelectorAll('[data-dice]'));
 }
-function getDiceCountEl() {
+function _getDiceCountEl() {
   if (_diceDomPorts.getDiceCountEl) return _diceDomPorts.getDiceCountEl();
   if (typeof document === 'undefined') return null;
   return document.querySelector('[data-dice-count]');
 }
-function getDiceResultEl() {
+function _getDiceResultEl() {
   if (_diceDomPorts.getDiceResultEl) return _diceDomPorts.getDiceResultEl();
   if (typeof document === 'undefined') return null;
   return document.querySelector('[data-dice-result]');
@@ -54,7 +54,7 @@ function getDiceResultEl() {
 // ── 3D Dice Integration ────────────────────────────────────────
 let isRolling = false;
 
-function maybePlay3DDice({ sides, diceCount } = {}) {
+function _maybePlay3DDice({ sides, diceCount } = {}) {
   if (sides !== 20 || diceCount !== 1) {
     return Promise.resolve(null);
   }
@@ -114,8 +114,8 @@ export function rollDice(sides) {
     }
 
     // Get and validate dice count
-    const diceCountEl = getDiceCountEl();
-    const resultEl = getDiceResultEl();
+    const diceCountEl = _getDiceCountEl();
+    const resultEl = _getDiceResultEl();
 
     if (!diceCountEl || !resultEl) {
       new ErrorHandler().handle(
@@ -158,10 +158,10 @@ export function rollDice(sides) {
     isRolling = true;
 
     const isSingleD20 = sides === 20 && diceCount === 1;
-    const d20PhysicalRollPromise = isSingleD20 ? maybePlay3DDice({ sides, diceCount }) : null;
+    const d20PhysicalRollPromise = isSingleD20 ? _maybePlay3DDice({ sides, diceCount }) : null;
 
     // Soft-disable dice buttons to avoid rapid re-clicks during animation
-    const diceButtons = getDiceButtons();
+    const diceButtons = _getDiceButtons();
     diceButtons.forEach((btn) => {
       // Preserve prior disabled state
       if (!btn.hasAttribute('data-prev-disabled')) {
@@ -203,7 +203,7 @@ export function rollDice(sides) {
         });
         isRolling = false;
         // Re-enable dice buttons based on previous state
-        const diceBtns = getDiceButtons();
+        const diceBtns = _getDiceButtons();
         diceBtns.forEach((btn) => {
           const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
           btn.disabled = wasDisabled;
@@ -293,7 +293,7 @@ export function rollDice(sides) {
             resultEl.style.textShadow = 'none';
             isRolling = false;
             // Re-enable dice buttons after successful roll concludes
-            const diceBtns = getDiceButtons();
+            const diceBtns = _getDiceButtons();
             diceBtns.forEach((btn) => {
               const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
               btn.disabled = wasDisabled;
@@ -315,7 +315,7 @@ export function rollDice(sides) {
           });
           isRolling = false;
           // Re-enable dice buttons after result shows
-          const diceBtns = getDiceButtons();
+          const diceBtns = _getDiceButtons();
           diceBtns.forEach((btn) => {
             const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
             btn.disabled = wasDisabled;
@@ -340,13 +340,13 @@ export function rollDice(sides) {
       isRolling: isRolling,
       globalScope: {
         sidebarController: !!window.sidebarController,
-        diceCountElement: !!getDiceCountEl(),
-        resultElement: !!getDiceResultEl(),
+        diceCountElement: !!_getDiceCountEl(),
+        resultElement: !!_getDiceResultEl(),
       },
     });
     isRolling = false;
     // Attempt to re-enable dice buttons on failure
-    const diceBtns = getDiceButtons();
+    const diceBtns = _getDiceButtons();
     diceBtns.forEach((btn) => {
       const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
       btn.disabled = wasDisabled;

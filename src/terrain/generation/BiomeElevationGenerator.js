@@ -33,7 +33,7 @@ import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
 
 // ── Private Helpers (Biome Shapers) ─────────────────────────
 
-function shapeGrassland(x, y, nx, ny, seed, opts) {
+function _shapeGrassland(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.5;
   const rough = clamp(opts.roughness ?? 1.0, 0.25, 3);
   const n = fbm2(nx * 2.2, ny * 2.2, seed, 4 + Math.round(rough), 1.9, 0.55);
@@ -41,7 +41,7 @@ function shapeGrassland(x, y, nx, ny, seed, opts) {
   return h;
 }
 
-function shapeHills(x, y, nx, ny, seed, opts) {
+function _shapeHills(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 4.0;
   const rough = clamp(opts.roughness ?? 1.1, 0.25, 3);
   const base = fbm2(nx * 2.8, ny * 2.8, seed, 5 + Math.round(rough), 2.05, 0.5);
@@ -49,7 +49,7 @@ function shapeHills(x, y, nx, ny, seed, opts) {
   return (base - 0.5 + bumps) * r;
 }
 
-function shapeMountain(x, y, nx, ny, seed, opts) {
+function _shapeMountain(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 8.0; // bigger peaks
   const ridged = ridge(nx * 2.2, ny * 2.2, seed, 6);
   const valley = fbm2(nx * 0.7, ny * 0.7, seed + 123, 3, 2.0, 0.6);
@@ -58,14 +58,14 @@ function shapeMountain(x, y, nx, ny, seed, opts) {
   return h;
 }
 
-function shapeDesertHot(x, y, nx, ny, seed, opts) {
+function _shapeDesertHot(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 1.5; // largely flat with mild pans
   const n = fbm2(nx * 3.5, ny * 3.5, seed, 4, 2.2, 0.55);
   const pans = (n - 0.5) * r * 1.2;
   return pans + (opts.waterBias ?? 0); // can bias down to imply basins
 }
 
-function shapeSandDunes(x, y, nx, ny, seed, opts) {
+function _shapeSandDunes(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 3.0;
   const dirDeg =
     ((Number.isFinite(opts.orientation)
@@ -81,7 +81,7 @@ function shapeSandDunes(x, y, nx, ny, seed, opts) {
   return (wave * 0.6 + (detail - 0.5) * 0.7) * r;
 }
 
-function shapeWetlands(x, y, nx, ny, seed, opts) {
+function _shapeWetlands(x, y, nx, ny, seed, opts) {
   // Goal: patchy shallow pools with gentle slightly raised hummocks; ~55% water coverage.
   const r = opts.relief ?? 2.0;
   const base = fbm2(nx * 1.8, ny * 1.8, seed, 4, 2.0, 0.55); // broad low variations
@@ -100,13 +100,13 @@ function shapeWetlands(x, y, nx, ny, seed, opts) {
   return h;
 }
 
-function shapeTundra(x, y, nx, ny, seed, opts) {
+function _shapeTundra(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 1.5;
   const low = fbm2(nx * 1.7, ny * 1.7, seed, 3, 2.0, 0.6);
   return (low - 0.5) * r;
 }
 
-function shapeCoast(x, y, nx, ny, seed, opts) {
+function _shapeCoast(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 3.0;
   // Oriented shoreline axis; pick seeded orientation if not provided.
   const theta = Number.isFinite(opts.orientation)
@@ -154,7 +154,7 @@ function shapeCoast(x, y, nx, ny, seed, opts) {
   return h;
 }
 
-function shapeRiverLake(x, y, nx, ny, seed, opts) {
+function _shapeRiverLake(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.5;
   // Meandering channel with seeded orientation
   const orient = randFromSeed(seed, 29) * Math.PI * 2;
@@ -168,38 +168,38 @@ function shapeRiverLake(x, y, nx, ny, seed, opts) {
 
 // ── Private Helpers (Biome Variant Shapers) ───────────────
 
-function shapeForestTemperate(x, y, nx, ny, seed, opts) {
+function _shapeForestTemperate(x, y, nx, ny, seed, opts) {
   const o = { ...opts, relief: opts.relief ?? 3.0, roughness: opts.roughness ?? 1.1 };
-  return shapeHills(x, y, nx, ny, seed, o);
+  return _shapeHills(x, y, nx, ny, seed, o);
 }
 
-function shapeForestConifer(x, y, nx, ny, seed, opts) {
+function _shapeForestConifer(x, y, nx, ny, seed, opts) {
   const o = { ...opts, relief: opts.relief ?? 3.8, roughness: (opts.roughness ?? 1.2) + 0.2 };
   // slightly craggier than temperate
-  return shapeHills(x, y, nx, ny, seed + 31, o);
+  return _shapeHills(x, y, nx, ny, seed + 31, o);
 }
 
-function shapeSavanna(x, y, nx, ny, seed, opts) {
+function _shapeSavanna(x, y, nx, ny, seed, opts) {
   const o = { ...opts, relief: opts.relief ?? 2.2, roughness: opts.roughness ?? 0.9 };
-  return shapeGrassland(x, y, nx, ny, seed + 7, o);
+  return _shapeGrassland(x, y, nx, ny, seed + 7, o);
 }
 
-function shapeSteppe(x, y, nx, ny, seed, opts) {
+function _shapeSteppe(x, y, nx, ny, seed, opts) {
   const o = { ...opts, relief: opts.relief ?? 1.8, roughness: opts.roughness ?? 0.7 };
-  return shapeGrassland(x, y, nx, ny, seed + 13, o);
+  return _shapeGrassland(x, y, nx, ny, seed + 13, o);
 }
 
-function shapeDesertCold(x, y, nx, ny, seed, opts) {
+function _shapeDesertCold(x, y, nx, ny, seed, opts) {
   // cold desert: flats with pans, similar to tundra+desert
   const r = opts.relief ?? 1.2;
   const n = fbm2(nx * 2.5, ny * 2.5, seed, 3, 2.0, 0.55) - 0.5;
   return n * r + (opts.waterBias ?? -0.2);
 }
 
-function shapeOasis(x, y, nx, ny, seed, opts) {
+function _shapeOasis(x, y, nx, ny, seed, opts) {
   // Reworked oasis: single central pool (roughly circular) and predominantly dry sand elsewhere.
   // 1. Base desert floor (flattened) to keep dunes subtle.
-  const desert = shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: 0.8, roughness: 0.6 });
+  const desert = _shapeDesertHot(x, y, nx, ny, seed, { ...opts, relief: 0.8, roughness: 0.6 });
   const cx = nx - 0.5;
   const cy = ny - 0.5;
   const d = Math.sqrt(cx * cx + cy * cy);
@@ -240,100 +240,100 @@ function shapeOasis(x, y, nx, ny, seed, opts) {
   return h;
 }
 
-function shapeSaltFlats(x, y, nx, ny, seed, opts) {
+function _shapeSaltFlats(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 0.8;
   const n = fbm2(nx * 6.0, ny * 6.0, seed + 91, 2, 2.0, 0.5) - 0.5; // fine micro undulations
   return n * r + (opts.waterBias ?? -0.3);
 }
 
-function shapeThornscrub(x, y, nx, ny, seed, opts) {
+function _shapeThornscrub(x, y, nx, ny, seed, opts) {
   const o = { ...opts, relief: opts.relief ?? 2.0, roughness: (opts.roughness ?? 1.0) + 0.2 };
-  return shapeGrassland(x, y, nx, ny, seed + 23, o);
+  return _shapeGrassland(x, y, nx, ny, seed + 23, o);
 }
 
-function shapeGlacier(x, y, nx, ny, seed, opts) {
+function _shapeGlacier(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.8;
   const slope = cliffBand(nx, ny, seed, randFromSeed(seed, 2) * 180, 0.12);
   const smooth = fbm2(nx * 1.2, ny * 1.2, seed + 212, 3, 1.8, 0.6) - 0.5;
   return (slope * 0.7 + smooth * 0.3) * r;
 }
 
-function shapeFrozenLake(x, y, nx, ny, seed, opts) {
+function _shapeFrozenLake(x, y, nx, ny, seed, opts) {
   const base = -Math.abs(radial(nx, ny, seed + 9, false, 1.1, 0.0));
   return base * (opts.relief ?? 2.0) - Math.abs(opts.waterBias ?? 0.6);
 }
 
-function shapePackIce(x, y, nx, ny, seed, opts) {
+function _shapePackIce(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 1.6;
   const cells = (Math.sin(nx * 22 + seed) + Math.sin(ny * 21 + seed * 0.7)) * 0.25;
   const noise = fbm2(nx * 4.0, ny * 4.0, seed + 44, 3, 2.0, 0.55) - 0.5;
   return (cells + noise * 0.5) * r;
 }
 
-function shapeScreeSlope(x, y, nx, ny, seed, opts) {
+function _shapeScreeSlope(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 4.5;
   const ridgey = ridge(nx * 2.5, ny * 2.5, seed + 55, 5) - 0.5;
   const band = cliffBand(nx, ny, seed + 3, randFromSeed(seed, 17) * 180, 0.08);
   return (ridgey * 0.8 + band * 0.6) * r;
 }
 
-function shapeCedarHighlands(x, y, nx, ny, seed, opts) {
+function _shapeCedarHighlands(x, y, nx, ny, seed, opts) {
   const o = { ...opts, relief: opts.relief ?? 3.5 };
-  return shapeHills(x, y, nx, ny, seed + 66, o);
+  return _shapeHills(x, y, nx, ny, seed + 66, o);
 }
 
-function shapeGeyserBasin(x, y, nx, ny, seed, opts) {
+function _shapeGeyserBasin(x, y, nx, ny, seed, opts) {
   // rolling with random pits (vents)
-  const base = shapeWetlands(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.0 });
+  const base = _shapeWetlands(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.0 });
   const pits = fbm2(nx * 10.0, ny * 10.0, seed + 77, 2, 2.0, 0.5) - 0.4;
   return base - pits * 1.2;
 }
 
-function shapeFloodplain(x, y, nx, ny, seed, opts) {
-  const base = shapeRiverLake(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.0 });
+function _shapeFloodplain(x, y, nx, ny, seed, opts) {
+  const base = _shapeRiverLake(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.0 });
   return base * 0.8; // gentler
 }
 
-function shapeBloodMarsh(x, y, nx, ny, seed, opts) {
-  const base = shapeWetlands(x, y, nx, ny, seed + 88, { ...opts, relief: opts.relief ?? 2.2 });
+function _shapeBloodMarsh(x, y, nx, ny, seed, opts) {
+  const base = _shapeWetlands(x, y, nx, ny, seed + 88, { ...opts, relief: opts.relief ?? 2.2 });
   return base - 0.5; // deeper bogs
 }
 
-function shapeMangrove(x, y, nx, ny, seed, opts) {
+function _shapeMangrove(x, y, nx, ny, seed, opts) {
   // coastal wetlands
-  const coast = shapeCoast(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.5 });
-  const wet = shapeWetlands(x, y, nx, ny, seed + 99, { ...opts, relief: opts.relief ?? 2.0 });
+  const coast = _shapeCoast(x, y, nx, ny, seed, { ...opts, relief: opts.relief ?? 2.5 });
+  const wet = _shapeWetlands(x, y, nx, ny, seed + 99, { ...opts, relief: opts.relief ?? 2.0 });
   return coast * 0.6 + wet * 0.7;
 }
 
-function shapeOcean(x, y, nx, ny, seed, opts) {
+function _shapeOcean(x, y, nx, ny, seed, opts) {
   const bowl = -radial(nx, ny, seed + 111, false, 1.2, 0.0);
   const long = fbm2(nx * 1.1, ny * 1.1, seed + 112, 2, 2.0, 0.6) - 0.5;
   return (bowl * 1.2 + long * 0.3) * (opts.relief ?? 3.0) - Math.abs(opts.waterBias ?? 0.5);
 }
 
-function shapeCoralReef(x, y, nx, ny, seed, opts) {
+function _shapeCoralReef(x, y, nx, ny, seed, opts) {
   // shallow shelves with ridges
   const ring = radial(nx, ny, seed + 121, true, 1.0, 0.0); // high around edges
   const ridges = ridge(nx * 3.5, ny * 3.5, seed + 122, 4) - 0.5;
   return (ring * 0.8 + ridges * 0.6) * (opts.relief ?? 2.5);
 }
 
-function shapeDeadForest(x, y, nx, ny, seed, opts) {
-  const base = shapeSteppe(x, y, nx, ny, seed + 131, { ...opts, relief: opts.relief ?? 1.7 });
+function _shapeDeadForest(x, y, nx, ny, seed, opts) {
+  const base = _shapeSteppe(x, y, nx, ny, seed + 131, { ...opts, relief: opts.relief ?? 1.7 });
   return base - 0.3;
 }
 
-function shapePetrifiedForest(x, y, nx, ny, seed, opts) {
-  const h = shapeHills(x, y, nx, ny, seed + 141, { ...opts, relief: opts.relief ?? 3.2 });
+function _shapePetrifiedForest(x, y, nx, ny, seed, opts) {
+  const h = _shapeHills(x, y, nx, ny, seed + 141, { ...opts, relief: opts.relief ?? 3.2 });
   const cracks = cliffBand(nx, ny, seed + 142, 90, 0.06) + cliffBand(nx, ny, seed + 143, 0, 0.06);
   return h + cracks * 0.6;
 }
 
-function shapeBambooThicket(x, y, nx, ny, seed, opts) {
+function _shapeBambooThicket(x, y, nx, ny, seed, opts) {
   // gentle longitudinal ridges
   const dir = randFromSeed(seed, 7) * 360;
-  const dune = shapeSandDunes(x, y, nx, ny, seed + 151, {
+  const dune = _shapeSandDunes(x, y, nx, ny, seed + 151, {
     ...opts,
     relief: opts.relief ?? 2.2,
     orientation: dir,
@@ -341,7 +341,7 @@ function shapeBambooThicket(x, y, nx, ny, seed, opts) {
   return dune * 0.7;
 }
 
-function shapeOrchard(x, y, nx, ny, seed) {
+function _shapeOrchard(x, y, nx, ny, seed) {
   // Orchard: intentionally near-flat to showcase regular planting rows.
   // Replace previous noisy grid interference with a gentle single-axis tilt plus subtle micro-variation.
   // Target variance < ~0.25. Relief scaling kept minimal regardless of opts.relief to preserve flatness.
@@ -352,104 +352,104 @@ function shapeOrchard(x, y, nx, ny, seed) {
   return base + tilt + micro; // typically ~0.3..0.5 range
 }
 
-function shapeMysticGrove(x, y, nx, ny, seed, opts) {
+function _shapeMysticGrove(x, y, nx, ny, seed, opts) {
   const humps =
     radial(nx, ny, seed + 171, true, 1.0, 0.0) +
     (fbm2(nx * 5.0, ny * 5.0, seed + 172, 3, 2.0, 0.5) - 0.5);
   return humps * (opts.relief ?? 2.4);
 }
 
-function shapeFeywildBloom(x, y, nx, ny, seed, opts) {
+function _shapeFeywildBloom(x, y, nx, ny, seed, opts) {
   const petals = Math.sin((nx - 0.5) * 16 + seed) * Math.cos((ny - 0.5) * 16 + seed * 0.5);
   const base = radial(nx, ny, seed + 181, true, 1.0, 0.0);
   return (base * 0.7 + petals * 0.3) * (opts.relief ?? 2.6);
 }
 
-function shapeShadowfellForest(x, y, nx, ny, seed, opts) {
+function _shapeShadowfellForest(x, y, nx, ny, seed, opts) {
   const bowl = -radial(nx, ny, seed + 191, false, 0.8, 0.0);
   const rough = fbm2(nx * 3.0, ny * 3.0, seed + 192, 3, 2.0, 0.6) - 0.5;
   return (bowl + rough * 0.5) * (opts.relief ?? 2.0);
 }
 
-function shapeCavern(x, y, nx, ny, seed, opts) {
+function _shapeCavern(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 3.0;
   const ceiling = -radial(nx, ny, seed + 201, false, 1.0, 0.0);
   const tunnels = Math.sin(nx * 10 + seed) * Math.cos(ny * 10 + seed * 0.7) * 0.3;
   return (ceiling + tunnels) * r - 0.4;
 }
 
-function shapeFungalGrove(x, y, nx, ny, seed, opts) {
+function _shapeFungalGrove(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.2;
   const bumps = fbm2(nx * 6.0, ny * 6.0, seed + 211, 4, 2.0, 0.5) - 0.4;
   return bumps * r;
 }
 
-function shapeCrystalFields(x, y, nx, ny, seed, opts) {
+function _shapeCrystalFields(x, y, nx, ny, seed, opts) {
   const spikes = ridge(nx * 4.0, ny * 4.0, seed + 221, 4) - 0.5;
   return spikes * (opts.relief ?? 3.0);
 }
 
-function shapeCrystalSpires(x, y, nx, ny, seed, opts) {
+function _shapeCrystalSpires(x, y, nx, ny, seed, opts) {
   const rid = ridge(nx * 6.0, ny * 6.0, seed + 231, 5) - 0.5;
   const center = radial(nx, ny, seed + 232, true, 0.8, 0.0);
   return (rid * 0.9 + center * 0.4) * (opts.relief ?? 4.0);
 }
 
-function shapeEldritchRift(x, y, nx, ny, seed, opts) {
+function _shapeEldritchRift(x, y, nx, ny, seed, opts) {
   const band1 = cliffBand(nx, ny, seed + 241, randFromSeed(seed, 242) * 180, 0.05);
   const band2 = cliffBand(nx, ny, seed + 243, randFromSeed(seed, 244) * 180 + 90, 0.05);
   const base = fbm2(nx * 2.0, ny * 2.0, seed + 245, 3, 2.0, 0.6) - 0.5;
   return (band1 + band2 + base * 0.4) * (opts.relief ?? 3.5);
 }
 
-function shapeVolcanic(x, y, nx, ny, seed, opts) {
+function _shapeVolcanic(x, y, nx, ny, seed, opts) {
   const cone = radial(nx, ny, seed + 251, false, 1.2, 0.0); // high center cone
   const caldera = -Math.exp(-((nx - 0.5) ** 2 + (ny - 0.5) ** 2) * 40); // dip at center
   const lava = ridge(nx * 3.0, ny * 3.0, seed + 252, 4) - 0.5;
   return (cone + caldera * 1.5 + lava * 0.4) * (opts.relief ?? 5.0);
 }
 
-function shapeObsidianPlain(x, y, nx, ny, seed, opts) {
+function _shapeObsidianPlain(x, y, nx, ny, seed, opts) {
   const flat = fbm2(nx * 2.0, ny * 2.0, seed + 261, 2, 2.0, 0.55) - 0.5;
   const shards = ridge(nx * 6.0, ny * 6.0, seed + 262, 3) - 0.5;
   return (flat * 0.4 + shards * 0.3) * (opts.relief ?? 1.6);
 }
 
-function shapeAshWastes(x, y, nx, ny, seed, opts) {
-  const dunes = shapeSandDunes(x, y, nx, ny, seed + 271, { ...opts, relief: opts.relief ?? 2.0 });
+function _shapeAshWastes(x, y, nx, ny, seed, opts) {
+  const dunes = _shapeSandDunes(x, y, nx, ny, seed + 271, { ...opts, relief: opts.relief ?? 2.0 });
   return dunes * 0.7 - 0.4;
 }
 
-function shapeLavaFields(x, y, nx, ny, seed, opts) {
+function _shapeLavaFields(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.8;
   const flows =
     Math.sin(nx * 14 + seed) * 0.5 + (fbm2(nx * 3.5, ny * 3.5, seed + 281, 3, 2.0, 0.55) - 0.5);
   return flows * r + 0.3;
 }
 
-function shapeWasteland(x, y, nx, ny, seed, opts) {
+function _shapeWasteland(x, y, nx, ny, seed, opts) {
   const rough = fbm2(nx * 3.0, ny * 3.0, seed + 291, 5, 2.1, 0.5) - 0.5;
   return rough * (opts.relief ?? 3.0) - 0.2;
 }
 
-function shapeRuinedUrban(x, y, nx, ny, seed, opts) {
+function _shapeRuinedUrban(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.0;
   const grid = (Math.sign(Math.sin(nx * 20)) + Math.sign(Math.cos(ny * 20))) * 0.2;
   const rubble = fbm2(nx * 5.0, ny * 5.0, seed + 301, 3, 2.0, 0.55) - 0.5;
   return (grid + rubble) * r;
 }
 
-function shapeGraveyard(x, y, nx, ny, seed, opts) {
+function _shapeGraveyard(x, y, nx, ny, seed, opts) {
   const hummocks = fbm2(nx * 6.0, ny * 6.0, seed + 311, 3, 2.0, 0.55) - 0.5;
   return hummocks * (opts.relief ?? 1.8) - 0.1;
 }
 
-function shapeAstralPlateau(x, y, nx, ny, seed, opts) {
+function _shapeAstralPlateau(x, y, nx, ny, seed, opts) {
   const plateau = radial(nx, ny, seed + 321, false, 1.0, 0.0);
   return plateau * (opts.relief ?? 3.0) + 0.5; // lifted
 }
 
-function shapeArcaneLeyNexus(x, y, nx, ny, seed, opts) {
+function _shapeArcaneLeyNexus(x, y, nx, ny, seed, opts) {
   const bandA = cliffBand(nx, ny, seed + 331, 0, 0.04);
   const bandB = cliffBand(nx, ny, seed + 332, 90, 0.04);
   const base = fbm2(nx * 2.0, ny * 2.0, seed + 333, 2, 2.0, 0.6) - 0.5;
@@ -459,72 +459,72 @@ function shapeArcaneLeyNexus(x, y, nx, ny, seed, opts) {
 // ── Constants ───────────────────────────────────────────────
 
 const RECIPE_INDEX = {
-  grassland: shapeGrassland,
-  hills: shapeHills,
-  mountain: shapeMountain,
-  alpine: shapeMountain,
-  desertHot: shapeDesertHot,
-  sandDunes: shapeSandDunes,
-  wetlands: shapeWetlands,
-  swamp: shapeWetlands,
-  tundra: shapeTundra,
-  coast: shapeCoast,
-  riverLake: shapeRiverLake,
+  grassland: _shapeGrassland,
+  hills: _shapeHills,
+  mountain: _shapeMountain,
+  alpine: _shapeMountain,
+  desertHot: _shapeDesertHot,
+  sandDunes: _shapeSandDunes,
+  wetlands: _shapeWetlands,
+  swamp: _shapeWetlands,
+  tundra: _shapeTundra,
+  coast: _shapeCoast,
+  riverLake: _shapeRiverLake,
   // Forest & plains variants
-  forestTemperate: shapeForestTemperate,
-  forestConifer: shapeForestConifer,
-  savanna: shapeSavanna,
-  steppe: shapeSteppe,
+  forestTemperate: _shapeForestTemperate,
+  forestConifer: _shapeForestConifer,
+  savanna: _shapeSavanna,
+  steppe: _shapeSteppe,
   // Desert variants
-  desertCold: shapeDesertCold,
-  oasis: shapeOasis,
-  saltFlats: shapeSaltFlats,
-  thornscrub: shapeThornscrub,
+  desertCold: _shapeDesertCold,
+  oasis: _shapeOasis,
+  saltFlats: _shapeSaltFlats,
+  thornscrub: _shapeThornscrub,
   // Arctic
-  glacier: shapeGlacier,
-  frozenLake: shapeFrozenLake,
-  packIce: shapePackIce,
+  glacier: _shapeGlacier,
+  frozenLake: _shapeFrozenLake,
+  packIce: _shapePackIce,
   // Mountain
-  screeSlope: shapeScreeSlope,
-  cedarHighlands: shapeCedarHighlands,
-  geyserBasin: shapeGeyserBasin,
+  screeSlope: _shapeScreeSlope,
+  cedarHighlands: _shapeCedarHighlands,
+  geyserBasin: _shapeGeyserBasin,
   // Wetlands
-  floodplain: shapeFloodplain,
-  bloodMarsh: shapeBloodMarsh,
-  mangrove: shapeMangrove,
+  floodplain: _shapeFloodplain,
+  bloodMarsh: _shapeBloodMarsh,
+  mangrove: _shapeMangrove,
   // Aquatic
-  ocean: shapeOcean,
-  coralReef: shapeCoralReef,
+  ocean: _shapeOcean,
+  coralReef: _shapeCoralReef,
   // Forest variants
-  deadForest: shapeDeadForest,
-  petrifiedForest: shapePetrifiedForest,
-  bambooThicket: shapeBambooThicket,
-  orchard: shapeOrchard,
-  mysticGrove: shapeMysticGrove,
-  feywildBloom: shapeFeywildBloom,
-  shadowfellForest: shapeShadowfellForest,
+  deadForest: _shapeDeadForest,
+  petrifiedForest: _shapePetrifiedForest,
+  bambooThicket: _shapeBambooThicket,
+  orchard: _shapeOrchard,
+  mysticGrove: _shapeMysticGrove,
+  feywildBloom: _shapeFeywildBloom,
+  shadowfellForest: _shapeShadowfellForest,
   // Underground
-  cavern: shapeCavern,
-  fungalGrove: shapeFungalGrove,
-  crystalFields: shapeCrystalFields,
-  crystalSpires: shapeCrystalSpires,
-  eldritchRift: shapeEldritchRift,
+  cavern: _shapeCavern,
+  fungalGrove: _shapeFungalGrove,
+  crystalFields: _shapeCrystalFields,
+  crystalSpires: _shapeCrystalSpires,
+  eldritchRift: _shapeEldritchRift,
   // Volcanic
-  volcanic: shapeVolcanic,
-  obsidianPlain: shapeObsidianPlain,
-  ashWastes: shapeAshWastes,
-  lavaFields: shapeLavaFields,
+  volcanic: _shapeVolcanic,
+  obsidianPlain: _shapeObsidianPlain,
+  ashWastes: _shapeAshWastes,
+  lavaFields: _shapeLavaFields,
   // Wasteland
-  wasteland: shapeWasteland,
-  ruinedUrban: shapeRuinedUrban,
-  graveyard: shapeGraveyard,
+  wasteland: _shapeWasteland,
+  ruinedUrban: _shapeRuinedUrban,
+  graveyard: _shapeGraveyard,
   // Exotic
-  astralPlateau: shapeAstralPlateau,
-  arcaneLeyNexus: shapeArcaneLeyNexus,
+  astralPlateau: _shapeAstralPlateau,
+  arcaneLeyNexus: _shapeArcaneLeyNexus,
 };
 
 function pickRecipe(biomeKey) {
-  return RECIPE_INDEX[biomeKey] || shapeGrassland;
+  return RECIPE_INDEX[biomeKey] || _shapeGrassland;
 }
 
 // Desired maximum absolute elevation (in levels) per biome for better thematic variety.

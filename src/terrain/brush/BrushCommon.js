@@ -38,7 +38,7 @@ export function normalizeBrushSize(value, config = TERRAIN_CONFIG) {
  * Returning both radii keeps footprint math identical across controller/highlighter/overlay.
  * @param {number} size
  */
-function computeBrushRadii(size) {
+function _computeBrushRadii(size) {
   const clamped = Math.max(1, Math.round(size));
   const negativeRadius = Math.floor((clamped - 1) / 2);
   const positiveRadius = clamped - negativeRadius - 1;
@@ -55,7 +55,7 @@ function computeBrushRadii(size) {
  */
 export function computeBrushFootprint(gridX, gridY, brushSize, bounds = {}) {
   const size = normalizeBrushSize(brushSize);
-  const { negativeRadius, positiveRadius } = computeBrushRadii(size);
+  const { negativeRadius, positiveRadius } = _computeBrushRadii(size);
   const minX = Number.isFinite(bounds.minX) ? bounds.minX : 0;
   const minY = Number.isFinite(bounds.minY) ? bounds.minY : 0;
   const hasMaxX = Number.isFinite(bounds.cols);

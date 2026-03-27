@@ -40,7 +40,7 @@ export function computeSlopeAspect(gameManager, heights) {
  * @param {(x:number,y:number)=>boolean} isSourceFn
  * @returns {number[][]}
  */
-function computeDistanceField(gameManager, heights, isSourceFn) {
+function _computeDistanceField(gameManager, heights, isSourceFn) {
   const cols = gameManager.cols;
   const rows = gameManager.rows;
   const dist = Array.from({ length: rows }, () => new Array(cols).fill(Infinity));
@@ -86,7 +86,7 @@ function computeDistanceField(gameManager, heights, isSourceFn) {
 export function computeMoistureField(gameManager, heights) {
   const rows = gameManager.rows;
   const cols = gameManager.cols;
-  const dist = computeDistanceField(
+  const dist = _computeDistanceField(
     gameManager,
     heights,
     (x, y) => (Number.isFinite(heights?.[y]?.[x]) ? heights[y][x] : 0) < 0

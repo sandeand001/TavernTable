@@ -69,14 +69,14 @@ class CreatureToken {
    */
   createSprite() {
     try {
-      this.createFallbackGraphics();
-      this.applyFacing();
+      this._createFallbackGraphics();
+      this._applyFacing();
     } catch (error) {
       GameErrors.sprites(error, {
         stage: 'createSprite',
         creatureType: this.type,
       });
-      this.createFallbackGraphics();
+      this._createFallbackGraphics();
     }
   }
 
@@ -111,7 +111,7 @@ class CreatureToken {
   /**
    * Create a fallback graphics representation when sprites are not available
    */
-  createFallbackGraphics() {
+  _createFallbackGraphics() {
     try {
       // Try to use the old drawing method if available, otherwise use colored circle
       if (typeof this.drawCreature === 'function') {
@@ -131,7 +131,7 @@ class CreatureToken {
           /* ignore bounds error */
         }
       } else {
-        this.createFallbackSprite();
+        this._createFallbackSprite();
       }
     } catch (error) {
       GameErrors.sprites(error, {
@@ -139,14 +139,14 @@ class CreatureToken {
         creatureType: this.type,
       });
       // Last resort - create a simple colored circle
-      this.createFallbackSprite();
+      this._createFallbackSprite();
     }
   }
 
   /**
    * Create a simple colored circle as the most basic fallback
    */
-  createFallbackSprite() {
+  _createFallbackSprite() {
     try {
       // Color-coded fallback circles for different creature types
       const colorMap = {
@@ -178,7 +178,7 @@ class CreatureToken {
   /**
    * Apply the facing direction to the sprite
    */
-  applyFacing() {
+  _applyFacing() {
     if (!this.sprite) return;
 
     try {
@@ -202,7 +202,7 @@ class CreatureToken {
    */
   setFacing(facingRight) {
     this.facingRight = Boolean(facingRight);
-    this.applyFacing();
+    this._applyFacing();
   }
 
   // ── Positioning ────────────────────────────────────────
