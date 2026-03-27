@@ -4,9 +4,11 @@
 import { Sprite, Texture } from '../../../core/PixiStub.js';
 
 import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
-import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
-import logger, { LOG_CATEGORY } from '../../../utils/Logger.js';
+
 import { repositionPlaceableSprite } from './placeables-positioning.js';
+
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
+import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 
 const PLACEABLE_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
 

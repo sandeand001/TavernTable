@@ -1,4 +1,3 @@
-import { isJest } from '../utils/env.js';
 /**
  * UIController.js
  * Handles UI interactions and initialization for TavernTable
@@ -18,12 +17,9 @@ import { isJest } from '../utils/env.js';
  * @version 1.0.0
  */
 
-import GameManager from '../core/GameManager.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
-import { Sanitizers, GameValidators } from '../utils/Validation.js';
 import { TOKEN_COMMANDS } from '../config/TokenCommandConfig.js';
+
 import {
   getCreatureButtons,
   getFacingButton,
@@ -38,8 +34,14 @@ import {
   getGameContainer,
 } from './domHelpers.js';
 import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
-import { rollDice } from '../systems/dice/dice.js';
 import { RadialMenu } from './components/RadialMenu.js';
+
+import { isJest } from '../utils/env.js';
+import GameManager from '../core/GameManager.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { Sanitizers, GameValidators } from '../utils/Validation.js';
+import { rollDice } from '../systems/dice/dice.js';
 
 // ── Constants ──────────────────────────────────────────────────
 const TOKEN_DRAG_MIME = 'application/taverntable-token';

@@ -20,6 +20,21 @@
  * - Integrates with existing manager systems
  */
 
+import { GRID_CONFIG } from '../config/GameConstants.js';
+import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
+import { getTokenCommand } from '../config/TokenCommandConfig.js';
+
+import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
+import { StateCoordinator } from '../coordinators/StateCoordinator.js';
+import { InputCoordinator } from '../coordinators/InputCoordinator.js';
+import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
+import { SpatialCoordinator } from '../scene/picking/SpatialCoordinator.js';
+import { ThreeSceneManager } from '../scene/ThreeSceneManager.js';
+import { CameraRig } from '../scene/camera/CameraRig.js';
+import { TerrainMeshBuilder } from '../scene/terrain/TerrainMeshBuilder.js';
+import { TerrainRebuilder } from '../scene/terrain/TerrainRebuilder.js';
+import { PlaceableMeshPool } from '../scene/terrain/PlaceableMeshPool.js';
+import { PickingService } from '../scene/picking/PickingService.js';
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
 import {
   ErrorHandler,
@@ -28,25 +43,6 @@ import {
   ERROR_CATEGORY,
 } from '../utils/ErrorHandler.js';
 import { Sanitizers } from '../utils/Validation.js';
-import { GRID_CONFIG } from '../config/GameConstants.js';
-import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
-import { getTokenCommand } from '../config/TokenCommandConfig.js';
-
-// Import coordinators
-import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
-import { StateCoordinator } from '../coordinators/StateCoordinator.js';
-import { InputCoordinator } from '../coordinators/InputCoordinator.js';
-import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
-// 3D Transition Phase 0: Spatial coordinator (grid <-> world abstraction)
-import { SpatialCoordinator } from '../scene/picking/SpatialCoordinator.js';
-import { ThreeSceneManager } from '../scene/ThreeSceneManager.js';
-import { CameraRig } from '../scene/camera/CameraRig.js';
-import { TerrainMeshBuilder } from '../scene/terrain/TerrainMeshBuilder.js';
-import { TerrainRebuilder } from '../scene/terrain/TerrainRebuilder.js';
-import { PlaceableMeshPool } from '../scene/terrain/PlaceableMeshPool.js';
-// Centralized picking (screen -> world/grid) service (3D transition phase)
-import { PickingService } from '../scene/picking/PickingService.js';
-// 2D elevation scale utilities (pixels per level) used to map to 3D world Y units
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 
 const EMOTE_COMMAND_PREFIX = 'emote-';

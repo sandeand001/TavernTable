@@ -3,12 +3,13 @@
 // Clean implementation with camera mode toggles and debug overlay.
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 
 import { installLightingMethods } from './lighting/LightingSystem.js';
 import { installGridOverlayMethods } from './grid/GridOverlay.js';
 import { installCameraMethods } from './camera/CameraSystem.js';
+
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 
 export class ThreeSceneManager {
   // ── Constructor ───────────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
-import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
-import BiomeCanvasPainter from '../../terrain/painting/BiomeCanvasPainter.js';
 import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
+
+import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { traceDiamondPath } from '../../utils/geometry/GeometryUtils.js';
+import BiomeCanvasPainter from '../../terrain/painting/BiomeCanvasPainter.js';
 
 /**
  * BiomeShadingController - façade for painterly biome shading outside terrain mode.

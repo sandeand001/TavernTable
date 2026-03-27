@@ -21,6 +21,7 @@ import {
   getTerrainPlaceablesRoot,
   getTerrainModeEls,
 } from './domHelpers.js';
+
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 
 class SidebarController {

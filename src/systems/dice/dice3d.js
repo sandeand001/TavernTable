@@ -1,7 +1,6 @@
 // dice3d.js — d20 roll orchestration (slim core).
 // Model management, animation, and calibration extracted to sibling modules.
 
-import logger from '../../utils/Logger.js';
 import {
   diceState,
   hasWindow,
@@ -20,8 +19,9 @@ import {
   applyCriticalRollTint,
 } from './DiceModelManager.js';
 import { scheduleRollAnimation } from './DiceAnimationScheduler.js';
-// Side-effect import: registers window calibration globals
 import './FaceCalibrationUI.js';
+
+import logger from '../../utils/Logger.js';
 
 // ── Core lifecycle ───────────────────────────────────────────────────────────
 function clearActiveDie() {

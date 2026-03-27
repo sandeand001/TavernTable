@@ -1,6 +1,8 @@
 import { Graphics } from '../../core/PixiStub.js';
-import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
+
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
+
+import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
 import { traceDiamondPath } from '../../utils/geometry/GeometryUtils.js';
 
