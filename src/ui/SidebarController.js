@@ -197,7 +197,7 @@ class SidebarController {
     root.classList.add('placeables-unified-grid');
 
     // Lazy import to avoid cost until tab viewed
-    import('../config/TerrainPlaceables.js')
+    import('../config/terrain/TerrainPlaceables.js')
       .then((mod) => {
         const TERRAIN_PLACEABLES = mod.TERRAIN_PLACEABLES || mod.default || {};
         const entries = Object.entries(TERRAIN_PLACEABLES);
@@ -455,7 +455,7 @@ class SidebarController {
       const root = getBiomeRootEl();
       if (!root) return;
       root.textContent = '';
-      import('../config/BiomeConstants.js')
+      import('../config/biome/BiomeConstants.js')
         .then((mod) => {
           const { BIOME_GROUPS } = mod;
           Object.entries(BIOME_GROUPS).forEach(([group, list]) => {

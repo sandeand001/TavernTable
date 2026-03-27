@@ -1,6 +1,6 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameErrors } from '../../../utils/ErrorHandler.js';
-import { ContainerUtils } from '../../../utils/ContainerUtils.js';
+import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
 
 /** Validate terrain container state before operations. */
 export function validateContainerState(m) {

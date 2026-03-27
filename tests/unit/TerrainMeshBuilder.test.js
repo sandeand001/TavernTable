@@ -1,4 +1,4 @@
-import { TerrainMeshBuilder } from '../../src/scene/TerrainMeshBuilder.js';
+import { TerrainMeshBuilder } from '../../src/scene/terrain/TerrainMeshBuilder.js';
 
 describe('TerrainMeshBuilder', () => {
   test('builds flat geometry with expected vertex count and y mapping', async () => {

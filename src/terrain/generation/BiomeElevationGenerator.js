@@ -18,7 +18,7 @@
  *  - applyBiomeElevationIfFlat(heightArray, biomeKey, options?) -> number[][]
  */
 
-import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import {
   hash2D,
   smoothNoise,
@@ -29,7 +29,7 @@ import {
   radial,
   cliffBand,
 } from './NoisePrimitives.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
 
 // ------------------------
 // Lightweight deterministic noise (fbm)

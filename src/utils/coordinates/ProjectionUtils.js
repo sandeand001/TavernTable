@@ -4,7 +4,7 @@
  * Focus: clarity and correctness.
  */
 
-import { logger, LOG_CATEGORY } from './Logger.js';
+import { logger, LOG_CATEGORY } from '../Logger.js';
 
 const TOPDOWN_TILE_BASE = 0;
 const TOPDOWN_PLACEABLE_BASE = 500000;

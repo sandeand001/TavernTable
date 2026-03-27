@@ -1,8 +1,8 @@
 // PIXI sprite creation for 2D placeable items extracted from placeables.js (Phase 8).
 // Handles texture loading, scale computation, anchoring, and debug logging.
 
-import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
-import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
+import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import logger, { LOG_CATEGORY } from '../../../utils/Logger.js';
 import { repositionPlaceableSprite } from './placeables-positioning.js';
 

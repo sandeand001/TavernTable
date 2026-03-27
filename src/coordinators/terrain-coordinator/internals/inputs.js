@@ -5,7 +5,7 @@ import {
   ERROR_SEVERITY,
   GameErrors,
 } from '../../../utils/ErrorHandler.js';
-import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 
 /**
  * Get grid coordinates from mouse event using interaction manager when available.

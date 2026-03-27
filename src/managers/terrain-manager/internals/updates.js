@@ -1,10 +1,14 @@
 import { GameErrors } from '../../../utils/ErrorHandler.js';
 import { LOG_CATEGORY, LOG_LEVEL, logger } from '../../../utils/Logger.js';
-import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 import { updatePlaceablesForCell } from './placeables.js';
-import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
-import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
+import {
+  computeDepthKey,
+  TYPE_BIAS,
+  withOverlayRaise,
+} from '../../../utils/geometry/DepthUtils.js';
 
 /** Enqueue affected cells and trigger processing. */
 export function updateTerrainDisplay(m, centerX, centerY, brushSize) {

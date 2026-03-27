@@ -1,5 +1,5 @@
 // Minimal, deterministic tests for palette API stability
-import { getBiomeColorHex } from '../../src/config/BiomePalettes.js';
+import { getBiomeColorHex } from '../../src/config/biome/BiomePalettes.js';
 
 // A tiny stub to avoid depending on real biome constants in tests
 const KNOWN_BIOMES = ['grassland', 'desert', 'tundra'];

@@ -1,6 +1,6 @@
 import { logger } from '../../../utils/Logger.js';
-import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
 /**
  * Wire up token right-drag interactions and global snap bridge.

@@ -1,4 +1,4 @@
-import { CameraRig } from '../../src/scene/CameraRig.js';
+import { CameraRig } from '../../src/scene/camera/CameraRig.js';
 
 describe('CameraRig', () => {
   function makeCamera() {

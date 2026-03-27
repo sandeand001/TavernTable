@@ -2,8 +2,8 @@
 // Shared between TerrainManager (overlay) and TerrainCoordinator (base tiles)
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
-import { darkenColor } from '../utils/ColorUtils.js';
+import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
+import { darkenColor } from '../utils/color/ColorUtils.js';
 
 export class TerrainFacesRenderer {
   constructor(gameManager) {

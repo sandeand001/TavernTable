@@ -1,4 +1,4 @@
-import { TerrainHeightUtils } from '../../src/utils/TerrainHeightUtils.js';
+import { TerrainHeightUtils } from '../../src/utils/terrain/TerrainHeightUtils.js';
 
 describe('TerrainHeightUtils', () => {
   test('createHeightArray builds correct dimensions and clamps default', () => {

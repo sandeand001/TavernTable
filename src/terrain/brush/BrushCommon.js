@@ -1,4 +1,4 @@
-import { TERRAIN_CONFIG } from '../../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 
 export const BRUSH_LAYER_HINT = 'aboveFacesBelowTokens';
 export const BRUSH_COLORS = Object.freeze({

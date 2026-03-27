@@ -3,7 +3,7 @@ import {
   placeItem,
   cyclePlaceableVariant,
 } from '../../src/managers/terrain-manager/internals/placeables.js';
-import { TERRAIN_PLACEABLES } from '../../src/config/TerrainPlaceables.js';
+import { TERRAIN_PLACEABLES } from '../../src/config/terrain/TerrainPlaceables.js';
 
 describe('Placeables tree variants', () => {
   const mockM = {

@@ -1,7 +1,7 @@
 // Internal tool/brush helpers for TerrainCoordinator. Zero functional change.
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { Sanitizers } from '../../../utils/Validation.js';
-import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 
 const clampToOddBrushSize = (value) => {
   const min = Number.isFinite(TERRAIN_CONFIG.MIN_BRUSH_SIZE) ? TERRAIN_CONFIG.MIN_BRUSH_SIZE : 1;

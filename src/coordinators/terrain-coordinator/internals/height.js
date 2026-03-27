@@ -1,4 +1,4 @@
-import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 
 /**
  * Safely read a terrain height from the working data array with guards.

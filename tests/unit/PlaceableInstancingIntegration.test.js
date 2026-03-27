@@ -35,7 +35,7 @@ jest.mock('three', () => {
 
 import { GameManager } from '../../src/core/GameManager.js';
 import { TerrainManager } from '../../src/managers/TerrainManager.js';
-import { TERRAIN_PLACEABLES } from '../../src/config/TerrainPlaceables.js';
+import { TERRAIN_PLACEABLES } from '../../src/config/terrain/TerrainPlaceables.js';
 
 // Provide a minimal subset of TERRAIN_PLACEABLES if not defined fully in environment
 // Provide a deterministic test placeable definition

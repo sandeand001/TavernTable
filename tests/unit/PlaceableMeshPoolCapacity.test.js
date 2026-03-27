@@ -40,7 +40,7 @@ jest.mock('three', () => {
   return { PlaneGeometry, MeshBasicMaterial, InstancedMesh, Object3D, Matrix4 };
 });
 
-import { PlaceableMeshPool } from '../../src/scene/PlaceableMeshPool.js';
+import { PlaceableMeshPool } from '../../src/scene/terrain/PlaceableMeshPool.js';
 
 function buildStubGM() {
   return {

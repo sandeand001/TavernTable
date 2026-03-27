@@ -1,4 +1,4 @@
-import { TerrainMeshBuilder } from '../../src/scene/TerrainMeshBuilder.js';
+import { TerrainMeshBuilder } from '../../src/scene/terrain/TerrainMeshBuilder.js';
 
 // Ensures advanced (hard-edges + walls) path produces more vertices than legacy plane
 // and uses BufferGeometry when three namespace supplies it.

@@ -1,4 +1,4 @@
-import { TerrainRebuilder } from '../../src/scene/TerrainRebuilder.js';
+import { TerrainRebuilder } from '../../src/scene/terrain/TerrainRebuilder.js';
 import { GRID_CONFIG } from '../../src/config/GameConstants.js';
 
 describe('TerrainRebuilder biome color fallback', () => {

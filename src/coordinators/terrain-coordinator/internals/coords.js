@@ -1,4 +1,4 @@
-import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 
 /**
  * Check if grid position is within bounds of the current game grid.

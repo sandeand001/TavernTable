@@ -1,7 +1,7 @@
 import {
   computeSlopeAspect,
   computeMoistureField,
-} from '../../../src/terrain/biome-painter/fields.js';
+} from '../../../src/terrain/painting/biome-painter/fields.js';
 
 // Minimal fake gameManager with grid dimensions
 const gm = (cols, rows) => ({ cols, rows });

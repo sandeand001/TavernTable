@@ -1,4 +1,4 @@
-import { TerrainBrushController } from '../../src/terrain/TerrainBrushController.js';
+import { TerrainBrushController } from '../../src/terrain/brush/TerrainBrushController.js';
 
 describe('Terrain brush preview footprint', () => {
   test('getFootprintCells returns a centered square of size brushSize', () => {

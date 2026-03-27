@@ -8,16 +8,16 @@
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
-import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 // import { GRID_CONFIG } from '../config/GameConstants.js';
-import { lightenColor, darkenColor } from '../utils/ColorUtils.js';
-import { traceDiamondPath } from '../utils/GeometryUtils.js';
-import { getBiomeColorHex } from '../config/BiomePalettes.js';
+import { lightenColor, darkenColor } from '../utils/color/ColorUtils.js';
+import { traceDiamondPath } from '../utils/geometry/GeometryUtils.js';
+import { getBiomeColorHex } from '../config/biome/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
-import { TERRAIN_PLACEABLES } from '../config/TerrainPlaceables.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { TERRAIN_PLACEABLES } from '../config/terrain/TerrainPlaceables.js';
+import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 // elevation offset calculation is delegated into internals
-import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 // shading pattern helpers are used within internals
 import {
   validateContainerState as _validateContainerState,

@@ -8,9 +8,9 @@
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
 // Validation utilities are referenced within internals; no direct import needed here
-import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TerrainDataStore } from '../terrain/TerrainDataStore.js';
-import { TerrainBrushController } from '../terrain/TerrainBrushController.js';
+import { TerrainBrushController } from '../terrain/brush/TerrainBrushController.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TerrainInputHandlers } from './terrain-coordinator/TerrainInputHandlers.js';
 import { ElevationScaleController } from './terrain-coordinator/ElevationScaleController.js';
@@ -62,7 +62,7 @@ import {
   generateBiomeElevationField,
   isAllDefaultHeight,
   getBiomeElevationScaleHint,
-} from '../terrain/BiomeElevationGenerator.js';
+} from '../terrain/generation/BiomeElevationGenerator.js';
 
 export class TerrainCoordinator {
   /**

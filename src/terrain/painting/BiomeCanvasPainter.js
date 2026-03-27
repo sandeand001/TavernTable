@@ -6,9 +6,9 @@
  * it as a PIXI texture for efficient display.
  */
 
-import { getBiomeColorHex } from '../config/BiomePalettes.js';
-import { shadeMul as _sharedShadeMul } from '../utils/ColorUtils.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
+import { shadeMul as _sharedShadeMul } from '../../utils/color/ColorUtils.js';
+import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
 // Internal style classification (inlined; original helper internalized)
 function __styleForBiome(biome) {
   const b = String(biome || '');
@@ -31,7 +31,7 @@ import {
   scatterTuftsGlobal as motifScatterTuftsGlobal,
 } from './biome-painter/motifs.js';
 import { computeSlopeAspect, computeMoistureField } from './biome-painter/fields.js';
-import { traceDiamondFacePath2D } from '../utils/CanvasShapeUtils.js';
+import { traceDiamondFacePath2D } from '../../utils/canvas/CanvasShapeUtils.js';
 
 export class BiomeCanvasPainter {
   constructor(gameManager) {

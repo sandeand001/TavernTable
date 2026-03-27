@@ -1,4 +1,4 @@
-import { reprojectAll } from '../../src/utils/ProjectionUtils.js';
+import { reprojectAll } from '../../src/utils/coordinates/ProjectionUtils.js';
 
 // Minimal game manager + token sprite stubs
 function makeGameManager() {

@@ -2,13 +2,13 @@
 // Domain-level helper that builds a hover-only highlight descriptor for the terrain brush.
 // Pure data, no PIXI/UI imports. App layer renders based on the returned descriptor.
 
-import { logger, LOG_CATEGORY } from '../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import {
   BRUSH_LAYER_HINT,
   BRUSH_COLORS,
   resolveHighlightStyle,
   getDefaultHighlightStyle,
-} from './brush/BrushCommon.js';
+} from './BrushCommon.js';
 
 /**
  * @typedef {Object} Brush

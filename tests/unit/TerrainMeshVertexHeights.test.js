@@ -1,4 +1,4 @@
-import { TerrainMeshBuilder } from '../../src/scene/TerrainMeshBuilder.js';
+import { TerrainMeshBuilder } from '../../src/scene/terrain/TerrainMeshBuilder.js';
 
 // Verifies multi-cell height pattern correctly maps to geometry Y values.
 // Skips gracefully if Three.js cannot be imported in the test environment.

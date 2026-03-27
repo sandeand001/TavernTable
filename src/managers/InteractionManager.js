@@ -8,8 +8,8 @@
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
-import { CoordinateUtils } from '../utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import {
   isPointInCellDiamond as _isPointInCellDiamond,
   pickTopmostGridCellAt as _pickTopmost,
@@ -31,6 +31,11 @@ import {
   handleTokenMovementKeyUp as _handleMovementUp,
   shouldIgnoreKeyTarget as _shouldIgnoreKey,
 } from './interaction-manager/internals/keyboard.js';
+import {
+  start3DRotation as _start3DRotation,
+  update3DRotation as _update3DRotation,
+  stop3DRotation as _stop3DRotation,
+} from './interaction-manager/internals/rotation.js';
 
 export class InteractionManager {
   constructor(gameManager) {
@@ -230,20 +235,7 @@ export class InteractionManager {
 
   /** Begin 3D camera rotation (right mouse drag) */
   start3DRotation(event, threeMgr) {
-    try {
-      this.isRotating3D = true;
-      this.rotateStartX = event.clientX;
-      this.rotateStartY = event.clientY;
-      // Capture starting yaw/pitch from manager private fields if accessible
-      this.startYaw = threeMgr._isoYaw || 0;
-      const startPitchRad = threeMgr._isoPitch != null ? threeMgr._isoPitch : 0.6;
-      this.startPitchDeg = (startPitchRad * 180) / Math.PI;
-      this.gameManager.app.view.style.cursor = 'grabbing';
-      event.preventDefault();
-      event.stopPropagation();
-    } catch (e) {
-      this.isRotating3D = false;
-    }
+    return _start3DRotation(this, event, threeMgr);
   }
 
   _startRightButtonDrag(event) {
@@ -259,40 +251,12 @@ export class InteractionManager {
 
   /** Update 3D rotation given current mouse */
   update3DRotation(event) {
-    try {
-      if (!this.isRotating3D) return;
-      const threeMgr = this.gameManager?.threeSceneManager;
-      if (!threeMgr) return;
-      const dx = event.clientX - this.rotateStartX;
-      const dy = event.clientY - this.rotateStartY;
-      // Horizontal drag adjusts yaw
-      const yawDeltaDeg = dx * this.yawSensitivity;
-      let newYaw = this.startYaw + (yawDeltaDeg * Math.PI) / 180;
-      // Normalize yaw into [0, 2PI)
-      const TAU = Math.PI * 2;
-      newYaw = ((newYaw % TAU) + TAU) % TAU;
-      // Vertical drag adjusts pitch (dragging up now lowers pitch; dragging down increases pitch)
-      const pitchDeltaDeg = dy * this.rotationSensitivity;
-      let newPitchDeg = this.startPitchDeg + pitchDeltaDeg;
-      if (newPitchDeg < 0) newPitchDeg = 0;
-      if (newPitchDeg > 89.9) newPitchDeg = 89.9;
-      // Apply new spherical orientation
-      threeMgr.setIsoAngles({ yaw: newYaw, pitch: (newPitchDeg * Math.PI) / 180 });
-      if (!threeMgr._isoMode) {
-        // In free mode maintain orientation via general pitch setter
-        threeMgr.setCameraPitchDegrees(newPitchDeg);
-      }
-    } catch (_) {
-      /* ignore */
-    }
+    return _update3DRotation(this, event);
   }
 
   /** End 3D rotation */
   stop3DRotation() {
-    this.isRotating3D = false;
-    this._activeDragButton = null;
-    this._removeGlobalDragListeners();
-    this.gameManager.app.view.style.cursor = 'default';
+    return _stop3DRotation(this);
   }
 
   /**

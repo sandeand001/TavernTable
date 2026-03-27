@@ -18,7 +18,7 @@
  *   window.threeBiomeHarmonyLowSaturationBoost = 0..1 pushes low elevations slightly more chroma (default 0.15)
  */
 
-import { TERRAIN_CONFIG } from './TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 import { getBiomeColorHex } from './BiomePalettes.js';
 
 const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;

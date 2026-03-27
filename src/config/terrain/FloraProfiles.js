@@ -1,7 +1,7 @@
 // FloraProfiles.js — Biome flora profiles, spectral variants, candidate filters, and helper functions.
 // Extracted from flora.js (Phase 8).
 
-import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
+import { TERRAIN_PLACEABLES } from './TerrainPlaceables.js';
 
 function isSpectralPlaceable(id) {
   if (!id) return false;

@@ -1,6 +1,6 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameErrors } from '../../../utils/ErrorHandler.js';
-import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 import * as biomeInternals from './biome.js';
 
 /**

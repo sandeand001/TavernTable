@@ -6,7 +6,7 @@
  */
 
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';

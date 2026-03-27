@@ -7,7 +7,7 @@
  * Eliminates code duplication in TerrainManager cleanup patterns.
  */
 
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../Logger.js';
 
 export class ContainerUtils {
   /**

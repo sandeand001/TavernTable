@@ -1,4 +1,4 @@
-import { traceDiamondFacePath2D } from '../../src/utils/CanvasShapeUtils.js';
+import { traceDiamondFacePath2D } from '../../src/utils/canvas/CanvasShapeUtils.js';
 
 describe('CanvasShapeUtils.traceDiamondFacePath2D', () => {
   test('traces expected diamond face path centered at cx,cy', () => {

@@ -2,7 +2,7 @@
 // Extracted from ThreeSceneManager.js (Phase 6). Installed via mixin pattern.
 
 import { GRID_CONFIG } from '../../config/GameConstants.js';
-import { TerrainBrushOverlay3D } from '../TerrainBrushOverlay3D.js';
+import { TerrainBrushOverlay3D } from '../terrain/TerrainBrushOverlay3D.js';
 
 function _rebuildGridOverlay(metrics = null, options = {}) {
   if (!this.scene || !this.three) return;

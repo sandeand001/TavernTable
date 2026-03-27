@@ -1,6 +1,6 @@
 import { placeNewToken } from '../../src/managers/token-manager/internals/placement.js';
-import { CoordinateUtils } from '../../src/utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../../src/utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../../src/utils/coordinates/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../src/utils/terrain/TerrainHeightUtils.js';
 
 describe('placeNewToken', () => {
   test('creates creature, positions with elevation, sets zIndex, adds to container, and tracks in collection', () => {

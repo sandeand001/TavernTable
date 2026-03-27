@@ -1,10 +1,10 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameValidators } from '../../../utils/Validation.js';
-import { ContainerUtils } from '../../../utils/ContainerUtils.js';
-import { TERRAIN_CONFIG } from '../../../config/TerrainConstants.js';
-import { lightenColor, darkenColor } from '../../../utils/ColorUtils.js';
-import { getBiomeColorHex } from '../../../config/BiomePalettes.js';
-import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
+import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
+import { lightenColor, darkenColor } from '../../../utils/color/ColorUtils.js';
+import { getBiomeColorHex } from '../../../config/biome/BiomePalettes.js';
+import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
 /** Validate tile creation inputs with container state checks. */
 export function validateTileCreationInputs(m, x, y) {

@@ -70,7 +70,7 @@ describe('GameManager.placeTokenAtPointer', () => {
     await gm.enableHybridRender?.(); // ensures pickingService if not already
     if (!gm.pickingService) {
       // fallback instantiation if enableHybridRender was a no-op due to mocked scene
-      const { PickingService } = await import('../../src/scene/PickingService.js');
+      const { PickingService } = await import('../../src/scene/picking/PickingService.js');
       gm.pickingService = new PickingService({ gameManager: gm });
     }
     const placed = await gm.placeTokenAtPointer(50, 50);

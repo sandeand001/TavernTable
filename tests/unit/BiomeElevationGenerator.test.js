@@ -1,10 +1,10 @@
-import { TERRAIN_CONFIG } from '../../src/config/TerrainConstants.js';
-import { TerrainHeightUtils } from '../../src/utils/TerrainHeightUtils.js';
+import { TERRAIN_CONFIG } from '../../src/config/terrain/TerrainConstants.js';
+import { TerrainHeightUtils } from '../../src/utils/terrain/TerrainHeightUtils.js';
 import {
   isAllDefaultHeight,
   generateBiomeElevationField,
   applyBiomeElevationIfFlat,
-} from '../../src/terrain/BiomeElevationGenerator.js';
+} from '../../src/terrain/generation/BiomeElevationGenerator.js';
 
 function allWithin(arr, min, max) {
   for (let y = 0; y < arr.length; y++) {

@@ -14,12 +14,12 @@
  * @version 2.0.0
  */
 
-import { logger, LOG_CATEGORY } from './Logger.js';
-import { TOKEN_PLACEMENT_OFFSET as CONFIG_TOKEN_OFFSET } from '../config/GameConstants.js';
+import { logger, LOG_CATEGORY } from '../Logger.js';
+import { TOKEN_PLACEMENT_OFFSET as CONFIG_TOKEN_OFFSET } from '../../config/GameConstants.js';
 // Fallback in case build caching serves older GameConstants without export
 const TOKEN_PLACEMENT_OFFSET =
   typeof CONFIG_TOKEN_OFFSET !== 'undefined' ? CONFIG_TOKEN_OFFSET : { x: 0, y: 0 };
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from './ErrorHandler.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../ErrorHandler.js';
 
 /**
  * Coordinate transformation utilities for isometric grid systems

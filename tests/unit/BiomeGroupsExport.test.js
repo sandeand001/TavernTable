@@ -1,4 +1,4 @@
-import { BIOME_GROUPS, ALL_BIOMES } from '../../src/config/BiomeConstants.js';
+import { BIOME_GROUPS, ALL_BIOMES } from '../../src/config/biome/BiomeConstants.js';
 
 /**
  * Regression test: ensure BIOME_GROUPS remains exported so SidebarController dynamic menu builds.

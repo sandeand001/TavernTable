@@ -5,7 +5,7 @@
  */
 
 import { ALL_BIOMES } from './BiomeConstants.js';
-import { TERRAIN_CONFIG } from './TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 
 const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;
 const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;

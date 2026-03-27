@@ -1,8 +1,8 @@
 // TerrainDataStore.js - Manages terrain height arrays and related operations
 // Keeps TerrainCoordinator lean by extracting data concerns
 
-import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-import { TerrainHeightUtils } from '../utils/TerrainHeightUtils.js';
+import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
+import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 
 export class TerrainDataStore {

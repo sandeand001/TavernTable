@@ -1,4 +1,4 @@
-import { BiomeCanvasPainter } from '../../src/terrain/BiomeCanvasPainter.js';
+import { BiomeCanvasPainter } from '../../src/terrain/painting/BiomeCanvasPainter.js';
 
 /**
  * BiomeCanvasPainter smoke — construct, set seed, compute bounds, and call paint/clear without throwing.

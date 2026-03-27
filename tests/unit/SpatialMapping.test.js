@@ -1,4 +1,4 @@
-import { SpatialCoordinator } from '../../src/scene/SpatialCoordinator.js';
+import { SpatialCoordinator } from '../../src/scene/picking/SpatialCoordinator.js';
 
 describe('SpatialCoordinator', () => {
   test('grid <-> world roundtrip integrity for defaults', () => {

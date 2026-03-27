@@ -1,5 +1,5 @@
 import { TerrainCoordinator } from '../../src/coordinators/TerrainCoordinator.js';
-import { TerrainHeightUtils } from '../../src/utils/TerrainHeightUtils.js';
+import { TerrainHeightUtils } from '../../src/utils/terrain/TerrainHeightUtils.js';
 
 // Minimal GameManager stub for coordinator
 function makeGameManager(cols = 2, rows = 2) {

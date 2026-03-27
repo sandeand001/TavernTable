@@ -1,5 +1,5 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
-import { ContainerUtils } from '../../../utils/ContainerUtils.js';
+import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
 
 /**
  * Prepare base grid tiles for editing overlay: reset elevation visuals and remove faces/shadows.

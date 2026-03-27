@@ -49,7 +49,7 @@ jest.mock('three', () => {
 });
 
 import { GameManager } from '../../src/core/GameManager.js';
-import { PickingService } from '../../src/scene/PickingService.js';
+import { PickingService } from '../../src/scene/picking/PickingService.js';
 
 // Minimal stub for ThreeSceneManager so PickingService finds camera + canvas bounds
 class FakeCamera {}

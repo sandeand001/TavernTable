@@ -1,6 +1,6 @@
 /* eslint-disable indent */
 // UI domHelpers removed; DOM access is injected via coordinator.domPorts to satisfy layering.
-import { buildBrushHighlightDescriptor } from '../../terrain/TerrainBrushHighlighter.js';
+import { buildBrushHighlightDescriptor } from '../../terrain/brush/TerrainBrushHighlighter.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 

@@ -3,9 +3,9 @@
 // Applies elevation + biome-based vertex coloring.
 
 // Simplified: expressive/atlas modes removed. Use 2D biome palette directly.
-import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-import { GRID_CONFIG } from '../config/GameConstants.js';
-import { getBiomeColorWithHydrology } from '../config/BiomePalettes.js';
+import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
+import { GRID_CONFIG } from '../../config/GameConstants.js';
+import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 
 export class TerrainRebuilder {
   constructor({ gameManager, builder, debounceMs = 120 } = {}) {

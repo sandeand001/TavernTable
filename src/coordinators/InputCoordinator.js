@@ -9,7 +9,7 @@
 import { logger } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
-import { CoordinateUtils } from '../utils/CoordinateUtils.js';
+import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 
 export class InputCoordinator {
   constructor(gameManager) {

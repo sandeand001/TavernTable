@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TerrainBrushOverlay3D } from '../../src/scene/TerrainBrushOverlay3D.js';
+import { TerrainBrushOverlay3D } from '../../src/scene/terrain/TerrainBrushOverlay3D.js';
 import { BRUSH_COLORS } from '../../src/terrain/brush/BrushCommon.js';
 
 describe('TerrainBrushOverlay3D', () => {

@@ -183,20 +183,65 @@
 
 **GATE**: Full `npm test` pass
 
-- [x] **GATE PASSED** — committed as: `318e663`
+- [x] **GATE PASSED** — committed as: `c1beed7`
 
 ---
 
-## Phase 9 — Function Dedup & Organization · `LOW RISK`
+## Phase 9 — Code Organization & Conventions · `MEDIUM RISK`
 
-**Goal**: Eliminate duplicated logic and fix misplaced code.
+**Goal**: Establish consistent structure across the entire codebase per `CONVENTIONS.md`.
 
-- [ ] Consolidate `validateContainerState()` (duplicated in `terrain-manager/internals/container.js` AND `terrain-coordinator/internals/container.js`)
-- [ ] Evaluate merging `utils/ColorUtils.js` + `scene/ColorUtils3D.js`
-- [ ] Move 3D rotation logic (`start3DRotation`, `update3DRotation`) from `InteractionManager` → `CameraSystem`
-- [ ] Move `ID_TO_MODEL_KEY` mapping from `placeables.js` → `TerrainPlaceables.js` config
+> See `CONVENTIONS.md` for the full specification: directory layout, in-file
+> ordering, section comments, responsibility boundaries.
 
-**GATE**: `npm test` passes
+### 9A — Dead code & cleanup (done)
+- [x] Delete `scene/ColorUtils3D.js` (zero importers — dead code)
+- [x] Delete redundant `ID_TO_MODEL_KEY` from `placeables.js`
+- [x] Extract 3D rotation → `interaction-manager/internals/rotation.js`
+- [x] ~~Consolidate `validateContainerState()`~~ — not duplicated (skip)
+- [ ] Delete deprecated shim `managers/BiomeCanvasPainter.js` (9-line re-export)
+- [ ] Delete dead stub `terrain/ShadingHelpers.js` (3 lines, empty)
+- [ ] Delete empty directories: `core/model-cache/`, `scene/assets/`
+
+### 9B — Directory restructuring
+Restructure flat directories per `CONVENTIONS.md` §5 target layout:
+
+- [ ] `config/` → split into `config/biome/`, `config/terrain/`
+- [ ] `scene/` → split into `scene/camera/`, `scene/lighting/`, `scene/grid/`, `scene/terrain/`, `scene/picking/`
+- [ ] `terrain/` → split into `terrain/generation/`, `terrain/painting/`, `terrain/brush/`
+- [ ] `ui/` → create `ui/controls/` for toggle/control files
+- [ ] `utils/` → split into `utils/canvas/`, `utils/color/`, `utils/coordinates/`, `utils/geometry/`, `utils/terrain/`
+- [ ] Move `FloraProfiles.js` from `terrain-coordinator/internals/` → `config/terrain/`
+- [ ] Group `terrain-coordinator/internals/` (19 files) into sub-concerns: `activation/`, `brush/`, `rendering/`, `spatial/`
+- [ ] Update all import paths across the codebase
+
+### 9C — In-file method grouping
+Apply `// ── Section ──` comments and reorder methods in **all files** per `CONVENTIONS.md` §2:
+
+**Convention**: constructor → lifecycle → public API → event handlers → private helpers → accessors
+
+**Large files (reorder + section comments):**
+- [ ] `InteractionManager.js` — constructor, event setup, mouse handlers, delegating methods, cleanup
+- [ ] `Token3DAdapter.js` — constructor/init, public API, animation, movement, rendering, cleanup
+- [ ] `ThreeSceneManager.js` — constructor/init, public API, delegating methods, cleanup
+- [ ] `placeables.js` — config/constants, tree helpers, model cache, placeItem, variant cycling, removal
+- [ ] `GameManager.js` — constructor, coordinator init, public API, event handlers, cleanup
+- [ ] `TerrainCoordinator.js` — constructor, lifecycle, public API, event handlers, private helpers
+- [ ] `TerrainManager.js` — constructor, lifecycle, public API, private helpers
+- [ ] `BiomeCanvasPainter.js` — constructor, lifecycle, public API, private helpers
+- [ ] `BiomeElevationGenerator.js` — constructor, generation API, noise helpers, private helpers
+- [ ] `SidebarController.js` — constructor, public API, event handlers, DOM helpers
+- [ ] `UIController.js` — constructor, public API, event handlers, DOM helpers
+
+**Medium files (section comments only, no reorder needed):**
+- [ ] All `scene/` class files (CameraRig, PickingService, PlaceableMeshPool, etc.)
+- [ ] All `coordinators/terrain-coordinator/` controller files
+- [ ] All `managers/*/internals/` files
+- [ ] All `utils/` files with > 5 functions
+- [ ] All `systems/dice/` files
+- [ ] All `terrain/` files
+
+**GATE**: `npm test` passes, `npm run lint` clean
 
 - [ ] **GATE PASSED** — committed as: _______________
 
@@ -204,13 +249,13 @@
 
 ## Phase 10 — Final Cleanup · `LOW RISK`
 
-**Goal**: Polish — remove dead code, update docs.
+**Goal**: Polish — remove dead code, update docs, validate structure.
 
 - [ ] Run `node tools/find-unused-exports.js` and remove dead exports
 - [ ] Clean up any remaining debug/diagnostic files
-- [ ] Update `README.md` to reflect new file structure
+- [ ] Update `README.md` to reflect new directory structure
 - [ ] Verify `tools/` scripts are still relevant (remove obsolete ones)
-- [ ] Final line-count audit — confirm no file exceeds ~600 lines
+- [ ] Final line-count audit — confirm no file exceeds ~800 lines (façades) or ~400 lines (internals)
 
 **GATE**: Full `npm test` + manual browser smoke test
 

@@ -1,7 +1,7 @@
 // Lifecycle, preview, and diagnostics for PlaceableMeshPool.
 // Extracted from PlaceableMeshPool.js (Phase 8).
 
-import logger, { LOG_CATEGORY } from '../utils/Logger.js';
+import logger, { LOG_CATEGORY } from '../../utils/Logger.js';
 
 const PLACEABLE_POOL_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
 

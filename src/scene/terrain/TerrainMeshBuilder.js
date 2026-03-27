@@ -2,7 +2,7 @@
 // Responsible for constructing a heightfield mesh (initially flat) from grid elevation data.
 // Future: will incorporate smoothing, normals, materials, biome-driven vertex color.
 
-import { GRID_CONFIG } from '../config/GameConstants.js';
+import { GRID_CONFIG } from '../../config/GameConstants.js';
 
 export class TerrainMeshBuilder {
   constructor(opts = {}) {

@@ -1,5 +1,5 @@
-import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 // Depth utils no longer used for rendering order; we align to tile depth bands.
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';

@@ -1,5 +1,5 @@
 import { TerrainCoordinator } from '../../src/coordinators/TerrainCoordinator.js';
-import { TERRAIN_PLACEABLES } from '../../src/config/TerrainPlaceables.js';
+import { TERRAIN_PLACEABLES } from '../../src/config/terrain/TerrainPlaceables.js';
 
 // Helper to build a minimal game manager similar to existing integration tests
 function makeGameManager(cols = 12, rows = 12) {

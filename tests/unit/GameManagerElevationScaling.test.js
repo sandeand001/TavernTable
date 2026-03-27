@@ -1,5 +1,5 @@
 import { GameManager } from '../../src/core/GameManager.js';
-import { TerrainHeightUtils } from '../../src/utils/TerrainHeightUtils.js';
+import { TerrainHeightUtils } from '../../src/utils/terrain/TerrainHeightUtils.js';
 
 function buildHybridGM() {
   const gm = new GameManager({ cols: 4, rows: 4 });

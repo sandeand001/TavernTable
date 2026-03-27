@@ -55,7 +55,7 @@ jest.mock('three', () => {
   return { PlaneGeometry, MeshBasicMaterial, InstancedMesh, Object3D };
 });
 
-import { PlaceableMeshPool } from '../../src/scene/PlaceableMeshPool.js';
+import { PlaceableMeshPool } from '../../src/scene/terrain/PlaceableMeshPool.js';
 
 describe('PlaceableMeshPool terrain height Y mapping', () => {
   test('applies elevationUnit * height as world Y', async () => {

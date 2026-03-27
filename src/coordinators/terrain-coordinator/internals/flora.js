@@ -16,7 +16,7 @@ import {
   stripSpectralWeights,
   relocateTropicalCandidate,
   isCoastlineTile,
-} from './FloraProfiles.js';
+} from '../../../config/terrain/FloraProfiles.js';
 
 function clearExistingPlants(c) {
   const tm = c.terrainManager;

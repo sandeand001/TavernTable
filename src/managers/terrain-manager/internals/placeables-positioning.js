@@ -1,9 +1,9 @@
 // Placeable positioning helpers extracted from placeables.js (Phase 8).
 // Handles isometric coordinate mapping, elevation offsets, and z-index assignment.
 
-import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
-import { CoordinateUtils } from '../../../utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../../../utils/TerrainHeightUtils.js';
+import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
+import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
 /**
  * Compute isometric center for a grid cell using current tile dimensions.

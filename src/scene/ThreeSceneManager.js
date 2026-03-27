@@ -6,9 +6,9 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 
-import { installLightingMethods } from './scene-manager/LightingSystem.js';
-import { installGridOverlayMethods } from './scene-manager/GridOverlay.js';
-import { installCameraMethods } from './scene-manager/CameraSystem.js';
+import { installLightingMethods } from './lighting/LightingSystem.js';
+import { installGridOverlayMethods } from './grid/GridOverlay.js';
+import { installCameraMethods } from './camera/CameraSystem.js';
 
 export class ThreeSceneManager {
   constructor(gameManager) {

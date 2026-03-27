@@ -1,5 +1,5 @@
 import { TerrainCoordinator } from '../../src/coordinators/TerrainCoordinator.js';
-import { TERRAIN_CONFIG } from '../../src/config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../src/config/terrain/TerrainConstants.js';
 
 function makeCoordinatorWithHeights(heights) {
   const gameManager = { cols: heights?.[0]?.length || 0, rows: heights?.length || 0 };

@@ -1,7 +1,7 @@
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
-import { TerrainHeightUtils } from '../../utils/TerrainHeightUtils.js';
-import { CoordinateUtils } from '../../utils/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../../utils/coordinates/CoordinateUtils.js';
 
 /**
  * ElevationScaleController - Extracted logic for updating elevation perception scale.

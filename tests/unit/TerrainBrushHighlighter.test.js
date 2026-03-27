@@ -1,4 +1,4 @@
-import { buildBrushHighlightDescriptor } from '../../src/terrain/TerrainBrushHighlighter.js';
+import { buildBrushHighlightDescriptor } from '../../src/terrain/brush/TerrainBrushHighlighter.js';
 import { BRUSH_COLORS } from '../../src/terrain/brush/BrushCommon.js';
 
 function makeBrush(size = 1) {

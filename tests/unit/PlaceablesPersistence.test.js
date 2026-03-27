@@ -1,5 +1,5 @@
 import { clearAllTerrainTiles } from '../../src/managers/terrain-manager/internals/container.js';
-import { ContainerUtils } from '../../src/utils/ContainerUtils.js';
+import { ContainerUtils } from '../../src/utils/terrain/ContainerUtils.js';
 
 describe('TerrainManager clearAllTerrainTiles placeable preservation', () => {
   let originalSafeRemove;

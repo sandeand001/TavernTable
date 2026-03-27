@@ -22,7 +22,7 @@
  * of the 2D painterly system to keep per‑vertex color generation lightweight.
  */
 
-import { TERRAIN_CONFIG } from './TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 import { ALL_BIOMES } from './BiomeConstants.js';
 
 const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;

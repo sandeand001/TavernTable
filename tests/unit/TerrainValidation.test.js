@@ -1,5 +1,5 @@
-import { TerrainValidation } from '../../src/utils/TerrainValidation.js';
-import { TERRAIN_CONFIG } from '../../src/config/TerrainConstants.js';
+import { TerrainValidation } from '../../src/utils/terrain/TerrainValidation.js';
+import { TERRAIN_CONFIG } from '../../src/config/terrain/TerrainConstants.js';
 
 describe('TerrainValidation.validateTerrainCoordinates', () => {
   test('accepts in-bounds integer coordinates', () => {

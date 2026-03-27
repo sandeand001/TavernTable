@@ -1,4 +1,4 @@
-import { TERRAIN_PLACEABLES } from '../../../config/TerrainPlaceables.js';
+import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
 import logger, { LOG_CATEGORY } from '../../../utils/Logger.js';
 import { createPlaceableSprite } from './placeables-sprite.js';
 import {
@@ -15,7 +15,7 @@ export {
   repositionAllPlaceables,
 };
 // Depth utilities no longer used for cross-container zIndex raise; we align to tile scheme.
-// import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/DepthUtils.js';
+// import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/geometry/DepthUtils.js';
 
 // NOTE: previous QA introduced a fixed LEVEL_COMPENSATION which caused
 // consistent downward shifts and incorrect behavior for elevated tiles.
@@ -28,24 +28,6 @@ export {
 
 // Optional auto-baseline detection helpers for trees were removed in favor of
 // explicit, per-asset baselineOffsetPx in the config to keep behavior deterministic.
-
-// Central model key mapping for plant/tree placeables (previously duplicated in multiple branches)
-const ID_TO_MODEL_KEY = {
-  // Updated to canonical model keys
-  'tree-green-deciduous': 'common-broadleaf-1',
-  'tree-green-conifer': 'pine-conifer-1',
-  'tree-green-willow': 'common-broadleaf-4',
-  'tree-green-oval': 'common-broadleaf-2',
-  'tree-green-columnar': 'pine-conifer-2',
-  'tree-green-small': 'pine-conifer-4',
-  'tree-green-small-oval': 'pine-conifer-5',
-  'tree-green-tall-columnar': 'pine-conifer-3',
-  'tree-orange-deciduous': 'common-broadleaf-3',
-  'tree-yellow-willow': 'common-broadleaf-5',
-  'tree-yellow-conifer': 'pine-conifer-5',
-  'tree-yellow-conifer-alt': 'twisted-bare-2',
-  'tree-bare-deciduous': 'twisted-bare-1',
-};
 
 const TREE_ID_PATTERN = /^tree-/i;
 
@@ -301,7 +283,7 @@ export function placeItem(m, id, x, y) {
     // Async model load & placement
     ensureModelCache(gm3d).then((cache) => {
       if (!cache) return;
-      const modelKey = def.modelKey || ID_TO_MODEL_KEY[id];
+      const modelKey = def.modelKey;
       const finalizeModelPlacement = (model) => {
         // Guard: item may have been removed before model finished loading.
         const currentList = m.placeables?.get(tileKey);

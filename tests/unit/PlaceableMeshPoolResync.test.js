@@ -50,7 +50,7 @@ jest.mock('three', () => {
   return { PlaneGeometry, MeshBasicMaterial, Object3D, InstancedMesh };
 });
 
-import { PlaceableMeshPool } from '../../src/scene/PlaceableMeshPool.js';
+import { PlaceableMeshPool } from '../../src/scene/terrain/PlaceableMeshPool.js';
 
 function buildGM(heights) {
   return {

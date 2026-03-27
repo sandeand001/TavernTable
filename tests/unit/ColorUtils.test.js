@@ -1,4 +1,4 @@
-import { shadeMul, lightenColor, darkenColor } from '../../src/utils/ColorUtils.js';
+import { shadeMul, lightenColor, darkenColor } from '../../src/utils/color/ColorUtils.js';
 
 // Minimal tests to lock behavior for shared color helpers
 

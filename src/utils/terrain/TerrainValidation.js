@@ -6,8 +6,8 @@
  * code and provides standardized error messages.
  */
 
-import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../Logger.js';
 import { TerrainHeightUtils } from './TerrainHeightUtils.js';
 
 export class TerrainValidation {

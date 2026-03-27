@@ -1,6 +1,6 @@
 import { snapTokenToGrid } from '../../src/managers/token-manager/internals/positioning.js';
-import { CoordinateUtils } from '../../src/utils/CoordinateUtils.js';
-import { TerrainHeightUtils } from '../../src/utils/TerrainHeightUtils.js';
+import { CoordinateUtils } from '../../src/utils/coordinates/CoordinateUtils.js';
+import { TerrainHeightUtils } from '../../src/utils/terrain/TerrainHeightUtils.js';
 
 describe('snapTokenToGrid', () => {
   test('uses topmost picker and applies elevation offset', () => {

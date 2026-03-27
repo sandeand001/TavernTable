@@ -1,5 +1,5 @@
-import { TerrainMeshBuilder } from '../../src/scene/TerrainMeshBuilder.js';
-import { TerrainRebuilder } from '../../src/scene/TerrainRebuilder.js';
+import { TerrainMeshBuilder } from '../../src/scene/terrain/TerrainMeshBuilder.js';
+import { TerrainRebuilder } from '../../src/scene/terrain/TerrainRebuilder.js';
 
 // Simple performance guard: ensures a geometry builds and metrics are recorded.
 // Uses a stub three namespace with only what's required by TerrainMeshBuilder.

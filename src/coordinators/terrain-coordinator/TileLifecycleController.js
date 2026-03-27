@@ -5,7 +5,7 @@
  * private methods for now. Later, logic can be migrated here safely.
  */
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
-import { TERRAIN_CONFIG } from '../../config/TerrainConstants.js';
+import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 
 export class TileLifecycleController {
   /**
