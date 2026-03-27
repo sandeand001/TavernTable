@@ -1,7 +1,7 @@
-import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
-import { GRID_CONFIG } from '../../../config/GameConstants.js';
-import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
-import { traceDiamondPath } from '../../../utils/geometry/GeometryUtils.js';
+import { logger, LOG_CATEGORY } from '../../../../utils/logger/Logger.js';
+import { GRID_CONFIG } from '../../../../config/GameConstants.js';
+import { TERRAIN_CONFIG } from '../../../../config/terrain/TerrainConstants.js';
+import { traceDiamondPath } from '../../../../utils/geometry/GeometryUtils.js';
 
 // ── In-Place Tile Update ───────────────────────────────────────────
 

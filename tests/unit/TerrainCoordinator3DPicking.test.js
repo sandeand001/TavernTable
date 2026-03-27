@@ -1,4 +1,4 @@
-import { getGridCoordinatesFromEvent } from '../../src/coordinators/terrain-coordinator/internals/inputs.js';
+import { getGridCoordinatesFromEvent } from '../../src/coordinators/terrain-coordinator/internals/brush/inputs.js';
 
 describe('TerrainCoordinator getGridCoordinatesFromEvent (3D picking)', () => {
   beforeEach(() => {

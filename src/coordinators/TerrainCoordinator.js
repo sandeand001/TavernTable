@@ -28,36 +28,36 @@ import {
   processAllGridTiles as _processAllTiles,
   logCompletion as _logApplyComplete,
   handleApplicationError as _handleApplyError,
-} from './terrain-coordinator/internals/apply.js';
+} from './terrain-coordinator/internals/activation/apply.js';
 import {
   getGridCoordinatesFromEvent as _getCoordsFromEvent,
   modifyTerrainAtPosition as _modifyAtPos,
-} from './terrain-coordinator/internals/inputs.js';
+} from './terrain-coordinator/internals/brush/inputs.js';
 import {
   setRichShadingEnabled as _setRichShadingEnabled,
   setBiomeSeed as _setBiomeSeed,
-} from './terrain-coordinator/internals/biome.js';
-import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-coordinator/internals/color.js';
+} from './terrain-coordinator/internals/rendering/biome.js';
+import { getBiomeOrBaseColor as _getBiomeOrBaseColorInternal } from './terrain-coordinator/internals/rendering/color.js';
 import { autoPopulateBiomeFlora as _autoPopulateBiomeFlora } from './terrain-coordinator/internals/flora.js';
-import { handleGridResize as _handleResize } from './terrain-coordinator/internals/resize.js';
-import { getTerrainHeight as _getHeight } from './terrain-coordinator/internals/height.js';
-import { isValidGridPosition as _isValidPos } from './terrain-coordinator/internals/coords.js';
-import { modifyTerrainHeightAtCell as _modifyAtCell } from './terrain-coordinator/internals/brush.js';
+import { handleGridResize as _handleResize } from './terrain-coordinator/internals/spatial/resize.js';
+import { getTerrainHeight as _getHeight } from './terrain-coordinator/internals/spatial/height.js';
+import { isValidGridPosition as _isValidPos } from './terrain-coordinator/internals/spatial/coords.js';
+import { modifyTerrainHeightAtCell as _modifyAtCell } from './terrain-coordinator/internals/brush/brush.js';
 import {
   setTerrainTool as _setTool,
   getBrushSize as _getBrushSize,
   setBrushSize as _setBrushSize,
   increaseBrushSize as _incBrush,
   decreaseBrushSize as _decBrush,
-} from './terrain-coordinator/internals/tools.js';
+} from './terrain-coordinator/internals/brush/tools.js';
 import {
   updateBaseGridTileInPlace as _updateBaseGridTileInPlace,
   replaceBaseGridTile as _replaceBaseGridTile,
-} from './terrain-coordinator/internals/baseGridUpdates.js';
-import { resetTerrain as _resetTerrain } from './terrain-coordinator/internals/reset.js';
-import { loadBaseTerrainIntoWorkingState as _loadBaseIntoWorking } from './terrain-coordinator/internals/state.js';
+} from './terrain-coordinator/internals/rendering/baseGridUpdates.js';
+import { resetTerrain as _resetTerrain } from './terrain-coordinator/internals/activation/reset.js';
+import { loadBaseTerrainIntoWorkingState as _loadBaseIntoWorking } from './terrain-coordinator/internals/activation/state.js';
 import { validateDependencies as _validateDeps } from './terrain-coordinator/internals/deps.js';
-import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/init.js';
+import { initializeTerrainData as _initTerrainData } from './terrain-coordinator/internals/activation/init.js';
 import {
   generateBiomeElevationField,
   isAllDefaultHeight,

@@ -1,7 +1,7 @@
 // Internal tool/brush helpers for TerrainCoordinator. Zero functional change.
-import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
-import { Sanitizers } from '../../../utils/Validation.js';
-import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
+import { logger, LOG_CATEGORY } from '../../../../utils/logger/Logger.js';
+import { Sanitizers } from '../../../../utils/Validation.js';
+import { TERRAIN_CONFIG } from '../../../../config/terrain/TerrainConstants.js';
 
 // ── Brush Size Clamping ────────────────────────────────────────────
 

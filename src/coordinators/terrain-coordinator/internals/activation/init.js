@@ -1,6 +1,6 @@
-import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
-import { GameErrors } from '../../../utils/error/ErrorHandler.js';
-import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
+import { TERRAIN_CONFIG } from '../../../../config/terrain/TerrainConstants.js';
+import { GameErrors } from '../../../../utils/error/ErrorHandler.js';
+import { logger, LOG_CATEGORY } from '../../../../utils/logger/Logger.js';
 
 export function initializeTerrainData(c) {
   try {

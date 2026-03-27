@@ -9,7 +9,7 @@ import {
   activateTerrainMode as _activateMode,
   loadTerrainStateAndDisplay as _loadStateAndDisplay,
   handleTerrainModeActivationError as _handleActivationError,
-} from './internals/mode.js';
+} from './internals/activation/mode.js';
 
 /**
  * ActivationHelpers - façade for TerrainCoordinator enable/disable helpers.

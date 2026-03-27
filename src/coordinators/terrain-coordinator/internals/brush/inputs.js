@@ -4,8 +4,8 @@ import {
   ERROR_CATEGORY,
   ERROR_SEVERITY,
   GameErrors,
-} from '../../../utils/error/ErrorHandler.js';
-import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
+} from '../../../../utils/error/ErrorHandler.js';
+import { CoordinateUtils } from '../../../../utils/coordinates/CoordinateUtils.js';
 
 // ── Grid Coordinate Resolution ────────────────────────────────────
 

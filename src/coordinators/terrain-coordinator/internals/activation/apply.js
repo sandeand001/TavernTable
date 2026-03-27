@@ -1,6 +1,6 @@
-import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
-import { GameErrors } from '../../../utils/error/ErrorHandler.js';
-import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
+import { logger, LOG_CATEGORY } from '../../../../utils/logger/Logger.js';
+import { GameErrors } from '../../../../utils/error/ErrorHandler.js';
+import { TERRAIN_CONFIG } from '../../../../config/terrain/TerrainConstants.js';
 
 // ── Validation ────────────────────────────────────────────────────
 

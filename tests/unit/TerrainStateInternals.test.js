@@ -1,5 +1,5 @@
-import { initializeTerrainData } from '../../src/coordinators/terrain-coordinator/internals/init.js';
-import { loadBaseTerrainIntoWorkingState } from '../../src/coordinators/terrain-coordinator/internals/state.js';
+import { initializeTerrainData } from '../../src/coordinators/terrain-coordinator/internals/activation/init.js';
+import { loadBaseTerrainIntoWorkingState } from '../../src/coordinators/terrain-coordinator/internals/activation/state.js';
 
 describe('TerrainCoordinator state internals', () => {
   test('initializeTerrainData resizes datastore for valid grid', () => {

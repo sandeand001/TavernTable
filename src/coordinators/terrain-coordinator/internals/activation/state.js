@@ -1,5 +1,5 @@
-import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
-import { GameErrors } from '../../../utils/error/ErrorHandler.js';
+import { logger, LOG_CATEGORY } from '../../../../utils/logger/Logger.js';
+import { GameErrors } from '../../../../utils/error/ErrorHandler.js';
 
 export function loadBaseTerrainIntoWorkingState(c) {
   try {
