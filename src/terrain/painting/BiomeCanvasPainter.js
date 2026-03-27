@@ -33,6 +33,15 @@ import {
 } from './biome-painter/motifs.js';
 import { computeSlopeAspect, computeMoistureField } from './biome-painter/fields.js';
 import { traceDiamondFacePath2D } from '../../utils/canvas/CanvasShapeUtils.js';
+import {
+  drawRipplesInFace,
+  drawIceGlintsInFace,
+  drawTuftsInFace,
+  drawCanopyInFace,
+  drawStriationsInFace,
+  drawCrackInFace,
+} from './internals/faceDetails.js';
+import { applyBiomeStylePass } from './internals/biomeStylePass.js';
 
 export class BiomeCanvasPainter {
   // ── Constructor ─────────────────────────────────────────────
@@ -341,161 +350,23 @@ export class BiomeCanvasPainter {
     return _sharedShadeMul(hexInt >>> 0, factor);
   }
 
-  /** Draw concentric soft ripples centered in a face. */
   _drawRipplesInFace(ctx, cx, cy, w, h, baseColor, alpha = 0.18) {
-    this._clipSingleFace(ctx, cx, cy, w, h);
-    ctx.save();
-    ctx.strokeStyle = this._hex(this._shadeHex(baseColor, 1.15));
-    ctx.globalAlpha = alpha;
-    ctx.lineWidth = Math.max(1, Math.floor(h * 0.06));
-    const rx = w * 0.28,
-      ry = h * 0.22;
-    for (let i = 0; i < 3; i++) {
-      const k = 1 + i * 0.25;
-      ctx.beginPath();
-      for (let t = 0; t <= Math.PI * 2 + 0.001; t += Math.PI / 24) {
-        const nx = Math.cos(t) * rx * k;
-        const ny = Math.sin(t) * ry * k * 0.9;
-        const wob = 1 + this._valueNoise2D((cx + nx) * 0.02, (cy + ny) * 0.02) * 0.05;
-        const x = cx + nx * wob;
-        const y = cy + ny * wob;
-        if (t === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.restore(); // from _clipSingleFace
+    drawRipplesInFace(this, ctx, cx, cy, w, h, baseColor, alpha);
   }
-
-  /** Draw icy specular glints as short thin strokes in a face. */
   _drawIceGlintsInFace(ctx, cx, cy, w, h, alpha = 0.18) {
-    this._clipSingleFace(ctx, cx, cy, w, h);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = Math.max(1, Math.floor(h * 0.04));
-    const base = Math.floor(this._randU(cx, cy, 'iceCount') * 3) + 2;
-    for (let i = 0; i < base; i++) {
-      const r1 = this._randU(cx, cy, i + 101);
-      const r2 = this._randU(cx, cy, i + 202);
-      const ox = (r1 * 0.3 + 0.1) * w * 0.5;
-      const oy = (r2 * 0.2 - 0.1) * h * 0.5;
-      const x0 = cx + ox;
-      const y0 = cy - oy;
-      const x1 = x0 + w * 0.18;
-      const y1 = y0 - h * 0.14;
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.restore();
+    drawIceGlintsInFace(this, ctx, cx, cy, w, h, alpha);
   }
-
-  /** Draw short grassy tufts or reeds in a face (directional hatch marks). */
   _drawTuftsInFace(ctx, cx, cy, w, h, color, alpha = 0.22, density = 5, lean = 0.2) {
-    this._clipSingleFace(ctx, cx, cy, w, h);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = this._hex(color);
-    ctx.lineWidth = Math.max(1, Math.floor(h * 0.05));
-    for (let i = 0; i < density; i++) {
-      const rA = this._randU(cx, cy, i + 301);
-      const rB = this._randU(cx, cy, i + 302);
-      const rC = this._randU(cx, cy, i + 303);
-      const ang = -Math.PI / 3 + (rA - 0.5) * 0.3;
-      const r = (rB * 0.25 + 0.15) * Math.min(w, h) * 0.5;
-      const a = rC * Math.PI * 2;
-      const x0 = cx + Math.cos(a) * r * 0.4;
-      const y0 = cy + Math.sin(a) * r * 0.4;
-      const len = r * (0.8 + this._randU(cx, cy, i + 304) * 0.4);
-      const x1 = x0 + Math.cos(ang) * len * (1 + lean);
-      const y1 = y0 + Math.sin(ang) * len * (1 - lean);
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.restore();
+    drawTuftsInFace(this, ctx, cx, cy, w, h, color, alpha, density, lean);
   }
-
-  /** Draw small crown-like canopy blobs inside a face. */
   _drawCanopyInFace(ctx, cx, cy, w, h, baseColor, alpha = 0.18) {
-    this._clipSingleFace(ctx, cx, cy, w, h);
-    const crownColor = this._shadeHex(baseColor, 0.8);
-    const r = Math.min(w, h) * 0.2;
-    const count = 3 + Math.floor(this._randU(cx, cy, 'canopyN') * 4);
-    for (let i = 0; i < count; i++) {
-      const r1 = this._randU(cx, cy, i + 401);
-      const r2 = this._randU(cx, cy, i + 402);
-      const r3 = this._randU(cx, cy, i + 403);
-      const r4 = this._randU(cx, cy, i + 404);
-      const ox = (r1 - 0.5) * w * 0.2;
-      const oy = (r2 - 0.1) * h * 0.25;
-      this._strokeBlob(
-        ctx,
-        cx + ox,
-        cy + oy,
-        r * (0.8 + r3 * 0.6),
-        crownColor,
-        alpha * (0.9 + r4 * 0.2),
-        0.1,
-        18
-      );
-    }
-    // occasional small clearing (lighter patch)
-    if (this._randU(cx, cy, 'canopyClear') < 0.15) {
-      const light = this._shadeHex(baseColor, 1.12);
-      this._strokeBlob(ctx, cx, cy + h * 0.05, r * 0.9, light, alpha * 0.4, 0.05, 18);
-    }
-    ctx.restore();
-    ctx.restore();
+    drawCanopyInFace(this, ctx, cx, cy, w, h, baseColor, alpha);
   }
-
-  /** Draw rock striations across a face (alpine/mountain). */
   _drawStriationsInFace(ctx, cx, cy, w, h, color, alpha = 0.18) {
-    this._clipSingleFace(ctx, cx, cy, w, h);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = this._hex(this._shadeHex(color, 0.7));
-    ctx.lineWidth = Math.max(1, Math.floor(h * 0.06));
-    const k = 3;
-    for (let i = -k; i <= k; i++) {
-      const y = cy + (i / k) * h * 0.4 + this._valueNoise2D((cx + i) * 0.03, cy * 0.03) * h * 0.05;
-      ctx.beginPath();
-      ctx.moveTo(cx - w * 0.45, y);
-      ctx.lineTo(cx + w * 0.45, y - h * 0.1);
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.restore();
+    drawStriationsInFace(this, ctx, cx, cy, w, h, color, alpha);
   }
-
-  /** Draw dark crack line across a face (volcanic or dry ground). */
   _drawCrackInFace(ctx, cx, cy, w, h, color, alpha = 0.22) {
-    this._clipSingleFace(ctx, cx, cy, w, h);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = this._hex(this._shadeHex(color, 0.4));
-    ctx.lineWidth = Math.max(1, Math.floor(h * 0.08));
-    const steps = 6;
-    ctx.beginPath();
-    let x = cx - w * 0.45;
-    let y = cy + this._valueNoise2D(cx * 0.05, cy * 0.05) * h * 0.1;
-    ctx.moveTo(x, y);
-    for (let i = 0; i < steps; i++) {
-      x += w * 0.15;
-      const rr = this._randU(cx, cy, i + 501) - 0.5;
-      y += rr * h * 0.25;
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-    ctx.restore();
+    drawCrackInFace(this, ctx, cx, cy, w, h, color, alpha);
   }
 
   // ── Private Helpers (Global Motifs) ─────────────────────────
@@ -683,343 +554,26 @@ export class BiomeCanvasPainter {
         }
       }
 
-      // Biome-specific global passes (continuous strokes across the band clip)
-      const longCount = Math.floor(12 * perf * densityMul);
-      // Derive a band orientation (ribbons/striations follow terrain). For water/wetland, bias slightly to shallow downhill.
-      const bandOrient = this._bandOrientationForDepth(
+      applyBiomeStylePass(this, {
+        style,
+        ctx,
+        canvas,
+        biomeKey,
         d,
         heights,
         slope,
         aspect,
-        null,
-        this._slopeGainForStroke
-      );
-      const avgSlope = this._bandAverage(slope, d);
-      if (style === 'plains') {
-        // Wind-swept tufts scattered across the band
-        const col = getBiomeColorHex(biomeKey, 0, 0, 0, {
-          moisture: this._bandAverage(moisture, d),
-          slope: avgSlope,
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        const avgMoist = this._bandAverage(moisture, d);
-        const density = (rows + cols) * (0.6 + avgMoist * 0.6) * perf;
-        this._scatterTuftsGlobal(
-          ctx,
-          canvas,
-          Math.floor(density),
-          Math.min(w, h) * 0.35,
-          this._shadeHex(col, 0.75),
-          0.18,
-          0.12
-        );
-      } else if (style === 'arid') {
-        const col = getBiomeColorHex(biomeKey, 2, 0, 0, {
-          moisture: this._bandAverage(moisture, d),
-          slope: avgSlope,
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        if (/salt|flat/i.test(String(biomeKey))) {
-          this._globalCracks(ctx, canvas, col, 0.22, 8 + Math.floor(4 * densityMul));
-        } else {
-          // Dunes prefer along-contour undulations (perpendicular to flow)
-          this._ribbonAlongFlow = false;
-          this._globalRibbons(
-            ctx,
-            canvas,
-            longCount,
-            Math.max(2, h * 0.18),
-            col,
-            0.1,
-            bandOrient + Math.PI
-          );
-          // Some savanna/steppe tufts layered sparsely
-          if (/savanna|steppe|prairie|grass/i.test(String(biomeKey))) {
-            this._scatterTuftsGlobal(
-              ctx,
-              canvas,
-              Math.floor((rows + cols) * 0.4 * perf),
-              Math.min(w, h) * 0.3,
-              this._shadeHex(col, 0.7),
-              0.16,
-              0.15
-            );
-          }
-        }
-      } else if (style === 'forest') {
-        const col = getBiomeColorHex(biomeKey, 0, 0, 0, {
-          moisture: this._bandAverage(moisture, d),
-          slope: avgSlope,
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        const avgMoist = this._bandAverage(moisture, d);
-        const count = (rows + cols) * (0.7 + avgMoist * 0.8) * perf;
-        this._scatterBlobsGlobal(
-          ctx,
-          canvas,
-          Math.floor(count),
-          Math.min(w, h) * 0.26,
-          0.7,
-          this._shadeHex(col, 0.85),
-          0.16,
-          0.08,
-          18
-        );
-      } else if (style === 'wetland') {
-        // Two clips: depressions get ripples, others get reeds
-        // 1) Ripples on negative tiles of this band
-        ctx.save();
-        this._applyFaceClip(
-          ctx,
-          this.bounds,
-          heights,
-          (gx, gy) => gx + gy === d && (heights[gy][gx] || 0) < 0
-        );
-        const wetOrient = this._bandOrientationForDepth(
-          d,
-          heights,
-          slope,
-          aspect,
-          (x, y) => (heights[y][x] || 0) < 0,
-          this._slopeGainForStroke
-        );
-        const negMoist = this._bandAverage(moisture, d, (x, y) => (heights[y][x] || 0) < 0);
-        const negSlope = this._bandAverage(slope, d, (x, y) => (heights[y][x] || 0) < 0);
-        const waterCol = getBiomeColorHex(biomeKey, -2, 0, 0, {
-          moisture: negMoist,
-          slope: negSlope,
-          aspectRad: wetOrient,
-          seed,
-          mapFreq,
-        });
-        // Water flows downhill -> align ribbons along flow
-        this._ribbonAlongFlow = true;
-        this._globalRibbons(
-          ctx,
-          canvas,
-          longCount + 4,
-          Math.max(2, h * 0.16),
-          waterCol,
-          0.1,
-          wetOrient + Math.PI
-        );
-        ctx.restore();
-        // 2) Reeds on non-negative faces of this band
-        ctx.save();
-        this._applyFaceClip(
-          ctx,
-          this.bounds,
-          heights,
-          (gx, gy) => gx + gy === d && (heights[gy][gx] || 0) >= 0
-        );
-        const reedCol = getBiomeColorHex(biomeKey, 0, 0, 0, {
-          moisture: this._bandAverage(moisture, d, (x, y) => (heights[y][x] || 0) >= 0),
-          slope: this._bandAverage(slope, d, (x, y) => (heights[y][x] || 0) >= 0),
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        const bandMoist = this._bandAverage(moisture, d, (x, y) => (heights[y][x] || 0) >= 0);
-        const reedCount = (rows + cols) * (0.6 + bandMoist * 0.8) * perf;
-        this._scatterTuftsGlobal(
-          ctx,
-          canvas,
-          Math.floor(reedCount),
-          Math.min(w, h) * 0.32,
-          this._shadeHex(reedCol, 0.6),
-          0.18,
-          0.08
-        );
-        ctx.restore();
-      } else if (style === 'alpine') {
-        // Striations across band; then ice glints on high or frozen
-        const midCol = getBiomeColorHex(biomeKey, 0, 0, 0, {
-          moisture: this._bandAverage(moisture, d),
-          slope: avgSlope,
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        this._globalStriations(
-          ctx,
-          canvas,
-          midCol,
-          0.14,
-          bandOrient + Math.PI / 2,
-          Math.max(28, Math.floor(h * 0.7))
-        );
-        // High/frozen sub-clip for glints
-        ctx.save();
-        this._applyFaceClip(
-          ctx,
-          this.bounds,
-          heights,
-          (gx, gy) => gx + gy === d && (heights[gy][gx] || 0) > 1
-        );
-        this._globalStriations(
-          ctx,
-          canvas,
-          0xffffff,
-          0.1,
-          bandOrient - Math.PI / 3,
-          Math.max(36, Math.floor(h * 0.8))
-        );
-        ctx.restore();
-      } else if (style === 'water') {
-        // Water strokes only on underwater tiles (h<0)
-        const waterCol = getBiomeColorHex(biomeKey, -2, 0, 0, {
-          moisture: this._bandAverage(moisture, d, (x, y) => (heights[y][x] || 0) < 0),
-          slope: this._bandAverage(slope, d, (x, y) => (heights[y][x] || 0) < 0),
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        ctx.save();
-        this._applyFaceClip(
-          ctx,
-          this.bounds,
-          heights,
-          (gx, gy) => gx + gy === d && (heights[gy][gx] || 0) < 0
-        );
-        this._ribbonAlongFlow = true;
-        this._globalRibbons(
-          ctx,
-          canvas,
-          longCount + 6,
-          Math.max(2, h * 0.16),
-          waterCol,
-          0.1,
-          bandOrient + Math.PI
-        );
-        ctx.restore();
-
-        // For coast/beach on land (h>=0), ensure sand presence by a light scatter of blobs in sand tone
-        if (/coast|beach|shore/i.test(String(biomeKey))) {
-          const sandCol = getBiomeColorHex(
-            'beach',
-            2, // dry-ish sand reference
-            0,
-            0,
-            {
-              moisture: this._bandAverage(moisture, d, (x, y) => (heights[y][x] || 0) >= 0),
-              slope: this._bandAverage(slope, d, (x, y) => (heights[y][x] || 0) >= 0),
-              aspectRad: bandOrient,
-              seed,
-              mapFreq,
-            }
-          );
-          ctx.save();
-          this._applyFaceClip(
-            ctx,
-            this.bounds,
-            heights,
-            (gx, gy) => gx + gy === d && (heights[gy][gx] || 0) >= 0
-          );
-          // scale density and alpha by shorelineSandStrength
-          const landCount = Math.floor((rows + cols) * 0.35 * perf * shorelineSandStrength);
-          const landAlpha = 0.1 * Math.min(1.5, Math.max(0.4, shorelineSandStrength));
-          this._scatterBlobsGlobal(
-            ctx,
-            canvas,
-            landCount,
-            Math.min(w, h) * 0.18,
-            0.5,
-            sandCol,
-            landAlpha,
-            0.04,
-            14
-          );
-          ctx.restore();
-
-          // Add shallow-water speckles of sand just below sea level to suggest suspended sandbars
-          const wetSandCol = getBiomeColorHex(
-            'beach',
-            0, // wet sand
-            0,
-            0,
-            {
-              moisture: this._bandAverage(moisture, d, (x, y) => (heights[y][x] || 0) < 0),
-              slope: this._bandAverage(slope, d, (x, y) => (heights[y][x] || 0) < 0),
-              aspectRad: bandOrient,
-              seed,
-              mapFreq,
-            }
-          );
-          ctx.save();
-          this._applyFaceClip(
-            ctx,
-            this.bounds,
-            heights,
-            (gx, gy) => gx + gy === d && (heights[gy][gx] || 0) < 0 && (heights[gy][gx] || 0) > -2
-          );
-          const waterCount = Math.floor((rows + cols) * 0.15 * perf * shorelineSandStrength);
-          const waterAlpha = 0.06 * Math.min(1.5, Math.max(0.4, shorelineSandStrength));
-          this._scatterBlobsGlobal(
-            ctx,
-            canvas,
-            waterCount,
-            Math.min(w, h) * 0.14,
-            0.4,
-            wetSandCol,
-            waterAlpha,
-            0.03,
-            12
-          );
-          ctx.restore();
-        }
-      } else if (style === 'volcanic') {
-        const col = getBiomeColorHex(biomeKey, -1, 0, 0, {
-          moisture: this._bandAverage(moisture, d),
-          slope: avgSlope,
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        this._globalCracks(ctx, canvas, col, 0.24, 10 + Math.floor(4 * densityMul));
-      } else if (style === 'arcane') {
-        const col = getBiomeColorHex(biomeKey, 0, 0, 0, {
-          moisture: this._bandAverage(moisture, d),
-          slope: avgSlope,
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        this._globalRibbons(
-          ctx,
-          canvas,
-          Math.floor(longCount * 0.7),
-          Math.max(2, h * 0.14),
-          col,
-          0.1,
-          0.2
-        );
-      } else {
-        // Generic: light scatter to avoid flatness
-        const col = getBiomeColorHex(biomeKey, 0, 0, 0, {
-          moisture: this._bandAverage(moisture, d),
-          slope: avgSlope,
-          aspectRad: bandOrient,
-          seed,
-          mapFreq,
-        });
-        this._scatterBlobsGlobal(
-          ctx,
-          canvas,
-          Math.floor((rows + cols) * 0.3 * perf),
-          Math.min(w, h) * 0.2,
-          0.5,
-          col,
-          0.1,
-          0.05,
-          14
-        );
-      }
+        moisture,
+        rows,
+        cols,
+        w,
+        h,
+        perf,
+        densityMul,
+        seed,
+        mapFreq,
+        shorelineSandStrength,
+      });
       // Release face clip for this layer
       try {
         ctx.restore();
