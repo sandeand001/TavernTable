@@ -73,5 +73,3 @@ export function buildBrushHighlightDescriptor(params) {
     return { cells: [], style: getDefaultHighlightStyle(), zHint: BRUSH_LAYER_HINT };
   }
 }
-
-export default { buildBrushHighlightDescriptor };

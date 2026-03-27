@@ -157,10 +157,4 @@ function onDragMove() {
 }
 
 // ── Exports ───────────────────────────────────────────
-// ES6 module exports
 export { onDragStart, onDragEnd, onDragMove };
-
-// Legacy global exports for backward compatibility
-window.onDragStart = onDragStart;
-window.onDragEnd = onDragEnd;
-window.onDragMove = onDragMove;

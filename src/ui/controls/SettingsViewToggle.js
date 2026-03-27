@@ -4,7 +4,7 @@
  * Layer: ui
  */
 
-(function initViewToggle() {
+function initViewToggle() {
   if (typeof window === 'undefined') return;
   const READY = (fn) =>
     document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', fn) : fn();
@@ -133,4 +133,9 @@
       inject();
     }
   });
-})();
+}
+
+// Auto-invoke for backward compat with <script type="module"> loading
+initViewToggle();
+
+export { initViewToggle };
