@@ -131,18 +131,18 @@
 
 ---
 
-## Phase 6 — Segment `ThreeSceneManager.js` (2,493 lines → ~4 files) · `MEDIUM RISK`
+## Phase 6 — Segment `ThreeSceneManager.js` (2,612 lines → 4 files) · `MEDIUM RISK`
 
 **Goal**: Separate camera, lighting, and grid overlay into own modules.
 
-- [ ] Extract `scene/CameraSystem.js` (~700 lines) — iso mode, zoom, pitch, frustum
-- [ ] Extract `scene/LightingSystem.js` (~600 lines) — sun cycle, ambient, hemisphere, shadows
-- [ ] Extract `scene/GridOverlay.js` (~400 lines) — bootstrap grid, visibility, style stack
-- [ ] Slim `ThreeSceneManager.js` to orchestrator (~600 lines)
+- [x] Extract `scene/scene-manager/CameraSystem.js` (627 lines) — iso mode, zoom, pitch, frustum, reframe, calibration
+- [x] Extract `scene/scene-manager/LightingSystem.js` (731 lines) — sun cycle, color math, time-of-day profiles, terrain/placeable lighting
+- [x] Extract `scene/scene-manager/GridOverlay.js` (354 lines) — grid overlay, brush preview, style stack, visibility toggles
+- [x] Slim `ThreeSceneManager.js` to orchestrator (982 lines) importing above via mixin pattern
 
 **GATE**: `npm test` passes · camera, lighting, grid overlay work in browser
 
-- [ ] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: _______________
 
 ---
 
