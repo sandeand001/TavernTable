@@ -1,4 +1,4 @@
-import { reprojectAll } from '../../src/utils/coordinates/ProjectionUtils.js';
+import { reprojectAll } from '../../src/coordinators/ProjectionUtils.js';
 
 function makeGameManager() {
   return {
