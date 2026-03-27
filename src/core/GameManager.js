@@ -195,7 +195,7 @@ class GameManager {
     if (!degraded) {
       // Hide the legacy 2D tile grid once 3D mode is active; keep the Three grid visible by default.
       try {
-        this.threeSceneManager.setPixiGridVisible?.(false);
+        this.threeSceneManager.setLegacyGridVisible?.(false);
       } catch (_) {
         /* ignore */
       }
@@ -1027,8 +1027,8 @@ class GameManager {
    * Create and configure the application
    * @throws {Error} When application cannot be created or container not found
    */
-  createPixiApp() {
-    return this.renderCoordinator.createPixiApp();
+  createApp() {
+    return this.renderCoordinator.createApp();
   }
 
   /**

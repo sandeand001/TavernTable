@@ -25,7 +25,8 @@ try {
   console.warn('[process-listeners] optional diagnostics failed:', e.message);
 }
 
-// Mock rendering stubs if not available in test environment
+// PixiStub mock — provides the same shapes that src/core/PixiStub.js
+// exposes so tests run without a real canvas/WebGL context.
 if (typeof global.PIXI === 'undefined') {
   global.PIXI = {
     Application: class {

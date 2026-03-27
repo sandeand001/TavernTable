@@ -337,7 +337,7 @@ function setBootstrapGridVisible(visible) {
   }
 }
 
-function setPixiGridVisible(visible) {
+function setLegacyGridVisible(visible) {
   try {
     const gc = this.gameManager?.gridContainer;
     if (!gc) return;
@@ -362,5 +362,5 @@ export function installGridOverlayMethods(prototype) {
   prototype.syncGridOverlayToTerrain = syncGridOverlayToTerrain;
   prototype._normalizeGridOverlayStyle = _normalizeGridOverlayStyle;
   prototype.setBootstrapGridVisible = setBootstrapGridVisible;
-  prototype.setPixiGridVisible = setPixiGridVisible;
+  prototype.setLegacyGridVisible = setLegacyGridVisible;
 }

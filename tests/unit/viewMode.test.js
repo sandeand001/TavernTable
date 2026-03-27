@@ -65,7 +65,7 @@ describe('View Mode Toggle', () => {
       redrawGrid: jest.fn(),
     };
     gm.renderCoordinator = {
-      createPixiApp: jest.fn(),
+      createApp: jest.fn(),
       fixExistingTokens: jest.fn(),
       centerGrid: jest.fn(),
       resetZoom: jest.fn(),

@@ -33,7 +33,7 @@ export class StateCoordinator {
       });
 
       // Create app with validation
-      this.gameManager.renderCoordinator.createPixiApp();
+      this.gameManager.renderCoordinator.createApp();
 
       // NOW create managers after app exists
       logger.log(LOG_LEVEL.DEBUG, 'Creating manager instances', LOG_CATEGORY.SYSTEM, {

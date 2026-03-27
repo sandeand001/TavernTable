@@ -34,7 +34,7 @@ export class RenderCoordinator {
   /**
    * Create and configure the stub application
    */
-  createPixiApp() {
+  createApp() {
     try {
       const width = typeof window !== 'undefined' ? window.innerWidth || 1024 : 1024;
       const height = typeof window !== 'undefined' ? window.innerHeight || 768 : 768;
@@ -71,8 +71,8 @@ export class RenderCoordinator {
       window.app = this.gameManager.app; // debug convenience
 
       logger.log(LOG_LEVEL.DEBUG, 'Application created successfully', LOG_CATEGORY.SYSTEM, {
-        context: 'RenderCoordinator.createPixiApp',
-        stage: 'pixi_initialization_complete',
+        context: 'RenderCoordinator.createApp',
+        stage: 'app_initialization_complete',
         appDimensions: {
           width: this.gameManager.app.screen.width,
           height: this.gameManager.app.screen.height,
@@ -81,8 +81,8 @@ export class RenderCoordinator {
       });
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
-        context: 'RenderCoordinator.createPixiApp',
-        stage: 'pixi_application_creation',
+        context: 'RenderCoordinator.createApp',
+        stage: 'app_creation',
         containerExists: !!this.domPorts.getGameContainer(),
         gameManagerState: !!this.gameManager,
         errorType: error.constructor.name,
