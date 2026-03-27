@@ -146,19 +146,25 @@
 
 ---
 
-## Phase 7 — Segment `dice3d.js` (1,640 lines → ~5 files) · `MEDIUM RISK`
+## Phase 7 — Segment `dice3d.js` (1,770 lines → 2 files) · `MEDIUM RISK`
 
 **Goal**: Modularize the d20 system.
 
-- [ ] Extract `systems/dice/DiceModelManager.js` (~350 lines) — blueprint caching, cloning, materials, tinting
-- [ ] Extract `systems/dice/DicePhysics.js` (~450 lines) — collision detection, ricochet, vector math
-- [ ] Extract `systems/dice/DiceAnimationScheduler.js` (~350 lines) — roll animation, path building, face snap
-- [ ] Extract `systems/dice/FaceCalibrationUI.js` (~250 lines) — calibration start/stop, pointer events
-- [ ] Slim `dice3d.js` to entry point (~200 lines)
+> **Scope adjusted**: `dice3d.js` uses extensive shared mutable module state
+> (`threeNamespace`, `blueprintPromise`, `activeDieState`, `faceCalibrationState`, etc.)
+> which makes splitting model management, animation, and calibration into separate files
+> risky. Only the pure physics/collision functions (zero state dependencies) were extracted.
+> Further segmentation deferred to Phase 8 or later if state management is refactored.
+
+- [x] Extract `systems/dice/DicePhysics.js` (449 lines) — collision, ricochet, vector math, path building
+- [ ] ~~Extract `systems/dice/DiceModelManager.js`~~ — **deferred** (depends on 6 shared `let` vars)
+- [ ] ~~Extract `systems/dice/DiceAnimationScheduler.js`~~ — **deferred** (tightly coupled to model + state)
+- [ ] ~~Extract `systems/dice/FaceCalibrationUI.js`~~ — **deferred** (shares calibration state with animation)
+- [x] Slim `dice3d.js` to 1,344 lines importing physics from `DicePhysics.js`
 
 **GATE**: `npm test` passes · d20 roll works in browser
 
-- [ ] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: _______________
 
 ---
 
