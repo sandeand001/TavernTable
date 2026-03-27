@@ -172,24 +172,19 @@
 
 **Goal**: Break down remaining 900+ line files into manageable modules.
 
-> **Scope adjusted**: Only pure-function extractions were performed to avoid the risks
-> encountered in Phase 5 (class mixin extraction breaking animation/movement). Files
-> with heavy shared mutable state or tightly coupled class methods are left intact.
-> Remaining segmentation can be revisited after Phase 9 (dedup/organization).
-
-- [x] `BiomeElevationGenerator.js` (1,048 → 969 lines) → `NoisePrimitives.js` (85 lines) extracted
-- [ ] ~~`placeables.js` (1,554)~~ — **deferred** (shared state: MODEL_BASELINE_OFFSETS Map, ID_TO_MODEL_KEY)
-- [ ] ~~`InteractionManager.js` (1,257)~~ — **deferred** (class with 45+ methods, heavy instance state coupling)
-- [ ] ~~`flora.js` (1,149)~~ — **deferred** (mostly immutable biome profile data — good candidate for future extraction)
+- [x] `BiomeElevationGenerator.js` (1,048 → 969) → `terrain/NoisePrimitives.js` (85 lines)
+- [x] `flora.js` (1,149 → 321) → `terrain-coordinator/internals/FloraProfiles.js` (842 lines)
+- [ ] ~~`InteractionManager.js` (1,257)~~ — **deferred** (extracted methods reference too many parent constants)
+- [ ] ~~`ModelAssetCache.js` (1,027)~~ — **deferred** (post-processing methods reference parent-scoped helpers)
+- [ ] ~~`placeables.js` (1,554)~~ — **deferred** (shared mutable state across functions)
 - [ ] ~~`BiomeCanvasPainter.js` (1,134)~~ — **deferred** (tightly coupled class internals)
 - [ ] ~~`PlaceableMeshPool.js` (1,097)~~ — **deferred** (class with instance state coupling)
-- [ ] ~~`ModelAssetCache.js` (1,027)~~ — **deferred** (class with shared loading state)
 
 *Note: `GameManager.js` (1,583 lines) is low priority — already well-structured via coordinator pattern.*
 
 **GATE**: Full `npm test` pass
 
-- [x] **GATE PASSED** — committed as: `d0902cf`
+- [x] **GATE PASSED** — committed as: _______________
 
 ---
 
