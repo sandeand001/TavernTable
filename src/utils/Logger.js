@@ -95,8 +95,7 @@ const shouldEmitToConsole = (config, level) => {
 
 const emitConsoleFallback = (config, level, ...args) => {
   if (!shouldEmitToConsole(config, level)) return;
-  const method =
-    level >= LOG_LEVEL.ERROR ? 'error' : level >= LOG_LEVEL.WARN ? 'warn' : 'log';
+  const method = level >= LOG_LEVEL.ERROR ? 'error' : level >= LOG_LEVEL.WARN ? 'warn' : 'log';
   try {
     if (typeof console?.[method] === 'function') {
       console[method](...args);
@@ -132,8 +131,7 @@ class LoggerConfig {
     this.applicationName = options.applicationName || 'TavernTable';
     this.correlationIdHeader = options.correlationIdHeader || 'x-correlation-id';
     const normalizedConsoleLevel = normalizeLevelInput(options.consoleLevel);
-    this.consoleLevel =
-      normalizedConsoleLevel ?? Math.max(this.level, LOG_LEVEL.WARN);
+    this.consoleLevel = normalizedConsoleLevel ?? Math.max(this.level, LOG_LEVEL.WARN);
   }
 }
 
@@ -458,7 +456,12 @@ class RemoteOutputHandler {
       if (this.buffer.length < 100) {
         this.buffer.unshift(...logs.slice(-50)); // Only keep recent logs
       }
-      emitConsoleFallback(this.config, LOG_LEVEL.ERROR, 'Failed to send logs to remote endpoint:', error);
+      emitConsoleFallback(
+        this.config,
+        LOG_LEVEL.ERROR,
+        'Failed to send logs to remote endpoint:',
+        error
+      );
     }
   }
 
@@ -905,7 +908,8 @@ const defaultConsoleLevel = runningInJest
   : isProduction
     ? LOG_LEVEL.ERROR
     : LOG_LEVEL.WARN;
-const resolvedConsoleLevel = envConsoleLevelOverride ?? Math.max(defaultConsoleLevel, resolvedLevel);
+const resolvedConsoleLevel =
+  envConsoleLevelOverride ?? Math.max(defaultConsoleLevel, resolvedLevel);
 
 // Global logger instance with environment-specific configuration
 export const logger = new Logger({

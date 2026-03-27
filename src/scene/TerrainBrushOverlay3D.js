@@ -7,10 +7,7 @@ import {
   ensureBoxMesh,
   syncMeshMaterial,
 } from './terrain-brush/OverlayMeshPool.js';
-import {
-  ensureOutlinePool,
-  syncOutlineStyle,
-} from './terrain-brush/OverlayOutlinePool.js';
+import { ensureOutlinePool, syncOutlineStyle } from './terrain-brush/OverlayOutlinePool.js';
 
 export class TerrainBrushOverlay3D {
   constructor({ three, scene, gameManager } = {}) {

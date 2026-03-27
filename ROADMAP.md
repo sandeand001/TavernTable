@@ -146,25 +146,24 @@
 
 ---
 
-## Phase 7 — Segment `dice3d.js` (1,770 lines → 2 files) · `MEDIUM RISK`
+## Phase 7 — Segment `dice3d.js` (1,770 lines → 6 files) · `MEDIUM RISK`
 
 **Goal**: Modularize the d20 system.
 
-> **Scope adjusted**: `dice3d.js` uses extensive shared mutable module state
-> (`threeNamespace`, `blueprintPromise`, `activeDieState`, `faceCalibrationState`, etc.)
-> which makes splitting model management, animation, and calibration into separate files
-> risky. Only the pure physics/collision functions (zero state dependencies) were extracted.
-> Further segmentation deferred to Phase 8 or later if state management is refactored.
+> **Round 1** (commit `867aa8b`): Extracted pure physics/collision functions.
+> **Round 2**: Introduced `DiceState.js` shared-state object to unlock the remaining
+> extractions — model management, animation scheduling, and face calibration UI.
 
 - [x] Extract `systems/dice/DicePhysics.js` (449 lines) — collision, ricochet, vector math, path building
-- [ ] ~~Extract `systems/dice/DiceModelManager.js`~~ — **deferred** (depends on 6 shared `let` vars)
-- [ ] ~~Extract `systems/dice/DiceAnimationScheduler.js`~~ — **deferred** (tightly coupled to model + state)
-- [ ] ~~Extract `systems/dice/FaceCalibrationUI.js`~~ — **deferred** (shares calibration state with animation)
-- [x] Slim `dice3d.js` to 1,344 lines importing physics from `DicePhysics.js`
+- [x] Extract `systems/dice/DiceState.js` (246 lines) — shared mutable state, constants, board/geometry utilities
+- [x] Extract `systems/dice/DiceModelManager.js` (173 lines) — model loading, material tuning, blueprint cache
+- [x] Extract `systems/dice/DiceAnimationScheduler.js` (364 lines) — roll animation, snap-to-board, ground sampling
+- [x] Extract `systems/dice/FaceCalibrationUI.js` (331 lines) — calibration UI, pointer handling, window globals
+- [x] Slim `dice3d.js` to 238 lines (orchestration core: playD20RollOnGrid, clearActiveDie, accent lights)
 
 **GATE**: `npm test` passes · d20 roll works in browser
 
-- [x] **GATE PASSED** — committed as: `867aa8b`
+- [x] **GATE PASSED** — round 1 committed as: `867aa8b`
 
 ---
 
@@ -174,8 +173,8 @@
 
 - [x] `BiomeElevationGenerator.js` (1,048 → 969) → `terrain/NoisePrimitives.js` (85 lines)
 - [x] `flora.js` (1,149 → 321) → `terrain-coordinator/internals/FloraProfiles.js` (842 lines)
-- [ ] ~~`InteractionManager.js` (1,257)~~ — **deferred** (extracted methods reference too many parent constants)
-- [ ] ~~`ModelAssetCache.js` (1,027)~~ — **deferred** (post-processing methods reference parent-scoped helpers)
+- [x] `InteractionManager.js` (1,257 → 1,042) → `interaction-manager/internals/keyboard.js` (128 lines)
+- [x] `ModelAssetCache.js` (1,027 → 704) → `core/ModelPostProcessing.js` (321 lines)
 - [ ] ~~`placeables.js` (1,554)~~ — **deferred** (shared mutable state across functions)
 - [ ] ~~`BiomeCanvasPainter.js` (1,134)~~ — **deferred** (tightly coupled class internals)
 - [ ] ~~`PlaceableMeshPool.js` (1,097)~~ — **deferred** (class with instance state coupling)

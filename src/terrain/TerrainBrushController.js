@@ -3,10 +3,7 @@
 
 import { LOG_LEVEL, LOG_CATEGORY, logger } from '../utils/Logger.js';
 import { TERRAIN_CONFIG } from '../config/TerrainConstants.js';
-import {
-  normalizeBrushSize,
-  computeBrushFootprint,
-} from './brush/BrushCommon.js';
+import { normalizeBrushSize, computeBrushFootprint } from './brush/BrushCommon.js';
 
 export class TerrainBrushController {
   constructor(dataStore) {

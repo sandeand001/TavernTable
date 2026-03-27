@@ -21,15 +21,7 @@ function disposeMesh(group, mesh) {
   }
 }
 
-export function ensurePlaneMesh({
-  three,
-  group,
-  mesh,
-  capacity = 0,
-  required,
-  colorHex,
-  opacity,
-}) {
+export function ensurePlaneMesh({ three, group, mesh, capacity = 0, required, colorHex, opacity }) {
   if (!group || !three?.InstancedMesh || !three?.PlaneGeometry || !three?.MeshBasicMaterial) {
     return { mesh, capacity };
   }
