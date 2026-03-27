@@ -4,13 +4,11 @@
  * type: 'path' (coexists with tokens) | 'structure' (exclusive)
  */
 // ── Base Terrain Placeables ───────────────────────────────────
-export const TERRAIN_PLACEABLES = {
+const TERRAIN_PLACEABLES = {
   // scaleMode: 'contain' (fit inside tile, preserve aspect),
   //            'cover'   (cover tile, preserve aspect, may overflow),
   //            'stretch' (force exact tile dimensions, may distort)
 };
-
-export default { TERRAIN_PLACEABLES };
 
 // Tree groups (multi-variant placeables). Each key below points to an array of
 // image paths. The placeable system accepts `img` as either a string or an
@@ -1095,3 +1093,6 @@ Object.entries(TREE_PLACEABLES).forEach(([k, v]) => {
 });
 
 // (Former forest billboard experimental group removed; placeholder comments pruned.)
+
+// ── Export ──────────────────────────────────────────────────────
+export { TERRAIN_PLACEABLES };
