@@ -3,6 +3,34 @@
  * Centralizes lighten/darken to reduce duplication and keep visuals consistent.
  */
 
+// ── Basic Color Conversions ───────────────────────────────────
+export function hexToRgb(hex) {
+  return { r: (hex >> 16) & 0xff, g: (hex >> 8) & 0xff, b: hex & 0xff };
+}
+
+export function rgbToHex({ r, g, b }) {
+  return (r << 16) | (g << 8) | b;
+}
+
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+export function clamp01(x) {
+  return x < 0 ? 0 : x > 1 ? 1 : x;
+}
+
+export function lerpColor(aHex, bHex, t) {
+  const a = hexToRgb(aHex);
+  const b = hexToRgb(bHex);
+  return rgbToHex({
+    r: Math.round(lerp(a.r, b.r, t)),
+    g: Math.round(lerp(a.g, b.g, t)),
+    b: Math.round(lerp(a.b, b.b, t)),
+  });
+}
+
+// ── Shade Helpers ─────────────────────────────────────────────
 /**
  * Lighten a hex color by blending toward white.
  * @param {number} color - 0xRRGGBB
