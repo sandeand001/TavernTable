@@ -5,9 +5,8 @@
  * Heuristics are intentionally coarse and can be tuned later.
  */
 import { createSeededRNG, rngInt, makeWeightedPicker } from '../../../utils/SeededRNG.js';
+import { BIOME_FLORA_PROFILES, DEFAULT_PROFILE } from '../../../config/terrain/FloraProfiles.js';
 import {
-  BIOME_FLORA_PROFILES,
-  DEFAULT_PROFILE,
   candidateFilters,
   isSpectralPlaceable,
   isTropicalCluster,
@@ -16,7 +15,7 @@ import {
   stripSpectralWeights,
   relocateTropicalCandidate,
   isCoastlineTile,
-} from '../../../config/terrain/FloraProfiles.js';
+} from '../../../terrain/flora/floraHelpers.js';
 
 // ── Cleanup & Resolution Helpers ───────────────────────────────────
 
