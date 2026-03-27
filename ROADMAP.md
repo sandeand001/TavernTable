@@ -142,7 +142,7 @@
 
 **GATE**: `npm test` passes · camera, lighting, grid overlay work in browser
 
-- [x] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `8194749`
 
 ---
 
