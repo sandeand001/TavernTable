@@ -6,20 +6,13 @@
  * Works in coordination with TerrainCoordinator for complete terrain system
  */
 
-import { Container, Graphics } from '../core/PixiStub.js';
+import { Container } from '../core/PixiStub.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
-import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 // import { GRID_CONFIG } from '../config/GameConstants.js';
-import { lightenColor, darkenColor } from '../utils/color/ColorUtils.js';
-import { traceDiamondPath } from '../utils/geometry/GeometryUtils.js';
-import { getBiomeColorHex } from '../config/biome/BiomePalettes.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TERRAIN_PLACEABLES } from '../config/terrain/TerrainPlaceables.js';
-import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
-// elevation offset calculation is delegated into internals
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
-// shading pattern helpers are used within internals
 import {
   validateContainerState as _validateContainerState,
   showAllTerrainTiles as _showAll,
@@ -48,6 +41,18 @@ import {
   placeItem as _placeItem,
   removeItem as _removeItem,
 } from './terrain-manager/internals/placeables.js';
+import {
+  getColorForHeight as _getColorForHeight,
+  getBorderColorForHeight as _getBorderColorForHeight,
+  addElevationShadow as _addElevationShadow,
+  addDepressionEffect as _addDepressionEffect,
+  reapplyElevationScaleToOverlay as _reapplyElevationScale,
+} from './terrain-manager/internals/elevation.js';
+import {
+  ensurePreviewLayerOnTop as _ensurePreview,
+  renderBrushPreview as _renderBrushPreview,
+  clearBrushPreview as _clearBrushPreview,
+} from './terrain-manager/internals/preview.js';
 
 export class TerrainManager {
   // ── Constructor ─────────────────────────────────────────────
@@ -183,41 +188,7 @@ export class TerrainManager {
    *  placeables may be raised above preview during terrain mode per UX request.
    */
   ensurePreviewLayerOnTop() {
-    try {
-      if (!this.gameManager?.gridContainer || !this.previewContainer) return;
-      const parent = this.gameManager.gridContainer;
-      // Keep zIndex higher than terrain overlay so resorting doesn't bury the preview.
-      // Tokens/placeables may be raised above this value when editing.
-      const desired = (this.terrainContainer?.zIndex || 100000) + 10;
-      if (this.previewContainer.zIndex !== desired) {
-        this.previewContainer.zIndex = desired;
-      }
-      // Keep container alive and visible; order among siblings is handled by child zIndex
-      // Also nudge to the end as a safety net for environments not using zIndex sorting
-      if (typeof parent.setChildIndex === 'function') {
-        parent.setChildIndex(this.previewContainer, Math.max(0, parent.children.length - 1));
-      } else {
-        // Fallback: remove and re-add
-        try {
-          parent.removeChild(this.previewContainer);
-        } catch {
-          /* ignore */
-        }
-        parent.addChild(this.previewContainer);
-      }
-      // If the parent sorts by zIndex, apply ordering now
-      try {
-        if (parent.sortableChildren && typeof parent.sortChildren === 'function') {
-          parent.sortChildren();
-        }
-      } catch {
-        /* ignore */
-      }
-      this.previewContainer.visible = true;
-      // Parent container uses children zIndex to interleave; parent zIndex is not forced here.
-    } catch (_) {
-      /* best-effort */
-    }
+    return _ensurePreview(this);
   }
 
   /**
@@ -565,31 +536,7 @@ export class TerrainManager {
    * @returns {number} Hex color value
    */
   getColorForHeight(height) {
-    // Terrain mode should not be affected by biome selection
-    try {
-      if (
-        !this.terrainCoordinator?.isTerrainModeActive &&
-        typeof window !== 'undefined' &&
-        window.selectedBiome
-      ) {
-        const gx = 0; // Manager has no per-tile eval context outside coordinator; use 0 for stability
-        const gy = 0;
-        const mapFreq =
-          (typeof window !== 'undefined' && window.richShadingSettings?.mapFreq) || 0.05;
-        const seed = (this.terrainCoordinator?._biomeSeed ?? 1337) >>> 0;
-        return getBiomeColorHex(window.selectedBiome, height, gx, gy, {
-          moisture: 0.5,
-          slope: 0,
-          aspectRad: 0,
-          seed,
-          mapFreq,
-        });
-      }
-    } catch (_) {
-      /* fall back */
-    }
-    const colorKey = height.toString();
-    return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE[colorKey] || TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'];
+    return _getColorForHeight(this, height);
   }
 
   /**
@@ -602,17 +549,7 @@ export class TerrainManager {
    * @returns {number} Hex color value
    */
   getBorderColorForHeight(height) {
-    const baseColor = this.getColorForHeight(height);
-
-    // For positive heights, lighten the border
-    // For negative heights, darken the border
-    if (height > 0) {
-      return lightenColor(baseColor, 0.3);
-    } else if (height < 0) {
-      return darkenColor(baseColor, 0.3);
-    } else {
-      return baseColor;
-    }
+    return _getBorderColorForHeight(this, height);
   }
 
   //
@@ -625,41 +562,7 @@ export class TerrainManager {
    * @param {number} y - Grid Y coordinate
    */
   addElevationShadow(terrainTile, height, x, y) {
-    try {
-      // Create a shadow tile slightly offset and darker
-      const shadowTile = new Graphics();
-      const shadowColor = 0x000000; // Black shadow
-      const shadowAlpha = (0.2 * height) / TERRAIN_CONFIG.MAX_HEIGHT; // Stronger shadow for higher terrain
-
-      shadowTile.beginFill(shadowColor, shadowAlpha);
-
-      // Draw same diamond shape as main tile (shared helper)
-      traceDiamondPath(shadowTile, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      shadowTile.endFill();
-
-      // Position shadow slightly offset (down and right for 3D effect)
-      shadowTile.x = terrainTile.x + 2;
-      shadowTile.y = terrainTile.y + 2;
-
-      // Set depth value for shadow (same as main tile but mark as shadow)
-      shadowTile.depthValue = terrainTile.depthValue;
-      shadowTile.isShadowTile = true;
-      // Position shadows below faces/tiles at same depth
-      shadowTile.zIndex = (shadowTile.depthValue || 0) * 100 + 0;
-
-      // Add shadow using depth sorting (shadows should appear behind their main tiles)
-      this.addTileWithDepthSorting(shadowTile);
-
-      // Store reference for cleanup
-      terrainTile.shadowTile = shadowTile;
-    } catch (error) {
-      // Don't fail tile creation if shadow fails
-      logger.warn('Failed to create elevation shadow', {
-        coordinates: { x, y },
-        height,
-        error: error.message,
-      });
-    }
+    return _addElevationShadow(this, terrainTile, height, x, y);
   }
 
   /**
@@ -668,33 +571,7 @@ export class TerrainManager {
    * @param {number} height - Height level (negative)
    */
   addDepressionEffect(terrainTile, height) {
-    try {
-      // Create overlay to darken the tile
-      const overlay = new Graphics();
-      const overlayAlpha = (0.3 * Math.abs(height)) / TERRAIN_CONFIG.MAX_HEIGHT; // Darker for deeper depressions
-
-      overlay.beginFill(0x000000, overlayAlpha); // Semi-transparent black
-
-      // Draw same diamond shape as main tile (shared helper)
-      traceDiamondPath(overlay, this.gameManager.tileWidth, this.gameManager.tileHeight);
-      overlay.endFill();
-
-      // Position overlay exactly on top of tile
-      overlay.x = 0;
-      overlay.y = 0;
-
-      // Add overlay as child of the terrain tile
-      terrainTile.addChild(overlay);
-
-      // Store reference for cleanup
-      terrainTile.depressionOverlay = overlay;
-    } catch (error) {
-      // Don't fail tile creation if overlay fails
-      logger.warn('Failed to create depression effect', {
-        height,
-        error: error.message,
-      });
-    }
+    return _addDepressionEffect(this, terrainTile, height);
   }
 
   /**
@@ -742,126 +619,7 @@ export class TerrainManager {
    * terrain-mode colors persist while using the perception slider.
    */
   reapplyElevationScaleToOverlay() {
-    try {
-      if (!this.terrainContainer || !this.terrainTiles || this.terrainTiles.size === 0) return;
-
-      const w = this.gameManager.tileWidth;
-      const h = this.gameManager.tileHeight;
-
-      for (const [key, tile] of this.terrainTiles) {
-        if (!tile) continue;
-
-        const [x, y] = key.split(',').map(Number);
-
-        // Reset base iso position, then apply new elevation offset
-        tile.x = (x - y) * (w / 2);
-        tile.y = (x + y) * (h / 2);
-
-        let height;
-        if (Number.isFinite(tile.terrainHeight)) {
-          height = tile.terrainHeight;
-        } else {
-          height = this.terrainCoordinator.getTerrainHeight(x, y);
-        }
-        const offset = TerrainHeightUtils.calculateElevationOffset(height);
-        tile.y += offset;
-
-        // Clear and rebuild side faces/shadows/depressions to match new scale
-        try {
-          if (tile.shadowTile && tile.parent?.children?.includes(tile.shadowTile)) {
-            tile.parent.removeChild(tile.shadowTile);
-            if (typeof tile.shadowTile.destroy === 'function' && !tile.shadowTile.destroyed) {
-              tile.shadowTile.destroy();
-            }
-          }
-        } catch {
-          /* ignore */
-        }
-        tile.shadowTile = null;
-
-        try {
-          if (tile.depressionOverlay && tile.children?.includes(tile.depressionOverlay)) {
-            tile.removeChild(tile.depressionOverlay);
-            if (
-              typeof tile.depressionOverlay.destroy === 'function' &&
-              !tile.depressionOverlay.destroyed
-            ) {
-              tile.depressionOverlay.destroy();
-            }
-          }
-        } catch {
-          /* ignore */
-        }
-        tile.depressionOverlay = null;
-
-        try {
-          if (tile.sideFaces && tile.parent?.children?.includes(tile.sideFaces)) {
-            tile.parent.removeChild(tile.sideFaces);
-            if (typeof tile.sideFaces.destroy === 'function' && !tile.sideFaces.destroyed) {
-              tile.sideFaces.destroy();
-            }
-          }
-        } catch {
-          /* ignore */
-        }
-        tile.sideFaces = null;
-
-        this._addVisualEffects(tile, height, x, y);
-      }
-
-      try {
-        this.terrainContainer.sortChildren?.();
-      } catch {
-        /* no-op */
-      }
-
-      this.ensurePreviewLayerOnTop();
-
-      // After updating overlay positions, ensure tokens and placeables are visible above it
-      try {
-        const parent = this.gameManager?.gridContainer;
-        const previewZ = this.previewContainer?.zIndex;
-        const overlayZ = this.terrainContainer?.zIndex;
-        const desired = Number.isFinite(previewZ)
-          ? previewZ + 1
-          : Number.isFinite(overlayZ)
-            ? overlayZ + 11
-            : null;
-        if (Number.isFinite(desired) && parent?.children) {
-          // Raise tokens
-          if (Array.isArray(this.gameManager?.tokenManager?.placedTokens)) {
-            for (const t of this.gameManager.tokenManager.placedTokens) {
-              const s = t?.creature?.sprite;
-              if (!s) continue;
-              if (!Number.isFinite(s.zIndex) || s.zIndex < desired) s.zIndex = desired;
-            }
-          }
-          // Raise placeables managed by TerrainManager
-          if (this.placeables && this.placeables.size) {
-            for (const [, list] of this.placeables) {
-              if (!Array.isArray(list)) continue;
-              for (const s of list) {
-                if (!s) continue;
-                if (!Number.isFinite(s.zIndex) || s.zIndex < desired) s.zIndex = desired;
-              }
-            }
-          }
-          try {
-            parent.sortableChildren = true;
-            parent.sortChildren?.();
-          } catch (_) {
-            /* ignore */
-          }
-        }
-      } catch (_) {
-        /* best-effort */
-      }
-    } catch (error) {
-      GameErrors.rendering(error, {
-        stage: 'TerrainManager.reapplyElevationScaleToOverlay',
-        tiles: this.terrainTiles?.size,
-      });
-    }
+    return _reapplyElevationScale(this);
   }
 
   /**
@@ -870,179 +628,12 @@ export class TerrainManager {
    * @param {Array<{x:number,y:number}>} cells
    */
   renderBrushPreview(cells, options = {}) {
-    try {
-      const threeMgr = this.gameManager?.threeSceneManager;
-      const use3DPreview = this.gameManager?.is3DModeActive?.() && threeMgr?.setTerrainBrushPreview;
-      const terrainModeActive = !!this.terrainCoordinator?.isTerrainModeActive;
-      const hasCells = Array.isArray(cells) && cells.length > 0;
-      const shouldShow3D = use3DPreview && terrainModeActive && hasCells;
-
-      let previewCells3D = cells;
-      let previewStyle3D = options;
-      if (shouldShow3D && Array.isArray(cells) && cells.length) {
-        const brush = this.terrainCoordinator?.brush;
-        const getHeight = this.terrainCoordinator?.getTerrainHeight?.bind?.(
-          this.terrainCoordinator
-        );
-        if (brush && typeof getHeight === 'function') {
-          const maxH = Number.isFinite(TERRAIN_CONFIG?.MAX_HEIGHT)
-            ? TERRAIN_CONFIG.MAX_HEIGHT
-            : Infinity;
-          const minH = Number.isFinite(TERRAIN_CONFIG?.MIN_HEIGHT)
-            ? TERRAIN_CONFIG.MIN_HEIGHT
-            : -Infinity;
-          const stepRaw = Number.isFinite(brush.heightStep) ? Math.abs(brush.heightStep) : 1;
-          const delta = stepRaw > 0 ? stepRaw : 1;
-          const isLower = brush.tool === 'lower';
-          previewCells3D = cells.map((cell) => {
-            const cx = cell?.x ?? cell?.gridX ?? 0;
-            const cy = cell?.y ?? cell?.gridY ?? 0;
-            const currentHeight = getHeight(cx, cy) ?? 0;
-            let previewHeight = currentHeight;
-            if (isLower) {
-              previewHeight = Math.max(currentHeight - delta, minH);
-            } else {
-              previewHeight = Math.min(currentHeight + delta, maxH);
-            }
-            return {
-              x: cx,
-              y: cy,
-              currentHeight,
-              previewHeight,
-            };
-          });
-          previewStyle3D = {
-            ...options,
-            previewMode: 'terrain-height',
-            brushTool: brush.tool || 'raise',
-            heightStep: delta,
-          };
-        }
-      }
-
-      if (!hasCells || !terrainModeActive) {
-        if (use3DPreview) threeMgr?.clearTerrainBrushPreview?.();
-      } else if (use3DPreview) {
-        try {
-          threeMgr.setTerrainBrushPreview(previewCells3D, previewStyle3D);
-        } catch (_) {
-          /* ignore */
-        }
-      }
-
-      if (!this.previewContainer || !terrainModeActive) return;
-      // Ensure the preview layer is on top and visible before drawing
-      this.ensurePreviewLayerOnTop();
-      // Clear previous preview before drawing new (preserve 3D overlay when redrawing)
-      this.clearBrushPreview({ include3D: !shouldShow3D });
-      try {
-        if (this.previewContainer && this.previewContainer.visible === false) {
-          this.previewContainer.visible = true;
-        }
-        const parent = this.gameManager?.gridContainer;
-        if (parent && !parent.children?.includes(this.previewContainer)) {
-          parent.addChild(this.previewContainer);
-        }
-      } catch {
-        /* ignore */
-      }
-      if (!Array.isArray(cells) || cells.length === 0) return;
-
-      const w = this.gameManager.tileWidth;
-      const h = this.gameManager.tileHeight;
-      const color = typeof options.color === 'number' ? options.color : 0xffff00;
-      const lineWidth = typeof options.lineWidth === 'number' ? options.lineWidth : 2;
-      const fillAlpha = typeof options.fillAlpha === 'number' ? options.fillAlpha : 0.12;
-      const lineAlpha = typeof options.lineAlpha === 'number' ? options.lineAlpha : 0.9;
-
-      for (const { x, y } of cells) {
-        const g = new Graphics();
-        // Semi-transparent outline to avoid altering underlying colors
-        g.lineStyle(lineWidth, color, lineAlpha);
-        g.beginFill(color, fillAlpha);
-        g.moveTo(0, h / 2);
-        g.lineTo(w / 2, 0);
-        g.lineTo(w, h / 2);
-        g.lineTo(w / 2, h);
-        g.closePath();
-        g.endFill();
-
-        // Position in iso space, reusing the same transform logic as tiles
-        g.x = (x - y) * (w / 2);
-        g.y = (x + y) * (h / 2);
-
-        // Elevation offset so outline sits on the tile using the same scale util
-        try {
-          const height = this.terrainCoordinator.getTerrainHeight(x, y);
-          const offset =
-            typeof TerrainHeightUtils?.calculateElevationOffset === 'function'
-              ? TerrainHeightUtils.calculateElevationOffset(height)
-              : (height || 0) * (this.gameManager.tileHeight * 0.1);
-          g.y += offset;
-        } catch {
-          /* best-effort */
-        }
-
-        // Depth-sort preview strictly BETWEEN tile top (depth*100) and tokens (depth*100 + 1)
-        // and ensure it isn't hidden by overlay container resorting.
-        g.zIndex = (x + y) * 100 + 0.5;
-
-        this.previewContainer.addChild(g);
-        this.previewCache.set(`${x},${y}`, g);
-      }
-      try {
-        this.previewContainer.sortChildren?.();
-      } catch {
-        /* no-op */
-      }
-    } catch (error) {
-      logger.warn(
-        'Failed to render brush preview',
-        {
-          error: error.message,
-          cellsCount: Array.isArray(cells) ? cells.length : 0,
-        },
-        LOG_CATEGORY.RENDERING
-      );
-    }
+    return _renderBrushPreview(this, cells, options);
   }
 
   /** Clear any existing brush preview graphics. */
   clearBrushPreview(options = {}) {
-    const { include3D = true } = options;
-    if (include3D) {
-      try {
-        this.gameManager?.threeSceneManager?.clearTerrainBrushPreview?.();
-      } catch (_) {
-        /* ignore */
-      }
-    }
-    try {
-      if (!this.previewContainer) return;
-      for (const [, g] of this.previewCache) {
-        try {
-          if (g.parent) g.parent.removeChild(g);
-        } catch {
-          /* ignore */
-        }
-        try {
-          if (typeof g.destroy === 'function' && !g.destroyed) g.destroy({ children: true });
-        } catch {
-          /* ignore */
-        }
-      }
-      this.previewCache.clear();
-      // Also remove any stray children just in case
-      if (typeof this.previewContainer.removeChildren === 'function') {
-        this.previewContainer.removeChildren();
-      }
-    } catch (error) {
-      logger.warn(
-        'Failed to clear brush preview',
-        { error: error.message },
-        LOG_CATEGORY.RENDERING
-      );
-    }
+    return _clearBrushPreview(this, options);
   }
 
   // ── Cleanup ────────────────────────────────────────────────
