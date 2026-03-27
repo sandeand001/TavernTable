@@ -8,7 +8,7 @@ export function startGridDragging(c, event) {
   c.dragStartY = event.clientY;
   c.gridStartX = c.gameManager.gridContainer.x;
   c.gridStartY = c.gameManager.gridContainer.y;
-  c.gameManager.app.view.style.cursor = 'grabbing';
+  c.gameManager.getEventCanvas().style.cursor = 'grabbing';
 
   logger.log(LOG_LEVEL.TRACE, 'Grid dragging started', LOG_CATEGORY.USER, {
     startPosition: { x: c.dragStartX, y: c.dragStartY },
@@ -33,5 +33,5 @@ export function updateGridDragPosition(c, event) {
 
 export function stopGridDragging(c) {
   c.isDragging = false;
-  c.gameManager.app.view.style.cursor = 'default';
+  c.gameManager.getEventCanvas().style.cursor = 'default';
 }

@@ -617,6 +617,16 @@ class GameManager {
   }
 
   /**
+   * Return the DOM element that should receive pointer/mouse event listeners.
+   * Prefers the Three.js canvas, falls back to PIXI canvas, then the game container div.
+   */
+  getEventCanvas() {
+    const tsm = this.threeSceneManager;
+    if (tsm?.canvas) return tsm.canvas;
+    return this.app?.view ?? this.app?.canvas ?? document.getElementById('game-container');
+  }
+
+  /**
    * The legacy isometric grid should only render when we are explicitly in 2D mode.
    */
   shouldRenderIsometricGrid() {

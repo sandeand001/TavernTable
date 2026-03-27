@@ -185,11 +185,11 @@ export function setupTokenInteractions(c, sprite, tokenData) {
   if (
     typeof window !== 'undefined' &&
     !window.__ttContextMenuSuppressed &&
-    c.gameManager?.app?.view
+    c.gameManager?.getEventCanvas?.()
   ) {
     window.__ttContextMenuSuppressed = true;
-    c.gameManager.app.view.addEventListener('contextmenu', (e) => {
-      if (e.target === c.gameManager.app.view) {
+    c.gameManager.getEventCanvas().addEventListener('contextmenu', (e) => {
+      if (e.target === c.gameManager.getEventCanvas()) {
         e.preventDefault();
       }
     });

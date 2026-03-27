@@ -28,10 +28,18 @@ export class TerrainInputHandlers {
   setup() {
     try {
       // Mouse events for terrain painting
-      this.c.gameManager.app.view.addEventListener('mousedown', this.handleMouseDown.bind(this));
-      this.c.gameManager.app.view.addEventListener('mousemove', this.handleMouseMove.bind(this));
-      this.c.gameManager.app.view.addEventListener('mouseup', this.handleMouseUp.bind(this));
-      this.c.gameManager.app.view.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
+      this.c.gameManager
+        .getEventCanvas()
+        .addEventListener('mousedown', this.handleMouseDown.bind(this));
+      this.c.gameManager
+        .getEventCanvas()
+        .addEventListener('mousemove', this.handleMouseMove.bind(this));
+      this.c.gameManager
+        .getEventCanvas()
+        .addEventListener('mouseup', this.handleMouseUp.bind(this));
+      this.c.gameManager
+        .getEventCanvas()
+        .addEventListener('mouseleave', this.handleMouseLeave.bind(this));
       // Ensure drag always ends even if mouseup occurs outside the canvas
       // Use capture to guarantee we receive the event before it is possibly stopped elsewhere
       window.addEventListener('mouseup', this.handleMouseUp.bind(this), true);
@@ -69,7 +77,7 @@ export class TerrainInputHandlers {
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.INIT, {
         context: 'TerrainInputHandlers.setup',
-        appViewAvailable: !!this.c?.gameManager?.app?.view,
+        eventCanvasAvailable: !!this.c?.gameManager?.getEventCanvas?.(),
       });
       throw error;
     }

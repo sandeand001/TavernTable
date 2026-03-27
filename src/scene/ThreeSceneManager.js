@@ -290,7 +290,7 @@ export class ThreeSceneManager {
       Object.assign(this.canvas.style, {
         position: 'absolute',
         inset: '0',
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
         zIndex: '0',
       });
       if (!this._testMode) {
@@ -384,7 +384,7 @@ export class ThreeSceneManager {
         /* ignore */
       }
 
-      // Wheel (zoom) listener attached to container (canvas has pointerEvents: none)
+      // Wheel (zoom) listener attached to container (fallback for legacy code paths)
       try {
         if (!this._wheelListener && container) {
           this._wheelListener = (e) => {

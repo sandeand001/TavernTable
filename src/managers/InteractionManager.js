@@ -94,7 +94,7 @@ export class InteractionManager {
    * Disable browser context menu
    */
   setupContextMenu() {
-    this.gameManager.app.view.addEventListener('contextmenu', (event) => {
+    this.gameManager.getEventCanvas().addEventListener('contextmenu', (event) => {
       event.preventDefault();
     });
   }
@@ -113,7 +113,7 @@ export class InteractionManager {
    * Handle mouse down events with 3D-aware context menu logic
    */
   setupMouseDown() {
-    const view = this.gameManager.app.view;
+    const view = this.gameManager.getEventCanvas();
     view.addEventListener('mousedown', (event) => {
       if (event.button === 2) {
         if (this._tryCaptureRadialTrigger(event)) {
@@ -141,7 +141,7 @@ export class InteractionManager {
    * Handle mouse move events
    */
   setupMouseMove() {
-    const view = this.gameManager.app.view;
+    const view = this.gameManager.getEventCanvas();
     view.addEventListener('mousemove', (event) => {
       if (this._pendingRadialContext) {
         this._pendingRadialContext.lastScreenX = event.clientX;
@@ -172,7 +172,7 @@ export class InteractionManager {
    * Handle mouse up events
    */
   setupMouseUp() {
-    const view = this.gameManager.app.view;
+    const view = this.gameManager.getEventCanvas();
     view.addEventListener('mouseup', (event) => {
       if (event.button === 2) {
         if (this._pendingRadialContext) {
@@ -204,7 +204,7 @@ export class InteractionManager {
    * Handle mouse leave events
    */
   setupMouseLeave() {
-    const view = this.gameManager.app.view;
+    const view = this.gameManager.getEventCanvas();
     view.addEventListener('mouseleave', () => {
       if (this.isDragging || this.isRotating3D) {
         this._ensureGlobalDragListeners();
@@ -241,7 +241,7 @@ export class InteractionManager {
    * Set up zoom interaction handlers
    */
   setupZoomInteraction() {
-    this.gameManager.app.view.addEventListener('wheel', (event) => {
+    this.gameManager.getEventCanvas().addEventListener('wheel', (event) => {
       event.preventDefault();
       this.handleZoomWheel(event);
     });
@@ -280,13 +280,15 @@ export class InteractionManager {
           placeablesPanelVisible: !!panelVisible,
         });
         try {
-          this.gameManager.app.view.style.cursor = 'not-allowed';
+          this.gameManager.getEventCanvas().style.cursor = 'not-allowed';
         } catch (_) {
           /* ignore */
         }
         const t = setTimeout(() => {
           try {
-            this.gameManager.app.view.style.cursor = terrainActive ? 'crosshair' : 'default';
+            this.gameManager.getEventCanvas().style.cursor = terrainActive
+              ? 'crosshair'
+              : 'default';
           } catch (_) {
             /* ignore */
           }
@@ -978,7 +980,7 @@ export class InteractionManager {
    * @returns {Object} Mouse coordinates
    */
   getMousePosition(event) {
-    const rect = this.gameManager.app.view.getBoundingClientRect();
+    const rect = this.gameManager.getEventCanvas().getBoundingClientRect();
     return {
       mouseX: event.clientX - rect.left,
       mouseY: event.clientY - rect.top,

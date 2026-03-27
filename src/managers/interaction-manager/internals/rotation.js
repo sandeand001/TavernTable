@@ -24,7 +24,7 @@ export function start3DRotation(c, event, threeMgr) {
     c.startYaw = threeMgr._isoYaw || 0;
     const startPitchRad = threeMgr._isoPitch != null ? threeMgr._isoPitch : 0.6;
     c.startPitchDeg = startPitchRad * RAD2DEG;
-    c.gameManager.app.view.style.cursor = 'grabbing';
+    c.gameManager.getEventCanvas().style.cursor = 'grabbing';
     event.preventDefault();
     event.stopPropagation();
   } catch (e) {
@@ -77,5 +77,5 @@ export function stop3DRotation(c) {
   c.isRotating3D = false;
   c._activeDragButton = null;
   c._removeGlobalDragListeners();
-  c.gameManager.app.view.style.cursor = 'default';
+  c.gameManager.getEventCanvas().style.cursor = 'default';
 }

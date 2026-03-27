@@ -4,7 +4,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/Err
 // ── Wheel Zoom ──────────────────────────────────────────────────
 
 export function handleZoomWheel(c, event) {
-  const rect = c.gameManager.app.view.getBoundingClientRect();
+  const rect = c.gameManager.getEventCanvas().getBoundingClientRect();
   const mouseX = event.clientX - rect.left;
   const mouseY = event.clientY - rect.top;
 
