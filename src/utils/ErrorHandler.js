@@ -45,7 +45,7 @@ export { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './error/enums
 /**
  * Configuration interface for error handling behavior
  */
-export class ErrorHandlerConfig {
+class ErrorHandlerConfig {
   constructor(options = {}) {
     this.environment = options.environment || 'development';
     this.enableUserNotifications = options.enableUserNotifications ?? true;
@@ -63,7 +63,7 @@ export class ErrorHandlerConfig {
 /**
  * Structured error entry with comprehensive metadata
  */
-export class ErrorEntry {
+class ErrorEntry {
   constructor(error, severity, category, context = {}) {
     this.id = this.generateId();
     this.timestamp = new Date().toISOString();
@@ -748,113 +748,3 @@ export const GameErrors = {
 // ── Integration Helpers ─────────────────────────────────────────
 // Export error handler for direct access if needed
 export { errorHandler as default };
-
-/**
- * Integration helpers for easier adoption across the codebase
- */
-
-/**
- * Async wrapper that automatically handles promise rejections
- * @param {Function} asyncFn - Async function to wrap
- * @param {Object} context - Error context
- * @param {string} category - Error category
- * @param {string} recoveryStrategy - Recovery strategy
- * @returns {Function} Wrapped function
- */
-export function withErrorHandling(
-  asyncFn,
-  context = {},
-  category = ERROR_CATEGORY.SYSTEM,
-  recoveryStrategy = RECOVERY_STRATEGY.NONE
-) {
-  return async (...args) => {
-    try {
-      return await asyncFn(...args);
-    } catch (error) {
-      errorHandler.handle(
-        error,
-        ERROR_SEVERITY.ERROR,
-        category,
-        {
-          ...context,
-          functionName: asyncFn.name,
-          arguments: args,
-        },
-        recoveryStrategy
-      );
-      throw error; // Re-throw for caller handling
-    }
-  };
-}
-
-/**
- * Decorator for class methods to add automatic error handling
- * @param {string} category - Error category
- * @param {string} recoveryStrategy - Recovery strategy
- * @returns {Function} Method decorator
- */
-export function handleErrors(
-  category = ERROR_CATEGORY.SYSTEM,
-  recoveryStrategy = RECOVERY_STRATEGY.NONE
-) {
-  return function (target, propertyKey, descriptor) {
-    const originalMethod = descriptor.value;
-
-    descriptor.value = async function (...args) {
-      try {
-        return await originalMethod.apply(this, args);
-      } catch (error) {
-        errorHandler.handle(
-          error,
-          ERROR_SEVERITY.ERROR,
-          category,
-          {
-            className: target.constructor.name,
-            methodName: propertyKey,
-            arguments: args,
-          },
-          recoveryStrategy
-        );
-        throw error;
-      }
-    };
-
-    return descriptor;
-  };
-}
-
-/**
- * Performance monitoring wrapper
- * @param {Function} fn - Function to monitor
- * @param {string} operationName - Operation identifier
- * @param {number} thresholdMs - Performance threshold in milliseconds
- * @returns {Function} Wrapped function
- */
-export function withPerformanceMonitoring(fn, operationName, thresholdMs = 1000) {
-  return async (...args) => {
-    const startTime = performance.now();
-
-    try {
-      const result = await fn(...args);
-      const duration = performance.now() - startTime;
-
-      if (duration > thresholdMs) {
-        GameErrors.performance(`Slow operation detected: ${operationName}`, {
-          operation: operationName,
-          duration,
-          threshold: thresholdMs,
-        });
-      }
-
-      return result;
-    } catch (error) {
-      const duration = performance.now() - startTime;
-      GameErrors.performance(`Operation failed: ${operationName}`, {
-        operation: operationName,
-        duration,
-        error: error.message,
-      });
-      throw error;
-    }
-  };
-}

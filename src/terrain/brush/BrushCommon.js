@@ -38,7 +38,7 @@ export function normalizeBrushSize(value, config = TERRAIN_CONFIG) {
  * Returning both radii keeps footprint math identical across controller/highlighter/overlay.
  * @param {number} size
  */
-export function computeBrushRadii(size) {
+function computeBrushRadii(size) {
   const clamped = Math.max(1, Math.round(size));
   const negativeRadius = Math.floor((clamped - 1) / 2);
   const positiveRadius = clamped - negativeRadius - 1;

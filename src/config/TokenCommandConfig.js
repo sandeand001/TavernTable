@@ -141,7 +141,7 @@ function registerCommand(map, command) {
   }
 }
 
-export const TOKEN_COMMAND_LOOKUP = TOKEN_COMMANDS.reduce((map, command) => {
+const TOKEN_COMMAND_LOOKUP = TOKEN_COMMANDS.reduce((map, command) => {
   registerCommand(map, command);
   return map;
 }, Object.create(null));

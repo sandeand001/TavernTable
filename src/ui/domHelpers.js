@@ -2,7 +2,7 @@
 
 // ── Creature & Token Selectors ─────────────────────────
 /** CSS selector string for all creature token buttons (including remove). */
-export const CREATURE_BUTTONS_SELECTOR = '#creature-content button[id^="token-"], #token-remove';
+const CREATURE_BUTTONS_SELECTOR = '#creature-content button[id^="token-"], #token-remove';
 
 /**
  * Returns a NodeList of all creature buttons.
@@ -61,11 +61,6 @@ export function getBrushSizeDisplay() {
   return document.getElementById('brush-size-display');
 }
 
-/** Returns the token info element used for UI hints. */
-export function getTokenInfoEl() {
-  return document.getElementById('token-info');
-}
-
 /** Returns creature panel elements: the collapsible content and arrow. */
 export function getCreaturePanelEls() {
   return {
@@ -88,24 +83,10 @@ export function getTokenButtonByType(tokenType) {
 }
 
 // ── Dice UI ────────────────────────────────────────────
-/** Returns dice UI elements. */
-export function getDiceCountEl() {
-  return document.getElementById('dice-count');
-}
-
-export function getDiceResultEl() {
-  return document.getElementById('dice-result');
-}
-
 /** Returns all dice roll buttons in the dice panel. */
 export function getDiceButtons() {
   // Only the top dice panel's buttons; does not include sidebar controls
   return document.querySelectorAll('#dice-panel button[data-sides]');
-}
-
-/** Returns the dice panel clear-history button. */
-export function getDiceClearButton() {
-  return document.querySelector('#dice-log-panel .panel-footer .clear-button');
 }
 
 // ── Grid Actions & Display ─────────────────────────────
@@ -115,11 +96,6 @@ export function getGridActionButtons() {
     applySize: document.getElementById('apply-grid-size'),
     resetZoom: document.getElementById('reset-zoom'),
   };
-}
-
-/** Returns the terrain height display element. */
-export function getTerrainHeightDisplay() {
-  return document.getElementById('terrain-height-display');
 }
 
 /** Returns the main game container element. */
@@ -150,11 +126,6 @@ export function getShadingControls() {
 /** Returns the biome menu root element. */
 export function getBiomeRootEl() {
   return document.getElementById('biome-menu-root');
-}
-
-/** Returns NodeList of terrain height scale marks. */
-export function getScaleMarks() {
-  return document.querySelectorAll('.scale-mark');
 }
 
 // ── Tab Navigation ─────────────────────────────────────
@@ -211,37 +182,4 @@ export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
 /** Returns the root element where terrain placeable items should be injected. */
 export function getTerrainPlaceablesRoot() {
   return document.getElementById('terrain-placeables-root');
-}
-
-/** Helper to create a placeable button by id (used by Sidebar builder) */
-export function createPlaceableButton(id, label, imgSrc) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'placeable-btn';
-  btn.dataset.placeable = id;
-  btn.title = label || id;
-  // Always include an img element so later async thumbnail generation has a target.
-  const img = document.createElement('img');
-  img.className = 'placeable-preview';
-  img.alt = label || id;
-  // Use provided src or a 1x1 transparent pixel placeholder.
-  img.src =
-    imgSrc ||
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YkZyy8AAAAASUVORK5CYII=';
-  btn.appendChild(img);
-  const span = document.createElement('span');
-  span.className = 'placeable-label';
-  span.textContent = label || id;
-  btn.appendChild(span);
-  return btn;
-}
-
-// ── Error UI ───────────────────────────────────────────
-/** Error UI helpers */
-export function getErrorContainer() {
-  return document.getElementById('tavern-error-container');
-}
-
-export function getErrorStylesEl() {
-  return document.getElementById('tavern-error-styles');
 }

@@ -560,7 +560,7 @@ function normalizeBiomeKey(biomeKey) {
 }
 
 // ── Height Color Lookup ───────────────────────────────────────
-export function getBiomeHeightColor(biomeKey, height) {
+function getBiomeHeightColor(biomeKey, height) {
   const key = normalizeBiomeKey(biomeKey);
   const h = clampHeight(Math.round(height));
   if (!BIOME_HEIGHT_PALETTES[key]) {
@@ -577,7 +577,7 @@ export function getBiomeHeightColor(biomeKey, height) {
 }
 
 // ── Hydrology Blending ───────────────────────────────────────
-export const BIOME_HYDROLOGY = {
+const BIOME_HYDROLOGY = {
   coast: { shoreBand: [0, 0.4], tint: 0xc4ae84 },
   riverLake: { shoreBand: [0, 0.5], tint: 0x2d2218 },
   floodplain: { shoreBand: [0, 0.7], tint: 0x4a3d26 },
@@ -849,7 +849,7 @@ export function getBiomeColorHex(biomeKey, height, x = 0, y = 0, opts = {}) {
   return computePainterlyColor(biomeKey, height, x, y, opts).color;
 }
 
-export function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
+function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
   const biomeHex = getBiomeHeightColor(biomeKey, height);
   const a = hexToRgb(baseHex);
   const b = hexToRgb(biomeHex);
@@ -860,7 +860,3 @@ export function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
   };
   return rgbToHex(mixed);
 }
-
-export { BIOME_HEIGHT_PALETTES, BIOME_CANONICAL_COLOR };
-
-export default BIOME_HEIGHT_PALETTES;

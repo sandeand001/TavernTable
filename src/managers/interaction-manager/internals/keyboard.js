@@ -4,10 +4,10 @@
 
 // ── Key Code Constants ──────────────────────────────────────────
 
-export const MOVE_FORWARD_CODES = new Set(['ArrowUp', 'KeyW']);
-export const MOVE_BACKWARD_CODES = new Set(['ArrowDown', 'KeyS']);
-export const ROTATE_LEFT_CODES = new Set(['ArrowLeft', 'KeyA']);
-export const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
+const MOVE_FORWARD_CODES = new Set(['ArrowUp', 'KeyW']);
+const MOVE_BACKWARD_CODES = new Set(['ArrowDown', 'KeyS']);
+const ROTATE_LEFT_CODES = new Set(['ArrowLeft', 'KeyA']);
+const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
 
 // ── Input Filtering ─────────────────────────────────────────────
 

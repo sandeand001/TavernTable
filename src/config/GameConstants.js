@@ -72,31 +72,14 @@ export const CREATURE_SCALES = {
 // (Removed unused CREATURE_FOOTPRINTS during NFC cleanup)
 
 /**
- * Optional per-creature baseline Y offsets (in pixels at scale=1)
- * Negative moves the sprite up (useful when textures include bottom padding)
- */
-export const CREATURE_BASELINE_OFFSETS = {
-  mannequin: -4,
-};
-
-/**
  * Creature color mapping for fallback graphics
  * Used when PNG sprites are not available
  */
-export const CREATURE_COLORS = {
+const CREATURE_COLORS = {
   mannequin: 0xcb99ff, // Lavender
 };
 
-/**
- * Optional per-creature sprite filename overrides
- * Allows multiple creature types to share a single underlying asset
- */
-export const CREATURE_SPRITE_FILE_OVERRIDES = {
-  mannequin: 'defeated-doll-sprite.png',
-  'defeated-doll': 'defeated-doll-sprite.png',
-};
-
-export const CREATURE_TYPE_ALIASES = {
+const CREATURE_TYPE_ALIASES = {
   'defeated-doll': 'mannequin',
   'female-humanoid': 'mannequin',
 };

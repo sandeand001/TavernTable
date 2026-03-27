@@ -1016,9 +1016,4 @@ export function removeItem(m, x, y, id = null) {
 // ── Re-exports ─────────────────────────────────────────────
 
 // Re-export extracted functions so existing callers see no change
-export {
-  createPlaceableSprite,
-  repositionPlaceableSprite,
-  updatePlaceablesForCell,
-  repositionAllPlaceables,
-};
+export { createPlaceableSprite, updatePlaceablesForCell, repositionAllPlaceables };

@@ -873,7 +873,6 @@ export {
   isTropicalCluster,
   getTropicalDensityModifier,
   hash32,
-  pickIds,
   stripSpectralWeights,
   relocateTropicalCandidate,
   isCoastlineTile,

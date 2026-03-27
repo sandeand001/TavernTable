@@ -476,14 +476,8 @@ function pickInteriorPosition(metrics) {
 // ── Exports ────────────────────────────────────────────────────
 export {
   clampToRange,
-  normalize2D,
-  reflectVector2D,
-  deriveBounceIntensity,
   collectCollisionObstacles,
-  findPathCollision,
   buildRicochetPath,
-  createLinearPath,
-  mergePathInfos,
   buildAdditionalTravelTargets,
   extendPathDistance,
   adjustDieHeightForGround,
