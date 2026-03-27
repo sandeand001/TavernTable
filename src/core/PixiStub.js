@@ -1,6 +1,9 @@
 /**
  * PixiStub.js — Lightweight drop-in replacement for PIXI.js.
  *
+ * Lives in core/ because it is a foundational compatibility shim imported
+ * across all domains (managers, coordinators, entities, terrain).
+ *
  * Provides the minimum API surface used by the TavernTable codebase so the
  * CDN dependency on pixi.js-legacy can be removed.  All visual rendering is
  * handled by Three.js; this stub only satisfies the container/display-object
