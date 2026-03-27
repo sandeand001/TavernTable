@@ -246,7 +246,7 @@ Apply `// ── Section ──` comments and reorder methods in **all files** p
 
 **GATE**: `npm test` passes, `npm run lint` clean
 
-- [x] **GATE PASSED** — committed as: `1eafbff` (9C), `52d00dd` (9A+9B)
+- [x] **GATE PASSED** — committed as: `1eafbff` (9C), `52d00dd` (9A+9B), `24fe3c7` (import fixes)
 
 ---
 
