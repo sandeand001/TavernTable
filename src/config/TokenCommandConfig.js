@@ -135,15 +135,15 @@ const DEFAULT_COMMANDS = [
 // ── Command Registry & Lookup ─────────────────────────────────
 export const TOKEN_COMMANDS = DEFAULT_COMMANDS;
 
-function registerCommand(map, command) {
+function _registerCommand(map, command) {
   map[command.id] = command;
   if (Array.isArray(command.subActions)) {
-    command.subActions.forEach((child) => registerCommand(map, child));
+    command.subActions.forEach((child) => _registerCommand(map, child));
   }
 }
 
 const TOKEN_COMMAND_LOOKUP = TOKEN_COMMANDS.reduce((map, command) => {
-  registerCommand(map, command);
+  _registerCommand(map, command);
   return map;
 }, Object.create(null));
 
