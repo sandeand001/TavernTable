@@ -2,6 +2,8 @@
  * SeededRNG.js - lightweight deterministic PRNG utilities (xorshift32 style)
  * Used for terrain generation, flora placement, and any feature requiring reproducibility.
  */
+
+// ── Public API ──────────────────────────────────────────────────
 export function createSeededRNG(seed, salt = 0) {
   // Mix seed & salt into 32-bit state (avoid zero)
   let s = (seed ^ (0x9e3779b9 + (salt << 6) + (salt >> 2))) >>> 0;

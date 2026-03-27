@@ -14,10 +14,6 @@ import {
 
 // ── Mesh Creation ───────────────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Mesh creation                                                     */
-/* ------------------------------------------------------------------ */
-
 function _ensureTokenMesh(tokenEntry, scene) {
   if (!tokenEntry || tokenEntry.__threeMesh) return;
   const gm = this.gameManager;
@@ -156,10 +152,6 @@ async function _create3DToken(tokenEntry, scene, config) {
 
 // ── Skinned-Mesh Helper ───────────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Skinned-mesh helper                                               */
-/* ------------------------------------------------------------------ */
-
 function _findFirstSkinnedMesh(root) {
   if (!root) return null;
   if (root.isSkinnedMesh) return root;
@@ -173,10 +165,6 @@ function _findFirstSkinnedMesh(root) {
 }
 
 // ── Loaders ───────────────────────────────────────────────────────
-
-/* ------------------------------------------------------------------ */
-/*  Loaders                                                           */
-/* ------------------------------------------------------------------ */
 
 function _collectTintTargets(mesh) {
   const materials = [];
@@ -245,10 +233,6 @@ async function _getSkeletonUtils() {
 }
 
 // ── Templates & Cloning ───────────────────────────────────────────
-
-/* ------------------------------------------------------------------ */
-/*  Templates & cloning                                               */
-/* ------------------------------------------------------------------ */
 
 function _buildPathVariants(path) {
   const base = String(path || '').replace(/\\/g, '/');
@@ -364,10 +348,6 @@ async function _cloneTemplate(template) {
 }
 
 // ── Metadata, Tinting & Positioning ──────────────────────────────
-
-/* ------------------------------------------------------------------ */
-/*  Metadata, tinting & positioning                                   */
-/* ------------------------------------------------------------------ */
 
 function _applyCommonMetadata(mesh, tokenEntry, options = {}) {
   const type = tokenEntry?.type || tokenEntry?.creature?.type || 'unk';
@@ -521,9 +501,7 @@ function _positionMesh(mesh, tokenEntry) {
   return false;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Installer                                                         */
-/* ------------------------------------------------------------------ */
+// ── Installer ───────────────────────────────────────────────────
 
 export function installMeshFactoryMethods(prototype) {
   prototype._ensureTokenMesh = _ensureTokenMesh;

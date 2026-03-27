@@ -41,6 +41,7 @@ import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
 import { rollDice } from '../systems/dice/dice.js';
 import { RadialMenu } from './components/RadialMenu.js';
 
+// ── Constants ──────────────────────────────────────────────────
 const TOKEN_DRAG_MIME = 'application/taverntable-token';
 
 // ── Private Helpers ─────────────────────────────────────────

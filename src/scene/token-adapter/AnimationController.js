@@ -16,10 +16,6 @@ import { DEFAULT_MOVEMENT_PROFILE } from './MannequinConfig.js';
 
 // ── Animation Setup & Clip Resolution ────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Animation setup & clip resolution                                  */
-/* ------------------------------------------------------------------ */
-
 async function _setupAnimationSet(tokenEntry, container, config, templateBundle) {
   try {
     const three = await this._getThree();
@@ -314,10 +310,6 @@ async function _resolveAnimationClip(descriptor, fallbackClip, options = {}) {
 
 // ── Clip Loading & Caching ────────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Clip loading & caching                                             */
-/* ------------------------------------------------------------------ */
-
 async function _loadAnimationClip(path, options = {}) {
   if (!path) return null;
   const cacheKey = this._buildAnimationCacheKey(path, options.targetCacheKey);
@@ -372,10 +364,6 @@ function _buildAnimationCacheKey(path, targetKey) {
 
 // ── Retargeting ───────────────────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Retargeting                                                        */
-/* ------------------------------------------------------------------ */
-
 async function _retargetAnimationClip(clip, sourceRoot, targetRoot, options = {}) {
   if (!clip || !targetRoot || !sourceRoot) return clip;
   try {
@@ -401,10 +389,6 @@ async function _retargetAnimationClip(clip, sourceRoot, targetRoot, options = {}
 }
 
 // ── Clip Utilities ───────────────────────────────────────────────
-
-/* ------------------------------------------------------------------ */
-/*  Clip utilities                                                     */
-/* ------------------------------------------------------------------ */
 
 function _cloneClip(clip) {
   if (!clip) return null;
@@ -442,10 +426,6 @@ function _selectPrimaryClip(clips) {
 
 // ── Action Configuration ──────────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Action configuration                                               */
-/* ------------------------------------------------------------------ */
-
 function _configureAction(action, descriptor, three, defaults = {}) {
   if (!action || !three) return;
   const loopMode = (descriptor?.loop || defaults.loop || 'repeat').toLowerCase();
@@ -471,10 +451,6 @@ function _configureAction(action, descriptor, three, defaults = {}) {
 }
 
 // ── Movement Profile ─────────────────────────────────────────────
-
-/* ------------------------------------------------------------------ */
-/*  Movement profile                                                   */
-/* ------------------------------------------------------------------ */
 
 function _buildMovementProfile(movementOverrides = {}, actions = {}, clips = {}) {
   const tileWorldSize = this.gameManager?.spatial?.tileWorldSize || 1;
@@ -618,10 +594,6 @@ function _extractClipDuration(action) {
 
 // ── Playback ─────────────────────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Playback                                                           */
-/* ------------------------------------------------------------------ */
-
 function _setAnimation(tokenEntry, key, options = {}) {
   const data = this._tokenAnimationData.get(tokenEntry);
   if (!data || !data.actions) return;
@@ -746,10 +718,6 @@ function playTokenAnimation(tokenEntry, animationKey, options = {}) {
 
 // ── Manual Animation State ───────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Manual animation state                                             */
-/* ------------------------------------------------------------------ */
-
 function _clearManualAnimationRevert(tokenEntry) {
   if (!tokenEntry) return;
   const handle = this._manualAnimationRevertTimers.get(tokenEntry);
@@ -838,10 +806,6 @@ function _scheduleManualAnimationRevert(tokenEntry, delayMs, revertKey, revertOp
   }, delayMs);
   this._manualAnimationRevertTimers.set(tokenEntry, handle);
 }
-
-/* ------------------------------------------------------------------ */
-/*  Prototype installer                                                */
-/* ------------------------------------------------------------------ */
 
 export function installAnimationMethods(prototype) {
   prototype._setupAnimationSet = _setupAnimationSet;
