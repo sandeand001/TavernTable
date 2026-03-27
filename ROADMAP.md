@@ -175,9 +175,9 @@
 - [x] `flora.js` (1,149 → 321) → `terrain-coordinator/internals/FloraProfiles.js` (842 lines)
 - [x] `InteractionManager.js` (1,257 → 1,042) → `interaction-manager/internals/keyboard.js` (128 lines)
 - [x] `ModelAssetCache.js` (1,027 → 704) → `core/ModelPostProcessing.js` (321 lines)
-- [ ] ~~`placeables.js` (1,554)~~ — **deferred** (shared mutable state across functions)
-- [ ] ~~`BiomeCanvasPainter.js` (1,134)~~ — **deferred** (tightly coupled class internals)
-- [ ] ~~`PlaceableMeshPool.js` (1,097)~~ — **deferred** (class with instance state coupling)
+- [x] `placeables.js` (1,507 → 991) → `placeables-positioning.js` (152 lines) + `placeables-sprite.js` (387 lines)
+- [x] `PlaceableMeshPool.js` (1,072 → 765) → `scene/PlaceablePoolLifecycle.js` (319 lines)
+- [ ] ~~`BiomeCanvasPainter.js` (1,083)~~ — **deferred** (tightly coupled class internals; already delegates to biome-painter/motifs.js)
 
 *Note: `GameManager.js` (1,583 lines) is low priority — already well-structured via coordinator pattern.*
 

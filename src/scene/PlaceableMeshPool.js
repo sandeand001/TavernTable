@@ -1,19 +1,18 @@
-import logger, { LOG_CATEGORY } from '../utils/Logger.js';
+import {
+  logMeshPoolDebug,
+  setPreview as _setPreview,
+  hidePreview as _hidePreview,
+  dispose as _dispose,
+  clearAll as _clearAll,
+  fullReset as _fullReset,
+  purgeAll as _purgeAll,
+  validateHidden as _validateHidden,
+  debugSnapshot as _debugSnapshot,
+} from './PlaceablePoolLifecycle.js';
 
 // PlaceableMeshPool.js - Phase 4 scaffold
 // Manages instanced meshes for static placeables (trees, rocks, etc.).
-// Initial goals:
-//  - Group placeables by (variantKey) -> InstancedMesh
-//  - Provide add/update/remove API that defers GPU allocation until first use
-//  - Expose lightweight metrics for dev inspection
-//  - Fail gracefully if Three.js not available
-
-const PLACEABLE_POOL_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
-const logMeshPoolDebug = (message, data = {}) => {
-  if (logger.isDebugEnabled()) {
-    logger.debug(message, data, PLACEABLE_POOL_LOG_CATEGORY);
-  }
-};
+// Lifecycle, preview, and diagnostics extracted to PlaceablePoolLifecycle.js.
 
 export class PlaceableMeshPool {
   constructor({ gameManager, initialCapacity = 256, maxCapacity = 4096 } = {}) {
@@ -754,344 +753,45 @@ export class PlaceableMeshPool {
     }
   }
 
+  // ── Delegated methods (extracted to PlaceablePoolLifecycle.js) ──────────────
+
   getStats() {
     return { ...this._metrics };
   }
 
-  /**
-   * Allow callers to inject a custom material creation strategy.
-   * strategy({ key, type, three, capacity }) => THREE.Material
-   */
   setMaterialStrategy(fn) {
     if (typeof fn === 'function') this._materialStrategy = fn;
   }
 
-  /**
-   * Experimental: show/update a single preview mesh at grid coords (gx, gy).
-   * Lazy-creates a THREE.Mesh the first time it's invoked. Safe to call frequently.
-   */
   async setPreview(gx, gy) {
-    try {
-      const gm = this.gameManager;
-      if (!gm || !gm.is3DModeActive?.()) return;
-      const three = await this._ensureThree();
-      if (!three) return;
-      if (gx == null || gy == null || !Number.isFinite(gx) || !Number.isFinite(gy)) return;
-      if (this._previewCoords.gx === gx && this._previewCoords.gy === gy) return;
-      this._previewCoords = { gx, gy };
-      if (!this._previewMesh) {
-        const geo = new three.PlaneGeometry(1, 1);
-        geo.rotateX(-Math.PI / 2);
-        const mat = new three.MeshBasicMaterial({
-          color: 0xffff55,
-          transparent: true,
-          opacity: 0.35,
-          depthWrite: false,
-        });
-        this._previewMesh = new three.Mesh(geo, mat);
-        this._previewMesh.name = 'PlaceablePreview';
-        try {
-          gm.threeSceneManager?.scene?.add(this._previewMesh);
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
-      let h = 0;
-      try {
-        h = gm.getTerrainHeight?.(gx, gy) || 0;
-      } catch (_) {
-        h = 0;
-      }
-      const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-      this._previewMesh.position.set(world.x, worldY + 0.01, world.z);
-      this._previewMesh.visible = true;
-    } catch (_) {
-      /* ignore preview errors */
-    }
+    return _setPreview(this, gx, gy);
   }
 
-  /** Hide the preview indicator if present */
   hidePreview() {
-    try {
-      if (this._previewMesh) this._previewMesh.visible = false;
-      this._previewCoords = { gx: null, gy: null };
-    } catch (_) {
-      /* ignore */
-    }
+    return _hidePreview(this);
   }
 
-  /** Dispose all instanced meshes (phase teardown) */
   dispose() {
-    for (const g of this._groups.values()) {
-      try {
-        g.instancedMesh.geometry?.dispose();
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        g.instancedMesh.material?.dispose();
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        this.gameManager.threeSceneManager.scene.remove(g.instancedMesh);
-      } catch (_) {
-        /* ignore */
-      }
-    }
-    this._groups.clear();
-    try {
-      if (this._previewMesh) {
-        this.gameManager?.threeSceneManager?.scene?.remove(this._previewMesh);
-        this._previewMesh.geometry?.dispose?.();
-        this._previewMesh.material?.dispose?.();
-      }
-    } catch (_) {
-      /* ignore preview dispose */
-    }
-    try {
-      this.gameManager?.threeSceneManager?.registerPlaceablePool?.(null);
-    } catch (_) {
-      /* ignore unregister errors */
-    }
-    this._updateMetrics();
+    return _dispose(this);
   }
 
-  /**
-   * Clear all live instances WITHOUT disposing underlying geometries/materials.
-   * Used when regenerating an entire map so stale trees do not persist.
-   */
   clearAll() {
-    try {
-      // Increment epoch so any in-flight async addPlaceable operations originating from the
-      // previous generation abort on resume, preventing stale tree reappearance.
-      this._clearEpoch += 1;
-      logMeshPoolDebug('[PlaceableMeshPool] clearAll begin', {
-        epoch: this._clearEpoch,
-        groups: Array.from(this._groups.keys()),
-      });
-      for (const [key, group] of this._groups.entries()) {
-        group.freeIndices = [];
-        group.count = 0;
-        this._metadata.set(key, new Map());
-        // Scrub matrices so any future extension of draw count cannot resurrect stale visuals.
-        try {
-          const inst = group.instancedMesh;
-          if (inst && inst.setMatrixAt) {
-            const threeNS = this._three;
-            if (threeNS) {
-              const dummy = new threeNS.Object3D();
-              // Off-screen sink position (far below ground)
-              dummy.position.set(0, -9999, 0);
-              dummy.scale.set(0.0001, 0.0001, 0.0001); // virtually invisible even if shown
-              dummy.updateMatrix();
-              // Always scrub full capacity to eliminate ANY residual matrices.
-              const limit = group.capacity;
-              for (let i = 0; i < limit; i++) {
-                try {
-                  inst.setMatrixAt(i, dummy.matrix);
-                } catch (_) {
-                  /* ignore */
-                }
-              }
-              try {
-                inst.instanceMatrix.needsUpdate = true;
-              } catch (_) {
-                /* ignore */
-              }
-            }
-            try {
-              inst.count = 0;
-            } catch (_) {
-              /* ignore */
-            }
-          }
-        } catch (_) {
-          /* ignore scrub errors */
-        }
-      }
-      this._updateMetrics();
-      // Force a one-time billboard refresh next frame by invalidating last cached yaw/pitch
-      this._lastBillboardYaw = null;
-      this._lastBillboardPitch = null;
-      logMeshPoolDebug('[PlaceableMeshPool] clearAll end', {
-        epoch: this._clearEpoch,
-        metrics: this.getStats?.(),
-      });
-    } catch (_) {
-      /* ignore clear errors */
-    }
+    return _clearAll(this);
   }
 
-  /** Destroy and recreate all instanced groups (heavier than clearAll). */
   async fullReset() {
-    try {
-      const three = await this._ensureThree();
-      if (!three) return;
-      const old = Array.from(this._groups.entries());
-      // Remove & dispose
-      for (const [, g] of old) {
-        try {
-          this.gameManager?.threeSceneManager?.scene?.remove(g.instancedMesh);
-        } catch (_) {
-          /* ignore */
-        }
-        try {
-          g.instancedMesh.geometry?.dispose?.();
-        } catch (_) {
-          /* ignore */
-        }
-        try {
-          g.instancedMesh.material?.dispose?.();
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      this._groups.clear();
-      this._metadata.clear();
-      this._clearEpoch += 1;
-      this._updateMetrics();
-    } catch (_) {
-      /* ignore */
-    }
+    return _fullReset(this);
   }
 
-  /** Dev helper: validate there are no visible stale matrices beyond active counts */
   validateHidden() {
-    const issues = [];
-    try {
-      const three = this._three;
-      if (!three) return { ok: true, issues: [], scanned: 0 };
-      const tmp = new three.Matrix4();
-      for (const [key, g] of this._groups.entries()) {
-        const inst = g.instancedMesh;
-        if (!inst || typeof inst.getMatrixAt !== 'function') continue;
-        const active = g.count;
-        const maxScan = g.capacity; // scan entire capacity now that we heavy-scrub
-        let flagged = false;
-        for (let i = active; i < maxScan; i++) {
-          try {
-            inst.getMatrixAt(i, tmp);
-            const y = tmp.elements[13];
-            if (Number.isFinite(y) && y > -1000) {
-              issues.push({ key, index: i, y, active, capacity: g.capacity });
-              flagged = true;
-              break;
-            }
-          } catch (_) {
-            break;
-          }
-        }
-        if (!flagged && active === 0 && g.capacity > 0) {
-          // Optional secondary check: ensure first matrix is scrubbed
-          try {
-            inst.getMatrixAt(0, tmp);
-            const y0 = tmp.elements[13];
-            if (Number.isFinite(y0) && y0 > -1000) {
-              issues.push({ key, index: 0, y: y0, note: 'firstIndexVisibleDespiteZeroCount' });
-            }
-          } catch (_) {
-            /* ignore */
-          }
-        }
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    return { ok: issues.length === 0, issues };
+    return _validateHidden(this);
   }
 
-  /** Fully remove all groups (disposes instanced meshes) without touching preview. */
   purgeAll() {
-    try {
-      for (const g of this._groups.values()) {
-        try {
-          this.gameManager?.threeSceneManager?.scene?.remove(g.instancedMesh);
-        } catch (_) {
-          /* ignore */
-        }
-        try {
-          g.instancedMesh.geometry?.dispose?.();
-        } catch (_) {
-          /* ignore */
-        }
-        try {
-          g.instancedMesh.material?.dispose?.();
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      this._groups.clear();
-      this._metadata.clear();
-      this._updateMetrics();
-      this._clearEpoch += 1; // invalidate any in-flight add promises
-      // Sweep scene for any orphaned instanced meshes we previously created (defensive)
-      try {
-        const scene = this.gameManager?.threeSceneManager?.scene;
-        if (scene && Array.isArray(scene.children)) {
-          const leftovers = [];
-          for (let i = scene.children.length - 1; i >= 0; i--) {
-            const ch = scene.children[i];
-            if (ch && ch.isInstancedMesh && /^Placeables:/.test(ch.name)) {
-              leftovers.push(ch.name);
-              try {
-                scene.remove(ch);
-              } catch (_) {
-                /* ignore */
-              }
-              try {
-                ch.geometry?.dispose?.();
-              } catch (_) {
-                /* ignore */
-              }
-              try {
-                ch.material?.dispose?.();
-              } catch (_) {
-                /* ignore */
-              }
-            }
-          }
-          if (leftovers.length && typeof window !== 'undefined') {
-            logMeshPoolDebug('[PlaceableMeshPool] purgeAll removed stray meshes', { leftovers });
-          }
-        }
-      } catch (_) {
-        /* ignore sweep errors */
-      }
-    } catch (_) {
-      /* ignore purge errors */
-    }
+    return _purgeAll(this);
   }
 
-  /** Diagnostic helper: returns a snapshot of current instancing state for console inspection */
   debugSnapshot() {
-    const groups = [];
-    for (const [key, g] of this._groups.entries()) {
-      const live = g.count - g.freeIndices.length;
-      groups.push({ key, capacity: g.capacity, count: g.count, free: g.freeIndices.length, live });
-    }
-    let straySceneMeshes = 0;
-    try {
-      const scene = this.gameManager?.threeSceneManager?.scene;
-      if (scene?.children) {
-        straySceneMeshes = scene.children.filter((c) => {
-          return (
-            c?.isInstancedMesh &&
-            /^Placeables:/.test(c.name) &&
-            !this._groups.has(c.name.split(':')[1])
-          );
-        }).length;
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    return {
-      epoch: this._clearEpoch,
-      totalGroups: groups.length,
-      totalLive: groups.reduce((a, b) => a + b.live, 0),
-      straySceneMeshes,
-      groups,
-    };
+    return _debugSnapshot(this);
   }
 }
