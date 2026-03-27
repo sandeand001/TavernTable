@@ -164,7 +164,7 @@
 
 **GATE**: `npm test` passes · d20 roll works in browser
 
-- [x] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `867aa8b`
 
 ---
 
