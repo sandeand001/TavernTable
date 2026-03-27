@@ -22,19 +22,39 @@
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
-import { getTokenCommand } from '../config/TokenCommandConfig.js';
 
 import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
 import { StateCoordinator } from '../coordinators/StateCoordinator.js';
 import { InputCoordinator } from '../coordinators/InputCoordinator.js';
 import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 import { SpatialCoordinator } from '../scene/picking/SpatialCoordinator.js';
-import { ThreeSceneManager } from '../scene/ThreeSceneManager.js';
-import { CameraRig } from '../scene/camera/CameraRig.js';
-import { TerrainMeshBuilder } from '../scene/terrain/TerrainMeshBuilder.js';
-import { TerrainRebuilder } from '../scene/terrain/TerrainRebuilder.js';
-import { PlaceableMeshPool } from '../scene/terrain/PlaceableMeshPool.js';
-import { PickingService } from '../scene/picking/PickingService.js';
+import {
+  enableHybridRender as enableHybridRenderImpl,
+  isTestEnvironment as isTestEnvironmentImpl,
+  ensureTestThreeSceneFallback as ensureTestThreeSceneFallbackImpl,
+} from './game-manager/internals/init.js';
+import {
+  ensureInstancing as ensureInstancingImpl,
+  enableInstancedPlaceables as enableInstancedPlaceablesImpl,
+  reinstanceExistingPlants as reinstanceExistingPlantsImpl,
+  disableInstancedPlaceables as disableInstancedPlaceablesImpl,
+  flushInstancing as flushInstancingImpl,
+} from './game-manager/internals/instancing.js';
+import {
+  applyTokenCommand as applyTokenCommandImpl,
+  _setTokenQuickCommand as _setTokenQuickCommandImpl,
+  _resolveTokenEntry as _resolveTokenEntryImpl,
+  _extractTokenId as _extractTokenIdImpl,
+  _handleEmoteCommand as _handleEmoteCommandImpl,
+  _playIdleEmote as _playIdleEmoteImpl,
+} from './game-manager/internals/tokenCommands.js';
+import {
+  startTokenDragByGrid as startTokenDragByGridImpl,
+  updateTokenDragToGrid as updateTokenDragToGridImpl,
+  commitTokenDrag as commitTokenDragImpl,
+  cancelTokenDrag as cancelTokenDragImpl,
+} from './game-manager/internals/tokenDrag.js';
+import { sync3DElevationScaling as sync3DElevationScalingImpl } from './game-manager/internals/elevation.js';
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/logger/Logger.js';
 import {
   ErrorHandler,
@@ -44,9 +64,6 @@ import {
 } from '../utils/error/ErrorHandler.js';
 import { Sanitizers } from '../utils/Validation.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
-
-const EMOTE_COMMAND_PREFIX = 'emote-';
-const EMOTE_IDLE_ACTIONS = ['idle', 'idleVariant2', 'idleVariant3', 'idleVariant4', 'idleVariant5'];
 
 // Import existing managers
 // Managers are created dynamically within StateCoordinator to avoid circular dependencies
@@ -160,321 +177,7 @@ class GameManager {
    * Initializes ThreeSceneManager and switches renderMode.
    */
   async enableHybridRender() {
-    if (this.is3DModeActive()) return;
-
-    if (!this.threeSceneManager) {
-      this.threeSceneManager = new ThreeSceneManager(this);
-      await this.threeSceneManager.initialize();
-    }
-
-    let degraded = !!this.threeSceneManager?.degraded;
-
-    if (degraded) {
-      const recovered = this._ensureTestThreeSceneFallbackReady();
-      degraded = !!this.threeSceneManager?.degraded;
-      if (degraded && !recovered) {
-        const reason = this.threeSceneManager.degradeReason || 'Three.js renderer unavailable';
-        logger.log(
-          LOG_LEVEL.WARN,
-          'Hybrid 3D renderer unavailable; staying in 2D mode',
-          LOG_CATEGORY.SYSTEM,
-          {
-            context: 'GameManager.enableHybridRender',
-            reason,
-          }
-        );
-        this.threeSceneManager.ensureFallbackSurface?.();
-        return false;
-      }
-    }
-
-    if (!degraded) {
-      // Hide the legacy 2D tile grid once 3D mode is active; keep the Three grid visible by default.
-      try {
-        this.threeSceneManager.setLegacyGridVisible?.(false);
-      } catch (_) {
-        /* ignore */
-      }
-
-      // Flush any deferred plant models queued before scene was ready
-      try {
-        if (Array.isArray(this._deferredPlantModels) && this._deferredPlantModels.length) {
-          const sceneRef = this.threeSceneManager?.scene;
-          if (sceneRef) {
-            for (const { model, record } of this._deferredPlantModels) {
-              try {
-                sceneRef.add(model);
-                if (record && record.__threeModelPending) delete record.__threeModelPending;
-              } catch (_) {
-                /* ignore add failure */
-              }
-            }
-          }
-          this._deferredPlantModels.length = 0;
-        }
-      } catch (_) {
-        /* ignore deferred flush */
-      }
-
-      // If we are fully replacing tree sprites with 3D models, proactively clear any pre-created
-      // instanced plant quads so no green rectangles linger from earlier sessions.
-      try {
-        if (this.placeableMeshPool) {
-          this.placeableMeshPool._groups?.forEach((grp, key) => {
-            try {
-              if (
-                /plant/i.test(key) ||
-                key.includes('tree') ||
-                key.includes('oak') ||
-                key.includes('pine') ||
-                key.includes('birch') ||
-                key.includes('fir')
-              ) {
-                if (grp.instancedMesh?.parent) grp.instancedMesh.parent.remove(grp.instancedMesh);
-                this.placeableMeshPool._groups.delete(key);
-                this.placeableMeshPool._metadata.delete(key);
-              }
-            } catch (_) {
-              /* ignore per-group */
-            }
-          });
-          this.placeableMeshPool._updateMetrics?.();
-        }
-      } catch (_) {
-        /* ignore cleanup issues */
-      }
-
-      // Attach camera rig abstraction (Phase 1)
-      try {
-        if (this.threeSceneManager.camera) {
-          this.cameraRig = new CameraRig();
-          this.cameraRig.attach(this.threeSceneManager.camera);
-        }
-      } catch (_) {
-        /* ignore */
-      }
-    }
-
-    // Initialize centralized picking service once Three scene & camera exist (degraded-safe)
-    try {
-      if (!this.pickingService) {
-        this.pickingService = new PickingService({ gameManager: this });
-      }
-    } catch (_) {
-      /* non-fatal picking service init failure */
-    }
-
-    if (!degraded) {
-      // Phase 2: initialize terrain mesh pipeline
-      try {
-        if (!this.terrainRebuilder) {
-          const builder = new TerrainMeshBuilder({
-            tileWorldSize: this.spatial.tileWorldSize,
-            elevationUnit: this.spatial.elevationUnit,
-            enableBiomeVertexColors: true,
-            hardEdges: true,
-          });
-          this.terrainRebuilder = new TerrainRebuilder({ gameManager: this, builder });
-          const threeNS = (await import('three')).default || (await import('three'));
-          this.terrainRebuilder.rebuild({ three: threeNS });
-          try {
-            const updated = this.sync3DElevationScaling?.({ rebuild: false, hardSet: true });
-            if (updated) {
-              this.terrainRebuilder.rebuild({ three: threeNS });
-            }
-          } catch (_) {
-            /* ignore first parity sync */
-          }
-
-          if (typeof window !== 'undefined') {
-            window.requestTerrain3DRebuild = (reason = 'manual') => {
-              try {
-                const threeRef = this.threeSceneManager?.three || threeNS;
-                this.terrainRebuilder?.rebuild({ three: threeRef });
-                if (reason === '__noop__') {
-                  /* no-op */
-                }
-                return true;
-              } catch (_) {
-                return false;
-              }
-            };
-            if (!window.terrainRebuild) {
-              window.terrainRebuild = () => window.requestTerrain3DRebuild('alias');
-            }
-          }
-        }
-      } catch (e) {
-        /* non-fatal terrain mesh init failure */
-      }
-
-      // Phase 3 (initial scaffold): attach Token3DAdapter for existing tokens
-      try {
-        const { Token3DAdapter } = await import('../scene/Token3DAdapter.js');
-        if (!this.token3DAdapter) {
-          this.token3DAdapter = new Token3DAdapter(this);
-          this.token3DAdapter.attach();
-
-          // Attach token hover + selection listeners (3D interaction groundwork)
-          try {
-            if (typeof window !== 'undefined' && !this._tokenHoverListener) {
-              const canvas = this.threeSceneManager?.canvas;
-              const targetEl = canvas || document.body;
-
-              this._tokenHoverListener = async (evt) => {
-                try {
-                  if (!this.is3DModeActive() || !this.pickingService) return;
-                  const t0 =
-                    (typeof performance !== 'undefined' && performance.now()) || Date.now();
-                  const ground = await this.pickingService.pickGround(
-                    evt.clientX,
-                    evt.clientY,
-                    targetEl
-                  );
-                  let hoverToken = null;
-                  if (ground?.grid) {
-                    const gx = Math.round(ground.grid.gx);
-                    const gy = Math.round(ground.grid.gy);
-                    if (Number.isFinite(gx) && Number.isFinite(gy) && this.findExistingTokenAt) {
-                      hoverToken = this.findExistingTokenAt(gx, gy) || null;
-                    }
-                  }
-                  this.token3DAdapter.setHoverToken(hoverToken);
-                  try {
-                    const t1 =
-                      (typeof performance !== 'undefined' && performance.now()) || Date.now();
-                    window.__TT_METRICS__ = window.__TT_METRICS__ || {};
-                    window.__TT_METRICS__.interaction = {
-                      ...(window.__TT_METRICS__.interaction || {}),
-                      lastPickMs: t1 - t0,
-                      hoverTokenId: hoverToken?.id || null,
-                    };
-                  } catch (_) {
-                    /* ignore metrics */
-                  }
-                } catch (_) {
-                  /* ignore hover errors */
-                }
-              };
-              targetEl.addEventListener('pointermove', this._tokenHoverListener);
-
-              this._tokenSelectListener = async (evt) => {
-                try {
-                  if (!this.is3DModeActive() || !this.pickingService) return;
-                  const ground = await this.pickingService.pickGround(
-                    evt.clientX,
-                    evt.clientY,
-                    targetEl
-                  );
-                  let token = null;
-                  if (ground?.grid) {
-                    const gx = Math.round(ground.grid.gx);
-                    const gy = Math.round(ground.grid.gy);
-                    if (Number.isFinite(gx) && Number.isFinite(gy) && this.findExistingTokenAt) {
-                      token = this.findExistingTokenAt(gx, gy) || null;
-                    }
-                  }
-                  this.token3DAdapter.setSelectedToken(token);
-                  try {
-                    if (evt.button === 0 && token) {
-                      this.startTokenDragByGrid(token.gridX, token.gridY);
-                    }
-                  } catch (_) {
-                    /* ignore drag start issues */
-                  }
-                  try {
-                    window.__TT_METRICS__ = window.__TT_METRICS__ || {};
-                    window.__TT_METRICS__.interaction = {
-                      ...(window.__TT_METRICS__.interaction || {}),
-                      lastSelectedTokenId: token?.id || null,
-                    };
-                  } catch (_) {
-                    /* ignore metrics */
-                  }
-                } catch (_) {
-                  /* ignore select errors */
-                }
-              };
-              targetEl.addEventListener('pointerdown', this._tokenSelectListener);
-
-              this._tokenPointerUpListener = (evt) => {
-                try {
-                  if (evt.button !== 0) return;
-                  if (this._draggingToken) {
-                    this.commitTokenDrag();
-                  }
-                } catch (_) {
-                  /* ignore */
-                }
-              };
-              targetEl.addEventListener('pointerup', this._tokenPointerUpListener);
-
-              const originalHover = this._tokenHoverListener;
-              this._tokenHoverListener = async (evt) => {
-                await originalHover(evt);
-                if (this._draggingToken && this.pickingService) {
-                  try {
-                    const ground = await this.pickingService.pickGround(
-                      evt.clientX,
-                      evt.clientY,
-                      targetEl
-                    );
-                    if (ground?.grid) {
-                      const gx = Math.round(ground.grid.gx);
-                      const gy = Math.round(ground.grid.gy);
-                      this.updateTokenDragToGrid(gx, gy);
-                    }
-                  } catch (_) {
-                    /* ignore */
-                  }
-                }
-              };
-
-              try {
-                targetEl.removeEventListener('pointermove', originalHover);
-              } catch (_) {
-                /* ignore old listener removal failure */
-              }
-              targetEl.addEventListener('pointermove', this._tokenHoverListener);
-            }
-          } catch (_) {
-            /* ignore listener attach */
-          }
-        }
-      } catch (_) {
-        /* ignore Token3DAdapter init */
-      }
-
-      // Phase 4 scaffold: initialize placeable instancing pool (no migration yet unless flag enabled)
-      try {
-        if (this.features.instancedPlaceables && !this.placeableMeshPool) {
-          this.placeableMeshPool = new PlaceableMeshPool({ gameManager: this });
-        }
-      } catch (_) {
-        /* non-fatal instancing scaffold failure */
-      }
-    }
-    this.renderMode = '3d';
-    // Dev convenience: expose on window during early phases
-    try {
-      if (typeof window !== 'undefined') {
-        window.__TT_HYBRID_ACTIVE__ = true;
-        window.__TT_3D_ACTIVE__ = true;
-        // Convenience runtime hook for toggling isometric camera once hybrid active
-        if (!window.__TT_SET_ISO_MODE__) {
-          window.__TT_SET_ISO_MODE__ = (v) => {
-            try {
-              return this.setIsometricCamera(!!v);
-            } catch (e) {
-              return false;
-            }
-          };
-        }
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    return this.threeSceneManager;
+    return enableHybridRenderImpl(this);
   }
 
   // ── Public API ─────────────────────────────────────────────
@@ -495,101 +198,7 @@ class GameManager {
    * Defensive: if any value missing, fall back to 0.25 (quarter tile) heuristic.
    */
   sync3DElevationScaling(options = {}) {
-    try {
-      if (!this.is3DModeActive()) return false;
-      const tsm = this.threeSceneManager;
-      if (!tsm) return false;
-
-      const rawPixelsPerLevel = TerrainHeightUtils.getElevationUnit();
-      const pixelsPerLevel2D =
-        Number.isFinite(rawPixelsPerLevel) && rawPixelsPerLevel >= 0
-          ? rawPixelsPerLevel
-          : this._defaultElevationPixelsPerLevel;
-
-      const defaultPixels = this._defaultElevationPixelsPerLevel || 1;
-      const baselineWorldUnit =
-        Number.isFinite(this._baselineWorldElevationUnit) && this._baselineWorldElevationUnit > 0
-          ? this._baselineWorldElevationUnit
-          : Number.isFinite(this.spatial?.elevationUnit)
-            ? this.spatial.elevationUnit
-            : 0.5;
-      const attenuation =
-        Number.isFinite(this._worldElevationAttenuation) && this._worldElevationAttenuation > 0
-          ? this._worldElevationAttenuation
-          : 1;
-
-      let worldElevationUnit =
-        defaultPixels > 0 ? (baselineWorldUnit * pixelsPerLevel2D) / defaultPixels : 0;
-      worldElevationUnit *= attenuation;
-
-      if (!Number.isFinite(worldElevationUnit)) {
-        worldElevationUnit = baselineWorldUnit;
-      } else if (worldElevationUnit < 0) {
-        worldElevationUnit = 0;
-      }
-
-      const prevUnit = this.spatial?.elevationUnit;
-      const prev = Number.isFinite(prevUnit) ? prevUnit : null;
-      if (Number.isFinite(prev) && prev > 0 && !options.hardSet) {
-        worldElevationUnit = prev * 0.2 + worldElevationUnit * 0.8;
-      }
-
-      if (
-        Number.isFinite(prev) &&
-        prev > 0 &&
-        Number.isFinite(worldElevationUnit) &&
-        Math.abs(worldElevationUnit - prev) / Math.abs(prev) < 0.005
-      ) {
-        return false;
-      }
-
-      this.spatial.reconfigure({ elevationUnit: worldElevationUnit });
-      this._lastAppliedWorldElevationUnit = worldElevationUnit;
-      this._lastPixelsPerLevelApplied = pixelsPerLevel2D;
-      if (this.terrainRebuilder?.builder) {
-        this.terrainRebuilder.builder.elevationUnit = worldElevationUnit;
-      }
-      if (options.rebuild !== false) {
-        try {
-          if (typeof window !== 'undefined' && window.requestTerrain3DRebuild) {
-            window.requestTerrain3DRebuild('elevation-sync');
-          }
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      try {
-        this.placeableMeshPool?._markAllDirty?.();
-        this.placeableMeshPool?.refreshAll?.();
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        this.token3DAdapter?.refreshAll?.();
-      } catch (_) {
-        /* ignore */
-      }
-      if (typeof window !== 'undefined') {
-        window.__TT_METRICS__ = window.__TT_METRICS__ || {};
-        window.__TT_METRICS__.elevationSync = {
-          pixelsPerLevel2D,
-          worldElevationUnit,
-          baselineWorldUnit,
-          defaultPixels,
-          attenuation,
-          relativeScale:
-            Number.isFinite(pixelsPerLevel2D) && defaultPixels > 0
-              ? pixelsPerLevel2D / defaultPixels
-              : null,
-          timestamp: Date.now(),
-        };
-        window.sync3DElevationScaling = () =>
-          this.sync3DElevationScaling({ rebuild: true, hardSet: true });
-      }
-      return true;
-    } catch (err) {
-      return false;
-    }
+    return sync3DElevationScalingImpl(this, options);
   }
 
   /**
@@ -735,145 +344,27 @@ class GameManager {
    * Records original position but does not mutate token grid yet.
    */
   startTokenDragByGrid(gx, gy) {
-    if (!this.is3DModeActive()) return false;
-    if (this._draggingToken) return false; // already dragging
-    const token = (this.placedTokens || []).find((t) => t.gridX === gx && t.gridY === gy);
-    if (!token) return false;
-    this._draggingToken = token;
-    this._dragStart = { gx, gy };
-    this._dragLastPreview = { gx, gy };
-    try {
-      if (typeof window !== 'undefined') {
-        (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).interaction =
-          window.__TT_METRICS__.interaction || {};
-        window.__TT_METRICS__.interaction.dragActive = true;
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    return true;
+    return startTokenDragByGridImpl(this, gx, gy);
   }
 
   /** Update drag preview (token mesh position only) without committing logical grid. */
   updateTokenDragToGrid(gx, gy) {
-    if (!this._draggingToken) return false;
-    if (!Number.isFinite(gx) || !Number.isFinite(gy)) return false;
-    if (this._dragLastPreview && this._dragLastPreview.gx === gx && this._dragLastPreview.gy === gy)
-      return true; // no change
-    this._dragLastPreview = { gx, gy };
-    // Live-move mesh (visual feedback)
-    try {
-      const t = this._draggingToken;
-      const mesh = t.__threeMesh;
-      if (mesh && this.spatial && typeof this.spatial.gridToWorld === 'function') {
-        const world = this.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
-        let terrainH = 0;
-        try {
-          terrainH = (this.getTerrainHeight?.(gx, gy) || 0) * this.spatial.elevationUnit;
-        } catch (_) {
-          /* ignore */
-        }
-        mesh.position.set(world.x, terrainH, world.z);
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    return true;
+    return updateTokenDragToGridImpl(this, gx, gy);
   }
 
   /** Commit the drag (apply grid change) */
   commitTokenDrag() {
-    if (!this._draggingToken) return false;
-    const token = this._draggingToken;
-    const from = { ...(this._dragStart || { gx: token.gridX, gy: token.gridY }) };
-    const to = { ...(this._dragLastPreview || from) };
-    try {
-      token.gridX = to.gx;
-      token.gridY = to.gy;
-      // After committing, ensure mesh Y aligns with terrain bias via adapter (if any)
-      try {
-        this.token3DAdapter?.resyncHeights?.();
-      } catch (_) {
-        /* ignore */
-      }
-      if (typeof window !== 'undefined') {
-        (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).interaction =
-          window.__TT_METRICS__.interaction || {};
-        window.__TT_METRICS__.interaction.lastTokenDragGrid = { from, to };
-        window.__TT_METRICS__.interaction.dragActive = false;
-      }
-    } catch (_) {
-      /* ignore */
-    } finally {
-      this._draggingToken = null;
-      this._dragStart = null;
-      this._dragLastPreview = null;
-    }
-    return true;
+    return commitTokenDragImpl(this);
   }
 
   /** Cancel current drag reverting mesh to original grid (does not change logical token position) */
   cancelTokenDrag() {
-    if (!this._draggingToken) return false;
-    try {
-      const token = this._draggingToken;
-      const orig = this._dragStart || { gx: token.gridX, gy: token.gridY };
-      const mesh = token.__threeMesh;
-      if (mesh && this.spatial) {
-        const world = this.spatial.gridToWorld(orig.gx + 0.5, orig.gy + 0.5, 0);
-        let terrainH = 0;
-        try {
-          terrainH = (this.getTerrainHeight?.(orig.gx, orig.gy) || 0) * this.spatial.elevationUnit;
-        } catch (_) {
-          /* ignore */
-        }
-        mesh.position.set(world.x, terrainH, world.z);
-      }
-      if (typeof window !== 'undefined') {
-        (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).interaction =
-          window.__TT_METRICS__.interaction || {};
-        window.__TT_METRICS__.interaction.dragActive = false;
-      }
-    } catch (_) {
-      /* ignore */
-    } finally {
-      this._draggingToken = null;
-      this._dragStart = null;
-      this._dragLastPreview = null;
-    }
-    return true;
+    return cancelTokenDragImpl(this);
   }
 
   /** Apply a quick command selected from the radial menu. */
   applyTokenCommand(tokenEntry, commandId) {
-    if (!commandId) return false;
-    const command = getTokenCommand(commandId);
-    if (!command) {
-      logger.warn('Unknown token command', { commandId }, LOG_CATEGORY.INTERACTION);
-      return false;
-    }
-
-    const targetToken = this._resolveTokenEntry(tokenEntry);
-
-    if (commandId === 'clear') {
-      this._setTokenQuickCommand(targetToken, null);
-      try {
-        this.token3DAdapter?.playTokenAnimation?.(targetToken, 'idle', { force: true });
-      } catch (_) {
-        /* ignore */
-      }
-      return true;
-    }
-
-    if (targetToken) {
-      this._setTokenQuickCommand(targetToken, commandId);
-    }
-
-    if (commandId.startsWith(EMOTE_COMMAND_PREFIX)) {
-      return this._handleEmoteCommand(targetToken, commandId);
-    }
-
-    return true;
+    return applyTokenCommandImpl(this, tokenEntry, commandId);
   }
 
   /**
@@ -882,57 +373,7 @@ class GameManager {
    * This allows enabling the flag AFTER hybrid mode was already initialized.
    */
   ensureInstancing() {
-    try {
-      if (!this.features.instancedPlaceables) return null; // feature still disabled
-      if (!this.is3DModeActive()) return null; // wait until 3D active
-      if (!this.placeableMeshPool) {
-        this.placeableMeshPool = new PlaceableMeshPool({ gameManager: this });
-        try {
-          if (typeof window !== 'undefined') {
-            (window.__TT_METRICS__ = window.__TT_METRICS__ || {}).placeables = {
-              groups: 0,
-              liveInstances: 0,
-              capacityExpansions: 0,
-            };
-            // Dev aid so console explorers discover the helper
-            window.__TT_ENSURE_INSTANCING__ = () => this.ensureInstancing();
-            if (!window.__TT_VALIDATE_INSTANCING__) {
-              window.__TT_VALIDATE_INSTANCING__ = () => {
-                try {
-                  const pool = this.placeableMeshPool;
-                  if (!pool) return { ok: false, reason: 'no_pool' };
-                  const snapshot = pool.debugSnapshot ? pool.debugSnapshot() : {};
-                  const hidden = pool.validateHidden ? pool.validateHidden() : { ok: true };
-                  // Count 2D plant sprites
-                  let spritePlants = 0;
-                  try {
-                    const tm = this.terrainCoordinator?.terrainManager;
-                    for (const arr of tm?.placeables?.values() || []) {
-                      for (const s of arr) if (s?.placeableType === 'plant') spritePlants += 1;
-                    }
-                  } catch (_) {
-                    /* ignore */
-                  }
-                  return { snapshot, hidden, spritePlants };
-                } catch (e) {
-                  return { ok: false, error: e?.message };
-                }
-              };
-            }
-          }
-        } catch (_) {
-          /* ignore metrics priming errors */
-        }
-        logger.debug(
-          'Instanced placeables pool created (late ensure)',
-          { context: 'GameManager.ensureInstancing', renderMode: this.renderMode },
-          LOG_CATEGORY.SYSTEM
-        );
-      }
-      return this.placeableMeshPool;
-    } catch (_) {
-      return null;
-    }
+    return ensureInstancingImpl(this);
   }
 
   /**
@@ -941,82 +382,12 @@ class GameManager {
    * If not, pool creation will occur automatically during enableHybridRender().
    */
   enableInstancedPlaceables() {
-    this.features.instancedPlaceables = true;
-    const pool = this.ensureInstancing();
-    // Retro-fit any already placed plant sprites into the pool so they become visible in 3D
-    try {
-      const tm = this.terrainCoordinator?.terrainManager;
-      if (tm?.placeables && pool) {
-        for (const [key, list] of tm.placeables.entries()) {
-          for (const sprite of list) {
-            try {
-              if (!sprite || sprite.__instancedRef) continue;
-              if (sprite.__is3DPlaceable) continue;
-              // Only plants
-              if (sprite.placeableType && sprite.placeableType !== 'plant') continue;
-              const [gxStr, gyStr] = key.split(',');
-              const gx = Number(gxStr);
-              const gy = Number(gyStr);
-              if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
-              const rec = {
-                gridX: gx,
-                gridY: gy,
-                type: 'plant',
-                variantKey: sprite.variantKey || sprite.placeableId || 'plant',
-              };
-              sprite.__instancedRef = rec;
-              const p = pool.addPlaceable(rec);
-              if (p && typeof p.then === 'function') p.catch(() => {});
-            } catch (_) {
-              /* ignore per-sprite retrofit issue */
-            }
-          }
-        }
-      }
-    } catch (_) {
-      /* ignore retrofit failures */
-    }
-    // Attach a lightweight pointer hover listener (once) to drive preview highlighting in 3D
-    try {
-      if (!this._instancingPreviewListener && typeof window !== 'undefined') {
-        const canvas = this.threeSceneManager?.canvas;
-        const targetEl = canvas || document.body;
-        this._instancingPreviewListener = async (evt) => {
-          try {
-            if (!this.features.instancedPlaceables || !this.is3DModeActive()) return;
-            if (!this.threeSceneManager || !this.placeableMeshPool) return;
-            // Use centralized picking service (ground plane) for hover
-            if (!this.pickingService) return;
-            const ground = await this.pickingService.pickGround(evt.clientX, evt.clientY, targetEl);
-            if (ground && ground.grid) {
-              const gx = Math.floor(ground.grid.gx);
-              const gy = Math.floor(ground.grid.gy);
-              if (Number.isFinite(gx) && Number.isFinite(gy)) {
-                this.placeableMeshPool.setPreview(gx, gy);
-              }
-            }
-          } catch (_) {
-            /* ignore */
-          }
-        };
-        targetEl.addEventListener('pointermove', this._instancingPreviewListener);
-      }
-    } catch (_) {
-      /* ignore listener attach issues */
-    }
-    return pool;
+    return enableInstancedPlaceablesImpl(this);
   }
 
   /** Idempotently push all current plant sprites into instancing pool (used after biome repopulation). */
   reinstanceExistingPlants() {
-    try {
-      if (!this.features.instancedPlaceables) return;
-      // 2025-09 refactor: plant sprites are no longer pushed into the instancing pool because
-      // they are fully superseded by 3D models. Any previous retrofit logic has been removed.
-      return;
-    } catch (_) {
-      /* ignore */
-    }
+    return reinstanceExistingPlantsImpl(this);
   }
 
   /**
@@ -1179,14 +550,7 @@ class GameManager {
    * Safe to call when instancing disabled; resolves immediately.
    */
   async flushInstancing() {
-    if (!this._pendingInstancingPromises || this._pendingInstancingPromises.length === 0) return;
-    const pending = [...this._pendingInstancingPromises];
-    this._pendingInstancingPromises.length = 0;
-    try {
-      await Promise.allSettled(pending);
-    } catch (_) {
-      /* ignore */
-    }
+    return flushInstancingImpl(this);
   }
 
   /**
@@ -1331,201 +695,38 @@ class GameManager {
   // ── Private Helpers ────────────────────────────────────────
 
   _setTokenQuickCommand(tokenEntry, commandId) {
-    if (!tokenEntry) return;
-    if (commandId) {
-      tokenEntry.quickCommand = commandId;
-    } else {
-      delete tokenEntry.quickCommand;
-    }
+    return _setTokenQuickCommandImpl(this, tokenEntry, commandId);
   }
 
   _resolveTokenEntry(tokenLike) {
-    if (!tokenLike) return null;
-    const tokens = this.placedTokens || [];
-    if (tokens.includes(tokenLike)) {
-      return tokenLike;
-    }
-
-    const targetId = this._extractTokenId(tokenLike);
-    if (targetId != null) {
-      const byId = tokens.find((token) => this._extractTokenId(token) === targetId);
-      if (byId) {
-        return byId;
-      }
-    }
-
-    const gx = Number.isFinite(tokenLike.gridX) ? tokenLike.gridX : null;
-    const gy = Number.isFinite(tokenLike.gridY) ? tokenLike.gridY : null;
-    if (gx != null && gy != null) {
-      const byGrid = tokens.find((token) => token.gridX === gx && token.gridY === gy);
-      if (byGrid) {
-        return byGrid;
-      }
-    }
-
-    return null;
+    return _resolveTokenEntryImpl(this, tokenLike);
   }
 
   _extractTokenId(tokenLike) {
-    if (tokenLike == null) return null;
-    if (typeof tokenLike === 'string' || typeof tokenLike === 'number') {
-      return tokenLike;
-    }
-    return tokenLike.id ?? tokenLike.creature?.id ?? null;
+    return _extractTokenIdImpl(tokenLike);
   }
 
   _handleEmoteCommand(tokenEntry, commandId) {
-    const token = this._resolveTokenEntry(tokenEntry);
-    if (!token) {
-      return false;
-    }
-    const adapter = this.token3DAdapter;
-    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
-      logger.warn(
-        'Emote command requested before Token3DAdapter was ready',
-        { commandId },
-        LOG_CATEGORY.INTERACTION
-      );
-      return false;
-    }
-
-    switch (commandId) {
-      case 'emote-defeated':
-        return adapter.playTokenAnimation(token, 'defeated', {
-          force: true,
-          fadeIn: 0.22,
-          fadeOut: 0.35,
-          allowRootMotion: true,
-          releaseOnMovement: true,
-        });
-      case 'emote-rumba':
-      case 'emote-jump':
-        return adapter.playTokenAnimation(token, 'jump', {
-          force: true,
-          fadeIn: 0.2,
-          fadeOut: 0.3,
-          allowRootMotion: true,
-          movementLockMs: Infinity,
-          autoRevert: false,
-          releaseOnMovement: true,
-        });
-
-      case 'emote-fancy-pose':
-        return adapter.playTokenAnimation(token, 'fancyPose', {
-          force: true,
-          fadeIn: 0.25,
-          fadeOut: 0.35,
-          autoRevert: false,
-          movementLockMs: Infinity,
-          allowRootMotion: true,
-          releaseOnMovement: true,
-        });
-      case 'emote-dynamic-pose':
-        return adapter.playTokenAnimation(token, 'dynamicPose', {
-          force: true,
-          fadeIn: 0.25,
-          fadeOut: 0.35,
-          autoRevert: false,
-          movementLockMs: Infinity,
-          allowRootMotion: true,
-          releaseOnMovement: true,
-        });
-      case 'emote-idle':
-        return this._playIdleEmote(token);
-      default:
-        return false;
-    }
+    return _handleEmoteCommandImpl(this, tokenEntry, commandId);
   }
 
   _playIdleEmote(tokenEntry) {
-    const token = this._resolveTokenEntry(tokenEntry);
-    if (!token) return false;
-    const adapter = this.token3DAdapter;
-    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
-      return false;
-    }
-    const available = EMOTE_IDLE_ACTIONS.filter((key) => adapter.hasAnimation?.(token, key));
-    const pool = available.length ? available : ['idle'];
-    const choice = pool[Math.floor(Math.random() * pool.length)];
-    return adapter.playTokenAnimation(token, choice, { force: true });
+    return _playIdleEmoteImpl(this, tokenEntry);
   }
 
   _isTestEnvironment() {
-    try {
-      const env =
-        typeof globalThis !== 'undefined' && globalThis.process
-          ? globalThis.process.env
-          : undefined;
-      if (env?.JEST_WORKER_ID != null) {
-        return true;
-      }
-      if (typeof window !== 'undefined' && window.__TT_TEST_MODE__) {
-        return true;
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    return false;
+    return isTestEnvironmentImpl(this);
   }
 
   _ensureTestThreeSceneFallbackReady() {
-    if (!this._isTestEnvironment()) return false;
-    if (!this.threeSceneManager) return false;
-    const tsm = this.threeSceneManager;
-    if (!tsm.scene) {
-      tsm.scene = {
-        children: [],
-        add: () => {},
-        remove: () => {},
-      };
-    }
-    if (!tsm.camera) {
-      tsm.camera = {};
-    }
-    if (!tsm.canvas) {
-      tsm.canvas = { getContext: () => null };
-    }
-    if (!tsm.renderer) {
-      tsm.renderer = { render: () => {} };
-    }
-    if (typeof tsm.isReady !== 'function') {
-      tsm.isReady = () => true;
-    }
-    if (!tsm.registerPlaceablePool) {
-      tsm.registerPlaceablePool = () => {};
-    }
-    tsm.ensureFallbackSurface = tsm.ensureFallbackSurface || (() => {});
-    tsm.degraded = false;
-    tsm.degradeReason = null;
-    return true;
+    return ensureTestThreeSceneFallbackImpl(this);
   }
 
   // ── Cleanup ────────────────────────────────────────────────
 
   /** Experimental: disable instanced placeables (tears down pool). */
   disableInstancedPlaceables() {
-    try {
-      this.features.instancedPlaceables = false;
-      // Do NOT remove 2D sprites; only tear down 3D representation
-      if (this.placeableMeshPool) {
-        try {
-          this.placeableMeshPool.dispose?.();
-        } catch (_) {
-          /* ignore */
-        }
-        this.placeableMeshPool = null;
-      }
-      if (typeof window !== 'undefined') {
-        try {
-          if (window.__TT_METRICS__) delete window.__TT_METRICS__.placeables;
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return disableInstancedPlaceablesImpl(this);
   }
 
   /** Remove 3D interaction (hover/select) listeners (primarily for tests or hot-reload cleanup). */
