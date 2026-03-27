@@ -1,4 +1,6 @@
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -25,7 +27,7 @@ const summarizeClip = (clip, label) => {
 };
 
 const basePath =
-    'c:/Users/Andre/OneDrive/Desktop/Code/Taverntable/Taverntable/assets/animated-sprites';
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'animated-sprites');
 const standing = loadFbx(`${basePath}/Standing Idle.fbx`);
 const sprint = loadFbx(`${basePath}/Sprint.fbx`);
 const running = loadFbx(`${basePath}/running.fbx`);

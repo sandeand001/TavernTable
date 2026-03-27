@@ -120,16 +120,53 @@ TavernTable uses a **coordinator pattern** to keep the codebase modular without 
 
 ```
 src/
-├── config/          # Game constants, biome definitions, terrain placeables
-├── coordinators/    # High-level orchestrators (Render, State, Input, Terrain, Spatial)
-├── core/            # GameManager — central bootstrap and lifecycle
-├── entities/        # Creature definitions and factory
-├── managers/        # TokenManager, InteractionManager, GridRenderer, BiomeCanvasPainter
-├── scene/           # Three.js scene setup, camera rig, lighting
-├── systems/         # DragController, dice rolling engine, 3D dice physics
-├── terrain/         # Terrain state, mesh building, brush tools, height utilities
-├── ui/              # Sidebar, settings panel, DOM controllers
-└── utils/           # Coordinate math, validation, logging, error handling
+├── config/
+│   ├── biome/              # BiomeConstants, BiomePalettes (2D/3D/Harmonized), PaletteDesign
+│   └── terrain/            # TerrainConstants, TerrainPlaceables, FloraProfiles
+├── coordinators/
+│   ├── terrain-coordinator/ # TerrainCoordinator + controller files + internals/
+│   ├── InputCoordinator.js
+│   ├── RenderCoordinator.js
+│   └── StateCoordinator.js
+├── core/                   # GameManager — central bootstrap and lifecycle
+├── entities/creatures/     # CreatureToken, CreatureFactory
+├── managers/
+│   ├── grid-renderer/      # GridRenderer + internals/
+│   ├── interaction-manager/ # InteractionManager + internals/ (keyboard, pan, picking, rotation, zoom)
+│   ├── terrain-manager/    # TerrainManager + internals/ (tiles, placeables, sorting, updates)
+│   └── token-manager/      # TokenManager + internals/ (placement, selection, facing, creatures)
+├── scene/
+│   ├── camera/             # CameraRig, CameraSystem
+│   ├── grid/               # GridOverlay
+│   ├── lighting/           # LightingSystem
+│   ├── picking/            # PickingService, SpatialCoordinator
+│   ├── terrain/            # TerrainMeshBuilder, TerrainRebuilder, PlaceableMeshPool, overlays
+│   ├── token-adapter/      # MannequinConfig, AnimationController, MeshFactory, SelectionEffects
+│   ├── ThreeSceneManager.js
+│   └── Token3DAdapter.js
+├── systems/
+│   ├── dice/               # DicePhysics, DiceState, DiceModelManager, DiceAnimationScheduler
+│   └── DragController.js
+├── terrain/
+│   ├── brush/              # TerrainBrushController, TerrainBrushHighlighter, BrushCommon
+│   ├── generation/         # BiomeElevationGenerator, NoisePrimitives
+│   ├── painting/           # BiomeCanvasPainter + biome-painter/ (motifs, fields, etc.)
+│   └── TerrainDataStore.js
+├── ui/
+│   ├── components/         # RadialMenu
+│   ├── controls/           # Hybrid3DControls, HybridRenderToggle, SettingsViewToggle
+│   ├── UIController.js
+│   └── SidebarController.js
+└── utils/
+    ├── canvas/             # CanvasShapeUtils
+    ├── color/              # ColorUtils
+    ├── coordinates/        # CoordinateUtils, ProjectionUtils
+    ├── error/              # notification, telemetry
+    ├── geometry/           # GeometryUtils, DepthUtils
+    ├── terrain/            # TerrainHeightUtils, TerrainValidation, ContainerUtils
+    ├── ErrorHandler.js
+    ├── Logger.js
+    └── Validation.js
 ```
 
 ### Key Design Decisions
@@ -157,33 +194,28 @@ Taverntable/
 ├── index.html              # Single-page app entry point
 ├── package.json            # Dependencies and scripts
 ├── jest.config.js          # Test configuration
+├── CONVENTIONS.md          # Code organization specification
+├── ROADMAP.md              # Refactor progress tracker
 ├── assets/
 │   ├── animated-sprites/   # Mannequin FBX animations (60+)
 │   ├── Items/              # 3D models (d20-gold.glb)
-│   ├── sprites/            # Legacy 2D creature sprites (pending removal)
+│   ├── sprites/            # Mannequin FBX model, legacy defeated-doll sprite
 │   └── terrain/
-│       ├── 3d Assets/      # glTF/FBX flora models (trees, bushes, rocks, flowers, etc.)
-│       ├── paths/          # Legacy 2D path tiles
-│       ├── plants/         # Legacy 2D plant sprites
-│       └── structures/     # Legacy 2D structure tiles
-├── src/                    # Application source (ES modules)
-├── tests/                  # Jest unit tests
+│       └── 3d Assets/      # glTF/FBX flora models (trees, bushes, rocks, flowers, etc.)
+├── src/                    # Application source (ES modules, see Architecture above)
+├── tests/                  # Jest unit tests (70 suites, 185 tests)
 └── tools/                  # Dev utilities (layering checker, cycle scanner, unused export finder)
 ```
 
 ## Legacy / Roadmap
 
-TavernTable originally used Pixi.js for 2D isometric rendering. It is being migrated to a fully 3D Three.js engine. The following legacy code remains and is tagged for removal or rework:
+TavernTable originally used Pixi.js for 2D isometric rendering. The codebase has been through a major refactor (Phases 1–10) that removed dead creature types, legacy 2D assets, orphaned code, and reorganized the directory structure. The remaining migration work:
 
-| Area | Legacy Remnant | Status |
+| Area | Remaining Work | Status |
 |---|---|---|
-| **Creature sprites** | 9 old 2D creature types (dragon, beholder, etc.) in `GameConstants.js`, factory functions, and `assets/sprites/` | Pending removal — Mannequin is the only active token |
-| **SpriteManager** | `src/core/SpriteManager.js` — Pixi.js sprite loading | Pending replacement with 3D model loader |
-| **AnimatedSpriteManager** | `src/core/AnimatedSpriteManager.js` — Pixi animated sprites | Pending replacement |
-| **RenderCoordinator** | Creates a `PIXI.Application` instance | Pending 3D-only rewrite |
-| **Pixi utilities** | `TerrainPixiUtils.js`, `PixiShapeUtils.js` | Pending removal |
-| **2D terrain placeables** | Paths (dirt, stone) and structures (brick walls) in `TerrainPlaceables.js` | Pending 3D model replacements |
-| **Dice (d4–d12, d100)** | UI buttons exist but no 3D implementations | Planned |
+| **PIXI.js renderer** | RenderCoordinator still creates a `PIXI.Application`; grid, terrain tiles, and containers use PIXI graphics | Phase 11 — full Three.js migration |
+| **CreatureToken** | Uses `PIXI.Graphics` as a position handle in the container tree | Phase 11 — replace with Three.js Object3D |
+| **Dice (d4–d12, d100)** | UI buttons exist but only the d20 has a 3D implementation | Planned |
 
 ## License
 
