@@ -5,8 +5,13 @@
  * Manages all grid rendering operations while preserving existing functionality
  */
 
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import {
+  ErrorHandler,
+  ERROR_SEVERITY,
+  ERROR_CATEGORY,
+  GameErrors,
+} from '../utils/error/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { Container } from '../core/PixiStub.js';

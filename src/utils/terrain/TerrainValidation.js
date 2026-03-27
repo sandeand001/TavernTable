@@ -8,7 +8,7 @@
 
 // ── Imports ────────────────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../logger/Logger.js';
 import { TerrainHeightUtils } from './TerrainHeightUtils.js';
 
 // ── Terrain Validation ─────────────────────────────────────────

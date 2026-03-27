@@ -21,7 +21,7 @@ import {
 import { scheduleRollAnimation } from './DiceAnimationScheduler.js';
 import './FaceCalibrationUI.js';
 
-import logger from '../../utils/Logger.js';
+import logger from '../../utils/logger/Logger.js';
 
 // ── Core lifecycle ───────────────────────────────────────────────────────────
 function _clearActiveDie() {

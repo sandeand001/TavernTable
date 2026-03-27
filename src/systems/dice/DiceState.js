@@ -4,7 +4,7 @@
 
 import { DICE_CONFIG } from '../../config/GameConstants.js';
 
-import { LOG_CATEGORY } from '../../utils/Logger.js';
+import { LOG_CATEGORY } from '../../utils/logger/Logger.js';
 
 // ── Shared mutable state ────────────────────────────────────────────────────
 export const diceState = {

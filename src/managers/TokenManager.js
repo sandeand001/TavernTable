@@ -5,8 +5,8 @@
  * Handles all token-related operations while preserving existing functionality
  */
 
-import { logger, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 // Validation and creature creation are handled in internals now
 // Internals for selection helpers
 import {

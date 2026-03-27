@@ -1,4 +1,4 @@
-import { logger } from '../../../utils/Logger.js';
+import { logger } from '../../../utils/logger/Logger.js';
 import {
   GameValidators as DefaultGameValidators,
   Sanitizers as DefaultSanitizers,

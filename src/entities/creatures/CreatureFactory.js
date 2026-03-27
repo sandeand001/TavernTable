@@ -4,7 +4,7 @@ import { CREATURE_HELPERS } from '../../config/GameConstants.js';
 
 import CreatureToken from './CreatureToken.js';
 
-import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 
 class CreatureFactory {
   static createCreature(type, x = 0, y = 0, facingRight = true) {

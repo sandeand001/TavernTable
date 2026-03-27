@@ -18,13 +18,13 @@
  */
 
 // ── Imports & Re-exports ────────────────────────────────────────
-import { logger, LOG_LEVEL, LOG_CATEGORY } from './Logger.js';
-import { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './error/enums.js';
-import { ErrorNotificationManager } from './error/notification.js';
-import { ErrorTelemetryManager } from './error/telemetry.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../logger/Logger.js';
+import { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './enums.js';
+import { ErrorNotificationManager } from './notification.js';
+import { ErrorTelemetryManager } from './telemetry.js';
 
 // Re-export enums to preserve public API for existing imports from this module
-export { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './error/enums.js';
+export { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './enums.js';
 
 /**
  * Error severity levels with semantic meaning

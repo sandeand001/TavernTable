@@ -27,8 +27,8 @@ import { DICE_CONFIG } from '../../config/GameConstants.js';
 import { playD20RollOnGrid } from './dice3d.js';
 
 import { GameValidators } from '../../utils/Validation.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/logger/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
 
 // ── DOM Port Injection ──────────────────────────────────────────
 let _diceDomPorts = {};

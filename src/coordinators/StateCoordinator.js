@@ -7,8 +7,8 @@
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 
 // ── StateCoordinator Class ───────────────────────────────
 export class StateCoordinator {

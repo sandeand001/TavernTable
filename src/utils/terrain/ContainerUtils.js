@@ -8,7 +8,7 @@
  */
 
 // ── Imports ────────────────────────────────────────────────────
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../logger/Logger.js';
 
 // ── Container Lifecycle Utilities ───────────────────────────────
 export class ContainerUtils {

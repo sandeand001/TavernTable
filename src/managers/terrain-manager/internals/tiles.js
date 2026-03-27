@@ -1,5 +1,5 @@
 import { Container, Graphics } from '../../../core/PixiStub.js';
-import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { GameValidators } from '../../../utils/Validation.js';
 import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
 import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';

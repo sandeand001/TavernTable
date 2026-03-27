@@ -1,4 +1,4 @@
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 
 // ── Drag Start ──────────────────────────────────────────────────
 

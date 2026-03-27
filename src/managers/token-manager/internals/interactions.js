@@ -1,4 +1,4 @@
-import { logger } from '../../../utils/Logger.js';
+import { logger } from '../../../utils/logger/Logger.js';
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 

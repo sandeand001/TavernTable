@@ -1,5 +1,5 @@
 // ── Imports & Level Utilities ───────────────────────────────────
-import { getNodeEnv, isJest } from './env.js';
+import { getNodeEnv, isJest } from '../env.js';
 /**
  * Logger.js - Enterprise-Grade Logging System for TavernTable
  *
@@ -21,7 +21,7 @@ import { getNodeEnv, isJest } from './env.js';
  * @version 2.0.0
  */
 
-import { LOG_LEVEL, LOG_CATEGORY } from './logger/enums.js';
+import { LOG_LEVEL, LOG_CATEGORY } from './enums.js';
 // Re-export enums required by downstream imports (kept minimal public surface)
 // Narrowed public logging surface: consumers only need level & category.
 export { LOG_LEVEL, LOG_CATEGORY };

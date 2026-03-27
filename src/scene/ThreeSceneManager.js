@@ -8,8 +8,8 @@ import { installLightingMethods } from './lighting/LightingSystem.js';
 import { installGridOverlayMethods } from './grid/GridOverlay.js';
 import { installCameraMethods } from './camera/CameraSystem.js';
 
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 
 export class ThreeSceneManager {
   // ── Constructor ───────────────────────────────────────────────────────────

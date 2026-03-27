@@ -1,5 +1,5 @@
-import { GameErrors } from '../../../utils/ErrorHandler.js';
-import { LOG_CATEGORY, LOG_LEVEL, logger } from '../../../utils/Logger.js';
+import { GameErrors } from '../../../utils/error/ErrorHandler.js';
+import { LOG_CATEGORY, LOG_LEVEL, logger } from '../../../utils/logger/Logger.js';
 import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 import { updatePlaceablesForCell } from './placeables.js';
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';

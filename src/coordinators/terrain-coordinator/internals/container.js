@@ -1,5 +1,5 @@
 import { Container } from '../../../core/PixiStub.js';
-import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
 
 // ── Prepare Base Grid ─────────────────────────────────────────────

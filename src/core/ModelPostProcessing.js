@@ -4,7 +4,7 @@
 // shadow setup, height-based scaling, and per-asset tuning.
 
 // ── Imports & Constants ─────────────────────────────────────────
-import logger, { LOG_CATEGORY } from '../utils/Logger.js';
+import logger, { LOG_CATEGORY } from '../utils/logger/Logger.js';
 
 const MODEL_LOG_CATEGORY = LOG_CATEGORY.CACHE;
 const DEFAULT_TEXTURE_BASE = 'assets/terrain/3d Assets/Textures';

@@ -1,6 +1,6 @@
-import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/error/ErrorHandler.js';
 
 // ── Position Validation ─────────────────────────────────────────
 

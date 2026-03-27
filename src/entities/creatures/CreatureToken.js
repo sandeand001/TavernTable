@@ -4,13 +4,13 @@ import { Graphics } from '../../core/PixiStub.js';
 
 import { CREATURE_SCALES } from '../../config/GameConstants.js';
 
-import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import {
   ErrorHandler,
   ERROR_SEVERITY,
   ERROR_CATEGORY,
   GameErrors,
-} from '../../utils/ErrorHandler.js';
+} from '../../utils/error/ErrorHandler.js';
 import { GameValidators, Sanitizers } from '../../utils/Validation.js';
 
 // ── CreatureToken Class ─────────────────────────────────────────────

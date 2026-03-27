@@ -38,8 +38,8 @@ import { RadialMenu } from './components/RadialMenu.js';
 
 import { isJest } from '../utils/env.js';
 import GameManager from '../core/GameManager.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
 import { rollDice } from '../systems/dice/dice.js';
 

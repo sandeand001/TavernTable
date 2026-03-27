@@ -12,7 +12,7 @@ import {
   DICE_CONFIG,
   normalizeCreatureType,
 } from '../config/GameConstants.js';
-import { logger } from './Logger.js';
+import { logger } from './logger/Logger.js';
 
 // ── Type Validators ────────────────────────────────────────────
 /**

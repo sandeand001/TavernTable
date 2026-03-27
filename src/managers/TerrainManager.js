@@ -7,8 +7,8 @@
  */
 
 import { Container, Graphics } from '../core/PixiStub.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 // import { GRID_CONFIG } from '../config/GameConstants.js';
 import { lightenColor, darkenColor } from '../utils/color/ColorUtils.js';

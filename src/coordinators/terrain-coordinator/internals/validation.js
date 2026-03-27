@@ -1,4 +1,4 @@
-import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { TerrainValidation } from '../../../utils/terrain/TerrainValidation.js';
 
 // ── System State Validation ───────────────────────────────────────

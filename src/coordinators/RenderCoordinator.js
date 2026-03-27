@@ -9,9 +9,9 @@ import { Application } from '../core/PixiStub.js';
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 
 // ── RenderCoordinator Class ─────────────────────────────

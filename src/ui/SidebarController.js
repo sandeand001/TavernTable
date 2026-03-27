@@ -22,7 +22,7 @@ import {
   getTerrainModeEls,
 } from './domHelpers.js';
 
-import { logger, LOG_CATEGORY } from '../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
 class SidebarController {
   // ── Constructor ─────────────────────────────────────────────

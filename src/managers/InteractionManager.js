@@ -6,8 +6,8 @@
  * Handles all user input interactions including mouse, keyboard, and zoom
  */
 
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import {

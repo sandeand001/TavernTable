@@ -6,8 +6,8 @@
  * Handles mouse clicks, token placement/removal, and user interaction workflows
  */
 
-import { logger } from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger } from '../utils/logger/Logger.js';
+import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 

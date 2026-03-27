@@ -1,5 +1,5 @@
 // ── Imports & Logging Helpers ───────────────────────────────────
-import logger, { LOG_CATEGORY } from '../utils/Logger.js';
+import logger, { LOG_CATEGORY } from '../utils/logger/Logger.js';
 import {
   postProcessModel as _postProcess,
   computeTargetHeight as _computeTargetHeight,

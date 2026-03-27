@@ -1,4 +1,4 @@
-import { GameErrors } from '../../../utils/ErrorHandler.js';
+import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 // ── Activation ────────────────────────────────────────────────────
 

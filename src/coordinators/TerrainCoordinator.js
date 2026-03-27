@@ -5,8 +5,8 @@
  * Handles terrain height data management, rendering coordination, and system lifecycle
  */
 
-import { logger, LOG_CATEGORY } from '../utils/Logger.js';
-import { GameErrors } from '../utils/ErrorHandler.js';
+import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { GameErrors } from '../utils/error/ErrorHandler.js';
 // Validation utilities are referenced within internals; no direct import needed here
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TerrainDataStore } from '../terrain/TerrainDataStore.js';

@@ -35,13 +35,13 @@ import { TerrainMeshBuilder } from '../scene/terrain/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../scene/terrain/TerrainRebuilder.js';
 import { PlaceableMeshPool } from '../scene/terrain/PlaceableMeshPool.js';
 import { PickingService } from '../scene/picking/PickingService.js';
-import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
+import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/logger/Logger.js';
 import {
   ErrorHandler,
   errorHandler,
   ERROR_SEVERITY,
   ERROR_CATEGORY,
-} from '../utils/ErrorHandler.js';
+} from '../utils/error/ErrorHandler.js';
 import { Sanitizers } from '../utils/Validation.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 

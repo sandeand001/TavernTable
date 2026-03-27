@@ -4,7 +4,7 @@
 // ── Imports ────────────────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
 // ── Data Store ─────────────────────────────────────────────────
 export class TerrainDataStore {

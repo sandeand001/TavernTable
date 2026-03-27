@@ -2,7 +2,7 @@
 // Extracted from dice3d.js (Phase 7).
 
 // ── Imports ────────────────────────────────────────────────────
-import logger from '../../utils/Logger.js';
+import logger from '../../utils/logger/Logger.js';
 import {
   clampToRange,
   buildRicochetPath,

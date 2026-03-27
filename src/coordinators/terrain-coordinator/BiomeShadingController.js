@@ -2,7 +2,7 @@ import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
 
-import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { traceDiamondPath } from '../../utils/geometry/GeometryUtils.js';
 import BiomeCanvasPainter from '../../terrain/painting/BiomeCanvasPainter.js';
 

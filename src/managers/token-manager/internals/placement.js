@@ -1,8 +1,8 @@
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
-import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
+import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 // Depth utils no longer used for rendering order; we align to tile depth bands.
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/error/ErrorHandler.js';
 
 // ── Token Placement ────────────────────────────────────────────
 
