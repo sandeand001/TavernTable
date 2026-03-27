@@ -199,51 +199,54 @@
 - [x] Delete redundant `ID_TO_MODEL_KEY` from `placeables.js`
 - [x] Extract 3D rotation → `interaction-manager/internals/rotation.js`
 - [x] ~~Consolidate `validateContainerState()`~~ — not duplicated (skip)
-- [ ] Delete deprecated shim `managers/BiomeCanvasPainter.js` (9-line re-export)
-- [ ] Delete dead stub `terrain/ShadingHelpers.js` (3 lines, empty)
-- [ ] Delete empty directories: `core/model-cache/`, `scene/assets/`
+- [x] Delete deprecated shim `managers/BiomeCanvasPainter.js` (9-line re-export)
+- [x] Delete dead stub `terrain/ShadingHelpers.js` (3 lines, empty)
+- [x] Delete empty directories: `core/model-cache/`, `scene/assets/`
 
-### 9B — Directory restructuring
+### 9B — Directory restructuring (done)
 Restructure flat directories per `CONVENTIONS.md` §5 target layout:
 
-- [ ] `config/` → split into `config/biome/`, `config/terrain/`
-- [ ] `scene/` → split into `scene/camera/`, `scene/lighting/`, `scene/grid/`, `scene/terrain/`, `scene/picking/`
-- [ ] `terrain/` → split into `terrain/generation/`, `terrain/painting/`, `terrain/brush/`
-- [ ] `ui/` → create `ui/controls/` for toggle/control files
-- [ ] `utils/` → split into `utils/canvas/`, `utils/color/`, `utils/coordinates/`, `utils/geometry/`, `utils/terrain/`
-- [ ] Move `FloraProfiles.js` from `terrain-coordinator/internals/` → `config/terrain/`
-- [ ] Group `terrain-coordinator/internals/` (19 files) into sub-concerns: `activation/`, `brush/`, `rendering/`, `spatial/`
-- [ ] Update all import paths across the codebase
+- [x] `config/` → split into `config/biome/`, `config/terrain/`
+- [x] `scene/` → split into `scene/camera/`, `scene/lighting/`, `scene/grid/`, `scene/terrain/`, `scene/picking/`
+- [x] `terrain/` → split into `terrain/generation/`, `terrain/painting/`, `terrain/brush/`
+- [x] `ui/` → create `ui/controls/` for toggle/control files
+- [x] `utils/` → split into `utils/canvas/`, `utils/color/`, `utils/coordinates/`, `utils/geometry/`, `utils/terrain/`
+- [x] Move `FloraProfiles.js` from `terrain-coordinator/internals/` → `config/terrain/`
+- [x] ~~Group `terrain-coordinator/internals/` (19 files)~~ — kept flat (files are small enough)
+- [x] Update all import paths across the codebase
 
-### 9C — In-file method grouping
+### 9C — In-file method grouping (done)
 Apply `// ── Section ──` comments and reorder methods in **all files** per `CONVENTIONS.md` §2:
 
 **Convention**: constructor → lifecycle → public API → event handlers → private helpers → accessors
 
 **Large files (reorder + section comments):**
-- [ ] `InteractionManager.js` — constructor, event setup, mouse handlers, delegating methods, cleanup
-- [ ] `Token3DAdapter.js` — constructor/init, public API, animation, movement, rendering, cleanup
-- [ ] `ThreeSceneManager.js` — constructor/init, public API, delegating methods, cleanup
-- [ ] `placeables.js` — config/constants, tree helpers, model cache, placeItem, variant cycling, removal
-- [ ] `GameManager.js` — constructor, coordinator init, public API, event handlers, cleanup
-- [ ] `TerrainCoordinator.js` — constructor, lifecycle, public API, event handlers, private helpers
-- [ ] `TerrainManager.js` — constructor, lifecycle, public API, private helpers
-- [ ] `BiomeCanvasPainter.js` — constructor, lifecycle, public API, private helpers
-- [ ] `BiomeElevationGenerator.js` — constructor, generation API, noise helpers, private helpers
-- [ ] `SidebarController.js` — constructor, public API, event handlers, DOM helpers
-- [ ] `UIController.js` — constructor, public API, event handlers, DOM helpers
+- [x] `InteractionManager.js` — constructor, event setup, mouse handlers, delegating methods, cleanup
+- [x] `Token3DAdapter.js` — 22 domain sections (constructor/init, movement phases, animation, cleanup)
+- [x] `ThreeSceneManager.js` — constructor/init, public API, delegating methods, cleanup
+- [x] `placeables.js` — config/constants, tree helpers, model cache, placeItem, variant cycling, removal
+- [x] `GameManager.js` — constructor, coordinator init, public API, event handlers, cleanup
+- [x] `TerrainCoordinator.js` — constructor, lifecycle, public API, event handlers, private helpers
+- [x] `TerrainManager.js` — constructor, lifecycle, public API, private helpers
+- [x] `BiomeCanvasPainter.js` — constructor, lifecycle, public API, private helpers
+- [x] `BiomeElevationGenerator.js` — constructor, generation API, noise helpers, private helpers
+- [x] `SidebarController.js` — constructor, public API, event handlers, DOM helpers
+- [x] `UIController.js` — constructor, public API, event handlers, DOM helpers
 
 **Medium files (section comments only, no reorder needed):**
-- [ ] All `scene/` class files (CameraRig, PickingService, PlaceableMeshPool, etc.)
-- [ ] All `coordinators/terrain-coordinator/` controller files
-- [ ] All `managers/*/internals/` files
-- [ ] All `utils/` files with > 5 functions
-- [ ] All `systems/dice/` files
-- [ ] All `terrain/` files
+- [x] All `scene/` class files (CameraSystem, LightingSystem, GridOverlay, PickingService, etc.)
+- [x] All `coordinators/terrain-coordinator/` controller files
+- [x] All `managers/*/internals/` files
+- [x] All `utils/` files with > 5 functions
+- [x] All `systems/dice/` files
+- [x] All `terrain/` files
+- [x] All `config/` data files (TerrainPlaceables, FloraProfiles, BiomePalettes, etc.)
+- [x] All `ui/` and `entities/` files
+- [x] All `core/` files (ModelAssetCache, ModelPostProcessing)
 
 **GATE**: `npm test` passes, `npm run lint` clean
 
-- [ ] **GATE PASSED** — committed as: _______________
+- [x] **GATE PASSED** — committed as: `1eafbff` (9C), `52d00dd` (9A+9B)
 
 ---
 
