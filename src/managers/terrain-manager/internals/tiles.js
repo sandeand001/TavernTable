@@ -1,3 +1,4 @@
+import { Container, Graphics } from '../../../core/PixiStub.js';
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameValidators } from '../../../utils/Validation.js';
 import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
@@ -51,9 +52,9 @@ export function cleanupExistingTile(m, tileKey) {
 
 // ── Tile Graphics Construction ────────────────────────────────
 
-/** Create base PIXI.Graphics for a terrain tile. */
+/** Create base Graphics for a terrain tile. */
 export function createBaseTerrainGraphics(m, x, y, height) {
-  const terrainTile = new PIXI.Graphics();
+  const terrainTile = new Graphics();
   terrainTile.isTerrainTile = true;
   terrainTile.gridX = x;
   terrainTile.gridY = y;
@@ -148,7 +149,7 @@ export function applyTerrainStyling(m, terrainTile, height) {
   terrainTile.lineTo(m.gameManager.tileWidth / 2, m.gameManager.tileHeight);
   terrainTile.lineTo(0, m.gameManager.tileHeight / 2);
 
-  const paint = new PIXI.Container();
+  const paint = new Container();
   paint.x = 0;
   paint.y = 0;
   const w = m.gameManager.tileWidth;
@@ -168,7 +169,7 @@ export function applyTerrainStyling(m, terrainTile, height) {
       ? 0.12
       : TERRAIN_CONFIG.HEIGHT_ALPHA;
   const baseAlpha = Math.max(0, Math.min(1, baseAlphaRaw * intensityMul));
-  const mask = new PIXI.Graphics();
+  const mask = new Graphics();
   mask.beginFill(0xffffff, 1);
   mask.moveTo(0, h / 2);
   mask.lineTo(w / 2, 0);
@@ -190,7 +191,7 @@ export function applyTerrainStyling(m, terrainTile, height) {
   void seed;
 
   if (!shadingEnabled) {
-    const center = new PIXI.Graphics();
+    const center = new Graphics();
     center.beginFill(color, Math.min(1, baseAlpha + 0.05));
     center.moveTo(w / 2, h * 0.18);
     center.lineTo(w * 0.85, h / 2);
@@ -201,7 +202,7 @@ export function applyTerrainStyling(m, terrainTile, height) {
     paint.addChild(center);
   } else if (/desert|dune|salt|thorn|savanna|steppe/i.test(biome)) {
     // Kept default simple fill here to avoid circular import of shading helpers; manager still draws detailed patterns
-    const center = new PIXI.Graphics();
+    const center = new Graphics();
     center.beginFill(color, baseAlpha);
     center.drawRect(w * 0.2, h * 0.35, w * 0.6, h * 0.3);
     center.endFill();
@@ -209,7 +210,7 @@ export function applyTerrainStyling(m, terrainTile, height) {
   } else {
     const lighter = lightenColor(color, 0.15);
     const darker = darkenColor(color, 0.15);
-    const topTri = new PIXI.Graphics();
+    const topTri = new Graphics();
     topTri.beginFill(lighter, baseAlpha);
     topTri.moveTo(w / 2, 0);
     topTri.lineTo(w, h / 2);
@@ -217,7 +218,7 @@ export function applyTerrainStyling(m, terrainTile, height) {
     topTri.closePath();
     topTri.endFill();
     paint.addChild(topTri);
-    const bottomTri = new PIXI.Graphics();
+    const bottomTri = new Graphics();
     bottomTri.beginFill(darker, baseAlpha);
     bottomTri.moveTo(w / 2, h);
     bottomTri.lineTo(w, h / 2);
@@ -225,7 +226,7 @@ export function applyTerrainStyling(m, terrainTile, height) {
     bottomTri.closePath();
     bottomTri.endFill();
     paint.addChild(bottomTri);
-    const center = new PIXI.Graphics();
+    const center = new Graphics();
     center.beginFill(color, Math.min(1, baseAlpha + 0.05));
     center.moveTo(w / 2, h * 0.18);
     center.lineTo(w * 0.85, h / 2);

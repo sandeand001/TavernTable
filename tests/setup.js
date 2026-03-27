@@ -25,7 +25,7 @@ try {
   console.warn('[process-listeners] optional diagnostics failed:', e.message);
 }
 
-// Mock PIXI if not available in test environment
+// Mock rendering stubs if not available in test environment
 if (typeof global.PIXI === 'undefined') {
   global.PIXI = {
     Application: class {

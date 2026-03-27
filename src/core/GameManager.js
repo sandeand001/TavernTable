@@ -74,7 +74,7 @@ class GameManager {
   constructor(options = {}) {
     const { cols, rows } = options || {};
 
-    // Core PIXI and rendering state
+    // Core rendering state
     this.app = null;
     this.gridContainer = null;
     this.spritesReady = false;
@@ -91,7 +91,7 @@ class GameManager {
     this.inputCoordinator = new InputCoordinator(this);
     this.terrainCoordinator = new TerrainCoordinator(this);
 
-    // Managers will be initialized after PIXI app creation in initialize()
+    // Managers will be initialized after app creation in initialize()
     this.tokenManager = null;
     this.interactionManager = null;
     this.gridRenderer = null;
@@ -155,7 +155,7 @@ class GameManager {
   }
 
   /**
-   * Create manager instances after PIXI app is ready
+   * Create manager instances after app is ready
    */
   // createManagers() no longer needed here (handled by StateCoordinator.createManagers())
 
@@ -193,7 +193,7 @@ class GameManager {
     }
 
     if (!degraded) {
-      // Hide the legacy Pixi tile grid once 3D mode is active; keep the Three grid visible by default.
+      // Hide the legacy 2D tile grid once 3D mode is active; keep the Three grid visible by default.
       try {
         this.threeSceneManager.setPixiGridVisible?.(false);
       } catch (_) {
@@ -618,7 +618,7 @@ class GameManager {
 
   /**
    * Return the DOM element that should receive pointer/mouse event listeners.
-   * Prefers the Three.js canvas, falls back to PIXI canvas, then the game container div.
+   * Prefers the Three.js canvas, falls back to stub canvas, then the game container div.
    */
   getEventCanvas() {
     const tsm = this.threeSceneManager;
@@ -1024,8 +1024,8 @@ class GameManager {
   }
 
   /**
-   * Create and configure the PIXI application
-   * @throws {Error} When PIXI application cannot be created or container not found
+   * Create and configure the application
+   * @throws {Error} When application cannot be created or container not found
    */
   createPixiApp() {
     return this.renderCoordinator.createPixiApp();
@@ -1134,7 +1134,7 @@ class GameManager {
 
   /**
    * Snap a token to the nearest grid center
-   * @param {PIXI.Sprite} token - Token sprite to snap
+   * @param {Object} token - Token sprite to snap
    */
   snapToGrid(token) {
     return this.inputCoordinator.snapToGrid(token);

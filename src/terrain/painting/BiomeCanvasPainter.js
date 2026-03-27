@@ -3,9 +3,10 @@
  * ------------------------------------------------------
  * Paints a continuous, painterly biome canvas that ignores tile boundaries
  * while responding to elevation. Renders into an HTMLCanvasElement and uses
- * it as a PIXI texture for efficient display.
+ * it as a texture for efficient display.
  */
 
+import { Sprite, Texture } from '../../core/PixiStub.js';
 import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
 import { shadeMul as _sharedShadeMul } from '../../utils/color/ColorUtils.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
@@ -39,7 +40,7 @@ export class BiomeCanvasPainter {
   constructor(gameManager) {
     this.gameManager = gameManager;
     // Per-depth band layers so paint sits on the topmost faces in draw order
-    // Map<depth:number, { canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, sprite: PIXI.Sprite }>
+    // Map<depth:number, { canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, sprite: Sprite }>
     this.layers = new Map();
     this.bounds = null; // { minX, minY, maxX, maxY, width, height }
     // Seed for spatial noise to keep patterns semi-stable
@@ -209,27 +210,13 @@ export class BiomeCanvasPainter {
       // If a sprite already exists, replace its texture so baseTexture matches new canvas size
       if (layer.sprite && !layer.sprite.destroyed) {
         try {
-          const hasPIXI = typeof window !== 'undefined' && window.PIXI;
-          if (hasPIXI) {
-            const tex = window.PIXI.Texture.from(layer.canvas);
-            layer.sprite.texture = tex;
-          } else if (typeof PIXI !== 'undefined') {
-            const tex = PIXI.Texture.from(layer.canvas);
-            layer.sprite.texture = tex;
-          } else {
-            // Fallback: mark sprite for rebuild in next paint pass
-            try {
-              layer.sprite.destroy?.({ children: false, texture: false, baseTexture: false });
-            } catch (_) {
-              /* ignore */
-            }
-            layer.sprite = null;
-          }
+          const tex = Texture.from(layer.canvas);
+          layer.sprite.texture = tex;
         } catch (_) {
           // If texture replacement fails, drop sprite; it will be recreated below
           try {
-            layer.sprite.destroy?.();
-          } catch (_) {
+            layer.sprite.destroy?.({ children: false, texture: false, baseTexture: false });
+          } catch (_2) {
             /* ignore */
           }
           layer.sprite = null;
@@ -1044,18 +1031,9 @@ export class BiomeCanvasPainter {
       if (!layer.sprite || layer.sprite.destroyed) {
         let sprite = null;
         try {
-          const hasPIXI = typeof window !== 'undefined' && window.PIXI;
-          const tex = hasPIXI
-            ? window.PIXI.Texture.from(canvas)
-            : typeof PIXI !== 'undefined'
-              ? PIXI.Texture.from(canvas)
-              : null;
+          const tex = Texture.from(canvas);
           if (tex) {
-            sprite = hasPIXI
-              ? new window.PIXI.Sprite(tex)
-              : typeof PIXI !== 'undefined'
-                ? new PIXI.Sprite(tex)
-                : null;
+            sprite = new Sprite(tex);
           }
         } catch (_) {
           /* ignore */

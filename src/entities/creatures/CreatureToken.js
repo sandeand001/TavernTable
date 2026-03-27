@@ -1,5 +1,6 @@
 // src/entities/creatures/CreatureToken.js - Base class for all creature tokens
 
+import { Graphics } from '../../core/PixiStub.js';
 import { CREATURE_SCALES } from '../../config/GameConstants.js';
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import {
@@ -16,7 +17,7 @@ import { GameValidators, Sanitizers } from '../../utils/Validation.js';
  *
  * Provides common functionality for creature positioning, scaling,
  * and interaction management. Visual rendering is handled by
- * Token3DAdapter (3D FBX models); the PIXI Graphics fallback
+ * Token3DAdapter (3D FBX models); the Graphics fallback
  * serves as a position/state handle in the container tree.
  *
  * @class CreatureToken
@@ -61,7 +62,7 @@ class CreatureToken {
   // ── Sprite Creation ───────────────────────────────────
   /**
    * Create the sprite representation for this creature.
-   * Uses PIXI.Graphics as a position/state handle; 3D rendering
+   * Uses Graphics as a position/state handle; 3D rendering
    * is handled by Token3DAdapter.
    */
   createSprite() {
@@ -112,7 +113,7 @@ class CreatureToken {
     try {
       // Try to use the old drawing method if available, otherwise use colored circle
       if (typeof this.drawCreature === 'function') {
-        this.sprite = new PIXI.Graphics();
+        this.sprite = new Graphics();
         this.sprite.scale.set(0.7, 0.7);
         this.drawCreature();
         // Bottom-center align pivot using local bounds
@@ -152,7 +153,7 @@ class CreatureToken {
 
       const color = colorMap[this.type] || 0x808080; // Default to gray
 
-      this.sprite = new PIXI.Graphics();
+      this.sprite = new Graphics();
       this.sprite.beginFill(color);
       this.sprite.drawCircle(0, 0, 20);
       this.sprite.endFill();
@@ -229,7 +230,7 @@ class CreatureToken {
   // ── Stage Management ──────────────────────────────────
   /**
    * Add this creature's sprite to a display container
-   * @param {PIXI.Container} stage - Container to add sprite to
+   * @param {Container} stage - Container to add sprite to
    */
   addToStage(stage) {
     try {

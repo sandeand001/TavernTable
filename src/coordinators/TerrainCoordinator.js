@@ -816,7 +816,7 @@ export class TerrainCoordinator {
   /**
    * Public pass-through for elevation visual effect so tests and collaborators
    * can stub/spy this method without depending on private fields.
-   * @param {PIXI.DisplayObject} tile
+   * @param {Object} tile
    * @param {number} height
    */
   addVisualElevationEffect(tile, height) {
@@ -849,7 +849,7 @@ export class TerrainCoordinator {
     if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
     try {
       if (this.isTerrainModeActive) return false;
-      // Headless/test mode support: if gridContainer is missing (no PIXI app), create a stub
+      // Headless/test mode support: if gridContainer is missing (no app), create a stub
       if (!this.gameManager?.gridContainer) {
         this.gameManager.gridContainer = {
           removeChildren() {},

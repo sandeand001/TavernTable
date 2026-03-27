@@ -325,7 +325,7 @@ export class InputCoordinator {
 
   /**
    * Snap a token to the nearest grid center
-   * @param {PIXI.Sprite} token - Token sprite to snap
+   * @param {Object} token - Token sprite to snap
    */
   snapToGrid(token) {
     if (this.gameManager.tokenManager) {

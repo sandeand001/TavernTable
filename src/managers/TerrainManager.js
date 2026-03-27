@@ -6,6 +6,7 @@
  * Works in coordination with TerrainCoordinator for complete terrain system
  */
 
+import { Container, Graphics } from '../core/PixiStub.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { GameErrors } from '../utils/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
@@ -56,14 +57,14 @@ export class TerrainManager {
     this.terrainCoordinator = terrainCoordinator;
     this.facesRenderer = new TerrainFacesRenderer(gameManager);
 
-    // PIXI containers for terrain rendering
+    // Containers for terrain rendering
     this.terrainContainer = null;
-    this.terrainTiles = new Map(); // Map of "x,y" -> PIXI.Graphics terrain tile
+    this.terrainTiles = new Map(); // Map of "x,y" -> Graphics terrain tile
     // Preview overlay for brush footprint highlighting (non-destructive)
     this.previewContainer = null;
-    this.previewCache = new Map(); // Map of "x,y" -> PIXI.Graphics preview diamond
+    this.previewCache = new Map(); // Map of "x,y" -> Graphics preview diamond
     // Per-tile placeable items (paths, structures)
-    this.placeables = new Map(); // Map of "x,y" -> Array<PIXI.Sprite>
+    this.placeables = new Map(); // Map of "x,y" -> Array<Sprite>
 
     // Performance optimization
     this.updateQueue = new Set(); // Cells that need visual updates
@@ -121,7 +122,7 @@ export class TerrainManager {
   initialize() {
     try {
       // Create terrain container - positioned above grid tiles
-      this.terrainContainer = new PIXI.Container();
+      this.terrainContainer = new Container();
       // Allow internal ordering if needed and ensure this container renders above base grid/tokens
       this.terrainContainer.sortableChildren = true;
       // Grid tiles use zIndex depth*100; tokens use depth*100+10, so pick a value higher than any expected
@@ -143,7 +144,7 @@ export class TerrainManager {
       // previews BETWEEN base tiles (depth*100) and tokens (depth*100 + 1) and always on top
       // of the terrain overlay. Parent zIndex must be higher than terrainContainer because the
       // parent gridContainer is frequently resorted by zIndex elsewhere (tokens/placeables).
-      this.previewContainer = new PIXI.Container();
+      this.previewContainer = new Container();
       this.previewContainer.sortableChildren = true;
       // Ensure the preview container renders above terrain overlay regardless of parent sorting
       this.previewContainer.zIndex = (this.terrainContainer?.zIndex || 100000) + 10;
@@ -504,7 +505,7 @@ export class TerrainManager {
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
    * @param {number} height - Terrain height
-   * @returns {PIXI.Graphics} Created terrain tile graphics
+   * @returns {Graphics} Created terrain tile graphics
    */
   _createBaseTerrainGraphics(x, y, height) {
     return _createBase(this, x, y, height);
@@ -513,7 +514,7 @@ export class TerrainManager {
   /**
    * DECOMPOSED METHOD: Apply styling to terrain tile
    * @private
-   * @param {PIXI.Graphics} terrainTile - Terrain tile to style
+   * @param {Graphics} terrainTile - Terrain tile to style
    * @param {number} height - Terrain height
    */
   _applyTerrainStyling(terrainTile, height) {
@@ -523,7 +524,7 @@ export class TerrainManager {
   /**
    * DECOMPOSED METHOD: Position terrain tile in isometric space
    * @private
-   * @param {PIXI.Graphics} terrainTile - Terrain tile to position
+   * @param {Graphics} terrainTile - Terrain tile to position
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
    * @param {number} height - Terrain height
@@ -535,7 +536,7 @@ export class TerrainManager {
   /**
    * DECOMPOSED METHOD: Add visual effects for height perception
    * @private
-   * @param {PIXI.Graphics} terrainTile - Terrain tile for effects
+   * @param {Graphics} terrainTile - Terrain tile for effects
    * @param {number} height - Terrain height
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
@@ -547,7 +548,7 @@ export class TerrainManager {
   /**
    * DECOMPOSED METHOD: Finalize terrain tile and add to container
    * @private
-   * @param {PIXI.Graphics} terrainTile - Terrain tile to finalize
+   * @param {Graphics} terrainTile - Terrain tile to finalize
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
    * @param {string} tileKey - Tile key for storage
@@ -618,7 +619,7 @@ export class TerrainManager {
 
   /**
    * Add shadow effect for elevated terrain
-   * @param {PIXI.Graphics} terrainTile - The terrain tile graphics
+   * @param {Graphics} terrainTile - The terrain tile graphics
    * @param {number} height - Height level (positive)
    * @param {number} x - Grid X coordinate
    * @param {number} y - Grid Y coordinate
@@ -626,7 +627,7 @@ export class TerrainManager {
   addElevationShadow(terrainTile, height, x, y) {
     try {
       // Create a shadow tile slightly offset and darker
-      const shadowTile = new PIXI.Graphics();
+      const shadowTile = new Graphics();
       const shadowColor = 0x000000; // Black shadow
       const shadowAlpha = (0.2 * height) / TERRAIN_CONFIG.MAX_HEIGHT; // Stronger shadow for higher terrain
 
@@ -663,13 +664,13 @@ export class TerrainManager {
 
   /**
    * Add darkening effect for depressed terrain
-   * @param {PIXI.Graphics} terrainTile - The terrain tile graphics
+   * @param {Graphics} terrainTile - The terrain tile graphics
    * @param {number} height - Height level (negative)
    */
   addDepressionEffect(terrainTile, height) {
     try {
       // Create overlay to darken the tile
-      const overlay = new PIXI.Graphics();
+      const overlay = new Graphics();
       const overlayAlpha = (0.3 * Math.abs(height)) / TERRAIN_CONFIG.MAX_HEIGHT; // Darker for deeper depressions
 
       overlay.beginFill(0x000000, overlayAlpha); // Semi-transparent black
@@ -699,7 +700,7 @@ export class TerrainManager {
   /**
    * Add terrain tile to container with proper depth sorting for isometric rendering
    * Ensures tiles further from viewer (higher x+y values) appear behind closer tiles
-   * @param {PIXI.Graphics} terrainTile - The terrain tile to add
+   * @param {Graphics} terrainTile - The terrain tile to add
    */
   addTileWithDepthSorting(terrainTile) {
     return _addWithSort(this, terrainTile);
@@ -955,7 +956,7 @@ export class TerrainManager {
       const lineAlpha = typeof options.lineAlpha === 'number' ? options.lineAlpha : 0.9;
 
       for (const { x, y } of cells) {
-        const g = new PIXI.Graphics();
+        const g = new Graphics();
         // Semi-transparent outline to avoid altering underlying colors
         g.lineStyle(lineWidth, color, lineAlpha);
         g.beginFill(color, fillAlpha);

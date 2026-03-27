@@ -87,7 +87,7 @@ export class TileLifecycleController {
 
   /**
    * Apply visual/effect data to a new tile.
-   * @param {PIXI.DisplayObject} newTile
+   * @param {Object} newTile
    * @param {number} height
    * @param {number} x
    * @param {number} y
@@ -146,7 +146,7 @@ export class TileLifecycleController {
 
   /**
    * Add base 3D faces to a tile when appropriate.
-   * @param {PIXI.DisplayObject} tile
+   * @param {Object} tile
    * @param {number} x
    * @param {number} y
    * @param {number} height

@@ -2,6 +2,7 @@
 // Shared between TerrainManager (overlay) and TerrainCoordinator (base tiles)
 
 // ── Imports ────────────────────────────────────────────────────
+import { Graphics } from '../core/PixiStub.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import { darkenColor } from '../utils/color/ColorUtils.js';
@@ -96,7 +97,7 @@ export class TerrainFacesRenderer {
     const bottom = { x: w / 2, y: h };
     const left = { x: 0, y: h / 2 };
 
-    const faces = new PIXI.Graphics();
+    const faces = new Graphics();
     let colors;
     if (shaded) {
       colors = { r: baseTopColor, b: baseTopColor, l: baseTopColor, t: baseTopColor };

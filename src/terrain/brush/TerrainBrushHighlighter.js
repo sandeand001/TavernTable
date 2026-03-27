@@ -1,6 +1,6 @@
 // TerrainBrushHighlighter.js
 // Domain-level helper that builds a hover-only highlight descriptor for the terrain brush.
-// Pure data, no PIXI/UI imports. App layer renders based on the returned descriptor.
+// Pure data, no UI imports. App layer renders based on the returned descriptor.
 
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import {
@@ -39,7 +39,7 @@ import {
  * The style intentionally differs from raise/lower colors to avoid conflating mechanics.
  *
  * Notes on layering: The renderer should place this preview above terrain faces and below tokens.
- * This function only returns data; it does not manipulate PIXI objects.
+ * This function only returns data; it does not manipulate display objects.
  *
  * @param {{ brush: Brush, center: {gridX:number, gridY:number}, terrainModeActive: boolean }} params
  * @returns {HighlightDescriptor}

@@ -5,6 +5,7 @@
  */
 
 // ── Imports & Constants ─────────────────────────────────────────
+import { Graphics } from '../../core/PixiStub.js';
 import { logger, LOG_CATEGORY } from '../Logger.js';
 
 const TOPDOWN_TILE_BASE = 0;
@@ -36,8 +37,7 @@ export function ensureTopDownSquare(tile, gameManager) {
   if (tile.__topDownGraphic && tile.__topDownGraphic.__isTopDownSquare) {
     return tile.__topDownGraphic;
   }
-  // eslint-disable-next-line no-undef
-  const g = new PIXI.Graphics();
+  const g = new Graphics();
   g.__isTopDownSquare = true;
   g.__gridX = tile.__gridX;
   g.__gridY = tile.__gridY;

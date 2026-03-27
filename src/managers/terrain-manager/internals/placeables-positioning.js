@@ -27,7 +27,7 @@ export function repositionPlaceableSprite(m, sprite) {
     // Instanced billboard/ground cards are managed by the mesh pool; height resync handled centrally.
     return;
   }
-  // PURE 3D MODEL RECORD (no PIXI sprite texture data)
+  // PURE 3D MODEL RECORD (no sprite texture data)
   if (sprite.__threeModel && !sprite.texture) {
     try {
       const gm = m.gameManager;

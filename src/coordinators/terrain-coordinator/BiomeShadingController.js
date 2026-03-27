@@ -145,7 +145,7 @@ export class BiomeShadingController {
         try {
           if (child.__topDownGraphic && child.__topDownGraphic.__isTopDownSquare) {
             const sq = child.__topDownGraphic;
-            const g = sq; // PIXI.Graphics
+            const g = sq; // Graphics object
             if (g && typeof g.clear === 'function') {
               g.clear();
               // Elevation brightness adjustment will run again when ensureTopDownSquare is called next switch.

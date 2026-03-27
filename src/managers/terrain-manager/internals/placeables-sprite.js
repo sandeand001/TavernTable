@@ -1,5 +1,7 @@
-// PIXI sprite creation for 2D placeable items extracted from placeables.js (Phase 8).
+// Sprite creation for 2D placeable items extracted from placeables.js (Phase 8).
 // Handles texture loading, scale computation, anchoring, and debug logging.
+
+import { Sprite, Texture } from '../../../core/PixiStub.js';
 
 import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
@@ -10,7 +12,7 @@ const PLACEABLE_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
 
 // ── Sprite Creation ─────────────────────────────────────────────
 
-/** Create a PIXI.Sprite for a placeable item and attach metadata (legacy 2D path). */
+/** Create a Sprite for a placeable item and attach metadata (legacy 2D path). */
 export function createPlaceableSprite(m, id, x, y) {
   const def = TERRAIN_PLACEABLES[id];
   if (!def) throw new Error(`Unknown placeable id: ${id}`);
@@ -25,21 +27,21 @@ export function createPlaceableSprite(m, id, x, y) {
     variantIndex = hash % len;
     imgPath = def.img[variantIndex];
   }
-  // Support environments where PIXI.Sprite.from may not be present (tests mock).
+  // Support environments where Sprite.from may not be present (tests mock).
   let sprite;
   try {
-    if (typeof PIXI.Sprite?.from === 'function') {
-      sprite = PIXI.Sprite.from(imgPath);
-    } else if (typeof PIXI.Texture?.from === 'function' && typeof PIXI.Sprite === 'function') {
-      sprite = new PIXI.Sprite(PIXI.Texture.from(imgPath));
+    if (typeof Sprite.from === 'function') {
+      sprite = Sprite.from(imgPath);
+    } else if (typeof Texture.from === 'function') {
+      sprite = new Sprite(Texture.from(imgPath));
     } else {
       // Fallback: attempt direct construction
-      sprite = new PIXI.Sprite(imgPath);
+      sprite = new Sprite(imgPath);
     }
   } catch (err) {
     // Best-effort fallback
     try {
-      sprite = new PIXI.Sprite(PIXI.Texture.from ? PIXI.Texture.from(imgPath) : {});
+      sprite = new Sprite(Texture.from ? Texture.from(imgPath) : {});
     } catch (_) {
       sprite = {
         x: 0,
@@ -69,7 +71,7 @@ export function createPlaceableSprite(m, id, x, y) {
   // original dimensions when available. If dimensions are not yet available,
   // attach safe listeners on the baseTexture and apply a conservative sizing
   // that will be recalculated once the texture loads. Avoid forcing scale resets
-  // that may conflict with PIXI internals.
+  // that may conflict with PixiStub internals.
   // Defaults chosen to match the project's isometric tile footprint: width ~64, height ~32
   const tileW = m.gameManager?.tileWidth || 64;
   const tileH = m.gameManager?.tileHeight || 32;

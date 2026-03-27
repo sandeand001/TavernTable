@@ -162,7 +162,7 @@ export class TokenManager {
    * Place a new token at the specified grid coordinates
    * @param {number} gridX - Grid X coordinate
    * @param {number} gridY - Grid Y coordinate
-   * @param {PIXI.Container} gridContainer - Grid container to add token to
+   * @param {Object} gridContainer - Grid container to add token to
    */
   placeNewToken(gridX, gridY, gridContainer) {
     return _placeNewToken(this, gridX, gridY, gridContainer);
@@ -196,7 +196,7 @@ export class TokenManager {
 
   /**
    * Snap a token to the nearest grid center
-   * @param {PIXI.Sprite} token - Token sprite to snap
+   * @param {Object} token - Token sprite to snap
    */
   snapToGrid(token, pointerLocalX = null, pointerLocalY = null) {
     return _snapTokenToGrid(this, token, pointerLocalX, pointerLocalY);
@@ -217,7 +217,7 @@ export class TokenManager {
 
   /**
    * Set up token interaction events
-   * @param {PIXI.Sprite} sprite - Token sprite
+   * @param {Object} sprite - Token sprite
    * @param {Object} tokenData - Token data
    */
   setupTokenInteractions(sprite, tokenData) {

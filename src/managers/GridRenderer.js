@@ -9,6 +9,7 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY, GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
+import { Container } from '../core/PixiStub.js';
 import {
   drawIsometricTile as _drawIsoTile,
   clearGridTiles as _clearTiles,
@@ -27,9 +28,9 @@ export class GridRenderer {
    */
   setupGrid() {
     try {
-      // Defensive check - ensure PIXI app is properly initialized
+      // Defensive check - ensure app is properly initialized
       if (!this.gameManager.app || !this.gameManager.app.stage) {
-        throw new Error('GameManager PIXI app not initialized before grid setup');
+        throw new Error('GameManager app not initialized before grid setup');
       }
 
       logger.log(LOG_LEVEL.DEBUG, 'Creating grid container', LOG_CATEGORY.SYSTEM, {
@@ -40,7 +41,7 @@ export class GridRenderer {
       });
 
       // Create main grid container
-      this.gameManager.gridContainer = new PIXI.Container();
+      this.gameManager.gridContainer = new Container();
       // Enable zIndex-based sorting so tokens/tiles can occlude correctly in isometric depth
       this.gameManager.gridContainer.sortableChildren = true;
       this.gameManager.app.stage.addChild(this.gameManager.gridContainer);
@@ -93,7 +94,7 @@ export class GridRenderer {
    * @param {number} x - Grid x coordinate
    * @param {number} y - Grid y coordinate
    * @param {number} color - Hex color value (default from config)
-   * @returns {PIXI.Graphics} The created tile graphics object
+   * @returns {Graphics} The created tile graphics object
    */
   drawIsometricTile(x, y, color = GRID_CONFIG.TILE_COLOR) {
     try {

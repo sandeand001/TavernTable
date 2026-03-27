@@ -1,3 +1,4 @@
+import { Graphics } from '../../core/PixiStub.js';
 import { logger, LOG_CATEGORY } from '../../utils/Logger.js';
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
@@ -15,7 +16,7 @@ export class ElevationVisualsController {
 
   /**
    * Add visual elevation effect to a tile based on height
-   * @param {PIXI.Graphics} tile - The tile graphics object
+   * @param {Graphics} tile - The tile graphics object
    * @param {number} height - The terrain height
    */
   addVisualElevationEffect(tile, height) {
@@ -51,7 +52,7 @@ export class ElevationVisualsController {
       if (Math.abs(height) > 1) {
         const shadowAlpha = Math.min(Math.abs(height) * 0.1, 0.4);
         const shadowColor = height > 0 ? 0x000000 : 0x444444;
-        const shadow = new PIXI.Graphics();
+        const shadow = new Graphics();
         shadow.beginFill(shadowColor, shadowAlpha);
         const tileWidth = this.c.gameManager.tileWidth;
         const tileHeight = this.c.gameManager.tileHeight;

@@ -32,10 +32,10 @@ export class StateCoordinator {
         timestamp: new Date().toISOString(),
       });
 
-      // Create PIXI app with validation
+      // Create app with validation
       this.gameManager.renderCoordinator.createPixiApp();
 
-      // NOW create managers after PIXI app exists
+      // NOW create managers after app exists
       logger.log(LOG_LEVEL.DEBUG, 'Creating manager instances', LOG_CATEGORY.SYSTEM, {
         context: 'StateCoordinator.initializeApplication',
         stage: 'manager_creation',
@@ -192,7 +192,7 @@ export class StateCoordinator {
 
   // ── Manager Creation ──────────────────────────────────
   /**
-   * Create manager instances after PIXI app is ready
+   * Create manager instances after app is ready
    */
   async createManagers() {
     // Create managers synchronously to avoid dependency issues

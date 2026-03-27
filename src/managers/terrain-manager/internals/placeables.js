@@ -1,3 +1,4 @@
+import { Texture } from '../../../core/PixiStub.js';
 import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
 import logger, { LOG_CATEGORY } from '../../../utils/Logger.js';
 import { createPlaceableSprite } from './placeables-sprite.js';
@@ -270,7 +271,7 @@ export function placeItem(m, id, x, y) {
 
     // Provide a lightweight display-list presence so tests that previously
     // enumerated terrainContainer.children can still locate the placed item.
-    // (PIXI containers in tests accept plain objects.)
+    // (Containers in tests accept plain objects.)
     try {
       if (m.terrainContainer) {
         m.terrainContainer.addChild(record);
@@ -914,7 +915,7 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
     const nextPath = def.img[nextIndex];
     if (!nextPath) continue;
     try {
-      sprite.texture = PIXI.Texture.from(nextPath);
+      sprite.texture = Texture.from(nextPath);
       sprite.placeableVariantIndex = nextIndex;
       try {
         sprite.getLocalBounds && sprite.getLocalBounds();
@@ -940,7 +941,7 @@ export function removeItem(m, x, y, id = null) {
     const p = list[i];
     if (!id || p.placeableId === id) {
       try {
-        // Only attempt Pixi removal if object looks like a sprite
+        // Only attempt removal if object looks like a sprite
         if (p && p.parent && typeof p.parent.removeChild === 'function') {
           p.parent.removeChild(p);
         }

@@ -47,7 +47,7 @@ export const GRID_CONFIG = {
 
 /**
  * Application configuration
- * Core PIXI.js and rendering settings
+ * Core rendering settings
  */
 // (Removed unused APP_CONFIG during NFC cleanup)
 

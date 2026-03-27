@@ -27,7 +27,7 @@ import { TypeValidators } from '../utils/Validation.js';
 // ── Drag Start ─────────────────────────────────────────
 /**
  * Handle drag start event for creature tokens
- * @param {Object} event - PIXI interaction event
+ * @param {Object} event - Pointer interaction event
  */
 function onDragStart(event) {
   try {
@@ -80,7 +80,7 @@ function onDragStart(event) {
 // ── Drag End ──────────────────────────────────────────
 /**
  * Handle drag end event for creature tokens
- * @param {Object} event - PIXI interaction event
+ * @param {Object} event - Pointer interaction event
  */
 function onDragEnd(event) {
   try {

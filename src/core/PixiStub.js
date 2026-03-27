@@ -241,3 +241,4 @@ const PIXI = {
 window.PIXI = PIXI;
 
 export default PIXI;
+export { Application, Container, Graphics, Sprite, Texture };
