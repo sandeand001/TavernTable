@@ -31,13 +31,7 @@ import {
 } from './NoisePrimitives.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
 
-// ------------------------
-// Lightweight deterministic noise (fbm)
-// ------------------------
-
-// ------------------------
-// Biome shaping recipes
-// ------------------------
+// ── Private Helpers (Biome Shapers) ─────────────────────────
 
 function shapeGrassland(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.5;
@@ -172,7 +166,7 @@ function shapeRiverLake(x, y, nx, ny, seed, opts) {
   return base - band * (r * 1.2) - Math.abs(opts.waterBias ?? 0.8);
 }
 
-// -------------- Additional biome variants (lightweight compositions) --------------
+// ── Private Helpers (Biome Variant Shapers) ───────────────
 
 function shapeForestTemperate(x, y, nx, ny, seed, opts) {
   const o = { ...opts, relief: opts.relief ?? 3.0, roughness: opts.roughness ?? 1.1 };
@@ -462,6 +456,8 @@ function shapeArcaneLeyNexus(x, y, nx, ny, seed, opts) {
   return (bandA + bandB + base * 0.4) * (opts.relief ?? 3.2);
 }
 
+// ── Constants ───────────────────────────────────────────────
+
 const RECIPE_INDEX = {
   grassland: shapeGrassland,
   hills: shapeHills,
@@ -736,6 +732,8 @@ function getProfileForBiome(biomeKey) {
   return BIOME_ELEVATION_PROFILES[biomeKey] || {};
 }
 
+// ── Noise Helpers ───────────────────────────────────────────
+
 // Small, separable-ish box blur for smoothing before quantization
 function smoothHeightsInPlace(arr, rows, cols, radius = 1, iterations = 1) {
   if (!radius || radius <= 0 || !iterations || iterations <= 0) return;
@@ -780,9 +778,7 @@ function applyRidgePowerInPlace(arr, rows, cols, power = 1.0) {
   }
 }
 
-// ------------------------
-// Public API
-// ------------------------
+// ── Generation API ─────────────────────────────────────────
 
 export function isAllDefaultHeight(heightArray, defaultHeight = TERRAIN_CONFIG.DEFAULT_HEIGHT) {
   if (!Array.isArray(heightArray) || heightArray.length === 0 || !Array.isArray(heightArray[0]))
@@ -915,6 +911,8 @@ export function applyBiomeElevationIfFlat(heightArray, biomeKey, options = {}) {
   }
   return TerrainHeightUtils.copyHeightArray(heightArray);
 }
+
+// ── Constants (Elevation Hints) ─────────────────────────────
 
 // Biome-specific default elevation perception (pixels per level) for UI slider.
 // This does not force generation outcome by itself; it sets the runtime unit so

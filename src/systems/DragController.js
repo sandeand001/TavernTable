@@ -24,6 +24,7 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { TypeValidators } from '../utils/Validation.js';
 
+// ── Drag Start ─────────────────────────────────────────
 /**
  * Handle drag start event for creature tokens
  * @param {Object} event - PIXI interaction event
@@ -76,6 +77,7 @@ function onDragStart(event) {
   }
 }
 
+// ── Drag End ──────────────────────────────────────────
 /**
  * Handle drag end event for creature tokens
  * @param {Object} event - PIXI interaction event
@@ -130,6 +132,7 @@ function onDragEnd(event) {
   }
 }
 
+// ── Drag Move ─────────────────────────────────────────
 /**
  * Handle drag move event for creature tokens
  */
@@ -153,6 +156,7 @@ function onDragMove() {
   }
 }
 
+// ── Exports ───────────────────────────────────────────
 // ES6 module exports
 export { onDragStart, onDragEnd, onDragMove };
 

@@ -24,6 +24,8 @@ import {
 import { logger, LOG_CATEGORY } from '../utils/Logger.js';
 
 class SidebarController {
+  // ── Constructor ─────────────────────────────────────────────
+
   constructor() {
     this.activeTab = 'dice-log';
     this.diceLogEntries = [];
@@ -113,6 +115,8 @@ class SidebarController {
     }
   }
 
+  // ── Public API ──────────────────────────────────────────────
+
   switchTab(tabId) {
     this.activeTab = tabId;
     try {
@@ -125,6 +129,8 @@ class SidebarController {
     }
     this.onTabChange(tabId);
   }
+
+  // ── Event Handlers ──────────────────────────────────────────
 
   onTabChange(tabId) {
     if (tabId === 'dice-log') this.refreshDiceLog();
@@ -186,9 +192,8 @@ class SidebarController {
     }
   }
 
-  /* =============================
-   * Unified Placeables Grid
-   * ============================= */
+  // ── Public API (Placeables) ───────────────────────────────
+
   buildTerrainPlaceablesMenuSafely() {
     if (this._placeablesBuilt) return; // Build only once per session; remove this if dynamic updates needed
     const root = getTerrainPlaceablesRoot();
@@ -315,9 +320,8 @@ class SidebarController {
       });
   }
 
-  /* =============================
-   * Biomes (existing logic preserved, simplified)
-   * ============================= */
+  // ── DOM Helpers (Biomes) ───────────────────────────────────
+
   _wireGenerateMapButton() {
     const btn = document.getElementById('generate-map');
     const lock = document.getElementById('biome-seed-lock');
@@ -529,9 +533,8 @@ class SidebarController {
     }
   }
 
-  /* =============================
-   * Dice Log
-   * ============================= */
+  // ── Public API (Dice Log) ─────────────────────────────────
+
   addDiceLogEntry(message, type = 'roll') {
     const timestamp = new Date().toLocaleTimeString();
     const entry = { message, type, timestamp, id: Date.now() + Math.random() };
@@ -575,9 +578,8 @@ class SidebarController {
     this.addDiceLogEntry('Dice log cleared.', 'system');
   }
 
-  /* =============================
-   * Creatures / Tokens
-   * ============================= */
+  // ── Public API (Creatures) ────────────────────────────────
+
   refreshCreatureSelection() {
     const selectedToken = window.gameManager?.selectedTokenType ?? window.selectedTokenType;
     if (!selectedToken) return;
@@ -601,6 +603,8 @@ class SidebarController {
     }
     this.refreshCreatureSelection();
   }
+
+  // ── DOM Helpers ────────────────────────────────────────────
 
   _syncVisualGridToggleState(toggleEl, explicitVisible) {
     if (!toggleEl) return;

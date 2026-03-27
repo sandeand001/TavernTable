@@ -2,6 +2,7 @@
 // This file intentionally minimal in Phase 0/1; expanded in later phases.
 
 export const BIOME_DESIGNS = {
+  // ── Sand Dunes ────────────────────────────────────────────────
   sandDunes: {
     expressive: {
       // Altitude bands defined in normalized elevation 0..1 order (low -> high)
@@ -28,6 +29,7 @@ export const BIOME_DESIGNS = {
       allowHardBands: false,
     },
   },
+  // ── Mountain ──────────────────────────────────────────────────
   mountain: {
     expressive: {
       bands: [
@@ -55,6 +57,7 @@ export const BIOME_DESIGNS = {
       allowHardBands: false,
     },
   },
+  // ── Swamp ─────────────────────────────────────────────────────
   swamp: {
     expressive: {
       bands: [
@@ -81,6 +84,7 @@ export const BIOME_DESIGNS = {
   },
 };
 
+// ── Lookup Helper ──────────────────────────────────────────────
 export function getBiomeDesign(biomeKey, mode) {
   const entry = BIOME_DESIGNS[biomeKey];
   if (!entry) return null;

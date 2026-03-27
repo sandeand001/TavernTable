@@ -1,3 +1,4 @@
+// ── Imports & Setup ──────────────────────────────────────────
 // FloraProfiles.js — Biome flora profiles, spectral variants, candidate filters, and helper functions.
 // Extracted from flora.js (Phase 8).
 
@@ -20,6 +21,7 @@ const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter((k) => {
   return type === 'plant' || type === 'plant-family';
 });
 
+// ── Tropical Configuration ────────────────────────────────────
 const TROPICAL_HEIGHT_VARIANCE = 1.5;
 const TROPICAL_RELOCATION_RADIUS = 2;
 const TROPICAL_DENSITY_THRESHOLDS = [
@@ -41,6 +43,7 @@ const RING_OFFSETS = (() => {
   return offsets;
 })();
 
+// ── Tropical Helper Functions ─────────────────────────────────
 function isTropicalCluster(id) {
   if (!id) return false;
   if (/^plant-tropical-/i.test(id)) return true;
@@ -104,6 +107,7 @@ function isFlatEnoughForTropical(c, x, y, baseHeight) {
   return true;
 }
 
+// ── Hash & Weight Utilities ──────────────────────────────────
 // Simple deterministic 32-bit hash (Jenkins-like mix) used for seed salting
 function hash32(str) {
   let h = 0x811c9dc5;
@@ -155,6 +159,7 @@ function relocateTropicalCandidate(c, x, y, baseHeight) {
   return null;
 }
 
+// ── Spectral Variant Mapping ─────────────────────────────────
 const SPECTRAL_VARIANTS = {
   'tree-birch-a': 'tree-birch-a-spectral',
   'tree-birch-b': 'tree-birch-b-spectral',
@@ -206,6 +211,7 @@ function stripSpectralWeights(weightMap) {
   return removed ? filtered : weightMap;
 }
 
+// ── Water Detection Helpers ───────────────────────────────────
 function isAdjacentToWater(c, x, y) {
   if (!c?.gameManager) return false;
   const cols = c.gameManager.cols || 0;
@@ -227,6 +233,7 @@ function isAdjacentToWater(c, x, y) {
 }
 
 // Candidate filters / strategies --------------------------------------------
+// ── Candidate Filters & Strategies ────────────────────────────
 const candidateFilters = {
   oasisSetback(c, x, y, h, rng) {
     const height = Number.isFinite(h) ? h : (c.getTerrainHeight?.(x, y) ?? 0);
@@ -341,6 +348,7 @@ function hasWaterWithinRadius(c, x, y, radius) {
   return false;
 }
 
+// ── Biome Flora Profiles ──────────────────────────────────────
 const BIOME_FLORA_PROFILES = [
   { re: /(sandDunes|saltFlats|desertHot|desertCold)/i, density: 0, spacing: 0 },
   { re: /(glacier|frozenLake|packIce|ocean|coralReef)/i, density: 0, spacing: 0 },
@@ -822,6 +830,7 @@ const BIOME_FLORA_PROFILES = [
   },
 ];
 
+// ── Default Profile & Exports ────────────────────────────────
 const DEFAULT_PROFILE = {
   density: 0.07,
   spacing: 2,

@@ -2,6 +2,7 @@
 
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
 
+// ── Utility Helpers ────────────────────────────────────
 function el(id) {
   return document.getElementById(id);
 }
@@ -26,6 +27,7 @@ function setStoredGridVisibility(value) {
   }
 }
 
+// ── 3D Controls Injection ──────────────────────────────
 function attach3DControls() {
   const settingsPanel = el('settings-panel');
   if (!settingsPanel) return;
@@ -180,6 +182,7 @@ function attach3DControls() {
   }
 }
 
+// ── Auto-Attach ────────────────────────────────────────
 window.addEventListener('load', () => {
   try {
     attach3DControls();

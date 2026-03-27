@@ -1,5 +1,6 @@
 // src/config/GameConstants.js - Centralized game configuration and constants
 
+// ── Grid Configuration ────────────────────────────────────────
 /**
  * Grid configuration constants
  * Controls the isometric grid rendering and behavior
@@ -55,6 +56,7 @@ export const GRID_CONFIG = {
  */
 // (Removed unused INPUT_CONFIG during NFC cleanup)
 
+// ── Creature Configuration ────────────────────────────────────
 /**
  * Creature scaling configuration
  * Defines size multipliers for different creature types
@@ -105,6 +107,7 @@ export function normalizeCreatureType(creatureType) {
   return CREATURE_TYPE_ALIASES[lower] || lower;
 }
 
+// ── Token Placement ──────────────────────────────────────────
 /**
  * Global token placement fine-tuning offset (pixels)
  * Applied after computing isometric center so that bottom-center anchored sprites
@@ -113,6 +116,7 @@ export function normalizeCreatureType(creatureType) {
  */
 export const TOKEN_PLACEMENT_OFFSET = { x: 3, y: 8 };
 
+// ── Validation ────────────────────────────────────────────────
 /**
  * Validation helpers
  * Provides consistent validation logic across the application
@@ -162,6 +166,7 @@ export const VALIDATION = {
   },
 };
 
+// ── Creature Helpers ─────────────────────────────────────────
 /**
  * Helper functions for creature configuration
  */
@@ -195,6 +200,7 @@ export const CREATURE_HELPERS = {
   },
 };
 
+// ── Dice System ──────────────────────────────────────────────
 /**
  * Dice system configuration
  */

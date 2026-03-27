@@ -4,6 +4,7 @@
  * the deterministic helpers relied upon by the 3D terrain branch.
  */
 
+// ── Imports & Constants ────────────────────────────────────────
 import { ALL_BIOMES } from './BiomeConstants.js';
 import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 
@@ -11,6 +12,7 @@ const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;
 const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;
 const ZERO = 0;
 
+// ── Color Math Utilities ───────────────────────────────────────
 function clampHeight(h) {
   return Math.max(MIN_H, Math.min(MAX_H, h));
 }
@@ -45,6 +47,7 @@ function lerpColor(aHex, bHex, t) {
   });
 }
 
+// ── OKLCH Color Space Conversion ──────────────────────────────
 function srgbToLinear01(u8) {
   const c = u8 / 255;
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -129,6 +132,7 @@ function lerpOklch(lchA, lchB, t) {
   };
 }
 
+// ── Noise Functions ──────────────────────────────────────────
 function hash2D(x, y, seed = 1337) {
   const X = Math.sin(x * 127.1 + y * 311.7 + seed * 0.7) * 43758.5453;
   return X - Math.floor(X);
@@ -154,6 +158,7 @@ function fbm2(x, y, seed = 1337) {
   return n1 * 0.65 + n2 * 0.35;
 }
 
+// ── Palette Generation Helpers ────────────────────────────────
 function generateHeightGradient(lowHex, midHex, highHex) {
   const palette = {};
   for (let h = MIN_H; h <= MAX_H; h++) {
@@ -208,6 +213,7 @@ function generateFromStops(stops) {
   return palette;
 }
 
+// ── Base Triads (Biome Color Anchors) ────────────────────────
 const BIOME_BASE_TRIADS = {
   grassland: [0x1d3a22, 0x3f8c2f, 0xd6c46b],
   forestTemperate: [0x0e2414, 0x2e7a3b, 0x95d56e],
@@ -262,6 +268,7 @@ const BIOME_BASE_TRIADS = {
   arcaneLeyNexus: [0x14003a, 0x7600de, 0xe6b2ff],
 };
 
+// ── Height Stop Maps (Granular Per-Biome) ────────────────────
 const BIOME_STOP_MAP = {
   desertHot: [
     { h: -10, color: 0x3a1606 },
@@ -479,6 +486,7 @@ const BIOME_STOP_MAP = {
   ],
 };
 
+// ── Palette Initialization & Snowcap Processing ───────────────
 const BIOME_HEIGHT_PALETTES = {};
 const BIOME_CANONICAL_COLOR = {};
 const DEFAULT_TRIAD = [0x253035, 0x607078, 0xbfd3e1];
@@ -532,6 +540,7 @@ function resolveRichShadingSetting(key, fallback) {
 const DEFAULT_SHORELINE_SAND_STRENGTH = resolveRichShadingSetting('shorelineSandStrength', 1.0);
 const DEFAULT_RICH_SHADING_INTENSITY = resolveRichShadingSetting('intensity', 1.0);
 
+// ── Biome Key Normalization ─────────────────────────────────
 function normalizeBiomeKey(biomeKey) {
   const raw = String(biomeKey || '');
   const lc = raw.toLowerCase().replace(/\s+/g, '');
@@ -550,6 +559,7 @@ function normalizeBiomeKey(biomeKey) {
   return biomeKey;
 }
 
+// ── Height Color Lookup ───────────────────────────────────────
 export function getBiomeHeightColor(biomeKey, height) {
   const key = normalizeBiomeKey(biomeKey);
   const h = clampHeight(Math.round(height));
@@ -566,6 +576,7 @@ export function getBiomeHeightColor(biomeKey, height) {
   return palette && palette[h] != null ? palette[h] : 0x808080;
 }
 
+// ── Hydrology Blending ───────────────────────────────────────
 export const BIOME_HYDROLOGY = {
   coast: { shoreBand: [0, 0.4], tint: 0xc4ae84 },
   riverLake: { shoreBand: [0, 0.5], tint: 0x2d2218 },
@@ -610,6 +621,7 @@ export function getBiomeColorWithHydrology(biomeKey, height) {
   return base;
 }
 
+// ── Painterly Color Computation ───────────────────────────────
 function computePainterlyColor(biomeKey, height, x = 0, y = 0, opts = {}) {
   const {
     moisture = 0.5,
@@ -797,6 +809,7 @@ function computePainterlyColor(biomeKey, height, x = 0, y = 0, opts = {}) {
   return { color: finalHex, fx };
 }
 
+// ── Public API & Exports ──────────────────────────────────────
 export function getBiomeColor(biomeKey, height, x = 0, y = 0, opts = {}) {
   return computePainterlyColor(biomeKey, height, x, y, opts);
 }

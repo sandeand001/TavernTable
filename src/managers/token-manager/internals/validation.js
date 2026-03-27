@@ -2,6 +2,8 @@ import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
+// ── Position Validation ─────────────────────────────────────────
+
 export function validateTokenPositions(c, cols, rows) {
   try {
     const outOfBounds = c.placedTokens.filter(

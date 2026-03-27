@@ -17,6 +17,7 @@
  * @version 2.1.0
  */
 
+// ── Imports & Re-exports ────────────────────────────────────────
 import { logger, LOG_LEVEL, LOG_CATEGORY } from './Logger.js';
 import { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './error/enums.js';
 import { ErrorNotificationManager } from './error/notification.js';
@@ -40,6 +41,7 @@ export { ERROR_SEVERITY, ERROR_CATEGORY, RECOVERY_STRATEGY } from './error/enums
  */
 // moved to ./error/enums.js
 
+// ── Configuration ───────────────────────────────────────────────
 /**
  * Configuration interface for error handling behavior
  */
@@ -57,6 +59,7 @@ export class ErrorHandlerConfig {
   }
 }
 
+// ── Structured Error Entry ──────────────────────────────────────
 /**
  * Structured error entry with comprehensive metadata
  */
@@ -156,6 +159,7 @@ export class ErrorEntry {
 
 // ErrorTelemetryManager moved to ./error/telemetry.js
 
+// ── Error Handler ───────────────────────────────────────────────
 /**
  * Main ErrorHandler class - Central error management system
  */
@@ -488,7 +492,7 @@ export class ErrorHandler {
   }
 }
 
-// Browser-safe environment detection
+// ── Environment Detection ───────────────────────────────────────
 const getEnvironment = () => {
   // Check if we're in Node.js environment
   if (typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env) {
@@ -513,7 +517,7 @@ const environment = getEnvironment();
 const isProduction = environment === 'production';
 const isDevelopment = environment === 'development';
 
-// Global error handler instance with production-ready defaults
+// ── Singleton Instance ──────────────────────────────────────────
 export const errorHandler = new ErrorHandler({
   environment: environment,
   enableTelemetry: isProduction,
@@ -526,6 +530,7 @@ export const errorHandler = new ErrorHandler({
   userNotificationTimeout: 5000,
 });
 
+// ── Convenience Wrappers ────────────────────────────────────────
 /**
  * Convenience wrapper functions for common error scenarios
  * These provide a simplified API while maintaining full functionality
@@ -740,6 +745,7 @@ export const GameErrors = {
   },
 };
 
+// ── Integration Helpers ─────────────────────────────────────────
 // Export error handler for direct access if needed
 export { errorHandler as default };
 

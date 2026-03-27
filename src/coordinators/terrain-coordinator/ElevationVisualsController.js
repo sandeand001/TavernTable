@@ -3,6 +3,7 @@ import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
 import { traceDiamondPath } from '../../utils/geometry/GeometryUtils.js';
 
+// ── ElevationVisualsController Class ────────────────────
 /**
  * ElevationVisualsController - Encapsulates height-based visual effects on tiles.
  * Delegated by TerrainCoordinator.addVisualElevationEffect to keep behavior identical.

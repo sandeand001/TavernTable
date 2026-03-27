@@ -10,6 +10,7 @@ import {
   getDefaultHighlightStyle,
 } from './BrushCommon.js';
 
+// ── Type Definitions ──────────────────────────────────
 /**
  * @typedef {Object} Brush
  * @property {'raise'|'lower'} tool
@@ -32,6 +33,7 @@ import {
  * @property {'aboveFacesBelowTokens'} zHint - Layering hint for renderer
  */
 
+// ── Highlight Descriptor Builder ───────────────────────
 /**
  * Build a highlighter descriptor for the current brush hover.
  * The style intentionally differs from raise/lower colors to avoid conflating mechanics.

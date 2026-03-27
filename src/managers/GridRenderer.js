@@ -15,11 +15,13 @@ import {
 } from './grid-renderer/internals/tiles.js';
 import { traceDiamondPath } from '../utils/geometry/GeometryUtils.js';
 
+// ── GridRenderer Class ──────────────────────────────────
 export class GridRenderer {
   constructor(gameManager) {
     this.gameManager = gameManager;
   }
 
+  // ── Grid Setup ─────────────────────────────────────────
   /**
    * Set up the isometric grid with tiles and visual elements
    */
@@ -85,6 +87,7 @@ export class GridRenderer {
     }
   }
 
+  // ── Tile Drawing ───────────────────────────────────────
   /**
    * Draw an isometric tile at the specified grid coordinates
    * @param {number} x - Grid x coordinate
@@ -120,6 +123,7 @@ export class GridRenderer {
     }
   }
 
+  // ── Grid Clear & Redraw ────────────────────────────────
   /**
    * Clear all grid tiles from the display while preserving tokens
    */
@@ -142,6 +146,7 @@ export class GridRenderer {
     }
   }
 
+  // ── Grid Style Stack ───────────────────────────────────
   pushGridStyle(style = {}) {
     if (!this.gameManager?.gridContainer?.children) return;
     const fillColor = style.fillColor ?? GRID_CONFIG.TILE_COLOR;

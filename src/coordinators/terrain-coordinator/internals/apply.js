@@ -2,6 +2,8 @@ import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameErrors } from '../../../utils/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 
+// ── Validation ────────────────────────────────────────────────────
+
 export function validateApplicationRequirements(c) {
   if (!c.dataStore?.working) {
     logger.debug('Cannot apply terrain - missing working height field', {
@@ -21,9 +23,13 @@ export function validateApplicationRequirements(c) {
   }
 }
 
+// ── Height Initialization ──────────────────────────────────────────
+
 export function initializeBaseHeights(c) {
   c.dataStore.applyWorkingToBase();
 }
+
+// ── Grid Tile Processing ───────────────────────────────────────────
 
 export function processAllGridTiles(c) {
   let modifiedTiles = 0;
@@ -50,6 +56,8 @@ export function processAllGridTiles(c) {
   }
   return modifiedTiles;
 }
+
+// ── Logging & Error Handling ──────────────────────────────────────
 
 export function logCompletion(c, modifiedTiles) {
   logger.info(

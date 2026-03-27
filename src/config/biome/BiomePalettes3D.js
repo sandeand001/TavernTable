@@ -22,6 +22,7 @@
  * of the 2D painterly system to keep per‑vertex color generation lightweight.
  */
 
+// ── Imports & Constants ────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 import { ALL_BIOMES } from './BiomeConstants.js';
 
@@ -30,6 +31,7 @@ const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;
 const ZERO = 0;
 
 // Utility helpers -----------------------------------------------------------
+// ── Utility Helpers ──────────────────────────────────────────
 function clamp(v, a, b) {
   return v < a ? a : v > b ? b : v;
 }
@@ -52,6 +54,7 @@ function lerpColor(a, b, t) {
   );
 }
 
+// ── Atmospheric & Depth Effects ───────────────────────────────
 // Atmospheric lift: lighten + slight hue push toward cool sky scatter
 function applyAtmosphere(baseHex, normHeight) {
   // normHeight 0..1 above ZERO
@@ -79,6 +82,7 @@ function applyDepth(baseHex, depth01) {
   );
 }
 
+// ── Base Triads (Curated Per-Biome Color Stops) ───────────────
 // High level curated triads (low -> mid -> high). Some biomes gain a 4th accent stop.
 // Chosen for cinematic separation & mood.
 const BIOME_3D_BASE_TRIADS = {
@@ -126,6 +130,7 @@ const BIOME_3D_BASE_TRIADS = {
   crystalSpires: [0x060c18, 0x324a9a, 0xbcd9ff], // Lofty refracted ice‑blue
 };
 
+// ── Palette Construction & Cache ──────────────────────────────
 // Build per-biome height palettes (cache) ----------------------------------
 const BIOME_3D_HEIGHT_PALETTES = {};
 function buildPalette(triad) {
@@ -157,6 +162,7 @@ function ensureBiomePalette(keyRaw) {
   return BIOME_3D_HEIGHT_PALETTES[key];
 }
 
+// ── Custom Palette Registration ──────────────────────────────
 export function registerCustom3DBiomePalette(key, triadOrStops) {
   if (!key || !triadOrStops || !Array.isArray(triadOrStops)) return false;
   BIOME_3D_BASE_TRIADS[key] = triadOrStops.slice(0, 4);
@@ -165,6 +171,7 @@ export function registerCustom3DBiomePalette(key, triadOrStops) {
 }
 
 // Core lookup ----------------------------------------------------------------
+// ── Core Color Lookup ─────────────────────────────────────────
 export function getBiomeColor3DHex(biomeKey, height, opts = {}) {
   const palette = ensureBiomePalette(biomeKey);
   const hClamped = Math.max(MIN_H, Math.min(MAX_H, Math.round(height)));
@@ -197,6 +204,7 @@ export function getBiomeColor3DHex(biomeKey, height, opts = {}) {
   return base;
 }
 
+// ── Pre-warming & Export Info ─────────────────────────────────
 // Pre-warm common palettes for shipped biome list (non-blocking, try/catch guarded)
 try {
   ALL_BIOMES.forEach((b) => ensureBiomePalette(b.key));

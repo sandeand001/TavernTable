@@ -1,3 +1,4 @@
+// ── Imports & Level Utilities ───────────────────────────────────
 import { getNodeEnv, isJest } from './env.js';
 /**
  * Logger.js - Enterprise-Grade Logging System for TavernTable
@@ -105,6 +106,7 @@ const emitConsoleFallback = (config, level, ...args) => {
   }
 };
 
+// ── Configuration ───────────────────────────────────────────────
 /**
  * Configuration class for logger behavior
  */
@@ -135,6 +137,7 @@ class LoggerConfig {
   }
 }
 
+// ── Log Entry ──────────────────────────────────────────────────
 /**
  * Log entry structure with comprehensive metadata
  */
@@ -259,6 +262,7 @@ class LogEntry {
   }
 }
 
+// ── Console Output Handler ──────────────────────────────────────
 /**
  * Console output handler with formatting
  */
@@ -316,6 +320,7 @@ class ConsoleOutputHandler {
   }
 }
 
+// ── Memory Output Handler ───────────────────────────────────────
 /**
  * Memory output handler for log retention
  */
@@ -390,6 +395,7 @@ class MemoryOutputHandler {
   }
 }
 
+// ── Remote Output Handler ───────────────────────────────────────
 /**
  * Remote output handler for centralized logging
  */
@@ -473,6 +479,7 @@ class RemoteOutputHandler {
   }
 }
 
+// ── Performance Monitor ─────────────────────────────────────────
 /**
  * Performance monitor for tracking method execution times
  */
@@ -558,6 +565,7 @@ export class PerformanceMonitor {
   }
 }
 
+// ── Logger ─────────────────────────────────────────────────────
 /**
  * Main Logger class - Central logging management system
  */
@@ -882,6 +890,7 @@ export class Logger {
   }
 }
 
+// ── Singleton Instance ──────────────────────────────────────────
 // Environment detection centralized via env helper
 const environment = getNodeEnv();
 const isProduction = environment === 'production';

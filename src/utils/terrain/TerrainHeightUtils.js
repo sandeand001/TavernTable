@@ -6,9 +6,11 @@
  * consistent height-related calculations.
  */
 
+// ── Imports & Configuration ─────────────────────────────────────
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../Logger.js';
 
+// ── Height Utilities ───────────────────────────────────────────
 export class TerrainHeightUtils {
   // Runtime override for pixels-per-level. When null/undefined, falls back to config.
   static _elevationUnitOverride = undefined;

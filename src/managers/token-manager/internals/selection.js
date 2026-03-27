@@ -1,6 +1,8 @@
 import { GameValidators } from '../../../utils/Validation.js';
 import { normalizeCreatureType } from '../../../config/GameConstants.js';
 
+// ── DOM Port Helpers ────────────────────────────────────────────
+
 // UI decoupling: DOM access now routed through c.domPorts (injected by UI layer) with fallbacks.
 function getPorts(c) {
   const dp = (c && c.domPorts) || {};
@@ -23,6 +25,8 @@ function getPorts(c) {
   };
 }
 
+// ── Token Lookup ───────────────────────────────────────────────
+
 export function findExistingTokenAt(c, gridX, gridY) {
   // Previously this matched tokens in adjacent cells which caused
   // accidental removals/moves when clicking nearby tiles. Only return
@@ -35,6 +39,8 @@ export function findExistingTokenAt(c, gridX, gridY) {
       token.gridY === gridY
   );
 }
+
+// ── Token Type Selection ────────────────────────────────────────
 
 export function selectToken(c, tokenType) {
   let canonicalType = tokenType;

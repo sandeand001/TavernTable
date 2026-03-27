@@ -2,12 +2,16 @@ import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 import { GameValidators } from '../../../utils/Validation.js';
 
+// ── Creature Factory Imports ───────────────────────────────────
+
 // Creature creation functions
 import {
   createMannequin,
   createFemaleHumanoid,
   createDefeatedDoll,
 } from '../../../entities/creatures/index.js';
+
+// ── Creature Instantiation ─────────────────────────────────────
 
 export function createCreatureByType(c, type) {
   const normalizedType = typeof type === 'string' ? type.toLowerCase() : type;

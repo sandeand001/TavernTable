@@ -18,6 +18,7 @@
  *   window.threeBiomeHarmonyLowSaturationBoost = 0..1 pushes low elevations slightly more chroma (default 0.15)
  */
 
+// ── Imports & Constants ────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 import { getBiomeColorHex } from './BiomePalettes.js';
 
@@ -26,6 +27,7 @@ const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;
 const ZERO = 0;
 
 // Small helpers ------------------------------------------------------------
+// ── Math Helpers ──────────────────────────────────────────────
 function clamp(v, a, b) {
   return v < a ? a : v > b ? b : v;
 }
@@ -49,6 +51,7 @@ function lerpColor(a, b, t) {
 }
 
 // Atmospheric lift & depth shaping (copied/adapted from stylized palette) ---
+// ── Atmospheric & Depth Shaping ────────────────────────────────
 function applyAtmosphere(baseHex, normHeight, highlightExtra) {
   const { r, g, b } = hexToRgb(baseHex);
   const t = Math.pow(clamp(normHeight, 0, 1), 1.05);
@@ -70,6 +73,7 @@ function applyDepth(baseHex, depth01, strength = 1) {
   );
 }
 
+// ── Saturation Adjustment ─────────────────────────────────────
 // Slight saturation push toward extremes so lows not muddy & highs not chalky.
 function adjustSaturation(hexVal, satBoost) {
   if (!satBoost) return hexVal;
@@ -85,6 +89,7 @@ function adjustSaturation(hexVal, satBoost) {
   );
 }
 
+// ── Palette Generation & Cache ────────────────────────────────
 const HARMONY_CACHE = {}; // biomeKey -> { palette: {h:hex}, meta }
 
 function buildHarmonizedPalette(biomeKey) {
@@ -118,6 +123,7 @@ function ensureHarmonyPalette(biomeKey) {
   return HARMONY_CACHE[biomeKey].palette;
 }
 
+// ── Public API ────────────────────────────────────────────────
 export function getHarmonized3DColorHex(biomeKey, height) {
   const pal = ensureHarmonyPalette(biomeKey);
   const hClamped = Math.max(MIN_H, Math.min(MAX_H, Math.round(height)));

@@ -1,6 +1,7 @@
 // MannequinConfig.js — Model definitions, animation library, and movement constants
 // Extracted from Token3DAdapter.js (Phase 5 refactor)
 
+// ── Mannequin Model Definition ──────────────────────────
 export const MANNEQUIN_MODEL = {
   path: 'assets/animated-sprites/Standing Idle.fbx',
   tileSpan: 1,
@@ -177,12 +178,14 @@ export const MANNEQUIN_MODEL = {
   verticalOffset: 0,
 };
 
+// ── Model Registry ─────────────────────────────────────
 export const TOKEN_3D_MODELS = {
   mannequin: MANNEQUIN_MODEL,
   'defeated-doll': MANNEQUIN_MODEL,
   'female-humanoid': MANNEQUIN_MODEL,
 };
 
+// ── Default Movement Profile ───────────────────────────
 export const DEFAULT_BILLBOARD_SIZE = 0.9;
 
 export const DEFAULT_MOVEMENT_PROFILE = {
@@ -209,6 +212,7 @@ export const DEFAULT_MOVEMENT_PROFILE = {
   fallLoopMinDrop: 4.5,
 };
 
+// ── Fall & Landing Constants ────────────────────────────
 export const DEFAULT_FALL_TRIGGER_PROGRESS = 0.38;
 export const DEFAULT_HEIGHT_SNAP_PROGRESS = 0.62;
 export const HARD_LANDING_HEIGHT_THRESHOLD = 5;
@@ -227,6 +231,7 @@ export const PATH_SPEED_MODES = {
   RUN: 'run',
   SPRINT: 'sprint',
 };
+// ── Climb Constants ───────────────────────────────────
 export const DEFAULT_CLIMB_DURATION = 1.2;
 export const DEFAULT_CLIMB_RECOVER_DURATION = 0.95;
 export const MAX_STANDARD_CLIMB_LEVELS = 4;
@@ -275,6 +280,7 @@ export const CLIMB_APPROACH_TOLERANCE_RUN_SCALE = 0.65;
 export const CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE = 0.45;
 export const MAX_INTERMEDIATE_CLIMB_CHAIN = 4;
 export const PATH_STALL_REPATH_DELAY = 0.35;
+// ── Selection & Logging Constants ──────────────────────
 export const SELECTION_COLLIDER_HEIGHT = 2.3;
 export const SELECTION_COLLIDER_RADIUS_RATIO = 0.46;
 export const CLIMB_RECOVER_DEFAULT_CROUCH_DROP = 0.05;

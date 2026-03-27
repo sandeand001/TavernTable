@@ -6,6 +6,8 @@ import { ensurePlaneMesh, ensureBoxMesh, syncMeshMaterial } from './OverlayMeshP
 import { ensureOutlinePool, syncOutlineStyle } from './OverlayOutlinePool.js';
 
 export class TerrainBrushOverlay3D {
+  // ── Constructor ───────────────────────────────────────────────────
+
   constructor({ three, scene, gameManager } = {}) {
     this.three = three;
     this.scene = scene;
@@ -50,6 +52,8 @@ export class TerrainBrushOverlay3D {
   get isAvailable() {
     return !!(this._group && this.three && this.scene);
   }
+
+  // ── Cleanup ───────────────────────────────────────────────────────
 
   dispose() {
     try {
@@ -168,6 +172,8 @@ export class TerrainBrushOverlay3D {
     }
   }
 
+  // ── Clear / Reset ─────────────────────────────────────────────────
+
   clear() {
     if (!this.isAvailable) return;
     try {
@@ -201,6 +207,8 @@ export class TerrainBrushOverlay3D {
       /* ignore */
     }
   }
+
+  // ── Highlight Rendering ───────────────────────────────────────────
 
   setHighlight(cells = [], style = {}) {
     if (!this.isAvailable) return;

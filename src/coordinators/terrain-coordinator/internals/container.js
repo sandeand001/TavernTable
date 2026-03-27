@@ -1,6 +1,8 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
 
+// ── Prepare Base Grid ─────────────────────────────────────────────
+
 /**
  * Prepare base grid tiles for editing overlay: reset elevation visuals and remove faces/shadows.
  * Mirrors TerrainCoordinator._prepareBaseGridForEditing
@@ -110,6 +112,8 @@ export function prepareBaseGridForEditing(c) {
   }
 }
 
+// ── Reset Container ──────────────────────────────────────────────
+
 /**
  * Reset terrain container safely before reuse. Mirrors _resetTerrainContainerSafely
  */
@@ -195,6 +199,8 @@ export function resetTerrainContainerSafely(c) {
     c.terrainManager.isUpdating = false;
   }
 }
+
+// ── Validate Container Integrity ──────────────────────────────────
 
 /**
  * Ensure terrain overlay container and grid container are in a valid state.

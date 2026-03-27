@@ -7,6 +7,8 @@ import {
 } from '../../../utils/ErrorHandler.js';
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 
+// ── Grid Coordinate Resolution ────────────────────────────────────
+
 /**
  * Get grid coordinates from mouse event using interaction manager when available.
  * Mirrors TerrainCoordinator.getGridCoordinatesFromEvent behavior.
@@ -80,6 +82,8 @@ export function getGridCoordinatesFromEvent(c, event) {
     return null;
   }
 }
+
+// ── Terrain Height Modification ────────────────────────────────────
 
 /**
  * Modify terrain height at specified position.

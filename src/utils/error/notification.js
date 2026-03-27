@@ -2,6 +2,7 @@
 // Error notification manager extracted with no behavior changes.
 import { RECOVERY_STRATEGY, ERROR_CATEGORY } from './enums.js';
 
+// ── DOM Port Injection ─────────────────────────────────
 // UI decoupling: replace domHelpers import with local fallback queries; allow injection via static configure.
 let _errorDomPorts = {};
 export function setErrorDomPorts(ports = {}) {
@@ -18,6 +19,7 @@ function getErrorStylesEl() {
   return document.getElementById('tavern-error-styles');
 }
 
+// ── ErrorNotificationManager Class ─────────────────────
 export class ErrorNotificationManager {
   constructor(config) {
     this.config = config;
@@ -26,6 +28,7 @@ export class ErrorNotificationManager {
     this.initialized = false;
   }
 
+  // ── Initialization & Container ─────────────────────────
   initialize() {
     if (this.initialized || typeof document === 'undefined') return;
 
@@ -48,6 +51,7 @@ export class ErrorNotificationManager {
     return container;
   }
 
+  // ── Style Injection ────────────────────────────────────
   injectStyles() {
     if (getErrorStylesEl()) return;
     if (document.getElementById('tavern-error-styles')) return;
@@ -73,6 +77,7 @@ export class ErrorNotificationManager {
     document.head.appendChild(styles);
   }
 
+  // ── Notification Display ───────────────────────────────
   show(errorEntry, recoveryStrategy = RECOVERY_STRATEGY.NONE) {
     if (!this.config.enableUserNotifications || !this.shouldShowToUser(errorEntry.severity)) return;
     this.initialize();
@@ -122,6 +127,7 @@ export class ErrorNotificationManager {
     return notification;
   }
 
+  // ── Recovery Actions ──────────────────────────────────
   createRecoveryActions(errorEntry, strategy) {
     const actions = document.createElement('div');
     actions.className = 'tavern-error-actions';
@@ -154,6 +160,7 @@ export class ErrorNotificationManager {
     this.dismiss(errorEntry.id);
   }
 
+  // ── Dismiss & Cleanup ─────────────────────────────────
   dismiss(errorId) {
     const notification = this.activeNotifications.get(errorId);
     if (notification) {
@@ -170,6 +177,7 @@ export class ErrorNotificationManager {
     for (const [errorId] of this.activeNotifications) this.dismiss(errorId);
   }
 
+  // ── Severity & User Messages ───────────────────────────
   shouldShowToUser(severity) {
     return severity === 'error' || severity === 'critical';
   }

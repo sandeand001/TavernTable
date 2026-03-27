@@ -7,13 +7,6 @@ import {
   repositionAllPlaceables,
 } from './placeables-positioning.js';
 
-// Re-export extracted functions so existing callers see no change
-export {
-  createPlaceableSprite,
-  repositionPlaceableSprite,
-  updatePlaceablesForCell,
-  repositionAllPlaceables,
-};
 // Depth utilities no longer used for cross-container zIndex raise; we align to tile scheme.
 // import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/geometry/DepthUtils.js';
 
@@ -29,6 +22,8 @@ export {
 // Optional auto-baseline detection helpers for trees were removed in favor of
 // explicit, per-asset baselineOffsetPx in the config to keep behavior deterministic.
 
+// ── Constants ─────────────────────────────────────────────
+
 const TREE_ID_PATTERN = /^tree-/i;
 
 const MODEL_BASELINE_OFFSETS = new Map();
@@ -36,6 +31,29 @@ const MODEL_BASELINE_OFFSETS = new Map();
 const PLACEABLE_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
 const shouldLogTreeModelInfo = () =>
   logger.isInfoEnabled() && typeof window !== 'undefined' && !!window.DEBUG_TREE_MODELS;
+
+const PLANT_FAMILY_VARIANTS = (() => {
+  const map = new Map();
+  try {
+    for (const def of Object.values(TERRAIN_PLACEABLES)) {
+      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
+      const variants = def.familyVariants.filter(
+        (variantId) => typeof variantId === 'string' && TERRAIN_PLACEABLES[variantId]
+      );
+      if (variants.length < 2) continue;
+      for (const variantId of variants) {
+        if (!map.has(variantId)) {
+          map.set(variantId, variants);
+        }
+      }
+    }
+  } catch (_) {
+    /* ignore mapping failures */
+  }
+  return map;
+})();
+
+// ── Model Cache ─────────────────────────────────────────────
 
 function resolveModelBaselineOffset(gameManager, cacheKey, root) {
   const key = cacheKey || null;
@@ -67,26 +85,48 @@ function resolveModelBaselineOffset(gameManager, cacheKey, root) {
   return baseline;
 }
 
-const PLANT_FAMILY_VARIANTS = (() => {
-  const map = new Map();
-  try {
-    for (const def of Object.values(TERRAIN_PLACEABLES)) {
-      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
-      const variants = def.familyVariants.filter(
-        (variantId) => typeof variantId === 'string' && TERRAIN_PLACEABLES[variantId]
-      );
-      if (variants.length < 2) continue;
-      for (const variantId of variants) {
-        if (!map.has(variantId)) {
-          map.set(variantId, variants);
+async function ensureModelCache(gameManager) {
+  if (gameManager._modelAssetCache !== undefined) {
+    // Upgrade path: legacy instance without hasKey -> recreate
+    if (gameManager._modelAssetCache && typeof gameManager._modelAssetCache.hasKey !== 'function') {
+      try {
+        const mod = await import('../../../core/ModelAssetCache.js');
+        const MC = mod.ModelAssetCache || mod.default;
+        gameManager._modelAssetCache = MC ? new MC() : null;
+        try {
+          const threeRef = gameManager?.threeSceneManager?.three;
+          if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
+            gameManager._modelAssetCache.setThree(threeRef);
+          }
+        } catch (_) {
+          /* ignore */
         }
+      } catch (_) {
+        /* ignore upgrade failure */
       }
     }
-  } catch (_) {
-    /* ignore mapping failures */
+    return gameManager._modelAssetCache;
   }
-  return map;
-})();
+  try {
+    const mod = await import('../../../core/ModelAssetCache.js');
+    const MC = mod.ModelAssetCache || mod.default;
+    gameManager._modelAssetCache = MC ? new MC() : null;
+    // Inject three reference if already initialized
+    try {
+      const threeRef = gameManager?.threeSceneManager?.three;
+      if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
+        gameManager._modelAssetCache.setThree(threeRef);
+      }
+    } catch (_) {
+      /* ignore three inject */
+    }
+  } catch (_) {
+    gameManager._modelAssetCache = null;
+  }
+  return gameManager._modelAssetCache;
+}
+
+// ── Tree Helpers ─────────────────────────────────────────────
 
 function isTreePlaceableId(id, def = TERRAIN_PLACEABLES[id]) {
   if (!id) return false;
@@ -165,46 +205,7 @@ function resolvePlantFamilyVariants(variantId) {
   return null;
 }
 
-async function ensureModelCache(gameManager) {
-  if (gameManager._modelAssetCache !== undefined) {
-    // Upgrade path: legacy instance without hasKey -> recreate
-    if (gameManager._modelAssetCache && typeof gameManager._modelAssetCache.hasKey !== 'function') {
-      try {
-        const mod = await import('../../../core/ModelAssetCache.js');
-        const MC = mod.ModelAssetCache || mod.default;
-        gameManager._modelAssetCache = MC ? new MC() : null;
-        try {
-          const threeRef = gameManager?.threeSceneManager?.three;
-          if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
-            gameManager._modelAssetCache.setThree(threeRef);
-          }
-        } catch (_) {
-          /* ignore */
-        }
-      } catch (_) {
-        /* ignore upgrade failure */
-      }
-    }
-    return gameManager._modelAssetCache;
-  }
-  try {
-    const mod = await import('../../../core/ModelAssetCache.js');
-    const MC = mod.ModelAssetCache || mod.default;
-    gameManager._modelAssetCache = MC ? new MC() : null;
-    // Inject three reference if already initialized
-    try {
-      const threeRef = gameManager?.threeSceneManager?.three;
-      if (threeRef && gameManager._modelAssetCache && !gameManager._modelAssetCache._three) {
-        gameManager._modelAssetCache.setThree(threeRef);
-      }
-    } catch (_) {
-      /* ignore three inject */
-    }
-  } catch (_) {
-    gameManager._modelAssetCache = null;
-  }
-  return gameManager._modelAssetCache;
-}
+// ── Place Item ─────────────────────────────────────────────
 
 export function placeItem(m, id, x, y) {
   const tileKey = `${x},${y}`;
@@ -750,6 +751,8 @@ export function placeItem(m, id, x, y) {
   return true;
 }
 
+// ── Variant Cycling ─────────────────────────────────────────────
+
 /**
  * Cycle the variant for placeables at a tile or for a specific sprite.
  * If `id` is provided, only cycle sprites that match that placeable id.
@@ -926,6 +929,8 @@ export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
   return changed;
 }
 
+// ── Removal ─────────────────────────────────────────────
+
 export function removeItem(m, x, y, id = null) {
   const tileKey = `${x},${y}`;
   if (!m.placeables || !m.placeables.has(tileKey)) return false;
@@ -1007,3 +1012,13 @@ export function removeItem(m, x, y, id = null) {
   if (list.length === 0) m.placeables.delete(tileKey);
   return removed;
 }
+
+// ── Re-exports ─────────────────────────────────────────────
+
+// Re-export extracted functions so existing callers see no change
+export {
+  createPlaceableSprite,
+  repositionPlaceableSprite,
+  updatePlaceablesForCell,
+  repositionAllPlaceables,
+};

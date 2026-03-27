@@ -1,5 +1,7 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
 
+// ── Single Tile Insertion ───────────────────────────────────────
+
 /** Add a terrain tile to the container with isometric depth sorting. */
 export function addTileWithDepthSorting(m, terrainTile) {
   try {
@@ -50,6 +52,8 @@ export function addTileWithDepthSorting(m, terrainTile) {
     m.terrainContainer.addChild(terrainTile);
   }
 }
+
+// ── Full Container Re-Sort ─────────────────────────────────────
 
 /** Re-sort all terrain tiles by depth to ensure proper rendering order. */
 export function sortAllTerrainTilesByDepth(m) {

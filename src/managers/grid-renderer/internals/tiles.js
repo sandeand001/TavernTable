@@ -1,5 +1,6 @@
 import { GRID_CONFIG } from '../../../config/GameConstants.js';
 
+// ── Tile Drawing ───────────────────────────────────────
 // Create and return a PIXI isometric grid tile
 export function drawIsometricTile(c, x, y, color = GRID_CONFIG.TILE_COLOR) {
   const tile = new PIXI.Graphics();
@@ -32,6 +33,7 @@ export function drawIsometricTile(c, x, y, color = GRID_CONFIG.TILE_COLOR) {
   return tile;
 }
 
+// ── Tile Cleanup ───────────────────────────────────────
 // Remove all grid tiles (keep tokens/others)
 export function clearGridTiles(c) {
   const gc = c.gameManager.gridContainer;

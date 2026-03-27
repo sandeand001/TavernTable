@@ -6,10 +6,12 @@
  * code and provides standardized error messages.
  */
 
+// ── Imports ────────────────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../Logger.js';
 import { TerrainHeightUtils } from './TerrainHeightUtils.js';
 
+// ── Terrain Validation ─────────────────────────────────────────
 export class TerrainValidation {
   /**
    * Validate the overall terrain system state

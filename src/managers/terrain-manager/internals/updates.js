@@ -10,6 +10,8 @@ import {
   withOverlayRaise,
 } from '../../../utils/geometry/DepthUtils.js';
 
+// ── Queue Enqueue ────────────────────────────────────────────────
+
 /** Enqueue affected cells and trigger processing. */
 export function updateTerrainDisplay(m, centerX, centerY, brushSize) {
   try {
@@ -29,6 +31,8 @@ export function updateTerrainDisplay(m, centerX, centerY, brushSize) {
     });
   }
 }
+
+// ── Throttled Queue Processing ─────────────────────────────────
 
 /** Process queued updates with throttling to maintain frame rate. */
 export function processUpdateQueue(m) {
@@ -130,6 +134,8 @@ export function processUpdateQueue(m) {
     });
   }
 }
+
+// ── Immediate Queue Flush ──────────────────────────────────────
 
 /**
  * Flush all pending terrain updates immediately, bypassing throttle and batching.

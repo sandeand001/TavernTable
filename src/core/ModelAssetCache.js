@@ -1,3 +1,4 @@
+// ── Imports & Logging Helpers ───────────────────────────────────
 import logger, { LOG_CATEGORY } from '../utils/Logger.js';
 import {
   postProcessModel as _postProcess,
@@ -23,7 +24,7 @@ const toErrorPayload = (error) =>
       }
     : undefined;
 
-// Clean minimal ModelAssetCache implementation (readable + properly indented)
+// ── Constants & Tropical Entry Builder ──────────────────────────
 const DEFAULT_TEXTURE_BASE = 'assets/terrain/3d Assets/Textures';
 const TROPICAL_FBX_SOURCE = 'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx';
 const TROPICAL_TEXTURE_BASE = 'assets/terrain/3d Assets/Tropical/textures';
@@ -65,6 +66,7 @@ const makeTropicalEntry = (node, textures = {}, options = {}) => {
   return entry;
 };
 
+// ── Model Asset Cache ───────────────────────────────────────────
 class ModelAssetCache {
   constructor() {
     this._three = null;

@@ -20,6 +20,8 @@ export class ActivationHelpers {
     this.c = coordinator;
   }
 
+  // ── Delegation Helpers ─────────────────────────────────────────────
+
   prepareBaseGridForEditing() {
     if (typeof this.c._prepareBaseGridForEditing === 'function')
       return this.c._prepareBaseGridForEditing();
@@ -56,7 +58,8 @@ export class ActivationHelpers {
     return _handleActivationError(this.c, error);
   }
 
-  // Provide a single entry point mirroring enableTerrainMode body
+  // ── Enable Terrain Mode ────────────────────────────────────────────
+
   enableTerrainMode() {
     try {
       this.validateTerrainSystemForActivation();
@@ -96,7 +99,8 @@ export class ActivationHelpers {
     }
   }
 
-  // Mirror TerrainCoordinator.disableTerrainMode with identical behavior
+  // ── Disable Terrain Mode ───────────────────────────────────────────
+
   disableTerrainMode() {
     try {
       this.c.isTerrainModeActive = false;

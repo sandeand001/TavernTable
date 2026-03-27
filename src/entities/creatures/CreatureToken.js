@@ -10,6 +10,7 @@ import {
 } from '../../utils/ErrorHandler.js';
 import { GameValidators, Sanitizers } from '../../utils/Validation.js';
 
+// ── CreatureToken Class ─────────────────────────────────────────────
 /**
  * Base class for all creature tokens in the TavernTable game
  *
@@ -22,6 +23,7 @@ import { GameValidators, Sanitizers } from '../../utils/Validation.js';
  * @version 2.0.0
  */
 class CreatureToken {
+  // ── Constructor & Validation ───────────────────────────
   /**
    * Create a new creature token
    * @param {string} type - Creature type identifier
@@ -56,6 +58,7 @@ class CreatureToken {
     }
   }
 
+  // ── Sprite Creation ───────────────────────────────────
   /**
    * Create the sprite representation for this creature.
    * Uses PIXI.Graphics as a position/state handle; 3D rendering
@@ -168,6 +171,7 @@ class CreatureToken {
     }
   }
 
+  // ── Facing & Direction ─────────────────────────────────
   /**
    * Apply the facing direction to the sprite
    */
@@ -198,6 +202,7 @@ class CreatureToken {
     this.applyFacing();
   }
 
+  // ── Positioning ────────────────────────────────────────
   /**
    * Set the position of the creature
    * @param {number} x - X coordinate
@@ -221,6 +226,7 @@ class CreatureToken {
     }
   }
 
+  // ── Stage Management ──────────────────────────────────
   /**
    * Add this creature's sprite to a display container
    * @param {PIXI.Container} stage - Container to add sprite to
@@ -262,6 +268,7 @@ class CreatureToken {
     }
   }
 
+  // ── Sprite Recreation ─────────────────────────────────
   /**
    * Recreate the sprite (useful for upgrading from fallback to PNG)
    * Preserves position and parent container

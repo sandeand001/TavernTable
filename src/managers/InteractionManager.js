@@ -38,6 +38,7 @@ import {
 } from './interaction-manager/internals/rotation.js';
 
 export class InteractionManager {
+  // ── Constructor ─────────────────────────────────────────────
   constructor(gameManager) {
     // Core refs
     this.gameManager = gameManager;
@@ -77,6 +78,7 @@ export class InteractionManager {
     this._radialProjectVector = null;
   }
 
+  // ── Lifecycle ─────────────────────────────────────────────
   /**
    * Set up all grid interactions
    */
@@ -86,6 +88,8 @@ export class InteractionManager {
     this.setupKeyboardInteractions();
     this.setupZoomInteraction();
   }
+
+  // ── Event Setup ─────────────────────────────────────────────
   /**
    * Disable browser context menu
    */
@@ -233,9 +237,145 @@ export class InteractionManager {
     });
   }
 
-  /** Begin 3D camera rotation (right mouse drag) */
-  start3DRotation(event, threeMgr) {
-    return _start3DRotation(this, event, threeMgr);
+  /**
+   * Set up zoom interaction handlers
+   */
+  setupZoomInteraction() {
+    this.gameManager.app.view.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      this.handleZoomWheel(event);
+    });
+  }
+
+  // ── Mouse Handlers ─────────────────────────────────────────────
+  /**
+   * Handle left mouse click for token interactions
+   * @param {MouseEvent} event - Mouse click event
+   */
+  handleLeftClick(event) {
+    try {
+      if (event.button !== 0) {
+        return;
+      }
+
+      // Check if terrain mode is active OR a placeable is actively selected (and panel visible)
+      const terrainActive =
+        this.gameManager.isTerrainModeActive && this.gameManager.isTerrainModeActive();
+      // Only treat placeables as blocking when a placeable is actually selected AND the Placeable Tiles panel is visible.
+      const terrainCoordinator = this.gameManager?.terrainCoordinator;
+      const placeableSelected =
+        typeof terrainCoordinator?.getSelectedPlaceable === 'function'
+          ? !!terrainCoordinator.getSelectedPlaceable()
+          : false;
+      const panelVisible =
+        typeof terrainCoordinator?.isPlaceablesPanelVisible === 'function'
+          ? !!terrainCoordinator.isPlaceablesPanelVisible()
+          : false;
+
+      if (terrainActive || (placeableSelected && panelVisible)) {
+        // Terrain mode active or a placeable is selected, token placement is disabled
+        logger.log('Token placement blocked - state', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
+          terrainActive: !!terrainActive,
+          placeableSelected: !!placeableSelected,
+          placeablesPanelVisible: !!panelVisible,
+        });
+        try {
+          this.gameManager.app.view.style.cursor = 'not-allowed';
+        } catch (_) {
+          /* ignore */
+        }
+        const t = setTimeout(() => {
+          try {
+            this.gameManager.app.view.style.cursor = terrainActive ? 'crosshair' : 'default';
+          } catch (_) {
+            /* ignore */
+          }
+        }, 200);
+        if (typeof t?.unref === 'function') t.unref();
+        return;
+      }
+
+      const gm = this.gameManager;
+      const selectedTokenType =
+        typeof gm?.selectedTokenType === 'string' ? gm.selectedTokenType : null;
+      const isRemoveMode = selectedTokenType === 'remove';
+
+      Promise.resolve(this._resolvePointerTarget(event))
+        .then((target) => {
+          const safeTarget = target || {};
+          const gridX = Number.isFinite(safeTarget.gridX) ? safeTarget.gridX : null;
+          const gridY = Number.isFinite(safeTarget.gridY) ? safeTarget.gridY : null;
+          const tokenEntry = safeTarget.token || null;
+
+          if (isRemoveMode) {
+            if (gridX != null && gridY != null) {
+              gm.handleTokenInteraction(gridX, gridY);
+            }
+            return;
+          }
+
+          if (tokenEntry) {
+            this._selectTokenEntry(tokenEntry);
+            return;
+          }
+
+          const adapter = gm?.token3DAdapter;
+          const selectedToken = adapter?.getSelectedToken?.() || null;
+          const canNavigate =
+            selectedToken &&
+            adapter?.navigateToGrid &&
+            typeof adapter.navigateToGrid === 'function' &&
+            gm?.is3DModeActive?.() &&
+            gridX != null &&
+            gridY != null;
+
+          if (canNavigate) {
+            const tokenDescriptor = this._describeTokenForLogs(selectedToken);
+            logger.log('Token navigation requested', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
+              source: 'grid-click',
+              token: tokenDescriptor,
+              target: { gridX, gridY },
+            });
+
+            const result = adapter.navigateToGrid(selectedToken, gridX, gridY);
+            if (result) {
+              logger.log('Token navigation accepted', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
+                source: 'grid-click',
+                token: tokenDescriptor,
+                target: { gridX, gridY },
+                goal: result.goal ? { gridX: result.goal.gridX, gridY: result.goal.gridY } : null,
+                speedMode: result.speedMode || null,
+                distance: Number.isFinite(result.distance) ? result.distance : null,
+              });
+              return;
+            }
+
+            logger.log('Token navigation rejected', LOG_LEVEL.WARN, LOG_CATEGORY.INTERACTION, {
+              source: 'grid-click',
+              token: tokenDescriptor,
+              target: { gridX, gridY },
+            });
+          }
+
+          this._clearTokenSelection();
+        })
+        .catch((error) => {
+          try {
+            new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
+              stage: 'resolvePointerTarget',
+              event: { button: event.button, x: event.clientX, y: event.clientY },
+            });
+          } catch (_) {
+            /* ignore secondary errors */
+          }
+        });
+    } catch (error) {
+      const errorHandler = new ErrorHandler();
+      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
+        stage: 'handleLeftClick',
+        event: { button: event.button, x: event.clientX, y: event.clientY },
+      });
+    }
   }
 
   _startRightButtonDrag(event) {
@@ -247,42 +387,6 @@ export class InteractionManager {
       this.startGridDragging(event);
     }
     this._ensureGlobalDragListeners();
-  }
-
-  /** Update 3D rotation given current mouse */
-  update3DRotation(event) {
-    return _update3DRotation(this, event);
-  }
-
-  /** End 3D rotation */
-  stop3DRotation() {
-    return _stop3DRotation(this);
-  }
-
-  /**
-   * Start grid dragging interaction
-   * @param {MouseEvent} event - Mouse event
-   */
-  startGridDragging(event) {
-    return _startDrag(this, event);
-  }
-
-  /**
-   * Update grid position during drag
-   * @param {MouseEvent} event - Mouse event
-   */
-  updateGridDragPosition(event) {
-    return _updateDrag(this, event);
-  }
-
-  /**
-   * Stop grid dragging interaction
-   */
-  stopGridDragging() {
-    const result = _stopDrag(this);
-    this._activeDragButton = null;
-    this._removeGlobalDragListeners();
-    return result;
   }
 
   _handleGlobalMouseMove(event) {
@@ -341,26 +445,71 @@ export class InteractionManager {
     this._removeGlobalDragListeners();
   }
 
-  _ensureGlobalDragListeners() {
-    if (!this._globalMouseMoveListening) {
-      document.addEventListener('mousemove', this._boundGlobalMouseMove);
-      this._globalMouseMoveListening = true;
-    }
-    if (!this._globalMouseUpListening) {
-      document.addEventListener('mouseup', this._boundGlobalMouseUp);
-      this._globalMouseUpListening = true;
-    }
+  // ── Delegating Methods ─────────────────────────────────────────────
+  /** Begin 3D camera rotation (right mouse drag) */
+  start3DRotation(event, threeMgr) {
+    return _start3DRotation(this, event, threeMgr);
   }
 
-  _removeGlobalDragListeners() {
-    if (this._globalMouseMoveListening) {
-      document.removeEventListener('mousemove', this._boundGlobalMouseMove);
-      this._globalMouseMoveListening = false;
-    }
-    if (this._globalMouseUpListening) {
-      document.removeEventListener('mouseup', this._boundGlobalMouseUp);
-      this._globalMouseUpListening = false;
-    }
+  /** Update 3D rotation given current mouse */
+  update3DRotation(event) {
+    return _update3DRotation(this, event);
+  }
+
+  /** End 3D rotation */
+  stop3DRotation() {
+    return _stop3DRotation(this);
+  }
+
+  /**
+   * Start grid dragging interaction
+   * @param {MouseEvent} event - Mouse event
+   */
+  startGridDragging(event) {
+    return _startDrag(this, event);
+  }
+
+  /**
+   * Update grid position during drag
+   * @param {MouseEvent} event - Mouse event
+   */
+  updateGridDragPosition(event) {
+    return _updateDrag(this, event);
+  }
+
+  /**
+   * Stop grid dragging interaction
+   */
+  stopGridDragging() {
+    const result = _stopDrag(this);
+    this._activeDragButton = null;
+    this._removeGlobalDragListeners();
+    return result;
+  }
+
+  /**
+   * Handle zoom wheel events
+   * @param {WheelEvent} event - Wheel event
+   */
+  handleZoomWheel(event) {
+    return _handleZoomWheel(this, event);
+  }
+
+  /**
+   * Apply zoom transformation
+   * @param {number} newScale - New scale value
+   * @param {number} mouseX - Mouse X position
+   * @param {number} mouseY - Mouse Y position
+   */
+  applyZoom(newScale, mouseX, mouseY) {
+    return _applyZoom(this, newScale, mouseX, mouseY);
+  }
+
+  /**
+   * Reset zoom to default scale and center grid
+   */
+  resetZoom() {
+    return _resetZoom(this);
   }
 
   _handleTokenRotationKeyDown(event) {
@@ -377,6 +526,117 @@ export class InteractionManager {
 
   _handleTokenMovementKeyUp(event) {
     return _handleMovementUp(this, event);
+  }
+
+  _shouldIgnoreKeyTarget(target) {
+    return _shouldIgnoreKey(target);
+  }
+
+  /**
+   * Pick the topmost grid cell under local pointer, considering elevation and depth order.
+   * Returns { gridX, gridY } or null.
+   */
+  pickTopmostGridCellAt(localX, localY) {
+    return _pickTopmost(this, localX, localY);
+  }
+
+  /**
+   * Hit test an isometric diamond at grid cell (gx, gy) against a local point (lx, ly)
+   * Accounts for elevation offset so the test matches the visually shifted tile.
+   */
+  _isPointInCellDiamond(gx, gy, lx, ly) {
+    return _isPointInCellDiamond(this, gx, gy, lx, ly);
+  }
+
+  // ── Target Resolution ─────────────────────────────────────────────
+  async _resolvePointerTarget(event) {
+    const gm = this.gameManager;
+    let gridX = null;
+    let gridY = null;
+    let token = null;
+
+    const threeTarget = this._pick3DTarget(event);
+    if (threeTarget) {
+      token = threeTarget.token || token;
+      if (Number.isFinite(threeTarget.gridX)) {
+        gridX = threeTarget.gridX;
+      }
+      if (Number.isFinite(threeTarget.gridY)) {
+        gridY = threeTarget.gridY;
+      }
+    }
+
+    const spriteToken = this._pickTokenBySprite(event);
+    if (spriteToken) {
+      if (!token) {
+        token = spriteToken;
+      }
+      if (!Number.isFinite(gridX) && Number.isFinite(spriteToken.gridX)) {
+        gridX = spriteToken.gridX;
+      }
+      if (!Number.isFinite(gridY) && Number.isFinite(spriteToken.gridY)) {
+        gridY = spriteToken.gridY;
+      }
+    }
+
+    const canUse3D =
+      typeof gm?.is3DModeActive === 'function' &&
+      gm.is3DModeActive() &&
+      gm.pickingService &&
+      typeof gm.pickingService.pickGround === 'function';
+
+    let groundPick = null;
+    if (canUse3D) {
+      try {
+        groundPick = await gm.pickingService.pickGround(event.clientX, event.clientY);
+      } catch (_) {
+        groundPick = null;
+      }
+
+      if (groundPick?.token && !token) {
+        token = groundPick.token;
+      }
+
+      if (groundPick?.grid) {
+        const gx = Math.round(groundPick.grid.gx);
+        const gy = Math.round(groundPick.grid.gy);
+        if (Number.isFinite(gx) && Number.isFinite(gy)) {
+          gridX = gx;
+          gridY = gy;
+        }
+      }
+    }
+
+    if ((!Number.isFinite(gridX) || !Number.isFinite(gridY)) && token) {
+      if (Number.isFinite(token.gridX)) {
+        gridX = token.gridX;
+      }
+      if (Number.isFinite(token.gridY)) {
+        gridY = token.gridY;
+      }
+    }
+
+    if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
+      const gridCoords = this.getGridCoordinatesFromClick(event);
+      if (gridCoords) {
+        gridX = gridCoords.gridX;
+        gridY = gridCoords.gridY;
+      }
+    }
+
+    if (!token && Number.isFinite(gridX) && Number.isFinite(gridY)) {
+      try {
+        token = gm?.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
+      } catch (_) {
+        token = null;
+      }
+    }
+
+    return {
+      gridX: Number.isFinite(gridX) ? gridX : null,
+      gridY: Number.isFinite(gridY) ? gridY : null,
+      token,
+    };
   }
 
   _tryCaptureRadialTrigger(event) {
@@ -520,347 +780,6 @@ export class InteractionManager {
     }
   }
 
-  _get3DTokenScreenPosition(tokenEntry) {
-    try {
-      const gm = this.gameManager;
-      const threeMgr = gm?.threeSceneManager;
-      const mesh = tokenEntry?.__threeMesh;
-      if (!mesh || !threeMgr?.camera || !threeMgr?.renderer || !threeMgr?.three) {
-        return null;
-      }
-      this._radialProjectVector = this._radialProjectVector || new threeMgr.three.Vector3();
-      const vector = this._radialProjectVector;
-      mesh.getWorldPosition(vector);
-      vector.project(threeMgr.camera);
-      const dom = threeMgr.renderer.domElement;
-      if (!dom) {
-        return null;
-      }
-      const rect = dom.getBoundingClientRect();
-      return {
-        x: rect.left + ((vector.x + 1) / 2) * rect.width,
-        y: rect.top + ((-vector.y + 1) / 2) * rect.height,
-      };
-    } catch (_) {
-      return null;
-    }
-  }
-
-  _shouldIgnoreKeyTarget(target) {
-    return _shouldIgnoreKey(target);
-  }
-
-  /**
-   * Set up zoom interaction handlers
-   */
-  setupZoomInteraction() {
-    this.gameManager.app.view.addEventListener('wheel', (event) => {
-      event.preventDefault();
-      this.handleZoomWheel(event);
-    });
-  }
-
-  /**
-   * Handle zoom wheel events
-   * @param {WheelEvent} event - Wheel event
-   */
-  handleZoomWheel(event) {
-    return _handleZoomWheel(this, event);
-  }
-
-  /**
-   * Apply zoom transformation
-   * @param {number} newScale - New scale value
-   * @param {number} mouseX - Mouse X position
-   * @param {number} mouseY - Mouse Y position
-   */
-  applyZoom(newScale, mouseX, mouseY) {
-    return _applyZoom(this, newScale, mouseX, mouseY);
-  }
-
-  /**
-   * Reset zoom to default scale and center grid
-   */
-  resetZoom() {
-    return _resetZoom(this);
-  }
-
-  /**
-   * Handle left mouse click for token interactions
-   * @param {MouseEvent} event - Mouse click event
-   */
-  handleLeftClick(event) {
-    try {
-      if (event.button !== 0) {
-        return;
-      }
-
-      // Check if terrain mode is active OR a placeable is actively selected (and panel visible)
-      const terrainActive =
-        this.gameManager.isTerrainModeActive && this.gameManager.isTerrainModeActive();
-      // Only treat placeables as blocking when a placeable is actually selected AND the Placeable Tiles panel is visible.
-      const terrainCoordinator = this.gameManager?.terrainCoordinator;
-      const placeableSelected =
-        typeof terrainCoordinator?.getSelectedPlaceable === 'function'
-          ? !!terrainCoordinator.getSelectedPlaceable()
-          : false;
-      const panelVisible =
-        typeof terrainCoordinator?.isPlaceablesPanelVisible === 'function'
-          ? !!terrainCoordinator.isPlaceablesPanelVisible()
-          : false;
-
-      if (terrainActive || (placeableSelected && panelVisible)) {
-        // Terrain mode active or a placeable is selected, token placement is disabled
-        logger.log('Token placement blocked - state', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
-          terrainActive: !!terrainActive,
-          placeableSelected: !!placeableSelected,
-          placeablesPanelVisible: !!panelVisible,
-        });
-        try {
-          this.gameManager.app.view.style.cursor = 'not-allowed';
-        } catch (_) {
-          /* ignore */
-        }
-        const t = setTimeout(() => {
-          try {
-            this.gameManager.app.view.style.cursor = terrainActive ? 'crosshair' : 'default';
-          } catch (_) {
-            /* ignore */
-          }
-        }, 200);
-        if (typeof t?.unref === 'function') t.unref();
-        return;
-      }
-
-      const gm = this.gameManager;
-      const selectedTokenType =
-        typeof gm?.selectedTokenType === 'string' ? gm.selectedTokenType : null;
-      const isRemoveMode = selectedTokenType === 'remove';
-
-      Promise.resolve(this._resolvePointerTarget(event))
-        .then((target) => {
-          const safeTarget = target || {};
-          const gridX = Number.isFinite(safeTarget.gridX) ? safeTarget.gridX : null;
-          const gridY = Number.isFinite(safeTarget.gridY) ? safeTarget.gridY : null;
-          const tokenEntry = safeTarget.token || null;
-
-          if (isRemoveMode) {
-            if (gridX != null && gridY != null) {
-              gm.handleTokenInteraction(gridX, gridY);
-            }
-            return;
-          }
-
-          if (tokenEntry) {
-            this._selectTokenEntry(tokenEntry);
-            return;
-          }
-
-          const adapter = gm?.token3DAdapter;
-          const selectedToken = adapter?.getSelectedToken?.() || null;
-          const canNavigate =
-            selectedToken &&
-            adapter?.navigateToGrid &&
-            typeof adapter.navigateToGrid === 'function' &&
-            gm?.is3DModeActive?.() &&
-            gridX != null &&
-            gridY != null;
-
-          if (canNavigate) {
-            const tokenDescriptor = this._describeTokenForLogs(selectedToken);
-            logger.log('Token navigation requested', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
-              source: 'grid-click',
-              token: tokenDescriptor,
-              target: { gridX, gridY },
-            });
-
-            const result = adapter.navigateToGrid(selectedToken, gridX, gridY);
-            if (result) {
-              logger.log('Token navigation accepted', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
-                source: 'grid-click',
-                token: tokenDescriptor,
-                target: { gridX, gridY },
-                goal: result.goal ? { gridX: result.goal.gridX, gridY: result.goal.gridY } : null,
-                speedMode: result.speedMode || null,
-                distance: Number.isFinite(result.distance) ? result.distance : null,
-              });
-              return;
-            }
-
-            logger.log('Token navigation rejected', LOG_LEVEL.WARN, LOG_CATEGORY.INTERACTION, {
-              source: 'grid-click',
-              token: tokenDescriptor,
-              target: { gridX, gridY },
-            });
-          }
-
-          this._clearTokenSelection();
-        })
-        .catch((error) => {
-          try {
-            new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
-              stage: 'resolvePointerTarget',
-              event: { button: event.button, x: event.clientX, y: event.clientY },
-            });
-          } catch (_) {
-            /* ignore secondary errors */
-          }
-        });
-    } catch (error) {
-      const errorHandler = new ErrorHandler();
-      errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
-        stage: 'handleLeftClick',
-        event: { button: event.button, x: event.clientX, y: event.clientY },
-      });
-    }
-  }
-
-  /**
-   * Get grid coordinates from mouse click event
-   * @param {MouseEvent} event - Mouse click event
-   * @returns {Object|null} Grid coordinates or null if invalid
-   */
-  getGridCoordinatesFromClick(event) {
-    try {
-      const gm = this.gameManager;
-      const canUse3D =
-        !!gm?.pickingService?.pickGroundSync &&
-        typeof gm?.is3DModeActive === 'function' &&
-        gm.is3DModeActive();
-      const clientX = event?.clientX ?? event?.x ?? null;
-      const clientY = event?.clientY ?? event?.y ?? null;
-      if (canUse3D && clientX != null && clientY != null) {
-        try {
-          const targetElement = event?.target || null;
-          const ground = gm.pickingService.pickGroundSync(clientX, clientY, targetElement);
-          if (ground?.grid) {
-            const gx = Math.round(ground.grid.gx);
-            const gy = Math.round(ground.grid.gy);
-            if (Number.isFinite(gx) && Number.isFinite(gy)) {
-              const candidate = { gridX: gx, gridY: gy };
-              if (this.isValidGridPosition(candidate)) {
-                return candidate;
-              }
-            }
-          }
-        } catch (_) {
-          /* fallback to 2D conversion */
-        }
-      }
-
-      const mouseCoords = this.getMousePosition(event);
-      const localCoords = this.convertToLocalCoordinates(mouseCoords);
-
-      // Enhanced picking: prefer visually topmost tile at pointer, honoring elevation
-      const picked = this.pickTopmostGridCellAt(localCoords.localX, localCoords.localY);
-      if (!picked) {
-        return null;
-      }
-
-      if (!this.isValidGridPosition(picked)) {
-        return null;
-      }
-      return picked;
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
-        context: 'getGridCoordinatesFromClick',
-        stage: 'coordinate_conversion',
-        event: event ? { x: event.clientX, y: event.clientY } : null,
-      });
-      return null;
-    }
-  }
-
-  async _resolvePointerTarget(event) {
-    const gm = this.gameManager;
-    let gridX = null;
-    let gridY = null;
-    let token = null;
-
-    const threeTarget = this._pick3DTarget(event);
-    if (threeTarget) {
-      token = threeTarget.token || token;
-      if (Number.isFinite(threeTarget.gridX)) {
-        gridX = threeTarget.gridX;
-      }
-      if (Number.isFinite(threeTarget.gridY)) {
-        gridY = threeTarget.gridY;
-      }
-    }
-
-    const spriteToken = this._pickTokenBySprite(event);
-    if (spriteToken) {
-      if (!token) {
-        token = spriteToken;
-      }
-      if (!Number.isFinite(gridX) && Number.isFinite(spriteToken.gridX)) {
-        gridX = spriteToken.gridX;
-      }
-      if (!Number.isFinite(gridY) && Number.isFinite(spriteToken.gridY)) {
-        gridY = spriteToken.gridY;
-      }
-    }
-
-    const canUse3D =
-      typeof gm?.is3DModeActive === 'function' &&
-      gm.is3DModeActive() &&
-      gm.pickingService &&
-      typeof gm.pickingService.pickGround === 'function';
-
-    let groundPick = null;
-    if (canUse3D) {
-      try {
-        groundPick = await gm.pickingService.pickGround(event.clientX, event.clientY);
-      } catch (_) {
-        groundPick = null;
-      }
-
-      if (groundPick?.token && !token) {
-        token = groundPick.token;
-      }
-
-      if (groundPick?.grid) {
-        const gx = Math.round(groundPick.grid.gx);
-        const gy = Math.round(groundPick.grid.gy);
-        if (Number.isFinite(gx) && Number.isFinite(gy)) {
-          gridX = gx;
-          gridY = gy;
-        }
-      }
-    }
-
-    if ((!Number.isFinite(gridX) || !Number.isFinite(gridY)) && token) {
-      if (Number.isFinite(token.gridX)) {
-        gridX = token.gridX;
-      }
-      if (Number.isFinite(token.gridY)) {
-        gridY = token.gridY;
-      }
-    }
-
-    if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
-      const gridCoords = this.getGridCoordinatesFromClick(event);
-      if (gridCoords) {
-        gridX = gridCoords.gridX;
-        gridY = gridCoords.gridY;
-      }
-    }
-
-    if (!token && Number.isFinite(gridX) && Number.isFinite(gridY)) {
-      try {
-        token = gm?.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
-      } catch (_) {
-        token = null;
-      }
-    }
-
-    return {
-      gridX: Number.isFinite(gridX) ? gridX : null,
-      gridY: Number.isFinite(gridY) ? gridY : null,
-      token,
-    };
-  }
-
   _pickTokenBySprite(event) {
     try {
       const gm = this.gameManager;
@@ -953,6 +872,34 @@ export class InteractionManager {
       return null;
     }
   }
+
+  _get3DTokenScreenPosition(tokenEntry) {
+    try {
+      const gm = this.gameManager;
+      const threeMgr = gm?.threeSceneManager;
+      const mesh = tokenEntry?.__threeMesh;
+      if (!mesh || !threeMgr?.camera || !threeMgr?.renderer || !threeMgr?.three) {
+        return null;
+      }
+      this._radialProjectVector = this._radialProjectVector || new threeMgr.three.Vector3();
+      const vector = this._radialProjectVector;
+      mesh.getWorldPosition(vector);
+      vector.project(threeMgr.camera);
+      const dom = threeMgr.renderer.domElement;
+      if (!dom) {
+        return null;
+      }
+      const rect = dom.getBoundingClientRect();
+      return {
+        x: rect.left + ((vector.x + 1) / 2) * rect.width,
+        y: rect.top + ((-vector.y + 1) / 2) * rect.height,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Token Selection ─────────────────────────────────────────────
   _selectTokenEntry(tokenEntry) {
     if (!tokenEntry) return;
     const adapter = this.gameManager?.token3DAdapter;
@@ -968,20 +915,61 @@ export class InteractionManager {
     }
   }
 
+  // ── Coordinate Helpers ─────────────────────────────────────────────
   /**
-   * Hit test an isometric diamond at grid cell (gx, gy) against a local point (lx, ly)
-   * Accounts for elevation offset so the test matches the visually shifted tile.
+   * Get grid coordinates from mouse click event
+   * @param {MouseEvent} event - Mouse click event
+   * @returns {Object|null} Grid coordinates or null if invalid
    */
-  _isPointInCellDiamond(gx, gy, lx, ly) {
-    return _isPointInCellDiamond(this, gx, gy, lx, ly);
-  }
+  getGridCoordinatesFromClick(event) {
+    try {
+      const gm = this.gameManager;
+      const canUse3D =
+        !!gm?.pickingService?.pickGroundSync &&
+        typeof gm?.is3DModeActive === 'function' &&
+        gm.is3DModeActive();
+      const clientX = event?.clientX ?? event?.x ?? null;
+      const clientY = event?.clientY ?? event?.y ?? null;
+      if (canUse3D && clientX != null && clientY != null) {
+        try {
+          const targetElement = event?.target || null;
+          const ground = gm.pickingService.pickGroundSync(clientX, clientY, targetElement);
+          if (ground?.grid) {
+            const gx = Math.round(ground.grid.gx);
+            const gy = Math.round(ground.grid.gy);
+            if (Number.isFinite(gx) && Number.isFinite(gy)) {
+              const candidate = { gridX: gx, gridY: gy };
+              if (this.isValidGridPosition(candidate)) {
+                return candidate;
+              }
+            }
+          }
+        } catch (_) {
+          /* fallback to 2D conversion */
+        }
+      }
 
-  /**
-   * Pick the topmost grid cell under local pointer, considering elevation and depth order.
-   * Returns { gridX, gridY } or null.
-   */
-  pickTopmostGridCellAt(localX, localY) {
-    return _pickTopmost(this, localX, localY);
+      const mouseCoords = this.getMousePosition(event);
+      const localCoords = this.convertToLocalCoordinates(mouseCoords);
+
+      // Enhanced picking: prefer visually topmost tile at pointer, honoring elevation
+      const picked = this.pickTopmostGridCellAt(localCoords.localX, localCoords.localY);
+      if (!picked) {
+        return null;
+      }
+
+      if (!this.isValidGridPosition(picked)) {
+        return null;
+      }
+      return picked;
+    } catch (error) {
+      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+        context: 'getGridCoordinatesFromClick',
+        stage: 'coordinate_conversion',
+        event: event ? { x: event.clientX, y: event.clientY } : null,
+      });
+      return null;
+    }
   }
 
   /**
@@ -1079,7 +1067,30 @@ export class InteractionManager {
     );
   }
 
-  // Getters for backward compatibility
+  // ── Drag Listener Helpers ─────────────────────────────────────────────
+  _ensureGlobalDragListeners() {
+    if (!this._globalMouseMoveListening) {
+      document.addEventListener('mousemove', this._boundGlobalMouseMove);
+      this._globalMouseMoveListening = true;
+    }
+    if (!this._globalMouseUpListening) {
+      document.addEventListener('mouseup', this._boundGlobalMouseUp);
+      this._globalMouseUpListening = true;
+    }
+  }
+
+  _removeGlobalDragListeners() {
+    if (this._globalMouseMoveListening) {
+      document.removeEventListener('mousemove', this._boundGlobalMouseMove);
+      this._globalMouseMoveListening = false;
+    }
+    if (this._globalMouseUpListening) {
+      document.removeEventListener('mouseup', this._boundGlobalMouseUp);
+      this._globalMouseUpListening = false;
+    }
+  }
+
+  // ── Backward-Compat Accessors ─────────────────────────────────────────────
   getGridScale() {
     return this.gridScale;
   }
@@ -1096,6 +1107,7 @@ export class InteractionManager {
     return this.isSpacePressed;
   }
 
+  // ── Logging ─────────────────────────────────────────────
   _describeTokenForLogs(tokenEntry) {
     if (!tokenEntry) {
       return { id: null, label: null, type: null };

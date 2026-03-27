@@ -2,6 +2,8 @@ import { logger } from '../../../utils/Logger.js';
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
+// ── Token Interaction Setup ────────────────────────────────────
+
 /**
  * Wire up token right-drag interactions and global snap bridge.
  * Mirrors previous TokenManager.setupTokenInteractions behavior.

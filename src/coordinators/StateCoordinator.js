@@ -9,6 +9,7 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHandler.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
+// ── StateCoordinator Class ───────────────────────────────
 export class StateCoordinator {
   constructor(gameManager) {
     this.gameManager = gameManager;
@@ -17,6 +18,7 @@ export class StateCoordinator {
     this.viewMode = 'isometric';
   }
 
+  // ── Application Initialization ─────────────────────────
   /**
    * Initialize the game manager and set up all components
    * @returns {Promise<void>} Promise that resolves when initialization is complete
@@ -92,6 +94,7 @@ export class StateCoordinator {
     }
   }
 
+  // ── View Mode Management ───────────────────────────────
   /** Initialize view mode from persistent storage (localStorage) */
   initializeViewMode() {
     try {
@@ -187,6 +190,7 @@ export class StateCoordinator {
     this.setViewMode(next);
   }
 
+  // ── Manager Creation ──────────────────────────────────
   /**
    * Create manager instances after PIXI app is ready
    */
@@ -203,6 +207,7 @@ export class StateCoordinator {
     logger.debug('Manager instances created');
   }
 
+  // ── Global Variables (Legacy) ──────────────────────────
   /**
    * Set up global variables for backward compatibility
    * @deprecated - This is maintained for legacy code compatibility
@@ -235,6 +240,7 @@ export class StateCoordinator {
     }
   }
 
+  // ── Sprite Initialization ───────────────────────────────
   /**
    * Mark sprites as ready (3D models loaded via Token3DAdapter; legacy SpriteManager removed)
    */
@@ -243,6 +249,7 @@ export class StateCoordinator {
     window.spritesReady = true;
   }
 
+  // ── Grid Dimensions & Validation ───────────────────────
   /**
    * Update application state when grid is resized
    * @param {number} newCols - New column count
@@ -276,6 +283,7 @@ export class StateCoordinator {
     }
   }
 
+  // ── Application State & Reset ──────────────────────────
   /**
    * Get current application state
    * @returns {Object} Current state information

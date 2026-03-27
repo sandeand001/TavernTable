@@ -15,6 +15,8 @@ export class TileLifecycleController {
     this.coordinator = coordinator;
   }
 
+  // ── Tile Lookup & Removal ──────────────────────────────────────────
+
   /**
    * Find grid tiles to remove around a position.
    * @param {number} x
@@ -61,6 +63,8 @@ export class TileLifecycleController {
     });
   }
 
+  // ── Tile Creation & Effects ───────────────────────────────────────
+
   /**
    * Create a replacement tile for given position/height.
    * @param {number} x
@@ -106,6 +110,8 @@ export class TileLifecycleController {
     newTile.terrainHeight = height;
   }
 
+  // ── Logging & Error Handling ──────────────────────────────────────
+
   /**
    * Log a successful tile replacement (moved from coordinator)
    */
@@ -135,6 +141,8 @@ export class TileLifecycleController {
     });
     // no-throw on purpose
   }
+
+  // ── 3D Face Management ───────────────────────────────────────────
 
   /**
    * Add base 3D faces to a tile when appropriate.
@@ -171,6 +179,8 @@ export class TileLifecycleController {
       );
     }
   }
+
+  // ── Artifact Cleanup ──────────────────────────────────────────────
 
   /**
    * Clear elevation-related artifacts from a tile (shadow, faces, overlays) and optionally reset visuals.

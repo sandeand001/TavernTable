@@ -3,6 +3,7 @@
  * Each entry is id -> { label, imgPath, type }
  * type: 'path' (coexists with tokens) | 'structure' (exclusive)
  */
+// ── Base Terrain Placeables ───────────────────────────────────
 export const TERRAIN_PLACEABLES = {
   // scaleMode: 'contain' (fit inside tile, preserve aspect),
   //            'cover'   (cover tile, preserve aspect, may overflow),
@@ -20,6 +21,7 @@ export default { TERRAIN_PLACEABLES };
 // can distinguish them from single-image placeables.
 // Legacy tree frame arrays removed (2D sprites deprecated for plants)
 
+// ── Legacy Tree Placeables ────────────────────────────────────
 const TREE_PLACEABLES = {
   'tree-green-deciduous': {
     label: 'Green Deciduous',
@@ -133,6 +135,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
+  // ── Plant Family Selectors ───────────────────────────────────
   // --- New variant families (3D) ---
   // Virtual family selectors (user chooses one button; placement picks random variant each click)
   'family-birch': {
@@ -234,6 +237,7 @@ const TREE_PLACEABLES = {
     representativeModelKey: 'tall-thick-3',
     spectral: true,
   },
+  // ── Birch Trees ──────────────────────────────────────────────
   // Birch (temperate / mixed forests)
   'tree-birch-a': {
     label: 'Birch A',
@@ -275,6 +279,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
+  // ── Birch Spectral Variants ───────────────────────────────────
   // Birch spectral (retain incorrect coloring as intentional fantasy variants)
   'tree-birch-a-spectral': {
     label: 'Birch A (Spectral)',
@@ -321,6 +326,7 @@ const TREE_PLACEABLES = {
     baselineOffsetPx: 16,
     tintVariant: 'spectral',
   },
+  // ── Cherry Blossom Trees ──────────────────────────────────────
   // Cherry blossom (fantastical / mystic / fey)
   'tree-cherry-a': {
     label: 'Cherry A',
@@ -362,6 +368,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
+  // ── Giant Pine Trees ─────────────────────────────────────────
   // Giant pines (alpine / mountain)
   'tree-giant-pine-a': {
     label: 'Giant Pine A',
@@ -403,6 +410,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 20,
   },
+  // ── Dead Trees ───────────────────────────────────────────────
   // Dead trees (shadow / petrified / dead forests)
   'tree-dead-a': {
     label: 'Dead Tree A',
@@ -444,6 +452,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 16,
   },
+  // ── Thick Trunk Trees ────────────────────────────────────────
   // Tall thick trunks (cedar highlands / ancient groves)
   'tree-thick-a': {
     label: 'Thick Trunk A',
@@ -530,6 +539,7 @@ const TREE_PLACEABLES = {
     baselineOffsetPx: 18,
     tintVariant: 'spectral',
   },
+  // ── Understory — Bushes ──────────────────────────────────────
   // Understory - bushes
   'bush-common': {
     label: 'Bush',
@@ -597,6 +607,7 @@ const TREE_PLACEABLES = {
     baselineOffsetPx: 10,
     tintVariant: 'spectral',
   },
+  // ── Tropical Foliage ─────────────────────────────────────────
   // Tropical understory and foliage
   'plant-tropical-monstera-a': {
     label: 'Monstera A',
@@ -654,6 +665,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 2,
   },
+  // ── Flowers ──────────────────────────────────────────────────
   // Flowers (can be used for mystical / meadow biomes)
   'flower-1-group': {
     label: 'Flowers 1 Group',
@@ -805,6 +817,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 4,
   },
+  // ── Mushrooms ────────────────────────────────────────────────
   // Mushrooms (swamp / fungal / shadow biomes)
   'mushroom-common': {
     label: 'Mushroom Common',
@@ -856,6 +869,7 @@ const TREE_PLACEABLES = {
     baselineOffsetPx: 2,
     tintVariant: 'spectral',
   },
+  // ── Grasses ──────────────────────────────────────────────────
   // Grasses
   'grass-common-short': {
     label: 'Grass Common Short',
@@ -931,6 +945,7 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 0,
   },
+  // ── Rocks & Pebbles ─────────────────────────────────────────
   // Rocks / pebbles (as placeable decorative plants for variety layering)
   'rock-medium-4': {
     label: 'Rock Medium 4',
@@ -1072,6 +1087,7 @@ const TREE_PLACEABLES = {
   },
 };
 
+// ── Merge & Finalization ───────────────────────────────────────
 // Merge TREE_PLACEABLES into TERRAIN_PLACEABLES so existing code can reference
 // all placeables from a single exported object.
 Object.entries(TREE_PLACEABLES).forEach(([k, v]) => {

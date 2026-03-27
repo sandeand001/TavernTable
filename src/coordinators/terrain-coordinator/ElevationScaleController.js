@@ -12,6 +12,8 @@ export class ElevationScaleController {
     this.c = coordinator; // TerrainCoordinator instance
   }
 
+  // ── Scale Application ──────────────────────────────────────────────
+
   /** Apply a new elevation unit (pixels per level) and refresh visuals accordingly. */
   apply(unit, options = {}) {
     try {

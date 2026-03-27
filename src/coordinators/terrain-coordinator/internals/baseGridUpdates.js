@@ -3,6 +3,8 @@ import { GRID_CONFIG } from '../../../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 import { traceDiamondPath } from '../../../utils/geometry/GeometryUtils.js';
 
+// ── In-Place Tile Update ───────────────────────────────────────────
+
 /**
  * Update base grid tile in-place without destruction (safer), extracted from TerrainCoordinator.
  * @returns {boolean} True if updated successfully, false if replacement needed
@@ -101,6 +103,8 @@ export function updateBaseGridTileInPlace(c, x, y, height) {
     return false; // Update failed, caller should use replacement
   }
 }
+
+// ── Tile Replacement ──────────────────────────────────────────────
 
 /** Replace a base grid tile with terrain-modified version (enhanced safety), extracted from TerrainCoordinator. */
 export function replaceBaseGridTile(c, x, y, height) {

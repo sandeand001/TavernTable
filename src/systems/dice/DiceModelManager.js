@@ -1,12 +1,15 @@
 // Model loading and material management for the d20 dice system.
 // Extracted from dice3d.js (Phase 7).
 
+// ── Imports ────────────────────────────────────────────────────
 import { diceState, hasWindow, getSceneManager } from './DiceState.js';
 
+// ── Constants ──────────────────────────────────────────────────
 const D20_MODEL_PATH = 'assets/Items/d20-gold.glb';
 const CRIT_FAILURE_COLOR_HEX = 0xb3261e;
 const CRIT_SUCCESS_COLOR_HEX = 0x1f8f3a;
 
+// ── Three.js & Loader Bootstrap ─────────────────────────────────
 export async function ensureThreeNamespace() {
   if (diceState.threeNamespace) return diceState.threeNamespace;
   const manager = getSceneManager();
@@ -26,6 +29,7 @@ export async function ensureLoaderCtor() {
   return diceState.gltfLoaderCtor;
 }
 
+// ── Blueprint Loading ──────────────────────────────────────────
 export async function ensureBlueprint() {
   if (diceState.diceBlueprint) return diceState.diceBlueprint;
   if (!diceState.blueprintPromise) {
@@ -63,6 +67,7 @@ export async function ensureBlueprint() {
   return diceState.blueprintPromise;
 }
 
+// ── Dice Cloning & Material Tuning ──────────────────────────────
 export function cloneDice(base) {
   const clone = base.clone(true);
   clone.traverse((child) => {
@@ -106,6 +111,7 @@ export function applyDiceMaterialTuning(material) {
   }
 }
 
+// ── Material State Management ──────────────────────────────────
 export function recordDiceBaseMaterialState(mesh) {
   if (!mesh) return;
   const materialState = [];
@@ -160,6 +166,7 @@ export function tintDiceMaterial(mesh, colorHex) {
   });
 }
 
+// ── Critical Roll Tinting ───────────────────────────────────────
 export function applyCriticalRollTint(mesh, rollValue) {
   if (!mesh) return;
   const normalized = Number(rollValue);
@@ -177,6 +184,7 @@ export function applyCriticalRollTint(mesh, rollValue) {
   resetDiceMaterialColors(mesh);
 }
 
+// ── Asset Preloading ───────────────────────────────────────────
 export function preloadD20Asset() {
   if (!hasWindow()) return Promise.resolve(false);
   return ensureBlueprint()

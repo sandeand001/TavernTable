@@ -5,6 +5,7 @@ import { LOG_LEVEL, LOG_CATEGORY, logger } from '../../utils/Logger.js';
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { normalizeBrushSize, computeBrushFootprint } from './BrushCommon.js';
 
+// ── TerrainBrushController Class ───────────────────────
 export class TerrainBrushController {
   constructor(dataStore) {
     this.dataStore = dataStore; // TerrainDataStore
@@ -17,6 +18,7 @@ export class TerrainBrushController {
     this.tool = tool === 'lower' ? 'lower' : 'raise';
   }
 
+  // ── Brush Sizing ───────────────────────────────────────
   increaseBrush() {
     this.brushSize = normalizeBrushSize(this.brushSize + 1);
   }
@@ -25,6 +27,7 @@ export class TerrainBrushController {
     this.brushSize = normalizeBrushSize(this.brushSize - 1);
   }
 
+  // ── Footprint & Application ────────────────────────────
   /**
    * Get the set of grid cells affected by the current brush at a center position.
    * This is a non-mutating helper used for hover/preview rendering.
@@ -59,6 +62,7 @@ export class TerrainBrushController {
     return modifiedCount > 0; // signal to callers whether a terrain change occurred
   }
 
+  // ── Cell Modification ─────────────────────────────────
   _modifyCell(x, y) {
     if (x < 0 || y < 0 || y >= this.dataStore.rows || x >= this.dataStore.cols) return;
     const current = this.dataStore.get(x, y);

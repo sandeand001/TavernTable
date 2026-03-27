@@ -4,6 +4,8 @@
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { TerrainBrushOverlay3D } from '../terrain/TerrainBrushOverlay3D.js';
 
+// ── Grid Rebuild ───────────────────────────────────────────────────
+
 function _rebuildGridOverlay(metrics = null, options = {}) {
   if (!this.scene || !this.three) return;
   const { force = false } = options;
@@ -198,6 +200,8 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
   this._gridOverlayKey = key;
 }
 
+// ── Brush Overlay ─────────────────────────────────────────────────
+
 function _ensureBrushOverlay() {
   if (this.brushOverlay) return this.brushOverlay;
   if (!this.three || !this.scene) return null;
@@ -218,6 +222,8 @@ function _ensureBrushOverlay() {
   return this.brushOverlay;
 }
 
+// ── Style Stack ───────────────────────────────────────────────────
+
 function pushGridOverlayStyle(style = {}) {
   if (!style) return;
   this._gridOverlayStyleStack.push({ ...this._gridOverlayStyle });
@@ -236,6 +242,8 @@ function popGridOverlayStyle() {
   }
   this._rebuildGridOverlay();
 }
+
+// ── Terrain Brush Preview ──────────────────────────────────────────
 
 function setTerrainBrushPreview(cells = [], style = {}) {
   if (!this.gameManager?.is3DModeActive?.()) {
@@ -258,6 +266,8 @@ function clearTerrainBrushPreview() {
   }
 }
 
+// ── Terrain Mesh Opacity ───────────────────────────────────────────
+
 function setTerrainMeshOpacity(opacity = 1) {
   const clamped = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
   this._terrainMeshOpacity = clamped;
@@ -278,6 +288,8 @@ function setTerrainMeshOpacity(opacity = 1) {
   }
 }
 
+// ── Grid Sync & Helpers ───────────────────────────────────────────
+
 function syncGridOverlayToTerrain() {
   try {
     this._rebuildGridOverlay(null, { force: true });
@@ -294,6 +306,8 @@ function _normalizeGridOverlayStyle(style = {}) {
   if (typeof style.borderAlpha === 'number') normalized.borderAlpha = style.borderAlpha;
   return normalized;
 }
+
+// ── Visibility Toggle ─────────────────────────────────────────────
 
 function setBootstrapGridVisible(visible) {
   this.showBootstrapGrid = !!visible;

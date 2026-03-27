@@ -3,6 +3,8 @@ import { GameErrors } from '../../../utils/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 import * as biomeInternals from './biome.js';
 
+// ── Terrain Reset ─────────────────────────────────────────────────
+
 /**
  * Reset all terrain heights to default and refresh visuals.
  * Extracted from TerrainCoordinator for better compartmentalization.

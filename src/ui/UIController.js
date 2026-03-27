@@ -43,6 +43,8 @@ import { RadialMenu } from './components/RadialMenu.js';
 
 const TOKEN_DRAG_MIME = 'application/taverntable-token';
 
+// ── Private Helpers ─────────────────────────────────────────
+
 let radialMenuInstance = null;
 
 function getRadialMenuInstance() {
@@ -108,6 +110,8 @@ function getTokenDragType(event) {
   }
 }
 
+// ── DOM Helpers ────────────────────────────────────────────
+
 function setupTokenDrag(button, tokenType) {
   if (!button || button.dataset.boundTokenDrag) return;
   button.setAttribute('draggable', 'true');
@@ -168,6 +172,8 @@ function ensureTokenDropTargets() {
     bindTarget(container);
   }
 }
+
+// ── Public API ──────────────────────────────────────────────
 
 /**
  * Toggle the visibility of the creature tokens panel
@@ -284,7 +290,7 @@ function resetZoom() {
   }
 }
 
-// === TERRAIN CONTROL FUNCTIONS ===
+// ── Event Handlers ──────────────────────────────────────────
 
 /**
  * Toggle terrain modification mode on/off
@@ -598,6 +604,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof stopper?.unref === 'function') stopper.unref();
 });
 
+// ── Public API (Terrain Controls) ──────────────────────────
+
 /**
  * Set the active terrain tool
  * @param {string} tool - Tool name ('raise' or 'lower')
@@ -703,6 +711,8 @@ function decreaseBrushSize() {
   }
 }
 
+// ── DOM Helpers (Display) ──────────────────────────────────
+
 /**
  * Update brush size display in UI
  */
@@ -772,6 +782,8 @@ function resetTerrain() {
     });
   }
 }
+
+// ── Constructor (Application Bootstrap) ───────────────────
 
 /**
  * Initialize the application when the page loads

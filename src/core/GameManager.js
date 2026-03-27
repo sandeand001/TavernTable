@@ -63,6 +63,8 @@ const EMOTE_IDLE_ACTIONS = ['idle', 'idleVariant2', 'idleVariant3', 'idleVariant
  * Main coordinator for game operations with delegated responsibilities
  */
 class GameManager {
+  // ── Constructor ─────────────────────────────────────────────
+
   /**
    * Initialize the GameManager with coordinators
    * @param {object} [options] optional overrides
@@ -142,195 +144,7 @@ class GameManager {
     logger.pushContext({ component: 'GameManager' });
   }
 
-  /**
-   * Sync the 3D world elevation unit (world Y per level) so that one elevation level
-   * produces the same on-screen vertical pixel displacement as the 2D isometric elevation effect.
-   *
-   * Contract:
-   *  - 2D uses TerrainHeightUtils.getElevationUnit() pixels per level (default 8).
-   *  - 3D orthographic camera has a vertical world span = (camera.top - camera.bottom).
-   *  - Screen pixels per world unit S = rendererHeightPx / (camera.top - camera.bottom).
-   *  - Camera pitch compresses vertical axis by cos(pitch) after rotation.
-   *  => desired world elevation unit W satisfies: desiredPixels = S * (W * cos(pitch)).
-   *  => W = desiredPixels / (S * cos(pitch)).
-   *
-   * We recompute when: entering hybrid mode, window resize, or 2D elevation scale change.
-   * Defensive: if any value missing, fall back to 0.25 (quarter tile) heuristic.
-   */
-  sync3DElevationScaling(options = {}) {
-    try {
-      if (!this.is3DModeActive()) return false;
-      const tsm = this.threeSceneManager;
-      if (!tsm) return false;
-
-      const rawPixelsPerLevel = TerrainHeightUtils.getElevationUnit();
-      const pixelsPerLevel2D =
-        Number.isFinite(rawPixelsPerLevel) && rawPixelsPerLevel >= 0
-          ? rawPixelsPerLevel
-          : this._defaultElevationPixelsPerLevel;
-
-      const defaultPixels = this._defaultElevationPixelsPerLevel || 1;
-      const baselineWorldUnit =
-        Number.isFinite(this._baselineWorldElevationUnit) && this._baselineWorldElevationUnit > 0
-          ? this._baselineWorldElevationUnit
-          : Number.isFinite(this.spatial?.elevationUnit)
-            ? this.spatial.elevationUnit
-            : 0.5;
-      const attenuation =
-        Number.isFinite(this._worldElevationAttenuation) && this._worldElevationAttenuation > 0
-          ? this._worldElevationAttenuation
-          : 1;
-
-      let worldElevationUnit =
-        defaultPixels > 0 ? (baselineWorldUnit * pixelsPerLevel2D) / defaultPixels : 0;
-      worldElevationUnit *= attenuation;
-
-      if (!Number.isFinite(worldElevationUnit)) {
-        worldElevationUnit = baselineWorldUnit;
-      } else if (worldElevationUnit < 0) {
-        worldElevationUnit = 0;
-      }
-
-      const prevUnit = this.spatial?.elevationUnit;
-      const prev = Number.isFinite(prevUnit) ? prevUnit : null;
-      if (Number.isFinite(prev) && prev > 0 && !options.hardSet) {
-        worldElevationUnit = prev * 0.2 + worldElevationUnit * 0.8;
-      }
-
-      if (
-        Number.isFinite(prev) &&
-        prev > 0 &&
-        Number.isFinite(worldElevationUnit) &&
-        Math.abs(worldElevationUnit - prev) / Math.abs(prev) < 0.005
-      ) {
-        return false;
-      }
-
-      this.spatial.reconfigure({ elevationUnit: worldElevationUnit });
-      this._lastAppliedWorldElevationUnit = worldElevationUnit;
-      this._lastPixelsPerLevelApplied = pixelsPerLevel2D;
-      if (this.terrainRebuilder?.builder) {
-        this.terrainRebuilder.builder.elevationUnit = worldElevationUnit;
-      }
-      if (options.rebuild !== false) {
-        try {
-          if (typeof window !== 'undefined' && window.requestTerrain3DRebuild) {
-            window.requestTerrain3DRebuild('elevation-sync');
-          }
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      try {
-        this.placeableMeshPool?._markAllDirty?.();
-        this.placeableMeshPool?.refreshAll?.();
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        this.token3DAdapter?.refreshAll?.();
-      } catch (_) {
-        /* ignore */
-      }
-      if (typeof window !== 'undefined') {
-        window.__TT_METRICS__ = window.__TT_METRICS__ || {};
-        window.__TT_METRICS__.elevationSync = {
-          pixelsPerLevel2D,
-          worldElevationUnit,
-          baselineWorldUnit,
-          defaultPixels,
-          attenuation,
-          relativeScale:
-            Number.isFinite(pixelsPerLevel2D) && defaultPixels > 0
-              ? pixelsPerLevel2D / defaultPixels
-              : null,
-          timestamp: Date.now(),
-        };
-        window.sync3DElevationScaling = () =>
-          this.sync3DElevationScaling({ rebuild: true, hardSet: true });
-      }
-      return true;
-    } catch (err) {
-      return false;
-    }
-  }
-
-  /**
-   * Report whether the 3D scene is the authoritative render path.
-   * Treat legacy '3d-hybrid' as equivalent to the new '3d' mode so callers remain backwards compatible.
-   */
-  is3DModeActive() {
-    const modeActive = this.renderMode === '3d' || this.renderMode === '3d-hybrid';
-    if (!modeActive) return false;
-    const manager = this.threeSceneManager;
-    if (!manager) return false;
-    try {
-      if (typeof manager.isReady === 'function') {
-        const ready = manager.isReady();
-        if (ready != null) return !!ready;
-      }
-    } catch (_) {
-      /* ignore readiness check failures */
-    }
-    return !!manager.scene;
-  }
-
-  /**
-   * The legacy isometric grid should only render when we are explicitly in 2D mode.
-   */
-  shouldRenderIsometricGrid() {
-    return this.renderMode === '2d-iso';
-  }
-
-  // Property getters for backward compatibility with null safety
-  get selectedTokenType() {
-    return this.tokenManager?.getSelectedTokenType() || 'female-humanoid';
-  }
-
-  set selectedTokenType(value) {
-    if (this.tokenManager) {
-      this.tokenManager.setSelectedTokenType(value);
-    }
-  }
-
-  get tokenFacingRight() {
-    return this.tokenManager?.getTokenFacingRight() || true;
-  }
-
-  set tokenFacingRight(value) {
-    if (this.tokenManager) {
-      this.tokenManager.setTokenFacingRight(value);
-    }
-  }
-
-  get placedTokens() {
-    return this.tokenManager?.getPlacedTokens() || [];
-  }
-
-  set placedTokens(value) {
-    if (this.tokenManager) {
-      this.tokenManager.placedTokens = value;
-    }
-  }
-
-  // Interaction properties delegated to InteractionManager with null safety
-  get gridScale() {
-    return this.interactionManager?.getGridScale() || 1.0;
-  }
-
-  set gridScale(scale) {
-    if (this.interactionManager) {
-      this.interactionManager.setGridScale(scale);
-    }
-  }
-
-  get isDragging() {
-    return this.interactionManager?.getIsDragging() || false;
-  }
-
-  get isSpacePressed() {
-    return this.interactionManager?.getIsSpacePressed() || false;
-  }
+  // ── Coordinator Init ────────────────────────────────────────
 
   /**
    * Initialize the game manager and set up all components
@@ -344,8 +158,6 @@ class GameManager {
    * Create manager instances after PIXI app is ready
    */
   // createManagers() no longer needed here (handled by StateCoordinator.createManagers())
-
-  // === RENDERING OPERATIONS (Delegated to RenderCoordinator) ===
 
   /**
    * Enable hybrid 2D + 3D rendering. Idempotent.
@@ -669,6 +481,198 @@ class GameManager {
     return this.threeSceneManager;
   }
 
+  // ── Public API ─────────────────────────────────────────────
+
+  /**
+   * Sync the 3D world elevation unit (world Y per level) so that one elevation level
+   * produces the same on-screen vertical pixel displacement as the 2D isometric elevation effect.
+   *
+   * Contract:
+   *  - 2D uses TerrainHeightUtils.getElevationUnit() pixels per level (default 8).
+   *  - 3D orthographic camera has a vertical world span = (camera.top - camera.bottom).
+   *  - Screen pixels per world unit S = rendererHeightPx / (camera.top - camera.bottom).
+   *  - Camera pitch compresses vertical axis by cos(pitch) after rotation.
+   *  => desired world elevation unit W satisfies: desiredPixels = S * (W * cos(pitch)).
+   *  => W = desiredPixels / (S * cos(pitch)).
+   *
+   * We recompute when: entering hybrid mode, window resize, or 2D elevation scale change.
+   * Defensive: if any value missing, fall back to 0.25 (quarter tile) heuristic.
+   */
+  sync3DElevationScaling(options = {}) {
+    try {
+      if (!this.is3DModeActive()) return false;
+      const tsm = this.threeSceneManager;
+      if (!tsm) return false;
+
+      const rawPixelsPerLevel = TerrainHeightUtils.getElevationUnit();
+      const pixelsPerLevel2D =
+        Number.isFinite(rawPixelsPerLevel) && rawPixelsPerLevel >= 0
+          ? rawPixelsPerLevel
+          : this._defaultElevationPixelsPerLevel;
+
+      const defaultPixels = this._defaultElevationPixelsPerLevel || 1;
+      const baselineWorldUnit =
+        Number.isFinite(this._baselineWorldElevationUnit) && this._baselineWorldElevationUnit > 0
+          ? this._baselineWorldElevationUnit
+          : Number.isFinite(this.spatial?.elevationUnit)
+            ? this.spatial.elevationUnit
+            : 0.5;
+      const attenuation =
+        Number.isFinite(this._worldElevationAttenuation) && this._worldElevationAttenuation > 0
+          ? this._worldElevationAttenuation
+          : 1;
+
+      let worldElevationUnit =
+        defaultPixels > 0 ? (baselineWorldUnit * pixelsPerLevel2D) / defaultPixels : 0;
+      worldElevationUnit *= attenuation;
+
+      if (!Number.isFinite(worldElevationUnit)) {
+        worldElevationUnit = baselineWorldUnit;
+      } else if (worldElevationUnit < 0) {
+        worldElevationUnit = 0;
+      }
+
+      const prevUnit = this.spatial?.elevationUnit;
+      const prev = Number.isFinite(prevUnit) ? prevUnit : null;
+      if (Number.isFinite(prev) && prev > 0 && !options.hardSet) {
+        worldElevationUnit = prev * 0.2 + worldElevationUnit * 0.8;
+      }
+
+      if (
+        Number.isFinite(prev) &&
+        prev > 0 &&
+        Number.isFinite(worldElevationUnit) &&
+        Math.abs(worldElevationUnit - prev) / Math.abs(prev) < 0.005
+      ) {
+        return false;
+      }
+
+      this.spatial.reconfigure({ elevationUnit: worldElevationUnit });
+      this._lastAppliedWorldElevationUnit = worldElevationUnit;
+      this._lastPixelsPerLevelApplied = pixelsPerLevel2D;
+      if (this.terrainRebuilder?.builder) {
+        this.terrainRebuilder.builder.elevationUnit = worldElevationUnit;
+      }
+      if (options.rebuild !== false) {
+        try {
+          if (typeof window !== 'undefined' && window.requestTerrain3DRebuild) {
+            window.requestTerrain3DRebuild('elevation-sync');
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      try {
+        this.placeableMeshPool?._markAllDirty?.();
+        this.placeableMeshPool?.refreshAll?.();
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        this.token3DAdapter?.refreshAll?.();
+      } catch (_) {
+        /* ignore */
+      }
+      if (typeof window !== 'undefined') {
+        window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+        window.__TT_METRICS__.elevationSync = {
+          pixelsPerLevel2D,
+          worldElevationUnit,
+          baselineWorldUnit,
+          defaultPixels,
+          attenuation,
+          relativeScale:
+            Number.isFinite(pixelsPerLevel2D) && defaultPixels > 0
+              ? pixelsPerLevel2D / defaultPixels
+              : null,
+          timestamp: Date.now(),
+        };
+        window.sync3DElevationScaling = () =>
+          this.sync3DElevationScaling({ rebuild: true, hardSet: true });
+      }
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /**
+   * Report whether the 3D scene is the authoritative render path.
+   * Treat legacy '3d-hybrid' as equivalent to the new '3d' mode so callers remain backwards compatible.
+   */
+  is3DModeActive() {
+    const modeActive = this.renderMode === '3d' || this.renderMode === '3d-hybrid';
+    if (!modeActive) return false;
+    const manager = this.threeSceneManager;
+    if (!manager) return false;
+    try {
+      if (typeof manager.isReady === 'function') {
+        const ready = manager.isReady();
+        if (ready != null) return !!ready;
+      }
+    } catch (_) {
+      /* ignore readiness check failures */
+    }
+    return !!manager.scene;
+  }
+
+  /**
+   * The legacy isometric grid should only render when we are explicitly in 2D mode.
+   */
+  shouldRenderIsometricGrid() {
+    return this.renderMode === '2d-iso';
+  }
+
+  // Property getters for backward compatibility with null safety
+  get selectedTokenType() {
+    return this.tokenManager?.getSelectedTokenType() || 'female-humanoid';
+  }
+
+  set selectedTokenType(value) {
+    if (this.tokenManager) {
+      this.tokenManager.setSelectedTokenType(value);
+    }
+  }
+
+  get tokenFacingRight() {
+    return this.tokenManager?.getTokenFacingRight() || true;
+  }
+
+  set tokenFacingRight(value) {
+    if (this.tokenManager) {
+      this.tokenManager.setTokenFacingRight(value);
+    }
+  }
+
+  get placedTokens() {
+    return this.tokenManager?.getPlacedTokens() || [];
+  }
+
+  set placedTokens(value) {
+    if (this.tokenManager) {
+      this.tokenManager.placedTokens = value;
+    }
+  }
+
+  // Interaction properties delegated to InteractionManager with null safety
+  get gridScale() {
+    return this.interactionManager?.getGridScale() || 1.0;
+  }
+
+  set gridScale(scale) {
+    if (this.interactionManager) {
+      this.interactionManager.setGridScale(scale);
+    }
+  }
+
+  get isDragging() {
+    return this.interactionManager?.getIsDragging() || false;
+  }
+
+  get isSpacePressed() {
+    return this.interactionManager?.getIsSpacePressed() || false;
+  }
+
   /**
    * Convenience wrapper: ensure hybrid mode (if requested) then toggle isometric camera preset.
    * @param {boolean} enabled whether isometric preset should be active
@@ -866,126 +870,6 @@ class GameManager {
     return true;
   }
 
-  _setTokenQuickCommand(tokenEntry, commandId) {
-    if (!tokenEntry) return;
-    if (commandId) {
-      tokenEntry.quickCommand = commandId;
-    } else {
-      delete tokenEntry.quickCommand;
-    }
-  }
-
-  _resolveTokenEntry(tokenLike) {
-    if (!tokenLike) return null;
-    const tokens = this.placedTokens || [];
-    if (tokens.includes(tokenLike)) {
-      return tokenLike;
-    }
-
-    const targetId = this._extractTokenId(tokenLike);
-    if (targetId != null) {
-      const byId = tokens.find((token) => this._extractTokenId(token) === targetId);
-      if (byId) {
-        return byId;
-      }
-    }
-
-    const gx = Number.isFinite(tokenLike.gridX) ? tokenLike.gridX : null;
-    const gy = Number.isFinite(tokenLike.gridY) ? tokenLike.gridY : null;
-    if (gx != null && gy != null) {
-      const byGrid = tokens.find((token) => token.gridX === gx && token.gridY === gy);
-      if (byGrid) {
-        return byGrid;
-      }
-    }
-
-    return null;
-  }
-
-  _extractTokenId(tokenLike) {
-    if (tokenLike == null) return null;
-    if (typeof tokenLike === 'string' || typeof tokenLike === 'number') {
-      return tokenLike;
-    }
-    return tokenLike.id ?? tokenLike.creature?.id ?? null;
-  }
-
-  _handleEmoteCommand(tokenEntry, commandId) {
-    const token = this._resolveTokenEntry(tokenEntry);
-    if (!token) {
-      return false;
-    }
-    const adapter = this.token3DAdapter;
-    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
-      logger.warn(
-        'Emote command requested before Token3DAdapter was ready',
-        { commandId },
-        LOG_CATEGORY.INTERACTION
-      );
-      return false;
-    }
-
-    switch (commandId) {
-      case 'emote-defeated':
-        return adapter.playTokenAnimation(token, 'defeated', {
-          force: true,
-          fadeIn: 0.22,
-          fadeOut: 0.35,
-          allowRootMotion: true,
-          releaseOnMovement: true,
-        });
-      case 'emote-rumba':
-      case 'emote-jump':
-        return adapter.playTokenAnimation(token, 'jump', {
-          force: true,
-          fadeIn: 0.2,
-          fadeOut: 0.3,
-          allowRootMotion: true,
-          movementLockMs: Infinity,
-          autoRevert: false,
-          releaseOnMovement: true,
-        });
-
-      case 'emote-fancy-pose':
-        return adapter.playTokenAnimation(token, 'fancyPose', {
-          force: true,
-          fadeIn: 0.25,
-          fadeOut: 0.35,
-          autoRevert: false,
-          movementLockMs: Infinity,
-          allowRootMotion: true,
-          releaseOnMovement: true,
-        });
-      case 'emote-dynamic-pose':
-        return adapter.playTokenAnimation(token, 'dynamicPose', {
-          force: true,
-          fadeIn: 0.25,
-          fadeOut: 0.35,
-          autoRevert: false,
-          movementLockMs: Infinity,
-          allowRootMotion: true,
-          releaseOnMovement: true,
-        });
-      case 'emote-idle':
-        return this._playIdleEmote(token);
-      default:
-        return false;
-    }
-  }
-
-  _playIdleEmote(tokenEntry) {
-    const token = this._resolveTokenEntry(tokenEntry);
-    if (!token) return false;
-    const adapter = this.token3DAdapter;
-    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
-      return false;
-    }
-    const available = EMOTE_IDLE_ACTIONS.filter((key) => adapter.hasAnimation?.(token, key));
-    const pool = available.length ? available : ['idle'];
-    const choice = pool[Math.floor(Math.random() * pool.length)];
-    return adapter.playTokenAnimation(token, choice, { force: true });
-  }
-
   /**
    * Ensure the instanced placeables mesh pool exists if the feature flag is enabled.
    * Safe to call repeatedly (idempotent). Returns the pool instance or null if not created.
@@ -1117,32 +1001,6 @@ class GameManager {
     return pool;
   }
 
-  /** Experimental: disable instanced placeables (tears down pool). */
-  disableInstancedPlaceables() {
-    try {
-      this.features.instancedPlaceables = false;
-      // Do NOT remove 2D sprites; only tear down 3D representation
-      if (this.placeableMeshPool) {
-        try {
-          this.placeableMeshPool.dispose?.();
-        } catch (_) {
-          /* ignore */
-        }
-        this.placeableMeshPool = null;
-      }
-      if (typeof window !== 'undefined') {
-        try {
-          if (window.__TT_METRICS__) delete window.__TT_METRICS__.placeables;
-        } catch (_) {
-          /* ignore */
-        }
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
   /** Idempotently push all current plant sprites into instancing pool (used after biome repopulation). */
   reinstanceExistingPlants() {
     try {
@@ -1150,64 +1008,6 @@ class GameManager {
       // 2025-09 refactor: plant sprites are no longer pushed into the instancing pool because
       // they are fully superseded by 3D models. Any previous retrofit logic has been removed.
       return;
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  /** Remove 3D interaction (hover/select) listeners (primarily for tests or hot-reload cleanup). */
-  remove3DInteractionListeners() {
-    try {
-      const canvas = this.threeSceneManager?.canvas;
-      const targetEl = canvas || (typeof document !== 'undefined' ? document.body : null);
-      if (targetEl) {
-        if (this._tokenHoverListener) {
-          targetEl.removeEventListener('pointermove', this._tokenHoverListener);
-        }
-        if (this._tokenSelectListener) {
-          targetEl.removeEventListener('pointerdown', this._tokenSelectListener);
-        }
-        if (this._tokenPointerUpListener) {
-          targetEl.removeEventListener('pointerup', this._tokenPointerUpListener);
-        }
-      }
-    } catch (_) {
-      /* ignore */
-    } finally {
-      this._tokenHoverListener = null;
-      this._tokenSelectListener = null;
-      this._tokenPointerUpListener = null;
-    }
-    try {
-      if (typeof window !== 'undefined') {
-        window.__TT_REMOVE_3D_INTERACTIONS__ = () => this.remove3DInteractionListeners();
-      }
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  /** Disable hybrid (dispose three + listeners) mainly for tests / teardown */
-  disableHybridRender() {
-    if (!this.is3DModeActive()) return;
-    try {
-      this.remove3DInteractionListeners();
-    } catch (_) {
-      /* ignore */
-    }
-    try {
-      this.threeSceneManager?.dispose?.();
-    } catch (_) {
-      /* ignore */
-    }
-    this.threeSceneManager = null;
-    this.pickingService = null;
-    this.renderMode = '2d-iso';
-    try {
-      if (typeof window !== 'undefined') {
-        window.__TT_HYBRID_ACTIVE__ = false;
-        window.__TT_3D_ACTIVE__ = false;
-      }
     } catch (_) {
       /* ignore */
     }
@@ -1330,8 +1130,6 @@ class GameManager {
     return this.inputCoordinator.snapToGrid(token);
   }
 
-  // === TERRAIN OPERATIONS (Delegated to TerrainCoordinator) ===
-
   /**
    * Enable terrain modification mode
    */
@@ -1368,46 +1166,6 @@ class GameManager {
    */
   getTerrainHeight(gridX, gridY) {
     return this.terrainCoordinator ? this.terrainCoordinator.getTerrainHeight(gridX, gridY) : 0;
-  }
-
-  /** Phase 2 hook: invoked by TerrainCoordinator after height edits to schedule 3D rebuild. */
-  notifyTerrainHeightsChanged() {
-    if (!this.terrainRebuilder || !this.threeSceneManager || !this.is3DModeActive()) {
-      return;
-    }
-    // Synchronous optimistic request so callers (and tests) can observe the call immediately.
-    // A second debounced request with the three namespace (if available) will override args.
-    try {
-      this.terrainRebuilder.request();
-    } catch (_) {
-      /* ignore */
-    }
-    try {
-      import('three')
-        .then((threeNS) => {
-          try {
-            this.terrainRebuilder.request({ three: threeNS });
-            // After scheduling rebuild, resync token heights (placeables future when we store per-instance coords)
-            try {
-              this.token3DAdapter?.resyncHeights?.();
-            } catch (_) {
-              /* ignore */
-            }
-            try {
-              this.placeableMeshPool?.resyncHeights?.();
-            } catch (_) {
-              /* ignore */
-            }
-          } catch (_) {
-            /* ignore */
-          }
-        })
-        .catch(() => {
-          /* ignore dynamic import failure */
-        });
-    } catch (_) {
-      /* ignore */
-    }
   }
 
   /**
@@ -1450,7 +1208,6 @@ class GameManager {
     return this.terrainCoordinator ? this.terrainCoordinator.isTerrainModeActive : false;
   }
 
-  // === VIEW MODE (Delegated to StateCoordinator) ===
   getViewMode() {
     return this.stateCoordinator?.getViewMode() || 'isometric';
   }
@@ -1460,8 +1217,6 @@ class GameManager {
       this.stateCoordinator.toggleViewMode();
     }
   }
-
-  // === GRID MANAGEMENT ===
 
   /**
    * Resize the game grid to new dimensions
@@ -1525,6 +1280,170 @@ class GameManager {
     }
   }
 
+  // ── Event Handlers ─────────────────────────────────────────
+
+  /** Phase 2 hook: invoked by TerrainCoordinator after height edits to schedule 3D rebuild. */
+  notifyTerrainHeightsChanged() {
+    if (!this.terrainRebuilder || !this.threeSceneManager || !this.is3DModeActive()) {
+      return;
+    }
+    // Synchronous optimistic request so callers (and tests) can observe the call immediately.
+    // A second debounced request with the three namespace (if available) will override args.
+    try {
+      this.terrainRebuilder.request();
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      import('three')
+        .then((threeNS) => {
+          try {
+            this.terrainRebuilder.request({ three: threeNS });
+            // After scheduling rebuild, resync token heights (placeables future when we store per-instance coords)
+            try {
+              this.token3DAdapter?.resyncHeights?.();
+            } catch (_) {
+              /* ignore */
+            }
+            try {
+              this.placeableMeshPool?.resyncHeights?.();
+            } catch (_) {
+              /* ignore */
+            }
+          } catch (_) {
+            /* ignore */
+          }
+        })
+        .catch(() => {
+          /* ignore dynamic import failure */
+        });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  // ── Private Helpers ────────────────────────────────────────
+
+  _setTokenQuickCommand(tokenEntry, commandId) {
+    if (!tokenEntry) return;
+    if (commandId) {
+      tokenEntry.quickCommand = commandId;
+    } else {
+      delete tokenEntry.quickCommand;
+    }
+  }
+
+  _resolveTokenEntry(tokenLike) {
+    if (!tokenLike) return null;
+    const tokens = this.placedTokens || [];
+    if (tokens.includes(tokenLike)) {
+      return tokenLike;
+    }
+
+    const targetId = this._extractTokenId(tokenLike);
+    if (targetId != null) {
+      const byId = tokens.find((token) => this._extractTokenId(token) === targetId);
+      if (byId) {
+        return byId;
+      }
+    }
+
+    const gx = Number.isFinite(tokenLike.gridX) ? tokenLike.gridX : null;
+    const gy = Number.isFinite(tokenLike.gridY) ? tokenLike.gridY : null;
+    if (gx != null && gy != null) {
+      const byGrid = tokens.find((token) => token.gridX === gx && token.gridY === gy);
+      if (byGrid) {
+        return byGrid;
+      }
+    }
+
+    return null;
+  }
+
+  _extractTokenId(tokenLike) {
+    if (tokenLike == null) return null;
+    if (typeof tokenLike === 'string' || typeof tokenLike === 'number') {
+      return tokenLike;
+    }
+    return tokenLike.id ?? tokenLike.creature?.id ?? null;
+  }
+
+  _handleEmoteCommand(tokenEntry, commandId) {
+    const token = this._resolveTokenEntry(tokenEntry);
+    if (!token) {
+      return false;
+    }
+    const adapter = this.token3DAdapter;
+    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
+      logger.warn(
+        'Emote command requested before Token3DAdapter was ready',
+        { commandId },
+        LOG_CATEGORY.INTERACTION
+      );
+      return false;
+    }
+
+    switch (commandId) {
+      case 'emote-defeated':
+        return adapter.playTokenAnimation(token, 'defeated', {
+          force: true,
+          fadeIn: 0.22,
+          fadeOut: 0.35,
+          allowRootMotion: true,
+          releaseOnMovement: true,
+        });
+      case 'emote-rumba':
+      case 'emote-jump':
+        return adapter.playTokenAnimation(token, 'jump', {
+          force: true,
+          fadeIn: 0.2,
+          fadeOut: 0.3,
+          allowRootMotion: true,
+          movementLockMs: Infinity,
+          autoRevert: false,
+          releaseOnMovement: true,
+        });
+
+      case 'emote-fancy-pose':
+        return adapter.playTokenAnimation(token, 'fancyPose', {
+          force: true,
+          fadeIn: 0.25,
+          fadeOut: 0.35,
+          autoRevert: false,
+          movementLockMs: Infinity,
+          allowRootMotion: true,
+          releaseOnMovement: true,
+        });
+      case 'emote-dynamic-pose':
+        return adapter.playTokenAnimation(token, 'dynamicPose', {
+          force: true,
+          fadeIn: 0.25,
+          fadeOut: 0.35,
+          autoRevert: false,
+          movementLockMs: Infinity,
+          allowRootMotion: true,
+          releaseOnMovement: true,
+        });
+      case 'emote-idle':
+        return this._playIdleEmote(token);
+      default:
+        return false;
+    }
+  }
+
+  _playIdleEmote(tokenEntry) {
+    const token = this._resolveTokenEntry(tokenEntry);
+    if (!token) return false;
+    const adapter = this.token3DAdapter;
+    if (!adapter || typeof adapter.playTokenAnimation !== 'function') {
+      return false;
+    }
+    const available = EMOTE_IDLE_ACTIONS.filter((key) => adapter.hasAnimation?.(token, key));
+    const pool = available.length ? available : ['idle'];
+    const choice = pool[Math.floor(Math.random() * pool.length)];
+    return adapter.playTokenAnimation(token, choice, { force: true });
+  }
+
   _isTestEnvironment() {
     try {
       const env =
@@ -1573,6 +1492,92 @@ class GameManager {
     tsm.degraded = false;
     tsm.degradeReason = null;
     return true;
+  }
+
+  // ── Cleanup ────────────────────────────────────────────────
+
+  /** Experimental: disable instanced placeables (tears down pool). */
+  disableInstancedPlaceables() {
+    try {
+      this.features.instancedPlaceables = false;
+      // Do NOT remove 2D sprites; only tear down 3D representation
+      if (this.placeableMeshPool) {
+        try {
+          this.placeableMeshPool.dispose?.();
+        } catch (_) {
+          /* ignore */
+        }
+        this.placeableMeshPool = null;
+      }
+      if (typeof window !== 'undefined') {
+        try {
+          if (window.__TT_METRICS__) delete window.__TT_METRICS__.placeables;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** Remove 3D interaction (hover/select) listeners (primarily for tests or hot-reload cleanup). */
+  remove3DInteractionListeners() {
+    try {
+      const canvas = this.threeSceneManager?.canvas;
+      const targetEl = canvas || (typeof document !== 'undefined' ? document.body : null);
+      if (targetEl) {
+        if (this._tokenHoverListener) {
+          targetEl.removeEventListener('pointermove', this._tokenHoverListener);
+        }
+        if (this._tokenSelectListener) {
+          targetEl.removeEventListener('pointerdown', this._tokenSelectListener);
+        }
+        if (this._tokenPointerUpListener) {
+          targetEl.removeEventListener('pointerup', this._tokenPointerUpListener);
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    } finally {
+      this._tokenHoverListener = null;
+      this._tokenSelectListener = null;
+      this._tokenPointerUpListener = null;
+    }
+    try {
+      if (typeof window !== 'undefined') {
+        window.__TT_REMOVE_3D_INTERACTIONS__ = () => this.remove3DInteractionListeners();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /** Disable hybrid (dispose three + listeners) mainly for tests / teardown */
+  disableHybridRender() {
+    if (!this.is3DModeActive()) return;
+    try {
+      this.remove3DInteractionListeners();
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      this.threeSceneManager?.dispose?.();
+    } catch (_) {
+      /* ignore */
+    }
+    this.threeSceneManager = null;
+    this.pickingService = null;
+    this.renderMode = '2d-iso';
+    try {
+      if (typeof window !== 'undefined') {
+        window.__TT_HYBRID_ACTIVE__ = false;
+        window.__TT_3D_ACTIVE__ = false;
+      }
+    } catch (_) {
+      /* ignore */
+    }
   }
 }
 

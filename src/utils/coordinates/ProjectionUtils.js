@@ -4,12 +4,14 @@
  * Focus: clarity and correctness.
  */
 
+// ── Imports & Constants ─────────────────────────────────────────
 import { logger, LOG_CATEGORY } from '../Logger.js';
 
 const TOPDOWN_TILE_BASE = 0;
 const TOPDOWN_PLACEABLE_BASE = 500000;
 const TOPDOWN_CREATURE_BASE = 1000000;
 
+// ── Position Helpers ───────────────────────────────────────────
 export function applyIsometricPosition(displayObject, gx, gy, gameManager) {
   if (!displayObject || !gameManager) return;
   const w = gameManager.tileWidth;
@@ -28,6 +30,7 @@ export function applyTopDownPosition(displayObject, gx, gy, gameManager) {
   displayObject.y = gy * size + size / 2;
 }
 
+// ── Top-Down Square Management ─────────────────────────────────
 export function ensureTopDownSquare(tile, gameManager) {
   if (!tile || !gameManager) return null;
   if (tile.__topDownGraphic && tile.__topDownGraphic.__isTopDownSquare) {
@@ -54,6 +57,7 @@ export function ensureTopDownSquare(tile, gameManager) {
   return g;
 }
 
+// ── Full Scene Reprojection ────────────────────────────────────
 export function reprojectAll(gameManager, mode) {
   if (!gameManager || !gameManager.gridContainer) return;
   const isTopDown = mode === 'topdown';
@@ -321,6 +325,7 @@ export function reprojectAll(gameManager, mode) {
   }
 }
 
+// ── Deprecated Incremental API ──────────────────────────────────
 export function scheduleIncrementalReproject(gameManager, mode) {
   if (typeof window !== 'undefined' && !scheduleIncrementalReproject.__warned) {
     scheduleIncrementalReproject.__warned = true;

@@ -65,6 +65,8 @@ import {
 } from '../terrain/generation/BiomeElevationGenerator.js';
 
 export class TerrainCoordinator {
+  // ── Constructor ─────────────────────────────────────────────
+
   /**
    * Extended constructor with optional injected collaborators and DOM ports.
    * @param {object} gameManager
@@ -168,9 +170,8 @@ export class TerrainCoordinator {
     );
   }
 
-  // ------------------------------
-  // Placeables UI & Removal Mode API
-  // ------------------------------
+  // ── Public API ──────────────────────────────────────────────
+
   /** Current selected placeable id (string|null). */
   getSelectedPlaceable() {
     return this._selectedPlaceable || null;
@@ -226,6 +227,8 @@ export class TerrainCoordinator {
   isPlaceableRemovalMode() {
     return !!this._placeableRemovalMode;
   }
+
+  // ── Lifecycle ───────────────────────────────────────────────
 
   applyTerrainModeGridTint() {
     const gm = this.gameManager;
@@ -334,6 +337,8 @@ export class TerrainCoordinator {
       throw error;
     }
   }
+
+  // ── Private Helpers ─────────────────────────────────────────
 
   /**
    * Remove all existing biome flora/placeables from both 2D sprites and 3D instanced mesh pool.
@@ -444,6 +449,8 @@ export class TerrainCoordinator {
     }
   }
 
+  // ── Event Handlers ──────────────────────────────────────────
+
   /**
    * Handle mouse up events to stop terrain painting
    * @param {MouseEvent} event - Mouse event
@@ -485,6 +492,8 @@ export class TerrainCoordinator {
   resetHeightIndicator() {
     return this._inputHandlers.resetHeightIndicator();
   }
+
+  // ── Public API (Terrain State) ──────────────────────────────
 
   /** Get the current elevation perception scale (pixels per level). */
   getElevationScale() {
@@ -581,6 +590,8 @@ export class TerrainCoordinator {
   validateTerrainDataConsistency() {
     return _validateDataConsistency(this);
   }
+
+  // ── Lifecycle (Mode Switching) ──────────────────────────────
 
   enableTerrainMode() {
     return this._activationHelpers.enableTerrainMode();
@@ -826,6 +837,8 @@ export class TerrainCoordinator {
     }
     return this._getBiomeOrBaseColor(height);
   }
+
+  // ── Public API (Biome Generation) ──────────────────────────
 
   /**
    * Generate and apply biome-based elevations if the terrain is flat (no manual edits).

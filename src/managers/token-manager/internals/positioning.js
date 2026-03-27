@@ -4,6 +4,8 @@ import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 // Depth utils no longer used for token layering; use tile depth bands instead.
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
+// ── Grid Snap Logic ────────────────────────────────────────────
+
 export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = null) {
   try {
     const localX = pointerLocalX !== null && pointerLocalY !== null ? pointerLocalX : token.x;

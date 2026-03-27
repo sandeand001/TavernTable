@@ -1,6 +1,7 @@
 // Animation scheduling, snap-to-board, and roll animation for the d20 system.
 // Extracted from dice3d.js (Phase 7).
 
+// ── Imports ────────────────────────────────────────────────────
 import logger from '../../utils/Logger.js';
 import {
   clampToRange,
@@ -23,6 +24,7 @@ import {
   orientMeshToFaceIndex,
 } from './DiceState.js';
 
+// ── Constants & Easing ─────────────────────────────────────────
 const TRAVEL_DURATION_MS = 850;
 const TRAVEL_DISTANCE_MULTIPLIER = 3;
 const SNAP_DURATION_MS = 220;
@@ -37,6 +39,7 @@ const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 const randomBetween = (min, max) => min + Math.random() * (max - min);
 const hasWindow = () => typeof window !== 'undefined';
 
+// ── Snap Computation ───────────────────────────────────────────
 export function computeSnapSolution(mesh, three, groundY) {
   if (!mesh || !three?.Vector3 || !three?.Quaternion) return null;
   const faces = collectWorldFaceData(mesh, three);
@@ -81,6 +84,7 @@ export function snapDieToBoard(mesh, three, groundY) {
   solution?.applyFinal();
 }
 
+// ── Roll Animation Scheduling ──────────────────────────────────
 export function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
   const baseTravelMs = TRAVEL_DURATION_MS;
   const settleDurationMs = options.settleDurationMs ?? 650;

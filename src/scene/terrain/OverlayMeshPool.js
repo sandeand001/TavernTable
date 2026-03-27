@@ -1,3 +1,4 @@
+// ── Mesh Disposal ──────────────────────────────────────
 function disposeMesh(group, mesh) {
   if (!mesh) return;
   try {
@@ -21,6 +22,7 @@ function disposeMesh(group, mesh) {
   }
 }
 
+// ── Instanced Plane Mesh ───────────────────────────────
 export function ensurePlaneMesh({ three, group, mesh, capacity = 0, required, colorHex, opacity }) {
   if (!group || !three?.InstancedMesh || !three?.PlaneGeometry || !three?.MeshBasicMaterial) {
     return { mesh, capacity };
@@ -60,6 +62,7 @@ export function ensurePlaneMesh({ three, group, mesh, capacity = 0, required, co
   return { mesh: instanced, capacity: newCapacity };
 }
 
+// ── Instanced Box Mesh ─────────────────────────────────
 export function ensureBoxMesh({
   three,
   group,
@@ -108,6 +111,7 @@ export function ensureBoxMesh({
   return { mesh: instanced, capacity: newCapacity };
 }
 
+// ── Material Sync ──────────────────────────────────────
 export function syncMeshMaterial(mesh, colorHex, opacity) {
   if (!mesh?.material) return;
   const material = mesh.material;

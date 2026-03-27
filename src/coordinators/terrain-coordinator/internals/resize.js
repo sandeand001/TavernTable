@@ -1,6 +1,8 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameErrors } from '../../../utils/ErrorHandler.js';
 
+// ── Grid Resize Handler ───────────────────────────────────────────
+
 /**
  * Handle grid resize - reinitialize terrain data and attempt to preserve overlap.
  * Mirrors TerrainCoordinator.handleGridResize behavior.

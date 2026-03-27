@@ -10,19 +10,20 @@
  * Controls terrain height modification behavior and limits
  */
 export const TERRAIN_CONFIG = {
-  // Height system (expanded to +/-10 operational range)
+  // ── Height System ─────────────────────────────────────────────
+  // (expanded to +/-10 operational range)
   // NOTE: Biome palettes & terrain visuals automatically adapt via TERRAIN_CONFIG.
   DEFAULT_HEIGHT: 0,
   MIN_HEIGHT: -10,
   MAX_HEIGHT: 10,
   HEIGHT_STEP: 1,
 
-  // Brush system
+  // ── Brush System ──────────────────────────────────────────────
   DEFAULT_BRUSH_SIZE: 1,
   MIN_BRUSH_SIZE: 1,
   MAX_BRUSH_SIZE: 5,
 
-  // Visual representation
+  // ── Height Color Scale ────────────────────────────────────────
   HEIGHT_COLOR_SCALE: {
     // Expanded color mapping for -10..10 range
     // Negative heights = deep abyssal blues → cool violets → desaturated mid
@@ -50,7 +51,7 @@ export const TERRAIN_CONFIG = {
     10: 0xf3e9b2,
   },
 
-  // Visual effects
+  // ── Visual Effects ────────────────────────────────────────────
   HEIGHT_ALPHA: 0.7, // Base alpha for terrain tiles
   HEIGHT_BORDER_ALPHA: 0.9, // Border alpha for terrain tiles
   HEIGHT_BORDER_WIDTH: 2, // Border width for non-default heights
@@ -59,14 +60,14 @@ export const TERRAIN_CONFIG = {
   TERRAIN_MODE_OVERLAY_BASE_ALPHA: 0.18, // Fill alpha for neutral tiles while terrain mode is active
   TERRAIN_MODE_MESH_ALPHA: 1, // Opacity for 3D terrain mesh while terrain mode is active
 
-  // Performance settings
+  // ── Performance ──────────────────────────────────────────────
   BATCH_UPDATE_SIZE: 10, // Maximum cells to update per frame
   UPDATE_THROTTLE_MS: 16, // Minimum time between updates (60fps)
 
-  // Input handling
+  // ── Input Handling ────────────────────────────────────────────
   CONTINUOUS_PAINT_DELAY: 50, // Milliseconds between continuous paint operations
 
-  // Animation (future enhancement)
+  // ── Animation ─────────────────────────────────────────────────
   TRANSITION_DURATION: 200, // Milliseconds for height change animations
   EASING_FUNCTION: 'ease-out', // CSS easing function for animations
 };

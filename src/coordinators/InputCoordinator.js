@@ -11,11 +11,13 @@ import { GameErrors } from '../utils/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 
+// ── InputCoordinator Class ───────────────────────────────
 export class InputCoordinator {
   constructor(gameManager) {
     this.gameManager = gameManager;
   }
 
+  // ── Click & Drop Handlers ───────────────────────────────
   /**
    * Handle left mouse click for token placement
    * @param {MouseEvent} event - Mouse click event
@@ -92,6 +94,7 @@ export class InputCoordinator {
     }
   }
 
+  // ── Token Interaction ──────────────────────────────────
   /**
    * Handle token placement or removal at grid coordinates
    * @param {number} gridX - Grid X coordinate
@@ -142,6 +145,7 @@ export class InputCoordinator {
     }
   }
 
+  // ── Token Lookup & Removal ─────────────────────────────
   /**
    * Find existing token at grid coordinates
    * @param {number} gridX - Grid X coordinate
@@ -167,6 +171,7 @@ export class InputCoordinator {
     }
   }
 
+  // ── Token Placement ───────────────────────────────────
   /**
    * Place a new token at the specified grid coordinates
    * @param {number} gridX - Grid X coordinate
@@ -246,6 +251,7 @@ export class InputCoordinator {
     return true;
   }
 
+  // ── Coordinate Conversion ───────────────────────────────
   /**
    * Convert grid coordinates to isometric coordinates
    * @param {number} gridX - Grid X coordinate
@@ -281,6 +287,7 @@ export class InputCoordinator {
     }
   }
 
+  // ── Token Selection & Facing ───────────────────────────
   /**
    * Select a token type for placement
    * @param {string} tokenType - Type of token to select
@@ -326,6 +333,7 @@ export class InputCoordinator {
     }
   }
 
+  // ── Batch Operations ──────────────────────────────────
   /**
    * Handle batch token operations
    * @param {Array} operations - Array of token operations
@@ -374,6 +382,7 @@ export class InputCoordinator {
     }
   }
 
+  // ── Statistics ─────────────────────────────────────────
   /**
    * Get interaction statistics
    * @returns {Object} Statistics about user interactions

@@ -1,10 +1,12 @@
 // TerrainFacesRenderer.js - Draws neighbor-aware 3D side faces for tiles
 // Shared between TerrainManager (overlay) and TerrainCoordinator (base tiles)
 
+// ── Imports ────────────────────────────────────────────────────
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import { darkenColor } from '../utils/color/ColorUtils.js';
 
+// ── Faces Renderer ─────────────────────────────────────────────
 export class TerrainFacesRenderer {
   constructor(gameManager) {
     this.gameManager = gameManager;

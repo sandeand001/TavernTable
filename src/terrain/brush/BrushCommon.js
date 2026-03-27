@@ -1,5 +1,6 @@
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 
+// ── Constants & Defaults ───────────────────────────────
 export const BRUSH_LAYER_HINT = 'aboveFacesBelowTokens';
 export const BRUSH_COLORS = Object.freeze({
   preview: 0x22d3ee,
@@ -12,6 +13,7 @@ const DEFAULT_HIGHLIGHT_STYLE = Object.freeze({
   lineWidth: 2,
 });
 
+// ── Brush Size Normalization ────────────────────────────
 /**
  * Clamp the incoming brush size so every consumer honors the same bounds.
  * @param {number} value
@@ -30,6 +32,7 @@ export function normalizeBrushSize(value, config = TERRAIN_CONFIG) {
   return Math.max(min, Math.min(max, rounded));
 }
 
+// ── Brush Geometry ─────────────────────────────────────
 /**
  * Even brush sizes are represented as a lopsided box: e.g. size 4 => -1, +2 cell reach.
  * Returning both radii keeps footprint math identical across controller/highlighter/overlay.
@@ -73,6 +76,7 @@ export function computeBrushFootprint(gridX, gridY, brushSize, bounds = {}) {
   return cells;
 }
 
+// ── Highlight Style Helpers ─────────────────────────────
 export function getDefaultHighlightStyle() {
   return { ...DEFAULT_HIGHLIGHT_STYLE };
 }

@@ -15,10 +15,14 @@ export class TerrainInputHandlers {
     this.lastGridCoords = null;
   }
 
+  // ── Internal Helpers ───────────────────────────────────────────────
+
   /** Small helper to avoid duplicating the scale mark selector */
   _getScaleMarks() {
     return this.c?.domPorts?.getScaleMarks ? this.c.domPorts.getScaleMarks() : [];
   }
+
+  // ── Event Setup ───────────────────────────────────────────────────
 
   /** Set up terrain-specific input event handlers */
   setup() {
@@ -70,6 +74,8 @@ export class TerrainInputHandlers {
       throw error;
     }
   }
+
+  // ── Mouse Handlers ────────────────────────────────────────────────
 
   /** Handle mouse down events for terrain modification */
   handleMouseDown(event) {
@@ -431,6 +437,8 @@ export class TerrainInputHandlers {
     }
   }
 
+  // ── Keyboard Handlers ─────────────────────────────────────────────
+
   /** Handle keyboard shortcuts for terrain tools */
   handleKeyDown(event) {
     try {
@@ -476,6 +484,8 @@ export class TerrainInputHandlers {
     }
   }
 
+  // ── Preview Helpers ───────────────────────────────────────────────
+
   /**
    * Re-render the brush preview at the last known hover coordinates
    * if terrain mode is active and a valid position is cached.
@@ -498,6 +508,8 @@ export class TerrainInputHandlers {
       /* ignore preview issues */
     }
   }
+
+  // ── Height Indicator UI ───────────────────────────────────────────
 
   /** Update the height indicator in the UI to show terrain level at cursor position */
   updateHeightIndicator(gridX, gridY) {

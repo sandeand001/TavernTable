@@ -62,6 +62,8 @@ import { installSelectionMethods } from './token-adapter/SelectionEffects.js';
 import { installMeshFactoryMethods } from './token-adapter/MeshFactory.js';
 
 export class Token3DAdapter {
+  // ── Constructor & Initialization ─────────────────────────────────────────────
+
   constructor(gameManager) {
     this.gameManager = gameManager;
     this._attached = false;
@@ -88,6 +90,8 @@ export class Token3DAdapter {
     this._manualAnimationRevertTimers = new WeakMap();
     this._manualAnimationStates = new WeakMap();
   }
+
+  // ── Pathing & Debug Logging ─────────────────────────────────────────────
 
   setPathingLoggingEnabled(isEnabled) {
     if (typeof isEnabled === 'boolean') {
@@ -422,6 +426,8 @@ export class Token3DAdapter {
     return Date.now();
   }
 
+  // ── Resume Probe Management ─────────────────────────────────────────────
+
   _armResumeProbe(state, payload = {}) {
     if (!state) return;
     const now = this._getPathingTimestamp();
@@ -549,6 +555,8 @@ export class Token3DAdapter {
     }
   }
 
+  // ── Lifecycle & Scene Attachment ─────────────────────────────────────────────
+
   attach() {
     if (this._attached) return;
     this._attached = true;
@@ -640,6 +648,8 @@ export class Token3DAdapter {
     if (!scene) return;
     return this._ensureTokenMesh(tokenEntry, scene);
   }
+
+  // ── Root Bone & Root Motion ─────────────────────────────────────────────
 
   _registerRootBones(tokenEntry, container) {
     if (!tokenEntry || !container) return;
@@ -818,6 +828,8 @@ export class Token3DAdapter {
     };
     this._updateTokenWorldDuringMovement(state.token, updatedWorld);
   }
+
+  // ── World Authority & Motion Transfer ─────────────────────────────────────────────
 
   _lockTokenWorldAuthority(state) {
     if (!state || !state.token || state.__worldLockActive) return;
@@ -1034,6 +1046,8 @@ export class Token3DAdapter {
     return bestOffset;
   }
 
+  // ── Movement State Management ─────────────────────────────────────────────
+
   _ensureMovementState(tokenEntry) {
     if (!tokenEntry) return null;
     let state = this._movementStates.get(tokenEntry);
@@ -1161,6 +1175,8 @@ export class Token3DAdapter {
 
     return state;
   }
+
+  // ── Movement Intent, Style & Sprint ─────────────────────────────────────────────
 
   _recalculateMovementIntent(state) {
     if (!state) return 0;
@@ -1521,6 +1537,8 @@ export class Token3DAdapter {
     this._handleMovementStyleChange(state, snapshot, options);
   }
 
+  // ── Movement Phase Lifecycle ─────────────────────────────────────────────
+
   _startMovementPhase(state, newSign) {
     if (!state || !newSign) return;
     const tokenEntry = state.token;
@@ -1584,6 +1602,8 @@ export class Token3DAdapter {
     state.stepFinalized = false;
     state.stopBlendedToIdle = false;
   }
+
+  // ── World Position & Spatial Utilities ─────────────────────────────────────────────
 
   _resolveTokenWorldPosition(tokenEntry) {
     if (!tokenEntry) return { x: 0, y: 0, z: 0 };
@@ -1725,6 +1745,8 @@ export class Token3DAdapter {
   _shouldHoldMovementState(state) {
     return Boolean(state?.__resumeProbe);
   }
+
+  // ── Public Movement & Navigation API ─────────────────────────────────────────────
 
   beginForwardMovement(tokenEntry, sourceKey = '__forward') {
     this._releaseManualAnimationForMovement(tokenEntry);
@@ -2373,6 +2395,8 @@ export class Token3DAdapter {
     }
   }
 
+  // ── Movement Update Loop & Phase Advancement ─────────────────────────────────────────────
+
   _updateForwardMovements(delta) {
     if (!this._movementStates.size) return;
     const bounds = this._computeMovementBounds();
@@ -2645,6 +2669,8 @@ export class Token3DAdapter {
       this._resetMovementState(state, { useStopBlend: true, clearStopFlags: true });
     }
   }
+
+  // ── Fall Phase & Landing ─────────────────────────────────────────────
 
   _advanceFallPhase(state, delta) {
     if (!state) return;
@@ -3134,6 +3160,8 @@ export class Token3DAdapter {
     return true;
   }
 
+  // ── Movement Step Advancement ─────────────────────────────────────────────
+
   _advanceMovementStep(state, distance, options = {}) {
     const step = state.activeStep;
     if (!step || distance <= 0) return false;
@@ -3244,6 +3272,8 @@ export class Token3DAdapter {
     }
     return completed;
   }
+
+  // ── Free Movement & Path State ─────────────────────────────────────────────
 
   _advanceFreeMovement(state, delta, bounds) {
     if (!state || !(delta > 0)) return;
@@ -3449,6 +3479,8 @@ export class Token3DAdapter {
       state.pathReached = false;
     }
   }
+
+  // ── Climb State Management ─────────────────────────────────────────────
 
   _clearPathState(state, options = {}) {
     if (!state) return;
@@ -3765,6 +3797,8 @@ export class Token3DAdapter {
 
     this._resetMovementState(state);
   }
+
+  // ── Climb Phase Execution ─────────────────────────────────────────────
 
   _startClimbPhase(state, climbInfo, options = {}) {
     if (!state || !climbInfo) {
@@ -4192,6 +4226,8 @@ export class Token3DAdapter {
     }
   }
 
+  // ── Climb Recover & Advance ─────────────────────────────────────────────
+
   _startClimbRecoverPhase(state) {
     if (!state) return;
 
@@ -4541,6 +4577,8 @@ export class Token3DAdapter {
     );
   }
 
+  // ── Goal Resumption & Navigation Helpers ─────────────────────────────────────────────
+
   _reissueMaintainedGoal(state, goal, options = {}) {
     if (!state?.token || !goal) return false;
     const gm = this.gameManager;
@@ -4771,6 +4809,8 @@ export class Token3DAdapter {
 
     return resumed;
   }
+
+  // ── Step Creation & Movement Reset ─────────────────────────────────────────────
 
   _lockStepAtTarget(state) {
     const step = state.activeStep;
@@ -5165,6 +5205,8 @@ export class Token3DAdapter {
     return true;
   }
 
+  // ── Utility Helpers ─────────────────────────────────────────────
+
   _cloneWorld(world) {
     return world ? { ...world } : null;
   }
@@ -5334,6 +5376,8 @@ export class Token3DAdapter {
     if (!tokenEntry || !world) return;
     tokenEntry.world = { x: world.x, y: world.y, z: world.z };
   }
+
+  // ── Vertical Bias, Cleanup & Visual Effects ─────────────────────────────────────────────
 
   setVerticalBias(v) {
     if (!Number.isFinite(v)) return;

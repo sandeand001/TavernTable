@@ -34,6 +34,8 @@ import { computeSlopeAspect, computeMoistureField } from './biome-painter/fields
 import { traceDiamondFacePath2D } from '../../utils/canvas/CanvasShapeUtils.js';
 
 export class BiomeCanvasPainter {
+  // ── Constructor ─────────────────────────────────────────────
+
   constructor(gameManager) {
     this.gameManager = gameManager;
     // Per-depth band layers so paint sits on the topmost faces in draw order
@@ -48,6 +50,9 @@ export class BiomeCanvasPainter {
           : Math.random() * 1e9
       ) >>> 0;
   }
+
+  // ── Private Helpers ─────────────────────────────────────────
+
   /** Optionally set a deterministic seed so palette noise and strokes are coherent across systems. */
   setSeed(seed) {
     if (Number.isFinite(seed)) this._seed = seed >>> 0;
@@ -85,8 +90,7 @@ export class BiomeCanvasPainter {
     return (h >>> 0) / 4294967296;
   }
 
-  // ========================= TERRAIN FIELD HELPERS =========================
-  // field helpers moved to biome-painter/fields.js
+  // ── Private Helpers (Terrain Fields) ────────────────────────
 
   /** Compute a representative orientation for a depth band, weighted by slope and optional predicate. */
   _bandOrientationForDepth(d, heights, slope, aspect, predicateFn = null, slopeGain = 1.0) {
@@ -507,7 +511,8 @@ export class BiomeCanvasPainter {
     ctx.restore();
   }
 
-  // ========================= GLOBAL (CANVAS-WIDE) MOTIFS =========================
+  // ── Private Helpers (Global Motifs) ─────────────────────────
+
   /** Draw multiple long ribbons across the current clip (e.g., dunes/waves). */
   _globalRibbons(ctx, canvas, count, width, color, alpha, orient = 0) {
     for (let i = 0; i < count; i++) {
@@ -579,6 +584,8 @@ export class BiomeCanvasPainter {
       ribbonAlongFlow: this._ribbonAlongFlow,
     };
   }
+
+  // ── Public API ──────────────────────────────────────────────
 
   /** Paint the canvas for the given biome and heights. */
   paint(biomeKey, heights, tilesHiddenCallback = null) {
@@ -1109,6 +1116,8 @@ export class BiomeCanvasPainter {
 
     if (typeof tilesHiddenCallback === 'function') tilesHiddenCallback(true);
   }
+
+  // ── Lifecycle ───────────────────────────────────────────────
 
   /** Remove the painter sprite and optionally restore tiles. */
   clear(tilesHiddenCallback = null) {

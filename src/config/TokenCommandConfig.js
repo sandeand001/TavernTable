@@ -1,4 +1,5 @@
 const DEFAULT_COMMANDS = [
+  // ── Advance Command ──────────────────────────────────────────
   {
     id: 'advance',
     label: 'Advance',
@@ -30,6 +31,7 @@ const DEFAULT_COMMANDS = [
       },
     ],
   },
+  // ── Hold Command ──────────────────────────────────────────────
   {
     id: 'hold',
     label: 'Hold',
@@ -38,6 +40,7 @@ const DEFAULT_COMMANDS = [
     accent: '#4E7BFF',
     tint: 0x4e7bff,
   },
+  // ── Support Command ──────────────────────────────────────────
   {
     id: 'support',
     label: 'Support',
@@ -62,6 +65,7 @@ const DEFAULT_COMMANDS = [
       },
     ],
   },
+  // ── Emotes Command ───────────────────────────────────────────
   {
     id: 'emotes',
     label: 'Emotes',
@@ -107,6 +111,7 @@ const DEFAULT_COMMANDS = [
       },
     ],
   },
+  // ── Focus Command ────────────────────────────────────────────
   {
     id: 'focus',
     label: 'Focus',
@@ -115,6 +120,7 @@ const DEFAULT_COMMANDS = [
     accent: '#A18BFF',
     tint: 0xa18bff,
   },
+  // ── Clear Command ────────────────────────────────────────────
   {
     id: 'clear',
     label: 'Clear',
@@ -125,6 +131,7 @@ const DEFAULT_COMMANDS = [
   },
 ];
 
+// ── Command Registry & Lookup ─────────────────────────────────
 export const TOKEN_COMMANDS = DEFAULT_COMMANDS;
 
 function registerCommand(map, command) {

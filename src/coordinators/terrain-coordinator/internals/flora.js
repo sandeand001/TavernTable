@@ -18,6 +18,8 @@ import {
   isCoastlineTile,
 } from '../../../config/terrain/FloraProfiles.js';
 
+// ── Cleanup & Resolution Helpers ───────────────────────────────────
+
 function clearExistingPlants(c) {
   const tm = c.terrainManager;
   if (!tm?.placeables) return;
@@ -52,6 +54,8 @@ function getBiomeRNG(baseSeed, biomeKey, salt) {
   const mix = (baseSeed >>> 0) ^ hash32(String(biomeKey || '')) ^ (salt * 0x9e3779b1);
   return createSeededRNG(mix >>> 0, salt >>> 0);
 }
+
+// ── Main Population Entry Point ───────────────────────────────────
 
 export function autoPopulateBiomeFlora(c, biomeKey, seed) {
   try {
@@ -100,6 +104,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
     const rows = c.gameManager.rows;
     const cols = c.gameManager.cols;
     const densityScale = densityMultiplier;
+    // ── Grid Strategy ─────────────────────────────────────────────────
     // Strategy: grid (orchard deterministic rows)
     if (strategy === 'grid' && grid) {
       const gx = Math.max(2, grid.x | 0);
@@ -213,6 +218,8 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       }
       return;
     }
+
+    // ── Generic Candidate Collection & Placement ───────────────────
 
     // Generic candidate collection (with optional filters)
     const filterFn =

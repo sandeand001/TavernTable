@@ -12,6 +12,8 @@ import {
   SELECTION_COLLIDER_RADIUS_RATIO,
 } from './MannequinConfig.js';
 
+// ── Mesh Creation ───────────────────────────────────────────────
+
 /* ------------------------------------------------------------------ */
 /*  Mesh creation                                                     */
 /* ------------------------------------------------------------------ */
@@ -152,6 +154,8 @@ async function _create3DToken(tokenEntry, scene, config) {
   }
 }
 
+// ── Skinned-Mesh Helper ───────────────────────────────────────────
+
 /* ------------------------------------------------------------------ */
 /*  Skinned-mesh helper                                               */
 /* ------------------------------------------------------------------ */
@@ -167,6 +171,8 @@ function _findFirstSkinnedMesh(root) {
   }
   return null;
 }
+
+// ── Loaders ───────────────────────────────────────────────────────
 
 /* ------------------------------------------------------------------ */
 /*  Loaders                                                           */
@@ -237,6 +243,8 @@ async function _getSkeletonUtils() {
   }
   return this._skeletonUtilsPromise;
 }
+
+// ── Templates & Cloning ───────────────────────────────────────────
 
 /* ------------------------------------------------------------------ */
 /*  Templates & cloning                                               */
@@ -354,6 +362,8 @@ async function _cloneTemplate(template) {
     return null;
   }
 }
+
+// ── Metadata, Tinting & Positioning ──────────────────────────────
 
 /* ------------------------------------------------------------------ */
 /*  Metadata, tinting & positioning                                   */

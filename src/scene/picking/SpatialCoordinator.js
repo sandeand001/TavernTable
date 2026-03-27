@@ -4,6 +4,7 @@
 // World Axis Convention: X (east), Z (south), Y (up).
 // Defaults (can be tuned later): one grid cell = 1 world unit on X and Z, elevation level = 0.5 world units.
 
+// ── Spatial Coordinator ─────────────────────────────────────────
 export class SpatialCoordinator {
   constructor(options = {}) {
     const {

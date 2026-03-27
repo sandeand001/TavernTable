@@ -31,6 +31,7 @@ import { placeNewToken as _placeNewToken } from './token-manager/internals/place
 // Orientation helpers
 import { rotateToken as _rotateToken } from './token-manager/internals/orientation.js';
 
+// ── Token Type Normalization ────────────────────────────
 const DEFAULT_TOKEN_TYPE = 'mannequin';
 const LEGACY_TOKEN_ALIASES = {
   'female-humanoid': DEFAULT_TOKEN_TYPE,
@@ -47,7 +48,9 @@ function normalizeTokenType(tokenType) {
   return LEGACY_TOKEN_ALIASES[lowered] || lowered;
 }
 
+// ── TokenManager Class ─────────────────────────────────
 export class TokenManager {
+  // ── Constructor & State Accessors ───────────────────────
   constructor(gameManager) {
     this.gameManager = gameManager;
     this.selectedTokenType = DEFAULT_TOKEN_TYPE;
@@ -90,6 +93,7 @@ export class TokenManager {
     }
   }
 
+  // ── Token Validation & Selection ───────────────────────
   /**
    * Validate positions of all placed tokens
    * @param {number} cols - Number of grid columns
@@ -135,6 +139,7 @@ export class TokenManager {
     return _rotateToken(this, tokenEntry, deltaRadians);
   }
 
+  // ── Token Placement & Removal ──────────────────────────
   /**
    * Find existing token at grid coordinates
    * @param {number} gridX - Grid X coordinate
@@ -184,6 +189,7 @@ export class TokenManager {
     }
   }
 
+  // ── Creature Creation & Snapping ───────────────────────
   createCreatureByType(type) {
     return _createCreatureByType(this, type);
   }
@@ -196,6 +202,7 @@ export class TokenManager {
     return _snapTokenToGrid(this, token, pointerLocalX, pointerLocalY);
   }
 
+  // ── Collection & Interactions ──────────────────────────
   /**
    * Add a token to the collection and set up interaction handlers
    * @param {Object} creature - Creature to add

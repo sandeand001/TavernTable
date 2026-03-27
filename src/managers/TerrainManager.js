@@ -49,6 +49,8 @@ import {
 } from './terrain-manager/internals/placeables.js';
 
 export class TerrainManager {
+  // ── Constructor ─────────────────────────────────────────────
+
   constructor(gameManager, terrainCoordinator) {
     this.gameManager = gameManager;
     this.terrainCoordinator = terrainCoordinator;
@@ -76,6 +78,8 @@ export class TerrainManager {
       timestamp: new Date().toISOString(),
     });
   }
+
+  // ── Public API ──────────────────────────────────────────────
 
   /**
    * Public wrapper for placing a terrain placeable (path/plant/structure) at grid coords.
@@ -108,6 +112,8 @@ export class TerrainManager {
       return false;
     }
   }
+
+  // ── Lifecycle ───────────────────────────────────────────────
 
   /**
    * Initialize terrain rendering system
@@ -471,6 +477,8 @@ export class TerrainManager {
     }
   }
 
+  // ── Private Helpers ─────────────────────────────────────────
+
   /**
    * DECOMPOSED METHOD: Validate tile creation inputs
    * @private
@@ -547,6 +555,8 @@ export class TerrainManager {
   _finalizeTerrainTile(terrainTile, x, y, tileKey) {
     return _finalizeTile(this, terrainTile, x, y, tileKey);
   }
+
+  // ── Public API (Rendering) ─────────────────────────────────
 
   /**
    * Get color for terrain height
@@ -1033,6 +1043,8 @@ export class TerrainManager {
       );
     }
   }
+
+  // ── Cleanup ────────────────────────────────────────────────
 
   /**
    * Refresh all terrain display (useful after grid resize or terrain reset)

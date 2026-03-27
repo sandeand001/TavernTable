@@ -2,6 +2,8 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { GameErrors } from '../../../utils/ErrorHandler.js';
 import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
 
+// ── Container Validation ───────────────────────────────────────
+
 /** Validate terrain container state before operations. */
 export function validateContainerState(m) {
   try {
@@ -46,6 +48,8 @@ export function validateContainerState(m) {
     throw error;
   }
 }
+
+// ── Show / Hide Tiles ──────────────────────────────────────────
 
 /** Show all terrain tiles (when terrain mode is enabled). */
 export function showAllTerrainTiles(m) {
@@ -115,6 +119,8 @@ export function hideAllTerrainTiles(m) {
     GameErrors.rendering(error, { stage: 'hideAllTerrainTiles' });
   }
 }
+
+// ── Full Terrain Cleanup ────────────────────────────────────────
 
 /** Clear all terrain tiles completely (for terrain mode transitions). */
 export function clearAllTerrainTiles(m) {

@@ -14,6 +14,8 @@ export class BiomeShadingController {
     this.c = coordinator;
   }
 
+  // ── Biome Palette Application ─────────────────────────────────────
+
   /** Re-color existing base grid tiles using currently selected biome palette. */
   applyToBaseGrid() {
     if (this.c.isTerrainModeActive) return;
@@ -218,6 +220,8 @@ export class BiomeShadingController {
     }
   }
 
+  // ── Base Tile Visibility ───────────────────────────────────────────
+
   /** Show or hide the base tile fills (keeping borders) */
   toggleBaseTileVisibility(show) {
     try {
@@ -238,6 +242,8 @@ export class BiomeShadingController {
       /* ignore */
     }
   }
+
+  // ── Color Resolution ──────────────────────────────────────────────
 
   /** Determine base tile color when not editing: biome palette if selected, else neutral. */
   getBiomeOrBaseColor(height, gx = 0, gy = 0) {

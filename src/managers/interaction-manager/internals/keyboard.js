@@ -2,10 +2,14 @@
 // Extracted from InteractionManager.js (Phase 8).
 // Follows the same (context, event) pattern as pan.js, zoom.js, picking.js.
 
+// ── Key Code Constants ──────────────────────────────────────────
+
 export const MOVE_FORWARD_CODES = new Set(['ArrowUp', 'KeyW']);
 export const MOVE_BACKWARD_CODES = new Set(['ArrowDown', 'KeyS']);
 export const ROTATE_LEFT_CODES = new Set(['ArrowLeft', 'KeyA']);
 export const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
+
+// ── Input Filtering ─────────────────────────────────────────────
 
 export function shouldIgnoreKeyTarget(target) {
   if (!target) return false;
@@ -20,6 +24,8 @@ export function shouldIgnoreKeyTarget(target) {
   }
   return false;
 }
+
+// ── Token Rotation Handlers ─────────────────────────────────────
 
 export function handleTokenRotationKeyDown(c, event) {
   try {
@@ -73,6 +79,8 @@ export function handleTokenRotationKeyUp(c, event) {
     return false;
   }
 }
+
+// ── Token Movement Handlers ─────────────────────────────────────
 
 export function handleTokenMovementKeyDown(c, event) {
   try {

@@ -1,6 +1,7 @@
 // src/terrain/biome-painter/fields.js
 // Pure helpers to compute terrain derivative fields used by the painter.
 
+// ── Slope & Aspect Computation ─────────────────────────
 /**
  * Compute per-tile slope magnitude and aspect (downhill direction angle in radians)
  * using simple central differences. Aspect is atan2(dzdy, dzdx).
@@ -31,6 +32,7 @@ export function computeSlopeAspect(gameManager, heights) {
   return { slope, aspect };
 }
 
+// ── Distance Field (BFS) ───────────────────────────────
 /**
  * Compute multi-source BFS distance (in tiles) to nearest source cell matching predicate.
  * @param {{cols:number, rows:number}} gameManager
@@ -74,6 +76,7 @@ function computeDistanceField(gameManager, heights, isSourceFn) {
   return dist;
 }
 
+// ── Moisture Field ─────────────────────────────────────
 /**
  * Moisture field 0..1, decaying with distance from negative-height (depressions) as proxy for water.
  * @param {{cols:number, rows:number}} gameManager

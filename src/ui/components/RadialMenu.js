@@ -1,5 +1,6 @@
 import { TOKEN_COMMANDS } from '../../config/TokenCommandConfig.js';
 
+// ── Constants ─────────────────────────────────────────────
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEWBOX_SIZE = 220;
 const CENTER = VIEWBOX_SIZE / 2;
@@ -35,6 +36,7 @@ const SUBMENU_LABEL_DISTANCE = (SUBMENU_OUTER_RADIUS + SUBMENU_LABEL_OUTSET) * M
 const SUBMENU_LABEL_VISIBLE_DISTANCE =
   (SUBMENU_OUTER_RADIUS + SUBMENU_LABEL_VISIBLE_OUTSET) * MENU_SCALE;
 
+// ── SVG Geometry Helpers ──────────────────────────────────
 function polarToCartesian(cx, cy, radius, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
   return {
@@ -86,7 +88,9 @@ function midpointAngle(startDeg, endDeg) {
   return startDeg + (endDeg - startDeg) / 2;
 }
 
+// ── RadialMenu Class ──────────────────────────────────────
 export class RadialMenu {
+  // ── Constructor ────────────────────────────────────────
   constructor(options = {}) {
     this.actions =
       Array.isArray(options.actions) && options.actions.length ? options.actions : TOKEN_COMMANDS;
@@ -132,6 +136,7 @@ export class RadialMenu {
     this._build();
   }
 
+  // ── Lifecycle ──────────────────────────────────────────
   attach(parent = document.body) {
     if (this.root.parentNode !== parent) {
       parent.appendChild(this.root);
@@ -191,6 +196,7 @@ export class RadialMenu {
     this._applyActiveState(commandId);
   }
 
+  // ── DOM Build ─────────────────────────────────────────
   _build() {
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', `0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`);
@@ -295,6 +301,7 @@ export class RadialMenu {
     svg.appendChild(this._submenuGroup);
   }
 
+  // ── Position Tracking ─────────────────────────────────
   _startTrackingPosition() {
     this._stopTrackingPosition();
     const step = () => {
@@ -354,6 +361,7 @@ export class RadialMenu {
     return this._context?.screenPosition || null;
   }
 
+  // ── Action Dispatch ────────────────────────────────────
   _handleAction(actionId) {
     if (!this._context) return;
     const payload = {
@@ -392,6 +400,7 @@ export class RadialMenu {
     ];
   }
 
+  // ── Submenu Management ─────────────────────────────────
   _toggleSubmenu(meta, subActions) {
     if (this._activeSubmenu?.actionId === meta.action.id) {
       this._clearSubmenu();
@@ -490,6 +499,7 @@ export class RadialMenu {
     }
   }
 
+  // ── Hover & Active State ───────────────────────────────
   _setSubHover(subActionId, isHovering) {
     const segment = this._submenuSegments.get(subActionId);
     const icon = this._submenuIcons.get(subActionId);
@@ -567,6 +577,7 @@ export class RadialMenu {
     });
   }
 
+  // ── Global Event Handlers ──────────────────────────────
   _bindGlobalHandlers() {
     document.addEventListener('pointerdown', this._boundPointerHandler, true);
     document.addEventListener('keydown', this._boundKeyHandler, true);

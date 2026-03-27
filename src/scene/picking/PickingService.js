@@ -6,6 +6,8 @@
 //  - Ground plane intersection now; future: terrain/token/placeable meshes
 
 export class PickingService {
+  // ── Constructor ───────────────────────────────────────────────────
+
   constructor({ gameManager } = {}) {
     this.gameManager = gameManager;
     this._three = gameManager?.threeSceneManager?.three || null;
@@ -19,6 +21,8 @@ export class PickingService {
     this._metrics = { raycasts: 0, lastMs: 0 };
     this._terrainIntersections = [];
   }
+
+  // ── Three.js Initialization ──────────────────────────────────────
 
   async _ensureThree() {
     if (this._three) return this._three;
@@ -79,6 +83,8 @@ export class PickingService {
     }
     return !!this._raycaster && !!this._v2 && !!this._hitPoint && !!this._plane;
   }
+
+  // ── Core Picking Logic ───────────────────────────────────────────
 
   _executeGroundPick(three, clientX, clientY, targetElement = null) {
     if (!three) return null;
@@ -242,6 +248,8 @@ export class PickingService {
     };
   }
 
+  // ── Metrics ───────────────────────────────────────────────────────
+
   _recordPickMetrics(start) {
     const end = (typeof performance !== 'undefined' && performance.now()) || Date.now();
     this._metrics.raycasts += 1;
@@ -257,6 +265,8 @@ export class PickingService {
       /* ignore metrics errors */
     }
   }
+
+  // ── Public API ────────────────────────────────────────────────────
 
   registerLayer(fn) {
     if (typeof fn === 'function') this._layers.push(fn);

@@ -11,6 +11,8 @@ import { installGridOverlayMethods } from './grid/GridOverlay.js';
 import { installCameraMethods } from './camera/CameraSystem.js';
 
 export class ThreeSceneManager {
+  // ── Constructor ───────────────────────────────────────────────────────────
+
   constructor(gameManager) {
     this.gameManager = gameManager;
     this.initialized = false;
@@ -102,6 +104,8 @@ export class ThreeSceneManager {
       /* ignore */
     }
   }
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────
 
   async initialize(containerId = 'game-container') {
     if (this.initialized) return;
@@ -431,6 +435,38 @@ export class ThreeSceneManager {
     }
   }
 
+  // ── Public API ───────────────────────────────────────────────────────────
+
+  ensureFallbackSurface() {
+    if (!this.degraded) return;
+    this._ensureDegradedPlaceholders();
+  }
+
+  addAnimationCallback(fn) {
+    if (typeof fn !== 'function') return () => {};
+    this._animCallbacks.push(fn);
+    return () => this.removeAnimationCallback(fn);
+  }
+
+  removeAnimationCallback(fn) {
+    this._animCallbacks = this._animCallbacks.filter((f) => f !== fn);
+  }
+
+  getRenderStats() {
+    const { startTime, frameCount, accumulatedMs } = this._metrics;
+    const avg = frameCount > 0 ? accumulatedMs / frameCount : 0;
+    return {
+      initialized: this.initialized,
+      degraded: this.degraded,
+      degradeReason: this.degradeReason,
+      startTime,
+      frameCount,
+      averageFrameMs: Number.isFinite(avg) ? +avg.toFixed(3) : 0,
+    };
+  }
+
+  // ── Private Helpers ───────────────────────────────────────────────────────────
+
   _hasUsableWebGLContext() {
     try {
       const isTestEnv =
@@ -553,11 +589,6 @@ export class ThreeSceneManager {
     } catch (_) {
       /* ignore */
     }
-    this._ensureDegradedPlaceholders();
-  }
-
-  ensureFallbackSurface() {
-    if (!this.degraded) return;
     this._ensureDegradedPlaceholders();
   }
 
@@ -867,28 +898,7 @@ export class ThreeSceneManager {
     requestAnimationFrame(updateOverlay);
   }
 
-  addAnimationCallback(fn) {
-    if (typeof fn !== 'function') return () => {};
-    this._animCallbacks.push(fn);
-    return () => this.removeAnimationCallback(fn);
-  }
-
-  removeAnimationCallback(fn) {
-    this._animCallbacks = this._animCallbacks.filter((f) => f !== fn);
-  }
-
-  getRenderStats() {
-    const { startTime, frameCount, accumulatedMs } = this._metrics;
-    const avg = frameCount > 0 ? accumulatedMs / frameCount : 0;
-    return {
-      initialized: this.initialized,
-      degraded: this.degraded,
-      degradeReason: this.degradeReason,
-      startTime,
-      frameCount,
-      averageFrameMs: Number.isFinite(avg) ? +avg.toFixed(3) : 0,
-    };
-  }
+  // ── Cleanup ───────────────────────────────────────────────────────────
 
   dispose() {
     try {

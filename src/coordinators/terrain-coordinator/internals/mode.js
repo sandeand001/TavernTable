@@ -1,9 +1,13 @@
 import { GameErrors } from '../../../utils/ErrorHandler.js';
 
+// ── Activation ────────────────────────────────────────────────────
+
 /** Activate terrain mode state */
 export function activateTerrainMode(c) {
   c.isTerrainModeActive = true;
 }
+
+// ── State Loading & Display ────────────────────────────────────────
 
 /** Load terrain state into working buffer and display overlay */
 export function loadTerrainStateAndDisplay(c) {
@@ -58,6 +62,8 @@ export function loadTerrainStateAndDisplay(c) {
     }
   }
 }
+
+// ── Activation Error Handling ──────────────────────────────────────
 
 /** Handle errors during terrain mode activation with enriched context, then rethrow. */
 export function handleTerrainModeActivationError(c, error) {

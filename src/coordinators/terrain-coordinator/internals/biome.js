@@ -1,6 +1,7 @@
 // Biome-related UI toggles and shading enablement outside of terrain mode
 // This module centralizes the logic to enable/disable rich shading without altering behavior.
 
+// ── Rich Shading Toggle ───────────────────────────────
 /**
  * Enable or disable the rich biome canvas shading outside terrain mode.
  * Mirrors existing TerrainCoordinator.setRichShadingEnabled behavior.
@@ -38,6 +39,7 @@ export function setRichShadingEnabled(c, enabled) {
   }
 }
 
+// ── Biome Seed Management ─────────────────────────────
 /**
  * Set a deterministic biome seed and repaint if applicable (outside terrain mode).
  * Mirrors TerrainCoordinator.setBiomeSeed behavior.
@@ -64,6 +66,7 @@ export function setBiomeSeed(c, seed) {
   }
 }
 
+// ── Post-Reset Shading ─────────────────────────────────
 /**
  * Handle shading state after a terrain reset when outside terrain mode.
  * Applies biome shading if enabled+biome, or ensures base tiles visible and clears painter if disabled.

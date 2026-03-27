@@ -1,6 +1,8 @@
 // LightingSystem.js — Sun cycle, color math, time-of-day profiles, terrain/placeable lighting.
 // Extracted from ThreeSceneManager.js (Phase 6). Installed via mixin pattern.
 
+// ── Time Normalization ─────────────────────────────────────────────
+
 function _normalizeMinutes(mins) {
   if (!Number.isFinite(mins)) return 0;
   let value = mins % 1440;
@@ -21,6 +23,8 @@ function _azimuthDegreesToMinutes(degrees) {
   const minutes = (normalized / 360) * 1440;
   return this._normalizeMinutes(minutes);
 }
+
+// ── Sun Elevation & Stored Time ───────────────────────────────────
 
 function _applySunElevationForTime(minutes, options = {}) {
   const normalized = this._normalizeMinutes(minutes);
@@ -66,6 +70,8 @@ function _applyStoredSunTime() {
   this.setSunTimeMinutes(this._sunTimeMinutes ?? 720, { immediate: true, skipPersist: true });
 }
 
+// ── Sun Animation ─────────────────────────────────────────────────
+
 function _ensureSunAnimator() {
   if (this._sunAnimFn) return;
   this._sunAnimFn = (ts) => {
@@ -103,6 +109,8 @@ function _applySunAzimuth() {
   }
   this._updateSunCoverage();
 }
+
+// ── Public Sun API ────────────────────────────────────────────────
 
 function setSunAzimuthDegrees(degrees, options = {}) {
   if (!Number.isFinite(degrees)) return;
@@ -177,6 +185,8 @@ function getSunTimeMinutes() {
   this._sunTimeMinutes = derived;
   return derived;
 }
+
+// ── Color Math Utilities ───────────────────────────────────────────
 
 function _normalizeDegrees(deg) {
   if (!Number.isFinite(deg)) return 0;
@@ -272,6 +282,8 @@ function _timeWindowFactor(minutes, start, end, fade = 60) {
   const fall = 1 - this._smoothstep(e - width, e, m);
   return this._clamp(Math.min(rise, fall), 0, 1);
 }
+
+// ── Time-of-Day Profile Engine ─────────────────────────────────────
 
 function getTimeOfDayProfile(minutes = this.getSunTimeMinutes()) {
   const normalized = this._normalizeMinutes(Number.isFinite(minutes) ? minutes : 0);
@@ -504,6 +516,8 @@ function getTimeOfDayProfile(minutes = this.getSunTimeMinutes()) {
   };
 }
 
+// ── Terrain / Placeable Color Registration ────────────────────────
+
 function registerTerrainGeometryBasis(geometry) {
   try {
     if (!geometry || typeof geometry.getAttribute !== 'function') {
@@ -547,6 +561,8 @@ function registerPlaceablePool(pool) {
     /* ignore placeable profile apply */
   }
 }
+
+// ── Profile Application (terrain, placeables, lights) ───────────
 
 function _applyTerrainColorProfile(terrainProfile) {
   if (!terrainProfile || !this._terrainColorAttribute || !this._terrainBaseColors) return;

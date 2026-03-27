@@ -4,6 +4,8 @@ import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 // Depth utils no longer used for rendering order; we align to tile depth bands.
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
+// ── Token Placement ────────────────────────────────────────────
+
 export function placeNewToken(c, gridX, gridY, gridContainer) {
   try {
     const hasBlockingPlaceable = (gx, gy) => {

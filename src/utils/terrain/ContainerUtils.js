@@ -7,8 +7,10 @@
  * Eliminates code duplication in TerrainManager cleanup patterns.
  */
 
+// ── Imports ────────────────────────────────────────────────────
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../Logger.js';
 
+// ── Container Lifecycle Utilities ───────────────────────────────
 export class ContainerUtils {
   /**
    * Safely remove a child from a container with proper validation

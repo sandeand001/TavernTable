@@ -1,6 +1,8 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { TerrainValidation } from '../../../utils/terrain/TerrainValidation.js';
 
+// ── System State Validation ───────────────────────────────────────
+
 /**
  * Validate the overall terrain system state. Mirrors TerrainCoordinator.validateTerrainSystemState
  */
@@ -49,6 +51,8 @@ export function validateTerrainSystemState(c) {
     throw error;
   }
 }
+
+// ── Data Consistency Validation ───────────────────────────────────
 
 /**
  * Validate consistency of terrain data arrays (working/base). Mirrors TerrainCoordinator.validateTerrainDataConsistency

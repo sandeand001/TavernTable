@@ -1,3 +1,5 @@
+// ── Angle Normalization ─────────────────────────────────────────
+
 const TAU = Math.PI * 2;
 
 function normalizeAngleInternal(angle) {
@@ -11,6 +13,8 @@ function normalizeAngleInternal(angle) {
 export function normalizeAngle(angle) {
   return normalizeAngleInternal(angle);
 }
+
+// ── Token Rotation ─────────────────────────────────────────────
 
 export function rotateToken(c, tokenEntry, deltaRadians) {
   if (!tokenEntry || !Number.isFinite(deltaRadians) || deltaRadians === 0) {

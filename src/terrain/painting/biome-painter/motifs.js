@@ -1,6 +1,7 @@
 // Global and face-level painterly motif helpers extracted from BiomeCanvasPainter.
 // These are pure-ish helpers that rely on a provided utils object for RNG, color ops, and field sampling.
 
+// ── Blob & Ribbon Strokes ──────────────────────────────
 /** Stroke a soft, perturbed blob shape. */
 export function strokeBlob(ctx, cx, cy, r, color, alpha, jag = 0.12, steps = 24, u) {
   ctx.save();
@@ -53,6 +54,7 @@ export function strokeRibbon(ctx, sx, sy, len, width, color, alpha, orient = 0, 
   ctx.restore();
 }
 
+// ── Global Striations ─────────────────────────────────
 /** Parallel striations across current clip at a given angle. */
 export function globalStriations(
   ctx,
@@ -87,6 +89,7 @@ export function globalStriations(
   ctx.restore();
 }
 
+// ── Global Cracks ──────────────────────────────────────
 /** Crack network across current clip. */
 export function globalCracks(
   ctx,
@@ -120,6 +123,7 @@ export function globalCracks(
   ctx.restore();
 }
 
+// ── Scatter Blobs & Tufts ──────────────────────────────
 /** Scatter soft blobs across the clip. */
 export function scatterBlobsGlobal(
   ctx,

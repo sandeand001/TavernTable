@@ -3,6 +3,8 @@ import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { Sanitizers } from '../../../utils/Validation.js';
 import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 
+// ── Brush Size Clamping ────────────────────────────────────────────
+
 const clampToOddBrushSize = (value) => {
   const min = Number.isFinite(TERRAIN_CONFIG.MIN_BRUSH_SIZE) ? TERRAIN_CONFIG.MIN_BRUSH_SIZE : 1;
   const max = Number.isFinite(TERRAIN_CONFIG.MAX_BRUSH_SIZE) ? TERRAIN_CONFIG.MAX_BRUSH_SIZE : min;
@@ -15,6 +17,8 @@ const clampToOddBrushSize = (value) => {
   }
   return clamped;
 };
+
+// ── Tool Selection ────────────────────────────────────────────────
 
 export function setTerrainTool(c, tool) {
   let sanitizedTool;
@@ -55,6 +59,8 @@ export function setTerrainTool(c, tool) {
     LOG_CATEGORY.USER
   );
 }
+
+// ── Brush Size Accessors ───────────────────────────────────────────
 
 export function getBrushSize(c) {
   return c.brush?.brushSize ?? TERRAIN_CONFIG.MIN_BRUSH_SIZE;

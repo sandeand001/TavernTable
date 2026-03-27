@@ -10,6 +10,7 @@
     document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', fn) : fn();
 
   READY(() => {
+    // ── DOM Injection & Toggle Wiring ───────────────────────
     const inject = () => {
       const gm = window.gameManager;
       if (!gm) return false;
@@ -110,6 +111,7 @@
       return true;
     };
 
+    // ── Polling Loop ───────────────────────────────────────
     let attempts = 0;
     const MAX = 200; // ~20s
     // Skip polling loop entirely in Jest to avoid lingering timers

@@ -1,3 +1,4 @@
+// ── Outline Material & Geometry ────────────────────────
 function buildOutlineMaterial(three, baseColor, lineAlpha, lineWidth) {
   const material = new three.LineBasicMaterial({
     color: typeof baseColor === 'number' ? baseColor : 0xffffff,
@@ -52,6 +53,7 @@ function buildOutlineGeometry(three) {
   return manual;
 }
 
+// ── Outline Pool Management ────────────────────────────
 export function ensureOutlinePool({
   three,
   group,
@@ -86,6 +88,7 @@ export function ensureOutlinePool({
   return { pool: outlinePool, material: outlineMaterial };
 }
 
+// ── Style Sync ─────────────────────────────────────────
 export function syncOutlineStyle(material, colorHex, lineAlpha, lineWidth) {
   if (!material) return;
   try {

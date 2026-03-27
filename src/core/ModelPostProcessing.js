@@ -3,6 +3,7 @@
 // Handles texture application, foliage detection, alpha testing,
 // shadow setup, height-based scaling, and per-asset tuning.
 
+// ── Imports & Constants ─────────────────────────────────────────
 import logger, { LOG_CATEGORY } from '../utils/Logger.js';
 
 const MODEL_LOG_CATEGORY = LOG_CATEGORY.CACHE;
@@ -286,6 +287,7 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
   }
 }
 
+// ── Target Height Computation ───────────────────────────────────
 /**
  * Determine canonical target height in scene units for a given registry key.
  * These values preserve natural relative proportions (tree > bush > flower > pebble).
@@ -314,6 +316,7 @@ export function computeTargetHeight(key) {
   return 6;
 }
 
+// ── Auto-Scaling ────────────────────────────────────────────────
 export function autoScaleModel(three, root, targetHeight = 6) {
   try {
     const box = new three.Box3().setFromObject(root);

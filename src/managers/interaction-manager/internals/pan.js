@@ -1,5 +1,7 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
 
+// ── Drag Start ──────────────────────────────────────────────────
+
 export function startGridDragging(c, event) {
   c.isDragging = true;
   c.dragStartX = event.clientX;
@@ -18,12 +20,16 @@ export function startGridDragging(c, event) {
   event.stopPropagation();
 }
 
+// ── Drag Update ─────────────────────────────────────────────────
+
 export function updateGridDragPosition(c, event) {
   const deltaX = event.clientX - c.dragStartX;
   const deltaY = event.clientY - c.dragStartY;
   c.gameManager.gridContainer.x = c.gridStartX + deltaX;
   c.gameManager.gridContainer.y = c.gridStartY + deltaY;
 }
+
+// ── Drag End ────────────────────────────────────────────────────
 
 export function stopGridDragging(c) {
   c.isDragging = false;

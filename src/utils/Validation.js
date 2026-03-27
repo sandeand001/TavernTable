@@ -5,6 +5,7 @@
  * Provides consistent input validation, type checking, and data sanitization
  */
 
+// ── Imports ────────────────────────────────────────────────────
 import {
   GRID_CONFIG,
   CREATURE_SCALES,
@@ -13,6 +14,7 @@ import {
 } from '../config/GameConstants.js';
 import { logger } from './Logger.js';
 
+// ── Type Validators ────────────────────────────────────────────
 /**
  * Basic type validation utilities
  */
@@ -84,6 +86,7 @@ export const TypeValidators = {
   },
 };
 
+// ── Game Validators ───────────────────────────────────────────
 /**
  * Game-specific validation utilities
  */
@@ -273,6 +276,7 @@ export const GameValidators = {
   },
 };
 
+// ── Sanitizers ─────────────────────────────────────────────────
 /**
  * Input sanitization utilities
  */

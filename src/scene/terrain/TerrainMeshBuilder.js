@@ -5,6 +5,8 @@
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 
 export class TerrainMeshBuilder {
+  // ── Constructor ───────────────────────────────────────────────────
+
   constructor(opts = {}) {
     this.tileWorldSize = opts.tileWorldSize || 1.0; // world units per tile (X/Z)
     this.elevationUnit = opts.elevationUnit || 0.5; // world Y per elevation level
@@ -15,6 +17,8 @@ export class TerrainMeshBuilder {
     // Force the advanced per-tile + wall geometry path even if legacy path available.
     this.forceAdvanced = !!opts.forceAdvanced;
   }
+
+  // ── Build: Geometry Generation ────────────────────────────────────
 
   build({ cols, rows, getHeight, three, getBiomeColor, getWallColor }) {
     if (!three) throw new Error('Three namespace required');

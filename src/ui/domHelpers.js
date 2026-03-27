@@ -1,5 +1,6 @@
 // Small DOM helpers to keep selectors DRY and consistent across UI modules
 
+// ── Creature & Token Selectors ─────────────────────────
 /** CSS selector string for all creature token buttons (including remove). */
 export const CREATURE_BUTTONS_SELECTOR = '#creature-content button[id^="token-"], #token-remove';
 
@@ -16,6 +17,7 @@ export function getFacingButton() {
   return document.getElementById('facing-right');
 }
 
+// ── Terrain Controls ──────────────────────────────────
 /** Returns terrain tool buttons (raise/lower). */
 export function getTerrainToolButtons() {
   return {
@@ -24,6 +26,7 @@ export function getTerrainToolButtons() {
   };
 }
 
+// ── Grid Controls ──────────────────────────────────────
 /** Returns grid size input elements. */
 export function getGridSizeInputs() {
   return {
@@ -84,6 +87,7 @@ export function getTokenButtonByType(tokenType) {
   return document.getElementById(`token-${tokenType}`);
 }
 
+// ── Dice UI ────────────────────────────────────────────
 /** Returns dice UI elements. */
 export function getDiceCountEl() {
   return document.getElementById('dice-count');
@@ -104,6 +108,7 @@ export function getDiceClearButton() {
   return document.querySelector('#dice-log-panel .panel-footer .clear-button');
 }
 
+// ── Grid Actions & Display ─────────────────────────────
 /** Returns grid apply/reset zoom buttons. */
 export function getGridActionButtons() {
   return {
@@ -127,6 +132,7 @@ export function getDiceLogContentEl() {
   return document.getElementById('dice-log-content');
 }
 
+// ── Shading & Biome Controls ───────────────────────────
 /** Returns the rich shading controls elements (shading intensity, density, shoreline sand, perf). */
 export function getShadingControls() {
   return {
@@ -151,6 +157,7 @@ export function getScaleMarks() {
   return document.querySelectorAll('.scale-mark');
 }
 
+// ── Tab Navigation ─────────────────────────────────────
 /** Returns the tab navigation buttons. */
 export function getTabButtons() {
   return document.querySelectorAll('.tab-button');
@@ -161,6 +168,7 @@ export function getTabPanels() {
   return document.querySelectorAll('.tab-panel');
 }
 
+// ── Slider Controls ───────────────────────────────────
 /** Returns grid opacity slider and its value element (next sibling). */
 export function getGridOpacityControl() {
   const slider = document.getElementById('grid-opacity');
@@ -186,6 +194,7 @@ export function getVisualGridToggle() {
   return document.getElementById('visual-grid-toggle');
 }
 
+// ── Biome Buttons ──────────────────────────────────────
 /** Returns all biome button elements under the biome root (or provided root). */
 export function getBiomeButtons(root = getBiomeRootEl()) {
   if (!root) return [];
@@ -198,6 +207,7 @@ export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
   return root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
 }
 
+// ── Placeable UI ───────────────────────────────────────
 /** Returns the root element where terrain placeable items should be injected. */
 export function getTerrainPlaceablesRoot() {
   return document.getElementById('terrain-placeables-root');
@@ -226,6 +236,7 @@ export function createPlaceableButton(id, label, imgSrc) {
   return btn;
 }
 
+// ── Error UI ───────────────────────────────────────────
 /** Error UI helpers */
 export function getErrorContainer() {
   return document.getElementById('tavern-error-container');

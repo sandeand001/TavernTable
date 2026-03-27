@@ -6,6 +6,8 @@
  * prototype via `installSelectionMethods(prototype)`.
  */
 
+// ── Material Creation ──────────────────────────────────────────────
+
 function _createMaterialForToken(three, tokenEntry) {
   try {
     const sprite = tokenEntry?.creature?.sprite;
@@ -54,6 +56,8 @@ function _createMaterialForToken(three, tokenEntry) {
   });
 }
 
+// ── Facing / Orientation ───────────────────────────────────────────
+
 function _syncFacingDirection() {
   const gm = this.gameManager;
   if (!gm || !gm.is3DModeActive?.()) return;
@@ -69,6 +73,8 @@ function _syncFacingDirection() {
     /* ignore */
   }
 }
+
+// ── Selection & Hover State ───────────────────────────────────────
 
 function getSelectedToken() {
   return this._selectedToken || null;
@@ -196,6 +202,8 @@ function _normalizeAngle(angle) {
   return normalized;
 }
 
+// ── Selection Indicator Lifecycle ─────────────────────────────────
+
 function clearHighlights() {
   this.setHoverToken(null);
   this.setSelectedToken(null);
@@ -269,6 +277,8 @@ async function _ensureSelectionIndicator(tokenEntry) {
     return null;
   }
 }
+
+// ── Visual State Refresh ──────────────────────────────────────────
 
 function _setSelectionIndicatorSuppressed(state, suppressed) {
   if (!state) return;

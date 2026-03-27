@@ -21,12 +21,13 @@
  * @since 1.0.0
  */
 
+// ── Imports ────────────────────────────────────────────────────
 import { GameValidators } from '../../utils/Validation.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/ErrorHandler.js';
 import { DICE_CONFIG } from '../../config/GameConstants.js';
 import { playD20RollOnGrid } from './dice3d.js';
-// UI decoupling: DOM access injected via setDiceDomPorts. Fallbacks query document directly.
+// ── DOM Port Injection ──────────────────────────────────────────
 let _diceDomPorts = {};
 export function setDiceDomPorts(ports = {}) {
   _diceDomPorts = ports || {};
@@ -47,7 +48,7 @@ function getDiceResultEl() {
   return document.querySelector('[data-dice-result]');
 }
 
-// Dice rolling functionality with animation
+// ── 3D Dice Integration ────────────────────────────────────────
 let isRolling = false;
 
 function maybePlay3DDice({ sides, diceCount } = {}) {
@@ -67,6 +68,7 @@ function maybePlay3DDice({ sides, diceCount } = {}) {
   return Promise.resolve(null);
 }
 
+// ── Roll Logic & Animation ─────────────────────────────────────
 /**
  * Rolls dice with animation and validation
  * @param {number} sides - Number of sides on the die (4, 6, 8, 10, 12, 20, 100)

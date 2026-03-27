@@ -4,6 +4,7 @@
 
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
 
+// ── Stats Formatting ───────────────────────────────────
 function formatStats(stats) {
   if (!stats) return '';
   const { degraded, degradeReason, frameCount, averageFrameMs } = stats;
@@ -24,6 +25,7 @@ function setHybridUnavailable(reason) {
   }
 }
 
+// ── Failure Handling ──────────────────────────────────
 function handleHybridFailure(toggle, error) {
   try {
     const reasonFromManager = window.gameManager?.threeSceneManager?.degradeReason;
@@ -44,6 +46,7 @@ function handleHybridFailure(toggle, error) {
   }
 }
 
+// ── Stats Update ───────────────────────────────────────
 function updateStats() {
   try {
     const el = document.getElementById('hybrid-stats');
@@ -59,6 +62,7 @@ function updateStats() {
   }
 }
 
+// ── Auto-Enable (No Toggle) ────────────────────────────
 function autoEnableHybridWithoutToggle(retries = 5) {
   try {
     if (!window.gameManager) {
@@ -94,6 +98,7 @@ function autoEnableHybridWithoutToggle(retries = 5) {
   }
 }
 
+// ── Toggle Attachment ──────────────────────────────────
 function attachHybridToggle() {
   const toggle = document.getElementById('hybrid-render-toggle');
   if (!toggle) {
@@ -157,6 +162,7 @@ function attachHybridToggle() {
   requestAnimationFrame(statsLoop);
 }
 
+// ── Event Listeners ───────────────────────────────────
 // Delay until window load so GameManager and DOM exist
 window.addEventListener('load', () => {
   try {

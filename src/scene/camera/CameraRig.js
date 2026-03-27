@@ -2,6 +2,7 @@
 // Phase 1: Orthographic camera controller abstraction (pan, zoom, target focus).
 // Pure math; no direct Three.js dependency beyond expected camera interface.
 
+// ── Camera Rig ─────────────────────────────────────────────────
 export class CameraRig {
   constructor(options = {}) {
     const {

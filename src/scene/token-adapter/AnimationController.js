@@ -14,6 +14,8 @@
 
 import { DEFAULT_MOVEMENT_PROFILE } from './MannequinConfig.js';
 
+// ── Animation Setup & Clip Resolution ────────────────────────────
+
 /* ------------------------------------------------------------------ */
 /*  Animation setup & clip resolution                                  */
 /* ------------------------------------------------------------------ */
@@ -310,6 +312,8 @@ async function _resolveAnimationClip(descriptor, fallbackClip, options = {}) {
   return this._cloneClip(fallbackClip);
 }
 
+// ── Clip Loading & Caching ────────────────────────────────────────
+
 /* ------------------------------------------------------------------ */
 /*  Clip loading & caching                                             */
 /* ------------------------------------------------------------------ */
@@ -366,6 +370,8 @@ function _buildAnimationCacheKey(path, targetKey) {
   return `${base}::${targetKey}`;
 }
 
+// ── Retargeting ───────────────────────────────────────────────────
+
 /* ------------------------------------------------------------------ */
 /*  Retargeting                                                        */
 /* ------------------------------------------------------------------ */
@@ -393,6 +399,8 @@ async function _retargetAnimationClip(clip, sourceRoot, targetRoot, options = {}
   }
   return clip;
 }
+
+// ── Clip Utilities ───────────────────────────────────────────────
 
 /* ------------------------------------------------------------------ */
 /*  Clip utilities                                                     */
@@ -432,6 +440,8 @@ function _selectPrimaryClip(clips) {
   return best || clips[0] || null;
 }
 
+// ── Action Configuration ──────────────────────────────────────────
+
 /* ------------------------------------------------------------------ */
 /*  Action configuration                                               */
 /* ------------------------------------------------------------------ */
@@ -459,6 +469,8 @@ function _configureAction(action, descriptor, three, defaults = {}) {
   action.reset();
   action.stop();
 }
+
+// ── Movement Profile ─────────────────────────────────────────────
 
 /* ------------------------------------------------------------------ */
 /*  Movement profile                                                   */
@@ -604,6 +616,8 @@ function _extractClipDuration(action) {
   return 0;
 }
 
+// ── Playback ─────────────────────────────────────────────────────
+
 /* ------------------------------------------------------------------ */
 /*  Playback                                                           */
 /* ------------------------------------------------------------------ */
@@ -729,6 +743,8 @@ function playTokenAnimation(tokenEntry, animationKey, options = {}) {
 
   return true;
 }
+
+// ── Manual Animation State ───────────────────────────────────────
 
 /* ------------------------------------------------------------------ */
 /*  Manual animation state                                             */

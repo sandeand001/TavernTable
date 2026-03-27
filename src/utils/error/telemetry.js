@@ -1,4 +1,6 @@
 // Error telemetry manager extracted with no behavior changes.
+
+// ── ErrorTelemetryManager Class ─────────────────────────
 export class ErrorTelemetryManager {
   constructor(config) {
     this.config = config;
@@ -6,6 +8,7 @@ export class ErrorTelemetryManager {
     this.sendTimeout = null;
   }
 
+  // ── Error Reporting ───────────────────────────────────
   async report(errorEntry) {
     if (!this.config.enableTelemetry || !this.config.telemetryEndpoint) {
       return;
@@ -24,6 +27,7 @@ export class ErrorTelemetryManager {
     if (typeof this.sendTimeout?.unref === 'function') this.sendTimeout.unref();
   }
 
+  // ── Batch Sending ──────────────────────────────────────
   async sendBatch() {
     if (this.pendingErrors.length === 0) return;
 

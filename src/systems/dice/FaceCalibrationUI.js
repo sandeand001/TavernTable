@@ -1,6 +1,7 @@
 // Face calibration UI for the d20 dice system.
 // Extracted from dice3d.js (Phase 7).
 
+// ── Imports ────────────────────────────────────────────────────
 import logger from '../../utils/Logger.js';
 import {
   diceState,
@@ -18,6 +19,7 @@ import {
 } from './DiceState.js';
 import { ensureThreeNamespace, ensureBlueprint, cloneDice } from './DiceModelManager.js';
 
+// ── Calibration Sequence & Face Cycling ─────────────────────────
 function getCalibrationSequence() {
   return D20_FACE_CALIBRATION_SEQUENCE.map((entry) => ({ ...entry }));
 }
@@ -73,6 +75,7 @@ function cycleCalibrationFace(direction = 0) {
   return diceState.faceCalibrationState.currentFaceInfo;
 }
 
+// ── Pointer Handling ───────────────────────────────────────────
 function handleCalibrationPointer(event) {
   if (
     !diceState.faceCalibrationState?.mesh ||
@@ -127,6 +130,7 @@ function handleCalibrationPointer(event) {
   }
 }
 
+// ── Calibration Lifecycle ───────────────────────────────────────
 export async function startD20FaceCalibration(options = {}) {
   if (!hasWindow()) return null;
   const manager = getSceneManager();
@@ -342,7 +346,7 @@ export function stopD20FaceCalibration() {
   return records;
 }
 
-// Register window globals for console access
+// ── Window Globals Registration ────────────────────────────────
 if (hasWindow()) {
   window.__TT_START_D20_CALIBRATION = (options) => startD20FaceCalibration(options);
   window.__TT_STOP_D20_CALIBRATION = () => stopD20FaceCalibration();

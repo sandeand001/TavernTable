@@ -1,6 +1,8 @@
 // CameraSystem.js — Isometric mode, zoom, pitch, frustum, reframe, calibration.
 // Extracted from ThreeSceneManager.js (Phase 6). Installed via mixin pattern.
 
+// ── Isometric / Pitch Mode ─────────────────────────────────────────
+
 function setIsometricMode(enabled = true) {
   this._isoMode = !!enabled;
   if (!this.camera) return;
@@ -139,6 +141,8 @@ function setIsoAngles({ yaw, pitch }) {
   }
 }
 
+// ── Camera Base Placement ──────────────────────────────────────────
+
 function _applyCameraBase({ cx, cz, span }) {
   if (!this.camera) return;
   if (this._isoMode) {
@@ -200,6 +204,8 @@ function _applyCameraBase({ cx, cz, span }) {
     /* ignore */
   }
 }
+
+// ── Isometric Camera Internals ─────────────────────────────────────
 
 /** Internal: apply isometric camera base placement & debugging */
 function _applyIsoCameraBase({ cx, cz, span }) {
@@ -310,6 +316,8 @@ function _computeIsoPosition({ isoPitch, isoYaw, cx, cz }) {
   return { x, y, z, horizDistRef: radius * cosP, pitchNorm, minY, minFloor, maxMin };
 }
 
+// ── Diagnostics & Measurement ─────────────────────────────────────
+
 /** Emit diagnostic info about current isometric pixel step ratio & effective pitch. */
 function debugIsoCamera() {
   try {
@@ -364,6 +372,8 @@ function measureTileStepPixelsProjected() {
     return null;
   }
 }
+// ── Calibration ───────────────────────────────────────────────────
+
 function calibrateTo2DTileAspect({ iterations = 28, minDeg = 10, maxDeg = 60 } = {}) {
   if (!this._isoMode) return null;
   const tw = this.gameManager?.tileWidth;
@@ -407,6 +417,8 @@ function calibrateTo2DTileAspect({ iterations = 28, minDeg = 10, maxDeg = 60 } =
   }
   return best;
 }
+// ── Frustum / Reframe ─────────────────────────────────────────────
+
 /** Recompute orthographic frustum. Simplified: constant board-diagonal based box in iso; aspect-based span otherwise. */
 function reframe() {
   if (!this.camera) return;
@@ -492,6 +504,8 @@ function reframe() {
   }
 }
 
+// ── Zoom ──────────────────────────────────────────────────────────
+
 /** Smooth zoom interpolation (called per frame) */
 function _updateZoom(dtMs) {
   if (this._zoom === this._targetZoom) return;
@@ -515,6 +529,8 @@ function setZoom(z) {
 function getZoom() {
   return this._zoom;
 }
+
+// ── Tile Step Measurement ─────────────────────────────────────────
 
 // Removed legacy calibrateIsoPitch() in favor of explicit solveIsoPitchForTargetRatio() utility.
 
@@ -559,6 +575,8 @@ function measureTileStepPixels() {
     return null;
   }
 }
+
+// ── Pitch Solver ──────────────────────────────────────────────────
 
 /** Solve pitch numerically to match target vertical/horizontal pixel step ratio (parity disabled). */
 function solveIsoPitchForTargetRatio(
@@ -605,6 +623,8 @@ function solveIsoPitchForTargetRatio(
   best.bestDeg = best.deg; // backward compatibility for UI check
   return best;
 }
+
+// ── Mixin Installation ────────────────────────────────────────────
 
 export function installCameraMethods(prototype) {
   prototype.setIsometricMode = setIsometricMode;

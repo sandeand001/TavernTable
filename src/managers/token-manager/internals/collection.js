@@ -1,5 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../../utils/Logger.js';
 
+// ── Token Registration ─────────────────────────────────────────
+
 export function addTokenToCollection(
   c,
   creature,

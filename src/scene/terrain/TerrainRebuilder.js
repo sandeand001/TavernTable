@@ -8,6 +8,8 @@ import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 
 export class TerrainRebuilder {
+  // ── Constructor ───────────────────────────────────────────────────
+
   constructor({ gameManager, builder, debounceMs = 120 } = {}) {
     this.gameManager = gameManager;
     this.builder = builder; // instance of TerrainMeshBuilder
@@ -16,6 +18,8 @@ export class TerrainRebuilder {
     this._lastArgs = null;
     this._lastFlushTime = Number.NEGATIVE_INFINITY;
   }
+
+  // ── Debounce / Request ─────────────────────────────────────────────
 
   request(args = {}) {
     this._lastArgs = this._mergeArgs(this._lastArgs, args);
@@ -66,6 +70,8 @@ export class TerrainRebuilder {
     }
     return base;
   }
+
+  // ── Rebuild Logic ─────────────────────────────────────────────────
 
   rebuild({ three } = {}) {
     if (!this.gameManager || !this.builder) return null;

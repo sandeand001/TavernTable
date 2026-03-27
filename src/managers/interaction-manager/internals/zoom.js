@@ -1,6 +1,8 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/ErrorHandler.js';
 
+// ── Wheel Zoom ──────────────────────────────────────────────────
+
 export function handleZoomWheel(c, event) {
   const rect = c.gameManager.app.view.getBoundingClientRect();
   const mouseX = event.clientX - rect.left;
@@ -26,6 +28,8 @@ export function handleZoomWheel(c, event) {
   });
 }
 
+// ── Zoom Application ────────────────────────────────────────────
+
 export function applyZoom(c, newScale, mouseX, mouseY) {
   const localX = (mouseX - c.gameManager.gridContainer.x) / c.gridScale;
   const localY = (mouseY - c.gameManager.gridContainer.y) / c.gridScale;
@@ -36,6 +40,8 @@ export function applyZoom(c, newScale, mouseX, mouseY) {
   c.gameManager.gridContainer.x = mouseX - localX * c.gridScale;
   c.gameManager.gridContainer.y = mouseY - localY * c.gridScale;
 }
+
+// ── Zoom Reset ──────────────────────────────────────────────────
 
 export function resetZoom(c) {
   try {

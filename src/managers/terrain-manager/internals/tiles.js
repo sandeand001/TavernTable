@@ -6,6 +6,8 @@ import { lightenColor, darkenColor } from '../../../utils/color/ColorUtils.js';
 import { getBiomeColorHex } from '../../../config/biome/BiomePalettes.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
+// ── Tile Validation & Cleanup ──────────────────────────────────
+
 /** Validate tile creation inputs with container state checks. */
 export function validateTileCreationInputs(m, x, y) {
   // ENHANCED: Validate container state before tile creation
@@ -47,6 +49,8 @@ export function cleanupExistingTile(m, tileKey) {
   }
 }
 
+// ── Tile Graphics Construction ────────────────────────────────
+
 /** Create base PIXI.Graphics for a terrain tile. */
 export function createBaseTerrainGraphics(m, x, y, height) {
   const terrainTile = new PIXI.Graphics();
@@ -61,6 +65,8 @@ export function createBaseTerrainGraphics(m, x, y, height) {
   terrainTile.sideFaces = null;
   return terrainTile;
 }
+
+// ── Color & Styling ─────────────────────────────────────────────
 
 /** Internal: get fill color for height, matching manager logic (no external export). */
 function getColorForHeightInternal(m, height) {
@@ -237,6 +243,8 @@ export function applyTerrainStyling(m, terrainTile, height) {
   terrainTile.paintMask = mask;
 }
 
+// ── Tile Positioning ───────────────────────────────────────────
+
 /** Position a terrain tile in iso space and apply elevation offset. */
 export function positionTerrainTile(m, terrainTile, x, y, height) {
   terrainTile.x = (x - y) * (m.gameManager.tileWidth / 2);
@@ -244,6 +252,8 @@ export function positionTerrainTile(m, terrainTile, x, y, height) {
   const elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
   terrainTile.y += elevationOffset;
 }
+
+// ── Tile Finalization & Visual Effects ────────────────────────
 
 /** Finalize tile: add with depth sorting and store in map. */
 export function finalizeTerrainTile(m, terrainTile, x, y, tileKey) {

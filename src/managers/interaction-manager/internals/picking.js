@@ -1,6 +1,8 @@
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
+// ── Diamond Hit Testing ────────────────────────────────────────
+
 /**
  * Hit test an isometric diamond at grid cell (gx, gy) against a local point (lx, ly),
  * accounting for elevation offset so the test matches the visually shifted tile.
@@ -28,6 +30,8 @@ export function isPointInCellDiamond(c, gx, gy, lx, ly) {
   const halfH = c.gameManager.tileHeight / 2;
   return dx / halfW + dy / halfH <= 1;
 }
+
+// ── Topmost Cell Picking ───────────────────────────────────────
 
 /**
  * Pick the topmost grid cell under local pointer, considering elevation and depth order.

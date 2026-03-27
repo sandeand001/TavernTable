@@ -1,6 +1,7 @@
 // NoisePrimitives.js — Hash, smooth noise, fbm, ridge noise for terrain generation.
 // Extracted from BiomeElevationGenerator.js (Phase 8). Pure functions, no state.
 
+// ── Hash & Smoothing ───────────────────────────────────
 function hash2D(x, y, seed = 1337) {
   const X = Math.sin(x * 127.1 + y * 311.7 + seed * 0.73) * 43758.5453;
   return X - Math.floor(X);
@@ -20,6 +21,7 @@ function smoothNoise(x, y, seed = 1337) {
   return (v00 * (1 - u) + v10 * u) * (1 - v) + (v01 * (1 - u) + v11 * u) * v;
 }
 
+// ── Fractal Noise (fBm & Ridge) ────────────────────────
 function fbm2(x, y, seed = 1337, octaves = 4, lacunarity = 2.0, gain = 0.5) {
   let freq = 1.0;
   let amp = 0.5;
@@ -47,6 +49,7 @@ function ridge(x, y, seed = 1337, octaves = 5) {
   return s / (2 - Math.pow(0.5, octaves)); // normalize ~[0,1]
 }
 
+// ── Utility & PRNG ────────────────────────────────────
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -62,6 +65,7 @@ function randFromSeed(seed, k1 = 0, k2 = 0) {
 }
 
 // Shape helpers
+// ── Shape Helpers ──────────────────────────────────────
 function radial(nx, ny, seed, invert = false, scale = 1.0, bump = 0.0) {
   const cx = 0.5,
     cy = 0.5;

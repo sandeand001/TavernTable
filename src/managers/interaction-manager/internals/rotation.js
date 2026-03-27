@@ -1,9 +1,13 @@
 // 3D camera rotation via mouse drag — extracted from InteractionManager (Phase 9).
 // Manages yaw/pitch drag state and applies angles via ThreeSceneManager.
 
+// ── Constants ───────────────────────────────────────────────────
+
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 const TAU = Math.PI * 2;
+
+// ── Rotation Start ──────────────────────────────────────────────
 
 /**
  * Begin 3D camera rotation (right mouse drag).
@@ -27,6 +31,8 @@ export function start3DRotation(c, event, threeMgr) {
     c.isRotating3D = false;
   }
 }
+
+// ── Rotation Update ─────────────────────────────────────────────
 
 /**
  * Update 3D rotation given current mouse position.
@@ -60,6 +66,8 @@ export function update3DRotation(c, event) {
     /* ignore */
   }
 }
+
+// ── Rotation End ────────────────────────────────────────────────
 
 /**
  * End 3D rotation.

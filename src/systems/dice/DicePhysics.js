@@ -1,6 +1,7 @@
 // DicePhysics.js — Collision detection, ricochet, vector math, path building.
 // Extracted from dice3d.js (Phase 7). Pure functions, no shared state.
 
+// ── Constants & Settings ────────────────────────────────────────
 const DEFAULT_RICOCHET_SETTINGS = {
   maxBounces: 4,
   pulseWidth: 0.085,
@@ -8,6 +9,7 @@ const DEFAULT_RICOCHET_SETTINGS = {
   obstacleLimit: 256,
 };
 
+// ── Vector Math ─────────────────────────────────────────────────
 function clampToRange(value, min, max) {
   if (!Number.isFinite(value)) return value;
   if (Number.isFinite(min) && value < min) return min;
@@ -32,6 +34,7 @@ function reflectVector2D(vector, normal) {
   };
 }
 
+// ── Collision Detection ────────────────────────────────────────
 function deriveBounceIntensity(obstacle) {
   const type = obstacle?.type || obstacle?.placeableType;
   if (!type) return 0.6;
@@ -156,6 +159,7 @@ function findPathCollision(start, target, obstacles, clearance = 0) {
   return best;
 }
 
+// ── Ricochet Path Building ─────────────────────────────────────
 function buildRicochetPath(start, target, metrics, options = {}) {
   const tileSize = metrics?.tileSize || 1;
   const boardWidth = (metrics?.cols || 1) * tileSize;
@@ -263,6 +267,7 @@ function buildRicochetPath(start, target, metrics, options = {}) {
   };
 }
 
+// ── Linear Path ────────────────────────────────────────────────
 const clonePoint = (point) => ({
   x: Number.isFinite(point?.x) ? point.x : 0,
   z: Number.isFinite(point?.z) ? point.z : 0,
@@ -299,6 +304,7 @@ function createLinearPath(startPoint, endPoint, metrics) {
   };
 }
 
+// ── Path Merging & Extension ───────────────────────────────────
 function mergePathInfos(paths) {
   if (!Array.isArray(paths) || !paths.length) return null;
   const waypoints = [];
@@ -431,6 +437,7 @@ function extendPathDistance(basePath, additionalTargets, metrics, options = {}) 
   return combined || basePath;
 }
 
+// ── Ground & Board Position Helpers ──────────────────────────────
 function adjustDieHeightForGround(mesh, three, groundY) {
   if (!three?.Box3) return;
   const bounds = new three.Box3().setFromObject(mesh);
@@ -466,6 +473,7 @@ function pickInteriorPosition(metrics) {
   };
 }
 
+// ── Exports ────────────────────────────────────────────────────
 export {
   clampToRange,
   normalize2D,

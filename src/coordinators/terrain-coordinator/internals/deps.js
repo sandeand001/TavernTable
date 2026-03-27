@@ -4,6 +4,7 @@ import {
   Sanitizers as DefaultSanitizers,
 } from '../../../utils/Validation.js';
 
+// ── Dependency Validation ───────────────────────────────
 export function validateDependencies(c) {
   const missingDependencies = [];
 

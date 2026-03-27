@@ -11,6 +11,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/ErrorHand
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 
+// ── RenderCoordinator Class ─────────────────────────────
 export class RenderCoordinator {
   /**
    * @param {object} gameManager
@@ -28,6 +29,7 @@ export class RenderCoordinator {
     };
   }
 
+  // ── PIXI Application Setup ─────────────────────────────
   /**
    * Create and configure the PIXI application
    */
@@ -144,6 +146,7 @@ export class RenderCoordinator {
     }
   }
 
+  // ── Grid Centering & Zoom ──────────────────────────────
   /** Center the grid on the screen */
   centerGrid() {
     if (!this.gameManager.gridContainer || !this.gameManager.app) {
@@ -173,6 +176,7 @@ export class RenderCoordinator {
     } else logger.debug('Cannot reset zoom: InteractionManager not available');
   }
 
+  // ── Token Fixup ────────────────────────────────────────
   /** Ensure placed token sprites are in grid container and positioned correctly */
   fixExistingTokens() {
     if (!this.gameManager.placedTokens || !this.gameManager.gridContainer) return;
@@ -196,6 +200,7 @@ export class RenderCoordinator {
     });
   }
 
+  // ── Viewport Resize & Info ─────────────────────────────
   /** Handle window resize: resize renderer & recenter grid */
   handleResize() {
     if (!this.gameManager.app) return;

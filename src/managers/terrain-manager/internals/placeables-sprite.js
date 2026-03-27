@@ -8,6 +8,8 @@ import { repositionPlaceableSprite } from './placeables-positioning.js';
 
 const PLACEABLE_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
 
+// ── Sprite Creation ─────────────────────────────────────────────
+
 /** Create a PIXI.Sprite for a placeable item and attach metadata (legacy 2D path). */
 export function createPlaceableSprite(m, id, x, y) {
   const def = TERRAIN_PLACEABLES[id];

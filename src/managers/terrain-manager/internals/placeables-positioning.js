@@ -5,6 +5,8 @@ import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
+// ── Coordinate Helpers ──────────────────────────────────────────
+
 /**
  * Compute isometric center for a grid cell using current tile dimensions.
  * @private
@@ -12,6 +14,8 @@ import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js
 function _isoCenterForCell(m, gx, gy) {
   return CoordinateUtils.gridToIsometric(gx, gy, m.gameManager.tileWidth, m.gameManager.tileHeight);
 }
+
+// ── Single Sprite Repositioning ───────────────────────────────
 
 /**
  * Reposition a single placeable sprite using current grid position and terrain height.
@@ -108,6 +112,8 @@ export function repositionPlaceableSprite(m, sprite) {
     /* ignore */
   }
 }
+
+// ── Batch Repositioning ────────────────────────────────────────
 
 /**
  * Reposition all placeables located on a specific cell (gx, gy).

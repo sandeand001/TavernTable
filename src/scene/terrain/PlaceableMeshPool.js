@@ -15,6 +15,8 @@ import {
 // Lifecycle, preview, and diagnostics extracted to PlaceablePoolLifecycle.js.
 
 export class PlaceableMeshPool {
+  // ── Constructor ───────────────────────────────────────────────────
+
   constructor({ gameManager, initialCapacity = 256, maxCapacity = 4096 } = {}) {
     this.gameManager = gameManager;
     this._groups = new Map(); // key -> { instancedMesh, capacity, count, freeIndices[] }
@@ -38,6 +40,8 @@ export class PlaceableMeshPool {
     }
   }
 
+  // ── Three.js Initialization ──────────────────────────────────────
+
   async _ensureThree() {
     if (this._three) return this._three;
     try {
@@ -48,6 +52,8 @@ export class PlaceableMeshPool {
       return null;
     }
   }
+
+  // ── Key Derivation & Scale ───────────────────────────────────────
 
   /** Derive a stable variant key from a placeable sprite or data. */
   _deriveKey(placeable) {
@@ -123,6 +129,8 @@ export class PlaceableMeshPool {
       return { x: 1, y: 1, z: 1 };
     }
   }
+
+  // ── Public API: Add / Remove ─────────────────────────────────────
 
   /** Public: add a placeable instance; returns handle with group key + index (or null). */
   async addPlaceable(placeable) {
@@ -294,6 +302,8 @@ export class PlaceableMeshPool {
     delete placeable.__meshPoolHandle;
     this._updateMetrics();
   }
+
+  // ── Group Creation & Capacity ────────────────────────────────────
 
   /** Create a new instanced mesh group for a variant key. */
   async _createGroup(key, three, type = 'generic', placeable = null) {
@@ -615,6 +625,8 @@ export class PlaceableMeshPool {
     }
   }
 
+  // ── Metrics & Lighting ────────────────────────────────────────────
+
   _updateMetrics() {
     let totalInstances = 0;
     for (const g of this._groups.values()) totalInstances += g.count - g.freeIndices.length;
@@ -687,6 +699,8 @@ export class PlaceableMeshPool {
       mat.needsUpdate = true;
     }
   }
+
+  // ── Height Resync ─────────────────────────────────────────────────
 
   /** Recompute Y positions for all live instances (call after terrain height changes). */
   async resyncHeights() {
