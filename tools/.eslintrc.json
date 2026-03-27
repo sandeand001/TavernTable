@@ -9,7 +9,6 @@
     "sourceType": "module"
   },
   "globals": {
-    "PIXI": "readonly"
   },
   "rules": {
     // Style handled by Prettier; keep behavioral rules here

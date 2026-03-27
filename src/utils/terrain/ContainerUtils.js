@@ -406,6 +406,3 @@ export class ContainerUtils {
     }
   }
 }
-
-// Backward-compatible alias for callers still referencing the old name
-export { ContainerUtils as TerrainPixiUtils };
