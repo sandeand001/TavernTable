@@ -1,6 +1,6 @@
 // Hybrid3DControls.js - Adds streamlined experimental 3D controls into the Settings panel.
 
-import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
+import { logger, LOG_CATEGORY, LOG_LEVEL } from '../../utils/Logger.js';
 
 // ── Utility Helpers ────────────────────────────────────
 function el(id) {

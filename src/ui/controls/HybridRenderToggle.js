@@ -2,7 +2,7 @@
 // Adds a settings panel checkbox to invoke GameManager.enableHybridRender()
 // and displays lightweight render stats (frame count & avg frame ms) when active.
 
-import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/Logger.js';
+import { logger, LOG_CATEGORY, LOG_LEVEL } from '../../utils/Logger.js';
 
 // ── Stats Formatting ───────────────────────────────────
 function formatStats(stats) {
