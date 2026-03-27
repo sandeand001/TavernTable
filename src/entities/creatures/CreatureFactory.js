@@ -1,6 +1,6 @@
 // src/entities/creatures/CreatureFactory.js - Factory for creating creature tokens
 
-import { CREATURE_HELPERS } from '../../config/GameConstants.js';
+import { CREATURE_HELPERS } from './creatureHelpers.js';
 
 import CreatureToken from './CreatureToken.js';
 

@@ -71,25 +71,6 @@ export const CREATURE_SCALES = {
  */
 // (Removed unused CREATURE_FOOTPRINTS during NFC cleanup)
 
-/**
- * Creature color mapping for fallback graphics
- * Used when PNG sprites are not available
- */
-const CREATURE_COLORS = {
-  mannequin: 0xcb99ff, // Lavender
-};
-
-const CREATURE_TYPE_ALIASES = {
-  'defeated-doll': 'mannequin',
-  'female-humanoid': 'mannequin',
-};
-
-export function normalizeCreatureType(creatureType) {
-  if (typeof creatureType !== 'string' || creatureType.length === 0) return '';
-  const lower = creatureType.toLowerCase();
-  return CREATURE_TYPE_ALIASES[lower] || lower;
-}
-
 // ── Token Placement ──────────────────────────────────────────
 /**
  * Global token placement fine-tuning offset (pixels)
@@ -98,90 +79,6 @@ export function normalizeCreatureType(creatureType) {
  * Calibrated to correct observed constant Δ=(+3,+8) (tokens too far right and down).
  */
 export const TOKEN_PLACEMENT_OFFSET = { x: 3, y: 8 };
-
-// ── Validation ────────────────────────────────────────────────
-/**
- * Validation helpers
- * Provides consistent validation logic across the application
- */
-export const VALIDATION = {
-  /**
-   * Validate grid dimensions
-   * @param {number} width - Grid width
-   * @param {number} height - Grid height
-   * @returns {boolean} True if valid
-   */
-  isValidGridSize(width, height) {
-    return (
-      Number.isInteger(width) &&
-      Number.isInteger(height) &&
-      width >= GRID_CONFIG.MIN_SIZE &&
-      width <= GRID_CONFIG.MAX_SIZE &&
-      height >= GRID_CONFIG.MIN_SIZE &&
-      height <= GRID_CONFIG.MAX_SIZE
-    );
-  },
-
-  /**
-   * Validate coordinate is within grid bounds
-   * @param {number} x - X coordinate
-   * @param {number} y - Y coordinate
-   * @param {number} cols - Grid columns
-   * @param {number} rows - Grid rows
-   * @returns {boolean} True if valid
-   */
-  isValidCoordinate(x, y, cols, rows) {
-    return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x < cols && y >= 0 && y < rows;
-  },
-
-  /**
-   * Validate creature type
-   * @param {string} type - Creature type
-   * @returns {boolean} True if valid
-   */
-  isValidCreatureType(type) {
-    const normalized = normalizeCreatureType(type);
-    return (
-      typeof normalized === 'string' &&
-      normalized.length > 0 &&
-      Object.hasOwnProperty.call(CREATURE_SCALES, normalized)
-    );
-  },
-};
-
-// ── Creature Helpers ─────────────────────────────────────────
-/**
- * Helper functions for creature configuration
- */
-export const CREATURE_HELPERS = {
-  /**
-   * Get the scale value for a creature type
-   * @param {string} creatureType - The creature type
-   * @returns {number} The scale multiplier
-   */
-  getScale(creatureType) {
-    const normalized = normalizeCreatureType(creatureType);
-    return CREATURE_SCALES[normalized] || CREATURE_SCALES.mannequin;
-  },
-
-  /**
-   * Get the color value for a creature type
-   * @param {string} creatureType - The creature type
-   * @returns {number} The color hex value
-   */
-  getColor(creatureType) {
-    const normalized = normalizeCreatureType(creatureType);
-    return CREATURE_COLORS[normalized] || CREATURE_COLORS.mannequin;
-  },
-
-  /**
-   * Get all available creature types
-   * @returns {string[]} Array of creature type names
-   */
-  getAllTypes() {
-    return Object.keys(CREATURE_SCALES);
-  },
-};
 
 // ── Dice System ──────────────────────────────────────────────
 /**

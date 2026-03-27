@@ -1,5 +1,5 @@
 import { GameValidators } from '../../../utils/Validation.js';
-import { normalizeCreatureType } from '../../../config/GameConstants.js';
+import { normalizeCreatureType } from '../../../entities/creatures/creatureHelpers.js';
 
 // ── DOM Port Helpers ────────────────────────────────────────────
 

@@ -6,12 +6,8 @@
  */
 
 // ── Imports ────────────────────────────────────────────────────
-import {
-  GRID_CONFIG,
-  CREATURE_SCALES,
-  DICE_CONFIG,
-  normalizeCreatureType,
-} from '../config/GameConstants.js';
+import { GRID_CONFIG, CREATURE_SCALES, DICE_CONFIG } from '../config/GameConstants.js';
+import { normalizeCreatureType } from '../entities/creatures/creatureHelpers.js';
 import { logger } from './logger/Logger.js';
 
 // ── Type Validators ────────────────────────────────────────────
