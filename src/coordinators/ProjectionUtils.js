@@ -274,7 +274,7 @@ export function reprojectAll(gameManager, mode) {
           const screenH = gameManager.app.screen.height;
           const padding = 80;
           const rawMapW = (gameManager.cols || 0) * gameManager.tileWidth;
-          const rawMapH = (gameManager.rows || 0) * gameManager.tileWidth;
+          const rawMapH = (gameManager.rows || 0) * gameManager.tileHeight;
           const availableW = Math.max(10, screenW - padding * 2);
           const availableH = Math.max(10, screenH - padding * 2);
           const scaleFitW = availableW / rawMapW;
