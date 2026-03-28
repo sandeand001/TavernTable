@@ -94,12 +94,12 @@
 
 | Step | Violation | Task | Status |
 |------|-----------|------|--------|
-| 6.1 | V-007 | Remove `ui/lib/` from target structure (files don't exist) OR create them | |
-| 6.2 | V-008 | Add `terrain/flora/` to target structure | |
-| 6.3 | — | Document mixin installer pattern used in `scene/token-adapter/` | |
-| 6.4 | — | Add `scene/token-adapter/` subdirectory layout to target structure | |
+| 6.1 | V-007 | Remove `ui/lib/` from target structure (files don't exist) OR create them | ✅ Removed from target |
+| 6.2 | V-008 | Add `terrain/flora/` to target structure | ✅ Done |
+| 6.3 | — | Document mixin installer pattern used in `scene/token-adapter/` | ✅ Added §3.3 |
+| 6.4 | — | Add `scene/token-adapter/` subdirectory layout to target structure | ✅ Done |
 
-**COMMIT**: after 6.1–6.4 ·  
+**COMMIT**: `7b6d21d` — Phase 6 complete
 
 ---
 
@@ -128,3 +128,4 @@
 | 5c | Phase 5.3 | Reorganize token-adapter/ | `9c6e79e` | V-001. 11 files into 3 subdirs, 9 internal refs fixed. Tests: 70/70 pass. |
 | 5d | Phase 5.4 | Move PixiStub to utils/stubs/ | `32bca46` | V-004. 15 source files + index.html updated. Tests: 70/70 pass. |
 | 5e | Phase 5.5 | Move ProjectionUtils to utils/ | `7ca65bb` | V-005. 6 importers updated. Tests: 70/70 pass. |
+| 6 | Phase 6 | Update CONVENTIONS.md target structure | `7b6d21d` | V-007,008 resolved. Mixin pattern documented (§3.3). token-adapter subdirs in target. |
