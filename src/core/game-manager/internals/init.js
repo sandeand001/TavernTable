@@ -12,6 +12,7 @@ import { PlaceableMeshPool } from '../../../scene/terrain/PlaceableMeshPool.js';
 import { PickingService } from '../../../scene/picking/PickingService.js';
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../../../utils/logger/Logger.js';
 
+// ── Public API ──────────────────────────────────────────────────
 /**
  * Enable hybrid 2D + 3D rendering. Idempotent.
  * Initializes ThreeSceneManager and switches renderMode.

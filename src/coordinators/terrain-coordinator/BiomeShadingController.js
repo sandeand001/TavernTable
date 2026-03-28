@@ -11,6 +11,7 @@ import BiomeCanvasPainter from '../../terrain/painting/BiomeCanvasPainter.js';
  * Delegated by TerrainCoordinator to keep behavior identical.
  */
 export class BiomeShadingController {
+  // ── Constructor ──────────────────────────────────────────────
   constructor(coordinator) {
     this.c = coordinator;
   }

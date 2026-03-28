@@ -12,6 +12,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/Err
 
 // ── StateCoordinator Class ───────────────────────────────
 export class StateCoordinator {
+  // ── Constructor ──────────────────────────────────────────────
   constructor(gameManager) {
     this.gameManager = gameManager;
     this.initializationComplete = false;

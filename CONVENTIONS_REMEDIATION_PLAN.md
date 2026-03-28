@@ -30,15 +30,15 @@
 
 | Step | Violation | Task | Status |
 |------|-----------|------|--------|
-| 2.1 | V-033 | Fix `GameManager.js` dual export → single `export default` | |
-| 2.2 | V-034 | Fix `BiomeCanvasPainter.js` → `export default class` | |
-| 2.3 | V-035 | Fix `NoisePrimitives.js` → inline `export function` at each def | |
-| 2.4 | V-036 | Fix `RadialMenu.js` → `export default class` | |
-| 2.5 | V-039 | Fix `Validation.js` importing from `entities/` — inline the normalizer or move validation block | |
-| 2.6 | V-041 | Fix `placeables.js` import pattern (`import logger, {…}` → `import { logger, …}`) | |
-| 2.7 | V-040 | Add blank line between import groups in `DragController.js` | |
+| 2.1 | V-033 | Fix `GameManager.js` dual export → single `export default` | ✅ Done + 7 test importers updated |
+| 2.2 | V-034 | Fix `BiomeCanvasPainter.js` → `export default class` | ✅ Done + 1 test importer updated |
+| 2.3 | V-035 | Fix `NoisePrimitives.js` → inline `export function` at each def | ✅ Done |
+| 2.4 | V-036 | Fix `RadialMenu.js` → `export default class` | ✅ Done + UIController importer updated |
+| 2.5 | V-039 | Fix `Validation.js` importing from `entities/` — inline the normalizer or move validation block | ✅ Done — inlined alias map + normalizer into Validation.js |
+| 2.6 | V-041 | Fix `placeables.js` import pattern (`import logger, {…}` → `import { logger, …}`) | ✅ Done |
+| 2.7 | V-040 | Add blank line between import groups in `DragController.js` | ⏭ Skipped — imports already correct |
 
-**COMMIT**: after 2.1–2.7 ·  
+**COMMIT**: `02a0d25` — Phase 2 complete
 
 ---
 
@@ -47,9 +47,9 @@
 
 | Step | Violation | Task | Status |
 |------|-----------|------|--------|
-| 3.1 | V-057 | Rename `Placeables.trees.test.js` → `PlaceablesTrees.test.js` | |
+| 3.1 | V-057 | Rename `Placeables.trees.test.js` → `PlaceablesTrees.test.js` | ✅ Done |
 
-**COMMIT**: after 3.1 ·  
+**COMMIT**: `3c8134d` — Phase 3 complete
 
 ---
 
@@ -120,3 +120,5 @@
 | # | Phase | Scope | Hash | Notes |
 |---|-------|-------|------|-------|
 | 1 | Phase 1 | Cleanup empty dirs, dead code, duplicate tests | `60f3d34` | V-002,003,006,046,054,055,056,058 resolved. V-045 false positive (Container used). Tests: 70 suites, 3 pre-existing failures unchanged. |
+| 2 | Phase 2 | Fix import/export violations | `02a0d25` | V-033,034,035,036,039,041 resolved. V-040 already correct (skipped). 16 files changed. Tests: 70/70 pass. |
+| 3 | Phase 3 | Rename non-standard test file | `3c8134d` | V-057 resolved. Tests: 70/70 pass. |

@@ -2,6 +2,7 @@
  * 3D Drag API (public for tests): initiate a token drag by its grid coords.
  * Records original position but does not mutate token grid yet.
  */
+// ── Public API ──────────────────────────────────────────────────
 export function startTokenDragByGrid(gm, gx, gy) {
   if (!gm.is3DModeActive()) return false;
   if (gm._draggingToken) return false; // already dragging

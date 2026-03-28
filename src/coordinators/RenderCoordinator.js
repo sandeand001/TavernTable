@@ -16,6 +16,7 @@ import { GameValidators } from '../utils/Validation.js';
 
 // ── RenderCoordinator Class ─────────────────────────────
 export class RenderCoordinator {
+  // ── Constructor ──────────────────────────────────────────────
   /**
    * @param {object} gameManager
    * @param {object} [domPorts] - injected DOM accessors (UI layer). Expected shape:

@@ -23,6 +23,7 @@ const KNOWN_ALPHA_TEXTURES = new Set(
 
 const clampAlphaTest = (value) => Math.min(0.45, Math.max(0.01, value ?? 0.05));
 
+// ── Public API ──────────────────────────────────────────────────
 /**
  * Apply texture mapping, foliage classification, alpha testing, shadow setup,
  * and auto-scaling to a loaded model.

@@ -1,3 +1,4 @@
+// ── Pointer Target Resolution ───────────────────────────────────
 export async function resolvePointerTarget(mgr, event) {
   const gm = mgr.gameManager;
   let gridX = null;
@@ -88,6 +89,7 @@ export async function resolvePointerTarget(mgr, event) {
   };
 }
 
+// ── Radial Menu Capture ──────────────────────────────────────────
 export function tryCaptureRadialTrigger(mgr, event) {
   try {
     const capture = pick3DTarget(mgr, event) || pickSpriteTarget(mgr, event);
@@ -154,6 +156,7 @@ export function dispatchRadialMenuRequest(mgr, context) {
   }
 }
 
+// ── Picking Helpers ─────────────────────────────────────────────
 export function pick3DTarget(mgr, event) {
   try {
     const gm = mgr.gameManager;

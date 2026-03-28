@@ -8,6 +8,7 @@ import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 
 export class TileLifecycleController {
+  // ── Constructor ──────────────────────────────────────────────
   /**
    * @param {import('../TerrainCoordinator.js').TerrainCoordinator} coordinator
    */

@@ -1,5 +1,6 @@
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 
+// ── Public API ──────────────────────────────────────────────────
 /**
  * Sync the 3D world elevation unit (world Y per level) so that one elevation level
  * produces the same on-screen vertical pixel displacement as the 2D isometric elevation effect.

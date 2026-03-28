@@ -8,6 +8,7 @@ import { CoordinateUtils } from '../../utils/coordinates/CoordinateUtils.js';
  * Delegated by TerrainCoordinator.setElevationScale to avoid behavior changes.
  */
 export class ElevationScaleController {
+  // ── Constructor ──────────────────────────────────────────────
   constructor(coordinator) {
     this.c = coordinator; // TerrainCoordinator instance
   }
