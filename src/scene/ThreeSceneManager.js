@@ -674,8 +674,17 @@ export class ThreeSceneManager {
 
   _resize() {
     if (!this.renderer || !this.camera) return;
-    const w = (typeof window !== 'undefined' && window.innerWidth) || 800;
-    const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
+    // Use the canvas container's actual dimensions (accounts for sidebar)
+    // rather than window.innerWidth which ignores CSS layout.
+    const container = this.canvas?.parentElement;
+    const w =
+      (container && container.clientWidth) ||
+      (typeof window !== 'undefined' && window.innerWidth) ||
+      800;
+    const h =
+      (container && container.clientHeight) ||
+      (typeof window !== 'undefined' && window.innerHeight) ||
+      600;
     try {
       this.renderer.setSize(w, h, false);
     } catch (_) {

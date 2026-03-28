@@ -434,8 +434,15 @@ function reframe() {
         this._isoBaseFrustum = { halfWidth: halfDiag * 1.05, halfHeight: halfDiag * 1.05 };
       }
       const { halfHeight: hh } = this._isoBaseFrustum;
-      const w = (typeof window !== 'undefined' && window.innerWidth) || 800;
-      const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
+      const container = this.canvas?.parentElement;
+      const w =
+        (container && container.clientWidth) ||
+        (typeof window !== 'undefined' && window.innerWidth) ||
+        800;
+      const h =
+        (container && container.clientHeight) ||
+        (typeof window !== 'undefined' && window.innerHeight) ||
+        600;
       const aspect = w / h;
       const z = this._zoom <= 0 ? 1 : this._zoom;
       const scale = 1 / z; // bigger zoom value => closer (smaller extents)
@@ -451,8 +458,15 @@ function reframe() {
       const width = cols * tileSize;
       const depth = rows * tileSize;
       const baseSpan = Math.max(width, depth) * 0.5;
-      const w = (typeof window !== 'undefined' && window.innerWidth) || 800;
-      const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
+      const container = this.canvas?.parentElement;
+      const w =
+        (container && container.clientWidth) ||
+        (typeof window !== 'undefined' && window.innerWidth) ||
+        800;
+      const h =
+        (container && container.clientHeight) ||
+        (typeof window !== 'undefined' && window.innerHeight) ||
+        600;
       const aspect = w / h;
       const margin = 1.08;
       const z = this._zoom <= 0 ? 1 : this._zoom;
@@ -491,8 +505,15 @@ function reframe() {
       const halfX = (width * Math.cos(yaw) + depth * Math.sin(yaw)) * 0.5;
       const halfZ = (width * Math.sin(yaw) + depth * Math.cos(yaw)) * 0.5;
       const baseSpan = Math.max(halfX, halfZ);
-      const w = (typeof window !== 'undefined' && window.innerWidth) || 800;
-      const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
+      const container = this.canvas?.parentElement;
+      const w =
+        (container && container.clientWidth) ||
+        (typeof window !== 'undefined' && window.innerWidth) ||
+        800;
+      const h =
+        (container && container.clientHeight) ||
+        (typeof window !== 'undefined' && window.innerHeight) ||
+        600;
       const aspect = w / h;
       const margin = 1.08;
       this.camera.left = -baseSpan * aspect * margin;
