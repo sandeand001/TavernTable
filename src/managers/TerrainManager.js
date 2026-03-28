@@ -9,7 +9,6 @@
 import { Container } from '../core/PixiStub.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
-// import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TERRAIN_PLACEABLES } from '../config/terrain/TerrainPlaceables.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
