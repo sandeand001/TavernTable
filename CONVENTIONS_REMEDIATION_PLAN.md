@@ -79,13 +79,13 @@
 
 | Step | Violation | Task | Status |
 |------|-----------|------|--------|
-| 5.1 | V-042 | Rename `ui/domHelpers.js` → `ui/dom-helpers.js` + update importers | |
-| 5.2 | V-044 | Convert `CreatureFactory` class → plain function export + update importers | |
-| 5.3 | V-001 | Reorganize `scene/token-adapter/` into subdirs (movement/, pathing/, spatial/) | |
-| 5.4 | V-004 | Move `core/PixiStub.js` → `utils/stubs/PixiStub.js` + update importers | |
-| 5.5 | V-005 | Move `coordinators/ProjectionUtils.js` → `utils/coordinates/ProjectionUtils.js` + update importers | |
+| 5.1 | V-042 | Rename `ui/domHelpers.js` → `ui/dom-helpers.js` + update importers | ✅ Done |
+| 5.2 | V-044 | Convert `CreatureFactory` class → plain function export + update importers | ✅ Done |
+| 5.3 | V-001 | Reorganize `scene/token-adapter/` into subdirs (movement/, pathing/, spatial/) | ✅ Done (15→4 root + 3 subdirs) |
+| 5.4 | V-004 | Move `core/PixiStub.js` → `utils/stubs/PixiStub.js` + update importers | ✅ Done (15 files + index.html) |
+| 5.5 | V-005 | Move `coordinators/ProjectionUtils.js` → `utils/coordinates/ProjectionUtils.js` + update importers | ✅ Done |
 
-**COMMIT**: after each step (5.1, 5.2, 5.3, 5.4, 5.5) individually ·  
+**COMMITS**: `cec870a` (5.1), `7bc54a3` (5.2), `9c6e79e` (5.3), `32bca46` (5.4), `7ca65bb` (5.5)
 
 ---
 
@@ -123,3 +123,8 @@
 | 2 | Phase 2 | Fix import/export violations | `02a0d25` | V-033,034,035,036,039,041 resolved. V-040 already correct (skipped). 16 files changed. Tests: 70/70 pass. |
 | 3 | Phase 3 | Rename non-standard test file | `3c8134d` | V-057 resolved. Tests: 70/70 pass. |
 | 4 | Phase 4 | Add missing section comments | `f2c0f59` | 10 files updated, 7 files already adequate. V-015 thru V-032 resolved. Tests: 70/70 pass. |
+| 5a | Phase 5.1 | Rename domHelpers.js | `cec870a` | V-042. 3 importers + test updated. Tests: 70/70 pass. |
+| 5b | Phase 5.2 | CreatureFactory → function | `7bc54a3` | V-044. Tests: 70/70 pass. |
+| 5c | Phase 5.3 | Reorganize token-adapter/ | `9c6e79e` | V-001. 11 files into 3 subdirs, 9 internal refs fixed. Tests: 70/70 pass. |
+| 5d | Phase 5.4 | Move PixiStub to utils/stubs/ | `32bca46` | V-004. 15 source files + index.html updated. Tests: 70/70 pass. |
+| 5e | Phase 5.5 | Move ProjectionUtils to utils/ | `7ca65bb` | V-005. 6 importers updated. Tests: 70/70 pass. |

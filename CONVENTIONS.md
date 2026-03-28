@@ -152,7 +152,32 @@ higher-level methods first, lower-level helpers they call after.
 | `export default { fn1, fn2 }` | **Avoid** — prefer named exports for tree-shaking |
 | `export { instance as default }` | Singletons only (`ErrorHandler`, `GameManager`) |
 
-### 3.3 Import Hygiene
+### 3.3 Mixin Installer Pattern
+
+When a large class is decomposed via **prototype mixin installers** (instead of
+the `internals/` pattern), each extracted file exports a single `installXMethods`
+function that receives the class prototype and assigns methods to it:
+
+```js
+// token-adapter/movement/ClimbPhases.js
+export function installClimbMethods(prototype) {
+  prototype._startClimb = function (state) { /* ... */ };
+  prototype._finishClimb = function (state) { /* ... */ };
+}
+```
+
+The parent class imports and calls these installers after the class definition:
+
+```js
+installClimbMethods(Token3DAdapter.prototype);
+```
+
+**Rules for mixin files:**
+- Each file exports exactly **one** `installXMethods(prototype)` function.
+- Mixin files may import from sibling config files (e.g., `MannequinConfig.js`).
+- Mixin files must **not** import from the parent class file.
+
+### 3.4 Import Hygiene
 
 - Import only what you use. No wildcard (`*`) imports.
 - Group imports in this order:
@@ -226,7 +251,8 @@ src/
 ├── core/
 │   ├── GameManager.js
 │   ├── ModelAssetCache.js
-│   └── ModelPostProcessing.js
+│   ├── ModelPostProcessing.js
+│   └── game-manager/internals/  ← elevation.js, init.js, instancing.js, tokenCommands.js, tokenDrag.js
 │
 ├── entities/
 │   └── creatures/
@@ -251,6 +277,9 @@ src/
 │   ├── terrain/                 ← TerrainMeshBuilder.js, TerrainRebuilder.js, TerrainMaterialFactory.js, TerrainBrushOverlay3D.js, PlaceableMeshPool.js, PlaceablePoolLifecycle.js
 │   │   └── brush/               ← OverlayMeshPool.js, OverlayOutlinePool.js
 │   ├── token-adapter/           ← AnimationController.js, MannequinConfig.js, MeshFactory.js, SelectionEffects.js
+│   │   ├── movement/            ← ClimbPhases.js, FallPhases.js, MovementPhases.js, MovementStyle.js, StepFactory.js
+│   │   ├── pathing/             ← Navigation.js, PathingLogger.js, ResumeProbe.js
+│   │   └── spatial/             ← RootMotion.js, SpatialUtils.js, WorldAuthority.js
 │   ├── picking/                 ← PickingService.js, SpatialCoordinator.js
 │   ├── ThreeSceneManager.js
 │   └── Token3DAdapter.js
@@ -265,14 +294,14 @@ src/
 │   ├── generation/              ← BiomeElevationGenerator.js, NoisePrimitives.js
 │   ├── painting/                ← BiomeCanvasPainter.js + biome-painter/ contents
 │   ├── brush/                   ← TerrainBrushController.js, TerrainBrushHighlighter.js, BrushCommon.js
+│   ├── flora/                   ← floraHelpers.js
 │   ├── TerrainDataStore.js
 │   └── TerrainFacesRenderer.js
 │
 ├── ui/
 │   ├── components/              ← RadialMenu.js
 │   ├── controls/                ← Hybrid3DControls.js, HybridRenderToggle.js, SettingsViewToggle.js
-│   ├── lib/                     ← elevationUtils.js, spriteKeys.js
-│   ├── domHelpers.js
+│   ├── dom-helpers.js
 │   ├── SidebarController.js
 │   ├── UIController.js
 │   └── styles.css
@@ -284,6 +313,7 @@ src/
     ├── error/                   ← ErrorHandler.js, enums.js, notification.js, telemetry.js
     ├── geometry/                ← GeometryUtils.js, DepthUtils.js
     ├── logger/                  ← Logger.js, enums.js
+    ├── stubs/                   ← PixiStub.js (transitional PIXI shim)
     ├── terrain/                 ← TerrainHeightUtils.js, TerrainValidation.js, ContainerUtils.js
     ├── env.js
     ├── SeededRNG.js
