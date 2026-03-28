@@ -1,10 +1,10 @@
 // src/entities/creatures/index.js - Global creature creation functions
 
-import CreatureFactory from './CreatureFactory.js';
+import { createCreature } from './CreatureFactory.js';
 
 function createMannequin(x = 0, y = 0) {
   const facingRight = window.tokenFacingRight !== undefined ? window.tokenFacingRight : true;
-  return CreatureFactory.createCreature('mannequin', x, y, facingRight);
+  return createCreature('mannequin', x, y, facingRight);
 }
 
 // Legacy aliases retained for saved states or external scripts not yet migrated.
