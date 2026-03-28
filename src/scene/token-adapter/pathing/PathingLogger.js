@@ -12,7 +12,7 @@ import {
   PATHING_LOG_PREFIX,
   PATHING_LOG_ARCHIVE_LIMIT,
   FALL_HEIGHT_VERBOSE_STORAGE_KEYS,
-} from './MannequinConfig.js';
+} from '../MannequinConfig.js';
 
 // ── Logging Toggle ─────────────────────────────────────────────────
 

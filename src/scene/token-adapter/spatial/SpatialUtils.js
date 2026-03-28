@@ -7,7 +7,7 @@
  * on a class prototype via `installSpatialUtilsMethods()`.
  */
 
-import { CONTINUOUS_ROTATION_SPEED } from './MannequinConfig.js';
+import { CONTINUOUS_ROTATION_SPEED } from '../MannequinConfig.js';
 
 // ── World Position & Spatial Utilities ───────────────────────────────────
 

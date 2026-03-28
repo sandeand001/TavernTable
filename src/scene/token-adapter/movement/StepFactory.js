@@ -16,7 +16,7 @@ import {
   FALL_MIN_HEIGHT_THRESHOLD,
   FALL_EDGE_TRIGGER_TILE_RATIO,
   PATH_STALL_REPATH_DELAY,
-} from './MannequinConfig.js';
+} from '../MannequinConfig.js';
 
 // ── Free Movement ────────────────────────────────────────────────────────
 

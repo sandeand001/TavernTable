@@ -23,17 +23,20 @@ import {
 import { installAnimationMethods } from './token-adapter/AnimationController.js';
 import { installSelectionMethods } from './token-adapter/SelectionEffects.js';
 import { installMeshFactoryMethods } from './token-adapter/MeshFactory.js';
-import { installPathingLoggerMethods } from './token-adapter/PathingLogger.js';
-import { installClimbMethods } from './token-adapter/ClimbPhases.js';
-import { installFallMethods } from './token-adapter/FallPhases.js';
-import { installNavigationMethods } from './token-adapter/Navigation.js';
-import { installMovementStyleMethods } from './token-adapter/MovementStyle.js';
-import { installMovementPhaseMethods } from './token-adapter/MovementPhases.js';
-import { installRootMotionMethods } from './token-adapter/RootMotion.js';
-import { installWorldAuthorityMethods } from './token-adapter/WorldAuthority.js';
-import { installStepFactoryMethods } from './token-adapter/StepFactory.js';
-import { installSpatialUtilsMethods } from './token-adapter/SpatialUtils.js';
-import { installResumeProbeMethods } from './token-adapter/ResumeProbe.js';
+
+import { installClimbMethods } from './token-adapter/movement/ClimbPhases.js';
+import { installFallMethods } from './token-adapter/movement/FallPhases.js';
+import { installMovementStyleMethods } from './token-adapter/movement/MovementStyle.js';
+import { installMovementPhaseMethods } from './token-adapter/movement/MovementPhases.js';
+import { installStepFactoryMethods } from './token-adapter/movement/StepFactory.js';
+
+import { installNavigationMethods } from './token-adapter/pathing/Navigation.js';
+import { installPathingLoggerMethods } from './token-adapter/pathing/PathingLogger.js';
+import { installResumeProbeMethods } from './token-adapter/pathing/ResumeProbe.js';
+
+import { installRootMotionMethods } from './token-adapter/spatial/RootMotion.js';
+import { installSpatialUtilsMethods } from './token-adapter/spatial/SpatialUtils.js';
+import { installWorldAuthorityMethods } from './token-adapter/spatial/WorldAuthority.js';
 
 export class Token3DAdapter {
   // ── Constructor & Initialization ─────────────────────────────────────────────

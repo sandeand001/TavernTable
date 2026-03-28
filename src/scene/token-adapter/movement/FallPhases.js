@@ -4,7 +4,7 @@ import {
   FALL_LANDING_THRESHOLD_CONFIG,
   FALL_LOOP_MIN_DROP,
   SPRINT_THRESHOLD_SECONDS,
-} from './MannequinConfig.js';
+} from '../MannequinConfig.js';
 
 function _advanceFallPhase(state, delta) {
   if (!state) return;

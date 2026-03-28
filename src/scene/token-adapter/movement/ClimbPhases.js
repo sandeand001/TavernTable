@@ -14,7 +14,7 @@ import {
   CLIMB_RECOVER_MAX_CROUCH_DROP,
   CLIMB_RECOVER_CROUCH_HOLD,
   CLIMB_RECOVER_STAND_RELEASE,
-} from './MannequinConfig.js';
+} from '../MannequinConfig.js';
 
 function _resetClimbWallState(state, options = {}) {
   if (!state) return;

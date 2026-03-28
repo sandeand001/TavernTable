@@ -11,7 +11,7 @@ import {
   DEFAULT_MOVEMENT_PROFILE,
   DEFAULT_FALL_TRIGGER_PROGRESS,
   DEFAULT_HEIGHT_SNAP_PROGRESS,
-} from './MannequinConfig.js';
+} from '../MannequinConfig.js';
 
 // ── Movement Update Loop ─────────────────────────────────────────────────
 
