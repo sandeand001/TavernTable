@@ -143,7 +143,7 @@ describe('View Mode Toggle', () => {
       },
     ];
     // Directly use reprojectAll to avoid dependencies on full toggle pipeline
-    const { reprojectAll } = require('../../../src/coordinators/ProjectionUtils.js');
+    const { reprojectAll } = require('../../../src/utils/coordinates/ProjectionUtils.js');
     reprojectAll(gm, 'isometric');
     const baselineY = sprite.y;
     for (let i = 0; i < 25; i++) {

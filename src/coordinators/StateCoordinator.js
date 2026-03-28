@@ -108,7 +108,7 @@ export class StateCoordinator {
         }
       }
       if (this.viewMode === 'topdown') {
-        import('./ProjectionUtils.js')
+        import('../utils/coordinates/ProjectionUtils.js')
           .then((m) => m.reprojectAll(this.gameManager, 'topdown'))
           .catch(() => {
             this.viewMode = 'isometric';
@@ -164,7 +164,7 @@ export class StateCoordinator {
     persist(mode);
 
     // Always perform a direct reprojection (transition system removed)
-    import('./ProjectionUtils.js')
+    import('../utils/coordinates/ProjectionUtils.js')
       .then((m) => {
         const doReproject = () => {
           try {

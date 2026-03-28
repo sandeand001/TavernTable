@@ -5,8 +5,8 @@
  */
 
 // ── Imports & Constants ─────────────────────────────────────────
-import { Graphics } from '../utils/stubs/PixiStub.js';
-import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { Graphics } from '../stubs/PixiStub.js';
+import { logger, LOG_CATEGORY } from '../logger/Logger.js';
 
 const TOPDOWN_TILE_BASE = 0;
 const TOPDOWN_PLACEABLE_BASE = 500000;
