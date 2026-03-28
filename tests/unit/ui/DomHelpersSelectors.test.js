@@ -2,7 +2,7 @@ import {
   getDiceButtons,
   getGridActionButtons,
   getTerrainModeEls,
-} from '../../../src/ui/domHelpers.js';
+} from '../../../src/ui/dom-helpers.js';
 
 /**
  * Minimal DOM wiring smoke test to ensure selectors don't throw

@@ -20,7 +20,7 @@ import {
   getBiomeButtonByKey,
   getTerrainPlaceablesRoot,
   getTerrainModeEls,
-} from './domHelpers.js';
+} from './dom-helpers.js';
 
 import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
 

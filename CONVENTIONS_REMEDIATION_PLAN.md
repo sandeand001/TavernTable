@@ -58,19 +58,19 @@
 
 | Step | Violation | Task | Status |
 |------|-----------|------|--------|
-| 4.1 | V-015 | Add sections to `coordinators/TerrainCoordinator.js` | |
-| 4.2 | V-016 | Add sections to `coordinators/RenderCoordinator.js` | |
-| 4.3 | V-017 | Add constructor section to `coordinators/StateCoordinator.js` | |
-| 4.4 | V-018–020 | Add constructor sections to `ElevationScaleController`, `BiomeShadingController`, `TileLifecycleController` | |
-| 4.5 | V-021 | Add sections to `core/ModelPostProcessing.js` | |
-| 4.6 | V-022–024 | Add sections to `core/game-manager/internals/` (init, tokenDrag, elevation) | |
-| 4.7 | V-025 | Add sections to `coordinators/ProjectionUtils.js` | |
-| 4.8 | V-026 | Add sections to `managers/interaction-manager/internals/target-resolution.js` | |
-| 4.9 | V-027–030 | Add sections to dice files (DiceState, FaceCalibrationUI, dice.js, dice3d.js) | |
-| 4.10 | V-031 | Add sections to `terrain/painting/BiomeCanvasPainter.js` | |
-| 4.11 | V-032 | Add sections to `terrain/flora/floraHelpers.js` | |
+| 4.1 | V-015 | Add sections to `coordinators/TerrainCoordinator.js` | ⏭ Already has full sections |
+| 4.2 | V-016 | Add sections to `coordinators/RenderCoordinator.js` | ✅ Added Constructor marker |
+| 4.3 | V-017 | Add constructor section to `coordinators/StateCoordinator.js` | ✅ Added Constructor marker |
+| 4.4 | V-018–020 | Add constructor sections to `ElevationScaleController`, `BiomeShadingController`, `TileLifecycleController` | ✅ Done (3 files) |
+| 4.5 | V-021 | Add sections to `core/ModelPostProcessing.js` | ✅ Added Public API marker |
+| 4.6 | V-022–024 | Add sections to `core/game-manager/internals/` (init, tokenDrag, elevation) | ✅ Done (3 files) |
+| 4.7 | V-025 | Add sections to `coordinators/ProjectionUtils.js` | ⏭ Already has sections |
+| 4.8 | V-026 | Add sections to `managers/interaction-manager/internals/target-resolution.js` | ✅ Added 3 section markers |
+| 4.9 | V-027–030 | Add sections to dice files (DiceState, FaceCalibrationUI, dice.js, dice3d.js) | ⏭ Already have adequate sections |
+| 4.10 | V-031 | Add sections to `terrain/painting/BiomeCanvasPainter.js` | ⏭ Already has full sections |
+| 4.11 | V-032 | Add sections to `terrain/flora/floraHelpers.js` | ⏭ Already has sections |
 
-**COMMIT**: after 4.1–4.11 ·  
+**COMMIT**: `f2c0f59` — Phase 4 complete
 
 ---
 
@@ -122,3 +122,4 @@
 | 1 | Phase 1 | Cleanup empty dirs, dead code, duplicate tests | `60f3d34` | V-002,003,006,046,054,055,056,058 resolved. V-045 false positive (Container used). Tests: 70 suites, 3 pre-existing failures unchanged. |
 | 2 | Phase 2 | Fix import/export violations | `02a0d25` | V-033,034,035,036,039,041 resolved. V-040 already correct (skipped). 16 files changed. Tests: 70/70 pass. |
 | 3 | Phase 3 | Rename non-standard test file | `3c8134d` | V-057 resolved. Tests: 70/70 pass. |
+| 4 | Phase 4 | Add missing section comments | `f2c0f59` | 10 files updated, 7 files already adequate. V-015 thru V-032 resolved. Tests: 70/70 pass. |

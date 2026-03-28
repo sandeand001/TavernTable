@@ -32,8 +32,8 @@ import {
   getCreaturePanelEls,
   getTerrainModeEls,
   getGameContainer,
-} from './domHelpers.js';
-import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
+} from './dom-helpers.js';
+import { getDiceButtons, getGridActionButtons } from './dom-helpers.js';
 import RadialMenu from './components/RadialMenu.js';
 
 import { isJest } from '../utils/env.js';
