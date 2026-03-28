@@ -89,7 +89,7 @@ function midpointAngle(startDeg, endDeg) {
 }
 
 // ── RadialMenu Class ──────────────────────────────────────
-export class RadialMenu {
+export default class RadialMenu {
   // ── Constructor ────────────────────────────────────────
   constructor(options = {}) {
     this.actions =

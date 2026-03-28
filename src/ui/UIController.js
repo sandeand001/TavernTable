@@ -34,7 +34,7 @@ import {
   getGameContainer,
 } from './domHelpers.js';
 import { getDiceButtons, getGridActionButtons } from './domHelpers.js';
-import { RadialMenu } from './components/RadialMenu.js';
+import RadialMenu from './components/RadialMenu.js';
 
 import { isJest } from '../utils/env.js';
 import GameManager from '../core/GameManager.js';

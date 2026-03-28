@@ -1,5 +1,5 @@
 /* global PIXI */
-import { GameManager } from '../../../src/core/GameManager.js';
+import GameManager from '../../../src/core/GameManager.js';
 
 /**
  * viewMode.test.js - Basic unit tests for view mode toggle & coordinate consistency.

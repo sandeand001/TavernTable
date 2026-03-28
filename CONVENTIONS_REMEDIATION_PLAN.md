@@ -11,17 +11,17 @@
 
 | Step | Violation | Task | Status |
 |------|-----------|------|--------|
-| 1.1 | V-002 | Delete `src/scene/token-adapter/internals/` (empty) | |
-| 1.2 | V-003 | Delete `src/ui/internals/` (empty) | |
-| 1.3 | V-006 | Delete `tests/terrain/` (orphaned empty dir) | |
-| 1.4 | V-045 | Remove unused `Container` import from `managers/GridRenderer.js` | |
-| 1.5 | V-046 | Remove commented-out import from `managers/TerrainManager.js` | |
-| 1.6 | V-054 | Delete duplicate `tests/unit/TerrainCoordinator3DPicking.test.js` | |
-| 1.7 | V-055 | Delete duplicate `tests/unit/TerrainStateInternals.test.js` | |
-| 1.8 | V-056 | Delete duplicate `tests/unit/viewMode.test.js` (keep `core/` copy) | |
-| 1.9 | V-058 | Already covered by 1.3 (empty `tests/terrain/`) | |
+| 1.1 | V-002 | Delete `src/scene/token-adapter/internals/` (empty) | ✅ Done |
+| 1.2 | V-003 | Delete `src/ui/internals/` (empty) | ✅ Done |
+| 1.3 | V-006 | Delete `tests/terrain/` (orphaned empty dir) | ✅ Done |
+| 1.4 | V-045 | Remove unused `Container` import from `managers/GridRenderer.js` | ⏭ Skipped — false positive, import IS used |
+| 1.5 | V-046 | Remove commented-out import from `managers/TerrainManager.js` | ✅ Done |
+| 1.6 | V-054 | Delete duplicate `tests/unit/TerrainCoordinator3DPicking.test.js` | ✅ Done |
+| 1.7 | V-055 | Delete duplicate `tests/unit/TerrainStateInternals.test.js` | ✅ Done |
+| 1.8 | V-056 | Delete duplicate `tests/unit/viewMode.test.js` (keep `core/` copy) | ✅ Done |
+| 1.9 | V-058 | Already covered by 1.3 (empty `tests/terrain/`) | ✅ Done |
 
-**COMMIT**: after 1.1–1.8 ·  
+**COMMIT**: `60f3d34` — Phase 1 complete
 
 ---
 
@@ -119,4 +119,4 @@
 
 | # | Phase | Scope | Hash | Notes |
 |---|-------|-------|------|-------|
-| | | | | |
+| 1 | Phase 1 | Cleanup empty dirs, dead code, duplicate tests | `60f3d34` | V-002,003,006,046,054,055,056,058 resolved. V-045 false positive (Container used). Tests: 70 suites, 3 pre-existing failures unchanged. |

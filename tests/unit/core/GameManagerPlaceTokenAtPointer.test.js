@@ -36,7 +36,7 @@ jest.mock('three', () => {
   return { Vector2, Vector3, Plane, Raycaster };
 });
 
-import { GameManager } from '../../../src/core/GameManager.js';
+import GameManager from '../../../src/core/GameManager.js';
 
 // Provide minimal token manager & dependencies
 function buildHybridGM() {

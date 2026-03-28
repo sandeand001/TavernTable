@@ -43,7 +43,7 @@ import {
 } from './internals/faceDetails.js';
 import { applyBiomeStylePass } from './internals/biomeStylePass.js';
 
-export class BiomeCanvasPainter {
+export default class BiomeCanvasPainter {
   // ── Constructor ─────────────────────────────────────────────
 
   constructor(gameManager) {
@@ -671,5 +671,3 @@ export class BiomeCanvasPainter {
     if (typeof tilesHiddenCallback === 'function') tilesHiddenCallback(false);
   }
 }
-
-export default BiomeCanvasPainter;

@@ -2,12 +2,12 @@
 // Extracted from BiomeElevationGenerator.js (Phase 8). Pure functions, no state.
 
 // ── Hash & Smoothing ───────────────────────────────────
-function hash2D(x, y, seed = 1337) {
+export function hash2D(x, y, seed = 1337) {
   const X = Math.sin(x * 127.1 + y * 311.7 + seed * 0.73) * 43758.5453;
   return X - Math.floor(X);
 }
 
-function smoothNoise(x, y, seed = 1337) {
+export function smoothNoise(x, y, seed = 1337) {
   const x0 = Math.floor(x),
     y0 = Math.floor(y);
   const xf = x - x0,
@@ -22,7 +22,7 @@ function smoothNoise(x, y, seed = 1337) {
 }
 
 // ── Fractal Noise (fBm & Ridge) ────────────────────────
-function fbm2(x, y, seed = 1337, octaves = 4, lacunarity = 2.0, gain = 0.5) {
+export function fbm2(x, y, seed = 1337, octaves = 4, lacunarity = 2.0, gain = 0.5) {
   let freq = 1.0;
   let amp = 0.5;
   let sum = 0.0;
@@ -34,7 +34,7 @@ function fbm2(x, y, seed = 1337, octaves = 4, lacunarity = 2.0, gain = 0.5) {
   return sum; // in ~[0,1]
 }
 
-function ridge(x, y, seed = 1337, octaves = 5) {
+export function ridge(x, y, seed = 1337, octaves = 5) {
   // Ridged multifractal feel for mountains
   let s = 0;
   let weight = 1;
@@ -50,12 +50,12 @@ function ridge(x, y, seed = 1337, octaves = 5) {
 }
 
 // ── Utility & PRNG ────────────────────────────────────
-function clamp(v, lo, hi) {
+export function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
 // Deterministic PRNG helper for seeded variation
-function randFromSeed(seed, k1 = 0, k2 = 0) {
+export function randFromSeed(seed, k1 = 0, k2 = 0) {
   let h = (seed | 0) ^ 0x9e3779b9 ^ (k1 | 0) ^ ((k2 | 0) * 0x85ebca6b);
   h ^= h >>> 16;
   h = Math.imul(h, 0x27d4eb2d);
@@ -64,9 +64,8 @@ function randFromSeed(seed, k1 = 0, k2 = 0) {
   return h / 4294967296; // [0,1)
 }
 
-// Shape helpers
 // ── Shape Helpers ──────────────────────────────────────
-function radial(nx, ny, seed, invert = false, scale = 1.0, bump = 0.0) {
+export function radial(nx, ny, seed, invert = false, scale = 1.0, bump = 0.0) {
   const cx = 0.5,
     cy = 0.5;
   const dx = nx - cx,
@@ -77,12 +76,10 @@ function radial(nx, ny, seed, invert = false, scale = 1.0, bump = 0.0) {
   return base * scale + n * 0.4 + bump;
 }
 
-function cliffBand(nx, ny, seed, angleDeg = 0, width = 0.08) {
+export function cliffBand(nx, ny, seed, angleDeg = 0, width = 0.08) {
   const th = (angleDeg * Math.PI) / 180;
   const u = nx * Math.cos(th) + ny * Math.sin(th);
   const edge = Math.tanh((u - 0.5) / width); // sharp transition
   const noise = (fbm2(nx * 8, ny * 8, seed, 3, 2.1, 0.5) - 0.5) * 0.2;
   return edge + noise; // -1..1
 }
-
-export { hash2D, smoothNoise, fbm2, ridge, clamp, randFromSeed, radial, cliffBand };

@@ -1,4 +1,4 @@
-import { GameManager } from '../../../src/core/GameManager.js';
+import GameManager from '../../../src/core/GameManager.js';
 import { TerrainHeightUtils } from '../../../src/utils/terrain/TerrainHeightUtils.js';
 
 function buildHybridGM() {

@@ -791,5 +791,4 @@ class GameManager {
 // Legacy global wrapper functions removed (2025-08 cleanup). UI now binds directly to gameManager methods.
 
 // Export the GameManager class for ES6 module usage
-export { GameManager }; // provide named export for compatibility with older test imports
 export default GameManager;

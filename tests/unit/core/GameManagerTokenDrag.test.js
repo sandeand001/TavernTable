@@ -1,6 +1,6 @@
 // GameManager token drag interaction tests (3D hybrid drag-to-move)
 
-import { GameManager } from '../../../src/core/GameManager.js';
+import GameManager from '../../../src/core/GameManager.js';
 
 function buildHybridGMWithToken() {
   const gm = new GameManager({ cols: 20, rows: 20 });

@@ -34,7 +34,7 @@ jest.mock('three', () => {
   return { PlaneGeometry, MeshBasicMaterial, InstancedMesh, Object3D };
 });
 
-import { GameManager } from '../../../../src/core/GameManager.js';
+import GameManager from '../../../../src/core/GameManager.js';
 import { TerrainManager } from '../../../../src/managers/TerrainManager.js';
 import { TERRAIN_PLACEABLES } from '../../../../src/config/terrain/TerrainPlaceables.js';
 

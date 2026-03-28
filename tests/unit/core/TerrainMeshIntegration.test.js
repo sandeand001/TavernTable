@@ -1,4 +1,4 @@
-import { GameManager } from '../../../src/core/GameManager.js';
+import GameManager from '../../../src/core/GameManager.js';
 
 describe('TerrainMesh integration (Phase 2)', () => {
   test('rebuild request invoked after terrain height change in hybrid mode (graceful if three unavailable)', async () => {

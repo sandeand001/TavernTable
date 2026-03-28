@@ -48,7 +48,7 @@ jest.mock('three', () => {
   return { Vector2, Vector3, Plane, Raycaster };
 });
 
-import { GameManager } from '../../../../src/core/GameManager.js';
+import GameManager from '../../../../src/core/GameManager.js';
 import { PickingService } from '../../../../src/scene/picking/PickingService.js';
 
 // Minimal stub for ThreeSceneManager so PickingService finds camera + canvas bounds
