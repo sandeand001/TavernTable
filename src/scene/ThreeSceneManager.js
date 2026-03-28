@@ -290,7 +290,8 @@ export class ThreeSceneManager {
       this.canvas.setAttribute('data-three', 'true');
       Object.assign(this.canvas.style, {
         position: 'absolute',
-        inset: '0',
+        top: '0',
+        left: '0',
         pointerEvents: 'auto',
         zIndex: '0',
       });
@@ -686,7 +687,7 @@ export class ThreeSceneManager {
       (typeof window !== 'undefined' && window.innerHeight) ||
       600;
     try {
-      this.renderer.setSize(w, h, false);
+      this.renderer.setSize(w, h, true);
     } catch (_) {
       /* noop */
     }
