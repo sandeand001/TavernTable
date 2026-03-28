@@ -433,11 +433,14 @@ function reframe() {
       if (!this._isoBaseFrustum) {
         this._isoBaseFrustum = { halfWidth: halfDiag * 1.05, halfHeight: halfDiag * 1.05 };
       }
-      const { halfWidth: hw, halfHeight: hh } = this._isoBaseFrustum;
+      const { halfHeight: hh } = this._isoBaseFrustum;
+      const w = (typeof window !== 'undefined' && window.innerWidth) || 800;
+      const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
+      const aspect = w / h;
       const z = this._zoom <= 0 ? 1 : this._zoom;
       const scale = 1 / z; // bigger zoom value => closer (smaller extents)
-      this.camera.left = -hw * scale;
-      this.camera.right = hw * scale;
+      this.camera.left = -hh * aspect * scale;
+      this.camera.right = hh * aspect * scale;
       this.camera.top = hh * scale;
       this.camera.bottom = -hh * scale;
     } else {

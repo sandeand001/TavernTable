@@ -681,20 +681,25 @@ export class ThreeSceneManager {
     } catch (_) {
       /* noop */
     }
-    const aspect = w / h;
-    const cols = this.gameManager?.cols || 25;
-    const rows = this.gameManager?.rows || 25;
-    const span = Math.max(cols, rows) * 0.6;
-    this.camera.left = -span * aspect;
-    this.camera.right = span * aspect;
-    this.camera.top = span;
-    this.camera.bottom = -span;
-    try {
-      this.camera.updateProjectionMatrix();
-    } catch (_) {
-      /* noop */
+    // Delegate frustum recalculation to reframe() which accounts for iso mode + aspect ratio
+    if (typeof this.reframe === 'function') {
+      this.reframe();
+    } else {
+      const aspect = w / h;
+      const cols = this.gameManager?.cols || 25;
+      const rows = this.gameManager?.rows || 25;
+      const span = Math.max(cols, rows) * 0.6;
+      this.camera.left = -span * aspect;
+      this.camera.right = span * aspect;
+      this.camera.top = span;
+      this.camera.bottom = -span;
+      try {
+        this.camera.updateProjectionMatrix();
+      } catch (_) {
+        /* noop */
+      }
+      this._updateSunCoverage();
     }
-    this._updateSunCoverage();
   }
 
   _getBoardMetrics() {
