@@ -6,7 +6,7 @@
  * it as a texture for efficient display.
  */
 
-import { Sprite, Texture } from '../../core/PixiStub.js';
+import { Sprite, Texture } from '../../utils/stubs/PixiStub.js';
 import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
 import { shadeMul as _sharedShadeMul } from '../../utils/color/ColorUtils.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';

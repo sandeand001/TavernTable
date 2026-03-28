@@ -1,6 +1,6 @@
 // src/entities/creatures/CreatureToken.js - Base class for all creature tokens
 
-import { Graphics } from '../../core/PixiStub.js';
+import { Graphics } from '../../utils/stubs/PixiStub.js';
 
 import { CREATURE_SCALES } from '../../config/GameConstants.js';
 

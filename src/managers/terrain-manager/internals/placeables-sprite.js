@@ -1,7 +1,7 @@
 // Sprite creation for 2D placeable items extracted from placeables.js (Phase 8).
 // Handles texture loading, scale computation, anchoring, and debug logging.
 
-import { Sprite, Texture } from '../../../core/PixiStub.js';
+import { Sprite, Texture } from '../../../utils/stubs/PixiStub.js';
 
 import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
 

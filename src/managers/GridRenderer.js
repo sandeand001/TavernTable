@@ -14,7 +14,7 @@ import {
 } from '../utils/error/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { Container } from '../core/PixiStub.js';
+import { Container } from '../utils/stubs/PixiStub.js';
 import {
   drawIsometricTile as _drawIsoTile,
   clearGridTiles as _clearTiles,

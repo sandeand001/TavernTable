@@ -5,7 +5,7 @@
  * Handles application lifecycle, grid positioning, and zoom management
  */
 
-import { Application } from '../core/PixiStub.js';
+import { Application } from '../utils/stubs/PixiStub.js';
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
 

@@ -1,5 +1,5 @@
 import { GRID_CONFIG } from '../../../config/GameConstants.js';
-import { Graphics } from '../../../core/PixiStub.js';
+import { Graphics } from '../../../utils/stubs/PixiStub.js';
 
 // ── Tile Drawing ───────────────────────────────────────
 // Create and return an isometric grid tile

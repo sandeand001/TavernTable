@@ -1,4 +1,4 @@
-import { Graphics } from '../../../core/PixiStub.js';
+import { Graphics } from '../../../utils/stubs/PixiStub.js';
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { TERRAIN_CONFIG } from '../../../config/terrain/TerrainConstants.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';

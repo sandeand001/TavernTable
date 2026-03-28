@@ -6,7 +6,7 @@
  * Works in coordination with TerrainCoordinator for complete terrain system
  */
 
-import { Container } from '../core/PixiStub.js';
+import { Container } from '../utils/stubs/PixiStub.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';

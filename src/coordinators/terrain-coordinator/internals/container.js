@@ -1,4 +1,4 @@
-import { Container } from '../../../core/PixiStub.js';
+import { Container } from '../../../utils/stubs/PixiStub.js';
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { ContainerUtils } from '../../../utils/terrain/ContainerUtils.js';
 
