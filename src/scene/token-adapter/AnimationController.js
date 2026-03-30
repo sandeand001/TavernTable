@@ -12,7 +12,7 @@
  *   - Manual (user-triggered) animation state, revert timers, and height offsets
  */
 
-import { DEFAULT_MOVEMENT_PROFILE } from './MannequinConfig.js';
+import { DEFAULT_MOVEMENT_PROFILE } from '../../config/token-adapter/MannequinConfig.js';
 
 // ── Animation Setup & Clip Resolution ────────────────────────────
 

@@ -1,7 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../../../utils/logger/Logger.js';
 import { GameErrors } from '../../../../utils/error/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../../../../config/terrain/TerrainConstants.js';
-import * as biomeInternals from '../rendering/biome.js';
+import { handlePostResetShading } from '../rendering/biome.js';
 
 // ── Terrain Reset ─────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ export function resetTerrain(c) {
     );
 
     // Outside terrain mode, synchronize biome shading state after reset
-    biomeInternals.handlePostResetShading?.(c);
+    handlePostResetShading?.(c);
   } catch (error) {
     GameErrors.operation(error, {
       stage: 'resetTerrain',

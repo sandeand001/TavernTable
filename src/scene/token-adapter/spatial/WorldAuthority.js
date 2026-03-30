@@ -12,7 +12,7 @@ import {
   LANDING_OFFSET_SANITIZE_LIMITS,
   LANDING_VARIANTS_FORCE_ZERO_ELEVATION,
   LANDING_VARIANTS_ALLOW_TILE_EXIT,
-} from '../MannequinConfig.js';
+} from '../../../config/token-adapter/MannequinConfig.js';
 
 // ── World Authority Lock / Unlock ────────────────────────────────────────
 

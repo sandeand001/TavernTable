@@ -10,7 +10,7 @@ import {
   TOKEN_3D_MODELS,
   SELECTION_COLLIDER_HEIGHT,
   SELECTION_COLLIDER_RADIUS_RATIO,
-} from './MannequinConfig.js';
+} from '../../config/token-adapter/MannequinConfig.js';
 
 // ── Mesh Creation ───────────────────────────────────────────────
 

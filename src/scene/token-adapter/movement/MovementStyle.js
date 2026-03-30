@@ -12,7 +12,7 @@ import {
   SPRINT_LEAN_RADIANS,
   SPRINT_THRESHOLD_SECONDS,
   SPRINT_SPEED_MULTIPLIER,
-} from '../MannequinConfig.js';
+} from '../../../config/token-adapter/MannequinConfig.js';
 
 // ── Movement Intent ──────────────────────────────────────────────────────
 

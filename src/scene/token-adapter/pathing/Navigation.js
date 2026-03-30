@@ -28,7 +28,7 @@ import {
   CLIMB_APPROACH_TOLERANCE_RUN_SCALE,
   CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE,
   MAX_INTERMEDIATE_CLIMB_CHAIN,
-} from '../MannequinConfig.js';
+} from '../../../config/token-adapter/MannequinConfig.js';
 
 // ── Main Navigation Entry-Point ──────────────────────────────────────────
 

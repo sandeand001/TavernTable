@@ -19,7 +19,7 @@ import {
   CLIMB_RECOVER_CROUCH_HOLD,
   CLIMB_RECOVER_STAND_RELEASE,
   TOKEN_WORLD_LOCK_PROP,
-} from './token-adapter/MannequinConfig.js';
+} from '../config/token-adapter/MannequinConfig.js';
 import { installAnimationMethods } from './token-adapter/AnimationController.js';
 import { installSelectionMethods } from './token-adapter/SelectionEffects.js';
 import { installMeshFactoryMethods } from './token-adapter/MeshFactory.js';

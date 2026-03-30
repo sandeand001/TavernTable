@@ -12,3 +12,9 @@
 - [ ] **Edge tile destination overshoot** — Sprite cannot stop on destination tile when that tile is on the edge of an elevated area. May overshoot and fall off.
 - [ ] **Sprint-to-climb on closely spaced elevations** — Odd behavior when sprinting across multiple elevation changes with only a single tile between the top of the first climb and the start of the second. May be related to sprint state persisting through climb continuation, or the single-tile gap not giving enough space for the approach phase.
 - [ ] **Multiple in-line falls animation** — Falling animation breaks when the path includes multiple consecutive falls (e.g. stepping off a series of descending tiles). Needs investigation into how chained fall phases are handled and whether the fall state resets correctly between sequential drops.
+
+---
+
+## Visual Features
+
+- [ ] **Water visuals** — Add visual water rendering for water-type biome tiles (rivers, lakes, swamps). Could include animated surface, transparency/depth effects, shoreline blending, and reflections.
