@@ -68,12 +68,14 @@
 
 ## Phase 6 — Color Dedup & Final Cleanup
 
-- [ ] **6a.** Add missing functions to `utils/color/ColorUtils.js`: `clamp`, `srgbToLinear`, `hexToLinearRGB`, `mixLinearColor` *(H2)*
-- [ ] **6b.** Replace duplicate color functions in `BiomePalettes*.js` with `ColorUtils` imports *(H2)*
-- [ ] **6c.** Replace duplicate color functions in `LightingSystem.js` with `ColorUtils` imports *(H2)*
-- [ ] **6d.** Plan `dice/` subdirectories for future growth *(M2)*
+- [x] **6a.** Add missing functions to `utils/color/ColorUtils.js`: `clamp`, `hexFromRgb` *(H2)*
+- [x] **6b.** Replace duplicate color functions in `BiomePalettes3D.js` and `BiomePalettes3DHarmonized.js` with ColorUtils imports *(H2)*
+- [x] **6b.** Replace `mix()` alias in `BiomePalettes.js` with already-imported `lerp` *(H2)*
+- [x] **6c.** `LightingSystem.js` — *skip: different domain (0-1 float linear RGB with NaN guards)* *(H2)*
+- [x] **6d.** Plan `dice/` subdirectories — *not needed yet (8 files, all focused)* *(M2)*
 
-**Gate:** `npm test` passes, terrain colors correct in browser
+**Gate:** `npm test` passes, terrain colors correct in browser  
+**Commit:** `9a457ef`
 
 ---
 
