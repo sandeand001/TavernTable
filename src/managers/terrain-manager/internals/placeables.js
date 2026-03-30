@@ -1,4 +1,3 @@
-import { Texture } from '../../../utils/stubs/PixiStub.js';
 import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { createPlaceableSprite } from './placeables-sprite.js';
@@ -7,6 +6,8 @@ import {
   updatePlaceablesForCell,
   repositionAllPlaceables,
 } from './placeables-positioning.js';
+import { cyclePlaceableVariant } from './placeables-variant.js';
+import { removeItem } from './placeables-removal.js';
 
 // Depth utilities no longer used for cross-container zIndex raise; we align to tile scheme.
 // import { computeDepthKey, TYPE_BIAS, withOverlayRaise } from '../../../utils/geometry/DepthUtils.js';
@@ -32,27 +33,6 @@ const MODEL_BASELINE_OFFSETS = new Map();
 const PLACEABLE_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
 const shouldLogTreeModelInfo = () =>
   logger.isInfoEnabled() && typeof window !== 'undefined' && !!window.DEBUG_TREE_MODELS;
-
-const PLANT_FAMILY_VARIANTS = (() => {
-  const map = new Map();
-  try {
-    for (const def of Object.values(TERRAIN_PLACEABLES)) {
-      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
-      const variants = def.familyVariants.filter(
-        (variantId) => typeof variantId === 'string' && TERRAIN_PLACEABLES[variantId]
-      );
-      if (variants.length < 2) continue;
-      for (const variantId of variants) {
-        if (!map.has(variantId)) {
-          map.set(variantId, variants);
-        }
-      }
-    }
-  } catch (_) {
-    /* ignore mapping failures */
-  }
-  return map;
-})();
 
 // ── Model Cache ─────────────────────────────────────────────
 
@@ -182,28 +162,6 @@ function cloneMeshMaterials(root) {
       child.material.needsUpdate = true;
     }
   });
-}
-
-function resolvePlantFamilyVariants(variantId) {
-  if (typeof variantId !== 'string') return null;
-  const cached = PLANT_FAMILY_VARIANTS.get(variantId);
-  if (cached && cached.length >= 2) return cached;
-  try {
-    for (const def of Object.values(TERRAIN_PLACEABLES)) {
-      if (!def || def.type !== 'plant-family' || !Array.isArray(def.familyVariants)) continue;
-      if (!def.familyVariants.includes(variantId)) continue;
-      const variants = def.familyVariants.filter(
-        (v) => typeof v === 'string' && TERRAIN_PLACEABLES[v]
-      );
-      if (variants.length >= 2) {
-        PLANT_FAMILY_VARIANTS.set(variantId, variants);
-        return variants;
-      }
-    }
-  } catch (_) {
-    /* ignore */
-  }
-  return null;
 }
 
 // ── Place Item ─────────────────────────────────────────────
@@ -752,269 +710,13 @@ export function placeItem(m, id, x, y) {
   return true;
 }
 
-// ── Variant Cycling ─────────────────────────────────────────────
-
-/**
- * Cycle the variant for placeables at a tile or for a specific sprite.
- * If `id` is provided, only cycle sprites that match that placeable id.
- * If `index` is provided, set variant to the explicit index; otherwise
- * progress to the next variant in the source array.
- */
-export function cyclePlaceableVariant(m, x, y, id = null, index = null) {
-  const tileKey = `${x},${y}`;
-  if (!m.placeables || !m.placeables.has(tileKey)) return false;
-  const list = m.placeables.get(tileKey);
-  let changed = false;
-  const gm = m.gameManager;
-  for (const sprite of list) {
-    if (!sprite || (id && sprite.placeableId !== id)) continue;
-
-    // Handle native 3D instanced placeables
-    if (sprite.__is3DPlaceable && !sprite.__threeModel) {
-      const def = TERRAIN_PLACEABLES[sprite.placeableId];
-      if (!def) continue;
-      const variants = Array.isArray(def.img) ? def.img : def.img ? [def.img] : [];
-      if (variants.length < 2) {
-        const familyVariants = resolvePlantFamilyVariants(sprite.placeableId);
-        if (familyVariants && familyVariants.length >= 2) {
-          const len = familyVariants.length;
-          const currentIndex = familyVariants.indexOf(sprite.placeableId);
-          const baselineIndex =
-            currentIndex >= 0 ? currentIndex : Number(sprite.placeableVariantIndex) || 0;
-          const nextIndex = Number.isFinite(index)
-            ? ((index % len) + len) % len
-            : (baselineIndex + 1) % len;
-          const nextId = familyVariants[nextIndex];
-          if (nextId && nextId !== sprite.placeableId) {
-            try {
-              if (sprite.__instancedRef && gm?.placeableMeshPool) {
-                gm.placeableMeshPool.removePlaceable(sprite.__instancedRef);
-                delete sprite.__instancedRef;
-              }
-            } catch (_) {
-              /* ignore removal failure */
-            }
-            sprite.placeableId = nextId;
-            sprite.id = nextId;
-            sprite.variantKey = nextId;
-            sprite.texturePath = null;
-            sprite.__rawVariantKey = null;
-            sprite.placeableVariantIndex = nextIndex;
-            const nextDef = TERRAIN_PLACEABLES[nextId];
-            if (nextDef && typeof nextDef.type === 'string') {
-              sprite.placeableType = nextDef.type;
-            }
-            if (nextDef && nextDef.tintVariant) {
-              sprite.tintVariant = nextDef.tintVariant;
-            } else if (sprite.tintVariant) {
-              delete sprite.tintVariant;
-            }
-            sprite.__threeModelPending = true;
-            if (sprite.__threeModel) {
-              try {
-                sprite.__threeModel.parent?.remove(sprite.__threeModel);
-              } catch (_) {
-                /* ignore */
-              }
-              delete sprite.__threeModel;
-            }
-            const pool =
-              gm?.is3DModeActive?.() && gm?.features?.instancedPlaceables
-                ? gm.ensureInstancing?.() || gm.placeableMeshPool
-                : null;
-            if (pool) {
-              try {
-                const handlePromise = pool.addPlaceable(sprite);
-                sprite.__instancingPromise = handlePromise;
-                if (handlePromise && typeof handlePromise.then === 'function') {
-                  if (!Array.isArray(gm._pendingInstancingPromises)) {
-                    gm._pendingInstancingPromises = [];
-                  }
-                  gm._pendingInstancingPromises.push(handlePromise);
-                  handlePromise.catch(() => {
-                    /* instancing re-add failure falls back to sprite rendering */
-                  });
-                }
-              } catch (_) {
-                /* ignore re-add failure */
-              }
-            }
-            changed = true;
-          }
-          continue;
-        }
-        const nextIndex = Number.isFinite(index)
-          ? Math.max(0, index) % Math.max(variants.length, 1)
-          : (Number(sprite.placeableVariantIndex) + 1) % Math.max(variants.length, 1);
-        if (nextIndex !== sprite.placeableVariantIndex) {
-          sprite.placeableVariantIndex = nextIndex;
-          changed = true;
-        }
-        continue;
-      }
-      const len = variants.length;
-      const nextIndex = Number.isFinite(index)
-        ? ((index % len) + len) % len
-        : (sprite.placeableVariantIndex + 1) % len;
-      const nextPath = variants[nextIndex];
-      if (!nextPath) continue;
-      try {
-        if (sprite.__instancedRef && gm?.placeableMeshPool) {
-          gm.placeableMeshPool.removePlaceable(sprite.__instancedRef);
-          delete sprite.__meshPoolHandle;
-        }
-      } catch (_) {
-        /* ignore */
-      }
-      sprite.placeableVariantIndex = nextIndex;
-      sprite.variantKey = nextPath;
-      sprite.texturePath = nextPath;
-      sprite.__rawVariantKey = nextPath;
-      const pool =
-        gm?.is3DModeActive?.() && gm?.features?.instancedPlaceables
-          ? gm.ensureInstancing?.() || gm.placeableMeshPool
-          : null;
-      if (pool) {
-        try {
-          const handlePromise = pool.addPlaceable(sprite);
-          sprite.__instancingPromise = handlePromise;
-          if (handlePromise && typeof handlePromise.then === 'function') {
-            if (!Array.isArray(gm._pendingInstancingPromises)) {
-              gm._pendingInstancingPromises = [];
-            }
-            gm._pendingInstancingPromises.push(handlePromise);
-            handlePromise.catch(() => {
-              /* instancing re-add failure falls back to sprite rendering */
-            });
-          }
-        } catch (_) {
-          /* ignore re-add failure */
-        }
-      }
-      changed = true;
-      continue;
-    }
-
-    // Skip pure 3D model records (handled separately)
-    if (sprite && sprite.__threeModel && !sprite.texture) continue;
-    if (!sprite || (id && sprite.placeableId !== id)) continue;
-    const def = TERRAIN_PLACEABLES[sprite.placeableId];
-    if (!def) continue;
-    if (!Array.isArray(def.img) || def.img.length < 2) {
-      const nextIndex = Number.isFinite(index) ? index % 2 : (sprite.placeableVariantIndex + 1) % 2;
-      if (nextIndex !== sprite.placeableVariantIndex) {
-        sprite.placeableVariantIndex = nextIndex;
-        changed = true;
-      }
-      continue;
-    }
-    const len = def.img.length;
-    const nextIndex = Number.isFinite(index)
-      ? index % len
-      : (sprite.placeableVariantIndex + 1) % len;
-    const nextPath = def.img[nextIndex];
-    if (!nextPath) continue;
-    try {
-      sprite.texture = Texture.from(nextPath);
-      sprite.placeableVariantIndex = nextIndex;
-      try {
-        sprite.getLocalBounds && sprite.getLocalBounds();
-      } catch (_) {
-        /* ignore */
-      }
-      changed = true;
-    } catch (_) {
-      /* best-effort */
-    }
-  }
-  return changed;
-}
-
-// ── Removal ─────────────────────────────────────────────
-
-export function removeItem(m, x, y, id = null) {
-  const tileKey = `${x},${y}`;
-  if (!m.placeables || !m.placeables.has(tileKey)) return false;
-  const list = m.placeables.get(tileKey);
-  let removed = false;
-  for (let i = list.length - 1; i >= 0; i--) {
-    const p = list[i];
-    if (!id || p.placeableId === id) {
-      try {
-        // Only attempt removal if object looks like a sprite
-        if (p && p.parent && typeof p.parent.removeChild === 'function') {
-          p.parent.removeChild(p);
-        }
-      } catch (_) {
-        /* best-effort */
-      }
-      // Remove any attached 3D model (full replacement mode)
-      try {
-        if (p.__threeModel) {
-          const tm = p.__threeModel;
-          try {
-            tm.parent?.remove(tm);
-          } catch (_) {
-            /* ignore */
-          }
-          // dispose resources
-          try {
-            tm.traverse?.((n) => {
-              if (n.isMesh) {
-                try {
-                  n.geometry?.dispose?.();
-                } catch (_) {
-                  /* ignore */
-                }
-                if (n.material) {
-                  const mats = Array.isArray(n.material) ? n.material : [n.material];
-                  for (const mtl of mats) {
-                    try {
-                      mtl.map?.dispose?.();
-                    } catch (_) {
-                      /* ignore */
-                    }
-                    try {
-                      mtl.alphaMap?.dispose?.();
-                    } catch (_) {
-                      /* ignore */
-                    }
-                    try {
-                      mtl.dispose?.();
-                    } catch (_) {
-                      /* ignore */
-                    }
-                  }
-                }
-              }
-            });
-          } catch (_) {
-            /* ignore */
-          }
-          delete p.__threeModel;
-        }
-      } catch (_) {
-        /* ignore */
-      }
-      // Phase 4: if instanced, remove from mesh pool
-      try {
-        const gm = m.gameManager;
-        if (gm?.features?.instancedPlaceables && p.__instancedRef) {
-          gm.placeableMeshPool?.removePlaceable(p.__instancedRef);
-          delete p.__instancedRef;
-        }
-      } catch (_) {
-        /* ignore */
-      }
-      list.splice(i, 1);
-      removed = true;
-    }
-  }
-  if (list.length === 0) m.placeables.delete(tileKey);
-  return removed;
-}
-
 // ── Re-exports ─────────────────────────────────────────────
 
 // Re-export extracted functions so existing callers see no change
-export { createPlaceableSprite, updatePlaceablesForCell, repositionAllPlaceables };
+export {
+  createPlaceableSprite,
+  updatePlaceablesForCell,
+  repositionAllPlaceables,
+  cyclePlaceableVariant,
+  removeItem,
+};

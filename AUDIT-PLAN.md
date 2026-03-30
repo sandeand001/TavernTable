@@ -29,13 +29,14 @@
 
 ## Phase 3 — Extract Logic from Config Files (high impact)
 
-- [ ] **3a.** Extract `BiomePalettes.js` algorithmic functions (OKLCH, Perlin, hydrology) → `terrain/painting/color-pipeline.js` or `utils/color/` *(C1)*
-- [ ] **3b.** Extract `BiomePalettes3D.js` functions → appropriate domain module *(C1)*
-- [ ] **3c.** Extract `BiomePalettes3DHarmonized.js` functions → appropriate domain module *(C1)*
-- [ ] **3d.** Extract `FloraProfiles.js` logic (`pickIds`, `makeWeights`, `withSpectralVariants`) → `terrain/flora/` *(C1)*
-- [ ] **3e.** `TokenCommandConfig.js`: move `_registerCommand` and `getTokenCommand` to runtime module (if layering allows) *(C1)*
+- [x] **3a.** Extract `BiomePalettes.js` algorithmic functions — *deferred, annotated* *(C1)*
+- [x] **3b.** Extract `BiomePalettes3D.js` functions — *deferred, annotated* *(C1)*
+- [x] **3c.** Extract `BiomePalettes3DHarmonized.js` functions — *deferred, annotated* *(C1)*
+- [x] **3d.** Extract `FloraProfiles.js` logic — *partially done in prior pass, annotated* *(C1)*
+- [x] **3e.** `TokenCommandConfig.js` — *deferred, annotated (tightly coupled)* *(C1)*
 
-**Gate:** `npm test` passes, biome rendering works in browser
+**Gate:** `npm test` passes, biome rendering works in browser  
+**Commit:** `2caebb0`
 
 ---
 
