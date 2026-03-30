@@ -1,266 +1,309 @@
-# Conventions Audit Report
+# CONVENTIONS.md Compliance Audit Report
 
-**Date:** 2026-03-28  
-**Scope:** Every file under `src/` and `tests/` reviewed against `CONVENTIONS.md`  
-**Total files reviewed:** 162 source files, 70 test files
+**Date:** 2026-03-30  
+**Scope:** All 168 source files under `src/` (42,457 LOC), 70 test files under `tests/`  
+**Audited against:** CONVENTIONS.md §1–§7
 
 ---
 
 ## Executive Summary
 
-| Category | Score | Notes |
-|----------|-------|-------|
-| Directory Layout (§1) | 95% | Structure matches target; 1 duplicate file, 1 misplaced config |
-| In-File Organization (§2) | 78% | Many files missing section comments; several over 800 lines |
-| Module Patterns (§3) | 90% | 1 wildcard import; some singleton exports incorrect |
-| Responsibility Boundaries (§4) | 75% | Logic in config files; duplicate color functions across codebase |
-| Dead Code & Deprecation (§6) | 98% | No empty dirs, no stubs; 1 duplicate file to delete |
-| Test Naming (§1.4) | 100% | All 70 test files properly named and located |
+| Metric | Value |
+|--------|-------|
+| Total files audited | 168 source + 70 test |
+| Fully compliant files | **~145 / 168 (86%)** |
+| Critical violations | **6** |
+| Major violations | **9** |
+| Minor violations | **5** |
+| Files over 800 LOC | **3** (ThreeSceneManager 965, ClimbPhases 938, TerrainConstants 1093) |
+| Files approaching 800 LOC | **5** (PlaceableMeshPool 772, AnimationController 750, Navigation 746, UIController 782, BiomePalettes 776) |
 
-**Overall Compliance: ~85%**
-
----
-
-## Critical Violations (Must Fix)
-
-### C1. Logic in Config Files (§1.1 — "Pure data, no logic")
-
-Config files must contain only constants, palettes, and lookup tables — **no functions with control flow**.
-
-| File | Lines | Issue |
-|------|-------|-------|
-| `config/biome/BiomePalettes.js` | 24–435 | 20+ functions: OKLCH color math, Perlin noise, painterly rendering, hydrology blending |
-| `config/biome/BiomePalettes3D.js` | 28–135 | `applyAtmosphere()`, `applyDepth()`, `buildPalette()`, `ensureBiomePalette()`, `getBiomeColor3DHex()` |
-| `config/biome/BiomePalettes3DHarmonized.js` | 31–145 | `adjustSaturation()`, `buildHarmonizedPalette()`, `getHarmonized3DColorHex()`, `rebuildHarmonizedBiomeCache()` |
-| `config/TokenCommandConfig.js` | 113–123 | `_registerCommand()` (recursive tree traversal), `getTokenCommand()` (conditional lookup) |
-| `config/terrain/FloraProfiles.js` | 11–61 | `pickIds()`, `makeWeights()`, `withSpectralVariants()` — filtering/transformation logic |
-
-**Fix:** Extract all algorithmic functions to appropriate utility/domain modules. Keep only pure data (objects, arrays, maps) in config files. The BiomePalettes color math could go to `utils/color/` or a new `terrain/painting/color-pipeline.js`.
+The codebase is in **good overall health**. The `internals/` pattern, mixin installers, test naming, import hygiene, utils domain isolation, and dead code policy are all well-followed. The primary issues are: (1) config files containing algorithmic logic, (2) two files exceeding 800 LOC that could be split, and (3) scattered section comment gaps in class files.
 
 ---
 
-### C2. Files Exceeding ~800 Lines (§1.2)
+## CRITICAL Violations
 
-| File | Lines | Recommended Action |
-|------|-------|--------------------|
-| `core/GameManager.js` | ~1,100 | Further decompose to `game-manager/internals/` |
-| `core/ModelAssetCache.js` | ~730 | Borderline — add section comments at minimum |
-| `managers/InteractionManager.js` | ~845 | Acceptable (excellent section organization) |
-| `managers/TerrainManager.js` | ~810 | Acceptable (well-structured) |
-| `managers/terrain-manager/internals/placeables.js` | ~1,000+ | **Split into:** `placeables-plant-3d.js`, `placeables-variant-cycling.js`, `placeables-removal.js` |
-| `managers/terrain-manager/internals/placeables-sprite.js` | ~500 | Add section comments; consider decomposition |
-| `ui/UIController.js` | ~900 | Extract to `ui/ui-controller/internals/` |
-| `ui/components/RadialMenu.js` | ~900 | Extract to `ui/components/radial-menu/internals/` |
-| `utils/error/ErrorHandler.js` | ~950 | Extract to `utils/error/internals/` |
-| `utils/logger/Logger.js` | ~1,050 | Extract to `utils/logger/internals/` |
-| `scene/ThreeSceneManager.js` | ~1,000+ | Extract to `scene/three-scene-manager/internals/` |
-| `terrain/painting/BiomeCanvasPainter.js` | ~900 | Extract field helpers and canvas layer management |
-| `terrain/generation/internals/biomeShapeFunctions.js` | ~800+ | Split by biome category (plains, deserts, mountains, etc.) |
+### 1. `config/biome/BiomePalettes.js` — Logic in config (§4.2, §1.1)
+
+**776 lines | Contains ~17 algorithmic functions in a config file**
+
+The file itself acknowledges the violation on line 1:
+> `// NOTE: §4 violation — algorithmic functions here are tightly coupled to palette data.`
+
+Functions like `srgbToLinear01`, `oklabToRgb01`, `hexToOklch`, `lerpOklch`, `fbm2`, `generateHeightGradient`, `getBiomeColor`, `getBiomeColorHex`, and `getBiomeColorWithHydrology` are all algorithmic — they belong in `utils/color/` or a dedicated `terrain/painting/` helper, not in config.
+
+**Impact:** Violates the core principle that `config/` = pure data, no logic.  
+**Risk:** Medium — functions are tightly coupled to the data, so extraction requires careful refactoring.  
+**Recommendation:** Extract color-space conversion functions to `utils/color/OklchUtils.js`. Extract biome color lookup functions to `terrain/painting/biome-color-lookup.js`. Keep only data tables (`BIOME_BASE_TRIADS`, stop definitions) in the config file.
 
 ---
 
-### C3. Duplicate File (§6 — delete deprecated shims)
+### 2. `config/biome/BiomePalettes3D.js` — Logic in config (§4.2)
 
-`src/coordinators/ProjectionUtils.js` is a **full copy** of `src/utils/coordinates/ProjectionUtils.js`.
+**184 lines | Contains `applyAtmosphere()`, `applyDepth()`, `buildPalette()`, `ensureBiomePalette()` + exports functions**
 
-**Fix:** Delete `src/coordinators/ProjectionUtils.js` and update imports in `StateCoordinator.js` to point to `../utils/coordinates/ProjectionUtils.js`.
+Line 1 acknowledges: `// NOTE: §4 violation`
 
----
+Exports `registerCustom3DBiomePalette`, `getBiomeColor3DHex`, and a default function object — all logic, not data.
 
-### C4. Misplaced Config File (§4.2 — config belongs in `config/`)
-
-`src/scene/token-adapter/MannequinConfig.js` contains pure data (constants, profiles, animation config, landing thresholds) with no logic.
-
-**Fix:** Move to `src/config/token-adapter/MannequinConfig.js` and update all imports.
+**Recommendation:** Move functions to a palette builder module. Keep only `BIOME_3D_BASE_TRIADS` in config.
 
 ---
 
-### C5. Singleton Export Pattern (§3.2)
+### 3. `config/biome/BiomePalettes3DHarmonized.js` — Logic in config (§4.2)
 
-| File | Current | Expected |
-|------|---------|----------|
-| `core/GameManager.js` | `export default GameManager` | `const gm = new GameManager(); export { gm as default }` |
-| `core/ModelAssetCache.js` | `export default ModelAssetCache` | `export { instance as default }` |
+**129 lines | Contains `applyAtmosphere()`, `applyDepth()`, `adjustSaturation()`, `buildHarmonizedPalette()`, `ensureHarmonyPalette()`**
 
----
+Line 1 acknowledges: `// NOTE: §4 violation`
 
-## High-Priority Violations
+Same pattern as the other two palette files. Exports `getHarmonized3DColorHex`, `rebuildHarmonizedBiomeCache` — logic, not data.
 
-### H1. Missing Section Comments (§2.1)
-
-Files with >5 methods/functions that lack `// ── Section Name ────` headers:
-
-| File | Methods | Status |
-|------|---------|--------|
-| `core/ModelAssetCache.js` | 15+ | **No section comments at all** |
-| `scene/ThreeSceneManager.js` | Many | Missing throughout |
-| `scene/Token3DAdapter.js` | Many | Inconsistent — some sections marked, others not |
-| `scene/camera/CameraRig.js` | ~5 | Missing headers |
-| `scene/camera/CameraSystem.js` | ~8 | Inconsistent application |
-| `scene/picking/PickingService.js` | ~10 | Missing throughout (~400 lines) |
-| `scene/token-adapter/AnimationController.js` | Many | Incomplete coverage |
-| `scene/token-adapter/ClimbPhases.js` | ~6 | Missing headers |
-| `scene/token-adapter/FallPhases.js` | ~6 | Missing headers |
-| `scene/terrain/PlaceableMeshPool.js` | ~10 | Missing headers |
-| `scene/terrain/brush/OverlayMeshPool.js` | 3 | Missing `── Public API ──` section |
-| `managers/terrain-manager/internals/placeables-sprite.js` | Large | Missing throughout |
-| `managers/token-manager/internals/positioning.js` | 1 (280 lines) | Complex function needs section dividers |
-| `terrain/painting/internals/faceDetails.js` | 6 | Missing function group headers |
-| `utils/color/ColorUtils.js` | 8 | Missing section delimiters |
-| `ui/controls/Hybrid3DControls.js` | 5+ | Missing headers |
-| `ui/controls/HybridRenderToggle.js` | 6+ | Missing headers |
+**Recommendation:** Consolidate all three palette builder functions into one `terrain/painting/palette-builder.js` module.
 
 ---
 
-### H2. Duplicate Color/Math Functions (§4.1 — no overlapping functionality)
+### 4. `config/terrain/FloraProfiles.js` — Utility functions in config (§4.2)
 
-The canonical location for color utilities is `utils/color/ColorUtils.js`. The following files contain **duplicate implementations**:
+**98 lines | Contains `pickIds()`, `makeWeights()`, `withSpectralVariants()`**
 
-| File | Duplicated Functions |
-|------|---------------------|
-| `config/biome/BiomePalettes.js` | `hexToRgb`, `rgb01ToHex`, `clamp`, `mix`/`lerp` |
-| `config/biome/BiomePalettes3D.js` | `clamp`, `lerp`, `hex`, `hexToRgb`, `lerpColor` |
-| `config/biome/BiomePalettes3DHarmonized.js` | `clamp`, `lerp`, `hex`, `hexToRgb`, `lerpColor` |
-| `scene/lighting/LightingSystem.js` | `_clamp`, `_srgbToLinear`, `_hexToLinearRGB`, `_mixLinearColor` |
+Line 3 acknowledges: `// NOTE: §4 violation`
 
-**Fix:** Consolidate by adding missing functions (`clamp`, `lerp`, `srgbToLinear`) to `utils/color/ColorUtils.js`, then import from there. For the BiomePalettes files, the functions should move out with the logic (see C1).
+These helper functions are called at import-time to construct the `BIOME_FLORA_PROFILES` data. While the result is data, the process of building it is logic.
+
+**Recommendation:** Move `pickIds`, `makeWeights`, `withSpectralVariants` to `terrain/flora/floraHelpers.js` (which already exists), then import them in FloraProfiles.
 
 ---
 
-### H3. Wildcard Import (§3.4)
+### 5. `scene/ThreeSceneManager.js` — Exceeds 800 LOC (§1.2)
 
-`src/coordinators/terrain-coordinator/internals/activation/reset.js` line 4:
-```js
-import * as biomeInternals from '../rendering/biome.js';
-```
+**965 lines | Class with 5 section comments**
 
-**Fix:** Change to named imports: `import { functionA, functionB } from '../rendering/biome.js'`.
+This is the largest class file in the codebase. It has proper section comments (`Constructor`, `Lifecycle`, `Public API`, `Private Helpers`, `Cleanup`) and already delegates via mixin installers (lighting, grid overlay, camera). However, it exceeds the 800-line guideline by 165 lines.
 
----
+**Can it be split safely?** Yes. The `Lifecycle` section (line 109–439) contains initialization logic spanning 330 lines — scene setup, renderer creation, shadow configuration, terrain mesh init, instanced mesh creation. This could be extracted to `scene/three-scene-manager/internals/init.js`. The `Cleanup` section (line 917–965) could also be extracted.
 
-### H4. Import Grouping Issues (§3.4)
-
-Several files have imports not properly grouped with blank lines between groups:
-
-| File | Issue |
-|------|-------|
-| `core/GameManager.js` | Config mixed with coordinator imports without blank line separators |
-| `core/ModelAssetCache.js` | Import groups not separated |
-| `core/ModelPostProcessing.js` | Logger import not separated from same-module imports |
-| `entities/creatures/CreatureToken.js` | Stubs/config/utils all mixed together |
+**Recommendation:** Create `scene/three-scene-manager/internals/` with `init.js` (~300 lines) and optionally `cleanup.js` (~50 lines). This would bring the parent class to ~615 lines.
 
 ---
 
-## Medium-Priority Violations
+### 6. `scene/token-adapter/movement/ClimbPhases.js` — Exceeds 800 LOC (§1.2)
 
-### M1. Mixin Installer Pattern Compliance (§3.3)
+**938 lines | Mixin installer with 9 section comments**
 
-Several token-adapter mixin files may be missing explicit `installXMethods(prototype)` exports:
+The file is well-organized with clear sections: State Reset Helpers, Climb Resolution Helpers, Climb Landing, Standard Climb Phase, Wall Climb Sequence, Climb Phase Advancement, Climb Recover Phase, Climb Advance Phase, Module Installation. The climb animation system is inherently complex and the sections are logically cohesive.
 
-| File | Status |
-|------|--------|
-| `scene/token-adapter/movement/ClimbPhases.js` | Needs verification of installer export |
-| `scene/token-adapter/movement/FallPhases.js` | Needs verification of installer export |
-| `scene/token-adapter/movement/MovementPhases.js` | Needs verification |
-| `scene/token-adapter/movement/MovementStyle.js` | Needs verification |
-| `scene/token-adapter/movement/StepFactory.js` | Needs verification |
-| `scene/token-adapter/pathing/PathingLogger.js` | Missing `installPathingLoggerMethods()` |
-| `scene/token-adapter/spatial/SpatialUtils.js` | Missing explicit installer export |
+**Can it be split safely?** Partially. The Wall Climb Sequence (line 346–652, ~306 lines) is the largest section and could be extracted to a separate file. However, each climb phase shares local helper functions and state management. Splitting may require passing additional context or duplicating helper references.
 
-**Confirmed compliant:**
-- `scene/token-adapter/SelectionEffects.js` ✓
-- `scene/token-adapter/pathing/ResumeProbe.js` ✓
-- `scene/token-adapter/spatial/RootMotion.js` ✓
-- `scene/token-adapter/spatial/WorldAuthority.js` ✓
+**Recommendation:** Consider extracting `climb-wall.js` with the Wall Climb Sequence (~306 lines), which would bring ClimbPhases.js to ~632 lines. The helper functions they share could be placed in a `climb-helpers.js`. However, if this creates excessive parameter-passing overhead or coupling, keeping the file unified at 938 lines is defensible given its singular, cohesive concern.
 
 ---
 
-### M2. Dice Directory File Count (§1.2)
+## MAJOR Violations
 
-`src/systems/dice/` has **8 files**, exceeding the 6-file guideline. Not critical since each file is focused, but consider subdirectories if it grows further.
+### 7. `config/TokenCommandConfig.js` — Function exports from config (§4.2)
 
----
+**150 lines | Has `_registerCommand()` and `export function getTokenCommand()`**
 
-### M3. Section Comment Formatting Inconsistencies
+Line 140 notes: `// NOTE: §4 violation — _registerCommand builds the tree lazily at import time`
 
-Some files use slightly different dash lengths or styles in their section comments. While functional, standardizing to the exact convention format would improve consistency:
-```js
-// ── Section Name ────────────────────────────────────────────
-```
+The file exports `getTokenCommand()`, a lookup function. While this is a thin data-access wrapper, it technically violates the "config = pure data" rule.
 
----
-
-## Fully Compliant Areas
-
-### Directory Structure
-- All 10 top-level `src/` domains match §1.1 perfectly ✓
-- `internals/` folder pattern correctly applied in 6 locations ✓
-- No empty directories ✓
-- No stub files ✓
-
-### Circular Dependency Prevention
-- **Zero circular dependencies** found across all `internals/` directories ✓
-- All `internals/` files import only from `utils/`, `config/`, `scene/`, or sibling internals ✓
-
-### Utils Domain Independence (§4.3)
-- **Zero violations** — no `utils/` file imports from `managers/`, `scene/`, `coordinators/`, `terrain/`, or `entities/` ✓
-
-### Test Files (§1.4)
-- All 70 test files use `.test.js` suffix ✓
-- All mirror `src/` path structure in `tests/unit/` ✓
-- No test files outside `tests/unit/` (only setup utilities at root) ✓
-
-### Coordinators Directory
-- **95% compliant** — excellent orchestration patterns, proper delegation to controllers and internals ✓
-- Clean separation of coordinator state vs. manager state ✓
-
-### Systems & Terrain
-- Well-organized with proper internals patterns ✓
-- Generated file correctly uses `.generated.js` suffix ✓
-- All internals functions use `(context, ...)` first argument pattern ✓
+**Recommendation:** Either move `getTokenCommand()` to a separate `config/token-adapter/token-command-lookup.js` utility, or document an explicit exception since it's a simple lookup into exported data.
 
 ---
 
-## Test Coverage Gaps
+### 8. `config/biome/PaletteDesign.js` — Function export from config (§3.2)
 
-While test naming is compliant, many src/ modules lack test files:
+**90 lines | Exports `getBiomeDesign()` function at line 88**
 
-| Domain | Files | Tests | Coverage |
-|--------|-------|-------|----------|
-| config/ | 10 | 2 | 20% |
-| coordinators/ | 27 | 24 | 89% |
-| core/ | 8 | 5 | 63% |
-| entities/ | 4 | 0 | 0% |
-| managers/ | 23 | 10 | 43% |
-| scene/ | 31 | 15 | 48% |
-| systems/ | 9 | 1 | 11% |
-| terrain/ | 12 | 5 | 42% |
-| ui/ | 6 | 3 | 50% |
-| utils/ | 17 | 7 | 41% |
-| **Total** | **162** | **70** | **43%** |
+This is a simple object lookup function, not algorithmic logic. Low severity.
+
+**Recommendation:** Accept as minor exception or inline the lookup into consumers.
 
 ---
 
-## Prioritized Action Items
+### 9. `ui/UIController.js` — Approaching 800 LOC + ordering violation (§1.2, §2.2)
 
-### Tier 1 — Critical (structural/architectural violations)
-1. **Extract logic from config files** (C1): Move all algorithmic functions out of `BiomePalettes*.js`, `TokenCommandConfig.js`, `FloraProfiles.js`
-2. **Split oversized files** (C2): `placeables.js` (1000+ lines), `GameManager.js` (1100), `Logger.js` (1050), `ErrorHandler.js` (950)
-3. **Delete duplicate** `coordinators/ProjectionUtils.js` (C3)
-4. **Move** `MannequinConfig.js` to `config/` (C4)
-5. **Fix singleton exports** for `GameManager` and `ModelAssetCache` (C5)
+**782 lines | Module file with reversed section order**
 
-### Tier 2 — High (convention enforcement)
-6. **Add section comments** to 17 files missing them (H1)
-7. **Consolidate duplicate color functions** into `utils/color/ColorUtils.js` (H2)
-8. **Replace wildcard import** in `reset.js` (H3)
-9. **Fix import grouping** in 4 files (H4)
+The file places `// ── Private Helpers ──` (line 49) before `// ── Public API ──` (line 179). Per §2.2, module files should order: Imports → Constants → **Public API** → **Private Helpers**. This file has them reversed.
 
-### Tier 3 — Medium (pattern consistency)
-10. **Verify mixin installer exports** in 7 token-adapter files (M1)
-11. **Plan dice/ subdirectories** for future growth (M2)
-12. **Standardize section comment formatting** across all files (M3)
+Additionally at 782 lines, any new feature will push it over the 800-line threshold.
 
-### Tier 4 — Improvement (not violations)
-13. Increase test coverage from 43% to 60%+ (focus on entities/, systems/, config/)
-14. Add section comments to borderline files (<5 methods but would benefit)
+**Recommendation:** 
+1. Reorder sections to match §2.2: move Public API above Private Helpers.
+2. Plan extraction into `ui/ui-controller/internals/` with modules for terrain controls, creature panel, grid sizing, etc.
+
+---
+
+### 10. `core/ModelAssetCache.js` — Missing class section comments (§2.1, §2.3)
+
+**713 lines | Has partial section comments but lacks full class sectioning**
+
+Has `// ── Imports & Logging Helpers ──` and `// ── Constants & Tropical Entry Builder ──` at module level, but the class body lacks the required `// ── Constructor ──`, `// ── Lifecycle ──`, `// ── Public API ──`, `// ── Private Helpers ──` section markers.
+
+**Recommendation:** Add standard class section comments per §2.3.
+
+---
+
+### 11. `managers/GridRenderer.js` — Missing section comments (§2.1)
+
+**214 lines | No horizontal-rule section markers inside class**
+
+Class is small but lacks any `// ── Section ──` markers.
+
+**Recommendation:** Add `// ── Constructor ──`, `// ── Public API ──`, `// ── Private Helpers ──` markers.
+
+---
+
+### 12. `managers/TokenManager.js` — Incomplete section comments (§2.1)
+
+**202 lines | Has partial sections, missing Constants + full class structure**
+
+Has `// ── Constructor & State Accessors ───` but lacks `// ── Constants ──` before the class for module-level constants (`DEFAULT_TOKEN_TYPE`, `LEGACY_TOKEN_ALIASES`, `normalizeTokenType`), and lacks `// ── Lifecycle ──`, `// ── Public API ──`, `// ── Private Helpers ──` inside the class.
+
+**Recommendation:** Add missing section headers.
+
+---
+
+### 13. `managers/InteractionManager.js` — Incomplete section comments (§2.3)
+
+**726 lines | Has Constructor and Lifecycle sections but missing Event Handlers and Private Helpers sections**
+
+Has `// ── Constructor ──` (line 50), `// ── Lifecycle ──` (line 90), `// ── Event Setup ──` (line 101), but lacks `// ── Public API ──`, `// ── Event Handlers ──`, and `// ── Private Helpers ──` section markers.
+
+**Recommendation:** Add missing section headers for Public API, Event Handlers, and Private Helpers.
+
+---
+
+### 14. `managers/TerrainManager.js` — Incomplete section comments (§2.3)
+
+**708 lines | Has Constructor and Public API but missing Private Helpers section**
+
+Has `// ── Constructor ──` (line 57), `// ── Public API ──` (line 87), `// ── Lifecycle ──` (line 121), but lacks `// ── Event Handlers ──`, `// ── Private Helpers ──`, `// ── Accessors ──` sections.
+
+**Recommendation:** Add missing section headers.
+
+---
+
+### 15. `coordinators/TerrainCoordinator.js` — Import grouping (§3.4)
+
+**686 lines | Imports not grouped per convention**
+
+Lines 5–76: imports from utils, config, terrain, coordinators, and internals are intermixed. Per §3.4 they should be grouped: (1) third-party → (2) config → (3) same-domain siblings → (4) cross-domain, with blank lines between groups.
+
+**Recommendation:** Reorganize imports into proper groups with blank-line separators.
+
+---
+
+## MINOR Violations
+
+### 16. `coordinators/InputCoordinator.js` — Import grouping (§3.4)
+
+**172 lines | Mixed utils imports without blank-line separation**
+
+Logger, GameErrors, GameValidators, CoordinateUtils imports could be grouped more clearly.
+
+---
+
+### 17. `coordinators/RenderCoordinator.js` — Import grouping (§3.4)
+
+**306 lines | PixiStub, config, and utils imports not clearly separated**
+
+Missing blank lines between import groups.
+
+---
+
+### 18. `entities/creatures/CreatureToken.js` — Missing class section headers (§2.3)
+
+**286 lines | Has Constructor section but lacks subsequent sections**
+
+Has `// ── Constructor & Validation ───` but no `// ── Public API ──`, `// ── Private Helpers ──` sections after.
+
+---
+
+### 19. `entities/creatures/creatureHelpers.js` — Missing section header (§2.4)
+
+**29 lines | Private data lacks section comment**
+
+`CREATURE_COLORS` and `CREATURE_TYPE_ALIASES` defined before the main export without a `// ── Private Data ──` section header.
+
+---
+
+### 20. `core/ModelPostProcessing.js` — Missing Private Helpers section (§2.2)
+
+**325 lines | Has Public API section but lacks Private Helpers demarcation**
+
+Functions after the main export lack a `// ── Private Helpers ──` marker.
+
+---
+
+## Files Over 800 LOC Analysis
+
+| File | Lines | Pure Data? | Can Split? | Recommendation |
+|------|------:|:----------:|:----------:|----------------|
+| `config/terrain/TerrainConstants.js` | 1,093 | **Yes** | No — it's all config objects | **Acceptable.** Pure data file, no logic. Splitting would fragment related constants. |
+| `scene/ThreeSceneManager.js` | 965 | No | **Yes** | Extract init logic to `internals/init.js` (~300 lines) |
+| `scene/token-adapter/movement/ClimbPhases.js` | 938 | No | **Partially** | Extract Wall Climb Sequence (~306 lines) if safe; otherwise accept with documentation |
+
+---
+
+## Files Approaching 800 LOC (Watch List)
+
+| File | Lines | Trend | Action |
+|------|------:|-------|--------|
+| `ui/UIController.js` | 782 | Growing | **Refactor soon** — already has ordering violation |
+| `config/biome/BiomePalettes.js` | 776 | Stable | Will shrink when logic extracted per Critical #1 |
+| `scene/terrain/PlaceableMeshPool.js` | 772 | Stable | Already has lifecycle extracted; monitor |
+| `scene/token-adapter/AnimationController.js` | 750 | Growing | Plan `internals/` extraction before 800 |
+| `scene/token-adapter/pathing/Navigation.js` | 746 | Growing | Plan `internals/` extraction before 800 |
+
+---
+
+## Areas of Strong Compliance
+
+These aspects of the codebase are **exemplary**:
+
+1. **`internals/` pattern** — All 60+ internals files across 8 parent modules correctly export plain functions with `(context, ...)` as first parameter. Zero circular dependency violations.
+
+2. **Mixin installer pattern** — All mixin files (ClimbPhases, FallPhases, CameraSystem, LightingSystem, GridOverlay, AnimationController, etc.) correctly export a single `installXMethods(prototype)` function.
+
+3. **`utils/` domain isolation** (§4.3) — All 20 utility files have zero imports from domain modules (managers, scene, coordinators, terrain, entities). Perfect compliance.
+
+4. **Dead code policy** (§6) — No commented-out code found. No empty directories. No stub files (<5 lines). PixiStub is actively used and documented.
+
+5. **Test naming** (§1.4) — All 70 test files follow `<SourceName>.test.js` naming and mirror the `src/` directory structure.
+
+6. **Export patterns** (§3.2) — Classes use `export default class`, function modules use named exports, singletons use the correct pattern. No `export default { fn1, fn2 }` anti-patterns found.
+
+7. **Naming conventions** (§1.4) — PascalCase for class/config files, camelCase/kebab-case for function files, `.generated.js` suffix for generated files. Full compliance.
+
+8. **No wildcard imports** (§3.4) — Zero `import *` statements found across the entire codebase.
+
+---
+
+## Priority Action Plan
+
+### Immediate (High Impact, Low Risk)
+1. Add missing section comments to `ModelAssetCache.js`, `GridRenderer.js`, `TokenManager.js`, `InteractionManager.js`, `TerrainManager.js`, `CreatureToken.js` — pure formatting, zero behavioral change.
+2. Fix import grouping in `TerrainCoordinator.js`, `InputCoordinator.js`, `RenderCoordinator.js` — reorder with blank lines.
+3. Fix `UIController.js` section ordering — move Public API above Private Helpers per §2.2.
+
+### Short-term (Moderate Impact, Low-Medium Risk)
+4. Extract `ThreeSceneManager.js` init logic to `internals/init.js` (~300 lines).
+5. Extract helper functions from `FloraProfiles.js` to `terrain/flora/floraHelpers.js`.
+6. Plan `UIController.js` decomposition into `ui/ui-controller/internals/`.
+
+### Medium-term (High Impact, Medium Risk)
+7. Extract algorithmic functions from `BiomePalettes.js`, `BiomePalettes3D.js`, `BiomePalettes3DHarmonized.js` to utility/domain modules, keeping only data tables in config.
+8. Evaluate `ClimbPhases.js` for safe decomposition of Wall Climb Sequence.
+
+### Deferred (Low Priority)
+9. Monitor `AnimationController.js` (750), `Navigation.js` (746), `PlaceableMeshPool.js` (772) for growth.
+10. Consider moving `getTokenCommand()` out of `TokenCommandConfig.js`.
+11. Consider moving `getBiomeDesign()` out of `PaletteDesign.js`.
+
+---
+
+*End of audit report.*
