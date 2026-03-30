@@ -26,34 +26,11 @@
 // ── Imports & Constants ────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 import { ALL_BIOMES } from './BiomeConstants.js';
+import { clamp, lerp, hexFromRgb, hexToRgb, lerpColor } from '../../utils/color/ColorUtils.js';
 
 const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;
 const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;
 const ZERO = 0;
-
-// Utility helpers -----------------------------------------------------------
-// ── Utility Helpers ──────────────────────────────────────────
-function clamp(v, a, b) {
-  return v < a ? a : v > b ? b : v;
-}
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-function hex(r, g, b) {
-  return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255);
-}
-function hexToRgb(h) {
-  return { r: (h >> 16) & 255, g: (h >> 8) & 255, b: h & 255 };
-}
-function lerpColor(a, b, t) {
-  const A = hexToRgb(a);
-  const B = hexToRgb(b);
-  return hex(
-    Math.round(lerp(A.r, B.r, t)),
-    Math.round(lerp(A.g, B.g, t)),
-    Math.round(lerp(A.b, B.b, t))
-  );
-}
 
 // ── Atmospheric & Depth Effects ───────────────────────────────
 // Atmospheric lift: lighten + slight hue push toward cool sky scatter
@@ -64,7 +41,7 @@ function applyAtmosphere(baseHex, normHeight) {
   const lift = 18 * t; // value lift
   // Subtle cool shift at high altitude
   const cool = 12 * t;
-  return hex(
+  return hexFromRgb(
     clamp(Math.round(r + lift * 0.9), 0, 255),
     clamp(Math.round(g + lift + cool * 0.3), 0, 255),
     clamp(Math.round(b + lift + cool), 0, 255)
@@ -76,7 +53,7 @@ function applyDepth(baseHex, depth01) {
   // depth01: 0 at sea level, 1 very deep
   const { r, g, b } = hexToRgb(baseHex);
   const d = Math.pow(depth01, 0.85);
-  return hex(
+  return hexFromRgb(
     clamp(Math.round(r * (0.72 - 0.15 * d)), 0, 255),
     clamp(Math.round(g * (0.78 - 0.1 * d)), 0, 255),
     clamp(Math.round(b * (0.92 + 0.1 * d)), 0, 255) // bias blue w/ depth
@@ -199,7 +176,7 @@ export function getBiomeColor3DHex(biomeKey, height, opts = {}) {
     const t = intensity - 1; // -1 .. +? (we clamp softly)
     const scale = 1 + 0.85 * t;
     const adj = (c) => clamp(Math.round(pivot + (c - pivot) * scale), 0, 255);
-    base = hex(adj(r), adj(g), adj(b));
+    base = hexFromRgb(adj(r), adj(g), adj(b));
   }
 
   return base;

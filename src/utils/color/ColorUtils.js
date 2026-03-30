@@ -16,8 +16,16 @@ export function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+export function clamp(value, min, max) {
+  return value < min ? min : value > max ? max : value;
+}
+
 export function clamp01(x) {
   return x < 0 ? 0 : x > 1 ? 1 : x;
+}
+
+export function hexFromRgb(r, g, b) {
+  return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255);
 }
 
 export function lerpColor(aHex, bHex, t) {

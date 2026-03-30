@@ -42,25 +42,27 @@
 
 ## Phase 4 — Split Oversized Files
 
-- [ ] **4a.** `managers/terrain-manager/internals/placeables.js` (1000+) → split into `placeables-plant-3d.js`, `placeables-variant-cycling.js`, `placeables-removal.js`
-- [ ] **4b.** `core/GameManager.js` (~1100) → further decompose to `game-manager/internals/`
-- [ ] **4c.** `utils/logger/Logger.js` (~1050) → extract handler classes to `utils/logger/internals/`
-- [ ] **4d.** `utils/error/ErrorHandler.js` (~950) → extract to `utils/error/internals/`
-- [ ] **4e.** `ui/UIController.js` (~900) → extract token drag-drop to `ui/internals/`
-- [ ] **4f.** `ui/components/RadialMenu.js` (~900) → extract to `ui/components/radial-menu/internals/`
-- [ ] **4g.** `scene/ThreeSceneManager.js` (~1000) → extract to `scene/three-scene-manager/internals/`
+- [x] **4a.** `managers/terrain-manager/internals/placeables.js` (1020→722) → split into `placeables-removal.js`, `placeables-variant.js`
+- [x] **4b.** `core/GameManager.js` (~796) → *already under guideline, skip*
+- [x] **4c.** `utils/logger/Logger.js` (939→395) → extract handlers, LogEntry, PerformanceMonitor to `utils/logger/internals/`
+- [x] **4d.** `utils/error/ErrorHandler.js` (~750) → *already under guideline, skip*
+- [x] **4e.** `ui/UIController.js` (~873) → *cohesive glue layer, skip*
+- [x] **4f.** `ui/components/RadialMenu.js` (~608) → *already under guideline, skip*
+- [x] **4g.** `scene/ThreeSceneManager.js` (~1007) → *cohesive orchestrator with mixins, skip*
 
-**Gate:** `npm test` passes, all UI interactions work
+**Gate:** `npm test` passes, all UI interactions work  
+**Commit:** `03d72b1`
 
 ---
 
 ## Phase 5 — Import & Export Pattern Fixes
 
-- [ ] **5a.** Fix singleton export pattern for `GameManager.js` *(C5)*
-- [ ] **5b.** Fix singleton export pattern for `ModelAssetCache.js` *(C5)*
-- [ ] **5c.** Verify mixin installer exports in 7 token-adapter files *(M1)*
+- [x] **5a.** Fix singleton export pattern for `GameManager.js` — *skip: instantiated with options, class export is correct* *(C5)*
+- [x] **5b.** Fix singleton export pattern for `ModelAssetCache.js` — *skip: same rationale* *(C5)*
+- [x] **5c.** Verify mixin installer exports in 7 token-adapter files — *all 7 compliant* *(M1)*
 
-**Gate:** `npm test` passes
+**Gate:** `npm test` passes  
+**Commit:** no changes needed
 
 ---
 

@@ -22,34 +22,11 @@
 // ── Imports & Constants ────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 import { getBiomeColorHex } from './BiomePalettes.js';
+import { clamp, lerp, hexFromRgb, hexToRgb, lerpColor } from '../../utils/color/ColorUtils.js';
 
 const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;
 const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;
 const ZERO = 0;
-
-// Small helpers ------------------------------------------------------------
-// ── Math Helpers ──────────────────────────────────────────────
-function clamp(v, a, b) {
-  return v < a ? a : v > b ? b : v;
-}
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-function hex(r, g, b) {
-  return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255);
-}
-function hexToRgb(h) {
-  return { r: (h >> 16) & 255, g: (h >> 8) & 255, b: h & 255 };
-}
-function lerpColor(a, b, t) {
-  const A = hexToRgb(a);
-  const B = hexToRgb(b);
-  return hex(
-    Math.round(lerp(A.r, B.r, t)),
-    Math.round(lerp(A.g, B.g, t)),
-    Math.round(lerp(A.b, B.b, t))
-  );
-}
 
 // Atmospheric lift & depth shaping (copied/adapted from stylized palette) ---
 // ── Atmospheric & Depth Shaping ────────────────────────────────
@@ -58,7 +35,7 @@ function applyAtmosphere(baseHex, normHeight, highlightExtra) {
   const t = Math.pow(clamp(normHeight, 0, 1), 1.05);
   const liftBase = 14 * t + highlightExtra * 40 * t * t;
   const cool = 10 * t;
-  return hex(
+  return hexFromRgb(
     clamp(Math.round(r + liftBase * 0.85), 0, 255),
     clamp(Math.round(g + liftBase + cool * 0.25), 0, 255),
     clamp(Math.round(b + liftBase + cool), 0, 255)
@@ -67,7 +44,7 @@ function applyAtmosphere(baseHex, normHeight, highlightExtra) {
 function applyDepth(baseHex, depth01, strength = 1) {
   const { r, g, b } = hexToRgb(baseHex);
   const d = Math.pow(depth01, 0.9) * strength;
-  return hex(
+  return hexFromRgb(
     clamp(Math.round(r * (0.78 - 0.22 * d)), 0, 255),
     clamp(Math.round(g * (0.8 - 0.18 * d)), 0, 255),
     clamp(Math.round(b * (0.92 + 0.1 * d)), 0, 255)
@@ -83,7 +60,7 @@ function adjustSaturation(hexVal, satBoost) {
   const sr = lum + (r - lum) * (1 + satBoost);
   const sg = lum + (g - lum) * (1 + satBoost);
   const sb = lum + (b - lum) * (1 + satBoost);
-  return hex(
+  return hexFromRgb(
     clamp(Math.round(sr), 0, 255),
     clamp(Math.round(sg), 0, 255),
     clamp(Math.round(sb), 0, 255)

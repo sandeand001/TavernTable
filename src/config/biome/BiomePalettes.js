@@ -19,10 +19,6 @@ function clampHeight(h) {
   return Math.max(MIN_H, Math.min(MAX_H, h));
 }
 
-function mix(a, b, t) {
-  return a + (b - a) * t;
-}
-
 // ── OKLCH Color Space Conversion ──────────────────────────────
 function srgbToLinear01(u8) {
   const c = u8 / 255;
@@ -102,8 +98,8 @@ function mixAngleDeg(a, b, t) {
 
 function lerpOklch(lchA, lchB, t) {
   return {
-    L: mix(lchA.L, lchB.L, t),
-    C: mix(lchA.C, lchB.C, t),
+    L: lerp(lchA.L, lchB.L, t),
+    C: lerp(lchA.C, lchB.C, t),
     h: mixAngleDeg(lchA.h, lchB.h, t),
   };
 }
@@ -125,7 +121,7 @@ function smoothNoise(x, y, seed = 1337) {
   const v11 = hash2D(x0 + 1, y0 + 1, seed);
   const u = xf * xf * (3 - 2 * xf);
   const v = yf * yf * (3 - 2 * yf);
-  return mix(mix(v00, v10, u), mix(v01, v11, u), v);
+  return lerp(lerp(v00, v10, u), lerp(v01, v11, u), v);
 }
 
 function fbm2(x, y, seed = 1337) {
