@@ -133,6 +133,7 @@ const DEFAULT_COMMANDS = [
 ];
 
 // ── Command Registry & Lookup ─────────────────────────────────
+// NOTE: §4 violation — _registerCommand builds the tree lazily at import time; getTokenCommand is a pure data accessor. Extraction not warranted.
 export const TOKEN_COMMANDS = DEFAULT_COMMANDS;
 
 function _registerCommand(map, command) {

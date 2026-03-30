@@ -18,11 +18,12 @@
 
 ## Phase 2 — Cosmetic: Section Comments & Formatting (no logic changes)
 
-- [ ] **2a.** Add section comments to 17 files listed in H1
-- [ ] **2b.** Standardize section comment dash lengths across all files *(M3)*
-- [ ] **2c.** Fix import grouping in `GameManager.js`, `ModelAssetCache.js`, `ModelPostProcessing.js`, `CreatureToken.js` *(H4)*
+- [x] **2a.** Add section comments to 17 files listed in H1
+- [x] **2b.** Standardize section comment dash lengths across all files *(M3)*
+- [x] **2c.** Fix import grouping in `GameManager.js`, `ModelAssetCache.js`, `ModelPostProcessing.js`, `CreatureToken.js` *(H4)*
 
-**Gate:** `npm test` passes
+**Gate:** `npm test` passes  
+**Commit:** `7c37c94`
 
 ---
 

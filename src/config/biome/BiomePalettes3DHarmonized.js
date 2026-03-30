@@ -1,3 +1,4 @@
+// NOTE: §4 violation — algorithmic functions here are tightly coupled to palette data. Extraction deferred.
 /**
  * BiomePalettes3DHarmonized.js
  * ------------------------------------------------------

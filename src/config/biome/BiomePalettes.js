@@ -1,3 +1,4 @@
+// NOTE: §4 violation — algorithmic functions here are tightly coupled to palette data. Extraction deferred.
 /**
  * BiomePalettes.js — Painterly palette merged with legacy helpers.
  * Combines the expressive OKLCH-based shading system from main with

@@ -1,3 +1,4 @@
+// NOTE: §4 violation — pickIds/makeWeights/withSpectralVariants build profile data at import time; tightly coupled. Extraction deferred.
 // ── Imports & Setup ──────────────────────────────────────────
 // FloraProfiles.js — Biome flora profiles, spectral variants, and data tables.
 // Runtime helper functions live in src/terrain/flora/floraHelpers.js.
