@@ -6,6 +6,8 @@ import {
   SPRINT_THRESHOLD_SECONDS,
 } from '../../../config/token-adapter/MannequinConfig.js';
 
+// ── Fall Phase Advancement ──────────────────────────────────────
+
 function _advanceFallPhase(state, delta) {
   if (!state) return;
   state.phaseElapsed += delta;
@@ -179,6 +181,8 @@ function _finalizePostFallState(state, profileOverride = null) {
   this._unlockTokenWorldAuthority(state);
 }
 
+// ── Fall Transitions ───────────────────────────────────────────
+
 function _checkFallTransitions(state) {
   if (!state || state.phase !== 'fall' || state.fallMode !== 'loop') return;
   const step = state.activeStep;
@@ -247,6 +251,8 @@ function _transitionFallToLanding(state) {
   return true;
 }
 
+// ── Animation Helpers ──────────────────────────────────────────
+
 function _isLandingAnimationComplete(state, animationData) {
   if (!state) return true;
   const data = animationData || this._tokenAnimationData.get(state.token);
@@ -272,6 +278,8 @@ function _isLandingAnimationComplete(state, animationData) {
   }
   return true;
 }
+
+// ── Speed & Duration ───────────────────────────────────────────
 
 function _calculateFallSpeed(step, duration, profile) {
   if (!step) return 0;
@@ -316,6 +324,8 @@ function _getLandingClipDuration(profile, landingKey) {
   }
   return base.fallClipDuration || base.hardLandingClipDuration || base.fallLoopClipDuration || 0;
 }
+
+// ── Fall Entry ─────────────────────────────────────────────────
 
 function _computeLandingThreshold(distance, landingKey) {
   if (!(distance > 0)) return 0;
@@ -489,6 +499,8 @@ function _maybeEnterFallPhase(state, animationData) {
   return true;
 }
 
+// ── Fall State Management ──────────────────────────────────────
+
 function _ensureFallStepActive(state) {
   if (!state || state.phase !== 'walk') return false;
   if (state.activeStep && !state.activeStep.__fallSingleUse) return false;
@@ -514,6 +526,8 @@ function _clearFallStepState(state, options = {}) {
     state.activeStep = null;
   }
 }
+
+// ── Movement Resume ───────────────────────────────────────────
 
 function _captureFallResumeContext(state) {
   if (!state) return null;
@@ -575,6 +589,8 @@ function _resumeMovementAfterFall(state) {
 
   return true;
 }
+
+// ── Module Installation ────────────────────────────────────────
 
 function installFallMethods(prototype) {
   prototype._advanceFallPhase = _advanceFallPhase;

@@ -7,11 +7,12 @@
 
 ## Phase 1 — Zero-Risk: Delete & Move (no logic changes)
 
-- [ ] **1a.** Delete duplicate `src/coordinators/ProjectionUtils.js`, update import in `StateCoordinator.js` *(C3)*
-- [ ] **1b.** Move `scene/token-adapter/MannequinConfig.js` → `config/token-adapter/MannequinConfig.js`, update ~13 imports *(C4)*
-- [ ] **1c.** Replace wildcard import in `activation/reset.js` with named imports *(H3)*
+- [x] **1a.** Delete duplicate `src/coordinators/ProjectionUtils.js`, update import in `StateCoordinator.js` *(C3)*
+- [x] **1b.** Move `scene/token-adapter/MannequinConfig.js` → `config/token-adapter/MannequinConfig.js`, update ~13 imports *(C4)*
+- [x] **1c.** Replace wildcard import in `activation/reset.js` with named imports *(H3)*
 
-**Gate:** `npm test` passes, app loads in browser
+**Gate:** `npm test` passes, app loads in browser  
+**Commit:** `3cacc3e`
 
 ---
 

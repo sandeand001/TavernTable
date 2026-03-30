@@ -16,6 +16,8 @@ import {
   CLIMB_RECOVER_STAND_RELEASE,
 } from '../../../config/token-adapter/MannequinConfig.js';
 
+// ── State Reset Helpers ─────────────────────────────────────────
+
 function _resetClimbWallState(state, options = {}) {
   if (!state) return;
   state.climbWallQueue = null;
@@ -64,6 +66,8 @@ function _clearClimbState(state) {
   state.climbAdvanceTargetWorld = null;
 }
 
+// ── Climb Resolution Helpers ───────────────────────────────────
+
 function _resolveClimbLandingWorld(state) {
   if (!state) return null;
   const finalWorld = this._cloneWorld(this._resolveClimbFinalWorld(state));
@@ -89,6 +93,8 @@ function _resolveClimbRecoverWorld(state) {
     state.climbStartWorld
   );
 }
+
+// ── Climb Landing ──────────────────────────────────────────────
 
 function _finalizeClimbLanding(state, options = {}) {
   if (!state) return true;
@@ -253,6 +259,8 @@ function _resetClimbLandingState(state, options = {}) {
   this._resetMovementState(state);
 }
 
+// ── Standard Climb Phase ────────────────────────────────────────
+
 function _startClimbPhase(state, climbInfo, options = {}) {
   if (!state || !climbInfo) {
     this._resetMovementState(state);
@@ -334,6 +342,8 @@ function _startClimbPhase(state, climbInfo, options = {}) {
   state.climbAnimationPrestarted = false;
   state.climbPrestartFootWorld = null;
 }
+
+// ── Wall Climb Sequence ─────────────────────────────────────────
 
 function _maybeStartClimbWallSequence(state, climbInfo, animationData) {
   if (!state || !climbInfo) return false;
@@ -640,6 +650,8 @@ function _resolveClimbWallDuration(state) {
   return DEFAULT_CLIMB_WALL_DURATION;
 }
 
+// ── Climb Phase Advancement ────────────────────────────────────
+
 function _advanceClimbPhase(state, delta) {
   if (!state?.climbActive) {
     return;
@@ -677,6 +689,8 @@ function _advanceClimbPhase(state, delta) {
     this._startClimbRecoverPhase(state);
   }
 }
+
+// ── Climb Recover Phase ────────────────────────────────────────
 
 function _startClimbRecoverPhase(state) {
   if (!state) return;
@@ -889,6 +903,8 @@ function _resolveClimbRecoverRiseRatio(state, progress) {
   return local * local * (3 - 2 * local);
 }
 
+// ── Climb Advance Phase ────────────────────────────────────────
+
 function _advanceClimbAdvancePhase(state, delta) {
   const finalizeAdvance = () => {
     if (!state) return;
@@ -1023,6 +1039,8 @@ function _resolveClimbFinalWorld(state) {
     null
   );
 }
+
+// ── Module Installation ────────────────────────────────────────
 
 function installClimbMethods(prototype) {
   prototype._resetClimbWallState = _resetClimbWallState;

@@ -1,3 +1,5 @@
+// ── Water Effects ──────────────────────────────────────────────
+
 export function drawRipplesInFace(painter, ctx, cx, cy, w, h, baseColor, alpha = 0.18) {
   painter._clipSingleFace(ctx, cx, cy, w, h);
   ctx.save();
@@ -49,6 +51,8 @@ export function drawIceGlintsInFace(painter, ctx, cx, cy, w, h, alpha = 0.18) {
   ctx.restore();
   ctx.restore();
 }
+
+// ── Vegetation Details ─────────────────────────────────────────
 
 export function drawTuftsInFace(
   painter,
@@ -118,6 +122,8 @@ export function drawCanopyInFace(painter, ctx, cx, cy, w, h, baseColor, alpha = 
   ctx.restore();
   ctx.restore();
 }
+
+// ── Rock & Surface Details ─────────────────────────────────────
 
 export function drawStriationsInFace(painter, ctx, cx, cy, w, h, color, alpha = 0.18) {
   painter._clipSingleFace(ctx, cx, cy, w, h);

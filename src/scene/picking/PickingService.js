@@ -336,6 +336,8 @@ export class PickingService {
     return list.length ? list[0] : null;
   }
 
+  // ── Internal Helpers ──────────────────────────────────────────
+
   _extractWorldFaceNormal(intersection) {
     try {
       const base = intersection?.face?.normal;

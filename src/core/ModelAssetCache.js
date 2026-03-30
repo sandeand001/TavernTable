@@ -1,5 +1,6 @@
 // ── Imports & Logging Helpers ───────────────────────────────────
 import logger, { LOG_CATEGORY } from '../utils/logger/Logger.js';
+
 import {
   postProcessModel as _postProcess,
   computeTargetHeight as _computeTargetHeight,
@@ -310,6 +311,8 @@ class ModelAssetCache {
     });
   }
 
+  // ── Registry Lookup ─────────────────────────────────────────────
+
   setThree(three) {
     this._three = three;
   }
@@ -321,6 +324,8 @@ class ModelAssetCache {
   _resolveKey(key) {
     return this._legacyToCanonical[key] || key;
   }
+
+  // ── Path Building & Registry Loading ────────────────────────────
 
   _buildPathVariants(basePath, format = 'OBJ') {
     if (!basePath) return [];
@@ -381,6 +386,8 @@ class ModelAssetCache {
     }
   }
 
+  // ── Public API ──────────────────────────────────────────────────
+
   async getModel(key) {
     key = this._resolveKey(key);
     if (this._cache.has(key)) return this._cache.get(key).clone(true);
@@ -411,6 +418,8 @@ class ModelAssetCache {
     }
     return obj ? obj.clone(true) : null;
   }
+
+  // ── OBJ Loading ────────────────────────────────────────────────
 
   async _loadOBJ(three, key, path, descriptor) {
     if (!three) return null;
@@ -497,6 +506,8 @@ class ModelAssetCache {
     }
     return result;
   }
+
+  // ── FBX Loading ────────────────────────────────────────────────
 
   async _ensureFBXLoaderCtor() {
     if (this._fbxLoaderCtorPromise) return this._fbxLoaderCtorPromise;
@@ -619,6 +630,8 @@ class ModelAssetCache {
     return result;
   }
 
+  // ── FBX Node Selection & Pruning ──────────────────────────────
+
   _selectFBXNode(three, root, descriptor, key) {
     if (!root || !descriptor?.node) return root;
     const target = String(descriptor.node || '').toLowerCase();
@@ -689,6 +702,8 @@ class ModelAssetCache {
       }
     });
   }
+
+  // ── Alignment & Post-Processing ───────────────────────────────
 
   _centerAndGround(three, root, options = {}) {
     if (!three || !root) return;

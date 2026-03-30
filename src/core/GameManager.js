@@ -28,6 +28,7 @@ import { StateCoordinator } from '../coordinators/StateCoordinator.js';
 import { InputCoordinator } from '../coordinators/InputCoordinator.js';
 import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 import { SpatialCoordinator } from '../scene/picking/SpatialCoordinator.js';
+
 import {
   enableHybridRender as enableHybridRenderImpl,
   isTestEnvironment as isTestEnvironmentImpl,
@@ -55,6 +56,7 @@ import {
   cancelTokenDrag as cancelTokenDragImpl,
 } from './game-manager/internals/tokenDrag.js';
 import { sync3DElevationScaling as sync3DElevationScalingImpl } from './game-manager/internals/elevation.js';
+
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/logger/Logger.js';
 import {
   ErrorHandler,

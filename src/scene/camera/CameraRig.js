@@ -22,6 +22,8 @@ export class CameraRig {
     this.camera = null; // assigned on attach
   }
 
+  // ── Public API ──────────────────────────────────────────────────
+
   attach(camera) {
     this.camera = camera;
     this._apply();
@@ -53,6 +55,8 @@ export class CameraRig {
     this.zoom = clamped;
     this._apply();
   }
+
+  // ── Internal ────────────────────────────────────────────────────
 
   _apply() {
     if (!this.camera) return;
