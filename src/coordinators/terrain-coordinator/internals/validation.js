@@ -8,7 +8,7 @@ import { TerrainValidation } from '../../../utils/terrain/TerrainValidation.js';
  */
 export function validateTerrainSystemState(c) {
   try {
-    const validationResult = TerrainValidation.validateTerrainSystemState(c, c.terrainManager);
+    const validationResult = TerrainValidation.validateTerrainSystemState(c, null);
 
     if (!validationResult.isValid) {
       const errorMessage = TerrainValidation.getErrorMessage(validationResult);

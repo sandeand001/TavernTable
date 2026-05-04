@@ -44,10 +44,6 @@ describe('ActivationHelpers.disableTerrainMode', () => {
       lastModifiedCell: '0,0',
       gameManager: { gridContainer },
       applyTerrainToBaseGrid: jest.fn(),
-      terrainManager: {
-        hideAllTerrainTiles: jest.fn(),
-        clearAllTerrainTiles: jest.fn(),
-      },
       resetHeightIndicator: jest.fn(),
       applyBiomePaletteToBaseGrid: jest.fn(),
     };
@@ -74,8 +70,6 @@ describe('ActivationHelpers.disableTerrainMode', () => {
 
     // Base integration and overlay cleanup
     expect(c.applyTerrainToBaseGrid).toHaveBeenCalled();
-    expect(c.terrainManager.hideAllTerrainTiles).toHaveBeenCalled();
-    expect(c.terrainManager.clearAllTerrainTiles).toHaveBeenCalled();
 
     // UI reset
     expect(c.resetHeightIndicator).toHaveBeenCalled();

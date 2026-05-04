@@ -442,9 +442,7 @@ class SidebarController {
   _refreshTerrainOverlayIfActive() {
     try {
       const gm = window.gameManager;
-      if (gm?.terrainCoordinator?.isTerrainModeActive && gm?.terrainCoordinator?.terrainManager) {
-        gm.terrainCoordinator.terrainManager.refreshAllTerrainDisplay();
-      } else if (gm?.terrainCoordinator && !gm.terrainCoordinator.isTerrainModeActive) {
+      if (gm?.terrainCoordinator && !gm.terrainCoordinator.isTerrainModeActive) {
         const enabled = !!window.richShadingSettings?.enabled;
         if (enabled) gm.terrainCoordinator.applyBiomePaletteToBaseGrid?.();
         else gm.terrainCoordinator.setRichShadingEnabled?.(false);

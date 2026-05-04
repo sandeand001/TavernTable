@@ -1,4 +1,3 @@
-/* global PIXI */
 import { TerrainCoordinator } from '../../../src/coordinators/TerrainCoordinator.js';
 import { TERRAIN_PLACEABLES } from '../../../src/config/terrain/TerrainPlaceables.js';
 
@@ -20,25 +19,23 @@ function makeGameManager(cols = 12, rows = 12) {
   };
   const app = { view: document.createElement('canvas') };
   const gridRenderer = {
-    // minimal stub that marks tiles
-    drawIsometricTile: jest.fn((x, y) => {
-      const g = new PIXI.Graphics();
-      g.isGridTile = true;
-      g.gridX = x;
-      g.gridY = y;
-      g.baseIsoY = 100;
-      g.y = 100;
-      g.depthValue = x + y;
-      g.clear = jest.fn();
-      g.lineStyle = jest.fn();
-      g.beginFill = jest.fn();
-      g.moveTo = jest.fn();
-      g.lineTo = jest.fn();
-      g.endFill = jest.fn();
-      g.addChild = jest.fn();
-      g.parent = gridContainer;
-      return g;
-    }),
+    drawIsometricTile: jest.fn((x, y) => ({
+      isGridTile: true,
+      gridX: x,
+      gridY: y,
+      baseIsoY: 100,
+      y: 100,
+      depthValue: x + y,
+      destroyed: false,
+      clear: jest.fn(),
+      lineStyle: jest.fn(),
+      beginFill: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      endFill: jest.fn(),
+      addChild: jest.fn(),
+      parent: gridContainer,
+    })),
   };
   return {
     cols,

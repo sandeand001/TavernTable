@@ -4,7 +4,6 @@ import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
 
 import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { traceDiamondPath } from '../../utils/geometry/GeometryUtils.js';
-import BiomeCanvasPainter from '../../terrain/painting/BiomeCanvasPainter.js';
 
 /**
  * BiomeShadingController - façade for painterly biome shading outside terrain mode.
@@ -34,16 +33,12 @@ export class BiomeShadingController {
       }
       // Mark that biome changed so projection can purge stale overlays if needed
       this.c.gameManager.__biomeVersion = (this.c.gameManager.__biomeVersion || 0) + 1;
-      const richEnabled = !!window?.richShadingSettings?.enabled;
-      // Ensure a continuous biome canvas exists and paint it from current heights if rich shading is enabled
-      if (richEnabled) {
-        if (!this.c._biomeCanvas) this.c._biomeCanvas = new BiomeCanvasPainter(this.c.gameManager);
-        // Keep painter noise deterministic with our coordinator seed
-        try {
-          this.c._biomeCanvas.setSeed?.(this.c._biomeSeed >>> 0);
-        } catch (_) {
-          /* ignore setSeed error */
-        }
+      // Rich shading via BiomeCanvasPainter removed (ADR-0001); clear any stale canvas
+      try {
+        this.c._biomeCanvas?.clear?.();
+        this.c._biomeCanvas = null;
+      } catch (_) {
+        /* ignore */
       }
       const rows = this.c.gameManager.rows,
         cols = this.c.gameManager.cols;
@@ -56,29 +51,8 @@ export class BiomeShadingController {
           .fill(null)
           .map(() => Array(cols).fill(0));
       }
-      // Paint canvas only when rich shading is enabled; keep per-tile fills so tops raise visually
-      if (richEnabled) {
-        try {
-          this.c._biomeCanvas.paint(biomeKey, heights, null);
-        } catch (pe) {
-          logger.warn('Biome painter paint() failed', {
-            context: 'BiomeShadingController.applyToBaseGrid',
-            biome: biomeKey,
-            error: pe?.message,
-            stack: pe?.stack,
-          });
-          throw pe;
-        }
-      } else {
-        // If a painter exists from a previous run, clear its sprites to avoid ghost overlays
-        try {
-          this.c._biomeCanvas?.clear?.();
-        } catch (_) {
-          /* ignore */
-        }
-        // Ensure base tiles are visible when rich shading is disabled
-        this.toggleBaseTileVisibility(true);
-      }
+      // Ensure base tiles are visible
+      this.toggleBaseTileVisibility(true);
 
       this.c.gameManager.gridContainer.children.forEach((child) => {
         if (!child.isGridTile) return;

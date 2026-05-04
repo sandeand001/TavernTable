@@ -8,6 +8,7 @@ import { ThreeSceneManager } from '../../../scene/ThreeSceneManager.js';
 import { CameraRig } from '../../../scene/camera/CameraRig.js';
 import { TerrainMeshBuilder } from '../../../scene/terrain/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../../../scene/terrain/TerrainRebuilder.js';
+import { TerrainEngineSceneAdapter } from '../../../scene/terrain/TerrainEngineSceneAdapter.js';
 import { PlaceableMeshPool } from '../../../scene/terrain/PlaceableMeshPool.js';
 import { PickingService } from '../../../scene/picking/PickingService.js';
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../../../utils/logger/Logger.js';
@@ -164,6 +165,20 @@ export async function enableHybridRender(gm) {
       }
     } catch (e) {
       /* non-fatal terrain mesh init failure */
+    }
+
+    // Wire TerrainEngineSceneAdapter (ADR-0001) — after rebuilder is available
+    try {
+      if (gm.terrainEngine && !gm.terrainEngineSceneAdapter) {
+        gm.terrainEngineSceneAdapter = new TerrainEngineSceneAdapter({
+          engine: gm.terrainEngine,
+          threeSceneManager: gm.threeSceneManager,
+          rebuilder: gm.terrainRebuilder || null,
+        });
+        gm.terrainEngineSceneAdapter.attach();
+      }
+    } catch (_) {
+      /* non-fatal */
     }
 
     // Phase 3 (initial scaffold): attach Token3DAdapter for existing tokens

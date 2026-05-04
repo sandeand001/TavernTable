@@ -11,13 +11,11 @@ import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TerrainDataStore } from '../terrain/TerrainDataStore.js';
 import { TerrainBrushController } from '../terrain/brush/TerrainBrushController.js';
-import { TerrainFacesRenderer } from '../terrain/TerrainFacesRenderer.js';
 import { TerrainInputHandlers } from './terrain-coordinator/TerrainInputHandlers.js';
 import { ElevationScaleController } from './terrain-coordinator/ElevationScaleController.js';
 import { ActivationHelpers } from './terrain-coordinator/ActivationHelpers.js';
 import { BiomeShadingController } from './terrain-coordinator/BiomeShadingController.js';
 import { TileLifecycleController } from './terrain-coordinator/TileLifecycleController.js';
-import { ElevationVisualsController } from './terrain-coordinator/ElevationVisualsController.js';
 import {
   validateTerrainSystemState as _validateSystemState,
   validateTerrainDataConsistency as _validateDataConsistency,
@@ -76,7 +74,7 @@ export class TerrainCoordinator {
    */
   constructor(gameManager, terrainManager = null, biomeShadingController = null, domPorts = {}) {
     this.gameManager = gameManager;
-    this.terrainManager = terrainManager;
+    this.terrainManager = null; // deleted in Phase 2 (ADR-0001)
     this.biomeShadingController = biomeShadingController;
     // Injected DOM accessors (UI layer) to avoid violating layering in submodules.
     const defaultGetTerrainHeightDisplay = () => {
@@ -108,13 +106,11 @@ export class TerrainCoordinator {
     this.isTerrainModeActive = false;
     this.dataStore = new TerrainDataStore(this.gameManager.cols, this.gameManager.rows);
     this.brush = new TerrainBrushController(this.dataStore);
-    this.faces = new TerrainFacesRenderer(this.gameManager);
     // Façade-backed extractions
     this._inputHandlers = new TerrainInputHandlers(this);
     this._elevationScaleController = new ElevationScaleController(this);
     this._activationHelpers = new ActivationHelpers(this);
     this._tileLifecycle = new TileLifecycleController(this);
-    this._elevationVisuals = new ElevationVisualsController(this);
 
     // UI state
     this.isDragging = false;
@@ -266,54 +262,13 @@ export class TerrainCoordinator {
   }
 
   /**
-   * Initialize terrain system and create managers
+   * Initialize terrain system (TerrainManager deleted in Phase 2; no-op)
    * @returns {Promise<void>}
    */
   async initialize() {
-    try {
-      // Validate that grid system is ready
-      if (!this.gameManager.gridContainer) {
-        throw new Error('Grid container must be created before terrain system initialization');
-      }
-
-      // Import TerrainManager dynamically to avoid circular dependencies
-      const { TerrainManager } = await import('../managers/TerrainManager.js');
-      this.terrainManager = new TerrainManager(this.gameManager, this);
-
-      // Initialize terrain height data array
-      this.initializeTerrainData();
-
-      // Initialize terrain rendering system
-      this.terrainManager.initialize();
-
-      // Set up terrain-specific input handlers
-      this.setupTerrainInputHandlers();
-
-      logger.info(
-        'Terrain system initialized',
-        {
-          context: 'TerrainCoordinator.initialize',
-          stage: 'initialization_complete',
-          gridDimensions: {
-            cols: this.gameManager.cols,
-            rows: this.gameManager.rows,
-          },
-          terrainManagerReady: !!this.terrainManager,
-          inputHandlersConfigured: true,
-          timestamp: new Date().toISOString(),
-        },
-        LOG_CATEGORY.SYSTEM
-      );
-    } catch (error) {
-      GameErrors.initialization(error, {
-        stage: 'TerrainCoordinator.initialize',
-        gameManagerAvailable: !!this.gameManager,
-        gridDimensions: {
-          cols: this.gameManager?.cols,
-          rows: this.gameManager?.rows,
-        },
-      });
-    }
+    // TerrainManager removed (ADR-0001). Input handlers are now wired during construction.
+    this.initializeTerrainData();
+    this.setupTerrainInputHandlers();
   }
 
   /**
@@ -719,13 +674,11 @@ export class TerrainCoordinator {
   }
 
   /**
-   * Public pass-through for elevation visual effect so tests and collaborators
-   * can stub/spy this method without depending on private fields.
-   * @param {Object} tile
-   * @param {number} height
+   * No-op: ElevationVisualsController deleted in Phase 2 (ADR-0001).
+   * 3D scene adapter handles elevation visuals via TerrainEngineSceneAdapter.
    */
-  addVisualElevationEffect(tile, height) {
-    return this._elevationVisuals.addVisualElevationEffect(tile, height);
+  addVisualElevationEffect(_tile, _height) {
+    // No-op in 3D mode
   }
 
   /**
@@ -733,13 +686,6 @@ export class TerrainCoordinator {
    * Uses TerrainManager's palette logic if available; falls back to biome/base color.
    */
   getColorForHeight(height) {
-    try {
-      if (this.terrainManager && typeof this.terrainManager.getColorForHeight === 'function') {
-        return this.terrainManager.getColorForHeight(height);
-      }
-    } catch (_) {
-      /* ignore and fall back */
-    }
     return this._getBiomeOrBaseColor(height);
   }
 

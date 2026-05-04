@@ -25,7 +25,7 @@ export class TileLifecycleController {
    */
   findGridTilesToRemove(x, y) {
     const tilesToRemove = [];
-    const gridChildren = this.coordinator.gameManager.gridContainer.children || [];
+    const gridChildren = this.coordinator.gameManager.gridContainer?.children || [];
 
     gridChildren.forEach((child) => {
       if (child && child.isGridTile && child.gridX === x && child.gridY === y) {
@@ -47,7 +47,7 @@ export class TileLifecycleController {
   removeGridTilesSafely(tilesToRemove, x, y) {
     tilesToRemove.forEach((tile) => {
       try {
-        if (this.coordinator.gameManager.gridContainer.children.includes(tile)) {
+        if (this.coordinator.gameManager.gridContainer?.children?.includes(tile)) {
           this.coordinator.gameManager.gridContainer.removeChild(tile);
         }
 
@@ -73,6 +73,9 @@ export class TileLifecycleController {
    * @param {number} height
    */
   createReplacementTile(x, y, height) {
+    if (!this.coordinator.gameManager.gridRenderer) {
+      throw new Error('gridRenderer unavailable (3D mode): tile creation skipped');
+    }
     const isEditing = !!this.coordinator.isTerrainModeActive;
     const color = isEditing
       ? this.coordinator.getColorForHeight(height)

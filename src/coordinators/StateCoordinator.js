@@ -27,43 +27,22 @@ export class StateCoordinator {
    */
   async initializeApplication() {
     try {
-      // Log initialization start
       logger.log(LOG_LEVEL.INFO, 'Initializing TavernTable GameManager', LOG_CATEGORY.SYSTEM, {
         context: 'StateCoordinator.initializeApplication',
         stage: 'initialization_start',
         timestamp: new Date().toISOString(),
       });
 
-      // Create app with validation
-      this.gameManager.renderCoordinator.createApp();
-
-      // NOW create managers after app exists
-      logger.log(LOG_LEVEL.DEBUG, 'Creating manager instances', LOG_CATEGORY.SYSTEM, {
-        context: 'StateCoordinator.initializeApplication',
-        stage: 'manager_creation',
-        pixiAppReady: !!this.gameManager.app,
-      });
       await this.createManagers();
 
-      // Set up grid system
-      this.gameManager.gridRenderer.setupGrid();
-
-      // Configure global variables
       this.setupGlobalVariables();
 
-      // Enable grid interaction
       this.gameManager.interactionManager.setupGridInteraction();
 
-      // Initialize terrain system
       await this.gameManager.terrainCoordinator.initialize();
 
-      // Initialize sprites with error handling
       await this.initializeSprites();
 
-      // Fix any existing tokens that might be in wrong container
-      this.gameManager.renderCoordinator.fixExistingTokens();
-
-      // Initialize view mode (after grid + tokens exist)
       this.initializeViewMode();
 
       this.initializationComplete = true;
@@ -84,35 +63,23 @@ export class StateCoordinator {
         context: 'StateCoordinator.initializeApplication',
         stage: 'game_manager_initialization',
         initializationSteps: {
-          pixiApp: !!this.gameManager.renderCoordinator,
           managers: !!(this.gameManager.tokenManager && this.gameManager.interactionManager),
-          grid: !!this.gameManager.gridRenderer,
           globalVars: !!window.gameManager,
           sprites: this.gameManager.spritesReady,
         },
         timestamp: new Date().toISOString(),
       });
-      throw error; // Re-throw to allow caller to handle
+      throw error;
     }
   }
 
   // ── View Mode Management ───────────────────────────────
-  /** Initialize view mode from persistent storage (localStorage) */
   initializeViewMode() {
     try {
-      this.viewMode = 'isometric'; // hard default
+      this.viewMode = 'isometric';
       if (typeof localStorage !== 'undefined') {
         const stored = localStorage.getItem('taverntable.viewMode');
-        if (stored === 'topdown') {
-          this.viewMode = 'topdown';
-        }
-      }
-      if (this.viewMode === 'topdown') {
-        import('../utils/coordinates/ProjectionUtils.js')
-          .then((m) => m.reprojectAll(this.gameManager, 'topdown'))
-          .catch(() => {
-            this.viewMode = 'isometric';
-          });
+        if (stored === 'topdown') this.viewMode = 'topdown';
       }
     } catch (_) {
       this.viewMode = 'isometric';
@@ -128,9 +95,7 @@ export class StateCoordinator {
     if (this.viewMode === mode) return;
     const previous = this.viewMode;
     const gm = this.gameManager;
-    // Animation system removed; immediate reprojection only.
 
-    // If entering top-down, disable terrain edit mode + prevent generation during that state
     try {
       if (
         mode === 'topdown' &&
@@ -159,32 +124,9 @@ export class StateCoordinator {
       );
     };
 
-    // Optimistically set (so getViewMode reflects target during animation)
     this.viewMode = mode;
     persist(mode);
-
-    // Always perform a direct reprojection (transition system removed)
-    import('../utils/coordinates/ProjectionUtils.js')
-      .then((m) => {
-        const doReproject = () => {
-          try {
-            m.reprojectAll(gm, mode);
-            dispatch(mode);
-          } catch (_) {
-            this.viewMode = previous;
-            persist(previous);
-            dispatch(previous, { error: true });
-          }
-        };
-        // If animate was requested, still yield one tick so UI events (click feedback) paint first
-        // Immediate reprojection (no animation delay)
-        doReproject();
-      })
-      .catch(() => {
-        this.viewMode = previous;
-        persist(previous);
-        dispatch(previous, { error: true });
-      });
+    dispatch(mode);
   }
 
   toggleViewMode() {
@@ -197,14 +139,12 @@ export class StateCoordinator {
    * Create manager instances after app is ready
    */
   async createManagers() {
-    // Create managers synchronously to avoid dependency issues
     const { TokenManager } = await import('../managers/TokenManager.js');
     const { InteractionManager } = await import('../managers/InteractionManager.js');
-    const { GridRenderer } = await import('../managers/GridRenderer.js');
 
     this.gameManager.tokenManager = new TokenManager(this.gameManager);
     this.gameManager.interactionManager = new InteractionManager(this.gameManager);
-    this.gameManager.gridRenderer = new GridRenderer(this.gameManager);
+    this.gameManager.gridRenderer = null;
 
     logger.debug('Manager instances created');
   }
@@ -216,12 +156,10 @@ export class StateCoordinator {
    */
   setupGlobalVariables() {
     try {
-      // Make variables globally available for other modules (legacy support)
       window.tileWidth = this.gameManager.tileWidth;
       window.tileHeight = this.gameManager.tileHeight;
       window.rows = this.gameManager.rows;
       window.cols = this.gameManager.cols;
-      window.gridContainer = this.gameManager.gridContainer;
       window.selectedTokenType = this.gameManager.selectedTokenType;
       window.tokenFacingRight = this.gameManager.tokenFacingRight;
       window.placedTokens = this.gameManager.placedTokens;
@@ -234,7 +172,6 @@ export class StateCoordinator {
         stage: 'global_variable_setup',
         variables: {
           gameManager: !!this.gameManager,
-          gridContainer: !!this.gameManager.gridContainer,
           placedTokens: !!this.gameManager.placedTokens,
         },
         legacyCompatibility: true,

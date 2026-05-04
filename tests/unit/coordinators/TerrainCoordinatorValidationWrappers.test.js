@@ -36,32 +36,17 @@ describe('TerrainCoordinator validation wrappers', () => {
     expect(c.validateTerrainDataConsistency()).toBe(false);
   });
 
-  test('validateTerrainSystemState throws when manager missing critical bits', () => {
+  test('validateTerrainSystemState returns true when terrainManager is null (ADR-0001: manager deleted)', () => {
     const gm = makeGameManager(2, 2);
     const c = new TerrainCoordinator(gm);
-    // Provide a deliberately incomplete terrainManager
-    c.terrainManager = {
-      isInitialized: false,
-      terrainContainer: null, // invalid
-      terrainTiles: null, // invalid
-      terrainCoordinator: null,
-      gameManager: null,
-    };
-    expect(() => c.validateTerrainSystemState()).toThrow(/Terrain system state corrupted/i);
+    // terrainManager is null (deleted); validation should succeed without throwing
+    expect(() => c.validateTerrainSystemState()).not.toThrow();
   });
 
-  test('validateTerrainSystemState returns true when manager is well-formed', () => {
+  test('validateTerrainSystemState returns true when data is well-formed', () => {
     const gm = makeGameManager(2, 2);
     const c = new TerrainCoordinator(gm);
-    const manager = {
-      isInitialized: true,
-      terrainContainer: { destroyed: false },
-      terrainTiles: new Map(),
-      terrainCoordinator: c,
-      gameManager: gm,
-    };
-    c.terrainManager = manager;
-    // Also ensure data arrays exist and look valid
+    // Ensure data arrays exist and look valid
     c.dataStore.working = Array(gm.rows)
       .fill(null)
       .map(() => Array(gm.cols).fill(0));

@@ -16,67 +16,7 @@ import { autoPopulateBiomeFlora as _autoPopulateBiomeFlora } from '../flora.js';
 // ── Private Helpers ──────────────────────────────────────────
 
 export function clearAllBiomeFlora(c) {
-  try {
-    const tm = c.terrainManager;
-    if (tm && tm.placeables) {
-      for (const [key, arr] of tm.placeables.entries()) {
-        for (let i = arr.length - 1; i >= 0; i--) {
-          const sprite = arr[i];
-          if (sprite && sprite.placeableType === 'plant') {
-            try {
-              sprite.__clearedGeneration = c._generationRunId || 0;
-            } catch (_) {
-              /* ignore */
-            }
-            try {
-              if (sprite.__instancedRef && c.gameManager?.placeableMeshPool) {
-                c.gameManager.placeableMeshPool.removePlaceable(sprite.__instancedRef);
-              }
-            } catch (_) {
-              /* ignore */
-            }
-            try {
-              const model = sprite.__threeModel;
-              if (model && c.gameManager?.threeSceneManager?.scene) {
-                c.gameManager.threeSceneManager.scene.remove(model);
-                try {
-                  model.traverse?.((child) => {
-                    if (child.isMesh) {
-                      child.geometry?.dispose?.();
-                      if (Array.isArray(child.material)) {
-                        child.material.forEach((m) => m?.dispose?.());
-                      } else {
-                        child.material?.dispose?.();
-                      }
-                    }
-                  });
-                } catch (_) {
-                  /* ignore disposal errors */
-                }
-              }
-            } catch (_) {
-              /* ignore model removal errors */
-            }
-            try {
-              sprite.parent?.removeChild?.(sprite);
-            } catch (_) {
-              /* ignore */
-            }
-            arr.splice(i, 1);
-          }
-        }
-        if (arr.length === 0) {
-          try {
-            tm.placeables.delete(key);
-          } catch (_) {
-            /* ignore */
-          }
-        }
-      }
-    }
-  } catch (_) {
-    /* ignore */
-  }
+  // Clear 3D mesh pool (the only active placeable system after TerrainManager deletion)
   try {
     if (c.gameManager?.placeableMeshPool) {
       const pool = c.gameManager.placeableMeshPool;
@@ -112,17 +52,8 @@ export function logPlaceableInstancingState(c, stage = 'unknown') {
   }
 }
 
-function _tagPlants(c) {
-  try {
-    const tm = c.terrainManager;
-    for (const arr of tm?.placeables?.values() || []) {
-      for (const s of arr) {
-        if (s?.placeableType === 'plant') s.__generationRunId = c._generationRunId;
-      }
-    }
-  } catch (_) {
-    /* ignore */
-  }
+function _tagPlants(_c) {
+  // No-op: terrainManager.placeables removed (ADR-0001)
 }
 
 // ── Public API ───────────────────────────────────────────────
@@ -248,33 +179,6 @@ export function generateBiomeElevation(c, biomeKey, options = {}) {
     c.dataStore.base = field.map((r) => [...r]);
     c.dataStore.working = field.map((r) => [...r]);
 
-    if (options.headless === true) {
-      if (!c.terrainManager) {
-        c.terrainManager = {
-          gameManager: c.gameManager,
-          placeables: new Map(),
-          placeTerrainItem(x, y, id) {
-            const key = `${x},${y}`;
-            let arr = this.placeables.get(key);
-            if (!arr) {
-              arr = [];
-              this.placeables.set(key, arr);
-            }
-            const sprite = { placeableType: 'plant', id, x, y, parent: null };
-            arr.push(sprite);
-            return true;
-          },
-        };
-      }
-      try {
-        _autoPopulateBiomeFlora(c, activeBiome, seed);
-      } catch (_) {
-        /* ignore flora errors */
-      }
-      _tagPlants(c);
-      return true;
-    }
-
     _validateApplyReqs(c);
     const modified = _processAllTiles(c);
     _logApplyComplete(c, modified);
@@ -290,27 +194,10 @@ export function generateBiomeElevation(c, biomeKey, options = {}) {
     } catch (_) {
       /* ignore flora errors */
     }
-    _tagPlants(c);
     try {
       c.gameManager?.reinstanceExistingPlants?.();
     } catch (_) {
       /* ignore */
-    }
-    try {
-      const tm = c.terrainManager;
-      const hasPlants = (() => {
-        if (!tm?.placeables) return false;
-        for (const arr of tm.placeables.values()) {
-          if (arr.some((s) => s.placeableType === 'plant')) return true;
-        }
-        return false;
-      })();
-      if (!hasPlants && c.gameManager?.features?.instancedPlaceables) {
-        _autoPopulateBiomeFlora(c, activeBiome, (seed + 0x9e3779b1) >>> 0);
-        c.gameManager?.reinstanceExistingPlants?.();
-      }
-    } catch (_) {
-      /* ignore retry errors */
     }
     try {
       if (c.gameManager?.is3DModeActive?.()) {

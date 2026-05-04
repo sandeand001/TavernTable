@@ -17,7 +17,7 @@ export function resetTerrain(c) {
       c.dataStore.resetAll(TERRAIN_CONFIG.DEFAULT_HEIGHT);
     }
 
-    // Repaint base grid tiles so any elevation artifacts are cleared immediately.
+    // Repaint base grid tiles (no-op in 3D mode: gridContainer is empty)
     const rows = Number.isInteger(c.gameManager?.rows) ? c.gameManager.rows : 0;
     const cols = Number.isInteger(c.gameManager?.cols) ? c.gameManager.cols : 0;
     if (rows > 0 && cols > 0 && typeof c.updateBaseGridTileInPlace === 'function') {
@@ -41,10 +41,6 @@ export function resetTerrain(c) {
           }
         }
       }
-    }
-
-    if (c.terrainManager) {
-      c.terrainManager.refreshAllTerrainDisplay();
     }
 
     // Ensure the 3D mesh queues a rebuild if hybrid mode is active.

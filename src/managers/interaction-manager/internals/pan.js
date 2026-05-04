@@ -3,6 +3,7 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/logger/Logger.js
 // ── Drag Start ──────────────────────────────────────────────────
 
 export function startGridDragging(c, event) {
+  if (!c.gameManager.gridContainer) return;
   c.isDragging = true;
   c.dragStartX = event.clientX;
   c.dragStartY = event.clientY;
@@ -23,6 +24,7 @@ export function startGridDragging(c, event) {
 // ── Drag Update ─────────────────────────────────────────────────
 
 export function updateGridDragPosition(c, event) {
+  if (!c.gameManager.gridContainer) return;
   const deltaX = event.clientX - c.dragStartX;
   const deltaY = event.clientY - c.dragStartY;
   c.gameManager.gridContainer.x = c.gridStartX + deltaX;

@@ -50,12 +50,6 @@ export class TerrainInputHandlers {
           if (this.c.isDragging) {
             this.c.isDragging = false;
             this.c.lastModifiedCell = null;
-            // Ensure any pending updates are applied now to avoid lingering visuals
-            try {
-              this.c.terrainManager?.flushUpdateQueue();
-            } catch {
-              /* ignore */
-            }
           }
         },
         true

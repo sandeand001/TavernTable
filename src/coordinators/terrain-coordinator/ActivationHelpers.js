@@ -1,11 +1,6 @@
 import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import {
-  prepareBaseGridForEditing as _prepareGridForEdit,
-  resetTerrainContainerSafely as _resetContainerSafely,
-  validateContainerIntegrity as _validateContainer,
-} from './internals/container.js';
-import {
   activateTerrainMode as _activateMode,
   loadTerrainStateAndDisplay as _loadStateAndDisplay,
   handleTerrainModeActivationError as _handleActivationError,
@@ -23,25 +18,18 @@ export class ActivationHelpers {
   // ── Delegation Helpers ─────────────────────────────────────────────
 
   prepareBaseGridForEditing() {
-    if (typeof this.c._prepareBaseGridForEditing === 'function')
-      return this.c._prepareBaseGridForEditing();
-    return _prepareGridForEdit(this.c);
+    // No-op: 2D PIXI container removed (ADR-0001)
   }
   validateTerrainSystemForActivation() {
     if (typeof this.c._validateTerrainSystemForActivation === 'function')
       return this.c._validateTerrainSystemForActivation();
-    // Fall back to the public validator when wrapper is absent
     return this.c.validateTerrainSystemState();
   }
   resetTerrainContainerSafely() {
-    if (typeof this.c._resetTerrainContainerSafely === 'function')
-      return this.c._resetTerrainContainerSafely();
-    return _resetContainerSafely(this.c);
+    // No-op: terrain PIXI container removed (ADR-0001)
   }
   validateContainerIntegrity() {
-    if (typeof this.c._validateContainerIntegrity === 'function')
-      return this.c._validateContainerIntegrity();
-    return _validateContainer(this.c);
+    // No-op: PIXI container removed (ADR-0001)
   }
   activateTerrainMode() {
     if (typeof this.c._activateTerrainMode === 'function') return this.c._activateTerrainMode();
@@ -73,24 +61,13 @@ export class ActivationHelpers {
       } catch (_) {
         /* non-fatal */
       }
-      // Ensure existing placeables (trees/plants) are re-layered above the
-      // elevation overlay immediately when terrain mode turns on.
-      try {
-        this.c.terrainManager?.repositionAllPlaceables?.();
-      } catch (_) {
-        /* non-fatal */
-      }
 
       logger.info(
-        'Terrain mode enabled with enhanced safety checks',
+        'Terrain mode enabled',
         {
           context: 'ActivationHelpers.enableTerrainMode',
           tool: this.c.brush.tool,
           brushSize: this.c.brush.brushSize,
-          baseTerrainLoaded: true,
-          terrainManagerReady: !!this.c.terrainManager,
-          containerIntegrity: 'validated',
-          safetyEnhancements: 'applied',
         },
         LOG_CATEGORY.USER
       );
@@ -109,12 +86,6 @@ export class ActivationHelpers {
       try {
         this.c.restoreTerrainModeGridTint?.();
       } catch (_) {
-        /* non-fatal */
-      }
-      // Clear any lingering brush preview since terrain mode is now off
-      try {
-        this.c.terrainManager?.clearBrushPreview();
-      } catch {
         /* non-fatal */
       }
 
@@ -169,23 +140,6 @@ export class ActivationHelpers {
 
       // Apply current terrain modifications permanently to base grid
       this.c.applyTerrainToBaseGrid();
-
-      // Clear terrain overlay system completely, but preserve placeables
-      if (this.c.terrainManager) {
-        const m = this.c.terrainManager;
-        // Hide terrain tiles visuals, but if placeables exist we’ll keep container visible
-        m.hideAllTerrainTiles();
-        // clearAllTerrainTiles will now preserve and reattach placeables and only hide
-        // the container when no placeables remain
-        m.clearAllTerrainTiles();
-        // Reposition placeables after overlay is removed so they return to
-        // normal interleaved depth (below overlay bias no longer needed).
-        try {
-          m.repositionAllPlaceables?.();
-        } catch (_) {
-          /* non-fatal */
-        }
-      }
 
       // Reset height indicator
       this.c.resetHeightIndicator?.();

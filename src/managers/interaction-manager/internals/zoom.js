@@ -31,6 +31,7 @@ export function handleZoomWheel(c, event) {
 // ── Zoom Application ────────────────────────────────────────────
 
 export function applyZoom(c, newScale, mouseX, mouseY) {
+  if (!c.gameManager.gridContainer) return;
   const localX = (mouseX - c.gameManager.gridContainer.x) / c.gridScale;
   const localY = (mouseY - c.gameManager.gridContainer.y) / c.gridScale;
 
@@ -44,6 +45,7 @@ export function applyZoom(c, newScale, mouseX, mouseY) {
 // ── Zoom Reset ──────────────────────────────────────────────────
 
 export function resetZoom(c) {
+  if (!c.gameManager.gridContainer) return;
   try {
     c.gridScale = 1.0;
     c.gameManager.gridContainer.scale.set(c.gridScale);

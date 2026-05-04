@@ -23,11 +23,11 @@
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 
-import { RenderCoordinator } from '../coordinators/RenderCoordinator.js';
 import { StateCoordinator } from '../coordinators/StateCoordinator.js';
 import { InputCoordinator } from '../coordinators/InputCoordinator.js';
 import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 import { SpatialCoordinator } from '../scene/picking/SpatialCoordinator.js';
+import { TerrainEngine } from '../terrain/TerrainEngine.js';
 
 import {
   enableHybridRender as enableHybridRenderImpl,
@@ -100,11 +100,16 @@ class GameManager {
     this.cols = Number.isInteger(cols) && cols > 0 ? cols : GRID_CONFIG.DEFAULT_COLS;
     this.rows = Number.isInteger(rows) && rows > 0 ? rows : GRID_CONFIG.DEFAULT_ROWS;
 
+    // TerrainEngine — authoritative terrain state (ADR-0001)
+    this.terrainEngine = new TerrainEngine(this.cols, this.rows);
+
     // Create coordinators after grid dimensions are available
-    this.renderCoordinator = new RenderCoordinator(this);
     this.stateCoordinator = new StateCoordinator(this);
     this.inputCoordinator = new InputCoordinator(this);
     this.terrainCoordinator = new TerrainCoordinator(this);
+
+    // TerrainEngineSceneAdapter — wired after threeSceneManager is ready (see init.js)
+    this.terrainEngineSceneAdapter = null;
 
     // Managers will be initialized after app creation in initialize()
     this.tokenManager = null;
@@ -392,34 +397,19 @@ class GameManager {
     return reinstanceExistingPlantsImpl(this);
   }
 
-  /**
-   * Create and configure the application
-   * @throws {Error} When application cannot be created or container not found
-   */
-  createApp() {
-    return this.renderCoordinator.createApp();
-  }
+  /** @deprecated 2D PIXI app removed; no-op */
+  createApp() {}
 
-  /**
-   * Center the grid on the screen
-   */
-  centerGrid() {
-    return this.renderCoordinator.centerGrid();
-  }
+  /** @deprecated 2D grid container removed; no-op */
+  centerGrid() {}
 
-  /**
-   * Reset the grid zoom to default scale and center the view
-   */
+  /** @deprecated 2D zoom removed; delegates to interactionManager if present */
   resetZoom() {
-    return this.renderCoordinator.resetZoom();
+    if (this.interactionManager) this.interactionManager.resetZoom();
   }
 
-  /**
-   * Fix any existing tokens that might be in the wrong container
-   */
-  fixExistingTokens() {
-    return this.renderCoordinator.fixExistingTokens();
-  }
+  /** @deprecated 2D sprite container removed; no-op */
+  fixExistingTokens() {}
 
   /**
    * Handle token placement or removal at grid coordinates
@@ -513,6 +503,7 @@ class GameManager {
    * Enable terrain modification mode
    */
   enableTerrainMode() {
+    this.terrainEngine?.activate();
     if (this.terrainCoordinator) {
       this.terrainCoordinator.enableTerrainMode();
     }
@@ -522,6 +513,7 @@ class GameManager {
    * Disable terrain modification mode
    */
   disableTerrainMode() {
+    this.terrainEngine?.deactivate();
     if (this.terrainCoordinator) {
       this.terrainCoordinator.disableTerrainMode();
     }
@@ -559,6 +551,7 @@ class GameManager {
    * Reset all terrain heights to default
    */
   resetTerrain() {
+    this.terrainEngine?.reset();
     if (this.terrainCoordinator) {
       this.terrainCoordinator.resetTerrain();
     }
@@ -612,6 +605,9 @@ class GameManager {
 
       // Update grid dimensions through state coordinator
       this.stateCoordinator.updateGridDimensions(sanitizedCols, sanitizedRows);
+
+      // Update terrain engine dimensions
+      this.terrainEngine?.resize(sanitizedCols, sanitizedRows);
 
       // Update terrain system for new grid dimensions
       if (this.terrainCoordinator) {

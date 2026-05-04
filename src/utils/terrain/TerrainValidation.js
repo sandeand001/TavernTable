@@ -70,11 +70,8 @@ export class TerrainValidation {
         }
       }
 
-      // Validate terrain manager
-      if (!terrainManager) {
-        result.errors.push('TerrainManager is null or undefined');
-        result.isValid = false;
-      } else {
+      // TerrainManager is deleted (ADR-0001); skip manager validation when null
+      if (terrainManager !== null && terrainManager !== undefined) {
         // Check manager state
         result.details.managerInitialized = !!terrainManager.isInitialized;
 
@@ -108,20 +105,7 @@ export class TerrainValidation {
         }
       }
 
-      // Cross-validate coordinator and manager consistency
-      if (terrainCoordinator && terrainManager) {
-        if (terrainCoordinator.terrainManager !== terrainManager) {
-          result.warnings.push(
-            'TerrainCoordinator and TerrainManager have inconsistent references'
-          );
-        }
-
-        if (terrainManager.terrainCoordinator !== terrainCoordinator) {
-          result.warnings.push(
-            'TerrainManager and TerrainCoordinator have inconsistent references'
-          );
-        }
-      }
+      // Cross-validation skipped: terrainManager is deleted (ADR-0001)
 
       logger.log(
         LOG_LEVEL.DEBUG,

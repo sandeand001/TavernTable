@@ -24,14 +24,7 @@ export class ElevationScaleController {
       // Update global height util override so all compute paths use the new unit
       TerrainHeightUtils.setElevationUnit(unit);
 
-      // 1) Re-apply elevation to overlay tiles without recreating them (preserve colors) when terrain mode is active
-      if (this.c.terrainManager && this.c.isTerrainModeActive) {
-        try {
-          this.c.terrainManager.reapplyElevationScaleToOverlay();
-        } catch (_) {
-          /* non-fatal */
-        }
-      }
+      // 1) Re-apply elevation to overlay tiles (no-op in 3D mode: terrainManager removed)
 
       // 2) Re-apply elevation to base grid tiles (position and faces)
       if (this.c.gameManager?.gridContainer?.children) {
@@ -111,24 +104,7 @@ export class ElevationScaleController {
         });
       }
 
-      // 4) Re-apply elevation to placeables so trees/plants stick to tiles
-      try {
-        const tm = this.c.terrainManager;
-        if (tm && typeof tm.repositionAllPlaceables === 'function') {
-          tm.repositionAllPlaceables();
-        } else if (tm) {
-          // dynamic import to avoid circular deps during initial load
-          import('../../managers/terrain-manager/internals/placeables.js').then((mod) => {
-            try {
-              mod.repositionAllPlaceables?.(tm);
-            } catch (_) {
-              /* ignore */
-            }
-          });
-        }
-      } catch (_) {
-        /* non-fatal */
-      }
+      // 4) Re-apply elevation to placeables (handled by 3D mesh pool, no 2D terrainManager)
 
       // 5) If overlay container exists, ensure it still sorts correctly
       try {

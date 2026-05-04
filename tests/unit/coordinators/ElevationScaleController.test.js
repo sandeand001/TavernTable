@@ -1,4 +1,4 @@
-/* global PIXI */
+/* eslint-disable no-unused-vars */
 import { TerrainCoordinator } from '../../../src/coordinators/TerrainCoordinator.js';
 import { TerrainHeightUtils } from '../../../src/utils/terrain/TerrainHeightUtils.js';
 
@@ -21,21 +21,24 @@ function makeGameManager(cols = 2, rows = 2) {
   const app = { view: document.createElement('canvas') };
   const gridRenderer = {
     drawIsometricTile: jest.fn((x, y) => {
-      const g = new PIXI.Graphics();
-      g.isGridTile = true;
-      g.gridX = x;
-      g.gridY = y;
-      g.baseIsoY = 100;
-      g.y = 100;
-      g.depthValue = x + y;
-      g.clear = jest.fn();
-      g.lineStyle = jest.fn();
-      g.beginFill = jest.fn();
-      g.moveTo = jest.fn();
-      g.lineTo = jest.fn();
-      g.endFill = jest.fn();
-      g.addChild = jest.fn();
-      g.parent = gridContainer;
+      const g = {
+        children: [],
+        destroyed: false,
+        isGridTile: true,
+        gridX: x,
+        gridY: y,
+        baseIsoY: 100,
+        y: 100,
+        depthValue: x + y,
+        clear: jest.fn(),
+        lineStyle: jest.fn(),
+        beginFill: jest.fn(),
+        moveTo: jest.fn(),
+        lineTo: jest.fn(),
+        endFill: jest.fn(),
+        addChild: jest.fn(),
+        parent: gridContainer,
+      };
       return g;
     }),
   };
@@ -90,9 +93,7 @@ describe('ElevationScaleController.apply', () => {
     // Unit should update
     expect(TerrainHeightUtils.getElevationUnit()).toBe(prevUnit + 3);
 
-    // Faces should be (re)added on t0 since it is higher than right neighbor
-    // The controller removes baseSideFaces first, then re-adds via tile lifecycle
-    // So we just verify property is set
-    expect(t0.baseSideFaces || null).not.toBeNull();
+    // Note: baseSideFaces rendering via TerrainFacesRenderer has been removed (ADR-0001)
+    // The elevation unit update is the authoritative signal that scale was applied
   });
 });
