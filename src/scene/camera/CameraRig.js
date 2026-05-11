@@ -26,7 +26,8 @@ export class CameraRig {
 
   attach(camera) {
     this.camera = camera;
-    this._apply();
+    // Do NOT call _apply() here — CameraSystem._applyCameraBase owns initial camera
+    // positioning. The rig only applies when explicitly panned/zoomed.
   }
 
   setTarget(x, z) {

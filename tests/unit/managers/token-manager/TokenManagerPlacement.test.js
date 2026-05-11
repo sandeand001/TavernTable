@@ -3,22 +3,13 @@ import { CoordinateUtils } from '../../../../src/utils/coordinates/CoordinateUti
 import { TerrainHeightUtils } from '../../../../src/utils/terrain/TerrainHeightUtils.js';
 
 describe('placeNewToken', () => {
-  test('creates creature, positions with elevation, sets zIndex, adds to container, and tracks in collection', () => {
+  test('creates creature, positions with elevation, and tracks in collection', () => {
     const gridX = 3,
       gridY = 2;
     const tileWidth = 64,
       tileHeight = 32;
     const height = 1;
 
-    const addedChildren = [];
-    const gridContainer = {
-      addChild: jest.fn((child) => {
-        addedChildren.push(child);
-      }),
-      sortChildren: jest.fn(),
-    };
-
-    // tokenManager-like context
     const c = {
       selectedTokenType: 'mannequin',
       gameManager: {
@@ -34,24 +25,17 @@ describe('placeNewToken', () => {
       createCreatureByType: jest.fn(() => ({ sprite: { x: 0, y: 0, zIndex: 0 } })),
     };
 
-    placeNewToken(c, gridX, gridY, gridContainer);
+    placeNewToken(c, gridX, gridY, null);
 
     // ensure creature was created with selected type
     expect(c.createCreatureByType).toHaveBeenCalledWith('mannequin');
 
-    // verify position and elevation
+    // verify position and elevation applied to sprite
     const iso = CoordinateUtils.gridToIsometric(gridX, gridY, tileWidth, tileHeight);
     const elev = TerrainHeightUtils.calculateElevationOffset(height);
-    const sprite = addedChildren[0];
-
+    const sprite = c.createCreatureByType.mock.results[0].value.sprite;
     expect(sprite.x).toBe(iso.x);
     expect(sprite.y).toBe(iso.y + elev);
-    // depth now uses simplified band: depth*100 + 70 (token band)
-    expect(sprite.zIndex).toBe((gridX + gridY) * 100 + 70);
-
-    // container interactions
-    expect(gridContainer.addChild).toHaveBeenCalledWith(sprite);
-    expect(gridContainer.sortChildren).toHaveBeenCalled();
 
     // collection tracking
     expect(c.addTokenToCollection).toHaveBeenCalled();
@@ -72,11 +56,8 @@ describe('placeNewToken', () => {
       createCreatureByType: jest.fn(() => null),
     };
 
-    const gridContainer = { addChild: jest.fn(), sortChildren: jest.fn() };
-
-    placeNewToken(c, 0, 0, gridContainer);
+    placeNewToken(c, 0, 0, null);
 
     expect(c.addTokenToCollection).not.toHaveBeenCalled();
-    expect(gridContainer.addChild).not.toHaveBeenCalled();
   });
 });

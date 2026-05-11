@@ -28,6 +28,7 @@ import { InputCoordinator } from '../coordinators/InputCoordinator.js';
 import { TerrainCoordinator } from '../coordinators/TerrainCoordinator.js';
 import { SpatialCoordinator } from '../scene/picking/SpatialCoordinator.js';
 import { TerrainEngine } from '../terrain/TerrainEngine.js';
+import ModelAssetCache from './ModelAssetCache.js';
 
 import {
   enableHybridRender as enableHybridRenderImpl,
@@ -114,7 +115,6 @@ class GameManager {
     // Managers will be initialized after app creation in initialize()
     this.tokenManager = null;
     this.interactionManager = null;
-    this.gridRenderer = null;
 
     // 3D Transition: canonical spatial mapping (grid -> world) used by future Three.js scene
     this.spatial = new SpatialCoordinator();
@@ -124,6 +124,7 @@ class GameManager {
     this.threeSceneManager = null; // lazy init when entering hybrid mode
     this.terrainRebuilder = null; // Phase 2: debounced terrain mesh updates
     this.placeableMeshPool = null; // Phase 4: instanced placeables (scaffold)
+    this.modelAssetCache = new ModelAssetCache(); // 3D model loader/cache (OBJ/FBX → InstancedMesh)
     this.pickingService = null; // Centralized picking abstraction
     // Feature flags (incremental enablement of new systems)
     this.features = {
@@ -614,17 +615,12 @@ class GameManager {
         this.terrainCoordinator.handleGridResize(sanitizedCols, sanitizedRows);
       }
 
-      // Clear existing grid tiles and redraw
-      if (this.gridRenderer) {
-        this.gridRenderer.redrawGrid();
-      }
-
       // Check if any tokens are now outside the new grid bounds
       this.stateCoordinator.validateTokenPositions();
 
       // Only recenter the grid if explicitly requested
       if (centerAfterResize) {
-        this.renderCoordinator.centerGrid();
+        this.threeSceneManager?.reframe?.();
       }
 
       logger.info(

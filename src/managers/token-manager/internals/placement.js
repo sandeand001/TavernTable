@@ -80,28 +80,7 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
     if (creature.sprite) {
       creature.sprite.x = iso.x;
       creature.sprite.y = iso.y + elevationOffset;
-      // Attach token to terrainContainer so elevated front tiles can occlude it properly.
-      const tContainer = c.gameManager?.terrainManager?.terrainContainer || gridContainer;
-      if (tContainer) {
-        try {
-          if (creature.sprite.parent && creature.sprite.parent !== tContainer) {
-            creature.sprite.parent.removeChild(creature.sprite);
-          }
-          tContainer.addChild(creature.sprite);
-        } catch (_) {
-          /* ignore */
-        }
-        // depthValue pattern from tiles: depth*100 + offset (tiles use +20, faces +5, placeables 32-45)
-        const depth = gridX + gridY;
-        creature.sprite.depthValue = depth;
-        creature.sprite.zIndex = depth * 100 + 70; // token band
-        try {
-          tContainer.sortableChildren = true;
-          tContainer.sortChildren?.();
-        } catch (_) {
-          /* ignore */
-        }
-      }
+      // 2D sprite attachment removed; Token3DAdapter handles 3D mesh placement.
     }
 
     c.addTokenToCollection(creature, gridX, gridY);

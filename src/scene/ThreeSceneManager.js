@@ -82,6 +82,9 @@ export class ThreeSceneManager {
     // Simplified implementation: removed legacy vertical persistence, parity scaling, and frustum lock.
     // We keep a constant board-based frustum so pitch directly affects the vertical compression visually.
     this._isoBaseFrustum = null; // cached {halfWidth, halfHeight}
+    // Pan target (world XZ the camera looks at); null = use board centre
+    this._panCx = null;
+    this._panCz = null;
     // Zoom state (orthographic zoom implemented by scaling frustum extents)
     this._zoom = 1.0; // 1 == baseline
     this._minZoom = 0.35;

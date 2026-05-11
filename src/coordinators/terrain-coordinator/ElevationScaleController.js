@@ -26,60 +26,7 @@ export class ElevationScaleController {
 
       // 1) Re-apply elevation to overlay tiles (no-op in 3D mode: terrainManager removed)
 
-      // 2) Re-apply elevation to base grid tiles (position and faces)
-      if (this.c.gameManager?.gridContainer?.children) {
-        const children = this.c.gameManager.gridContainer.children;
-        // First, remove any base faces to avoid duplicates; will be re-added per tile below
-        children.forEach((child) => {
-          if (child && child.isGridTile) {
-            if (child.baseSideFaces && child.parent?.children?.includes(child.baseSideFaces)) {
-              try {
-                child.parent.removeChild(child.baseSideFaces);
-                if (
-                  typeof child.baseSideFaces.destroy === 'function' &&
-                  !child.baseSideFaces.destroyed
-                ) {
-                  child.baseSideFaces.destroy();
-                }
-              } catch (_) {
-                /* ignore */
-              }
-              child.baseSideFaces = null;
-            }
-          }
-        });
-
-        // Now recompute y position and shadows for each base tile; then re-add faces
-        children.forEach((child) => {
-          if (child && child.isGridTile) {
-            try {
-              // Reset to baseline
-              if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
-              // Remove prior shadow
-              if (child.shadowTile && child.parent?.children?.includes(child.shadowTile)) {
-                child.parent.removeChild(child.shadowTile);
-                if (typeof child.shadowTile.destroy === 'function' && !child.shadowTile.destroyed) {
-                  child.shadowTile.destroy();
-                }
-                child.shadowTile = null;
-              }
-              // Apply new elevation offset
-              const h = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
-              if (h !== 0) {
-                this.c.addVisualElevationEffect(child, h);
-              }
-              // Re-add base faces using current base heights
-              const gx = child.gridX,
-                gy = child.gridY;
-              const height = Number.isFinite(child.terrainHeight) ? child.terrainHeight : 0;
-              // Re-add base side faces using tile lifecycle controller
-              this.c._tileLifecycle.addBase3DFaces(child, gx, gy, height);
-            } catch (_) {
-              /* continue on error */
-            }
-          }
-        });
-      }
+      // 2) Re-apply elevation to base grid tiles — no-op in 3D mode (mesh owns geometry)
 
       // 3) Reposition tokens vertically to match new scale and keep zIndex consistent
       if (this.c.gameManager?.tokenManager?.placedTokens) {
@@ -106,12 +53,7 @@ export class ElevationScaleController {
 
       // 4) Re-apply elevation to placeables (handled by 3D mesh pool, no 2D terrainManager)
 
-      // 5) If overlay container exists, ensure it still sorts correctly
-      try {
-        this.c.gameManager?.gridContainer?.sortChildren?.();
-      } catch (_) {
-        /* no-op */
-      }
+      // 5) No overlay container to sort in 3D mode
       // 6) If outside terrain mode and a biome is selected, repaint the biome canvas
       const shouldRepaintBiome = options?.repaintBiome !== false;
       if (

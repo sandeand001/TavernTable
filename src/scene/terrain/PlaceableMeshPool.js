@@ -57,6 +57,10 @@ export class PlaceableMeshPool {
 
   /** Derive a stable variant key from a placeable sprite or data. */
   _deriveKey(placeable) {
+    // Prefer modelKey for grouping (so instances sharing a 3D model share one InstancedMesh)
+    if (placeable?.modelKey && typeof placeable.modelKey === 'string') {
+      return placeable.modelKey;
+    }
     let key =
       placeable?.variantKey || placeable?.type || placeable?.sprite?.__variantKey || 'default';
     const isPlant = placeable?.type === 'plant';
@@ -122,6 +126,12 @@ export class PlaceableMeshPool {
           y: tileWorld * (heightRatio || 1) || tileWorld,
           z: 1,
         };
+      }
+
+      if (profile === 'model') {
+        // TODO: tune per-species scale once assets are calibrated
+        // OBJ models are auto-scaled by ModelPostProcessing; use identity to avoid double-scaling
+        return { x: 1, y: 1, z: 1 };
       }
 
       return { x: tileWorld, y: tileWorld, z: tileWorld };
@@ -310,6 +320,73 @@ export class PlaceableMeshPool {
     try {
       const capacity = this._initialCapacity; // initial; grow strategy implemented
       const profile = placeable?.renderProfile || (type === 'plant' ? 'billboard' : 'ground');
+
+      // ── Model asset path (OBJ/FBX) ─────────────────────────────────
+      const modelKey = placeable?.modelKey;
+      if (modelKey && this.gameManager?.modelAssetCache?.getModel) {
+        try {
+          const modelRoot = await this.gameManager.modelAssetCache.getModel(modelKey);
+          let modelGeom = null;
+          let modelMat = null;
+          if (modelRoot) {
+            (modelRoot.traverse || function () {}).call(modelRoot, (child) => {
+              if (!modelGeom && child.isMesh && child.geometry) {
+                modelGeom = child.geometry;
+                modelMat = child.material;
+              }
+            });
+          }
+          if (modelGeom && modelMat) {
+            const instanced = new three.InstancedMesh(modelGeom, modelMat, capacity);
+            instanced.name = `Placeables:${key}`;
+            try {
+              instanced.castShadow = true;
+            } catch (_) {
+              /* ignore */
+            }
+            try {
+              instanced.count = 0;
+            } catch (_) {
+              /* ignore */
+            }
+            try {
+              const scene = this.gameManager.threeSceneManager?.scene;
+              if (scene && typeof scene.add === 'function') scene.add(instanced);
+            } catch (_) {
+              /* ignore */
+            }
+            const tintCategory = placeable?.type || type || 'generic';
+            const baseColorRef = modelMat?.color
+              ? { r: modelMat.color.r, g: modelMat.color.g, b: modelMat.color.b }
+              : null;
+            return {
+              key,
+              type,
+              profile: 'model', // upright 3D model; no billboard rotation needed
+              tintCategory,
+              instancedMesh: instanced,
+              capacity,
+              freeIndices: [],
+              count: 0,
+              baseColor: baseColorRef,
+            };
+          }
+        } catch (modelErr) {
+          // log once and fall through to placeholder
+          try {
+            const { logger: _log, LOG_CATEGORY: _cat } = await import(
+              '../../utils/logger/Logger.js'
+            );
+            _log.warn(
+              '[PlaceableMeshPool] model load failed, using placeholder',
+              { key, modelKey, err: modelErr?.message },
+              _cat?.SYSTEM
+            );
+          } catch (_) {
+            /* ignore logger import error */
+          }
+        }
+      }
 
       // Geometry selection driven by render profile (billboard vs ground overlay)
       let geo;

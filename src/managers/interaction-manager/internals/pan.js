@@ -3,18 +3,13 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/logger/Logger.js
 // ── Drag Start ──────────────────────────────────────────────────
 
 export function startGridDragging(c, event) {
-  if (!c.gameManager.gridContainer) return;
   c.isDragging = true;
   c.dragStartX = event.clientX;
   c.dragStartY = event.clientY;
-  c.gridStartX = c.gameManager.gridContainer.x;
-  c.gridStartY = c.gameManager.gridContainer.y;
   c.gameManager.getEventCanvas().style.cursor = 'grabbing';
 
   logger.log(LOG_LEVEL.TRACE, 'Grid dragging started', LOG_CATEGORY.USER, {
     startPosition: { x: c.dragStartX, y: c.dragStartY },
-    gridPosition: { x: c.gridStartX, y: c.gridStartY },
-    currentScale: c.gridScale,
   });
 
   event.preventDefault();
@@ -24,11 +19,12 @@ export function startGridDragging(c, event) {
 // ── Drag Update ─────────────────────────────────────────────────
 
 export function updateGridDragPosition(c, event) {
-  if (!c.gameManager.gridContainer) return;
   const deltaX = event.clientX - c.dragStartX;
   const deltaY = event.clientY - c.dragStartY;
-  c.gameManager.gridContainer.x = c.gridStartX + deltaX;
-  c.gameManager.gridContainer.y = c.gridStartY + deltaY;
+  // Update start for next incremental delta
+  c.dragStartX = event.clientX;
+  c.dragStartY = event.clientY;
+  c.gameManager.threeSceneManager?.panBy(deltaX, deltaY);
 }
 
 // ── Drag End ────────────────────────────────────────────────────

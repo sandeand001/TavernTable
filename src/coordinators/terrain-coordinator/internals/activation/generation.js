@@ -62,12 +62,6 @@ export function generateBiomeElevationIfFlat(c, biomeKey, options = {}) {
   if (c.gameManager?.getViewMode && c.gameManager.getViewMode() === 'topdown') return false;
   try {
     if (c.isTerrainModeActive) return false;
-    if (!c.gameManager?.gridContainer) {
-      c.gameManager.gridContainer = {
-        removeChildren() {},
-        addChild() {},
-      };
-    }
     if (c._isGenerating) return false;
     c._isGenerating = true;
     const base = c.dataStore?.base;
@@ -139,12 +133,6 @@ export function generateBiomeElevation(c, biomeKey, options = {}) {
   if (c.gameManager?.getViewMode && c.gameManager.getViewMode() === 'topdown') return false;
   try {
     if (c.isTerrainModeActive) return false;
-    if (!c.gameManager?.gridContainer) {
-      c.gameManager.gridContainer = {
-        removeChildren() {},
-        addChild() {},
-      };
-    }
     if (c._isGenerating) return false;
     c._isGenerating = true;
 

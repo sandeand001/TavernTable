@@ -391,7 +391,8 @@ export class InteractionManager {
 
   _startRightButtonDrag(event) {
     this._activeDragButton = 2;
-    const threeMgr = this.gameManager?.threeSceneManager;
+    const gm = this.gameManager;
+    const threeMgr = gm?.threeSceneManager;
     if (threeMgr && threeMgr.camera) {
       this.start3DRotation(event, threeMgr);
     } else {
@@ -419,6 +420,7 @@ export class InteractionManager {
       }
       return;
     }
+
     if (this._activeDragButton === null) {
       this._removeGlobalDragListeners();
       return;
@@ -680,13 +682,10 @@ export class InteractionManager {
    * @returns {Object} Local coordinates
    */
   convertToLocalCoordinates({ mouseX, mouseY }) {
-    const gridRelativeX = mouseX - this.gameManager.gridContainer.x;
-    const gridRelativeY = mouseY - this.gameManager.gridContainer.y;
-
-    return {
-      localX: gridRelativeX / this.gridScale,
-      localY: gridRelativeY / this.gridScale,
-    };
+    // gridContainer no longer exists in 3D mode; this 2D path is only reached
+    // when the 3D pickGroundSync path in getGridCoordinatesFromClick already failed.
+    // Return a sentinel that will produce an invalid grid position and be filtered out.
+    return { localX: 0, localY: 0 };
   }
 
   /**

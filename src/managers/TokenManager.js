@@ -13,8 +13,6 @@ import {
   findExistingTokenAt as _findExistingTokenAt,
   selectToken as _selectToken,
 } from './token-manager/internals/selection.js';
-// Internals for token interaction wiring
-import { setupTokenInteractions as _setupTokenInteractions } from './token-manager/internals/interactions.js';
 // Internals for positioning helpers
 import { snapTokenToGrid as _snapTokenToGrid } from './token-manager/internals/positioning.js';
 // Internals for collection management
@@ -213,14 +211,5 @@ export class TokenManager {
    */
   addTokenToCollection(creature, gridX, gridY, selectedTokenType = null, placedTokens = null) {
     return _addTokenToCollection(this, creature, gridX, gridY, selectedTokenType, placedTokens);
-  }
-
-  /**
-   * Set up token interaction events
-   * @param {Object} sprite - Token sprite
-   * @param {Object} tokenData - Token data
-   */
-  setupTokenInteractions(sprite, tokenData) {
-    return _setupTokenInteractions(this, sprite, tokenData);
   }
 }

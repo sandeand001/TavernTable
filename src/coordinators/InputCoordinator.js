@@ -189,12 +189,12 @@ export class InputCoordinator {
       return;
     }
 
-    if (this.gameManager.tokenManager && this.gameManager.gridContainer) {
-      this.gameManager.tokenManager.placeNewToken(gridX, gridY, this.gameManager.gridContainer);
+    if (this.gameManager.tokenManager) {
+      this.gameManager.tokenManager.placeNewToken(gridX, gridY, null);
       // Update global array for backward compatibility
       window.placedTokens = this.gameManager.placedTokens;
     } else {
-      logger.debug('Cannot place token: TokenManager or gridContainer not available');
+      logger.debug('Cannot place token: TokenManager not available');
     }
   }
 
@@ -219,13 +219,13 @@ export class InputCoordinator {
     }
 
     const tm = this.gameManager.tokenManager;
-    if (!tm || !this.gameManager.gridContainer) {
-      logger.debug('Cannot place token via drag: TokenManager or gridContainer missing');
+    if (!tm) {
+      logger.debug('Cannot place token via drag: TokenManager missing');
       return false;
     }
 
     if (typeof tm.placeTokenOfType === 'function') {
-      tm.placeTokenOfType(tokenType, gridX, gridY, this.gameManager.gridContainer);
+      tm.placeTokenOfType(tokenType, gridX, gridY, null);
     } else {
       const previousType =
         typeof tm.getSelectedTokenType === 'function'

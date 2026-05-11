@@ -648,6 +648,156 @@ function solveIsoPitchForTargetRatio(
   return best;
 }
 
+// ── Pan / Zoom (Three.js camera) ──────────────────────────────────
+
+/**
+ * Pan the camera by a screen-space pixel delta.
+ * Converts pixel movement → world XZ movement using camera frustum and orientation.
+ * Call on every mousemove during drag.
+ */
+function panBy(screenDx, screenDy) {
+  const cam = this.camera;
+  if (!cam) return;
+  try {
+    const frustumW = cam.right - cam.left;
+    const frustumH = cam.top - cam.bottom;
+    const canvasW =
+      this.canvas?.width ||
+      this.renderer?.domElement?.width ||
+      (typeof window !== 'undefined' && window.innerWidth) ||
+      800;
+    const canvasH =
+      this.canvas?.height ||
+      this.renderer?.domElement?.height ||
+      (typeof window !== 'undefined' && window.innerHeight) ||
+      600;
+
+    const worldPerPxW = frustumW / canvasW;
+    const worldPerPxH = frustumH / canvasH;
+
+    // Camera right and up vectors in world space (columns 0 and 1 of matrixWorld)
+    const m = cam.matrixWorld?.elements;
+    let rX = 1,
+      rZ = 0,
+      uX = 0,
+      uZ = -1;
+    if (m) {
+      rX = m[0];
+      rZ = m[2];
+      uX = m[4];
+      uZ = m[6];
+    }
+
+    const cols = this.gameManager?.cols || 25;
+    const rows = this.gameManager?.rows || 25;
+    if (!Number.isFinite(this._panCx)) this._panCx = cols * 0.5;
+    if (!Number.isFinite(this._panCz)) this._panCz = rows * 0.5;
+
+    // Dragging right (positive screenDx) should pan camera right (negative world offset in camera-right dir)
+    this._panCx -= screenDx * worldPerPxW * rX + screenDy * worldPerPxH * uX;
+    this._panCz -= screenDx * worldPerPxW * rZ + screenDy * worldPerPxH * uZ;
+
+    const span = Math.max(cols, rows) * 0.6;
+    this._applyCameraBase({ cx: this._panCx, cz: this._panCz, span });
+  } catch (_) {
+    /* ignore pan errors */
+  }
+}
+
+/**
+ * Set camera look-at target explicitly (world XZ).
+ */
+function setCameraTarget(cx, cz) {
+  if (!Number.isFinite(cx) || !Number.isFinite(cz)) return;
+  this._panCx = cx;
+  this._panCz = cz;
+  const cols = this.gameManager?.cols || 25;
+  const rows = this.gameManager?.rows || 25;
+  const span = Math.max(cols, rows) * 0.6;
+  this._applyCameraBase({ cx, cz, span });
+}
+
+/**
+ * Reset camera target to board center and clear stored pan offset.
+ */
+function resetCameraTarget() {
+  const cols = this.gameManager?.cols || 25;
+  const rows = this.gameManager?.rows || 25;
+  this._panCx = cols * 0.5;
+  this._panCz = rows * 0.5;
+  const span = Math.max(cols, rows) * 0.6;
+  this._applyCameraBase({ cx: this._panCx, cz: this._panCz, span });
+}
+
+/**
+ * Zoom by a multiplicative factor while keeping the world point under (mouseX, mouseY) stable.
+ * mouseX, mouseY are canvas-relative pixel coordinates.
+ */
+function zoomAtScreenPoint(factor, mouseX, mouseY) {
+  const cam = this.camera;
+  if (!cam || !Number.isFinite(factor) || factor <= 0) return;
+  try {
+    // Capture frustum before zoom
+    const hwOld = (cam.right - cam.left) * 0.5;
+    const hhOld = (cam.top - cam.bottom) * 0.5;
+
+    const canvasW =
+      this.canvas?.width ||
+      this.renderer?.domElement?.width ||
+      (typeof window !== 'undefined' && window.innerWidth) ||
+      800;
+    const canvasH =
+      this.canvas?.height ||
+      this.renderer?.domElement?.height ||
+      (typeof window !== 'undefined' && window.innerHeight) ||
+      600;
+
+    // Apply zoom instantly (bypass easing for responsive wheel behaviour)
+    const newZoom = Math.min(this._maxZoom, Math.max(this._minZoom, this._zoom * factor));
+    this._zoom = newZoom;
+    this._targetZoom = newZoom;
+    this.reframe();
+
+    // Capture frustum after zoom
+    const hwNew = (cam.right - cam.left) * 0.5;
+    const hhNew = (cam.top - cam.bottom) * 0.5;
+
+    // Mouse NDC position (u,v) ∈ [-1, 1]
+    const u = (mouseX / canvasW) * 2 - 1;
+    const v = -((mouseY / canvasH) * 2 - 1);
+
+    // Camera right and up XZ components
+    const m = cam.matrixWorld?.elements;
+    let rX = 1,
+      rZ = 0,
+      uX = 0,
+      uZ = -1;
+    if (m) {
+      rX = m[0];
+      rZ = m[2];
+      uX = m[4];
+      uZ = m[6];
+    }
+
+    // World offset shift to keep mouse anchor stable
+    const dcx = u * rX * (hwOld - hwNew) + v * uX * (hhOld - hhNew);
+    const dcz = u * rZ * (hwOld - hwNew) + v * uZ * (hhOld - hhNew);
+
+    const cols = this.gameManager?.cols || 25;
+    const rows = this.gameManager?.rows || 25;
+    if (!Number.isFinite(this._panCx)) this._panCx = cols * 0.5;
+    if (!Number.isFinite(this._panCz)) this._panCz = rows * 0.5;
+
+    this._panCx += dcx;
+    this._panCz += dcz;
+
+    const span = Math.max(cols, rows) * 0.6;
+    this._applyCameraBase({ cx: this._panCx, cz: this._panCz, span });
+  } catch (_) {
+    /* ignore zoom errors */
+  }
+}
+
 // ── Mixin Installation ────────────────────────────────────────────
 
 export function installCameraMethods(prototype) {
@@ -667,4 +817,8 @@ export function installCameraMethods(prototype) {
   prototype.getZoom = getZoom;
   prototype.measureTileStepPixels = measureTileStepPixels;
   prototype.solveIsoPitchForTargetRatio = solveIsoPitchForTargetRatio;
+  prototype.panBy = panBy;
+  prototype.setCameraTarget = setCameraTarget;
+  prototype.resetCameraTarget = resetCameraTarget;
+  prototype.zoomAtScreenPoint = zoomAtScreenPoint;
 }

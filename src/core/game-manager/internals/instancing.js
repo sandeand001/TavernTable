@@ -5,6 +5,7 @@
  */
 
 import { PlaceableMeshPool } from '../../../scene/terrain/PlaceableMeshPool.js';
+import ModelAssetCache from '../../ModelAssetCache.js';
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 
 /**
@@ -16,6 +17,9 @@ export function ensureInstancing(gm) {
     if (!gm.features.instancedPlaceables) return null; // feature still disabled
     if (!gm.is3DModeActive()) return null; // wait until 3D active
     if (!gm.placeableMeshPool) {
+      if (!gm.modelAssetCache) {
+        gm.modelAssetCache = new ModelAssetCache();
+      }
       gm.placeableMeshPool = new PlaceableMeshPool({ gameManager: gm });
       try {
         if (typeof window !== 'undefined') {

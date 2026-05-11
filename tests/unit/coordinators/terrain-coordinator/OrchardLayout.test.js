@@ -1,44 +1,21 @@
 import GameManager from '../../../../src/core/GameManager.js';
 import { TerrainCoordinator } from '../../../../src/coordinators/TerrainCoordinator.js';
 
-function collectPlants(c) {
-  const out = [];
-  const tm = c.terrainManager;
-  if (!tm?.placeables) return out;
-  for (const list of tm.placeables.values()) {
-    if (!Array.isArray(list)) continue;
-    for (const p of list) if (p?.placeableType === 'plant') out.push(p);
-  }
-  return out;
-}
-
 describe('Orchard layout', () => {
   test('single species, uniform row counts with slight spacing & jitter', () => {
     const gm = new GameManager({ rows: 24, cols: 24 });
     gm.gridContainer = { addChild: () => {} };
     const c = new TerrainCoordinator(gm);
-    if (!c.terrainManager || !c.terrainManager.placeables) {
-      c.terrainManager = c.terrainManager || { gameManager: gm };
-      c.terrainManager.placeables = new Map();
-      c.terrainManager.placeTerrainItem = function placeTerrainItem(x, y, id) {
-        const key = `${x},${y}`;
-        let list = this.placeables.get(key);
-        if (!list) {
-          list = [];
-          this.placeables.set(key, list);
-        }
-        const plant = {
-          placeableType: 'plant',
-          placeableId: id,
-          gridX: x,
-          gridY: y,
-          parent: gm.gridContainer,
-        };
-        list.push(plant);
-        gm.gridContainer.addChild(plant);
-        return true;
-      };
-    }
+    const orchardPlants = [];
+    gm.placeableMeshPool = {
+      addPlaceable(p) {
+        orchardPlants.push(p);
+        return Promise.resolve();
+      },
+      purgeAll() {
+        orchardPlants.length = 0;
+      },
+    };
     const ok = c.generateBiomeElevation('orchard', { seed: 555 });
     expect(ok).toBe(true);
 
@@ -51,9 +28,9 @@ describe('Orchard layout', () => {
     const variance = heights.reduce((a, b) => a + (b - mean) * (b - mean), 0) / heights.length;
     expect(variance).toBeLessThan(0.3);
 
-    const plants = collectPlants(c);
+    const plants = orchardPlants;
     expect(plants.length).toBeGreaterThan(0);
-    const ids = new Set(plants.map((p) => p.placeableId || p.id));
+    const ids = new Set(plants.map((p) => p.variantKey));
     expect(ids.size).toBe(1); // single cultivar
 
     // Collect rows: group by y

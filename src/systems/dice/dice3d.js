@@ -54,7 +54,7 @@ function _resolvePrimaryCamera(manager) {
     manager?.camera ||
     manager?.activeCamera ||
     manager?.mainCamera ||
-    manager?.renderCoordinator?.camera ||
+    manager?.gameManager?.threeSceneManager?.camera ||
     manager?.gameManager?.camera ||
     manager?.scene?.camera ||
     null
@@ -64,8 +64,8 @@ function _resolvePrimaryCamera(manager) {
 function _resolvePrimaryDomElement(manager) {
   return (
     manager?.renderer?.domElement ||
+    manager?.gameManager?.threeSceneManager?.canvas ||
     manager?.gameManager?.renderer?.domElement ||
-    manager?.renderCoordinator?.renderer?.domElement ||
     (hasWindow() ? window.document?.body : null) ||
     null
   );

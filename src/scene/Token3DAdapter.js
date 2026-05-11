@@ -166,6 +166,7 @@ export class Token3DAdapter {
     return this._ensureTokenMesh(tokenEntry, scene);
   }
 
+  /** Teleport a token to a new grid cell immediately (used by token-drag in InteractionManager). */
   // ── Root Bone & Root Motion (installed via RootMotion mixin) ──────────
 
   // ── World Authority & Motion Transfer (installed via WorldAuthority mixin) ──────────

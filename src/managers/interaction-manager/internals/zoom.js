@@ -10,53 +10,39 @@ export function handleZoomWheel(c, event) {
 
   const zoomDirection = event.deltaY > 0 ? -1 : 1;
   const zoomFactor = 1 + c.zoomSpeed * zoomDirection;
-  const newScale = c.gridScale * zoomFactor;
 
-  if (newScale < c.minScale || newScale > c.maxScale) {
-    return;
-  }
+  const tsm = c.gameManager.threeSceneManager;
+  if (!tsm) return;
 
-  applyZoom(c, newScale, mouseX, mouseY);
+  const prevZoom = tsm.getZoom();
+  tsm.zoomAtScreenPoint(zoomFactor, mouseX, mouseY);
+
   logger.log(LOG_LEVEL.DEBUG, 'Zoom applied', LOG_CATEGORY.USER, {
     zoomDirection,
     zoomFactor,
-    previousScale: c.gridScale / zoomFactor,
-    newScale: c.gridScale,
-    zoomPercentage: `${(c.gridScale * 100).toFixed(0)}%`,
+    previousZoom: prevZoom,
+    newZoom: tsm.getZoom(),
     mousePosition: { x: mouseX, y: mouseY },
-    bounds: { min: c.minScale, max: c.maxScale },
   });
 }
 
 // ── Zoom Application ────────────────────────────────────────────
 
-export function applyZoom(c, newScale, mouseX, mouseY) {
-  if (!c.gameManager.gridContainer) return;
-  const localX = (mouseX - c.gameManager.gridContainer.x) / c.gridScale;
-  const localY = (mouseY - c.gameManager.gridContainer.y) / c.gridScale;
-
-  c.gridScale = newScale;
-  c.gameManager.gridContainer.scale.set(c.gridScale);
-
-  c.gameManager.gridContainer.x = mouseX - localX * c.gridScale;
-  c.gameManager.gridContainer.y = mouseY - localY * c.gridScale;
+export function applyZoom(c, factor, mouseX, mouseY) {
+  c.gameManager.threeSceneManager?.zoomAtScreenPoint(factor, mouseX, mouseY);
 }
 
 // ── Zoom Reset ──────────────────────────────────────────────────
 
 export function resetZoom(c) {
-  if (!c.gameManager.gridContainer) return;
   try {
-    c.gridScale = 1.0;
-    c.gameManager.gridContainer.scale.set(c.gridScale);
-    c.gameManager.centerGrid();
-    logger.debug(
-      'Grid zoom reset to default',
-      {
-        newScale: c.gridScale,
-      },
-      LOG_CATEGORY.USER
-    );
+    const tsm = c.gameManager.threeSceneManager;
+    if (!tsm) return;
+    tsm._zoom = 1.0;
+    tsm._targetZoom = 1.0;
+    tsm.reframe?.();
+    tsm.resetCameraTarget?.();
+    logger.log(LOG_LEVEL.DEBUG, 'Zoom reset to default', LOG_CATEGORY.USER, { newZoom: 1.0 });
   } catch (error) {
     const errorHandler = new ErrorHandler();
     errorHandler.handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.RENDERING, {

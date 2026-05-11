@@ -1,9 +1,6 @@
 import { GRID_CONFIG } from '../../config/GameConstants.js';
-import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
-import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
-
 import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
-import { traceDiamondPath } from '../../utils/geometry/GeometryUtils.js';
+import { getBiomeColorHex } from '../../config/biome/BiomePalettes.js';
 
 /**
  * BiomeShadingController - façade for painterly biome shading outside terrain mode.
@@ -17,206 +14,33 @@ export class BiomeShadingController {
 
   // ── Biome Palette Application ─────────────────────────────────────
 
-  /** Re-color existing base grid tiles using currently selected biome palette. */
+  /** Re-color existing base grid tiles using currently selected biome palette.
+   * In 3D mode the terrain mesh owns all coloring; this schedules a mesh rebuild. */
   applyToBaseGrid() {
     if (this.c.isTerrainModeActive) return;
     if (typeof window === 'undefined' || !window.selectedBiome) return;
-    const biomeKey = window.selectedBiome;
     try {
-      // Ensure grid container is available
-      if (!this.c?.gameManager?.gridContainer) {
-        logger.debug('Biome shading skipped: gridContainer missing', {
-          context: 'BiomeShadingController.applyToBaseGrid',
-          biome: biomeKey,
-        });
-        return;
-      }
-      // Mark that biome changed so projection can purge stale overlays if needed
       this.c.gameManager.__biomeVersion = (this.c.gameManager.__biomeVersion || 0) + 1;
-      // Rich shading via BiomeCanvasPainter removed (ADR-0001); clear any stale canvas
-      try {
-        this.c._biomeCanvas?.clear?.();
-        this.c._biomeCanvas = null;
-      } catch (_) {
-        /* ignore */
-      }
-      const rows = this.c.gameManager.rows,
-        cols = this.c.gameManager.cols;
-      // Prefer authoritative heights from datastore when available to avoid sampling half-updated tiles
-      let heights;
-      if (this.c?.dataStore?.base && this.c?.dataStore?.base.length === rows) {
-        heights = this.c.dataStore.base.map((r) => r.slice());
-      } else {
-        heights = Array(rows)
-          .fill(null)
-          .map(() => Array(cols).fill(0));
-      }
-      // Ensure base tiles are visible
-      this.toggleBaseTileVisibility(true);
-
-      this.c.gameManager.gridContainer.children.forEach((child) => {
-        if (!child.isGridTile) return;
-        const h = typeof child.terrainHeight === 'number' ? child.terrainHeight : 0;
-        // Provide coordinates to color function for variation
-        this.c._currentColorEvalX = child.gridX;
-        this.c._currentColorEvalY = child.gridY;
-        const borderColor = GRID_CONFIG.TILE_BORDER_COLOR;
-        const borderAlpha = GRID_CONFIG.TILE_BORDER_ALPHA;
-
-        // Clean up any previous rich shading layers
-        try {
-          if (child.paintLayer) {
-            child.removeChild(child.paintLayer);
-            if (typeof child.paintLayer.destroy === 'function' && !child.paintLayer.destroyed) {
-              child.paintLayer.destroy({ children: true });
-            }
-            child.paintLayer = null;
-          }
-          if (child.paintMask) {
-            child.removeChild(child.paintMask);
-            if (typeof child.paintMask.destroy === 'function' && !child.paintMask.destroyed) {
-              child.paintMask.destroy();
-            }
-            child.paintMask = null;
-          }
-        } catch (_) {
-          /* ignore */
-        }
-
-        child.clear();
-        child.lineStyle(1, borderColor, borderAlpha);
-        // Fill the top with the biome palette color so elevation offsets are visible on the tile itself
-        try {
-          const fillHex = getBiomeColorHex(
-            biomeKey,
-            h,
-            this.c._currentColorEvalX,
-            this.c._currentColorEvalY,
-            {
-              moisture: 0.5,
-              slope: 0,
-              aspectRad: 0,
-              seed: this.c._biomeSeed >>> 0,
-              mapFreq: window?.richShadingSettings?.mapFreq || 0.05,
-            }
-          );
-          child.beginFill(fillHex, 1.0);
-          // Track current top fill color so top-down projection squares can mirror biome coloration
-          child.__currentFillColor = fillHex;
-          traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
-          child.endFill();
-        } catch (_) {
-          // Fallback: draw border only
-          traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
-          // Fallback path: ensure at least base color recorded
-          if (typeof child.__currentFillColor === 'undefined') {
-            child.__currentFillColor = GRID_CONFIG.TILE_COLOR;
-          }
-        }
-
-        if (typeof child.baseIsoY === 'number') child.y = child.baseIsoY;
-        if (h !== TERRAIN_CONFIG.DEFAULT_HEIGHT) this.c.addVisualElevationEffect(child, h);
-
-        // If a top-down square already exists for this tile, recolor it immediately
-        try {
-          if (child.__topDownGraphic && child.__topDownGraphic.__isTopDownSquare) {
-            const sq = child.__topDownGraphic;
-            const g = sq; // Graphics object
-            if (g && typeof g.clear === 'function') {
-              g.clear();
-              // Elevation brightness adjustment will run again when ensureTopDownSquare is called next switch.
-              g.beginFill(
-                child.__currentFillColor || child.__baseColor || GRID_CONFIG.TILE_COLOR,
-                1.0
-              );
-              g.lineStyle({ width: 1, color: 0x000000, alpha: 0.15 });
-              g.drawRect(
-                -this.c.gameManager.tileWidth / 2,
-                -this.c.gameManager.tileWidth / 2,
-                this.c.gameManager.tileWidth,
-                this.c.gameManager.tileWidth
-              );
-              g.endFill();
-            }
-            // Track version so stale squares from older biome passes can be detected if orphaned
-            sq.__biomeVersion = this.c.gameManager.__biomeVersion;
-          }
-        } catch (_) {
-          /* ignore square recolor errors */
-        }
-      });
-      // Purge orphaned top-down squares whose parent tiles were removed during map regeneration
-      try {
-        const gc = this.c.gameManager.gridContainer;
-        const toDestroy = [];
-        gc.children.forEach((ch) => {
-          if (ch && ch.__isTopDownSquare) {
-            // If there is no corresponding base tile with same grid coords, mark for destroy
-            const gx = ch.__gridX;
-            const gy = ch.__gridY;
-            const hasBase = gc.children.some(
-              (c2) => c2?.isGridTile && c2.__gridX === gx && c2.__gridY === gy
-            );
-            if (!hasBase) toDestroy.push(ch);
-          }
-        });
-        toDestroy.forEach((sq) => {
-          try {
-            if (gc.children.includes(sq)) gc.removeChild(sq);
-            sq.destroy?.();
-          } catch (_) {
-            /* ignore */
-          }
-        });
-      } catch (_) {
-        /* ignore purge errors */
-      }
+      // Schedule 3D mesh recolor since biome palette changed.
+      this.c.gameManager?.notifyTerrainHeightsChanged?.();
       logger.debug(
-        'Applied biome palette to base grid',
-        { context: 'BiomeShadingController.applyToBaseGrid', biome: biomeKey },
+        'Applied biome palette (3D mesh recolor scheduled)',
+        { context: 'BiomeShadingController.applyToBaseGrid', biome: window.selectedBiome },
         LOG_CATEGORY.USER
       );
-      // Schedule 3D mesh recolor (rebuild) since biome palette changed.
-      try {
-        this.c.gameManager?.notifyTerrainHeightsChanged?.();
-      } catch (_) {
-        /* non-fatal */
-      }
     } catch (e) {
-      // Downgraded to DEBUG to avoid noisy repeats; inner paint() warns on real failures
       logger.debug('Biome palette application encountered an error', {
         context: 'BiomeShadingController.applyToBaseGrid',
-        biome: biomeKey,
         error: e?.message,
-        stack: e?.stack,
       });
-    } finally {
-      this.c._currentColorEvalX = undefined;
-      this.c._currentColorEvalY = undefined;
     }
   }
 
   // ── Base Tile Visibility ───────────────────────────────────────────
 
-  /** Show or hide the base tile fills (keeping borders) */
-  toggleBaseTileVisibility(show) {
-    try {
-      this.c.gameManager.gridContainer.children.forEach((child) => {
-        if (!child?.isGridTile) return;
-        child.clear();
-        child.lineStyle(1, GRID_CONFIG.TILE_BORDER_COLOR, GRID_CONFIG.TILE_BORDER_ALPHA);
-        if (show) {
-          child.beginFill(GRID_CONFIG.TILE_COLOR, 1.0);
-          child.__currentFillColor = GRID_CONFIG.TILE_COLOR;
-        } else {
-          // preserve last color reference even when hidden, do not overwrite
-        }
-        traceDiamondPath(child, this.c.gameManager.tileWidth, this.c.gameManager.tileHeight);
-        if (show) child.endFill();
-      });
-    } catch (_) {
-      /* ignore */
-    }
+  /** Show or hide the base tile fills — no-op in 3D mode (mesh owns visuals). */
+  toggleBaseTileVisibility(_show) {
+    // 2D sprite tiles gone; Three.js mesh controls visibility.
   }
 
   // ── Color Resolution ──────────────────────────────────────────────

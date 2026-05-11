@@ -2,54 +2,19 @@ import { TerrainCoordinator } from '../../../src/coordinators/TerrainCoordinator
 
 // Minimal GameManager stub for coordinator construction (mirrors public smoke test)
 function makeGameManager(cols = 4, rows = 4) {
-  const gridContainer = {
-    children: [],
-    sortChildren: jest.fn(),
-    addChild(child) {
-      this.children.push(child);
-    },
-    removeChild(child) {
-      this.children = this.children.filter((c) => c !== child);
-    },
-    getChildIndex(child) {
-      return this.children.indexOf(child);
-    },
-    sortableChildren: true,
-  };
   const app = { view: document.createElement('canvas') };
-  const gridRenderer = {
-    drawIsometricTile: jest.fn((x, y) => ({
-      isGridTile: true,
-      gridX: x,
-      gridY: y,
-      baseIsoY: 100,
-      y: 100,
-      depthValue: x + y,
-      destroyed: false,
-      clear: jest.fn(),
-      lineStyle: jest.fn(),
-      beginFill: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      endFill: jest.fn(),
-      addChild: jest.fn(),
-      parent: gridContainer,
-    })),
-  };
   return {
     cols,
     rows,
     tileWidth: 64,
     tileHeight: 32,
-    gridContainer,
     app,
-    gridRenderer,
     tokenManager: { placedTokens: [] },
   };
 }
 
 describe('TerrainCoordinator.generateBiomeElevationIfFlat integration', () => {
-  test('generates elevations on flat grid and repaints base tiles', () => {
+  test('generates elevations on flat grid and updates data store', () => {
     const gm = makeGameManager(5, 3);
     const c = new TerrainCoordinator(gm);
 
@@ -62,12 +27,9 @@ describe('TerrainCoordinator.generateBiomeElevationIfFlat integration', () => {
     const didGen = c.generateBiomeElevationIfFlat('hills', { seed: 12345 });
     expect(didGen).toBe(true);
 
-    // Data updated
+    // Data updated (3D mode — no 2D tile drawing, but data store must reflect new heights)
     const allDefaultAfter = c.dataStore.base.every((r) => r.every((v) => v === 0));
     expect(allDefaultAfter).toBe(false);
-
-    // Repaint called for at least some tiles
-    expect(gm.gridRenderer.drawIsometricTile).toHaveBeenCalled();
   });
 
   test('no-ops when terrain is not flat or when terrain mode is active', () => {
@@ -76,11 +38,9 @@ describe('TerrainCoordinator.generateBiomeElevationIfFlat integration', () => {
 
     // First call generates
     expect(c.generateBiomeElevationIfFlat('grassland', { seed: 1 })).toBe(true);
-    const drawCallsAfterFirst = gm.gridRenderer.drawIsometricTile.mock.calls.length;
 
     // Second call should no-op (not flat anymore)
     expect(c.generateBiomeElevationIfFlat('grassland', { seed: 2 })).toBe(false);
-    expect(gm.gridRenderer.drawIsometricTile.mock.calls.length).toBe(drawCallsAfterFirst);
 
     // Force terrain mode active -> should also no-op
     c.isTerrainModeActive = true;

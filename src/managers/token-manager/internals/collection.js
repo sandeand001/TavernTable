@@ -67,11 +67,6 @@ export function addTokenToCollection(
     /* non-fatal */
   }
 
-  // Set up right-click drag system for all tokens
-  if (creature && creature.sprite) {
-    c.setupTokenInteractions(creature.sprite, newTokenData);
-  }
-
   logger.debug(
     'Token added to collection',
     {

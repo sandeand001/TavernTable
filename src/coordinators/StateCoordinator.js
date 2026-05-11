@@ -144,7 +144,6 @@ export class StateCoordinator {
 
     this.gameManager.tokenManager = new TokenManager(this.gameManager);
     this.gameManager.interactionManager = new InteractionManager(this.gameManager);
-    this.gameManager.gridRenderer = null;
 
     logger.debug('Manager instances created');
   }
@@ -257,9 +256,17 @@ export class StateCoordinator {
       this.updateGridDimensions(GRID_CONFIG.DEFAULT_COLS, GRID_CONFIG.DEFAULT_ROWS);
 
       // Recenter and reset zoom
-      if (this.gameManager.renderCoordinator) {
-        this.gameManager.renderCoordinator.resetZoom();
-        this.gameManager.renderCoordinator.centerGrid();
+      const tsm = this.gameManager.threeSceneManager;
+      if (tsm) {
+        tsm._zoom = 1.0;
+        tsm._targetZoom = 1.0;
+        tsm._panCx = null;
+        tsm._panCz = null;
+        tsm.reframe?.();
+        const cols = this.gameManager.cols || 25;
+        const rows = this.gameManager.rows || 25;
+        const span = Math.max(cols, rows) * 0.6;
+        tsm._applyCameraBase?.({ cx: cols * 0.5, cz: rows * 0.5, span });
       }
 
       logger.info('Application state reset to defaults');
@@ -270,7 +277,7 @@ export class StateCoordinator {
         resetSteps: {
           tokensCleared: !!this.gameManager.tokenManager,
           gridReset: true,
-          zoomReset: !!this.gameManager.renderCoordinator,
+          zoomReset: !!this.gameManager.threeSceneManager,
         },
         targetDimensions: {
           cols: GRID_CONFIG.DEFAULT_COLS,

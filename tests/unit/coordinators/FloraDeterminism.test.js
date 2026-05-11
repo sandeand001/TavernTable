@@ -49,12 +49,20 @@ function makeGameManager(cols = 12, rows = 12) {
   };
 }
 
-function collectPlants(c) {
-  const out = [];
-  for (const [, list] of c.terrainManager.placeables || []) {
-    for (const p of list) if (p.placeableType === 'plant') out.push(p);
-  }
-  return out;
+function makePlantPool() {
+  const plants = [];
+  return {
+    pool: {
+      addPlaceable(p) {
+        plants.push(p);
+        return Promise.resolve();
+      },
+      purgeAll() {
+        plants.length = 0;
+      },
+    },
+    plants,
+  };
 }
 
 // Identify a bare tree id to assert petrified constraint.
@@ -63,39 +71,13 @@ const BARE_IDS = Object.keys(TERRAIN_PLACEABLES).filter((k) => /bare/i.test(k));
 // Utility to run two generations and compare
 function generateFloraSnapshot(biome, seed, cols = 12, rows = 12) {
   const gm = makeGameManager(cols, rows);
+  const { pool, plants } = makePlantPool();
+  gm.placeableMeshPool = pool;
   const c = new TerrainCoordinator(gm);
-  // Inject minimal terrainManager stub if missing (enables flora placement)
-  if (!c.terrainManager) {
-    c.terrainManager = {
-      gameManager: gm,
-      placeables: new Map(),
-      placeTerrainItem(x, y, id) {
-        const key = `${x},${y}`;
-        let list = this.placeables.get(key);
-        if (!list) {
-          list = [];
-          this.placeables.set(key, list);
-        }
-        const plant = {
-          placeableType: 'plant',
-          placeableId: id,
-          gridX: x,
-          gridY: y,
-          parent: gm.gridContainer,
-        };
-        list.push(plant);
-        gm.gridContainer.addChild(plant);
-        return true;
-      },
-    };
-  } else if (!c.terrainManager.placeables) {
-    c.terrainManager.placeables = new Map();
-  }
   const ok = c.generateBiomeElevation(biome, { seed });
   expect(ok).toBe(true);
-  const plants = collectPlants(c);
   const snapshot = plants
-    .map((p) => ({ id: p.placeableId, x: p.gridX, y: p.gridY }))
+    .map((p) => ({ id: p.variantKey, x: p.gridX, y: p.gridY }))
     .sort((a, b) => a.x - b.x || a.y - b.y || a.id.localeCompare(b.id));
   return { snapshot, count: plants.length };
 }
@@ -135,6 +117,12 @@ describe('Deterministic flora placement', () => {
     // We recompute adjacency using the TerrainCoordinator API.
     // Reconstruct a new coordinator with same seed to query heights.
     const gm2 = makeGameManager(24, 16);
+    gm2.placeableMeshPool = {
+      addPlaceable() {
+        return Promise.resolve();
+      },
+      purgeAll() {},
+    };
     const c2 = new TerrainCoordinator(gm2);
     c2.generateBiomeElevation('oasis', { seed: 9999 });
     const adjCount = run.snapshot.filter((p) => {

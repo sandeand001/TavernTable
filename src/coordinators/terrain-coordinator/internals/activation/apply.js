@@ -8,18 +8,9 @@ export function validateApplicationRequirements(c) {
   if (!c.dataStore?.working) {
     logger.debug('Cannot apply terrain - missing working height field', {
       context: 'apply.validateApplicationRequirements',
-      hasGridContainer: !!c.gameManager.gridContainer,
       hasTerrainHeights: !!c.dataStore?.working,
     });
     throw new Error('Missing requirements for terrain application');
-  }
-  if (!c.gameManager.gridContainer) {
-    // Headless/test mode allowance: create a noop container so downstream tile update
-    // calls still succeed without rendering.
-    c.gameManager.gridContainer = {
-      removeChildren() {},
-      addChild() {},
-    };
   }
 }
 

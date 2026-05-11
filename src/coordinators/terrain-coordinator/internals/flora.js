@@ -6,6 +6,7 @@
  */
 import { createSeededRNG, rngInt, makeWeightedPicker } from '../../../utils/SeededRNG.js';
 import { BIOME_FLORA_PROFILES, DEFAULT_PROFILE } from '../../../config/terrain/FloraProfiles.js';
+import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
 import {
   candidateFilters,
   isSpectralPlaceable,
@@ -17,27 +18,7 @@ import {
   isCoastlineTile,
 } from '../../../terrain/flora/floraHelpers.js';
 
-// ── Cleanup & Resolution Helpers ───────────────────────────────────
-
-function clearExistingPlants(c) {
-  const tm = c.terrainManager;
-  if (!tm?.placeables) return;
-  for (const [key, list] of tm.placeables) {
-    if (!Array.isArray(list) || list.length === 0) continue;
-    for (let i = list.length - 1; i >= 0; i--) {
-      const p = list[i];
-      if (p?.placeableType === 'plant') {
-        try {
-          p.parent?.removeChild?.(p);
-        } catch (_) {
-          // ignore placeable removal errors
-        }
-        list.splice(i, 1);
-      }
-    }
-    if (list.length === 0) tm.placeables.delete(key);
-  }
-}
+// ── Resolution Helpers ───────────────────────────────────
 
 function resolveProfile(biomeKey) {
   if (!biomeKey) return DEFAULT_PROFILE;
@@ -58,9 +39,8 @@ function getBiomeRNG(baseSeed, biomeKey, salt) {
 
 export function autoPopulateBiomeFlora(c, biomeKey, seed) {
   try {
-    if (!c?.terrainManager?.gameManager?.gridContainer) return true; // headless mode: allow logic proceed as success
-    const tm = c.terrainManager;
-    clearExistingPlants(c);
+    if (!c?.gameManager?.placeableMeshPool) return;
+    const pool = c.gameManager.placeableMeshPool;
     const profile = resolveProfile(biomeKey);
     const {
       density: profileDensity,
@@ -172,7 +152,15 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
                 if (placeHeight <= 0) continue;
                 if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
               }
-              tm.placeTerrainItem(placeX, placeY, id);
+              const _def0 = TERRAIN_PLACEABLES[id] || {};
+              pool.addPlaceable({
+                type: 'plant',
+                variantKey: id,
+                modelKey: _def0.modelKey,
+                placeableId: id,
+                gridX: placeX,
+                gridY: placeY,
+              });
             }
             const span = Math.abs(maxSpace - minSpace);
             const jitter = span > 0 ? Math.floor(rowRng() * (span + 1)) : 0;
@@ -208,7 +196,14 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               if (placeHeight <= 0) continue;
               if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
             }
-            tm.placeTerrainItem(placeX, placeY, id);
+            pool.addPlaceable({
+              type: 'plant',
+              variantKey: id,
+              modelKey: (TERRAIN_PLACEABLES[id] || {}).modelKey,
+              placeableId: id,
+              gridX: placeX,
+              gridY: placeY,
+            });
           }
           const spacing = rowSpacings[rowIndex % rowSpacings.length];
           y += spacing;
@@ -294,8 +289,15 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
         if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
       }
       if (spacing > 0 && placed.some((p) => manhattan(p, [placeX, placeY]) < spacing)) continue;
-      const ok = tm.placeTerrainItem(placeX, placeY, id);
-      if (ok) placed.push([placeX, placeY]);
+      pool.addPlaceable({
+        type: 'plant',
+        variantKey: id,
+        modelKey: (TERRAIN_PLACEABLES[id] || {}).modelKey,
+        placeableId: id,
+        gridX: placeX,
+        gridY: placeY,
+      });
+      placed.push([placeX, placeY]);
     }
   } catch (_) {
     /* best effort */

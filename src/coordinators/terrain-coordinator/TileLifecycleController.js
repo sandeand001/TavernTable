@@ -23,45 +23,13 @@ export class TileLifecycleController {
    * @param {number} x
    * @param {number} y
    */
-  findGridTilesToRemove(x, y) {
-    const tilesToRemove = [];
-    const gridChildren = this.coordinator.gameManager.gridContainer?.children || [];
-
-    gridChildren.forEach((child) => {
-      if (child && child.isGridTile && child.gridX === x && child.gridY === y) {
-        if (!child.destroyed) {
-          tilesToRemove.push(child);
-        }
-      }
-    });
-
-    return tilesToRemove;
+  findGridTilesToRemove(_x, _y) {
+    // 2D sprite tiles no longer exist; nothing to remove.
+    return [];
   }
 
-  /**
-   * Remove a list of tiles safely.
-   * @param {any[]} tilesToRemove
-   * @param {number} x
-   * @param {number} y
-   */
-  removeGridTilesSafely(tilesToRemove, x, y) {
-    tilesToRemove.forEach((tile) => {
-      try {
-        if (this.coordinator.gameManager.gridContainer?.children?.includes(tile)) {
-          this.coordinator.gameManager.gridContainer.removeChild(tile);
-        }
-
-        if (tile.destroy && !tile.destroyed) {
-          tile.destroy();
-        }
-      } catch (tileRemovalError) {
-        logger.warn('Error removing individual tile during replacement', {
-          context: 'TileLifecycleController.removeGridTilesSafely',
-          coordinates: { x, y },
-          error: tileRemovalError.message,
-        });
-      }
-    });
+  removeGridTilesSafely(_tilesToRemove, _x, _y) {
+    // No-op: sprite tiles gone in 3D mode.
   }
 
   // ── Tile Creation & Effects ───────────────────────────────────────
@@ -72,21 +40,8 @@ export class TileLifecycleController {
    * @param {number} y
    * @param {number} height
    */
-  createReplacementTile(x, y, height) {
-    if (!this.coordinator.gameManager.gridRenderer) {
-      throw new Error('gridRenderer unavailable (3D mode): tile creation skipped');
-    }
-    const isEditing = !!this.coordinator.isTerrainModeActive;
-    const color = isEditing
-      ? this.coordinator.getColorForHeight(height)
-      : this.coordinator._getBiomeOrBaseColor(height);
-    const newTile = this.coordinator.gameManager.gridRenderer.drawIsometricTile(x, y, color);
-
-    if (!newTile || newTile.destroyed) {
-      throw new Error('Failed to create replacement tile');
-    }
-
-    return newTile;
+  createReplacementTile(_x, _y, _height) {
+    throw new Error('createReplacementTile: 2D tile creation removed (3D mode)');
   }
 
   /**

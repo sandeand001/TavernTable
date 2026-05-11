@@ -10,6 +10,7 @@ import { TerrainMeshBuilder } from '../../../scene/terrain/TerrainMeshBuilder.js
 import { TerrainRebuilder } from '../../../scene/terrain/TerrainRebuilder.js';
 import { TerrainEngineSceneAdapter } from '../../../scene/terrain/TerrainEngineSceneAdapter.js';
 import { PlaceableMeshPool } from '../../../scene/terrain/PlaceableMeshPool.js';
+import ModelAssetCache from '../../ModelAssetCache.js';
 import { PickingService } from '../../../scene/picking/PickingService.js';
 import { logger, LOG_CATEGORY, LOG_LEVEL } from '../../../utils/logger/Logger.js';
 
@@ -106,7 +107,10 @@ export async function enableHybridRender(gm) {
     // Attach camera rig abstraction (Phase 1)
     try {
       if (gm.threeSceneManager.camera) {
-        gm.cameraRig = new CameraRig();
+        const gridCenter = gm.spatial.gridToWorld(gm.cols / 2, gm.rows / 2, 0);
+        gm.cameraRig = new CameraRig({
+          target: { x: gridCenter.x, z: gridCenter.z },
+        });
         gm.cameraRig.attach(gm.threeSceneManager.camera);
       }
     } catch (_) {
@@ -246,7 +250,13 @@ export async function enableHybridRender(gm) {
                     token = gm.findExistingTokenAt(gx, gy) || null;
                   }
                 }
-                gm.token3DAdapter.setSelectedToken(token);
+                // Only update selection when a token is found; clicking empty
+                // space must NOT clear the selection here because
+                // InteractionManager.handleLeftClick (mousedown) uses the
+                // existing selection for click-to-navigate.
+                if (token) {
+                  gm.token3DAdapter.setSelectedToken(token);
+                }
                 try {
                   if (evt.button === 0 && token) {
                     gm.startTokenDragByGrid(token.gridX, token.gridY);
@@ -320,6 +330,9 @@ export async function enableHybridRender(gm) {
     // Phase 4 scaffold: initialize placeable instancing pool (no migration yet unless flag enabled)
     try {
       if (gm.features.instancedPlaceables && !gm.placeableMeshPool) {
+        if (!gm.modelAssetCache) {
+          gm.modelAssetCache = new ModelAssetCache();
+        }
         gm.placeableMeshPool = new PlaceableMeshPool({ gameManager: gm });
       }
     } catch (_) {

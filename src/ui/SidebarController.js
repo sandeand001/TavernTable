@@ -657,14 +657,9 @@ class SidebarController {
     }
   }
 
-  onGridOpacityChange(opacity) {
-    if (window.gameManager?.gridContainer) {
-      window.gameManager.gridContainer.children.forEach((child) => {
-        if (child.isGridTile) child.alpha = opacity;
-      });
-    } else {
-      logger.debug('GameManager not available for grid opacity change', {}, LOG_CATEGORY.UI);
-    }
+  onGridOpacityChange(_opacity) {
+    // 2D sprite tile opacity removed; Three.js mesh controls grid visibility.
+    logger.debug('Grid opacity change not applicable in 3D mode', {}, LOG_CATEGORY.UI);
   }
 
   onSunTimeChange(minutes, options = {}) {

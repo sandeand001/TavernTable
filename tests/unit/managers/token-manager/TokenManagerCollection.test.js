@@ -3,11 +3,9 @@ import { addTokenToCollection } from '../../../../src/managers/token-manager/int
 describe('addTokenToCollection', () => {
   test('pushes a new token with correct fields and uses instance defaults', () => {
     const placedTokens = [];
-    const setupCalls = [];
     const c = {
       selectedTokenType: 'mannequin',
       placedTokens,
-      setupTokenInteractions: (sprite, data) => setupCalls.push({ sprite, data }),
     };
     const creature = { sprite: { id: 'sprite-1' } };
 
@@ -25,9 +23,6 @@ describe('addTokenToCollection', () => {
     expect(token.__originGridY).toBe(4);
     // baseIsoY is initialized lazily only when sprite present & not previously set; allow undefined or number
     expect(['number', 'undefined']).toContain(typeof token.creature.sprite.baseIsoY);
-    expect(setupCalls.length).toBe(1);
-    expect(setupCalls[0].sprite).toBe(creature.sprite);
-    expect(setupCalls[0].data).toBe(placedTokens[0]);
   });
 
   test('uses provided overrides for token type and tokens array', () => {
@@ -35,7 +30,6 @@ describe('addTokenToCollection', () => {
     const c = {
       selectedTokenType: 'mannequin',
       placedTokens: [],
-      setupTokenInteractions: () => {},
     };
     const creature = { sprite: {} };
 

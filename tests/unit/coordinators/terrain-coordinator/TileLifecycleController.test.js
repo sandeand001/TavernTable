@@ -2,25 +2,6 @@ import { TileLifecycleController } from '../../../../src/coordinators/terrain-co
 
 // Minimal stubs for coordinator and dependencies
 function makeCoordinatorStub() {
-  const removed = [];
-  const gridContainer = {
-    children: [],
-    removeChild: (t) => {
-      removed.push(t);
-    },
-  };
-  const gameManager = {
-    gridContainer,
-    gridRenderer: {
-      drawIsometricTile: (x, y, color) => ({
-        x,
-        y,
-        color,
-        destroyed: false,
-        parent: gridContainer,
-      }),
-    },
-  };
   const faces = { addBaseFaces: jest.fn() };
   const dataStore = {
     base: [
@@ -33,48 +14,36 @@ function makeCoordinatorStub() {
     getColorForHeight: () => 0x112233,
     _getBiomeOrBaseColor: () => 0x445566,
     addVisualElevationEffect: jest.fn(),
-    gameManager,
+    gameManager: {},
     faces,
     dataStore,
   };
 }
 
 describe('TileLifecycleController', () => {
-  test('findGridTilesToRemove returns only matching, non-destroyed tiles', () => {
+  test('findGridTilesToRemove returns empty array (no 2D tiles in 3D mode)', () => {
     const coord = makeCoordinatorStub();
     const ctrl = new TileLifecycleController(coord);
-
-    const t1 = { isGridTile: true, gridX: 1, gridY: 2, destroyed: false };
-    const t2 = { isGridTile: true, gridX: 1, gridY: 2, destroyed: true };
-    const t3 = { isGridTile: true, gridX: 2, gridY: 2, destroyed: false };
-    coord.gameManager.gridContainer.children = [t1, t2, t3];
-
     const res = ctrl.findGridTilesToRemove(1, 2);
-    expect(res).toEqual([t1]);
+    expect(res).toEqual([]);
   });
 
-  test('removeGridTilesSafely removes and destroys tiles, isolating errors', () => {
+  test('removeGridTilesSafely is a safe no-op', () => {
     const coord = makeCoordinatorStub();
     const ctrl = new TileLifecycleController(coord);
-    const t = { destroyed: false, destroy: jest.fn(), isGridTile: true, gridX: 0, gridY: 0 };
-    coord.gameManager.gridContainer.children = [t];
-
-    ctrl.removeGridTilesSafely([t], 0, 0);
-    expect(coord.gameManager.gridContainer.removeChild).toBeDefined();
-    expect(t.destroy).toHaveBeenCalled();
+    expect(() => ctrl.removeGridTilesSafely([], 0, 0)).not.toThrow();
   });
 
-  test('createReplacementTile returns a new PIXI-like object and throws if bad', () => {
+  test('createReplacementTile throws (2D tile creation removed)', () => {
     const coord = makeCoordinatorStub();
     const ctrl = new TileLifecycleController(coord);
-    const tile = ctrl.createReplacementTile(0, 0, 1);
-    expect(tile).toMatchObject({ x: 0, y: 0, destroyed: false });
+    expect(() => ctrl.createReplacementTile(0, 0, 1)).toThrow();
   });
 
   test('applyTileEffectsAndData calls elevation effect and adds faces', () => {
     const coord = makeCoordinatorStub();
     const ctrl = new TileLifecycleController(coord);
-    const tile = { parent: coord.gameManager.gridContainer };
+    const tile = {};
 
     ctrl.applyTileEffectsAndData(tile, 2, 0, 0);
     expect(coord.addVisualElevationEffect).toHaveBeenCalled();

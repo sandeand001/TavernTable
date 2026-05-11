@@ -54,25 +54,8 @@ export function getGridCoordinatesFromEvent(c, event) {
       return c.gameManager.interactionManager.getGridCoordinatesFromClick(event);
     }
 
-    const rect = c.gameManager.getEventCanvas().getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-
-    const gridRelativeX = mouseX - c.gameManager.gridContainer.x;
-    const gridRelativeY = mouseY - c.gameManager.gridContainer.y;
-
-    const scale = c.gameManager.interactionManager?.gridScale || 1.0;
-    const localX = gridRelativeX / scale;
-    const localY = gridRelativeY / scale;
-
-    const gridCoords = c.gameManager.interactionManager?.convertToGridCoordinates({
-      localX,
-      localY,
-    });
-    if (!gridCoords || !c.isValidGridPosition(gridCoords.gridX, gridCoords.gridY)) {
-      return null;
-    }
-    return gridCoords;
+    // No picking service and no interaction manager — cannot resolve coordinates.
+    return null;
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
       context: 'TerrainCoordinator.getGridCoordinatesFromEvent',

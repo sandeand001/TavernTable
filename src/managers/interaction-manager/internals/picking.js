@@ -38,28 +38,13 @@ export function isPointInCellDiamond(c, gx, gy, lx, ly) {
  * Returns { gridX, gridY } or null. Extracted from InteractionManager.
  */
 export function pickTopmostGridCellAt(c, localX, localY) {
-  const gc = c.gameManager.gridContainer;
-  if (!gc) return null;
-
   const hitTileTop = (tile) => {
-    const isGridTop = tile.isGridTile === true;
     const isTerrainTop = tile.isTerrainTile === true;
-    if (!isGridTop && !isTerrainTop) return false;
+    if (!isTerrainTop) return false;
     const halfW = c.gameManager.tileWidth / 2;
     const halfH = c.gameManager.tileHeight / 2;
     const cx = tile.x + halfW;
-    let baseY = isGridTop && typeof tile.baseIsoY === 'number' ? tile.baseIsoY : tile.y;
-    if (isGridTop) {
-      try {
-        const h = c.gameManager?.terrainCoordinator?.dataStore?.get(tile.gridX, tile.gridY) ?? 0;
-        if (Number.isFinite(h) && h !== 0) {
-          baseY += TerrainHeightUtils.calculateElevationOffset(h);
-        }
-      } catch (_) {
-        /* ignore elevation lookup */
-      }
-    }
-    const cy = baseY + halfH;
+    const cy = tile.y + halfH;
     const dx = Math.abs(localX - cx);
     const dy = Math.abs(localY - cy);
     return dx / halfW + dy / halfH <= 1;
@@ -86,15 +71,6 @@ export function pickTopmostGridCellAt(c, localX, localY) {
       if (hitTileTop(t)) {
         return { gridX: t.gridX, gridY: t.gridY };
       }
-    }
-  }
-
-  const gridTops = gc.children
-    .filter((ch) => ch && ch.visible && ch.isGridTile === true)
-    .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
-  for (const tile of gridTops) {
-    if (hitTileTop(tile)) {
-      return { gridX: tile.gridX, gridY: tile.gridY };
     }
   }
 
