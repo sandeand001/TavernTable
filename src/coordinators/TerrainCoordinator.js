@@ -1,21 +1,24 @@
 /**
- * TerrainCoordinator.js - Manages terrain height modification system
+ * TerrainCoordinator.js — Thin wiring layer (ADR-0001)
  *
- * Follows the established coordinator pattern for the TavernTable application
- * Handles terrain height data management, rendering coordination, and system lifecycle
+ * Owns no terrain logic. Holds sub-controllers and delegates every public
+ * call to an internal module. Its only structural job is to create the
+ * collaborators in the constructor and expose the public API surface that
+ * GameManager, UIController, SidebarController, and tests depend on.
  */
 
 import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
-// Validation utilities are referenced within internals; no direct import needed here
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TerrainDataStore } from '../terrain/TerrainDataStore.js';
 import { TerrainBrushController } from '../terrain/brush/TerrainBrushController.js';
+
 import { TerrainInputHandlers } from './terrain-coordinator/TerrainInputHandlers.js';
 import { ElevationScaleController } from './terrain-coordinator/ElevationScaleController.js';
 import { ActivationHelpers } from './terrain-coordinator/ActivationHelpers.js';
 import { BiomeShadingController } from './terrain-coordinator/BiomeShadingController.js';
 import { TileLifecycleController } from './terrain-coordinator/TileLifecycleController.js';
+
 import {
   validateTerrainSystemState as _validateSystemState,
   validateTerrainDataConsistency as _validateDataConsistency,
@@ -61,485 +64,164 @@ import {
   generateBiomeElevationIfFlat as _generateBiomeElevationIfFlat,
   generateBiomeElevation as _generateBiomeElevation,
 } from './terrain-coordinator/internals/activation/generation.js';
+import {
+  applyTerrainModeGridTint as _applyGridTint,
+  restoreTerrainModeGridTint as _restoreGridTint,
+} from './terrain-coordinator/internals/rendering/gridTint.js';
+import {
+  getSelectedPlaceable as _getSelectedPlaceable,
+  setSelectedPlaceable as _setSelectedPlaceable,
+  isPlaceablesPanelVisible as _isPlaceablesPanelVisible,
+  setPlaceablesPanelVisible as _setPlaceablesPanelVisible,
+  setPlaceableRemovalMode as _setPlaceableRemovalMode,
+  isPlaceableRemovalMode as _isPlaceableRemovalMode,
+} from './terrain-coordinator/internals/placeableUI.js';
+import {
+  getTreeDensityMultiplier as _getTreeDensity,
+  setTreeDensityMultiplier as _setTreeDensity,
+} from './terrain-coordinator/internals/treeDensity.js';
 
 export class TerrainCoordinator {
   // ── Constructor ─────────────────────────────────────────────
 
-  /**
-   * Extended constructor with optional injected collaborators and DOM ports.
-   * @param {object} gameManager
-   * @param {object} [terrainManager]
-   * @param {object} [biomeShadingController]
-   * @param {object} [domPorts] shape: { getTerrainHeightDisplay, getScaleMarks, getGameContainer }
-   */
-  constructor(gameManager, terrainManager = null, biomeShadingController = null, domPorts = {}) {
+  constructor(gameManager, _terrainManager = null, biomeShadingController = null, domPorts = {}) {
     this.gameManager = gameManager;
-    this.terrainManager = null; // deleted in Phase 2 (ADR-0001)
+    this.terrainManager = null;
     this.biomeShadingController = biomeShadingController;
-    // Injected DOM accessors (UI layer) to avoid violating layering in submodules.
-    const defaultGetTerrainHeightDisplay = () => {
-      if (typeof document === 'undefined') {
-        return null;
-      }
-      return document.getElementById('terrain-height-display');
-    };
-    const defaultGetScaleMarks = () => {
-      if (typeof document === 'undefined') {
-        return [];
-      }
-      return document.querySelectorAll('.scale-mark');
-    };
-    const defaultGetGameContainer = () => {
-      if (typeof document === 'undefined') {
-        return null;
-      }
-      return document.getElementById('game-container');
-    };
-    this.domPorts = {
-      getTerrainHeightDisplay: domPorts.getTerrainHeightDisplay || defaultGetTerrainHeightDisplay,
-      getScaleMarks: domPorts.getScaleMarks || defaultGetScaleMarks,
-      getGameContainer: domPorts.getGameContainer || defaultGetGameContainer,
-    };
-    this.validateDependencies();
 
-    // Terrain modification state & helpers
+    // DOM accessors injected to avoid layering violations in submodules.
+    this.domPorts = {
+      getTerrainHeightDisplay:
+        domPorts.getTerrainHeightDisplay ||
+        (() =>
+          typeof document !== 'undefined'
+            ? document.getElementById('terrain-height-display')
+            : null),
+      getScaleMarks:
+        domPorts.getScaleMarks ||
+        (() => (typeof document !== 'undefined' ? document.querySelectorAll('.scale-mark') : [])),
+      getGameContainer:
+        domPorts.getGameContainer ||
+        (() =>
+          typeof document !== 'undefined' ? document.getElementById('game-container') : null),
+    };
+
+    _validateDeps(this);
+
+    // Core terrain data & brush
     this.isTerrainModeActive = false;
     this.dataStore = new TerrainDataStore(this.gameManager.cols, this.gameManager.rows);
     this.brush = new TerrainBrushController(this.dataStore);
-    // Façade-backed extractions
+
+    // Sub-controllers
     this._inputHandlers = new TerrainInputHandlers(this);
     this._elevationScaleController = new ElevationScaleController(this);
     this._activationHelpers = new ActivationHelpers(this);
     this._tileLifecycle = new TileLifecycleController(this);
+    this._biomeShading = new BiomeShadingController(this);
 
-    // UI state
+    // Runtime state
     this.isDragging = false;
     this.lastModifiedCell = null;
     this._gridTintApplied = false;
-
-    // Elevation perception runtime state (pixels per level). Initialized from config default.
     this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-    // Continuous biome canvas painter (used outside terrain mode)
     this._biomeCanvas = null;
-    // Biome shading façade
-    this._biomeShading = new BiomeShadingController(this);
-    // Shared seed for biome color/painter coherence (can be overridden by UI)
     this._biomeSeed =
       typeof window !== 'undefined' && Number.isFinite(window.richShadingSettings?.seed)
         ? window.richShadingSettings.seed >>> 0
         : Math.floor(Math.random() * 1e9) >>> 0;
-
-    const initialTreeDensity =
+    this._treeDensityMultiplier =
       typeof window !== 'undefined' && Number.isFinite(window.treeDensityMultiplier)
         ? Math.max(0, window.treeDensityMultiplier)
         : 1;
-    this._treeDensityMultiplier = initialTreeDensity;
     if (typeof window !== 'undefined') {
       window.treeDensityMultiplier = this._treeDensityMultiplier;
     }
-
-    // Currently selected terrain placeable id (managed by coordinator)
     this._selectedPlaceable = null;
-    // Whether the Placeable Tiles panel is visible in the UI. Controlled by UI layer.
-    // When false, placeable selection/preview/placement should be inert.
-    // Default to hidden (DOM default uses display:none) and let UI sync actual state
     this._placeablesPanelVisible = false;
-    // Placeable Tiles brush size (independent from terrain brush)
-    // Initialized to current terrain brush size so UI starts consistent but remains independent
     this._ptBrushSize = this.brush?.brushSize || 1;
-
-    // Placeable removal mode flag (UI toggle). When true, clicks remove plant/tree placeables
-    // instead of placing or editing height. Drag removal not yet supported (intentional
-    // to reduce accidental large wipes). Accessors provided below.
     this._placeableRemovalMode = false;
 
     logger.debug(
       'TerrainCoordinator initialized',
       {
         context: 'TerrainCoordinator.constructor',
-        stage: 'initialization',
         defaultTool: this.brush.tool,
         defaultBrushSize: this.brush.brushSize,
-        timestamp: new Date().toISOString(),
       },
       LOG_CATEGORY.SYSTEM
     );
   }
 
-  // ── Public API ──────────────────────────────────────────────
-
-  /** Current selected placeable id (string|null). */
-  getSelectedPlaceable() {
-    return this._selectedPlaceable || null;
-  }
-
-  /** Set or clear the currently selected placeable id. */
-  setSelectedPlaceable(id) {
-    // Block selection changes while removal mode is active
-    if (this._placeableRemovalMode) {
-      return false;
-    }
-    if (id === null || id === undefined || id === '') {
-      this._selectedPlaceable = null;
-      return true;
-    }
-    if (typeof id === 'string') {
-      this._selectedPlaceable = id;
-      // Selecting a placeable implicitly disables placeable removal mode (mutually exclusive UX)
-      this._placeableRemovalMode = false;
-      return true;
-    }
-    return false;
-  }
-
-  /** Whether the placeables panel is currently visible to the user. */
-  isPlaceablesPanelVisible() {
-    return !!this._placeablesPanelVisible;
-  }
-
-  /** Inform coordinator of placeables panel visibility (affects preview + placement). */
-  setPlaceablesPanelVisible(visible) {
-    this._placeablesPanelVisible = !!visible;
-    // If panel is hidden, clear selection to avoid confusing hidden-state placement
-    if (!this._placeablesPanelVisible) {
-      this._selectedPlaceable = null;
-    }
-  }
-
-  /** Enable/disable placeable removal mode (clears selected placeable when enabling). */
-  setPlaceableRemovalMode(enabled) {
-    this._placeableRemovalMode = !!enabled;
-    if (this._placeableRemovalMode) {
-      // Ensure no placeable is selected while removing
-      this._selectedPlaceable = null;
-      // Optionally reflect globally used fallback variable
-      if (typeof window !== 'undefined') {
-        window.selectedTerrainPlaceable = null;
-      }
-    }
-  }
-
-  /** Returns true if placeable removal mode is active. */
-  isPlaceableRemovalMode() {
-    return !!this._placeableRemovalMode;
-  }
-
   // ── Lifecycle ───────────────────────────────────────────────
 
-  applyTerrainModeGridTint() {
-    const gm = this.gameManager;
-    if (!gm) return;
-    this._gridTintApplied = false;
-    const meshAlpha =
-      typeof TERRAIN_CONFIG.TERRAIN_MODE_MESH_ALPHA === 'number'
-        ? TERRAIN_CONFIG.TERRAIN_MODE_MESH_ALPHA
-        : 0.55;
-    try {
-      gm.threeSceneManager?.setTerrainMeshOpacity?.(meshAlpha);
-    } catch (_) {
-      /* non-fatal */
-    }
-  }
-
-  restoreTerrainModeGridTint() {
-    const gm = this.gameManager;
-    if (!gm) return;
-    const meshAlphaOff = 1;
-    try {
-      gm.threeSceneManager?.setTerrainMeshOpacity?.(meshAlphaOff);
-    } catch (_) {
-      /* non-fatal */
-    }
-    this._gridTintApplied = false;
-  }
-
-  /**
-   * Validate that all required dependencies are available
-   * @private
-   */
-  validateDependencies() {
-    return _validateDeps(this);
-  }
-
-  /**
-   * Initialize terrain system (TerrainManager deleted in Phase 2; no-op)
-   * @returns {Promise<void>}
-   */
   async initialize() {
-    // TerrainManager removed (ADR-0001). Input handlers are now wired during construction.
-    this.initializeTerrainData();
-    this.setupTerrainInputHandlers();
+    _initTerrainData(this);
+    this._setupInputHandlers();
   }
 
-  /**
-   * Initialize terrain height data for the current grid
-   */
   initializeTerrainData() {
     return _initTerrainData(this);
   }
-
-  /**
-   * Set up terrain-specific input event handlers
-   */
-  setupTerrainInputHandlers() {
-    try {
-      this._inputHandlers.setup();
-    } catch (error) {
-      GameErrors.initialization(error, {
-        stage: 'setupTerrainInputHandlers',
-        appViewAvailable: !!this.gameManager?.app?.view,
-      });
-      throw error;
-    }
+  validateDependencies() {
+    return _validateDeps(this);
   }
-
-  // ── Private Helpers ─────────────────────────────────────────
-
-  /**
-   * Remove all existing biome flora/placeables from both 2D sprites and 3D instanced mesh pool.
-   * Ensures a fresh slate prior to repopulation on biome regeneration.
-   * @private
-   */
-  _clearAllBiomeFlora() {
-    _clearAllBiomeFlora(this);
-  }
-
-  /** Dev/diagnostic helper: log instanced placeable stats to console. */
-  _logPlaceableInstancingState(stage = 'unknown') {
-    _logPlaceableInstancingState(this, stage);
-  }
-
-  // ── Event Handlers ──────────────────────────────────────────
-
-  /**
-   * Handle mouse up events to stop terrain painting
-   * @param {MouseEvent} event - Mouse event
-   */
-  handleTerrainMouseUp(event) {
-    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
-    return this._inputHandlers.handleMouseUp(event);
-  }
-
-  /**
-   * Handle mouse leave events to stop terrain painting
-   */
-  handleTerrainMouseLeave() {
-    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
-    return this._inputHandlers.handleMouseLeave();
-  }
-
-  /**
-   * Handle keyboard shortcuts for terrain tools
-   * @param {KeyboardEvent} event - Keyboard event
-   */
-  handleTerrainKeyDown(event) {
-    if (this.gameManager?.getViewMode && this.gameManager.getViewMode() === 'topdown') return false;
-    return this._inputHandlers.handleKeyDown(event);
-  }
-
-  /**
-   * Update the height indicator in the UI to show terrain level at cursor position
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   */
-  updateHeightIndicator(gridX, gridY) {
-    return this._inputHandlers.updateHeightIndicator(gridX, gridY);
-  }
-
-  /**
-   * Reset the height indicator to default state
-   */
-  resetHeightIndicator() {
-    return this._inputHandlers.resetHeightIndicator();
-  }
-
-  // ── Public API (Terrain State) ──────────────────────────────
-
-  /** Get the current elevation perception scale (pixels per level). */
-  getElevationScale() {
-    return this._elevationScale;
-  }
-
-  /**
-   * Set the elevation perception scale (pixels per level) at runtime and refresh visuals.
-   * Applies to overlay tiles, base tiles, faces, and tokens.
-   * @param {number} unit - Pixels per height level (0 disables vertical exaggeration)
-   */
-  setElevationScale(unit, options = {}) {
-    return this._elevationScaleController.apply(unit, options);
-  }
-
-  getTreeDensityMultiplier() {
-    return Number.isFinite(this._treeDensityMultiplier) ? this._treeDensityMultiplier : 1;
-  }
-
-  setTreeDensityMultiplier(multiplier) {
-    const numeric = Number(multiplier);
-    const clamped = Number.isFinite(numeric) && numeric >= 0 ? numeric : 1;
-    this._treeDensityMultiplier = clamped;
-    if (typeof window !== 'undefined') {
-      window.treeDensityMultiplier = clamped;
-    }
-    return this._treeDensityMultiplier;
-  }
-
-  /**
-   * Get grid coordinates from mouse event
-   * @param {MouseEvent} event - Mouse event
-   * @returns {Object|null} Grid coordinates or null if invalid
-   */
-  getGridCoordinatesFromEvent(event) {
-    return _getCoordsFromEvent(this, event);
-  }
-
-  /**
-   * Modify terrain height at specified position
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   */
-  modifyTerrainAtPosition(gridX, gridY) {
-    // Returns boolean indicating if any cell height changed
-    return _modifyAtPos(this, gridX, gridY) || false;
-  }
-
-  /**
-   * Modify height at a specific cell
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   */
-  modifyTerrainHeightAtCell(gridX, gridY) {
-    const changed = _modifyAtCell(this, gridX, gridY);
-    if (
-      changed &&
-      this.gameManager &&
-      typeof this.gameManager.notifyTerrainHeightsChanged === 'function'
-    ) {
-      // Debounced 3D terrain mesh rebuild
-      this.gameManager.notifyTerrainHeightsChanged();
-    }
-    return changed;
-  }
-
-  /**
-   * Check if grid position is valid
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   * @returns {boolean} True if position is valid
-   */
-  isValidGridPosition(gridX, gridY) {
-    return _isValidPos(this, gridX, gridY);
-  }
-
-  /**
-   * Enable terrain modification mode with base terrain loading
-   */
-  /**
-   * NEW METHOD: Comprehensive terrain system state validation
-   * Validates all critical components before terrain operations
-   * @throws {Error} If terrain system state is corrupted or invalid
-   * @returns {boolean} True if all validations pass
-   */
   validateTerrainSystemState() {
     return _validateSystemState(this);
   }
-
-  /**
-   * NEW METHOD: Validate terrain data array consistency
-   * @returns {boolean} True if terrain data structures are consistent
-   */
   validateTerrainDataConsistency() {
     return _validateDataConsistency(this);
   }
 
-  // ── Lifecycle (Mode Switching) ──────────────────────────────
+  _setupInputHandlers() {
+    try {
+      this._inputHandlers.setup();
+    } catch (error) {
+      GameErrors.initialization(error, { stage: 'setupTerrainInputHandlers' });
+      throw error;
+    }
+  }
+
+  // ── Placeable UI State ──────────────────────────────────────
+
+  getSelectedPlaceable() {
+    return _getSelectedPlaceable(this);
+  }
+  setSelectedPlaceable(id) {
+    return _setSelectedPlaceable(this, id);
+  }
+  isPlaceablesPanelVisible() {
+    return _isPlaceablesPanelVisible(this);
+  }
+  setPlaceablesPanelVisible(v) {
+    return _setPlaceablesPanelVisible(this, v);
+  }
+  setPlaceableRemovalMode(e) {
+    return _setPlaceableRemovalMode(this, e);
+  }
+  isPlaceableRemovalMode() {
+    return _isPlaceableRemovalMode(this);
+  }
+
+  // ── Terrain Mode ────────────────────────────────────────────
 
   enableTerrainMode() {
     return this._activationHelpers.enableTerrainMode();
   }
+  disableTerrainMode() {
+    return this._activationHelpers.disableTerrainMode();
+  }
+  applyTerrainModeGridTint() {
+    _applyGridTint(this);
+  }
+  restoreTerrainModeGridTint() {
+    _restoreGridTint(this);
+  }
 
-  /**
-   * Public: Load base terrain heights into the working buffer.
-   * Expected by internals/mode.loadTerrainStateAndDisplay which calls
-   * c.loadBaseTerrainIntoWorkingState().
-   */
   loadBaseTerrainIntoWorkingState() {
     return _loadBaseIntoWorking(this);
   }
 
-  /**
-   * DECOMPOSED METHOD: Prepare base grid visuals for editing overlay
-   * Resets per-tile elevation offsets, shadows, and base 3D faces so
-   * the editing overlay is the sole visual representation of height.
-   * @private
-   */
-  // Removed: pass-through wrapper now handled by ActivationHelpers directly
-
-  /**
-   * DECOMPOSED METHOD: Validate terrain system before activation
-   * @private
-   */
-  // Removed: pass-through wrapper now handled by ActivationHelpers directly
-
-  /**
-   * DECOMPOSED METHOD: Reset terrain container state safely
-   * @private
-   */
-  // Removed: pass-through wrapper now handled by ActivationHelpers directly
-
-  /**
-   * DECOMPOSED METHOD: Validate container integrity after reset
-   * @private
-   */
-  // Removed: pass-through wrapper now handled by ActivationHelpers directly
-
-  /**
-   * DECOMPOSED METHOD: Activate terrain mode state
-   * @private
-   */
-  // Removed: pass-through wrapper now handled by ActivationHelpers directly
-
-  /**
-   * Public: Handle grid resize by reinitializing terrain data and preserving overlap.
-   * @param {number} newCols
-   * @param {number} newRows
-   */
-  handleGridResize(newCols, newRows) {
-    const result = _handleResize(this, newCols, newRows);
-    try {
-      if (this.gameManager && typeof this.gameManager.notifyTerrainHeightsChanged === 'function') {
-        this.gameManager.notifyTerrainHeightsChanged();
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    return result;
-  }
-
-  /**
-   * DECOMPOSED METHOD: Load terrain state and display
-   * @private
-   */
-  // Removed: pass-through wrapper now handled by ActivationHelpers directly
-
-  /**
-   * DECOMPOSED METHOD: Handle terrain mode activation errors
-   * @private
-   * @param {Error} error - The error that occurred during activation
-   */
-  // Removed: pass-through wrapper now handled by ActivationHelpers directly
-
-  /**
-   * Disable terrain modification mode and apply changes permanently
-   */
-  disableTerrainMode() {
-    return this._activationHelpers.disableTerrainMode();
-  }
-
-  /**
-   * Public: Apply current working terrain to the base grid permanently.
-   * Used by ActivationHelpers.disableTerrainMode().
-   * @returns {number} modifiedTiles - count of non-default tiles updated
-   */
   applyTerrainToBaseGrid() {
     try {
       _validateApplyReqs(this);
@@ -552,164 +234,165 @@ export class TerrainCoordinator {
     }
   }
 
-  /**
-   * Set current terrain tool with robust validation
-   * @param {string} tool - Tool name ('raise' or 'lower')
-   */
+  // ── Brush & Tools ───────────────────────────────────────────
+
   setTerrainTool(tool) {
     return _setTool(this, tool);
   }
-
-  /**
-   * Brush size proxy for UI and render calls
-   * Getter returns current brush size from controller.
-   * Setter clamps value within config bounds.
-   */
   get brushSize() {
     return _getBrushSize(this);
   }
-
-  set brushSize(value) {
-    _setBrushSize(this, value);
+  set brushSize(v) {
+    _setBrushSize(this, v);
+  }
+  increaseBrushSize() {
+    return _incBrush(this);
+  }
+  decreaseBrushSize() {
+    return _decBrush(this);
   }
 
-  /**
-   * Placeable Tiles brush size (independent of terrain brush size).
-   * Getter/Setter are exposed for UI and tests. Setter clamps to config bounds.
-   */
   get ptBrushSize() {
     return this._ptBrushSize;
   }
-
   set ptBrushSize(value) {
     try {
       const min = TERRAIN_CONFIG.MIN_BRUSH_SIZE || 1;
       const max = TERRAIN_CONFIG.MAX_BRUSH_SIZE || 5;
       const n = Math.trunc(Number(value));
-      if (Number.isFinite(n)) {
-        this._ptBrushSize = Math.max(min, Math.min(max, n));
-      }
+      if (Number.isFinite(n)) this._ptBrushSize = Math.max(min, Math.min(max, n));
     } catch (_) {
-      // leave as-is on bad input
+      /* leave as-is */
     }
   }
 
-  /**
-   * Increase brush size
-   */
-  increaseBrushSize() {
-    return _incBrush(this);
-  }
+  // ── Terrain Data ────────────────────────────────────────────
 
-  /**
-   * Decrease brush size
-   */
-  decreaseBrushSize() {
-    return _decBrush(this);
+  getTerrainHeight(gx, gy) {
+    return _getHeight(this, gx, gy);
   }
-
-  /**
-   * Get terrain height at specific coordinates
-   * @param {number} gridX - Grid X coordinate
-   * @param {number} gridY - Grid Y coordinate
-   * @returns {number} Terrain height
-   */
-  getTerrainHeight(gridX, gridY) {
-    return _getHeight(this, gridX, gridY);
-  }
-
-  /**
-   * Reset all terrain heights to default
-   */
   resetTerrain() {
     return _resetTerrain(this);
   }
 
-  /** Enable or disable the rich biome canvas shading outside terrain mode. */
-  setRichShadingEnabled(enabled) {
-    return _setRichShadingEnabled(this, enabled);
+  modifyTerrainAtPosition(gx, gy) {
+    return _modifyAtPos(this, gx, gy) || false;
   }
 
-  /**
-   * NEW METHOD: Update base grid tile in-place without destruction (SAFER)
-   * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate
-   * @param {number} height - Terrain height value
-   * @returns {boolean} True if tile was updated successfully, false if replacement needed
-   */
-  updateBaseGridTileInPlace(x, y, height) {
-    return _updateBaseGridTileInPlace(this, x, y, height);
+  modifyTerrainHeightAtCell(gx, gy) {
+    const changed = _modifyAtCell(this, gx, gy);
+    if (changed && typeof this.gameManager?.notifyTerrainHeightsChanged === 'function') {
+      this.gameManager.notifyTerrainHeightsChanged();
+    }
+    return changed;
   }
 
-  /**
-   * Replace a base grid tile with terrain-modified version (ENHANCED SAFETY)
-   * @param {number} x - Grid X coordinate
-   * @param {number} y - Grid Y coordinate
-   * @param {number} height - Terrain height value
-   */
-  replaceBaseGridTile(x, y, height) {
-    return _replaceBaseGridTile(this, x, y, height);
+  isValidGridPosition(gx, gy) {
+    return _isValidPos(this, gx, gy);
   }
 
-  // (implementation details for tile lifecycle and elevation visuals are handled
-  //  by TileLifecycleController and ElevationVisualsController respectively)
-  /** Determine base tile color when not editing: biome palette if selected, else neutral. */
-  _getBiomeOrBaseColor(height) {
-    return _getBiomeOrBaseColorInternal(this, height);
+  handleGridResize(newCols, newRows) {
+    const result = _handleResize(this, newCols, newRows);
+    try {
+      this.gameManager?.notifyTerrainHeightsChanged?.();
+    } catch (_) {
+      /* ignore */
+    }
+    return result;
   }
 
-  /** Re-color existing base grid tiles using currently selected biome palette. */
-  applyBiomePaletteToBaseGrid() {
-    return this._biomeShading.applyToBaseGrid();
+  // ── Elevation Scale ─────────────────────────────────────────
+
+  getElevationScale() {
+    return this._elevationScale;
+  }
+  setElevationScale(unit, opts = {}) {
+    return this._elevationScaleController.apply(unit, opts);
   }
 
-  /** Optional: allow external systems/UI to set a deterministic seed for biome visuals. */
+  // ── Tree Density ────────────────────────────────────────────
+
+  getTreeDensityMultiplier() {
+    return _getTreeDensity(this);
+  }
+  setTreeDensityMultiplier(m) {
+    return _setTreeDensity(this, m);
+  }
+
+  // ── Rendering & Biome ───────────────────────────────────────
+
+  getGridCoordinatesFromEvent(e) {
+    return _getCoordsFromEvent(this, e);
+  }
+  setRichShadingEnabled(e) {
+    return _setRichShadingEnabled(this, e);
+  }
   setBiomeSeed(seed) {
     return _setBiomeSeed(this, seed);
   }
-
-  /** Show or hide the base tile fills (keeping borders) */
-  _toggleBaseTileVisibility(show) {
-    return this._biomeShading.toggleBaseTileVisibility(show);
+  applyBiomePaletteToBaseGrid() {
+    return this._biomeShading.applyToBaseGrid();
+  }
+  _getBiomeOrBaseColor(h) {
+    return _getBiomeOrBaseColorInternal(this, h);
+  }
+  getColorForHeight(h) {
+    return this._getBiomeOrBaseColor(h);
+  }
+  _toggleBaseTileVisibility(s) {
+    return this._biomeShading.toggleBaseTileVisibility(s);
+  }
+  updateBaseGridTileInPlace(x, y, h) {
+    return _updateBaseGridTileInPlace(this, x, y, h);
+  }
+  replaceBaseGridTile(x, y, h) {
+    return _replaceBaseGridTile(this, x, y, h);
+  }
+  addVisualElevationEffect() {
+    /* no-op: 3D scene adapter handles elevation visuals */
   }
 
-  /**
-   * No-op: ElevationVisualsController deleted in Phase 2 (ADR-0001).
-   * 3D scene adapter handles elevation visuals via TerrainEngineSceneAdapter.
-   */
-  addVisualElevationEffect(_tile, _height) {
-    // No-op in 3D mode
+  // ── Biome Generation ────────────────────────────────────────
+
+  generateBiomeElevationIfFlat(key, opts = {}) {
+    return _generateBiomeElevationIfFlat(this, key, opts);
+  }
+  generateBiomeElevation(key, opts = {}) {
+    return _generateBiomeElevation(this, key, opts);
   }
 
-  /**
-   * Pass-through: get color for a given height when editing terrain.
-   * Uses TerrainManager's palette logic if available; falls back to biome/base color.
-   */
-  getColorForHeight(height) {
-    return this._getBiomeOrBaseColor(height);
+  // ── Input Event Handlers ────────────────────────────────────
+
+  handleTerrainMouseUp(e) {
+    if (this.gameManager?.getViewMode?.() === 'topdown') return false;
+    return this._inputHandlers.handleMouseUp(e);
+  }
+  handleTerrainMouseLeave() {
+    if (this.gameManager?.getViewMode?.() === 'topdown') return false;
+    return this._inputHandlers.handleMouseLeave();
+  }
+  handleTerrainKeyDown(e) {
+    if (this.gameManager?.getViewMode?.() === 'topdown') return false;
+    return this._inputHandlers.handleKeyDown(e);
+  }
+  updateHeightIndicator(gx, gy) {
+    return this._inputHandlers.updateHeightIndicator(gx, gy);
+  }
+  resetHeightIndicator() {
+    return this._inputHandlers.resetHeightIndicator();
   }
 
-  // ── Public API (Biome Generation) ──────────────────────────
+  // ── Private Helpers (delegated) ─────────────────────────────
 
-  /**
-   * Generate and apply biome-based elevations if the terrain is flat (no manual edits).
-   * Safe to call repeatedly; it will no-op once edits exist.
-   * Only affects base/working data and base tiles; does nothing in terrain edit mode.
-   */
-  generateBiomeElevationIfFlat(biomeKey, options = {}) {
-    return _generateBiomeElevationIfFlat(this, biomeKey, options);
+  _clearAllBiomeFlora() {
+    _clearAllBiomeFlora(this);
+  }
+  _logPlaceableInstancingState(stage = 'unknown') {
+    _logPlaceableInstancingState(this, stage);
   }
 
-  /**
-   * Generate and apply biome-based elevations regardless of current flatness.
-   * Overwrites base and working height fields and repaints base tiles.
-   * Does nothing while terrain edit mode is active.
-   * @param {string} biomeKey
-   * @param {{seed?: number}} options
-   * @returns {boolean} true if generation applied
-   */
-  generateBiomeElevation(biomeKey, options = {}) {
-    return _generateBiomeElevation(this, biomeKey, options);
+  // Legacy alias kept for callers (TerrainInputHandlers)
+  setupTerrainInputHandlers() {
+    return this._setupInputHandlers();
   }
 }
-// End of TerrainCoordinator
