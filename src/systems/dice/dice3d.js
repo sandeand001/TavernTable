@@ -87,8 +87,7 @@ function _attachDiceAccentLights(mesh, three, tileSize) {
 function _attachDieDismissOnClick(manager, mesh) {
   if (!hasWindow() || !mesh || !manager) return null;
   if (!diceState.threeNamespace?.Raycaster || !diceState.threeNamespace?.Vector2) return null;
-  const camera = _resolvePrimaryCamera(manager);
-  if (!camera) return null;
+  if (!_resolvePrimaryCamera(manager)) return null;
   const pointer = new diceState.threeNamespace.Vector2();
   const raycaster = new diceState.threeNamespace.Raycaster();
   const pointerTargets = [];
@@ -133,6 +132,8 @@ function _attachDieDismissOnClick(manager, mesh) {
     if (!diceState.activeDieState || diceState.activeDieState.mesh !== mesh) return;
     if (event?.button != null && event.button !== 0) return;
     if (!updatePointerFromEvent(event)) return;
+    const camera = _resolvePrimaryCamera(manager);
+    if (!camera) return;
     raycaster.setFromCamera(pointer, camera);
     const intersections = raycaster.intersectObject(mesh, true);
     if (!intersections?.length) return;

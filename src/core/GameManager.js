@@ -191,19 +191,11 @@ class GameManager {
   // ── Public API ─────────────────────────────────────────────
 
   /**
-   * Sync the 3D world elevation unit (world Y per level) so that one elevation level
-   * produces the same on-screen vertical pixel displacement as the 2D isometric elevation effect.
-   *
-   * Contract:
-   *  - 2D uses TerrainHeightUtils.getElevationUnit() pixels per level (default 8).
-   *  - 3D orthographic camera has a vertical world span = (camera.top - camera.bottom).
-   *  - Screen pixels per world unit S = rendererHeightPx / (camera.top - camera.bottom).
-   *  - Camera pitch compresses vertical axis by cos(pitch) after rotation.
-   *  => desired world elevation unit W satisfies: desiredPixels = S * (W * cos(pitch)).
-   *  => W = desiredPixels / (S * cos(pitch)).
+   * Sync world Y per terrain level with the elevation-scale control, using the
+   * stable world baseline and attenuation. Camera projection, pitch, and zoom
+   * must not change physical terrain heights or token movement.
    *
    * We recompute when: entering hybrid mode, window resize, or 2D elevation scale change.
-   * Defensive: if any value missing, fall back to 0.25 (quarter tile) heuristic.
    */
   sync3DElevationScaling(options = {}) {
     return sync3DElevationScalingImpl(this, options);

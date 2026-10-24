@@ -61,8 +61,8 @@ describe('Physical d20 completion and cleanup', () => {
     delete window.gameManager;
   });
 
-  async function start() {
-    const result = playD20RollOnGrid({ dismissOnClick: false });
+  async function start(options = {}) {
+    const result = playD20RollOnGrid({ dismissOnClick: false, ...options });
     for (let i = 0; i < 6; i += 1) await Promise.resolve();
     return { result };
   }
@@ -118,5 +118,28 @@ describe('Physical d20 completion and cleanup', () => {
     expect(manager.scene.children).toHaveLength(0);
     expect(material.dispose).toHaveBeenCalledTimes(1);
     expect(diceState.activeDieState).toBeNull();
+  });
+
+  test('click dismissal uses the active camera after switching lenses', async () => {
+    const canvas = document.createElement('canvas');
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 });
+    manager.renderer = { domElement: canvas };
+    manager.camera = new three.PerspectiveCamera(40, 800 / 600, 0.1, 1000);
+    manager.camera.position.set(20, 20, 40);
+    manager.camera.lookAt(20, 0, 20);
+    manager.camera.updateMatrixWorld(true);
+    const { result } = await start({ dismissOnClick: true });
+
+    manager.camera = new three.PerspectiveCamera(40, 800 / 600, 0.1, 1000);
+    manager.camera.position.set(0, 12, 10);
+    manager.camera.lookAt(0, 0, 0);
+    manager.camera.updateMatrixWorld(true);
+    manager.scene.updateMatrixWorld(true);
+    canvas.dispatchEvent(
+      new MouseEvent('pointerdown', { clientX: 400, clientY: 300, button: 0, bubbles: true })
+    );
+
+    expect(diceState.activeDieState).toBeNull();
+    expect((await result).reason).toBe('cancelled');
   });
 });

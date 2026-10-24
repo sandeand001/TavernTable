@@ -1,6 +1,6 @@
 # TavernTable maintenance handoff
 
-Last verified: October 24, 2026, after the cliff-motion and large-d20 updates.
+Last verified: October 24, 2026, after the cliff-motion, large-d20, and camera updates.
 
 ## Start here
 
@@ -28,9 +28,12 @@ npm run test:stable -- --watch=false
 npm run lint:all
 ```
 
-- 76 Jest suites and 323 tests pass.
+- 77 Jest suites and 341 tests pass.
 - JavaScript lint has no errors and 40 existing unused-variable warnings.
 - Stylesheet lint and the architecture-layer check pass.
+- Repository-wide `format:check` reports the unchanged
+  [lint configuration](./tools/.eslintrc.json); changed JavaScript and tests pass
+  a focused formatting check.
 
 The three previously recorded movement failures were caused by stale test
 assumptions, not established gameplay regressions:
@@ -43,6 +46,39 @@ assumptions, not established gameplay regressions:
 both normal-path and drunk animation loading and the real fall cleanup.
 The subsequent cliff-motion pass changes production movement and adds the
 regressions below. Remaining browser reports are tracked separately in the backlog.
+
+## Camera projection and view modes
+
+- [CameraSystem](./src/scene/camera/CameraSystem.js) owns a cached perspective
+  lens for normal 3D orbit and an orthographic lens for tactical top-down.
+  `ThreeSceneManager.camera` always points to the active lens.
+- Normal 3D uses a 35-degree field of view. Board dimensions, tile size, viewport
+  aspect, and zoom determine orbit distance; perspective near clipping is positive.
+  Framing is recomputed rather than keeping a stale board-size cache.
+- `setTopDownView` saves/restores orbit yaw, pitch, and manual pitch lock.
+  Focus and zoom remain live across switches; top-down pitch stays at 89.9
+  degrees even when rotation inputs request a different pitch.
+- [StateCoordinator](./src/coordinators/StateCoordinator.js) applies stored and
+  subsequent mode changes independently of settings-panel listeners. Keep the
+  persisted values `isometric` and `topdown` for compatibility; `isometric` now
+  selects the normal perspective view, not an orthographic lens.
+- Pan and cursor zoom use ground-ray intersections in CSS pixels, not
+  drawing-buffer dimensions. Orbiting must not reset a panned focus.
+  World elevation scaling remains independent of camera projection and zoom.
+- Picking, die dismissal, and default face calibration must read the active
+  camera when handling input. An explicitly supplied calibration camera remains
+  an override. Reattach the camera rig when the active lens changes, without
+  repositioning it or accidentally applying scene zoom twice.
+- Real-Three camera tests cover cardinal yaws and the reported approximately
+  10-degree low-angle pose, portrait/landscape and non-unit-tile boards, mode
+  persistence, pan/zoom, rig behavior, and picking/dismissal after switches.
+  Browser checks measured the near edge at about 889 pixels and the far edge at
+  582 in that low-angle pose; top-down opposite edges remained equal. They also
+  exercised the actual settings toggle, top-down rotation lock, cursor zoom,
+  picking, and a physical d20 throw followed by camera-switch dismissal.
+- Pan math is covered at the camera API. The existing Space-drag keyboard flag
+  is not wired by the interaction manager; this pass does not add a new pan
+  input binding.
 
 ## Large d20 physics
 

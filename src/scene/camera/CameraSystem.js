@@ -1,12 +1,141 @@
 // CameraSystem.js — Isometric mode, zoom, pitch, frustum, reframe, calibration.
 // Extracted from ThreeSceneManager.js (Phase 6). Installed via mixin pattern.
 
+import { GameErrors } from '../../utils/error/ErrorHandler.js';
+
+const PERSPECTIVE_FOV = 35;
+const TOP_DOWN_PITCH = (89.9 * Math.PI) / 180;
+
+function _getCameraViewport() {
+  const canvas = this.canvas || this.renderer?.domElement;
+  const container = canvas?.parentElement;
+  const rect = canvas?.getBoundingClientRect?.();
+  const width = container?.clientWidth || rect?.width || canvas?.width || 800;
+  const height = container?.clientHeight || rect?.height || canvas?.height || 600;
+  return { width, height, aspect: width / height };
+}
+
+function getCameraTarget() {
+  const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+  return {
+    x: Number.isFinite(this._panCx) ? this._panCx : ((this.gameManager?.cols || 25) * tileSize) / 2,
+    z: Number.isFinite(this._panCz) ? this._panCz : ((this.gameManager?.rows || 25) * tileSize) / 2,
+  };
+}
+
+function _getCameraFraming() {
+  const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+  const width = (this.gameManager?.cols || 25) * tileSize;
+  const depth = (this.gameManager?.rows || 25) * tileSize;
+  const halfDiag = Math.hypot(width, depth) / 2;
+  return {
+    width,
+    depth,
+    halfDiag,
+    halfHeight: this._isoMode ? halfDiag * 1.05 : Math.max(width, depth) * 0.5 * 1.08,
+    aspect: this._getCameraViewport().aspect,
+    zoom: this._zoom > 0 ? this._zoom : 1,
+  };
+}
+
+function _ensureCameraProjection() {
+  if (this.camera?.isOrthographicCamera) this._orthographicCamera ||= this.camera;
+  if (this.camera?.isPerspectiveCamera) this._perspectiveCamera ||= this.camera;
+  const useOrthographic = this._topDownView === true;
+  const currentMatches = useOrthographic
+    ? this.camera?.isOrthographicCamera
+    : this.camera?.isPerspectiveCamera;
+  if (currentMatches) return this.camera;
+
+  const previous = this.camera;
+  let next;
+  if (useOrthographic) {
+    this._orthographicCamera ||= new this.three.OrthographicCamera(-1, 1, 1, -1, -100, 2000);
+    next = this._orthographicCamera;
+  } else {
+    this._perspectiveCamera ||= new this.three.PerspectiveCamera(
+      PERSPECTIVE_FOV,
+      this._getCameraViewport().aspect,
+      0.1,
+      2000
+    );
+    next = this._perspectiveCamera;
+  }
+  if (previous?.up) next.up.copy(previous.up);
+  if (previous?.layers) next.layers.mask = previous.layers.mask;
+  this.camera = next;
+  return next;
+}
+
+function _getPerspectiveRadius(isoPitch, isoYaw) {
+  const { width, depth, halfHeight, aspect, zoom } = this._getCameraFraming();
+  const tangent = Math.tan((PERSPECTIVE_FOV * Math.PI) / 360);
+  const forward = {
+    x: -Math.cos(isoPitch) * Math.cos(isoYaw),
+    z: -Math.cos(isoPitch) * Math.sin(isoYaw),
+  };
+  let distance = halfHeight / tangent;
+  for (const x of [-width / 2, width / 2]) {
+    for (const z of [-depth / 2, depth / 2]) {
+      const viewDepth = x * forward.x + z * forward.z;
+      const right = x * Math.sin(isoYaw) - z * Math.cos(isoYaw);
+      const up = -Math.sin(isoPitch) * (x * Math.cos(isoYaw) + z * Math.sin(isoYaw));
+      distance = Math.max(
+        distance,
+        Math.abs(right) / (tangent * aspect * 0.94) - viewDepth,
+        Math.abs(up) / (tangent * 0.94) - viewDepth
+      );
+    }
+  }
+  return distance / zoom;
+}
+
+function setTopDownView(enabled) {
+  const next = !!enabled;
+  const matchesLens = next ? this.camera?.isOrthographicCamera : this.camera?.isPerspectiveCamera;
+  if (this._topDownView === next && matchesLens) return;
+  if (next && !this._topDownView) {
+    this._savedOrbitView = {
+      yaw: this._isoYaw,
+      pitch: this._isoPitch,
+      manualLock: this._isoManualLock,
+    };
+  } else if (!next && this._topDownView && this._savedOrbitView) {
+    this._isoYaw = this._savedOrbitView.yaw;
+    this._isoPitch = this._savedOrbitView.pitch;
+    this._isoManualLock = this._savedOrbitView.manualLock;
+    this._savedOrbitView = null;
+  }
+  this._topDownView = next;
+  if (next) {
+    this._isoPitch = TOP_DOWN_PITCH;
+    this._isoManualLock = true;
+  }
+  if (!this.camera?.isCamera || this.degraded) return;
+  this.reframe();
+}
+
+function _screenToGround(x, y) {
+  if (!this.camera?.isCamera || !this.three) return null;
+  const { width, height } = this._getCameraViewport();
+  this.camera.updateMatrixWorld(true);
+  this._cameraRaycaster ||= new this.three.Raycaster();
+  this._cameraNdc ||= new this.three.Vector2();
+  this._cameraGroundPlane ||= new this.three.Plane(new this.three.Vector3(0, 1, 0), 0);
+  this._cameraNdc.set((x / width) * 2 - 1, 1 - (y / height) * 2);
+  this._cameraRaycaster.setFromCamera(this._cameraNdc, this.camera);
+  return this._cameraRaycaster.ray.intersectPlane(
+    this._cameraGroundPlane,
+    new this.three.Vector3()
+  );
+}
+
 // ── Isometric / Pitch Mode ─────────────────────────────────────────
 
 function setIsometricMode(enabled = true) {
   this._isoMode = !!enabled;
   if (!this.camera) return;
-  if (this._isoMode) {
+  if (this._isoMode && !this._topDownView) {
     // Apply preset pitch before first reframe
     try {
       if (!this._isoManualLock) {
@@ -87,7 +216,7 @@ function setIsoPitchDegrees(deg) {
   if (!Number.isFinite(deg)) return;
   if (deg < 0) deg = 0; // permit true 0 from UI
   if (deg > 89.9) deg = 89.9; // avoid singularities at 90
-  const rad = (deg * Math.PI) / 180;
+  const rad = this._topDownView ? TOP_DOWN_PITCH : (deg * Math.PI) / 180;
   this._isoPitch = rad;
   this._isoManualLock = true; // prevent auto overrides going forward
   if (this._isoMode) {
@@ -113,7 +242,7 @@ function setCameraPitchDegrees(deg, { lock = false } = {}) {
   if (!Number.isFinite(deg)) return;
   if (deg < 0) deg = 0;
   if (deg > 89.9) deg = 89.9;
-  const rad = (deg * Math.PI) / 180;
+  const rad = this._topDownView ? TOP_DOWN_PITCH : (deg * Math.PI) / 180;
   this._isoPitch = rad;
   if (lock) this._isoManualLock = true;
   // Apply base orientation using current yaw but do not force iso mode.
@@ -131,7 +260,7 @@ function setCameraPitchDegrees(deg, { lock = false } = {}) {
 /** Optional combined setter for yaw/pitch (radians) */
 function setIsoAngles({ yaw, pitch }) {
   if (Number.isFinite(yaw)) this._isoYaw = yaw;
-  if (Number.isFinite(pitch)) this._isoPitch = pitch;
+  if (Number.isFinite(pitch) && !this._topDownView) this._isoPitch = pitch;
   if (this._isoMode) {
     const cols = this.gameManager?.cols || 25;
     const rows = this.gameManager?.rows || 25;
@@ -144,34 +273,25 @@ function setIsoAngles({ yaw, pitch }) {
 // ── Camera Base Placement ──────────────────────────────────────────
 
 function _applyCameraBase({ cx, cz, span }) {
-  if (!this.camera) return;
+  if (!this.camera || this.degraded) return;
+  this._ensureCameraProjection();
+  const target = this.getCameraTarget();
+  cx = target.x;
+  cz = target.z;
   if (this._isoMode) {
     // Apply isometric camera base (extracted helper)
     this._applyIsoCameraBase({ cx, cz, span });
   } else {
     // Free (non-iso) mode: spherical positioning relative to center
     try {
-      const yaw = this._isoYaw || 0.78539816339;
+      const yaw = Number.isFinite(this._isoYaw) ? this._isoYaw : Math.PI / 4;
       const pitch = this._isoPitch != null ? this._isoPitch : 0.5;
-      const cols = this.gameManager?.cols || 25;
-      const rows = this.gameManager?.rows || 25;
-      const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
-      const width = cols * tileSize;
-      const depth = rows * tileSize;
-      const halfDiag = 0.5 * Math.sqrt(width * width + depth * depth);
-      const radius = halfDiag * 1.08;
-      const cosP = Math.cos(pitch);
-      const sinP = Math.sin(pitch);
-      const x = cx + radius * cosP * Math.cos(yaw);
-      const z = cz + radius * cosP * Math.sin(yaw);
-      let y = radius * sinP;
-      const minFloor = halfDiag * 0.01;
-      const maxMin = halfDiag * 0.15;
-      const pitchNorm = Math.min(Math.max(pitch / (Math.PI * 0.5), 0), 1);
-      const t = pitchNorm;
-      const smooth = t * t * (3 - 2 * t);
-      const minY = minFloor + (maxMin - minFloor) * smooth;
-      if (y < minY) y = minY;
+      const { x, y, z, pitchNorm, minY } = this._computeIsoPosition({
+        isoPitch: pitch,
+        isoYaw: yaw,
+        cx,
+        cz,
+      });
       this.camera.position.set(x, y, z);
       this.camera.lookAt(cx, 0, cz);
       if (typeof window !== 'undefined') {
@@ -188,11 +308,15 @@ function _applyCameraBase({ cx, cz, span }) {
           minY,
         };
       }
-    } catch (_) {
-      this.camera.position.set(cx + span, span * 1.4, cz + span);
-      this.camera.lookAt(cx, 0, cz);
+    } catch (error) {
+      GameErrors.rendering(error, { component: 'CameraSystem', operation: 'placeCamera' });
     }
   }
+  this.camera.updateMatrixWorld(true);
+  this.gameManager?.cameraRig?.attach?.(this.camera, {
+    target: this.getCameraTarget(),
+    zoom: 1 / (this._zoom || 1),
+  });
   try {
     if (typeof window !== 'undefined') {
       window.__TT_THREE_CAMERA__ = {
@@ -208,11 +332,15 @@ function _applyCameraBase({ cx, cz, span }) {
 // ── Isometric Camera Internals ─────────────────────────────────────
 
 /** Internal: apply isometric camera base placement & debugging */
-function _applyIsoCameraBase({ cx, cz, span }) {
+function _applyIsoCameraBase({ cx, cz }) {
   const isoYaw = this._isoYaw;
   // Global hard override (diagnostics) takes precedence
   try {
-    if (typeof window !== 'undefined' && Number.isFinite(window.__TT_FORCE_ISO_PITCH_DEG)) {
+    if (
+      !this._topDownView &&
+      typeof window !== 'undefined' &&
+      Number.isFinite(window.__TT_FORCE_ISO_PITCH_DEG)
+    ) {
       this._isoPitch = (window.__TT_FORCE_ISO_PITCH_DEG * Math.PI) / 180;
     }
   } catch (_) {
@@ -222,29 +350,9 @@ function _applyIsoCameraBase({ cx, cz, span }) {
   let r;
   try {
     r = this._computeIsoPosition({ isoPitch, isoYaw, cx, cz });
-  } catch (_) {
-    // Fallback simplified placement if helper fails
-    const radius = span * 1.8;
-    const cosP = Math.cos(isoPitch);
-    const sinP = Math.sin(isoPitch);
-    const x = cx + radius * cosP * Math.cos(isoYaw);
-    const z = cz + radius * cosP * Math.sin(isoYaw);
-    let y = radius * sinP;
-    if (isoPitch > 1.3) {
-      const halfDiag = span; // approximate fallback
-      const dynMin = halfDiag * 0.05;
-      if (y < dynMin) y = dynMin;
-    }
-    r = {
-      x,
-      y,
-      z,
-      horizDistRef: radius * Math.cos(isoPitch),
-      pitchNorm: null,
-      minY: y,
-      minFloor: null,
-      maxMin: null,
-    };
+  } catch (error) {
+    GameErrors.rendering(error, { component: 'CameraSystem', operation: 'placeIsometricCamera' });
+    return;
   }
   this.camera.position.set(r.x, r.y, r.z);
   this.camera.lookAt(cx, 0, cz);
@@ -300,7 +408,9 @@ function _computeIsoPosition({ isoPitch, isoYaw, cx, cz }) {
   const width = cols * tileSize;
   const depth = rows * tileSize;
   const halfDiag = 0.5 * Math.sqrt(width * width + depth * depth);
-  const radius = halfDiag * 1.08; // constant framing radius
+  const radius = this.camera?.isPerspectiveCamera
+    ? this._getPerspectiveRadius(isoPitch, isoYaw)
+    : halfDiag * 1.08;
   const cosP = Math.cos(isoPitch);
   const sinP = Math.sin(isoPitch);
   const x = cx + radius * cosP * Math.cos(isoYaw);
@@ -341,22 +451,19 @@ function debugIsoCamera() {
 // Projected measurement using Three.js project() for accuracy
 function measureTileStepPixelsProjected() {
   try {
-    if (!this._isoMode || !this.camera || !this.renderer || !this.three) return null;
+    if (!this.camera || !this.renderer || !this.three) return null;
     const three = this.three;
-    const cols = this.gameManager?.cols || 25;
-    const rows = this.gameManager?.rows || 25;
-    const cx = cols * 0.5;
-    const cz = rows * 0.5;
+    const { x: cx, z: cz } = this.getCameraTarget();
     const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+    const { width, height } = this._getCameraViewport();
+    this.camera.updateMatrixWorld(true);
     const base = new three.Vector3(cx, 0, cz);
     const px = base.clone().add(new three.Vector3(tileSize, 0, 0));
     const pz = base.clone().add(new three.Vector3(0, 0, tileSize));
     const proj = (v) => {
       const vv = v.clone();
       vv.project(this.camera);
-      const w = this.renderer.domElement.width || 1;
-      const h = this.renderer.domElement.height || 1;
-      return { x: (vv.x * 0.5 + 0.5) * w, y: (-vv.y * 0.5 + 0.5) * h };
+      return { x: (vv.x * 0.5 + 0.5) * width, y: (-vv.y * 0.5 + 0.5) * height };
     };
     const b = proj(base);
     const bx = proj(px);
@@ -367,7 +474,17 @@ function measureTileStepPixelsProjected() {
     const dyZ = Math.abs(bz.y - b.y);
     const avgDx = (dxX + dxZ) * 0.5;
     const avgDy = (dyX + dyZ) * 0.5;
-    return { dxX, dyX, dxZ, dyZ, avgDx, avgDy, ratio: avgDy / (avgDx || 1) };
+    return {
+      dx: avgDx,
+      dy: avgDy,
+      dxX,
+      dyX,
+      dxZ,
+      dyZ,
+      avgDx,
+      avgDy,
+      ratio: avgDy / (avgDx || 1),
+    };
   } catch (_) {
     return null;
   }
@@ -419,112 +536,33 @@ function calibrateTo2DTileAspect({ iterations = 28, minDeg = 10, maxDeg = 60 } =
 }
 // ── Frustum / Reframe ─────────────────────────────────────────────
 
-/** Recompute orthographic frustum. Simplified: constant board-diagonal based box in iso; aspect-based span otherwise. */
+/** Update the active lens and its board-relative framing. */
 function reframe() {
-  if (!this.camera) return;
+  if (!this.camera || this.degraded) return;
   try {
-    if (this._isoMode) {
-      const cols = this.gameManager?.cols || 25;
-      const rows = this.gameManager?.rows || 25;
-      const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
-      const width = cols * tileSize;
-      const depth = rows * tileSize;
-      const halfDiag = 0.5 * Math.sqrt(width * width + depth * depth);
-      if (!this._isoBaseFrustum) {
-        this._isoBaseFrustum = { halfWidth: halfDiag * 1.05, halfHeight: halfDiag * 1.05 };
-      }
-      const { halfHeight: hh } = this._isoBaseFrustum;
-      const container = this.canvas?.parentElement;
-      const w =
-        (container && container.clientWidth) ||
-        (typeof window !== 'undefined' && window.innerWidth) ||
-        800;
-      const h =
-        (container && container.clientHeight) ||
-        (typeof window !== 'undefined' && window.innerHeight) ||
-        600;
-      const aspect = w / h;
-      const z = this._zoom <= 0 ? 1 : this._zoom;
-      const scale = 1 / z; // bigger zoom value => closer (smaller extents)
-      this.camera.left = -hh * aspect * scale;
-      this.camera.right = hh * aspect * scale;
-      this.camera.top = hh * scale;
-      this.camera.bottom = -hh * scale;
+    this._ensureCameraProjection();
+    const { halfHeight, aspect, zoom } = this._getCameraFraming();
+    if (this.camera.isPerspectiveCamera) {
+      this.camera.aspect = aspect;
+      this.camera.fov = PERSPECTIVE_FOV;
+      this.camera.zoom = 1;
     } else {
-      // Non-iso: simple aspect-based span relative to board size
-      const cols = this.gameManager?.cols || 25;
-      const rows = this.gameManager?.rows || 25;
-      const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
-      const width = cols * tileSize;
-      const depth = rows * tileSize;
-      const baseSpan = Math.max(width, depth) * 0.5;
-      const container = this.canvas?.parentElement;
-      const w =
-        (container && container.clientWidth) ||
-        (typeof window !== 'undefined' && window.innerWidth) ||
-        800;
-      const h =
-        (container && container.clientHeight) ||
-        (typeof window !== 'undefined' && window.innerHeight) ||
-        600;
-      const aspect = w / h;
-      const margin = 1.08;
-      const z = this._zoom <= 0 ? 1 : this._zoom;
-      const scale = 1 / z;
-      this.camera.left = -baseSpan * aspect * margin * scale;
-      this.camera.right = baseSpan * aspect * margin * scale;
-      this.camera.top = baseSpan * margin * scale;
-      this.camera.bottom = -baseSpan * margin * scale;
-    }
-    // Diagnostic raw measurement (non-mutating)
-    try {
-      const raw = this.measureTileStepPixels();
-      if (raw && this.camera) {
-        this.camera.__isoRawMeasurement = {
-          dx: raw.dx,
-          dy: raw.dy,
-          ratio: raw.ratio,
-          pitchDeg: (this._isoPitch * 180) / Math.PI,
-          timestamp: (typeof performance !== 'undefined' && performance.now()) || Date.now(),
-        };
-      }
-    } catch (_) {
-      /* ignore */
+      this.camera.left = (-halfHeight * aspect) / zoom;
+      this.camera.right = (halfHeight * aspect) / zoom;
+      this.camera.top = halfHeight / zoom;
+      this.camera.bottom = -halfHeight / zoom;
+      this.camera.zoom = 1;
     }
     this.camera.updateProjectionMatrix();
+    const target = this.getCameraTarget();
+    this._applyCameraBase({
+      cx: target.x,
+      cz: target.z,
+      span: Math.max(this.gameManager?.cols || 25, this.gameManager?.rows || 25) * 0.6,
+    });
     this._updateSunCoverage();
-  } catch (_) {
-    // Fallback to previous heuristic if any error occurs
-    try {
-      const cols = this.gameManager?.cols || 25;
-      const rows = this.gameManager?.rows || 25;
-      const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
-      const width = cols * tileSize;
-      const depth = rows * tileSize;
-      const yaw = this._isoMode ? this._isoYaw : Math.PI / 4;
-      const halfX = (width * Math.cos(yaw) + depth * Math.sin(yaw)) * 0.5;
-      const halfZ = (width * Math.sin(yaw) + depth * Math.cos(yaw)) * 0.5;
-      const baseSpan = Math.max(halfX, halfZ);
-      const container = this.canvas?.parentElement;
-      const w =
-        (container && container.clientWidth) ||
-        (typeof window !== 'undefined' && window.innerWidth) ||
-        800;
-      const h =
-        (container && container.clientHeight) ||
-        (typeof window !== 'undefined' && window.innerHeight) ||
-        600;
-      const aspect = w / h;
-      const margin = 1.08;
-      this.camera.left = -baseSpan * aspect * margin;
-      this.camera.right = baseSpan * aspect * margin;
-      this.camera.top = baseSpan * margin;
-      this.camera.bottom = -baseSpan * margin;
-      this.camera.updateProjectionMatrix();
-      this._updateSunCoverage();
-    } catch (_) {
-      /* ignore */
-    }
+  } catch (error) {
+    GameErrors.rendering(error, { component: 'CameraSystem', operation: 'reframe' });
   }
 }
 
@@ -560,44 +598,7 @@ function getZoom() {
 
 /** Measure current pixel displacement for +X and +Z tile steps (after current frustum applied). */
 function measureTileStepPixels() {
-  try {
-    if (!this.camera || !this.renderer || !this.gameManager) return null;
-    if (!this.gameManager.tileWidth || !this.gameManager.tileHeight) return null;
-    const tSize = this.gameManager?.spatial?.tileWorldSize || 1;
-    const q = this.camera.quaternion || { x: 0, y: 0, z: 0, w: 1 };
-    const rotate = (vx, vy, vz) => {
-      const { x, y, z, w } = q;
-      const ix = w * vx + y * vz - z * vy;
-      const iy = w * vy + z * vx - x * vz;
-      const iz = w * vz + x * vy - y * vx;
-      const iw = -x * vx - y * vy - z * vz;
-      return {
-        x: ix * w + iw * -x + iy * -z - iz * -y,
-        y: iy * w + iw * -y + iz * -x - ix * -z,
-        z: iz * w + iw * -z + ix * -y - iy * -x,
-      };
-    };
-    const right = rotate(1, 0, 0);
-    const up = rotate(0, 1, 0);
-    const canvasW = this.renderer.domElement.width || 1;
-    const canvasH = this.renderer.domElement.height || 1;
-    const frustumWidthWorld = this.camera.right - this.camera.left;
-    const frustumHeightWorld = this.camera.top - this.camera.bottom;
-    if (!(frustumWidthWorld > 0 && frustumHeightWorld > 0)) return null;
-    const pxPerRight = canvasW / frustumWidthWorld;
-    const pxPerUp = canvasH / frustumHeightWorld;
-    const stepX = { x: tSize, y: 0, z: 0 };
-    const stepZ = { x: 0, y: 0, z: tSize };
-    const dotRX = stepX.x * right.x + stepX.y * right.y + stepX.z * right.z;
-    const dotUX = stepX.x * up.x + stepX.y * up.y + stepX.z * up.z;
-    const dotRZ = stepZ.x * right.x + stepZ.y * right.y + stepZ.z * right.z;
-    const dotUZ = stepZ.x * up.x + stepZ.y * up.y + stepZ.z * up.z;
-    const dxAvg = (Math.abs(dotRX) * pxPerRight + Math.abs(dotRZ) * pxPerRight) * 0.5;
-    const dyAvg = (Math.abs(dotUX) * pxPerUp + Math.abs(dotUZ) * pxPerUp) * 0.5;
-    return { dx: dxAvg, dy: dyAvg, ratio: dyAvg / dxAvg, pxPerRight, pxPerUp };
-  } catch (_) {
-    return null;
-  }
+  return this.measureTileStepPixelsProjected();
 }
 
 // ── Pitch Solver ──────────────────────────────────────────────────
@@ -656,51 +657,16 @@ function solveIsoPitchForTargetRatio(
  * Call on every mousemove during drag.
  */
 function panBy(screenDx, screenDy) {
-  const cam = this.camera;
-  if (!cam) return;
+  if (!this.camera || this.degraded) return;
   try {
-    const frustumW = cam.right - cam.left;
-    const frustumH = cam.top - cam.bottom;
-    const canvasW =
-      this.canvas?.width ||
-      this.renderer?.domElement?.width ||
-      (typeof window !== 'undefined' && window.innerWidth) ||
-      800;
-    const canvasH =
-      this.canvas?.height ||
-      this.renderer?.domElement?.height ||
-      (typeof window !== 'undefined' && window.innerHeight) ||
-      600;
-
-    const worldPerPxW = frustumW / canvasW;
-    const worldPerPxH = frustumH / canvasH;
-
-    // Camera right and up vectors in world space (columns 0 and 1 of matrixWorld)
-    const m = cam.matrixWorld?.elements;
-    let rX = 1,
-      rZ = 0,
-      uX = 0,
-      uZ = -1;
-    if (m) {
-      rX = m[0];
-      rZ = m[2];
-      uX = m[4];
-      uZ = m[6];
-    }
-
-    const cols = this.gameManager?.cols || 25;
-    const rows = this.gameManager?.rows || 25;
-    if (!Number.isFinite(this._panCx)) this._panCx = cols * 0.5;
-    if (!Number.isFinite(this._panCz)) this._panCz = rows * 0.5;
-
-    // Dragging right (positive screenDx) should pan camera right (negative world offset in camera-right dir)
-    this._panCx -= screenDx * worldPerPxW * rX + screenDy * worldPerPxH * uX;
-    this._panCz -= screenDx * worldPerPxW * rZ + screenDy * worldPerPxH * uZ;
-
-    const span = Math.max(cols, rows) * 0.6;
-    this._applyCameraBase({ cx: this._panCx, cz: this._panCz, span });
-  } catch (_) {
-    /* ignore pan errors */
+    const { width, height } = this._getCameraViewport();
+    const before = this._screenToGround(width / 2, height / 2);
+    const after = this._screenToGround(width / 2 + screenDx, height / 2 + screenDy);
+    if (!before || !after) return;
+    const target = this.getCameraTarget();
+    this.setCameraTarget(target.x + before.x - after.x, target.z + before.z - after.z);
+  } catch (error) {
+    GameErrors.rendering(error, { component: 'CameraSystem', operation: 'pan' });
   }
 }
 
@@ -723,8 +689,9 @@ function setCameraTarget(cx, cz) {
 function resetCameraTarget() {
   const cols = this.gameManager?.cols || 25;
   const rows = this.gameManager?.rows || 25;
-  this._panCx = cols * 0.5;
-  this._panCz = rows * 0.5;
+  const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+  this._panCx = cols * tileSize * 0.5;
+  this._panCz = rows * tileSize * 0.5;
   const span = Math.max(cols, rows) * 0.6;
   this._applyCameraBase({ cx: this._panCx, cz: this._panCz, span });
 }
@@ -734,73 +701,33 @@ function resetCameraTarget() {
  * mouseX, mouseY are canvas-relative pixel coordinates.
  */
 function zoomAtScreenPoint(factor, mouseX, mouseY) {
-  const cam = this.camera;
-  if (!cam || !Number.isFinite(factor) || factor <= 0) return;
+  if (!this.camera || !Number.isFinite(factor) || factor <= 0 || this.degraded) return;
   try {
-    // Capture frustum before zoom
-    const hwOld = (cam.right - cam.left) * 0.5;
-    const hhOld = (cam.top - cam.bottom) * 0.5;
-
-    const canvasW =
-      this.canvas?.width ||
-      this.renderer?.domElement?.width ||
-      (typeof window !== 'undefined' && window.innerWidth) ||
-      800;
-    const canvasH =
-      this.canvas?.height ||
-      this.renderer?.domElement?.height ||
-      (typeof window !== 'undefined' && window.innerHeight) ||
-      600;
-
-    // Apply zoom instantly (bypass easing for responsive wheel behaviour)
+    const before = this._screenToGround(mouseX, mouseY);
     const newZoom = Math.min(this._maxZoom, Math.max(this._minZoom, this._zoom * factor));
     this._zoom = newZoom;
     this._targetZoom = newZoom;
     this.reframe();
-
-    // Capture frustum after zoom
-    const hwNew = (cam.right - cam.left) * 0.5;
-    const hhNew = (cam.top - cam.bottom) * 0.5;
-
-    // Mouse NDC position (u,v) ∈ [-1, 1]
-    const u = (mouseX / canvasW) * 2 - 1;
-    const v = -((mouseY / canvasH) * 2 - 1);
-
-    // Camera right and up XZ components
-    const m = cam.matrixWorld?.elements;
-    let rX = 1,
-      rZ = 0,
-      uX = 0,
-      uZ = -1;
-    if (m) {
-      rX = m[0];
-      rZ = m[2];
-      uX = m[4];
-      uZ = m[6];
+    const after = this._screenToGround(mouseX, mouseY);
+    if (before && after) {
+      const target = this.getCameraTarget();
+      this.setCameraTarget(target.x + before.x - after.x, target.z + before.z - after.z);
     }
-
-    // World offset shift to keep mouse anchor stable
-    const dcx = u * rX * (hwOld - hwNew) + v * uX * (hhOld - hhNew);
-    const dcz = u * rZ * (hwOld - hwNew) + v * uZ * (hhOld - hhNew);
-
-    const cols = this.gameManager?.cols || 25;
-    const rows = this.gameManager?.rows || 25;
-    if (!Number.isFinite(this._panCx)) this._panCx = cols * 0.5;
-    if (!Number.isFinite(this._panCz)) this._panCz = rows * 0.5;
-
-    this._panCx += dcx;
-    this._panCz += dcz;
-
-    const span = Math.max(cols, rows) * 0.6;
-    this._applyCameraBase({ cx: this._panCx, cz: this._panCz, span });
-  } catch (_) {
-    /* ignore zoom errors */
+  } catch (error) {
+    GameErrors.rendering(error, { component: 'CameraSystem', operation: 'zoom' });
   }
 }
 
 // ── Mixin Installation ────────────────────────────────────────────
 
 export function installCameraMethods(prototype) {
+  prototype._getCameraViewport = _getCameraViewport;
+  prototype.getCameraTarget = getCameraTarget;
+  prototype._getCameraFraming = _getCameraFraming;
+  prototype._ensureCameraProjection = _ensureCameraProjection;
+  prototype._getPerspectiveRadius = _getPerspectiveRadius;
+  prototype._screenToGround = _screenToGround;
+  prototype.setTopDownView = setTopDownView;
   prototype.setIsometricMode = setIsometricMode;
   prototype.setIsoPitchDegrees = setIsoPitchDegrees;
   prototype.setCameraPitchDegrees = setCameraPitchDegrees;

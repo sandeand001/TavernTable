@@ -43,6 +43,8 @@ and cached models.
 
 - Rendering uses Three.js. The former PIXI renderer has been removed, but some
   compatibility helpers and old renderer-oriented test fixtures remain.
+- The orbiting 3D view uses natural perspective. Tactical top-down stays
+  orthographic, with parallel edges and no distance-based foreshortening.
 - OBJ/FBX model loading and instanced placeables are wired into the 3D scene.
 - Automatic biome flora uses concrete model-backed plants, not virtual family
   menu entries. Instance-group creation is shared per model and invalidated
@@ -61,6 +63,17 @@ and cached models.
 - There is no complete scene save/load interface, shared-session multiplayer,
   or packaged desktop release. The engine's terrain snapshot methods are not a
   complete application persistence feature.
+
+## Camera views
+
+In **Settings**, enable **Top-Down View** for an orthographic tactical map.
+Disable it to return to natural 3D perspective: nearby edges appear larger than
+distant edges rather than looking like an ambiguous parallel projection.
+
+Switching views preserves the current focus and zoom, and returning to 3D
+restores the previous orbit angle. Top-down pitch stays locked while rotating.
+Mouse-wheel zoom remains anchored to the ground beneath the cursor. Camera
+changes do not rescale terrain heights or token movement.
 
 ## Large d20 rolls
 
@@ -128,9 +141,12 @@ package manifest for this app; lint configuration remains under
 
 ### Verification snapshot: October 24, 2026
 
-- Jest: **76 suites, 323 tests passing**.
+- Jest: **77 suites, 341 tests passing**.
 - JavaScript lint: **0 errors, 40 existing unused-variable warnings**.
 - Stylesheet lint and architecture-layer check: **passing**.
+- The repository-wide formatting check flags the unchanged
+  [lint configuration](./tools/.eslintrc.json). Changed JavaScript and tests pass
+  a focused formatting check.
 
 Cliff-motion regression coverage includes real Three.js hierarchy transforms,
 animation/root blending, terrain-edge detection, exact arrival budgets, input
@@ -141,6 +157,9 @@ remaining limits; a green suite alone does not close every older movement report
 Large-d20 tests additionally use the real GLB geometry to cover all 20 numbered
 faces, physical ground contact, bounds/terrain, frame-rate independence, short
 throws, cancellation, cocked rolls, and result/log consistency.
+Camera tests use real Three.js projections to cover near/far edge widths,
+landscape/portrait framing, non-unit tiles, stored view modes, cursor zoom,
+ground-plane pan math, and picking after projection switches.
 
 ## Project layout
 

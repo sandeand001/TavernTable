@@ -84,6 +84,7 @@ export class StateCoordinator {
     } catch (_) {
       this.viewMode = 'isometric';
     }
+    this.gameManager?.threeSceneManager?.setTopDownView?.(this.viewMode === 'topdown');
   }
 
   getViewMode() {
@@ -125,6 +126,7 @@ export class StateCoordinator {
     };
 
     this.viewMode = mode;
+    gm?.threeSceneManager?.setTopDownView?.(mode === 'topdown');
     persist(mode);
     dispatch(mode);
   }

@@ -83,7 +83,9 @@ function _handleCalibrationPointer(event) {
     !diceState.threeNamespace?.Vector2
   )
     return;
-  const { mesh, raycaster, pointer, camera, domElement } = diceState.faceCalibrationState;
+  const { mesh, raycaster, pointer, domElement, manager, cameraOverride } =
+    diceState.faceCalibrationState;
+  const camera = cameraOverride || manager?.camera || diceState.faceCalibrationState.camera;
   if (!raycaster || !pointer || !camera) return;
   const rect = domElement?.getBoundingClientRect?.();
   const clientX = event.clientX ?? 0;
@@ -208,6 +210,7 @@ export async function startD20FaceCalibration(options = {}) {
     mesh,
     manager,
     camera,
+    cameraOverride: options.camera || null,
     domElement,
     pointerTarget: domElement || window,
     raycaster: new diceState.threeNamespace.Raycaster(),

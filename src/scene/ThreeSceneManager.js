@@ -21,6 +21,10 @@ export class ThreeSceneManager {
     this.degradeReason = null;
     this.scene = null;
     this.camera = null;
+    this._perspectiveCamera = null;
+    this._orthographicCamera = null;
+    this._topDownView = false;
+    this._savedOrbitView = null;
     this.renderer = null;
     this.canvas = null;
     this._animationHandle = null;
@@ -81,11 +85,10 @@ export class ThreeSceneManager {
     this._isoPitch = (overrideDeg * Math.PI) / 180;
     // Simplified implementation: removed legacy vertical persistence, parity scaling, and frustum lock.
     // We keep a constant board-based frustum so pitch directly affects the vertical compression visually.
-    this._isoBaseFrustum = null; // cached {halfWidth, halfHeight}
     // Pan target (world XZ the camera looks at); null = use board centre
     this._panCx = null;
     this._panCz = null;
-    // Zoom state (orthographic zoom implemented by scaling frustum extents)
+    // Shared zoom state: orthographic extents or perspective orbit distance.
     this._zoom = 1.0; // 1 == baseline
     this._minZoom = 0.35;
     this._maxZoom = 3.0;
@@ -286,6 +289,7 @@ export class ThreeSceneManager {
         -100,
         500
       );
+      this.setTopDownView(this.gameManager?.getViewMode?.() === 'topdown');
       this._applyCameraBase({ cx: cols * 0.5, cz: rows * 0.5, span });
 
       // Canvas / renderer
@@ -702,10 +706,14 @@ export class ThreeSceneManager {
       const cols = this.gameManager?.cols || 25;
       const rows = this.gameManager?.rows || 25;
       const span = Math.max(cols, rows) * 0.6;
-      this.camera.left = -span * aspect;
-      this.camera.right = span * aspect;
-      this.camera.top = span;
-      this.camera.bottom = -span;
+      if (this.camera.isPerspectiveCamera) {
+        this.camera.aspect = aspect;
+      } else {
+        this.camera.left = -span * aspect;
+        this.camera.right = span * aspect;
+        this.camera.top = span;
+        this.camera.bottom = -span;
+      }
       try {
         this.camera.updateProjectionMatrix();
       } catch (_) {
@@ -978,6 +986,11 @@ export class ThreeSceneManager {
     this.renderer = null;
     this.scene = null;
     this.camera = null;
+    this._perspectiveCamera = null;
+    this._orthographicCamera = null;
+    this._cameraRaycaster = null;
+    this._cameraNdc = null;
+    this._cameraGroundPlane = null;
     this.canvas = null;
     this.initialized = false;
   }

@@ -51,7 +51,7 @@ function attach3DControls() {
         <span class="toggle-slider"></span>
         <span class="toggle-label">Top-Down Camera</span>
       </label>
-      <div class="small-text" style="opacity:0.75;">Lock the hybrid camera to a tactical top-down angle.</div>
+      <div class="small-text" style="opacity:0.75;">Use a parallel tactical map view; disable for natural 3D perspective.</div>
     </div>
   `;
 
@@ -100,6 +100,10 @@ function attach3DControls() {
   const applyTopDownLock = (shouldLock) => {
     const mgr = ensureHybrid();
     if (!mgr) return;
+    if (typeof mgr.setTopDownView === 'function') {
+      mgr.setTopDownView(shouldLock);
+      return;
+    }
 
     if (shouldLock && storedIsoPitch == null) {
       storedIsoPitch = toDegrees(mgr._isoPitch) ?? 45;
@@ -175,7 +179,7 @@ function attach3DControls() {
         const message =
           detail.mode === 'topdown'
             ? 'Camera locked to top-down view'
-            : 'Camera returned to isometric view';
+            : 'Camera returned to perspective view';
         logger.log(LOG_LEVEL.INFO, message, LOG_CATEGORY.USER);
       }
     });

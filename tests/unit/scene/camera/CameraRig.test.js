@@ -1,4 +1,5 @@
 import { CameraRig } from '../../../../src/scene/camera/CameraRig.js';
+import { PerspectiveCamera, Vector3 } from 'three';
 
 describe('CameraRig', () => {
   function makeCamera() {
@@ -35,5 +36,23 @@ describe('CameraRig', () => {
     expect(rig.zoom).toBe(0.5);
     rig.setZoom(5);
     expect(rig.zoom).toBe(2);
+  });
+
+  test.each([1, 0.5])('perspective pan preserves direction and lens at rig zoom %s', (zoom) => {
+    const camera = new PerspectiveCamera(35, 16 / 9, 0.1, 1000);
+    camera.position.set(30, 20, 10);
+    camera.lookAt(10, 0, 15);
+    const rig = new CameraRig({ target: { x: 10, z: 15 } });
+    rig.attach(camera, { zoom });
+    const direction = camera.getWorldDirection(new Vector3());
+
+    rig.pan(3, -4);
+    expect(camera.position.toArray()).toEqual([33, 20, 6]);
+    expect(camera.getWorldDirection(new Vector3()).distanceTo(direction)).toBeLessThan(1e-6);
+    expect(camera.zoom).toBe(1);
+
+    rig.zoomIn();
+    expect(camera.zoom).toBeGreaterThan(1);
+    expect(camera.aspect).toBe(16 / 9);
   });
 });
