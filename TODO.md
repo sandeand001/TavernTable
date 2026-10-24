@@ -39,6 +39,9 @@ not establish that these gameplay issues are fixed.
 ## Visual Features
 
 - [ ] **Tree overhang on placement** — Investigate and fix the tree overhang issue when placing trees.
+- [ ] **Tree orientation** — Investigate and fix incorrect tree orientation.
+- [ ] **Tree variety** — Review and fix tree variety across generated biomes.
+- [ ] **Unintended biome transparency** — Fix trees and other biome assets appearing transparent in biomes where they should remain opaque.
 - [ ] **Water visuals** — Add visual water rendering for water-type biome tiles (rivers, lakes, swamps). Could include animated surface, transparency/depth effects, shoreline blending, and reflections.
 
 ---
