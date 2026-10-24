@@ -1,3 +1,4 @@
+import { PATH_NAVIGATION_KEY } from '../../../src/config/token-adapter/MannequinConfig.js';
 import { addTokenToCollection } from '../../../src/managers/token-manager/internals/collection.js';
 
 // Minimal hybrid-mode creation test for Token3DAdapter
@@ -715,7 +716,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     expect(rollLanding.landingVariant).toBe('fallToRoll');
   });
 
-  test('_finishFallPhase transfers root offsets before locking and updates grids', () => {
+  test('_finishFallPhase transfers horizontal root offsets before locking and updates grids', () => {
     const gm = {
       is3DModeActive: () => true,
       spatial: { worldToGrid: jest.fn(() => ({ gridX: 7, gridY: 9 })) },
@@ -764,8 +765,12 @@ describe('Token3DAdapter (Phase 3)', () => {
 
     adapter._finishFallPhase(state);
 
-    const expectedWorld = { x: 1.5, y: 1.75, z: 3.75 };
-    expect(transferSpy).toHaveBeenCalledWith(state, expectedWorld, expect.any(Object));
+    const expectedWorld = { x: 1.5, y: 2, z: 3.75 };
+    expect(transferSpy).toHaveBeenCalledWith(
+      state,
+      expectedWorld,
+      expect.objectContaining({ offsetWorld: { x: 0.5, y: 0, z: 0.75 } })
+    );
     expect(transferSpy.mock.invocationCallOrder[0]).toBeLessThan(
       lockSpy.mock.invocationCallOrder[0]
     );
@@ -904,7 +909,10 @@ describe('Token3DAdapter (Phase 3)', () => {
     expect(hardLandingClamp.y).toBe(0);
   });
 
-  test('walk animation resumes once clips are ready', () => {
+  test.each([
+    [PATH_NAVIGATION_KEY, 'walk'],
+    ['KeyW', 'drunkWalk'],
+  ])('%s movement animation resumes once clips are ready', (inputKey, animationKey) => {
     const gm = {
       is3DModeActive: () => true,
       spatial: {
@@ -918,14 +926,15 @@ describe('Token3DAdapter (Phase 3)', () => {
     jest.spyOn(adapter, '_logPathing').mockImplementation(() => {});
     const token = { gridX: 0, gridY: 0, world: { x: 0.5, y: 0, z: 0.5 } };
     const state = adapter._ensureMovementState(token);
-    state.pathActive = true;
-    state.pathSpeedMode = 'walk';
-    state.forwardKeys.add('KeyW');
+    state.pathActive = inputKey === PATH_NAVIGATION_KEY;
+    state.pathSpeedMode = state.pathActive ? 'walk' : null;
+    state.pathKey = state.pathActive ? PATH_NAVIGATION_KEY : null;
+    state.forwardKeys.add(inputKey);
     jest.spyOn(adapter, '_setAnimation').mockImplementation(() => {});
 
     adapter._startMovementPhase(state, 1);
 
-    expect(state.__pendingLoopKey).toBe('walk');
+    expect(state.__pendingLoopKey).toBe(animationKey);
     expect(adapter._setAnimation).not.toHaveBeenCalled();
 
     const fakeAction = {
@@ -937,7 +946,7 @@ describe('Token3DAdapter (Phase 3)', () => {
       stop: jest.fn(),
     };
     adapter._tokenAnimationData.set(token, {
-      actions: { walk: fakeAction },
+      actions: { [animationKey]: fakeAction },
       profile: {},
       current: null,
     });
@@ -946,7 +955,7 @@ describe('Token3DAdapter (Phase 3)', () => {
 
     expect(adapter._setAnimation).toHaveBeenCalledWith(
       token,
-      'walk',
+      animationKey,
       expect.objectContaining({ force: true })
     );
     expect(state.__pendingLoopKey).toBeNull();
@@ -1156,9 +1165,9 @@ describe('Token3DAdapter (Phase 3)', () => {
     adapter._logFallHeightSample = jest.fn();
     adapter._setAnimation = jest.fn();
     adapter._syncTokenAndMeshWorld = jest.fn();
-    const finalizeSpy = jest.spyOn(adapter, '_finalizePostFallState').mockImplementation(() => {});
+    const finalizeSpy = jest.spyOn(adapter, '_finalizePostFallState');
 
-    const token = { gridX: 0, gridY: 0 };
+    const token = { gridX: 0, gridY: 0, __ttWorldLock: 1 };
     const step = {
       tokenEntry: token,
       targetWorld: { x: 2, y: 0, z: 2 },
@@ -1176,7 +1185,9 @@ describe('Token3DAdapter (Phase 3)', () => {
       activeStep: step,
       fallLandingKey: 'fallToRoll',
       profile: {},
+      __worldLockActive: true,
     };
+    adapter._movementStates.set(token, state);
 
     adapter._tokenAnimationData.set(token, {
       actions: {
@@ -1202,6 +1213,14 @@ describe('Token3DAdapter (Phase 3)', () => {
     expect(adapter._resumeMovementAfterFall).toHaveBeenCalledWith(state);
     expect(finalizeSpy).toHaveBeenCalledWith(state, state.profile);
     expect(state.phase).toBe('idle');
+    expect(adapter._movementStates.has(token)).toBe(false);
+    expect(state.__worldLockActive).toBe(false);
+    expect(token.__ttWorldLock).toBeUndefined();
+    expect(adapter._setAnimation).toHaveBeenCalledWith(
+      token,
+      'idle',
+      expect.objectContaining({ force: true })
+    );
   });
 
   test('_finishFallPhase preserves fall-to-roll landing offset even if it exits the tile', () => {

@@ -3,6 +3,12 @@
 **Status:** Accepted  
 **Date:** 2026-05-03
 
+**Implementation status (2026-10-23):** Partial. TerrainEngine and its scene
+adapter exist, but the live TerrainCoordinator still maintains a separate height
+store and remains the entry point for much of the editing workflow. Completing
+this migration is a [follow-up task](../../TODO.md), not part of the October 2026
+housekeeping pass. The decision below remains the intended design.
+
 ---
 
 ## Context

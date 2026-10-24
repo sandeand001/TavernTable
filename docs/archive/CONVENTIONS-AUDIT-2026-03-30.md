@@ -1,5 +1,10 @@
 # CONVENTIONS.md Compliance Audit Report
 
+> Historical report from March 30, 2026, retained for context. File counts, paths,
+> and findings below describe that point in time and must be revalidated.
+> See the current [README](../../README.md), [backlog](../../TODO.md), and
+> [conventions](../../CONVENTIONS.md) before starting new work.
+
 **Date:** 2026-03-30  
 **Scope:** All 168 source files under `src/` (42,457 LOC), 70 test files under `tests/`  
 **Audited against:** CONVENTIONS.md §1–§7

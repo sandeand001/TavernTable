@@ -15,28 +15,28 @@ overlapping responsibility, and make the codebase navigable at a glance.
 
 Each top-level directory owns a single concern:
 
-| Directory | Responsibility |
-|-----------|---------------|
-| `config/` | Pure data: constants, palettes, lookup tables. No logic. |
-| `coordinators/` | Orchestration façades that wire managers + scene together. |
-| `core/` | Application bootstrap and cross-cutting singletons (`GameManager`, `ModelAssetCache`). |
-| `entities/` | Domain objects (tokens, creatures, items). |
-| `managers/` | 2D/PIXI state owners — grid, terrain tiles, tokens, interaction. |
-| `scene/` | 3D/Three.js rendering — scene graph, cameras, lighting, 3D adapters. |
-| `systems/` | Self-contained subsystems (dice, drag). |
-| `terrain/` | Terrain generation, painting, elevation, biome logic. |
-| `ui/` | DOM/HTML controllers, sidebars, menus, CSS. |
-| `utils/` | Generic helpers with **zero domain knowledge**. |
+| Directory       | Responsibility                                                                         |
+| --------------- | -------------------------------------------------------------------------------------- |
+| `config/`       | Pure data: constants, palettes, lookup tables. No logic.                               |
+| `coordinators/` | Orchestration façades that wire managers + scene together.                             |
+| `core/`         | Application bootstrap and cross-cutting singletons (`GameManager`, `ModelAssetCache`). |
+| `entities/`     | Domain objects (tokens, creatures, items).                                             |
+| `managers/`     | Token placement, selection, and input interaction state.                               |
+| `scene/`        | Three.js rendering — scene graph, cameras, lighting, mesh pools, and adapters.         |
+| `systems/`      | Self-contained subsystems (dice, drag).                                                |
+| `terrain/`      | Terrain generation, painting, elevation, biome logic.                                  |
+| `ui/`           | DOM/HTML controllers, sidebars, menus, CSS.                                            |
+| `utils/`        | Generic helpers with **zero domain knowledge**.                                        |
 
 ### 1.2 Subdirectory Rules
 
-| Scenario | Pattern | Example |
-|----------|---------|---------|
-| A class grows beyond **~800 lines** | Create `<module-name>/internals/` alongside the class | `managers/InteractionManager.js` + `managers/interaction-manager/internals/` |
-| A directory has **> 6 files** | Group by sub-concern into subdirectories | `scene/` → `scene/terrain/`, `scene/camera/`, `scene/token-adapter/` |
-| Pure data / config lives next to logic | Move it to `config/` or a scoped `config/` subdir | `FloraProfiles.js` → `config/terrain/FloraProfiles.js` |
-| A file is a thin re-export shim | Delete it; update importers to point at the real module | deprecated `managers/BiomeCanvasPainter.js` |
-| A directory is empty | Delete it | `core/model-cache/`, `scene/assets/` |
+| Scenario                               | Pattern                                                 | Example                                                                      |
+| -------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| A class grows beyond **~800 lines**    | Create `<module-name>/internals/` alongside the class   | `managers/InteractionManager.js` + `managers/interaction-manager/internals/` |
+| A directory has **> 6 files**          | Group by sub-concern into subdirectories                | `scene/` → `scene/terrain/`, `scene/camera/`, `scene/token-adapter/`         |
+| Pure data / config lives next to logic | Move it to `config/` or a scoped `config/` subdir       | `FloraProfiles.js` → `config/terrain/FloraProfiles.js`                       |
+| A file is a thin re-export shim        | Delete it; update importers to point at the real module | deprecated `managers/BiomeCanvasPainter.js`                                  |
+| A directory is empty                   | Delete it                                               | `core/model-cache/`, `scene/assets/`                                         |
 
 ### 1.3 `internals/` Folders
 
@@ -63,16 +63,20 @@ managers/
 - The parent class imports these and delegates via thin wrapper methods.
 - `internals/` files must **not** import from the parent class (no circular deps).
 
+These general extraction patterns do not override accepted
+[architecture decisions](./docs/adr/). In particular, ADR-0001 calls for a deep
+terrain module and a wiring-only coordinator, not another pass-through facade.
+
 ### 1.4 Naming Conventions
 
-| Item | Convention | Example |
-|------|-----------|---------|
-| Class files | PascalCase matching the class name | `TokenManager.js` |
-| Function-export files | camelCase or kebab-case describing the concern | `pan.js`, `placeables-positioning.js` |
-| Config/data files | PascalCase describing the data | `BiomePalettes.js`, `TerrainPlaceables.js` |
-| Barrel re-exports | `index.js` | `entities/creatures/index.js` |
-| Generated files | `.generated.js` suffix | `d20FaceCenters.generated.js` |
-| Test files | `<SourceName>.test.js` in `tests/unit/` mirroring `src/` path | `tests/unit/managers/TokenManager.test.js` |
+| Item                  | Convention                                                    | Example                                    |
+| --------------------- | ------------------------------------------------------------- | ------------------------------------------ |
+| Class files           | PascalCase matching the class name                            | `TokenManager.js`                          |
+| Function-export files | camelCase or kebab-case describing the concern                | `pan.js`, `placeables-positioning.js`      |
+| Config/data files     | PascalCase describing the data                                | `BiomePalettes.js`, `TerrainPlaceables.js` |
+| Barrel re-exports     | `index.js`                                                    | `entities/creatures/index.js`              |
+| Generated files       | `.generated.js` suffix                                        | `d20FaceCenters.generated.js`              |
+| Test files            | `<SourceName>.test.js` in `tests/unit/` mirroring `src/` path | `tests/unit/managers/TokenManager.test.js` |
 
 ---
 
@@ -137,20 +141,20 @@ higher-level methods first, lower-level helpers they call after.
 
 ### 3.1 When to Use Classes vs Plain Functions
 
-| Use a **class** when | Use **plain function exports** when |
-|----------------------|-------------------------------------|
-| The module owns persistent state | The module is stateless |
-| There is a clear lifecycle (init → use → dispose) | Functions are called independently |
-| The module is injected or wired by a coordinator | Logic is extracted from a class into `internals/` |
+| Use a **class** when                              | Use **plain function exports** when               |
+| ------------------------------------------------- | ------------------------------------------------- |
+| The module owns persistent state                  | The module is stateless                           |
+| There is a clear lifecycle (init → use → dispose) | Functions are called independently                |
+| The module is injected or wired by a coordinator  | Logic is extracted from a class into `internals/` |
 
 ### 3.2 Export Style
 
-| Pattern | When to use |
-|---------|------------|
-| `export default class Foo` | One class per file |
-| `export function foo()` | Multiple named function exports |
-| `export default { fn1, fn2 }` | **Avoid** — prefer named exports for tree-shaking |
-| `export { instance as default }` | Singletons only (`ErrorHandler`, `GameManager`) |
+| Pattern                          | When to use                                       |
+| -------------------------------- | ------------------------------------------------- |
+| `export default class Foo`       | One class per file                                |
+| `export function foo()`          | Multiple named function exports                   |
+| `export default { fn1, fn2 }`    | **Avoid** — prefer named exports for tree-shaking |
+| `export { instance as default }` | Singletons only (`ErrorHandler`, `GameManager`)   |
 
 ### 3.3 Mixin Installer Pattern
 
@@ -161,8 +165,12 @@ function that receives the class prototype and assigns methods to it:
 ```js
 // token-adapter/movement/ClimbPhases.js
 export function installClimbMethods(prototype) {
-  prototype._startClimb = function (state) { /* ... */ };
-  prototype._finishClimb = function (state) { /* ... */ };
+  prototype._startClimb = function (state) {
+    /* ... */
+  };
+  prototype._finishClimb = function (state) {
+    /* ... */
+  };
 }
 ```
 
@@ -173,6 +181,7 @@ installClimbMethods(Token3DAdapter.prototype);
 ```
 
 **Rules for mixin files:**
+
 - Each file exports exactly **one** `installXMethods(prototype)` function.
 - Mixin files may import from sibling config files (e.g., `MannequinConfig.js`).
 - Mixin files must **not** import from the parent class file.
@@ -181,7 +190,7 @@ installClimbMethods(Token3DAdapter.prototype);
 
 - Import only what you use. No wildcard (`*`) imports.
 - Group imports in this order:
-  1. Third-party libraries (`three`, `pixi.js`)
+  1. Third-party libraries (`three`)
   2. Config / constants
   3. Same-domain siblings
   4. Cross-domain imports
@@ -196,12 +205,14 @@ installClimbMethods(Token3DAdapter.prototype);
 Every piece of functionality must live in **exactly one place**.
 
 Before adding a new function, search for existing implementations:
-- Coordinate conversion → `utils/CoordinateUtils.js` or `utils/ProjectionUtils.js`
-- Color manipulation → `utils/ColorUtils.js`
-- Container/PIXI helpers → `utils/ContainerUtils.js`
-- Validation → `utils/Validation.js` (general) or `utils/TerrainValidation.js` (terrain-specific)
-- Error handling → `utils/ErrorHandler.js`
-- Logging → `utils/Logger.js`
+
+- Coordinate conversion → [CoordinateUtils](./src/utils/coordinates/CoordinateUtils.js)
+- Color manipulation → [ColorUtils](./src/utils/color/ColorUtils.js)
+- Legacy container compatibility → [ContainerUtils](./src/utils/terrain/ContainerUtils.js)
+- Validation → [Validation](./src/utils/Validation.js) (general) or
+  [TerrainValidation](./src/utils/terrain/TerrainValidation.js) (terrain-specific)
+- Error handling → [ErrorHandler](./src/utils/error/ErrorHandler.js)
+- Logging → [Logger](./src/utils/logger/Logger.js)
 
 ### 4.2 Config Stays in `config/`
 
@@ -219,106 +230,35 @@ the domain directory instead.
 
 ---
 
-## 5. Target Directory Structure
+## 5. Current Structure and Terrain Direction
 
-This is the intended structure after all reorganization is complete:
+See the [README](./README.md#project-layout) for the project layout and the
+[backlog](./TODO.md) for unfinished work. Do not maintain a second exhaustive
+file inventory here; it becomes misleading when files are moved or removed.
 
-```
-src/
-├── config/
-│   ├── biome/                   ← BiomeConstants, BiomePalettes, BiomePalettes3D, BiomePalettes3DHarmonized, PaletteDesign
-│   ├── terrain/                 ← TerrainConstants, TerrainPlaceables, FloraProfiles
-│   ├── GameConstants.js
-│   └── TokenCommandConfig.js
-│
-├── coordinators/
-│   ├── InputCoordinator.js
-│   ├── RenderCoordinator.js
-│   ├── StateCoordinator.js
-│   ├── TerrainCoordinator.js
-│   └── terrain-coordinator/
-│       ├── (6 controller files)
-│       └── internals/           ← (grouped sub-concerns)
-│           ├── activation/      ← apply.js, init.js, mode.js, reset.js, state.js
-│           ├── brush/           ← brush.js, inputs.js, tools.js
-│           ├── rendering/       ← biome.js, color.js, baseGridUpdates.js
-│           ├── spatial/         ← coords.js, height.js, resize.js
-│           ├── container.js
-│           ├── deps.js
-│           ├── flora.js
-│           └── validation.js
-│
-├── core/
-│   ├── GameManager.js
-│   ├── ModelAssetCache.js
-│   ├── ModelPostProcessing.js
-│   └── game-manager/internals/  ← elevation.js, init.js, instancing.js, tokenCommands.js, tokenDrag.js
-│
-├── entities/
-│   └── creatures/
-│       ├── CreatureFactory.js
-│       ├── CreatureToken.js
-│       └── index.js
-│
-├── managers/
-│   ├── GridRenderer.js
-│   ├── InteractionManager.js
-│   ├── TerrainManager.js
-│   ├── TokenManager.js
-│   ├── grid-renderer/internals/
-│   ├── interaction-manager/internals/
-│   ├── terrain-manager/internals/
-│   └── token-manager/internals/
-│
-├── scene/
-│   ├── camera/                  ← CameraRig.js, CameraSystem.js
-│   ├── lighting/                ← LightingSystem.js
-│   ├── grid/                    ← GridOverlay.js
-│   ├── terrain/                 ← TerrainMeshBuilder.js, TerrainRebuilder.js, TerrainMaterialFactory.js, TerrainBrushOverlay3D.js, PlaceableMeshPool.js, PlaceablePoolLifecycle.js
-│   │   └── brush/               ← OverlayMeshPool.js, OverlayOutlinePool.js
-│   ├── token-adapter/           ← AnimationController.js, MannequinConfig.js, MeshFactory.js, SelectionEffects.js
-│   │   ├── movement/            ← ClimbPhases.js, FallPhases.js, MovementPhases.js, MovementStyle.js, StepFactory.js
-│   │   ├── pathing/             ← Navigation.js, PathingLogger.js, ResumeProbe.js
-│   │   └── spatial/             ← RootMotion.js, SpatialUtils.js, WorldAuthority.js
-│   ├── picking/                 ← PickingService.js, SpatialCoordinator.js
-│   ├── ThreeSceneManager.js
-│   └── Token3DAdapter.js
-│
-├── systems/
-│   ├── DragController.js
-│   └── dice/
-│       ├── (dice subsystem files)
-│       └── d20FaceCenters.generated.js
-│
-├── terrain/
-│   ├── generation/              ← BiomeElevationGenerator.js, NoisePrimitives.js
-│   ├── painting/                ← BiomeCanvasPainter.js + biome-painter/ contents
-│   ├── brush/                   ← TerrainBrushController.js, TerrainBrushHighlighter.js, BrushCommon.js
-│   ├── flora/                   ← floraHelpers.js
-│   ├── TerrainDataStore.js
-│   └── TerrainFacesRenderer.js
-│
-├── ui/
-│   ├── components/              ← RadialMenu.js
-│   ├── controls/                ← Hybrid3DControls.js, HybridRenderToggle.js, SettingsViewToggle.js
-│   ├── dom-helpers.js
-│   ├── SidebarController.js
-│   ├── UIController.js
-│   └── styles.css
-│
-└── utils/
-    ├── canvas/                  ← CanvasShapeUtils.js
-    ├── color/                   ← ColorUtils.js
-    ├── coordinates/             ← CoordinateUtils.js, ProjectionUtils.js
-    ├── error/                   ← ErrorHandler.js, enums.js, notification.js, telemetry.js
-    ├── geometry/                ← GeometryUtils.js, DepthUtils.js
-    ├── logger/                  ← Logger.js, enums.js
-    ├── stubs/                   ← PixiStub.js (transitional PIXI shim)
-    ├── terrain/                 ← TerrainHeightUtils.js, TerrainValidation.js, ContainerUtils.js
-    ├── env.js
-    ├── SeededRNG.js
-    └── Validation.js
-```
+- [GameManager](./src/core/GameManager.js) coordinates application startup and
+  currently constructs both the terrain engine and the legacy coordinator.
+- [scene](./src/scene/) owns Three.js rendering, including terrain geometry,
+  token animation, picking, and instanced placeables.
+- [terrain](./src/terrain/) contains the engine, height storage, brush logic,
+  generation, and flora helpers.
+- [ui](./src/ui/) owns DOM controls and presentation.
+- [config/token-adapter](./src/config/token-adapter/) contains mannequin models
+  and movement configuration; it is separate from the rendering implementation.
+
+The PIXI renderer and its GridRenderer, TerrainManager, and RenderCoordinator
+modules have been removed. Remaining compatibility helpers and legacy test
+fixtures do not imply that the old renderer is still supported.
+
+[ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md) remains the accepted
+terrain direction: one state-owning engine, outbound events, and external
+rendering adapters. That migration is **not complete**. The live
+[TerrainCoordinator](./src/coordinators/TerrainCoordinator.js) still has a
+separate height store and a broad compatibility interface.
+
+Complete the caller and event migration with integration tests before removing
+those compatibility paths. A smaller coordinator or more extracted wrappers is
+not evidence that the ownership problem is solved.
 
 ---
 

@@ -1,10 +1,31 @@
 # TavernTable — TODO
 
-> Post-refactor tasks and known issues to address after the cleanup roadmap is complete.
+> Current backlog. Setup and the last verified test baseline are in
+> [README.md](./README.md). Historical audits are not the current task list.
+
+---
+
+## Terrain Ownership Follow-up
+
+- [ ] **Complete the accepted terrain-engine migration** - Follow
+      [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md). The engine and the
+      legacy coordinator currently maintain separate height stores. Move live
+      callers to the engine's state and event seam; do not merely extract more
+      pass-through helpers. This larger refactor was explicitly deferred from the
+      October 2026 housekeeping pass.
+- [ ] **Add public-interface integration coverage for the migration** - Verify
+      that game height queries and tool selection use the engine, resizing keeps
+      game and terrain dimensions consistent, and reset/load trigger scene updates.
+      Cover editing input, biome/flora generation, and adapter attach/detach without
+      relying on legacy 2D fixtures.
 
 ---
 
 ## Mannequin Movement Polish
+
+These are previously reported browser behaviors, not failures currently
+reproduced by the unit suite. Correcting the stale movement-test fixtures did
+not establish that these gameplay issues are fixed.
 
 - [ ] **Fall animation edge cases** — Fall detection uses world-position-derived tile which can be slightly off at tile boundaries. Current fix (same-elevation guard) prevents cliff-edge oscillation but edge-adjacent destinations may still have issues where the sprite overshoots instead of stopping. Investigate smoother cliff-edge pathGoal handling.
 - [ ] **Orientation deferral during path navigation** — `_advanceWalkPhase` calls `_ensureFallStepActive` before `_applyPendingOrientation`, so `_getMovementYaw` may use a stale `facingAngle` when checking which tile to evaluate for falls. Low-priority since the world-position fix mostly compensates, but a proper fix would apply pending orientation before fall detection.
@@ -18,3 +39,11 @@
 ## Visual Features
 
 - [ ] **Water visuals** — Add visual water rendering for water-type biome tiles (rivers, lakes, swamps). Could include animated surface, transparency/depth effects, shoreline blending, and reflections.
+
+---
+
+## Deferred Platform Work
+
+- Desktop packaging and shared-session multiplayer are future considerations,
+  after the local gameplay and editing workflow is more complete.
+- Procedural biome shader painting remains a future enhancement under ADR-0001.
