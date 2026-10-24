@@ -34,11 +34,18 @@ There is no application build step. Python serves the HTML, JavaScript, and
 assets; open the app through HTTP rather than opening the HTML file directly.
 The server is a development file server, not a multiplayer session server.
 
+After changing code, hard-refresh the browser (`Ctrl+Shift+R`) and regenerate the
+map. There is no hot reload, and an open tab can retain old JavaScript modules
+and cached models.
+
 ## Current state
 
 - Rendering uses Three.js. The former PIXI renderer has been removed, but some
   compatibility helpers and old renderer-oriented test fixtures remain.
 - OBJ/FBX model loading and instanced placeables are wired into the 3D scene.
+- Automatic biome flora uses concrete model-backed plants, not virtual family
+  menu entries. Instance-group creation is shared per model and invalidated
+  when a map is cleared or regenerated.
 - Token navigation is animation-based. The movement polish items in
   [TODO.md](./TODO.md) still need browser-level investigation.
 - The terrain-engine migration is **partially implemented**.
@@ -49,6 +56,37 @@ The server is a development file server, not a multiplayer session server.
 - There is no complete scene save/load interface, shared-session multiplayer,
   or packaged desktop release. The engine's terrain snapshot methods are not a
   complete application persistence feature.
+
+## Exotic biome appearances
+
+All biomes marked `exotic` use biome-specific appearances, including those listed
+outside the Exotic menu group. Choose a biome and press **Generate** to apply
+its population and appearance.
+
+| Biome             | Generated asset appearance                                                | Opacity range |
+| ----------------- | ------------------------------------------------------------------------- | ------------- |
+| Blood Marsh       | Crimson, burgundy, and muted red tones; suitable shallow-marsh vegetation | 65-85%        |
+| Mystic Grove      | Teal, mint, lavender, and pale gold                                       | 60-80%        |
+| Feywild Bloom     | Pink, aqua, lilac, and lime                                               | 50-75%        |
+| Shadowfell Forest | Muted blue-violet and ghostly gray dead trees                             | 30-60%        |
+| Crystal Spires    | Blue-purple rocks and pebbles                                             | 45-80%        |
+| Eldritch Rift     | Violet and eerie teal dead trees, fungi, and rocks                        | 30-65%        |
+| Lava Fields       | Dark ember-tinted rocks and pebbles only; no plants or foliage            | 80-95%        |
+| Astral Plateau    | Original natural texture colors, with transparency only                   | 35-65%        |
+| Arcane Ley Nexus  | Unnatural magenta, cyan, violet, and blue tones                           | 35-70%        |
+
+Lower opacity means more see-through. Variation is stable for the same biome,
+seed, model, and position, so locking the seed also preserves the appearance
+pattern. The palettes and opacity levels are defined in
+[ExoticBiomeAppearance.js](./src/config/biome/ExoticBiomeAppearance.js).
+
+Fantasy tinting retains the original texture detail and cutouts rather than
+substituting the generic multicolored atlas. Astral retains the original texture
+colors as well. Material copies are isolated from cached assets, so generating
+an exotic biome does not tint or fade a later ordinary biome.
+
+The **Asset Density** control scales generated trees, plants, and rocks. Changing
+the biome palette alone recolors the ground; regenerate to replace the assets.
 
 ## Development commands
 
@@ -67,7 +105,7 @@ package manifest for this app; lint configuration remains under
 
 ### Verification snapshot: October 23, 2026
 
-- Jest: **63 suites, 190 tests passing**.
+- Jest: **69 suites, 231 tests passing**.
 - JavaScript lint: **0 errors, 40 existing unused-variable warnings**.
 - Stylesheet lint and architecture-layer check: **passing**.
 

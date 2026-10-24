@@ -38,6 +38,7 @@ not establish that these gameplay issues are fixed.
 
 ## Visual Features
 
+- [ ] **Tree overhang on placement** — Investigate and fix the tree overhang issue when placing trees.
 - [ ] **Water visuals** — Add visual water rendering for water-type biome tiles (rivers, lakes, swamps). Could include animated surface, transparency/depth effects, shoreline blending, and reflections.
 
 ---

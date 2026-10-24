@@ -2,6 +2,7 @@
 // Extracted from PlaceableMeshPool.js (Phase 8).
 
 import logger, { LOG_CATEGORY } from '../../utils/logger/Logger.js';
+import { disposePlaceableMaterials } from './materials/placeable-appearance.js';
 
 const PLACEABLE_POOL_LOG_CATEGORY = LOG_CATEGORY.RENDERING;
 
@@ -66,6 +67,8 @@ export function hidePreview(pool) {
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
 export function dispose(pool) {
+  pool._clearEpoch += 1;
+  pool._pendingGroups.clear();
   for (const g of pool._groups.values()) {
     try {
       g.instancedMesh.geometry?.dispose();
@@ -73,7 +76,7 @@ export function dispose(pool) {
       /* ignore */
     }
     try {
-      g.instancedMesh.material?.dispose();
+      disposePlaceableMaterials(g.instancedMesh.material);
     } catch (_) {
       /* ignore */
     }
@@ -84,6 +87,7 @@ export function dispose(pool) {
     }
   }
   pool._groups.clear();
+  pool._metadata.clear();
   try {
     if (pool._previewMesh) {
       pool.gameManager?.threeSceneManager?.scene?.remove(pool._previewMesh);
@@ -106,6 +110,7 @@ export function clearAll(pool) {
     // Increment epoch so any in-flight async addPlaceable operations originating from the
     // previous generation abort on resume, preventing stale tree reappearance.
     pool._clearEpoch += 1;
+    pool._pendingGroups.clear();
     logMeshPoolDebug('[PlaceableMeshPool] clearAll begin', {
       epoch: pool._clearEpoch,
       groups: Array.from(pool._groups.keys()),
@@ -181,7 +186,7 @@ export async function fullReset(pool) {
         /* ignore */
       }
       try {
-        g.instancedMesh.material?.dispose?.();
+        disposePlaceableMaterials(g.instancedMesh.material);
       } catch (_) {
         /* ignore */
       }
@@ -189,6 +194,7 @@ export async function fullReset(pool) {
     pool._groups.clear();
     pool._metadata.clear();
     pool._clearEpoch += 1;
+    pool._pendingGroups.clear();
     pool._updateMetrics();
   } catch (_) {
     /* ignore */
@@ -209,7 +215,7 @@ export function purgeAll(pool) {
         /* ignore */
       }
       try {
-        g.instancedMesh.material?.dispose?.();
+        disposePlaceableMaterials(g.instancedMesh.material);
       } catch (_) {
         /* ignore */
       }
@@ -218,6 +224,7 @@ export function purgeAll(pool) {
     pool._metadata.clear();
     pool._updateMetrics();
     pool._clearEpoch += 1; // invalidate any in-flight add promises
+    pool._pendingGroups.clear();
     // Sweep scene for any orphaned instanced meshes we previously created (defensive)
     try {
       const scene = pool.gameManager?.threeSceneManager?.scene;
@@ -238,7 +245,7 @@ export function purgeAll(pool) {
               /* ignore */
             }
             try {
-              ch.material?.dispose?.();
+              disposePlaceableMaterials(ch.material);
             } catch (_) {
               /* ignore */
             }

@@ -248,7 +248,7 @@
             style="display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:0.75rem;">
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
               <button id="generate-map" type="button" class="primary-button"
-                title="Generate heightmap for selected biome">Generate</button>
+                title="Generate terrain and place assets for the selected biome">Generate</button>
               <label class="toggle-switch" for="biome-seed-lock"
                 title="Lock seed so repeated generate uses same pattern">
                 <input type="checkbox" id="biome-seed-lock" />
@@ -258,22 +258,23 @@
               <button id="biome-reseed" type="button" class="action-button"
                 title="Pick a new random seed">Reseed</button>
             </div>
-            <small class="small-text" style="flex-basis:100%;">Generate creates elevation using the selected biome.
-              Unlock seed to randomize each time. (Single palette mode active)</small>
+            <small class="small-text" style="flex-basis:100%;">Generate creates terrain and places biome assets.
+              Exotic appearances apply to generated assets. Unlock seed to randomize each time.</small>
           </div>
           <div class="section-subtitle" style="margin:0 0 0.25rem;">Biomes</div>
           <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
             <!-- Biome group buttons injected at runtime -->
           </div>
-          <div class="section-subtitle" style="margin-top:1rem;">Tree Density</div>
-          <div id="tree-density-controls" class="setting-group" role="group" aria-label="Tree density controls">
+          <div class="section-subtitle" style="margin-top:1rem;">Asset Density</div>
+          <div id="tree-density-controls" class="setting-group" role="group" aria-label="Biome asset density controls">
             <div class="setting-item">
-              <label for="tree-density-slider">Tree Density:</label>
+              <label for="tree-density-slider">Asset Density:</label>
               <input type="range" id="tree-density-slider" min="0" max="200" step="5" value="100" class="range-input"
-                aria-label="Adjust tree density prior to biome generation">
+                aria-label="Adjust tree, plant, and rock density prior to biome generation">
               <span id="tree-density-value" class="range-value">100%</span>
             </div>
-            <small class="small-text">Adjust before generating: 0% removes trees, 200% doubles biome density.</small>
+            <small class="small-text">Adjust before generating: 0% removes generated trees, plants, and rocks;
+              200% doubles biome asset density.</small>
           </div>
           <div class="section-subtitle" style="margin-top:1rem;">Notes</div>
           <p class="small-text">Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to

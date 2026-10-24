@@ -28,7 +28,7 @@ npm run test:stable -- --watch=false
 npm run lint:all
 ```
 
-- 63 Jest suites and 190 tests pass.
+- 69 Jest suites and 231 tests pass.
 - JavaScript lint has no errors and 40 existing unused-variable warnings.
 - Stylesheet lint and the architecture-layer check pass.
 
@@ -43,6 +43,28 @@ assumptions, not established gameplay regressions:
 both normal-path and drunk animation loading and the real fall cleanup.
 Movement production code was not changed. The manually reported movement issues
 in the backlog remain open.
+
+## Exotic asset appearances
+
+- All nine rarity-exotic biomes have distinct palettes and deterministic opacity
+  variants in [ExoticBiomeAppearance.js](./src/config/biome/ExoticBiomeAppearance.js).
+  Astral keeps natural diffuse colors; Arcane uses fantasy hues.
+- [Placeable appearance materials](./src/scene/terrain/materials/placeable-appearance.js)
+  clone materials before styling, retain texture UVs/alpha, and isolate shader
+  programs from ordinary materials. Dispose owned material arrays, not cached
+  source materials or shared textures.
+- Capture the generated biome and seed before asynchronous model loading.
+  Instance groups include the appearance variant in their identity.
+- Crystal Spires uses rocky decor; Lava Fields uses only rocks/pebbles. Rift and
+  Shadowfell floors can support their fitting assets below zero. Blood Marsh
+  allows shallow wet-ground placement while excluding its deep basin.
+- Shadowfell must use its dedicated profile, not the earlier Dead Forest rule.
+  Flower materials use the existing `Flowers.png` texture and cutout handling.
+- Appearance updates apply when generating a biome. The density control is
+  labeled Asset Density because it also affects plants and rocks.
+
+This is model material styling, not procedural terrain painting or completion
+of the terrain ownership migration.
 
 ## Important unfinished work
 
@@ -65,6 +87,15 @@ terrain design, not a statement that the migration is finished.
 The 3D model pipeline uses [ModelAssetCache](./src/core/ModelAssetCache.js),
 [ModelPostProcessing](./src/core/ModelPostProcessing.js), and
 [PlaceableMeshPool](./src/scene/terrain/PlaceableMeshPool.js).
+
+- Automatic flora weights must reference concrete `plant` entries with a
+  `modelKey`, not virtual `plant-family` menu selectors.
+- Match OBJ material names to their authored diffuse textures. TallThick leaves
+  use `Leaves_TallThick_C.png`, and Pine bark uses `Bark_PineTree.png`; the generic
+  `Leaves.png` atlas is not a universal foliage texture.
+- Share in-flight instance-group creation per model/appearance key. Clear/reset/dispose
+  must invalidate pending groups before they can publish stale scene meshes.
+
 Asset scale calibration and model-load fallbacks still need browser checks.
 
 The [March 2026 audit](./docs/archive/CONVENTIONS-AUDIT-2026-03-30.md) is retained

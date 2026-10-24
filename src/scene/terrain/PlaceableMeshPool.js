@@ -9,6 +9,12 @@ import {
   validateHidden as _validateHidden,
   debugSnapshot as _debugSnapshot,
 } from './PlaceablePoolLifecycle.js';
+import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
+import {
+  disposePlaceableMaterials,
+  preparePlaceableMaterials,
+  resolvePlaceableAppearance,
+} from './materials/placeable-appearance.js';
 
 // PlaceableMeshPool.js - Phase 4 scaffold
 // Manages instanced meshes for static placeables (trees, rocks, etc.).
@@ -20,6 +26,7 @@ export class PlaceableMeshPool {
   constructor({ gameManager, initialCapacity = 256, maxCapacity = 4096 } = {}) {
     this.gameManager = gameManager;
     this._groups = new Map(); // key -> { instancedMesh, capacity, count, freeIndices[] }
+    this._pendingGroups = new Map();
     // Per-group metadata: Map<key, Map<index, { gx, gy }>> for reverse height recompute
     this._metadata = new Map();
     this._three = null; // cached namespace once loaded
@@ -150,6 +157,16 @@ export class PlaceableMeshPool {
     }
     // Capture epoch so we can detect if a clear happened while awaiting dynamic imports.
     const epochAtStart = this._clearEpoch;
+    const appearance = resolvePlaceableAppearance(
+      placeable?.biomeKey ?? gm.terrainCoordinator?._lastGeneratedBiomeKey,
+      {
+        modelKey: placeable?.modelKey,
+        variantKey: placeable?.variantKey,
+        gridX: placeable?.gridX,
+        gridY: placeable?.gridY,
+        biomeSeed: placeable?.biomeSeed ?? gm.terrainCoordinator?._biomeSeed,
+      }
+    );
     const three = await this._ensureThree();
     if (!three) {
       return null;
@@ -162,7 +179,8 @@ export class PlaceableMeshPool {
       return null;
     }
     const rawVariant = placeable?.variantKey;
-    const key = this._deriveKey(placeable);
+    const modelKey = this._deriveKey(placeable);
+    const key = appearance ? `${modelKey}|${appearance.key}` : modelKey;
     // Preserve original texture path separately for material creation
     try {
       if (placeable && rawVariant) placeable.__rawVariantKey = rawVariant;
@@ -183,22 +201,14 @@ export class PlaceableMeshPool {
       /* ignore */
     }
     logMeshPoolDebug('[PlaceableMeshPool] addPlaceable start', { key, epochAtStart });
-    let group = this._groups.get(key);
-    if (!group || !group.instancedMesh) {
-      group = await this._createGroup(key, three, placeable?.type || 'generic', placeable);
-      if (!group) return null;
-      this._groups.set(key, group);
-      this._metadata.set(key, new Map());
-      this._updateMetrics();
-      try {
-        const profile = this.gameManager?.threeSceneManager?.getTimeOfDayProfile?.();
-        if (profile && profile.placeables) {
-          this.applyLightingProfile(profile.placeables);
-        }
-      } catch (_) {
-        /* ignore tint bootstrap */
-      }
-    }
+    const group = await this._getOrCreateGroup(
+      key,
+      three,
+      placeable?.type || 'generic',
+      placeable,
+      appearance
+    );
+    if (!group) return null;
     // Re-check epoch after potential async _createGroup work (defensive double-guard)
     if (epochAtStart !== this._clearEpoch) {
       return null;
@@ -315,8 +325,47 @@ export class PlaceableMeshPool {
 
   // ── Group Creation & Capacity ────────────────────────────────────
 
+  async _getOrCreateGroup(key, three, type, placeable, appearance = null) {
+    const existing = this._groups.get(key);
+    if (existing?.instancedMesh) return existing;
+    const pending = this._pendingGroups.get(key);
+    if (pending) return pending;
+
+    const epoch = this._clearEpoch;
+    const creation = this._createGroup(key, three, type, placeable, appearance)
+      .then((group) => {
+        if (!group) return null;
+        if (epoch !== this._clearEpoch) {
+          // Geometry/textures are cached; this unpublished group owns its material clones.
+          disposePlaceableMaterials(group.instancedMesh.material);
+          group.instancedMesh.dispose?.();
+          return null;
+        }
+        this.gameManager.threeSceneManager?.scene?.add?.(group.instancedMesh);
+        this._groups.set(key, group);
+        this._metadata.set(key, new Map());
+        this._updateMetrics();
+        try {
+          const profile = this.gameManager.threeSceneManager?.getTimeOfDayProfile?.();
+          if (profile?.placeables) this.applyLightingProfile(profile.placeables);
+        } catch (error) {
+          logger.warn(
+            'Placeable group lighting initialization failed',
+            { key, error: error.message },
+            LOG_CATEGORY.RENDERING
+          );
+        }
+        return group;
+      })
+      .finally(() => {
+        if (this._pendingGroups.get(key) === creation) this._pendingGroups.delete(key);
+      });
+    this._pendingGroups.set(key, creation);
+    return creation;
+  }
+
   /** Create a new instanced mesh group for a variant key. */
-  async _createGroup(key, three, type = 'generic', placeable = null) {
+  async _createGroup(key, three, type = 'generic', placeable = null, appearance = null) {
     try {
       const capacity = this._initialCapacity; // initial; grow strategy implemented
       const profile = placeable?.renderProfile || (type === 'plant' ? 'billboard' : 'ground');
@@ -337,21 +386,16 @@ export class PlaceableMeshPool {
             });
           }
           if (modelGeom && modelMat) {
+            modelMat = preparePlaceableMaterials(three, modelMat, appearance);
             const instanced = new three.InstancedMesh(modelGeom, modelMat, capacity);
             instanced.name = `Placeables:${key}`;
             try {
-              instanced.castShadow = true;
+              instanced.castShadow = !appearance;
             } catch (_) {
               /* ignore */
             }
             try {
               instanced.count = 0;
-            } catch (_) {
-              /* ignore */
-            }
-            try {
-              const scene = this.gameManager.threeSceneManager?.scene;
-              if (scene && typeof scene.add === 'function') scene.add(instanced);
             } catch (_) {
               /* ignore */
             }
@@ -363,6 +407,7 @@ export class PlaceableMeshPool {
               key,
               type,
               profile: 'model', // upright 3D model; no billboard rotation needed
+              appearance,
               tintCategory,
               instancedMesh: instanced,
               capacity,
@@ -372,19 +417,11 @@ export class PlaceableMeshPool {
             };
           }
         } catch (modelErr) {
-          // log once and fall through to placeholder
-          try {
-            const { logger: _log, LOG_CATEGORY: _cat } = await import(
-              '../../utils/logger/Logger.js'
-            );
-            _log.warn(
-              '[PlaceableMeshPool] model load failed, using placeholder',
-              { key, modelKey, err: modelErr?.message },
-              _cat?.SYSTEM
-            );
-          } catch (_) {
-            /* ignore logger import error */
-          }
+          logger.warn(
+            '[PlaceableMeshPool] model load failed, using placeholder',
+            { key, modelKey, error: modelErr.message },
+            LOG_CATEGORY.RENDERING
+          );
         }
       }
 
@@ -471,11 +508,12 @@ export class PlaceableMeshPool {
         }
       }
 
+      if (appearance) mat = preparePlaceableMaterials(three, mat, appearance);
       const instanced = new three.InstancedMesh(geo, mat, capacity);
       instanced.name = `Placeables:${key}`;
       // Allow instanced meshes to cast shadows (terrain receives). Keep receiveShadow off to avoid dark cards.
       try {
-        instanced.castShadow = true;
+        instanced.castShadow = !appearance;
       } catch (_) {
         /* ignore */
       }
@@ -484,13 +522,6 @@ export class PlaceableMeshPool {
         instanced.count = 0;
       } catch (_) {
         /* ignore */
-      }
-      // Add to scene (graceful degraded mode handling: scene may be stub/missing .add)
-      try {
-        const scene = this.gameManager.threeSceneManager?.scene;
-        if (scene && typeof scene.add === 'function') scene.add(instanced);
-      } catch (_) {
-        /* ignore scene add failure */
       }
       // Register billboard updater for upright quads so they keep facing the camera.
       if (profile === 'billboard' && this.gameManager?.threeSceneManager?.addAnimationCallback) {
@@ -594,6 +625,7 @@ export class PlaceableMeshPool {
         key,
         type,
         profile,
+        appearance,
         tintCategory,
         instancedMesh: instanced,
         capacity,
@@ -602,6 +634,11 @@ export class PlaceableMeshPool {
         baseColor: baseColorRef,
       };
     } catch (err) {
+      logger.error(
+        'Placeable group creation failed',
+        { key, type, error: err.message },
+        LOG_CATEGORY.RENDERING
+      );
       // Capture error for diagnostics and attempt a fallback lightweight group so tests can proceed
       try {
         this._lastGroupCreateError = (err && err.message) || 'unknown';
@@ -659,6 +696,9 @@ export class PlaceableMeshPool {
       const old = group.instancedMesh;
       const newInst = new three.InstancedMesh(old.geometry, old.material, newCapacity);
       newInst.name = old.name;
+      newInst.castShadow = old.castShadow;
+      newInst.receiveShadow = old.receiveShadow;
+      newInst.visible = old.visible;
       // Copy existing matrices (best-effort)
       try {
         for (let i = 0; i < group.count; i++) {

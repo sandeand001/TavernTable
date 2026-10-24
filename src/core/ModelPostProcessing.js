@@ -114,13 +114,16 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
               if (/leaves_twistedtree/.test(nameLc)) return 'Leaves_TwistedTree_C.png';
               if (/leaves_normaltree/.test(nameLc)) return 'Leaves_NormalTree_C.png';
               if (/leaves_giantpine/.test(nameLc)) return 'Leaves_GiantPine_C.png';
+              if (/leaves_tallthick|tallthick_leaves/.test(nameLc)) return 'Leaves_TallThick_C.png';
               if (/cherry|sakura|blossom/.test(nameLc)) return 'Leaves_CherryBlossom_C.png';
               if (/(leaves_pine|leaf_pine)/.test(nameLc)) return 'Leaf_Pine_C.png';
               if (/leaves/.test(nameLc)) return 'Leaves.png';
               if (/bark_twistedtree/.test(nameLc)) return 'Bark_TwistedTree.png';
               if (/bark_deadtree/.test(nameLc)) return 'Bark_DeadTree.png';
               if (/bark_normaltree/.test(nameLc)) return 'Bark_NormalTree.png';
+              if (/bark_pine/.test(nameLc)) return 'Bark_PineTree.png';
               if (/bark/.test(nameLc)) return 'Bark_NormalTree.png';
+              if (/flower|petal/.test(nameLc)) return 'Flowers.png';
               if (/mushroom/.test(nameLc)) return 'Mushrooms.png';
               if (/grass/.test(nameLc)) return 'Grass.png';
               if (/rock|stone|path/.test(nameLc)) return 'Rocks_Diffuse.png';
@@ -166,7 +169,7 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
           const alphaFileLc = alphaSrcLc.split(/[\\/]/).pop() || '';
           const combinedLabel = `${nodeLabel} ${matLabelLc} ${mapNameLc} ${mapSrcLc}`;
           const heurFoliage =
-            /(leaf|leaves|foliage|canopy|crown|autumn|orange|yellow|red|frond|palm|banana|monstera|fern)/.test(
+            /(leaf|leaves|foliage|canopy|crown|autumn|orange|yellow|red|frond|palm|banana|monstera|fern|flower|petal)/.test(
               combinedLabel
             );
           const heurTrunk = /(bark|trunk|branch|wood|stem|log)/.test(combinedLabel);

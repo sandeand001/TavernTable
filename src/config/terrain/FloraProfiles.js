@@ -8,7 +8,8 @@ import { isSpectralPlaceable } from '../../terrain/flora/floraHelpers.js';
 
 const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter((k) => {
   const type = TERRAIN_PLACEABLES[k].type;
-  return type === 'plant' || type === 'plant-family';
+  // Families are menu selectors, not renderable model assets.
+  return type === 'plant';
 });
 
 // ── Weight Utilities ─────────────────────────────────────────
@@ -73,9 +74,48 @@ function withSpectralVariants(weightMap) {
 const BIOME_FLORA_PROFILES = [
   { re: /(sandDunes|saltFlats|desertHot|desertCold)/i, density: 0, spacing: 0 },
   { re: /(glacier|frozenLake|packIce|ocean|coralReef)/i, density: 0, spacing: 0 },
-  // Override earlier blanket zero-density for underground/exotic so we can add targeted placements.
-  { re: /(crystalFields|crystalSpires|eldritchRift)/i, density: 0, spacing: 0 },
-  { re: /(obsidianPlain|lavaFields)/i, density: 0, spacing: 0 },
+  { re: /(crystalFields|obsidianPlain)/i, density: 0, spacing: 0 },
+  {
+    re: /(crystalSpires)/i,
+    density: 0.12,
+    spacing: 2,
+    weights: makeWeights({
+      'rock-big-1': 1,
+      'rock-big-2': 1,
+      'rock-medium-4': 5,
+      'pebble-round-3': 2,
+      'pebble-square-3': 1.5,
+    }),
+  },
+  {
+    re: /(eldritchRift)/i,
+    density: 0.1,
+    spacing: 2,
+    // The rift's solid floor can be below zero; it is not ordinary water.
+    elevationFilter: (c, h) => Number.isFinite(h),
+    weights: makeWeights({
+      'tree-dead-a': 2,
+      'tree-dead-b': 1.8,
+      'tree-dead-c': 1.2,
+      'mushroom-common': 3,
+      'mushroom-oyster': 2,
+      'mushroom-redcap': 1.5,
+      'rock-medium-4': 1.5,
+      'pebble-square-3': 0.8,
+    }),
+  },
+  {
+    re: /(lavaFields)/i,
+    density: 0.045,
+    spacing: 3,
+    weights: makeWeights({
+      'rock-big-1': 0.8,
+      'rock-big-2': 0.6,
+      'rock-medium-4': 5,
+      'pebble-round-1': 2,
+      'pebble-square-3': 1.5,
+    }),
+  },
   {
     re: /(ashWastes|wasteland|graveyard|ruinedUrban)/i,
     density: 0.02,
@@ -198,9 +238,9 @@ const BIOME_FLORA_PROFILES = [
       'plant-tropical-fern-c': 3.8,
     }),
   },
-  // Dead / shadow / petrified refinements
+  // Dead / petrified refinements; Shadowfell has its own profile below.
   {
-    re: /(deadForest|shadowfellForest)/i,
+    re: /(deadForest)/i,
     // Burnt / Dead forest: emphasize charred, lifeless canopy.
     // Tweaks:
     // - Slightly reduced density so gaps feel scorched/open.
@@ -387,6 +427,7 @@ const BIOME_FLORA_PROFILES = [
     re: /(shadowfellForest)/i,
     density: 0.2,
     spacing: 2,
+    elevationFilter: (c, h) => Number.isFinite(h),
     weights: makeWeights({
       'tree-dead-a': 6,
       'tree-dead-b': 5,
@@ -405,11 +446,15 @@ const BIOME_FLORA_PROFILES = [
     re: /(bloodMarsh)/i,
     density: 0.2,
     spacing: 2,
-    elevationFilter: (c, h) => h > 0,
+    // Marsh vegetation can root in shallow wet ground, but not the deep basin.
+    elevationFilter: (c, h) => h >= -2,
     weights: makeWeights({
       'tree-bare-deciduous': 6,
       'tree-green-willow': 1,
       'tree-yellow-willow': 1,
+      'grass-common-tall': 0.8,
+      'mushroom-redcap': 0.4,
+      'rock-medium-4': 0.4,
     }),
   },
   {

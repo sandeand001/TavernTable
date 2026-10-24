@@ -154,6 +154,8 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               }
               const _def0 = TERRAIN_PLACEABLES[id] || {};
               pool.addPlaceable({
+                biomeKey,
+                biomeSeed: seed ?? c._biomeSeed,
                 type: 'plant',
                 variantKey: id,
                 modelKey: _def0.modelKey,
@@ -197,6 +199,8 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
             }
             pool.addPlaceable({
+              biomeKey,
+              biomeSeed: seed ?? c._biomeSeed,
               type: 'plant',
               variantKey: id,
               modelKey: (TERRAIN_PLACEABLES[id] || {}).modelKey,
@@ -230,7 +234,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
         } else if (candidateFilter === 'swampEdge') {
           if (h <= 0 && !(h >= -1.0)) continue; // legacy edge allowance
         } else {
-          if (h <= 0) continue; // generic rule: stay above waterline
+          if (h <= 0 && !elevationFilter) continue;
         }
         if (elevationFilter && !elevationFilter(c, h)) continue;
         if (filterFn && !filterFn(c, x, y, h, coordRng)) continue;
@@ -290,6 +294,8 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       }
       if (spacing > 0 && placed.some((p) => manhattan(p, [placeX, placeY]) < spacing)) continue;
       pool.addPlaceable({
+        biomeKey,
+        biomeSeed: seed ?? c._biomeSeed,
         type: 'plant',
         variantKey: id,
         modelKey: (TERRAIN_PLACEABLES[id] || {}).modelKey,
