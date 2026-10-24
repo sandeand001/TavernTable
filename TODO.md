@@ -36,6 +36,17 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 
 ---
 
+## Dice Rolling
+
+- [x] **Natural large d20 rolls** - Replace the scripted extended travel, three-axis
+      spin, and late face snap with rigid-body physics. Read the real numbered
+      facet, retain cocked dice for a manual reroll, and never substitute a random
+      result for an unreadable physical die. Other dice types and multiple-die
+      rolls are unchanged. Launch momentum now carries the die across the board
+      and supports physical banks off its boundary walls.
+
+---
+
 ## Visual Features
 
 - [ ] **Tree overhang on placement** — Investigate and fix the tree overhang issue when placing trees.

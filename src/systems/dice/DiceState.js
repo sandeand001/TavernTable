@@ -165,6 +165,8 @@ export function createGroundSampler(manager, metrics, fallbackHeight = DEFAULT_R
 }
 
 // ── Geometry: face data, orientation ────────────────────────────────────────
+const d20ColliderCache = new WeakMap();
+
 export function collectWorldFaceData(mesh, three) {
   if (!mesh || !three?.Vector3) return [];
   const faces = [];
@@ -227,28 +229,115 @@ export function collectWorldFaceData(mesh, three) {
   return faces;
 }
 
+export function getD20ColliderData(mesh, three) {
+  if (d20ColliderCache.has(mesh)) return d20ColliderCache.get(mesh);
+  const worldFaces = new Map(
+    collectWorldFaceData(mesh, three).map((face) => [face.faceIndex, face])
+  );
+  const inverseRoot = mesh.matrixWorld.clone().invert();
+  const localNormalMatrix = new three.Matrix3().setFromMatrix4(mesh.matrixWorld).transpose();
+  const numberedFaces = Object.entries(D20_NUMBER_TO_FACE_INDEX).map(([value, faceIndex]) => {
+    const face = worldFaces.get(faceIndex);
+    if (!face) throw new Error(`Gold d20 is missing numbered face ${value}`);
+    const normal = face.normal.clone().applyMatrix3(localNormalMatrix).normalize();
+    const centroid = face.centroid.clone().applyMatrix4(inverseRoot);
+    return { value: Number(value), faceIndex, normal, centroid, plane: normal.dot(centroid) };
+  });
+  mesh.traverse((child) => {
+    const positions = child.isMesh ? child.geometry?.attributes?.position : null;
+    if (!positions) return;
+    const toRoot = inverseRoot.clone().multiply(child.matrixWorld);
+    const vertex = new three.Vector3();
+    for (let i = 0; i < positions.count; i += 1) {
+      vertex.fromBufferAttribute(positions, i).applyMatrix4(toRoot);
+      // The calibrated triangles are recessed; include the bevels and raised numerals.
+      for (const face of numberedFaces) face.plane = Math.max(face.plane, face.normal.dot(vertex));
+    }
+  });
+
+  const vertices = [];
+  for (let i = 0; i < numberedFaces.length - 2; i += 1) {
+    for (let j = i + 1; j < numberedFaces.length - 1; j += 1) {
+      for (let k = j + 1; k < numberedFaces.length; k += 1) {
+        const a = numberedFaces[i];
+        const b = numberedFaces[j];
+        const c = numberedFaces[k];
+        const bc = b.normal.clone().cross(c.normal);
+        const determinant = a.normal.dot(bc);
+        if (Math.abs(determinant) < 1e-8) continue;
+        const vertex = bc
+          .multiplyScalar(a.plane)
+          .addScaledVector(c.normal.clone().cross(a.normal), b.plane)
+          .addScaledVector(a.normal.clone().cross(b.normal), c.plane)
+          .divideScalar(determinant);
+        if (numberedFaces.some((face) => face.normal.dot(vertex) > face.plane + 1e-6)) continue;
+        if (vertices.some((existing) => existing.distanceToSquared(vertex) < 1e-10)) continue;
+        vertices.push(vertex);
+      }
+    }
+  }
+  const faces = numberedFaces.map((face) => {
+    const indices = vertices
+      .map((vertex, index) => ({ vertex, index }))
+      .filter(({ vertex }) => Math.abs(face.normal.dot(vertex) - face.plane) < 1e-6)
+      .map(({ index }) => index);
+    if (indices.length < 3) throw new Error(`Invalid collider for d20 face ${face.value}`);
+    const center = new three.Vector3();
+    for (const index of indices) center.add(vertices[index]);
+    center.divideScalar(indices.length);
+    const u = new three.Vector3(Math.abs(face.normal.y) < 0.9 ? 0 : 1, 1, 0)
+      .cross(face.normal)
+      .normalize();
+    const v = face.normal.clone().cross(u);
+    const angle = (index) => {
+      const offset = vertices[index].clone().sub(center);
+      return Math.atan2(offset.dot(v), offset.dot(u));
+    };
+    return indices.sort((a, b) => angle(a) - angle(b));
+  });
+  const data = {
+    numberedFaces,
+    vertices,
+    faces,
+    radius: Math.max(...vertices.map((vertex) => vertex.length())),
+  };
+  d20ColliderCache.set(mesh, data);
+  return data;
+}
+
 export function resolveUpFacingFace(mesh, three, facesOverride = null) {
   if (!mesh || !three?.Vector3) return null;
-  const faces = Array.isArray(facesOverride) ? facesOverride : collectWorldFaceData(mesh, three);
+  let faces;
+  if (Array.isArray(facesOverride)) {
+    faces = facesOverride.filter((face) => Number.isInteger(FACE_INDEX_TO_NUMBER[face.faceIndex]));
+  } else {
+    const data = getD20ColliderData(mesh, three);
+    mesh.updateMatrixWorld(true);
+    const normalMatrix = new three.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    faces = data.numberedFaces.map((face) => {
+      const centroid = face.centroid.clone().applyMatrix4(mesh.matrixWorld);
+      return {
+        ...face,
+        normal: face.normal.clone().applyMatrix3(normalMatrix).normalize(),
+        centroid,
+        centroidY: centroid.y,
+      };
+    });
+  }
   if (!faces.length) return null;
   const up = new three.Vector3(0, 1, 0);
   let best = null;
   for (const face of faces) {
     const alignment = face.normal.dot(up);
     if (!(alignment > 0)) continue;
-    const areaScore = Number.isFinite(face.area) ? face.area : 0;
-    const heightScore = Number.isFinite(face.centroidY) ? face.centroidY * 0.1 : 0;
-    const score = alignment * 10 + areaScore + heightScore;
-    if (!best || score > best.score) {
+    if (!best || alignment > best.score) {
       best = {
         ...face,
-        score,
+        score: alignment,
       };
     }
   }
-  if (!best) {
-    best = faces[0];
-  }
+  if (!best) return null;
   return {
     ...best,
     value: FACE_INDEX_TO_NUMBER[best.faceIndex] ?? null,

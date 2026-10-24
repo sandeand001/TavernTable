@@ -170,17 +170,19 @@ export async function playD20RollOnGrid(options = {}) {
     return { success: false, value: null, reason: 'no-manager' };
   }
 
+  let clone = null;
+  let animationState = null;
+  let clickDismissCleanup = null;
   try {
     _clearActiveDie();
     const three = await ensureThreeNamespace();
     const blueprint = await ensureBlueprint();
-    const clone = cloneDice(blueprint);
+    clone = cloneDice(blueprint);
     const metrics = getBoardMetrics(manager);
     const tileSize = metrics.tileSize || 1;
     const scale = tileSize * (options.scale ?? DEFAULT_SCALE);
     clone.scale.setScalar(scale);
     _attachDiceAccentLights(clone, three, tileSize);
-    manager.scene.add(clone);
     resetDiceMaterialColors(clone);
     const animationOptions = { ...options };
     const upstreamOnSettle =
@@ -188,7 +190,6 @@ export async function playD20RollOnGrid(options = {}) {
     if (typeof animationOptions.restHeight !== 'number') {
       animationOptions.restHeight = DEFAULT_REST_HEIGHT;
     }
-    let clickDismissCleanup = null;
     if (animationOptions.dismissOnClick !== false) {
       try {
         clickDismissCleanup = _attachDieDismissOnClick(manager, clone);
@@ -225,16 +226,43 @@ export async function playD20RollOnGrid(options = {}) {
         faceInfo: payload?.faceInfo || null,
       });
     };
+    animationOptions.onCancel = () => {
+      if (settled) return;
+      settled = true;
+      settleResolver({ success: false, value: null, reason: 'cancelled' });
+    };
+    animationOptions.onCocked = () => {
+      if (settled) return;
+      settled = true;
+      settleResolver({ success: false, value: null, reason: 'cocked' });
+    };
+    animationOptions.onError = (error) => {
+      if (settled) return;
+      settled = true;
+      settleResolver({ success: false, value: null, reason: 'physics-error', error });
+    };
 
-    const animationState = scheduleRollAnimation(manager, clone, metrics, animationOptions);
+    animationState = await scheduleRollAnimation(manager, clone, metrics, animationOptions);
+    manager.scene.add(clone);
     diceState.activeDieState = {
       mesh: clone,
       dispose: animationState.dispose,
       interactionCleanup: clickDismissCleanup,
     };
 
-    return await settlePromise;
+    const result = await settlePromise;
+    if (!result.success && result.reason !== 'cocked' && diceState.activeDieState?.mesh === clone) {
+      _clearActiveDie();
+    }
+    return result;
   } catch (error) {
+    clickDismissCleanup?.();
+    animationState?.dispose();
+    if (!animationState && clone) {
+      clone.traverse((child) => {
+        if (child.isMesh) child.material?.dispose();
+      });
+    }
     logger.error(
       '[dice3d] Unable to play d20 animation',
       { error: toErrorPayload(error) },

@@ -1,18 +1,5 @@
-// Animation scheduling, snap-to-board, and roll animation for the d20 system.
-// Extracted from dice3d.js (Phase 7).
-
-// ── Imports ────────────────────────────────────────────────────
 import logger from '../../utils/logger/Logger.js';
-import {
-  clampToRange,
-  buildRicochetPath,
-  buildAdditionalTravelTargets,
-  extendPathDistance,
-  adjustDieHeightForGround,
-  pickEdgePosition,
-  pickInteriorPosition,
-  collectCollisionObstacles,
-} from './DicePhysics.js';
+import { adjustDieHeightForGround, collectCollisionObstacles } from './DicePhysics.js';
 import {
   diceState,
   DICE_LOG_CATEGORY,
@@ -20,59 +7,28 @@ import {
   toErrorPayload,
   createGroundSampler,
   collectWorldFaceData,
+  getD20ColliderData,
   resolveUpFacingFace,
-  orientMeshToFaceIndex,
 } from './DiceState.js';
 
-// ── Constants & Easing ─────────────────────────────────────────
-const TRAVEL_DURATION_MS = 850;
-const TRAVEL_DISTANCE_MULTIPLIER = 3;
-const SNAP_DURATION_MS = 220;
-const DEFAULT_RICOCHET_SETTINGS = {
-  maxBounces: 4,
-  pulseWidth: 0.085,
-  clearanceTiles: 0.35,
-  obstacleLimit: 256,
-};
-
-const _easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-const _randomBetween = (min, max) => min + Math.random() * (max - min);
-const _hasWindow = () => typeof window !== 'undefined';
-
-// ── Snap Computation ───────────────────────────────────────────
 export function computeSnapSolution(mesh, three, groundY) {
   if (!mesh || !three?.Vector3 || !three?.Quaternion) return null;
-  const faces = collectWorldFaceData(mesh, three);
-  if (!faces.length) return null;
+  const faces = collectWorldFaceData(mesh, three).filter((face) =>
+    Number.isInteger(FACE_INDEX_TO_NUMBER[face.faceIndex])
+  );
   const down = new three.Vector3(0, -1, 0);
-  const centroidTolerance = Math.max(Math.abs(groundY) * 0.02, 0.01);
-  let bestFace = null;
-
-  for (const face of faces) {
-    if (!bestFace) {
-      bestFace = face;
-      continue;
-    }
-    if (face.centroidY < bestFace.centroidY - centroidTolerance) {
-      bestFace = face;
-      continue;
-    }
-    const centroidDelta = Math.abs(face.centroidY - bestFace.centroidY);
-    if (centroidDelta <= centroidTolerance) {
-      if (face.normal.dot(down) > bestFace.normal.dot(down)) {
-        bestFace = face;
-      }
-    }
-  }
-
-  if (!bestFace) return null;
-  const correction = new three.Quaternion().setFromUnitVectors(bestFace.normal, down);
+  const best = faces.reduce(
+    (current, face) =>
+      !current || face.normal.dot(down) > current.normal.dot(down) ? face : current,
+    null
+  );
+  if (!best) return null;
+  const correction = new three.Quaternion().setFromUnitVectors(best.normal, down);
   const targetQuat = mesh.quaternion.clone().premultiply(correction);
   return {
     targetQuat,
     applyFinal: () => {
       mesh.quaternion.copy(targetQuat);
-      mesh.rotation.setFromQuaternion(mesh.quaternion);
       mesh.updateMatrixWorld(true);
       adjustDieHeightForGround(mesh, three, groundY);
     },
@@ -80,314 +36,142 @@ export function computeSnapSolution(mesh, three, groundY) {
 }
 
 export function snapDieToBoard(mesh, three, groundY) {
-  const solution = computeSnapSolution(mesh, three, groundY);
-  solution?.applyFinal();
+  computeSnapSolution(mesh, three, groundY)?.applyFinal();
 }
 
-// ── Roll Animation Scheduling ──────────────────────────────────
-export function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
-  const baseTravelMs = TRAVEL_DURATION_MS;
-  const settleDurationMs = options.settleDurationMs ?? 650;
-  const snapDurationMs = options.snapDurationMs ?? SNAP_DURATION_MS;
-  const forcedFaceIndex = Number.isFinite(options.forceFaceIndex) ? options.forceFaceIndex : null;
-  const initialStart = pickEdgePosition(metrics);
-  const initialTarget = pickInteriorPosition(metrics);
-  const defaultPathLength = Math.hypot(
-    (initialTarget.x || 0) - (initialStart.x || 0),
-    (initialTarget.z || 0) - (initialStart.z || 0)
-  );
-  const fallbackPath = {
-    waypoints: [initialStart, initialTarget],
-    segments: [
-      {
-        start: initialStart,
-        end: initialTarget,
-        length: defaultPathLength,
-      },
-    ],
-    totalLength: defaultPathLength || metrics.tileSize || 1,
-    bounces: [],
-    finalWaypoint: initialTarget,
-    getPointAt: (progress) => {
-      const clamped = clampToRange(progress, 0, 1);
-      return {
-        x: initialStart.x + (initialTarget.x - initialStart.x) * clamped,
-        z: initialStart.z + (initialTarget.z - initialStart.z) * clamped,
-      };
-    },
-  };
-
-  let pathInfo = fallbackPath;
-  let obstacles = null;
-  if (options.enableRicochet !== false) {
-    try {
-      obstacles = collectCollisionObstacles(manager, metrics);
-      const ricochetPath = buildRicochetPath(initialStart, initialTarget, metrics, {
-        obstacles,
-        maxBounces: options.maxRicochetBounces,
-        clearanceTiles: options.ricochetClearanceTiles,
-      });
-      if (ricochetPath?.segments?.length) {
-        pathInfo = ricochetPath;
-      }
-    } catch (_) {
-      pathInfo = fallbackPath;
-    }
+function notify(callback, payload, stage) {
+  if (typeof callback !== 'function') return;
+  try {
+    callback(payload);
+  } catch (error) {
+    logger.warn(
+      'D20 animation callback failed',
+      { stage, error: toErrorPayload(error) },
+      DICE_LOG_CATEGORY
+    );
   }
+}
 
-  const basePathLength = pathInfo.totalLength || metrics.tileSize || 1;
-  const distanceMultiplier = Number.isFinite(options.travelDistanceMultiplier)
-    ? Math.max(1, options.travelDistanceMultiplier)
-    : TRAVEL_DISTANCE_MULTIPLIER;
-  const desiredSegments = Math.max(2, Math.round(distanceMultiplier));
-  const additionalSegmentsNeeded = Math.max(0, desiredSegments - 1);
-  const additionalTargets = buildAdditionalTravelTargets(metrics, additionalSegmentsNeeded);
-  const extendedTravelEnabled = options.enableExtendedTravel !== false;
-  if (extendedTravelEnabled && additionalTargets.length) {
-    pathInfo = extendPathDistance(pathInfo, additionalTargets, metrics, {
-      obstacles,
-      maxBounces: options.maxRicochetBounces,
-      clearanceTiles: options.ricochetClearanceTiles,
-    });
+export async function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
+  if (options.forceFaceIndex != null) {
+    throw new Error('Physical d20 rolls cannot force a result; use face calibration instead');
   }
-
-  const adjustedPathLength = pathInfo.totalLength || basePathLength;
-  const travelDistanceScale = Math.max(
-    1,
-    basePathLength > 0 ? adjustedPathLength / basePathLength : distanceMultiplier
+  const three = diceState.threeNamespace;
+  const { createD20Simulation } = await import('./D20Dynamics.js');
+  const sampleGround = createGroundSampler(manager, metrics, options.restHeight ?? 0);
+  const groundHeights = Array.from({ length: metrics.rows }, (_, y) =>
+    Array.from({ length: metrics.cols }, (_, x) =>
+      sampleGround((x + 0.5) * metrics.tileSize, (y + 0.5) * metrics.tileSize)
+    )
   );
-  const travelDurationMs = baseTravelMs * travelDistanceScale;
+  const geometry = getD20ColliderData(mesh, three);
+  const fitScale =
+    (Math.min(metrics.cols, metrics.rows) * metrics.tileSize * 0.4) / geometry.radius;
+  mesh.scale.setScalar(Math.min(mesh.scale.x, fitScale));
+  const simulation = createD20Simulation({
+    geometry,
+    scale: mesh.scale.x,
+    metrics,
+    groundHeights,
+    obstacles: collectCollisionObstacles(manager, metrics),
+    random: options.random,
+  });
+  mesh.position.copy(simulation.body.position);
+  mesh.quaternion.copy(simulation.body.quaternion);
+  const renderQuaternion = new three.Quaternion();
 
-  const DEFAULT_REST_HEIGHT_FALLBACK = 0;
-  const start = pathInfo.waypoints?.[0] || initialStart;
-  const target = pathInfo.finalWaypoint || initialTarget;
-  const arcHeight = options.arcHeight ?? metrics.tileSize * 0.05;
-  const restHeight =
-    typeof options.restHeight === 'number' ? options.restHeight : DEFAULT_REST_HEIGHT_FALLBACK;
-  const hopHeight = metrics.tileSize * 1.15;
-  const groundLift = (mesh.userData?.groundLiftBase ?? 0) * mesh.scale.x;
-  const sampleGroundHeight = createGroundSampler(manager, metrics, restHeight);
-  const pathResolver =
-    typeof pathInfo.getPointAt === 'function' ? pathInfo.getPointAt : fallbackPath.getPointAt;
-  const pathBounces = Array.isArray(pathInfo.bounces) ? pathInfo.bounces : [];
-  const bouncePulseWidth = Number.isFinite(options.ricochetPulseWidth)
-    ? Math.max(0.02, options.ricochetPulseWidth)
-    : DEFAULT_RICOCHET_SETTINGS.pulseWidth;
-  const ricochetHopScale = hopHeight * 0.75;
-  let forcedFaceAligned = false;
-  const getBounceBoost = (progress) => {
-    if (!pathBounces.length) return 0;
-    let boost = 0;
-    for (const bounce of pathBounces) {
-      const delta = Math.abs(progress - (bounce.progress ?? 0));
-      if (delta <= bouncePulseWidth) {
-        const strength = 1 - delta / bouncePulseWidth;
-        boost += ricochetHopScale * (bounce.intensity ?? 0.6) * strength;
-      }
-    }
-    return boost;
-  };
-
-  let resolvedGroundY = sampleGroundHeight(start.x, start.z, restHeight);
-  const targetGroundY = sampleGroundHeight(target.x, target.z, restHeight);
-
-  mesh.position.set(start.x, resolvedGroundY + groundLift + arcHeight, start.z);
-  mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-  const startAngles = { x: mesh.rotation.x, y: mesh.rotation.y, z: mesh.rotation.z };
-  const spinScale = Math.max(1, travelDistanceScale);
-  const endAngles = {
-    x: startAngles.x + _randomBetween(Math.PI * 3 * spinScale, Math.PI * 5 * spinScale),
-    y: startAngles.y + _randomBetween(Math.PI * 2 * spinScale, Math.PI * 4 * spinScale),
-    z: startAngles.z + _randomBetween(Math.PI * 2 * spinScale, Math.PI * 4 * spinScale),
-  };
-
-  let startTs = null;
-  let settleTs = null;
-  let stopped = false;
+  let finished = false;
+  let lastTimestamp = null;
   let removeCallback = null;
   let rafHandle = null;
-  let hasSnappedFlat = false;
-  let snapState = null;
-  let settleCallbackFired = false;
 
-  const fireSettleCallback = () => {
-    if (settleCallbackFired || typeof options.onSettle !== 'function') return;
-    let faceInfo = null;
-    try {
-      faceInfo = resolveUpFacingFace(mesh, diceState.threeNamespace);
-    } catch (_) {
-      faceInfo = null;
+  const stopScheduling = () => {
+    if (removeCallback) {
+      removeCallback();
+      removeCallback = null;
     }
-    if (!faceInfo && Number.isFinite(forcedFaceIndex)) {
-      faceInfo = {
-        faceIndex: forcedFaceIndex,
-        value: FACE_INDEX_TO_NUMBER[forcedFaceIndex] ?? null,
-      };
-    }
-    try {
-      options.onSettle({ mesh, faceInfo: faceInfo || null });
-    } catch (callbackError) {
-      logger.warn(
-        'Dice settle callback failed',
-        { error: toErrorPayload(callbackError) },
-        DICE_LOG_CATEGORY
-      );
-    }
-    settleCallbackFired = true;
-  };
-
-  const stopAnimation = () => {
-    if (stopped) return;
-    stopped = true;
-    if (typeof removeCallback === 'function') {
-      try {
-        removeCallback();
-      } catch (_) {
-        /* ignore */
-      }
-    }
-    if (rafHandle && _hasWindow()) {
-      try {
-        window.cancelAnimationFrame(rafHandle);
-      } catch (_) {
-        /* ignore */
-      }
+    if (rafHandle != null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(rafHandle);
+      rafHandle = null;
     }
   };
 
-  const ensureGroundContact = () => {
+  const step = (timestamp) => {
+    if (finished) return;
     try {
-      resolvedGroundY = sampleGroundHeight(mesh.position.x, mesh.position.z, resolvedGroundY);
-      adjustDieHeightForGround(mesh, diceState.threeNamespace, resolvedGroundY);
-    } catch (_) {
-      /* ignore grounding errors */
-    }
-  };
-
-  const step = (ts) => {
-    if (stopped) return;
-    if (startTs == null) startTs = ts;
-    const elapsed = ts - startTs;
-    const travelT = Math.min(Math.max(elapsed / travelDurationMs, 0), 1);
-    const eased = _easeOutCubic(travelT);
-    const pathPoint = pathResolver(eased) || target;
-    mesh.position.x = pathPoint.x;
-    mesh.position.z = pathPoint.z;
-
-    if (settleTs == null) {
-      const bounce = Math.sin(travelT * Math.PI) * hopHeight + getBounceBoost(eased);
-      const groundY = sampleGroundHeight(mesh.position.x, mesh.position.z, resolvedGroundY);
-      resolvedGroundY = groundY;
-      mesh.position.y = groundY + groundLift + arcHeight + Math.max(bounce, 0);
-      const spinT = _easeOutCubic(travelT);
-      mesh.rotation.set(
-        startAngles.x + (endAngles.x - startAngles.x) * spinT,
-        startAngles.y + (endAngles.y - startAngles.y) * spinT,
-        startAngles.z + (endAngles.z - startAngles.z) * spinT
-      );
-      if (travelT >= 1) {
-        settleTs = ts;
-        resolvedGroundY = sampleGroundHeight(target.x, target.z, targetGroundY);
-        mesh.position.set(target.x, resolvedGroundY + groundLift, target.z);
-        ensureGroundContact();
-        if (forcedFaceIndex != null && !forcedFaceAligned) {
-          forcedFaceAligned = orientMeshToFaceIndex(
-            mesh,
-            forcedFaceIndex,
-            diceState.threeNamespace
-          );
-          if (!forcedFaceAligned && options.debugFaceIndex !== false) {
-            logger.warn(
-              'Unable to align die to requested faceIndex',
-              { faceIndex: forcedFaceIndex },
-              DICE_LOG_CATEGORY
-            );
-          }
-          ensureGroundContact();
-        }
-      }
-      return;
-    }
-
-    const wobbleT = Math.min((ts - settleTs) / settleDurationMs, 1);
-    const wobbleStrength = (1 - wobbleT) * 0.015 * metrics.tileSize;
-    mesh.rotation.x += Math.sin(wobbleT * Math.PI * 2) * wobbleStrength;
-    mesh.rotation.z -= Math.sin(wobbleT * Math.PI * 2) * wobbleStrength;
-    ensureGroundContact();
-    if (wobbleT >= 1) {
-      if (!hasSnappedFlat) {
-        if (!snapState) {
-          const snapGround = sampleGroundHeight(mesh.position.x, mesh.position.z, resolvedGroundY);
-          const solution = computeSnapSolution(mesh, diceState.threeNamespace, snapGround);
-          if (solution) {
-            snapState = {
-              startQuat: mesh.quaternion.clone(),
-              targetQuat: solution.targetQuat,
-              groundY: snapGround,
-              startTs: ts,
-            };
-          } else {
-            hasSnappedFlat = true;
-            fireSettleCallback();
-            stopAnimation();
-            return;
-          }
-        }
-
-        if (snapState?.targetQuat) {
-          const snapElapsed = ts - snapState.startTs;
-          const snapT = Math.min(Math.max(snapElapsed / snapDurationMs, 0), 1);
-          mesh.quaternion.copy(snapState.startQuat).slerp(snapState.targetQuat, snapT);
-          mesh.rotation.setFromQuaternion(mesh.quaternion);
-          mesh.updateMatrixWorld(true);
-          ensureGroundContact();
-          if (snapT >= 1) {
-            const finalGround = snapState?.groundY ?? resolvedGroundY;
-            snapDieToBoard(mesh, diceState.threeNamespace, finalGround);
-            snapState = null;
-            hasSnappedFlat = true;
-            if (forcedFaceIndex != null && !forcedFaceAligned) {
-              forcedFaceAligned = orientMeshToFaceIndex(
-                mesh,
-                forcedFaceIndex,
-                diceState.threeNamespace
-              );
-              ensureGroundContact();
-            }
-            fireSettleCallback();
-            stopAnimation();
-          }
+      if (!Number.isFinite(timestamp)) throw new Error('Invalid d20 animation timestamp');
+      const delta = lastTimestamp == null ? 0 : Math.max((timestamp - lastTimestamp) / 1000, 0);
+      lastTimestamp = timestamp;
+      const done = simulation.advance(delta);
+      const body = simulation.body;
+      if (done) {
+        mesh.position.copy(body.position);
+        mesh.quaternion.copy(body.quaternion);
+        mesh.updateMatrixWorld(true);
+        if (simulation.cocked) {
+          finished = true;
+          stopScheduling();
+          notify(options.onCocked, { mesh }, 'cocked');
           return;
         }
+        const faceInfo = resolveUpFacingFace(mesh, three);
+        if (!Number.isInteger(faceInfo?.value) || faceInfo.value < 1 || faceInfo.value > 20) {
+          throw new Error('Unable to read the settled d20 face');
+        }
+        finished = true;
+        stopScheduling();
+        notify(options.onSettle, { mesh, faceInfo }, 'settle');
+      } else {
+        mesh.position.copy(body.previousPosition).lerp(body.position, simulation.alpha);
+        mesh.quaternion
+          .copy(body.previousQuaternion)
+          .slerp(renderQuaternion.copy(body.quaternion), simulation.alpha);
       }
-
-      fireSettleCallback();
-      stopAnimation();
+    } catch (error) {
+      finished = true;
+      stopScheduling();
+      logger.error('D20 physics roll failed', { error: toErrorPayload(error) }, DICE_LOG_CATEGORY);
+      notify(options.onError, error, 'error');
     }
   };
 
-  const managerCallback = manager?.addAnimationCallback;
-  if (typeof managerCallback === 'function') {
-    removeCallback = managerCallback.call(manager, step);
-  } else if (_hasWindow()) {
-    const loop = (ts) => {
-      if (stopped) return;
-      step(ts || performance.now());
-      rafHandle = window.requestAnimationFrame(loop);
+  if (typeof manager?.addAnimationCallback === 'function') {
+    removeCallback = manager.addAnimationCallback(step);
+    if (
+      typeof removeCallback !== 'function' &&
+      typeof manager.removeAnimationCallback === 'function'
+    ) {
+      removeCallback = () => manager.removeAnimationCallback(step);
+    }
+  } else if (typeof window !== 'undefined') {
+    const loop = (timestamp) => {
+      step(timestamp);
+      if (!finished) rafHandle = window.requestAnimationFrame(loop);
     };
     rafHandle = window.requestAnimationFrame(loop);
-    removeCallback = () => {
-      stopped = true;
-    };
   } else {
-    removeCallback = () => {};
+    throw new Error('No animation scheduler is available for the d20');
   }
 
+  const stopAnimation = () => {
+    if (finished) return;
+    finished = true;
+    stopScheduling();
+    notify(options.onCancel, { mesh }, 'cancel');
+  };
   return {
     stopAnimation,
     dispose: () => {
       stopAnimation();
-      if (mesh.parent) mesh.parent.remove(mesh);
+      mesh.parent?.remove(mesh);
+      const materials = new Set();
+      mesh.traverse((child) => {
+        if (!child.isMesh) return;
+        for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+          if (material) materials.add(material);
+        }
+      });
+      for (const material of materials) material.dispose();
     },
   };
 }

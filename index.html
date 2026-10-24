@@ -8,10 +8,11 @@
   <meta name="description"
     content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling">
   <link rel="stylesheet" href="src/ui/styles.css">
-  <!-- Import map so bare specifier 'three' resolves in native ESM environment (no bundler) -->
+  <!-- Pinned native ESM dependencies; no application bundler. -->
   <script type="importmap">
     {
       "imports": {
+        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
         "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
         "three/examples/jsm/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js",
         "three/examples/jsm/loaders/FBXLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js",

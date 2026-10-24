@@ -1,6 +1,6 @@
 # TavernTable maintenance handoff
 
-Last verified: October 2026, after the cliff-motion update.
+Last verified: October 24, 2026, after the cliff-motion and large-d20 updates.
 
 ## Start here
 
@@ -28,7 +28,7 @@ npm run test:stable -- --watch=false
 npm run lint:all
 ```
 
-- 71 Jest suites and 264 tests pass.
+- 76 Jest suites and 323 tests pass.
 - JavaScript lint has no errors and 40 existing unused-variable warnings.
 - Stylesheet lint and the architecture-layer check pass.
 
@@ -43,6 +43,64 @@ assumptions, not established gameplay regressions:
 both normal-path and drunk animation loading and the real fall cleanup.
 The subsequent cliff-motion pass changes production movement and adds the
 regressions below. Remaining browser reports are tracked separately in the backlog.
+
+## Large d20 physics
+
+- This changes only the single gold d20 on the board. Other dice and multi-die
+  rolls keep their existing 2D path.
+- [D20Dynamics](./src/systems/dice/D20Dynamics.js) uses cannon-es 0.20.0, pinned in
+  the dependency manifest and the browser import map. Load it lazily for the large
+  die; a physics download must not become an application-startup requirement.
+- [DiceState](./src/systems/dice/DiceState.js) derives a compact convex collider
+  from the 20 calibrated numbered planes of the existing GLB. Enclose the raised
+  numerals/bevels as well as the recessed calibration triangles. Do not interpret
+  arbitrary body/glyph triangle indices as the numbered result: some numbered
+  facets contain multiple triangles.
+- Advance at 1/120 second with an owned accumulator. Cannon's render-time-budgeted
+  stepping can discard accumulated time and change results with frame rate.
+  Render the body pose; never add an Euler spin, cumulative wobble, or cosmetic
+  snap after the body stops. Convert Cannon quaternions to Three quaternions
+  before calling Three's `slerp`.
+- Terrain colliders are a snapshot of the live heights at throw time, coalesced
+  into same-height boxes. Static obstacles and board boundaries participate in
+  contacts. Set static body position/orientation in the constructor so broadphase
+  bounds are correct. Terrain edits during a throw are not live collider updates.
+- A quiet die may sleep only when the top facet is unambiguous. Let gravity
+  continue tipping a low-speed die balanced on an edge. A stationary cocked die
+  prompts a manual reroll, as selected by the owner: retain its model, publish no
+  number, and release the controls. A six-second simulation guard reports an
+  unsettled-roll failure rather than forcing a face or fabricating a result.
+- Launch momentum scales with the usable board span rather than a fixed weak
+  impulse, so throws cross the board. Boundary walls have a separate contact
+  material (0.45 restitution, 0.2 friction) for a modest bank; the board keeps its
+  lower restitution. Linear damping is 0.22 in flight / 0.4 on contact, and
+  angular damping is 0.35 / 0.6. This preserves the strong toss without extending
+  the slow finish. The cocked-die regression uses a recorded resting pose so
+  launch tuning cannot invalidate that fixture.
+- [DiceAnimationScheduler](./src/systems/dice/DiceAnimationScheduler.js) handles
+  physics/render scheduling, small-board fitting, and one-shot completion,
+  cancellation, and cocked/error outcomes. Dispose cloned materials on dismissal,
+  not the shared GLB geometry or textures.
+- [dice3d](./src/systems/dice/dice3d.js) resolves every roll outcome explicitly.
+  [dice](./src/systems/dice/dice.js) displays/logs only a valid physical result.
+  RNG fallback is reserved for an unavailable 3D renderer, never a failed face
+  read or cancelled/cocked die.
+
+Tests under [the dice unit directory](./tests/unit/systems/dice/) load the actual
+gold GLB for geometry/contact checks and cover 30/120 FPS pose/result agreement,
+bounded throws, all 20 faces, minimum-board fitting, asynchronous setup,
+cancellation, cocked prompts, and unchanged non-d20/multi-die behavior.
+Browser verification uses the same model and physics modules. The owned visual
+fixture allows software WebGL for this host's strict GPU-preflight rejection;
+the temporary per-instance preflight override is restored immediately. Renderer
+availability code and the existing animation assets were not changed.
+The original gentle-launch verification covered 200 flat-board throws and all
+values 1-20. In the current 100-seed cross-board replay on a 25-tile board, 99 throws
+contacted a far wall and 98 rebounded away from it. Median travel was about 27.85
+world units; median simulated duration was 4.07 seconds, with a 5.63-second maximum.
+Four throws correctly prompted for a cocked die; none hit the failure guard.
+Uneven-board checks exercise both valid landings and explicit cocked/unsettled
+outcomes, rather than counting an arbitrary number as a successful result.
 
 ## Mannequin cliff motion
 

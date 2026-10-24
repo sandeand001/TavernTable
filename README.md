@@ -14,7 +14,8 @@ Requirements:
 - Node.js with npm.
 - Python 3 available as `python`.
 - A modern browser with WebGL 2.
-- Internet access for the pinned Three.js modules loaded from jsDelivr.
+- Internet access for the pinned Three.js modules and the large d20's cannon-es
+  physics module loaded from jsDelivr.
 
 Verified development environment: Windows, Node.js 24.4.1, npm 11.4.2, and
 Python 3.13.14.
@@ -50,6 +51,8 @@ and cached models.
   share approach geometry, aligned climbing/recovery, and contact-timed landings.
   Rolls require enough flat landing space. Remaining movement follow-ups are in
   [TODO.md](./TODO.md).
+- The single large d20 uses rigid-body physics and reads its actual resting face.
+  Other dice types and multiple-die rolls retain their existing behavior.
 - The terrain-engine migration is **partially implemented**.
   [TerrainEngine](./src/terrain/TerrainEngine.js) exists, but the live
   [TerrainCoordinator](./src/coordinators/TerrainCoordinator.js) still owns a
@@ -58,6 +61,24 @@ and cached models.
 - There is no complete scene save/load interface, shared-session multiplayer,
   or packaged desktop release. The engine's terrain snapshot methods are not a
   complete application persistence feature.
+
+## Large d20 rolls
+
+With **Count: 1**, press **d20** to throw the gold die onto the board. Bounces,
+tumbling, friction, and quiet-body settling come from a fixed-step physics
+simulation rather than a scripted tour and a final face snap.
+The low forward launch scales with the board's usable span, sending the die
+across the board with end-over-end tumble and a modest rebound from its boundary
+walls. Surface resistance keeps the finish from dragging on.
+
+The displayed result comes from the resting numbered face. If the die is caught
+between faces, the result says **D20 is cocked. Roll again.** The model stays
+visible for inspection, no number is logged, and you can press d20 again.
+Clicking the die dismisses it; dismissing during a throw cancels that roll.
+On very small boards, its size is reduced enough to leave rolling room.
+
+Only an unavailable 3D renderer uses the existing 2D d20 fallback. A failed or
+unreadable physical roll never silently becomes a random result.
 
 ## Exotic biome appearances
 
@@ -105,9 +126,9 @@ Run commands from the project root. The root package manifest is the only
 package manifest for this app; lint configuration remains under
 [tools](./tools/).
 
-### Verification snapshot: October 2026 cliff-motion update
+### Verification snapshot: October 24, 2026
 
-- Jest: **71 suites, 264 tests passing**.
+- Jest: **76 suites, 323 tests passing**.
 - JavaScript lint: **0 errors, 40 existing unused-variable warnings**.
 - Stylesheet lint and architecture-layer check: **passing**.
 
@@ -117,6 +138,9 @@ release, and landing clearance. Fresh-load browser replays with the actual FBX
 clips also cover walk/run/sprint, both inputs, adjacent height changes, elevation
 scales, and 30/60/120 FPS. See [HANDOFF.md](./HANDOFF.md) for motion invariants and
 remaining limits; a green suite alone does not close every older movement report.
+Large-d20 tests additionally use the real GLB geometry to cover all 20 numbered
+faces, physical ground contact, bounds/terrain, frame-rate independence, short
+throws, cancellation, cocked rolls, and result/log consistency.
 
 ## Project layout
 

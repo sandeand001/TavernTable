@@ -54,21 +54,22 @@ function _getDiceResultEl() {
 // ── 3D Dice Integration ────────────────────────────────────────
 let isRolling = false;
 
+function _releaseRollControls() {
+  isRolling = false;
+  _getDiceButtons().forEach((button) => {
+    const wasDisabled = button.getAttribute('data-prev-disabled') === '1';
+    button.disabled = wasDisabled;
+    button.classList.toggle('disabled', wasDisabled);
+    button.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
+    button.removeAttribute('data-prev-disabled');
+  });
+}
+
 function _maybePlay3DDice({ sides, diceCount } = {}) {
   if (sides !== 20 || diceCount !== 1) {
     return Promise.resolve(null);
   }
-  try {
-    const rollPromise = playD20RollOnGrid({ dismissOnClick: true });
-    if (rollPromise?.then) {
-      return rollPromise
-        .then((result) => (Number.isInteger(result?.value) ? result.value : null))
-        .catch(() => null);
-    }
-  } catch (_) {
-    /* ignore animation errors */
-  }
-  return Promise.resolve(null);
+  return playD20RollOnGrid({ dismissOnClick: true });
 }
 
 // ── Roll Logic & Animation ─────────────────────────────────────
@@ -201,16 +202,7 @@ export function rollDice(sides) {
           diceCount: diceCount,
           isRolling: isRolling,
         });
-        isRolling = false;
-        // Re-enable dice buttons based on previous state
-        const diceBtns = _getDiceButtons();
-        diceBtns.forEach((btn) => {
-          const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
-          btn.disabled = wasDisabled;
-          btn.classList.toggle('disabled', wasDisabled);
-          btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
-          btn.removeAttribute('data-prev-disabled');
-        });
+        _releaseRollControls();
       }
     };
 
@@ -221,11 +213,38 @@ export function rollDice(sides) {
 
         try {
           if (isSingleD20 && d20PhysicalRollPromise) {
-            const physicalValue = await d20PhysicalRollPromise;
-            const resolvedValue = Number.isInteger(physicalValue)
-              ? physicalValue
-              : Math.floor(Math.random() * sides) + 1;
-            results.push(resolvedValue);
+            const physicalRoll = await d20PhysicalRollPromise;
+            if (physicalRoll?.reason === 'cancelled') {
+              resultEl.textContent = 'Roll cancelled.';
+              _releaseRollControls();
+              return;
+            }
+            if (physicalRoll?.reason === 'cocked') {
+              resultEl.textContent = 'D20 is cocked. Roll again.';
+              _releaseRollControls();
+              return;
+            }
+            if (
+              physicalRoll?.success &&
+              Number.isInteger(physicalRoll.value) &&
+              physicalRoll.value >= 1 &&
+              physicalRoll.value <= 20
+            ) {
+              results.push(physicalRoll.value);
+            } else if (
+              physicalRoll?.reason === 'no-manager' ||
+              physicalRoll?.reason === 'no-window'
+            ) {
+              logger.log(
+                LOG_LEVEL.INFO,
+                '3D d20 unavailable; using the 2D roll',
+                LOG_CATEGORY.USER,
+                { reason: physicalRoll.reason }
+              );
+              results.push(Math.floor(Math.random() * sides) + 1);
+            } else {
+              throw physicalRoll?.error || new Error('Unable to read the settled d20 face');
+            }
           } else {
             for (let i = 0; i < diceCount; i++) {
               results.push(Math.floor(Math.random() * sides) + 1);
@@ -291,16 +310,7 @@ export function rollDice(sides) {
           const t = setTimeout(() => {
             resultEl.style.color = DICE_CONFIG.COLORS.NORMAL_ROLL;
             resultEl.style.textShadow = 'none';
-            isRolling = false;
-            // Re-enable dice buttons after successful roll concludes
-            const diceBtns = _getDiceButtons();
-            diceBtns.forEach((btn) => {
-              const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
-              btn.disabled = wasDisabled;
-              btn.classList.toggle('disabled', wasDisabled);
-              btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
-              btn.removeAttribute('data-prev-disabled');
-            });
+            _releaseRollControls();
           }, DICE_CONFIG.RESULT_DISPLAY_DURATION);
           if (typeof t?.unref === 'function') t.unref();
         } catch (error) {
@@ -313,16 +323,8 @@ export function rollDice(sides) {
             diceCount: diceCount,
             sidebarAvailable: !!window.sidebarController,
           });
-          isRolling = false;
-          // Re-enable dice buttons after result shows
-          const diceBtns = _getDiceButtons();
-          diceBtns.forEach((btn) => {
-            const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
-            btn.disabled = wasDisabled;
-            btn.classList.toggle('disabled', wasDisabled);
-            btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
-            btn.removeAttribute('data-prev-disabled');
-          });
+          if (!results.length) resultEl.textContent = `Unable to roll d${sides}. Please try again.`;
+          _releaseRollControls();
         }
       };
 
@@ -344,16 +346,7 @@ export function rollDice(sides) {
         resultElement: !!_getDiceResultEl(),
       },
     });
-    isRolling = false;
-    // Attempt to re-enable dice buttons on failure
-    const diceBtns = _getDiceButtons();
-    diceBtns.forEach((btn) => {
-      const wasDisabled = btn.getAttribute('data-prev-disabled') === '1';
-      btn.disabled = wasDisabled;
-      btn.classList.toggle('disabled', wasDisabled);
-      btn.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
-      btn.removeAttribute('data-prev-disabled');
-    });
+    _releaseRollControls();
     return false;
   }
 }
