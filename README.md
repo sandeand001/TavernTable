@@ -46,8 +46,10 @@ and cached models.
 - Automatic biome flora uses concrete model-backed plants, not virtual family
   menu entries. Instance-group creation is shared per model and invalidated
   when a map is cleared or regenerated.
-- Token navigation is animation-based. The movement polish items in
-  [TODO.md](./TODO.md) still need browser-level investigation.
+- Token navigation is animation-based. Click and keyboard cliff traversal now
+  share approach geometry, aligned climbing/recovery, and contact-timed landings.
+  Rolls require enough flat landing space. Remaining movement follow-ups are in
+  [TODO.md](./TODO.md).
 - The terrain-engine migration is **partially implemented**.
   [TerrainEngine](./src/terrain/TerrainEngine.js) exists, but the live
   [TerrainCoordinator](./src/coordinators/TerrainCoordinator.js) still owns a
@@ -103,17 +105,18 @@ Run commands from the project root. The root package manifest is the only
 package manifest for this app; lint configuration remains under
 [tools](./tools/).
 
-### Verification snapshot: October 23, 2026
+### Verification snapshot: October 2026 cliff-motion update
 
-- Jest: **69 suites, 231 tests passing**.
+- Jest: **71 suites, 264 tests passing**.
 - JavaScript lint: **0 errors, 40 existing unused-variable warnings**.
 - Stylesheet lint and architecture-layer check: **passing**.
 
-The previous three movement-test failures were stale assertions/fixtures:
-landing sanitization removes vertical root offsets, `W` selects the drunk gait,
-and the real fall finalizer sets the idle phase. Tests now cover those contracts
-without changing movement production code. A green unit suite does not resolve
-the manually reported movement issues in the backlog.
+Cliff-motion regression coverage includes real Three.js hierarchy transforms,
+animation/root blending, terrain-edge detection, exact arrival budgets, input
+release, and landing clearance. Fresh-load browser replays with the actual FBX
+clips also cover walk/run/sprint, both inputs, adjacent height changes, elevation
+scales, and 30/60/120 FPS. See [HANDOFF.md](./HANDOFF.md) for motion invariants and
+remaining limits; a green suite alone does not close every older movement report.
 
 ## Project layout
 

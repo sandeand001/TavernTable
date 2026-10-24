@@ -13,6 +13,7 @@
  */
 
 import { DEFAULT_MOVEMENT_PROFILE } from '../../config/token-adapter/MannequinConfig.js';
+import { GameErrors } from '../../utils/error/ErrorHandler.js';
 
 // ── Animation Setup & Clip Resolution ────────────────────────────
 
@@ -185,37 +186,31 @@ async function _setupAnimationSet(tokenEntry, container, config, templateBundle)
     }
 
     const climbClip = await this._resolveAnimationClip(animationsConfig.climb, null, clipOptions);
-    if (climbClip) {
-      const action = mixer.clipAction(climbClip);
-      this._configureAction(action, animationsConfig.climb, three, { loop: 'once' });
-      action.clampWhenFinished = true;
-      actions.climb = action;
-      clips.climb = climbClip.duration || 0;
-    }
-
     const climbWallClip = await this._resolveAnimationClip(
       animationsConfig.climbWall,
       null,
       clipOptions
     );
-    if (climbWallClip) {
-      const action = mixer.clipAction(climbWallClip);
-      this._configureAction(action, animationsConfig.climbWall, three, { loop: 'repeat' });
-      actions.climbWall = action;
-      clips.climbWall = climbWallClip.duration || 0;
-    }
-
     const climbRecoverClip = await this._resolveAnimationClip(
       animationsConfig.climbRecover,
       null,
       clipOptions
     );
-    if (climbRecoverClip) {
-      const action = mixer.clipAction(climbRecoverClip);
-      this._configureAction(action, animationsConfig.climbRecover, three, { loop: 'once' });
-      action.clampWhenFinished = true;
-      actions.climbRecover = action;
-      clips.climbRecover = climbRecoverClip.duration || 0;
+    const preparedClimbs = this._prepareClimbRootMotion(tokenEntry, {
+      climb: climbClip,
+      climbWall: climbWallClip,
+      climbRecover: climbRecoverClip,
+    });
+    for (const key of ['climb', 'climbWall', 'climbRecover']) {
+      const clip = preparedClimbs[key];
+      if (!clip) continue;
+      const action = mixer.clipAction(clip);
+      this._configureAction(action, animationsConfig[key], three, {
+        loop: key === 'climbWall' ? 'repeat' : 'once',
+      });
+      action.clampWhenFinished = key !== 'climbWall';
+      actions[key] = action;
+      clips[key] = clip.duration || 0;
     }
     const hardLandingClip = await this._resolveAnimationClip(
       animationsConfig.hardLanding,
@@ -263,16 +258,26 @@ async function _setupAnimationSet(tokenEntry, container, config, templateBundle)
     await loadOptionalAnimation('dynamicPose', { loop: 'once', clamp: true });
     await loadOptionalAnimation('defeated', { loop: 'once', clamp: true });
 
-    this._animationMixers.set(tokenEntry, mixer);
-
+    const landingContactTimes = {};
+    for (const key of ['fall', 'hardLanding', 'fallToRoll']) {
+      const contactTime = animationsConfig[key]?.contactTime;
+      if (contactTime == null) continue;
+      if (!Number.isFinite(contactTime) || contactTime < 0 || contactTime > clips[key]) {
+        throw new Error(`Invalid ground-contact time for ${key}`);
+      }
+      landingContactTimes[key] = contactTime;
+    }
     const profile = this._buildMovementProfile(config.movementProfile, actions, clips);
     const animationData = {
       mixer,
       actions,
       clips,
       profile,
+      rootMotion: preparedClimbs.rootMotion,
+      landingContactTimes,
       current: null,
     };
+    this._animationMixers.set(tokenEntry, mixer);
     this._tokenAnimationData.set(tokenEntry, animationData);
 
     if (actions.idle) {
@@ -280,8 +285,8 @@ async function _setupAnimationSet(tokenEntry, container, config, templateBundle)
     }
 
     this._resumeMovementAnimations(tokenEntry);
-  } catch (_) {
-    /* ignore animation setup errors */
+  } catch (error) {
+    GameErrors.rendering(error, { component: 'Token3DAdapter', operation: 'setupAnimations' });
   }
 }
 

@@ -23,16 +23,16 @@
 
 ## Mannequin Movement Polish
 
-These are previously reported browser behaviors, not failures currently
-reproduced by the unit suite. Correcting the stale movement-test fixtures did
-not establish that these gameplay issues are fixed.
+Completed items have regression coverage and actual-FBX browser replays described
+in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 
-- [ ] **Fall animation edge cases** — Fall detection uses world-position-derived tile which can be slightly off at tile boundaries. Current fix (same-elevation guard) prevents cliff-edge oscillation but edge-adjacent destinations may still have issues where the sprite overshoots instead of stopping. Investigate smoother cliff-edge pathGoal handling.
-- [ ] **Orientation deferral during path navigation** — `_advanceWalkPhase` calls `_ensureFallStepActive` before `_applyPendingOrientation`, so `_getMovementYaw` may use a stale `facingAngle` when checking which tile to evaluate for falls. Low-priority since the world-position fix mostly compensates, but a proper fix would apply pending orientation before fall detection.
-- [ ] **Walk animation not playing for short paths** — Sprite slides instead of walking for short-distance navigation. Run animation works for longer paths. Investigate whether the `walk` action is failing to load or the animation fade-in is being skipped.
-- [ ] **Edge tile destination overshoot** — Sprite cannot stop on destination tile when that tile is on the edge of an elevated area. May overshoot and fall off.
-- [ ] **Sprint-to-climb on closely spaced elevations** — Odd behavior when sprinting across multiple elevation changes with only a single tile between the top of the first climb and the start of the second. May be related to sprint state persisting through climb continuation, or the single-tile gap not giving enough space for the approach phase.
-- [ ] **Multiple in-line falls animation** — Falling animation breaks when the path includes multiple consecutive falls (e.g. stepping off a series of descending tiles). Needs investigation into how chained fall phases are handled and whether the fall state resets correctly between sequential drops.
+- [x] **Climb, crouch-to-stand, and fall alignment** — Correct root-space scale/rotation, continuous wall and mantle motion, authored recovery poses, foot grounding, and contact-timed landings for click and keyboard control.
+- [x] **Orientation deferral during traversal** — Preserve facing throughout committed climbs and falls, retain requested post-climb turns, and evaluate navigated falls using the actual world-space goal direction.
+- [x] **Edge tile destination overshoot** — Arrival obeys the movement budget and reaches the exact destination without consuming the tolerance as a final snap. Verified a running arrival beside a cliff without falling off.
+- [x] **Sprint-to-climb on closely spaced elevations** — Verified two eight-level rises with a single intermediate tile, including sprinting approach and continued navigation.
+- [x] **Multiple in-line falls animation** — Verified two consecutive ten-level drops. Unsafe rolls use a braced landing; the next fall begins normally and releases its world lock before movement resumes.
+- [ ] **Broader fall edge cases** — Continue stress-testing irregular/diagonal terrain and retargeting during animated transitions. World-space edge tracing replaces the old stored-grid/same-elevation guard, but the validated cliff fixtures are not exhaustive coverage.
+- [ ] **Walk animation not playing for short paths** — Loaded-clip short walking paths now replay correctly. Reproduce the original cold-loading slide before declaring this report resolved.
 
 ---
 

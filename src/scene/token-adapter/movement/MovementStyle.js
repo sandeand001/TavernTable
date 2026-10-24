@@ -428,7 +428,9 @@ function _startMovementPhase(state, newSign) {
     });
   } else {
     state.hasLoopStarted = true;
-    this._playLoopAnimation(state, { force: true });
+    const loop = data?.actions?.[state.loopActionKey];
+    const alreadyPlaying = data?.current === state.loopActionKey && loop?.isRunning?.();
+    this._playLoopAnimation(state, { force: !alreadyPlaying });
   }
 
   this._logPathing('movement:phase-start', {

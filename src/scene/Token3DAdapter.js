@@ -16,8 +16,6 @@ import {
   PATH_STALL_REPATH_DELAY,
   SELECTION_COLLIDER_HEIGHT,
   SELECTION_COLLIDER_RADIUS_RATIO,
-  CLIMB_RECOVER_CROUCH_HOLD,
-  CLIMB_RECOVER_STAND_RELEASE,
   TOKEN_WORLD_LOCK_PROP,
 } from '../config/token-adapter/MannequinConfig.js';
 import { installAnimationMethods } from './token-adapter/AnimationController.js';
@@ -37,6 +35,7 @@ import { installResumeProbeMethods } from './token-adapter/pathing/ResumeProbe.j
 import { installRootMotionMethods } from './token-adapter/spatial/RootMotion.js';
 import { installSpatialUtilsMethods } from './token-adapter/spatial/SpatialUtils.js';
 import { installWorldAuthorityMethods } from './token-adapter/spatial/WorldAuthority.js';
+import { GameErrors } from '../utils/error/ErrorHandler.js';
 
 export class Token3DAdapter {
   // ── Constructor & Initialization ─────────────────────────────────────────────
@@ -95,25 +94,31 @@ export class Token3DAdapter {
           }
           this._lastFrameTime = now;
 
-          if (delta > 0) {
-            try {
-              this._updateForwardMovements(delta);
-            } catch (_) {
-              /* ignore movement update errors */
-            }
-          }
-
           if (delta > 0 && this._animationMixers.size) {
             for (const [tokenEntry, mixer] of this._animationMixers.entries()) {
               try {
                 mixer.update(delta);
-              } catch (_) {
-                /* ignore mixer update */
+              } catch (error) {
+                GameErrors.rendering(error, {
+                  component: 'Token3DAdapter',
+                  operation: 'updateAnimation',
+                  tokenId: tokenEntry.id,
+                });
               }
+            }
+          }
+
+          if (delta > 0) {
+            this._updateForwardMovements(delta);
+            for (const tokenEntry of this._animationMixers.keys()) {
               try {
                 this._neutralizeRootMotion(tokenEntry);
-              } catch (_) {
-                /* ignore root reset */
+              } catch (error) {
+                GameErrors.rendering(error, {
+                  component: 'Token3DAdapter',
+                  operation: 'neutralizeRootMotion',
+                  tokenId: tokenEntry.id,
+                });
               }
             }
           }
@@ -249,6 +254,8 @@ export class Token3DAdapter {
         pathStallTime: 0,
         lastRequestedGoal: null,
         climbQueued: null,
+        climbKeyboardApproach: null,
+        climbKeyboardActive: false,
         climbPendingInfo: null,
         climbActive: false,
         climbElapsed: 0,
@@ -270,10 +277,6 @@ export class Token3DAdapter {
         climbRecoverDuration: 0,
         climbRecoverStartWorld: null,
         climbRecoverAnchorPosition: null,
-        climbRecoverCrouchWorld: null,
-        climbRecoverCrouchDrop: 1.0,
-        climbRecoverRiseHold: CLIMB_RECOVER_CROUCH_HOLD,
-        climbRecoverStandRelease: CLIMB_RECOVER_STAND_RELEASE,
         climbLastWorld: null,
         climbAdvanceActive: false,
         climbAdvanceTargetWorld: null,

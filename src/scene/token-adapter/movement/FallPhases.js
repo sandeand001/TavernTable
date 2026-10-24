@@ -145,6 +145,7 @@ function _finishFallPhase(state) {
 
   const resumed = this._resumeMovementAfterFall(state);
   if (resumed) {
+    this._unlockTokenWorldAuthority(state);
     return;
   }
 
@@ -232,15 +233,41 @@ function _transitionFallToLanding(state) {
     this._extractClipDuration(actions[landingKey]) ||
     this._getLandingClipDuration(profile, landingKey) ||
     0;
-  state.fallSpeed = this._calculateFallSpeed(state.activeStep, state.fallDuration, profile);
+  state.fallSpeed =
+    state.fallSpeed > 0
+      ? state.fallSpeed
+      : this._calculateFallSpeed(state.activeStep, state.fallDuration, profile);
   if (!(state.fallSpeed > 0)) {
     state.fallSpeed = Math.max(profile.walkSpeed || 0, 0);
   }
 
   const verticalDistance = Math.max(state.activeStep?.heightDrop || 0, 0);
 
+  let fadeIn = profile.fallFadeIn ?? DEFAULT_MOVEMENT_PROFILE.fallFadeIn;
+  const contactTime = data?.landingContactTimes?.[landingKey];
+  const rootInfo = this._rootBones.get(state.token)?.[0];
+  const firstPose = rootInfo ? this._getActionRootPosition(rootInfo, actions[landingKey], 0) : null;
+  if (Number.isFinite(contactTime) && contactTime > 0) {
+    const step = state.activeStep;
+    const verticalSpeed =
+      step?.totalDistance > 0
+        ? (state.fallSpeed * Math.abs(step.startWorld.y - step.targetWorld.y)) / step.totalDistance
+        : 0;
+    const poseRise = firstPose
+      ? this._rootDisplacementToWorld(rootInfo, {
+          x: 0,
+          y: firstPose.y - rootInfo.bone.position.y,
+          z: 0,
+        }).y
+      : 0;
+    fadeIn = Math.min(
+      contactTime,
+      Math.max(fadeIn, verticalSpeed > 0 ? poseRise / verticalSpeed : 0)
+    );
+  }
+
   this._setAnimation(state.token, landingKey, {
-    fadeIn: profile.fallFadeIn,
+    fadeIn,
     fadeOut: profile.fallFadeOut,
     force: true,
   });
@@ -325,6 +352,39 @@ function _getLandingClipDuration(profile, landingKey) {
   return base.fallClipDuration || base.hardLandingClipDuration || base.fallLoopClipDuration || 0;
 }
 
+function _hasLandingRollClearance(state, animationData) {
+  const rootInfo = this._rootBones.get(state.token)?.[0];
+  const action = animationData?.actions?.fallToRoll;
+  const track = action
+    ?.getClip?.()
+    ?.tracks?.find((entry) => entry.name === `${rootInfo?.bone.name}.position`);
+  const landing = state.activeStep?.targetWorld;
+  if (!rootInfo || !track || !landing) return true;
+  const bounds = this._computeMovementBounds();
+  let previous = landing;
+  for (const time of track.times) {
+    const position = this._getActionRootPosition(rootInfo, action, time);
+    const offset = this._rootDisplacementToWorld(rootInfo, {
+      x: position.x - rootInfo.basePosition.x,
+      y: 0,
+      z: position.z - rootInfo.basePosition.z,
+    });
+    const world = { x: landing.x + offset.x, y: landing.y, z: landing.z + offset.z };
+    if (
+      world.x < bounds.minX ||
+      world.x > bounds.maxX ||
+      world.z < bounds.minZ ||
+      world.z > bounds.maxZ ||
+      Math.abs(this._sampleWorldHeight(world.x, world.z, landing.y) - landing.y) > 1e-3 ||
+      this._findTerrainTransition(previous, world, (from, to) => from !== to)
+    ) {
+      return false;
+    }
+    previous = world;
+  }
+  return true;
+}
+
 // ── Fall Entry ─────────────────────────────────────────────────
 
 function _computeLandingThreshold(distance, landingKey) {
@@ -368,21 +428,24 @@ function _maybeEnterFallPhase(state, animationData) {
   if (!step.fallStartCaptured) {
     const travelRatio =
       step.totalDistance > 0 ? Math.min(step.traveled / step.totalDistance, 1) : 0;
-    step.fallStartRatio = travelRatio;
-    if (step.mesh?.position) {
-      step.fallStartPosition = {
-        x: step.mesh.position.x,
-        y: step.mesh.position.y,
-        z: step.mesh.position.z,
-      };
-    } else {
-      step.fallStartPosition = this._lerp3(step.startPosition, step.targetPosition, travelRatio);
-    }
-
-    const worldRef =
+    step.startWorld =
       this._cloneWorld(step.tokenEntry?.world) ||
       this._lerp3(step.startWorld, step.targetWorld, travelRatio);
-    step.fallStartWorld = worldRef;
+    step.startPosition = this._composeMeshPosition(step.startWorld, step.mesh || state.mesh);
+    step.totalDistance = Math.hypot(
+      step.targetWorld.x - step.startWorld.x,
+      step.targetWorld.y - step.startWorld.y,
+      step.targetWorld.z - step.startWorld.z
+    );
+    step.horizontalDistance = Math.hypot(
+      step.targetWorld.x - step.startWorld.x,
+      step.targetWorld.z - step.startWorld.z
+    );
+    step.traveled = 0;
+    step.horizontalTraveled = 0;
+    step.fallStartRatio = 0;
+    step.fallStartPosition = this._cloneWorld(step.startPosition);
+    step.fallStartWorld = this._cloneWorld(step.startWorld);
     step.fallStartCaptured = true;
   }
 
@@ -390,7 +453,15 @@ function _maybeEnterFallPhase(state, animationData) {
   const fallLoopMinDrop = Number.isFinite(profile?.fallLoopMinDrop)
     ? profile.fallLoopMinDrop
     : FALL_LOOP_MIN_DROP;
-  const preferredLanding = step.landingVariant || 'fall';
+  let preferredLanding = step.landingVariant || 'fall';
+  if (
+    preferredLanding === 'fallToRoll' &&
+    actions?.hardLanding &&
+    !this._hasLandingRollClearance(state, data)
+  ) {
+    preferredLanding = 'hardLanding';
+    step.landingVariant = preferredLanding;
+  }
   let landingKey = this._selectLandingAnimation(actions, preferredLanding);
   if (!landingKey) {
     landingKey = this._selectLandingAnimation(actions, 'fall');
@@ -398,7 +469,9 @@ function _maybeEnterFallPhase(state, animationData) {
 
   state.fallLandingKey = landingKey;
   state.fallLandingDuration = this._getLandingClipDuration(profile, landingKey);
-  const fallLoopEligible = actions?.fallLoop && verticalDistance >= fallLoopMinDrop;
+  const contactTime = data?.landingContactTimes?.[landingKey];
+  const fallLoopEligible =
+    actions?.fallLoop && (verticalDistance >= fallLoopMinDrop || Number.isFinite(contactTime));
   state.fallMode = fallLoopEligible ? 'loop' : 'landing';
 
   let animationKey = null;
@@ -465,13 +538,10 @@ function _maybeEnterFallPhase(state, animationData) {
   if (!(state.fallSpeed > 0)) {
     state.fallSpeed = Math.max(profile.walkSpeed || 0, 0);
   }
-  const priorSpeed = Math.max(
-    Number(state.lastMoveSpeed) || 0,
-    Number(state.activeSpeed) || 0,
-    profile.walkSpeed || 0
-  );
-  if (priorSpeed > 0 && priorSpeed > state.fallSpeed) {
-    state.fallSpeed = priorSpeed;
+  if (fallLoopEligible && Number.isFinite(contactTime) && step.totalDistance > 0) {
+    const verticalSpeed =
+      (state.fallSpeed * Math.abs(step.startWorld.y - step.targetWorld.y)) / step.totalDistance;
+    state.fallLandingThreshold = Math.max(verticalSpeed * contactTime, 1e-5);
   }
 
   const fadeIn =
@@ -507,7 +577,11 @@ function _ensureFallStepActive(state) {
   if (state.__fallStepActive && state.activeStep?.__fallSingleUse) {
     return true;
   }
-  const step = this._createForwardMovementStep(state.token, state.mesh);
+  const step = this._createForwardMovementStep(
+    state.token,
+    state.mesh,
+    state.movementSign || state.lastMoveSign || 1
+  );
   if (!step || !step.requiresFall) {
     return false;
   }
@@ -550,12 +624,13 @@ function _resumeMovementAfterFall(state) {
   if (!resume) return false;
 
   const pathStillValid = resume.pathActive && state.pathActive && state.pathGoal;
-  const shouldResume = resume.intentHold || pathStillValid;
+  const liveIntent = this._recalculateMovementIntent(state);
+  const shouldResume = liveIntent !== 0 || pathStillValid;
   if (!shouldResume) {
     return false;
   }
 
-  const movementSign = resume.movementSign || state.movementSign || 1;
+  const movementSign = liveIntent || resume.movementSign || state.movementSign || 1;
   state.phase = 'walk';
   state.phaseElapsed = 0;
   state.intentHold = true;
@@ -602,6 +677,7 @@ function installFallMethods(prototype) {
   prototype._calculateFallSpeed = _calculateFallSpeed;
   prototype._selectLandingAnimation = _selectLandingAnimation;
   prototype._getLandingClipDuration = _getLandingClipDuration;
+  prototype._hasLandingRollClearance = _hasLandingRollClearance;
   prototype._computeLandingThreshold = _computeLandingThreshold;
   prototype._maybeEnterFallPhase = _maybeEnterFallPhase;
   prototype._ensureFallStepActive = _ensureFallStepActive;

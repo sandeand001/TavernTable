@@ -21,14 +21,71 @@ import {
   PATH_SPEED_MODES,
   MAX_STANDARD_CLIMB_LEVELS,
   CLIMB_WALL_ENTRY_TILE_HALF_RATIO,
-  CLIMB_WALL_ENTRY_MIN_RATIO,
-  CLIMB_WALL_ENTRY_RUN_BACKOFF_RATIO,
-  CLIMB_WALL_ENTRY_SPRINT_BACKOFF_RATIO,
   CLIMB_APPROACH_TOLERANCE_MIN,
   CLIMB_APPROACH_TOLERANCE_RUN_SCALE,
   CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE,
   MAX_INTERMEDIATE_CLIMB_CHAIN,
 } from '../../../config/token-adapter/MannequinConfig.js';
+
+function _createClimbApproach(tokenEntry, targetGridX, targetGridY) {
+  const spatial = this.gameManager?.spatial;
+  if (!spatial?.gridToWorld || !this._isGridWithinBounds(targetGridX, targetGridY)) return null;
+  const currentWorld = this._resolveTokenWorldPosition(tokenEntry);
+  const currentGrid = this._mapWorldToGrid(currentWorld) || tokenEntry;
+  const currentHeight = this._getTerrainHeight(currentGrid.gridX, currentGrid.gridY);
+  const targetHeight = this._getTerrainHeight(targetGridX, targetGridY);
+  const stepX = Math.sign(targetGridX - currentGrid.gridX);
+  const stepY = Math.sign(targetGridY - currentGrid.gridY);
+  const candidates = [];
+  if (stepX) candidates.push({ gridX: targetGridX - stepX, gridY: targetGridY });
+  if (stepY) candidates.push({ gridX: targetGridX, gridY: targetGridY - stepY });
+  const preferZ =
+    Math.abs(targetGridY - currentGrid.gridY) > Math.abs(targetGridX - currentGrid.gridX);
+  if (preferZ) candidates.reverse();
+  const approach = candidates.find(
+    (cell) =>
+      this._isGridWithinBounds(cell.gridX, cell.gridY) &&
+      this._getTerrainHeight(cell.gridX, cell.gridY) - currentHeight < MAX_STANDARD_CLIMB_LEVELS
+  );
+  if (!approach) {
+    const intermediate = candidates.find((cell) =>
+      this._isGridWithinBounds(cell.gridX, cell.gridY)
+    );
+    return intermediate
+      ? this._createClimbApproach(tokenEntry, intermediate.gridX, intermediate.gridY)
+      : null;
+  }
+  const approachHeight = this._getTerrainHeight(approach.gridX, approach.gridY);
+  const heightDelta = targetHeight - approachHeight;
+  if (heightDelta < MAX_STANDARD_CLIMB_LEVELS) return null;
+  const approachWorld = spatial.gridToWorld(
+    approach.gridX + 0.5,
+    approach.gridY + 0.5,
+    approachHeight
+  );
+  const targetWorld = spatial.gridToWorld(targetGridX + 0.5, targetGridY + 0.5, targetHeight);
+  const distance = Math.hypot(targetWorld.x - approachWorld.x, targetWorld.z - approachWorld.z);
+  const entryDepth = (spatial.tileWorldSize || 1) * 0.5 * CLIMB_WALL_ENTRY_TILE_HALF_RATIO;
+  const footWorld = {
+    x: approachWorld.x + ((targetWorld.x - approachWorld.x) / distance) * entryDepth,
+    y: approachWorld.y,
+    z: approachWorld.z + ((targetWorld.z - approachWorld.z) / distance) * entryDepth,
+  };
+  const elevationUnit = spatial.elevationUnit || 1;
+  return {
+    goal: { ...approach, world: this._cloneWorld(footWorld) },
+    info: {
+      targetGridX,
+      targetGridY,
+      targetHeight,
+      footWorld,
+      edgeWorld: { x: footWorld.x, y: targetWorld.y, z: footWorld.z },
+      finalWorld: targetWorld,
+      heightDelta,
+      elevationUnit,
+    },
+  };
+}
 
 // ── Main Navigation Entry-Point ──────────────────────────────────────────
 
@@ -57,8 +114,10 @@ function navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
     state.pathStallTime = 0;
     const tokenDescriptor = this._describeTokenForLogs(tokenEntry);
 
-    const currentGridX = Number.isFinite(tokenEntry.gridX) ? Math.round(tokenEntry.gridX) : 0;
-    const currentGridY = Number.isFinite(tokenEntry.gridY) ? Math.round(tokenEntry.gridY) : 0;
+    const currentWorld = this._resolveTokenWorldPosition(tokenEntry);
+    const currentGrid = this._mapWorldToGrid(currentWorld);
+    const currentGridX = currentGrid?.gridX ?? Math.round(tokenEntry.gridX || 0);
+    const currentGridY = currentGrid?.gridY ?? Math.round(tokenEntry.gridY || 0);
 
     let targetGridX = Number.isFinite(gridX) ? Math.round(gridX) : currentGridX;
     let targetGridY = Number.isFinite(gridY) ? Math.round(gridY) : currentGridY;
@@ -81,7 +140,15 @@ function navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
       };
     }
 
-    const sameTile = currentGridX === targetGridX && currentGridY === targetGridY;
+    const targetCenter = spatial.gridToWorld(
+      targetGridX + 0.5,
+      targetGridY + 0.5,
+      this._getTerrainHeight(targetGridX, targetGridY)
+    );
+    const sameTile =
+      currentGridX === targetGridX &&
+      currentGridY === targetGridY &&
+      Math.hypot(targetCenter.x - currentWorld.x, targetCenter.z - currentWorld.z) <= 1e-4;
     if (sameTile) {
       if (!preserveLastGoal) {
         state.lastRequestedGoal = null;
@@ -183,7 +250,6 @@ function navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
             : heightDelta;
       }
     }
-    const currentWorld = this._resolveTokenWorldPosition(tokenEntry);
     const fallbackHeight = Number.isFinite(options.elevation)
       ? options.elevation
       : (currentWorld?.y ?? 0);
@@ -265,10 +331,6 @@ function navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
         : 0;
 
     const climbEligible = heightDelta >= MAX_STANDARD_CLIMB_LEVELS;
-    const elevationUnit =
-      Number.isFinite(spatial?.elevationUnit) && spatial.elevationUnit > 0
-        ? spatial.elevationUnit
-        : 0.5;
     const toleranceBase =
       Number.isFinite(requestOptions.tolerance) && requestOptions.tolerance > 0
         ? requestOptions.tolerance
@@ -280,144 +342,31 @@ function navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
     let pathTolerance = toleranceBase;
 
     if (climbEligible) {
-      const stepX = Math.sign(targetGridX - currentGridX);
-      const stepY = Math.sign(targetGridY - currentGridY);
-
-      let approachGridX = targetGridX - stepX;
-      let approachGridY = targetGridY - stepY;
-
-      if (!Number.isFinite(approachGridX)) approachGridX = currentGridX;
-      if (!Number.isFinite(approachGridY)) approachGridY = currentGridY;
-
-      if (!this._isGridWithinBounds(approachGridX, approachGridY)) {
-        approachGridX = currentGridX;
-        approachGridY = currentGridY;
-      }
-
-      if (approachGridX === targetGridX && approachGridY === targetGridY) {
-        approachGridX = currentGridX;
-        approachGridY = currentGridY;
-      }
-
-      const approachHeightLevel = this._getTerrainHeight(approachGridX, approachGridY);
-      let approachCenterWorld = null;
-      try {
-        approachCenterWorld = spatial.gridToWorld(
-          approachGridX + 0.5,
-          approachGridY + 0.5,
-          Number.isFinite(approachHeightLevel) ? approachHeightLevel : fallbackHeight
-        );
-      } catch (_) {
-        approachCenterWorld = null;
-      }
-      const approachX = Number.isFinite(approachCenterWorld?.x)
-        ? approachCenterWorld.x
-        : approachGridX + 0.5;
-      const approachZ = Number.isFinite(approachCenterWorld?.z)
-        ? approachCenterWorld.z
-        : approachGridY + 0.5;
-      const approachY = this._sampleWorldHeight(
-        approachX,
-        approachZ,
-        Number.isFinite(approachCenterWorld?.y) ? approachCenterWorld.y : fallbackHeight
-      );
-      const approachWorld = { x: approachX, z: approachZ, y: approachY };
-
-      const tileHalf =
-        Number.isFinite(spatial?.tileWorldSize) && spatial.tileWorldSize > 0
-          ? spatial.tileWorldSize * 0.5
-          : 0.5;
-
-      const dirX = targetWorld.x - approachWorld.x;
-      const dirZ = targetWorld.z - approachWorld.z;
-      const dirLen = Math.hypot(dirX, dirZ);
-      const baseEntryRatio = Math.min(Math.max(CLIMB_WALL_ENTRY_TILE_HALF_RATIO, 0.05), 1);
-      const entryVector = dirLen > 1e-4 ? { x: dirX / dirLen, z: dirZ / dirLen } : { x: 0, z: 0 };
-
-      let wallEntryDepth = tileHalf * baseEntryRatio;
-      if (dirLen > 1e-4) {
-        wallEntryDepth = Math.min(Math.max(wallEntryDepth, 0), dirLen);
-      } else {
-        wallEntryDepth = 0;
-      }
-
-      const wallEntryWorld = this._cloneWorld(approachWorld) || approachWorld;
-      wallEntryWorld.x += entryVector.x * wallEntryDepth;
-      wallEntryWorld.z += entryVector.z * wallEntryDepth;
-
-      let stopDepth = wallEntryDepth;
-      const extraBackoff = (() => {
+      const plan = this._createClimbApproach(tokenEntry, targetGridX, targetGridY);
+      state.climbQueued = plan?.info || null;
+      if (plan) {
+        pathGoalGridX = plan.goal.gridX;
+        pathGoalGridY = plan.goal.gridY;
+        pathGoalWorld = plan.goal.world;
+        if (plan.info.targetGridX !== targetGridX || plan.info.targetGridY !== targetGridY) {
+          continuationGoal = {
+            gridX: requestedTargetGridX,
+            gridY: requestedTargetGridY,
+            options: { ...requestOptions, __preferredSpeedMode: speedMode },
+          };
+        }
+        pathTolerance = Math.min(toleranceBase, PATH_SPEED_DEFAULT_TOLERANCE * 0.5);
         if (speedMode === PATH_SPEED_MODES.RUN) {
-          return tileHalf * CLIMB_WALL_ENTRY_RUN_BACKOFF_RATIO;
+          pathTolerance = Math.max(
+            pathTolerance * CLIMB_APPROACH_TOLERANCE_RUN_SCALE,
+            CLIMB_APPROACH_TOLERANCE_MIN
+          );
+        } else if (speedMode === PATH_SPEED_MODES.SPRINT) {
+          pathTolerance = Math.max(
+            pathTolerance * CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE,
+            CLIMB_APPROACH_TOLERANCE_MIN
+          );
         }
-        if (speedMode === PATH_SPEED_MODES.SPRINT) {
-          return tileHalf * CLIMB_WALL_ENTRY_SPRINT_BACKOFF_RATIO;
-        }
-        return 0;
-      })();
-      const minStopDepth = CLIMB_WALL_ENTRY_MIN_RATIO * tileHalf;
-      stopDepth = Math.max(wallEntryDepth - extraBackoff, minStopDepth);
-      if (dirLen > 1e-4) {
-        stopDepth = Math.min(stopDepth, dirLen);
-      } else {
-        stopDepth = 0;
-      }
-
-      const stopWorld = this._cloneWorld(approachWorld) || approachWorld;
-      stopWorld.x += entryVector.x * stopDepth;
-      stopWorld.z += entryVector.z * stopDepth;
-
-      const edgeTopWorld = {
-        x: wallEntryWorld.x,
-        z: wallEntryWorld.z,
-        y: targetWorld.y,
-      };
-
-      const availableWallHeight = Math.max((edgeTopWorld.y ?? 0) - (wallEntryWorld.y ?? 0), 0);
-      const maxStandardWorldHeight = MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
-      const wallWorldTravel = Math.max(0, availableWallHeight - maxStandardWorldHeight);
-      const extraWallLevels = Math.max(0, heightDelta - MAX_STANDARD_CLIMB_LEVELS);
-
-      state.climbQueued = {
-        targetGridX,
-        targetGridY,
-        targetHeight: targetHeightLevel,
-        footWorld: this._cloneWorld(wallEntryWorld) || wallEntryWorld,
-        edgeWorld: this._cloneWorld(edgeTopWorld) || edgeTopWorld,
-        finalWorld: this._cloneWorld(targetWorld) || targetWorld,
-        heightDelta,
-        elevationUnit,
-        extraWallLevels,
-        wallWorldTravel,
-      };
-
-      this._logPathing('climb:queued', {
-        token: tokenDescriptor,
-        target: {
-          gridX: targetGridX,
-          gridY: targetGridY,
-          heightDelta,
-          extraWallLevels,
-        },
-        continuationGoal: continuationGoal
-          ? { gridX: continuationGoal.gridX, gridY: continuationGoal.gridY }
-          : null,
-      });
-
-      pathGoalGridX = approachGridX;
-      pathGoalGridY = approachGridY;
-      pathGoalWorld = stopWorld;
-      pathTolerance = Math.min(toleranceBase, PATH_SPEED_DEFAULT_TOLERANCE * 0.5);
-      if (speedMode === PATH_SPEED_MODES.RUN) {
-        pathTolerance = Math.max(
-          pathTolerance * CLIMB_APPROACH_TOLERANCE_RUN_SCALE,
-          CLIMB_APPROACH_TOLERANCE_MIN
-        );
-      } else if (speedMode === PATH_SPEED_MODES.SPRINT) {
-        pathTolerance = Math.max(
-          pathTolerance * CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE,
-          CLIMB_APPROACH_TOLERANCE_MIN
-        );
       }
     } else {
       state.climbQueued = null;
@@ -823,6 +772,7 @@ function _attemptIntermediateClimbRedirect(state) {
 
 export function installNavigationMethods(prototype) {
   prototype.navigateToGrid = navigateToGrid;
+  prototype._createClimbApproach = _createClimbApproach;
   prototype._clearPathState = _clearPathState;
   prototype._completePath = _completePath;
   prototype._reissueMaintainedGoal = _reissueMaintainedGoal;

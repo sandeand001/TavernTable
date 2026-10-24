@@ -12,6 +12,7 @@ import {
   DEFAULT_FALL_TRIGGER_PROGRESS,
   DEFAULT_HEIGHT_SNAP_PROGRESS,
 } from '../../../config/token-adapter/MannequinConfig.js';
+import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 // ── Movement Update Loop ─────────────────────────────────────────────────
 
@@ -77,7 +78,7 @@ function _updateForwardMovements(delta) {
         continue;
       }
 
-      if (state.pendingStop && state.phase !== 'stop' && state.phase !== 'fall') {
+      if (state.pendingStop && (state.phase === 'start' || state.phase === 'walk')) {
         this._initiateStopPhase(state);
       }
 
@@ -90,8 +91,14 @@ function _updateForwardMovements(delta) {
       ) {
         this._movementStates.delete(tokenEntry);
       }
-    } catch (_) {
+    } catch (error) {
       this._movementStates.delete(tokenEntry);
+      GameErrors.gameState(error, {
+        component: 'Token3DAdapter',
+        operation: 'advanceMovement',
+        tokenId: tokenEntry?.id,
+        phase: state.phase,
+      });
     }
   }
 }
@@ -299,7 +306,12 @@ function _advanceMovementStep(state, distance, options = {}) {
   const fallSingleUse = !!step.__fallSingleUse;
 
   const remaining = Math.max(0, step.totalDistance - step.traveled);
-  const move = Math.min(distance, remaining);
+  const approachingFall = step.requiresFall && state.phase !== 'fall';
+  const travelScale =
+    approachingFall && step.horizontalDistance > 1e-6
+      ? step.totalDistance / step.horizontalDistance
+      : 1;
+  const move = Math.min(distance * travelScale, remaining);
   if (move <= 0) {
     return remaining <= 1e-5;
   }
@@ -372,7 +384,7 @@ function _advanceMovementStep(state, distance, options = {}) {
   }
   if (completed && !state.stepFinalized) {
     this._lockStepAtTarget(state);
-    if (state.phase === 'fall') {
+    if (state.phase === 'fall' || state.phase === 'climb-advance') {
       return true;
     }
     if (state.phase === 'walk' && state.intentHold && !state.pendingStop && !fallSingleUse) {

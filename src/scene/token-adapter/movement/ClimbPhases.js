@@ -6,19 +6,11 @@ import {
   MAX_STANDARD_CLIMB_LEVELS,
   HIGH_WALL_SEGMENT_LEVELS,
   DEFAULT_CLIMB_WALL_DURATION,
-  CLIMB_WALL_BLEND_LEAD,
-  CLIMB_WALL_PROGRESS_EXPONENT,
-  CLIMB_WALL_PROGRESS_SCALE,
-  CLIMB_RECOVER_DEFAULT_CROUCH_DROP,
-  CLIMB_RECOVER_MIN_CROUCH_DROP,
-  CLIMB_RECOVER_MAX_CROUCH_DROP,
-  CLIMB_RECOVER_CROUCH_HOLD,
-  CLIMB_RECOVER_STAND_RELEASE,
 } from '../../../config/token-adapter/MannequinConfig.js';
 
 // ── State Reset Helpers ─────────────────────────────────────────
 
-function _resetClimbWallState(state, options = {}) {
+function _resetClimbWallState(state) {
   if (!state) return;
   state.climbWallQueue = null;
   state.climbWallActive = false;
@@ -28,10 +20,6 @@ function _resetClimbWallState(state, options = {}) {
   state.climbWallTargetWorld = null;
   state.climbWallBaseDuration = 0;
   state.climbWallAnimationPlaying = false;
-  if (!options?.preservePrestart) {
-    state.climbAnimationPrestarted = false;
-    state.climbPrestartFootWorld = null;
-  }
 }
 
 function _resetClimbRecoverState(state) {
@@ -41,16 +29,14 @@ function _resetClimbRecoverState(state) {
   state.climbRecoverDuration = 0;
   state.climbRecoverStartWorld = null;
   state.climbRecoverAnchorPosition = null;
-  state.climbRecoverCrouchWorld = null;
-  state.climbRecoverCrouchDrop = 0;
-  state.climbRecoverRiseHold = CLIMB_RECOVER_CROUCH_HOLD;
-  state.climbRecoverStandRelease = CLIMB_RECOVER_STAND_RELEASE;
 }
 
 function _clearClimbState(state) {
   if (!state) return;
   this._setSelectionIndicatorSuppressed(state, false);
   state.climbQueued = null;
+  state.climbKeyboardApproach = null;
+  state.climbKeyboardActive = false;
   state.climbPendingInfo = null;
   state.climbActive = false;
   state.climbElapsed = 0;
@@ -136,6 +122,7 @@ function _finalizeClimbLanding(state, options = {}) {
 function _resetClimbLandingState(state, options = {}) {
   if (!state) return;
   const info = state.climbData || state.climbQueued || {};
+  const keyboardClimb = state.climbKeyboardActive;
   const landingWorld = options.landingWorld ?? this._resolveClimbLandingWorld(state);
   const tokenDescriptor = this._describeTokenForLogs(state.token);
 
@@ -180,6 +167,14 @@ function _resetClimbLandingState(state, options = {}) {
   state.phase = 'idle';
 
   this._clearClimbState(state);
+
+  if (keyboardClimb) {
+    this._applyPendingOrientation(state);
+    if (!this._hasActiveIntents(state)) {
+      this._resetMovementState(state);
+    }
+    return;
+  }
 
   const hadSyntheticPath = Boolean(state.forwardKeys?.has(PATH_NAVIGATION_KEY));
   let resumed = false;
@@ -281,6 +276,7 @@ function _startClimbPhase(state, climbInfo, options = {}) {
   const animationData = this._tokenAnimationData.get(state.token);
 
   if (!options?.skipWallPlan) {
+    this._orientTokenTowardsWorld(state.token, climbInfo.finalWorld || climbInfo.edgeWorld);
     const planned = this._maybeStartClimbWallSequence(state, climbInfo, animationData);
     if (planned) {
       return;
@@ -297,6 +293,15 @@ function _startClimbPhase(state, climbInfo, options = {}) {
   const startWorld = this._cloneWorldWithFallback(climbInfo.footWorld, state.token?.world) || {};
   const targetEdge = this._cloneWorldWithFallback(climbInfo.edgeWorld, climbInfo.finalWorld) || {};
   const finalWorld = this._cloneWorldWithFallback(climbInfo.finalWorld, targetEdge) || {};
+  const rootMotion = animationData?.rootMotion;
+  if (rootMotion?.climbTransferLocal) {
+    const transfer = this._rootDisplacementToWorld(
+      rootMotion.rootInfo,
+      rootMotion.climbTransferLocal
+    );
+    targetEdge.x += transfer.x;
+    targetEdge.z += transfer.z;
+  }
 
   state.phase = 'climb';
   state.climbActive = true;
@@ -324,23 +329,15 @@ function _startClimbPhase(state, climbInfo, options = {}) {
   if (climbAction) {
     const fadeIn = profile?.climbFadeIn ?? profile.walkFadeIn ?? 0.18;
     const fadeOut = profile?.climbFadeOut ?? profile.walkFadeOut ?? 0.18;
-    const shouldRestart = animationData?.current !== 'climb';
-    if (shouldRestart) {
-      this._setAnimation(state.token, 'climb', {
-        fadeIn,
-        fadeOut,
-        force: true,
-      });
-    }
+    this._setAnimation(state.token, 'climb', {
+      fadeIn,
+      fadeOut,
+      force: true,
+    });
   } else {
     this._finalizeClimbLanding(state, { allowAdvance: false });
-    state.climbAnimationPrestarted = false;
-    state.climbPrestartFootWorld = null;
     return;
   }
-
-  state.climbAnimationPrestarted = false;
-  state.climbPrestartFootWorld = null;
 }
 
 // ── Wall Climb Sequence ─────────────────────────────────────────
@@ -373,7 +370,7 @@ function _maybeStartClimbWallSequence(state, climbInfo, animationData) {
   pendingInfo.wallWorldTravel = 0;
 
   state.climbPendingInfo = pendingInfo;
-  this._resetClimbWallState(state, { preservePrestart: true });
+  this._resetClimbWallState(state);
   state.climbWallQueue = queue;
   state.climbWallBaseDuration = plan.baseDuration;
 
@@ -392,7 +389,7 @@ function _maybeStartClimbWallSequence(state, climbInfo, animationData) {
 function _planClimbWallSegments(state, climbInfo, animationData) {
   if (!state || !climbInfo) return null;
   const totalHeight = Number.isFinite(climbInfo.heightDelta) ? climbInfo.heightDelta : 0;
-  if (!(totalHeight > MAX_STANDARD_CLIMB_LEVELS)) return null;
+  if (totalHeight < MAX_STANDARD_CLIMB_LEVELS) return null;
   if (!animationData?.actions?.climbWall) return null;
 
   const footWorld =
@@ -404,7 +401,14 @@ function _planClimbWallSegments(state, climbInfo, animationData) {
     Number.isFinite(climbInfo.elevationUnit) && climbInfo.elevationUnit > 0
       ? climbInfo.elevationUnit
       : this.gameManager?.spatial?.elevationUnit || 0.5;
-  const referenceHeight = Math.max(HIGH_WALL_SEGMENT_LEVELS * elevationUnit, 1e-4);
+  const rootMotion = animationData.rootMotion;
+  const wallDisplacement = rootMotion?.wall
+    ? this._rootDisplacementToWorld(rootMotion.rootInfo, rootMotion.wall.displacementLocal)
+    : null;
+  const referenceHeight =
+    wallDisplacement?.y > 1e-4
+      ? wallDisplacement.y
+      : Math.max(HIGH_WALL_SEGMENT_LEVELS * elevationUnit, 1e-4);
   const baseDuration =
     this._extractClipDuration(animationData.actions.climbWall) ||
     animationData?.profile?.climbWallClipDuration ||
@@ -412,12 +416,12 @@ function _planClimbWallSegments(state, climbInfo, animationData) {
     DEFAULT_CLIMB_WALL_DURATION;
 
   const availableWallHeight = Math.max((edgeWorld.y ?? 0) - (footWorld.y ?? 0), 0);
-  const maxStandardWorldHeight = MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
-  const defaultWallTravel = Math.max(availableWallHeight - maxStandardWorldHeight, 0);
-  const requestedWallTravel = Number.isFinite(climbInfo.wallWorldTravel)
-    ? Math.max(climbInfo.wallWorldTravel, 0)
-    : defaultWallTravel;
-  const travelWorld = Math.min(Math.max(requestedWallTravel, 0), defaultWallTravel);
+  const climbDisplacement = rootMotion?.climbTransferLocal
+    ? this._rootDisplacementToWorld(rootMotion.rootInfo, rootMotion.climbTransferLocal)
+    : null;
+  const maxStandardWorldHeight =
+    climbDisplacement?.y > 1e-4 ? climbDisplacement.y : MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
+  const travelWorld = Math.max(availableWallHeight - maxStandardWorldHeight, 0);
   if (!(travelWorld > 1e-4)) {
     return null;
   }
@@ -425,9 +429,8 @@ function _planClimbWallSegments(state, climbInfo, animationData) {
   const segments = [];
   let remaining = travelWorld;
   let cursor = this._cloneWorld(footWorld) || {};
-  let guard = 0;
 
-  while (remaining > 1e-4 && guard < 32) {
+  while (remaining > 1e-4) {
     const portion = Math.min(referenceHeight, remaining);
     const target = {
       x: cursor.x,
@@ -442,7 +445,6 @@ function _planClimbWallSegments(state, climbInfo, animationData) {
     });
     cursor = this._cloneWorld(target) || target;
     remaining -= portion;
-    guard += 1;
   }
 
   if (!segments.length) {
@@ -490,10 +492,8 @@ function _startNextClimbWallSegment(state, animationData) {
 
   const fadeIn = profile?.climbWallFadeIn ?? profile.walkFadeIn ?? 0.18;
   const fadeOut = profile?.climbWallFadeOut ?? profile.walkFadeOut ?? 0.18;
-  if (!state.climbWallAnimationPlaying) {
-    this._setAnimation(state.token, 'climbWall', { fadeIn, fadeOut, force: true });
-    state.climbWallAnimationPlaying = true;
-  }
+  this._setAnimation(state.token, 'climbWall', { fadeIn, fadeOut, force: true });
+  state.climbWallAnimationPlaying = true;
 
   this._logPathing('climbWall:segment-start', {
     token: this._describeTokenForLogs(state.token),
@@ -529,27 +529,25 @@ function _advanceClimbWallPhase(state, delta) {
   let appliedWithHelper = false;
   if (anchorWorld && targetWorld) {
     const progress = duration > 1e-4 ? state.climbWallElapsed / duration : 1;
-    let easedProgress = progress;
-    if (progress > 0 && progress < 1 - 1e-4) {
-      easedProgress = Math.pow(progress, CLIMB_WALL_PROGRESS_EXPONENT);
-      easedProgress = Math.min(easedProgress, progress * CLIMB_WALL_PROGRESS_SCALE);
-    } else if (progress >= 1 - 1e-4) {
-      easedProgress = 1;
+    let motionProgress = progress;
+    const wall = this._tokenAnimationData.get(state.token)?.rootMotion?.wall;
+    if (wall?.interpolant) {
+      const endY = wall.interpolant.evaluate(duration)[1];
+      const sampleY = wall.interpolant.evaluate(state.climbWallElapsed)[1];
+      const travelY = endY - wall.start.y;
+      if (Math.abs(travelY) > 1e-4) {
+        motionProgress = Math.min(Math.max((sampleY - wall.start.y) / travelY, 0), 1);
+      }
     }
-    currentWorld = this._lerp3(anchorWorld, targetWorld, easedProgress);
+    currentWorld = this._lerp3(anchorWorld, targetWorld, motionProgress);
     this._syncTokenAndMeshWorld(state, currentWorld);
     appliedWithHelper = true;
     state.climbLastWorld = this._cloneWorld(currentWorld);
-    if (state.climbAnimationPrestarted) {
-      state.climbPrestartFootWorld = this._cloneWorld(currentWorld);
-    }
   }
 
   if (!appliedWithHelper && currentWorld) {
     this._applyMeshWorldPosition(state.mesh, currentWorld);
   }
-
-  this._maybePrestartClimbAnimation(state, duration);
 
   if (state.climbWallElapsed >= duration - 1e-4) {
     this._logPathing('climbWall:segment-complete', {
@@ -571,25 +569,17 @@ function _resumeStandardClimbAfterWall(state) {
     hasPending: Boolean(pending),
   });
 
-  this._resetClimbWallState(state, { preservePrestart: true });
+  this._resetClimbWallState(state);
 
   if (pending) {
-    if (state.climbPrestartFootWorld) {
-      pending.footWorld = this._cloneWorld(state.climbPrestartFootWorld);
-    } else if (state.climbLastWorld) {
+    if (state.climbLastWorld) {
       pending.footWorld = this._cloneWorld(state.climbLastWorld);
     }
     state.climbPendingInfo = null;
     this._commitClimbWallPose(state, pending.footWorld);
-    state.climbPrestartFootWorld = null;
     this._startClimbPhase(state, pending, { skipWallPlan: true });
   } else if (!state.climbActive && !state.climbRecoverActive) {
     this._resetMovementState(state);
-  }
-
-  state.climbAnimationPrestarted = false;
-  if (!pending) {
-    state.climbPrestartFootWorld = null;
   }
 }
 
@@ -606,31 +596,6 @@ function _commitClimbWallPose(state, anchorWorld) {
   this._transferRootMotionToWorld(state, target);
   this._syncTokenAndMeshWorld(state, target);
   state.climbLastWorld = this._cloneWorld(target);
-}
-
-function _maybePrestartClimbAnimation(state, duration) {
-  if (!state || state.climbAnimationPrestarted) return;
-  if (!state.climbPendingInfo) return;
-  if (Array.isArray(state.climbWallQueue) && state.climbWallQueue.length) return;
-  if (!(duration > 0)) return;
-
-  const remaining = duration - (state.climbWallElapsed || 0);
-  const profile = state.profile || DEFAULT_MOVEMENT_PROFILE;
-  const lead = profile?.climbWallTransitionLead ?? CLIMB_WALL_BLEND_LEAD;
-  if (!(lead > 0) || remaining > lead) return;
-
-  const animationData = this._tokenAnimationData.get(state.token);
-  if (!animationData?.actions?.climb) return;
-
-  const fadeIn = profile?.climbFadeIn ?? profile.walkFadeIn ?? 0.18;
-  const fadeOut = profile?.climbWallFadeOut ?? profile.walkFadeOut ?? 0.18;
-  state.climbAnimationPrestarted = true;
-  state.climbPrestartFootWorld = this._cloneWorld(state.climbLastWorld);
-  this._setAnimation(state.token, 'climb', {
-    fadeIn,
-    fadeOut,
-    force: true,
-  });
 }
 
 function _resolveClimbWallDuration(state) {
@@ -665,19 +630,16 @@ function _advanceClimbPhase(state, delta) {
 
   state.climbElapsed = Math.min(state.climbElapsed + Math.max(delta, 0), duration);
   const anchorWorld = state.climbStartWorld || this._resolveTokenWorldPosition(state.token);
-  if (anchorWorld) {
-    this._applyMeshWorldPosition(state.mesh, anchorWorld);
-  }
 
   const targetWorld = state.climbTargetWorld || state.climbFinalWorld || anchorWorld;
   let appliedWorld = null;
   if (anchorWorld && targetWorld) {
     const progress = duration > 1e-4 ? state.climbElapsed / duration : 1;
     const currentWorld = this._lerp3(anchorWorld, targetWorld, progress);
-    this._syncTokenAndMeshWorld(state, currentWorld, { mesh: null });
+    this._syncTokenAndMeshWorld(state, currentWorld);
     appliedWorld = currentWorld;
   } else if (anchorWorld) {
-    this._syncTokenAndMeshWorld(state, anchorWorld, { mesh: null });
+    this._syncTokenAndMeshWorld(state, anchorWorld);
     appliedWorld = anchorWorld;
   }
 
@@ -711,56 +673,10 @@ function _startClimbRecoverPhase(state) {
     recoverStartWorld,
   });
 
-  const rootTransfer = this._transferRootMotionToWorld(state) || null;
-
-  let adjustedWorld = this._cloneWorld(recoverStartWorld);
-  if (!adjustedWorld) {
-    adjustedWorld = this._resolveTokenWorldPosition(state.token);
-  }
-  if (adjustedWorld) {
-    state.climbRecoverStartWorld = this._cloneWorld(adjustedWorld);
-    this._syncTokenAndMeshWorld(state, adjustedWorld, { mesh: null });
-  } else {
-    state.climbRecoverStartWorld = null;
-  }
-
-  const crouchDrop = this._resolveClimbRecoverCrouchDrop(state, rootTransfer);
-  state.climbRecoverCrouchDrop = crouchDrop;
-  if (state.climbRecoverStartWorld && crouchDrop > 1e-4) {
-    state.climbRecoverCrouchWorld = {
-      x: state.climbRecoverStartWorld.x,
-      y: state.climbRecoverStartWorld.y - crouchDrop,
-      z: state.climbRecoverStartWorld.z,
-    };
-  } else if (state.climbRecoverStartWorld) {
-    state.climbRecoverCrouchWorld = this._cloneWorld(state.climbRecoverStartWorld);
-  } else {
-    state.climbRecoverCrouchWorld = null;
-  }
-
-  const riseWindow = this._resolveClimbRecoverRiseWindow(state);
-  state.climbRecoverRiseHold = riseWindow.hold;
-  state.climbRecoverStandRelease = riseWindow.release;
-
-  const meshAnchorWorld =
-    state.climbRecoverCrouchWorld || state.climbRecoverStartWorld || recoverStartWorld;
-
-  if (state.climbRecoverCrouchWorld) {
-    this._syncTokenAndMeshWorld(state, state.climbRecoverCrouchWorld, { mesh: null });
-  }
-
-  if (meshAnchorWorld) {
-    this._assignClimbRecoverAnchorPosition(state, meshAnchorWorld);
-  } else {
-    this._assignClimbRecoverAnchorPosition(state, null);
-  }
-
-  if (meshAnchorWorld) {
-    state.climbLastWorld = this._cloneWorld(meshAnchorWorld);
-  } else if (state.climbRecoverStartWorld) {
-    state.climbLastWorld = this._cloneWorld(state.climbRecoverStartWorld);
-  } else {
-    state.climbLastWorld = null;
+  state.climbRecoverStartWorld = this._cloneWorld(recoverStartWorld);
+  if (recoverStartWorld) {
+    this._syncTokenAndMeshWorld(state, recoverStartWorld);
+    state.climbLastWorld = this._cloneWorld(recoverStartWorld);
   }
 
   const animationData = this._tokenAnimationData.get(state.token);
@@ -824,16 +740,7 @@ function _advanceClimbRecoverPhase(state, delta) {
     state.climbTargetWorld ||
     state.climbStartWorld ||
     this._resolveTokenWorldPosition(state.token);
-  const crouchWorld = state.climbRecoverCrouchWorld || startWorld;
-  const progress = duration > 1e-4 ? state.climbRecoverElapsed / duration : 1;
-  const riseRatio = this._resolveClimbRecoverRiseRatio(state, progress);
-
-  let currentWorld = null;
-  if (startWorld && crouchWorld) {
-    currentWorld = this._lerp3(crouchWorld, startWorld, riseRatio);
-  } else {
-    currentWorld = startWorld || crouchWorld || null;
-  }
+  const currentWorld = startWorld;
 
   if (currentWorld) {
     const composed = this._syncTokenAndMeshWorld(state, currentWorld);
@@ -845,62 +752,19 @@ function _advanceClimbRecoverPhase(state, delta) {
 
   if (state.climbRecoverElapsed >= duration - 1e-4) {
     state.climbRecoverActive = false;
+    const transfer = this._extractRootMotionOffset(state);
+    if (transfer?.offsetWorld && startWorld) {
+      const settledWorld = {
+        x: startWorld.x + transfer.offsetWorld.x,
+        y: startWorld.y,
+        z: startWorld.z + transfer.offsetWorld.z,
+      };
+      this._transferRootMotionToWorld(state, settledWorld, transfer);
+      state.climbRecoverStartWorld = this._cloneWorld(settledWorld);
+      state.climbLastWorld = this._cloneWorld(settledWorld);
+    }
     finalizeRecover();
   }
-}
-
-function _resolveClimbRecoverCrouchDrop(state, rootTransfer) {
-  const profile = state?.profile || DEFAULT_MOVEMENT_PROFILE;
-  const minDrop = Math.max(profile?.climbRecoverCrouchMinDrop ?? CLIMB_RECOVER_MIN_CROUCH_DROP, 0);
-  const maxDrop = Math.max(
-    profile?.climbRecoverCrouchMaxDrop ?? CLIMB_RECOVER_MAX_CROUCH_DROP,
-    minDrop
-  );
-  const configuredDrop = profile?.climbRecoverCrouchDrop;
-  if (Number.isFinite(configuredDrop)) {
-    return Math.min(Math.max(configuredDrop, minDrop), maxDrop);
-  }
-  if (Number.isFinite(rootTransfer?.offsetWorld?.y) && rootTransfer.offsetWorld.y < -1e-4) {
-    const measured = Math.abs(rootTransfer.offsetWorld.y);
-    return Math.min(Math.max(measured, minDrop), maxDrop);
-  }
-  return Math.min(Math.max(CLIMB_RECOVER_DEFAULT_CROUCH_DROP, minDrop), maxDrop);
-}
-
-function _resolveClimbRecoverRiseWindow(state) {
-  const profile = state?.profile || DEFAULT_MOVEMENT_PROFILE;
-  const holdRaw = profile?.climbRecoverCrouchHold;
-  const releaseRaw = profile?.climbRecoverStandRelease;
-  const hold = Number.isFinite(holdRaw)
-    ? Math.min(Math.max(holdRaw, 0), 0.6)
-    : CLIMB_RECOVER_CROUCH_HOLD;
-  const releaseDefault = Math.max(CLIMB_RECOVER_STAND_RELEASE, hold + 0.1);
-  let release = Number.isFinite(releaseRaw)
-    ? Math.min(Math.max(releaseRaw, hold + 0.05), 0.95)
-    : releaseDefault;
-  release = Math.max(release, hold + 0.05);
-  return { hold, release };
-}
-
-function _resolveClimbRecoverRiseRatio(state, progress) {
-  const hold = Number.isFinite(state?.climbRecoverRiseHold)
-    ? state.climbRecoverRiseHold
-    : CLIMB_RECOVER_CROUCH_HOLD;
-  const release = Number.isFinite(state?.climbRecoverStandRelease)
-    ? state.climbRecoverStandRelease
-    : CLIMB_RECOVER_STAND_RELEASE;
-  if (!(release > hold + 1e-4)) {
-    return progress >= release ? 1 : 0;
-  }
-  if (progress <= hold + 1e-4) {
-    return 0;
-  }
-  if (progress >= release - 1e-4) {
-    return 1;
-  }
-  const span = Math.max(release - hold, 1e-4);
-  const local = Math.min(Math.max((progress - hold) / span, 0), 1);
-  return local * local * (3 - 2 * local);
 }
 
 // ── Climb Advance Phase ────────────────────────────────────────
@@ -957,7 +821,6 @@ function _startClimbAdvancePhase(state, startWorld, finalWorld) {
   state.intentHold = false;
   state.pendingStop = false;
 
-  this._orientTokenTowardsWorld(state.token, finalWorld);
   this._playLoopAnimation(state, { force: true });
 
   this._logPathing('climb:advance-start', {
@@ -1057,14 +920,10 @@ function installClimbMethods(prototype) {
   prototype._advanceClimbWallPhase = _advanceClimbWallPhase;
   prototype._resumeStandardClimbAfterWall = _resumeStandardClimbAfterWall;
   prototype._commitClimbWallPose = _commitClimbWallPose;
-  prototype._maybePrestartClimbAnimation = _maybePrestartClimbAnimation;
   prototype._resolveClimbWallDuration = _resolveClimbWallDuration;
   prototype._advanceClimbPhase = _advanceClimbPhase;
   prototype._startClimbRecoverPhase = _startClimbRecoverPhase;
   prototype._advanceClimbRecoverPhase = _advanceClimbRecoverPhase;
-  prototype._resolveClimbRecoverCrouchDrop = _resolveClimbRecoverCrouchDrop;
-  prototype._resolveClimbRecoverRiseWindow = _resolveClimbRecoverRiseWindow;
-  prototype._resolveClimbRecoverRiseRatio = _resolveClimbRecoverRiseRatio;
   prototype._advanceClimbAdvancePhase = _advanceClimbAdvancePhase;
   prototype._startClimbAdvancePhase = _startClimbAdvancePhase;
   prototype._createClimbAdvanceStep = _createClimbAdvanceStep;

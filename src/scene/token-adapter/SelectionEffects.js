@@ -122,6 +122,7 @@ function updateTokenOrientation(tokenEntry) {
 function _shouldDeferOrientation(state) {
   if (!state) return false;
   if (state.phase === 'stop') return false;
+  if (state.phase?.startsWith('climb') || state.phase === 'fall') return true;
   if (!state.activeStep) return false;
   if (state.stepFinalized) return false;
   return true;

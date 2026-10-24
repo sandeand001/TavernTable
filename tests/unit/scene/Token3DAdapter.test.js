@@ -414,12 +414,12 @@ describe('Token3DAdapter (Phase 3)', () => {
 
     adapter._advanceClimbPhase(state, 0.5);
 
-    expect(adapter._applyMeshWorldPosition).toHaveBeenCalledWith(state.mesh, state.climbStartWorld);
+    expect(adapter._applyMeshWorldPosition).not.toHaveBeenCalled();
     expect(adapter._syncTokenAndMeshWorld).toHaveBeenCalledTimes(1);
     const [syncState, syncedWorld, syncOptions] = adapter._syncTokenAndMeshWorld.mock.calls[0];
     expect(syncState).toBe(state);
     expect(syncedWorld.y).toBeCloseTo(0.5);
-    expect(syncOptions).toEqual({ mesh: null });
+    expect(syncOptions).toBeUndefined();
     expect(state.climbLastWorld).toEqual(expect.objectContaining({ y: syncedWorld.y }));
     expect(adapter._startClimbRecoverPhase).not.toHaveBeenCalled();
   });
@@ -445,8 +445,8 @@ describe('Token3DAdapter (Phase 3)', () => {
 
     adapter._advanceClimbPhase(state, 0.25);
 
-    expect(adapter._applyMeshWorldPosition).toHaveBeenCalledWith(state.mesh, anchor);
-    expect(adapter._syncTokenAndMeshWorld).toHaveBeenCalledWith(state, anchor, { mesh: null });
+    expect(adapter._applyMeshWorldPosition).not.toHaveBeenCalled();
+    expect(adapter._syncTokenAndMeshWorld).toHaveBeenCalledWith(state, anchor);
     expect(state.climbLastWorld).toEqual({ x: 2, y: 3, z: 4 });
     expect(adapter._startClimbRecoverPhase).not.toHaveBeenCalled();
   });
@@ -615,7 +615,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     return { adapter, token, state };
   };
 
-  test('navigateToGrid adjusts climb approach for walk, run, and sprint speeds', () => {
+  test('navigateToGrid reaches the same wall anchor at walk, run, and sprint speeds', () => {
     const slowTargetY = 2;
     const runTargetY = 5;
     const sprintTargetY = 8;
@@ -638,12 +638,12 @@ describe('Token3DAdapter (Phase 3)', () => {
     const runClearance = wallClearance(run.state, runTargetY);
     const sprintClearance = wallClearance(sprint.state, sprintTargetY);
 
-    expect(runClearance).toBeGreaterThan(slowClearance);
-    expect(sprintClearance).toBeGreaterThan(runClearance);
-    expect(runClearance).toBeGreaterThan(0.25);
-    expect(runClearance).toBeLessThan(0.45);
-    expect(sprintClearance).toBeGreaterThan(0.65);
-    expect(sprintClearance).toBeLessThan(0.85);
+    expect(slowClearance).toBeCloseTo(0.16);
+    expect(runClearance).toBeCloseTo(slowClearance);
+    expect(sprintClearance).toBeCloseTo(slowClearance);
+    for (const { state } of [slow, run, sprint]) {
+      expect(state.pathGoal.world).toEqual(state.climbQueued.footWorld);
+    }
 
     expect(run.state.pathTolerance).toBeLessThan(slow.state.pathTolerance);
     expect(sprint.state.pathTolerance).toBeLessThan(run.state.pathTolerance);
@@ -683,6 +683,7 @@ describe('Token3DAdapter (Phase 3)', () => {
       const gm = {
         spatial: {
           tileWorldSize: 1,
+          elevationUnit: 0.5,
           gridToWorld: (gridX, gridY, heightLevel = 0) => ({
             x: gridX,
             y: (heightLevel ?? 0) * 0.5,
@@ -703,7 +704,7 @@ describe('Token3DAdapter (Phase 3)', () => {
     };
 
     const noFall = buildStep(2.5);
-    expect(noFall.requiresFall).toBe(false);
+    expect(noFall).toBeNull();
 
     const softLanding = buildStep(4);
     expect(softLanding.requiresFall).toBe(true);
@@ -777,8 +778,8 @@ describe('Token3DAdapter (Phase 3)', () => {
     expect(step.targetWorld).toEqual(expectedWorld);
     expect(stepGridSpy).toHaveBeenCalledWith(step, expectedWorld);
     expect(tokenGridSpy).toHaveBeenCalledWith(token, expectedWorld);
-    expect(token.__ttWorldLock).toBe(1);
-    expect(state.__worldLockActive).toBe(true);
+    expect(token.__ttWorldLock).toBeUndefined();
+    expect(state.__worldLockActive).toBe(false);
   });
 
   test('_finishFallPhase clamps outlier root offsets', () => {

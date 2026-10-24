@@ -112,6 +112,60 @@ function _isGridWithinBounds(gx, gy) {
   return true;
 }
 
+function _findTerrainTransition(startWorld, endWorld, matches) {
+  const tile = this.gameManager?.spatial?.tileWorldSize || 1;
+  const dx = endWorld.x - startWorld.x;
+  const dz = endWorld.z - startWorld.z;
+  const length = Math.hypot(dx, dz);
+  if (!(length > 1e-6)) return null;
+  const direction = { x: dx / length, z: dz / length };
+  const stepX = Math.sign(dx);
+  const stepY = Math.sign(dz);
+  let gridX = Math.floor(startWorld.x / tile);
+  let gridY = Math.floor(startWorld.z / tile);
+  const deltaX = stepX ? tile / Math.abs(direction.x) : Infinity;
+  const deltaZ = stepY ? tile / Math.abs(direction.z) : Infinity;
+  let nextX = stepX
+    ? ((gridX + (stepX > 0 ? 1 : 0)) * tile - startWorld.x) / direction.x
+    : Infinity;
+  let nextZ = stepY
+    ? ((gridY + (stepY > 0 ? 1 : 0)) * tile - startWorld.z) / direction.z
+    : Infinity;
+
+  while (Math.min(nextX, nextZ) <= length + 1e-6) {
+    const distance = Math.max(Math.min(nextX, nextZ), 0);
+    const fromGrid = { gridX, gridY };
+    const fromHeight = this._getTerrainHeight(gridX, gridY);
+    if (nextX <= distance + 1e-6) {
+      gridX += stepX;
+      nextX += deltaX;
+    }
+    if (nextZ <= distance + 1e-6) {
+      gridY += stepY;
+      nextZ += deltaZ;
+    }
+    if (!this._isGridWithinBounds(gridX, gridY)) return null;
+    const toHeight = this._getTerrainHeight(gridX, gridY);
+    if (matches(fromHeight, toHeight)) {
+      return {
+        fromGrid,
+        toGrid: { gridX, gridY },
+        fromHeight,
+        toHeight,
+        direction,
+        distance,
+        exitDistance: Math.min(nextX, nextZ),
+        world: {
+          x: startWorld.x + direction.x * distance,
+          y: toHeight * (this.gameManager?.spatial?.elevationUnit || 1),
+          z: startWorld.z + direction.z * distance,
+        },
+      };
+    }
+  }
+  return null;
+}
+
 function _advanceRotationState(state, delta) {
   if (!state || !(delta > 0)) return;
   const intent = this._computeRotationIntent(state);
@@ -338,6 +392,7 @@ export function installSpatialUtilsMethods(prototype) {
   prototype._sampleWorldHeight = _sampleWorldHeight;
   prototype._estimateHeightFromWorld = _estimateHeightFromWorld;
   prototype._isGridWithinBounds = _isGridWithinBounds;
+  prototype._findTerrainTransition = _findTerrainTransition;
   prototype._advanceRotationState = _advanceRotationState;
   prototype._hasActiveIntents = _hasActiveIntents;
   prototype._shouldHoldMovementState = _shouldHoldMovementState;

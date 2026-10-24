@@ -16,7 +16,10 @@ import {
   FALL_MIN_HEIGHT_THRESHOLD,
   FALL_EDGE_TRIGGER_TILE_RATIO,
   PATH_STALL_REPATH_DELAY,
+  MAX_STANDARD_CLIMB_LEVELS,
+  CLIMB_WALL_ENTRY_TILE_HALF_RATIO,
 } from '../../../config/token-adapter/MannequinConfig.js';
+import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 // ── Free Movement ────────────────────────────────────────────────────────
 
@@ -89,35 +92,67 @@ function _advanceFreeMovement(state, delta, bounds) {
     Number.isFinite(currentWorld.y) && Number.isFinite(sampledCurrentY)
       ? currentWorld.y - sampledCurrentY
       : 0;
-  const pathGoal = state.pathActive ? state.pathGoal : null;
-  const goalWorld = pathGoal?.world || null;
+  let goalWorld = (state.pathActive ? state.pathGoal?.world : state.climbKeyboardApproach) || null;
   let clampToGoal = false;
   let tolerance = 0;
+  const tileSize = bounds?.tileSize || this.gameManager?.spatial?.tileWorldSize || 1;
+
+  if (goalWorld) {
+    const remaining = Math.hypot(goalWorld.x - currentWorld.x, goalWorld.z - currentWorld.z);
+    if (remaining > 1e-6) {
+      direction = {
+        x: (goalWorld.x - currentWorld.x) / remaining,
+        z: (goalWorld.z - currentWorld.z) / remaining,
+      };
+    }
+  }
+
+  if (!state.climbQueued && !state.climbKeyboardApproach) {
+    const edge = this._findTerrainTransition(
+      currentWorld,
+      {
+        x: currentWorld.x + direction.x * tileSize,
+        z: currentWorld.z + direction.z * tileSize,
+      },
+      (fromHeight, toHeight) => toHeight - fromHeight >= MAX_STANDARD_CLIMB_LEVELS
+    );
+    if (edge && (state.pathActive || sign > 0)) {
+      const plan = this._createClimbApproach(state.token, edge.toGrid.gridX, edge.toGrid.gridY);
+      if (!plan) {
+        throw new Error('Unable to plan a climb at the terrain edge');
+      }
+      state.climbQueued = plan.info;
+      if (state.pathActive) {
+        state.climbContinuationGoal = this._cloneClimbContinuationGoal(
+          state.lastRequestedGoal || state.pathGoal
+        );
+        state.pathGoal = plan.goal;
+      } else {
+        state.climbKeyboardActive = true;
+        state.climbKeyboardApproach = plan.goal.world;
+        state.lastRequestedGoal = null;
+        state.climbContinuationGoal = null;
+      }
+      goalWorld = plan.goal.world;
+      this._orientTokenTowardsWorld(state.token, goalWorld);
+    } else if (edge) {
+      const standOff = tileSize * (1 - CLIMB_WALL_ENTRY_TILE_HALF_RATIO) * 0.5;
+      distance = Math.min(distance, Math.max(edge.distance - standOff, 0));
+    }
+  }
 
   if (goalWorld) {
     const toGoalX = goalWorld.x - currentWorld.x;
     const toGoalZ = goalWorld.z - currentWorld.z;
     const remaining = Math.hypot(toGoalX, toGoalZ);
-    const tileSize = bounds?.tileSize || this.gameManager?.spatial?.tileWorldSize || 1;
     tolerance = Math.max(state.pathTolerance || tileSize * 0.1, 0.05);
 
     if (remaining > 1e-6) {
       direction = { x: toGoalX / remaining, z: toGoalZ / remaining };
     }
 
-    if (!(remaining > tolerance)) {
-      distance = remaining;
-      clampToGoal = true;
-    } else {
-      const projected = toGoalX * direction.x + toGoalZ * direction.z;
-      if (projected <= tolerance) {
-        distance = Math.max(remaining - tolerance, 0);
-        clampToGoal = true;
-      } else if (distance >= projected) {
-        distance = Math.max(projected, 0);
-        clampToGoal = true;
-      }
-    }
+    clampToGoal = remaining <= distance + 1e-6;
+    distance = Math.min(distance, remaining);
   }
 
   if (!(distance > 0) && !clampToGoal) {
@@ -149,6 +184,7 @@ function _advanceFreeMovement(state, delta, bounds) {
   }
 
   this._syncTokenAndMeshWorld(state, nextWorld);
+  this._applyTokenGridFromWorld(state.token, nextWorld);
 
   const actualDistance = Math.hypot(nextWorld.x - currentWorld.x, nextWorld.z - currentWorld.z);
   if (delta > 1e-4 && actualDistance > 0) {
@@ -219,7 +255,11 @@ function _advanceFreeMovement(state, delta, bounds) {
 
   if (goalWorld) {
     const remainingAfter = Math.hypot(goalWorld.x - nextWorld.x, goalWorld.z - nextWorld.z);
-    state.pathReached = remainingAfter <= Math.max(tolerance, 0.05);
+    state.pathReached = state.pathActive && remainingAfter <= 1e-5;
+    if (state.climbKeyboardApproach && remainingAfter <= 1e-5) {
+      state.climbKeyboardApproach = null;
+      this._startClimbPhase(state, state.climbQueued);
+    }
   } else {
     state.pathReached = false;
   }
@@ -394,6 +434,9 @@ function _applyMovementResetCore(state, options = {}) {
   state.activeStep = null;
   state.stepFinalized = true;
   state.intentHold = false;
+  state.climbQueued = null;
+  state.climbKeyboardApproach = null;
+  state.climbKeyboardActive = false;
 
   if (clearStopFlags) {
     state.stopTriggered = false;
@@ -412,50 +455,49 @@ function _applyMovementResetCore(state, options = {}) {
   }
 }
 
-function _createForwardMovementStep(tokenEntry, mesh) {
+function _createForwardMovementStep(tokenEntry, mesh, directionSign = 1) {
   try {
     const gm = this.gameManager;
     if (!gm?.spatial) return null;
-    const rawGridX = Number.isFinite(tokenEntry.gridX) ? tokenEntry.gridX : 0;
-    const rawGridY = Number.isFinite(tokenEntry.gridY) ? tokenEntry.gridY : 0;
-    const storedGridX = Math.round(rawGridX);
-    const storedGridY = Math.round(rawGridY);
-    let startGridX = storedGridX;
-    let startGridY = storedGridY;
-    const world = tokenEntry.world;
-    if (world && Number.isFinite(world.x) && Number.isFinite(world.z)) {
-      const mapped = this._mapWorldToGrid(world);
-      if (mapped && mapped.gridX != null && mapped.gridY != null) {
-        const dx = Math.abs(mapped.gridX - storedGridX);
-        const dy = Math.abs(mapped.gridY - storedGridY);
-        if (dx <= 1 && dy <= 1 && (mapped.gridX !== storedGridX || mapped.gridY !== storedGridY)) {
-          const storedH = this._getTerrainHeight(storedGridX, storedGridY);
-          const mappedH = this._getTerrainHeight(mapped.gridX, mapped.gridY);
-          if (Number.isFinite(storedH) && Number.isFinite(mappedH) && storedH === mappedH) {
-            startGridX = mapped.gridX;
-            startGridY = mapped.gridY;
-          }
-        }
-      }
-    }
+    const startWorld = this._resolveTokenWorldPosition(tokenEntry);
+    const currentGrid = this._mapWorldToGrid(startWorld) || tokenEntry;
+    const startGridX = currentGrid.gridX;
+    const startGridY = currentGrid.gridY;
     const yaw = this._getMovementYaw(tokenEntry);
-    const { stepX, stepY } = this._getForwardGridDelta(yaw);
-    if (stepX === 0 && stepY === 0) return null;
-
-    const targetGridX = startGridX + stepX;
-    const targetGridY = startGridY + stepY;
-
+    let direction = this._getDirectionalVectorFromYaw(yaw, directionSign);
+    const state = this._movementStates.get(tokenEntry);
+    const goal = state?.pathActive ? state.pathGoal?.world : null;
+    const goalDistance = goal ? Math.hypot(goal.x - startWorld.x, goal.z - startWorld.z) : Infinity;
+    if (goal && goalDistance > 1e-6) {
+      direction = {
+        x: (goal.x - startWorld.x) / goalDistance,
+        z: (goal.z - startWorld.z) / goalDistance,
+      };
+    }
+    const tileSize = gm.spatial.tileWorldSize || 1;
+    const lookAhead = Math.min(tileSize, goalDistance);
+    const edge = this._findTerrainTransition(
+      startWorld,
+      { x: startWorld.x + direction.x * lookAhead, z: startWorld.z + direction.z * lookAhead },
+      (fromHeight, toHeight) => fromHeight - toHeight > FALL_MIN_HEIGHT_THRESHOLD
+    );
+    if (!edge) return null;
+    const targetGridX = edge.toGrid.gridX;
+    const targetGridY = edge.toGrid.gridY;
     const startHeight = this._getTerrainHeight(startGridX, startGridY);
-    const targetHeight = this._getTerrainHeight(targetGridX, targetGridY);
-    const heightDrop =
-      Number.isFinite(startHeight) && Number.isFinite(targetHeight)
-        ? startHeight - targetHeight
-        : 0;
-
-    const startWorld =
-      this._cloneWorld(tokenEntry.world) ||
-      gm.spatial.gridToWorld(startGridX + 0.5, startGridY + 0.5, startHeight);
-    const targetWorld = gm.spatial.gridToWorld(targetGridX + 0.5, targetGridY + 0.5, targetHeight);
+    const targetHeight = edge.toHeight;
+    const heightDrop = edge.fromHeight - targetHeight;
+    const insideDistance = Math.min(tileSize * 0.5, (edge.exitDistance - edge.distance) * 0.5);
+    const landingDistance = Math.min(edge.distance + insideDistance, goalDistance);
+    const targetWorld = {
+      x: startWorld.x + direction.x * landingDistance,
+      y: this._sampleWorldHeight(
+        startWorld.x + direction.x * landingDistance,
+        startWorld.z + direction.z * landingDistance,
+        edge.world.y
+      ),
+      z: startWorld.z + direction.z * landingDistance,
+    };
 
     const startPosition = this._composeMeshPosition(startWorld, mesh);
     const targetPosition = this._composeMeshPosition(targetWorld, mesh);
@@ -467,20 +509,17 @@ function _createForwardMovementStep(tokenEntry, mesh) {
     if (!(totalDistance > 0.001)) return null;
 
     const horizontalDistance = Math.hypot(dx, dz);
-    const tileSize = gm.spatial?.tileWorldSize || 1;
-    const edgeDistance = Math.min(
-      horizontalDistance,
-      tileSize * Math.max(Math.min(FALL_EDGE_TRIGGER_TILE_RATIO, 0.95), 0.4)
-    );
+    const supportMargin = tileSize * (FALL_EDGE_TRIGGER_TILE_RATIO - 0.5);
+    const edgeDistance = Math.min(horizontalDistance, edge.distance + Math.max(supportMargin, 0));
     const fallTriggerProgress = horizontalDistance > 0 ? edgeDistance / horizontalDistance : 1;
     const normalizedTrigger = Math.min(
-      Math.max(fallTriggerProgress || DEFAULT_FALL_TRIGGER_PROGRESS, 0.4),
+      Math.max(fallTriggerProgress || DEFAULT_FALL_TRIGGER_PROGRESS, 0),
       0.98
     );
     const requiresFall = heightDrop > FALL_MIN_HEIGHT_THRESHOLD;
     let landingVariant = null;
     if (requiresFall) {
-      if (heightDrop > ROLLING_LANDING_HEIGHT_THRESHOLD) {
+      if (heightDrop > ROLLING_LANDING_HEIGHT_THRESHOLD && directionSign > 0) {
         landingVariant = 'fallToRoll';
       } else if (heightDrop > HARD_LANDING_HEIGHT_THRESHOLD) {
         landingVariant = 'hardLanding';
@@ -517,7 +556,12 @@ function _createForwardMovementStep(tokenEntry, mesh) {
       verticalSnapProgress: DEFAULT_HEIGHT_SNAP_PROGRESS,
       landingVariant,
     };
-  } catch (_) {
+  } catch (error) {
+    GameErrors.gameState(error, {
+      component: 'Token3DAdapter',
+      operation: 'createFallStep',
+      tokenId: tokenEntry?.id,
+    });
     return null;
   }
 }

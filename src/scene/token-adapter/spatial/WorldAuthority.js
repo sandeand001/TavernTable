@@ -51,12 +51,13 @@ function _transferRootMotionToWorld(state, targetWorld = null, precomputedTransf
   if (!state) return null;
   const transfer = precomputedTransfer || this._extractRootMotionOffset(state);
   const currentWorld = this._resolveTokenWorldPosition(state.token);
+  const preservePose = state.phase === 'fall' || state.phase?.startsWith('climb');
   let combinedOffset = null;
 
   if (transfer?.offsetWorld) {
     combinedOffset = {
       x: transfer.offsetWorld.x || 0,
-      y: transfer.offsetWorld.y || 0,
+      y: preservePose ? 0 : transfer.offsetWorld.y || 0,
       z: transfer.offsetWorld.z || 0,
     };
   }
@@ -88,7 +89,7 @@ function _transferRootMotionToWorld(state, targetWorld = null, precomputedTransf
   }
 
   if (transfer) {
-    this._resetRootBonePose(transfer.rootInfo);
+    this._resetRootBonePose(transfer.rootInfo, { preservePose });
   }
 
   return transfer || null;
@@ -115,7 +116,7 @@ function _sanitizeLandingRootOffset(step, offsetWorld, landingKey = null) {
 
   const horizontalMagnitude = Math.hypot(offsetX, offsetZ);
   const stepHorizontal = Math.max(step?.horizontalDistance || 0, 0);
-  const horizontalLimitBase = stepHorizontal > 0 ? stepHorizontal : tileSize * 0.85;
+  const horizontalLimitBase = Math.max(stepHorizontal, tileSize * 0.85);
   const configuredMax = horizontalMaxTiles > 0 ? horizontalMaxTiles : 6;
   const horizontalLimit = Math.max(
     Math.min(

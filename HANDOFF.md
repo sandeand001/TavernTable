@@ -1,6 +1,6 @@
 # TavernTable maintenance handoff
 
-Last verified: October 23, 2026.
+Last verified: October 2026, after the cliff-motion update.
 
 ## Start here
 
@@ -18,8 +18,8 @@ Last verified: October 23, 2026.
   byte-for-byte, including licenses.
 - The pre-existing terrain-coordinator work was committed and pushed before
   cleanup: [checkpoint 6a3c434](https://github.com/sandeand001/TavernTable/commit/6a3c434aba1afb442732f28ced59d1e9246c94ed).
-- This pass is housekeeping and test-baseline maintenance. The owner explicitly
-  deferred the broader terrain ownership migration.
+- That cleanup did not include the broader terrain ownership migration; the
+  owner explicitly deferred it. The later mannequin motion work is described below.
 
 ## Verified baseline
 
@@ -28,7 +28,7 @@ npm run test:stable -- --watch=false
 npm run lint:all
 ```
 
-- 69 Jest suites and 231 tests pass.
+- 71 Jest suites and 264 tests pass.
 - JavaScript lint has no errors and 40 existing unused-variable warnings.
 - Stylesheet lint and the architecture-layer check pass.
 
@@ -41,8 +41,55 @@ assumptions, not established gameplay regressions:
 
 [Token3DAdapter.test.js](./tests/unit/scene/Token3DAdapter.test.js) now exercises
 both normal-path and drunk animation loading and the real fall cleanup.
-Movement production code was not changed. The manually reported movement issues
-in the backlog remain open.
+The subsequent cliff-motion pass changes production movement and adds the
+regressions below. Remaining browser reports are tracked separately in the backlog.
+
+## Mannequin cliff motion
+
+- [RootMotion](./src/scene/token-adapter/spatial/RootMotion.js) transforms
+  displacement through the bone parent's world matrix, including scale. Do not
+  substitute container yaw or treat FBX centimeters as world units.
+- Prepare per-token climbing clip copies before creating mixer actions. The wall
+  controller owns vertical travel; the mantle transfers its locomotor root bridge
+  to the support anchor while retaining the authored crouched ending pose.
+  Cached source clips and animation assets must remain unchanged.
+- Sample the mixer before movement. Wall segments follow the authored root curve;
+  phase/action clocks start together, without prestarting the mantle or jumping
+  the final half of a wall segment.
+- Preserve hip height and rotation. Cinematic planar root channels use their
+  own action's sampled weight, not an outgoing walk/run translation. Recovery
+  retains its authored rise and forward shift, with render-only toe grounding
+  for blend penetration; its canonical terrain support height remains fixed.
+- [Navigation](./src/scene/token-adapter/pathing/Navigation.js) shares climb
+  approach geometry with keyboard movement. Keep held physical keys intact.
+  Releasing a key or requesting a turn during a climb/fall must not interrupt the
+  committed traversal; finish safely before stopping or applying the turn.
+- Trace actual world-space cell crossings. Approach/arrival movement must stay
+  within the speed-times-delta budget; tolerance is not permission to teleport.
+  Finishing ledge advance belongs to the climb finalizer, not generic stopping.
+- Rebase a fall trajectory at takeoff so its duration excludes consumed walking
+  distance. [MannequinConfig](./src/config/token-adapter/MannequinConfig.js)
+  annotates first-foot-contact times: soft landing at 8/30 seconds, hard landing
+  at 3/30, and roll at 2/30. These are asset events, not full recovery durations.
+  Recheck them if replacing or retargeting the clips.
+- Preserve genuine roll travel in world units. A roll needs flat support along
+  its authored root path and must stay inside board movement bounds; otherwise
+  use the braced landing. Release world authority on every completed landing,
+  including landings that resume movement.
+
+New regression seams:
+[RootMotion.test.js](./tests/unit/scene/token-adapter/spatial/RootMotion.test.js)
+and [CliffMotion.test.js](./tests/unit/scene/token-adapter/movement/CliffMotion.test.js).
+Fresh-source browser replays used the actual 26-action mannequin, repeated
+eight-level climbs, soft/hard/rolling falls, cardinal/diagonal travel, both inputs,
+walk/run/sprint, release/turn requests, edge destinations, adjacent cliffs,
+0.15/0.3/0.5 elevation units, and 30/60/120 FPS.
+
+In the 60 Hz eight-level fixture, the wall-to-mantle hip discontinuity fell from
+about 0.605 to 0.002 world units. Recovery toe clearance is approximately
+0-0.011 instead of hovering up to 0.228 above the ledge; exact click destinations
+no longer consume a roughly 0.36-unit final snap. This is not full-body IK or
+proof that every irregular-terrain/cold-loading edge case is solved.
 
 ## Exotic asset appearances
 

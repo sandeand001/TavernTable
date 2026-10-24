@@ -92,6 +92,8 @@ export const MANNEQUIN_MODEL = {
       path: 'assets/animated-sprites/Falling To Landing.fbx',
       loop: 'once',
       clampWhenFinished: true,
+      // Seconds to first foot contact, before the rest of the landing/recovery.
+      contactTime: 8 / 30,
     },
     climb: {
       path: 'assets/animated-sprites/Climbing.fbx',
@@ -112,11 +114,13 @@ export const MANNEQUIN_MODEL = {
       path: 'assets/animated-sprites/hard landing.fbx',
       loop: 'once',
       clampWhenFinished: true,
+      contactTime: 3 / 30,
     },
     fallToRoll: {
       path: 'assets/animated-sprites/falling to roll.fbx',
       loop: 'once',
       clampWhenFinished: true,
+      contactTime: 2 / 30,
     },
     fallLoop: {
       path: 'assets/animated-sprites/falling idle.fbx',
@@ -237,13 +241,7 @@ export const DEFAULT_CLIMB_RECOVER_DURATION = 0.95;
 export const MAX_STANDARD_CLIMB_LEVELS = 4;
 export const HIGH_WALL_SEGMENT_LEVELS = 4;
 export const DEFAULT_CLIMB_WALL_DURATION = 1.2;
-export const CLIMB_WALL_BLEND_LEAD = 0.2;
-export const CLIMB_WALL_PROGRESS_EXPONENT = 1.35;
-export const CLIMB_WALL_PROGRESS_SCALE = 0.5;
 export const CLIMB_WALL_ENTRY_TILE_HALF_RATIO = 0.68;
-export const CLIMB_WALL_ENTRY_MIN_RATIO = -0.45;
-export const CLIMB_WALL_ENTRY_RUN_BACKOFF_RATIO = 0.32;
-export const CLIMB_WALL_ENTRY_SPRINT_BACKOFF_RATIO = 1.1;
 export const FALL_EDGE_TRIGGER_TILE_RATIO = 1 - CLIMB_WALL_ENTRY_TILE_HALF_RATIO * 0.5;
 export const FALL_LANDING_THRESHOLD_CONFIG = {
   fall: { slope: 0.05, bias: 0.24, lower: 0.35, upper: 0.85 },
@@ -283,11 +281,6 @@ export const PATH_STALL_REPATH_DELAY = 0.35;
 // ── Selection & Logging Constants ──────────────────────
 export const SELECTION_COLLIDER_HEIGHT = 2.3;
 export const SELECTION_COLLIDER_RADIUS_RATIO = 0.46;
-export const CLIMB_RECOVER_DEFAULT_CROUCH_DROP = 0.05;
-export const CLIMB_RECOVER_MIN_CROUCH_DROP = 0.01;
-export const CLIMB_RECOVER_MAX_CROUCH_DROP = 0.25;
-export const CLIMB_RECOVER_CROUCH_HOLD = 0.24;
-export const CLIMB_RECOVER_STAND_RELEASE = 0.78;
 export const PATHING_LOG_LOCAL_STORAGE_KEY = 'tt:pathingLogs';
 export const PATHING_LOG_ENV_FLAG = 'TT_PATHING_LOGS';
 export const PATHING_LOG_PREFIX = '[Token3DAdapter]';
