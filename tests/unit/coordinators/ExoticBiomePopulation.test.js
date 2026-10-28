@@ -26,6 +26,7 @@ describe('Biome-appropriate exotic populations', () => {
       const placements = generate(biomeKey);
       expect(placements.length).toBeGreaterThan(0);
       for (const item of placements) {
+        expect(item.generatedBiome).toBe(true);
         expect(item.modelKey).toBeTruthy();
         expect(item.biomeKey).toBe(biomeKey);
         expect(item.biomeSeed).toBe(12345);

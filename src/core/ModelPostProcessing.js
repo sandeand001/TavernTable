@@ -21,6 +21,8 @@ const KNOWN_ALPHA_TEXTURES = new Set(
   ].map((name) => name.toLowerCase())
 );
 
+const BASE_COLOR_ALPHA_MATERIALS = new Set(['mi_mzra_monstera_b07a1', 'mi_mzra_monstera_b07a2']);
+
 const clampAlphaTest = (value) => Math.min(0.45, Math.max(0.01, value ?? 0.05));
 
 // ── Public API ──────────────────────────────────────────────────
@@ -234,6 +236,9 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
           if (opacityTex) {
             mat.alphaMap = opacityTex;
             mat.needsUpdate = true;
+          } else if (BASE_COLOR_ALPHA_MATERIALS.has(matLabelLc)) {
+            mat.alphaMap = null;
+            mat.needsUpdate = true;
           }
           mat.transparent = false;
           if (
@@ -267,12 +272,8 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
   } catch (traverseErr) {
     // ignore traversal issues (model still may be usable)
   }
-  try {
-    const targetH = computeTargetHeight(key);
-    autoScaleModel(three, root, targetH);
-  } catch (scaleErr) {
-    // scaling failure is non-fatal
-  }
+  const targetH = computeTargetHeight(key);
+  autoScaleModel(three, root, targetH);
   try {
     if (!cache.__loggedKeys) cache.__loggedKeys = new Set();
     if (!cache.__loggedKeys.has(key)) {
@@ -322,14 +323,39 @@ export function computeTargetHeight(key) {
 
 // ── Auto-Scaling ────────────────────────────────────────────────
 export function autoScaleModel(three, root, targetHeight = 6) {
-  try {
-    const box = new three.Box3().setFromObject(root);
-    const size = new three.Vector3();
-    box.getSize(size);
-    const h = size.y || 1;
-    const s = targetHeight / h;
-    if (s > 0 && Number.isFinite(s)) root.scale.setScalar(s);
-  } catch (scaleErr) {
-    // ignore scaling error
+  const box = new three.Box3().setFromObject(root, true);
+  const height = box.max.y - box.min.y;
+  if (
+    !Number.isFinite(height) ||
+    height <= 0 ||
+    !Number.isFinite(targetHeight) ||
+    targetHeight <= 0
+  ) {
+    throw new Error('Model height calibration requires finite positive source and target heights');
   }
+  root.scale.multiplyScalar(targetHeight / height);
+  root.updateMatrixWorld(true);
+}
+
+/** Measure the basal two percent, excluding foliage when choosing a plant's root anchor. */
+export function getModelSupportBounds(three, root) {
+  root.updateWorldMatrix(true, true);
+  const box = new three.Box3().setFromObject(root, true);
+  if (box.isEmpty() || !Number.isFinite(box.min.y) || !Number.isFinite(box.max.y)) {
+    throw new Error('Cannot measure support for an empty or non-finite model');
+  }
+  const ceiling = box.min.y + (box.max.y - box.min.y) * 0.02 + 1e-7;
+  const support = new three.Box3();
+  const point = new three.Vector3();
+  root.traverse((child) => {
+    if (!child.isMesh) return;
+    const positions = child.geometry?.attributes?.position;
+    if (!positions) throw new Error('Static model mesh has no vertex positions');
+    for (let i = 0; i < positions.count; i++) {
+      point.fromBufferAttribute(positions, i).applyMatrix4(child.matrixWorld);
+      if (point.y <= ceiling) support.expandByPoint(point);
+    }
+  });
+  if (support.isEmpty()) throw new Error('Static model has no measurable ground support');
+  return support;
 }

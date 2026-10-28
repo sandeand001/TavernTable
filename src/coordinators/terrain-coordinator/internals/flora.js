@@ -154,6 +154,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               }
               const _def0 = TERRAIN_PLACEABLES[id] || {};
               pool.addPlaceable({
+                generatedBiome: true,
                 biomeKey,
                 biomeSeed: seed ?? c._biomeSeed,
                 type: 'plant',
@@ -199,6 +200,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
             }
             pool.addPlaceable({
+              generatedBiome: true,
               biomeKey,
               biomeSeed: seed ?? c._biomeSeed,
               type: 'plant',
@@ -294,6 +296,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       }
       if (spacing > 0 && placed.some((p) => manhattan(p, [placeX, placeY]) < spacing)) continue;
       pool.addPlaceable({
+        generatedBiome: true,
         biomeKey,
         biomeSeed: seed ?? c._biomeSeed,
         type: 'plant',

@@ -1,4 +1,6 @@
 import { TOKEN_COMMANDS } from '../../config/TokenCommandConfig.js';
+import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
 
 // ── Constants ─────────────────────────────────────────────
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -96,6 +98,8 @@ export default class RadialMenu {
       Array.isArray(options.actions) && options.actions.length ? options.actions : TOKEN_COMMANDS;
     this.root = document.createElement('div');
     this.root.className = 'radial-menu hidden';
+    this.root.inert = true;
+    this.root.setAttribute('aria-hidden', 'true');
     this.root.setAttribute('role', 'dialog');
     this.root.setAttribute('aria-label', 'Token radial commands');
     this.root.style.setProperty('--menu-size', `${MENU_SIZE}px`);
@@ -128,6 +132,7 @@ export default class RadialMenu {
     this._submenuLabels = new Map();
     this._activeSubmenu = null;
     this._listeners = new Set();
+    this._actionAvailability = {};
     this._context = null;
     this._raf = null;
     this._boundPointerHandler = (event) => this._handleGlobalPointer(event);
@@ -171,8 +176,10 @@ export default class RadialMenu {
         y: rawContext.screenY ?? 0,
       },
     };
+    this._updateTokenName();
 
     this.root.classList.remove('hidden');
+    this.root.inert = false;
     this.root.setAttribute('aria-hidden', 'false');
     this._bindGlobalHandlers();
     this._startTrackingPosition();
@@ -184,6 +191,7 @@ export default class RadialMenu {
       return;
     }
     this.root.classList.add('hidden');
+    this.root.inert = true;
     this.root.setAttribute('aria-hidden', 'true');
     this._clearSubmenu();
     this._context = null;
@@ -192,8 +200,13 @@ export default class RadialMenu {
     this._removeGlobalHandlers();
   }
 
-  setActiveCommand(commandId) {
+  setActiveCommand(commandId, token = null) {
+    if (token && this._context?.token !== token) return;
     this._applyActiveState(commandId);
+  }
+
+  setActionAvailability(availability) {
+    this._actionAvailability = { ...availability };
   }
 
   // ── DOM Build ─────────────────────────────────────────
@@ -230,6 +243,9 @@ export default class RadialMenu {
     centerButton.innerHTML = '<span>✕</span><small>Close</small>';
     centerButton.addEventListener('click', () => this.hide());
     this.root.appendChild(centerButton);
+    this._tokenName = document.createElement('div');
+    this._tokenName.className = 'radial-token-name';
+    this.root.appendChild(this._tokenName);
 
     const segmentSize = 360 / this.actions.length;
 
@@ -241,8 +257,9 @@ export default class RadialMenu {
 
       const path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', describeRingSegment(start, end));
-      path.setAttribute('tabindex', '0');
+      path.setAttribute('tabindex', action.disabled ? '-1' : '0');
       path.setAttribute('role', 'button');
+      if (action.disabled) path.setAttribute('aria-disabled', 'true');
       path.dataset.actionId = action.id;
       path.dataset.index = String(index);
       path.style.setProperty('--accent', action.accent || BASE_ACCENT);
@@ -267,7 +284,7 @@ export default class RadialMenu {
       path.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          this._handleAction(action.id);
+          this._handleSegmentClick(actionMeta);
         }
       });
       svg.appendChild(path);
@@ -323,12 +340,19 @@ export default class RadialMenu {
   }
 
   _updatePosition() {
+    this._updateTokenName();
     const pos = this._getScreenPosition();
     if (!pos) return;
     const offsetX = MENU_OFFSET?.x ?? 0;
     const offsetY = MENU_OFFSET?.y ?? 0;
     this.root.style.left = `${Math.round(pos.x + offsetX)}px`;
     this.root.style.top = `${Math.round(pos.y + offsetY)}px`;
+  }
+
+  _updateTokenName() {
+    const name = getTokenDisplayName(this._context?.token);
+    this._tokenName.textContent = name;
+    this.root.setAttribute('aria-label', `Token commands for ${name}`);
   }
 
   _getScreenPosition() {
@@ -363,7 +387,12 @@ export default class RadialMenu {
 
   // ── Action Dispatch ────────────────────────────────────
   _handleAction(actionId) {
-    if (!this._context) return;
+    if (
+      !this._context ||
+      this._actionMeta.get(actionId)?.action.disabled ||
+      this._actionAvailability[actionId]?.allowed === false
+    )
+      return;
     const payload = {
       actionId,
       token: this._context.token,
@@ -374,15 +403,24 @@ export default class RadialMenu {
     this._listeners.forEach((listener) => {
       try {
         listener(payload);
-      } catch (_) {
-        /* ignore listener errors */
+      } catch (error) {
+        new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.UI, {
+          component: 'RadialMenu',
+          actionId,
+          tokenId: payload.tokenId,
+        });
       }
     });
   }
 
   _handleSegmentClick(meta) {
-    const subActions = this._getSubActions(meta.action);
-    this._toggleSubmenu(meta, subActions);
+    if (meta.action.disabled) return;
+    if (meta.action.subActions?.length) {
+      this._toggleSubmenu(meta, meta.action.subActions);
+    } else {
+      this._handleAction(meta.action.id);
+      this.hide();
+    }
   }
 
   _getSubActions(action) {
@@ -418,10 +456,16 @@ export default class RadialMenu {
     if (!subActions.length || !this._submenuGroup) return;
     this._activeSubmenu = { actionId: meta.action.id };
     this._setSegmentRetracted(meta.action.id, true);
-    const totalSpan = meta.end - meta.start;
+    const totalSpan = Math.min(360, Math.max(meta.end - meta.start, subActions.length * 24));
+    const firstAngle = (meta.start + meta.end - totalSpan) / 2;
     const segmentSize = totalSpan / subActions.length;
-    subActions.forEach((subAction, index) => {
-      const start = meta.start + index * segmentSize;
+    subActions.forEach((entry, index) => {
+      const availability = this._actionAvailability[entry.id];
+      const subAction =
+        availability?.allowed === false
+          ? { ...entry, disabled: true, description: availability.reason }
+          : entry;
+      const start = firstAngle + index * segmentSize;
       const end = start + segmentSize;
       const midAngle = midpointAngle(start, end);
       const path = document.createElementNS(SVG_NS, 'path');
@@ -430,6 +474,13 @@ export default class RadialMenu {
         describeRingSegment(start, end, SUBMENU_INNER_RADIUS, SUBMENU_OUTER_RADIUS)
       );
       path.classList.add('radial-submenu-path');
+      path.setAttribute('role', 'button');
+      path.setAttribute('tabindex', subAction.disabled ? '-1' : '0');
+      if (subAction.disabled) {
+        path.setAttribute('aria-disabled', 'true');
+        path.style.opacity = '0.35';
+      }
+      path.setAttribute('aria-label', subAction.label);
       path.dataset.subActionId = subAction.id;
       path.style.setProperty('--accent', subAction.accent || meta.action.accent || BASE_ACCENT);
       const angleRad = ((midAngle - 90) * Math.PI) / 180;
@@ -445,8 +496,17 @@ export default class RadialMenu {
       path.addEventListener('blur', () => this._setSubHover(subAction.id, false));
       path.addEventListener('click', (event) => {
         event.stopPropagation();
+        if (subAction.disabled) return;
         this._handleAction(subAction.id);
         this.hide();
+      });
+      path.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          if (subAction.disabled) return;
+          this._handleAction(subAction.id);
+          this.hide();
+        }
       });
       this._submenuGroup.appendChild(path);
       this._submenuSegments.set(subAction.id, path);
@@ -458,6 +518,7 @@ export default class RadialMenu {
         icon.style.setProperty('--angle', `${midAngle}deg`);
         icon.style.setProperty('--accent', subAction.accent || meta.action.accent || BASE_ACCENT);
         icon.textContent = subAction.icon || '•';
+        if (subAction.disabled) icon.style.opacity = '0.35';
         this._submenuIconLayer.appendChild(icon);
         this._submenuIcons.set(subAction.id, icon);
       }
@@ -542,6 +603,8 @@ export default class RadialMenu {
     if (!actionId) return;
     const segment = this._segments.get(actionId);
     const icon = this._icons.get(actionId);
+    const label = this._labels.get(actionId);
+    if (label) label.style.visibility = isRetracted ? 'hidden' : '';
     if (segment) {
       if (isRetracted) {
         segment.dataset.submenuOpen = 'true';

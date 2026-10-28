@@ -10,6 +10,8 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
+import { KEYBOARD_TOKEN_CONTROLS_ENABLED } from '../config/TokenMovementConfig.js';
+import { TokenFacingGesture } from './interaction-manager/internals/facing.js';
 import {
   isPointInCellDiamond as _isPointInCellDiamond,
   pickTopmostGridCellAt as _pickTopmost,
@@ -112,6 +114,8 @@ export class InteractionManager {
    * Set up mouse interaction handlers
    */
   setupMouseInteractions() {
+    this._facingGesture?.detach();
+    this._facingGesture = new TokenFacingGesture(this).attach(this.gameManager.getEventCanvas());
     this.setupMouseDown();
     this.setupMouseMove();
     this.setupMouseUp();
@@ -225,6 +229,7 @@ export class InteractionManager {
    * Set up keyboard interactions
    */
   setupKeyboardInteractions() {
+    if (!KEYBOARD_TOKEN_CONTROLS_ENABLED) return;
     document.addEventListener('keydown', (event) => {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(true);
@@ -319,7 +324,9 @@ export class InteractionManager {
           const tokenEntry = safeTarget.token || null;
 
           if (isRemoveMode) {
-            if (gridX != null && gridY != null) {
+            if (tokenEntry) {
+              gm.removeToken(tokenEntry);
+            } else if (gridX != null && gridY != null) {
               gm.handleTokenInteraction(gridX, gridY);
             }
             return;
@@ -332,11 +339,12 @@ export class InteractionManager {
 
           const adapter = gm?.token3DAdapter;
           const selectedToken = adapter?.getSelectedToken?.() || null;
+          const is3D = gm?.is3DModeActive?.();
+          if (is3D && (gridX == null || gridY == null)) return;
           const canNavigate =
             selectedToken &&
-            adapter?.navigateToGrid &&
-            typeof adapter.navigateToGrid === 'function' &&
-            gm?.is3DModeActive?.() &&
+            typeof adapter?.requestMoveToGrid === 'function' &&
+            is3D &&
             gridX != null &&
             gridY != null;
 
@@ -348,7 +356,9 @@ export class InteractionManager {
               target: { gridX, gridY },
             });
 
-            const result = adapter.navigateToGrid(selectedToken, gridX, gridY);
+            const result = safeTarget.wallSurface
+              ? adapter.requestMoveToSurface?.(selectedToken, safeTarget.wallSurface)
+              : adapter.requestMoveToGrid(selectedToken, gridX, gridY);
             if (result) {
               logger.log('Token navigation accepted', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
                 source: 'grid-click',
@@ -361,11 +371,12 @@ export class InteractionManager {
               return;
             }
 
-            logger.log('Token navigation rejected', LOG_LEVEL.WARN, LOG_CATEGORY.INTERACTION, {
+            logger.log('Token navigation rejected', LOG_LEVEL.DEBUG, LOG_CATEGORY.INTERACTION, {
               source: 'grid-click',
               token: tokenDescriptor,
               target: { gridX, gridY },
             });
+            return;
           }
 
           this._clearTokenSelection();
@@ -621,23 +632,22 @@ export class InteractionManager {
         gm.is3DModeActive();
       const clientX = event?.clientX ?? event?.x ?? null;
       const clientY = event?.clientY ?? event?.y ?? null;
-      if (canUse3D && clientX != null && clientY != null) {
-        try {
-          const targetElement = event?.target || null;
-          const ground = gm.pickingService.pickGroundSync(clientX, clientY, targetElement);
-          if (ground?.grid) {
-            const gx = Math.round(ground.grid.gx);
-            const gy = Math.round(ground.grid.gy);
-            if (Number.isFinite(gx) && Number.isFinite(gy)) {
-              const candidate = { gridX: gx, gridY: gy };
-              if (this.isValidGridPosition(candidate)) {
-                return candidate;
-              }
+      if (canUse3D) {
+        if (clientX == null || clientY == null)
+          throw new Error('3D picking requires pointer coordinates');
+        const targetElement = gm.threeSceneManager?.canvas || event?.target || null;
+        const ground = gm.pickingService.pickGroundSync(clientX, clientY, targetElement);
+        if (ground?.grid) {
+          const gx = Math.round(ground.grid.gx);
+          const gy = Math.round(ground.grid.gy);
+          if (Number.isFinite(gx) && Number.isFinite(gy)) {
+            const candidate = { gridX: gx, gridY: gy };
+            if (this.isValidGridPosition(candidate)) {
+              return candidate;
             }
           }
-        } catch (_) {
-          /* fallback to 2D conversion */
         }
+        return null;
       }
 
       const mouseCoords = this.getMousePosition(event);

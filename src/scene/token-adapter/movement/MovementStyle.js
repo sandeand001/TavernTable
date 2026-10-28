@@ -200,11 +200,16 @@ function _updateMovementFlags(state, directionOverride) {
   const backwardSet = state.backwardKeys || new Set();
   const drunkDrives = sign >= 0 ? forwardSet : backwardSet;
   const drunkKey = sign >= 0 ? 'KeyW' : 'KeyS';
-  const styleIsDrunk = this._setHasKey(drunkDrives, drunkKey);
+  const plannedSettings = this._movementRoutes?.get(state.token)?.settings;
+  const styleIsDrunk = plannedSettings
+    ? plannedSettings.type === 'drunk'
+    : state.pathActive
+      ? state.pathMovementType === 'drunk'
+      : this._setHasKey(drunkDrives, drunkKey);
 
   state.movementStyle = styleIsDrunk ? 'drunk' : 'standard';
 
-  const pathMode = state.pathActive ? state.pathSpeedMode : null;
+  const pathMode = plannedSettings?.mode || (state.pathActive ? state.pathSpeedMode : null);
   if (pathMode === 'walk') {
     state.isRunning = false;
     this._resetSprintState(state);

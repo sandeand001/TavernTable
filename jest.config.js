@@ -5,17 +5,10 @@ module.exports = {
     '<rootDir>/coverage/',
     '<rootDir>/.attic/',
     '<rootDir>/tools/',
-    '<rootDir>/devworkflow/'
+    '<rootDir>/devworkflow/',
   ],
-  testMatch: [
-    '**/__tests__/**/*.test.js',
-    '**/?(*.)+(spec|test).js'
-  ],
-  collectCoverageFrom: [
-    'src/**/*.js',
-    '!src/**/*.config.js',
-    '!src/index.js'
-  ],
+  testMatch: ['**/__tests__/**/*.test.js', '**/?(*.)+(spec|test).js'],
+  collectCoverageFrom: ['src/**/*.js', '!src/**/*.config.js', '!src/index.js'],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   coverageThreshold: {
@@ -23,17 +16,18 @@ module.exports = {
       branches: 60,
       functions: 60,
       lines: 60,
-      statements: 60
-    }
+      statements: 60,
+    },
   },
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
   moduleFileExtensions: ['js', 'json'],
   transform: {
-    '^.+\\.js$': 'babel-jest'
+    '^.+\\.js$': 'babel-jest',
   },
+  transformIgnorePatterns: ['node_modules[\\\\/](?!three[\\\\/]examples[\\\\/]jsm[\\\\/])'],
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1'
+    '^@/(.*)$': '<rootDir>/src/$1',
   },
   testTimeout: 10000,
-  verbose: true
+  verbose: true,
 };

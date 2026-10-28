@@ -380,7 +380,9 @@ function _syncTokenAndMeshWorld(state, world, options = {}) {
   if (!mesh) {
     return null;
   }
-  return this._applyMeshWorldPosition(mesh, world);
+  const composed = this._applyMeshWorldPosition(mesh, world);
+  this._updateSelectionIndicatorTransform(tokenEntry);
+  return composed;
 }
 
 // ── Install ──────────────────────────────────────────────────────────────

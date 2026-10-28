@@ -19,16 +19,20 @@ import {
   TOKEN_WORLD_LOCK_PROP,
 } from '../config/token-adapter/MannequinConfig.js';
 import { installAnimationMethods } from './token-adapter/AnimationController.js';
+import { installManualActionMotionMethods } from './token-adapter/ManualActionMotion.js';
+import { installTraversalMotionMethods } from './token-adapter/movement/TraversalMotion.js';
 import { installSelectionMethods } from './token-adapter/SelectionEffects.js';
 import { installMeshFactoryMethods } from './token-adapter/MeshFactory.js';
 
 import { installClimbMethods } from './token-adapter/movement/ClimbPhases.js';
+import { installWallMovementMethods } from './token-adapter/movement/WallMovement.js';
 import { installFallMethods } from './token-adapter/movement/FallPhases.js';
 import { installMovementStyleMethods } from './token-adapter/movement/MovementStyle.js';
 import { installMovementPhaseMethods } from './token-adapter/movement/MovementPhases.js';
 import { installStepFactoryMethods } from './token-adapter/movement/StepFactory.js';
 
 import { installNavigationMethods } from './token-adapter/pathing/Navigation.js';
+import { installMovementRangeMethods } from './token-adapter/pathing/MovementRange.js';
 import { installPathingLoggerMethods } from './token-adapter/pathing/PathingLogger.js';
 import { installResumeProbeMethods } from './token-adapter/pathing/ResumeProbe.js';
 
@@ -53,8 +57,15 @@ export class Token3DAdapter {
     this._modelCache = new Map();
     this._animationMixers = new Map();
     this._animationClipCache = new Map();
+    this._animationSourceCache = new Map();
     this._tokenAnimationData = new Map();
     this._movementStates = new Map();
+    this._movementRoutes = new Map();
+    this._movementRange = null;
+    this._movementRangeOverlay = null;
+    this._movementRangeDirty = true;
+    this._movementRangeSpatialKey = null;
+    this._movementRangeScene = null;
     this._rootBones = new Map();
     this._lastFrameTime = null;
     this._lastFacingRight = null;
@@ -110,6 +121,7 @@ export class Token3DAdapter {
 
           if (delta > 0) {
             this._updateForwardMovements(delta);
+            this._updatePlannedMovements();
             for (const tokenEntry of this._animationMixers.keys()) {
               try {
                 this._neutralizeRootMotion(tokenEntry);
@@ -118,6 +130,21 @@ export class Token3DAdapter {
                   component: 'Token3DAdapter',
                   operation: 'neutralizeRootMotion',
                   tokenId: tokenEntry.id,
+                });
+              }
+            }
+            const selected = this._selectedToken;
+            if (
+              this._movementStates.get(selected)?.wallMotion?.holding &&
+              selected?.__ttSelectionIndicator?.visible
+            ) {
+              try {
+                this._updateSelectionIndicatorTransform(selected);
+              } catch (error) {
+                GameErrors.rendering(error, {
+                  component: 'Token3DAdapter',
+                  operation: 'updateSelectionIndicator',
+                  tokenId: selected.id,
                 });
               }
             }
@@ -248,6 +275,7 @@ export class Token3DAdapter {
         pathActive: false,
         pathGoal: null,
         pathSpeedMode: null,
+        pathMovementType: null,
         pathKey: null,
         pathTolerance: 0,
         pathReached: false,
@@ -505,16 +533,25 @@ export class Token3DAdapter {
       const tokens = gm.placedTokens || [];
       for (const t of tokens) {
         const mesh = t.__threeMesh;
-        if (!mesh) continue;
-        this._positionMesh(mesh, t);
+        if (!mesh || this.isMovementInProgress(t)) continue;
+        const state = this._movementStates.get(t);
+        if (state?.wallMotion?.holding && this._resyncHeldWall(state)) continue;
+        const world = this._resolveTokenWorldPosition(t);
+        world.y = this._sampleWorldHeight(world.x, world.z, world.y);
+        this._syncTokenAndMeshWorld({ token: t, mesh }, world);
       }
+      this._movementRangeDirty = true;
     } catch (_) {
       /* ignore */
     }
   }
 
   onTokenRemoved(tokenEntry) {
-    if (!tokenEntry || !tokenEntry.__threeMesh) return;
+    if (!tokenEntry) return;
+    this._movementRoutes.delete(tokenEntry);
+    this._movementRangeDirty = true;
+    if (this._selectedToken === tokenEntry) this._selectedToken = null;
+    if (!tokenEntry.__threeMesh) return;
     const mesh = tokenEntry.__threeMesh;
     if (this._hoverToken === tokenEntry) this._hoverToken = null;
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
@@ -580,7 +617,7 @@ export class Token3DAdapter {
     delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
   }
 
-  pickTokenByRay(raycaster) {
+  pickTokenByRay(raycaster, { precise = false } = {}) {
     try {
       if (!raycaster) return null;
       const gm = this.gameManager;
@@ -605,7 +642,15 @@ export class Token3DAdapter {
         if (!intersections || !intersections.length) {
           continue;
         }
-        const hit = intersections[0];
+        const hit =
+          precise || this.isWallAttached(tokenEntry)
+            ? intersections.find(
+                (entry) =>
+                  entry.object !== mesh.userData?.__ttSelectionCollider &&
+                  entry.object !== tokenEntry.__ttSelectionIndicator
+              )
+            : intersections[0];
+        if (!hit) continue;
         const distance = typeof hit?.distance === 'number' ? hit.distance : Infinity;
         if (distance >= minDistance) {
           continue;
@@ -670,12 +715,16 @@ export class Token3DAdapter {
 
 // Install mixin methods onto prototype.
 installAnimationMethods(Token3DAdapter.prototype);
+installManualActionMotionMethods(Token3DAdapter.prototype);
+installTraversalMotionMethods(Token3DAdapter.prototype);
 installSelectionMethods(Token3DAdapter.prototype);
 installMeshFactoryMethods(Token3DAdapter.prototype);
 installPathingLoggerMethods(Token3DAdapter.prototype);
 installClimbMethods(Token3DAdapter.prototype);
+installWallMovementMethods(Token3DAdapter.prototype);
 installFallMethods(Token3DAdapter.prototype);
 installNavigationMethods(Token3DAdapter.prototype);
+installMovementRangeMethods(Token3DAdapter.prototype);
 installMovementStyleMethods(Token3DAdapter.prototype);
 installMovementPhaseMethods(Token3DAdapter.prototype);
 installRootMotionMethods(Token3DAdapter.prototype);

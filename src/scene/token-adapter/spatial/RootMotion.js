@@ -45,24 +45,39 @@ function _neutralizeRootMotion(tokenEntry) {
   if (!roots || !roots.length) return;
   const manualState = this._getManualAnimationState(tokenEntry);
   if (manualState?.allowRootMotion) {
+    this._advanceManualActionMotion(tokenEntry, manualState);
+    if (manualState.inPlace) {
+      for (const { bone, basePosition } of roots) {
+        bone.position.x = basePosition?.x || 0;
+        bone.position.z = basePosition?.z || 0;
+      }
+    }
     return;
   }
+  if (this._neutralizeTraversalRoot(tokenEntry, roots)) return;
   const state = this._movementStates.get(tokenEntry);
   const mesh = state?.mesh || tokenEntry.__threeMesh;
-  const isRecovery = state?.phase === 'climb-recover';
+  const wallClip = state?.wallMotion?.clip;
+  const isRecovery = state?.phase === 'climb-recover' || wallClip === 'climbRecover';
   if (mesh?.userData?.__ttRecoveryGroundOffset || isRecovery) {
     this._applyMeshWorldPosition(mesh, this._resolveTokenWorldPosition(tokenEntry));
     mesh.userData.__ttRecoveryGroundOffset = 0;
   }
   const actionKey =
-    state?.phase === 'climb'
+    state?.phase === 'climb' || wallClip === 'climb'
       ? 'climb'
-      : isRecovery
-        ? 'climbRecover'
-        : state?.phase === 'fall' && state.fallMode === 'landing'
-          ? state.fallLandingKey
-          : null;
-  const action = this._tokenAnimationData.get(tokenEntry)?.actions?.[actionKey];
+      : wallClip === 'ledgeHang'
+        ? 'ledgeHang'
+        : isRecovery
+          ? 'climbRecover'
+          : state?.phase === 'fall' && state.fallMode === 'landing'
+            ? state.fallLandingKey
+            : null;
+  const actions = this._tokenAnimationData.get(tokenEntry)?.actions;
+  const action = actions?.[actionKey];
+  const outgoingGrip =
+    actionKey !== 'ledgeHang' && actions?.ledgeHang?.isScheduled?.() ? actions.ledgeHang : null;
+  const gripWeight = outgoingGrip ? Math.min(Math.max(outgoingGrip.getEffectiveWeight(), 0), 1) : 0;
   for (const info of roots) {
     const bone = info?.bone;
     if (!bone || !bone.position) continue;
@@ -72,9 +87,19 @@ function _neutralizeRootMotion(tokenEntry) {
     const sample = this._getActionRootPosition(info, action);
     if (sample) {
       // Ignore locomotion still present in an outgoing walk/run crossfade.
-      const weight = action.time > 0 ? Math.min(Math.max(action.getEffectiveWeight(), 0), 1) : 0;
+      const weight =
+        actionKey === 'ledgeHang' || action.time > 0
+          ? Math.min(Math.max(action.getEffectiveWeight(), 0), 1)
+          : 0;
       bone.position.x += (sample.x - bone.position.x) * weight;
       bone.position.z += (sample.z - bone.position.z) * weight;
+    }
+    if (gripWeight > 0) {
+      const grip = this._getActionRootPosition(info, outgoingGrip, 0);
+      if (grip) {
+        bone.position.x += (grip.x - (base?.x || 0)) * gripWeight;
+        bone.position.z += (grip.z - (base?.z || 0)) * gripWeight;
+      }
     }
   }
 
@@ -213,24 +238,45 @@ function _prepareClimbRootMotion(tokenEntry, sourceClips) {
     }
   }
 
-  if (wallTrack) {
-    const end = wallTrack.values.length - 3;
-    prepared.rootMotion.wall = {
-      interpolant: wallTrack.createInterpolant(),
-      start: { x: wallTrack.values[0], y: wallTrack.values[1], z: wallTrack.values[2] },
+  for (const [key, motionKey] of [
+    ['climbWall', 'wall'],
+    ['climbWallDown', 'wallDown'],
+  ]) {
+    const track = positionTrack(sourceClips[key]);
+    if (!track) continue;
+    const end = track.values.length - 3;
+    prepared.rootMotion[motionKey] = {
+      interpolant: track.createInterpolant(),
+      start: { x: track.values[0], y: track.values[1], z: track.values[2] },
       displacementLocal: {
-        x: wallTrack.values[end] - wallTrack.values[0],
-        y: wallTrack.values[end + 1] - wallTrack.values[1],
-        z: wallTrack.values[end + 2] - wallTrack.values[2],
+        x: track.values[end] - track.values[0],
+        y: track.values[end + 1] - track.values[1],
+        z: track.values[end + 2] - track.values[2],
       },
     };
-    prepared.climbWall = sourceClips.climbWall.clone();
-    const normalizedTrack = positionTrack(prepared.climbWall);
+    prepared[key] = sourceClips[key].clone();
+    const normalizedTrack = positionTrack(prepared[key]);
+    // Both loops share a feet-relative anchor; the downward clip starts one cycle higher.
+    const anchorTrack = wallTrack || track;
+    const anchorIndex = wallTrack || key === 'climbWall' ? 0 : end;
     for (let i = 0; i < normalizedTrack.values.length; i += 3) {
-      normalizedTrack.values[i] = wallTrack.values[0];
-      normalizedTrack.values[i + 1] = wallTrack.values[1];
-      normalizedTrack.values[i + 2] = wallTrack.values[2];
+      normalizedTrack.values[i] = anchorTrack.values[anchorIndex];
+      normalizedTrack.values[i + 1] = anchorTrack.values[anchorIndex + 1];
+      normalizedTrack.values[i + 2] = anchorTrack.values[anchorIndex + 2];
     }
+  }
+
+  if (prepared.climb) {
+    // The entry pose grips the lip; later mantle frames pull onto the platform.
+    const hang = prepared.climb.clone();
+    hang.name = 'Ledge Hang';
+    hang.duration = 1 / 30;
+    for (const track of hang.tracks) {
+      const pose = Array.from(track.createInterpolant().evaluate(0));
+      track.times = new Float32Array([0, hang.duration]);
+      track.values = new Float32Array([...pose, ...pose]);
+    }
+    prepared.ledgeHang = hang;
   }
 
   return prepared;

@@ -1902,3 +1902,235 @@ body {
   letter-spacing: 0.2em;
   opacity: 0.7;
 }
+
+.radial-token-name {
+  position: absolute;
+  top: -36px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 220px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(6, 16, 28, 0.94);
+  color: #dceeff;
+  font: 600 14px sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.radial-menu path[data-action-id][aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.35;
+  fill: color-mix(in srgb, var(--accent, #7ccdf9) 35%, transparent);
+  filter: none;
+  transform: translate3d(var(--pop-x, 0), var(--pop-y, 0), 0);
+}
+
+.character-sheet-window {
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #486b88;
+  border-radius: 10px;
+  background: #152131;
+  color: #e7eff8;
+  font: 14px sans-serif;
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.5);
+}
+
+.character-sheet-window[hidden] {
+  display: none;
+}
+
+.character-sheet-window[data-minimized='true'] .character-sheet-tabs,
+.character-sheet-window[data-minimized='true'] .character-sheet-content,
+.character-sheet-window[data-minimized='true'] .character-sheet-resize {
+  display: none;
+}
+
+.character-sheet-window button {
+  color: inherit;
+  font: inherit;
+}
+
+.character-sheet-window button:focus-visible,
+.character-sheet-content:focus-visible {
+  outline: 2px solid #7ccdf9;
+  outline-offset: -2px;
+}
+
+.character-sheet-titlebar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #20354d;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.character-sheet-titlebar h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.character-sheet-window-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.character-sheet-window-minimize,
+.character-sheet-window-close,
+.character-sheet-tab-close {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.character-sheet-window-minimize:hover,
+.character-sheet-window-close:hover,
+.character-sheet-tab-close:hover {
+  background: #40536b;
+}
+
+.character-sheet-window-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.character-sheet-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid #344b64;
+}
+
+.character-sheet-tab-item {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  max-width: 220px;
+  border: 1px solid #3d556e;
+  border-radius: 5px;
+  background: #1e2d40;
+}
+
+.character-sheet-tab {
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.character-sheet-tab[aria-selected='true'] {
+  background: #365575;
+}
+
+.character-sheet-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+  line-height: 1.5;
+}
+
+.character-sheet-content h3 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.character-sheet-hint {
+  color: #a9bcd1;
+}
+
+.character-sheet-movement {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid #486b88;
+  border-radius: 6px;
+}
+
+.character-sheet-movement legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+.character-sheet-movement label {
+  display: grid;
+  gap: 6px;
+}
+
+.character-sheet-movement input,
+.character-sheet-movement select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #486b88;
+  border-radius: 4px;
+  background: #20354d;
+  color: #e7eff8;
+  font: inherit;
+}
+
+.character-sheet-movement .character-sheet-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+}
+
+.character-sheet-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: se-resize;
+  touch-action: none;
+}
+
+.character-sheet-resize::after {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid #8bb5d7;
+  border-bottom: 2px solid #8bb5d7;
+  content: '';
+}

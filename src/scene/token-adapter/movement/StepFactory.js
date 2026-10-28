@@ -11,14 +11,17 @@ import {
   DEFAULT_MOVEMENT_PROFILE,
   DEFAULT_FALL_TRIGGER_PROGRESS,
   DEFAULT_HEIGHT_SNAP_PROGRESS,
-  HARD_LANDING_HEIGHT_THRESHOLD,
-  ROLLING_LANDING_HEIGHT_THRESHOLD,
-  FALL_MIN_HEIGHT_THRESHOLD,
   FALL_EDGE_TRIGGER_TILE_RATIO,
   PATH_STALL_REPATH_DELAY,
   MAX_STANDARD_CLIMB_LEVELS,
   CLIMB_WALL_ENTRY_TILE_HALF_RATIO,
 } from '../../../config/token-adapter/MannequinConfig.js';
+import {
+  FEET_PER_GRID_SQUARE,
+  MAX_STEP_HEIGHT_FEET,
+  HARD_LANDING_HEIGHT_FEET,
+  ROLLING_LANDING_HEIGHT_FEET,
+} from '../../../config/TokenMovementConfig.js';
 import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 // ── Free Movement ────────────────────────────────────────────────────────
@@ -107,12 +110,40 @@ function _advanceFreeMovement(state, delta, bounds) {
     }
   }
 
-  if (!state.climbQueued && !state.climbKeyboardApproach) {
+  if (!state.groundTransition) {
     const edge = this._findTerrainTransition(
       currentWorld,
       {
         x: currentWorld.x + direction.x * tileSize,
         z: currentWorld.z + direction.z * tileSize,
+      },
+      (from, to) => {
+        const feet =
+          (Math.abs(to - from) * this.gameManager.spatial.elevationUnit * FEET_PER_GRID_SQUARE) /
+          tileSize;
+        return feet > 1e-8 && feet <= MAX_STEP_HEIGHT_FEET + 1e-8;
+      }
+    );
+    if (edge) {
+      state.groundTransition = {
+        edge: { ...edge.world },
+        direction: { ...direction },
+        fromY: edge.fromHeight * this.gameManager.spatial.elevationUnit,
+        toY: edge.toHeight * this.gameManager.spatial.elevationUnit,
+        halfWidth: tileSize * 0.25,
+      };
+    }
+  }
+
+  if (!state.climbQueued && !state.climbKeyboardApproach) {
+    const lookAhead = goalWorld
+      ? Math.min(tileSize, Math.hypot(goalWorld.x - currentWorld.x, goalWorld.z - currentWorld.z))
+      : tileSize;
+    const edge = this._findTerrainTransition(
+      currentWorld,
+      {
+        x: currentWorld.x + direction.x * lookAhead,
+        z: currentWorld.z + direction.z * lookAhead,
       },
       (fromHeight, toHeight) => toHeight - fromHeight >= MAX_STANDARD_CLIMB_LEVELS
     );
@@ -181,6 +212,19 @@ function _advanceFreeMovement(state, delta, bounds) {
     const sampledNextY = this._sampleWorldHeight(nextWorld.x, nextWorld.z, currentWorld.y);
     const baseNextY = Number.isFinite(sampledNextY) ? sampledNextY : currentWorld.y;
     nextWorld.y = baseNextY + worldYOffset;
+  }
+  const groundTransition = state.groundTransition;
+  if (groundTransition) {
+    const along =
+      (nextWorld.x - groundTransition.edge.x) * groundTransition.direction.x +
+      (nextWorld.z - groundTransition.edge.z) * groundTransition.direction.z;
+    const ratio = Math.min(
+      1,
+      Math.max(0, (along + groundTransition.halfWidth) / (2 * groundTransition.halfWidth))
+    );
+    const smooth = ratio * ratio * (3 - 2 * ratio);
+    nextWorld.y = groundTransition.fromY + (groundTransition.toY - groundTransition.fromY) * smooth;
+    if (ratio >= 1) state.groundTransition = null;
   }
 
   this._syncTokenAndMeshWorld(state, nextWorld);
@@ -479,7 +523,9 @@ function _createForwardMovementStep(tokenEntry, mesh, directionSign = 1) {
     const edge = this._findTerrainTransition(
       startWorld,
       { x: startWorld.x + direction.x * lookAhead, z: startWorld.z + direction.z * lookAhead },
-      (fromHeight, toHeight) => fromHeight - toHeight > FALL_MIN_HEIGHT_THRESHOLD
+      (fromHeight, toHeight) =>
+        ((fromHeight - toHeight) * gm.spatial.elevationUnit * FEET_PER_GRID_SQUARE) / tileSize >
+        MAX_STEP_HEIGHT_FEET + 1e-8
     );
     if (!edge) return null;
     const targetGridX = edge.toGrid.gridX;
@@ -516,12 +562,13 @@ function _createForwardMovementStep(tokenEntry, mesh, directionSign = 1) {
       Math.max(fallTriggerProgress || DEFAULT_FALL_TRIGGER_PROGRESS, 0),
       0.98
     );
-    const requiresFall = heightDrop > FALL_MIN_HEIGHT_THRESHOLD;
+    const dropFeet = (heightDrop * gm.spatial.elevationUnit * FEET_PER_GRID_SQUARE) / tileSize;
+    const requiresFall = dropFeet > MAX_STEP_HEIGHT_FEET + 1e-8;
     let landingVariant = null;
     if (requiresFall) {
-      if (heightDrop > ROLLING_LANDING_HEIGHT_THRESHOLD && directionSign > 0) {
+      if (dropFeet > ROLLING_LANDING_HEIGHT_FEET && directionSign > 0) {
         landingVariant = 'fallToRoll';
-      } else if (heightDrop > HARD_LANDING_HEIGHT_THRESHOLD) {
+      } else if (dropFeet > HARD_LANDING_HEIGHT_FEET) {
         landingVariant = 'hardLanding';
       } else {
         landingVariant = 'fall';

@@ -1,70 +1,14 @@
+import { MANUAL_ACTIONS } from './HumanoidActionCatalog.js';
+
 // ── Constants ──────────────────────────────────────────────────
 const DEFAULT_COMMANDS = [
-  // ── Advance Command ──────────────────────────────────────────
+  // ── Character Sheet ─────────────────────────────────────────
   {
-    id: 'advance',
-    label: 'Advance',
-    description: 'Flag this unit to push forward or close the distance.',
-    icon: '⤴',
+    id: 'character-sheet',
+    label: 'Character Sheet',
+    description: 'Open this creature in the character sheet window.',
+    icon: '📜',
     accent: '#66CFFF',
-    tint: 0x66cfff,
-    subActions: [
-      {
-        id: 'advance-flank',
-        label: 'Flank',
-        description: 'Curve outward before closing in.',
-        icon: '🗡',
-        accent: '#7ad7ff',
-      },
-      {
-        id: 'advance-charge',
-        label: 'Charge',
-        description: 'Full-speed rush toward the target.',
-        icon: '⚡',
-        accent: '#4ad0ff',
-      },
-      {
-        id: 'advance-focus',
-        label: 'Lock Target',
-        description: 'Advance while maintaining aim.',
-        icon: '🎯',
-        accent: '#9fd0ff',
-      },
-    ],
-  },
-  // ── Hold Command ──────────────────────────────────────────────
-  {
-    id: 'hold',
-    label: 'Hold',
-    description: 'Hold position and defend the current tile.',
-    icon: '🛡',
-    accent: '#4E7BFF',
-    tint: 0x4e7bff,
-  },
-  // ── Support Command ──────────────────────────────────────────
-  {
-    id: 'support',
-    label: 'Support',
-    description: 'Assist allies; mark as providing buffs or aid.',
-    icon: '✨',
-    accent: '#63FFD3',
-    tint: 0x63ffd3,
-    subActions: [
-      {
-        id: 'support-heal',
-        label: 'Stabilise',
-        description: 'Provide healing or first aid.',
-        icon: '✚',
-        accent: '#8ffff0',
-      },
-      {
-        id: 'support-bolster',
-        label: 'Bolster',
-        description: 'Grant temporary buffs or shields.',
-        icon: '🛡',
-        accent: '#6efff0',
-      },
-    ],
   },
   // ── Emotes Command ───────────────────────────────────────────
   {
@@ -74,61 +18,24 @@ const DEFAULT_COMMANDS = [
     icon: '😊',
     accent: '#FFBD80',
     tint: 0xffbd80,
-    subActions: [
-      {
-        id: 'emote-defeated',
-        label: 'Defeated',
-        description: 'Collapse into the defeated pose.',
-        icon: '💀',
-        accent: '#f87171',
-      },
-      {
-        id: 'emote-idle',
-        label: 'Idle',
-        description: 'Play a relaxed idle animation (random pick).',
-        icon: '😌',
-        accent: '#facc15',
-      },
-      {
-        id: 'emote-rumba',
-        label: 'Rumba Dance',
-        description: 'Loop a flashy rumba dance.',
-        icon: '💃',
-        accent: '#fb7185',
-      },
-      {
-        id: 'emote-fancy-pose',
-        label: 'Fancy Pose',
-        description: 'Strike a stylish, poised stance.',
-        icon: '💃',
-        accent: '#e879f9',
-      },
-      {
-        id: 'emote-dynamic-pose',
-        label: 'Dynamic Pose',
-        description: 'Hold an action-ready dynamic pose.',
-        icon: '🕺',
-        accent: '#34d399',
-      },
-    ],
+    subActions: MANUAL_ACTIONS.filter((action) => action.group === 'emotes'),
   },
-  // ── Focus Command ────────────────────────────────────────────
   {
-    id: 'focus',
-    label: 'Focus',
-    description: 'Prioritise this token for targeted abilities.',
-    icon: '🎯',
-    accent: '#A18BFF',
-    tint: 0xa18bff,
+    id: 'actions',
+    label: 'Actions',
+    description: 'Visual actions for a stationary, grounded creature. No gameplay rules.',
+    icon: '\u2728',
+    accent: '#a5b4fc',
+    subActions: MANUAL_ACTIONS.filter((action) => action.group === 'actions'),
   },
-  // ── Clear Command ────────────────────────────────────────────
+  // ── Future Actions ───────────────────────────────────────────
   {
-    id: 'clear',
-    label: 'Clear',
-    description: 'Remove any quick command markers from this token.',
-    icon: '✖',
+    id: 'unavailable',
+    label: 'Not yet available',
+    description: 'More creature actions are coming later.',
+    icon: '…',
     accent: '#7E8DAA',
-    tint: null,
+    disabled: true,
   },
 ];
 

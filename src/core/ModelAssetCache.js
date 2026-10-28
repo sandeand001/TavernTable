@@ -5,6 +5,7 @@ import {
   postProcessModel as _postProcess,
   computeTargetHeight as _computeTargetHeight,
   autoScaleModel as _autoScaleModel,
+  getModelSupportBounds,
 } from './ModelPostProcessing.js';
 
 const MODEL_LOG_CATEGORY = LOG_CATEGORY.CACHE;
@@ -192,7 +193,7 @@ class ModelAssetCache {
     };
     Object.assign(this._registry, {
       'tropical-palm-a': makeTropicalEntry(
-        'Palm_B08a',
+        'SM_MZRa_Palm_B081',
         {
           baseColor: 'T_MZRa_Palm_B08a_BC.png',
         },
@@ -201,7 +202,7 @@ class ModelAssetCache {
         }
       ),
       'tropical-palm-b': makeTropicalEntry(
-        'Palm_B08b',
+        'SM_MZRa_Palm_B082',
         {
           baseColor: 'T_MZRa_Palm_B08b_BC.png',
           normal: 'T_MZRa_Palm_B08b_N.png',
@@ -212,29 +213,27 @@ class ModelAssetCache {
         }
       ),
       'tropical-banana-a': makeTropicalEntry(
-        'Banana_B09a',
+        'SM_MZRa_Banana_B091',
         {
           baseColor: 'T_MZRa_Banana_B09a_BC.png',
           normal: 'T_MZRa_Banana_B09_N.png',
-          roughness: 'T_MZRa_Banana_B09_M.png',
         },
         {
           foliageAlphaTest: 0.32,
         }
       ),
       'tropical-banana-b': makeTropicalEntry(
-        'Banana_B09b',
+        'SM_MZRa_Banana_B092',
         {
           baseColor: 'T_MZRa_Banana_B09_BC.png',
           normal: 'T_MZRa_Banana_B09_N.png',
-          roughness: 'T_MZRa_Banana_B09_M.png',
         },
         {
           foliageAlphaTest: 0.32,
         }
       ),
       'tropical-monstera-a': makeTropicalEntry(
-        'Monstera_B07a1',
+        'tree006SM_MZRa_Monstera_B071',
         {
           baseColor: 'MI_MZRa_Monstera_B07a1_BC.png',
         },
@@ -243,7 +242,7 @@ class ModelAssetCache {
         }
       ),
       'tropical-monstera-b': makeTropicalEntry(
-        'Monstera_B07b',
+        'tree007SM_MZRa_Monstera_B072',
         {
           baseColor: 'T_MZRa_Monstera_B07b_BC.png',
           normal: 'T_MZRa_Monstera_B07b_N.png',
@@ -254,7 +253,7 @@ class ModelAssetCache {
         }
       ),
       'tropical-fern-a': makeTropicalEntry(
-        'Fern_B051',
+        'SM_MZRa_Fern_B051',
         {
           baseColor: 'T_MZRa_Fern_B051_BC.png',
           opacity: 'T_MZRa_Fern_B051_O.png',
@@ -264,7 +263,7 @@ class ModelAssetCache {
         }
       ),
       'tropical-fern-b': makeTropicalEntry(
-        'Fern_B052',
+        'SM_MZRa_Fern_B052',
         {
           baseColor: 'T_MZRa_Fern_B052_BC.png',
           opacity: 'T_MZRa_Fern_B052_O.png',
@@ -274,7 +273,7 @@ class ModelAssetCache {
         }
       ),
       'tropical-fern-c': makeTropicalEntry(
-        'Fern_B053',
+        'SM_MZRa_Fern_B053',
         {
           baseColor: 'T_MZRa_Fern_B053_BC.png',
           opacity: 'T_MZRa_Fern_B053_O.png',
@@ -474,8 +473,15 @@ class ModelAssetCache {
             (root) => {
               try {
                 this._postProcess(three, root, key, url, 'OBJ', descriptor);
+                this._centerAndGround(three, root);
               } catch (postErr) {
-                // ignore post-process error for individual variant
+                logger.error(
+                  'OBJ model preparation failed',
+                  { key, url, error: toErrorPayload(postErr) },
+                  MODEL_LOG_CATEGORY
+                );
+                finish(null);
+                return;
               }
               if (url !== path) {
                 logModelDebug('OBJ fallback path succeeded', { key, url });
@@ -579,28 +585,22 @@ class ModelAssetCache {
           loader.load(
             url,
             (root) => {
-              let result = root;
+              let result;
               try {
-                result = this._selectFBXNode(three, root, descriptor, key) || root;
-              } catch (_) {
-                result = root;
-              }
-              try {
+                result = this._selectFBXNode(three, root, descriptor, key);
                 this._pruneFBXArtifacts(result, descriptor);
-              } catch (_) {
-                /* pruning best-effort */
-              }
-              try {
                 this._postProcess(three, result, key, url, 'FBX', descriptor);
-              } catch (_) {
-                /* post-processing errors are non-fatal */
-              }
-              if (descriptor?.centerAndGround) {
-                try {
+                if (descriptor.centerAndGround) {
                   this._centerAndGround(three, result, descriptor.centerAndGround);
-                } catch (_) {
-                  /* align optional */
                 }
+              } catch (error) {
+                logger.error(
+                  'FBX model preparation failed',
+                  { key, url, node: descriptor.node, error: toErrorPayload(error) },
+                  MODEL_LOG_CATEGORY
+                );
+                finish(null);
+                return;
               }
               if (url !== descriptor.path) {
                 logModelDebug('FBX fallback path succeeded', { key, url });
@@ -636,35 +636,25 @@ class ModelAssetCache {
     if (!root || !descriptor?.node) return root;
     const target = String(descriptor.node || '').toLowerCase();
     const matches = [];
-    try {
-      root.traverse?.((child) => {
-        const name = String(child?.name || '').toLowerCase();
-        if (!name) return;
-        if (name === target || name.startsWith(`${target}_`) || name.includes(target)) {
-          matches.push(child);
-        }
-      });
-    } catch (_) {
-      /* traversal failure falls back to full root */
+    root.updateWorldMatrix(true, true);
+    root.traverse((child) => {
+      if (String(child.name || '').toLowerCase() === target) matches.push(child);
+    });
+    if (!matches.length) {
+      throw new Error(`FBX node "${descriptor.node}" not found for ${key}`);
     }
-    if (!matches.length) return root;
+    if (matches.length !== 1) {
+      throw new Error(`FBX node "${descriptor.node}" is ambiguous for ${key}`);
+    }
     const group = new three.Group();
     group.name = `FBX:${key}:${descriptor.node}`;
-    const seen = new Set();
-    matches.forEach((node) => {
-      if (!node) return;
-      let parent = node.parent;
-      while (parent) {
-        if (matches.includes(parent)) return;
-        parent = parent.parent;
-      }
-      const clone = node.clone(true);
-      if (clone && !seen.has(clone.uuid)) {
-        seen.add(clone.uuid);
-        group.add(clone);
-      }
-    });
-    return group.children.length ? group : root;
+    const node = matches[0];
+    const clone = node.clone(true);
+    // Retain the source pack's parent transforms, including any nonuniform scale.
+    clone.matrix.copy(node.matrixWorld);
+    clone.matrixAutoUpdate = false;
+    group.add(clone);
+    return group;
   }
 
   _pruneFBXArtifacts(root, descriptor) {
@@ -706,25 +696,14 @@ class ModelAssetCache {
   // ── Alignment & Post-Processing ───────────────────────────────
 
   _centerAndGround(three, root, options = {}) {
-    if (!three || !root) return;
-    try {
-      const box = new three.Box3().setFromObject(root);
-      if (!box) return;
-      const center = new three.Vector3();
-      box.getCenter(center);
-      const alignXZ = options.alignXZ !== false;
-      const alignY = options.alignY !== false;
-      const nextPosition = root.position.clone?.() || new three.Vector3();
-      if (alignXZ) {
-        nextPosition.x -= center.x;
-        nextPosition.z -= center.z;
-      }
-      if (alignY) nextPosition.y -= box.min.y;
-      root.position.copy(nextPosition);
-      root.updateMatrixWorld?.(true);
-    } catch (_) {
-      /* positioning best effort */
+    const support = getModelSupportBounds(three, root);
+    const center = support.getCenter(new three.Vector3());
+    if (options.alignXZ !== false) {
+      root.position.x -= center.x;
+      root.position.z -= center.z;
     }
+    if (options.alignY !== false) root.position.y -= support.min.y;
+    root.updateMatrixWorld(true);
   }
 
   _postProcess(three, root, key, path, kind, descriptor) {

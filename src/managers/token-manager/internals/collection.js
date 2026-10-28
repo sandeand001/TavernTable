@@ -1,4 +1,9 @@
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
+import { TOKEN_MOVEMENT_DEFAULTS } from '../../../config/TokenMovementConfig.js';
+import {
+  getCreatureTypeLabel,
+  normalizeCreatureType,
+} from '../../../entities/creatures/creatureHelpers.js';
 
 // ── Token Registration ─────────────────────────────────────────
 
@@ -13,8 +18,18 @@ export function addTokenToCollection(
   // Use provided parameters or fall back to instance properties
   const tokenType = selectedTokenType || c.selectedTokenType;
   const tokens = placedTokens || c.placedTokens;
+  const canonicalType = normalizeCreatureType(tokenType);
+  c._tokenTypeCounts ||= new Map();
+  const instanceNumber = (c._tokenTypeCounts.get(canonicalType) || 0) + 1;
+  c._tokenTypeCounts.set(canonicalType, instanceNumber);
+  c._nextTokenId = (c._nextTokenId || 0) + 1;
+  const typeLabel = getCreatureTypeLabel(canonicalType);
 
   const newTokenData = {
+    id: `token-${c._nextTokenId}`,
+    instanceNumber,
+    name: instanceNumber === 1 ? typeLabel : `${typeLabel} ${instanceNumber}`,
+    movementSettings: { ...TOKEN_MOVEMENT_DEFAULTS },
     creature: creature,
     gridX: gridX,
     gridY: gridY,
@@ -39,6 +54,21 @@ export function addTokenToCollection(
     })(),
   };
   tokens.push(newTokenData);
+  if (instanceNumber > 1) {
+    const duplicates = tokens.filter(
+      (token) => normalizeCreatureType(token.type) === canonicalType
+    );
+    for (const token of duplicates) {
+      token.name = `${typeLabel} ${token.instanceNumber}`;
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('taverntable:tokenNamesChanged', {
+          detail: { tokens: duplicates, gameManager: c.gameManager },
+        })
+      );
+    }
+  }
 
   // Establish baseIsoY if creature sprite present (prevents cumulative drift when toggling view modes)
   try {

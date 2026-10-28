@@ -28,22 +28,17 @@ import { removeToken as _removeToken } from './token-manager/internals/removal.j
 import { placeNewToken as _placeNewToken } from './token-manager/internals/placement.js';
 // Orientation helpers
 import { rotateToken as _rotateToken } from './token-manager/internals/orientation.js';
+import { DEFAULT_CHARACTER_ID, normalizeCreatureType } from '../config/CharacterCatalog.js';
 
 // ── Token Type Normalization ────────────────────────────
-const DEFAULT_TOKEN_TYPE = 'mannequin';
-const LEGACY_TOKEN_ALIASES = {
-  'female-humanoid': DEFAULT_TOKEN_TYPE,
-  'defeated-doll': DEFAULT_TOKEN_TYPE,
-};
+const DEFAULT_TOKEN_TYPE = DEFAULT_CHARACTER_ID;
 
 function normalizeTokenType(tokenType) {
   if (tokenType === 'remove') return 'remove';
   if (typeof tokenType !== 'string') return DEFAULT_TOKEN_TYPE;
   const trimmed = tokenType.trim();
   if (!trimmed) return DEFAULT_TOKEN_TYPE;
-  const lowered = trimmed.toLowerCase();
-  if (lowered === 'remove') return 'remove';
-  return LEGACY_TOKEN_ALIASES[lowered] || lowered;
+  return normalizeCreatureType(trimmed);
 }
 
 // ── TokenManager Class ─────────────────────────────────
@@ -54,6 +49,8 @@ export class TokenManager {
     this.selectedTokenType = DEFAULT_TOKEN_TYPE;
     this.tokenFacingRight = true;
     this.placedTokens = [];
+    this._tokenTypeCounts = new Map();
+    this._nextTokenId = 0;
 
     if (typeof window !== 'undefined') {
       window.selectedTokenType = this.selectedTokenType;

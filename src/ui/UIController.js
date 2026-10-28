@@ -19,6 +19,8 @@
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TOKEN_COMMANDS } from '../config/TokenCommandConfig.js';
+import { CHARACTER_DEFINITIONS } from '../config/CharacterCatalog.js';
+import { MANUAL_ACTIONS } from '../config/HumanoidActionCatalog.js';
 
 import {
   getCreatureButtons,
@@ -35,6 +37,7 @@ import {
 } from './dom-helpers.js';
 import { getDiceButtons, getGridActionButtons } from './dom-helpers.js';
 import RadialMenu from './components/RadialMenu.js';
+import CharacterSheetWindow from './components/CharacterSheetWindow.js';
 
 import { isJest } from '../utils/env.js';
 import GameManager from '../core/GameManager.js';
@@ -49,6 +52,7 @@ const TOKEN_DRAG_MIME = 'application/taverntable-token';
 // ── Private Helpers ─────────────────────────────────────────
 
 let radialMenuInstance = null;
+let characterSheetWindow = null;
 
 function getRadialMenuInstance() {
   if (!radialMenuInstance) {
@@ -64,20 +68,49 @@ function getRadialMenuInstance() {
   return radialMenuInstance;
 }
 
-function handleRadialCommand(actionId, token) {
-  if (!actionId) {
-    return;
+async function handleRadialCommand(actionId, token) {
+  try {
+    if (!actionId) return;
+    const gm = window.gameManager;
+    if (actionId === 'character-sheet') {
+      if (!gm) throw new Error('Character sheets require an active game session');
+      if (!characterSheetWindow || characterSheetWindow.gameManager !== gm) {
+        characterSheetWindow?.destroy();
+        characterSheetWindow = new CharacterSheetWindow({ gameManager: gm }).attach();
+      }
+      characterSheetWindow.open(token);
+      return;
+    }
+    if (!gm || typeof gm.applyTokenCommand !== 'function') {
+      throw new Error('Creature actions require an active game session');
+    }
+    const applied = await gm.applyTokenCommand(token, actionId);
+    if (applied) {
+      const normalized = actionId === 'clear' ? null : actionId;
+      getRadialMenuInstance().setActiveCommand(normalized, token);
+    }
+  } catch (error) {
+    new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.UI, {
+      context: 'handleRadialCommand',
+      actionId,
+      tokenId: token?.id,
+    });
   }
-  const normalized = actionId === 'clear' ? null : actionId;
-  const gm = window.gameManager;
-  if (gm && typeof gm.applyTokenCommand === 'function') {
-    gm.applyTokenCommand(token, actionId);
-  }
-  getRadialMenuInstance().setActiveCommand(normalized);
 }
 
 function showRadialMenu(detail = {}) {
   const radial = getRadialMenuInstance();
+  const adapter = window.gameManager?.token3DAdapter;
+  radial.setActionAvailability(
+    typeof adapter?.getManualActionAvailability === 'function'
+      ? Object.fromEntries(
+          MANUAL_ACTIONS.map(({ id }) => [
+            id,
+            adapter.getManualActionAvailability(detail.token, id),
+          ])
+        )
+      : {}
+  );
   radial.show(detail);
   const activeCommand = detail.token?.quickCommand || null;
   radial.setActiveCommand(activeCommand);
@@ -350,6 +383,19 @@ function toggleTerrainMode() {
  */
 function attachDynamicUIHandlers() {
   try {
+    const creatureContent = document.getElementById('creature-content');
+    if (creatureContent) {
+      for (const character of CHARACTER_DEFINITIONS) {
+        const id = `token-${character.id}`;
+        if (document.getElementById(id)) continue;
+        const button = document.createElement('button');
+        button.id = id;
+        button.dataset.token = character.id;
+        button.setAttribute('aria-label', `Select ${character.label} token`);
+        button.textContent = `${character.icon} ${character.label}`;
+        creatureContent.appendChild(button);
+      }
+    }
     if (!window.gameManager) return;
 
     // Token buttons (data-token attribute or legacy id naming)
@@ -569,19 +615,12 @@ if (typeof window !== 'undefined') {
 
 // Attach after DOM ready & when game manager exists
 document.addEventListener('DOMContentLoaded', () => {
+  attachDynamicUIHandlers();
   // In test (Jest) environment, skip UI polling entirely to avoid lingering timers.
   if (isJest && isJest()) {
-    if (window.gameManager) {
-      try {
-        attachDynamicUIHandlers();
-      } catch (e) {
-        /* ignore in tests */
-      }
-    }
     return;
   }
   if (window.gameManager) {
-    attachDynamicUIHandlers();
     try {
       wireTerrainStyleControls();
     } catch (_) {

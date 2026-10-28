@@ -1,33 +1,39 @@
 // src/entities/creatures/creatureHelpers.js - Creature type normalization and helper functions
 
 import { CREATURE_SCALES } from '../../config/GameConstants.js';
+import {
+  DEFAULT_CHARACTER_ID,
+  getCharacterDefinition,
+  normalizeCreatureType,
+} from '../../config/CharacterCatalog.js';
 
-// ── Private Data ────────────────────────────────────────────────
-const CREATURE_COLORS = {
-  mannequin: 0xcb99ff, // Lavender
-};
+export { normalizeCreatureType };
 
-const CREATURE_TYPE_ALIASES = {
-  'defeated-doll': 'mannequin',
-  'female-humanoid': 'mannequin',
-};
+export function getCreatureTypeLabel(creatureType) {
+  const character = getCharacterDefinition(creatureType);
+  if (character) return character.label;
+  const type = normalizeCreatureType(creatureType);
+  return type
+    ? type
+        .split(/[-_\s]+/)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+    : 'Creature';
+}
 
-// ── Public API ──────────────────────────────────────────────────
-export function normalizeCreatureType(creatureType) {
-  if (typeof creatureType !== 'string' || creatureType.length === 0) return '';
-  const lower = creatureType.toLowerCase();
-  return CREATURE_TYPE_ALIASES[lower] || lower;
+export function getTokenDisplayName(token) {
+  return token?.name || token?.label || getCreatureTypeLabel(token?.type);
 }
 
 export const CREATURE_HELPERS = {
   getScale(creatureType) {
     const normalized = normalizeCreatureType(creatureType);
-    return CREATURE_SCALES[normalized] || CREATURE_SCALES.mannequin;
+    return CREATURE_SCALES[normalized] || CREATURE_SCALES[DEFAULT_CHARACTER_ID];
   },
 
   getColor(creatureType) {
-    const normalized = normalizeCreatureType(creatureType);
-    return CREATURE_COLORS[normalized] || CREATURE_COLORS.mannequin;
+    return (getCharacterDefinition(creatureType) || getCharacterDefinition(DEFAULT_CHARACTER_ID))
+      .color;
   },
 
   getAllTypes() {

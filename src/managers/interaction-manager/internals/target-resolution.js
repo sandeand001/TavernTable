@@ -4,48 +4,21 @@ export async function resolvePointerTarget(mgr, event) {
   let gridX = null;
   let gridY = null;
   let token = null;
-
-  const threeTarget = pick3DTarget(mgr, event);
-  if (threeTarget) {
-    token = threeTarget.token || token;
-    if (Number.isFinite(threeTarget.gridX)) {
-      gridX = threeTarget.gridX;
-    }
-    if (Number.isFinite(threeTarget.gridY)) {
-      gridY = threeTarget.gridY;
-    }
-  }
-
-  const spriteToken = pickTokenBySprite(mgr, event);
-  if (spriteToken) {
-    if (!token) {
-      token = spriteToken;
-    }
-    if (!Number.isFinite(gridX) && Number.isFinite(spriteToken.gridX)) {
-      gridX = spriteToken.gridX;
-    }
-    if (!Number.isFinite(gridY) && Number.isFinite(spriteToken.gridY)) {
-      gridY = spriteToken.gridY;
-    }
-  }
-
   const canUse3D =
     typeof gm?.is3DModeActive === 'function' &&
     gm.is3DModeActive() &&
-    gm.pickingService &&
-    typeof gm.pickingService.pickGround === 'function';
+    (typeof gm.pickingService?.pickGround === 'function' ||
+      typeof gm.pickingService?.pickGroundSync === 'function');
 
   let groundPick = null;
+  let wallSurface = null;
   if (canUse3D) {
-    try {
-      groundPick = await gm.pickingService.pickGround(event.clientX, event.clientY);
-    } catch (_) {
-      groundPick = null;
-    }
-
-    if (groundPick?.token && !token) {
-      token = groundPick.token;
-    }
+    groundPick =
+      typeof gm.pickingService.pickGround === 'function'
+        ? await gm.pickingService.pickGround(event.clientX, event.clientY)
+        : gm.pickingService.pickGroundSync(event.clientX, event.clientY);
+    token = groundPick?.token || null;
+    wallSurface = groundPick?.surface || null;
 
     if (groundPick?.grid) {
       const gx = Math.round(groundPick.grid.gx);
@@ -55,6 +28,8 @@ export async function resolvePointerTarget(mgr, event) {
         gridY = gy;
       }
     }
+  } else {
+    token = pickTokenBySprite(mgr, event);
   }
 
   if ((!Number.isFinite(gridX) || !Number.isFinite(gridY)) && token) {
@@ -66,7 +41,7 @@ export async function resolvePointerTarget(mgr, event) {
     }
   }
 
-  if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) {
+  if (!canUse3D && (!Number.isFinite(gridX) || !Number.isFinite(gridY))) {
     const gridCoords = mgr.getGridCoordinatesFromClick(event);
     if (gridCoords) {
       gridX = gridCoords.gridX;
@@ -74,19 +49,27 @@ export async function resolvePointerTarget(mgr, event) {
     }
   }
 
-  if (!token && Number.isFinite(gridX) && Number.isFinite(gridY)) {
-    try {
-      token = gm?.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
-    } catch (_) {
-      token = null;
-    }
+  if (!token && !wallSurface && Number.isFinite(gridX) && Number.isFinite(gridY)) {
+    token = gm?.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
+    if (!canSelectGridToken(gm, token, groundPick)) token = null;
   }
 
   return {
     gridX: Number.isFinite(gridX) ? gridX : null,
     gridY: Number.isFinite(gridY) ? gridY : null,
     token,
+    ...(wallSurface ? { wallSurface } : {}),
   };
+}
+
+function canSelectGridToken(gm, token, ground) {
+  if (!token || !gm.is3DModeActive?.()) return true;
+  if (gm.token3DAdapter?.isWallAttached?.(token)) return false;
+  return !(
+    Number.isFinite(token.world?.y) &&
+    Number.isFinite(ground?.world?.y) &&
+    Math.abs(token.world.y - ground.world.y) > (gm.spatial?.tileWorldSize || 1) * 0.05
+  );
 }
 
 // ── Radial Menu Capture ──────────────────────────────────────────
@@ -175,8 +158,9 @@ export function pick3DTarget(mgr, event) {
     let gridX = Number.isFinite(ground?.grid?.gx) ? Math.round(ground.grid.gx) : null;
     let gridY = Number.isFinite(ground?.grid?.gy) ? Math.round(ground.grid.gy) : null;
     let token = ground.token || null;
-    if (!token && gridX != null && gridY != null) {
-      token = gm.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
+    if (!token && !ground.surface && gridX != null && gridY != null) {
+      const candidate = gm.tokenManager?.findExistingTokenAt?.(gridX, gridY) || null;
+      if (canSelectGridToken(gm, candidate, ground)) token = candidate;
     }
     if (!token) {
       return null;
@@ -203,6 +187,11 @@ export function pickSpriteTarget(mgr, event) {
     if (!gm) {
       return null;
     }
+    let ground = null;
+    if (gm.is3DModeActive?.() && gm.pickingService?.pickGroundSync) {
+      ground = gm.pickingService.pickGroundSync(event.clientX, event.clientY);
+      if (!ground || (ground.surface && !ground.token)) return null;
+    }
     const gridCoords = mgr.getGridCoordinatesFromClick(event);
     if (!gridCoords) {
       return null;
@@ -218,7 +207,7 @@ export function pickSpriteTarget(mgr, event) {
         : null) ||
       gm.tokenManager?.findExistingTokenAt?.(gridX, gridY) ||
       null;
-    if (!token) {
+    if (!token || !canSelectGridToken(gm, token, ground)) {
       return null;
     }
     return {

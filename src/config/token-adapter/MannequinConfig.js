@@ -1,9 +1,12 @@
 // MannequinConfig.js — Model definitions, animation library, and movement constants
 // Extracted from Token3DAdapter.js (Phase 5 refactor)
 
-// ── Mannequin Model Definition ──────────────────────────
-export const MANNEQUIN_MODEL = {
-  path: 'assets/animated-sprites/Standing Idle.fbx',
+import { CHARACTER_DEFINITIONS, DEFAULT_CHARACTER_ID } from '../CharacterCatalog.js';
+import { HUMANOID_ANIMATIONS } from '../HumanoidActionCatalog.js';
+
+// ── Shared Humanoid Model Definition ────────────────────
+const HUMANOID_MODEL = {
+  retargetAnimations: true,
   tileSpan: 1,
   margin: 0.92,
   baseRotation: { x: 0, y: Math.PI / 2, z: 0 },
@@ -12,143 +15,7 @@ export const MANNEQUIN_MODEL = {
     loop: true,
     clampWhenFinished: false,
   },
-  animations: {
-    idle: {
-      path: 'assets/animated-sprites/Standing Idle.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    idleVariant2: {
-      path: 'assets/animated-sprites/idle (2).fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    idleVariant3: {
-      path: 'assets/animated-sprites/idle (3).fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    idleVariant4: {
-      path: 'assets/animated-sprites/idle (4).fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    idleVariant5: {
-      path: 'assets/animated-sprites/idle (5).fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    walk: {
-      path: 'assets/animated-sprites/Walking.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    walkBackward: {
-      path: 'assets/animated-sprites/Walk Backward.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    run: {
-      path: 'assets/animated-sprites/running.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    runBackward: {
-      path: 'assets/animated-sprites/Run Backward.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    sprint: {
-      path: 'assets/animated-sprites/Sprint.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    runStop: {
-      path: 'assets/animated-sprites/run to stop.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-    },
-    drunkWalk: {
-      path: 'assets/animated-sprites/drunk walk.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    drunkWalkBackward: {
-      path: 'assets/animated-sprites/drunk walk backwards.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    drunkRunForward: {
-      path: 'assets/animated-sprites/drunk run forward.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    drunkRunBackward: {
-      path: 'assets/animated-sprites/drunk run backward.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    fall: {
-      path: 'assets/animated-sprites/Falling To Landing.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-      // Seconds to first foot contact, before the rest of the landing/recovery.
-      contactTime: 8 / 30,
-    },
-    climb: {
-      path: 'assets/animated-sprites/Climbing.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-    },
-    climbWall: {
-      path: 'assets/animated-sprites/Climbing Up Wall.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    climbRecover: {
-      path: 'assets/animated-sprites/Crouched To Standing.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-    },
-    hardLanding: {
-      path: 'assets/animated-sprites/hard landing.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-      contactTime: 3 / 30,
-    },
-    fallToRoll: {
-      path: 'assets/animated-sprites/falling to roll.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-      contactTime: 2 / 30,
-    },
-    fallLoop: {
-      path: 'assets/animated-sprites/falling idle.fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-    },
-    defeated: {
-      path: 'assets/animated-sprites/Defeated.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-    },
-    jump: {
-      path: 'assets/animated-sprites/Rumba Dancing (1).fbx',
-      loop: 'repeat',
-      clampWhenFinished: false,
-      preserveRootMotion: true,
-    },
-    fancyPose: {
-      path: 'assets/animated-sprites/Female Standing Pose.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-    },
-    dynamicPose: {
-      path: 'assets/animated-sprites/Female Dynamic Pose.fbx',
-      loop: 'once',
-      clampWhenFinished: true,
-    },
-  },
+  animations: HUMANOID_ANIMATIONS,
   movementProfile: {
     startMoveDelay: 1,
     startToWalkBlendLead: 0.12,
@@ -166,9 +33,6 @@ export const MANNEQUIN_MODEL = {
     fallFadeOut: 0.12,
     fallLoopFadeIn: 0.08,
     fallLoopFadeOut: 0.12,
-    fallLoopVerticalSpeed: 9,
-    fallLoopMinDuration: 0.24,
-    fallLoopMaxDuration: 1.2,
     fallLoopTimeScale: 4.5,
     fallLoopMinDrop: 4.5,
     runSpeedMultiplier: 1.7,
@@ -183,11 +47,13 @@ export const MANNEQUIN_MODEL = {
 };
 
 // ── Model Registry ─────────────────────────────────────
-export const TOKEN_3D_MODELS = {
-  mannequin: MANNEQUIN_MODEL,
-  'defeated-doll': MANNEQUIN_MODEL,
-  'female-humanoid': MANNEQUIN_MODEL,
-};
+export const TOKEN_3D_MODELS = {};
+for (const character of CHARACTER_DEFINITIONS) {
+  const model = { ...HUMANOID_MODEL, ...character.model };
+  TOKEN_3D_MODELS[character.id] = model;
+  for (const alias of character.aliases) TOKEN_3D_MODELS[alias] = model;
+}
+export const MANNEQUIN_MODEL = TOKEN_3D_MODELS[DEFAULT_CHARACTER_ID];
 
 // ── Default Movement Profile ───────────────────────────
 export const DEFAULT_BILLBOARD_SIZE = 0.9;
@@ -209,14 +75,12 @@ export const DEFAULT_MOVEMENT_PROFILE = {
   fallFadeOut: 0.12,
   fallLoopFadeIn: 0.1,
   fallLoopFadeOut: 0.12,
-  fallLoopVerticalSpeed: 6.75,
-  fallLoopMinDuration: 0.27,
-  fallLoopMaxDuration: 1.33,
   fallLoopTimeScale: 4.5,
   fallLoopMinDrop: 4.5,
 };
 
 // ── Fall & Landing Constants ────────────────────────────
+export const FALL_GRAVITY_FEET_PER_SECOND_SQUARED = 32.174;
 export const DEFAULT_FALL_TRIGGER_PROGRESS = 0.38;
 export const DEFAULT_HEIGHT_SNAP_PROGRESS = 0.62;
 export const HARD_LANDING_HEIGHT_THRESHOLD = 5;

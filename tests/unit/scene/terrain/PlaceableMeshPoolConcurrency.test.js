@@ -79,7 +79,12 @@ describe('Asynchronous placeable group ownership', () => {
       expect(currentHandle).toBeTruthy();
       expect(pool.getStats()).toMatchObject({ groups: 1, instances: 1 });
       expect(scene.children).toHaveLength(1);
-      expect(scene.children[0].geometry).toBe(currentModel.geometry);
+      expect(scene.children[0].geometry).not.toBe(currentModel.geometry);
+      scene.children[0].geometry.computeBoundingBox();
+      currentModel.geometry.computeBoundingBox();
+      expect(scene.children[0].geometry.boundingBox.equals(currentModel.geometry.boundingBox)).toBe(
+        true
+      );
     }
   );
 

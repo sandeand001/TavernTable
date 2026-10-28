@@ -22,10 +22,10 @@ class CreatureToken {
     try {
       const typeValidation = GameValidators.creatureType(type);
       if (!typeValidation.isValid) {
-        throw new Error(`Invalid creature type: ${typeValidation.getErrorMessage()}`);
+        throw new Error(`Invalid creature type: ${typeValidation.errors.join(' ')}`);
       }
 
-      this.type = type;
+      this.type = typeValidation.normalizedType;
       this.x = Sanitizers.integer(x, 0);
       this.y = Sanitizers.integer(y, 0);
       this.facingRight = Boolean(facingRight);

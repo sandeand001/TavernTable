@@ -1,11 +1,10 @@
-// Internal input/event helpers for TerrainCoordinator. Zero functional change.
+// Internal input/event helpers for TerrainCoordinator.
 import {
   ErrorHandler,
   ERROR_CATEGORY,
   ERROR_SEVERITY,
   GameErrors,
 } from '../../../../utils/error/ErrorHandler.js';
-import { CoordinateUtils } from '../../../../utils/coordinates/CoordinateUtils.js';
 
 // ── Grid Coordinate Resolution ────────────────────────────────────
 
@@ -27,23 +26,15 @@ export function getGridCoordinatesFromEvent(c, event) {
           const gridXf = Number(ground.grid.gx);
           const gridYf = Number(ground.grid.gy);
           if (Number.isFinite(gridXf) && Number.isFinite(gridYf)) {
-            let gridX = Math.round(gridXf);
-            let gridY = Math.round(gridYf);
-            if (!c.isValidGridPosition(gridX, gridY)) {
-              const cols = Number.isInteger(c?.gameManager?.cols) ? c.gameManager.cols : null;
-              const rows = Number.isInteger(c?.gameManager?.rows) ? c.gameManager.rows : null;
-              if (Number.isInteger(cols) && Number.isInteger(rows)) {
-                const clamped = CoordinateUtils.clampToGrid(gridX, gridY, cols, rows);
-                gridX = clamped.gridX;
-                gridY = clamped.gridY;
-              }
-            }
+            const gridX = Math.round(gridXf);
+            const gridY = Math.round(gridYf);
             if (c.isValidGridPosition(gridX, gridY)) {
               return { gridX, gridY };
             }
             return null;
           }
         }
+        return null;
       }
     }
 

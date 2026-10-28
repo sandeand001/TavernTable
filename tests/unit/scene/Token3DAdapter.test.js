@@ -703,17 +703,17 @@ describe('Token3DAdapter (Phase 3)', () => {
       return adapter._createForwardMovementStep(token, mesh);
     };
 
-    const noFall = buildStep(2.5);
+    const noFall = buildStep(0.5);
     expect(noFall).toBeNull();
 
-    const softLanding = buildStep(4);
+    const softLanding = buildStep(2);
     expect(softLanding.requiresFall).toBe(true);
     expect(softLanding.landingVariant).toBe('fall');
 
-    const hardLanding = buildStep(6);
+    const hardLanding = buildStep(4);
     expect(hardLanding.landingVariant).toBe('hardLanding');
 
-    const rollLanding = buildStep(10);
+    const rollLanding = buildStep(6);
     expect(rollLanding.landingVariant).toBe('fallToRoll');
   });
 

@@ -6,6 +6,8 @@
  * prototype via `installSelectionMethods(prototype)`.
  */
 
+import { GameErrors } from '../../utils/error/ErrorHandler.js';
+
 // ── Material Creation ──────────────────────────────────────────────
 
 function _createMaterialForToken(three, tokenEntry) {
@@ -89,9 +91,17 @@ function setHoverToken(tokenEntry) {
 }
 
 async function setSelectedToken(tokenEntry) {
-  if (this._selectedToken === tokenEntry) return;
   const previous = this._selectedToken;
   this._selectedToken = tokenEntry || null;
+  this.refreshMovementRange?.();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('taverntable:tokenSelected', {
+        detail: { token: this._selectedToken, gameManager: this.gameManager },
+      })
+    );
+  }
+  if (previous === this._selectedToken) return;
   if (previous) {
     await this._refreshVisualState(previous);
   }
@@ -213,9 +223,17 @@ function clearHighlights() {
 async function _showSelectionIndicator(tokenEntry) {
   try {
     const marker = await this._ensureSelectionIndicator(tokenEntry);
-    if (marker) marker.visible = true;
-  } catch (_) {
-    /* ignore */
+    if (!marker) return;
+    this._updateSelectionIndicatorTransform(tokenEntry);
+    marker.visible =
+      this._selectedToken === tokenEntry &&
+      !this._movementStates.get(tokenEntry)?.selectionIndicatorSuppressed;
+  } catch (error) {
+    GameErrors.rendering(error, {
+      component: 'Token3DAdapter',
+      operation: 'showSelectionIndicator',
+      tokenId: tokenEntry?.id,
+    });
   }
 }
 
@@ -247,10 +265,12 @@ function _discardSelectionIndicator(tokenEntry) {
 
 async function _ensureSelectionIndicator(tokenEntry) {
   if (!tokenEntry || !tokenEntry.__threeMesh) return null;
-  if (tokenEntry.__threeMesh.userData?.__tt3DToken === false) return null;
+  const mesh = tokenEntry.__threeMesh;
+  if (mesh.userData?.__tt3DToken === false) return null;
   if (tokenEntry.__ttSelectionIndicator) return tokenEntry.__ttSelectionIndicator;
   const three = await this._getThree();
-  if (!three) return null;
+  if (!three || tokenEntry.__threeMesh !== mesh) return null;
+  if (tokenEntry.__ttSelectionIndicator) return tokenEntry.__ttSelectionIndicator;
   try {
     const inner = 0.34;
     const outer = 0.47;
@@ -267,16 +287,136 @@ async function _ensureSelectionIndicator(tokenEntry) {
     ring.position.y = 0.02;
     ring.userData = ring.userData || {};
     ring.userData.__ttBaseY = ring.position.y;
+    if (typeof three.Box3 === 'function') {
+      ring.userData.__ttBodyBounds = {
+        bounds: new three.Box3(),
+        vertex: new three.Vector3(),
+        pose: [],
+        valid: false,
+      };
+    }
     ring.name = 'TokenSelectionIndicator';
-    if (typeof tokenEntry.__threeMesh.add === 'function') {
-      tokenEntry.__threeMesh.add(ring);
+    ring.visible = false;
+    if (typeof mesh.add === 'function') {
+      mesh.add(ring);
     }
     tokenEntry.__ttSelectionIndicator = ring;
-    this._updateSelectionIndicatorHeight(tokenEntry);
+    this._updateSelectionIndicatorTransform(tokenEntry);
     return ring;
-  } catch (_) {
+  } catch (error) {
+    GameErrors.rendering(error, {
+      component: 'Token3DAdapter',
+      operation: 'createSelectionIndicator',
+      tokenId: tokenEntry.id,
+    });
     return null;
   }
+}
+
+function getSelectionBodyCenter(mesh, marker, target) {
+  const cache = marker.userData.__ttBodyBounds;
+  if (!cache) return false;
+  // Frozen holds reuse exact skinned bounds until their pose or transform changes.
+  const bodies = [];
+  let index = 0;
+  let changed = !cache.valid;
+  const sample = (value) => {
+    if (cache.pose[index] !== value) changed = true;
+    cache.pose[index++] = value;
+  };
+  mesh.traverseVisible((child) => {
+    if (!child.isMesh || child === marker || child === mesh.userData.__ttSelectionCollider) return;
+    const position = child.geometry?.attributes?.position;
+    if (!position) return;
+    bodies.push(child);
+    sample(child.id);
+    sample(child.geometry.id);
+    sample(position.version ?? position.data?.version);
+    for (const value of child.matrixWorld.elements) sample(value);
+    for (const value of child.morphTargetInfluences || []) sample(value);
+    if (child.isSkinnedMesh) {
+      sample(child.skeleton.uuid);
+      for (const matrix of [child.bindMatrix, child.bindMatrixInverse])
+        for (const value of matrix.elements) sample(value);
+      for (const bone of child.skeleton.bones)
+        for (const value of bone.matrixWorld.elements) sample(value);
+    }
+  });
+  if (cache.pose.length !== index) changed = true;
+  cache.pose.length = index;
+  if (changed) {
+    cache.bounds.makeEmpty();
+    for (const body of bodies) {
+      for (let i = 0; i < body.geometry.attributes.position.count; i++) {
+        body.getVertexPosition(i, cache.vertex).applyMatrix4(body.matrixWorld);
+        cache.bounds.expandByPoint(cache.vertex);
+      }
+    }
+    cache.valid = true;
+  }
+  if (cache.bounds.isEmpty()) return false;
+  cache.bounds.getCenter(target);
+  return true;
+}
+
+function _updateSelectionIndicatorTransform(tokenEntry) {
+  const mesh = tokenEntry?.__threeMesh;
+  const marker = tokenEntry?.__ttSelectionIndicator;
+  if (!mesh || !marker) return;
+  const baseY = marker.userData.__ttBaseY;
+  const state = this._movementStates.get(tokenEntry);
+  const motion = state?.wallMotion;
+  const onWall =
+    motion?.stage === 'surface' &&
+    (state.phase === 'climb-surface' || state.phase === 'climb-hold');
+  if (!onWall) {
+    const manualOffset = Number.isFinite(mesh.userData?.__ttManualVerticalOffset)
+      ? mesh.userData.__ttManualVerticalOffset
+      : 0;
+    marker.position.x = 0;
+    marker.position.y = baseY - manualOffset;
+    marker.position.z = 0;
+    marker.rotation.x = -Math.PI / 2;
+    marker.rotation.y = 0;
+    marker.rotation.z = 0;
+    return;
+  }
+  const { low, high } = motion.face;
+  const nx = low.gridX - high.gridX;
+  const nz = low.gridY - high.gridY;
+  if (Math.abs(nx) + Math.abs(nz) !== 1)
+    throw new Error('A wall selection ring requires a cardinal terrain face');
+  const plane = this.gameManager.spatial.gridToWorld(
+    (low.gridX + high.gridX + 1) / 2,
+    (low.gridY + high.gridY + 1) / 2,
+    0
+  );
+  const world = this._resolveTokenWorldPosition(tokenEntry);
+  const scratch = (marker.userData.__ttSurfaceScratch ||= {
+    position: marker.position.clone(),
+    normal: marker.position.clone(),
+    forward: marker.position.clone().set(0, 0, 1),
+  });
+  scratch.position.set(world.x, world.y, world.z);
+  const centerBody = this._selectedToken === tokenEntry && !state.selectionIndicatorSuppressed;
+  mesh.updateWorldMatrix(true, false);
+  if (centerBody) {
+    mesh.updateMatrixWorld(true);
+    getSelectionBodyCenter(mesh, marker, scratch.position);
+  }
+  if (nx) scratch.position.x = plane.x + nx * baseY;
+  if (nz) scratch.position.z = plane.z + nz * baseY;
+  marker.position.copy(mesh.worldToLocal(scratch.position));
+  const matrix = mesh.matrixWorld.elements;
+  // World-to-local normals use the transpose, including non-uniform parent scale.
+  scratch.normal
+    .set(
+      matrix[0] * nx + matrix[2] * nz,
+      matrix[4] * nx + matrix[6] * nz,
+      matrix[8] * nx + matrix[10] * nz
+    )
+    .normalize();
+  marker.quaternion.setFromUnitVectors(scratch.forward, scratch.normal);
 }
 
 // ── Visual State Refresh ──────────────────────────────────────────
@@ -353,6 +493,7 @@ function installSelectionMethods(prototype) {
   prototype._hideSelectionIndicator = _hideSelectionIndicator;
   prototype._discardSelectionIndicator = _discardSelectionIndicator;
   prototype._ensureSelectionIndicator = _ensureSelectionIndicator;
+  prototype._updateSelectionIndicatorTransform = _updateSelectionIndicatorTransform;
   prototype._setSelectionIndicatorSuppressed = _setSelectionIndicatorSuppressed;
   prototype._refreshVisualState = _refreshVisualState;
 }

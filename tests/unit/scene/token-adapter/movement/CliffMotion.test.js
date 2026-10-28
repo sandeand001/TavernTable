@@ -1,10 +1,11 @@
 import { Group } from 'three';
 import { Token3DAdapter } from '../../../../../src/scene/Token3DAdapter.js';
+import { MANNEQUIN_MODEL } from '../../../../../src/config/token-adapter/MannequinConfig.js';
 
-function createCliffFixture(x = 5.5, height = 8, elevationUnit = 0.3) {
+function createCliffFixture(x = 5.5, height = 8, elevationUnit = 0.3, tileSize = 1) {
   const mesh = new Group();
   mesh.userData.__ttBillboard = false;
-  const world = { x, y: x >= 6 ? height * elevationUnit : 0, z: 4.5 };
+  const world = { x: x * tileSize, y: x >= 6 ? height * elevationUnit : 0, z: 4.5 * tileSize };
   mesh.position.set(world.x, world.y, world.z);
   const token = {
     gridX: Math.floor(x),
@@ -20,16 +21,16 @@ function createCliffFixture(x = 5.5, height = 8, elevationUnit = 0.3) {
     is3DModeActive: () => true,
     getTerrainHeight: (gridX) => (gridX >= 6 ? height : 0),
     spatial: {
-      tileWorldSize: 1,
+      tileWorldSize: tileSize,
       elevationUnit,
       gridToWorld: (gridX, gridY, elevation) => ({
-        x: gridX,
+        x: gridX * tileSize,
         y: elevation * elevationUnit,
-        z: gridY,
+        z: gridY * tileSize,
       }),
       worldToGrid: (worldX, worldZ) => ({
-        gridX: Math.floor(worldX),
-        gridY: Math.floor(worldZ),
+        gridX: Math.floor(worldX / tileSize),
+        gridY: Math.floor(worldZ / tileSize),
       }),
     },
   });
@@ -60,7 +61,168 @@ function createCliffFixture(x = 5.5, height = 8, elevationUnit = 0.3) {
   return { adapter, token, mesh, state };
 }
 
+function enterFall(feet = 36, elevationUnit = 0.3, options = {}) {
+  const tileSize = options.tileSize ?? 1;
+  const fixture = createCliffFixture(
+    6.5,
+    (feet * tileSize) / 5 / elevationUnit,
+    elevationUnit,
+    tileSize
+  );
+  const { adapter, token, mesh, state } = fixture;
+  const data = adapter._tokenAnimationData.get(token);
+  if (options.disableLoop) delete data.actions.fallLoop;
+  data.profile = { ...MANNEQUIN_MODEL.movementProfile, walkSpeed: 1 };
+  state.profile = data.profile;
+  token.facingAngle = Math.PI;
+  if (options.airborneRelease) {
+    const startWorld = { ...token.world };
+    const targetWorld = { x: 5.5 * tileSize, y: 0, z: 4.5 * tileSize };
+    state.activeStep = {
+      tokenEntry: token,
+      mesh,
+      startWorld,
+      targetWorld,
+      startPosition: { ...startWorld },
+      targetPosition: { ...targetWorld },
+      totalDistance: Math.hypot(tileSize, startWorld.y),
+      horizontalDistance: tileSize,
+      traveled: 0,
+      horizontalTraveled: 0,
+      requiresFall: true,
+      fallTriggered: false,
+      fallTriggerProgress: 0.66,
+      heightDrop: startWorld.y / elevationUnit,
+      gridTargetX: 5,
+      gridTargetY: 4,
+    };
+  } else {
+    state.activeStep = adapter._createForwardMovementStep(token, mesh);
+  }
+  state.activeStep.landingVariant = options.landingKey || 'hardLanding';
+  state.stepFinalized = false;
+  adapter._advanceMovementStep(state, 0.67 * tileSize);
+  expect(state.phase).toBe('fall');
+  return fixture;
+}
+
+function airborneDuration({ adapter, token, state }, deltas = [1 / 120]) {
+  let elapsed = 0;
+  let frame = 0;
+  while (token.world.y > 1e-6 && elapsed < 60) {
+    const delta = deltas[frame++ % deltas.length];
+    adapter._advanceFallPhase(state, delta);
+    elapsed += delta;
+  }
+  return elapsed;
+}
+
 describe('Mannequin cliff traversal', () => {
+  test.each([20, 36, 60])(
+    'a %s-foot drop reaches ground at gravitational speed, independently of landing recovery',
+    (feet) => {
+      const fixture = enterFall(feet);
+      const delta = 1 / 120;
+      const elapsed = airborneDuration(fixture, [delta]);
+      const expected = Math.sqrt((2 * feet) / 32.174);
+      expect(elapsed).toBeGreaterThanOrEqual(expected - 1e-6);
+      expect(elapsed).toBeLessThan(expected + delta + 1e-6);
+      expect(fixture.token.world.y).toBe(0);
+    }
+  );
+
+  test('the creature accelerates downward rather than drifting at a constant speed', () => {
+    const { adapter, token, state } = enterFall();
+    const startY = token.world.y;
+    adapter._advanceFallPhase(state, 0.25);
+    const firstDrop = startY - token.world.y;
+    adapter._advanceFallPhase(state, 0.25);
+    const secondDrop = startY - firstDrop - token.world.y;
+    expect(firstDrop).toBeCloseTo((0.5 * 32.174 * 0.25 ** 2) / 5, 6);
+    expect(secondDrop).toBeCloseTo(firstDrop * 3, 6);
+  });
+
+  test('equal physical heights have the same airtime at different terrain elevation scales', () => {
+    const durations = [0.15, 0.3, 0.5].map((unit) => airborneDuration(enterFall(36, unit)));
+    expect(Math.max(...durations) - Math.min(...durations)).toBeLessThan(1 / 120);
+  });
+
+  test('airborne travel is separate from the length of the landing recovery clip', () => {
+    const short = enterFall();
+    const long = enterFall();
+    long.state.fallLandingDuration = 12;
+    long.adapter._tokenAnimationData.get(long.token).actions.hardLanding = {
+      getClip: () => ({ duration: 12 }),
+    };
+    expect(airborneDuration(long)).toBeCloseTo(airborneDuration(short), 6);
+  });
+
+  test.each([0.5, 2, 3])('world tiles sized %s retain the same physical fall time', (tileSize) => {
+    const elapsed = airborneDuration(enterFall(36, 0.3, { tileSize }));
+    expect(elapsed).toBeCloseTo(Math.ceil(Math.sqrt(72 / 32.174) * 120) / 120, 6);
+  });
+
+  test.each([
+    ['30 FPS', [1 / 30]],
+    ['60 FPS', [1 / 60]],
+    ['120 FPS', [1 / 120]],
+    ['uneven frames', [0.011, 0.023, 0.017, 0.031]],
+  ])('airtime and landing contact remain aligned at %s', (_, deltas) => {
+    const { adapter, token, state } = enterFall();
+    const duration = state.fallTrajectory.duration;
+    const cue = duration - 0.1;
+    let elapsed = 0;
+    let frame = 0;
+    while (state.fallMode === 'loop') {
+      const delta = deltas[frame++ % deltas.length];
+      elapsed += delta;
+      adapter._advanceFallPhase(state, delta);
+      expect(frame).toBeLessThan(300);
+    }
+    expect(elapsed).toBeGreaterThanOrEqual(cue);
+    const action = adapter._tokenAnimationData.get(token).actions.hardLanding;
+    expect(action.time).toBeCloseTo(elapsed - cue, 6);
+    const rest = airborneDuration({ adapter, token, state }, deltas);
+    const arrival = elapsed + rest;
+    expect(arrival).toBeGreaterThanOrEqual(duration - 1e-9);
+    expect(arrival).toBeLessThanOrEqual(duration + Math.max(...deltas) + 1e-9);
+    expect(state.phase).toBe('fall');
+  });
+
+  test('a short drop skips excess pre-contact frames instead of hanging in the air', () => {
+    const { adapter, token, state } = enterFall(0.3, 0.01, {
+      landingKey: 'fall',
+      airborneRelease: true,
+    });
+    const duration = Math.sqrt(0.6 / 32.174);
+    const action = adapter._tokenAnimationData.get(token).actions.fall;
+    expect(state.fallMode).toBe('landing');
+    expect(action.time).toBeCloseTo(8 / 30 - duration, 6);
+    expect(airborneDuration({ adapter, token, state })).toBeLessThan(duration + 1 / 120);
+  });
+
+  test('a missing fall loop holds the landing intro until its contact cue', () => {
+    const { adapter, token, state } = enterFall(36, 0.3, { disableLoop: true });
+    const action = adapter._tokenAnimationData.get(token).actions.hardLanding;
+    expect(action.paused).toBe(true);
+    adapter._advanceFallPhase(state, 0.5);
+    expect(action.paused).toBe(true);
+    expect(token.world.y).toBeGreaterThan(0);
+    adapter._advanceFallPhase(state, state.fallTrajectory.duration - 0.5);
+    expect(action.paused).toBe(false);
+    expect(action.time).toBeCloseTo(0.1);
+    expect(token.world.y).toBe(0);
+  });
+
+  test('horizontal travel stays steady while the vertical fall accelerates', () => {
+    const { adapter, token, state } = enterFall();
+    const start = { ...token.world };
+    const goal = state.activeStep.targetWorld;
+    adapter._advanceFallPhase(state, state.fallTrajectory.duration * 0.5);
+    expect(token.world.x).toBeCloseTo((start.x + goal.x) * 0.5, 6);
+    expect(token.world.y).toBeCloseTo(start.y * 0.75, 6);
+  });
+
   test('does not turn the arrival tolerance into an oversized final movement', () => {
     const { adapter, token, state } = createCliffFixture(0.7);
     state.pathActive = true;
@@ -114,7 +276,7 @@ describe('Mannequin cliff traversal', () => {
     expect(step.traveled).toBe(0);
     adapter._advanceFallPhase(state, state.fallDuration * 0.1);
 
-    expect(token.world.y).toBeCloseTo(startY * 0.9);
+    expect(token.world.y).toBeCloseTo(startY * 0.99);
   });
 
   test('does not resume a held movement that was released while airborne', () => {
@@ -126,9 +288,13 @@ describe('Mannequin cliff traversal', () => {
     expect(adapter._resumeMovementAfterFall(state)).toBe(false);
   });
 
-  test.each([0.15, 0.3, 0.5])(
+  test.each([
+    [0.15, 'fall', 8 / 30],
+    [0.3, 'hardLanding', 3 / 30],
+    [0.5, 'fallToRoll', 2 / 30],
+  ])(
     'times the landing from contact frames at elevation unit %s',
-    (elevationUnit) => {
+    (elevationUnit, expectedLanding, contactTime) => {
       const { adapter, token, mesh, state } = createCliffFixture(6.5, 8, elevationUnit);
       token.facingAngle = Math.PI;
       state.activeStep = adapter._createForwardMovementStep(token, mesh);
@@ -136,12 +302,14 @@ describe('Mannequin cliff traversal', () => {
       adapter._advanceMovementStep(state, 0.67);
       const speed = state.fallSpeed;
       const step = state.activeStep;
-      const verticalSpeed = (speed * (step.startWorld.y - step.targetWorld.y)) / step.totalDistance;
-
-      expect(state.fallLandingThreshold).toBeCloseTo(verticalSpeed * 0.1);
+      const trajectory = state.fallTrajectory;
+      const cue = Math.max(trajectory.duration - contactTime, 0);
+      expect(state.fallLandingThreshold).toBeCloseTo(
+        step.startWorld.y - step.targetWorld.y - 0.5 * trajectory.gravity * cue ** 2
+      );
       adapter._transitionFallToLanding(state);
       expect(state.fallSpeed).toBe(speed);
-      expect(state.fallLandingKey).toBe('hardLanding');
+      expect(state.fallLandingKey).toBe(expectedLanding);
     }
   );
 

@@ -2,38 +2,20 @@ import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/error/ErrorHandler.js';
 import { GameValidators } from '../../../utils/Validation.js';
 
-// ── Creature Factory Imports ───────────────────────────────────
-
-// Creature creation functions
-import {
-  createMannequin,
-  createFemaleHumanoid,
-  createDefeatedDoll,
-} from '../../../entities/creatures/index.js';
+import { createCreature } from '../../../entities/creatures/index.js';
 
 // ── Creature Instantiation ─────────────────────────────────────
 
 export function createCreatureByType(c, type) {
-  const normalizedType = typeof type === 'string' ? type.toLowerCase() : type;
+  let normalizedType = type;
   try {
-    const typeValidation = GameValidators.creatureType(normalizedType);
+    const typeValidation = GameValidators.creatureType(type);
     if (!typeValidation.isValid) {
-      throw new Error(`Invalid creature type: ${typeValidation.getErrorMessage()}`);
+      throw new Error(`Invalid creature type: ${typeValidation.errors.join(' ')}`);
     }
-
-    const creationFunctions = {
-      mannequin: () => createMannequin(),
-      // Legacy aliases maintained for users loading pre-migration save data.
-      'female-humanoid': () => createFemaleHumanoid(),
-      'defeated-doll': () => createDefeatedDoll(),
-    };
-
-    const createFn = creationFunctions[normalizedType];
-    if (!createFn) {
-      throw new Error(`No creation function found for creature type: ${type}`);
-    }
-
-    const creature = createFn();
+    normalizedType = typeValidation.normalizedType;
+    const facingRight = typeof window !== 'undefined' ? (window.tokenFacingRight ?? true) : true;
+    const creature = createCreature(normalizedType, 0, 0, facingRight);
     if (!creature) {
       throw new Error(`Creation function returned null for creature type: ${type}`);
     }

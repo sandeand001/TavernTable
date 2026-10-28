@@ -3,8 +3,10 @@ import {
   LANDING_VARIANTS_ALLOW_TILE_EXIT,
   FALL_LANDING_THRESHOLD_CONFIG,
   FALL_LOOP_MIN_DROP,
+  FALL_GRAVITY_FEET_PER_SECOND_SQUARED,
   SPRINT_THRESHOLD_SECONDS,
 } from '../../../config/token-adapter/MannequinConfig.js';
+import { FEET_PER_GRID_SQUARE } from '../../../config/TokenMovementConfig.js';
 
 // ── Fall Phase Advancement ──────────────────────────────────────
 
@@ -14,15 +16,26 @@ function _advanceFallPhase(state, delta) {
   const animationData = this._tokenAnimationData.get(state.token);
   const speed = Math.max(state.fallSpeed || 0, 0);
   const step = state.activeStep;
-  const stepFinished = step ? step.traveled >= step.totalDistance - 1e-5 : true;
+  const trajectory = state.fallTrajectory;
+  let stepFinished = step ? step.traveled >= step.totalDistance - 1e-5 : true;
 
-  if (!(speed > 0) && !(state.fallMode === 'landing' && stepFinished)) {
+  if (!trajectory && !(speed > 0) && !(state.fallMode === 'landing' && stepFinished)) {
     this._finishFallPhase(state);
     return;
   }
 
   let completed = false;
-  if (state.fallMode === 'landing') {
+  if (trajectory && step) {
+    trajectory.elapsed += Math.max(delta, 0);
+    const progress =
+      trajectory.duration > 0 ? Math.min(trajectory.elapsed / trajectory.duration, 1) : 1;
+    const distance = step.totalDistance * progress ** 2;
+    const move = Math.max(distance - step.traveled, 0);
+    completed =
+      move > 0
+        ? this._advanceMovementStep(state, move, { fallHorizontalProgress: progress })
+        : stepFinished;
+  } else if (state.fallMode === 'landing') {
     if (stepFinished || !(speed > 0)) {
       completed = true;
     } else {
@@ -32,6 +45,7 @@ function _advanceFallPhase(state, delta) {
     completed = this._advanceMovementStep(state, speed * delta);
   }
   this._checkFallTransitions(state);
+  stepFinished = step ? step.traveled >= step.totalDistance - 1e-5 : true;
   const logLabel = state.fallMode === 'landing' ? 'landing-step' : 'fall-step';
   this._logFallHeightSample(state, logLabel, step, {
     delta,
@@ -43,11 +57,10 @@ function _advanceFallPhase(state, delta) {
   if (state.fallMode === 'landing') {
     const duration = state.fallDuration || 0;
     const animationComplete = this._isLandingAnimationComplete(state, animationData);
-    if (duration > 0) {
-      shouldFinish = (animationComplete && stepFinished) || state.phaseElapsed >= duration - 1e-4;
-    } else {
-      shouldFinish = animationComplete && stepFinished;
-    }
+    shouldFinish =
+      stepFinished &&
+      (!trajectory || trajectory.landingStarted) &&
+      (animationComplete || (duration > 0 && state.phaseElapsed >= duration - 1e-4));
   } else {
     shouldFinish = completed;
   }
@@ -142,6 +155,7 @@ function _finishFallPhase(state) {
   }
 
   this._clearFallStepState(state, { force: true });
+  state.fallTrajectory = null;
 
   const resumed = this._resumeMovementAfterFall(state);
   if (resumed) {
@@ -171,6 +185,7 @@ function _finalizePostFallState(state, profileOverride = null) {
     fallLandingThreshold: 0,
     fallLandingKey: null,
     fallLandingDuration: 0,
+    fallTrajectory: null,
   });
 
   this._setAnimation(state.token, 'idle', {
@@ -185,7 +200,17 @@ function _finalizePostFallState(state, profileOverride = null) {
 // ── Fall Transitions ───────────────────────────────────────────
 
 function _checkFallTransitions(state) {
-  if (!state || state.phase !== 'fall' || state.fallMode !== 'loop') return;
+  if (!state || state.phase !== 'fall') return;
+  const trajectory = state.fallTrajectory;
+  if (trajectory) {
+    if (
+      !trajectory.landingStarted &&
+      trajectory.elapsed >= Math.max(trajectory.duration - trajectory.contactTime, 0) - 1e-9
+    )
+      this._transitionFallToLanding(state);
+    return;
+  }
+  if (state.fallMode !== 'loop') return;
   const step = state.activeStep;
   if (!step) return;
 
@@ -227,7 +252,11 @@ function _transitionFallToLanding(state) {
   }
 
   state.fallMode = 'landing';
-  state.phaseElapsed = 0;
+  const trajectory = state.fallTrajectory;
+  const clipTime = trajectory
+    ? Math.max(trajectory.elapsed - (trajectory.duration - trajectory.contactTime), 0)
+    : 0;
+  state.phaseElapsed = clipTime;
   state.fallDuration =
     state.fallLandingDuration ||
     this._extractClipDuration(actions[landingKey]) ||
@@ -249,8 +278,9 @@ function _transitionFallToLanding(state) {
   const firstPose = rootInfo ? this._getActionRootPosition(rootInfo, actions[landingKey], 0) : null;
   if (Number.isFinite(contactTime) && contactTime > 0) {
     const step = state.activeStep;
-    const verticalSpeed =
-      step?.totalDistance > 0
+    const verticalSpeed = trajectory
+      ? trajectory.gravity * Math.min(trajectory.elapsed, trajectory.duration)
+      : step?.totalDistance > 0
         ? (state.fallSpeed * Math.abs(step.startWorld.y - step.targetWorld.y)) / step.totalDistance
         : 0;
     const poseRise = firstPose
@@ -261,7 +291,7 @@ function _transitionFallToLanding(state) {
         }).y
       : 0;
     fadeIn = Math.min(
-      contactTime,
+      Math.max(contactTime - clipTime, 0),
       Math.max(fadeIn, verticalSpeed > 0 ? poseRise / verticalSpeed : 0)
     );
   }
@@ -271,6 +301,12 @@ function _transitionFallToLanding(state) {
     fadeOut: profile.fallFadeOut,
     force: true,
   });
+  if (trajectory) {
+    trajectory.landingStarted = true;
+    actions[landingKey].paused = false;
+    actions[landingKey].time = Math.min(clipTime, state.fallDuration);
+    this._animationMixers.get(state.token)?.update(0);
+  }
   this._logFallHeightSample(state, 'landing-transition', state.activeStep, {
     landingKey,
     verticalDistance,
@@ -371,6 +407,8 @@ function _hasLandingRollClearance(state, animationData) {
     });
     const world = { x: landing.x + offset.x, y: landing.y, z: landing.z + offset.z };
     if (
+      (this._isPlannedLandingPositionAllowed &&
+        !this._isPlannedLandingPositionAllowed(state, world)) ||
       world.x < bounds.minX ||
       world.x > bounds.maxX ||
       world.z < bounds.minZ ||
@@ -511,37 +549,28 @@ function _maybeEnterFallPhase(state, animationData) {
     ? this._computeLandingThreshold(verticalDistance, landingKey)
     : 0;
 
-  if (state.fallMode === 'loop') {
-    const baseVerticalSpeed = Math.max(profile.fallLoopVerticalSpeed || 2.2, 0.25);
-    const speedScale = 1 + Math.max(0, verticalDistance - 6) / 10;
-    const verticalSpeed = Math.max(baseVerticalSpeed / speedScale, 0.35);
-    const minDuration = Math.max(profile.fallLoopMinDuration || 0.7, 0.1);
-    const desiredDuration = verticalDistance > 0 ? verticalDistance / verticalSpeed : minDuration;
-    let duration = Math.max(desiredDuration, minDuration);
-    const configuredMax = profile.fallLoopMaxDuration;
-    if (configuredMax && configuredMax > 0) {
-      const extraAllowance = Math.max(0, (verticalDistance - 4) / Math.max(verticalSpeed, 0.1));
-      const dynamicMax = configuredMax + extraAllowance;
-      duration = Math.min(duration, dynamicMax);
-    }
-    state.fallDuration = duration;
-  } else {
-    state.fallDuration = state.fallLandingDuration;
-    if (!(state.fallDuration > 0) && animationKey && actions?.[animationKey]) {
-      state.fallDuration =
-        this._extractClipDuration(actions[animationKey]) ||
-        this._getLandingClipDuration(profile, animationKey);
-    }
-  }
+  const tileSize = this.gameManager?.spatial?.tileWorldSize ?? 1;
+  if (!Number.isFinite(tileSize) || tileSize <= 0)
+    throw new Error('Falling requires a positive world tile size');
+  const gravity = (FALL_GRAVITY_FEET_PER_SECOND_SQUARED * tileSize) / FEET_PER_GRID_SQUARE;
+  const worldDrop = Math.max(step.startWorld.y - step.targetWorld.y, 0);
+  const duration = Math.sqrt((2 * worldDrop) / gravity);
+  state.fallTrajectory = {
+    elapsed: 0,
+    duration,
+    gravity,
+    contactTime: Number.isFinite(contactTime) ? Math.max(contactTime, 0) : 0,
+    landingStarted: false,
+  };
+  state.fallDuration = duration;
 
   state.fallSpeed = this._calculateFallSpeed(step, state.fallDuration, profile);
   if (!(state.fallSpeed > 0)) {
     state.fallSpeed = Math.max(profile.walkSpeed || 0, 0);
   }
-  if (fallLoopEligible && Number.isFinite(contactTime) && step.totalDistance > 0) {
-    const verticalSpeed =
-      (state.fallSpeed * Math.abs(step.startWorld.y - step.targetWorld.y)) / step.totalDistance;
-    state.fallLandingThreshold = Math.max(verticalSpeed * contactTime, 1e-5);
+  if (Number.isFinite(contactTime)) {
+    const cue = Math.max(duration - contactTime, 0);
+    state.fallLandingThreshold = Math.max(worldDrop - 0.5 * gravity * cue ** 2, 0);
   }
 
   const fadeIn =
@@ -562,6 +591,8 @@ function _maybeEnterFallPhase(state, animationData) {
     force: true,
     timeScale,
   });
+  if (state.fallMode === 'landing') actions[animationKey].paused = true;
+  this._checkFallTransitions(state);
   this._logFallHeightSample(state, 'fall-enter', step, {
     landingKey: state.fallLandingKey,
     verticalDistance,
@@ -611,6 +642,7 @@ function _captureFallResumeContext(state) {
     intentHold: !!state.intentHold,
     pathActive: !!state.pathActive,
     pathSpeedMode: state.pathSpeedMode || null,
+    pathMovementType: state.pathMovementType || null,
     pathKeyActive: pathKeyHeld,
     runDuration: state.runDuration || 0,
     wasSprinting: !!state.isSprinting,
@@ -647,6 +679,9 @@ function _resumeMovementAfterFall(state) {
 
   if (!state.pathSpeedMode && resume.pathSpeedMode) {
     state.pathSpeedMode = resume.pathSpeedMode;
+  }
+  if (!state.pathMovementType && resume.pathMovementType) {
+    state.pathMovementType = resume.pathMovementType;
   }
 
   this._applyPendingOrientation(state);

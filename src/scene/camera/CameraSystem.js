@@ -19,6 +19,7 @@ function getCameraTarget() {
   const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
   return {
     x: Number.isFinite(this._panCx) ? this._panCx : ((this.gameManager?.cols || 25) * tileSize) / 2,
+    y: Number.isFinite(this._panCy) ? this._panCy : 0,
     z: Number.isFinite(this._panCz) ? this._panCz : ((this.gameManager?.rows || 25) * tileSize) / 2,
   };
 }
@@ -122,6 +123,7 @@ function _screenToGround(x, y) {
   this._cameraRaycaster ||= new this.three.Raycaster();
   this._cameraNdc ||= new this.three.Vector2();
   this._cameraGroundPlane ||= new this.three.Plane(new this.three.Vector3(0, 1, 0), 0);
+  this._cameraGroundPlane.constant = -this.getCameraTarget().y;
   this._cameraNdc.set((x / width) * 2 - 1, 1 - (y / height) * 2);
   this._cameraRaycaster.setFromCamera(this._cameraNdc, this.camera);
   return this._cameraRaycaster.ray.intersectPlane(
@@ -280,7 +282,7 @@ function _applyCameraBase({ cx, cz, span }) {
   cz = target.z;
   if (this._isoMode) {
     // Apply isometric camera base (extracted helper)
-    this._applyIsoCameraBase({ cx, cz, span });
+    this._applyIsoCameraBase({ cx, cy: target.y, cz, span });
   } else {
     // Free (non-iso) mode: spherical positioning relative to center
     try {
@@ -292,8 +294,8 @@ function _applyCameraBase({ cx, cz, span }) {
         cx,
         cz,
       });
-      this.camera.position.set(x, y, z);
-      this.camera.lookAt(cx, 0, cz);
+      this.camera.position.set(x, y + target.y, z);
+      this.camera.lookAt(cx, target.y, cz);
       if (typeof window !== 'undefined') {
         const dx = cx - x;
         const dz = cz - z;
@@ -332,7 +334,7 @@ function _applyCameraBase({ cx, cz, span }) {
 // ── Isometric Camera Internals ─────────────────────────────────────
 
 /** Internal: apply isometric camera base placement & debugging */
-function _applyIsoCameraBase({ cx, cz }) {
+function _applyIsoCameraBase({ cx, cy = 0, cz }) {
   const isoYaw = this._isoYaw;
   // Global hard override (diagnostics) takes precedence
   try {
@@ -354,8 +356,8 @@ function _applyIsoCameraBase({ cx, cz }) {
     GameErrors.rendering(error, { component: 'CameraSystem', operation: 'placeIsometricCamera' });
     return;
   }
-  this.camera.position.set(r.x, r.y, r.z);
-  this.camera.lookAt(cx, 0, cz);
+  this.camera.position.set(r.x, r.y + cy, r.z);
+  this.camera.lookAt(cx, cy, cz);
   // Debugging / inspection hooks
   if (typeof window !== 'undefined') {
     try {
@@ -453,11 +455,11 @@ function measureTileStepPixelsProjected() {
   try {
     if (!this.camera || !this.renderer || !this.three) return null;
     const three = this.three;
-    const { x: cx, z: cz } = this.getCameraTarget();
+    const { x: cx, y: cy, z: cz } = this.getCameraTarget();
     const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
     const { width, height } = this._getCameraViewport();
     this.camera.updateMatrixWorld(true);
-    const base = new three.Vector3(cx, 0, cz);
+    const base = new three.Vector3(cx, cy, cz);
     const px = base.clone().add(new three.Vector3(tileSize, 0, 0));
     const pz = base.clone().add(new three.Vector3(0, 0, tileSize));
     const proj = (v) => {
@@ -671,11 +673,18 @@ function panBy(screenDx, screenDy) {
 }
 
 /**
- * Set camera look-at target explicitly (world XZ).
+ * Set camera focus in world space, preserving its current height when omitted.
  */
-function setCameraTarget(cx, cz) {
-  if (!Number.isFinite(cx) || !Number.isFinite(cz)) return;
+function setCameraTarget(cx, cz, cy = this.getCameraTarget().y) {
+  if (![cx, cy, cz].every(Number.isFinite)) {
+    GameErrors.rendering(new Error('Camera focus coordinates must be finite'), {
+      component: 'CameraSystem',
+      operation: 'setCameraTarget',
+    });
+    return;
+  }
   this._panCx = cx;
+  this._panCy = cy;
   this._panCz = cz;
   const cols = this.gameManager?.cols || 25;
   const rows = this.gameManager?.rows || 25;
@@ -691,6 +700,7 @@ function resetCameraTarget() {
   const rows = this.gameManager?.rows || 25;
   const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
   this._panCx = cols * tileSize * 0.5;
+  this._panCy = 0;
   this._panCz = rows * tileSize * 0.5;
   const span = Math.max(cols, rows) * 0.6;
   this._applyCameraBase({ cx: this._panCx, cz: this._panCz, span });

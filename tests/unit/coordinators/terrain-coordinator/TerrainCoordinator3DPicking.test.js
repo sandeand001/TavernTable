@@ -29,7 +29,7 @@ describe('TerrainCoordinator getGridCoordinatesFromEvent (3D picking)', () => {
     expect(result).toEqual({ gridX: 4, gridY: 5 });
   });
 
-  test('falls back to interaction manager when pickGroundSync returns null', () => {
+  test('does not turn a 3D miss into a brush target through the interaction fallback', () => {
     const pickGroundSync = jest.fn(() => null);
     const fallback = jest.fn(() => ({ gridX: 7, gridY: 3 }));
     const coordinator = {
@@ -45,7 +45,33 @@ describe('TerrainCoordinator getGridCoordinatesFromEvent (3D picking)', () => {
     const result = getGridCoordinatesFromEvent(coordinator, event);
 
     expect(pickGroundSync).toHaveBeenCalledWith(10, 20, null);
+    expect(fallback).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  test('uses the interaction fallback when no 3D picking service is available', () => {
+    const fallback = jest.fn(() => ({ gridX: 7, gridY: 3 }));
+    const event = { clientX: 10, clientY: 20 };
+    const coordinator = {
+      gameManager: {
+        is3DModeActive: () => true,
+        interactionManager: { getGridCoordinatesFromClick: fallback },
+      },
+    };
+    expect(getGridCoordinatesFromEvent(coordinator, event)).toEqual({ gridX: 7, gridY: 3 });
     expect(fallback).toHaveBeenCalledWith(event);
-    expect(result).toEqual({ gridX: 7, gridY: 3 });
+  });
+
+  test('does not clamp an invalid 3D brush target to a boundary cell', () => {
+    const coordinator = {
+      gameManager: {
+        cols: 4,
+        rows: 4,
+        is3DModeActive: () => true,
+        pickingService: { pickGroundSync: () => ({ grid: { gx: -2, gy: 2 } }) },
+      },
+      isValidGridPosition: (x, y) => x >= 0 && y >= 0 && x < 4 && y < 4,
+    };
+    expect(getGridCoordinatesFromEvent(coordinator, { clientX: 10, clientY: 20 })).toBeNull();
   });
 });

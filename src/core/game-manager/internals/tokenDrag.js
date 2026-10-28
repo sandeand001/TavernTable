@@ -8,6 +8,7 @@ export function startTokenDragByGrid(gm, gx, gy) {
   if (gm._draggingToken) return false; // already dragging
   const token = (gm.placedTokens || []).find((t) => t.gridX === gx && t.gridY === gy);
   if (!token) return false;
+  if (gm.token3DAdapter?.isMovementInProgress?.(token)) return false;
   gm._draggingToken = token;
   gm._dragStart = { gx, gy };
   gm._dragLastPreview = { gx, gy };

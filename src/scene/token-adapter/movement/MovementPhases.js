@@ -10,7 +10,6 @@
 import {
   DEFAULT_MOVEMENT_PROFILE,
   DEFAULT_FALL_TRIGGER_PROGRESS,
-  DEFAULT_HEIGHT_SNAP_PROGRESS,
 } from '../../../config/token-adapter/MannequinConfig.js';
 import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
@@ -43,8 +42,16 @@ function _updateForwardMovements(delta) {
         case 'walk':
           this._advanceWalkPhase(state, delta, bounds);
           break;
+        case 'traversal':
+          this._advanceShortTraversal(state, delta);
+          break;
         case 'climb-wall':
           this._advanceClimbWallPhase(state, delta);
+          break;
+        case 'climb-surface':
+          this._advanceWallMovement(state, delta);
+          break;
+        case 'climb-hold':
           break;
         case 'climb':
           this._advanceClimbPhase(state, delta);
@@ -92,12 +99,20 @@ function _updateForwardMovements(delta) {
         this._movementStates.delete(tokenEntry);
       }
     } catch (error) {
-      this._movementStates.delete(tokenEntry);
+      const phase = state.phase;
+      if (state.traversal) {
+        state.traversal = null;
+        this._movementRoutes.delete(tokenEntry);
+        this._unlockTokenWorldAuthority(state);
+        this._setSelectionIndicatorSuppressed(state, false);
+        this._movementStates.delete(tokenEntry);
+      } else if (state.wallMotion) this._cancelWallMovement(state);
+      else this._movementStates.delete(tokenEntry);
       GameErrors.gameState(error, {
         component: 'Token3DAdapter',
         operation: 'advanceMovement',
         tokenId: tokenEntry?.id,
-        phase: state.phase,
+        phase,
       });
     }
   }
@@ -327,6 +342,22 @@ function _advanceMovementStep(state, distance, options = {}) {
 
   if (requiresFall) {
     if (isFallPhase) {
+      if (Number.isFinite(options.fallHorizontalProgress)) {
+        const horizontalPosition = this._lerp3(
+          step.startPosition,
+          step.targetPosition,
+          options.fallHorizontalProgress
+        );
+        const horizontalWorld = this._lerp3(
+          step.startWorld,
+          step.targetWorld,
+          options.fallHorizontalProgress
+        );
+        pos.x = horizontalPosition.x;
+        pos.z = horizontalPosition.z;
+        world.x = horizontalWorld.x;
+        world.z = horizontalWorld.z;
+      }
       const fallStartRatio = Number.isFinite(step.fallStartRatio) ? step.fallStartRatio : 0;
       const fallStartPositionY = Number.isFinite(step.fallStartPosition?.y)
         ? step.fallStartPosition.y
@@ -350,10 +381,9 @@ function _advanceMovementStep(state, distance, options = {}) {
       world.y = step.startWorld?.y ?? world.y;
     }
   } else if (verticalDelta > 1e-4) {
-    const snapProgress = step.verticalSnapProgress || DEFAULT_HEIGHT_SNAP_PROGRESS;
-    const useTarget = ratio >= snapProgress || options?.clamp;
-    pos.y = useTarget ? step.targetPosition.y : step.startPosition.y;
-    world.y = useTarget ? step.targetWorld.y : step.startWorld.y;
+    const progress = options.clamp ? 1 : ratio * ratio * (3 - 2 * ratio);
+    pos.y = step.startPosition.y + (step.targetPosition.y - step.startPosition.y) * progress;
+    world.y = step.startWorld.y + (step.targetWorld.y - step.startWorld.y) * progress;
   }
 
   step.horizontalTraveled = Math.hypot(pos.x - step.startPosition.x, pos.z - step.startPosition.z);

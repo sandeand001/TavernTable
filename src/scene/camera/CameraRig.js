@@ -34,8 +34,9 @@ export class CameraRig {
     // positioning. The rig only applies when explicitly panned/zoomed.
   }
 
-  setTarget(x, z) {
+  setTarget(x, z, y = this.target.y ?? 0) {
     this.target.x = x;
+    this.target.y = y;
     this.target.z = z;
     this._apply();
   }
@@ -86,12 +87,13 @@ export class CameraRig {
     if (this.camera.position) {
       const previous = this._appliedTarget || this.target;
       this.camera.position.x += this.target.x - previous.x;
+      this.camera.position.y += (this.target.y ?? 0) - (previous.y ?? 0);
       this.camera.position.z += this.target.z - previous.z;
     }
     this._appliedTarget = { ...this.target };
     if (typeof this.camera.lookAt === 'function') {
       try {
-        this.camera.lookAt(this.target.x, 0, this.target.z);
+        this.camera.lookAt(this.target.x, this.target.y ?? 0, this.target.z);
       } catch (_) {
         /* ignore */
       }

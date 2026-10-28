@@ -1,7 +1,7 @@
 // ── Token Removal ──────────────────────────────────────────────
 
 export function removeToken(c, token) {
-  token.creature.removeFromStage();
+  token.creature?.removeFromStage?.();
   c.placedTokens = c.placedTokens.filter((t) => t !== token);
   // Phase 3: notify 3D adapter for cleanup if hybrid mode active
   try {
@@ -15,5 +15,12 @@ export function removeToken(c, token) {
     }
   } catch (_) {
     /* non-fatal */
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('taverntable:tokenRemoved', {
+        detail: { token, gameManager: c.gameManager },
+      })
+    );
   }
 }

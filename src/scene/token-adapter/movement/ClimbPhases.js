@@ -291,17 +291,8 @@ function _startClimbPhase(state, climbInfo, options = {}) {
   }
 
   const startWorld = this._cloneWorldWithFallback(climbInfo.footWorld, state.token?.world) || {};
-  const targetEdge = this._cloneWorldWithFallback(climbInfo.edgeWorld, climbInfo.finalWorld) || {};
+  const targetEdge = this._resolveClimbTargetWorld(climbInfo, animationData);
   const finalWorld = this._cloneWorldWithFallback(climbInfo.finalWorld, targetEdge) || {};
-  const rootMotion = animationData?.rootMotion;
-  if (rootMotion?.climbTransferLocal) {
-    const transfer = this._rootDisplacementToWorld(
-      rootMotion.rootInfo,
-      rootMotion.climbTransferLocal
-    );
-    targetEdge.x += transfer.x;
-    targetEdge.z += transfer.z;
-  }
 
   state.phase = 'climb';
   state.climbActive = true;
@@ -338,6 +329,21 @@ function _startClimbPhase(state, climbInfo, options = {}) {
     this._finalizeClimbLanding(state, { allowAdvance: false });
     return;
   }
+}
+
+function _resolveClimbTargetWorld(climbInfo, animationData) {
+  const targetEdge = this._cloneWorldWithFallback(climbInfo.edgeWorld, climbInfo.finalWorld) || {};
+  const rootMotion = animationData?.rootMotion;
+  if (rootMotion?.climbTransferLocal) {
+    const transfer = this._rootDisplacementToWorld(
+      rootMotion.rootInfo,
+      rootMotion.climbTransferLocal
+    );
+    targetEdge.x += transfer.x;
+    targetEdge.z += transfer.z;
+  }
+
+  return targetEdge;
 }
 
 // ── Wall Climb Sequence ─────────────────────────────────────────
@@ -386,6 +392,14 @@ function _maybeStartClimbWallSequence(state, climbInfo, animationData) {
   return this._startNextClimbWallSegment(state, animationData);
 }
 
+function _resolveClimbMantleHeight(animationData, elevationUnit) {
+  const rootMotion = animationData?.rootMotion;
+  const displacement = rootMotion?.climbTransferLocal
+    ? this._rootDisplacementToWorld(rootMotion.rootInfo, rootMotion.climbTransferLocal)
+    : null;
+  return displacement?.y > 1e-4 ? displacement.y : MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
+}
+
 function _planClimbWallSegments(state, climbInfo, animationData) {
   if (!state || !climbInfo) return null;
   const totalHeight = Number.isFinite(climbInfo.heightDelta) ? climbInfo.heightDelta : 0;
@@ -416,11 +430,7 @@ function _planClimbWallSegments(state, climbInfo, animationData) {
     DEFAULT_CLIMB_WALL_DURATION;
 
   const availableWallHeight = Math.max((edgeWorld.y ?? 0) - (footWorld.y ?? 0), 0);
-  const climbDisplacement = rootMotion?.climbTransferLocal
-    ? this._rootDisplacementToWorld(rootMotion.rootInfo, rootMotion.climbTransferLocal)
-    : null;
-  const maxStandardWorldHeight =
-    climbDisplacement?.y > 1e-4 ? climbDisplacement.y : MAX_STANDARD_CLIMB_LEVELS * elevationUnit;
+  const maxStandardWorldHeight = this._resolveClimbMantleHeight(animationData, elevationUnit);
   const travelWorld = Math.max(availableWallHeight - maxStandardWorldHeight, 0);
   if (!(travelWorld > 1e-4)) {
     return null;
@@ -492,7 +502,13 @@ function _startNextClimbWallSegment(state, animationData) {
 
   const fadeIn = profile?.climbWallFadeIn ?? profile.walkFadeIn ?? 0.18;
   const fadeOut = profile?.climbWallFadeOut ?? profile.walkFadeOut ?? 0.18;
-  this._setAnimation(state.token, 'climbWall', { fadeIn, fadeOut, force: true });
+  const alreadyPlaying =
+    state.climbWallAnimationPlaying &&
+    data?.current === 'climbWall' &&
+    data.actions.climbWall?.isRunning?.();
+  if (!alreadyPlaying) {
+    this._setAnimation(state.token, 'climbWall', { fadeIn, fadeOut, force: true });
+  }
   state.climbWallAnimationPlaying = true;
 
   this._logPathing('climbWall:segment-start', {
@@ -518,7 +534,8 @@ function _advanceClimbWallPhase(state, delta) {
     return;
   }
 
-  state.climbWallElapsed = Math.min(state.climbWallElapsed + Math.max(delta, 0), duration);
+  const elapsed = state.climbWallElapsed + Math.max(delta, 0);
+  state.climbWallElapsed = Math.min(elapsed, duration);
   const anchorWorld =
     state.climbWallStartWorld ||
     state.climbLastWorld ||
@@ -549,7 +566,7 @@ function _advanceClimbWallPhase(state, delta) {
     this._applyMeshWorldPosition(state.mesh, currentWorld);
   }
 
-  if (state.climbWallElapsed >= duration - 1e-4) {
+  if (state.climbWallElapsed >= duration - 1e-9) {
     this._logPathing('climbWall:segment-complete', {
       token: this._describeTokenForLogs(state.token),
       remainingQueue: Array.isArray(state.climbWallQueue) ? state.climbWallQueue.length : 0,
@@ -557,6 +574,10 @@ function _advanceClimbWallPhase(state, delta) {
     state.climbWallActive = false;
     const animationData = this._tokenAnimationData.get(state.token);
     this._startNextClimbWallSegment(state, animationData);
+    const remainder = Math.max(elapsed - duration, 0);
+    if (remainder > 1e-9 && state.climbWallActive) {
+      this._advanceClimbWallPhase(state, remainder);
+    }
   }
 }
 
@@ -906,6 +927,8 @@ function _resolveClimbFinalWorld(state) {
 // ── Module Installation ────────────────────────────────────────
 
 function installClimbMethods(prototype) {
+  prototype._resolveClimbMantleHeight = _resolveClimbMantleHeight;
+  prototype._resolveClimbTargetWorld = _resolveClimbTargetWorld;
   prototype._resetClimbWallState = _resetClimbWallState;
   prototype._resetClimbRecoverState = _resetClimbRecoverState;
   prototype._clearClimbState = _clearClimbState;

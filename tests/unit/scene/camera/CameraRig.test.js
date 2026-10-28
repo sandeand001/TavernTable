@@ -55,4 +55,19 @@ describe('CameraRig', () => {
     expect(camera.zoom).toBeGreaterThan(1);
     expect(camera.aspect).toBe(16 / 9);
   });
+
+  test('panning and changing focus height preserve the camera direction', () => {
+    const camera = new PerspectiveCamera(35, 16 / 9, 0.1, 1000);
+    camera.position.set(30, 25, 10);
+    camera.lookAt(10, 5, 15);
+    const rig = new CameraRig({ target: { x: 10, y: 5, z: 15 } });
+    rig.attach(camera);
+    const direction = camera.getWorldDirection(new Vector3());
+    rig.pan(3, -4);
+    expect(camera.position.toArray()).toEqual([33, 25, 6]);
+    rig.setTarget(13, 11, 9);
+    expect(camera.position.toArray()).toEqual([33, 29, 6]);
+    expect(camera.getWorldDirection(new Vector3()).distanceTo(direction)).toBeLessThan(1e-6);
+    expect(camera.zoom).toBe(1);
+  });
 });

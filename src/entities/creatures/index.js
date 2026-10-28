@@ -17,4 +17,4 @@ function createDefeatedDoll(x = 0, y = 0) {
 }
 
 // Export all creature creation functions
-export { createMannequin, createFemaleHumanoid, createDefeatedDoll };
+export { createCreature, createMannequin, createFemaleHumanoid, createDefeatedDoll };

@@ -1,5 +1,7 @@
 // src/config/GameConstants.js - Centralized game configuration and constants
 
+import { CHARACTER_DEFINITIONS } from './CharacterCatalog.js';
+
 // ── Grid Configuration ────────────────────────────────────────
 /**
  * Grid configuration constants
@@ -61,9 +63,9 @@ export const GRID_CONFIG = {
  * Creature scaling configuration
  * Defines size multipliers for different creature types
  */
-export const CREATURE_SCALES = {
-  mannequin: 0.06,
-};
+export const CREATURE_SCALES = Object.fromEntries(
+  CHARACTER_DEFINITIONS.map(({ id, scale }) => [id, scale])
+);
 
 /**
  * Creature footprint configuration (in tiles)

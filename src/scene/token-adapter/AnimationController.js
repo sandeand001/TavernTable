@@ -12,281 +12,129 @@
  *   - Manual (user-triggered) animation state, revert timers, and height offsets
  */
 
-import { DEFAULT_MOVEMENT_PROFILE } from '../../config/token-adapter/MannequinConfig.js';
+import {
+  DEFAULT_MOVEMENT_PROFILE,
+  CLIMB_WALL_ENTRY_TILE_HALF_RATIO,
+} from '../../config/token-adapter/MannequinConfig.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import { getManualAction } from '../../config/HumanoidActionCatalog.js';
+import { cloneHumanoidRig, retargetHumanoidClip } from './HumanoidRig.js';
 
 // ── Animation Setup & Clip Resolution ────────────────────────────
 
 async function _setupAnimationSet(tokenEntry, container, config, templateBundle) {
-  try {
-    const three = await this._getThree();
-    if (!three) return;
-    const mixer = new three.AnimationMixer(container);
-    const animationsConfig = config.animations || {};
-    const actions = {};
-    const clips = {};
-
-    const loadOptionalAnimation = async (key, options = {}) => {
-      if (!key || actions[key]) return;
-      const descriptor = animationsConfig[key];
-      if (!descriptor) return;
-      const clip = await this._resolveAnimationClip(descriptor, null, clipOptions);
-      if (!clip) return;
-      const action = mixer.clipAction(clip);
-      const loopMode = options.loop || 'repeat';
-      this._configureAction(action, descriptor, three, { loop: loopMode });
-      if (options.clamp === true) {
-        action.clampWhenFinished = true;
-      }
-      actions[key] = action;
-      clips[key] = clip.duration || 0;
-    };
-
-    const targetCacheKey = (
-      tokenEntry.type ||
-      tokenEntry.creature?.type ||
-      tokenEntry.id ||
-      'default'
-    )
-      .toString()
-      .toLowerCase();
-    const clipOptions = { targetRoot: container, targetCacheKey };
-    const templateFallbackClip = this._selectPrimaryClip(templateBundle?.animations);
-
-    const idleClip = await this._resolveAnimationClip(
-      animationsConfig.idle,
-      templateFallbackClip,
-      clipOptions
-    );
-    if (idleClip) {
-      const action = mixer.clipAction(idleClip);
-      this._configureAction(action, animationsConfig.idle, three, { loop: 'repeat' });
-      actions.idle = action;
-      clips.idle = idleClip.duration || 0;
-    }
-
-    const walkClip = await this._resolveAnimationClip(animationsConfig.walk, null, clipOptions);
-    if (walkClip) {
-      const action = mixer.clipAction(walkClip);
-      this._configureAction(action, animationsConfig.walk, three, { loop: 'repeat' });
-      actions.walk = action;
-      clips.walk = walkClip.duration || 0;
-    }
-
-    const walkBackwardClip = await this._resolveAnimationClip(
-      animationsConfig.walkBackward,
-      null,
-      clipOptions
-    );
-    if (walkBackwardClip) {
-      const action = mixer.clipAction(walkBackwardClip);
-      this._configureAction(action, animationsConfig.walkBackward, three, { loop: 'repeat' });
-      actions.walkBackward = action;
-      clips.walkBackward = walkBackwardClip.duration || 0;
-    }
-
-    const runClip = await this._resolveAnimationClip(animationsConfig.run, null, clipOptions);
-    if (runClip) {
-      const action = mixer.clipAction(runClip);
-      this._configureAction(action, animationsConfig.run, three, { loop: 'repeat' });
-      actions.run = action;
-      clips.run = runClip.duration || 0;
-    }
-
-    const runBackwardClip = await this._resolveAnimationClip(
-      animationsConfig.runBackward,
-      null,
-      clipOptions
-    );
-    if (runBackwardClip) {
-      const action = mixer.clipAction(runBackwardClip);
-      this._configureAction(action, animationsConfig.runBackward, three, { loop: 'repeat' });
-      actions.runBackward = action;
-      clips.runBackward = runBackwardClip.duration || 0;
-    }
-
-    const sprintClip = await this._resolveAnimationClip(animationsConfig.sprint, null, clipOptions);
-    if (sprintClip) {
-      const action = mixer.clipAction(sprintClip);
-      this._configureAction(action, animationsConfig.sprint, three, { loop: 'repeat' });
-      actions.sprint = action;
-      clips.sprint = sprintClip.duration || 0;
-    }
-
-    const runStopClip = await this._resolveAnimationClip(
-      animationsConfig.runStop,
-      null,
-      clipOptions
-    );
-    if (runStopClip) {
-      const action = mixer.clipAction(runStopClip);
-      this._configureAction(action, animationsConfig.runStop, three, { loop: 'once' });
-      actions.runStop = action;
-      clips.runStop = runStopClip.duration || 0;
-    }
-
-    const drunkWalkClip = await this._resolveAnimationClip(
-      animationsConfig.drunkWalk,
-      null,
-      clipOptions
-    );
-    if (drunkWalkClip) {
-      const action = mixer.clipAction(drunkWalkClip);
-      this._configureAction(action, animationsConfig.drunkWalk, three, { loop: 'repeat' });
-      actions.drunkWalk = action;
-      clips.drunkWalk = drunkWalkClip.duration || 0;
-    }
-
-    const drunkWalkBackwardClip = await this._resolveAnimationClip(
-      animationsConfig.drunkWalkBackward,
-      null,
-      clipOptions
-    );
-    if (drunkWalkBackwardClip) {
-      const action = mixer.clipAction(drunkWalkBackwardClip);
-      this._configureAction(action, animationsConfig.drunkWalkBackward, three, {
-        loop: 'repeat',
-      });
-      actions.drunkWalkBackward = action;
-      clips.drunkWalkBackward = drunkWalkBackwardClip.duration || 0;
-    }
-
-    const drunkRunForwardClip = await this._resolveAnimationClip(
-      animationsConfig.drunkRunForward,
-      null,
-      clipOptions
-    );
-    if (drunkRunForwardClip) {
-      const action = mixer.clipAction(drunkRunForwardClip);
-      this._configureAction(action, animationsConfig.drunkRunForward, three, { loop: 'repeat' });
-      actions.drunkRunForward = action;
-      clips.drunkRunForward = drunkRunForwardClip.duration || 0;
-    }
-
-    const drunkRunBackwardClip = await this._resolveAnimationClip(
-      animationsConfig.drunkRunBackward,
-      null,
-      clipOptions
-    );
-    if (drunkRunBackwardClip) {
-      const action = mixer.clipAction(drunkRunBackwardClip);
-      this._configureAction(action, animationsConfig.drunkRunBackward, three, {
-        loop: 'repeat',
-      });
-      actions.drunkRunBackward = action;
-      clips.drunkRunBackward = drunkRunBackwardClip.duration || 0;
-    }
-
-    const fallClip = await this._resolveAnimationClip(animationsConfig.fall, null, clipOptions);
-    if (fallClip) {
-      const action = mixer.clipAction(fallClip);
-      this._configureAction(action, animationsConfig.fall, three, { loop: 'once' });
-      actions.fall = action;
-      clips.fall = fallClip.duration || 0;
-    }
-
-    const climbClip = await this._resolveAnimationClip(animationsConfig.climb, null, clipOptions);
-    const climbWallClip = await this._resolveAnimationClip(
-      animationsConfig.climbWall,
-      null,
-      clipOptions
-    );
-    const climbRecoverClip = await this._resolveAnimationClip(
-      animationsConfig.climbRecover,
-      null,
-      clipOptions
-    );
-    const preparedClimbs = this._prepareClimbRootMotion(tokenEntry, {
-      climb: climbClip,
-      climbWall: climbWallClip,
-      climbRecover: climbRecoverClip,
+  const three = await this._getThree();
+  if (!three) throw new Error('Character animation requires Three.js');
+  const mixer = new three.AnimationMixer(container);
+  const animationsConfig = config.animations || {};
+  const actions = {};
+  const clips = {};
+  const loaded = {};
+  const targetCacheKey = String(tokenEntry.type || tokenEntry.creature?.type || 'default');
+  const clipOptions = {
+    targetRig: templateBundle?.rig,
+    targetCacheKey,
+    retarget: config.retargetAnimations === true,
+  };
+  for (const [key, descriptor] of Object.entries(animationsConfig)) {
+    if (descriptor.lazy) continue;
+    const clip = await this._resolveAnimationClip(descriptor, null, clipOptions);
+    if (!clip) throw new Error(`Configured character animation is unavailable: ${key}`);
+    loaded[key] = clip;
+  }
+  if (!animationsConfig.idle) {
+    const fallback = this._selectPrimaryClip(templateBundle?.animations);
+    if (fallback) loaded.idle = this._cloneClip(fallback);
+  }
+  const rawTraversalClimb = loaded.climb;
+  const preparedClimbs = this._prepareClimbRootMotion(tokenEntry, loaded);
+  for (const key of ['climb', 'climbWall', 'climbWallDown', 'climbRecover', 'ledgeHang']) {
+    if (preparedClimbs[key]) loaded[key] = preparedClimbs[key];
+  }
+  for (const [key, clip] of Object.entries(loaded)) {
+    const action = mixer.clipAction(clip);
+    this._configureAction(action, animationsConfig[key], three, {
+      loop: key === 'ledgeHang' ? 'once' : 'repeat',
     });
-    for (const key of ['climb', 'climbWall', 'climbRecover']) {
-      const clip = preparedClimbs[key];
-      if (!clip) continue;
-      const action = mixer.clipAction(clip);
-      this._configureAction(action, animationsConfig[key], three, {
-        loop: key === 'climbWall' ? 'repeat' : 'once',
-      });
-      action.clampWhenFinished = key !== 'climbWall';
-      actions[key] = action;
-      clips[key] = clip.duration || 0;
+    if (key === 'ledgeHang') action.clampWhenFinished = true;
+    actions[key] = action;
+    clips[key] = clip.duration;
+  }
+  const landingContactTimes = {};
+  for (const key of ['fall', 'hardLanding', 'fallToRoll']) {
+    const contactTime = animationsConfig[key]?.contactTime;
+    if (contactTime == null) continue;
+    if (!Number.isFinite(contactTime) || contactTime < 0 || contactTime > clips[key]) {
+      throw new Error(`Invalid ground-contact time for ${key}`);
     }
-    const hardLandingClip = await this._resolveAnimationClip(
-      animationsConfig.hardLanding,
-      null,
-      clipOptions
+    landingContactTimes[key] = contactTime;
+  }
+  const animationData = {
+    mixer,
+    actions,
+    clips,
+    profile: this._buildMovementProfile(config.movementProfile, actions, clips),
+    rootMotion: preparedClimbs.rootMotion,
+    landingContactTimes,
+    clipOptions,
+    animationsConfig,
+    templateRoot: templateBundle?.template,
+    current: null,
+  };
+  animationData.traversal = this._prepareTraversalData(
+    tokenEntry,
+    animationData,
+    rawTraversalClimb,
+    three
+  );
+  this._alignLedgeHangGrip(tokenEntry, container, animationData, three);
+  this._animationMixers.set(tokenEntry, mixer);
+  this._tokenAnimationData.set(tokenEntry, animationData);
+  this._movementRangeDirty = true;
+  if (actions.idle) this._setAnimation(tokenEntry, 'idle', { immediate: true });
+  this._resumeMovementAnimations(tokenEntry);
+}
+
+function _alignLedgeHangGrip(tokenEntry, container, data, three) {
+  const action = data.actions.ledgeHang;
+  const rootInfo = data.rootMotion?.rootInfo;
+  if (!action || !rootInfo) return;
+  const hands = this._findFirstSkinnedMesh(container)?.skeleton?.bones.filter((bone) =>
+    /(LeftHand|RightHand)$/.test(bone.name)
+  );
+  const track = action
+    .getClip()
+    .tracks.find((entry) => entry.name === `${rootInfo.bone.name}.position`);
+  if (hands?.length !== 2 || !track)
+    throw new Error('Ledge hanging requires two hand bones and a root position track');
+  action.setEffectiveWeight(1).play();
+  action.paused = true;
+  try {
+    data.mixer.update(0);
+    container.updateWorldMatrix(true, false);
+    container.updateMatrixWorld(true);
+    const grip = hands[0]
+      .getWorldPosition(new three.Vector3())
+      .add(hands[1].getWorldPosition(new three.Vector3()))
+      .multiplyScalar(0.5);
+    const world = this._resolveTokenWorldPosition(tokenEntry);
+    const spatial = this.gameManager.spatial;
+    const standOff = spatial.tileWorldSize * (1 - CLIMB_WALL_ENTRY_TILE_HALF_RATIO) * 0.5;
+    const forward = this._getDirectionalVectorFromYaw(this._getMovementYaw(tokenEntry), 1);
+    const target = new three.Vector3(
+      world.x + forward.x * standOff,
+      world.y + this._resolveClimbMantleHeight(data, spatial.elevationUnit),
+      world.z + forward.z * standOff
     );
-    if (hardLandingClip) {
-      const action = mixer.clipAction(hardLandingClip);
-      this._configureAction(action, animationsConfig.hardLanding, three, { loop: 'once' });
-      actions.hardLanding = action;
-      clips.hardLanding = hardLandingClip.duration || 0;
+    const parent = rootInfo.bone.parent;
+    const offset = parent.worldToLocal(target).sub(parent.worldToLocal(grip));
+    for (let i = 0; i < track.values.length; i += 3) {
+      track.values[i] += offset.x;
+      track.values[i + 1] += offset.y;
+      track.values[i + 2] += offset.z;
     }
-
-    const fallToRollClip = await this._resolveAnimationClip(
-      animationsConfig.fallToRoll,
-      null,
-      clipOptions
-    );
-    if (fallToRollClip) {
-      const action = mixer.clipAction(fallToRollClip);
-      this._configureAction(action, animationsConfig.fallToRoll, three, { loop: 'once' });
-      actions.fallToRoll = action;
-      clips.fallToRoll = fallToRollClip.duration || 0;
-    }
-
-    const fallLoopClip = await this._resolveAnimationClip(
-      animationsConfig.fallLoop,
-      null,
-      clipOptions
-    );
-    if (fallLoopClip) {
-      const action = mixer.clipAction(fallLoopClip);
-      this._configureAction(action, animationsConfig.fallLoop, three, { loop: 'repeat' });
-      actions.fallLoop = action;
-      clips.fallLoop = fallLoopClip.duration || 0;
-    }
-
-    const idleVariantKeys = ['idleVariant2', 'idleVariant3', 'idleVariant4', 'idleVariant5'];
-    for (const variantKey of idleVariantKeys) {
-      await loadOptionalAnimation(variantKey, { loop: 'repeat' });
-    }
-
-    await loadOptionalAnimation('jump', { loop: 'repeat' });
-    await loadOptionalAnimation('fancyPose', { loop: 'once', clamp: true });
-    await loadOptionalAnimation('dynamicPose', { loop: 'once', clamp: true });
-    await loadOptionalAnimation('defeated', { loop: 'once', clamp: true });
-
-    const landingContactTimes = {};
-    for (const key of ['fall', 'hardLanding', 'fallToRoll']) {
-      const contactTime = animationsConfig[key]?.contactTime;
-      if (contactTime == null) continue;
-      if (!Number.isFinite(contactTime) || contactTime < 0 || contactTime > clips[key]) {
-        throw new Error(`Invalid ground-contact time for ${key}`);
-      }
-      landingContactTimes[key] = contactTime;
-    }
-    const profile = this._buildMovementProfile(config.movementProfile, actions, clips);
-    const animationData = {
-      mixer,
-      actions,
-      clips,
-      profile,
-      rootMotion: preparedClimbs.rootMotion,
-      landingContactTimes,
-      current: null,
-    };
-    this._animationMixers.set(tokenEntry, mixer);
-    this._tokenAnimationData.set(tokenEntry, animationData);
-
-    if (actions.idle) {
-      this._setAnimation(tokenEntry, 'idle', { immediate: true });
-    }
-
-    this._resumeMovementAnimations(tokenEntry);
-  } catch (error) {
-    GameErrors.rendering(error, { component: 'Token3DAdapter', operation: 'setupAnimations' });
+  } finally {
+    action.stop();
   }
 }
 
@@ -297,7 +145,11 @@ async function _resolveAnimationClip(descriptor, fallbackClip, options = {}) {
 
   const mergedOptions =
     descriptor && typeof descriptor === 'object'
-      ? { ...options, preserveRootMotion: descriptor.preserveRootMotion === true }
+      ? {
+          ...options,
+          preserveRootMotion: descriptor.preserveRootMotion === true,
+          retarget: descriptor.retarget ?? options.retarget,
+        }
       : options;
 
   if (typeof descriptor === 'string') {
@@ -317,80 +169,65 @@ async function _resolveAnimationClip(descriptor, fallbackClip, options = {}) {
 
 async function _loadAnimationClip(path, options = {}) {
   if (!path) return null;
-  const cacheKey = this._buildAnimationCacheKey(path, options.targetCacheKey);
+  const cacheKey = this._buildAnimationCacheKey(path, options.targetCacheKey, options.retarget);
   if (this._animationClipCache.has(cacheKey)) {
-    const cached = this._animationClipCache.get(cacheKey);
-    return cached ? cached.clone() : null;
+    const cached = await this._animationClipCache.get(cacheKey);
+    return cached.clone();
   }
-
+  const loading = (async () => {
+    const source = await this._loadAnimationSource(path);
+    return options.retarget === true
+      ? this._retargetAnimationClip(source.clip, source.rig, options.targetRig)
+      : source.clip;
+  })();
+  this._animationClipCache.set(cacheKey, loading);
   try {
-    const three = await this._getThree();
-    const FBXLoaderCtor = await this._getFBXLoaderCtor();
-    if (!three || !FBXLoaderCtor) {
-      this._animationClipCache.set(cacheKey, null);
-      return null;
-    }
-    const variants = this._buildPathVariants(path);
-    let clip = null;
-    let sourceRoot = null;
-    for (const url of variants) {
-      try {
-        const loader = new FBXLoaderCtor();
-        const object = await this._loadFBX(loader, url);
-        if (object?.animations?.length) {
-          clip = this._selectPrimaryClip(object.animations);
-          sourceRoot = object;
-          break;
-        }
-      } catch (_) {
-        /* try next */
-      }
-    }
-    if (clip && options.targetRoot) {
-      clip = await this._retargetAnimationClip(clip, sourceRoot, options.targetRoot, options);
-    }
-    if (clip) {
-      this._animationClipCache.set(cacheKey, clip);
-      return clip.clone();
-    }
-    this._animationClipCache.set(cacheKey, null);
-    return null;
-  } catch (_) {
-    this._animationClipCache.set(cacheKey, null);
-    return null;
+    const clip = await loading;
+    this._animationClipCache.set(cacheKey, clip);
+    return clip.clone();
+  } catch (error) {
+    this._animationClipCache.delete(cacheKey);
+    throw error;
   }
 }
 
-function _buildAnimationCacheKey(path, targetKey) {
+async function _loadAnimationSource(path) {
+  const cacheKey = path.toLowerCase();
+  if (this._animationSourceCache.has(cacheKey)) {
+    return this._animationSourceCache.get(cacheKey);
+  }
+  const loading = (async () => {
+    const [three, FBXLoaderCtor] = await Promise.all([this._getThree(), this._getFBXLoaderCtor()]);
+    if (!three || !FBXLoaderCtor) throw new Error('FBX animation loading is unavailable');
+    const variants = this._buildPathVariants(path);
+    for (const url of variants) {
+      const object = await this._loadFBX(new FBXLoaderCtor(), url);
+      const clip = this._selectPrimaryClip(object?.animations);
+      if (clip) {
+        return { clip, rig: cloneHumanoidRig(object, three) };
+      }
+    }
+    throw new Error(`Unable to load configured FBX animation: ${path}`);
+  })();
+  this._animationSourceCache.set(cacheKey, loading);
+  try {
+    return await loading;
+  } catch (error) {
+    this._animationSourceCache.delete(cacheKey);
+    throw error;
+  }
+}
+
+function _buildAnimationCacheKey(path, targetKey, retarget) {
   const base = path?.toLowerCase?.() || String(path || '');
-  if (!targetKey) return base;
-  return `${base}::${targetKey}`;
+  return `${base}::${targetKey || 'source'}::${retarget === true ? 'retarget' : 'reference'}`;
 }
 
 // ── Retargeting ───────────────────────────────────────────────────
 
-async function _retargetAnimationClip(clip, sourceRoot, targetRoot, options = {}) {
-  if (!clip || !targetRoot || !sourceRoot) return clip;
-  try {
-    const SkeletonUtils = await this._getSkeletonUtils();
-    if (SkeletonUtils?.retargetClip) {
-      const targetMesh = this._findFirstSkinnedMesh(targetRoot) || targetRoot;
-      const sourceMesh = this._findFirstSkinnedMesh(sourceRoot) || sourceRoot;
-      if (targetMesh && sourceMesh) {
-        const targetClone = SkeletonUtils.clone ? SkeletonUtils.clone(targetMesh) : null;
-        const sourceClone = SkeletonUtils.clone ? SkeletonUtils.clone(sourceMesh) : null;
-        const targetForRetarget = targetClone || targetMesh.clone?.(true) || targetMesh;
-        const sourceForRetarget = sourceClone || sourceMesh.clone?.(true) || sourceMesh;
-        const retargeted = SkeletonUtils.retargetClip(targetForRetarget, sourceForRetarget, clip, {
-          useFirstFramePosition: options.preserveRootMotion ? false : true,
-        });
-        if (retargeted) return retargeted;
-      }
-    }
-  } catch (_) {
-    /* ignore retarget errors */
-  }
-  return clip;
+async function _retargetAnimationClip(clip, sourceRoot, targetRoot) {
+  const [three, skeletonUtils] = await Promise.all([this._getThree(), this._getSkeletonUtils()]);
+  return retargetHumanoidClip(clip, sourceRoot, targetRoot, three, skeletonUtils);
 }
 
 // ── Clip Utilities ───────────────────────────────────────────────
@@ -486,6 +323,8 @@ function _buildMovementProfile(movementOverrides = {}, actions = {}, clips = {})
   profile.climbClipDuration = this._extractClipDuration(actions.climb) || clips.climb || 0;
   profile.climbWallClipDuration =
     this._extractClipDuration(actions.climbWall) || clips.climbWall || profile.climbClipDuration;
+  profile.climbWallDownClipDuration =
+    this._extractClipDuration(actions.climbWallDown) || clips.climbWallDown || 0;
   profile.hardLandingClipDuration =
     this._extractClipDuration(actions.hardLanding) || clips.hardLanding || 0;
   profile.fallToRollClipDuration =
@@ -659,6 +498,84 @@ function hasAnimation(tokenEntry, key) {
   return !!data?.actions?.[key];
 }
 
+async function playTokenAction(tokenEntry, commandId) {
+  const definition = getManualAction(commandId);
+  if (!definition) throw new Error(`Unknown manual action: ${commandId}`);
+  const data = this._tokenAnimationData.get(tokenEntry);
+  if (!data) throw new Error('Creature animations are not ready yet');
+  if (data.loadingManualAction) throw new Error('Another creature action is still loading');
+  const requireGrounded = () => {
+    if (
+      this.isMovementInProgress(tokenEntry) ||
+      this.isWallAttached(tokenEntry) ||
+      this._movementRoutes.has(tokenEntry)
+    ) {
+      throw new Error("Finish this creature's movement or climb before playing a manual action");
+    }
+    if (this._tokenAnimationData.get(tokenEntry) !== data || !tokenEntry.__threeMesh) {
+      throw new Error('The creature was removed while this action was loading');
+    }
+  };
+  requireGrounded();
+  const availability = this.getManualActionAvailability(tokenEntry, commandId);
+  if (!availability.allowed) throw new Error(availability.reason);
+  data.loadingManualAction = commandId;
+  try {
+    const choices = definition.choices?.filter((key) => data.actions[key]);
+    const key = choices?.length
+      ? choices[Math.floor(Math.random() * choices.length)]
+      : definition.animation?.key;
+    if (!key) throw new Error(`Manual action has no available animation: ${commandId}`);
+    const descriptors = [definition.animation, definition.returnAnimation].filter(Boolean);
+    for (const descriptor of descriptors) {
+      if (data.actions[descriptor.key]) continue;
+      const clip = await this._resolveAnimationClip(descriptor, null, data.clipOptions);
+      if (!clip) throw new Error(`Manual action animation is unavailable: ${commandId}`);
+      requireGrounded();
+      const three = await this._getThree();
+      requireGrounded();
+      const action = data.mixer.clipAction(clip);
+      this._configureAction(action, descriptor, three);
+      data.actions[descriptor.key] = action;
+      data.clips[descriptor.key] = clip.duration;
+    }
+    const placement = await this._prepareManualActionMotion(tokenEntry, definition, key);
+    requireGrounded();
+    if (definition.revertTo && !data.actions[definition.revertTo]) {
+      throw new Error(`Manual action recovery is unavailable: ${definition.revertTo}`);
+    }
+    const played = this.playTokenAnimation(tokenEntry, key, definition.playback);
+    if (!played || data.current !== key) throw new Error(`Unable to start action: ${commandId}`);
+    const manual = this._manualAnimationStates.get(tokenEntry);
+    manual.coverPlacement = placement;
+    this._movementRangeDirty = true;
+    if (definition.revertTo || placement) {
+      const action = data.actions[key];
+      const finished = (event) => {
+        if (event.action !== action) return;
+        if (this._getManualAnimationState(tokenEntry)?.key !== key) return;
+        if (placement) {
+          this._finishCoverPlacement(tokenEntry, placement);
+          data.mixer.removeEventListener('finished', finished);
+          return;
+        }
+        this._clearManualAnimationState(tokenEntry);
+        this._setAnimation(tokenEntry, definition.revertTo, {
+          fadeIn: definition.playback.fadeOut,
+          fadeOut: definition.playback.fadeOut,
+          __releaseManual: true,
+        });
+      };
+      data.mixer.addEventListener('finished', finished);
+      this._manualAnimationStates.get(tokenEntry).onRelease = () =>
+        data.mixer.removeEventListener('finished', finished);
+    }
+    return true;
+  } finally {
+    data.loadingManualAction = null;
+  }
+}
+
 function playTokenAnimation(tokenEntry, animationKey, options = {}) {
   if (!tokenEntry || !animationKey) return false;
   const data = this._tokenAnimationData.get(tokenEntry);
@@ -697,6 +614,8 @@ function playTokenAnimation(tokenEntry, animationKey, options = {}) {
   this._setManualAnimationState(tokenEntry, {
     key: animationKey,
     allowRootMotion: !!options.allowRootMotion,
+    inPlace: options.inPlace === true,
+    blocksMovement: options.blocksMovement === true,
     lockUntil,
     releaseOnMovement: options.releaseOnMovement === true,
   });
@@ -744,7 +663,10 @@ function _setManualAnimationState(tokenEntry, state) {
 
 function _clearManualAnimationState(tokenEntry) {
   if (!tokenEntry) return;
+  const state = this._manualAnimationStates.get(tokenEntry);
   this._manualAnimationStates.delete(tokenEntry);
+  state?.onRelease?.();
+  this._movementRangeDirty = true;
   this._applyManualHeightOffset(tokenEntry, null);
 }
 
@@ -769,9 +691,13 @@ function _applyManualHeightOffset(tokenEntry, manualState) {
       mesh.position.y += lift - previous;
     }
     this._updateSelectionColliderHeight(mesh);
-    this._updateSelectionIndicatorHeight(tokenEntry);
-  } catch (_) {
-    /* ignore position adjustments */
+    this._updateSelectionIndicatorTransform(tokenEntry);
+  } catch (error) {
+    GameErrors.rendering(error, {
+      component: 'Token3DAdapter',
+      operation: 'adjustManualAnimationHeight',
+      tokenId: tokenEntry.id,
+    });
   }
 }
 
@@ -780,7 +706,7 @@ function _getManualAnimationState(tokenEntry) {
   const state = this._manualAnimationStates.get(tokenEntry);
   if (!state) return null;
   if (Number.isFinite(state.lockUntil) && state.lockUntil <= Date.now()) {
-    this._manualAnimationStates.delete(tokenEntry);
+    this._clearManualAnimationState(tokenEntry);
     return null;
   }
   return state;
@@ -814,8 +740,10 @@ function _scheduleManualAnimationRevert(tokenEntry, delayMs, revertKey, revertOp
 
 export function installAnimationMethods(prototype) {
   prototype._setupAnimationSet = _setupAnimationSet;
+  prototype._alignLedgeHangGrip = _alignLedgeHangGrip;
   prototype._resolveAnimationClip = _resolveAnimationClip;
   prototype._loadAnimationClip = _loadAnimationClip;
+  prototype._loadAnimationSource = _loadAnimationSource;
   prototype._buildAnimationCacheKey = _buildAnimationCacheKey;
   prototype._retargetAnimationClip = _retargetAnimationClip;
   prototype._cloneClip = _cloneClip;
@@ -826,6 +754,7 @@ export function installAnimationMethods(prototype) {
   prototype._extractClipDuration = _extractClipDuration;
   prototype._setAnimation = _setAnimation;
   prototype.hasAnimation = hasAnimation;
+  prototype.playTokenAction = playTokenAction;
   prototype.playTokenAnimation = playTokenAnimation;
   prototype._clearManualAnimationRevert = _clearManualAnimationRevert;
   prototype._setManualAnimationState = _setManualAnimationState;

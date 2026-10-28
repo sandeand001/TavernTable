@@ -11,6 +11,8 @@ import {
   SELECTION_COLLIDER_HEIGHT,
   SELECTION_COLLIDER_RADIUS_RATIO,
 } from '../../config/token-adapter/MannequinConfig.js';
+import { cloneHumanoidRig } from './HumanoidRig.js';
+import { GameErrors } from '../../utils/error/ErrorHandler.js';
 
 // ── Mesh Creation ───────────────────────────────────────────────
 
@@ -54,6 +56,8 @@ function _attachPromise(tokenEntry, promise) {
     Object.defineProperty(tokenEntry, '__threeMeshPromise', {
       value: promise,
       enumerable: false,
+      writable: true,
+      configurable: true,
     });
   } catch (_) {
     tokenEntry.__threeMeshPromise = promise;
@@ -80,16 +84,17 @@ async function _createBillboardToken(tokenEntry, scene) {
 }
 
 async function _create3DToken(tokenEntry, scene, config) {
+  let container;
   try {
     const typeKey = (tokenEntry.type || tokenEntry.creature?.type || '').toLowerCase();
     const templateBundle = await this._loadModelTemplate(typeKey, config);
-    if (!templateBundle) return null;
+    if (!templateBundle) throw new Error(`Unable to load character model: ${config.path}`);
     const clone = await this._cloneTemplate(templateBundle.template);
-    if (!clone) return null;
+    if (!clone) throw new Error(`Unable to clone character model: ${config.path}`);
     const three = await this._getThree();
     if (!three) return null;
 
-    const container = new three.Group();
+    container = new three.Group();
     const baseName = tokenEntry.id || tokenEntry.creature?.type || typeKey || 'unk';
     container.name = `Token3D:${baseName}`;
     container.add(clone);
@@ -145,7 +150,15 @@ async function _create3DToken(tokenEntry, scene, config) {
     await this._setupAnimationSet(tokenEntry, container, config, templateBundle);
 
     return container;
-  } catch (_) {
+  } catch (error) {
+    if (container) scene.remove(container);
+    if (container && tokenEntry.__threeMesh === container) this.onTokenRemoved(tokenEntry);
+    GameErrors.rendering(error, {
+      component: 'Token3DAdapter',
+      operation: 'create3DToken',
+      tokenId: tokenEntry.id,
+      path: config.path,
+    });
     return null;
   }
 }
@@ -271,6 +284,7 @@ async function _loadModelTemplate(typeKey, config) {
         }
       }
       if (!loaded) return null;
+      const rig = cloneHumanoidRig(loaded, three);
       const templateRoot = new three.Group();
       templateRoot.name = `TokenTemplate:${key}`;
       templateRoot.add(loaded);
@@ -294,13 +308,15 @@ async function _loadModelTemplate(typeKey, config) {
       const maxXZ = Math.max(size.x, size.z, 0.0001);
       let scaleFactor = config.scale;
       if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
-        scaleFactor = desired / maxXZ;
+        const extent = config.normalization === 'height' ? Math.max(size.y, 0.0001) : maxXZ;
+        scaleFactor = desired / extent;
       }
       templateRoot.scale.setScalar(scaleFactor);
       templateRoot.updateMatrixWorld(true);
 
       return {
         template: templateRoot,
+        rig,
         animations: Array.isArray(loaded.animations) ? loaded.animations : [],
       };
     })();
@@ -428,22 +444,6 @@ function _updateSelectionColliderHeight(container) {
   }
 }
 
-function _updateSelectionIndicatorHeight(tokenEntry) {
-  const mesh = tokenEntry?.__threeMesh;
-  const indicator = tokenEntry?.__ttSelectionIndicator;
-  if (!mesh || !indicator || !indicator.position) return;
-  const manualOffset = Number.isFinite(mesh.userData?.__ttManualVerticalOffset)
-    ? mesh.userData.__ttManualVerticalOffset
-    : 0;
-  const baseY = Number.isFinite(indicator.userData?.__ttBaseY)
-    ? indicator.userData.__ttBaseY
-    : indicator.position.y;
-  const nextY = baseY - manualOffset;
-  if (indicator.position.y !== nextY) {
-    indicator.position.y = nextY;
-  }
-}
-
 function _positionMesh(mesh, tokenEntry) {
   try {
     const gm = this.gameManager;
@@ -521,6 +521,5 @@ export function installMeshFactoryMethods(prototype) {
   prototype._getMeshVerticalOffset = _getMeshVerticalOffset;
   prototype._attachSelectionCollider = _attachSelectionCollider;
   prototype._updateSelectionColliderHeight = _updateSelectionColliderHeight;
-  prototype._updateSelectionIndicatorHeight = _updateSelectionIndicatorHeight;
   prototype._positionMesh = _positionMesh;
 }

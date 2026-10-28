@@ -186,6 +186,77 @@ describe('Mannequin root motion with a real Three.js hierarchy', () => {
     expect(Array.from(climbWall.tracks[0].values)).toEqual([0, 100, 0, 0, 220, 0]);
   });
 
+  test('rebases the authored descent to the same wall anchor while retaining its downward curve', () => {
+    const { adapter, token } = createRig();
+    const climbWall = new AnimationClip('up', 2, [
+      new VectorKeyframeTrack('Hips.position', [0, 2], [0, 100, 0, 0, 220, 0]),
+    ]);
+    const climbWallDown = new AnimationClip('down', 2, [
+      new VectorKeyframeTrack('Hips.position', [0, 1, 2], [0, 227, 0, 0, 180, 0, 0, 101, 0]),
+    ]);
+    const prepared = adapter._prepareClimbRootMotion(token, { climbWall, climbWallDown });
+    expect(prepared.climbWallDown).not.toBe(climbWallDown);
+    expect(Array.from(prepared.climbWallDown.tracks[0].values)).toEqual([
+      0, 100, 0, 0, 100, 0, 0, 100, 0,
+    ]);
+    expect(prepared.rootMotion.wallDown.displacementLocal.y).toBe(-126);
+    expect(prepared.rootMotion.wallDown.interpolant.evaluate(1)[1]).toBe(180);
+    expect(Array.from(climbWallDown.tracks[0].values)).toEqual([0, 227, 0, 0, 180, 0, 0, 101, 0]);
+  });
+
+  test('derives a static ledge hang from the mantle entry pose, not a mid-crouch frame', () => {
+    const { adapter, token } = createRig();
+    const climb = new AnimationClip('mantle', 2, [
+      new VectorKeyframeTrack('Hips.position', [0, 2], [0, 100, 0, 0, 300, 40]),
+      new QuaternionKeyframeTrack('Hips.quaternion', [0, 2], [0, 0, 0, 1, 0, 0.6, 0, 0.8]),
+    ]);
+    const prepared = adapter._prepareClimbRootMotion(token, { climb });
+    expect(prepared.ledgeHang.duration).toBeCloseTo(1 / 30);
+    for (const track of prepared.ledgeHang.tracks) {
+      expect(track.times).toHaveLength(2);
+      expect(track.times[0]).toBe(0);
+      expect(track.times[1]).toBeCloseTo(1 / 30);
+      const size = track.getValueSize();
+      expect(Array.from(track.values.slice(0, size))).toEqual(Array.from(track.values.slice(size)));
+    }
+    expect(prepared.ledgeHang.tracks[0].values[1]).toBe(100);
+    expect(climb.duration).toBe(2);
+    expect(climb.tracks[0].values[4]).toBe(300);
+  });
+
+  test.each(['climb', 'climbWall'])(
+    'retains the outgoing ledge-grip offset while blending into %s',
+    (key) => {
+      const { adapter, token, mesh, hips } = createRig();
+      const mixer = new AnimationMixer(mesh);
+      const ledgeHang = mixer.clipAction(
+        new AnimationClip('hang', 1, [
+          new VectorKeyframeTrack('Hips.position', [0, 1], [30, 100, 10, 30, 100, 10]),
+        ])
+      );
+      const next = mixer.clipAction(
+        new AnimationClip(key, 1, [
+          new VectorKeyframeTrack('Hips.position', [0, 1], [20, 100, 0, 20, 100, 0]),
+        ])
+      );
+      ledgeHang.setEffectiveWeight(0.75).play();
+      ledgeHang.paused = true;
+      next.setEffectiveWeight(0.25).play();
+      next.time = 0.5;
+      mixer.update(0);
+      adapter._tokenAnimationData.set(token, { actions: { ledgeHang, [key]: next }, current: key });
+      adapter._movementStates.set(token, {
+        token,
+        mesh,
+        phase: 'climb-surface',
+        wallMotion: { clip: key },
+      });
+      adapter._neutralizeRootMotion(token);
+      expect(hips.position.x).toBeCloseTo(key === 'climb' ? 27.5 : 22.5);
+      expect(hips.position.z).toBeCloseTo(7.5);
+    }
+  );
+
   test.each([
     ['flat landing', 3.5, false, true],
     ['another cliff', 3.5, true, false],

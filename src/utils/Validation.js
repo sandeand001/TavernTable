@@ -7,19 +7,8 @@
 
 // ── Imports ────────────────────────────────────────────────────
 import { GRID_CONFIG, CREATURE_SCALES, DICE_CONFIG } from '../config/GameConstants.js';
+import { normalizeCreatureType } from '../config/CharacterCatalog.js';
 import { logger } from './logger/Logger.js';
-
-// ── Private Helpers ────────────────────────────────────────────
-const _CREATURE_TYPE_ALIASES = {
-  'defeated-doll': 'mannequin',
-  'female-humanoid': 'mannequin',
-};
-
-function _normalizeCreatureType(creatureType) {
-  if (typeof creatureType !== 'string' || creatureType.length === 0) return '';
-  const lower = creatureType.toLowerCase();
-  return _CREATURE_TYPE_ALIASES[lower] || lower;
-}
 
 // ── Type Validators ────────────────────────────────────────────
 /**
@@ -135,7 +124,7 @@ export const GameValidators = {
       return result;
     }
 
-    const normalized = _normalizeCreatureType(creatureType);
+    const normalized = normalizeCreatureType(creatureType);
 
     if (!validTypes.includes(normalized)) {
       result.isValid = false;

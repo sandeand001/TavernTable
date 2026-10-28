@@ -85,8 +85,9 @@ export class ThreeSceneManager {
     this._isoPitch = (overrideDeg * Math.PI) / 180;
     // Simplified implementation: removed legacy vertical persistence, parity scaling, and frustum lock.
     // We keep a constant board-based frustum so pitch directly affects the vertical compression visually.
-    // Pan target (world XZ the camera looks at); null = use board centre
+    // Camera focus in world space; null X/Z use the board centre.
     this._panCx = null;
+    this._panCy = 0;
     this._panCz = null;
     // Shared zoom state: orthographic extents or perspective orbit distance.
     this._zoom = 1.0; // 1 == baseline
@@ -293,7 +294,8 @@ export class ThreeSceneManager {
       this._applyCameraBase({ cx: cols * 0.5, cz: rows * 0.5, span });
 
       // Canvas / renderer
-      this.canvas = document.createElement('canvas');
+      // Keep the fallback input surface so renderer recovery retains its event listeners.
+      this.canvas ||= document.createElement('canvas');
       this.canvas.setAttribute('data-three', 'true');
       Object.assign(this.canvas.style, {
         position: 'absolute',
@@ -354,7 +356,6 @@ export class ThreeSceneManager {
           /* ignore colorspace */
         }
         this.renderer.setPixelRatio(window.devicePixelRatio || 1);
-        this._resize();
         this._boundResize = () => this._resize();
         window.addEventListener('resize', this._boundResize);
         // Also debounce elevation parity sync so 3D height steps continue matching 2D pixel steps after viewport resize.
@@ -393,10 +394,13 @@ export class ThreeSceneManager {
         /* ignore */
       }
 
+      if (!this._testMode) this._resize();
+
       // Wheel (zoom) listener attached to container (fallback for legacy code paths)
       try {
         if (!this._wheelListener && container) {
           this._wheelListener = (e) => {
+            if (e.defaultPrevented) return;
             try {
               const dy = e.deltaY;
               const step = Math.exp(0.2); // ~1.22 per wheel notch
@@ -487,7 +491,8 @@ export class ThreeSceneManager {
       }
       if (typeof document === 'undefined') return false;
       const canvas = document.createElement('canvas');
-      const attrs = { failIfMajorPerformanceCaveat: true };
+      // Match the renderer's default: software-backed WebGL is still usable.
+      const attrs = { failIfMajorPerformanceCaveat: false };
       const gl =
         canvas.getContext('webgl2', attrs) ||
         canvas.getContext('webgl', attrs) ||
@@ -992,6 +997,7 @@ export class ThreeSceneManager {
     this._cameraNdc = null;
     this._cameraGroundPlane = null;
     this.canvas = null;
+    this.gameManager?.token3DAdapter?.disposeMovementRange?.();
     this.initialized = false;
   }
 }

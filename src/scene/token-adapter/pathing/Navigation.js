@@ -387,6 +387,7 @@ function navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
     state.pathActive = true;
     state.pathGoal = { gridX: pathGoalGridX, gridY: pathGoalGridY, world: pathGoalWorld };
     state.pathSpeedMode = speedMode;
+    state.pathMovementType = requestOptions.movementType || 'default';
     state.pathTolerance = pathTolerance;
     state.pathReached = false;
     state.pathKey = PATH_NAVIGATION_KEY;
@@ -471,6 +472,7 @@ function _clearPathState(state, options = {}) {
   state.pathActive = false;
   state.pathGoal = null;
   state.pathSpeedMode = null;
+  state.pathMovementType = null;
   state.pathKey = null;
   state.pathTolerance = 0;
   state.pathReached = false;
@@ -534,6 +536,7 @@ function _completePath(state) {
     return;
   }
 
+  if (this._advancePlannedMovement?.(state)) return;
   this._resetMovementState(state);
 }
 

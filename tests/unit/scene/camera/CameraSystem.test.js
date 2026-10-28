@@ -99,7 +99,7 @@ function oppositeEdges(manager) {
     .sort((a, b) => a.distance - b.distance);
 }
 
-function groundPoint(manager, x, y) {
+function groundPoint(manager, x, y, height = 0) {
   manager.camera.updateMatrixWorld(true);
   const raycaster = new three.Raycaster();
   raycaster.setFromCamera(
@@ -107,7 +107,7 @@ function groundPoint(manager, x, y) {
     manager.camera
   );
   return raycaster.ray.intersectPlane(
-    new three.Plane(new three.Vector3(0, 1, 0), 0),
+    new three.Plane(new three.Vector3(0, 1, 0), -height),
     new three.Vector3()
   );
 }
@@ -212,6 +212,70 @@ describe('Natural 3D perspective and tactical top-down', () => {
     const focus = project(manager, new three.Vector3(7, 0, 9));
     expect(focus.x).toBeCloseTo(manager.viewport.width / 2);
     expect(focus.y).toBeCloseTo(manager.viewport.height / 2);
+  });
+
+  test.each([
+    [true, false],
+    [false, false],
+    [true, true],
+  ])(
+    'elevated focus stays centered without zoom or orbit changes: iso=%s, topdown=%s',
+    (isoMode, topDown) => {
+      const manager = new CameraHarness();
+      manager._isoMode = isoMode;
+      manager._isoPitch = 0.65;
+      manager._zoom = 1.35;
+      manager._targetZoom = 1.8;
+      manager.reframe();
+      if (topDown) manager.setTopDownView(true);
+      const previous = manager.getCameraTarget();
+      const relative = manager.camera.position
+        .clone()
+        .sub(new three.Vector3(previous.x, previous.y || 0, previous.z));
+      const direction = manager.camera.getWorldDirection(new three.Vector3());
+      const angles = { yaw: manager._isoYaw, pitch: manager._isoPitch };
+
+      manager.setCameraTarget(7, 9, 6);
+
+      const point = project(manager, new three.Vector3(7, 6, 9));
+      expect(point.x).toBeCloseTo(manager.viewport.width / 2);
+      expect(point.y).toBeCloseTo(manager.viewport.height / 2);
+      expect(
+        manager.camera.position
+          .clone()
+          .sub(new three.Vector3(7, 6, 9))
+          .distanceTo(relative)
+      ).toBeLessThan(1e-6);
+      expect(
+        manager.camera.getWorldDirection(new three.Vector3()).distanceTo(direction)
+      ).toBeLessThan(1e-6);
+      expect(manager._isoYaw).toBe(angles.yaw);
+      expect(manager._isoPitch).toBe(angles.pitch);
+      expect(manager._zoom).toBe(1.35);
+      expect(manager._targetZoom).toBe(1.8);
+    }
+  );
+
+  test('pan, cursor zoom, orbit and view switches retain focus elevation until reset', () => {
+    const manager = new CameraHarness();
+    manager._isoPitch = 0.65;
+    manager.reframe();
+    manager.setCameraTarget(7, 9, 6);
+    const cursor = groundPoint(manager, 650, 420, 6);
+    manager.zoomAtScreenPoint(1.2, 650, 420);
+    expect(groundPoint(manager, 650, 420, 6).distanceTo(cursor)).toBeLessThan(1e-6);
+    manager.panBy(30, -20);
+    expect(manager.getCameraTarget().y).toBe(6);
+    manager.setIsoAngles({ yaw: 0.7, pitch: 0.5 });
+    manager.setTopDownView(true);
+    manager.setTopDownView(false);
+    expect(manager.getCameraTarget().y).toBe(6);
+    const target = manager.getCameraTarget();
+    const pixel = project(manager, new three.Vector3(target.x, target.y, target.z));
+    expect(pixel.x).toBeCloseTo(manager.viewport.width / 2);
+    expect(pixel.y).toBeCloseTo(manager.viewport.height / 2);
+    manager.resetCameraTarget();
+    expect(manager.getCameraTarget().y).toBe(0);
   });
 
   test('picking follows the active lens when switching views', () => {

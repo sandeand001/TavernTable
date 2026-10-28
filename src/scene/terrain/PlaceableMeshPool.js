@@ -10,6 +10,8 @@ import {
   debugSnapshot as _debugSnapshot,
 } from './PlaceablePoolLifecycle.js';
 import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
+import { createPlaceableModelGeometry } from './placeableModelGeometry.js';
+import { fitGeneratedTreeScale } from './treeSupport.js';
 import {
   disposePlaceableMaterials,
   preparePlaceableMaterials,
@@ -220,6 +222,33 @@ export class PlaceableMeshPool {
       (placeable?.type === 'plant' ? 'billboard' : 'ground');
     group.profile = profile;
     const scale = this._resolveWorldScale(placeable, profile);
+    if (
+      profile === 'model' &&
+      placeable.generatedBiome === true &&
+      /^tree-/.test(placeable.placeableId || '')
+    ) {
+      try {
+        const fit = fitGeneratedTreeScale(gm, placeable, group.supportBounds);
+        if (fit === null) {
+          logMeshPoolDebug('[PlaceableMeshPool] unsupported generated tree site skipped', {
+            modelKey,
+            gridX: placeable.gridX,
+            gridY: placeable.gridY,
+          });
+          return null;
+        }
+        scale.x *= fit;
+        scale.y *= fit;
+        scale.z *= fit;
+      } catch (error) {
+        logger.error(
+          '[PlaceableMeshPool] generated tree support failed',
+          { modelKey, gridX: placeable.gridX, gridY: placeable.gridY, error: error.message },
+          LOG_CATEGORY.RENDERING
+        );
+        return null;
+      }
+    }
     placeable.__worldScale = scale;
     const heightOffset = Number.isFinite(placeable?.heightOffset)
       ? placeable.heightOffset
@@ -336,7 +365,7 @@ export class PlaceableMeshPool {
       .then((group) => {
         if (!group) return null;
         if (epoch !== this._clearEpoch) {
-          // Geometry/textures are cached; this unpublished group owns its material clones.
+          group.instancedMesh.geometry.dispose();
           disposePlaceableMaterials(group.instancedMesh.material);
           group.instancedMesh.dispose?.();
           return null;
@@ -373,20 +402,22 @@ export class PlaceableMeshPool {
       // ── Model asset path (OBJ/FBX) ─────────────────────────────────
       const modelKey = placeable?.modelKey;
       if (modelKey && this.gameManager?.modelAssetCache?.getModel) {
+        let modelGeom = null;
+        let modelMat = null;
         try {
           const modelRoot = await this.gameManager.modelAssetCache.getModel(modelKey);
-          let modelGeom = null;
-          let modelMat = null;
-          if (modelRoot) {
-            (modelRoot.traverse || function () {}).call(modelRoot, (child) => {
-              if (!modelGeom && child.isMesh && child.geometry) {
-                modelGeom = child.geometry;
-                modelMat = child.material;
-              }
-            });
+          if (!modelRoot) {
+            logger.warn(
+              '[PlaceableMeshPool] requested model is unavailable',
+              { key, modelKey },
+              LOG_CATEGORY.RENDERING
+            );
+            return null;
           }
-          if (modelGeom && modelMat) {
-            modelMat = preparePlaceableMaterials(three, modelMat, appearance);
+          const prepared = createPlaceableModelGeometry(three, modelRoot);
+          modelGeom = prepared.geometry;
+          if (modelGeom && prepared.material) {
+            modelMat = preparePlaceableMaterials(three, prepared.material, appearance);
             const instanced = new three.InstancedMesh(modelGeom, modelMat, capacity);
             instanced.name = `Placeables:${key}`;
             try {
@@ -414,14 +445,19 @@ export class PlaceableMeshPool {
               freeIndices: [],
               count: 0,
               baseColor: baseColorRef,
+              supportBounds: prepared.supportBounds,
             };
           }
+          throw new Error('Prepared static model has no geometry or material');
         } catch (modelErr) {
+          modelGeom?.dispose();
+          if (modelMat) disposePlaceableMaterials(modelMat);
           logger.warn(
-            '[PlaceableMeshPool] model load failed, using placeholder',
+            '[PlaceableMeshPool] model preparation failed',
             { key, modelKey, error: modelErr.message },
             LOG_CATEGORY.RENDERING
           );
+          return null;
         }
       }
 
