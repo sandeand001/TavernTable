@@ -18,6 +18,7 @@
  */
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
+import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TOKEN_COMMANDS } from '../config/TokenCommandConfig.js';
 import { CHARACTER_DEFINITIONS } from '../config/CharacterCatalog.js';
 import { MANUAL_ACTIONS } from '../config/HumanoidActionCatalog.js';
@@ -26,6 +27,7 @@ import {
   getCreatureButtons,
   getFacingButton,
   getTerrainToolButtons,
+  getTerrainWallControls,
   getGridSizeInputs,
   getTerrainResetButton,
   getElevationScaleControls,
@@ -45,6 +47,9 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
 import { rollDice } from '../systems/dice/dice.js';
+import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLauncher.js';
+import { connectCharacterServices } from './characters/characterServices.js';
+import CampaignAutosave from '../campaigns/CampaignAutosave.js';
 
 // ── Constants ──────────────────────────────────────────────────
 const TOKEN_DRAG_MIME = 'application/taverntable-token';
@@ -53,6 +58,7 @@ const TOKEN_DRAG_MIME = 'application/taverntable-token';
 
 let radialMenuInstance = null;
 let characterSheetWindow = null;
+let applicationStartup = null;
 
 function getRadialMenuInstance() {
   if (!radialMenuInstance) {
@@ -76,7 +82,16 @@ async function handleRadialCommand(actionId, token) {
       if (!gm) throw new Error('Character sheets require an active game session');
       if (!characterSheetWindow || characterSheetWindow.gameManager !== gm) {
         characterSheetWindow?.destroy();
-        characterSheetWindow = new CharacterSheetWindow({ gameManager: gm }).attach();
+        characterSheetWindow = new CharacterSheetWindow({
+          gameManager: gm,
+          initialBounds: { left: 32, top: 56, width: 860, height: 760 },
+          onOpenCompendium: (entryId) => {
+            if (!window.sidebarController?.openCompendium) {
+              throw new Error('The compendium sidebar is not available');
+            }
+            return window.sidebarController.openCompendium(entryId);
+          },
+        }).attach();
       }
       characterSheetWindow.open(token);
       return;
@@ -426,15 +441,65 @@ function attachDynamicUIHandlers() {
     }
 
     // Terrain tool buttons
-    const { raiseBtn, lowerBtn } = getTerrainToolButtons();
-    if (raiseBtn && !raiseBtn.dataset.boundTerrainHandler) {
-      raiseBtn.addEventListener('click', () => setTerrainTool('raise'));
-      raiseBtn.dataset.boundTerrainHandler = 'true';
+    const { raiseBtn, lowerBtn, wallBtn } = getTerrainToolButtons();
+    for (const [tool, button] of [
+      ['raise', raiseBtn],
+      ['lower', lowerBtn],
+      ['wall', wallBtn],
+    ]) {
+      if (button && !button.dataset.boundTerrainHandler) {
+        button.addEventListener('click', () => setTerrainTool(tool));
+        button.dataset.boundTerrainHandler = 'true';
+      }
     }
-    if (lowerBtn && !lowerBtn.dataset.boundTerrainHandler) {
-      lowerBtn.addEventListener('click', () => setTerrainTool('lower'));
-      lowerBtn.dataset.boundTerrainHandler = 'true';
+
+    const { heightInput: wallHeightSelect, fillSelect: wallFillSelect } = getTerrainWallControls();
+    if (wallHeightSelect && !wallHeightSelect.dataset.boundWallHandler) {
+      const options = document.createDocumentFragment();
+      for (let level = TERRAIN_CONFIG.MIN_HEIGHT; level <= TERRAIN_CONFIG.MAX_HEIGHT; level++) {
+        const option = document.createElement('option');
+        option.value = String(level);
+        option.textContent = String(level);
+        options.append(option);
+      }
+      wallHeightSelect.replaceChildren(options);
+      wallHeightSelect.addEventListener('change', () => {
+        const coordinator = window.gameManager?.terrainCoordinator;
+        try {
+          if (!coordinator) throw new Error('Terrain editing is not ready yet');
+          const level = wallHeightSelect.value === '' ? NaN : Number(wallHeightSelect.value);
+          coordinator.setWallTopLevel(level);
+          wallHeightSelect.value = String(coordinator.wallTopLevel);
+        } catch (error) {
+          if (Number.isInteger(coordinator?.wallTopLevel)) {
+            wallHeightSelect.value = String(coordinator.wallTopLevel);
+          }
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            context: 'setWallTopLevel',
+          });
+        }
+      });
+      wallHeightSelect.dataset.boundWallHandler = 'true';
     }
+    if (wallFillSelect && !wallFillSelect.dataset.boundWallFillHandler) {
+      wallFillSelect.addEventListener('change', () => {
+        const coordinator = window.gameManager?.terrainCoordinator;
+        try {
+          if (!coordinator) throw new Error('Terrain editing is not ready yet');
+          coordinator.setWallFillMode(wallFillSelect.value);
+          wallFillSelect.value = coordinator.wallFillMode;
+        } catch (error) {
+          if (typeof coordinator?.wallFillMode === 'string') {
+            wallFillSelect.value = coordinator.wallFillMode;
+          }
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            context: 'setWallFillMode',
+          });
+        }
+      });
+      wallFillSelect.dataset.boundWallFillHandler = 'true';
+    }
+    syncTerrainToolControls(window.gameManager?.terrainCoordinator?.brush?.tool || 'raise');
 
     // Terrain reset
     const resetTerrainBtn = getTerrainResetButton();
@@ -604,6 +669,9 @@ function attachDynamicUIHandlers() {
 function wireTerrainStyleControls() {}
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('taverntable:terrainToolChanged', (event) => {
+    syncTerrainToolControls(event.detail?.tool);
+  });
   window.addEventListener('taverntable:tokenRadial', (event) => {
     try {
       showRadialMenu(event?.detail || {});
@@ -648,9 +716,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Public API (Terrain Controls) ──────────────────────────
 
+function syncTerrainToolControls(tool) {
+  const { raiseBtn, lowerBtn, wallBtn } = getTerrainToolButtons();
+  for (const [value, button] of [
+    ['raise', raiseBtn],
+    ['lower', lowerBtn],
+    ['wall', wallBtn],
+  ]) {
+    if (!button) continue;
+    const active = tool === value;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  const { controlsEl, heightInput, fillSelect, brushControlsEl } = getTerrainWallControls();
+  if (controlsEl) controlsEl.hidden = tool !== 'wall';
+  if (brushControlsEl) brushControlsEl.hidden = tool === 'wall';
+  const level = window.gameManager?.terrainCoordinator?.wallTopLevel;
+  if (heightInput && Number.isInteger(level)) heightInput.value = String(level);
+  const fillMode = window.gameManager?.terrainCoordinator?.wallFillMode;
+  if (fillSelect && typeof fillMode === 'string') fillSelect.value = fillMode;
+}
+
 /**
  * Set the active terrain tool
- * @param {string} tool - Tool name ('raise' or 'lower')
+ * @param {string} tool - Tool name ('raise', 'lower', or 'wall')
  */
 function setTerrainTool(tool) {
   try {
@@ -661,32 +750,12 @@ function setTerrainTool(tool) {
     // Update tool in game manager
     window.gameManager.setTerrainTool(tool);
 
-    // Update UI button states
-    const { raiseBtn, lowerBtn } = getTerrainToolButtons();
-
-    if (raiseBtn && lowerBtn) {
-      // Remove active class from all buttons
-      raiseBtn.classList.remove('active');
-      lowerBtn.classList.remove('active');
-
-      // Add active class to selected tool
-      if (tool === 'raise') {
-        raiseBtn.classList.add('active');
-        // accessibility state
-        raiseBtn.setAttribute('aria-pressed', 'true');
-        lowerBtn.setAttribute('aria-pressed', 'false');
-      } else if (tool === 'lower') {
-        lowerBtn.classList.add('active');
-        // accessibility state
-        lowerBtn.setAttribute('aria-pressed', 'true');
-        raiseBtn.setAttribute('aria-pressed', 'false');
-      }
-    }
+    syncTerrainToolControls(window.gameManager.terrainCoordinator?.brush?.tool || tool);
 
     logger.log(LOG_LEVEL.DEBUG, 'Terrain tool selected', LOG_CATEGORY.USER, {
       context: 'setTerrainTool',
       selectedTool: tool,
-      uiUpdated: !!(raiseBtn && lowerBtn),
+      uiUpdated: !!getTerrainToolButtons().wallBtn,
     });
   } catch (error) {
     new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
@@ -831,16 +900,77 @@ function resetTerrain() {
  * Initialize the application when the page loads
  * Sets up the game manager and handles any initialization errors
  */
-async function initializeApplication() {
+function initializeApplication() {
+  if (!applicationStartup) applicationStartup = startCampaignApplication();
+  return applicationStartup;
+}
+
+async function startCampaignApplication() {
+  let loading = null;
+  const previousInert = new Map();
+  const pauseControls = () => {
+    for (const element of document.body.children) {
+      if (element === loading || previousInert.has(element)) continue;
+      previousInert.set(element, element.inert);
+      element.inert = true;
+    }
+  };
   try {
     // Validate gameManager exists
     if (!window.gameManager) {
       throw new Error('GameManager not found. Application cannot start.');
     }
 
-    // Initialize the game manager
-    await window.gameManager.initialize();
+    const manager = window.gameManager;
+    const services = await new CampaignLauncher().choose();
+    loading = document.createElement('section');
+    loading.className = 'campaign-picker';
+    loading.setAttribute('role', 'dialog');
+    loading.setAttribute('aria-modal', 'true');
+    loading.setAttribute('aria-label', 'Opening campaign');
+    loading.tabIndex = -1;
+    const loadingMessage = document.createElement('div');
+    loadingMessage.className = 'campaign-shell';
+    loadingMessage.setAttribute('role', 'status');
+    loadingMessage.textContent = 'Restoring your campaign. Please wait...';
+    loading.append(loadingMessage);
+    document.body.append(loading);
+    pauseControls();
+    loading.focus();
+    manager.campaignContext = services;
+    manager.campaign = services.campaign;
+    connectCharacterServices(manager, services);
+    const autosave = new CampaignAutosave({
+      gameManager: manager,
+      library: services.library,
+      combat: manager.characterServices.combat,
+      getRollLog: () => window.sidebarController.snapshotDiceLog(),
+      restoreRollLog: (entries) => window.sidebarController.restoreDiceLog(entries),
+    });
+    services.autosave = autosave;
+    mountCampaignControls(manager, services);
+    pauseControls();
+    await manager.initialize();
+    await manager.enableHybridRender();
+    if (!manager.token3DAdapter || !manager.is3DModeActive()) {
+      throw new Error('The 3D world could not finish initializing');
+    }
+    pauseControls();
+    await autosave.start(services.scene);
+    for (const [element, inert] of previousInert) element.inert = inert;
+    loading.remove();
   } catch (error) {
+    if (loading) {
+      loading.textContent = '';
+      const message = document.createElement('div');
+      message.className = 'campaign-shell';
+      message.textContent = `The campaign could not finish opening: ${error.message}. Your saved board was not reset. `;
+      const retry = document.createElement('button');
+      retry.textContent = 'Retry opening campaign';
+      retry.addEventListener('click', () => window.location.reload());
+      message.append(retry);
+      loading.append(message);
+    }
     new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
       context: 'initializeApplication',
       stage: 'application_startup',
@@ -892,7 +1022,9 @@ window.moduleLoadStatus = window.moduleLoadStatus || {};
 window.moduleLoadStatus.loaded = true;
 
 // Start the application when the page loads
-window.addEventListener('load', initializeApplication);
+window.addEventListener('load', () => {
+  if (!isJest()) void initializeApplication();
+});
 
 // Export functions for ES6 module usage
 export {

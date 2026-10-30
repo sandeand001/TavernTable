@@ -12,6 +12,7 @@ import {
 import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { createPlaceableModelGeometry } from './placeableModelGeometry.js';
 import { fitGeneratedTreeScale } from './treeSupport.js';
+import { readPlaceablePlacements } from '../SceneSnapshotReaders.js';
 import {
   disposePlaceableMaterials,
   preparePlaceableMaterials,
@@ -29,6 +30,7 @@ export class PlaceableMeshPool {
     this.gameManager = gameManager;
     this._groups = new Map(); // key -> { instancedMesh, capacity, count, freeIndices[] }
     this._pendingGroups = new Map();
+    this._pendingPlacements = new Set();
     // Per-group metadata: Map<key, Map<index, { gx, gy }>> for reverse height recompute
     this._metadata = new Map();
     this._three = null; // cached namespace once loaded
@@ -152,23 +154,52 @@ export class PlaceableMeshPool {
   // ── Public API: Add / Remove ─────────────────────────────────────
 
   /** Public: add a placeable instance; returns handle with group key + index (or null). */
-  async addPlaceable(placeable) {
+  addPlaceable(placeable) {
+    const pending = this._addPlaceable(placeable);
+    this._pendingPlacements.add(pending);
+    pending.then(
+      () => this._pendingPlacements.delete(pending),
+      () => this._pendingPlacements.delete(pending)
+    );
+    return pending;
+  }
+
+  async whenSettled() {
+    while (this._pendingPlacements.size) await Promise.all([...this._pendingPlacements]);
+  }
+
+  async snapshotPlacements() {
+    await this.whenSettled();
+    return readPlaceablePlacements(this);
+  }
+
+  async restorePlacements(placements) {
+    this.clearAll();
+    const handles = await Promise.all(
+      placements.map((placement) => this.addPlaceable({ ...placement }))
+    );
+    if (handles.some((handle) => !handle))
+      throw new Error(
+        'A saved terrain placeable could not be restored; the saved board was not reset'
+      );
+  }
+
+  async _addPlaceable(placeable) {
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) {
       return null;
     }
     // Capture epoch so we can detect if a clear happened while awaiting dynamic imports.
     const epochAtStart = this._clearEpoch;
-    const appearance = resolvePlaceableAppearance(
-      placeable?.biomeKey ?? gm.terrainCoordinator?._lastGeneratedBiomeKey,
-      {
-        modelKey: placeable?.modelKey,
-        variantKey: placeable?.variantKey,
-        gridX: placeable?.gridX,
-        gridY: placeable?.gridY,
-        biomeSeed: placeable?.biomeSeed ?? gm.terrainCoordinator?._biomeSeed,
-      }
-    );
+    const biomeKey = placeable?.biomeKey ?? gm.terrainCoordinator?._lastGeneratedBiomeKey;
+    const biomeSeed = placeable?.biomeSeed ?? gm.terrainCoordinator?._biomeSeed;
+    const appearance = resolvePlaceableAppearance(biomeKey, {
+      modelKey: placeable?.modelKey,
+      variantKey: placeable?.variantKey,
+      gridX: placeable?.gridX,
+      gridY: placeable?.gridY,
+      biomeSeed,
+    });
     const three = await this._ensureThree();
     if (!three) {
       return null;
@@ -221,9 +252,21 @@ export class PlaceableMeshPool {
       placeable?.renderProfile ||
       (placeable?.type === 'plant' ? 'billboard' : 'ground');
     group.profile = profile;
-    const scale = this._resolveWorldScale(placeable, profile);
+    if (
+      placeable.persistedScale &&
+      !['x', 'y', 'z'].every(
+        (axis) =>
+          Number.isFinite(placeable.persistedScale[axis]) && placeable.persistedScale[axis] > 0
+      )
+    ) {
+      throw new Error('Saved terrain placeable scale is invalid');
+    }
+    const scale = placeable.persistedScale
+      ? { ...placeable.persistedScale }
+      : this._resolveWorldScale(placeable, profile);
     if (
       profile === 'model' &&
+      !placeable.persistedScale &&
       placeable.generatedBiome === true &&
       /^tree-/.test(placeable.placeableId || '')
     ) {
@@ -303,22 +346,37 @@ export class PlaceableMeshPool {
       /* ignore positioning errors */
     }
     placeable.__meshPoolHandle = { key, index };
-    // Record metadata for reverse mapping
-    try {
-      const metaGroup = this._metadata.get(key) || new Map();
-      metaGroup.set(index, {
-        gx: placeable.gridX ?? 0,
-        gy: placeable.gridY ?? 0,
-        scale,
-        profile,
-        heightOffset,
-      });
-      this._metadata.set(key, metaGroup);
-    } catch (_) {
-      /* ignore metadata errors */
+    const source = {
+      type: placeable.type || 'generic',
+      gridX: placeable.gridX ?? 0,
+      gridY: placeable.gridY ?? 0,
+      heightOffset,
+      renderProfile: profile,
+    };
+    for (const property of [
+      'modelKey',
+      'variantKey',
+      'placeableId',
+      'generatedBiome',
+      'metricsOnly',
+    ]) {
+      if (placeable[property] !== undefined) source[property] = placeable[property];
     }
+    if (biomeKey !== undefined) source.biomeKey = biomeKey;
+    if (biomeSeed !== undefined) source.biomeSeed = biomeSeed;
+    const metaGroup = this._metadata.get(key) || new Map();
+    metaGroup.set(index, {
+      gx: source.gridX,
+      gy: source.gridY,
+      scale,
+      profile,
+      heightOffset,
+      source,
+    });
+    this._metadata.set(key, metaGroup);
     // Update metrics to reflect new live instance
     this._updateMetrics();
+    gm.sceneAutosave?.changed('terrain placement');
     const live = group.count - group.freeIndices.length;
     logMeshPoolDebug('[PlaceableMeshPool] addPlaceable done', { key, index, live });
     return placeable.__meshPoolHandle;
@@ -781,6 +839,7 @@ export class PlaceableMeshPool {
   // ── Metrics & Lighting ────────────────────────────────────────────
 
   _updateMetrics() {
+    this.gameManager?.sceneAutosave?.changed('terrain placements');
     let totalInstances = 0;
     for (const g of this._groups.values()) totalInstances += g.count - g.freeIndices.length;
     this._metrics.groups = this._groups.size;

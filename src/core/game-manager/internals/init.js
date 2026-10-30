@@ -237,11 +237,15 @@ export async function enableHybridRender(gm) {
             gm._tokenSelectListener = async (evt) => {
               try {
                 if (!gm.is3DModeActive() || !gm.pickingService) return;
+                if (gm.interactionManager?.isSpacePressed || gm.interactionManager?.isDragging)
+                  return;
                 const ground = await gm.pickingService.pickGround(
                   evt.clientX,
                   evt.clientY,
                   targetEl
                 );
+                if (gm.interactionManager?.isSpacePressed || gm.interactionManager?.isDragging)
+                  return;
                 let token = null;
                 if (ground?.grid) {
                   const gx = Math.round(ground.grid.gx);

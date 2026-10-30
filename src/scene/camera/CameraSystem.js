@@ -2,6 +2,7 @@
 // Extracted from ThreeSceneManager.js (Phase 6). Installed via mixin pattern.
 
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import { captureCameraView } from '../SceneSnapshotReaders.js';
 
 const PERSPECTIVE_FOV = 35;
 const TOP_DOWN_PITCH = (89.9 * Math.PI) / 180;
@@ -22,6 +23,21 @@ function getCameraTarget() {
     y: Number.isFinite(this._panCy) ? this._panCy : 0,
     z: Number.isFinite(this._panCz) ? this._panCz : ((this.gameManager?.rows || 25) * tileSize) / 2,
   };
+}
+
+function restoreView(view) {
+  this._isoMode = view.isometric;
+  this._isoYaw = view.yaw;
+  this._isoPitch = view.pitch;
+  this._isoManualLock = view.manualLock;
+  this._topDownView = view.topDown;
+  this._savedOrbitView = view.orbit ? { ...view.orbit } : null;
+  this._zoom = view.zoom;
+  this._targetZoom = view.zoom;
+  this._panCx = view.target.x;
+  this._panCy = view.target.y;
+  this._panCz = view.target.z;
+  this.reframe();
 }
 
 function _getCameraFraming() {
@@ -563,6 +579,7 @@ function reframe() {
       span: Math.max(this.gameManager?.cols || 25, this.gameManager?.rows || 25) * 0.6,
     });
     this._updateSunCoverage();
+    this.gameManager?.sceneAutosave?.changed('camera');
   } catch (error) {
     GameErrors.rendering(error, { component: 'CameraSystem', operation: 'reframe' });
   }
@@ -589,6 +606,7 @@ function setZoom(z) {
   if (!Number.isFinite(z)) return;
   const clamped = Math.min(this._maxZoom, Math.max(this._minZoom, z));
   this._targetZoom = clamped;
+  this.gameManager?.sceneAutosave?.changed('camera');
 }
 function getZoom() {
   return this._zoom;
@@ -658,12 +676,14 @@ function solveIsoPitchForTargetRatio(
  * Converts pixel movement → world XZ movement using camera frustum and orientation.
  * Call on every mousemove during drag.
  */
-function panBy(screenDx, screenDy) {
+function panBy(screenDx, screenDy, origin = null) {
   if (!this.camera || this.degraded) return;
   try {
     const { width, height } = this._getCameraViewport();
-    const before = this._screenToGround(width / 2, height / 2);
-    const after = this._screenToGround(width / 2 + screenDx, height / 2 + screenDy);
+    const x = origin?.x ?? width / 2;
+    const y = origin?.y ?? height / 2;
+    const before = this._screenToGround(x, y);
+    const after = this._screenToGround(x + screenDx, y + screenDy);
     if (!before || !after) return;
     const target = this.getCameraTarget();
     this.setCameraTarget(target.x + before.x - after.x, target.z + before.z - after.z);
@@ -690,6 +710,7 @@ function setCameraTarget(cx, cz, cy = this.getCameraTarget().y) {
   const rows = this.gameManager?.rows || 25;
   const span = Math.max(cols, rows) * 0.6;
   this._applyCameraBase({ cx, cz, span });
+  this.gameManager?.sceneAutosave?.changed('camera');
 }
 
 /**
@@ -731,6 +752,10 @@ function zoomAtScreenPoint(factor, mouseX, mouseY) {
 // ── Mixin Installation ────────────────────────────────────────────
 
 export function installCameraMethods(prototype) {
+  prototype.snapshotView = function () {
+    return captureCameraView(this);
+  };
+  prototype.restoreView = restoreView;
   prototype._getCameraViewport = _getCameraViewport;
   prototype.getCameraTarget = getCameraTarget;
   prototype._getCameraFraming = _getCameraFraming;

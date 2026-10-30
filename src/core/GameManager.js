@@ -185,7 +185,13 @@ class GameManager {
    * Initializes ThreeSceneManager and switches renderMode.
    */
   async enableHybridRender() {
-    return enableHybridRenderImpl(this);
+    if (this._hybridInitialization) return this._hybridInitialization;
+    this._hybridInitialization = enableHybridRenderImpl(this);
+    try {
+      return await this._hybridInitialization;
+    } finally {
+      this._hybridInitialization = null;
+    }
   }
 
   // ── Public API ─────────────────────────────────────────────
@@ -514,7 +520,7 @@ class GameManager {
 
   /**
    * Set current terrain tool
-   * @param {string} tool - Tool name ('raise' or 'lower')
+   * @param {string} tool - Tool name ('raise', 'lower', or 'wall')
    */
   setTerrainTool(tool) {
     if (this.terrainCoordinator) {
@@ -640,6 +646,7 @@ class GameManager {
 
   /** Phase 2 hook: invoked by TerrainCoordinator after height edits to schedule 3D rebuild. */
   notifyTerrainHeightsChanged() {
+    this.sceneAutosave?.changed('terrain');
     if (!this.terrainRebuilder || !this.threeSceneManager || !this.is3DModeActive()) {
       return;
     }

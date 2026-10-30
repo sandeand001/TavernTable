@@ -135,4 +135,30 @@ describe('Biome-specific model appearances', () => {
     for (const dispose of ownedDisposals) expect(dispose).toHaveBeenCalledTimes(1);
     for (const dispose of sourceDisposals) expect(dispose).not.toHaveBeenCalled();
   });
+
+  test('saved logical placements preserve deleted trees, effective appearances and resolved scales', async () => {
+    const first = makePool();
+    const removed = placement(undefined, 1);
+    const kept = {
+      ...placement('arcaneLeyNexus', 2),
+      persistedScale: { x: 0.4, y: 0.7, z: 0.5 },
+      heightOffset: 0.03,
+    };
+    await Promise.all([first.pool.addPlaceable(removed), first.pool.addPlaceable(kept)]);
+    first.pool.removePlaceable(removed);
+    const saved = await first.pool.snapshotPlacements();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      gridX: 2,
+      biomeKey: 'arcaneLeyNexus',
+      biomeSeed: 42,
+      modelKey: 'common-broadleaf-1',
+      variantKey: 'tree-green-deciduous',
+      persistedScale: kept.persistedScale,
+      heightOffset: 0.03,
+    });
+    const second = makePool();
+    await second.pool.restorePlacements(saved);
+    expect(await second.pool.snapshotPlacements()).toEqual(saved);
+  });
 });

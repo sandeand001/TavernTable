@@ -3,7 +3,7 @@
 
 import { TERRAIN_CONFIG } from '../../../../config/terrain/TerrainConstants.js';
 
-/** Apply overlay mesh opacity when entering terrain mode. */
+/** Apply editing opacity and refresh mode-dependent vertex colors. */
 export function applyTerrainModeGridTint(c) {
   const gm = c.gameManager;
   if (!gm) return;
@@ -12,21 +12,15 @@ export function applyTerrainModeGridTint(c) {
     typeof TERRAIN_CONFIG.TERRAIN_MODE_MESH_ALPHA === 'number'
       ? TERRAIN_CONFIG.TERRAIN_MODE_MESH_ALPHA
       : 0.55;
-  try {
-    gm.threeSceneManager?.setTerrainMeshOpacity?.(meshAlpha);
-  } catch (_) {
-    /* non-fatal */
-  }
+  gm.threeSceneManager?.setTerrainMeshOpacity?.(meshAlpha);
+  gm.terrainRebuilder?.request({});
 }
 
-/** Restore full mesh opacity when exiting terrain mode. */
+/** Refresh normal colors after edited heights have been committed. */
 export function restoreTerrainModeGridTint(c) {
   const gm = c.gameManager;
   if (!gm) return;
-  try {
-    gm.threeSceneManager?.setTerrainMeshOpacity?.(1);
-  } catch (_) {
-    /* non-fatal */
-  }
+  gm.threeSceneManager?.setTerrainMeshOpacity?.(1);
+  gm.terrainRebuilder?.request({});
   c._gridTintApplied = false;
 }

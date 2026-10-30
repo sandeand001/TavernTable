@@ -5,6 +5,18 @@
 
 ---
 
+## Terrain Editing
+
+- [x] **Restore normal colors after Terrain Mode** - Refresh baked mesh colors
+      after saving heights, including selected biome colors and delayed exits.
+- [x] **Simple wall and box drawing** - Click-drag lines, Filled rectangles or
+      hollow Outline boxes in any direction, with separate style/height controls,
+      live 3D preview, release-to-place, and
+      cancellation before committing. Set the exact target elevation, including
+      cutting higher terrain and negative-level trenches.
+
+---
+
 ## Terrain Ownership Follow-up
 
 - [ ] **Complete the accepted terrain-engine migration** - Follow
@@ -55,7 +67,7 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 
 ## Character Sheets
 
-- [x] **In-app character sheet placeholder** - One movable/resizable non-modal
+- [x] **In-app character sheet window** - One movable/resizable non-modal
       window with per-creature tabs, two-way map/tab selection sync, retained
       layout on close, movable minimized title bar, and tab cleanup on token removal.
 - [x] **Sheet-tab camera focus** - Center on the selected creature's current
@@ -82,8 +94,83 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 - [x] **Board-boundary input** - Ignore empty off-board clicks instead of clamping
       them to an edge destination. Preserve selection, valid edge/body/wall hits,
       and bounded fallback behavior without reviving 3D misses through 2D input.
-- [ ] **Character sheet contents and persistence** - Add actual sheet data and
-      editing beyond Movement, and integrate it with a future scene save/load design.
+- [x] **First-pass character contents and local persistence** - Editable campaign-owned
+      identity, abilities, HP, proficiencies, notes, saved-character library and
+      validated JSON backups, independent of ephemeral scene tokens.
+- [x] **Open SRD compendium and supported automation** - Local searchable
+      item/spell data, drag/drop and Add alternatives, inventory/equip/attune,
+      derived checks/AC/attacks, prepared casting, slot/concentration/rest tracking
+      and shared dice rolls. Reference-only effects are labeled explicitly.
+- [x] **Minimal campaign system and immutable edition** - Startup Create/Open
+      picker, campaign-owned characters, explicit 2014/2024 rule implementations,
+      source settings and acknowledged board saves before returning to the picker.
+- [x] **Versioned local resource databases** - Separate edition IndexedDB catalogs,
+      reviewed and hashed SRD/Open5e/5e-bits bundles, compatible opt-in sources,
+      attribution/licenses, and preserved owned content when sources are disabled.
+- [x] **Acknowledged persistent writes and scoped backups** - Atomic queued character
+      commits with revision conflict checks before UI/economy success; same-edition
+      character copies and scene-inclusive campaign backups excluding catalog databases.
+- [x] **2024 equivalents for existing automation** - Casting/Action Surge rules,
+      save-based Grapple/Shove, Monk Focus/dice/bonus options, Paladin features,
+      level-1 casting and revised rest/resource recovery. New conditional effects
+      remain manual rather than inheriting 2014 mechanics.
+- [x] **Independent sidebar compendium** - Browse without opening a sheet; default
+      Add to the selected creature or choose a saved character. Preserve drag/drop,
+      show destination confirmations and route sheet Details to the same sidebar.
+- [x] **Equipment mechanics in Details** - Show armor/shield AC, Dexterity handling,
+      minimum Strength and Stealth disadvantage alongside price/weight.
+- [x] **Unified visible movement controls** - One saved-character speed drives
+      linked-token range; edit it on Core and show remaining movement as a Combat
+      progress bar. Walk/Run buttons and Default/Drunk style remain shared.
+      No duplicate allowance controls or changes to traversal rules.
+- [x] **Compact health bar** - Current/max bar, separate temporary HP, Damage/Heal
+      and direct-edit controls; temp absorption, healing caps, validation and
+      persistence, without automatic target damage application.
+- [x] **Prominent rest and Hit Dice controls** - Short/Long Rest beside health,
+      optional one-die-at-a-time healing with Constitution, persistent remaining
+      dice, 2014 partial long-rest recovery and shared dice/log integration.
+- [x] **Rest-aware common class resources** - Manual usage counters with correct
+      short/long/daily recovery, Pact Magic and optional Wizard Arcane Recovery;
+      preserve usage in edition-scoped version-5 character and campaign backups.
+- [x] **Campaign world autosave** - Restore terrain, explicit flora placements,
+      stable creature IDs/names/character links, facing, camera and safe ground,
+      wall or ledge checkpoints. Resume committed turn budgets and sheet/shared
+      rolls without replaying unfinished work; report save failures/conflicts.
+- [x] **Shared editable creature names** - Edit the standalone sheet title on
+      every page; Enter/blur saves and Escape cancels. Only the title and tab show
+      the name during normal play. Linked labels and persistence stay synchronized.
+- [x] **Sheet settings disclosure** - A gear holds saved-character management,
+      new/import/export/delete and Compendium controls outside the normal play view;
+      operation failures remain visible when the settings panel is closed.
+- [x] **Space-grab map panning** - Hold Space and left-drag in either camera view
+      without moving/facing creatures or painting terrain; preserve text input,
+      outside-canvas release, focus-loss cleanup and autosaved camera position.
+- [x] **Unreflected facing drags** - Align snapped pointer direction with rendered
+      humanoid forward and the existing movement convention in both camera views;
+      test the loaded rigs rather than only their stored facing-angle values.
+- [ ] **Guided progression and broader 5e rules** - Level-up choices, class/subclass
+      features, multiclassing, additional conditional item/spell mechanics and
+      resource models beyond the first-pass supported calculations.
+- [x] **Combat / Non-combat play views** - Keep Core editing; add streamlined
+      checks/saves, compact play identity and relevant play options.
+- [x] **Customizable play layouts and Favorites** - Separate saved layouts per
+      character/page; drag sections/cards or use keyboard ordering, move favorites
+      without duplicates, auto-save and confirmed page reset. Preserve turn rules,
+      spent-option hiding, backup compatibility and ordinary checks/saves.
+- [x] **Visible character history rail** - Fixed right-hand, independently
+      scrolling uses/rolls with All / This turn filters, complete session history,
+      older follow-ups, checks/saves/rest dice and safe async attribution.
+- [x] **Manual-turn action economy** - Start/End Turn, enforced shared movement
+      tied to the grid, manual/DM adjustment, actions/bonus/reactions/free options,
+      Extra Attack continuation, disappearing spent options and recent-action rolls.
+- [x] **Ability/action cost integration** - Use the existing common rest-aware
+      counters for actual costs; add persistent custom entries, turn/rest/day
+      resets, linked class pools and attack-count overrides without duplication.
+- [ ] **Broader conditional combat features** - Active Rage/conditions, subclass
+      features, two-weapon fighting, rituals and conditional spell/ability effects.
+- [ ] **Targeting and automatic effect application** - Later stage; keep hit/save
+      confirmation and damage/healing/effects manual during the initial combat pass.
+- [ ] **Initiative/encounter ordering** - Later than the manual-turn combat pass.
 
 ---
 

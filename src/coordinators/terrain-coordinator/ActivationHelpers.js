@@ -56,11 +56,7 @@ export class ActivationHelpers {
       this.prepareBaseGridForEditing();
       this.activateTerrainMode();
       this.loadTerrainStateAndDisplay();
-      try {
-        this.c.applyTerrainModeGridTint?.();
-      } catch (_) {
-        /* non-fatal */
-      }
+      this.c.applyTerrainModeGridTint?.();
 
       logger.info(
         'Terrain mode enabled',
@@ -83,16 +79,13 @@ export class ActivationHelpers {
       this.c.isTerrainModeActive = false;
       this.c.isDragging = false;
       this.c.lastModifiedCell = null;
-      try {
-        this.c.restoreTerrainModeGridTint?.();
-      } catch (_) {
-        /* non-fatal */
-      }
+      this.c._inputHandlers?.cancelStroke?.();
 
       // 2D tile cleanup removed: sprite tiles don't exist in 3D mode.
 
       // Apply current terrain modifications permanently to base grid
       this.c.applyTerrainToBaseGrid();
+      this.c.restoreTerrainModeGridTint?.();
 
       // Reset height indicator
       this.c.resetHeightIndicator?.();

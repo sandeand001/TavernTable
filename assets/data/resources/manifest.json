@@ -1,0 +1,267 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "id": "srd-2014",
+      "version": "5.1-seed.1",
+      "name": "SRD 5.1",
+      "ruleset": "2014",
+      "core": true,
+      "file": "assets/data/resources/srd-2014-5.1-seed.1.json",
+      "bytes": 2619691,
+      "hash": "ed1cf37a7f178eb59512139fc2540c6cbf7934f82675a27c5f9f3afb658aa22f",
+      "count": 2025,
+      "licenses": [
+        "cc-by-40"
+      ],
+      "author": "Mike Mearls, Jeremy Crawford, Chris Perkins, Rodney Thompson, Peter Lee, James Wyatt, Robert J. Schwalb, Bruce R. Cordell, Chris Sims, and Steve Townshend, based on original material by E. Gary Gygax and Dave Arneson.",
+      "sourceURL": "https://dnd.wizards.com/resources/systems-reference-document"
+    },
+    {
+      "id": "srd-2024",
+      "version": "5.2.1-seed.1",
+      "name": "SRD 5.2.1",
+      "ruleset": "2024",
+      "core": true,
+      "file": "assets/data/resources/srd-2024-5.2.1-seed.1.json",
+      "bytes": 2992433,
+      "hash": "8486bd36b6105149a0d47b10e353ca45177cbc1341b29c77f53f0b87862231b4",
+      "count": 2296,
+      "licenses": [
+        "cc-by-40"
+      ],
+      "author": "Wizards of the Coast",
+      "sourceURL": "https://dnd.wizards.com/resources/systems-reference-document"
+    },
+    {
+      "id": "tdcs",
+      "version": "seed.1",
+      "name": "Tal'dorei Campaign Setting",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/tdcs-seed.1.json",
+      "bytes": 81581,
+      "hash": "6cb5c8f12dd700077d3d84366b80d2f6c4ad4f386e4c99b8679fc982797e1f35",
+      "count": 38,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Matthew Mercer, James Haeck",
+      "sourceURL": "https://en.wikipedia.org/wiki/Critical_Role%3A_Tal'Dorei_Campaign_Setting"
+    },
+    {
+      "id": "ccdx",
+      "version": "seed.1",
+      "name": "Creature Codex",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/ccdx-seed.1.json",
+      "bytes": 1075192,
+      "hash": "a8b56116770336b85a20aa090b97aecb63324cb39bed5cd74b7771b374b8f867",
+      "count": 356,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Wolfgang Baur, Dan Dillon, Richard Green, James Haeck, Chris Harris, Jeremy Hochhalter, James Introcaso, Chris Lockey, Shawn Merwin, and Jon Sawatsky",
+      "sourceURL": "https://koboldpress.com/kpstore/product/creature-codex-for-5th-edition-dnd/"
+    },
+    {
+      "id": "deepm",
+      "version": "seed.1",
+      "name": "Deep Magic for 5th Edition",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/deepm-seed.1.json",
+      "bytes": 678273,
+      "hash": "15d4aac14c96df78ff99d057b7277b3d89598f7f131507694dfab0b8e15913bf",
+      "count": 515,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Dan Dillon, Chris Harris, and Jeff Lee",
+      "sourceURL": "https://koboldpress.com/kpstore/product/deep-magic-for-5th-edition-hardcover/"
+    },
+    {
+      "id": "deepmx",
+      "version": "seed.1",
+      "name": "Deep Magic Extended",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/deepmx-seed.1.json",
+      "bytes": 83840,
+      "hash": "a61faa8752b0a7a310f1e285cbd286803be63aa9ffd0dc136f1d25d63e8ebb09",
+      "count": 64,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Not sure.",
+      "sourceURL": "https://koboldpress.com/deepmagic"
+    },
+    {
+      "id": "kp",
+      "version": "seed.1",
+      "name": "Kobold Press Compilation",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/kp-seed.1.json",
+      "bytes": 53535,
+      "hash": "e16ad2a96a706ebbd8e3a3d22f3f267af30d01db3f370f0981f3d5d846545123",
+      "count": 31,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Various",
+      "sourceURL": "https://koboldpress.com/"
+    },
+    {
+      "id": "tob",
+      "version": "seed.1",
+      "name": "Tome of Beasts",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/tob-seed.1.json",
+      "bytes": 1258683,
+      "hash": "cfea2f4c1b92329c554bc1ca65c45d24cb25276d7f25a3a093160dd53f0ab45c",
+      "count": 391,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Chris Harris, Dan Dillon, Rodrigo Garcia Carmona, and Wolfgang Baur",
+      "sourceURL": "https://koboldpress.com/tome-of-beasts/"
+    },
+    {
+      "id": "tob-2023",
+      "version": "seed.1",
+      "name": "Tome of Beasts 1 (2023 Edition)",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/tob-2023-seed.1.json",
+      "bytes": 1337572,
+      "hash": "f7cc047876225c1cec8b63b90f2cb088e092b7daad69a38476b8a415e5fffc4e",
+      "count": 408,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Dan Dillon, Chris Harris, Rodrigo Garcia Carmona, Wolfgang Baur",
+      "sourceURL": "https://koboldpress.com/kpstore/product/tome-of-beasts-1-2023-edition-hardcover/"
+    },
+    {
+      "id": "tob2",
+      "version": "seed.1",
+      "name": "Tome of Beasts 2",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/tob2-seed.1.json",
+      "bytes": 1181854,
+      "hash": "60f8f816ff0e410dfe04e4e0542dd13eb628befe0a3d478ef7d4a0fef00115ad",
+      "count": 383,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Wolfgang Baur, Celeste Conowitch, Darrin Drader, James Introcaso, Philip Larwood, Jeff Lee, Kelly Pawlik, Brian Suskind, Mike Welham",
+      "sourceURL": "https://koboldpress.com/tome-of-beasts-2/"
+    },
+    {
+      "id": "tob3",
+      "version": "seed.1",
+      "name": "Tome of Beasts 3",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/tob3-seed.1.json",
+      "bytes": 708050,
+      "hash": "a1561a8ddbb24008a1406756bdd052edb6313d91634cc010b370a21ffa5b623b",
+      "count": 397,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Wolfgang Baur, Celeste Conowitch, Darrin Drader, James Introcaso, Philip Larwood, Jeff Lee, Kelly Pawlik, Brian Suskind, Mike Welham",
+      "sourceURL": "https://koboldpress.com/tome-of-beasts-3/"
+    },
+    {
+      "id": "toh",
+      "version": "seed.1",
+      "name": "Tome of Heroes",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/toh-seed.1.json",
+      "bytes": 1044811,
+      "hash": "5b40672b6290a82f58507c9ad2b8c0cc6285fd8e4b177f589257597f04c9f391",
+      "count": 654,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Kelly Pawlik, Ben Mcfarland, and Briand Suskind",
+      "sourceURL": "https://koboldpress.com/kpstore/product/tome-of-heroes-for-5th-edition/"
+    },
+    {
+      "id": "vom",
+      "version": "seed.1",
+      "name": "Vault of Magic",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/vom-seed.1.json",
+      "bytes": 1454497,
+      "hash": "9dca0eada85b0ccff648849fa7a6a0fa9ba0c479ebac085cf7b485c7152ff9c7",
+      "count": 1063,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Phillip Larwood, Jeff Lee, and Christopher Lockey",
+      "sourceURL": "https://koboldpress.com/kpstore/product/vault-of-magic-for-5th-edition/"
+    },
+    {
+      "id": "wz",
+      "version": "seed.1",
+      "name": "Warlock Zine",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/wz-seed.1.json",
+      "bytes": 73118,
+      "hash": "b177f0e4d64f4b522de8d5aaf045a257737c53b413a976601c82d8f39c726fe2",
+      "count": 43,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Woflgang Baur, others.",
+      "sourceURL": "https://koboldpress.com/kpstore/product-category/all-products/warlock-5th-edition-dnd/"
+    },
+    {
+      "id": "open5e",
+      "version": "seed.1",
+      "name": "Open5e Originals",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/open5e-seed.1.json",
+      "bytes": 178739,
+      "hash": "86b02c3eea3ea24270d32479450df1eaa97c57f3207901d064a57f7018b8753a",
+      "count": 106,
+      "licenses": [
+        "ogl-10a"
+      ],
+      "author": "Ean Moody, Various",
+      "sourceURL": "https://open5e.com/"
+    },
+    {
+      "id": "spells-that-dont-suck",
+      "version": "seed.1",
+      "name": "Spells That Don't Suck",
+      "ruleset": "2014",
+      "core": false,
+      "file": "assets/data/resources/spells-that-dont-suck-seed.1.json",
+      "bytes": 309679,
+      "hash": "e82db4ea5d3939abfa895dd8daff983afdd46231c650dd4fca003519e1ae6ac3",
+      "count": 180,
+      "licenses": [
+        "cc-by-40"
+      ],
+      "author": "Ben Somers / somanyrobots, Omega Ankh",
+      "sourceURL": "https://www.somanyrobots.com/s/Spells-That-Dont-Suck-compressed.pdf"
+    }
+  ],
+  "excludedPacks": [
+    {
+      "id": "open5e-2024",
+      "reason": "The provider fixtures still declare the 2014 Open5e document; they are not validated 2024 content."
+    }
+  ]
+}

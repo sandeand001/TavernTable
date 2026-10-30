@@ -1,6 +1,15 @@
 import { ThreeSceneManager } from '../../../src/scene/ThreeSceneManager.js';
 
 describe('ThreeSceneManager metrics', () => {
+  test('the metrics overlay cannot intercept sidebar pointer input', async () => {
+    const manager = new ThreeSceneManager({});
+    await manager.initialize();
+    const overlay = document.getElementById('three-debug-overlay');
+    expect(overlay).not.toBeNull();
+    expect(overlay.style.pointerEvents).toBe('none');
+    manager.dispose();
+  });
+
   test('getRenderStats returns expected shape pre/post init', async () => {
     const tsm = new ThreeSceneManager({});
     let stats = tsm.getRenderStats();

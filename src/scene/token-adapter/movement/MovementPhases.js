@@ -102,7 +102,7 @@ function _updateForwardMovements(delta) {
       const phase = state.phase;
       if (state.traversal) {
         state.traversal = null;
-        this._movementRoutes.delete(tokenEntry);
+        this._finishPlannedMovement(tokenEntry, true);
         this._unlockTokenWorldAuthority(state);
         this._setSelectionIndicatorSuppressed(state, false);
         this._movementStates.delete(tokenEntry);

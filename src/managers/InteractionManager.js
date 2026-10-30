@@ -20,6 +20,8 @@ import {
   startGridDragging as _startDrag,
   updateGridDragPosition as _updateDrag,
   stopGridDragging as _stopDrag,
+  handlePanKeyDown,
+  releasePanKey,
 } from './interaction-manager/internals/pan.js';
 import {
   handleZoomWheel as _handleZoomWheel,
@@ -127,27 +129,39 @@ export class InteractionManager {
    */
   setupMouseDown() {
     const view = this.gameManager.getEventCanvas();
-    view.addEventListener('mousedown', (event) => {
-      if (event.button === 2) {
-        if (this._tryCaptureRadialTrigger(event)) {
+    view.addEventListener(
+      'pointerdown',
+      (event) => {
+        // Keep compatibility mouse events for panning, but bypass token pointer gestures.
+        if (event.button === 0 && this.isSpacePressed) event.stopImmediatePropagation();
+      },
+      true
+    );
+    view.addEventListener(
+      'mousedown',
+      (event) => {
+        if (event.button === 0 && this.isSpacePressed) {
+          this.startGridDragging(event);
+          event.stopImmediatePropagation();
           return;
         }
-        this._startRightButtonDrag(event);
-        return;
-      }
+        if (event.button === 2) {
+          if (this._tryCaptureRadialTrigger(event)) {
+            return;
+          }
+          this._startRightButtonDrag(event);
+          return;
+        }
 
-      if (event.button !== 0) {
-        return;
-      }
+        if (event.button !== 0) {
+          return;
+        }
 
-      if (this.isSpacePressed) {
-        this.startGridDragging(event);
-        return;
-      }
-
-      // Regular left click = token placement
-      this.handleLeftClick(event);
-    });
+        // Regular left click = token placement
+        this.handleLeftClick(event);
+      },
+      true
+    );
   }
 
   /**
@@ -229,8 +243,14 @@ export class InteractionManager {
    * Set up keyboard interactions
    */
   setupKeyboardInteractions() {
-    if (!KEYBOARD_TOKEN_CONTROLS_ENABLED) return;
+    if (this._keyboardInteractionsAttached) return;
+    this._keyboardInteractionsAttached = true;
     document.addEventListener('keydown', (event) => {
+      if (handlePanKeyDown(this, event)) {
+        event.preventDefault();
+        return;
+      }
+      if (!KEYBOARD_TOKEN_CONTROLS_ENABLED) return;
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(true);
       }
@@ -241,6 +261,12 @@ export class InteractionManager {
     });
 
     document.addEventListener('keyup', (event) => {
+      if (event.code === 'Space' && this.isSpacePressed) {
+        releasePanKey(this);
+        event.preventDefault();
+        return;
+      }
+      if (!KEYBOARD_TOKEN_CONTROLS_ENABLED) return;
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
         this.gameManager?.token3DAdapter?.setShiftModifier?.(false);
       }
@@ -248,6 +274,13 @@ export class InteractionManager {
       if (this._handleTokenRotationKeyUp(event) || this._handleTokenMovementKeyUp(event)) {
         event.preventDefault();
       }
+    });
+    window.addEventListener('blur', () => releasePanKey(this));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') releasePanKey(this);
+    });
+    document.addEventListener('focusin', (event) => {
+      if (this.isSpacePressed && this._shouldIgnoreKeyTarget(event.target)) releasePanKey(this);
     });
   }
 
@@ -413,6 +446,7 @@ export class InteractionManager {
   }
 
   _handleGlobalMouseMove(event) {
+    if (event.target === this.gameManager.getEventCanvas()) return;
     if (this.isRotating3D) {
       this.update3DRotation(event);
       return;

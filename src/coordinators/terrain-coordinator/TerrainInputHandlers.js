@@ -44,16 +44,7 @@ export class TerrainInputHandlers {
       // Use capture to guarantee we receive the event before it is possibly stopped elsewhere
       window.addEventListener('mouseup', this.handleMouseUp.bind(this), true);
       // Extra safety: if the window loses focus during a drag, end the session
-      window.addEventListener(
-        'blur',
-        () => {
-          if (this.c.isDragging) {
-            this.c.isDragging = false;
-            this.c.lastModifiedCell = null;
-          }
-        },
-        true
-      );
+      window.addEventListener('blur', () => this.cancelStroke(), true);
 
       // Keyboard shortcuts for terrain tools
       document.addEventListener('keydown', this.handleKeyDown.bind(this));
@@ -84,6 +75,8 @@ export class TerrainInputHandlers {
     try {
       // Only handle left mouse button
       if (event.button !== 0) return;
+      const im = this.c.gameManager?.interactionManager;
+      if (im?.isSpacePressed || im?.isDragging) return;
 
       // Placeable removal mode: intercept first. Removes plant/tree placeables at click footprint.
       if (
@@ -167,12 +160,6 @@ export class TerrainInputHandlers {
       // placeable is selected. This avoids the first-click-no-op issue when the
       // UI state isn't fully synced yet. Preview will still honor visibility.
 
-      // Do not start a terrain drag while panning (Space held)
-      const im = this.c.gameManager?.interactionManager;
-      if (im && im.isSpacePressed) {
-        return;
-      }
-
       const gridCoords = this.c.getGridCoordinatesFromEvent(event);
       if (!gridCoords) {
         return;
@@ -247,6 +234,10 @@ export class TerrainInputHandlers {
         } catch (e) {
           /* non-fatal */
         }
+      } else if (this.c.brush.tool === 'wall') {
+        this.c.brush.beginWallStroke(gridCoords.gridX, gridCoords.gridY);
+        this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
+        this._rerenderPreviewAtLastHover();
       } else {
         this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
       }
@@ -266,6 +257,11 @@ export class TerrainInputHandlers {
   /** Handle mouse move events for continuous terrain painting */
   handleMouseMove(event) {
     try {
+      const im = this.c.gameManager?.interactionManager;
+      if (im?.isSpacePressed || im?.isDragging) {
+        this.cancelStroke();
+        return;
+      }
       const gridCoords = this.c.getGridCoordinatesFromEvent(event);
 
       // Update height indicator when in terrain mode
@@ -287,31 +283,25 @@ export class TerrainInputHandlers {
 
       // Render preview: prefer placeable preview when a placeable is selected, otherwise render terrain elevation preview
       if (gridCoords && uiSelected && panelVisible) {
-        try {
-          const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
-          const desc = buildBrushHighlightDescriptor({
-            brush: ptBrush,
-            center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
-            terrainModeActive: this.c.isTerrainModeActive,
-          });
-          if (desc.cells.length) this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
-        } catch (_) {
-          /* non-fatal */
-        }
+        const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
+        const desc = buildBrushHighlightDescriptor({
+          brush: ptBrush,
+          center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
+          terrainModeActive: this.c.isTerrainModeActive,
+        });
+        this._renderBrushPreview(desc, false);
         this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
       } else if (gridCoords && this.c.isTerrainModeActive) {
-        // Elevation tool hover highlight
-        try {
-          const desc = buildBrushHighlightDescriptor({
-            brush: this.c.brush,
-            center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
-            terrainModeActive: true,
-          });
-          if (desc.cells.length) this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
-        } catch (_) {
-          /* non-fatal */
-        }
+        const desc = buildBrushHighlightDescriptor({
+          brush: this.c.brush,
+          center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
+          terrainModeActive: true,
+        });
+        this._renderBrushPreview(desc);
         this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
+      } else {
+        this.lastGridCoords = null;
+        this._clearPreview();
       }
 
       // Only process if we're actively dragging. Allow drag edits when
@@ -320,7 +310,18 @@ export class TerrainInputHandlers {
       //   (so placeables can be painted even when not in terrain edit mode).
       // Also require that the primary button is currently pressed to avoid lingering edits
       // And never edit while the grid panning interaction is active or Space is pressed
-      const im = this.c.gameManager?.interactionManager;
+      if (this.c.brush.wallStart) {
+        if (
+          !this.c.isTerrainModeActive ||
+          !(event.buttons & 1) ||
+          im?.isDragging ||
+          im?.isSpacePressed ||
+          this.c.isPlaceableRemovalMode?.()
+        ) {
+          this.cancelStroke();
+        }
+        return;
+      }
       if (
         !this.c.isDragging ||
         !(this.c.isTerrainModeActive || (uiSelected && panelVisible)) ||
@@ -389,15 +390,45 @@ export class TerrainInputHandlers {
   handleMouseUp(event) {
     try {
       if (event.button === 0 && this.c.isDragging) {
-        this.c.isDragging = false;
-        this.c.lastModifiedCell = null;
+        let validWallRelease = true;
+        try {
+          if (this.c.brush.tool === 'wall' && this.c.brush.wallStart) {
+            validWallRelease = false;
+            const canvas = this.c.gameManager.getEventCanvas();
+            const canvasRelease =
+              event.target === canvas || canvas.contains?.(event.target) === true;
+            const im = this.c.gameManager.interactionManager;
+            if (
+              canvasRelease &&
+              this.c.isTerrainModeActive &&
+              !im?.isDragging &&
+              !im?.isSpacePressed &&
+              !this.c.isPlaceableRemovalMode?.()
+            ) {
+              const cell = this.c.getGridCoordinatesFromEvent(event);
+              if (cell) {
+                this.c.modifyTerrainAtPosition(cell.gridX, cell.gridY);
+                this.lastGridCoords = { x: cell.gridX, y: cell.gridY };
+                validWallRelease = true;
+              }
+            }
+          }
+        } finally {
+          this.c.brush.cancelWallStroke?.();
+          this.c.isDragging = false;
+          this.c.lastModifiedCell = null;
+        }
+        if (!validWallRelease) {
+          this.lastGridCoords = null;
+          this._clearPreview();
+        }
         // Complete any pending terrain updates immediately
         try {
           this.c.terrainManager?.flushUpdateQueue();
         } catch {
           /* ignore */
         }
-        // Do NOT clear preview on mouse up; keep showing hover footprint per spec
+        this._rerenderPreviewAtLastHover();
 
         logger.trace(
           'Terrain painting session completed',
@@ -421,22 +452,20 @@ export class TerrainInputHandlers {
 
   /** Handle mouse leave events to stop terrain painting */
   handleMouseLeave() {
-    if (this.c.isDragging) {
-      this.c.isDragging = false;
-      this.c.lastModifiedCell = null;
-    }
+    this.cancelStroke();
     // If leaving the canvas, finish any pending updates to prevent later application
     try {
       this.c.terrainManager?.flushUpdateQueue();
     } catch {
       /* ignore */
     }
-    // Always clear preview on mouse leave
-    try {
-      this.c.terrainManager?.clearBrushPreview();
-    } catch {
-      /* ignore */
-    }
+  }
+
+  cancelStroke() {
+    this.c.isDragging = false;
+    this.c.lastModifiedCell = null;
+    this.c.brush.cancelWallStroke?.();
+    this._clearPreview();
   }
 
   // ── Keyboard Handlers ─────────────────────────────────────────────
@@ -444,7 +473,21 @@ export class TerrainInputHandlers {
   /** Handle keyboard shortcuts for terrain tools */
   handleKeyDown(event) {
     try {
+      if (event.code === 'Space' && this.c.gameManager?.interactionManager?.isSpacePressed) {
+        this.cancelStroke();
+        return;
+      }
       if (!this.c.isTerrainModeActive) {
+        return;
+      }
+
+      if (this.c.brush.wallStart && ['Escape', 'Space'].includes(event.code)) {
+        this.cancelStroke();
+        if (event.code === 'Escape') event.preventDefault();
+        return;
+      }
+      const target = event.target;
+      if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) {
         return;
       }
 
@@ -466,12 +509,12 @@ export class TerrainInputHandlers {
           }
           break;
         case 'BracketLeft': // [
-          this.c.decreaseBrushSize();
+          if (this.c.brush.tool !== 'wall') this.c.decreaseBrushSize();
           event.preventDefault();
           this._rerenderPreviewAtLastHover();
           break;
         case 'BracketRight': // ]
-          this.c.increaseBrushSize();
+          if (this.c.brush.tool !== 'wall') this.c.increaseBrushSize();
           event.preventDefault();
           this._rerenderPreviewAtLastHover();
           break;
@@ -487,6 +530,41 @@ export class TerrainInputHandlers {
   }
 
   // ── Preview Helpers ───────────────────────────────────────────────
+
+  _renderBrushPreview(desc, terrainHeight = true) {
+    const sceneManager = this.c.gameManager.threeSceneManager;
+    if (typeof sceneManager?.setTerrainBrushPreview === 'function') {
+      const cells = desc.cells.map((cell) => {
+        const currentHeight = this.c.getTerrainHeight(cell.x, cell.y);
+        return {
+          ...cell,
+          currentHeight,
+          previewHeight: terrainHeight
+            ? this.c.brush.getPreviewHeight(cell.x, cell.y)
+            : currentHeight,
+        };
+      });
+      sceneManager.setTerrainBrushPreview(cells, {
+        ...desc.style,
+        previewMode: 'terrain-height',
+        brushTool: this.c.brush.tool,
+        heightStep: this.c.brush.heightStep,
+      });
+    } else {
+      this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
+    }
+  }
+
+  _clearPreview() {
+    try {
+      this.c.gameManager.threeSceneManager?.clearTerrainBrushPreview?.();
+      this.c.terrainManager?.clearBrushPreview?.();
+    } catch (error) {
+      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.UI, {
+        context: 'TerrainInputHandlers.clearPreview',
+      });
+    }
+  }
 
   /**
    * Re-render the brush preview at the last known hover coordinates
@@ -504,10 +582,12 @@ export class TerrainInputHandlers {
         terrainModeActive: this.c.isTerrainModeActive,
       });
       if (desc.cells.length) {
-        this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
+        this._renderBrushPreview(desc);
       }
-    } catch (_) {
-      /* ignore preview issues */
+    } catch (error) {
+      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.UI, {
+        context: 'TerrainInputHandlers.refreshPreview',
+      });
     }
   }
 

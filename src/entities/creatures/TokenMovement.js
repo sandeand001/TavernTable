@@ -4,9 +4,31 @@ import {
   TOKEN_MOVEMENT_DEFAULTS,
 } from '../../config/TokenMovementConfig.js';
 
+const characterLibraries = new WeakMap();
+
 // ── Per-Creature Settings ────────────────────────────────────
+export function linkTokenCharacter(token, library, characterId) {
+  const character = library.get(characterId);
+  token.characterSheetId = character.id;
+  token.name = character.name;
+  token.nameMode = 'character';
+  characterLibraries.set(token, library);
+  const style = { ...token.movementSettings };
+  delete style.speed;
+  token.movementSettings = style;
+  return character;
+}
+
+export function unlinkTokenCharacter(token, movementSettings) {
+  characterLibraries.delete(token);
+  delete token.characterSheetId;
+  token.movementSettings = { ...movementSettings };
+}
+
 export function getTokenMovementSettings(token) {
   const settings = { ...TOKEN_MOVEMENT_DEFAULTS, ...token.movementSettings };
+  const library = characterLibraries.get(token);
+  if (library) settings.speed = library.get(token.characterSheetId).speed;
   if (!Number.isFinite(settings.speed) || settings.speed < 0) {
     throw new Error('Movement speed must be a finite, non-negative number of feet');
   }
@@ -22,7 +44,13 @@ export function setTokenMovementSettings(token, updates) {
   const settings = getTokenMovementSettings({
     movementSettings: { ...getTokenMovementSettings(token), ...updates },
   });
-  token.movementSettings = settings;
+  const library = characterLibraries.get(token);
+  if (library) {
+    if ('speed' in updates) library.edit(token.characterSheetId, { speed: settings.speed });
+    token.movementSettings = { mode: settings.mode, type: settings.type };
+  } else {
+    token.movementSettings = settings;
+  }
   return settings;
 }
 

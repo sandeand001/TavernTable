@@ -30,14 +30,14 @@ describe('Available token radial actions', () => {
     expect(menu.root.classList.contains('hidden')).toBe(false);
   });
 
-  test('shows the character sheet, emotes, visual actions and one unavailable placeholder', () => {
+  test('keeps naming on the sheet, not in the radial menu', () => {
     const buttons = [...menu.root.querySelectorAll('path[data-action-id]')];
     expect(buttons.map((button) => button.getAttribute('aria-label')).sort()).toEqual([
       'Actions',
       'Character Sheet',
       'Emotes',
-      'Not yet available',
     ]);
+    expect(menu.root.querySelector('[data-action-id="rename"]')).toBeNull();
     expect(menu.root.textContent).toContain('Mannequin 1');
   });
 
@@ -88,16 +88,6 @@ describe('Available token radial actions', () => {
       expect.objectContaining({ actionId: 'character-sheet', tokenId: 'token-1' })
     );
     expect(menu.root.classList.contains('hidden')).toBe(true);
-  });
-
-  test('the unavailable placeholder never opens a submenu or dispatches an action', () => {
-    const unavailable = menu.root.querySelector('path[data-action-id="unavailable"]');
-    expect(unavailable.getAttribute('aria-disabled')).toBe('true');
-    unavailable.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    unavailable.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-
-    expect(action).not.toHaveBeenCalled();
-    expect(menu.root.querySelectorAll('[data-sub-action-id]')).toHaveLength(0);
   });
 
   test('keyboard activation opens the same emote submenu and keeps every current emote', () => {

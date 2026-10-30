@@ -1,7 +1,7 @@
 # TavernTable maintenance handoff
 
-Last verified after the facing, natural action, physical-height and vault
-refinements, including actual-FBX contracts and rendered VS Code interaction checks.
+Campaign-owned IndexedDB persistence and separate 2014/2024 resources/rules now
+extend the terrain, humanoid, sheet, rest and manual-play foundation.
 
 ## Start here
 
@@ -29,7 +29,18 @@ npm run test:stable -- --watch=false
 npm run lint:all
 ```
 
-- 100 Jest suites and 751 tests pass.
+- Latest complete Jest run: 128 suites and 1,032 tests pass, including the native
+  fetch receiver contract and edition-scoped persistence/recovery regressions.
+- The Core-speed/Combat-meter follow-up passes 3 focused UI suites and 57 tests.
+- Play layouts/Favorites pass 14 focused suites and 208 tests, covering character
+  persistence, rest/actions, sheets/compendium, turn rules and actual navigation.
+- History rail/roll attribution passes 17 focused suites and 223 tests.
+- Compact roll summaries/tooltips pass 12 focused suites and 120 tests.
+- The fresh-turn attack-counter follow-up passes 6 focused suites / 84 tests.
+  Native 2024 checks show 1 attack at Fighter 1, 2 at Fighter 5, 4 after Action
+  Surge, 0 after spending the last action on Dash, and 2 after Undo. Display uses
+  `status.attacksAvailable`; keep `attacksRemaining` as the already-started
+  sequence for attack continuation, forfeit and DM ongoing-attack corrections.
 - JavaScript lint has no errors and 40 existing unused-variable warnings.
 - Stylesheet lint and the architecture-layer check pass.
 - Repository-wide `format:check` reports the unchanged
@@ -47,6 +58,72 @@ assumptions, not established gameplay regressions:
 both normal-path and drunk animation loading and the real fall cleanup.
 The subsequent cliff-motion pass changes production movement and adds the
 regressions below. Remaining browser reports are tracked separately in the backlog.
+
+## Terrain editing colors and wall tool
+
+- The saved pre-terrain checkpoint is
+  [3ea0cba](https://github.com/sandeand001/TavernTable/commit/3ea0cba9db9befde7f5e5871d580d8f202403725),
+  pushed to `main` before this editing work began.
+- Editing colors are baked into the 3D mesh, not just its opacity. Mode entry and
+  exit request a terrain rebuild. Exit must first copy working heights to the
+  base field, then restore normal colors; rebuilding before that copy can
+  momentarily restore stale geometry after an idle period.
+- [TerrainBrushController](./src/terrain/brush/TerrainBrushController.js) owns
+  wall stroke origin, inclusive corner-to-corner rectangles, Filled/Outline
+  selection, validated target levels and height prediction. Preview and
+  application share the same footprint and height logic.
+  Filled includes every rectangle cell; Outline includes only border cells
+  without duplicated corners. Single rows/columns and points remain supported,
+  and reversing either drag axis does not change the selected area.
+  Every wall cell is set to the exact selected level, raising or cutting
+  terrain. The owner explicitly chose this behavior after the raise-only
+  clamp silently ignored negative targets on level-zero ground. Do not restore
+  the old preservation clamp; preview and commit must agree for all 21 levels.
+- [TerrainInputHandlers](./src/coordinators/terrain-coordinator/TerrainInputHandlers.js)
+  starts a pending wall on mouse-down, previews without editing during drag,
+  and commits once on a valid canvas release. Window capture and canvas release
+  must not apply twice. Escape, Space pan, blur, leaving the canvas, tool/mode
+  changes, resizing, and off-board/UI release cancel pending work.
+- Preview uses the existing `ThreeSceneManager.setTerrainBrushPreview` surface
+  with current and predicted levels. Do not route 3D previews only through the
+  removed 2D terrain manager.
+- The Wall height dropdown uses the shared terrain range and is separate from
+  Raise/Lower brush size. A separate Box style dropdown selects Filled or Outline
+  and persists across tool changes. Both controls update the pending preview
+  without committing terrain. UI state and
+  pressed buttons also follow keyboard tool changes through
+  `taverntable:terrainToolChanged`. Invalid levels are reported through the
+  standard input-warning handler, with the last valid value restored visibly.
+  Keep the `.tool-group[hidden]` rule: the authored flex layout otherwise
+  overrides the browser's default hidden-element styling.
+- [Wall tests](./tests/unit/coordinators/TerrainWallTool.test.js),
+  [wall UI tests](./tests/unit/ui/UIControllerWallTool.test.js), and
+  [color lifecycle tests](./tests/unit/coordinators/terrain-coordinator/ActivationHelpers.test.js)
+  cover the gesture, height control, cancellation, real mesh colors, selected
+  biome restoration, delayed exits and preserved geometry.
+- Real browser pointer checks created six-cell horizontal and vertical walls at
+  top levels 4 and 2, respectively. The 3D preview changed no heights before
+  release and Escape cancelled another stroke. The initial raise-only behavior
+  was subsequently replaced by exact-level placement. Turning Terrain Mode off
+  restored the exact
+  original mesh color while retaining all twelve raised cells.
+- The exact-level browser replay cut six cells from 0 to -4 (world Y -1.2),
+  with no changes before release, and cut an existing level-6 wall to level 2.
+  Both results persisted after leaving Terrain Mode; the trench floor returned
+  to the same neutral vertex color as the rest of the board after the queued
+  rebuild. All 21 selected levels have gesture-level preview/commit tests, and
+  mode-exit geometry tests include negative elevations.
+- Rectangular browser checks placed a 5x4 Filled block, a reverse-dragged 6x6
+  Outline with all sixteen interior cells unchanged, a 5x4 negative Filled pit
+  and a seven-cell line. All 67 changed cells persisted after mode exit with
+  normal colors. Each preview matched the final footprint and changed no
+  terrain before release.
+- A whole-board 25x25 Filled preview rendered all 625 cells and cancelled
+  without edits. Representative warm frame sampling stayed close to baseline
+  (about 35 ms with preview versus 33 ms without) on the current software-backed
+  renderer; no unrelated rendering refactor was needed.
+- Live editing still uses the coordinator's working store. This feature does
+  not migrate terrain ownership or introduce a global undo system.
 
 ## Creature menus, identity, and character sheets
 
@@ -75,8 +152,11 @@ regressions below. Remaining browser reports are tracked separately in the backl
 - Visible-window selection creates/selects tabs without stealing focus; selection
   never reopens a hidden window. The window close button preserves tabs and
   layout; a tab close button discards just that tab. Removing a token discards
-  its tab even while hidden. Movement is now editable per creature; other sheet
-  sections remain placeholders. There is no reload persistence.
+  its tab even while hidden. The character editor retains this window; the
+  compendium lives in the sidebar. One Core character-speed control drives linked
+  token movement; manual combat shares a scene turn ledger.
+  Characters and their board links persist in the campaign; open tabs/windows
+  remain session-local.
 - Sheet-tab clicks, keyboard tab navigation, and explicit sheet opening select
   the associated map token through the existing 3D adapter. Passive map-to-tab
   events do not echo selection back to the adapter. When a visible active tab
@@ -106,6 +186,404 @@ regressions below. Remaining browser reports are tracked separately in the backl
 - Browser verification covers drag-to-place numbering, real right-click sheet
   actions, selection sync, hide/reopen with retained layout, window movement and
   resizing, deletion/tab cleanup, preserved Rumba emotes, and non-modal map input.
+
+## Campaign ownership, editions and offline resources
+
+- [CampaignLauncher](./src/ui/campaigns/CampaignLauncher.js) gates startup with a
+  Create/Open picker. The ruleset is required and immutable. Returning through
+  Campaigns flushes character/world saves and reloads to a fresh picker. Reopening
+  restores that campaign's saved board; no multiplayer is implied.
+- [CampaignStore](./src/campaigns/CampaignStore.js) owns campaign metadata and raw
+  character records in `taverntable.campaigns.v1`. Character keys are composite
+  `[campaignId, key]`; revision-checked replacement of a campaign snapshot is atomic.
+  Pack disabling retains its version pin. Ruleset/core-version updates are rejected.
+  Scenes are optional opaque JSON on the existing campaign aggregate, with separate
+  scene revision/date fields: no IndexedDB version upgrade or new store is required.
+- [CampaignAutosave](./src/campaigns/CampaignAutosave.js) coalesces scene changes,
+  reports acknowledged Saving/Saved/errors and flushes before navigation/export.
+  Scene-only and character writes share the facade queue and check both revisions;
+  never overwrite a stale window's scene. A character mutation projects its next
+  shared names/links into the same atomic character+scene commit.
+- [SceneWorld](./src/campaigns/SceneWorld.js) captures the live coordinator's working
+  heights, explicit logical flora records/resolved scales, stable token IDs and
+  poses, counters, camera and committed combat/history.
+  [CampaignScene](./src/campaigns/CampaignScene.js) validates version-1 scene data
+  against the campaign's edition/library before restoration or backup import.
+  Invalid/failed restoration keeps the saved record intact and blocks editing;
+  it must never autosave an empty partially hydrated world.
+  Await the shared `GameManager.enableHybridRender()` initialization promise before
+  hydration: a ready camera/render-mode flag alone does not mean adapters/pools
+  have finished initializing. Terrain ownership remains the partial ADR migration,
+  not a new authority switch to `TerrainEngine.save()`.
+- [SavedPlacements](./src/scene/token-adapter/SavedPlacements.js) records completed
+  ground checkpoints and stable wall/ledge holds, not animation tweens or falls.
+  Restored holds seek their real loaded clip and re-establish legitimate controller
+  world authority. Pending route reservations become only the completed checkpoint's
+  movement cost. Prospective combat saves stage economy/history with resource costs,
+  but read the live movement ledger at final capture after awaiting scene assets.
+  Unfinished rolls/routes are not replayed; Undo receipts and open windows/tabs
+  deliberately remain visit-local.
+- [CampaignCharacters](./src/campaigns/CampaignCharacters.js) keeps synchronous,
+  acknowledged reads over the computational kernel, but queues mutations on cloned
+  snapshots and publishes them only after the asynchronous store commits. Never
+  replace it with a fire-and-forget localStorage-shaped IndexedDB adapter.
+  Compound Add & equip and character replacement use one commit. Slot adjustments
+  read inside the mutation, not from stale UI arrays.
+- [CampaignWorkspace](./src/campaigns/CampaignWorkspace.js) is the async application
+  interface for opening, source settings and complete campaign backups. Import
+  validates settings, source availability, character schema and companion ownership
+  and the full scene before atomically creating a separate campaign. Campaign
+  backup version 2 includes the scene; version 1 imports as no saved board.
+  Bundled resource databases remain excluded. Character backup version 5 carries its ruleset and source pins;
+  cross-edition/unscoped legacy imports are not a campaign migration feature.
+- [ResourceStore](./src/resources/ResourceStore.js) uses separate physical databases
+  `taverntable.resources.2014.v1` and `taverntable.resources.2024.v1`.
+  [ResourceSeeds](./src/resources/ResourceSeeds.js) verifies same-origin seed bytes
+  against the manifest before installation. Keep native fetch calls unbound:
+  invoking a stored `Window.fetch` as a class method causes Illegal invocation.
+- [sync-resources](./tools/sync-resources.js) generates 16 reviewed packs / 8,950
+  entries from pinned Open5e and 5e-bits source snapshots. See the
+  [manifest](./assets/data/resources/manifest.json) and
+  [complete content notices](./assets/data/resources/NOTICES.txt). Images, A5E and
+  Black Flag are excluded. Open5e's `open5e-2024` fixtures still declare its 2014
+  document and are deliberately excluded rather than relabeled.
+- The 2014 core has 319 spells, 746 items and 2,025 total entries; the 2024 core
+  has 339 spells, 1,095 items and 2,296 total entries. Reference categories are
+  searchable/readable but do not expose fake automatic character effects.
+  Disabled sources remain resolvable for owned references, not new additions.
+- [Rules registry](./src/rules/rulesets.js) requires an explicit identity and selects
+  separate [2014](./src/rules/2014/rules.js) and [2024](./src/rules/2024/rules.js)
+  implementations. Preserve paired behavior tests: casting per turn, Action Surge's
+  restricted credit, Grapple/Shove saves, Monk dice/Focus/bonus attacks, Paladin
+  activations, slots and rest/resource recovery. Missing rulesets never mean 2014.
+- `CombatSession.commitAction` and Undo may return a Promise for a persistent
+  adapter; UI callers must await them. Persistent costs commit before in-memory
+  economy/history. Pending saves block action/turn changes. The synchronous kernel
+  remains useful in tests; `afterCharacterCommit` preserves its immediate UI path.
+- Conditional/choice dice formulas are explicitly manual at unsupported levels;
+  do not let nearest-lower table lookup invent an upcast result. 2024 Monk/Rogue
+  weapon training is curated against SRD properties, not stale provider class lists.
+- Native browser checks use the real campaign picker, IndexedDB and shared dice:
+  no default edition; 2014/2024 physical catalogs and independent character lists;
+  Paladin level-1 slots 0 versus 2; Cure Wounds `1d8+3` versus `2d8+3`; and
+  the 2024 slot limit even after a manual action-count correction. Four actual
+  short-rest Hit Dice at level 5 leave 3 dice after a 2014 long rest versus 5 in 2024. Native version-5 copying retains owned spell IDs/Favorites, cross-edition
+  import is rejected, campaign file import preserves the full snapshot, and
+  disabling Deep Magic preserves owned content/pins/Favorites and readable Details.
+  Provider API requests and unhandled page errors remain zero in these checks.
+  The three explicitly owned QA campaigns and their characters were removed after
+  verification; the preview was left at the fresh campaign picker. Other open
+  boards and legacy browser data were not reloaded or cleared.
+
+## Saved characters and compendium UI
+
+- [CharacterLibrary](./src/entities/characters/CharacterLibrary.js) is the
+  synchronous computational kernel over an explicit storage adapter and ruleset.
+  Primary version-1 keys still use `taverntable.character.v1.<UUID>` inside the
+  campaign snapshot, not global production localStorage. Its legacy backup codec
+  is internal compatibility, not the campaign UI's import contract.
+- A token's `characterSheetId` links to a record; it is not the ephemeral token
+  ID or the humanoid appearance definition. Multiple tokens may load the same
+  saved character. The campaign scene persists those token links.
+- [CompendiumCatalog](./src/entities/characters/CompendiumCatalog.js) validates
+  unique entry IDs and the required ruleset, searching only enabled compatible
+  sources. All pinned entries remain available for owned-content resolution.
+  Core classes have single-class slot progression; reference classes do not add
+  unimplemented progression automation. Runtime sheet loading is local.
+- [CharacterSheetContent](./src/ui/components/CharacterSheetContent.js) hosts the
+  library, editing, equipment, spellbook, backup and roll workflows inside
+  [CharacterSheetWindow](./src/ui/components/CharacterSheetWindow.js).
+  Existing direct window callers retain legacy bounds; the normal UI entrypoint
+  starts at 860 by 760, clamped to the viewport.
+  The only name editor is the standalone `plaintext-only` contenteditable title
+  above the sheet, not a Core/play-view input. Enter/blur commits and Escape
+  cancels. Preserve its draft while refreshing tab labels; bind commits to the
+  character ID captured when editing starts so tab/relink changes cannot rename
+  the wrong character. Reuse acknowledged rename/name-sync services and keep
+  failures visible rather than silently accepting invalid or rejected writes.
+  A gear opens the hidden Character settings section for saved-character selection,
+  New, Import/Export, Delete and Compendium. Keep operation errors outside that
+  disclosure; ordinary save messages remain accessible without cluttering play.
+- [characterServices](./src/ui/characters/characterServices.js) requires the selected
+  campaign context for both sheet and sidebar; there is no global 2014 loader.
+  Unlinked-token creation awaits its saved UUID and coalesces concurrent requests.
+  The
+  [CompendiumSidebar](./src/ui/characters/CompendiumSidebar.js) works independently
+  of an open sheet, defaults Add to the selected creature, and supports an explicit
+  saved-character destination. No destination means browsing/Details remain
+  available but Add buttons are disabled with a visible prompt.
+- The sheet no longer embeds a compendium. Its Compendium shortcut and item/spell
+  Details use the window's `onOpenCompendium` port to open the real sidebar.
+  Same-page `taverntable:characterChanged` events are game-manager scoped; an
+  `origin` prevents echo loops. Refresh notifications must not republish themselves
+  or discard focused drafts. Changes also keep destination names up to date.
+- [CompendiumPanel](./src/ui/components/CompendiumPanel.js) supplies ranked search,
+  category filters, paged results, details, keyboard Add/Add & equip alternatives
+  and native drag data. The custom MIME payload carries an explicit ruleset,
+  source/version pin and known catalog ID, never arbitrary dragged statistics.
+  A matching ID in another edition must not be reinterpreted. All user/data text must remain escaped or use
+  `textContent`. Armor Details include base/enhanced AC, Dexterity caps, Strength
+  requirements and Stealth disadvantage, not just cost/weight. Preserve explicit
+  `[hidden]` styling for the standalone sidebar as well as the sheet.
+- Owned, equipped and attuned are distinct states. Supported effects apply only
+  in the required state, identical item effects do not double-stack, and ability
+  minimum effects do not overwrite base scores. Armor/shield replacement and
+  removal reverse the derived effects. Only explicitly implemented magic effects
+  are automatic; Amulet of Health remains reference-only because retroactive HP
+  recalculation is not implemented.
+- Supported calculations cover ability modifiers, level proficiency, saves,
+  skills/expertise, initiative/passive Perception, armor/shields, magic weapons,
+  casting values, supported spell scaling, slots and concentration. Prepared
+  choices and inventory quantities persist. Long rest restores current HP,
+  clears temporary HP, restores slots, ends concentration and resets tracked
+  short/long-rest class counters, not unmodeled charges or effects.
+- Adding/preparing spells never spends slots. Casting checks preparation/slots
+  before consuming a resource. Roll buttons are separate from casting and do
+  not apply damage/healing to targets. Prepared limits, spell eligibility,
+  armor proficiency restrictions, class/subclass features, timed effects,
+  additional projectiles and conditional effects remain manual. Declared sheet
+  uses now share tracked manual-turn costs.
+- [rollDiceExpression](./src/systems/dice/dice.js) accepts bounded numeric dice
+  notation without evaluation and shares roll locking with the legacy boolean
+  `rollDice(sides)` API. Normal single-d20 checks use the settled physical face;
+  advantage/disadvantage use two digital d20s and keep one. Damage is digital.
+  Cocked, unreadable and cancelled physical rolls must not fabricate a result.
+  Missing-3D fallback is explicitly labeled/logged.
+- [HealthBar](./src/ui/characters/HealthBar.js) owns current/max display, percentage
+  and health colors, a separate temporary-HP badge, Damage/Heal and compact direct
+  editing. `CharacterLibrary.adjustHitPoints` reads fresh data, absorbs damage
+  with temporary HP first, clamps current HP at zero, caps healing at maximum and
+  validates before one save. The widget never applies resistance or target
+  effects automatically. Invalid edits remain visible and leave saved HP intact.
+- [CharacterRest](./src/entities/characters/CharacterRest.js) owns rest state
+  under `taverntable.character-rest.v1.<UUID>`, leaving primary version-1 records
+  unchanged so already-open older readers do not reject new character fields.
+  Absent companion state means unused resources; corrupt state must be reported,
+  never silently replaced. Composite HP/slot/rest changes validate first and roll
+  back prior writes on storage failure; rollback failures are explicit.
+- [CharacterRestResources](./src/config/CharacterRestResources.js) declares
+  supported 2014 base-class pools, capacities and rest policies. Use level/ability
+  formulas and progression boundaries, not one generic reset-all. Bard level 5,
+  Sorcerer level 20, unlimited level-20 Rage/Wild Shape, and higher Fighter/Cleric
+  capacities have regressions. Class cards spend these same counters; Signature
+  Spell/Arcanum assignment and effects remain manual, not ordinary slot casting.
+- [RestControls](./src/ui/characters/RestControls.js) places Short/Long Rest
+  and Resources by health on all sections. Qualifying rest duration and the
+  once-per-24-game-hours long-rest limit are manual declarations, not wall-clock
+  timers. Long rest requires at least 1 starting HP and recovers
+  `min(spent, max(1, floor(level / 2)))` Hit Dice, not every die.
+- Hit Dice come from class metadata and character level. Each shared-dice roll
+  adds effective Constitution once, clamps that die's healing at zero, caps
+  current HP and preserves temporary HP. Dice are committed only after a valid
+  roll. Creature/class/level changes or stale pool/modifier snapshots cannot
+  spend a different character's die. Short rest without dice is valid.
+- Pact Magic recovery uses the Warlock's actual base Pact slot levels, not every
+  slot override. Short rest preserves concentration, ordinary spent slots,
+  temporary HP and Hit Dice. Arcane Recovery is optional and atomic, with a
+  `ceil(wizardLevel / 2)` combined-level budget, slots 1-5 only and a daily-use
+  counter. Daily reset is an explicit new-game-day action, not an automatic
+  long-rest side effect.
+- Current version-4 backup import/export preserves Hit Dice, resource usage,
+  custom ability definitions/usage/attack overrides and play layouts, rebinding
+  companion ownership to the new imported UUID. Invalid companion imports and
+  failed writes leave no partial imported character. Delete removes all four keys.
+  Legacy version-1/2/3 backups import without guessing missing companion usage/preferences.
+- Native rest checks verify a Fighter's d10 roll of 6 plus CON 2 heals 8 HP while
+  retaining temporary HP and spending one die; short-rest uses recover without
+  dice, Pact slots recover without losing concentration, and Wizard level 7 can
+  recover levels 1+3 while leaving a spent level-4 slot untouched. The version-2
+  file-input import retains daily usage under a new UUID; New game day restores
+  that daily use without restoring slots or HP. Rest buttons are visible beside
+  health without scrolling at the normal bounds; the 900-by-700 layout has no
+  horizontal rest/form overflow.
+- Editing reconciles existing controls rather than replacing the form: preserve
+  native focus, caret and Tab behavior. Key inventory/spell rows by instance ID.
+  [reconcileContent](./src/ui/characters/reconcileContent.js) leaves explicitly
+  marked child-widget islands alone; HealthBar owns its unfinished input state.
+  Other-character storage events cannot discard drafts; same-character events
+  defer form refresh while a field is focused and display an explicit notice.
+  Grid range, health and rest displays still refresh without erasing that draft.
+- Sheet errors use the existing warning/input notification path. Do not silently
+  replace corrupt saved characters with blank records.
+- `linkTokenCharacter` in [TokenMovement](./src/entities/creatures/TokenMovement.js)
+  makes the saved record's speed authoritative for a linked token. A weak binding
+  resolves current library data; linked tokens store pace/style, not a competing
+  speed. Movement-setting API speed edits write the saved record. Link on every
+  create/load/import path; a future scene loader must also establish that binding.
+  Saved-character selection shares speed across linked tokens, not their pace/style.
+  The duplicate board-movement fieldset is removed. New records use 30 feet;
+  unlinked prototype tokens retain the old 50-foot default. Combat routes use the
+  remaining scene ledger, not a new speed setting or a fresh allowance per click.
+- Editable speed lives only in Core; shared Walk/Run/style controls remain visible.
+  Combat renders a compact, muted remaining/total movement bar from the same ledger.
+  The bar follows route reservations, Dash, Undo and DM corrections, distinguishes
+  waiting/downed states, and previews base per-move movement outside combat.
+  Zero speed uses an empty bar without division by zero. Native checks verify
+  a 10-foot route against 40-foot base speed produces 30/40 feet and 75% fill;
+  Dash produces 70/80 and 87.5%, without changing base speed.
+- [CombatSession](./src/entities/characters/CombatSession.js) owns manual turns,
+  separate action/bonus/reaction/attack credits, scene movement reservations,
+  2014 bonus-action spell restrictions, global-turn custom limits and targeted
+  Undo. One session is shared by sheet/sidebar/navigation through
+  `connectCharacterServices`. It is scene memory, not a saved encounter.
+- [combat/actions](./src/entities/characters/combat/actions.js) builds options
+  from actual equipped attacks, owned spells, common class data and custom
+  definitions. All sheet use paths, including Equipment/Spells, reserve and commit
+  through the same session. Extra Attack preserves only remaining attacks;
+  bonus/reactions/free options remain independent. Reaction refresh is at the
+  actor's next turn. Longer activation times are unavailable during combat.
+- [CharacterActions](./src/entities/characters/CharacterActions.js) stores a strict
+  action companion under `taverntable.character-actions.v1.<UUID>`, not unknown
+  primary fields or custom IDs in the fixed class-resource map. Own use pools and
+  linked class pools are mutually exclusive. Turn uses stay in memory; other
+  uses participate in atomic rest/day transactions. Backup versions 1/2/3/4 are
+  accepted. `commitStorageChanges` provides scoped multi-key rollback.
+- The Core custom editor supports activation, notes, own limits/reset policy or
+  linked class costs, plus automatic/manual attacks-per-action settings. Explicit
+  saves preserve usage. Preserve focused drafts and escape user labels/notes.
+- Combat/Non-combat play views hide spent options and keep recent follow-up
+  rolls. Generic checks/saves and damage/healing follow-ups are free, not another
+  Cast/Attack. Costs/rolls are automatic; triggers, targets, hit/save confirmation,
+  HP application and active effects remain manual, including Rage restrictions.
+  Rituals, two-weapon fighting, subclass rules and initiative remain future work.
+- Navigation reserves the route cost once, then settles actual controller costs.
+  Never replace its immutable speed snapshot with a shrinking budget each frame.
+  Interruptions refund untraveled costs; unexpected failures retain the committed
+  cost with explicit logging and DM correction. Forced falls remain automatic.
+  The adapter synchronizes movement-state transitions so turn controls re-enable
+  after free-play routes or forced motion. Scene motion blocks turn changes.
+- At 0 HP, ordinary combat uses and voluntary movement are unavailable; generic
+  rolls and a manual-resolution death save remain available. Rest buttons/handlers
+  and pending Hit Dice recovery cannot bypass combat. Manual resource corrections
+  remain distinct. DM movement/economy corrections invalidate old Undo; Undo cannot
+  refund already-used Dash movement or overwrite later HP/resource edits.
+- Native combat checks verify consecutive 20-foot and 10-foot routes exhaust one
+  30-foot allowance, the next route is rejected, and Dash adds 30 feet while
+  spending the action. Equipment's first sword attack leaves one Extra Attack;
+  Combat's second removes attack choices while damage rolls remain. Action Surge
+  debits its actual pool. A custom bonus ability spends one of two uses and short
+  rest restores both its uses and Action Surge. Wizard Misty Step suppresses
+  Fireball/own-turn Shield while allowing Fire Bolt; off-turn Shield works, and
+  the legacy Spells Cast spends the action and third-level slot exactly once.
+  DM corrections preserve saved speed and spent slots; 0 HP hides uses/movement
+  while retaining a manual death save. Version-3 native file-input import
+  preserves custom definitions/uses under a new UUID; its temporary copy is removed.
+  At a 900-by-700 viewport, the resized sheet has 434-pixel content with no
+  horizontal play-view overflow; custom forms collapse to one column.
+- [CharacterPlayLayout](./src/entities/characters/CharacterPlayLayout.js) stores
+  strictly validated preferences under `taverntable.character-layout.v1.<UUID>`,
+  leaving primary/rest/action companion shapes unchanged. Each page has section
+  order, per-section card order and ordered favorite IDs. Missing state is default;
+  corrupt state is explicit, never blanked. Version-4 backups rebind layout ownership;
+  four-key imports/deletes roll back atomically. Legacy imports receive defaults.
+- [PlayLayoutControls](./src/ui/characters/PlayLayoutControls.js) owns Customize
+  mode, native drag handles, keyboard ordering, favorite/unfavorite and confirmed
+  page reset. Drag payloads are scoped to one live drag, character and page, using
+  their own MIME type; normal card categories cannot change. Switching context
+  exits editing and cancels stale drags. Card IDs/order survive unavailability:
+  spent options disappear only in normal play and return to their saved places.
+  Favorite checks/saves stay ordinary free rolls. Restore enabled keyboard focus
+  after moving to an edge or moving a card between sections.
+- [RollHistory](./src/ui/characters/RollHistory.js) owns the fixed right-hand rail
+  on every sheet section, with All rolls / This turn filters. The main editor
+  and history scroll separately; narrow layouts stack the rail above the editor.
+  Window bounds expose `--sheet-window-height` to keep the sticky rail inside
+  the resized window. History refreshes during deferred Core updates without
+  replacing focused drafts. Follow-up buttons are disabled while customizing.
+  Legacy layout order entries for `recent` remain valid but no longer move it.
+  The rail omits redundant character names; the shared Dice Log keeps actor attribution.
+  Roll/use contexts retain the actor name captured at request time so even results
+  completed after a rename can remove exactly that display prefix.
+- Both logs use shared compact `name: total` markup with native hover titles and
+  focusable, described totals. [rollSummary](./src/systems/dice/rollSummary.js)
+  creates/copies validated numeric snapshots from real roll data, not parsed
+  log strings. Expression rolls and ordinary tray rolls pass snapshots to
+  `addDiceLogEntry` through its optional third argument; raw message text remains
+  available for compatibility, and system/older text-only entries stay plain.
+  Physical totals, compound dice/signs, modifiers and kept advantage/disadvantage
+  dice remain in the breakdown. Invalid snapshots fail before action costs.
+  Sheet history stores independent snapshots and suppresses duplicate verbose
+  text when a compact result is available; follow-ups/costs/filters are unchanged.
+- `CombatSession.history` retains the saved character's complete session history,
+  independently of the ten-entry turn/Undo support list. Do not use
+  `status().recent` to find older follow-ups; use `historyEntry`. End Combat
+  clears turn budgets, not history. Committed history is saved/exported with its campaign scene.
+  `captureRoll` snapshots owner/current manual turn before asynchronous dice;
+  `recordRoll` consumes that context once without spending any economy.
+  Generic checks, standalone/follow-up damage/healing and rest Hit Dice use this
+  path. Costed rolls are folded into their committed use once; an actual
+  completed roll from an uncommitted use is labeled as such, never a paid use.
+  Cancelled/unreadable rolls do not fabricate results, and Undo keeps roll text.
+- Native history checks verify attack/check/follow-up entries, 13 All versus
+  10 current-turn entries, older follow-ups raising retained history to 14,
+  retention after End Combat and free-play Hit Dice raising it to 15 while
+  healing/spending a die normally. The 220-pixel rail stays within the window
+  after 1,303 pixels of main scrolling and has its own scrollbar. At compact
+  width it stacks to 406 by 220 pixels without horizontal overflow.
+- Native layout checks verify card/section drag, drag-to-Favorites without
+  duplicates, keyboard section movement, independent page preferences, actual
+  Extra Attack through a favorite and spent-option hiding. Full reload preserves
+  both page layouts. Historical kernel checks also cover version-4 copies; current
+  campaign UI imports use edition-scoped version 5 and retain instance IDs.
+  Compact editing has no horizontal overflow.
+- [sync-srd-2014.js](./tools/sync-srd-2014.js) reproducibly generates the local
+  snapshot from a pinned 5e-bits/5e-srd-api commit. Keep per-input hashes,
+  [SRD attribution](./assets/data/SRD2014-NOTICE.txt), and
+  [the upstream MIT notice](./assets/data/SRD2014-UPSTREAM-LICENSE.txt).
+  Class slot extraction must exclude subclass feature-only rows; individual
+  weapon proficiency IDs come from upstream proficiency references, not guessed
+  plurals. Wizard levels 6/10 and Wizard dagger proficiency have regressions.
+- Records are local to the browser/profile/origin. Export JSON before clearing
+  browser data or moving between hostnames/ports. Export both requests a download
+  and exposes a copyable, read-only snapshot so backup access does not depend on
+  the embedded browser's download handling. The status must not claim that a file
+  was saved to disk. No account sync, paid compendium access, full rulebook
+  coverage, guided progression or multiplayer is provided.
+- Rendered checks cover native item/spell dragging, carry/equip/attune AC changes,
+  effective-ability and proficient +1 weapon values, upcasting and depleted slots,
+  concentration/rests, exact character persistence after a page reload, and a
+  copyable-export/file-input-import round trip under a new UUID. Physical d20
+  and digital advantage/damage results match the visible log and shared locks.
+  The sheet also fits a 900-by-700 viewport without horizontal form overflow,
+  minimizes to 48 pixels, and restores/resizes correctly. Embedded-host download
+  completion was not exposed to browser automation; copyable JSON is verified.
+- The UI-first browser pass also verifies independent browsing with no sheet,
+  native sidebar-to-sheet dragging, Details routing, hidden-sheet Add behavior,
+  and a real linked-token range of four steps at 20 feet but not five. Editing
+  HP to 20/30 with 5 temporary HP then applying 8 damage produces 17/30 and zero
+  temporary HP; healing above maximum stops at 30/30.
+- The read-only 3D metrics overlay must retain `pointer-events: none`; it otherwise
+  intercepts clicks on the sidebar tab row. A public scene-initialization test
+  and actual pointer clicks cover the fix.
+- The static development server can serve cached ES modules in a newly opened
+  tab: changing only the page query is not sufficient. Use no-cache routing
+  before navigating a fresh QA tab and remove it afterward. Do not reload an
+  edited board merely to update its scripts.
+
+### Delivered manual combat scope
+
+- Implemented after testing the sidebar/movement/health stage. Keep Core
+  for configuration, separate from Combat and Non-combat play views. A more
+  stylized identity/header can follow later; do not copy Roll20's layout.
+- Use manual creature Start/End Turn controls first, not an initiative tracker.
+  Movement must use one enforced, shared turn budget and the actual grid outline,
+  with an explicit manual/DM adjustment. Switching views or clicking a new
+  destination must not replenish the budget.
+- Separate movement, action, bonus action, reaction and no-action abilities.
+  Extra Attack commits the action to the remaining attacks; movement and valid
+  bonus/reaction/free options remain available. Spent/unavailable options disappear,
+  with recent-action damage/healing controls retained.
+- Use a hybrid of automatic standard costs/common class abilities and custom
+  entries for unsupported features. Reuse the now-implemented rest-resource
+  counters for ability usage instead of creating duplicate pools. Extra Attack,
+  costs and custom use/reset policies are implemented. Broader conditional
+  activation rules and active effects remain future work.
+- Track costs and produce rolls; targets, hit/save confirmation, application of
+  damage/healing and complex conditional effects remain manual initially.
+  Ordinary check/save rolls are not automatically actions. Automatic HP effect
+  application is a later goal, not part of this first-stage health widget.
+- Walk/Run retains existing traversal behavior, not a free Dash. The movement-type
+  dropdown means Default/Drunk animation style, not new flying/swimming modes.
 
 ## Shared humanoid imports and action authoring
 
@@ -164,6 +642,10 @@ regressions below. Remaining browser reports are tracked separately in the backl
   the original and current pointer onto the creature-height plane and snaps the
   resulting world-space vector to eight headings. Do not aim from the feet to
   an absolute screen coordinate: clicking the head would bias the direction.
+  Facing angles use `atan2(-dz, dx)`: positive facing turns toward world -Z.
+  Using `atan2(dz, dx)` reflects the Z axis even when stored-angle tests pass.
+  Real-FBX regressions compare rendered model forward with the drag and normal
+  navigation under both lenses and multiple orbits, not just the numeric angle.
   Simple clicks still use the normal interaction path. Terrain/remove modes,
   Space panning, right-button controls and busy/wall-attached tokens are protected.
   Global release, Escape, blur and renderer-canvas replacement clean up capture.
@@ -260,19 +742,19 @@ Mixamo assets retain [Adobe's own usage terms](https://helpx.adobe.com/creative-
 not the application's MIT license; do not redistribute them as a standalone
 character/animation library.
 
-| Asset | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `Knight T-Pose.fbx` | 10,852,288 | `f2ea71e09b7a5d92a23efd318ae0493b67919085a65c83c3d2b19a0a3ff8dee2` |
-| `Mutant T-Pose.fbx` | 19,800,640 | `f8c5b872648d3e73e8d65246e4f1163c07238d1327d56d985e7424cf13a95f92` |
-| `Waving.fbx` | 305,040 | `524107e646d9696a8aa44d72723cde03ec463be3bb1b2f58342005bcf6cfee39` |
-| `Sitting Idle.fbx` | 533,536 | `3f3cf77cafc64d59a4a3965e8c2411ea4e3c86658fa1ef257e7676b843f8f709` |
-| `Punching.fbx` | 343,424 | `9e94f20c79af3d0153f1e26f773c4aae8f4f262699e6830e39494ea7e74e1439` |
-| `Standing React Large Gut.fbx` | 414,480 | `297b0b0ce7ab8c7eceadfb2660b3cbc1b52fbce5a3a94bb632b0a5b051602bf5` |
-| `Standing Dodge Left.fbx` | 356,384 | `d338d3e22137a87c265c4adb0f29d18365c16e8e5780fa87576d78741f1d2a1e` |
-| `Standing 2H Magic Attack 01.fbx` | 568,592 | `036d68bfc32c724381ea1113c0146368dd911674e450bee88d589eb2dccbd8f1` |
-| `Jumping.fbx` | 457,360 | `67770690d4bda8b0538d3518df6abdb1f96f9a27a4b6a8f0d3d2f155cbb5cfac` |
-| `Vault Over Box.fbx` | 627,568 | `7b69c635ec085290083fc5f9c20adf072aa1b6817717e4eb157b373faaf1b8a4` |
-| `Jump Down.fbx` | 545,920 | `4f07f80f1e897f232577b05129b5bfe250225a4ef25e2624e8612c8efb565e17` |
+| Asset                             |      Bytes | SHA-256                                                            |
+| --------------------------------- | ---------: | ------------------------------------------------------------------ |
+| `Knight T-Pose.fbx`               | 10,852,288 | `f2ea71e09b7a5d92a23efd318ae0493b67919085a65c83c3d2b19a0a3ff8dee2` |
+| `Mutant T-Pose.fbx`               | 19,800,640 | `f8c5b872648d3e73e8d65246e4f1163c07238d1327d56d985e7424cf13a95f92` |
+| `Waving.fbx`                      |    305,040 | `524107e646d9696a8aa44d72723cde03ec463be3bb1b2f58342005bcf6cfee39` |
+| `Sitting Idle.fbx`                |    533,536 | `3f3cf77cafc64d59a4a3965e8c2411ea4e3c86658fa1ef257e7676b843f8f709` |
+| `Punching.fbx`                    |    343,424 | `9e94f20c79af3d0153f1e26f773c4aae8f4f262699e6830e39494ea7e74e1439` |
+| `Standing React Large Gut.fbx`    |    414,480 | `297b0b0ce7ab8c7eceadfb2660b3cbc1b52fbce5a3a94bb632b0a5b051602bf5` |
+| `Standing Dodge Left.fbx`         |    356,384 | `d338d3e22137a87c265c4adb0f29d18365c16e8e5780fa87576d78741f1d2a1e` |
+| `Standing 2H Magic Attack 01.fbx` |    568,592 | `036d68bfc32c724381ea1113c0146368dd911674e450bee88d589eb2dccbd8f1` |
+| `Jumping.fbx`                     |    457,360 | `67770690d4bda8b0538d3518df6abdb1f96f9a27a4b6a8f0d3d2f155cbb5cfac` |
+| `Vault Over Box.fbx`              |    627,568 | `7b69c635ec085290083fc5f9c20adf072aa1b6817717e4eb157b373faaf1b8a4` |
+| `Jump Down.fbx`                   |    545,920 | `4f07f80f1e897f232577b05129b5bfe250225a4ef25e2624e8612c8efb565e17` |
 
 The two traversal clips were exported from X Bot as FBX Binary, Without Skin,
 30 FPS, no keyframe reduction and default modifiers. Mixamo descriptions were
@@ -544,9 +1026,13 @@ Existing strafe and crouch clips were reused rather than downloaded again.
   582 in that low-angle pose; top-down opposite edges remained equal. They also
   exercised the actual settings toggle, top-down rotation lock, cursor zoom,
   picking, and a physical d20 throw followed by camera-switch dismissal.
-- Pan math is covered at the camera API. The existing Space-drag keyboard flag
-  is not wired by the interaction manager; this pass does not add a new pan
-  input binding.
+- Space + left-drag pans independently of the disabled creature keyboard controls.
+  The interaction manager filters editable/button targets, shows grab/grabbing,
+  keeps global drag listeners until release and clears Space on focus loss.
+  Capture-phase pan input wins over token pointer/facing gestures and terrain
+  editing/removal; pending terrain strokes are cancelled, not committed.
+  `panBy` accepts an optional CSS-pixel origin, preserving the actual grabbed
+  focus-plane point under the cursor in perspective as well as top-down.
 - Renderer recovery must reuse its fallback canvas: interaction and terrain
   listeners are already attached to that element. Creating a new canvas lost
   right-drag rotation in software-WebGL test sessions. The container wheel

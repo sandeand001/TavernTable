@@ -2,12 +2,19 @@ import CharacterSheetWindow from '../../../src/ui/components/CharacterSheetWindo
 import { TokenManager } from '../../../src/managers/TokenManager.js';
 import { installSelectionMethods } from '../../../src/scene/token-adapter/SelectionEffects.js';
 import { ErrorHandler } from '../../../src/utils/error/ErrorHandler.js';
+import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
+import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCatalog.js';
+import { getTokenMovementSettings } from '../../../src/entities/creatures/TokenMovement.js';
 
 describe('Tabbed in-app character sheets', () => {
   let gameManager;
   let manager;
   let sheets;
   const originalViewport = { width: window.innerWidth, height: window.innerHeight };
+
+  function movementControl(label) {
+    return sheets.root.querySelector(`[aria-label="${label}"]`);
+  }
 
   function addToken() {
     manager.addTokenToCollection({}, manager.placedTokens.length + 1, 1);
@@ -35,6 +42,7 @@ describe('Tabbed in-app character sheets', () => {
   }
 
   beforeEach(() => {
+    localStorage.clear();
     gameManager = {
       get placedTokens() {
         return manager.placedTokens;
@@ -42,7 +50,20 @@ describe('Tabbed in-app character sheets', () => {
     };
     manager = new TokenManager(gameManager);
     attachSelectionAdapter();
-    sheets = new CharacterSheetWindow({ gameManager }).attach();
+    const catalog = new CompendiumCatalog({
+      ...{ version: 1, entries: [], classes: [] },
+      ruleset: '2014',
+    });
+    const characterServices = {
+      catalog,
+      library: new CharacterLibrary({
+        ruleset: '2014',
+        catalog: catalog.entries,
+        classes: catalog.classes,
+        storage: localStorage,
+      }),
+    };
+    sheets = new CharacterSheetWindow({ gameManager, characterServices }).attach();
   });
 
   afterEach(() => {
@@ -51,7 +72,7 @@ describe('Tabbed in-app character sheets', () => {
     window.innerHeight = originalViewport.height;
   });
 
-  test('opens a named placeholder once per token in one non-modal window', () => {
+  test('opens a named character once per token in one non-modal window', () => {
     const token = addToken();
     sheets.open(token);
     sheets.open(token);
@@ -61,10 +82,88 @@ describe('Tabbed in-app character sheets', () => {
     expect(sheets.root.getAttribute('aria-modal')).toBe('false');
     expect(sheets.root.querySelectorAll('[role="tab"]')).toHaveLength(1);
     expect(sheets.heading.textContent).toBe('Mannequin');
-    expect(sheets.panel.textContent).toContain('coming soon');
-    expect(sheets.speedInput.value).toBe('50');
-    expect(sheets.modeInput.value).toBe('walk');
-    expect(sheets.typeInput.value).toBe('default');
+    expect(sheets.panel.textContent).toContain('Compendium');
+    expect(movementControl('Character speed (feet)').value).toBe('30');
+    expect(movementControl('Walk movement').getAttribute('aria-pressed')).toBe('true');
+    expect(movementControl('Movement type').value).toBe('default');
+  });
+
+  test('keeps only an editable plain-text title and moves character management behind a gear', async () => {
+    await sheets.open(addToken());
+    const gear = sheets.root.querySelector('button[aria-label="Character settings"]');
+    expect(gear).not.toBeNull();
+    const settings = sheets.root.querySelector('section[aria-label="Character settings"]');
+    expect(settings.hidden).toBe(true);
+    expect(gear.getAttribute('aria-expanded')).toBe('false');
+    expect(sheets.heading.getAttribute('contenteditable')).toBe('plaintext-only');
+    expect(sheets.heading.getAttribute('aria-label')).toBe('Character name');
+    expect(sheets.characterContent.main.querySelector('[data-character-field="name"]')).toBeNull();
+    expect(settings.contains(sheets.characterContent.librarySelect)).toBe(true);
+    for (const action of ['new', 'export', 'import', 'delete', 'compendium'])
+      expect(settings.querySelector(`[data-sheet-action="${action}"]`)).not.toBeNull();
+    gear.click();
+    expect(settings.hidden).toBe(false);
+    expect(gear.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(sheets.characterContent.librarySelect);
+    sheets.root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(settings.hidden).toBe(true);
+    expect(document.activeElement).toBe(gear);
+  });
+
+  test('the title saves plain text with Enter or blur, while Escape cancels the draft', async () => {
+    const token = addToken();
+    await sheets.open(token);
+    const id = token.characterSheetId;
+    const library = gameManager.characterServices.library;
+    sheets.heading.focus();
+    sheets.heading.textContent = '  Sentinel  ';
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    sheets.heading.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(true);
+    await sheets.renameReady;
+    expect(library.get(id).name).toBe('Sentinel');
+    expect(sheets.heading.textContent).toBe('Sentinel');
+    expect(sheets.tabs.get(token).button.textContent).toBe('Sentinel');
+    sheets.heading.focus();
+    sheets.heading.textContent = 'Cancelled';
+    sheets.heading.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    );
+    await sheets.renameReady;
+    expect(library.get(id).name).toBe('Sentinel');
+    expect(sheets.heading.textContent).toBe('Sentinel');
+    sheets.heading.focus();
+    sheets.heading.textContent = 'North\nSentinel';
+    sheets.heading.blur();
+    await sheets.renameReady;
+    expect(library.get(id).name).toBe('North Sentinel');
+    expect(sheets.heading.textContent).toBe('North Sentinel');
+    expect(sheets._gesture).toBeNull();
+  });
+
+  test('the plain-text title accepts 100 characters and reports longer names without changing the saved value', async () => {
+    const token = addToken();
+    await sheets.open(token);
+    const error = jest.spyOn(ErrorHandler.prototype, 'handle').mockImplementation(() => {});
+    try {
+      sheets.heading.focus();
+      sheets.heading.textContent = 'N'.repeat(100);
+      sheets.heading.blur();
+      expect(await sheets.renameReady).toBe(true);
+      sheets.heading.focus();
+      sheets.heading.textContent = 'N'.repeat(101);
+      sheets.heading.blur();
+      expect(await sheets.renameReady).toBe(false);
+      expect(error).toHaveBeenCalled();
+      expect(gameManager.characterServices.library.get(token.characterSheetId).name).toBe(
+        'N'.repeat(100)
+      );
+      expect(sheets.heading.textContent).toBe('N'.repeat(100));
+      expect(sheets.characterContent.settingsPanel.hidden).toBe(true);
+      expect(sheets.characterContent.status.classList.contains('sheet-error')).toBe(true);
+    } finally {
+      error.mockRestore();
+    }
   });
 
   test("Movement controls keep each creature's distance, mode, and type independent", () => {
@@ -76,25 +175,24 @@ describe('Tabbed in-app character sheets', () => {
     gameManager.token3DAdapter.applyMovementStyle = applyStyle;
     sheets.open(first);
     refresh.mockClear();
-    sheets.speedInput.value = '25';
-    sheets.speedInput.dispatchEvent(new Event('change'));
-    sheets.modeInput.value = 'run';
-    sheets.modeInput.dispatchEvent(new Event('change'));
-    sheets.typeInput.value = 'drunk';
-    sheets.typeInput.dispatchEvent(new Event('change'));
+    movementControl('Character speed (feet)').value = '25';
+    movementControl('Character speed (feet)').dispatchEvent(new Event('change', { bubbles: true }));
+    movementControl('Run movement').click();
+    movementControl('Movement type').value = 'drunk';
+    movementControl('Movement type').dispatchEvent(new Event('change', { bubbles: true }));
 
-    expect(first.movementSettings).toEqual({ speed: 25, mode: 'run', type: 'drunk' });
+    expect(getTokenMovementSettings(first)).toEqual({ speed: 25, mode: 'run', type: 'drunk' });
     expect(refresh).toHaveBeenCalledTimes(3);
     expect(applyStyle).toHaveBeenCalledTimes(2);
     expect(applyStyle).toHaveBeenLastCalledWith(first);
     sheets.open(second);
-    expect(sheets.speedInput.value).toBe('50');
-    expect(sheets.modeInput.value).toBe('walk');
-    expect(sheets.typeInput.value).toBe('default');
+    expect(movementControl('Character speed (feet)').value).toBe('30');
+    expect(movementControl('Walk movement').getAttribute('aria-pressed')).toBe('true');
+    expect(movementControl('Movement type').value).toBe('default');
     sheets.open(first);
-    expect(sheets.speedInput.value).toBe('25');
-    expect(sheets.modeInput.value).toBe('run');
-    expect(sheets.typeInput.value).toBe('drunk');
+    expect(movementControl('Character speed (feet)').value).toBe('25');
+    expect(movementControl('Run movement').getAttribute('aria-pressed')).toBe('true');
+    expect(movementControl('Movement type').value).toBe('drunk');
   });
 
   test.each(['-5', ''])(
@@ -104,16 +202,44 @@ describe('Tabbed in-app character sheets', () => {
       sheets.open(token);
       const error = jest.spyOn(ErrorHandler.prototype, 'handle').mockImplementation(() => {});
       try {
-        sheets.speedInput.value = value;
-        sheets.speedInput.dispatchEvent(new Event('change'));
+        movementControl('Character speed (feet)').value = value;
+        movementControl('Character speed (feet)').dispatchEvent(
+          new Event('change', { bubbles: true })
+        );
         expect(error).toHaveBeenCalled();
-        expect(sheets.speedInput.value).toBe('50');
-        expect(token.movementSettings).toEqual({ speed: 50, mode: 'walk', type: 'default' });
+        expect(movementControl('Character speed (feet)').value).toBe('30');
+        expect(getTokenMovementSettings(token)).toEqual({
+          speed: 30,
+          mode: 'walk',
+          type: 'default',
+        });
       } finally {
         error.mockRestore();
       }
     }
   );
+
+  test('an external speed edit refreshes the map range without discarding a focused field draft', () => {
+    const token = addToken();
+    const refresh = jest.fn();
+    gameManager.token3DAdapter.refreshMovementRange = refresh;
+    sheets.open(token);
+    refresh.mockClear();
+    const name = sheets.root.querySelector('[aria-label="Character name"]');
+    name.focus();
+    name.textContent = 'Uncommitted name';
+    gameManager.characterServices.library.edit(token.characterSheetId, { speed: 20 });
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: `taverntable.character.v1.${token.characterSheetId}`,
+        newValue: 'updated',
+      })
+    );
+    expect(getTokenMovementSettings(token).speed).toBe(20);
+    expect(refresh).toHaveBeenCalled();
+    expect(name.textContent).toBe('Uncommitted name');
+    expect(document.activeElement.getAttribute('aria-label')).toBe('Character name');
+  });
 
   test('creates and selects a tab on token selection only while the window is visible', () => {
     const first = addToken();
@@ -154,14 +280,14 @@ describe('Tabbed in-app character sheets', () => {
     expect(adapter.getSelectedToken()).toBe(second);
   });
 
-  test('renames the original sheet when the second copy is placed', () => {
+  test('placing another creature does not overwrite a saved shared character name or its sheet tab', () => {
     const first = addToken();
     sheets.open(first);
     expect(sheets.heading.textContent).toBe('Mannequin');
     addToken();
-    expect(sheets.heading.textContent).toBe('Mannequin 1');
-    expect(sheets.tabs.get(first).button.textContent).toBe('Mannequin 1');
-    expect(sheets.tabs.get(first).close.getAttribute('aria-label')).toBe('Close Mannequin 1 sheet');
+    expect(sheets.heading.textContent).toBe('Mannequin');
+    expect(sheets.tabs.get(first).button.textContent).toBe('Mannequin');
+    expect(sheets.tabs.get(first).close.getAttribute('aria-label')).toBe('Close Mannequin sheet');
   });
 
   test('clicking a sheet tab selects that exact creature on the map', async () => {

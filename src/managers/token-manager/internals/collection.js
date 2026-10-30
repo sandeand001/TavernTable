@@ -29,6 +29,7 @@ export function addTokenToCollection(
     id: `token-${c._nextTokenId}`,
     instanceNumber,
     name: instanceNumber === 1 ? typeLabel : `${typeLabel} ${instanceNumber}`,
+    nameMode: 'automatic',
     movementSettings: { ...TOKEN_MOVEMENT_DEFAULTS },
     creature: creature,
     gridX: gridX,
@@ -54,12 +55,15 @@ export function addTokenToCollection(
     })(),
   };
   tokens.push(newTokenData);
+  c.gameManager?.sceneAutosave?.changed('creature placed');
   if (instanceNumber > 1) {
     const duplicates = tokens.filter(
       (token) => normalizeCreatureType(token.type) === canonicalType
     );
     for (const token of duplicates) {
-      token.name = `${typeLabel} ${token.instanceNumber}`;
+      if (!token.characterSheetId && (!token.nameMode || token.nameMode === 'automatic')) {
+        token.name = `${typeLabel} ${token.instanceNumber}`;
+      }
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(

@@ -1,9 +1,6 @@
 import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
-import {
-  getTokenMovementSettings,
-  setTokenMovementSettings,
-} from '../../entities/creatures/TokenMovement.js';
+import CharacterSheetContent from './CharacterSheetContent.js';
 
 const VIEWPORT_MARGIN = 8;
 const MIN_WIDTH = 280;
@@ -12,14 +9,23 @@ const MINIMIZED_HEIGHT = 48;
 
 export default class CharacterSheetWindow {
   // ── Construction & Lifecycle ───────────────────────────────
-  constructor({ gameManager }) {
+  constructor({
+    gameManager,
+    characterServices = null,
+    initialBounds = null,
+    onOpenCompendium = null,
+  }) {
     this.gameManager = gameManager;
+    this.characterServices = characterServices;
+    this.onOpenCompendium = onOpenCompendium;
     this.tabs = new Map();
     this.activeToken = null;
     this.minimized = false;
     this._nextTabId = 0;
     this._gesture = null;
-    this._bounds = { left: 80, top: 120, width: 480, height: 360 };
+    this._nameEdit = null;
+    this.renameReady = Promise.resolve(true);
+    this._bounds = initialBounds || { left: 80, top: 120, width: 480, height: 360 };
     this._onSelected = (event) => {
       const { token, gameManager: source } = event.detail || {};
       if (source === this.gameManager && token && !this.root.hidden) {
@@ -51,7 +57,10 @@ export default class CharacterSheetWindow {
   }
 
   destroy() {
+    this._nameEdit = null;
+    this._destroyed = true;
     this._endGesture();
+    this.characterContent.destroy();
     window.removeEventListener('taverntable:tokenSelected', this._onSelected);
     window.removeEventListener('taverntable:tokenRemoved', this._onRemoved);
     window.removeEventListener('taverntable:tokenNamesChanged', this._onNamesChanged);
@@ -69,9 +78,12 @@ export default class CharacterSheetWindow {
     this.restore();
     this.tabs.get(token).button.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     this.tabs.get(token).button.focus({ preventScroll: true });
+    return this.ready;
   }
 
   hide() {
+    this._commitNameEdit();
+    this.heading.blur();
     this._endGesture();
     this.root.hidden = true;
   }
@@ -87,6 +99,11 @@ export default class CharacterSheetWindow {
   closeTab(token) {
     const tab = this.tabs.get(token);
     if (!tab) return;
+    if (this._nameEdit?.token === token) {
+      if (this.gameManager.placedTokens.includes(token)) this._commitNameEdit();
+      else this._nameEdit = null;
+      this.heading.blur();
+    }
     const tokens = [...this.tabs.keys()];
     const index = tokens.indexOf(token);
     const hadFocus = tab.item.contains(document.activeElement);
@@ -99,6 +116,7 @@ export default class CharacterSheetWindow {
       if (hadFocus) this.tabs.get(next).button.focus();
     } else {
       this.activeToken = null;
+      this.characterContent.clear();
       this.heading.textContent = '';
       this.hide();
     }
@@ -106,6 +124,8 @@ export default class CharacterSheetWindow {
 
   // ── Minimized State ──────────────────────────────────────
   _setMinimized(minimized) {
+    this._commitNameEdit();
+    this.heading.blur();
     this._endGesture();
     this.minimized = minimized;
     this.root.dataset.minimized = String(minimized);
@@ -141,29 +161,14 @@ export default class CharacterSheetWindow {
       </header>
       <div class="character-sheet-tabs" role="tablist" aria-label="Creature character sheets"></div>
       <div class="character-sheet-content" role="tabpanel" id="character-sheet-panel" tabindex="0">
-        <h3></h3>
-        <fieldset class="character-sheet-movement">
-          <legend>Movement</legend>
-          <label>Speed (feet)
-            <input type="number" min="0" step="any" aria-label="Movement speed (feet)" data-movement-speed>
-          </label>
-          <label>Mode
-            <select aria-label="Movement mode" data-movement-mode>
-              <option value="walk">Walk</option>
-              <option value="run">Run</option>
-            </select>
-          </label>
-          <label>Type
-            <select aria-label="Movement type" data-movement-type>
-              <option value="default">Default</option>
-              <option value="drunk">Drunk</option>
-            </select>
-          </label>
-          <p class="character-sheet-hint">Each grid step costs 5 feet. Climbing costs 2 feet per vertical foot.
-            Click inside a wall outline to stop near a 5-foot height. Walk climbs down; Run drops to ground with no vertical cost.
-            Mode and type update while moving; Speed applies to the next move.</p>
-        </fieldset>
-        <p>More character sheet sections - coming soon.</p>
+        <div class="character-sheet-heading">
+          <h3 contenteditable="false" role="textbox" aria-label="Character name" aria-multiline="false"
+            aria-describedby="character-sheet-save-status" tabindex="0" spellcheck="false"
+            title="Click to rename. Enter saves; Escape cancels."></h3>
+          <button type="button" class="character-sheet-settings-toggle" aria-label="Character settings"
+            aria-expanded="false" aria-controls="character-sheet-settings" title="Character settings">&#9881;</button>
+        </div>
+        <div class="character-sheet-editor-host"></div>
         <p class="character-sheet-hint">Select a creature or a sheet tab to keep them in sync.</p>
       </div>
       <button type="button" class="character-sheet-resize" aria-label="Resize character sheet window" title="Drag to resize, or use the arrow keys"></button>
@@ -171,17 +176,40 @@ export default class CharacterSheetWindow {
     this.tablist = this.root.querySelector('[role="tablist"]');
     this.panel = this.root.querySelector('[role="tabpanel"]');
     this.heading = this.panel.querySelector('h3');
-    this.speedInput = this.root.querySelector('[data-movement-speed]');
-    this.modeInput = this.root.querySelector('[data-movement-mode]');
-    this.typeInput = this.root.querySelector('[data-movement-type]');
-    this.speedInput.addEventListener('change', () => {
-      this._changeMovementSetting({ speed: this.speedInput.valueAsNumber });
+    this.characterContent = new CharacterSheetContent({
+      gameManager: this.gameManager,
+      services: this.characterServices,
+      onOpenCompendium: this.onOpenCompendium,
     });
-    this.modeInput.addEventListener('change', () => {
-      this._changeMovementSetting({ mode: this.modeInput.value });
+    this.panel.querySelector('.character-sheet-editor-host').append(this.characterContent.root);
+    this.settingsButton = this.root.querySelector('.character-sheet-settings-toggle');
+    this.settingsButton.addEventListener('click', () => {
+      this._setSettingsOpen(this.characterContent.settingsPanel.hidden);
+      if (!this.characterContent.settingsPanel.hidden) this.characterContent.librarySelect.focus();
     });
-    this.typeInput.addEventListener('change', () => {
-      this._changeMovementSetting({ type: this.typeInput.value });
+    this.characterContent.settingsPanel
+      .querySelector('[data-sheet-settings-close]')
+      .addEventListener('click', () => this._setSettingsOpen(false, true));
+    this.heading.addEventListener('focus', () => {
+      if (this.heading.getAttribute('contenteditable') === 'false') return;
+      this._nameEdit = {
+        token: this.activeToken,
+        characterId: this.activeToken.characterSheetId,
+        original: this.heading.textContent,
+      };
+    });
+    this.heading.addEventListener('blur', () => this._commitNameEdit());
+    this.heading.addEventListener('keydown', (event) => {
+      if (event.isComposing) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.heading.blur();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        this._nameEdit = null;
+        this.heading.textContent = getTokenDisplayName(this.activeToken);
+        this.heading.blur();
+      }
     });
     this.minimizeButton = this.root.querySelector('.character-sheet-window-minimize');
     this.minimizeButton.addEventListener('click', () => {
@@ -215,7 +243,17 @@ export default class CharacterSheetWindow {
         height: this._bounds.height + change[1],
       });
     });
-    this.root.addEventListener('keydown', (event) => event.stopPropagation());
+    this.root.addEventListener('keydown', (event) => {
+      if (
+        event.key === 'Escape' &&
+        !event.defaultPrevented &&
+        !this.characterContent.settingsPanel.hidden
+      ) {
+        event.preventDefault();
+        this._setSettingsOpen(false, true);
+      }
+      event.stopPropagation();
+    });
     for (const type of ['mousedown', 'mouseup', 'wheel', 'contextmenu']) {
       this.root.addEventListener(type, (event) => event.stopPropagation());
     }
@@ -225,6 +263,11 @@ export default class CharacterSheetWindow {
   _select(token, { syncToken = false } = {}) {
     if (!this.gameManager.placedTokens.includes(token)) {
       throw new Error('Cannot open a character sheet for a creature no longer in this session');
+    }
+    if (this.activeToken !== token) {
+      this._commitNameEdit();
+      this.heading.blur();
+      this._setSettingsOpen(false);
     }
     if (!this.tabs.has(token)) this._addTab(token);
     this.activeToken = token;
@@ -238,7 +281,11 @@ export default class CharacterSheetWindow {
       this.tabs.get(token).button.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
     this._refreshNames();
-    this._refreshMovementControls();
+    this.ready = this.characterContent.show(token);
+    this._syncNameEditing();
+    void this.ready.then(() => {
+      if (!this._destroyed && this.activeToken === token) this._syncNameEditing();
+    });
     if (syncToken) {
       void this._selectMapToken(token);
       this._focusCamera(token);
@@ -262,30 +309,6 @@ export default class CharacterSheetWindow {
         tokenId: token.id,
       });
     }
-  }
-
-  _refreshMovementControls() {
-    const settings = getTokenMovementSettings(this.activeToken);
-    this.speedInput.value = String(settings.speed);
-    this.modeInput.value = settings.mode;
-    this.typeInput.value = settings.type;
-  }
-
-  _changeMovementSetting(updates) {
-    try {
-      setTokenMovementSettings(this.activeToken, updates);
-      if ('mode' in updates || 'type' in updates) {
-        this.gameManager.token3DAdapter?.applyMovementStyle?.(this.activeToken);
-      }
-      this.gameManager.token3DAdapter?.refreshMovementRange?.();
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.VALIDATION, {
-        component: 'CharacterSheetWindow',
-        operation: 'changeMovement',
-        tokenId: this.activeToken?.id,
-      });
-    }
-    this._refreshMovementControls();
   }
 
   async _selectMapToken(token) {
@@ -333,7 +356,38 @@ export default class CharacterSheetWindow {
       tab.button.textContent = name;
       tab.close.setAttribute('aria-label', `Close ${name} sheet`);
     }
-    if (this.activeToken) this.heading.textContent = getTokenDisplayName(this.activeToken);
+    if (this.activeToken && this._nameEdit?.token !== this.activeToken)
+      this.heading.textContent = getTokenDisplayName(this.activeToken);
+  }
+
+  _syncNameEditing() {
+    const editable = !!(this.activeToken?.characterSheetId && this.characterContent.services);
+    this.heading.setAttribute('contenteditable', editable ? 'plaintext-only' : 'false');
+    this.heading.setAttribute('aria-readonly', String(!editable));
+  }
+
+  _commitNameEdit() {
+    const edit = this._nameEdit;
+    if (!edit) return this.renameReady;
+    this._nameEdit = null;
+    const text = this.heading.textContent.replace(/[\r\n]+/g, ' ');
+    if (text === edit.original) {
+      this._refreshNames();
+      return this.renameReady;
+    }
+    this.renameReady = Promise.resolve(
+      this.characterContent.rename(edit.token, text, edit.characterId)
+    ).then((saved) => {
+      if (!this._destroyed) this._refreshNames();
+      return saved;
+    });
+    return this.renameReady;
+  }
+
+  _setSettingsOpen(open, focus = false) {
+    this.characterContent.setSettingsOpen(open);
+    this.settingsButton.setAttribute('aria-expanded', String(open));
+    if (focus) this.settingsButton.focus({ preventScroll: true });
   }
 
   _handleTabKey(event, token) {
@@ -377,6 +431,7 @@ export default class CharacterSheetWindow {
     for (const [property, value] of Object.entries({ ...this._bounds, height: visibleHeight })) {
       this.root.style[property] = `${value}px`;
     }
+    this.root.style.setProperty('--sheet-window-height', `${height}px`);
   }
 
   _startGesture(event, kind) {

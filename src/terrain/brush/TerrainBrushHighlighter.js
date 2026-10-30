@@ -13,7 +13,7 @@ import {
 // ── Type Definitions ──────────────────────────────────
 /**
  * @typedef {Object} Brush
- * @property {'raise'|'lower'} tool
+ * @property {'raise'|'lower'|'wall'} tool
  * @property {number} brushSize
  * @property {(cx:number, cy:number) => Array<{x:number,y:number}>} getFootprintCells
  */

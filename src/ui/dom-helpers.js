@@ -18,11 +18,21 @@ export function getFacingButton() {
 }
 
 // ── Terrain Controls ──────────────────────────────────
-/** Returns terrain tool buttons (raise/lower). */
+/** Returns terrain tool buttons. */
 export function getTerrainToolButtons() {
   return {
     raiseBtn: document.getElementById('terrain-raise-btn'),
     lowerBtn: document.getElementById('terrain-lower-btn'),
+    wallBtn: document.getElementById('terrain-wall-btn'),
+  };
+}
+
+export function getTerrainWallControls() {
+  return {
+    controlsEl: document.getElementById('terrain-wall-controls'),
+    heightInput: document.getElementById('terrain-wall-height'),
+    fillSelect: document.getElementById('terrain-wall-fill'),
+    brushControlsEl: document.getElementById('terrain-brush-size-controls'),
   };
 }
 
