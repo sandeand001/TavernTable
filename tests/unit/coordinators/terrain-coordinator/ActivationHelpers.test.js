@@ -8,6 +8,22 @@ import {
   restoreTerrainModeGridTint,
 } from '../../../../src/coordinators/terrain-coordinator/internals/rendering/gridTint.js';
 
+describe('ActivationHelpers.enableTerrainMode', () => {
+  test('validates, activates, and loads state in order', () => {
+    const callOrder = [];
+    const c = {
+      _validateTerrainSystemForActivation: () => callOrder.push('validate'),
+      _activateTerrainMode: () => callOrder.push('activate'),
+      _loadTerrainStateAndDisplay: () => callOrder.push('load'),
+      brush: { tool: 'raise', brushSize: 1 },
+    };
+
+    new ActivationHelpers(c).enableTerrainMode();
+
+    expect(callOrder).toEqual(['validate', 'activate', 'load']);
+  });
+});
+
 describe('ActivationHelpers.disableTerrainMode', () => {
   test('clears flags, applies base integration, resets UI, and repaints biome', () => {
     const c = {
