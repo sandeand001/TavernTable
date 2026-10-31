@@ -2,6 +2,7 @@ import '../../../src/ui/UIController.js';
 import { applyTokenCommand } from '../../../src/core/game-manager/internals/tokenCommands.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCatalog.js';
+import { CHARACTER_DEFINITIONS } from '../../../src/config/CharacterCatalog.js';
 
 test('the real radial event opens and reuses the sheet window without applying a quick command', () => {
   const previousManager = window.gameManager;
@@ -126,7 +127,7 @@ test('the catalog populates and binds all palette entries once, including drag p
   try {
     document.dispatchEvent(new Event('DOMContentLoaded'));
     document.dispatchEvent(new Event('DOMContentLoaded'));
-    expect(container.querySelectorAll('button')).toHaveLength(3);
+    expect(container.querySelectorAll('button')).toHaveLength(CHARACTER_DEFINITIONS.length);
     const knight = container.querySelector('#token-knight');
     knight.click();
     expect(gameManager.selectToken).toHaveBeenCalledTimes(1);

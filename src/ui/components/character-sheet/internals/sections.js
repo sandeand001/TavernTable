@@ -17,8 +17,44 @@ export function field(label, path, value, type = 'text', limits = '') {
 }
 
 // -- Sheet sections --
+export function renderIdentitySection(context, character) {
+  const className =
+    context.services.library.classes.get(character.classId)?.name || 'Custom / no class';
+  return `<section class="sheet-identity-card" aria-label="Character information">
+    <div class="sheet-identity-fields">
+      <div class="sheet-identity-field"><span>Class:</span><output aria-label="Class">${escape(className)}</output></div>
+      ${[
+        ['Level', 'level', 'number', 'min="1" max="20" step="1" required'],
+        ['Ancestry', 'ancestry', 'text', 'maxlength="160"'],
+        ['Background', 'background', 'text', 'maxlength="160"'],
+        ['Alignment', 'alignment', 'text', 'maxlength="160"'],
+      ]
+        .map(
+          ([
+            label,
+            key,
+            type,
+            limits,
+          ]) => `<label class="sheet-identity-field"><span>${label}:</span>
+        <input type="${type}" aria-label="${label}" data-character-field="${key}" data-sheet-identity-value
+          value="${escape(character[key])}" placeholder="Not set" title="Click to edit. Enter saves; Escape cancels." ${limits}>
+      </label>`
+        )
+        .join('')}
+    </div>
+  </section>`;
+}
+
 export function renderCoreSection(context, character, stats) {
   return `
+      <section class="sheet-card sheet-class-selection" aria-label="Class selection">
+        <h4>Class selection (temporary)</h4>
+        <label class="sheet-field">Class (single-class)<select aria-label="Character class" data-character-field="classId">
+          <option value="" ${selected(character.classId === '')}>Custom / no class</option>
+          ${context.services.catalog.classes.map((entry) => `<option value="${escape(entry.id)}" ${selected(entry.id === character.classId)}>${escape(entry.name)}</option>`).join('')}
+        </select></label>
+        <p class="sheet-reference">Temporary manual selection. A future character builder (charactermancer) will determine class.</p>
+      </section>
       <div class="sheet-core-grid">
         <section class="sheet-card"><h4>Ability scores</h4>
           ${ABILITIES.map(

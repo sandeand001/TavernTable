@@ -1,5 +1,5 @@
 // Keep native controls alive so recalculating the sheet preserves focus and Tab navigation.
-export function reconcileContent(root, markup) {
+export function reconcileContent(root, markup, preserveInput = null) {
   const template = document.createElement('template');
   template.innerHTML = markup;
   const key = (node) =>
@@ -38,7 +38,7 @@ export function reconcileContent(root, markup) {
         // Child widgets own their controls and unfinished edits.
         if (!next.hasAttribute('data-sheet-island')) patchChildren(node, next);
         if (['INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)) {
-          if (node.value !== next.value) node.value = next.value;
+          if (node !== preserveInput && node.value !== next.value) node.value = next.value;
           if (node.tagName === 'INPUT') node.checked = next.checked;
           node.disabled = next.disabled;
         }

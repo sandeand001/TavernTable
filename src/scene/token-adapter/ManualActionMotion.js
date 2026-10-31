@@ -1,4 +1,5 @@
 import { getManualAction } from '../../config/HumanoidActionCatalog.js';
+import { facingAngleFromDirection } from '../../entities/creatures/TokenMovement.js';
 
 function rootTrack(clip, root) {
   const track = clip.tracks.find((entry) => entry.name === `${root.bone.name}.position`);
@@ -203,7 +204,7 @@ async function _prepareManualActionMotion(token, definition, key) {
   const inset = data.coverMetrics.back + this.gameManager.spatial.tileWorldSize * 0.02;
   if (wall.dx) goal.x = wall.plane - wall.dx * inset;
   else goal.z = wall.plane - wall.dz * inset;
-  const outward = Math.atan2(-wall.dz, -wall.dx);
+  const outward = facingAngleFromDirection(-wall.dx, -wall.dz);
   return {
     start,
     goal,

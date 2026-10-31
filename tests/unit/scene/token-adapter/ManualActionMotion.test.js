@@ -1,3 +1,4 @@
+import { CHARACTER_DEFINITIONS } from '../../../../src/config/CharacterCatalog.js';
 import {
   createHumanoidFixture,
   finishHumanoid,
@@ -21,7 +22,7 @@ async function fixture(type, height) {
   return f;
 }
 
-describe.each(['mannequin', 'knight', 'mutant'])('%s natural manual motion', (type) => {
+describe.each(CHARACTER_DEFINITIONS.map(({ id }) => id))('%s natural manual motion', (type) => {
   test('removing the supporting cover wall releases the held crouch', async () => {
     const f = await fixture(type, 24);
     await f.adapter.playTokenAction(f.token, 'action-cover');

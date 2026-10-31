@@ -26,6 +26,7 @@ import {
   CLIMB_APPROACH_TOLERANCE_SPRINT_SCALE,
   MAX_INTERMEDIATE_CLIMB_CHAIN,
 } from '../../../config/token-adapter/MannequinConfig.js';
+import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovement.js';
 
 function _createClimbApproach(tokenEntry, targetGridX, targetGridY) {
   const spatial = this.gameManager?.spatial;
@@ -598,8 +599,7 @@ function _orientTokenTowardsWorld(tokenEntry, targetWorld) {
   if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) {
     return;
   }
-  const yaw = Math.atan2(dx, -dz);
-  const facing = this._normalizeAngle(Math.PI / 2 - yaw);
+  const facing = facingAngleFromDirection(dx, dz);
   tokenEntry.facingAngle = facing;
   this.updateTokenOrientation(tokenEntry);
 }

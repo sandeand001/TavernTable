@@ -1,4 +1,5 @@
 import { cloneHumanoidRig } from '../HumanoidRig.js';
+import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovement.js';
 
 const EPSILON = 1e-8;
 const mix = (a, b, t) => a + (b - a) * t;
@@ -147,8 +148,8 @@ function _startShortTraversal(token, cell, kind) {
   const direction = { x: (goal.x - start.x) / distance, z: (goal.z - start.z) / distance };
   const facing =
     kind === 'lower-low'
-      ? Math.atan2(-direction.z, -direction.x)
-      : Math.atan2(direction.z, direction.x);
+      ? facingAngleFromDirection(-direction.x, -direction.z)
+      : facingAngleFromDirection(direction.x, direction.z);
   const tile = spatial.tileWorldSize;
   const phases = [];
   const walkSpeed = job.settings.mode === 'run' ? data.profile.runSpeed : data.profile.walkSpeed;

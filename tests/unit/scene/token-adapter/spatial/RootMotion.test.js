@@ -278,6 +278,54 @@ describe('Mannequin root motion with a real Three.js hierarchy', () => {
     expect(adapter._hasLandingRollClearance(state, data)).toBe(expected);
   });
 
+  test.each([
+    ['an airborne lead-in behind the landing point', 0, 2 / 30, 2, true],
+    ['a grounded backtrack behind the route', -0.2, 2 / 30, 2, false],
+    ['a roll beyond the approved destination', 0, 2 / 30, 1, false],
+    ['ground contact between position keyframes', 0, 1 / 20, 2, false],
+  ])('checks planned roll clearance with %s', (_, contactZ, contactTime, length, expected) => {
+    const { adapter, token } = createRig();
+    Object.assign(adapter.gameManager, {
+      cols: 12,
+      rows: 8,
+      getTerrainHeight: () => 0,
+    });
+    adapter.gameManager.spatial.elevationUnit = 0.3;
+    const clip = new AnimationClip('roll', 1, [
+      new VectorKeyframeTrack(
+        'Hips.position',
+        [0, 1 / 30, 2 / 30, 1],
+        [0, 100, -0.131843, 0, 100, -0.15, 0, 100, contactZ, 0, 100, 150]
+      ),
+    ]);
+    const state = { token, activeStep: { targetWorld: { x: 3.5, y: 0, z: 4.5 } } };
+    adapter._movementRoutes.set(token, {
+      current: { world: { x: 3.5 + length, y: 0, z: 4.5 } },
+    });
+    const data = {
+      actions: { fallToRoll: { getClip: () => clip } },
+      landingContactTimes: { fallToRoll: contactTime },
+    };
+
+    expect(adapter._hasLandingRollClearance(state, data)).toBe(expected);
+  });
+
+  test.each([NaN, -0.1, 1.1])('rejects an invalid roll contact time of %s', (contactTime) => {
+    const { adapter, token } = createRig();
+    const clip = new AnimationClip('roll', 1, [
+      new VectorKeyframeTrack('Hips.position', [0, 1], [0, 100, 0, 0, 100, 100]),
+    ]);
+    const state = { token, activeStep: { targetWorld: { x: 3.5, y: 0, z: 4.5 } } };
+    const data = {
+      actions: { fallToRoll: { getClip: () => clip } },
+      landingContactTimes: { fallToRoll: contactTime },
+    };
+
+    expect(() => adapter._hasLandingRollClearance(state, data)).toThrow(
+      'The roll landing contact time is outside its animation clip'
+    );
+  });
+
   test('continuing after a climb does not restart an already-playing walk cycle', () => {
     const { adapter, token, mesh } = createRig();
     const mixer = new AnimationMixer(mesh);

@@ -1,4 +1,5 @@
 import { normalizeAngle } from '../../token-manager/internals/orientation.js';
+import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovement.js';
 
 const HEADING_STEP = Math.PI / 4;
 const DRAG_THRESHOLD_SQUARED = 36;
@@ -97,7 +98,7 @@ export class TokenFacingGesture {
     const dx = point.x - state.origin.x;
     const dz = point.z - state.origin.z;
     if (Math.hypot(dx, dz) < 1e-5) return;
-    const target = Math.round(Math.atan2(-dz, dx) / HEADING_STEP) * HEADING_STEP;
+    const target = Math.round(facingAngleFromDirection(dx, dz) / HEADING_STEP) * HEADING_STEP;
     gm.tokenManager.rotateToken(
       state.token,
       normalizeAngle(target - (state.token.facingAngle || 0))

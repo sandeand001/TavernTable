@@ -3,6 +3,7 @@ import {
   signed,
   title,
   selected,
+  renderIdentitySection,
   renderCoreSection,
   renderEquipmentSection,
   renderSpellsSection,
@@ -50,6 +51,8 @@ export default class CharacterSheetContent {
     this.playOpened = {};
     this.dmMovementDraft = null;
     this.dmEconomyDraft = {};
+    this._identityEdit = null;
+    this._cancelingIdentityEdit = null;
     this.token = null;
     this.disposed = false;
     this.root = document.createElement('div');
@@ -122,7 +125,13 @@ export default class CharacterSheetContent {
     this.historyPanel = new RollHistory({ onError: (error) => this._failure(error, 'history') });
     this.root.append(this.historyPanel.root);
     this.root.addEventListener('change', (event) => this._change(event));
+    this.root.addEventListener('focusin', (event) => this._startIdentityEdit(event.target));
+    this.root.addEventListener('focusout', (event) => {
+      if (this._identityEdit?.element === event.target) this._identityEdit = null;
+    });
+    this.root.addEventListener('keydown', (event) => this._identityKeyDown(event));
     this.root.addEventListener('input', (event) => {
+      this._startIdentityEdit(event.target);
       if (event.target.dataset.playAmount) {
         const id = event.target.dataset.playAmount;
         this.playChoices[id] = { ...this.playChoices[id], amount: event.target.value };
@@ -194,6 +203,8 @@ export default class CharacterSheetContent {
 
   show(token) {
     if (token !== this.token) {
+      this._identityEdit?.element.blur();
+      this._identityEdit = null;
       this.playChoices = {};
       this.dmMovementDraft = null;
       this.dmEconomyDraft = {};
@@ -246,6 +257,7 @@ export default class CharacterSheetContent {
   }
 
   clear() {
+    this._identityEdit = null;
     this.token = null;
     this.movementView = null;
     this.healthBar.clear();
@@ -257,6 +269,7 @@ export default class CharacterSheetContent {
   }
 
   destroy() {
+    this._identityEdit = null;
     this.disposed = true;
     this.token = null;
     this.movementView = null;
@@ -297,7 +310,7 @@ export default class CharacterSheetContent {
   }
 
   render() {
-    const { library, catalog } = this.services;
+    const { library } = this.services;
     const id = this.characterId;
     const character = linkTokenCharacter(this.token, library, id);
     const stats = library.stats(id);
@@ -331,27 +344,12 @@ export default class CharacterSheetContent {
     this.librarySelect.value = id;
     this.layoutControls.sync();
     const markup = `
-      ${
-        ['combat', 'noncombat'].includes(this.section)
-          ? `
-        <header class="sheet-play-identity"><div>
-          <p>${escape(library.classes.get(character.classId)?.name || 'Custom character')} | Level ${character.level}${character.ancestry ? ` | ${escape(character.ancestry)}` : ''}</p>
-        </div><button type="button" data-sheet-section="core">Edit character</button></header>`
-          : `
-      <div class="sheet-identity-grid">
-        <label class="sheet-field">Class (single-class)<select aria-label="Character class" data-character-field="classId">
-          <option value="" ${selected(character.classId === '')}>Custom / no class</option>
-          ${catalog.classes.map((entry) => `<option value="${escape(entry.id)}" ${selected(entry.id === character.classId)}>${escape(entry.name)}</option>`).join('')}
-        </select></label>
-        ${field('Level', 'level', character.level, 'number', 'min="1" max="20" step="1"')}
-        ${field('Ancestry', 'ancestry', character.ancestry)}
-        ${field('Background', 'background', character.background)}
-        ${field('Alignment', 'alignment', character.alignment)}
-      </div>`
-      }
+      <div class="sheet-identity-row" data-sheet-key="identity">
+        ${renderIdentitySection(this, character)}
+        <div class="sheet-initiative">${this._stat('Initiative', signed(stats.initiative), 'Initiative', 'initiative')}</div>
+      </div>
       <div class="sheet-summary">
         ${this._stat('Armor class', stats.armorClass, 'AC')}
-        ${this._stat('Initiative', signed(stats.initiative), 'Initiative', 'initiative')}
         ${this._stat('Proficiency bonus', signed(stats.proficiencyBonus), 'Proficiency')}
         ${this._stat('Passive perception', stats.passivePerception, 'Passive perception')}
       </div>
@@ -434,7 +432,8 @@ export default class CharacterSheetContent {
       <p class="sheet-rules-coverage">${library.ruleset} rules. Class/subclass features, conditional spell effects,
         targeting and guided level-ups are not fully automated. Combat costs are tracked only after Start Turn. Level edits recalculate
         proficiency and slots; apply HP/features manually. Manual adjustments remain available.</p>`;
-    reconcileContent(this.main, markup);
+    const draft = this._identityEdit?.characterId === id ? this._identityEdit.element : null;
+    reconcileContent(this.main, markup, draft);
     const healthHost = this.main.querySelector('[data-sheet-island="health"]');
     if (this.healthBar.root.parentNode !== healthHost) healthHost.append(this.healthBar.root);
     if (this.restControls.root.parentNode !== healthHost) healthHost.append(this.restControls.root);
@@ -512,8 +511,43 @@ export default class CharacterSheetContent {
     }
   }
 
+  _startIdentityEdit(element) {
+    if (
+      element.matches?.('[data-sheet-identity-value]') &&
+      this._identityEdit?.element !== element
+    ) {
+      this._identityEdit = { element, characterId: this.characterId };
+    }
+  }
+
+  _identityKeyDown(event) {
+    const element = event.target;
+    if (event.isComposing || !element.matches?.('[data-sheet-identity-value]')) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      element.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      try {
+        const id = this._identityEdit?.characterId || this.characterId;
+        const value = this.services.library.get(id)[element.dataset.characterField];
+        if (typeof value !== 'string' && typeof value !== 'number')
+          throw new Error('The saved character information field is invalid');
+        this._identityEdit = null;
+        this._cancelingIdentityEdit = element;
+        element.value = String(value);
+        element.blur();
+      } catch (error) {
+        this._failure(error, 'cancelIdentityEdit');
+      } finally {
+        this._cancelingIdentityEdit = null;
+      }
+    }
+  }
+
   _change(event) {
     const element = event.target;
+    if (this._cancelingIdentityEdit === element) return;
     if (element === this.librarySelect) {
       this._run(() => {
         this.services.library.get(element.value);
@@ -536,6 +570,9 @@ export default class CharacterSheetContent {
         'Movement style updated.'
       );
     } else if (element.dataset.characterField) {
+      const characterId =
+        this._identityEdit?.element === element ? this._identityEdit.characterId : this.characterId;
+      if (this._identityEdit?.element === element) this._identityEdit = null;
       this._run(() => {
         const [fieldName, key] = element.dataset.characterField.split('.');
         const value =
@@ -547,7 +584,7 @@ export default class CharacterSheetContent {
                 ? Number(element.value)
                 : element.value;
         return this.services.library.edit(
-          this.characterId,
+          characterId,
           key ? { [fieldName]: { [key]: value } } : { [fieldName]: value }
         );
       });
