@@ -713,8 +713,8 @@ regressions below. Remaining browser reports are tracked separately in the backl
   controlled up/down waypoints when switching to Walk. Explicit top-cell goals
   never vault beyond their destination. Selection suppression and world-authority
   locks are released at the exact supported endpoint.
-- [MotionRefinements](./tests/unit/scene/token-adapter/movement/MotionRefinements.test.js),
-  [ManualActionMotion tests](./tests/unit/scene/token-adapter/ManualActionMotion.test.js),
+- [MotionRefinements](./tests/integration/scene/token-adapter/movement/MotionRefinements.test.js),
+  [ManualActionMotion tests](./tests/integration/scene/token-adapter/ManualActionMotion.test.js),
   [facing tests](./tests/unit/managers/TokenFacingGesture.test.js), and
   [vault planning tests](./tests/unit/entities/creatures/VaultMovement.test.js)
   cover the captured height scales, all three real rigs, foot clearance, planted
@@ -746,7 +746,7 @@ regressions below. Remaining browser reports are tracked separately in the backl
    key, `visualClip(...)` and `VISUAL_PLAYBACK`. Add `revertTo: 'idle'` for a
    one-shot; omit it for a held/looping performance. Loading, menu entries and
    dispatch derive from that entry. Do not repurpose a locomotion or legacy key.
-6. Run [HumanoidContracts](./tests/unit/scene/token-adapter/HumanoidContracts.test.js),
+6. Run [HumanoidContracts](./tests/integration/scene/token-adapter/HumanoidContracts.test.js),
    the existing wall/root-motion suites, menu tests, then the broader checks
    above. Contracts enumerate registered characters, so a new definition must
    satisfy the same behavior and contact tolerances.
@@ -1206,7 +1206,7 @@ outcomes, rather than counting an arbitrary number as a successful result.
   step. Keeping the action running reduces the 120-FPS step to about 0.018.
   Carry frame overshoot into the next geometric segment so uneven frame timing
   does not drift away from the action clock.
-- [ClimbWallContinuity.test.js](./tests/unit/scene/token-adapter/movement/ClimbWallContinuity.test.js)
+- [ClimbWallContinuity.test.js](./tests/integration/scene/token-adapter/movement/ClimbWallContinuity.test.js)
   builds the actual mannequin and climbing clips through the production setup.
   It measures the rendered skeleton's hands, steady cycle weight and phase
   alignment at 30/60/120 FPS and uneven deltas. Bone-pose coverage is essential:

@@ -691,6 +691,9 @@ Hard-refresh and regenerate to apply these changes to a new map.
 
 | Command                                | Purpose                                                                         |
 | -------------------------------------- | ------------------------------------------------------------------------------- |
+| `npm test`                             | Run the full Jest suite, including real-asset integration tests                 |
+| `npm run test:unit`                    | Run fast unit and mocked-boundary tests without the real-model suites           |
+| `npm run test:integration`             | Run integration tests that load actual FBX, OBJ, and GLB model assets           |
 | `npm run test:stable -- --watch=false` | Run the full Jest suite serially with open-handle detection                     |
 | `npm run test:watch`                   | Run tests in watch mode                                                         |
 | `npm run test:coverage`                | Generate a new coverage report                                                  |
@@ -701,6 +704,28 @@ Hard-refresh and regenerate to apply these changes to a new map.
 Run commands from the project root. The root package manifest is the only
 package manifest for this app; lint configuration remains under
 [tools](./tools/).
+
+### Test suite organization
+
+- [tests/unit](./tests/unit/): deterministic logic, UI, and mocked-boundary checks.
+- [tests/integration](./tests/integration/): real-model contracts and simulations,
+  including humanoid retargeting/motion, rendered facing, generated tree support,
+  tropical model calibration, and the physical d20.
+- [tests/helpers](./tests/helpers/): shared fixtures used by either group.
+
+Use `npm run test:unit` for quick local feedback. Run `npm test` before merging;
+the real-asset regressions remain required coverage, not optional replacements.
+The existing stable, watch, coverage, and CI commands still include both groups.
+Both test directories mirror the corresponding source paths.
+
+Prefer assertions about observable results and exact boundaries over permissive
+smoke checks. Consolidate overlapping cases around the public behavior they
+protect; keep meaningful table-driven inputs and remove obsolete coverage
+alongside its unused production code.
+
+Coverage check (October 30, 2026): the existing 60% global branch threshold is
+unmet both at the starting commit (56.82%) and after this cleanup (56.83%).
+All test cases pass; the threshold and full-suite coverage selection are unchanged.
 
 ### Verification snapshot: October 28, 2026
 
