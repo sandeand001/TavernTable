@@ -240,7 +240,7 @@ export default class RestControls {
       ? 'Cancel'
       : 'Done';
     this.root.querySelector('.sheet-rest-resources').hidden = !!confirmation;
-    const editingResource = this.resources.contains(document.activeElement);
+    const editingResource = this.resources.contains(this.root.ownerDocument.activeElement);
     if (!editingResource) {
       reconcileContent(
         this.resources,
@@ -334,7 +334,11 @@ export default class RestControls {
         });
       });
     } else if (action === 'daily') {
-      if (window.confirm("Declare a new game day and reset this character's daily-use counters?")) {
+      if (
+        this.root.ownerDocument.defaultView.confirm(
+          "Declare a new game day and reset this character's daily-use counters?"
+        )
+      ) {
         this._perform(
           () => this.library.rest.resetDaily(this.characterId),
           'Daily uses reset for a new game day.'

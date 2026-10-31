@@ -1,5 +1,9 @@
 import { ABILITIES, SKILLS } from '../../../../entities/characters/CharacterLibrary.js';
 import { escapeHtml as escape } from '../../../characters/escapeHtml.js';
+import {
+  FALL_TRAITS_DEFAULTS,
+  MOVEMENT_CONDITIONS,
+} from '../../../../config/TokenMovementConfig.js';
 
 // -- Shared sheet markup --
 export const signed = (value) => `${value >= 0 ? '+' : ''}${value}`;
@@ -46,6 +50,7 @@ export function renderIdentitySection(context, character) {
 }
 
 export function renderCoreSection(context, character, stats) {
+  const traits = { ...FALL_TRAITS_DEFAULTS, ...character.fallTraits };
   return `
       <section class="sheet-card sheet-class-selection" aria-label="Class selection">
         <h4>Class selection (temporary)</h4>
@@ -68,6 +73,37 @@ export function renderCoreSection(context, character, stats) {
         <section class="sheet-card"><h4>Movement</h4>
           ${field('Character speed (feet)', 'speed', character.speed, 'number', 'min="0" max="1000" step="1"')}
           <p class="sheet-reference">Base speed for this character. Combat shows remaining turn movement.</p>
+          <h4>Conditions and falling</h4>
+          <div class="sheet-movement-conditions">
+            ${MOVEMENT_CONDITIONS.map(
+              (condition) => `<label><input type="checkbox"
+              aria-label="${title(condition)} condition" data-character-condition="${condition}"
+              ${checked((character.conditions || []).includes(condition))}> ${title(condition)}</label>`
+            ).join('')}
+          </div>
+          ${field('Flying speed (feet)', 'fallTraits.flySpeed', traits.flySpeed, 'number', 'min="0" max="1000" step="1"')}
+          ${field('Other fall damage reduction', 'fallTraits.fallDamageReduction', traits.fallDamageReduction, 'number', 'min="0" max="1000" step="1"')}
+          ${[
+            ['hover', 'Can hover'],
+            ['featherFall', 'Feather Fall active'],
+            ['proneImmune', 'Immune to Prone'],
+          ]
+            .map(
+              ([
+                key,
+                label,
+              ]) => `<label><input type="checkbox" data-character-field="fallTraits.${key}"
+            aria-label="${label}" ${checked(traits[key])}> ${label}</label>`
+            )
+            .join('')}
+          <p class="sheet-reference">Flying speed grants Take flight on the creature radial menu. Take flight rises 5 feet; Raise and Lower spend their chosen distance.
+            Drop relinquishes flight for a zero-movement-cost fall, with normal damage and Prone rules.
+            Natural flight and already-applied spell or item flight use this manual speed setting; casting or owning an item does not apply its effect automatically.
+            Available flight otherwise prevents ledge-fall damage; non-hovering flight cannot help while movement is restricted or Prone.
+            Can hover is a rules protection, not the stationary flying animation.
+            Feather Fall is an already-applied effect and ends on landing; this toggle does not cast or spend a spell slot.
+            Monk Slow Fall (level 4+) prompts for a reaction at the start of a damaging fall.
+            Other protections and condition changes are manual.</p>
           <h4>Saving throws</h4>
           ${ABILITIES.map(
             (ability) => `<div class="sheet-check-row">

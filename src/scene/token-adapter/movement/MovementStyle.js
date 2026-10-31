@@ -13,6 +13,7 @@ import {
   SPRINT_THRESHOLD_SECONDS,
   SPRINT_SPEED_MULTIPLIER,
 } from '../../../config/token-adapter/MannequinConfig.js';
+import { getTokenConditions } from '../../../entities/creatures/TokenMovement.js';
 
 // ── Movement Intent ──────────────────────────────────────────────────────
 
@@ -195,6 +196,21 @@ function _updateMovementFlags(state, directionOverride) {
   }
   sign = sign >= 0 ? 1 : -1;
   state.activeDirectionSign = sign;
+  if (getTokenConditions(state.token).includes('prone')) {
+    this._resetSprintState(state);
+    state.movementStyle = 'crawl';
+    state.isRunning = false;
+    state.loopActionKey = sign > 0 ? 'crawl' : 'crawlBackward';
+    state.startActionKey = null;
+    state.stopActionKey = null;
+    state.startDuration = 0;
+    state.stopDuration = 0;
+    state.loopDuration = this._getActionDuration(state.token, state.loopActionKey);
+    state.startMoveDelay = 0;
+    state.startBlendLead = 0;
+    state.activeSpeed = Math.max((profile.walkSpeed || 0) * 0.5, 0.1);
+    return;
+  }
 
   const forwardSet = state.forwardKeys || new Set();
   const backwardSet = state.backwardKeys || new Set();

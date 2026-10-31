@@ -150,7 +150,14 @@ test('a prospective action save uses movement committed while awaiting scene ass
   await combat.useAction(token, 'dash');
   const saved = JSON.parse((await store.readScene(campaign.id)).scene);
   expect(saved.states[0].movementSpent).toBe(5);
-  expect(saved.states[0].budget).toMatchObject({ actions: 0, movementBonus: 30 });
+  expect(saved.states[0].budget).toMatchObject({ actions: 0, movementBonus: 0, dashes: 1 });
+  const reopened = new CombatSession({ library });
+  reopened.restore(saved, [token]);
+  expect(reopened.status(token).movement).toMatchObject({
+    total: 60,
+    spent: 5,
+    remaining: 55,
+  });
   store.close();
 });
 

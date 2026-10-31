@@ -4,8 +4,11 @@ import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js
 import {
   getTokenMovementSettings,
   linkTokenCharacter,
+  getTokenFallTraits,
+  getTokenConditions,
 } from '../../entities/creatures/TokenMovement.js';
 import CombatSession from '../../entities/characters/CombatSession.js';
+import FallingController from './FallingController.js';
 
 const pendingCharacters = new WeakMap();
 
@@ -22,6 +25,7 @@ export function connectCharacterServices(gameManager, services) {
     gameManager.characterServices.combat
   )
     return gameManager.characterServices;
+  gameManager.characterServices?.falling?.dispose();
   const combat = new CombatSession({
     library: services.library,
     hasToken: (token) => gameManager.placedTokens.includes(token),
@@ -33,6 +37,13 @@ export function connectCharacterServices(gameManager, services) {
   });
   const connected = { ...services, combat };
   gameManager.characterServices = connected;
+  connected.falling = new FallingController({
+    gameManager,
+    library: services.library,
+    combat,
+    getCharacter: (token) => getTokenCharacter(gameManager, token, connected),
+    onChanged: (id) => notifyCharacterChanged(gameManager, id),
+  });
   combat.subscribe(() => {
     gameManager.token3DAdapter?.refreshMovementRange?.();
     window.dispatchEvent(new CustomEvent('taverntable:combatChanged', { detail: { gameManager } }));
@@ -67,6 +78,8 @@ export function getTokenCharacter(gameManager, token, services) {
   const result = afterCharacterCommit(
     services.library.create(getTokenDisplayName(token), {
       linkTokenId: token.id,
+      fallTraits: getTokenFallTraits(token),
+      conditions: [...getTokenConditions(token)],
     }),
     link
   );
@@ -80,6 +93,12 @@ export function getTokenCharacter(gameManager, token, services) {
 
 export function notifyCharacterChanged(gameManager, characterId, entryKind = null, origin = null) {
   syncLinkedCreatureNames(gameManager, characterId);
+  for (const token of gameManager.placedTokens) {
+    if (token.characterSheetId === characterId) {
+      gameManager.token3DAdapter?.syncProneState?.(token);
+    }
+  }
+  gameManager.token3DAdapter?.refreshMovementRange?.();
   window.dispatchEvent(
     new CustomEvent('taverntable:characterChanged', {
       detail: { gameManager, characterId, entryKind, origin },

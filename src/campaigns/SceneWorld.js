@@ -38,6 +38,9 @@ export async function captureCampaignScene(
         type: movement.type,
         ...(character ? {} : { speed: movement.speed }),
       },
+      ...(character || !token.fallTraits
+        ? {}
+        : { fallTraits: TokenMovement.getTokenFallTraits(token) }),
       ...readStablePlacement(gm.token3DAdapter, token),
     };
   });
@@ -150,6 +153,7 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
     token.id = creature.id;
     token.instanceNumber = creature.instanceNumber;
     token.movementSettings = { ...creature.movement };
+    if (creature.fallTraits) token.fallTraits = { ...creature.fallTraits };
     if (creature.characterId)
       TokenMovement.linkTokenCharacter(token, library, creature.characterId);
     restored.push({ token, creature });

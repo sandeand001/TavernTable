@@ -366,6 +366,16 @@ function _updateSelectionIndicatorTransform(tokenEntry) {
   const baseY = marker.userData.__ttBaseY;
   const state = this._movementStates.get(tokenEntry);
   const motion = state?.wallMotion;
+  if (tokenEntry.flightActive) {
+    const world = this._resolveTokenWorldPosition(tokenEntry);
+    const ground = this._sampleWorldHeight(world.x, world.z);
+    const position = (marker.userData.__ttFlightProjection ||= marker.position.clone());
+    position.set(world.x, ground + this.gameManager.spatial.tileWorldSize * 0.015, world.z);
+    mesh.updateWorldMatrix(true, false);
+    marker.position.copy(mesh.worldToLocal(position));
+    marker.rotation.set(-Math.PI / 2, 0, 0);
+    return;
+  }
   const onWall =
     motion?.stage === 'surface' &&
     (state.phase === 'climb-surface' || state.phase === 'climb-hold');

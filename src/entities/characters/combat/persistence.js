@@ -30,6 +30,9 @@ export function snapshotCombat(
   for (const [token, state] of session.states) {
     if (!session.hasToken(token) || !token.characterSheetId) continue;
     let movementSpent = movementSession.states.get(token)?.movementSpent ?? state.movementSpent;
+    if (session._movementSnapshot?.has(token)) {
+      movementSpent += state.movementSpent - session._movementSnapshot.get(token);
+    }
     for (const ticket of movementSession.moves.values()) {
       if (ticket.token === token) movementSpent += (movementCosts.get(token.id) ?? 0) - ticket.cost;
     }
@@ -129,6 +132,7 @@ export function restoreCombat(data, tokens, library) {
       budget.restrictedActions > budget.actions ||
       FLAGS.some((key) => typeof budget[key] !== 'boolean') ||
       !finite(budget.movementBonus, -10000, 10000) ||
+      (budget.dashes !== undefined && !integer(budget.dashes, 0, 20)) ||
       !finite(row.movementSpent, 0, 1000000) ||
       !record(budget.customTurnUses) ||
       Object.entries(budget.customTurnUses).some(
@@ -149,12 +153,20 @@ export function restoreCombat(data, tokens, library) {
       row.recent.some((id) => entries.get(id)?.characterId !== row.characterId) ||
       Object.keys(budget).some(
         (key) =>
-          ![...COUNTS, ...FLAGS, 'movementBonus', 'customTurnUses', 'spellsCast'].includes(key)
+          ![
+            ...COUNTS,
+            ...FLAGS,
+            'movementBonus',
+            'dashes',
+            'customTurnUses',
+            'spellsCast',
+          ].includes(key)
       )
     )
       fail();
     states.set(token, {
       ...clone(budget),
+      dashes: budget.dashes ?? 0,
       movementSpent: row.movementSpent,
       recent: row.recent.map((id) => entries.get(id)),
       undo: [],

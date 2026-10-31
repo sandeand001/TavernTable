@@ -1,9 +1,14 @@
+import { getTokenConditions } from '../../entities/creatures/TokenMovement.js';
+
 export async function rollForSheet(
   context,
   request,
   { recordHistory = true, parentSequence } = {}
 ) {
-  const mode = request.check ? context.rollMode : 'normal';
+  let mode = request.check ? context.rollMode : 'normal';
+  if (request.attack && getTokenConditions(context.token).includes('prone')) {
+    mode = mode === 'advantage' ? 'normal' : 'disadvantage';
+  }
   const token = context.token;
   const characterId = context.characterId;
   const session = context.services.combat;

@@ -102,7 +102,7 @@ export default class PlayLayoutControls {
       if (!this.editing) throw new Error('Turn on Customize layout first');
       if (action === 'reset') {
         if (
-          window.confirm(
+          this.context.root.ownerDocument.defaultView.confirm(
             "Reset this page's arrangement and Favorites? Character statistics, resources and the other page will not change."
           )
         ) {

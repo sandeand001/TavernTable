@@ -177,12 +177,16 @@ describe('Tabbed in-app character sheets', () => {
     refresh.mockClear();
     movementControl('Character speed (feet)').value = '25';
     movementControl('Character speed (feet)').dispatchEvent(new Event('change', { bubbles: true }));
+    expect(refresh).toHaveBeenCalled();
+    refresh.mockClear();
     movementControl('Run movement').click();
+    expect(refresh).toHaveBeenCalled();
+    refresh.mockClear();
     movementControl('Movement type').value = 'drunk';
     movementControl('Movement type').dispatchEvent(new Event('change', { bubbles: true }));
 
     expect(getTokenMovementSettings(first)).toEqual({ speed: 25, mode: 'run', type: 'drunk' });
-    expect(refresh).toHaveBeenCalledTimes(3);
+    expect(refresh).toHaveBeenCalled();
     expect(applyStyle).toHaveBeenCalledTimes(2);
     expect(applyStyle).toHaveBeenLastCalledWith(first);
     sheets.open(second);

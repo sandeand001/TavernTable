@@ -1,11 +1,29 @@
 import { CHARACTER_REST_RESOURCES } from '../../config/CharacterRestResources.js';
 import { STANDARD_COMBAT_ACTIONS, CLASS_COMBAT_ACTIONS } from '../../config/CombatActions.js';
+import {
+  fallingDice,
+  standingCost,
+  fallProtection,
+  resolveFall,
+  movementImpaired,
+  cannotTakeActions,
+  canRemainAirborne,
+} from '../falling.js';
+import { flightAvailability } from '../flight.js';
 
 export default Object.freeze({
   id: '2014',
   restResources: CHARACTER_REST_RESOURCES,
   standardActions: STANDARD_COMBAT_ACTIONS,
   classActions: CLASS_COMBAT_ACTIONS,
+  fallingDice,
+  standingCost,
+  fallProtection,
+  resolveFall,
+  movementImpaired,
+  cannotTakeActions,
+  canRemainAirborne,
+  flightAvailability,
   martialArtsNeedsAttack: true,
   martialDie: (level) => (level >= 17 ? 10 : level >= 11 ? 8 : level >= 5 ? 6 : 4),
   flurryAttacks: () => 2,

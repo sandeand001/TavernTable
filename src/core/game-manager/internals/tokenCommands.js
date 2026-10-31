@@ -20,6 +20,17 @@ export async function applyTokenCommand(gm, tokenEntry, commandId) {
 
   const targetToken = _resolveTokenEntry(gm, tokenEntry);
 
+  if (command.flight) {
+    if (!targetToken || !gm.token3DAdapter?.applyFlightCommand) {
+      throw new Error('Flight requires a placed creature and an active movement adapter');
+    }
+    return gm.token3DAdapter.applyFlightCommand(
+      targetToken,
+      command.flight.kind,
+      command.flight.feet
+    );
+  }
+
   const played = await _handleEmoteCommand(gm, targetToken, commandId);
   if (played) {
     _setTokenQuickCommand(gm, targetToken, commandId);

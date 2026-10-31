@@ -48,6 +48,7 @@ export function characterActionOptions(library, token, choices = {}) {
         expression: `1d20${signed(attack.attackBonus)}`,
         label: `${attack.name} attack`,
         check: true,
+        attack: true,
       },
       followups: [
         { expression: attack.damage, label: `${attack.name} damage (${attack.damageType})` },
@@ -66,6 +67,7 @@ export function characterActionOptions(library, token, choices = {}) {
       expression: `1d20${signed(stats.abilityModifiers.strength + stats.proficiencyBonus)}`,
       label: 'Unarmed strike attack',
       check: true,
+      attack: true,
     },
     followups: [
       {
@@ -200,6 +202,7 @@ export function characterActionOptions(library, token, choices = {}) {
               expression: `1d20${signed(spell.attackBonus)}`,
               label: `${entry.name} spell attack`,
               check: true,
+              attack: true,
             },
       followups: [
         ...spell.damage

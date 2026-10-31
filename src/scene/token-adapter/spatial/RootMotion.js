@@ -43,6 +43,16 @@ function _registerRootBones(tokenEntry, container) {
 function _neutralizeRootMotion(tokenEntry) {
   const roots = this._rootBones.get(tokenEntry);
   if (!roots || !roots.length) return;
+  const state = this._movementStates.get(tokenEntry);
+  if (
+    tokenEntry.flightActive ||
+    (state?.phase === 'fall-choice' && state.activeStep?.ignoreFlight)
+  ) {
+    for (const { bone, basePosition } of roots) {
+      bone.position.copy(basePosition);
+    }
+    return;
+  }
   const manualState = this._getManualAnimationState(tokenEntry);
   if (manualState?.allowRootMotion) {
     this._advanceManualActionMotion(tokenEntry, manualState);
@@ -54,8 +64,8 @@ function _neutralizeRootMotion(tokenEntry) {
     }
     return;
   }
+  if (this._neutralizeProneRoot(tokenEntry, roots)) return;
   if (this._neutralizeTraversalRoot(tokenEntry, roots)) return;
-  const state = this._movementStates.get(tokenEntry);
   const mesh = state?.mesh || tokenEntry.__threeMesh;
   const wallClip = state?.wallMotion?.clip;
   const isRecovery = state?.phase === 'climb-recover' || wallClip === 'climbRecover';

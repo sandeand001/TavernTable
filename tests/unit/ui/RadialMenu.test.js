@@ -41,6 +41,80 @@ describe('Available token radial actions', () => {
     expect(menu.root.textContent).toContain('Mannequin 1');
   });
 
+  test('a grounded flyer gets Take flight, while airborne controls replace it with Raise, Lower and Drop', () => {
+    menu.setActionAvailability({ 'take-flight': { visible: true, allowed: true } });
+    expect(menu.root.querySelector('path[data-action-id="take-flight"]')).not.toBeNull();
+    expect(menu.root.querySelector('path[data-action-id="flight-raise"]')).toBeNull();
+    menu.setActionAvailability({
+      'flight-raise': { visible: true, allowed: true },
+      'flight-lower': { visible: true, allowed: true },
+      'flight-drop': { visible: true, allowed: true },
+    });
+    expect(menu.root.querySelector('path[data-action-id="take-flight"]')).toBeNull();
+    expect(
+      [...menu.root.querySelectorAll('path[data-action-id]')]
+        .map((entry) => entry.getAttribute('aria-label'))
+        .sort()
+    ).toEqual(['Actions', 'Character Sheet', 'Drop', 'Emotes', 'Lower', 'Raise']);
+  });
+
+  test.each(['raise', 'lower'])(
+    '%s exposes exactly 5, 10, 15 and 20 feet with unaffordable choices disabled',
+    (kind) => {
+      menu.setActionAvailability({
+        [`flight-${kind}`]: { visible: true, allowed: true },
+        [`flight-${kind}-15`]: { allowed: false, reason: 'Only 10 feet remain.' },
+        [`flight-${kind}-20`]: { allowed: false, reason: 'Only 10 feet remain.' },
+      });
+      menu.root
+        .querySelector(`path[data-action-id="flight-${kind}"]`)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(
+        [...menu.root.querySelectorAll('path[data-sub-action-id]')].map((entry) =>
+          entry.getAttribute('aria-label')
+        )
+      ).toEqual([5, 10, 15, 20].map((feet) => `${kind === 'raise' ? '+' : '-'}${feet} ft`));
+      const disabled = menu.root.querySelector(`path[data-sub-action-id="flight-${kind}-20"]`);
+      expect(disabled.getAttribute('aria-disabled')).toBe('true');
+      disabled.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(action).not.toHaveBeenCalled();
+      menu.root
+        .querySelector(`path[data-sub-action-id="flight-${kind}-10"]`)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(action).toHaveBeenCalledWith(
+        expect.objectContaining({ actionId: `flight-${kind}-10` })
+      );
+    }
+  );
+
+  test('unavailable Take flight cannot hide the menu or activate by pointer or keyboard', () => {
+    menu.setActionAvailability({
+      'take-flight': { visible: true, allowed: false, reason: 'Not enough movement.' },
+    });
+    const takeoff = menu.root.querySelector('path[data-action-id="take-flight"]');
+    expect(takeoff.getAttribute('aria-disabled')).toBe('true');
+    takeoff.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    takeoff.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(action).not.toHaveBeenCalled();
+    expect(menu.root.classList.contains('hidden')).toBe(false);
+  });
+
+  test.each(['raise', 'lower'])(
+    '%s shows signed elevation amounts directly without hovering',
+    (kind) => {
+      menu.setActionAvailability({ [`flight-${kind}`]: { visible: true, allowed: true } });
+      menu.root
+        .querySelector(`path[data-action-id="flight-${kind}"]`)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const sign = kind === 'raise' ? '+' : '-';
+      const options = [...menu.root.querySelectorAll('.radial-submenu-icon')];
+      expect(options.map((option) => option.textContent)).toEqual(
+        [5, 10, 15, 20].map((feet) => `${sign}${feet} ft`)
+      );
+      expect(options.every((option) => option.dataset.hover !== 'true')).toBe(true);
+    }
+  );
+
   test('the complete actions submenu uses separated targets rather than eight slivers', () => {
     menu.root
       .querySelector('path[data-action-id="actions"]')

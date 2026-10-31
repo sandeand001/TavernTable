@@ -11,6 +11,7 @@ export const ERROR_CATEGORY = Object.freeze({
   INITIALIZATION: 'initialization',
   RENDERING: 'rendering',
   INPUT: 'input',
+  UI: 'ui',
   ASSETS: 'assets',
   VALIDATION: 'validation',
   NETWORK: 'network',

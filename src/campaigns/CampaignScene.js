@@ -3,6 +3,7 @@ import { restoreCombat } from '../entities/characters/combat/persistence.js';
 import { copyRollSummary } from '../systems/dice/rollSummary.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { validateSavedPlacement } from '../scene/token-adapter/SavedPlacements.js';
+import { validateMovementEffects } from '../rules/falling.js';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
@@ -103,11 +104,21 @@ export function validateScene(scene, { ruleset, library }) {
       !['default', 'drunk'].includes(creature.movement.type) ||
       (creature.characterId === null && !finite(creature.movement.speed, 0, 1000)) ||
       !record(creature.pose) ||
-      !['ground', 'wall'].includes(creature.pose.kind) ||
+      !['ground', 'wall', 'flight'].includes(creature.pose.kind) ||
       !vector(creature.pose.world)
     )
       failure('creature identity or position');
     validateSavedPlacement(creature);
+    if (creature.fallTraits !== undefined) {
+      validateMovementEffects({ fallTraits: creature.fallTraits });
+    }
+    if (
+      creature.pose.kind === 'flight' &&
+      creature.pose.world.y <=
+        terrain.heights[creature.gridY][creature.gridX] * terrain.worldElevationUnit + 1e-7
+    ) {
+      failure('flight altitude');
+    }
     if (creature.characterId) {
       const character = library.get(creature.characterId);
       if (creature.name !== character.name || creature.nameMode !== 'character')
@@ -136,7 +147,11 @@ export function validateScene(scene, { ruleset, library }) {
         failure('stable wall/ledge attachment');
     }
     ids.add(creature.id);
-    placeholders.push({ id: creature.id, characterSheetId: creature.characterId });
+    placeholders.push({
+      id: creature.id,
+      characterSheetId: creature.characterId,
+      ...(creature.pose.kind === 'flight' ? { flightActive: true } : {}),
+    });
   }
   const counters = scene.tokenCounters;
   if (

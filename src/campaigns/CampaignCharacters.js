@@ -135,8 +135,11 @@ export default class CampaignCharacters {
     return this.engine.spell(...args);
   }
 
-  create(name, { linkTokenId } = {}) {
-    return this._mutate((engine) => engine.create(name), { type: 'create', linkTokenId });
+  create(name, { linkTokenId, fallTraits, conditions } = {}) {
+    return this._mutate((engine) => engine.create(name, { fallTraits, conditions }), {
+      type: 'create',
+      linkTokenId,
+    });
   }
   replace(id, name) {
     return this._mutate((engine) => engine.replace(id, name), { type: 'replace', oldId: id });
@@ -149,6 +152,9 @@ export default class CampaignCharacters {
   }
   adjustHitPoints(...args) {
     return this._mutate((engine) => engine.adjustHitPoints(...args));
+  }
+  applyFall(...args) {
+    return this._mutate((engine) => engine.applyFall(...args));
   }
   add(...args) {
     return this._mutate((engine) => engine.add(...args));

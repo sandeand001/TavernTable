@@ -116,7 +116,8 @@ climbing and vaulting rules apply without a separate wall-object system.
 ## Creature menus and character sheets
 
 Right-click a creature and choose **Character Sheet** to open its sheet
-inside the app, not a separate browser window. **Emotes** retain their existing
+inside the app. Use **Pop out** in the sheet title bar to move the sheets to a
+separate browser window, which you can drag to another monitor. **Emotes** retain their existing
 animations. **Actions** offers Wave, Sit, Take Cover, Jump, Punch, Hit Reaction,
 Dodge and Cast Spell. Other unfinished commands are represented by one disabled
 **Not yet available** option.
@@ -157,9 +158,17 @@ entry, not another creature class or command switch. See the
 
 Character sheets share one non-modal window:
 
-- Drag the title bar to move it, and the bottom-right handle to resize it.
+- **Pop out** moves all character tabs into a separate browser window without
+  starting another game. Edits, rolls, combat controls and map selection stay
+  connected to the original game. Keep the game page open while using the pop-out.
+  If your browser blocks it, allow pop-ups for this site and try again.
+- Resize or move the pop-out using your operating system's window controls.
+  **Dock**, or closing the browser window, returns the same sheets to the game
+  with their tabs and previous in-app size and position. Reopening Character Sheet
+  from the map focuses an existing pop-out rather than opening another one.
+- Inside the game, drag the title bar to move it, and the bottom-right handle to resize it.
   The map remains interactive around the window.
-- **− (Minimize)** collapses it to a movable title bar. **□ (Restore)** brings back
+- In-app **− (Minimize)** collapses it to a movable title bar. **□ (Restore)** brings back
   its tabs and previous full size.
 - Selecting creatures while minimized updates the selected sheet but leaves the
   window collapsed. Choosing **Character Sheet** from a creature menu restores it.
@@ -172,6 +181,8 @@ Character sheets share one non-modal window:
   This is a one-time recenter, not automatic following. Map-to-tab synchronization
   does not pan the camera; click the active tab to recenter again.
 - **× (Close)** hides the window without losing its tabs, size, or position.
+  In a pop-out, this sheet button also closes the browser window and leaves the
+  returned in-app sheets hidden; closing the native browser window returns them visibly.
   Selecting creatures does not reopen a closed window; use Character Sheet again.
 - The `x` on a tab closes just that sheet. Deleting a creature also removes its tab.
 - Each tab includes the selected campaign's character sheet and a health bar. **Core** holds
@@ -508,8 +519,9 @@ Set base speed on **Core**. The shared movement strip keeps **Walk / Run** butto
 and a **Default / Drunk** style dropdown; **Combat** has a compact, read-only
 **Remaining movement** bar:
 
-- **Core > Character speed (feet)** is the single distance setting for a linked
-  character and its token/grid range. New saved characters default to **30 feet**.
+- **Core > Character speed (feet)** is the ground-distance setting for a linked
+  character and its token/grid range. Flying uses **Core > Flying speed (feet)**.
+  New saved characters default to **30 feet** on the ground and no flying speed.
   Loading a saved character applies its speed; tokens sharing that record share
   speed, while retaining their individual pace/style. There is no second editable
   board allowance. Unlinked prototype tokens retain the legacy 50-foot fallback.
@@ -526,6 +538,48 @@ Speed changes refresh the idle range and apply to the next accepted move.
 Pace/style can update during movement without retargeting the committed route.
 Free play uses a per-move allowance; manual combat shares one remaining allowance
 across committed moves. Run is not Dash.
+
+**Flight:** a creature with an active flying speed gets **Take flight** in its
+radial menu. This rises **5 feet** and spends **5 feet** of flying movement.
+While airborne, it is replaced by **Raise**, **Lower** and **Drop**. Raise and
+Lower each offer **5, 10, 15 or 20 feet**, displayed directly as signed amounts
+(**+5 ft** through **+20 ft**, or **-5 ft** through **-20 ft**) without needing
+hover. Their chosen vertical distance is paid at one movement foot per vertical foot.
+Unaffordable or obstructed choices are
+disabled. Lowering exactly to terrain lands safely; choices below the surface
+are unavailable. The radial status shows height above ground, flying speed and
+the remaining flying allowance.
+
+Click-to-move retains absolute altitude over lower terrain, with the same
+five-foot horizontal/diagonal costs. Flying and ground movement share distance
+already spent during a combat turn; changing travel mode never refills it.
+Dash increases each mode's own allowance. Free play retains its per-move policy.
+Other creatures block overlapping vertical space; unmeasured solid placeables
+remain blocking. Both the selection marker and reachable-area outline project
+onto the terrain beneath the flyer rather than floating at flight altitude.
+
+**Drop** relinquishes flight and starts the shared falling lifecycle without a
+movement cost. Sufficient falls roll damage and may leave the creature Prone;
+Feather Fall, Slow Fall and other protections still apply. Drop does not erase
+natural flying speed or cancel a spell. Losing an active flight capability also
+causes a fall after the current committed waypoint. Completed airborne positions
+and movement costs survive campaign save/reopen; unfinished animations/routes do
+not replay.
+
+Flying speed is currently a manual active-effect setting: it can represent
+natural flight or an already-applied spell/item effect. Preparing/casting a spell
+or owning/equipping an item does not automatically select flight targets or
+manage effect duration. Restore the remaining granted speed, or clear it if no
+flight grant remains, when an effect ends. **Can hover** is a
+rules protection, independent of the stationary hover animation.
+
+Flight uses lazy, retargeted **Floating.fbx** and **Flying.fbx** locomotion
+clips in `assets/animated-sprites/`, with a quarter-second blend between hover
+and travel. They are not emotes and their root translation cannot change logical
+position or grant free elevation. Powered flight translates at twice the selected
+ground Walk/Run pace, with the existing minimum waypoint duration retained for
+smooth short moves. This visual rate does not change movement allowances, costs,
+animation playback timing or the gravity-driven Drop trajectory.
 
 Select a creature to outline the perimeter of its reachable area, without filling
 the tiles. Excluded holes receive their own boundary, and the outline follows
@@ -550,8 +604,9 @@ convention, so entering an animation does not reverse the corrected drag heading
   controlled lowering in Walk, and an authored hop down in Run.
 - Higher transitions use the appropriate full mantle, wall climb or
   gravity-driven fall. Controlled climbing still costs double vertical distance.
-- Landing variants also use physical height: soft landings, braced landings
-  above 7.5 feet, and rolls above 12 feet only when landing clearance permits.
+- Landing recovery uses physical height. Damaging rules-driven falls collapse
+  into Prone; protected falls use a softer landing. Visual-only traversal retains
+  the braced and clearance-checked rolling variants.
 
 **Vaults:** Run routes can vault over a waist-high terrain obstacle no more than
 one square thick when a clear, supported landing at the starting height exists.
@@ -607,7 +662,8 @@ retain the downward cycle's pose and timing.
 Falls accelerate under gravity at the grid's physical scale rather than drifting
 at a constant speed. A 20-foot fall takes about **1.1 seconds airborne**; a
 36-foot fall takes about **1.5 seconds**. Landing contact follows that trajectory,
-while the recovery animation retains its normal pace.
+while recovery normally retains its authored pace. Choosing Slow Fall slows the
+descent and softens recovery visually; its rules effect is damage reduction.
 
 Changing **Mode** or **Type** updates the current gait and travel pace immediately,
 without resetting the original allowance. Switching an active controlled descent
@@ -620,6 +676,76 @@ Keyboard creature movement and turning are disabled for now. Space-drag map pann
 mouse map rotation and keyboard navigation within sheets still work. Token-placement/drag editing
 remains separate from distance-limited click navigation. Free play retains a
 per-move allowance; manual combat shares one remaining allowance across moves.
+
+## Falling damage, Prone and standing up
+
+Running off a ledge or dropping from a wall uses the campaign's falling rules.
+At **ground contact**, each complete **10 feet** of vertical fall deals **1d6
+bludgeoning damage**, capped at **20d6**. Horizontal travel and animation height
+do not add damage. Temporary HP absorbs damage before current HP.
+
+A damaging fall makes the creature **Prone**, unless it is immune to that
+condition. Completely avoided damage does not newly impose Prone. Falling never
+clears an existing Prone condition. The current route stops at the landing, and
+unused route movement is refunded rather than charging the entire requested path.
+
+- **Stand Up** is always in the sheet's condition bar, regardless of the selected
+  page. It spends **half the current maximum Speed, rounded down**, and consumes
+  **no action, bonus action or reaction**. It is not half the remaining movement
+  and does not become more expensive after Dash.
+- For example, with Speed 30 and 10 feet already spent, a fall leaves 20 feet.
+  Standing costs 15 feet, leaving **5 feet**. A creature at 0 HP, with Speed 0,
+  restrained/grappled, or without enough movement cannot normally stand.
+- Prone remains through idle animations, turn changes, rests, saves and reloads
+  until the player stands. Clearing the Core Prone checkbox uses the same
+  cost-tracked standing operation; it is not a free shortcut.
+- Moving while Prone **crawls at double movement cost**. Stand before climbing or
+  vaulting. Weapon, unarmed and spell attack rolls automatically receive
+  disadvantage; an independently selected advantage cancels it. Advantage or
+  disadvantage for attacks *against* a prone target remains manual targeting.
+- In free play, standing reduces the **next per-move allowance**. Completing that
+  move refreshes the usual allowance. In combat, it reduces the shared turn
+  budget and never refreshes that budget.
+
+**Slow Fall:** a level 4+ Monk with an available reaction is prompted **at the
+start of the fall**. Choosing it spends the reaction in manual combat and reduces
+damage by **five times Monk level**. The airborne animation takes twice as long,
+and the landing plays more gently. These are visual timings, not extra movement
+or a change to the feature's rules. If damage remains after reduction, the
+creature still lands Prone. Declining does not spend the reaction.
+
+**Other protections:** Core has Flying speed, Can hover, Feather Fall active,
+other flat fall-damage reduction and Prone immunity. Available flight can avert
+a ledge fall; hovering or magical support differs from merely owning a fly
+speed. Incapacitated flight and Stunned movement use the selected 2014/2024
+rules. A flight **Drop** deliberately relinquishes flight protection but still
+honors Feather Fall and Slow Fall. Feather Fall is an already-applied effect,
+slows descent to 60 feet per game round, prevents fall damage, and ends on landing;
+its checkbox does not cast or spend a spell slot. Other conditional defenses,
+damage-triggered concentration checks, unconsciousness and death resolution
+remain manual.
+
+HP, Prone, completed fall rolls and movement costs are committed together with
+the safe landing checkpoint. A failed save pauses with an explicit Retry prompt,
+reusing the completed roll instead of rerolling or applying damage twice.
+
+The shared [animation catalog](./src/config/HumanoidActionCatalog.js) uses
+Mixamo **Fall Flat** for the in-place landing/collapse, **Sleeping Idle**
+(face down) for the held pose, **Getting Up** (From Stomach) for recovery, and
+**Prone Forward / Crawl Backwards In Prone** for crawling. Exports are FBX Binary,
+Without Skin, 30 FPS, no keyframe reduction, retargeted from Yaku J Ignite to the
+shared humanoid rigs. Lying bodies are grounded by their actual skin bounds,
+not just their feet. The lying clip's heading is matched to the end of the
+collapse on each rig, avoiding an authored sideways turn without changing the
+creature's logical facing or position. These assets retain [Mixamo's terms](https://www.mixamo.com/);
+they are not separately relicensed by the application's code license.
+
+Fall impact uses a balanced 0.18-second blend; transitions between collapse,
+lying, getting up and idle use balanced 0.4-second blends. Both clips retain full
+combined pose weight, and standing releases the lying-body grounding correction
+gradually instead of snapping upward. Refreshing a prone creature does not
+restart its held pose. These visual blends do not delay impact damage or spend
+additional movement/actions.
 
 ## Large d20 rolls
 

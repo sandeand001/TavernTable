@@ -2,9 +2,30 @@ import {
   FEET_PER_GRID_SQUARE,
   MAX_STEP_HEIGHT_FEET,
   TOKEN_MOVEMENT_DEFAULTS,
+  FALL_TRAITS_DEFAULTS,
 } from '../../config/TokenMovementConfig.js';
 
 const characterLibraries = new WeakMap();
+
+export function getTokenCharacterRecord(token) {
+  const library = characterLibraries.get(token);
+  return library ? library.get(token.characterSheetId) : null;
+}
+
+export function getTokenConditions(token) {
+  return getTokenCharacterRecord(token)?.conditions || token?.conditions || [];
+}
+
+export function getTokenFallTraits(token) {
+  return {
+    ...FALL_TRAITS_DEFAULTS,
+    ...(getTokenCharacterRecord(token)?.fallTraits || token?.fallTraits),
+  };
+}
+
+export function getTokenTravelMode(token) {
+  return token?.flightActive === true ? 'fly' : 'ground';
+}
 
 export function facingAngleFromDirection(x, z) {
   if (!Number.isFinite(x) || !Number.isFinite(z) || (x === 0 && z === 0))
@@ -68,16 +89,50 @@ export function movementStepCost(
   mode = 'walk',
   minClimbHeightDifference = elevationUnit > 0
     ? (MAX_STEP_HEIGHT_FEET * tileWorldSize) / (FEET_PER_GRID_SQUARE * elevationUnit)
-    : Infinity
+    : Infinity,
+  prone = false
 ) {
   const delta = toHeight - fromHeight;
   const climbs =
     Math.abs(delta) > minClimbHeightDifference + 1e-9 && (delta > 0 || mode === 'walk');
   const verticalFeet = (Math.abs(delta) * elevationUnit * FEET_PER_GRID_SQUARE) / tileWorldSize;
-  return FEET_PER_GRID_SQUARE + (climbs ? 2 * verticalFeet : 0);
+  return FEET_PER_GRID_SQUARE * (prone ? 2 : 1) + (climbs ? 2 * verticalFeet : 0);
 }
 
 // ── Reachability & Route Planning ────────────────────────────
+export function buildFlightRange({
+  flightWorldY,
+  getHeight,
+  elevationUnit,
+  blocked = new Set(),
+  ...grid
+}) {
+  if (
+    !Number.isFinite(flightWorldY) ||
+    typeof getHeight !== 'function' ||
+    !Number.isFinite(elevationUnit) ||
+    elevationUnit < 0
+  ) {
+    throw new Error('Flight range requires a finite altitude and valid terrain scale');
+  }
+  const obstacles = new Set(blocked);
+  for (let y = 0; y < grid.rows; y++) {
+    for (let x = 0; x < grid.cols; x++) {
+      const height = getHeight(x, y);
+      if (!Number.isFinite(height)) throw new Error(`Terrain height is invalid at ${x},${y}`);
+      if (height * elevationUnit >= flightWorldY - 1e-9) obstacles.add(`${x},${y}`);
+    }
+  }
+  const range = buildMovementRange({
+    ...grid,
+    mode: 'walk',
+    elevationUnit: 0,
+    getHeight: () => 0,
+    blocked: obstacles,
+  });
+  return { ...range, travelMode: 'fly', flightWorldY };
+}
+
 export function buildMovementRange({
   cols,
   rows,
@@ -96,6 +151,7 @@ export function buildMovementRange({
   wallStart = null,
   getWallRestHeight = null,
   maxVaultHeightDifference = 0,
+  prone = false,
 }) {
   if (
     !Number.isInteger(cols) ||
@@ -117,6 +173,7 @@ export function buildMovementRange({
     typeof getHeight !== 'function' ||
     (getWallRestHeight !== null && typeof getWallRestHeight !== 'function') ||
     !['walk', 'run'].includes(mode) ||
+    typeof prone !== 'boolean' ||
     !(minClimbHeightDifference >= 0) ||
     !(maxVaultHeightDifference >= 0)
   ) {
@@ -124,6 +181,8 @@ export function buildMovementRange({
       'Movement range requires a valid grid, start cell, distance, and terrain scale'
     );
   }
+  if (prone && wallStart) throw new Error('Stand up before requesting wall movement');
+  if (prone) mode = 'run';
   const heights = new Map();
   const heightAt = (x, y) => {
     const key = `${x},${y}`;
@@ -238,6 +297,7 @@ export function buildMovementRange({
       const key = `${x},${y}`;
       if (x < 0 || y < 0 || x >= cols || y >= rows || blocked.has(key)) continue;
       const height = heightAt(x, y);
+      if (prone && height - current.height > minClimbHeightDifference + 1e-9) continue;
       const diagonal = dx !== 0 && dy !== 0;
       if (diagonal) {
         if (blocked.has(`${x},${current.gridY}`) || blocked.has(`${current.gridX},${y}`)) continue;
@@ -262,7 +322,8 @@ export function buildMovementRange({
           tileWorldSize,
           elevationUnit,
           mode,
-          minClimbHeightDifference
+          minClimbHeightDifference,
+          prone
         );
       if (cost > speed + 1e-9) continue;
       const distance = current.distance + (diagonal ? Math.SQRT2 : 1);
@@ -274,7 +335,7 @@ export function buildMovementRange({
       previous.set(key, current.key);
       push(heap, { ...next, key, order: order++ });
     }
-    if (mode === 'run' && maxVaultHeightDifference > 0) {
+    if (mode === 'run' && !prone && maxVaultHeightDifference > 0) {
       for (const [dx, dy] of offsets.slice(0, 4)) {
         const ox = current.gridX + dx;
         const oy = current.gridY + dy;
@@ -336,6 +397,7 @@ export function buildMovementRange({
     for (const [dx, dy] of offsets.slice(0, 4)) {
       const face = faceAt(cell.gridX, cell.gridY, cell.gridX + dx, cell.gridY + dy);
       if (!face) continue;
+      if (prone) continue;
       if (blocked.has(`${face.low.gridX},${face.low.gridY}`)) continue;
       const baseCost = cell.cost + FEET_PER_GRID_SQUARE;
       const reach = (speed - baseCost) / verticalCostPerLevel;
@@ -373,6 +435,7 @@ export function buildMovementRange({
   }
   return {
     startKey,
+    prone,
     start,
     tiles,
     previous,

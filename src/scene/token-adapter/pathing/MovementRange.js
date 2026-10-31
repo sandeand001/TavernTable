@@ -3,6 +3,7 @@ import {
   getMovementRoute,
   getTokenMovementSettings,
   getWallMovementTarget,
+  getTokenConditions,
 } from '../../../entities/creatures/TokenMovement.js';
 import { MAX_STANDARD_CLIMB_LEVELS } from '../../../config/token-adapter/MannequinConfig.js';
 import { GameErrors } from '../../../utils/error/ErrorHandler.js';
@@ -31,6 +32,12 @@ function applyMovementStyle(token) {
       return;
     }
     const settings = getTokenMovementSettings(token);
+    if (job.flight) {
+      job.settings.mode = job.range.prone ? 'run' : settings.mode;
+      job.settings.type = settings.type;
+      this._movementRangeDirty = true;
+      return;
+    }
     const previousMode = job.settings.mode;
     job.settings.mode = settings.mode;
     job.settings.type = settings.type;
@@ -87,7 +94,9 @@ function getTokenMovementRange(token) {
   if (!token || this.isMovementInProgress(token)) return null;
   const gm = this.gameManager;
   const combat = gm.characterServices?.combat;
+  if (gm.characterServices?.library?.isSaving || combat?.pending || combat?.committing) return null;
   if (combat?.active && combat.activeToken !== token) return null;
+  if (token.flightActive) return this.getTokenFlightRange(token);
   const world = this._resolveTokenWorldPosition(token);
   const start = this._mapWorldToGrid(world) || token;
   const settings = getTokenMovementSettings(token);
@@ -110,7 +119,12 @@ function getTokenMovementRange(token) {
     rows: gm.rows,
     startGridX: start.gridX,
     startGridY: start.gridY,
-    speed: combat?.active ? combat.movementAllowance(token) : settings.speed,
+    speed: combat?.active
+      ? combat.movementAllowance(token)
+      : combat && token.characterSheetId
+        ? combat.freeMovementAllowance(token)
+        : settings.speed,
+    prone: getTokenConditions(token).includes('prone'),
     mode: settings.mode,
     tileWorldSize: gm.spatial.tileWorldSize,
     elevationUnit: gm.spatial.elevationUnit,
@@ -182,7 +196,7 @@ function refreshMovementRange() {
         tileSize
       );
     }
-    this._movementRangeOverlay.update(range, gm.spatial);
+    this._movementRangeOverlay.update(range, gm.spatial, (x, y) => gm.getTerrainHeight(x, y));
     return range;
   } catch (error) {
     this._movementRange = null;
@@ -207,6 +221,9 @@ function _requestPlannedMovement(token, destination) {
       throw new Error('Movement token is no longer in this session');
     if (this.gameManager.sceneAutosave?.ready === false)
       throw new Error('Wait for the campaign to finish opening before moving');
+    const services = this.gameManager.characterServices;
+    if (services?.library?.isSaving || services?.combat?.pending || services?.combat?.committing)
+      throw new Error('Finish the current character change or action before requesting movement');
     this.recordStablePlacement?.(token);
     if (this.isMovementInProgress(token)) {
       this._logPathing('movement:range-rejected', { reason: 'already-moving', tokenId: token.id });
@@ -220,6 +237,7 @@ function _requestPlannedMovement(token, destination) {
       });
       return null;
     }
+    if (token.flightActive) return this._requestFlyingMovement(token, destination, range);
     let route;
     let wallTarget = null;
     if (destination.surface) {
@@ -265,6 +283,8 @@ function _requestPlannedMovement(token, destination) {
     const combat = this.gameManager.characterServices?.combat;
     const settings = { ...getTokenMovementSettings(token) };
     if (combat?.active) settings.speed = combat.movementAllowance(token);
+    else if (combat && token.characterSheetId) settings.speed = combat.freeMovementAllowance(token);
+    if (range.prone) settings.mode = 'run';
     const world = this._resolveTokenWorldPosition(token);
     if (
       !route.length &&
@@ -341,9 +361,8 @@ function _beginPlannedMovementSegment(token, job) {
     Math.abs(cell.gridX - (from?.gridX ?? token.gridX)),
     Math.abs(cell.gridY - (from?.gridY ?? token.gridY))
   );
-  const affordableSteps = Math.floor(
-    (job.settings.speed - job.spent + 1e-9) / FEET_PER_GRID_SQUARE
-  );
+  const stepCost = FEET_PER_GRID_SQUARE * (job.range.prone ? 2 : 1);
+  const affordableSteps = Math.floor((job.settings.speed - job.spent + 1e-9) / stepCost);
   if (affordableSteps < steps) {
     if (affordableSteps <= 0) return this._stopPlannedMovement(token);
     cell = {
@@ -355,7 +374,7 @@ function _beginPlannedMovementSegment(token, job) {
     job.points = [cell];
     job.index = 1;
   }
-  job.segmentCost = Math.min(steps, affordableSteps) * FEET_PER_GRID_SQUARE;
+  job.segmentCost = Math.min(steps, affordableSteps) * stepCost;
   if (
     from &&
     Math.abs(from.gridX - cell.gridX) + Math.abs(from.gridY - cell.gridY) === 1 &&
@@ -378,7 +397,7 @@ function _beginPlannedMovementSegment(token, job) {
       cell.height > fromHeight || job.settings.mode === 'walk'
         ? Math.max(MAX_LOW_LEDGE_HEIGHT_FEET, shortClimbFeet)
         : MAX_LOW_LEDGE_HEIGHT_FEET;
-    if (data?.traversal && heightFeet <= shortLimit + 1e-8) {
+    if (!job.range.prone && data?.traversal && heightFeet <= shortLimit + 1e-8) {
       job.segmentCost =
         FEET_PER_GRID_SQUARE +
         (cell.height > fromHeight || job.settings.mode === 'walk' ? 2 * heightFeet : 0);
@@ -441,7 +460,7 @@ function _extendPlannedLandingGoal(state) {
       Math.abs(next.gridX - current.gridX),
       Math.abs(next.gridY - current.gridY)
     );
-    const cost = steps * FEET_PER_GRID_SQUARE;
+    const cost = steps * FEET_PER_GRID_SQUARE * (job.range.prone ? 2 : 1);
     if (job.spent + job.segmentCost + cost > job.settings.speed + 1e-9) break;
     job.current = next;
     job.index++;
@@ -492,6 +511,7 @@ function _updatePlannedMovements() {
     this._movementRangeDirty = true;
   }
   for (const [token, job] of this._movementRoutes) {
+    if (job.flight) continue;
     const cellKey = `${token.gridX},${token.gridY}`;
     if (job.cellKey !== cellKey) {
       job.cellKey = cellKey;
@@ -570,6 +590,20 @@ function _commitPlannedMovementCost(job) {
     throw new Error('Movement exceeded its original distance allowance');
 }
 
+function _getFallMovementCost(job) {
+  if (job.segmentCharged) return job.spent;
+  if (job.current.wallExit || job.current.kind === 'wall') return job.spent + job.segmentCost;
+  const start = this._mapWorldToGrid(job.segmentStartWorld);
+  if (!start) throw new Error('A completed fall has no valid movement origin');
+  const steps = Math.max(
+    Math.abs(job.token.gridX - start.gridX),
+    Math.abs(job.token.gridY - start.gridY)
+  );
+  return (
+    job.spent + Math.min(job.segmentCost, steps * FEET_PER_GRID_SQUARE * (job.range.prone ? 2 : 1))
+  );
+}
+
 function _finishPlannedMovement(token, interrupted = false) {
   const job = this._movementRoutes.get(token);
   this._movementRoutes.delete(token);
@@ -582,6 +616,7 @@ function _finishPlannedMovement(token, interrupted = false) {
     job.combat.finishMovement(ticket, cost);
   }
   if (job && !interrupted) this.recordStablePlacement?.(token);
+  if (job && !job.combat?.active && token.characterSheetId) job.combat?.completeFreeMovement(token);
 }
 
 function _stopPlannedMovement(token) {
@@ -631,6 +666,7 @@ export function installMovementRangeMethods(prototype) {
   prototype._getWallClimbThreshold = _getWallClimbThreshold;
   prototype._getWallRestHeight = _getWallRestHeight;
   prototype._commitPlannedMovementCost = _commitPlannedMovementCost;
+  prototype._getFallMovementCost = _getFallMovementCost;
   prototype._finishPlannedMovement = _finishPlannedMovement;
   prototype._stopPlannedMovement = _stopPlannedMovement;
   prototype._beginPlannedMovementSegment = _beginPlannedMovementSegment;

@@ -1,5 +1,8 @@
 import { getManualAction } from '../../config/HumanoidActionCatalog.js';
-import { facingAngleFromDirection } from '../../entities/creatures/TokenMovement.js';
+import {
+  facingAngleFromDirection,
+  getTokenConditions,
+} from '../../entities/creatures/TokenMovement.js';
 
 function rootTrack(clip, root) {
   const track = clip.tracks.find((entry) => entry.name === `${root.bone.name}.position`);
@@ -82,6 +85,11 @@ function findCoverWall(token, minimumHeight = 0) {
 function getManualActionAvailability(token, commandId) {
   const definition = getManualAction(commandId);
   if (!definition) return { allowed: false, reason: 'Unknown creature action.' };
+  if (token?.flightActive) {
+    return { allowed: false, reason: 'Reach the ground before playing a grounded visual action.' };
+  }
+  if (getTokenConditions(token).includes('prone'))
+    return { allowed: false, reason: 'Stand up from Prone before playing a visual action.' };
   const data = this._tokenAnimationData.get(token);
   if (!data) return { allowed: false, reason: 'Creature animations are still loading.' };
   if (this.isMovementInProgress(token) || this.isWallAttached(token))

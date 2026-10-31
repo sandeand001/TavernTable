@@ -35,6 +35,16 @@ function _updateForwardMovements(delta) {
     try {
       this._advanceRotationState(state, delta);
 
+      if (tokenEntry.flightActive) {
+        if (
+          !['flight-error', 'flight-loading'].includes(state.phase) &&
+          this.gameManager.sceneAutosave?.ready !== false
+        ) {
+          this._advanceFlightMotion(state, delta);
+        }
+        continue;
+      }
+
       switch (state.phase) {
         case 'start':
           this._advanceStartPhase(state, delta, bounds);
@@ -68,6 +78,13 @@ function _updateForwardMovements(delta) {
         case 'fall':
           this._advanceFallPhase(state, delta);
           break;
+        case 'fall-choice':
+        case 'fall-resolve':
+        case 'fall-error':
+          continue;
+        case 'stand-up':
+          this._advanceStandUp(state, delta);
+          break;
         case 'idle':
         default: {
           const netIntent = this._recalculateMovementIntent(state);
@@ -100,7 +117,10 @@ function _updateForwardMovements(delta) {
       }
     } catch (error) {
       const phase = state.phase;
-      if (state.traversal) {
+      if (tokenEntry.flightActive || state.flightMotion) {
+        if (this._movementRoutes.get(tokenEntry)?.flight) this._stopFlightMovement(state);
+        else state.phase = 'flight-error';
+      } else if (state.traversal) {
         state.traversal = null;
         this._finishPlannedMovement(tokenEntry, true);
         this._unlockTokenWorldAuthority(state);

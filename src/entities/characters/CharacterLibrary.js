@@ -2,6 +2,8 @@ import CharacterRest from './CharacterRest.js';
 import CharacterActions from './CharacterActions.js';
 import CharacterPlayLayout from './CharacterPlayLayout.js';
 import { rulesFor } from '../../rules/rulesets.js';
+import { validateMovementEffects } from '../../rules/falling.js';
+import { FALL_TRAITS_DEFAULTS } from '../../config/TokenMovementConfig.js';
 
 const STORAGE_PREFIX = 'taverntable.character.v1.';
 export const ABILITIES = [
@@ -115,8 +117,10 @@ export class CharacterLibrary {
     this.rest.remove(id);
   }
 
-  create(name) {
+  create(name, { fallTraits, conditions } = {}) {
     const character = this._newCharacter(name);
+    if (fallTraits !== undefined) character.fallTraits = fallTraits;
+    if (conditions !== undefined) character.conditions = conditions;
     this._save(character);
     return character.id;
   }
@@ -144,6 +148,8 @@ export class CharacterLibrary {
       abilities: Object.fromEntries(ABILITIES.map((ability) => [ability, 10])),
       hp: { max: 10, current: 10, temp: 0 },
       speed: 30,
+      conditions: [],
+      fallTraits: { ...FALL_TRAITS_DEFAULTS },
       initiativeBonus: 0,
       acBonus: 0,
       inspiration: false,
@@ -189,6 +195,8 @@ export class CharacterLibrary {
       'abilities',
       'hp',
       'speed',
+      'conditions',
+      'fallTraits',
       'initiativeBonus',
       'acBonus',
       'inspiration',
@@ -199,7 +207,7 @@ export class CharacterLibrary {
       'slotOverrides',
       'notes',
     ];
-    const merged = ['abilities', 'hp', 'skills', 'saveOverrides', 'slotOverrides'];
+    const merged = ['abilities', 'hp', 'skills', 'saveOverrides', 'slotOverrides', 'fallTraits'];
     for (const [field, value] of Object.entries(updates)) {
       if (!fields.includes(field))
         throw new Error(`Unknown or read-only character field: ${field}`);
@@ -222,14 +230,49 @@ export class CharacterLibrary {
     }
     const character = this.get(id);
     if (kind === 'damage') {
-      const absorbed = Math.min(character.hp.temp, amount);
-      character.hp.temp -= absorbed;
-      character.hp.current = Math.max(0, character.hp.current - (amount - absorbed));
+      this._damage(character, amount);
     } else {
       character.hp.current = Math.min(character.hp.max, character.hp.current + amount);
     }
     this._save(character);
     return character.hp;
+  }
+
+  applyFall(id, fall) {
+    const character = this.get(id);
+    if (
+      !fall ||
+      typeof fall.id !== 'string' ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(fall.id) ||
+      typeof fall.featherFall !== 'boolean'
+    ) {
+      throw new Error('A fall needs a valid, unique result and explicit spell state');
+    }
+    if (character.lastFall?.id === fall.id) {
+      return { ...character.lastFall, hp: { ...character.hp } };
+    }
+    const result = this.rules.resolveFall(fall);
+    this._damage(character, result.damage);
+    if (result.prone && !(character.conditions || []).includes('prone')) {
+      character.conditions = [...(character.conditions || []), 'prone'];
+    }
+    if (fall.featherFall) {
+      character.fallTraits = { ...character.fallTraits, featherFall: false };
+    }
+    character.lastFall = {
+      id: fall.id,
+      ...result,
+      featherFall: fall.featherFall,
+      avoidDamage: fall.avoidDamage,
+    };
+    this._save(character);
+    return { ...character.lastFall, hp: { ...character.hp } };
+  }
+
+  _damage(character, amount) {
+    const absorbed = Math.min(character.hp.temp, amount);
+    character.hp.temp -= absorbed;
+    character.hp.current = Math.max(0, character.hp.current - (amount - absorbed));
   }
 
   add(id, entryId, { equip = false } = {}) {
@@ -606,6 +649,9 @@ export class CharacterLibrary {
       'abilities',
       'hp',
       'speed',
+      'conditions',
+      'fallTraits',
+      'lastFall',
       'initiativeBonus',
       'acBonus',
       'inspiration',
@@ -622,6 +668,7 @@ export class CharacterLibrary {
     if (Object.keys(character).some((field) => !allowed.includes(field))) {
       throw new Error('Character data contains unsupported fields');
     }
+    validateMovementEffects(character);
     for (const field of ['skills', 'saveOverrides', 'slotOverrides']) {
       if (
         !character[field] ||
