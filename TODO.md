@@ -142,12 +142,20 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 - [x] **Sheet settings disclosure** - A gear holds saved-character management,
       new/import/export/delete and Compendium controls outside the normal play view;
       operation failures remain visible when the settings panel is closed.
+- [x] **Grouped character information and compact initiative** - One plain-text-style
+      identity card across every sheet page; class is read-only, other values remain
+      editable, and initiative is a smaller neighboring roll widget.
+- [ ] **Character builder / charactermancer** - Determine class during guided
+      character creation/progression and replace the temporary manual class dropdown
+      currently in Core. Do not treat the overview card as class selection.
 - [x] **Space-grab map panning** - Hold Space and left-drag in either camera view
       without moving/facing creatures or painting terrain; preserve text input,
       outside-canvas release, focus-loss cleanup and autosaved camera position.
 - [x] **Unreflected facing drags** - Align snapped pointer direction with rendered
       humanoid forward and the existing movement convention in both camera views;
-      test the loaded rigs rather than only their stored facing-angle values.
+      use one shared conversion for navigation, short climbs/descents, vaults/hops,
+      wall holds and cover. Test the loaded rigs in every cardinal direction,
+      including turns into climbs, rather than only stored angles or east-facing poses.
 - [ ] **Guided progression and broader 5e rules** - Level-up choices, class/subclass
       features, multiclassing, additional conditional item/spell mechanics and
       resource models beyond the first-pass supported calculations.

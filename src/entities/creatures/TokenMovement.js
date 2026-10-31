@@ -6,6 +6,12 @@ import {
 
 const characterLibraries = new WeakMap();
 
+export function facingAngleFromDirection(x, z) {
+  if (!Number.isFinite(x) || !Number.isFinite(z) || (x === 0 && z === 0))
+    throw new Error('Facing requires a finite, non-zero X/Z direction');
+  return Math.atan2(-z, x);
+}
+
 // ── Per-Creature Settings ────────────────────────────────────
 export function linkTokenCharacter(token, library, characterId) {
   const character = library.get(characterId);

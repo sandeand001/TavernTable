@@ -81,6 +81,64 @@ test('real campaign sheets acknowledge creation, edits, equipment, recovery and 
   }
 }, 30000);
 
+test.each(['2014', '2024'])(
+  'the %s information card acknowledges edits and restores all identity values after reopening',
+  async (ruleset) => {
+    const workspace = await CampaignWorkspace.load({
+      fetch: fetchBundledResource,
+      indexedDB: testIndexedDB(),
+      crypto: webcrypto,
+    });
+    const campaign = await workspace.create({ name: 'Identity values', ruleset });
+    const services = await workspace.open(campaign.id);
+    const id = await services.library.create('Reader');
+    const token = { id: 'hero', type: 'mannequin', name: 'Reader', characterSheetId: id };
+    const gameManager = {
+      placedTokens: [token],
+      campaignContext: services,
+      token3DAdapter: { setSelectedToken: jest.fn(), getSelectedToken: () => token },
+    };
+    const sheets = new CharacterSheetWindow({ gameManager, characterServices: services }).attach();
+    try {
+      await sheets.open(token);
+      for (const [label, field, value] of [
+        ['Character class', 'classId', 'wizard'],
+        ['Level', 'level', '5'],
+        ['Ancestry', 'ancestry', 'High Elf'],
+        ['Background', 'background', 'Sage'],
+        ['Alignment', 'alignment', 'Neutral good'],
+      ]) {
+        const input = sheets.root.querySelector(`[aria-label="${label}"]`);
+        const previous = services.library.get(id)[field];
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        expect(services.library.get(id)[field]).toBe(previous);
+        await services.library.flush();
+        expect(services.library.get(id)[field]).toBe(field === 'level' ? Number(value) : value);
+      }
+      sheets.root.querySelector('[data-sheet-section="combat"]').click();
+      expect(sheets.root.querySelector('[aria-label="Class"]').textContent).toBe('Wizard');
+      expect(
+        sheets.root.querySelector('[aria-label="Character class"]').closest('.sheet-section').hidden
+      ).toBe(true);
+      const reopened = await workspace.open(campaign.id);
+      expect(reopened.library.get(id)).toMatchObject({
+        classId: 'wizard',
+        level: 5,
+        ancestry: 'High Elf',
+        background: 'Sage',
+        alignment: 'Neutral good',
+      });
+    } finally {
+      sheets.destroy();
+      workspace.close();
+      document.body.replaceChildren();
+    }
+  },
+  30000
+);
+
 test('one plain-text title edits the name across all pages, updating linked labels and persisting without a prompt', async () => {
   const workspace = await CampaignWorkspace.load({
     fetch: fetchBundledResource,

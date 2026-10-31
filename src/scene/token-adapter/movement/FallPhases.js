@@ -391,14 +391,18 @@ function _getLandingClipDuration(profile, landingKey) {
 function _hasLandingRollClearance(state, animationData) {
   const rootInfo = this._rootBones.get(state.token)?.[0];
   const action = animationData?.actions?.fallToRoll;
-  const track = action
-    ?.getClip?.()
-    ?.tracks?.find((entry) => entry.name === `${rootInfo?.bone.name}.position`);
+  const clip = action?.getClip?.();
+  const track = clip?.tracks?.find((entry) => entry.name === `${rootInfo?.bone.name}.position`);
   const landing = state.activeStep?.targetWorld;
   if (!rootInfo || !track || !landing) return true;
+  const contactTime = animationData.landingContactTimes?.fallToRoll ?? 0;
+  if (!Number.isFinite(contactTime) || contactTime < 0 || contactTime > clip.duration) {
+    throw new Error('The roll landing contact time is outside its animation clip');
+  }
+  const groundedTimes = [contactTime, ...track.times.filter((time) => time > contactTime)];
   const bounds = this._computeMovementBounds();
   let previous = landing;
-  for (const time of track.times) {
+  for (const time of groundedTimes) {
     const position = this._getActionRootPosition(rootInfo, action, time);
     const offset = this._rootDisplacementToWorld(rootInfo, {
       x: position.x - rootInfo.basePosition.x,
@@ -448,6 +452,9 @@ function _maybeEnterFallPhase(state, animationData) {
   const actions = data?.actions;
   if (!actions?.fall && !actions?.fallLoop) return false;
   const profile = data?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
+
+  if (step.landingVariant === 'fallToRoll' && actions?.fallToRoll)
+    this._extendPlannedLandingGoal(state);
 
   if (!state.__fallResumeContext) {
     state.__fallResumeContext = this._captureFallResumeContext(state);

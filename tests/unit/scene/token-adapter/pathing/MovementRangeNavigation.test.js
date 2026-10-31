@@ -135,6 +135,75 @@ describe('Distance-limited click navigation', () => {
     expect(combat.status(token).movement.remaining).toBe(0);
   });
 
+  test('a committed Run drop includes approved straight runout and charges its full cost', () => {
+    localStorage.clear();
+    const { adapter, token, gm } = fixture((x) => (x < 3 ? 8 : 0));
+    const library = new CharacterLibrary({
+      ruleset: '2014',
+      storage: globalThis.localStorage,
+      catalog: [],
+    });
+    linkTokenCharacter(token, library, library.create('Nora'));
+    setTokenMovementSettings(token, { mode: 'run' });
+    const combat = new CombatSession({
+      library,
+      isMoving: (entry) => adapter.isMovementInProgress(entry),
+    });
+    gm.characterServices = { library, combat };
+    combat.startTurn(token);
+    expect(adapter.requestMoveToGrid(token, 8, 4).cost).toBe(30);
+    const job = adapter._movementRoutes.get(token);
+    const state = adapter._movementStates.get(token);
+    for (let frame = 0; frame < 600 && state.phase !== 'fall'; frame++)
+      adapter._updateForwardMovements(1 / 60);
+
+    expect(state.phase).toBe('fall');
+    expect(job.current).toMatchObject({ gridX: 8, gridY: 4 });
+    expect(state.pathGoal).toMatchObject({ gridX: 8, gridY: 4 });
+    expect(job.segmentCost).toBe(30);
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 8.5, y: 0, z: 4.5 });
+    expect(job.spent).toBe(30);
+    expect(combat.status(token).movement.spent).toBe(30);
+    expect(adapter.requestMoveToGrid(token, 9, 4)).toBeNull();
+  });
+
+  test('a committed Run drop does not consume a turn after its landing', () => {
+    const { adapter, token } = fixture((x) => (x < 3 ? 8 : 0));
+    setTokenMovementSettings(token, { mode: 'run', speed: 30 });
+    const request = adapter.requestMoveToGrid(token, 6, 6);
+    expect(request).toBeTruthy();
+    const job = adapter._movementRoutes.get(token);
+    const state = adapter._movementStates.get(token);
+    for (let frame = 0; frame < 600 && state.phase !== 'fall'; frame++)
+      adapter._updateForwardMovements(1 / 60);
+
+    expect(state.phase).toBe('fall');
+    expect(job.current).toMatchObject({ gridX: 4, gridY: 4 });
+    expect(job.points[job.index]).toMatchObject({ gridX: 6, gridY: 6 });
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 6.5, y: 0, z: 6.5 });
+    expect(job.spent).toBe(request.cost);
+  });
+
+  test('a committed Run drop only extends across the same flat landing height', () => {
+    const { adapter, token } = fixture((x) => (x < 3 ? 8 : x < 5 ? 0 : 1));
+    setTokenMovementSettings(token, { mode: 'run', speed: 50 });
+    const request = adapter.requestMoveToGrid(token, 8, 4);
+    expect(request).toBeTruthy();
+    const job = adapter._movementRoutes.get(token);
+    const state = adapter._movementStates.get(token);
+    for (let frame = 0; frame < 600 && state.phase !== 'fall'; frame++)
+      adapter._updateForwardMovements(1 / 60);
+
+    expect(state.phase).toBe('fall');
+    expect(job.current).toMatchObject({ gridX: 4, gridY: 4, height: 0 });
+    expect(job.segmentCost).toBe(10);
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 8.5, y: 0.5, z: 4.5 });
+    expect(job.spent).toBe(request.cost);
+  });
+
   test('rejects an eleven-square request before releasing emotes or changing movement state', () => {
     const { adapter, token } = fixture();
     const release = jest.spyOn(adapter, '_releaseManualAnimationForMovement');

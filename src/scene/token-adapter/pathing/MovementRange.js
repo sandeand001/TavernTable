@@ -415,6 +415,58 @@ function _hasReachedPlannedMovementGoal(token, job) {
   return Math.hypot(world.x - goal.x, world.y - goal.y, world.z - goal.z) <= 1e-4;
 }
 
+function _extendPlannedLandingGoal(state) {
+  const job = this._movementRoutes.get(state.token);
+  const step = state.activeStep;
+  if (!job || !state.pathActive || !state.pathGoal || !step) return false;
+  const original = job.current;
+  if (!original || original.kind === 'wall' || original.wallExit || original.vault) return false;
+  const directionX = Math.sign(step.targetWorld.x - step.startWorld.x);
+  const directionY = Math.sign(step.targetWorld.z - step.startWorld.z);
+  if (!directionX && !directionY) return false;
+  let extended = false;
+  while (job.index < job.points.length) {
+    const current = job.current;
+    const next = job.points[job.index];
+    if (
+      next.kind === 'wall' ||
+      next.wallExit ||
+      next.vault ||
+      next.height !== current.height ||
+      Math.sign(next.gridX - current.gridX) !== directionX ||
+      Math.sign(next.gridY - current.gridY) !== directionY
+    )
+      break;
+    const steps = Math.max(
+      Math.abs(next.gridX - current.gridX),
+      Math.abs(next.gridY - current.gridY)
+    );
+    const cost = steps * FEET_PER_GRID_SQUARE;
+    if (job.spent + job.segmentCost + cost > job.settings.speed + 1e-9) break;
+    job.current = next;
+    job.index++;
+    job.segmentCost += cost;
+    extended = true;
+  }
+  if (!extended) return false;
+  const target = job.current;
+  const world =
+    target.world ||
+    this.gameManager.spatial.gridToWorld(target.gridX + 0.5, target.gridY + 0.5, target.height);
+  for (const goal of [
+    state.pathGoal,
+    state.lastRequestedGoal,
+    state.climbContinuationGoal,
+    state.__resumeProbe?.goal,
+  ]) {
+    if (goal?.gridX !== original.gridX || goal?.gridY !== original.gridY) continue;
+    goal.gridX = target.gridX;
+    goal.gridY = target.gridY;
+    if (goal.world) goal.world = { ...world };
+  }
+  return true;
+}
+
 function _advancePlannedMovement(state) {
   const job = this._movementRoutes.get(state.token);
   if (!job || !this._hasReachedPlannedMovementGoal(state.token, job)) return false;
@@ -583,6 +635,7 @@ export function installMovementRangeMethods(prototype) {
   prototype._stopPlannedMovement = _stopPlannedMovement;
   prototype._beginPlannedMovementSegment = _beginPlannedMovementSegment;
   prototype._hasReachedPlannedMovementGoal = _hasReachedPlannedMovementGoal;
+  prototype._extendPlannedLandingGoal = _extendPlannedLandingGoal;
   prototype._advancePlannedMovement = _advancePlannedMovement;
   prototype._updatePlannedMovements = _updatePlannedMovements;
   prototype._isPlannedLandingPositionAllowed = _isPlannedLandingPositionAllowed;

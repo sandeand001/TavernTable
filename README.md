@@ -53,8 +53,9 @@ and cached models.
   retains aligned climbing/recovery and contact-timed landings. Rolls require
   enough flat landing space and room within the approved route. Remaining movement follow-ups are in
   [TODO.md](./TODO.md).
-- The creature palette includes Mannequin, Knight and Mutant, using one shared
-  humanoid animation and movement pipeline.
+- The creature palette includes Mannequin, Knight, Mutant, Female Archer,
+  Armored Knight and Monk, using one shared humanoid animation and movement pipeline.
+  The picker grows with the roster; shorter windows use the sidebar scrollbar.
 - Creature right-click menus retain emotes, add eight visual-only **Actions**,
   and open an in-app tabbed character sheet. Other planned commands share a
   disabled placeholder.
@@ -120,9 +121,12 @@ animations. **Actions** offers Wave, Sit, Take Cover, Jump, Punch, Hit Reaction,
 Dodge and Cast Spell. Other unfinished commands are represented by one disabled
 **Not yet available** option.
 
-The Knight (Mixamo's **Knight D Pelegrini**) and Mutant use the same one-square
-footprint, movement settings, wall climbing, ledge hangs and falling rules as
-Mannequin. They are appearances, not separate movement implementations.
+The Knight (Mixamo's **Knight D Pelegrini**), Mutant, Female Archer
+(**Erika Archer**), Armored Knight (**Paladin J Nordstrom**) and Monk
+(**Yaku J Ignite**) use the same one-square footprint, movement settings, wall
+climbing, ledge hangs and falling rules as Mannequin. They are appearances, not
+separate movement implementations. App labels describe appearances; source names
+remain provenance metadata.
 
 The new actions are animation previews, not combat or movement rules:
 
@@ -209,6 +213,15 @@ separate resource databases, not a filter over a mixed catalog.
   New, Export JSON, Import JSON, Delete and the Compendium shortcut. These controls
   are hidden during normal play. Escape or Close hides the settings again;
   errors remain visible even when settings are closed.
+- A single **character information** card groups Class, Level, Ancestry, Background
+  and Alignment on every sheet page. Values use plain-text styling; Level and the
+  descriptive values remain directly editable. Enter or leaving a field saves,
+  while Escape restores its saved value. Class is display-only in this card.
+  The manual class dropdown now lives in **Core > Class selection (temporary)**;
+  a future character builder/charactermancer will replace that control.
+- **Initiative** is a smaller roll card beside the character information, separate
+  from the grouped AC, proficiency and passive-perception cards. On narrow sheets
+  it moves below the information card. Its modifier and roll behavior are unchanged.
 - Reopening restores the last completed safe movement checkpoint, including stable
   wall climbs and ledge hangs, rather than replaying an interrupted animation.
   Active combat resumes its turn, remaining movement/actions/attacks and completed
@@ -527,6 +540,8 @@ and tactical views, even after camera rotation. Ordinary clicks retain selection
 and movement behavior, and right-drag still orbits the camera. Turning does not
 move the creature or cost movement. Escape or focus loss cancels a facing drag;
 facing is protected during movement, wall attachment and committed actions.
+Short climbs, descents, vaults and wall-aligned cover share the same world-facing
+convention, so entering an animation does not reverse the corrected drag heading.
 
 **Height transitions** use actual vertical feet, not the number of terrain levels:
 
@@ -676,9 +691,9 @@ Hard-refresh and regenerate to apply these changes to a new map.
 
 | Command                                | Purpose                                                                         |
 | -------------------------------------- | ------------------------------------------------------------------------------- |
-| `npm test`                             | Run the full Jest suite, including real-asset integration tests                   |
-| `npm run test:unit`                    | Run fast unit and mocked-boundary tests without the real-model suites             |
-| `npm run test:integration`             | Run integration tests that load actual FBX, OBJ, and GLB model assets              |
+| `npm test`                             | Run the full Jest suite, including real-asset integration tests                 |
+| `npm run test:unit`                    | Run fast unit and mocked-boundary tests without the real-model suites           |
+| `npm run test:integration`             | Run integration tests that load actual FBX, OBJ, and GLB model assets           |
 | `npm run test:stable -- --watch=false` | Run the full Jest suite serially with open-handle detection                     |
 | `npm run test:watch`                   | Run tests in watch mode                                                         |
 | `npm run test:coverage`                | Generate a new coverage report                                                  |
@@ -726,7 +741,7 @@ All test cases pass; the threshold and full-suite coverage selection are unchang
   [lint configuration](./tools/.eslintrc.json). Changed JavaScript and tests pass
   a focused formatting check.
 
-The humanoid contracts replay actual FBXs on all three registered characters:
+The humanoid contracts replay actual FBXs on every registered appearance:
 grounding, shared locomotion, live gait changes, movement budgets, double-cost
 climbs, frozen wall poses, two-hand ledge grips, gravity-driven falls, every
 manual action, asynchronous failures and removal/loading races. Browser checks

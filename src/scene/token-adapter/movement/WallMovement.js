@@ -4,7 +4,10 @@ import {
   HIGH_WALL_SEGMENT_LEVELS,
   PATH_NAVIGATION_KEY,
 } from '../../../config/token-adapter/MannequinConfig.js';
-import { getTokenMovementSettings } from '../../../entities/creatures/TokenMovement.js';
+import {
+  facingAngleFromDirection,
+  getTokenMovementSettings,
+} from '../../../entities/creatures/TokenMovement.js';
 import { FEET_PER_GRID_SQUARE } from '../../../config/TokenMovementConfig.js';
 
 const EPSILON = 1e-8;
@@ -41,7 +44,7 @@ function _startWallMovement(token, face, target) {
   const high = spatial.gridToWorld(face.high.gridX + 0.5, face.high.gridY + 0.5, face.high.height);
   const dx = face.high.gridX - face.low.gridX;
   const dz = face.high.gridY - face.low.gridY;
-  const facing = this._normalizeAngle(Math.PI / 2 - Math.atan2(dx, -dz));
+  const facing = facingAngleFromDirection(dx, dz);
   token.facingAngle = facing;
   this._applyOrientationImmediate(token, facing);
   state.pendingFacingAngle = undefined;
@@ -192,7 +195,7 @@ function _advanceWallMovement(state, delta) {
       }
       const dx = motion.face.high.gridX - motion.face.low.gridX;
       const dz = motion.face.high.gridY - motion.face.low.gridY;
-      const facing = this._normalizeAngle(Math.PI / 2 - Math.atan2(dx, -dz));
+      const facing = facingAngleFromDirection(dx, dz);
       state.token.facingAngle = facing;
       this._applyOrientationImmediate(state.token, facing);
       state.pendingFacingAngle = undefined;

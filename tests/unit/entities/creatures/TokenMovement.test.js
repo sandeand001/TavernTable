@@ -1,10 +1,32 @@
 import {
   buildMovementRange,
+  facingAngleFromDirection,
   getMovementRoute,
   getTokenMovementSettings,
   movementStepCost,
   setTokenMovementSettings,
 } from '../../../../src/entities/creatures/TokenMovement.js';
+
+describe('shared facing convention', () => {
+  test.each(Array.from({ length: 8 }, (_, index) => (index * Math.PI) / 4))(
+    'world heading %s maps to rendered +Z-forward facing without reflection',
+    (heading) => {
+      const x = Math.cos(heading) * 3;
+      const z = Math.sin(heading) * 3;
+      const angle = facingAngleFromDirection(x, z);
+      expect(Math.cos(angle)).toBeCloseTo(x / 3, 10);
+      expect(-Math.sin(angle)).toBeCloseTo(z / 3, 10);
+    }
+  );
+  test.each([
+    [0, 0],
+    [NaN, 1],
+    [1, Infinity],
+    [undefined, 1],
+  ])('rejects an invalid facing direction (%s, %s)', (x, z) =>
+    expect(() => facingAngleFromDirection(x, z)).toThrow('finite, non-zero')
+  );
+});
 
 function range(options = {}) {
   return buildMovementRange({

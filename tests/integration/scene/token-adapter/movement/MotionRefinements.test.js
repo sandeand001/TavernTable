@@ -1,4 +1,5 @@
 import { setTokenMovementSettings } from '../../../../../src/entities/creatures/TokenMovement.js';
+import { CHARACTER_DEFINITIONS } from '../../../../../src/config/CharacterCatalog.js';
 import {
   createHumanoidFixture,
   finishHumanoid,
@@ -82,7 +83,7 @@ test('a committed vault completes safely after a live switch to Walk', async () 
   expect(f.token.__ttWorldLock).toBeUndefined();
 });
 
-describe.each(['mannequin', 'knight', 'mutant'])('%s traversal handoffs', (type) => {
+describe.each(CHARACTER_DEFINITIONS.map(({ id }) => id))('%s traversal handoffs', (type) => {
   test('Run carries momentum straight into an already aligned vault', async () => {
     const f = await fixture({ type, height: 0, elevationUnit: 0.402 });
     f.gm.getTerrainHeight = (x) => (x === 6 ? 1 : 0);
@@ -234,7 +235,7 @@ describe.each(['mannequin', 'knight', 'mutant'])('%s traversal handoffs', (type)
   });
 });
 
-describe.each(['mannequin', 'knight', 'mutant'])('%s short authored traversal', (type) => {
+describe.each(CHARACTER_DEFINITIONS.map(({ id }) => id))('%s short authored traversal', (type) => {
   test.each([
     [false, 'walk', 'climb-low'],
     [true, 'walk', 'lower-low'],

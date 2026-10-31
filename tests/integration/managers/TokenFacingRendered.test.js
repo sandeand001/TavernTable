@@ -1,4 +1,5 @@
 import * as three from 'three';
+import { CHARACTER_DEFINITIONS } from '../../../src/config/CharacterCatalog.js';
 import { InteractionManager } from '../../../src/managers/InteractionManager.js';
 import { rotateToken } from '../../../src/managers/token-manager/internals/orientation.js';
 import {
@@ -13,7 +14,7 @@ beforeAll(() => {
 afterAll(() => restoreFiles());
 
 test.each(
-  ['mannequin', 'knight', 'mutant'].flatMap((type) =>
+  CHARACTER_DEFINITIONS.map(({ id }) => id).flatMap((type) =>
     [false, true].flatMap((topDown) => [0.6, 2.2].map((yaw) => ({ type, topDown, yaw })))
   )
 )(

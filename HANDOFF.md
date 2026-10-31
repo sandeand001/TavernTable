@@ -304,6 +304,16 @@ regressions below. Remaining browser reports are tracked separately in the backl
   A gear opens the hidden Character settings section for saved-character selection,
   New, Import/Export, Delete and Compendium. Keep operation errors outside that
   disclosure; ordinary save messages remain accessible without cluttering play.
+  All pages share one information card for class, level, ancestry, background and
+  alignment. Class is read-only there; its existing selector lives in the Core
+  section and is explicitly temporary until the character builder owns class choice.
+  Other values reuse native inputs with borderless, content-sized inline styling,
+  so validation and acknowledged writes stay on the existing character-edit path.
+  Preserve the focused identity draft during combat/history reconciliation; Enter
+  or blur commits and Escape restores the saved value without another write.
+  Initiative retains its existing derived roll but uses a smaller card beside
+  the information, separate from AC/proficiency/passive perception; narrow layouts
+  stack it below the information card rather than squeezing or clipping fields.
 - [characterServices](./src/ui/characters/characterServices.js) requires the selected
   campaign context for both sheet and sidebar; there is no global 2014 loader.
   Unlinked-token creation awaits its saved UUID and coalesces concurrent requests.
@@ -606,9 +616,9 @@ regressions below. Remaining browser reports are tracked separately in the backl
 - [HumanoidRig](./src/scene/token-adapter/HumanoidRig.js) clones the complete raw
   transform hierarchy without retaining source meshes/textures. It selects
   animation-driving bones, not the same-named bind copies that FBXLoader adds
-  underneath them for multiple skins. Knight has three skins; Mutant has a
-  reduced/asymmetric finger rig. Required body bones are validated; optional
-  missing finger bones do not invalidate a compatible humanoid.
+  underneath them for multiple skins. Knight has three skins; Female Archer
+  has four; Mutant has a reduced/asymmetric finger rig. Required body bones are
+  validated; optional missing finger bones do not invalidate a compatible humanoid.
 - Retargeting uses explicit names, target bind-rotation offsets, hip scale and
   bind-position offsets. It runs in raw model units, never against a placed or
   normalized token. Preserve authored root curves and exact clip duration.
@@ -617,6 +627,13 @@ regressions below. Remaining browser reports are tracked separately in the backl
   clips are cached by target type and reference/retarget policy, then cloned
   for callers. Prepared climb tracks and calibrated ledge grips remain
   per-token; never mutate the cached source to align an instance.
+- Rolling-landing clearance starts at the catalog's ground-contact time, not
+  the airborne lead-in. Sample the exact contact pose even between keyframes,
+  then all grounded root-position keys. Keep the existing flat-terrain, board
+  bounds and approved-route limits; do not loosen them to accommodate rig poses.
+  Once a rolling fall commits, its landing goal may absorb only approved,
+  straight, same-height runout waypoints, charging every absorbed grid step.
+  Keep turns, terrain changes and pre-fall Walk/Run switching boundaries intact.
 - `Token3DAdapter.playTokenAction(token, commandId)` and
   `GameManager.applyTokenCommand(token, commandId)` are asynchronous. Await
   their boolean result; a Promise is not a successful playback result.
@@ -642,10 +659,14 @@ regressions below. Remaining browser reports are tracked separately in the backl
   the original and current pointer onto the creature-height plane and snaps the
   resulting world-space vector to eight headings. Do not aim from the feet to
   an absolute screen coordinate: clicking the head would bias the direction.
-  Facing angles use `atan2(-dz, dx)`: positive facing turns toward world -Z.
-  Using `atan2(dz, dx)` reflects the Z axis even when stored-angle tests pass.
-  Real-FBX regressions compare rendered model forward with the drag and normal
-  navigation under both lenses and multiple orbits, not just the numeric angle.
+  Use the shared `facingAngleFromDirection` in TokenMovement for world X/Z
+  conversion: positive facing turns toward world -Z. Dragging, navigation, wall
+  approaches, short climbs, vaults/hops and cover must not keep separate atan2
+  conventions. Short walking descents face back toward the ledge; forward hops
+  and vaults face their travel direction; cover faces away from its support wall.
+  Real-FBX regressions compare rendered forward with all cardinal traversals,
+  perpendicular approaches, full wall/ledge holds and restoration, not just the
+  stored numeric angle or a single east-facing climb.
   Simple clicks still use the normal interaction path. Terrain/remove modes,
   Space panning, right-button controls and busy/wall-attached tokens are protected.
   Global release, Escape, blur and renderer-canvas replacement clean up capture.
@@ -706,11 +727,13 @@ regressions below. Remaining browser reports are tracked separately in the backl
    preview to finish loading **before** opening Download; the title can update
    before Mixamo's export state does. If Adobe expires the session, sign in
    normally rather than extracting credentials or bypassing browser security.
-2. Character: select a **T-Pose**, export **FBX Binary, With Skin, 30 FPS,
-   no keyframe reduction**, retaining embedded textures. Animation: use the
-   shared **X Bot** source and export **Without Skin**, with the same format/FPS
-   and no reduction. This batch uses default modifiers and no mirroring.
-   Preserve authored root motion; in-place preview policy belongs to playback.
+2. Character: select **FBX Binary** and **T-Pose**, retaining skin and embedded
+   textures. The current Character dialog exposes format and pose, with skin
+   implicit; do not claim FPS or reduction settings when those controls are absent.
+   Animation: use the shared **X Bot** source and export **FBX Binary, Without
+   Skin, 30 FPS, no keyframe reduction** when those controls are offered.
+   This batch uses default modifiers and no mirroring. Preserve authored root
+   motion; in-place preview policy belongs to playback.
 3. Save into [animated-sprites](./assets/animated-sprites/) without overwriting
    an unrelated asset. Check the binary header, parse the FBX, inspect required
    bones, decode material images, and verify the actual clip duration/end pose.
@@ -756,6 +779,30 @@ character/animation library.
 | `Vault Over Box.fbx`              |    627,568 | `7b69c635ec085290083fc5f9c20adf072aa1b6817717e4eb157b373faaf1b8a4` |
 | `Jump Down.fbx`                   |    545,920 | `4f07f80f1e897f232577b05129b5bfe250225a4ef25e2624e8612c8efb565e17` |
 
+Additional FBX Binary T-Pose Character exports use descriptive app labels:
+
+- **Female Archer** (`female-archer`), source **Erika Archer**: four skinned meshes,
+  67 unique bones and five embedded 2048-by-2048 textures.
+- **Armored Knight** (`armored-knight`), source **Paladin J Nordstrom**: two skinned
+  meshes, 67 unique bones and three embedded 2048-by-2048 textures.
+- **Monk** (`monk`), source **Yaku J Ignite**: one skinned mesh, 65 unique bones
+  and four embedded 2048-by-2048 textures.
+
+All embedded images were independently decoded. These appearances use the same
+height normalization and strict shared-animation retargeting as the earlier imports.
+
+| Asset                                                                          |      Bytes | SHA-256                                                            |
+| ------------------------------------------------------------------------------ | ---------: | ------------------------------------------------------------------ |
+| [Erika Archer.fbx](<./assets/animated-sprites/Erika Archer.fbx>)               | 19,585,584 | `a41db0101a574434a5438799a554cc3dfdb10d3d82d99d2f1327997a89178aff` |
+| [Paladin J Nordstrom.fbx](<./assets/animated-sprites/Paladin J Nordstrom.fbx>) |  9,045,904 | `5a12fdeac663e2498298f3e65c0870e5a6a91192aa1b81e951a648e371327e75` |
+| [Yaku J Ignite.fbx](<./assets/animated-sprites/Yaku J Ignite.fbx>)             | 20,107,744 | `b876f19b25deb34bc50c54c20423a2098884ef7797a3940b69fdfad6f3c0163d` |
+
+Model and animation files currently remain together in
+[animated-sprites](./assets/animated-sprites/). A future folder split must update
+both catalogs coherently without changing canonical appearance IDs. In particular,
+`Standing Idle.fbx` is both the original mannequin model and a shared idle-animation
+source; preserve both references rather than blindly moving or duplicating it.
+
 The two traversal clips were exported from X Bot as FBX Binary, Without Skin,
 30 FPS, no keyframe reduction and default modifiers. Mixamo descriptions were
 **Vault Over Box And Hide** and **Jumping Down From 2 Feet Platform With 2 Feet**.
@@ -764,7 +811,7 @@ Existing strafe and crouch clips were reused rather than downloaded again.
 
 ### Browser and contract verification
 
-- Actual-FBX contracts cover all three characters and all thirteen manual
+- Actual-FBX contracts enumerate registered appearances and all thirteen manual
   commands, including the five existing emotes. They check grounding, styles,
   budgets, held/resumed climbs, hand-to-lip contacts, physical falls, recovery,
   lazy loading, explicit retarget failures and late-load/removal safety.
