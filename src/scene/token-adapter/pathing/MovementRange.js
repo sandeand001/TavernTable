@@ -86,6 +86,8 @@ function applyMovementStyle(token) {
 function getTokenMovementRange(token) {
   if (!token || this.isMovementInProgress(token)) return null;
   const gm = this.gameManager;
+  const combat = gm.characterServices?.combat;
+  if (combat?.active && combat.activeToken !== token) return null;
   const world = this._resolveTokenWorldPosition(token);
   const start = this._mapWorldToGrid(world) || token;
   const settings = getTokenMovementSettings(token);
@@ -108,7 +110,7 @@ function getTokenMovementRange(token) {
     rows: gm.rows,
     startGridX: start.gridX,
     startGridY: start.gridY,
-    speed: settings.speed,
+    speed: combat?.active ? combat.movementAllowance(token) : settings.speed,
     mode: settings.mode,
     tileWorldSize: gm.spatial.tileWorldSize,
     elevationUnit: gm.spatial.elevationUnit,
@@ -203,11 +205,21 @@ function _requestPlannedMovement(token, destination) {
   try {
     if (!this.gameManager.placedTokens.includes(token))
       throw new Error('Movement token is no longer in this session');
+    if (this.gameManager.sceneAutosave?.ready === false)
+      throw new Error('Wait for the campaign to finish opening before moving');
+    this.recordStablePlacement?.(token);
     if (this.isMovementInProgress(token)) {
       this._logPathing('movement:range-rejected', { reason: 'already-moving', tokenId: token.id });
       return null;
     }
     const range = this.getTokenMovementRange(token);
+    if (!range) {
+      this._logPathing('movement:range-rejected', {
+        reason: 'turn-unavailable',
+        tokenId: token.id,
+      });
+      return null;
+    }
     let route;
     let wallTarget = null;
     if (destination.surface) {
@@ -250,7 +262,9 @@ function _requestPlannedMovement(token, destination) {
       });
       return null;
     }
-    const settings = getTokenMovementSettings(token);
+    const combat = this.gameManager.characterServices?.combat;
+    const settings = { ...getTokenMovementSettings(token) };
+    if (combat?.active) settings.speed = combat.movementAllowance(token);
     const world = this._resolveTokenWorldPosition(token);
     if (
       !route.length &&
@@ -263,16 +277,27 @@ function _requestPlannedMovement(token, destination) {
     const points = compressRoute(range.start, route);
     if (wallTarget) points.push(wallTarget);
     const cost = wallTarget?.cost ?? route.at(-1).cost;
-    const job = { points, index: 0, current: null, settings, range, spent: 0 };
+    const job = {
+      token,
+      points,
+      index: 0,
+      current: null,
+      settings,
+      range,
+      spent: 0,
+      plannedCost: cost,
+      combat,
+      combatMove: combat?.active ? combat.beginMovement(token, cost) : null,
+    };
     this._movementRoutes.set(token, job);
     const result = this._beginPlannedMovementSegment(token, job);
     this.refreshMovementRange();
     return { ...result, cost, distance: cost };
   } catch (error) {
     const state = this._movementStates.get(token);
-    if (this._movementRoutes.has(token) && state?.wallMotion && !state.wallMotion.holding)
-      this._cancelWallMovement(state);
-    this._movementRoutes.delete(token);
+    const hadRoute = this._movementRoutes.has(token);
+    this._finishPlannedMovement(token);
+    if (hadRoute && state?.wallMotion && !state.wallMotion.holding) this._cancelWallMovement(state);
     GameErrors.input(error, {
       component: 'TokenMovement',
       operation: 'requestMove',
@@ -285,6 +310,7 @@ function _requestPlannedMovement(token, destination) {
 function _beginPlannedMovementSegment(token, job) {
   let cell = job.points[job.index++];
   job.current = cell;
+  job.segmentStartWorld = { ...this._resolveTokenWorldPosition(token) };
   job.segmentCharged = false;
   job.segmentCost = 0;
   job.currentWall = null;
@@ -397,7 +423,7 @@ function _advancePlannedMovement(state) {
     this._beginPlannedMovementSegment(state.token, job);
     return true;
   }
-  this._movementRoutes.delete(state.token);
+  this._finishPlannedMovement(state.token);
   this._movementRangeDirty = true;
   return false;
 }
@@ -429,13 +455,13 @@ function _updatePlannedMovements() {
       this._commitPlannedMovementCost(job);
       if (job.index < job.points.length) this._beginPlannedMovementSegment(token, job);
       else {
-        this._movementRoutes.delete(token);
+        this._finishPlannedMovement(token);
         if (state?.phase !== 'climb-hold')
           this._resetMovementState(state || this._ensureMovementState(token));
         this._movementRangeDirty = true;
       }
     } catch (error) {
-      this._movementRoutes.delete(token);
+      this._finishPlannedMovement(token, true);
       this._movementRangeDirty = true;
       GameErrors.gameState(error, {
         component: 'TokenMovement',
@@ -478,7 +504,7 @@ function disposeMovementRange() {
   this._movementRangeOverlay?.dispose();
   this._movementRangeOverlay = null;
   this._movementRange = null;
-  this._movementRoutes.clear();
+  for (const token of this._movementRoutes.keys()) this._finishPlannedMovement(token, true);
   this._movementRangeSpatialKey = null;
   this._movementRangeScene = null;
   this._movementRangeDirty = true;
@@ -492,8 +518,22 @@ function _commitPlannedMovementCost(job) {
     throw new Error('Movement exceeded its original distance allowance');
 }
 
-function _stopPlannedMovement(token) {
+function _finishPlannedMovement(token, interrupted = false) {
+  const job = this._movementRoutes.get(token);
   this._movementRoutes.delete(token);
+  if (job?.combatMove) {
+    const ticket = job.combatMove;
+    job.combatMove = null;
+    const cost = interrupted
+      ? Math.min(ticket.allowance, Math.max(job.spent, job.plannedCost))
+      : job.spent;
+    job.combat.finishMovement(ticket, cost);
+  }
+  if (job && !interrupted) this.recordStablePlacement?.(token);
+}
+
+function _stopPlannedMovement(token) {
+  this._finishPlannedMovement(token);
   const state = this._movementStates.get(token);
   if (state && state.phase !== 'climb-hold') this._resetMovementState(state);
   this._movementRangeDirty = true;
@@ -539,6 +579,7 @@ export function installMovementRangeMethods(prototype) {
   prototype._getWallClimbThreshold = _getWallClimbThreshold;
   prototype._getWallRestHeight = _getWallRestHeight;
   prototype._commitPlannedMovementCost = _commitPlannedMovementCost;
+  prototype._finishPlannedMovement = _finishPlannedMovement;
   prototype._stopPlannedMovement = _stopPlannedMovement;
   prototype._beginPlannedMovementSegment = _beginPlannedMovementSegment;
   prototype._hasReachedPlannedMovementGoal = _hasReachedPlannedMovementGoal;

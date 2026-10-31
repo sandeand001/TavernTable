@@ -394,6 +394,7 @@ function _syncMovementVariant(state, directionOverride, options = {}) {
 // ── Movement Phase Lifecycle ─────────────────────────────────────────────
 
 function _startMovementPhase(state, newSign) {
+  this.recordStablePlacement?.(state.token);
   if (!state || !newSign) return;
   const tokenEntry = state.token;
   const data = this._tokenAnimationData.get(tokenEntry);

@@ -229,6 +229,7 @@ function _advanceFreeMovement(state, delta, bounds) {
 
   this._syncTokenAndMeshWorld(state, nextWorld);
   this._applyTokenGridFromWorld(state.token, nextWorld);
+  this.recordGroundCheckpoint?.(state);
 
   const actualDistance = Math.hypot(nextWorld.x - currentWorld.x, nextWorld.z - currentWorld.z);
   if (delta > 1e-4 && actualDistance > 0) {
@@ -324,6 +325,7 @@ function _lockStepAtTarget(state) {
   const token = step.tokenEntry;
   token.gridX = step.gridTargetX;
   token.gridY = step.gridTargetY;
+  this.recordStablePlacement?.(token);
 }
 
 function _createStopGlideStep(state, profile) {
@@ -497,6 +499,7 @@ function _applyMovementResetCore(state, options = {}) {
   if (!this._hasActiveIntents(state) && !this._shouldHoldMovementState(state)) {
     this._movementStates.delete(state.token);
   }
+  this.recordStablePlacement?.(state.token);
 }
 
 function _createForwardMovementStep(tokenEntry, mesh, directionSign = 1) {

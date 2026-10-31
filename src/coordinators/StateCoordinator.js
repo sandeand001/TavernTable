@@ -91,7 +91,7 @@ export class StateCoordinator {
     return this.viewMode;
   }
 
-  setViewMode(mode) {
+  setViewMode(mode, { remember = true } = {}) {
     if (mode !== 'isometric' && mode !== 'topdown') return;
     if (this.viewMode === mode) return;
     const previous = this.viewMode;
@@ -127,7 +127,7 @@ export class StateCoordinator {
 
     this.viewMode = mode;
     gm?.threeSceneManager?.setTopDownView?.(mode === 'topdown');
-    persist(mode);
+    if (remember) persist(mode);
     dispatch(mode);
   }
 

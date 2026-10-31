@@ -23,6 +23,10 @@ import {
 } from './dom-helpers.js';
 
 import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import CompendiumSidebar from './characters/CompendiumSidebar.js';
+import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
+import { copyRollSummary } from '../systems/dice/rollSummary.js';
+import { rollSummaryMarkup } from './dice/rollSummary.js';
 
 class SidebarController {
   // ── Constructor ─────────────────────────────────────────────
@@ -123,7 +127,11 @@ class SidebarController {
     try {
       const buttons = getTabButtons();
       const panels = getTabPanels();
-      buttons.forEach((b) => b.classList.toggle('active', b.getAttribute('data-tab') === tabId));
+      buttons.forEach((b) => {
+        const selected = b.getAttribute('data-tab') === tabId;
+        b.classList.toggle('active', selected);
+        b.setAttribute('aria-selected', String(selected));
+      });
       panels.forEach((p) => p.classList.toggle('active', p.id === `${tabId}-panel`));
     } catch (_) {
       /* ignore */
@@ -131,12 +139,42 @@ class SidebarController {
     this.onTabChange(tabId);
   }
 
+  openCompendium(entryId = null) {
+    this.pendingCompendiumEntry = entryId;
+    this.switchTab('compendium');
+    return this.compendiumReady;
+  }
+
+  _showCompendium(entryId) {
+    const host = document.getElementById('compendium-panel');
+    try {
+      const gameManager = window.gameManager;
+      if (!host || !gameManager) throw new Error('The game is not ready to open the compendium');
+      if (this.compendiumSidebar?.gameManager !== gameManager) {
+        this.compendiumSidebar?.destroy();
+        host.replaceChildren();
+        this.compendiumSidebar = new CompendiumSidebar({ gameManager }).attach(host);
+      }
+      return this.compendiumSidebar.open(entryId);
+    } catch (error) {
+      if (host) host.textContent = `${error.message}. Select the Compendium tab to retry.`;
+      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.UI, {
+        component: 'SidebarController',
+        operation: 'openCompendium',
+      });
+      return Promise.resolve(false);
+    }
+  }
+
   // ── Event Handlers ──────────────────────────────────────────
 
   onTabChange(tabId) {
     if (tabId === 'dice-log') this.refreshDiceLog();
     else if (tabId === 'creatures') this.refreshCreatureSelection();
-    else if (tabId === 'terrain') {
+    else if (tabId === 'compendium') {
+      this.compendiumReady = this._showCompendium(this.pendingCompendiumEntry);
+      this.pendingCompendiumEntry = null;
+    } else if (tabId === 'terrain') {
       this.buildTerrainPlaceablesMenuSafely();
       try {
         window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(true);
@@ -507,6 +545,7 @@ class SidebarController {
 
   selectBiome(biomeKey) {
     window.selectedBiome = biomeKey;
+    window.gameManager?.sceneAutosave?.changed('biome');
     try {
       if (
         window.gameManager?.terrainCoordinator &&
@@ -534,14 +573,25 @@ class SidebarController {
 
   // ── Public API (Dice Log) ─────────────────────────────────
 
-  addDiceLogEntry(message, type = 'roll') {
+  addDiceLogEntry(message, type = 'roll', rollResult = null) {
+    const summary = rollResult === null ? null : copyRollSummary(rollResult);
     const timestamp = new Date().toLocaleTimeString();
-    const entry = { message, type, timestamp, id: Date.now() + Math.random() };
+    const entry = { message, type, timestamp, id: Date.now() + Math.random(), rollResult: summary };
     this.diceLogEntries.unshift(entry);
     if (this.diceLogEntries.length > this.maxLogEntries) {
       this.diceLogEntries = this.diceLogEntries.slice(0, this.maxLogEntries);
     }
     if (this.activeTab === 'dice-log') this.refreshDiceLog();
+    window.gameManager?.sceneAutosave?.changed('shared roll log');
+  }
+
+  snapshotDiceLog() {
+    return JSON.parse(JSON.stringify(this.diceLogEntries));
+  }
+
+  restoreDiceLog(entries) {
+    this.diceLogEntries = JSON.parse(JSON.stringify(entries));
+    this.refreshDiceLog();
   }
 
   refreshDiceLog() {
@@ -564,7 +614,8 @@ class SidebarController {
       timeSpan.textContent = `[${entry.timestamp}]`;
       const messageSpan = document.createElement('span');
       messageSpan.className = 'log-message';
-      messageSpan.textContent = entry.message;
+      if (entry.rollResult) messageSpan.innerHTML = rollSummaryMarkup(entry.rollResult);
+      else messageSpan.textContent = entry.message;
       entryDiv.appendChild(timeSpan);
       entryDiv.appendChild(messageSpan);
       logContent.appendChild(entryDiv);

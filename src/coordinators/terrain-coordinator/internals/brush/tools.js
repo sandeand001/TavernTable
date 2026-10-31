@@ -21,9 +21,13 @@ const clampToOddBrushSize = (value) => {
 // ── Tool Selection ────────────────────────────────────────────────
 
 export function setTerrainTool(c, tool) {
+  const allowedTools = ['raise', 'lower', 'wall'];
+  if (c.brush.tool === 'wall' || tool === 'wall') {
+    c._inputHandlers?.cancelStroke?.();
+  }
   let sanitizedTool;
   if (typeof Sanitizers?.enum === 'function') {
-    sanitizedTool = Sanitizers.enum(tool, 'raise', ['raise', 'lower']);
+    sanitizedTool = Sanitizers.enum(tool, 'raise', allowedTools);
     logger.debug(
       'Used Sanitizers.enum for validation',
       {
@@ -33,7 +37,6 @@ export function setTerrainTool(c, tool) {
       LOG_CATEGORY.SYSTEM
     );
   } else {
-    const allowedTools = ['raise', 'lower'];
     sanitizedTool = allowedTools.includes(tool) ? tool : 'raise';
     logger.debug(
       'Used fallback validation',

@@ -237,7 +237,28 @@ export class TerrainCoordinator {
   // ── Brush & Tools ───────────────────────────────────────────
 
   setTerrainTool(tool) {
-    return _setTool(this, tool);
+    const result = _setTool(this, tool);
+    this._inputHandlers._rerenderPreviewAtLastHover();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('taverntable:terrainToolChanged', { detail: { tool: this.brush.tool } })
+      );
+    }
+    return result;
+  }
+  get wallTopLevel() {
+    return this.brush.wallTopLevel;
+  }
+  setWallTopLevel(level) {
+    this.brush.setWallTopLevel(level);
+    this._inputHandlers._rerenderPreviewAtLastHover();
+  }
+  get wallFillMode() {
+    return this.brush.wallFillMode;
+  }
+  setWallFillMode(mode) {
+    this.brush.setWallFillMode(mode);
+    this._inputHandlers._rerenderPreviewAtLastHover();
   }
   get brushSize() {
     return _getBrushSize(this);
@@ -292,6 +313,7 @@ export class TerrainCoordinator {
   }
 
   handleGridResize(newCols, newRows) {
+    this._inputHandlers.cancelStroke();
     const result = _handleResize(this, newCols, newRows);
     try {
       this.gameManager?.notifyTerrainHeightsChanged?.();

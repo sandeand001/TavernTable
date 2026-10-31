@@ -62,6 +62,27 @@ class CameraHarness {
 
 installCameraMethods(CameraHarness.prototype);
 
+test('campaign camera state preserves focus, zoom, top-down mode and its return orbit', () => {
+  const first = new CameraHarness();
+  first.setCameraTarget(8, 11, 3);
+  first.setIsoAngles({ yaw: 2.4, pitch: 0.6 });
+  first.setZoom(1.7);
+  first.setTopDownView(true);
+  const saved = first.snapshotView();
+  const second = new CameraHarness();
+  second.restoreView(saved);
+  expect(second.snapshotView()).toEqual(saved);
+  expect(second.camera.isOrthographicCamera).toBe(true);
+  second.setTopDownView(false);
+  expect(second.snapshotView()).toMatchObject({
+    yaw: 2.4,
+    pitch: 0.6,
+    topDown: false,
+    zoom: 1.7,
+    target: { x: 8, y: 3, z: 11 },
+  });
+});
+
 function project(manager, point) {
   manager.camera.updateMatrixWorld(true);
   const ndc = point.clone().project(manager.camera);
@@ -253,6 +274,22 @@ describe('Natural 3D perspective and tactical top-down', () => {
       expect(manager._isoPitch).toBe(angles.pitch);
       expect(manager._zoom).toBe(1.35);
       expect(manager._targetZoom).toBe(1.8);
+    }
+  );
+
+  test.each([false, true])(
+    'grabbing away from screen center keeps the held grid point beneath the pointer; topdown=%s',
+    (topDown) => {
+      const manager = new CameraHarness();
+      manager._isoPitch = 0.65;
+      manager.setCameraTarget(7, 9, 4);
+      manager.setTopDownView(topDown);
+      const point = groundPoint(manager, 170, 240, 4);
+      manager.panBy(95, -55, { x: 170, y: 240 });
+      const moved = project(manager, point);
+      expect(moved.x).toBeCloseTo(265, 5);
+      expect(moved.y).toBeCloseTo(185, 5);
+      expect(manager.getCameraTarget().y).toBe(4);
     }
   );
 

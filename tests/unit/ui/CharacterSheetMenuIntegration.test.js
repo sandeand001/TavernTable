@@ -1,14 +1,29 @@
 import '../../../src/ui/UIController.js';
 import { applyTokenCommand } from '../../../src/core/game-manager/internals/tokenCommands.js';
+import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
+import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCatalog.js';
 
 test('the real radial event opens and reuses the sheet window without applying a quick command', () => {
   const previousManager = window.gameManager;
   const first = { id: 'token-1', name: 'Mannequin 1' };
   const second = { id: 'token-2', name: 'Mannequin 2' };
+  const catalog = new CompendiumCatalog({
+    ...{ version: 1, entries: [], classes: [] },
+    ruleset: '2014',
+  });
   const gameManager = {
     placedTokens: [first, second],
     applyTokenCommand: jest.fn(),
     token3DAdapter: { setSelectedToken: jest.fn() },
+    characterServices: {
+      catalog,
+      library: new CharacterLibrary({
+        ruleset: '2014',
+        catalog: catalog.entries,
+        classes: catalog.classes,
+        storage: localStorage,
+      }),
+    },
   };
   window.gameManager = gameManager;
   try {

@@ -29,6 +29,7 @@ import { playD20RollOnGrid } from './dice3d.js';
 import { GameValidators } from '../../utils/Validation.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
+import { buildRollBreakdown } from './rollSummary.js';
 
 // ── DOM Port Injection ──────────────────────────────────────────
 let _diceDomPorts = {};
@@ -62,6 +63,17 @@ function _releaseRollControls() {
     button.classList.toggle('disabled', wasDisabled);
     button.setAttribute('aria-disabled', wasDisabled ? 'true' : 'false');
     button.removeAttribute('data-prev-disabled');
+  });
+}
+
+function _disableRollControls() {
+  _getDiceButtons().forEach((button) => {
+    if (!button.hasAttribute('data-prev-disabled')) {
+      button.setAttribute('data-prev-disabled', button.disabled ? '1' : '0');
+    }
+    button.disabled = true;
+    button.classList.add('disabled');
+    button.setAttribute('aria-disabled', 'true');
   });
 }
 
@@ -162,16 +174,7 @@ export function rollDice(sides) {
     const d20PhysicalRollPromise = isSingleD20 ? _maybePlay3DDice({ sides, diceCount }) : null;
 
     // Soft-disable dice buttons to avoid rapid re-clicks during animation
-    const diceButtons = _getDiceButtons();
-    diceButtons.forEach((btn) => {
-      // Preserve prior disabled state
-      if (!btn.hasAttribute('data-prev-disabled')) {
-        btn.setAttribute('data-prev-disabled', btn.disabled ? '1' : '0');
-      }
-      btn.disabled = true;
-      btn.classList.add('disabled');
-      btn.setAttribute('aria-disabled', 'true');
-    });
+    _disableRollControls();
 
     // Animation phase
     let animationFrame = 0;
@@ -210,6 +213,8 @@ export function rollDice(sides) {
       const finalize = async () => {
         const results = [];
         let total = 0;
+        let physical = false;
+        let digitalReason = '';
 
         try {
           if (isSingleD20 && d20PhysicalRollPromise) {
@@ -231,6 +236,7 @@ export function rollDice(sides) {
               physicalRoll.value <= 20
             ) {
               results.push(physicalRoll.value);
+              physical = true;
             } else if (
               physicalRoll?.reason === 'no-manager' ||
               physicalRoll?.reason === 'no-window'
@@ -242,6 +248,7 @@ export function rollDice(sides) {
                 { reason: physicalRoll.reason }
               );
               results.push(Math.floor(Math.random() * sides) + 1);
+              digitalReason = physicalRoll.reason;
             } else {
               throw physicalRoll?.error || new Error('Unable to read the settled d20 face');
             }
@@ -304,7 +311,19 @@ export function rollDice(sides) {
               diceCount === 1
                 ? `Rolled d${sides}: ${results[0]}`
                 : `Rolled ${diceCount}d${sides}: [${results.join(', ')}] = ${total}`;
-            window.sidebarController.addDiceLogEntry(logMessage, 'roll');
+            const expression = `${diceCount}d${sides}`;
+            window.sidebarController.addDiceLogEntry(logMessage, 'roll', {
+              label: diceCount === 1 ? `d${sides}` : expression,
+              total,
+              breakdown: buildRollBreakdown({
+                expression,
+                terms: [{ count: diceCount, sides, sign: 1, values: results }],
+                mode: 'normal',
+                total,
+                physical,
+                digitalReason,
+              }),
+            });
           }
 
           const t = setTimeout(() => {
@@ -348,6 +367,143 @@ export function rollDice(sides) {
     });
     _releaseRollControls();
     return false;
+  }
+}
+
+export async function rollDiceExpression(
+  { expression, label = 'Character roll', mode = 'normal' },
+  { random = Math.random, physicalRoll = _maybePlay3DDice } = {}
+) {
+  if (
+    typeof expression !== 'string' ||
+    expression.length > 160 ||
+    typeof label !== 'string' ||
+    label.length > 240 ||
+    !['normal', 'advantage', 'disadvantage'].includes(mode)
+  ) {
+    throw new Error('Invalid character dice request');
+  }
+  const notation = expression.toLowerCase().replace(/\s+/g, '');
+  const pattern = /([+-]?)(?:(\d*)d(\d+)|(\d+))/gy;
+  const terms = [];
+  let cursor = 0;
+  let diceCount = 0;
+  while (cursor < notation.length) {
+    pattern.lastIndex = cursor;
+    const match = pattern.exec(notation);
+    if (!match || (cursor > 0 && !match[1])) throw new Error('Unsupported dice expression');
+    const sign = match[1] === '-' ? -1 : 1;
+    if (match[3]) {
+      const count = Number(match[2] || 1);
+      const sides = Number(match[3]);
+      if (
+        !GameValidators.validateDiceSides(sides).isValid ||
+        !GameValidators.validateDiceCount(count).isValid
+      ) {
+        throw new Error('Unsupported dice type or count');
+      }
+      diceCount += count;
+      terms.push({ count, sides, sign, values: [] });
+    } else {
+      const value = Number(match[4]);
+      if (!Number.isSafeInteger(value) || value > 10000)
+        throw new Error('Dice modifier is too large');
+      terms.push({ constant: sign * value });
+    }
+    cursor = pattern.lastIndex;
+  }
+  if (!terms.length || diceCount > 100)
+    throw new Error('Invalid or excessively large dice expression');
+  const diceTerms = terms.filter((term) => term.sides);
+  const d20Check =
+    diceTerms.length === 1 &&
+    diceTerms[0].sides === 20 &&
+    diceTerms[0].count === 1 &&
+    diceTerms[0].sign === 1;
+  if (mode !== 'normal' && !d20Check) throw new Error('Advantage requires a single d20 check');
+  if (isRolling) throw new Error('Finish the current dice roll before rolling again');
+  isRolling = true;
+  _disableRollControls();
+  const resultElement = _getDiceResultEl();
+  if (resultElement) resultElement.textContent = `Rolling ${label}...`;
+  let physical = false;
+  let digitalReason = '';
+  try {
+    for (const term of diceTerms) {
+      if (d20Check && mode === 'normal') {
+        const rolled = await physicalRoll({ sides: 20, diceCount: 1 });
+        if (rolled?.reason === 'cancelled') {
+          const text = `${label}: roll cancelled.`;
+          if (resultElement) resultElement.textContent = text;
+          return { cancelled: true, text };
+        }
+        if (
+          rolled?.success &&
+          Number.isInteger(rolled.value) &&
+          rolled.value >= 1 &&
+          rolled.value <= 20
+        ) {
+          term.values.push(rolled.value);
+          physical = true;
+          continue;
+        }
+        if (!['no-manager', 'no-window'].includes(rolled?.reason)) {
+          throw (
+            rolled?.error ||
+            new Error(
+              rolled?.reason === 'cocked'
+                ? 'The d20 is cocked; roll again'
+                : 'Unable to read the settled d20'
+            )
+          );
+        }
+        digitalReason = ' (digital; 3D unavailable)';
+        logger.log(LOG_LEVEL.INFO, 'Character roll using digital dice', LOG_CATEGORY.USER, {
+          reason: rolled.reason,
+        });
+      }
+      const count = d20Check && mode !== 'normal' ? 2 : term.count;
+      for (let index = 0; index < count; index++) {
+        const value = random();
+        if (!Number.isFinite(value) || value < 0 || value >= 1)
+          throw new Error('Invalid dice randomness');
+        term.values.push(Math.floor(value * term.sides) + 1);
+      }
+    }
+    const total = terms.reduce((sum, term) => {
+      if (term.constant != null) return sum + term.constant;
+      const value =
+        d20Check && mode !== 'normal'
+          ? mode === 'advantage'
+            ? Math.max(...term.values)
+            : Math.min(...term.values)
+          : term.values.reduce((subtotal, roll) => subtotal + roll, 0);
+      return sum + term.sign * value;
+    }, 0);
+    const values = diceTerms.flatMap((term) => term.values);
+    const rolledText = values.length ? ` [${values.join(', ')}]` : '';
+    const text = `${label}: ${notation}${mode !== 'normal' ? ` (${mode}, digital)` : digitalReason}${rolledText} = ${total}`;
+    const summary = {
+      label,
+      total,
+      breakdown: buildRollBreakdown({
+        expression: notation,
+        terms,
+        mode,
+        total,
+        physical,
+        digitalReason,
+      }),
+    };
+    if (resultElement) resultElement.textContent = text;
+    if (typeof window !== 'undefined')
+      window.sidebarController?.addDiceLogEntry(text, 'roll', summary);
+    return { expression: notation, label, mode, values, total, physical, text, summary };
+  } catch (error) {
+    if (resultElement) resultElement.textContent = `Unable to roll: ${error.message}`;
+    throw error;
+  } finally {
+    _releaseRollControls();
   }
 }
 

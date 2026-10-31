@@ -65,7 +65,7 @@ describe.each([false, true])('eight-direction facing; orthographic=%s', (orthogr
       const end = f.screen(origin.x + Math.cos(heading) * 2, origin.z + Math.sin(heading) * 2);
       mouse(document, 'mousemove', end, { buttons: 1 });
       mouse(document, 'mouseup', end);
-      expect(Math.abs(normalizeAngle(f.token.facingAngle - heading))).toBeLessThan(1e-8);
+      expect(Math.abs(normalizeAngle(f.token.facingAngle + heading))).toBeLessThan(1e-8);
       expect(f.token.creature.facingAngle).toBe(f.token.facingAngle);
       expect(f.token.world).toEqual({ x: 0, y: 0, z: 0 });
       expect(f.manager.handleLeftClick).not.toHaveBeenCalled();
@@ -106,7 +106,7 @@ test('Escape restores the original heading and removes drag listeners', () => {
   const f = fixture();
   mouse(f.view, 'mousedown', f.screen(0, 0));
   mouse(document, 'mousemove', f.screen(0, 2), { buttons: 1 });
-  expect(f.token.facingAngle).toBeCloseTo(Math.PI / 2);
+  expect(f.token.facingAngle).toBeCloseTo(-Math.PI / 2);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   mouse(document, 'mousemove', f.screen(-2, 0), { buttons: 1 });
   expect(f.token.facingAngle).toBe(0);

@@ -34,6 +34,33 @@ export class TerrainDataStore {
       validCols,
       TERRAIN_CONFIG.DEFAULT_HEIGHT
     );
+    this.listeners = new Set();
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  _changed() {
+    for (const listener of this.listeners) listener();
+  }
+
+  restoreHeights(heights) {
+    if (
+      !Array.isArray(heights) ||
+      heights.length !== this.rows ||
+      heights.some(
+        (row) =>
+          !Array.isArray(row) ||
+          row.length !== this.cols ||
+          row.some((height) => !Number.isFinite(height))
+      )
+    )
+      throw new Error('Saved terrain heights do not match the grid');
+    this.base = heights.map((row) => [...row]);
+    this.working = heights.map((row) => [...row]);
+    this._changed();
   }
 
   resize(cols, rows) {
@@ -59,6 +86,7 @@ export class TerrainDataStore {
     this.rows = rows;
     this.base = newBase;
     this.working = newWorking;
+    this._changed();
   }
 
   get(gridX, gridY) {
@@ -73,15 +101,18 @@ export class TerrainDataStore {
   set(gridX, gridY, height) {
     if (gridY >= 0 && gridY < this.rows && gridX >= 0 && gridX < this.cols) {
       this.working[gridY][gridX] = height;
+      this._changed();
     }
   }
 
   applyWorkingToBase() {
     this.base = this.working.map((row) => [...row]);
+    this._changed();
   }
 
   loadBaseIntoWorking() {
     this.working = this.base.map((row) => [...row]);
+    this._changed();
   }
 
   /**
@@ -108,6 +139,7 @@ export class TerrainDataStore {
 
     this.base = TerrainHeightUtils.createHeightArray(rows, cols, value);
     this.working = TerrainHeightUtils.createHeightArray(rows, cols, value);
+    this._changed();
   }
 
   isConsistent() {

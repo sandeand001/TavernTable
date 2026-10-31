@@ -48,7 +48,11 @@ describe('Large d20 result authority', () => {
     playD20RollOnGrid.mockResolvedValue({ success: true, value: 17 });
 
     expect(await roll()).toBe('Result: d20 \u2192 17');
-    expect(window.sidebarController.addDiceLogEntry).toHaveBeenCalledWith('Rolled d20: 17', 'roll');
+    expect(window.sidebarController.addDiceLogEntry).toHaveBeenCalledWith(
+      'Rolled d20: 17',
+      'roll',
+      expect.objectContaining({ label: 'd20', total: 17 })
+    );
   });
 
   test.each([null, 0, 21])(

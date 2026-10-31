@@ -910,6 +910,7 @@ export class ThreeSceneManager {
         color: '#fff',
         padding: '4px 6px',
         zIndex: '9999',
+        pointerEvents: 'none',
       });
       document.body.appendChild(overlay);
     } catch (_) {

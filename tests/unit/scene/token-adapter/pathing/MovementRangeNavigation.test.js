@@ -1,6 +1,11 @@
 import { Group } from 'three';
 import { Token3DAdapter } from '../../../../../src/scene/Token3DAdapter.js';
-import { setTokenMovementSettings } from '../../../../../src/entities/creatures/TokenMovement.js';
+import {
+  linkTokenCharacter,
+  setTokenMovementSettings,
+} from '../../../../../src/entities/creatures/TokenMovement.js';
+import { CharacterLibrary } from '../../../../../src/entities/characters/CharacterLibrary.js';
+import CombatSession from '../../../../../src/entities/characters/CombatSession.js';
 
 function fixture(getHeight = () => 0) {
   const mesh = new Group();
@@ -71,6 +76,65 @@ function finish(adapter, token, observe = () => {}) {
 }
 
 describe('Distance-limited click navigation', () => {
+  test('combat range and actual successive routes use the same remaining turn allowance', () => {
+    localStorage.clear();
+    const { adapter, token, gm } = fixture();
+    const library = new CharacterLibrary({
+      ruleset: '2014',
+      storage: globalThis.localStorage,
+      catalog: [],
+    });
+    linkTokenCharacter(token, library, library.create('Nora'));
+    const combat = new CombatSession({
+      library,
+      isMoving: (entry) => adapter.isMovementInProgress(entry),
+    });
+    gm.characterServices = { library, combat };
+    combat.startTurn(token);
+    expect(adapter.requestMoveToGrid(token, 4, 4).cost).toBe(10);
+    expect(combat.status(token).movement.remaining).toBe(20);
+    finish(adapter, token);
+    expect(adapter.requestMoveToGrid(token, 8, 4).cost).toBe(20);
+    finish(adapter, token);
+    expect(combat.status(token).movement.spent).toBe(30);
+    expect(adapter.requestMoveToGrid(token, 9, 4)).toBeNull();
+    expect(token.world.x).toBeCloseTo(8.5, 5);
+    combat.endCombat();
+    expect(adapter.requestMoveToGrid(token, 14, 4).cost).toBe(30);
+    finish(adapter, token);
+  });
+
+  test('combat wall costs share the same pool and an off-turn creature has no requested movement', () => {
+    localStorage.clear();
+    const { adapter, token, gm } = fixture((x) => (x >= 3 ? 24 : 0));
+    const library = new CharacterLibrary({
+      ruleset: '2014',
+      storage: globalThis.localStorage,
+      catalog: [],
+    });
+    const id = library.create('Nora');
+    library.edit(id, { speed: 50 });
+    linkTokenCharacter(token, library, id);
+    const combat = new CombatSession({
+      library,
+      isMoving: (entry) => adapter.isMovementInProgress(entry),
+    });
+    gm.characterServices = { library, combat };
+    combat.startTurn(token);
+    const surface = (y) => ({ point: { x: 3, y, z: 4.5 }, normal: { x: -1, y: 0, z: 0 } });
+    expect(adapter.requestMoveToSurface(token, surface(4)).cost).toBe(45);
+    finish(adapter, token);
+    expect(combat.status(token).movement.remaining).toBe(5);
+    expect(adapter.requestMoveToSurface(token, surface(9))).toBeNull();
+    combat.endTurn();
+    expect(adapter.getTokenMovementRange(token)).toBeNull();
+    expect(adapter.requestMoveToSurface(token, surface(0))).toBeNull();
+    combat.startTurn(token);
+    expect(adapter.requestMoveToSurface(token, surface(9)).cost).toBe(50);
+    finish(adapter, token);
+    expect(combat.status(token).movement.remaining).toBe(0);
+  });
+
   test('rejects an eleven-square request before releasing emotes or changing movement state', () => {
     const { adapter, token } = fixture();
     const release = jest.spyOn(adapter, '_releaseManualAnimationForMovement');

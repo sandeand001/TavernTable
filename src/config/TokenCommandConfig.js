@@ -28,15 +28,6 @@ const DEFAULT_COMMANDS = [
     accent: '#a5b4fc',
     subActions: MANUAL_ACTIONS.filter((action) => action.group === 'actions'),
   },
-  // ── Future Actions ───────────────────────────────────────────
-  {
-    id: 'unavailable',
-    label: 'Not yet available',
-    description: 'More creature actions are coming later.',
-    icon: '…',
-    accent: '#7E8DAA',
-    disabled: true,
-  },
 ];
 
 // ── Command Registry & Lookup ─────────────────────────────────

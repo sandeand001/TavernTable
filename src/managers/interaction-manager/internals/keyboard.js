@@ -12,17 +12,12 @@ const ROTATE_RIGHT_CODES = new Set(['ArrowRight', 'KeyD']);
 // ── Input Filtering ─────────────────────────────────────────────
 
 export function shouldIgnoreKeyTarget(target) {
-  if (!target) return false;
-  try {
-    if (target.isContentEditable) return true;
-    const tag = (target.tagName || '').toUpperCase();
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-      return true;
-    }
-  } catch (_) {
-    /* ignore target introspection errors */
-  }
-  return false;
+  return !!(
+    target?.isContentEditable ||
+    target?.closest?.(
+      'input,textarea,select,button,a[href],[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="button"],[role="tab"],[role="combobox"]'
+    )
+  );
 }
 
 // ── Token Rotation Handlers ─────────────────────────────────────

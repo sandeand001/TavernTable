@@ -1,0 +1,18 @@
+import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
+import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
+import { sceneState } from '../../helpers/sceneState.js';
+
+test('scene data roundtrips names, terrain and linked identities while rejecting another edition or missing character', () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
+  const id = library.create('Rook');
+  const scene = sceneState({ characterId: id });
+  const context = { ruleset: '2014', library };
+  expect(decodeScene(encodeScene(scene, context), context)).toEqual(scene);
+  expect(() => decodeScene(JSON.stringify(scene), { ruleset: '2024', library })).toThrow('ruleset');
+  const missing = sceneState({ characterId: 'missing-character' });
+  expect(() => encodeScene(missing, context)).toThrow('character');
+  const corrupt = sceneState({ characterId: id });
+  corrupt.camera.zoom = NaN;
+  expect(() => encodeScene(corrupt, context)).toThrow('camera');
+});

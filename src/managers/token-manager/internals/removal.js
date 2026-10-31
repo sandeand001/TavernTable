@@ -3,6 +3,7 @@
 export function removeToken(c, token) {
   token.creature?.removeFromStage?.();
   c.placedTokens = c.placedTokens.filter((t) => t !== token);
+  c.gameManager?.sceneAutosave?.changed('creature removed');
   // Phase 3: notify 3D adapter for cleanup if hybrid mode active
   try {
     const gm = c.gameManager;

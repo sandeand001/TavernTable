@@ -38,6 +38,7 @@ function attach3DControls() {
   section.id = 'hybrid-3d-extended-section';
   section.innerHTML = `
     <div class="section-title">3D Experimental Controls</div>
+    <p class="small-text">Hold Space and left-drag the map to pan. Right-drag rotates and tilts; the mouse wheel zooms.</p>
     <div class="setting-item">
       <label class="toggle-switch" for="bootstrap-grid-toggle">
         <input type="checkbox" id="bootstrap-grid-toggle" checked />

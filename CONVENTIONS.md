@@ -76,7 +76,7 @@ terrain module and a wiring-only coordinator, not another pass-through facade.
 | Config/data files     | PascalCase describing the data                                | `BiomePalettes.js`, `TerrainPlaceables.js` |
 | Barrel re-exports     | `index.js`                                                    | `entities/creatures/index.js`              |
 | Generated files       | `.generated.js` suffix                                        | `d20FaceCenters.generated.js`              |
-| Test files            | `<SourceName>.test.js` in `tests/unit/` mirroring `src/` path | `tests/unit/managers/TokenManager.test.js` |
+| Test files            | `<SourceName>.test.js` in `tests/unit/` or `tests/integration/`, mirroring `src/` path | `tests/unit/managers/TokenManager.test.js` |
 
 ---
 

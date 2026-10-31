@@ -287,6 +287,7 @@ function _finishWallSurfaceTravel(state) {
     state.phase = 'climb-hold';
     this._setSelectionIndicatorSuppressed(state, false);
     this._movementRangeDirty = true;
+    this.recordStablePlacement?.(state.token);
   } else if (motion.destination === 'high') {
     motion.stage = 'recover';
     motion.stageTime = 0;
@@ -477,7 +478,7 @@ function wallClockAtHeight(motion, height) {
 function _cancelWallMovement(state) {
   state.wallMotion = null;
   state.climbRecoverStartWorld = null;
-  this._movementRoutes.delete(state.token);
+  this._finishPlannedMovement(state.token, true);
   this._setSelectionIndicatorSuppressed(state, false);
   this._unlockTokenWorldAuthority(state);
   this._resetMovementState(state);

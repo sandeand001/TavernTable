@@ -1,0 +1,28 @@
+TavernTable 2014 SRD compendium
+
+This work includes material taken from the System Reference Document 5.1
+("SRD 5.1") by Wizards of the Coast LLC and available at
+https://www.dndbeyond.com/srd .
+The SRD 5.1 is licensed under the Creative Commons Attribution 4.0
+International License, available at
+https://creativecommons.org/licenses/by/4.0/legalcode .
+
+Structured data was adapted from the 5e-bits/5e-srd-api project:
+https://github.com/5e-bits/5e-srd-api
+Pinned revision: 386930c2e93a7f2c9ba2a9715ccc5b95d8926e41
+The upstream structured-data project is MIT licensed; its copyright notice
+and license are reproduced in SRD2014-UPSTREAM-LICENSE.txt. Its README also
+identifies the underlying material as released under OGL 1.0a. This application
+uses the corresponding SRD 5.1 rules material under the Creative Commons
+permission identified above, with the upstream structured-data attribution
+retained.
+
+Changes: normalized fields for local search and character-sheet use;
+generated specific +1/+2/+3 weapon, armor and shield variants; attached
+explicitly supported mechanical effects to selected items; included class
+spell-slot progression. File-level source hashes are in srd2014.json.
+
+This is not a copy of Roll20's paid compendium and does not include every
+Player's Handbook, Dungeon Master's Guide, subclass, feat or expansion.
+Only explicitly tagged effects are applied automatically. Reference-only
+entries and spell descriptions do not imply automated effect execution.

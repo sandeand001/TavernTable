@@ -40,6 +40,7 @@ import { installRootMotionMethods } from './token-adapter/spatial/RootMotion.js'
 import { installSpatialUtilsMethods } from './token-adapter/spatial/SpatialUtils.js';
 import { installWorldAuthorityMethods } from './token-adapter/spatial/WorldAuthority.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
+import { installSavedPlacementMethods } from './token-adapter/SavedPlacements.js';
 
 export class Token3DAdapter {
   // ── Constructor & Initialization ─────────────────────────────────────────────
@@ -122,6 +123,7 @@ export class Token3DAdapter {
           if (delta > 0) {
             this._updateForwardMovements(delta);
             this._updatePlannedMovements();
+            this.gameManager?.characterServices?.combat?.syncMovementStatus?.();
             for (const tokenEntry of this._animationMixers.keys()) {
               try {
                 this._neutralizeRootMotion(tokenEntry);
@@ -195,6 +197,7 @@ export class Token3DAdapter {
     if (!gm || !gm.is3DModeActive?.()) return;
     const scene = gm.threeSceneManager?.scene;
     if (!scene) return;
+    this.recordStablePlacement(tokenEntry);
     return this._ensureTokenMesh(tokenEntry, scene);
   }
 
@@ -339,6 +342,7 @@ export class Token3DAdapter {
   // ── Public Movement & Navigation API ─────────────────────────────────────────────
 
   beginForwardMovement(tokenEntry, sourceKey = '__forward') {
+    if (this.gameManager.sceneAutosave?.ready === false) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, 1, sourceKey);
   }
@@ -348,6 +352,7 @@ export class Token3DAdapter {
   }
 
   beginBackwardMovement(tokenEntry, sourceKey = '__backward') {
+    if (this.gameManager.sceneAutosave?.ready === false) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, -1, sourceKey);
   }
@@ -373,6 +378,7 @@ export class Token3DAdapter {
   // ── Navigation & Path Orchestration (installed via Navigation mixin) ──
 
   beginRotation(tokenEntry, direction = 1, sourceKey = '__rotate') {
+    if (this.gameManager.sceneAutosave?.ready === false) return;
     try {
       if (!tokenEntry) return;
       this._releaseManualAnimationForMovement(tokenEntry);
@@ -548,7 +554,9 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    this.gameManager.characterServices?.combat?.forget(tokenEntry);
     this._movementRoutes.delete(tokenEntry);
+    this._savedPlacements?.delete(tokenEntry);
     this._movementRangeDirty = true;
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
     if (!tokenEntry.__threeMesh) return;
@@ -732,3 +740,4 @@ installWorldAuthorityMethods(Token3DAdapter.prototype);
 installStepFactoryMethods(Token3DAdapter.prototype);
 installSpatialUtilsMethods(Token3DAdapter.prototype);
 installResumeProbeMethods(Token3DAdapter.prototype);
+installSavedPlacementMethods(Token3DAdapter.prototype);

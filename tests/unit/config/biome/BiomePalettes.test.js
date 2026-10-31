@@ -1,8 +1,8 @@
 // Minimal, deterministic tests for palette API stability
 import { getBiomeColorHex } from '../../../../src/config/biome/BiomePalettes.js';
+import { TERRAIN_CONFIG } from '../../../../src/config/terrain/TerrainConstants.js';
 
-// A tiny stub to avoid depending on real biome constants in tests
-const KNOWN_BIOMES = ['grassland', 'desert', 'tundra'];
+const KNOWN_BIOMES = ['grassland', 'desertHot', 'tundra', 'desert'];
 
 // Helper: call with stable opts
 function sample(biome, height, x = 10, y = 20) {
@@ -20,24 +20,29 @@ function sample(biome, height, x = 10, y = 20) {
 
 describe('BiomePalettes.getBiomeColorHex', () => {
   test('returns a 24-bit integer color', () => {
-    const hex = sample(KNOWN_BIOMES[0], 0);
-    expect(typeof hex).toBe('number');
-    expect(hex).toBeGreaterThanOrEqual(0x000000);
-    expect(hex).toBeLessThanOrEqual(0xffffff);
+    for (const biome of KNOWN_BIOMES) {
+      const hex = sample(biome, 0);
+      expect(Number.isInteger(hex)).toBe(true);
+      expect(hex).toBeGreaterThanOrEqual(0x000000);
+      expect(hex).toBeLessThanOrEqual(0xffffff);
+    }
   });
 
-  test('height clamping yields stable results at extremes', () => {
-    const low = sample('desert', -9999);
-    const high = sample('desert', 9999);
-    expect(low).not.toBeNaN();
-    expect(high).not.toBeNaN();
-    expect(low).toBeGreaterThanOrEqual(0);
-    expect(high).toBeGreaterThanOrEqual(0);
+  test('out-of-range heights match the configured minimum and maximum endpoint colors', () => {
+    for (const biome of KNOWN_BIOMES) {
+      expect(sample(biome, TERRAIN_CONFIG.MIN_HEIGHT - 9999)).toBe(
+        sample(biome, TERRAIN_CONFIG.MIN_HEIGHT)
+      );
+      expect(sample(biome, TERRAIN_CONFIG.MAX_HEIGHT + 9999)).toBe(
+        sample(biome, TERRAIN_CONFIG.MAX_HEIGHT)
+      );
+    }
   });
 
-  test('deterministic for same inputs', () => {
-    const a = sample('grassland', 1, 42, 17);
-    const b = sample('grassland', 1, 42, 17);
-    expect(a).toBe(b);
+  test('deterministic for same inputs and equivalent desert names', () => {
+    for (const biome of KNOWN_BIOMES) {
+      expect(sample(biome, 1, 42, 17)).toBe(sample(biome, 1, 42, 17));
+    }
+    expect(sample('desert', 1, 42, 17)).toBe(sample('desertHot', 1, 42, 17));
   });
 });

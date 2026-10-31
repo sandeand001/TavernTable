@@ -61,6 +61,8 @@
         aria-controls="dice-log-panel">🎲 Dice Log</button>
       <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false"
         aria-controls="creatures-panel">🗡️ Creatures</button>
+      <button id="compendium-tab" class="tab-button" data-tab="compendium" role="tab"
+        aria-selected="false" aria-controls="compendium-panel" title="Compendium">&#128218; Compendium</button>
       <button class="tab-button" data-tab="terrain" role="tab" aria-selected="false" aria-controls="terrain-panel">🏔️
         Terrain</button>
       <button class="tab-button" data-tab="biomes" role="tab" aria-selected="false" aria-controls="biomes-panel">🌍
@@ -81,6 +83,8 @@
           <button class="clear-button">Clear History</button>
         </div>
       </div>
+
+      <div id="compendium-panel" class="tab-panel" role="tabpanel" aria-labelledby="compendium-tab"></div>
 
       <!-- Creatures Panel -->
       <div id="creatures-panel" class="tab-panel" role="tabpanel" aria-labelledby="creatures-tab">
@@ -147,15 +151,39 @@
             <div class="tool-group">
               <div class="section-subtitle">Tools</div>
               <div class="tool-buttons">
-                <button id="terrain-raise-btn" class="terrain-tool-btn active" aria-label="Raise terrain height">⬆️
+                <button id="terrain-raise-btn" class="terrain-tool-btn active" aria-label="Raise terrain height" aria-pressed="true">⬆️
                   Raise</button>
-                <button id="terrain-lower-btn" class="terrain-tool-btn" aria-label="Lower terrain height">⬇️
+                <button id="terrain-lower-btn" class="terrain-tool-btn" aria-label="Lower terrain height" aria-pressed="false">⬇️
                   Lower</button>
+                <button id="terrain-wall-btn" class="terrain-tool-btn" aria-label="Draw a terrain wall" aria-pressed="false">Wall</button>
               </div>
               <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center;"></div>
             </div>
 
-            <div class="tool-group">
+            <div id="terrain-wall-controls" class="tool-group" hidden>
+              <div class="section-subtitle">Wall Settings</div>
+              <div class="setting-item">
+                <label for="terrain-wall-height">Top level:</label>
+                <select id="terrain-wall-height" class="grid-input" aria-label="Wall top elevation level"
+                  aria-describedby="terrain-wall-help">
+                  <option value="3" selected>3</option>
+                </select>
+              </div>
+              <div class="setting-item">
+                <label for="terrain-wall-fill">Box style:</label>
+                <select id="terrain-wall-fill" class="grid-input" aria-label="Wall box style"
+                  aria-describedby="terrain-wall-help">
+                  <option value="filled" selected>Filled</option>
+                  <option value="outline">Outline</option>
+                </select>
+              </div>
+              <small id="terrain-wall-help" class="small-text">Drag opposite corners and release to build.
+                Filled changes the whole box; Outline changes only its one-cell-wide edge.
+                A single row or column makes a line. Selected cells are set to the chosen level,
+                raising or cutting terrain. Escape cancels an unfinished drag.</small>
+            </div>
+
+            <div id="terrain-brush-size-controls" class="tool-group">
               <div class="section-subtitle">Brush Size</div>
               <div class="brush-controls">
                 <button id="brush-decrease" class="brush-btn" aria-label="Decrease brush size">➖</button>
