@@ -15,10 +15,14 @@
 import {
   DEFAULT_MOVEMENT_PROFILE,
   CLIMB_WALL_ENTRY_TILE_HALF_RATIO,
+  PRONE_ANIMATION_KEYS,
+  PRONE_IMPACT_BLEND_SECONDS,
+  PRONE_TRANSITION_BLEND_SECONDS,
 } from '../../config/token-adapter/MannequinConfig.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { getManualAction } from '../../config/HumanoidActionCatalog.js';
 import { cloneHumanoidRig, retargetHumanoidClip } from './HumanoidRig.js';
+import { getTokenConditions } from '../../entities/creatures/TokenMovement.js';
 
 // ── Animation Setup & Clip Resolution ────────────────────────────
 
@@ -61,7 +65,7 @@ async function _setupAnimationSet(tokenEntry, container, config, templateBundle)
     clips[key] = clip.duration;
   }
   const landingContactTimes = {};
-  for (const key of ['fall', 'hardLanding', 'fallToRoll']) {
+  for (const key of ['fall', 'hardLanding', 'fallToRoll', 'proneLanding', 'prone']) {
     const contactTime = animationsConfig[key]?.contactTime;
     if (contactTime == null) continue;
     if (!Number.isFinite(contactTime) || contactTime < 0 || contactTime > clips[key]) {
@@ -87,6 +91,7 @@ async function _setupAnimationSet(tokenEntry, container, config, templateBundle)
     rawTraversalClimb,
     three
   );
+  this._prepareProneGrounding(tokenEntry, container, animationData, three);
   this._alignLedgeHangGrip(tokenEntry, container, animationData, three);
   this._animationMixers.set(tokenEntry, mixer);
   this._tokenAnimationData.set(tokenEntry, animationData);
@@ -331,6 +336,8 @@ function _buildMovementProfile(movementOverrides = {}, actions = {}, clips = {})
     this._extractClipDuration(actions.fallToRoll) || clips.fallToRoll || 0;
   profile.fallLoopClipDuration =
     this._extractClipDuration(actions.fallLoop) || clips.fallLoop || profile.fallClipDuration || 0;
+  profile.proneLandingClipDuration =
+    this._extractClipDuration(actions.proneLanding) || clips.proneLanding || 0;
 
   if (!Number.isFinite(profile.walkSpeed) || profile.walkSpeed <= 0) {
     const duration = Math.max(profile.walkClipDuration || 0, 1e-3);
@@ -439,6 +446,7 @@ function _extractClipDuration(action) {
 // ── Playback ─────────────────────────────────────────────────────
 
 function _setAnimation(tokenEntry, key, options = {}) {
+  if (key === 'idle' && getTokenConditions(tokenEntry).includes('prone')) key = 'prone';
   const data = this._tokenAnimationData.get(tokenEntry);
   if (!data || !data.actions) return;
   if (!data.actions[key]) return;
@@ -457,8 +465,21 @@ function _setAnimation(tokenEntry, key, options = {}) {
     this._clearManualAnimationState(tokenEntry);
   }
 
-  const fadeIn = options.immediate ? 0 : (options.fadeIn ?? 0.2);
-  const fadeOut = options.immediate ? 0 : (options.fadeOut ?? 0.2);
+  let fadeIn = options.immediate ? 0 : (options.fadeIn ?? 0.2);
+  let fadeOut = options.immediate ? 0 : (options.fadeOut ?? 0.2);
+  if (
+    !options.immediate &&
+    !isManualOverride &&
+    data.current !== key &&
+    data.actions[data.current] &&
+    (PRONE_ANIMATION_KEYS.has(data.current) || PRONE_ANIMATION_KEYS.has(key))
+  ) {
+    const minimum =
+      data.current === 'fallLoop' ? PRONE_IMPACT_BLEND_SECONDS : PRONE_TRANSITION_BLEND_SECONDS;
+    const duration = Math.max(fadeIn, fadeOut, minimum);
+    fadeIn = duration;
+    fadeOut = duration;
+  }
   const timeScale =
     Number.isFinite(options.timeScale) && options.timeScale > 0 ? options.timeScale : 1;
 
@@ -578,6 +599,14 @@ async function playTokenAction(tokenEntry, commandId) {
 
 function playTokenAnimation(tokenEntry, animationKey, options = {}) {
   if (!tokenEntry || !animationKey) return false;
+  if (getTokenConditions(tokenEntry).includes('prone')) {
+    GameErrors.input(new Error('Stand up from Prone before playing a visual action'), {
+      component: 'Token3DAdapter',
+      operation: 'playTokenAnimation',
+      tokenId: tokenEntry.id,
+    });
+    return false;
+  }
   const data = this._tokenAnimationData.get(tokenEntry);
   if (!data || !data.actions?.[animationKey]) {
     return false;

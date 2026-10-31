@@ -76,7 +76,9 @@ export default class CustomActionsEditor {
       if (action === 'cancel') this.form.hidden = true;
       if (
         action === 'delete' &&
-        window.confirm('Delete this custom ability and its tracked uses?')
+        this.root.ownerDocument.defaultView.confirm(
+          'Delete this custom ability and its tracked uses?'
+        )
       ) {
         this._perform(() => this.library.actions.remove(this.characterId, button.dataset.id));
       }
@@ -120,7 +122,11 @@ export default class CustomActionsEditor {
         this.resource.value = selected;
         this.resourceSignature = signature;
       }
-      if (!this.root.querySelector('.sheet-custom-attack-count').contains(document.activeElement)) {
+      if (
+        !this.root
+          .querySelector('.sheet-custom-attack-count')
+          .contains(this.root.ownerDocument.activeElement)
+      ) {
         this.override.checked = state.attackCountOverride !== null;
         this.attackCount.value = String(state.attackCountOverride ?? 2);
       }

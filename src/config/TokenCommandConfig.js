@@ -1,4 +1,5 @@
 import { MANUAL_ACTIONS } from './HumanoidActionCatalog.js';
+import { FLIGHT_ELEVATION_STEPS, FLIGHT_TAKEOFF_FEET } from './TokenMovementConfig.js';
 
 // ── Constants ──────────────────────────────────────────────────
 const DEFAULT_COMMANDS = [
@@ -27,6 +28,47 @@ const DEFAULT_COMMANDS = [
     icon: '\u2728',
     accent: '#a5b4fc',
     subActions: MANUAL_ACTIONS.filter((action) => action.group === 'actions'),
+  },
+  {
+    id: 'take-flight',
+    label: 'Take flight',
+    description: 'Rise 5 feet, spending 5 feet of flying movement.',
+    icon: '\u2197',
+    accent: '#7dd3fc',
+    hidden: true,
+    flight: { kind: 'takeoff', feet: FLIGHT_TAKEOFF_FEET },
+  },
+  ...[
+    ['raise', 'Raise', '\u2191'],
+    ['lower', 'Lower', '\u2193'],
+  ].map(([kind, label, icon]) => ({
+    id: `flight-${kind}`,
+    label,
+    description: `${label} flight elevation using flying movement.`,
+    icon,
+    accent: '#7dd3fc',
+    hidden: true,
+    flight: { kind },
+    subActions: FLIGHT_ELEVATION_STEPS.map((feet) => {
+      const amount = `${kind === 'raise' ? '+' : '-'}${feet} ft`;
+      return {
+        id: `flight-${kind}-${feet}`,
+        label: amount,
+        description: `${label} ${feet} feet. Costs ${feet} feet of flying movement.`,
+        iconText: amount,
+        accent: '#7dd3fc',
+        flight: { kind, feet },
+      };
+    }),
+  })),
+  {
+    id: 'flight-drop',
+    label: 'Drop',
+    description: 'Relinquish flight and fall. No movement cost; falling damage and Prone apply.',
+    icon: '\u21a7',
+    accent: '#fca5a5',
+    hidden: true,
+    flight: { kind: 'drop' },
   },
 ];
 

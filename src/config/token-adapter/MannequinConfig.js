@@ -113,8 +113,24 @@ export const FALL_LANDING_THRESHOLD_CONFIG = {
   fallToRoll: { slope: 0.06, bias: 0.3, lower: 0.45, upper: 1.0 },
 };
 export const FALL_LOOP_MIN_DROP = 4.5;
+export const PRONE_IMPACT_HOLD_SECONDS = 0.12;
+export const PRONE_IMPACT_BLEND_SECONDS = 0.18;
+export const PRONE_TRANSITION_BLEND_SECONDS = 0.4;
 export const LANDING_VARIANTS_ALLOW_TILE_EXIT = new Set(['fallToRoll']);
-export const LANDING_VARIANTS_FORCE_ZERO_ELEVATION = new Set(['fallToRoll', 'fall', 'hardLanding']);
+export const LANDING_VARIANTS_FORCE_ZERO_ELEVATION = new Set([
+  'fallToRoll',
+  'fall',
+  'hardLanding',
+  'proneLanding',
+  'prone',
+]);
+export const PRONE_ANIMATION_KEYS = new Set([
+  'proneLanding',
+  'prone',
+  'standUp',
+  'crawl',
+  'crawlBackward',
+]);
 export const LANDING_OFFSET_SANITIZE_LIMITS = {
   default: {
     horizontalMultiplier: 2.1,

@@ -23,6 +23,7 @@ import {
   getTokenMovementSettings,
   linkTokenCharacter,
   setTokenMovementSettings,
+  getTokenConditions,
 } from '../../entities/creatures/TokenMovement.js';
 import { reconcileContent } from '../characters/reconcileContent.js';
 import HealthBar from '../characters/HealthBar.js';
@@ -355,6 +356,7 @@ export default class CharacterSheetContent {
       </div>
       <p class="sheet-ac-source">${escape(stats.armorName)}${stats.shieldName ? ` + ${escape(stats.shieldName)}` : ''}${stats.equipmentACBonus ? ` + ${stats.equipmentACBonus} equipment` : ''}${character.acBonus ? ` + ${character.acBonus} adjustment` : ''}</p>
       <div data-sheet-key="health" data-sheet-island="health"></div>
+      ${this._fallingControls(character)}
       <div class="sheet-movement-controls" role="group" aria-label="Movement controls">
         <div class="sheet-movement-pace" role="group" aria-label="Travel pace">
           <span>Pace</span>
@@ -455,6 +457,40 @@ export default class CharacterSheetContent {
       editing: this.layoutControls.editing,
     });
     this.root.classList.add('sheet-with-history');
+  }
+
+  _fallingControls(character) {
+    const prone = getTokenConditions(this.token).includes('prone');
+    const standing = this.services.combat.standingAvailability(this.token);
+    const recent = character.lastFall;
+    const freeAllowance = this.services.combat.active
+      ? null
+      : this.services.combat.freeMovementAllowance(this.token);
+    return `<section class="sheet-condition-controls" aria-label="Falling and prone">
+      <strong aria-label="Prone condition">${prone ? 'Prone' : this.token.flightActive ? 'Airborne' : 'Standing'}</strong>
+      ${
+        prone
+          ? `<button type="button" data-sheet-action="stand-up" aria-label="Stand up"
+          title="${escape(standing.reason || `Spend ${standing.cost} feet; no action, bonus action or reaction`)}"
+          ${standing.allowed ? '' : 'disabled'}>Stand Up (${standing.cost} ft)</button>
+          <small>Costs half maximum Speed, not half remaining movement. No action cost.
+          Movement while prone is crawling and costs twice the distance. Attacks have disadvantage.</small>
+          ${standing.reason ? `<small>${escape(standing.reason)}</small>` : ''}`
+          : ''
+      }
+      ${
+        recent
+          ? `<small aria-label="Last fall result">Last fall: ${Number(recent.distanceFeet.toFixed(2))} ft,
+        ${recent.damage} bludgeoning damage${recent.reduction ? ` (${recent.reduction} reduction)` : ''}.</small>`
+          : ''
+      }
+      ${
+        freeAllowance !== null
+          ? `<small aria-label="Free-play movement allowance">Next move allowance: ${freeAllowance}/${standing.maxSpeed} ft.
+        Standing uses this allowance; a completed move refreshes it.</small>`
+          : ''
+      }
+    </section>`;
   }
 
   _stat(label, value, caption, roll = '') {
@@ -569,6 +605,28 @@ export default class CharacterSheetContent {
         () => setTokenMovementSettings(this.token, { type: element.value }),
         'Movement style updated.'
       );
+    } else if (element.dataset.characterCondition) {
+      const token = this.token;
+      const condition = element.dataset.characterCondition;
+      const wasChecked = getTokenConditions(token).includes(condition);
+      const result = this._run(() => {
+        if (condition === 'prone' && !element.checked) {
+          return this.services.falling.stand(token);
+        }
+        const adapter = this.gameManager.token3DAdapter;
+        if (adapter?.isMovementInProgress?.(this.token) || adapter?.isWallAttached?.(this.token)) {
+          throw new Error('Finish movement and return to ground before editing conditions');
+        }
+        const character = this.services.library.get(this.characterId);
+        const conditions = (character.conditions || []).filter((entry) => entry !== condition);
+        if (element.checked) conditions.push(condition);
+        return this.services.library.edit(character.id, { conditions });
+      }, 'Condition updated.');
+      const restore = (saved) => {
+        if (!saved && this.token === token && element.isConnected) element.checked = wasChecked;
+      };
+      if (typeof result?.then === 'function') result.then(restore);
+      else restore(result);
     } else if (element.dataset.characterField) {
       const characterId =
         this._identityEdit?.element === element ? this._identityEdit.characterId : this.characterId;
@@ -629,6 +687,13 @@ export default class CharacterSheetContent {
     const button = event.target.closest('[data-sheet-action]');
     if (!button) return;
     const action = button.dataset.sheetAction;
+    if (action === 'stand-up') {
+      this._run(
+        () => this.services.falling.stand(this.token),
+        'Standing up: half maximum movement spent; no action used.'
+      );
+      return;
+    }
     if (action === 'cast') {
       const slotLevel = this.slotLevels.get(button.dataset.instanceId);
       void performPlayAction(
@@ -738,7 +803,7 @@ export default class CharacterSheetContent {
           );
         if (
           action === 'delete' &&
-          window.confirm(
+          this.root.ownerDocument.defaultView.confirm(
             'Delete this saved character? Export a JSON backup first if you may want it later.'
           )
         ) {
@@ -761,11 +826,8 @@ export default class CharacterSheetContent {
 
   _deferRefresh(message) {
     if (['combat', 'noncombat'].includes(this.section)) return false;
-    if (
-      !this.main.contains(document.activeElement) ||
-      !document.activeElement.matches('input,select,textarea')
-    )
-      return false;
+    const active = this.root.ownerDocument.activeElement;
+    if (!this.main.contains(active) || !active.matches('input,select,textarea')) return false;
     try {
       this.gameManager.token3DAdapter?.refreshMovementRange?.();
       this.healthBar.update(this.services.library.get(this.characterId));
@@ -818,6 +880,19 @@ export default class CharacterSheetContent {
       this.root.querySelector(`[data-sheet-action="${action}"]`).disabled = busy;
     }
     this.healthBar.root.querySelector('[aria-label="Apply HP change"]').disabled = busy;
+    const movementBusy = this.gameManager.token3DAdapter?.isMovementInProgress?.(this.token);
+    for (const input of this.main.querySelectorAll(
+      '[data-character-condition], [data-character-field^="fallTraits."]'
+    )) {
+      input.disabled =
+        busy || !!movementBusy || !!this.gameManager.token3DAdapter?.isWallAttached?.(this.token);
+      if (
+        input.dataset.characterCondition === 'prone' &&
+        getTokenConditions(this.token).includes('prone') &&
+        !this.services.combat.standingAvailability(this.token).allowed
+      )
+        input.disabled = true;
+    }
   }
 
   async _openCompendium(entryId) {
@@ -860,7 +935,7 @@ export default class CharacterSheetContent {
     this.backupText.focus();
     this.backupText.select();
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-    const link = document.createElement('a');
+    const link = this.root.ownerDocument.createElement('a');
     link.href = url;
     link.download = `${character.name.replace(/[^a-z0-9._-]/gi, '-') || 'character'}.json`;
     link.click();
@@ -952,7 +1027,12 @@ export default class CharacterSheetContent {
             : spell.damage[Number(data.part)].notation;
       }
       if (!expression) throw new Error('This effect requires a manual roll');
-      return await rollForSheet(this, { expression, check, label: `${character.name}: ${label}` });
+      return await rollForSheet(this, {
+        expression,
+        check,
+        attack: data.rollKind === 'attack' || data.rollKind === 'spell-attack',
+        label: `${character.name}: ${label}`,
+      });
     } catch (error) {
       this.rollStatus.textContent = `Roll failed: ${error.message}`;
       this._failure(error, 'characterRoll');

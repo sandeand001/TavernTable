@@ -38,7 +38,7 @@ export function validateSavedPlacement(placement) {
   if (
     !finiteVector(pose?.world) ||
     !Number.isFinite(placement.facingAngle) ||
-    !['ground', 'wall'].includes(pose.kind)
+    !['ground', 'wall', 'flight'].includes(pose.kind)
   )
     throw new Error('The saved creature placement is invalid');
   if (pose.kind === 'wall') {
@@ -73,7 +73,7 @@ function currentPlacement(adapter, token) {
     gridX: token.gridX,
     gridY: token.gridY,
     facingAngle: token.facingAngle ?? 0,
-    pose: { kind: 'ground', world: { ...world } },
+    pose: { kind: token.flightActive ? 'flight' : 'ground', world: { ...world } },
   };
   if (motion?.holding) {
     const wall = {
@@ -95,6 +95,9 @@ function checkpointCost(adapter, token, placement) {
   const job = adapter._movementRoutes.get(token);
   if (!job) return { job: null, spent: 0 };
   if (job.segmentCharged) return { job, spent: job.spent };
+  if (adapter._movementStates.get(token)?.phase === 'fall-resolve') {
+    return { job, spent: adapter._getFallMovementCost(job) };
+  }
   if (placement.pose.kind === 'wall') return { job, spent: job.spent + (job.segmentCost || 0) };
   const start = job.segmentStartWorld;
   const cell = job.current;
@@ -114,7 +117,9 @@ function recordStablePlacement(token) {
   if (
     this._isManualMotionInProgress(token) ||
     (state?.wallMotion && !state.wallMotion.holding) ||
-    (state && !['idle', 'walk', 'start', 'stop', 'climb-hold'].includes(state.phase))
+    (state &&
+      !['idle', 'walk', 'start', 'stop', 'climb-hold'].includes(state.phase) &&
+      !(state.phase === 'fall-resolve' && state.stepFinalized))
   )
     return false;
   const placement = currentPlacement(this, token);
@@ -147,6 +152,14 @@ function getStablePlacement(token) {
         );
       }
     }
+  } else if (saved.placement.pose.kind === 'flight') {
+    const placement = saved.placement;
+    const ground =
+      this.gameManager.getTerrainHeight(placement.gridX, placement.gridY) *
+      this.gameManager.spatial.elevationUnit;
+    if (placement.pose.world.y <= ground + 1e-7) {
+      throw new SceneNotReadyError('Waiting for the flying creature to reach clear air or land');
+    }
   } else {
     const placement = saved.placement;
     const height =
@@ -177,6 +190,8 @@ async function restoreStablePlacement(token, placement) {
   this._movementStates.delete(token);
   delete token[TOKEN_WORLD_LOCK_PROP];
   const state = this._ensureMovementState(token);
+  if (placement.pose.kind === 'flight') token.flightActive = true;
+  else delete token.flightActive;
   token.gridX = placement.gridX;
   token.gridY = placement.gridY;
   token.facingAngle = placement.facingAngle;
@@ -211,8 +226,15 @@ async function restoreStablePlacement(token, placement) {
         : ((saved.loopClock % saved.wallDuration) + saved.wallDuration) % saved.wallDuration;
     this._seekWallClip(state, saved.clip, time);
     this._setSelectionIndicatorSuppressed(state, false);
+  } else if (placement.pose.kind === 'flight') {
+    state.phase = 'flight-loading';
+    this._lockTokenWorldAuthority(state);
+    await this._ensureFlightAnimations(token);
+    state.phase = 'idle';
+    this._setAnimation(token, 'hover', { force: true, fadeIn: 0, fadeOut: 0 });
   } else if (placement.pose.kind !== 'ground') throw new Error('Unsupported saved creature pose');
   this._neutralizeRootMotion(token);
+  this.syncProneState(token);
   token.__threeMesh.updateMatrixWorld?.(true);
   this.recordStablePlacement(token);
   this._movementRangeDirty = true;

@@ -138,6 +138,17 @@ export function humanoidBounds(fixture) {
   return bounds;
 }
 
+export function humanoidBodyHeading({ mesh, skins }) {
+  mesh.updateMatrixWorld(true);
+  const skeleton = skins[0].skeleton;
+  const at = (name) =>
+    skeleton.getBoneByName(`mixamorig${name}`).getWorldPosition(new three.Vector3());
+  const feet = at('LeftToeBase').add(at('RightToeBase')).multiplyScalar(0.5);
+  const direction = at('Head').sub(feet);
+  direction.y = 0;
+  return direction.normalize();
+}
+
 export const wallSurface = (y) => ({
   point: { x: 6, y, z: 4.5 },
   normal: { x: -1, y: 0, z: 0 },

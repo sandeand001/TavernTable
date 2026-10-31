@@ -1,6 +1,6 @@
 // Keep native controls alive so recalculating the sheet preserves focus and Tab navigation.
 export function reconcileContent(root, markup, preserveInput = null) {
-  const template = document.createElement('template');
+  const template = root.ownerDocument.createElement('template');
   template.innerHTML = markup;
   const key = (node) =>
     node.nodeType === 1

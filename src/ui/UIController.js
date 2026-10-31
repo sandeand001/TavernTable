@@ -19,7 +19,7 @@
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
-import { TOKEN_COMMANDS } from '../config/TokenCommandConfig.js';
+import { TOKEN_COMMANDS, getTokenCommand } from '../config/TokenCommandConfig.js';
 import { CHARACTER_DEFINITIONS } from '../config/CharacterCatalog.js';
 import { MANUAL_ACTIONS } from '../config/HumanoidActionCatalog.js';
 
@@ -100,7 +100,7 @@ async function handleRadialCommand(actionId, token) {
       throw new Error('Creature actions require an active game session');
     }
     const applied = await gm.applyTokenCommand(token, actionId);
-    if (applied) {
+    if (applied && !getTokenCommand(actionId)?.flight) {
       const normalized = actionId === 'clear' ? null : actionId;
       getRadialMenuInstance().setActiveCommand(normalized, token);
     }
@@ -116,7 +116,7 @@ async function handleRadialCommand(actionId, token) {
 function showRadialMenu(detail = {}) {
   const radial = getRadialMenuInstance();
   const adapter = window.gameManager?.token3DAdapter;
-  radial.setActionAvailability(
+  const availability =
     typeof adapter?.getManualActionAvailability === 'function'
       ? Object.fromEntries(
           MANUAL_ACTIONS.map(({ id }) => [
@@ -124,9 +124,23 @@ function showRadialMenu(detail = {}) {
             adapter.getManualActionAvailability(detail.token, id),
           ])
         )
-      : {}
-  );
-  radial.show(detail);
+      : {};
+  if (typeof adapter?.getFlightCommandAvailability === 'function') {
+    for (const action of TOKEN_COMMANDS.filter((entry) => entry.flight)) {
+      for (const entry of [action, ...(action.subActions || [])]) {
+        availability[entry.id] = adapter.getFlightCommandAvailability(
+          detail.token,
+          entry.flight.kind,
+          entry.flight.feet
+        );
+      }
+    }
+  }
+  radial.setActionAvailability(availability);
+  radial.show({
+    ...detail,
+    getFlightStatus: () => adapter?.getFlightStatus?.(detail.token) || null,
+  });
   const activeCommand = detail.token?.quickCommand || null;
   radial.setActiveCommand(activeCommand);
 }

@@ -27,6 +27,9 @@ import { installMeshFactoryMethods } from './token-adapter/MeshFactory.js';
 import { installClimbMethods } from './token-adapter/movement/ClimbPhases.js';
 import { installWallMovementMethods } from './token-adapter/movement/WallMovement.js';
 import { installFallMethods } from './token-adapter/movement/FallPhases.js';
+import { installProneMotionMethods } from './token-adapter/movement/ProneMotion.js';
+import { installFallingRulesMotionMethods } from './token-adapter/movement/FallingRulesMotion.js';
+import { installFlightMotionMethods } from './token-adapter/movement/FlightMotion.js';
 import { installMovementStyleMethods } from './token-adapter/movement/MovementStyle.js';
 import { installMovementPhaseMethods } from './token-adapter/movement/MovementPhases.js';
 import { installStepFactoryMethods } from './token-adapter/movement/StepFactory.js';
@@ -369,7 +372,7 @@ export class Token3DAdapter {
     if (this._modifiers.shift === active) return;
     this._modifiers.shift = active;
     for (const state of this._movementStates.values()) {
-      if (!state) continue;
+      if (!state || state.token?.flightActive) continue;
       const direction = state.movementSign || state.lastMoveSign || state.activeDirectionSign || 1;
       this._syncMovementVariant(state, direction, { force: false });
     }
@@ -422,6 +425,14 @@ export class Token3DAdapter {
   }
 
   _beginDirectionalMovement(tokenEntry, directionSign, sourceKey) {
+    if (tokenEntry?.flightActive) {
+      GameErrors.input(new Error('Use click-to-move and the radial menu while flying'), {
+        component: 'Token3DAdapter',
+        operation: 'beginDirectionalMovement',
+        tokenId: tokenEntry.id,
+      });
+      return;
+    }
     try {
       if (!tokenEntry || !directionSign) return;
       const gm = this.gameManager;
@@ -470,6 +481,7 @@ export class Token3DAdapter {
   }
 
   _endDirectionalMovement(tokenEntry, directionSign, sourceKey) {
+    if (tokenEntry?.flightActive) return;
     try {
       const state = this._movementStates.get(tokenEntry);
       if (!state) return;
@@ -543,7 +555,7 @@ export class Token3DAdapter {
         const state = this._movementStates.get(t);
         if (state?.wallMotion?.holding && this._resyncHeldWall(state)) continue;
         const world = this._resolveTokenWorldPosition(t);
-        world.y = this._sampleWorldHeight(world.x, world.z, world.y);
+        if (!t.flightActive) world.y = this._sampleWorldHeight(world.x, world.z, world.y);
         this._syncTokenAndMeshWorld({ token: t, mesh }, world);
       }
       this._movementRangeDirty = true;
@@ -554,6 +566,7 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    this.gameManager.characterServices?.falling?.cancel(tokenEntry);
     this.gameManager.characterServices?.combat?.forget(tokenEntry);
     this._movementRoutes.delete(tokenEntry);
     this._savedPlacements?.delete(tokenEntry);
@@ -622,6 +635,7 @@ export class Token3DAdapter {
 
     delete tokenEntry.__threeMesh;
     delete tokenEntry.__threeMeshPromise;
+    delete tokenEntry.flightActive;
     delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
   }
 
@@ -731,6 +745,9 @@ installPathingLoggerMethods(Token3DAdapter.prototype);
 installClimbMethods(Token3DAdapter.prototype);
 installWallMovementMethods(Token3DAdapter.prototype);
 installFallMethods(Token3DAdapter.prototype);
+installProneMotionMethods(Token3DAdapter.prototype);
+installFallingRulesMotionMethods(Token3DAdapter.prototype);
+installFlightMotionMethods(Token3DAdapter.prototype);
 installNavigationMethods(Token3DAdapter.prototype);
 installMovementRangeMethods(Token3DAdapter.prototype);
 installMovementStyleMethods(Token3DAdapter.prototype);

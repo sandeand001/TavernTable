@@ -41,6 +41,39 @@ function fixture(getHeight = () => 2) {
 }
 
 describe('Terrain-aligned reachable-tile overlay', () => {
+  test('flight outline projects onto the ground while altitude still controls reachability', async () => {
+    const { adapter, token, scene } = fixture((x) => (x >= 13 ? 2 : 1));
+    token.fallTraits = { flySpeed: 60 };
+    token.flightActive = true;
+    token.world.y = 5;
+    await adapter.setSelectedToken(token);
+    const positions = scene.getObjectByName('TokenMovementRange').geometry.attributes.position;
+    const heights = Array.from({ length: positions.count }, (_, index) => positions.getY(index));
+    expect(Math.max(...heights)).toBeCloseTo(1.008, 5);
+    expect(Math.min(...heights)).toBeCloseTo(0.508, 5);
+    expect(adapter._movementRange.flightWorldY).toBe(5);
+    expect(adapter._movementRange.tiles.get('13,12').cost).toBe(5);
+    expect(token.world.y).toBe(5);
+    adapter.disposeMovementRange();
+  });
+
+  test('flight projection follows edited terrain without changing the creature altitude', async () => {
+    let height = 1;
+    const { adapter, token, scene } = fixture(() => height);
+    token.fallTraits = { flySpeed: 60 };
+    token.flightActive = true;
+    token.world.y = 5;
+    await adapter.setSelectedToken(token);
+    const overlay = scene.getObjectByName('TokenMovementRange');
+    expect(overlay.geometry.attributes.position.getY(0)).toBeCloseTo(0.508, 5);
+    height = 2;
+    adapter.resyncHeights();
+    adapter._updatePlannedMovements();
+    expect(overlay.geometry.attributes.position.getY(0)).toBeCloseTo(1.008, 5);
+    expect(token.world.y).toBe(5);
+    adapter.disposeMovementRange();
+  });
+
   test('selection outlines the reachable perimeter at terrain height without participating in picking', async () => {
     const { adapter, token, scene } = fixture();
     await adapter.setSelectedToken(token);

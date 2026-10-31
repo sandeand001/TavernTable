@@ -24,6 +24,8 @@ export default class CharacterSheetWindow {
     this._nextTabId = 0;
     this._gesture = null;
     this._nameEdit = null;
+    this._popout = null;
+    this._parent = null;
     this.renameReady = Promise.resolve(true);
     this._bounds = initialBounds || { left: 80, top: 120, width: 480, height: 360 };
     this._onSelected = (event) => {
@@ -41,11 +43,14 @@ export default class CharacterSheetWindow {
     this._onViewportResize = () => this._applyBounds(this._bounds);
     this._onPointerMove = (event) => this._moveGesture(event);
     this._onPointerEnd = () => this._endGesture();
+    this._onPageHide = () => this.dock({ focus: false });
     this._build();
     this._applyBounds(this._bounds);
   }
 
   attach(parent = document.body) {
+    if (this._popout) this.dock({ focus: false });
+    this._parent = parent;
     if (this.root.parentNode === parent) return this;
     parent.appendChild(this.root);
     window.addEventListener('taverntable:tokenSelected', this._onSelected);
@@ -53,6 +58,7 @@ export default class CharacterSheetWindow {
     window.addEventListener('taverntable:tokenNamesChanged', this._onNamesChanged);
     window.addEventListener('resize', this._onViewportResize);
     window.addEventListener('blur', this._onPointerEnd);
+    window.addEventListener('pagehide', this._onPageHide);
     return this;
   }
 
@@ -60,12 +66,14 @@ export default class CharacterSheetWindow {
     this._nameEdit = null;
     this._destroyed = true;
     this._endGesture();
+    this.dock({ focus: false });
     this.characterContent.destroy();
     window.removeEventListener('taverntable:tokenSelected', this._onSelected);
     window.removeEventListener('taverntable:tokenRemoved', this._onRemoved);
     window.removeEventListener('taverntable:tokenNamesChanged', this._onNamesChanged);
     window.removeEventListener('resize', this._onViewportResize);
     window.removeEventListener('blur', this._onPointerEnd);
+    window.removeEventListener('pagehide', this._onPageHide);
     this.root.remove();
     this.tabs.clear();
     this.activeToken = null;
@@ -73,9 +81,11 @@ export default class CharacterSheetWindow {
 
   // ── Public Window & Tab Actions ────────────────────────────
   open(token) {
+    if (this._popout?.closed) this.dock({ focus: false });
     this._select(token, { syncToken: true });
     this.root.hidden = false;
     this.restore();
+    this._popout?.focus();
     this.tabs.get(token).button.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     this.tabs.get(token).button.focus({ preventScroll: true });
     return this.ready;
@@ -86,6 +96,7 @@ export default class CharacterSheetWindow {
     this.heading.blur();
     this._endGesture();
     this.root.hidden = true;
+    this.dock({ focus: false });
   }
 
   minimize() {
@@ -94,6 +105,74 @@ export default class CharacterSheetWindow {
 
   restore() {
     this._setMinimized(false);
+  }
+
+  popOut() {
+    try {
+      if (this._popout?.closed) this.dock({ focus: false });
+      if (this._popout) {
+        this._popout.focus();
+        return true;
+      }
+      const popout = window.open(
+        '',
+        '_blank',
+        `popup=yes,width=${Math.round(this._bounds.width)},height=${Math.round(this._bounds.height)},resizable=yes,scrollbars=yes`
+      );
+      if (!popout || popout.closed) {
+        throw new Error(
+          'Your browser blocked the character sheet window. Allow pop-ups for this site and try Pop out again.'
+        );
+      }
+      this._popout = popout;
+      const popoutDocument = popout.document;
+      popoutDocument.documentElement.lang = document.documentElement.lang;
+      const base = popoutDocument.createElement('base');
+      base.href = document.baseURI;
+      popoutDocument.head.append(base);
+      for (const style of document.querySelectorAll('style, link[rel~="stylesheet"]')) {
+        popoutDocument.head.append(style.cloneNode(true));
+      }
+      popoutDocument.body.className = 'character-sheet-popout';
+      this._commitNameEdit();
+      this._blurFocusedControl();
+      this._endGesture();
+      // Move the live view; its services and game events stay in the original window.
+      popoutDocument.body.append(this.root);
+      this._syncPopoutControls();
+      this.restore();
+      this._refreshNames();
+      popout.addEventListener('resize', this._onViewportResize);
+      popout.addEventListener('pagehide', this._onPageHide);
+      popout.focus();
+      this.popoutButton.focus({ preventScroll: true });
+      return true;
+    } catch (error) {
+      this.dock({ focus: false });
+      new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.UI, {
+        component: 'CharacterSheetWindow',
+        operation: 'popOut',
+      });
+      return false;
+    }
+  }
+
+  dock({ focus = true } = {}) {
+    const popout = this._popout;
+    if (!popout) return;
+    this._commitNameEdit();
+    this._blurFocusedControl();
+    popout.removeEventListener('resize', this._onViewportResize);
+    popout.removeEventListener('pagehide', this._onPageHide);
+    this._popout = null;
+    (this._parent || document.body).append(this.root);
+    this._syncPopoutControls();
+    this._applyBounds(this._bounds);
+    if (!popout.closed) popout.close();
+    if (focus && !this.root.hidden) {
+      window.focus();
+      this.popoutButton.focus({ preventScroll: true });
+    }
   }
 
   closeTab(token) {
@@ -106,7 +185,7 @@ export default class CharacterSheetWindow {
     }
     const tokens = [...this.tabs.keys()];
     const index = tokens.indexOf(token);
-    const hadFocus = tab.item.contains(document.activeElement);
+    const hadFocus = tab.item.contains(this.root.ownerDocument.activeElement);
     tab.item.remove();
     this.tabs.delete(token);
     if (this.activeToken !== token) return;
@@ -122,8 +201,9 @@ export default class CharacterSheetWindow {
     }
   }
 
-  // ── Minimized State ──────────────────────────────────────
+  // ── Window State ─────────────────────────────────────────
   _setMinimized(minimized) {
+    minimized = minimized && !this._popout;
     this._commitNameEdit();
     this.heading.blur();
     this._endGesture();
@@ -137,9 +217,33 @@ export default class CharacterSheetWindow {
     );
     this.minimizeButton.setAttribute('aria-expanded', String(!minimized));
     this._applyBounds(this._bounds);
-    if (minimized && this.root.contains(document.activeElement)) {
+    if (minimized && this.root.contains(this.root.ownerDocument.activeElement)) {
       this.minimizeButton.focus({ preventScroll: true });
     }
+  }
+
+  _blurFocusedControl() {
+    const active = this.root.ownerDocument.activeElement;
+    // Native fields must blur before adoption to commit their change events.
+    if (
+      !this._destroyed &&
+      this.gameManager.placedTokens.includes(this.activeToken) &&
+      this.root.contains(active)
+    )
+      active.blur();
+  }
+
+  _syncPopoutControls() {
+    const poppedOut = !!this._popout;
+    this.root.dataset.poppedOut = String(poppedOut);
+    this.popoutButton.textContent = poppedOut ? 'Dock' : 'Pop out';
+    this.popoutButton.setAttribute(
+      'aria-label',
+      poppedOut ? 'Dock character sheets' : 'Pop out character sheets'
+    );
+    this.popoutButton.title = poppedOut
+      ? 'Return character sheets to the game window'
+      : 'Open character sheets in a separate window';
   }
 
   // ── DOM Construction ─────────────────────────────────────
@@ -148,6 +252,7 @@ export default class CharacterSheetWindow {
     this.root.className = 'character-sheet-window';
     this.root.hidden = true;
     this.root.dataset.minimized = 'false';
+    this.root.dataset.poppedOut = 'false';
     this.root.setAttribute('role', 'dialog');
     this.root.setAttribute('aria-modal', 'false');
     this.root.setAttribute('aria-label', 'Character sheets');
@@ -155,6 +260,7 @@ export default class CharacterSheetWindow {
       <header class="character-sheet-titlebar">
         <h2>Character sheets</h2>
         <div class="character-sheet-window-actions">
+          <button type="button" class="character-sheet-window-popout" aria-label="Pop out character sheets" title="Open character sheets in a separate window">Pop out</button>
           <button type="button" class="character-sheet-window-minimize" aria-label="Minimize character sheets" title="Minimize" aria-expanded="true" aria-controls="character-sheet-panel">&#8722;</button>
           <button type="button" class="character-sheet-window-close" aria-label="Close character sheets" title="Close">&times;</button>
         </div>
@@ -211,6 +317,11 @@ export default class CharacterSheetWindow {
         this.heading.blur();
       }
     });
+    this.popoutButton = this.root.querySelector('.character-sheet-window-popout');
+    this.popoutButton.addEventListener('click', () => {
+      if (this._popout) this.dock();
+      else this.popOut();
+    });
     this.minimizeButton = this.root.querySelector('.character-sheet-window-minimize');
     this.minimizeButton.addEventListener('click', () => {
       if (this.minimized) this.restore();
@@ -227,7 +338,7 @@ export default class CharacterSheetWindow {
     const resize = this.root.querySelector('.character-sheet-resize');
     resize.addEventListener('pointerdown', (event) => this._startGesture(event, 'resize'));
     resize.addEventListener('keydown', (event) => {
-      if (this.minimized) return;
+      if (this.minimized || this._popout) return;
       const changes = {
         ArrowLeft: [-10, 0],
         ArrowRight: [10, 0],
@@ -264,9 +375,13 @@ export default class CharacterSheetWindow {
     if (!this.gameManager.placedTokens.includes(token)) {
       throw new Error('Cannot open a character sheet for a creature no longer in this session');
     }
+    const deferRefresh =
+      !!this._popout &&
+      this.activeToken === token &&
+      this.characterContent._deferRefresh('Finish this field to refresh the selected character.');
     if (this.activeToken !== token) {
       this._commitNameEdit();
-      this.heading.blur();
+      this._blurFocusedControl();
       this._setSettingsOpen(false);
     }
     if (!this.tabs.has(token)) this._addTab(token);
@@ -281,7 +396,7 @@ export default class CharacterSheetWindow {
       this.tabs.get(token).button.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
     this._refreshNames();
-    this.ready = this.characterContent.show(token);
+    this.ready = deferRefresh ? this.ready : this.characterContent.show(token);
     this._syncNameEditing();
     void this.ready.then(() => {
       if (!this._destroyed && this.activeToken === token) this._syncNameEditing();
@@ -358,6 +473,11 @@ export default class CharacterSheetWindow {
     }
     if (this.activeToken && this._nameEdit?.token !== this.activeToken)
       this.heading.textContent = getTokenDisplayName(this.activeToken);
+    if (this._popout) {
+      this._popout.document.title = this.activeToken
+        ? `${getTokenDisplayName(this.activeToken)} - Character sheets - TavernTable`
+        : 'Character sheets - TavernTable';
+    }
   }
 
   _syncNameEditing() {
@@ -408,6 +528,11 @@ export default class CharacterSheetWindow {
 
   // ── Dragging, Resizing & Viewport Bounds ────────────────────
   _applyBounds(bounds) {
+    if (this._popout) {
+      Object.assign(this.root.style, { left: '0px', top: '0px', width: '100%', height: '100%' });
+      this.root.style.setProperty('--sheet-window-height', `${this._popout.innerHeight}px`);
+      return;
+    }
     const availableWidth = Math.max(1, window.innerWidth - VIEWPORT_MARGIN * 2);
     const availableHeight = Math.max(1, window.innerHeight - VIEWPORT_MARGIN * 2);
     const width = Math.min(
@@ -435,7 +560,7 @@ export default class CharacterSheetWindow {
   }
 
   _startGesture(event, kind) {
-    if (event.button !== 0 || (kind === 'resize' && this.minimized)) return;
+    if (this._popout || event.button !== 0 || (kind === 'resize' && this.minimized)) return;
     this._endGesture();
     this._gesture = {
       kind,

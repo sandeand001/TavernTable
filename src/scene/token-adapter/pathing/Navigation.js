@@ -93,6 +93,7 @@ function _createClimbApproach(tokenEntry, targetGridX, targetGridY) {
 function navigateToGrid(tokenEntry, gridX, gridY, options = {}) {
   try {
     if (!tokenEntry) return null;
+    if (tokenEntry.flightActive) return this.requestMoveToGrid(tokenEntry, gridX, gridY);
     this._releaseManualAnimationForMovement(tokenEntry);
     const gm = this.gameManager;
     if (!gm?.is3DModeActive?.()) return null;

@@ -1,5 +1,15 @@
 import restResources from './resources.js';
 import { STANDARD_ACTIONS, CLASS_ACTIONS } from './actions.js';
+import {
+  fallingDice,
+  standingCost,
+  fallProtection,
+  resolveFall,
+  movementImpaired,
+  cannotTakeActions,
+  canRemainAirborne,
+} from '../falling.js';
+import { flightAvailability } from '../flight.js';
 
 function shortRestChoices(character, resources) {
   const pool = resources.find((resource) => resource.id === 'sorcery-points');
@@ -52,6 +62,15 @@ export default Object.freeze({
   restResources,
   standardActions: STANDARD_ACTIONS,
   classActions: CLASS_ACTIONS,
+  fallingDice,
+  standingCost,
+  fallProtection: (character, { ignoreFlight = false } = {}) =>
+    fallProtection(character, { ignoreFlight, ruleset: '2024' }),
+  resolveFall,
+  movementImpaired: (character) => movementImpaired(character, { ruleset: '2024' }),
+  cannotTakeActions,
+  canRemainAirborne: (character) => canRemainAirborne(character, { ruleset: '2024' }),
+  flightAvailability: (character) => flightAvailability(character, { ruleset: '2024' }),
   martialArtsNeedsAttack: false,
   martialDie: (level) => (level >= 17 ? 12 : level >= 11 ? 10 : level >= 5 ? 8 : 6),
   flurryAttacks: (level) => (level >= 10 ? 3 : 2),

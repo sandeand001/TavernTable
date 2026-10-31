@@ -61,6 +61,39 @@ test('manual combat shares one movement allowance across clicks and never resets
   expect(session.active).toBe(false);
 });
 
+test('walking, flying and Dash share spent movement while each speed keeps its own allowance', () => {
+  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 60 } });
+  session.startTurn(token);
+  const move = session.beginMovement(token, 10);
+  session.finishMovement(move, 10);
+  token.flightActive = true;
+  expect(session.status(token).movement).toMatchObject({ base: 60, spent: 10, remaining: 50 });
+  session.useAction(token, 'dash');
+  expect(session.status(token).movement).toMatchObject({ total: 120, remaining: 110 });
+  delete token.flightActive;
+  expect(session.status(token).movement).toMatchObject({
+    base: 30,
+    total: 60,
+    spent: 10,
+    remaining: 50,
+  });
+  expect(library.get(token.characterSheetId).speed).toBe(30);
+  const restored = new CombatSession({ library });
+  restored.restore(session.snapshot(), [token]);
+  token.flightActive = true;
+  expect(restored.status(token).movement).toMatchObject({ total: 120, spent: 10, remaining: 110 });
+});
+
+test('legacy saved numeric movement bonuses remain valid without a Dash count', () => {
+  session.startTurn(token);
+  const saved = session.snapshot();
+  delete saved.states[0].budget.dashes;
+  saved.states[0].budget.movementBonus = 30;
+  const restored = new CombatSession({ library });
+  restored.restore(saved, [token]);
+  expect(restored.status(token).movement.total).toBe(60);
+});
+
 test('Extra Attack commits the action to attacks without spending bonus actions or reactions', () => {
   library.edit(token.characterSheetId, { classId: 'barbarian', level: 5 });
   const sword = library.add(token.characterSheetId, 'item:longsword');

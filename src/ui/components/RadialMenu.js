@@ -94,8 +94,9 @@ function midpointAngle(startDeg, endDeg) {
 export default class RadialMenu {
   // ── Constructor ────────────────────────────────────────
   constructor(options = {}) {
-    this.actions =
+    this._configuredActions =
       Array.isArray(options.actions) && options.actions.length ? options.actions : TOKEN_COMMANDS;
+    this.actions = this._configuredActions.filter((action) => !action.hidden);
     this.root = document.createElement('div');
     this.root.className = 'radial-menu hidden';
     this.root.inert = true;
@@ -175,6 +176,7 @@ export default class RadialMenu {
         x: rawContext.screenX ?? 0,
         y: rawContext.screenY ?? 0,
       },
+      getFlightStatus: rawContext.getFlightStatus || null,
     };
     this._updateTokenName();
 
@@ -207,6 +209,22 @@ export default class RadialMenu {
 
   setActionAvailability(availability) {
     this._actionAvailability = { ...availability };
+    this._clearSubmenu();
+    this.actions = this._configuredActions
+      .filter((action) => availability[action.id]?.visible ?? !action.hidden)
+      .map((action) =>
+        availability[action.id]?.allowed === false
+          ? { ...action, disabled: true, description: availability[action.id].reason }
+          : action
+      );
+    this.root.replaceChildren();
+    this._segments.clear();
+    this._labels.clear();
+    this._icons.clear();
+    this._actionMeta.clear();
+    this._build();
+    this._updateTokenName();
+    this._applyActiveState(this._context?.token?.quickCommand || null);
   }
 
   // ── DOM Build ─────────────────────────────────────────
@@ -246,6 +264,10 @@ export default class RadialMenu {
     this._tokenName = document.createElement('div');
     this._tokenName.className = 'radial-token-name';
     this.root.appendChild(this._tokenName);
+    this._flightStatus = document.createElement('div');
+    this._flightStatus.className = 'radial-flight-status';
+    this._flightStatus.hidden = true;
+    this.root.appendChild(this._flightStatus);
 
     const segmentSize = 360 / this.actions.length;
 
@@ -353,6 +375,11 @@ export default class RadialMenu {
     const name = getTokenDisplayName(this._context?.token);
     this._tokenName.textContent = name;
     this.root.setAttribute('aria-label', `Token commands for ${name}`);
+    const flight = this._context?.getFlightStatus?.();
+    this._flightStatus.hidden = !flight;
+    if (flight) {
+      this._flightStatus.textContent = `${flight.flying ? `${Number(flight.heightFeet.toFixed(2))} ft above ground | ` : ''}Fly ${flight.speed} ft | ${Number(flight.remaining.toFixed(2))} ft remaining`;
+    }
   }
 
   _getScreenPosition() {
@@ -517,7 +544,8 @@ export default class RadialMenu {
         icon.dataset.subActionId = subAction.id;
         icon.style.setProperty('--angle', `${midAngle}deg`);
         icon.style.setProperty('--accent', subAction.accent || meta.action.accent || BASE_ACCENT);
-        icon.textContent = subAction.icon || '•';
+        icon.textContent = subAction.iconText || subAction.icon || '•';
+        if (subAction.iconText) icon.classList.add('radial-submenu-text');
         if (subAction.disabled) icon.style.opacity = '0.35';
         this._submenuIconLayer.appendChild(icon);
         this._submenuIcons.set(subAction.id, icon);

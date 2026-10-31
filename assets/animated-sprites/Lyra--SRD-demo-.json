@@ -1,0 +1,100 @@
+{
+  "format": "taverntable-character",
+  "version": 1,
+  "character": {
+    "version": 1,
+    "id": "e8a5cb8e-fec0-4461-847a-5f29b6fb3124",
+    "name": "Lyra (SRD demo)",
+    "classId": "wizard",
+    "level": 7,
+    "ancestry": "",
+    "background": "",
+    "alignment": "",
+    "experience": 0,
+    "abilities": {
+      "strength": 10,
+      "dexterity": 14,
+      "constitution": 10,
+      "intelligence": 16,
+      "wisdom": 10,
+      "charisma": 10
+    },
+    "hp": {
+      "max": 48,
+      "current": 48,
+      "temp": 0
+    },
+    "speed": 30,
+    "initiativeBonus": 0,
+    "acBonus": 0,
+    "inspiration": false,
+    "skills": {},
+    "saveOverrides": {},
+    "castingAbility": "auto",
+    "slotsUsed": [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "slotOverrides": {},
+    "concentration": "",
+    "spells": [
+      {
+        "id": "60e32ddb-ee44-49bb-87d5-3bf366d83860",
+        "entryId": "spell:fireball",
+        "prepared": true
+      },
+      {
+        "id": "0c46d921-97f5-4edd-b5e3-d2333508a81f",
+        "entryId": "spell:fly",
+        "prepared": true
+      },
+      {
+        "id": "68e3cc85-f1c6-4c72-bf24-01f71a731e79",
+        "entryId": "spell:fire-bolt",
+        "prepared": true
+      }
+    ],
+    "notes": "",
+    "equipment": [
+      {
+        "id": "3a665c42-05af-4307-919f-a07ecf8cb497",
+        "entryId": "item:chain-mail",
+        "quantity": 1,
+        "equipped": false,
+        "attuned": false
+      },
+      {
+        "id": "0d4a3b8e-1c4e-4326-bc8f-c133f831b5f2",
+        "entryId": "item:shield",
+        "quantity": 1,
+        "equipped": false,
+        "attuned": false
+      },
+      {
+        "id": "96053a0e-d13e-498a-98b7-3fa0c9e19849",
+        "entryId": "magic:ring-of-protection",
+        "quantity": 1,
+        "equipped": true,
+        "attuned": true
+      },
+      {
+        "id": "882df956-b9e6-415c-b755-1946101625fe",
+        "entryId": "magic:headband-of-intellect",
+        "quantity": 1,
+        "equipped": true,
+        "attuned": true
+      },
+      {
+        "id": "1417d11a-041a-49fd-8b7e-d109d93808a6",
+        "entryId": "magic:gauntlets-of-ogre-power",
+        "quantity": 1,
+        "equipped": true,
+        "attuned": true
+      },
+      {
+        "id": "1d23a7c7-2962-4013-ab25-54caa2c22160",
+        "entryId": "enhanced:dagger:1",
+        "quantity": 1,
+        "equipped": true,
+        "attuned": false
+      }
+    ]
+  }
+}

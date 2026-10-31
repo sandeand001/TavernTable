@@ -2,6 +2,15 @@ import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { attacksPerAction, characterActionOptions } from './combat/actions.js';
 import { copyRollSummary } from '../../systems/dice/rollSummary.js';
 import { snapshotCombat, restoreCombat } from './combat/persistence.js';
+import {
+  standingAvailability,
+  standUp,
+  slowFallAvailability,
+  useSlowFall,
+  applyFall,
+} from './combat/falling.js';
+import { movementSpeed } from '../../rules/flight.js';
+import { getTokenTravelMode } from '../creatures/TokenMovement.js';
 
 const EPSILON = 1e-7;
 
@@ -69,6 +78,7 @@ export default class CombatSession {
       attacksRemaining: 0,
       movementSpent: 0,
       movementBonus: 0,
+      dashes: 0,
       attackActionTaken: false,
       readied: false,
       spellsCast: [],
@@ -94,10 +104,11 @@ export default class CombatSession {
     this._publish();
   }
 
-  status(token) {
+  status(token, travelMode = getTokenTravelMode(token)) {
     const character = this._character(token);
     const state = this._state(token);
-    const total = Math.max(0, character.speed + state.movementBonus);
+    const speed = movementSpeed(character, travelMode);
+    const total = Math.max(0, speed * (1 + state.dashes) + state.movementBonus);
     const isTurn = this.active && this.activeToken === token;
     const moving = this.isMoving(token) || this.isSceneMoving();
     return {
@@ -111,7 +122,7 @@ export default class CombatSession {
       reactions: state.reactions,
       attacksRemaining: state.attacksRemaining,
       attacksAvailable:
-        isTurn && character.hp.current > 0
+        isTurn && !this.library.rules.cannotTakeActions(character)
           ? state.attacksRemaining +
             state.actions *
               attacksPerAction(
@@ -123,11 +134,13 @@ export default class CombatSession {
       customTurnUses: { ...state.customTurnUses },
       recent: state.recent.map((entry) => ({ ...entry })),
       movement: {
-        base: character.speed,
+        base: speed,
         total,
         spent: state.movementSpent,
         remaining:
-          isTurn && character.hp.current > 0 ? Math.max(0, total - state.movementSpent) : 0,
+          isTurn && !this.library.rules.movementImpaired(character)
+            ? Math.max(0, total - state.movementSpent)
+            : 0,
       },
       busy:
         this.pending !== null ||
@@ -314,7 +327,9 @@ export default class CombatSession {
           else if (action.cost === 'bonus') state.bonusActions--;
           else if (action.cost === 'reaction') state.reactions--;
           else if (action.cost === 'bonus-attack') state.bonusAttacksRemaining--;
-          if (action.effect === 'dash') state.movementBonus += character.speed;
+          if (action.effect === 'dash') {
+            state.dashes++;
+          }
           if (action.effect === 'ready') state.readied = true;
           if (action.effect === 'extra-action') {
             state.actions++;
@@ -388,7 +403,12 @@ export default class CombatSession {
     const entry = state.undo.at(-1);
     if (!entry || entry.characterId !== character.id)
       throw new Error('No matching action use can be undone');
-    if (state.movementSpent > character.speed + entry.before.movementBonus + EPSILON) {
+    if (
+      state.movementSpent >
+      movementSpeed(character, getTokenTravelMode(token)) * (1 + entry.before.dashes) +
+        entry.before.movementBonus +
+        EPSILON
+    ) {
       throw new Error('That movement has already been used; make a manual adjustment instead');
     }
     const ticket = Object.freeze({ token, characterId: character.id, undo: true });
@@ -438,6 +458,9 @@ export default class CombatSession {
         states,
         histories,
         listeners: new Set(),
+        _movementSnapshot: new Map(
+          [...this.states].map(([token, state]) => [token, state.movementSpent])
+        ),
       });
       apply(null, staged);
       return staged;
@@ -510,6 +533,7 @@ export default class CombatSession {
       attacksRemaining: state.attacksRemaining,
       bonusAttacksRemaining: state.bonusAttacksRemaining,
       movementBonus: state.movementBonus,
+      dashes: state.dashes,
       attackActionTaken: state.attackActionTaken,
       readied: state.readied,
       actionSurgeUsed: state.actionSurgeUsed,
@@ -521,7 +545,7 @@ export default class CombatSession {
   _available(token, action, ignorePending = false) {
     if (this.committing || this.library.isSaving) return false;
     if (this.pending && !ignorePending) return false;
-    if (this.active && this._character(token).hp.current === 0) return false;
+    if (this.library.rules.cannotTakeActions(this._character(token))) return false;
     if (action.spellReady === false) return false;
     if (action.resourceId) {
       const resource = this.library.rest
@@ -572,9 +596,42 @@ export default class CombatSession {
   }
 
   // -- Committed movement --
-  movementAllowance(token) {
+  standingAvailability(token) {
+    return standingAvailability(this, token);
+  }
+
+  standUp(token) {
+    return standUp(this, token);
+  }
+
+  slowFallAvailability(token) {
+    return slowFallAvailability(this, token);
+  }
+
+  useSlowFall(token, fallId) {
+    return useSlowFall(this, token, fallId);
+  }
+
+  applyFall(token, context) {
+    return applyFall(this, token, context);
+  }
+
+  freeMovementAllowance(token, travelMode = getTokenTravelMode(token)) {
+    const character = this._character(token);
+    if (this.active || this.library.rules.movementImpaired(character)) return 0;
+    return Math.max(0, movementSpeed(character, travelMode) - this._state(token).movementSpent);
+  }
+
+  completeFreeMovement(token) {
+    if (!this.active) {
+      this._state(token).movementSpent = 0;
+      this._publish();
+    }
+  }
+
+  movementAllowance(token, travelMode = getTokenTravelMode(token)) {
     if (!this.active || this.activeToken !== token) return 0;
-    return this.status(token).movement.remaining;
+    return this.status(token, travelMode).movement.remaining;
   }
 
   adjustMovement(token, remaining) {
@@ -585,16 +642,21 @@ export default class CombatSession {
       throw new Error('Remaining movement must be a number from 0 to 10000 feet');
     }
     const state = this._state(token);
-    state.movementBonus = state.movementSpent + remaining - this._character(token).speed;
+    state.movementBonus =
+      state.movementSpent +
+      remaining -
+      movementSpeed(this._character(token), getTokenTravelMode(token)) * (1 + state.dashes);
     state.undo = [];
     this._publish();
   }
 
-  beginMovement(token, cost) {
+  beginMovement(token, cost, travelMode = getTokenTravelMode(token)) {
     if (!this.active || this.activeToken !== token)
       throw new Error('Movement requires this creature to have the active turn');
-    if (this._character(token).hp.current === 0)
-      throw new Error('A creature at 0 HP cannot request combat movement');
+    if (this.library.rules.movementImpaired(this._character(token)))
+      throw new Error(
+        'A creature at 0 HP or with restricted movement cannot request combat movement'
+      );
     if (
       this.pending ||
       this.committing ||
@@ -604,7 +666,7 @@ export default class CombatSession {
     ) {
       throw new Error('Finish the current action or movement first');
     }
-    const allowance = this.movementAllowance(token);
+    const allowance = this.movementAllowance(token, travelMode);
     if (!Number.isFinite(cost) || cost < 0 || cost > allowance + EPSILON) {
       throw new Error('Not enough movement remains this turn');
     }
@@ -669,6 +731,7 @@ export default class CombatSession {
         attacksRemaining: 0,
         movementSpent: 0,
         movementBonus: 0,
+        dashes: 0,
         attackActionTaken: false,
         readied: false,
         recent: [],

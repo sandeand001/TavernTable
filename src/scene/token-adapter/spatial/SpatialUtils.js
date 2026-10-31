@@ -202,7 +202,7 @@ function _hasActiveIntents(state) {
 }
 
 function _shouldHoldMovementState(state) {
-  return Boolean(state?.__resumeProbe);
+  return Boolean(state?.__resumeProbe || state?.token?.flightActive);
 }
 
 // ── Movement Yaw & Facing ────────────────────────────────────────────────

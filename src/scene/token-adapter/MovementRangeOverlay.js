@@ -27,7 +27,10 @@ export class MovementRangeOverlay {
     scene.add(this.mesh);
   }
 
-  update(range, spatial) {
+  update(range, spatial, getTerrainHeight = null) {
+    if (range.travelMode === 'fly' && typeof getTerrainHeight !== 'function') {
+      throw new Error('A ground-projected flight outline requires terrain heights');
+    }
     const positions = [];
     const corners = new Map();
     const wallEdges = new Map();
@@ -65,6 +68,9 @@ export class MovementRangeOverlay {
       corners.get(key).heights.add(y);
     };
     for (const cell of range.tiles.values()) {
+      const height =
+        range.travelMode === 'fly' ? getTerrainHeight(cell.gridX, cell.gridY) : cell.height;
+      if (!Number.isFinite(height)) throw new Error('Movement outline terrain height is invalid');
       for (const edge of EDGES) {
         const neighborKey = `${cell.gridX + edge.dx},${cell.gridY + edge.dy}`;
         const wall = wallEdges.get(`${cell.gridX},${cell.gridY}>${neighborKey}`);
@@ -75,8 +81,8 @@ export class MovementRangeOverlay {
         )
           continue;
         if (range.tiles.has(neighborKey) && !wall) continue;
-        addPoint(cell.gridX + edge.from[0], cell.gridY + edge.from[1], cell.height);
-        addPoint(cell.gridX + edge.to[0], cell.gridY + edge.to[1], cell.height);
+        addPoint(cell.gridX + edge.from[0], cell.gridY + edge.from[1], height);
+        addPoint(cell.gridX + edge.to[0], cell.gridY + edge.to[1], height);
       }
     }
     // Join perimeter sections where their terrain heights meet a vertical ledge.

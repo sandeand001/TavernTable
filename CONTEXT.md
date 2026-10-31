@@ -43,7 +43,7 @@
 - **Saved character**: a persistent rules record, independent of a
   creature token's name, appearance and ephemeral scene ID. A token can load a
   record through `characterSheetId`; saving the record does not save the board.
-- **Character speed**: the saved record's authoritative distance setting for
+- **Character speed**: the saved record's authoritative ground-distance setting for
   linked tokens and their grid ranges, editable only on Core. Combat displays
   remaining movement as feet/allowance and a progress bar. Pace (Walk/Run) and animation style
   (Default/Drunk) remain per token. Free play has a per-move allowance; manual
@@ -56,6 +56,37 @@
   **Attacks left** is derived from unspent actions and any ongoing Attack-action
   sequence, honoring class/level and manual attack-count overrides. The internal
   ongoing sequence starts at zero; it must not grant free attacks at turn start.
+- **Flight**: a per-token airborne travel state using the saved character's active
+  flying speed. Take flight rises 5 feet. Raise/Lower offer 5, 10, 15 and 20 feet,
+  spending one foot of flying movement per vertical foot. Horizontal routes retain
+  absolute altitude, not a free terrain-following offset. Walking and flying share
+  movement spent; Dash increases each travel speed's allowance without resetting it.
+  Lowering exactly to ground lands normally. Drop relinquishes flight for a
+  zero-movement-cost fall and ignores flight's own damage protection, not Feather
+  Fall or other protections. It does not erase the ability or cancel concentration.
+  Flight grants from spells/items remain manually applied through Flying speed;
+  source/target effect automation is separate from casting and inventory ownership.
+  A hovering animation is visual; the Can hover rules trait remains independent.
+  Campaign checkpoints save completed stable airborne waypoints and their costs,
+  not unfinished routes, animation frames or unresolved falls.
+- **Falling**: an actual vertical terrain/airborne drop, measured in feet.
+  At impact, roll 1d6 per complete 10 feet, capped at 20d6; apply temporary HP
+  first, then current HP. Positive damage imposes Prone unless immune. Damage
+  avoidance does not clear existing Prone. Interrupt damaging routes and refund
+  their untraveled tail. HP, condition, completed roll and movement ledger commit
+  with the safe ground checkpoint, not an unfinished airborne animation.
+- **Prone**: a persisted character condition, not a temporary emote. Hold the
+  sleeping/lying pose through idle, turns, rests and reloads. Movement crawls at
+  double cost; ordinary attacks have disadvantage. Standing is an explicit sheet
+  choice costing half current maximum Speed, rounded down, with no action,
+  bonus action or reaction. Do not use half remaining movement or half Dash's
+  allowance. Core condition clearing uses this same operation.
+- **Fall protection**: available flight/hover, an explicitly active Feather Fall,
+  Monk Slow Fall, flat manual reduction and Prone immunity. Prompt for an available
+  Monk reaction before descent; its damage reduction is 5 times Monk level.
+  Slower descent/softer landing are cosmetic. A deliberate flight Drop uses
+  `ignoreFlight` without disabling Feather Fall or Slow Fall. The selected
+  edition owns incapacitated flight and Stunned movement differences.
 - **Combat use**: a declared attack, spell or feature that reserves its cost,
   resolves any roll, revalidates the actor, then commits persistent and turn
   costs. Cancelled/stale/failed rolls spend nothing. Targets and effects are manual.

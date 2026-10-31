@@ -5,13 +5,15 @@ import {
   FALL_LOOP_MIN_DROP,
   FALL_GRAVITY_FEET_PER_SECOND_SQUARED,
   SPRINT_THRESHOLD_SECONDS,
+  PRONE_IMPACT_HOLD_SECONDS,
 } from '../../../config/token-adapter/MannequinConfig.js';
 import { FEET_PER_GRID_SQUARE } from '../../../config/TokenMovementConfig.js';
+import { getTokenConditions } from '../../../entities/creatures/TokenMovement.js';
 
 // ── Fall Phase Advancement ──────────────────────────────────────
 
 function _advanceFallPhase(state, delta) {
-  if (!state) return;
+  if (!state || state.phase !== 'fall') return;
   state.phaseElapsed += delta;
   const animationData = this._tokenAnimationData.get(state.token);
   const speed = Math.max(state.fallSpeed || 0, 0);
@@ -29,7 +31,7 @@ function _advanceFallPhase(state, delta) {
     trajectory.elapsed += Math.max(delta, 0);
     const progress =
       trajectory.duration > 0 ? Math.min(trajectory.elapsed / trajectory.duration, 1) : 1;
-    const distance = step.totalDistance * progress ** 2;
+    const distance = step.totalDistance * (trajectory.linear ? progress : progress ** 2);
     const move = Math.max(distance - step.traveled, 0);
     completed =
       move > 0
@@ -52,6 +54,15 @@ function _advanceFallPhase(state, delta) {
     speed,
     stepFinished,
   });
+
+  if (
+    stepFinished &&
+    state.fallRules &&
+    (!trajectory || trajectory.elapsed >= trajectory.duration - 1e-9)
+  ) {
+    this._resolveRuleLanding(state, () => {});
+    return;
+  }
 
   let shouldFinish = false;
   if (state.fallMode === 'landing') {
@@ -154,6 +165,16 @@ function _finishFallPhase(state) {
     }
   }
 
+  if (
+    state.fallRules &&
+    this._resolveRuleLanding(state, () => this._completeFallPhase(state, profile))
+  )
+    return;
+  this._completeFallPhase(state, profile);
+}
+
+function _completeFallPhase(state, profile) {
+  this._movementRangeDirty = true;
   this._clearFallStepState(state, { force: true });
   state.fallTrajectory = null;
 
@@ -186,12 +207,13 @@ function _finalizePostFallState(state, profileOverride = null) {
     fallLandingKey: null,
     fallLandingDuration: 0,
     fallTrajectory: null,
+    fallLandingRate: 1,
   });
 
   this._setAnimation(state.token, 'idle', {
     fadeIn: profile.idleFadeIn,
     fadeOut: profile.fallFadeOut ?? profile.idleFadeOut,
-    force: true,
+    force: this._tokenAnimationData.get(state.token)?.current !== 'prone',
   });
 
   this._unlockTokenWorldAuthority(state);
@@ -253,13 +275,14 @@ function _transitionFallToLanding(state) {
 
   state.fallMode = 'landing';
   const trajectory = state.fallTrajectory;
+  const rate = state.fallLandingRate || 1;
   const clipTime = trajectory
-    ? Math.max(trajectory.elapsed - (trajectory.duration - trajectory.contactTime), 0)
+    ? Math.max(trajectory.elapsed - (trajectory.duration - trajectory.contactTime), 0) * rate
     : 0;
-  state.phaseElapsed = clipTime;
+  state.phaseElapsed = clipTime / rate;
   state.fallDuration =
     state.fallLandingDuration ||
-    this._extractClipDuration(actions[landingKey]) ||
+    this._extractClipDuration(actions[landingKey]) / rate ||
     this._getLandingClipDuration(profile, landingKey) ||
     0;
   state.fallSpeed =
@@ -273,7 +296,7 @@ function _transitionFallToLanding(state) {
   const verticalDistance = Math.max(state.activeStep?.heightDrop || 0, 0);
 
   let fadeIn = profile.fallFadeIn ?? DEFAULT_MOVEMENT_PROFILE.fallFadeIn;
-  const contactTime = data?.landingContactTimes?.[landingKey];
+  const contactTime = data?.landingContactTimes?.[landingKey] / rate;
   const rootInfo = this._rootBones.get(state.token)?.[0];
   const firstPose = rootInfo ? this._getActionRootPosition(rootInfo, actions[landingKey], 0) : null;
   if (Number.isFinite(contactTime) && contactTime > 0) {
@@ -300,6 +323,7 @@ function _transitionFallToLanding(state) {
     fadeIn,
     fadeOut: profile.fallFadeOut,
     force: true,
+    timeScale: rate,
   });
   if (trajectory) {
     trajectory.landingStarted = true;
@@ -359,6 +383,8 @@ function _calculateFallSpeed(step, duration, profile) {
 
 function _selectLandingAnimation(actions, preferredKey) {
   if (!actions) return null;
+  if (preferredKey === 'prone' && actions.prone) return 'prone';
+  if (preferredKey === 'proneLanding' && actions.proneLanding) return 'proneLanding';
   if (preferredKey === 'fallToRoll' && actions.fallToRoll) return 'fallToRoll';
   if (preferredKey === 'hardLanding' && actions.hardLanding) return 'hardLanding';
   if (preferredKey === 'fall' && actions.fall) return 'fall';
@@ -370,6 +396,8 @@ function _selectLandingAnimation(actions, preferredKey) {
 
 function _getLandingClipDuration(profile, landingKey) {
   const base = profile || DEFAULT_MOVEMENT_PROFILE;
+  if (landingKey === 'prone') return PRONE_IMPACT_HOLD_SECONDS;
+  if (landingKey === 'proneLanding') return base.proneLandingClipDuration || 0;
   if (landingKey === 'hardLanding') {
     return base.hardLandingClipDuration || base.fallClipDuration || base.fallLoopClipDuration || 0;
   }
@@ -453,6 +481,17 @@ function _maybeEnterFallPhase(state, animationData) {
   if (!actions?.fall && !actions?.fallLoop) return false;
   const profile = data?.profile || state.profile || DEFAULT_MOVEMENT_PROFILE;
 
+  if (this.gameManager?.characterServices?.falling && !state.fallRules)
+    return this._beginRuleFall(state, step);
+  if (state.fallRules) {
+    step.landingVariant = state.fallRules.wasProne
+      ? 'prone'
+      : state.fallRules.prone
+        ? 'proneLanding'
+        : 'fall';
+    state.fallLandingRate = state.fallRules.slowFall ? 0.7 : 1;
+  }
+
   if (step.landingVariant === 'fallToRoll' && actions?.fallToRoll)
     this._extendPlannedLandingGoal(state);
 
@@ -513,8 +552,9 @@ function _maybeEnterFallPhase(state, animationData) {
   }
 
   state.fallLandingKey = landingKey;
-  state.fallLandingDuration = this._getLandingClipDuration(profile, landingKey);
-  const contactTime = data?.landingContactTimes?.[landingKey];
+  const rate = state.fallLandingRate || 1;
+  state.fallLandingDuration = this._getLandingClipDuration(profile, landingKey) / rate;
+  const contactTime = data?.landingContactTimes?.[landingKey] / rate;
   const fallLoopEligible =
     actions?.fallLoop && (verticalDistance >= fallLoopMinDrop || Number.isFinite(contactTime));
   state.fallMode = fallLoopEligible ? 'loop' : 'landing';
@@ -559,15 +599,21 @@ function _maybeEnterFallPhase(state, animationData) {
   const tileSize = this.gameManager?.spatial?.tileWorldSize ?? 1;
   if (!Number.isFinite(tileSize) || tileSize <= 0)
     throw new Error('Falling requires a positive world tile size');
-  const gravity = (FALL_GRAVITY_FEET_PER_SECOND_SQUARED * tileSize) / FEET_PER_GRID_SQUARE;
+  const gravity =
+    (FALL_GRAVITY_FEET_PER_SECOND_SQUARED * tileSize) /
+    (FEET_PER_GRID_SQUARE * (state.fallRules?.slowFall ? 4 : 1));
   const worldDrop = Math.max(step.startWorld.y - step.targetWorld.y, 0);
-  const duration = Math.sqrt((2 * worldDrop) / gravity);
+  const linear = state.fallRules?.featherFall === true;
+  const duration = linear
+    ? worldDrop / ((10 * tileSize) / FEET_PER_GRID_SQUARE)
+    : Math.sqrt((2 * worldDrop) / gravity);
   state.fallTrajectory = {
     elapsed: 0,
     duration,
     gravity,
     contactTime: Number.isFinite(contactTime) ? Math.max(contactTime, 0) : 0,
     landingStarted: false,
+    linear,
   };
   state.fallDuration = duration;
 
@@ -590,7 +636,10 @@ function _maybeEnterFallPhase(state, animationData) {
       : profile.fallFadeOut;
 
   const fallLoopTimeScale = Math.max(profile.fallLoopTimeScale ?? 1, 0.1);
-  const timeScale = animationKey === 'fallLoop' ? fallLoopTimeScale : 1;
+  const timeScale =
+    animationKey === 'fallLoop'
+      ? fallLoopTimeScale * (state.fallRules?.slowFall || linear ? 0.4 : 1)
+      : rate;
 
   this._setAnimation(state.token, animationKey, {
     fadeIn,
@@ -658,6 +707,10 @@ function _captureFallResumeContext(state) {
 
 function _resumeMovementAfterFall(state) {
   if (!state) return false;
+  if (getTokenConditions(state.token).includes('prone')) {
+    state.__fallResumeContext = null;
+    return false;
+  }
   const resume = state.__fallResumeContext;
   state.__fallResumeContext = null;
   if (!resume) return false;
@@ -712,6 +765,7 @@ function _resumeMovementAfterFall(state) {
 function installFallMethods(prototype) {
   prototype._advanceFallPhase = _advanceFallPhase;
   prototype._finishFallPhase = _finishFallPhase;
+  prototype._completeFallPhase = _completeFallPhase;
   prototype._finalizePostFallState = _finalizePostFallState;
   prototype._checkFallTransitions = _checkFallTransitions;
   prototype._transitionFallToLanding = _transitionFallToLanding;
