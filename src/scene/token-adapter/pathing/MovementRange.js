@@ -32,7 +32,7 @@ function applyMovementStyle(token) {
       return;
     }
     const settings = getTokenMovementSettings(token);
-    if (job.flight) {
+    if (job.flight || job.layered) {
       job.settings.mode = job.range.prone ? 'run' : settings.mode;
       job.settings.type = settings.type;
       this._movementRangeDirty = true;
@@ -93,10 +93,12 @@ function applyMovementStyle(token) {
 function getTokenMovementRange(token) {
   if (!token || this.isMovementInProgress(token)) return null;
   const gm = this.gameManager;
+  if (gm.campaignWorld && token.mapId !== gm.campaignMapId) return null;
   const combat = gm.characterServices?.combat;
   if (gm.characterServices?.library?.isSaving || combat?.pending || combat?.committing) return null;
   if (combat?.active && combat.activeToken !== token) return null;
   if (token.flightActive) return this.getTokenFlightRange(token);
+  if (gm.terrainEngine?.geometry.hasVolumes) return this.getTokenSurfaceRange(token);
   const world = this._resolveTokenWorldPosition(token);
   const start = this._mapWorldToGrid(world) || token;
   const settings = getTokenMovementSettings(token);
@@ -219,6 +221,8 @@ function _requestPlannedMovement(token, destination) {
   try {
     if (!this.gameManager.placedTokens.includes(token))
       throw new Error('Movement token is no longer in this session');
+    if (this.gameManager.campaignWorld && token.mapId !== this.gameManager.campaignMapId)
+      throw new Error('Focus the creature on its own grid before requesting movement');
     if (this.gameManager.sceneAutosave?.ready === false)
       throw new Error('Wait for the campaign to finish opening before moving');
     const services = this.gameManager.characterServices;
@@ -238,6 +242,7 @@ function _requestPlannedMovement(token, destination) {
       return null;
     }
     if (token.flightActive) return this._requestFlyingMovement(token, destination, range);
+    if (range.layered) return this._requestSurfaceMovement(token, destination, range);
     let route;
     let wallTarget = null;
     if (destination.surface) {
@@ -511,7 +516,20 @@ function _updatePlannedMovements() {
     this._movementRangeDirty = true;
   }
   for (const [token, job] of this._movementRoutes) {
-    if (job.flight) continue;
+    if (job.flight || (job.layered && !job.surfaceFalling)) continue;
+    if (job.surfaceFalling) {
+      try {
+        this._completeSurfaceFall(token, job);
+      } catch (error) {
+        this._stopSurfaceMovement(this._movementStates.get(token));
+        GameErrors.gameState(error, {
+          component: 'SurfaceMovement',
+          operation: 'completeFall',
+          tokenId: token.id,
+        });
+      }
+      continue;
+    }
     const cellKey = `${token.gridX},${token.gridY}`;
     if (job.cellKey !== cellKey) {
       job.cellKey = cellKey;
@@ -551,6 +569,7 @@ function _updatePlannedMovements() {
 function _isPlannedLandingPositionAllowed(state, world) {
   const job = this._movementRoutes.get(state.token);
   if (!job) return true;
+  if (job.layered) return this._hasReachedPlannedMovementGoal(state.token, job);
   const start = state.activeStep.targetWorld;
   const goal =
     job.current.world ||

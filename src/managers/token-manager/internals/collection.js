@@ -13,7 +13,8 @@ export function addTokenToCollection(
   gridX,
   gridY,
   selectedTokenType = null,
-  placedTokens = null
+  placedTokens = null,
+  checkpoint = null
 ) {
   // Use provided parameters or fall back to instance properties
   const tokenType = selectedTokenType || c.selectedTokenType;
@@ -26,10 +27,14 @@ export function addTokenToCollection(
   const typeLabel = getCreatureTypeLabel(canonicalType);
 
   const newTokenData = {
-    id: `token-${c._nextTokenId}`,
-    instanceNumber,
-    name: instanceNumber === 1 ? typeLabel : `${typeLabel} ${instanceNumber}`,
-    nameMode: 'automatic',
+    id: checkpoint ? checkpoint.id : `token-${c._nextTokenId}`,
+    instanceNumber: checkpoint ? checkpoint.instanceNumber : instanceNumber,
+    name: checkpoint
+      ? checkpoint.name
+      : instanceNumber === 1
+        ? typeLabel
+        : `${typeLabel} ${instanceNumber}`,
+    nameMode: checkpoint ? checkpoint.nameMode : 'automatic',
     movementSettings: { ...TOKEN_MOVEMENT_DEFAULTS },
     creature: creature,
     gridX: gridX,
@@ -42,6 +47,7 @@ export function addTokenToCollection(
     // Phase 0 (3D Transition): canonical world position snapshot
     // We derive elevation from terrain data store (if present) so future 3D scene can place the mesh/billboard.
     world: (() => {
+      if (checkpoint) return { ...checkpoint.pose.world };
       try {
         const gm = c.gameManager;
         const height = gm?.getTerrainHeight?.(gridX, gridY) ?? 0;
@@ -54,6 +60,8 @@ export function addTokenToCollection(
       return { x: 0, y: 0, z: 0 };
     })(),
   };
+  if (c.gameManager?.campaignWorld)
+    newTokenData.mapId = checkpoint ? checkpoint.mapId : c.gameManager.campaignMapId;
   tokens.push(newTokenData);
   c.gameManager?.sceneAutosave?.changed('creature placed');
   if (instanceNumber > 1) {
@@ -92,8 +100,8 @@ export function addTokenToCollection(
       gm.token3DAdapter &&
       typeof gm.token3DAdapter.onTokenAdded === 'function'
     ) {
-      gm.token3DAdapter.onTokenAdded(newTokenData);
-      if (typeof gm.token3DAdapter.setSelectedToken === 'function') {
+      gm.token3DAdapter.onTokenAdded(newTokenData, checkpoint);
+      if (!checkpoint && typeof gm.token3DAdapter.setSelectedToken === 'function') {
         gm.token3DAdapter.setSelectedToken(newTokenData);
       }
     }

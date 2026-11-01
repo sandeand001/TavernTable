@@ -6,6 +6,7 @@
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
+import { TerrainVolumeMeshBuilder } from './TerrainVolumeMeshBuilder.js';
 
 export class TerrainRebuilder {
   // ── Constructor ───────────────────────────────────────────────────
@@ -126,14 +127,40 @@ export class TerrainRebuilder {
     };
     const wallColor = 0x050505;
     const wantsWalls = !!(threeNs && threeNs.BufferGeometry);
-    const geo = this.builder.build({
-      cols,
-      rows,
-      getHeight,
-      three: threeNs,
-      getBiomeColor: gmBiomeGetter,
-      getWallColor: wantsWalls ? () => wallColor : undefined,
-    });
+    const geo = gm.terrainEngine?.geometry.hasVolumes
+      ? new TerrainVolumeMeshBuilder().build({
+          geometry: gm.terrainEngine.geometry,
+          three: threeNs,
+          worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
+          visibleLayers: gm.terrainEngine.visibleLayers,
+          getColor: (x, z, height, span) => {
+            if (span.id === 'terrain') {
+              const feetPerLevel = (gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize;
+              return gmBiomeGetter(
+                Math.floor(x / 5),
+                Math.floor(z / 5),
+                feetPerLevel > 0 ? height / feetPerLevel : 0
+              );
+            }
+            return (
+              {
+                bridge: 0x9c744b,
+                cave: 0x858e91,
+                ground: 0x808179,
+                upper: 0xb9a98a,
+                roof: 0x784c43,
+              }[span.layerId] ?? 0x99938c
+            );
+          },
+        })
+      : this.builder.build({
+          cols,
+          rows,
+          getHeight,
+          three: threeNs,
+          getBiomeColor: gmBiomeGetter,
+          getWallColor: wantsWalls ? () => wallColor : undefined,
+        });
     // Debug sample of first vertex color to help diagnose "all black" issues.
     try {
       if (typeof window !== 'undefined' && !window.__TT_LAST_TERRAIN_COLOR_SAMPLE__) {

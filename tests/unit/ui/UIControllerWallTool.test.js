@@ -30,6 +30,7 @@ beforeEach(() => {
     <button id="terrain-undo-btn" disabled>Undo</button>
     <button id="terrain-redo-btn" disabled>Redo</button>
     <small id="terrain-history-status"></small>
+    <section id="terrain-construction"></section>
   `;
   const gm = {
     cols: 8,
@@ -64,6 +65,14 @@ test('Wall selection exposes its height control and hides the unrelated brush si
   expect(document.getElementById('terrain-wall-btn').getAttribute('aria-pressed')).toBe('true');
   expect(document.getElementById('terrain-raise-btn').getAttribute('aria-pressed')).toBe('false');
   expect(document.getElementById('terrain-lower-btn').getAttribute('aria-pressed')).toBe('false');
+});
+
+test('construction controls mount at startup without needing an Undo click first', () => {
+  const root = document.getElementById('terrain-construction');
+  expect(root.querySelector('form[aria-label="Construct terrain volume"]')).not.toBeNull();
+  expect(root.querySelector('[data-proof-map]').textContent).toBe('Add proof structures');
+  document.dispatchEvent(new Event('DOMContentLoaded'));
+  expect(root.querySelectorAll('form')).toHaveLength(1);
 });
 
 test('the height dropdown offers every supported level and updates the actual wall brush', () => {

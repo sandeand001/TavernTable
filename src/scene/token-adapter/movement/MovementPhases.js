@@ -46,6 +46,9 @@ function _updateForwardMovements(delta) {
       }
 
       switch (state.phase) {
+        case 'surface':
+          this._advanceSurfaceMotion(state, delta);
+          break;
         case 'start':
           this._advanceStartPhase(state, delta, bounds);
           break;
@@ -120,6 +123,8 @@ function _updateForwardMovements(delta) {
       if (tokenEntry.flightActive || state.flightMotion) {
         if (this._movementRoutes.get(tokenEntry)?.flight) this._stopFlightMovement(state);
         else state.phase = 'flight-error';
+      } else if (state.surfaceMotion) {
+        this._stopSurfaceMovement(state);
       } else if (state.traversal) {
         state.traversal = null;
         this._finishPlannedMovement(tokenEntry, true);

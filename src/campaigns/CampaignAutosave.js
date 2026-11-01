@@ -147,6 +147,7 @@ export default class CampaignAutosave {
   }
 
   _saved(captured) {
+    this.gameManager.campaignWorld?.acceptCheckpoint(captured.scene);
     this.acknowledged = Math.max(this.acknowledged, captured.generation);
     this.waiting = null;
     this._publish();

@@ -75,6 +75,22 @@ function currentPlacement(adapter, token) {
     facingAngle: token.facingAngle ?? 0,
     pose: { kind: token.flightActive ? 'flight' : 'ground', world: { ...world } },
   };
+  if (
+    !token.flightActive &&
+    !motion?.holding &&
+    adapter.gameManager.terrainEngine?.geometry.hasVolumes
+  ) {
+    const scale = 5 / adapter.gameManager.spatial.tileWorldSize;
+    const support = adapter.gameManager.terrainEngine.geometry.findSupport(
+      world.x * scale,
+      world.z * scale,
+      { belowFeet: world.y * scale + 1e-5, clearanceFeet: 5 }
+    );
+    if (!support || Math.abs(support.heightFeet - world.y * scale) > 1e-4) {
+      throw new SceneNotReadyError('Waiting for the creature to reach a supported floor');
+    }
+    placement.pose.surfaceId = support.id;
+  }
   if (motion?.holding) {
     const wall = {
       face: { id: motion.face.id, low: { ...motion.face.low }, high: { ...motion.face.high } },
@@ -138,6 +154,34 @@ function recordStablePlacement(token) {
 
 function getStablePlacement(token) {
   this._savedPlacements ||= new Map();
+  const gm = this.gameManager;
+  if (gm.campaignWorld && token.mapId !== gm.campaignMapId) {
+    const placement = this._savedPlacements.get(token)?.placement;
+    if (!placement)
+      throw new SceneNotReadyError('Waiting for the creature checkpoint on its own grid');
+    if (placement.pose.kind === 'wall') {
+      const map = gm.campaignWorld.getMap(token.mapId);
+      if (
+        [placement.pose.wall.face.low, placement.pose.wall.face.high].some(
+          (cell) => Math.abs(map.terrain.heights[cell.gridY][cell.gridX] - cell.height) > 1e-6
+        )
+      )
+        throw new SceneNotReadyError('Waiting for safe wall support on the creature grid');
+    } else {
+      const support = gm.campaignWorld.findLocalSupport(token.mapId, placement.pose.world, {
+        surfaceId: placement.pose.kind === 'ground' ? (placement.pose.surfaceId ?? null) : null,
+        clearanceFeet: placement.pose.kind === 'ground' ? 5 : 0,
+      });
+      if (
+        !support ||
+        (placement.pose.kind === 'ground'
+          ? Math.abs(support.heightWorld - placement.pose.world.y) > 1e-4
+          : placement.pose.world.y <= support.heightWorld + 1e-7)
+      )
+        throw new SceneNotReadyError('Waiting for safe support on the creature grid');
+    }
+    return clone(placement);
+  }
   if (!this.isMovementInProgress(token)) recordStablePlacement.call(this, token);
   const saved = this._savedPlacements.get(token);
   if (!saved)
@@ -154,17 +198,41 @@ function getStablePlacement(token) {
     }
   } else if (saved.placement.pose.kind === 'flight') {
     const placement = saved.placement;
-    const ground =
-      this.gameManager.getTerrainHeight(placement.gridX, placement.gridY) *
-      this.gameManager.spatial.elevationUnit;
+    const geometry = this.gameManager.terrainEngine?.geometry;
+    const scale = 5 / this.gameManager.spatial.tileWorldSize;
+    const support = geometry?.hasVolumes
+      ? geometry.findSupport(placement.pose.world.x * scale, placement.pose.world.z * scale, {
+          belowFeet: placement.pose.world.y * scale,
+        })
+      : null;
+    const ground = geometry?.hasVolumes
+      ? support?.heightFeet / scale
+      : this.gameManager.getTerrainHeight(placement.gridX, placement.gridY) *
+        this.gameManager.spatial.elevationUnit;
+    if (!Number.isFinite(ground)) {
+      throw new SceneNotReadyError('Waiting for clear air above a valid floor');
+    }
     if (placement.pose.world.y <= ground + 1e-7) {
       throw new SceneNotReadyError('Waiting for the flying creature to reach clear air or land');
     }
   } else {
     const placement = saved.placement;
-    const height =
-      this.gameManager.getTerrainHeight(placement.gridX, placement.gridY) *
-      this.gameManager.spatial.elevationUnit;
+    const scale = 5 / this.gameManager.spatial.tileWorldSize;
+    const geometry = this.gameManager.terrainEngine?.geometry;
+    const support = geometry?.hasVolumes
+      ? geometry.findSupport(placement.pose.world.x * scale, placement.pose.world.z * scale, {
+          belowFeet: placement.pose.world.y * scale + 1e-5,
+          surfaceId: placement.pose.surfaceId ?? null,
+          clearanceFeet: 5,
+        })
+      : null;
+    const height = geometry?.hasVolumes
+      ? support?.heightFeet / scale
+      : this.gameManager.getTerrainHeight(placement.gridX, placement.gridY) *
+        this.gameManager.spatial.elevationUnit;
+    if (!Number.isFinite(height)) {
+      throw new SceneNotReadyError('Waiting for the creature to reach a supported floor');
+    }
     if (Math.abs(height - placement.pose.world.y) > 1e-4) {
       throw new SceneNotReadyError(
         'Waiting for the creature to reach safe ground after terrain changed'
@@ -180,6 +248,27 @@ export function readStablePlacement(adapter, token) {
 
 async function restoreStablePlacement(token, placement) {
   validateSavedPlacement(placement);
+  const gm = this.gameManager;
+  if (gm.campaignWorld && token.mapId !== gm.campaignMapId) {
+    token.gridX = placement.gridX;
+    token.gridY = placement.gridY;
+    token.facingAngle = placement.facingAngle;
+    token.world = { ...placement.pose.world };
+    if (placement.pose.kind === 'flight') token.flightActive = true;
+    else delete token.flightActive;
+    this._savedPlacements ||= new Map();
+    this._savedPlacements.set(token, {
+      placement: {
+        gridX: placement.gridX,
+        gridY: placement.gridY,
+        facingAngle: placement.facingAngle,
+        pose: clone(placement.pose),
+      },
+      job: null,
+      spent: 0,
+    });
+    return;
+  }
   await token.__threeMeshPromise;
   const world = placement?.pose?.world;
   if (!world || ![world.x, world.y, world.z, placement.facingAngle].every(Number.isFinite)) {

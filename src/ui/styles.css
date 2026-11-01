@@ -1257,6 +1257,30 @@ body {
   box-shadow: none;
 }
 
+.terrain-volume-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.terrain-volume-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.terrain-volume-form input,
+.terrain-volume-form select {
+  width: 100%;
+  min-width: 0;
+}
+
+.terrain-volume-form button {
+  grid-column: 1 / -1;
+}
+
 .terrain-tool-btn.active {
   background: linear-gradient(180deg, rgba(110, 212, 147, 0.95), rgba(44, 140, 85, 0.95));
   color: #0b1b0f;

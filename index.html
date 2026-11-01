@@ -342,12 +342,12 @@
                   class="small-text"
                   role="status"
                   aria-live="polite"
-                  >No terrain height edits to undo.</small
+                  >No terrain or construction edits to undo.</small
                 >
                 <small class="small-text"
                   >Release to apply. Escape cancels a preview. Ctrl+Z undoes; Ctrl+Shift+Z or Ctrl+Y
-                  redoes. History keeps the last 100 height edits and resets when loading, resizing,
-                  or generating a map.</small
+                  redoes. History keeps the last 100 height or geometry edits and resets when
+                  loading, resizing, or generating a map.</small
                 >
               </div>
 
@@ -381,6 +381,12 @@
                   </div>
                 </div>
               </div>
+
+              <section
+                id="terrain-construction"
+                class="tool-group"
+                aria-label="Terrain construction"
+              ></section>
 
               <div class="tool-group">
                 <div class="section-subtitle">Elevation Perception</div>

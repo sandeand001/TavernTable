@@ -99,6 +99,34 @@ test('restoration uses the actual token lifecycle API and restores an empty save
   }
 });
 
+test('campaign checkpoints retain constructed volumes and the creature support floor', async () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
+  const { gm, adapter, token, terrain } = createWorld(library, library.create('Upper Scout'));
+  terrain.addVolume({
+    id: 'upper-floor',
+    layerId: 'upper',
+    bounds: { min: { x: 5, y: 9, z: 5 }, max: { x: 10, y: 10, z: 10 } },
+  });
+  token.world.y = 2;
+  try {
+    const scene = await captureCampaignScene(gm, library);
+    expect(scene.version).toBe(2);
+    expect(scene.terrain.geometry.volumes[0].id).toBe('upper-floor');
+    expect(scene.creatures[0].pose.surfaceId).toBe('upper-floor');
+    const reopened = decodeScene(encodeScene(scene, { ruleset: '2014', library }), {
+      ruleset: '2014',
+      library,
+    });
+    const restored = new TerrainEngine(1, 1);
+    restored.load({ heights: reopened.terrain.heights, geometry: reopened.terrain.geometry });
+    expect(restored.geometry.findSupport(7.5, 7.5, { belowFeet: 20 }).heightFeet).toBe(10);
+    expect(reopened.creatures[0].pose.world.y).toBe(2);
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
+
 test('autosave acknowledges a complete board and rejects conflicting scene/character updates without overwriting it', async () => {
   const store = new CampaignStore({
     indexedDB: testIndexedDB(),

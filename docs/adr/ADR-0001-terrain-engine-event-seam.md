@@ -9,7 +9,13 @@ capture/restore use TerrainEngine. TerrainCoordinator only wires its input and
 3D scene adapters. The engine also owns non-mutating gesture previews and bounded,
 session-local height Undo/Redo. Public-interface tests cover editing, persistence,
 biome/flora behavior and real terrain geometry without legacy 2D fixtures.
-Multiple walkable surfaces and cuttable 3D volumes remain a separate extension.
+The extension now includes solid/void geometry, multiple supports, finite
+interior floors and a volume mesh adapter. The numeric shared-world construction
+proof is paused: the chosen direction uses independent connected building/floor
+grids with shared physical coordinates. Version-3 map checkpoints and spatial
+queries are implemented; map controls, projected creatures, physical connections
+and the outline builder remain further work. Each grid still has one terrain
+owner; inactive-map checkpoints are not a competing live height store.
 
 ---
 

@@ -4,6 +4,7 @@ import { readStablePlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { readPlaceablePlacements, captureCameraView } from '../scene/SceneSnapshotReaders.js';
 import { snapshotCombat } from '../entities/characters/combat/persistence.js';
 import { validateScene } from './CampaignScene.js';
+import CampaignWorld from './CampaignWorld.js';
 
 export async function captureCampaignScene(
   gameManager,
@@ -27,6 +28,7 @@ export async function captureCampaignScene(
     const movement = TokenMovement.getTokenMovementSettings(token);
     return {
       id: token.id,
+      ...(gm.campaignWorld ? { mapId: token.mapId } : {}),
       type: normalizeCreatureType(token.type),
       instanceNumber: token.instanceNumber,
       name: character?.name ?? token.name,
@@ -57,19 +59,21 @@ export async function captureCampaignScene(
   if (!savedCombat.states.some((row) => row.tokenId === savedCombat.activeTokenId))
     savedCombat.activeTokenId = null;
   const terrainState = gm.terrainEngine.save();
+  const placeables = pool ? readPlaceablePlacements(pool) : [];
   const scene = {
-    version: 1,
+    version: terrainState.geometry ? 2 : 1,
     ruleset: library.ruleset,
     grid: { cols: gm.cols, rows: gm.rows, tileWorldSize: gm.spatial.tileWorldSize },
     terrain: {
       heights: terrainState.heights,
+      ...(terrainState.geometry ? { geometry: terrainState.geometry } : {}),
       biome: terrainState.biomeKey,
       seed: terrainState.biomeSeed,
       elevationScale: terrainState.elevationScale,
       worldElevationUnit: gm.spatial.elevationUnit,
       treeDensity: terrainState.treeDensityMultiplier,
       richShading: JSON.parse(JSON.stringify(globalThis.window?.richShadingSettings || {})),
-      placeables: pool ? readPlaceablePlacements(pool) : [],
+      placeables,
     },
     creatures,
     tokenCounters: {
@@ -81,6 +85,23 @@ export async function captureCampaignScene(
     selection: gm.token3DAdapter.getSelectedToken()?.id ?? null,
     rollLog: JSON.parse(JSON.stringify(rollLog)),
   };
+  if (gm.campaignWorld) {
+    const saved = gm.campaignWorld.save();
+    const map = saved.maps.find((entry) => entry.id === gm.campaignMapId);
+    if (!map) throw new Error('The displayed campaign map does not exist');
+    map.grid = scene.grid;
+    map.terrain = scene.terrain;
+    saved.creatures = creatures;
+    saved.tokenCounters = scene.tokenCounters;
+    saved.combat = savedCombat;
+    saved.rollLog = scene.rollLog;
+    saved.view = {
+      mapId: gm.campaignMapId,
+      focusTokenId: gm.campaignView.focusTokenId,
+      camera: scene.camera,
+    };
+    return validateScene(saved, { ruleset: library.ruleset, library });
+  }
   return validateScene(scene, { ruleset: library.ruleset, library });
 }
 
@@ -117,14 +138,25 @@ export function applySceneCharacterLinks(gameManager, scene, library) {
 export async function restoreCampaignScene(gameManager, scene, library, combat) {
   validateScene(scene, { ruleset: library.ruleset, library });
   const gm = gameManager;
-  const terrain = scene.terrain;
+  const world =
+    scene.version === 3
+      ? CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library })
+      : null;
+  const map = world ? world.getMap(scene.view.mapId) : scene;
+  const terrain = map.terrain;
   for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
-  gm.resizeGrid(scene.grid.cols, scene.grid.rows);
-  gm.spatial.tileWorldSize = scene.grid.tileWorldSize;
+  gm.campaignWorld = world;
+  gm.campaignMapId = world ? scene.view.mapId : null;
+  gm.campaignView = world
+    ? world.createView({ mapId: scene.view.mapId, focusTokenId: scene.view.focusTokenId })
+    : null;
+  gm.resizeGrid(map.grid.cols, map.grid.rows);
+  gm.spatial.tileWorldSize = map.grid.tileWorldSize;
   if (globalThis.window) {
     window.selectedBiome = terrain.biome;
     window.richShadingSettings = JSON.parse(JSON.stringify(terrain.richShading));
   }
+  gm.terrainEngine.configureGeometryBase(world && map.base === 'floor' ? 0.5 : null);
   gm.terrainEngine.load({
     heights: terrain.heights,
     biomeKey: terrain.biome,
@@ -132,8 +164,12 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
     elevationScale: terrain.elevationScale,
     treeDensityMultiplier: terrain.treeDensity,
     richShadingEnabled: terrain.richShading.enabled === true,
+    ...(terrain.geometry ? { geometry: terrain.geometry } : {}),
   });
   gm.spatial.elevationUnit = terrain.worldElevationUnit;
+  gm.terrainEngine.configureGeometryScale(
+    (terrain.worldElevationUnit * 5) / gm.spatial.tileWorldSize
+  );
   gm.notifyTerrainHeightsChanged();
   const pool = gm.ensureInstancing();
   if (!pool && terrain.placeables.length)
@@ -143,7 +179,14 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
   for (const creature of scene.creatures) {
     const model = gm.tokenManager.createCreatureByType(creature.type);
     if (!model) throw new Error(`The saved creature model "${creature.type}" could not be created`);
-    gm.tokenManager.addTokenToCollection(model, creature.gridX, creature.gridY, creature.type);
+    gm.tokenManager.addTokenToCollection(
+      model,
+      creature.gridX,
+      creature.gridY,
+      creature.type,
+      null,
+      creature
+    );
     const token = gm.placedTokens.at(-1);
     if (!token || token.creature !== model) throw new Error('A saved creature could not be placed');
     token.id = creature.id;
@@ -162,11 +205,13 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
   gm.tokenManager._nextTokenId = scene.tokenCounters.nextId;
   gm.tokenManager._tokenTypeCounts = new Map(scene.tokenCounters.types);
   combat.restore(scene.combat, gm.placedTokens);
+  const selection = world ? scene.view.focusTokenId : scene.selection;
+  const camera = world ? scene.view.camera : scene.camera;
   gm.token3DAdapter.setSelectedToken(
-    gm.placedTokens.find((token) => token.id === scene.selection) || null
+    gm.placedTokens.find((token) => token.id === selection) || null
   );
-  gm.stateCoordinator.setViewMode(scene.camera.topDown ? 'topdown' : 'isometric', {
+  gm.stateCoordinator.setViewMode(camera.topDown ? 'topdown' : 'isometric', {
     remember: false,
   });
-  gm.threeSceneManager.restoreView(scene.camera);
+  gm.threeSceneManager.restoreView(camera);
 }

@@ -51,6 +51,7 @@ import { rollDice } from '../systems/dice/dice.js';
 import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLauncher.js';
 import { connectCharacterServices } from './characters/characterServices.js';
 import CampaignAutosave from '../campaigns/CampaignAutosave.js';
+import { TerrainConstructionPanel } from './TerrainConstructionPanel.js';
 
 // ── Constants ──────────────────────────────────────────────────
 const TOKEN_DRAG_MIME = 'application/taverntable-token';
@@ -60,6 +61,7 @@ const TOKEN_DRAG_MIME = 'application/taverntable-token';
 let radialMenuInstance = null;
 let characterSheetWindow = null;
 let applicationStartup = null;
+let terrainConstruction = null;
 
 function getRadialMenuInstance() {
   if (!radialMenuInstance) {
@@ -538,6 +540,21 @@ function attachDynamicUIHandlers() {
       button.dataset.boundHistoryHandler = 'true';
     }
     syncTerrainHistoryControls();
+    const constructionRoot = document.getElementById('terrain-construction');
+    const manager = window.gameManager;
+    if (
+      constructionRoot &&
+      manager?.terrainEngine &&
+      (!terrainConstruction ||
+        terrainConstruction.root !== constructionRoot ||
+        terrainConstruction.gameManager !== manager)
+    ) {
+      terrainConstruction?.dispose();
+      terrainConstruction = new TerrainConstructionPanel({
+        root: constructionRoot,
+        gameManager: manager,
+      });
+    }
 
     // Terrain reset
     const resetTerrainBtn = getTerrainResetButton();
@@ -806,8 +823,8 @@ function syncTerrainHistoryControls() {
     statusEl.textContent = engine?.hasPendingStroke
       ? 'Preview only. Release on the map to apply, or press Escape to cancel.'
       : engine?.canUndo || engine?.canRedo
-        ? 'Terrain height history is available for this editing session.'
-        : 'No terrain height edits to undo.';
+        ? 'Terrain and construction history is available for this editing session.'
+        : 'No terrain or construction edits to undo.';
   }
 }
 

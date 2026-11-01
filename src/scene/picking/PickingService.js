@@ -156,6 +156,7 @@ export class PickingService {
             if (
               Number.isFinite(outwardHeight) &&
               Number.isFinite(inwardHeight) &&
+              !gm.terrainEngine?.geometry.hasVolumes &&
               outwardHeight > inwardHeight
             )
               wallNormal.negate();
@@ -168,6 +169,22 @@ export class PickingService {
             const inset = Math.min(Math.max(insetRaw, 0.01), tileSize * 0.25);
             worldX -= wallNormal.x * inset;
             worldZ -= wallNormal.z * inset;
+          } else if (wallNormal && gm.terrainEngine?.geometry.hasVolumes) {
+            const scale = 5 / safeTileSize;
+            const support =
+              wallNormal.y > 0.9
+                ? gm.terrainEngine.geometry.findSupport(
+                    Math.min(gm.cols * 5 - 1e-6, Math.max(0, worldX * scale)),
+                    Math.min(gm.rows * 5 - 1e-6, Math.max(0, worldZ * scale)),
+                    { belowFeet: worldY * scale + 1e-5 }
+                  )
+                : null;
+            surface = {
+              kind: wallNormal.y > 0.9 ? 'floor' : 'ceiling',
+              surfaceId: support?.id ?? null,
+              point: { x: worldX, y: worldY, z: worldZ },
+              normal: { x: wallNormal.x, y: wallNormal.y, z: wallNormal.z },
+            };
           }
           usedTerrainMesh = true;
         }

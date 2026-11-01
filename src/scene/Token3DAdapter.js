@@ -30,6 +30,7 @@ import { installFallMethods } from './token-adapter/movement/FallPhases.js';
 import { installProneMotionMethods } from './token-adapter/movement/ProneMotion.js';
 import { installFallingRulesMotionMethods } from './token-adapter/movement/FallingRulesMotion.js';
 import { installFlightMotionMethods } from './token-adapter/movement/FlightMotion.js';
+import { installSurfaceMotionMethods } from './token-adapter/movement/SurfaceMotion.js';
 import { installMovementStyleMethods } from './token-adapter/movement/MovementStyle.js';
 import { installMovementPhaseMethods } from './token-adapter/movement/MovementPhases.js';
 import { installStepFactoryMethods } from './token-adapter/movement/StepFactory.js';
@@ -195,12 +196,13 @@ export class Token3DAdapter {
     for (const t of tokens) this._ensureTokenMesh(t, scene);
   }
 
-  onTokenAdded(tokenEntry) {
+  onTokenAdded(tokenEntry, checkpoint = null) {
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) return;
     const scene = gm.threeSceneManager?.scene;
     if (!scene) return;
-    this.recordStablePlacement(tokenEntry);
+    if (gm.campaignWorld && tokenEntry.mapId !== gm.campaignMapId) return;
+    if (!checkpoint) this.recordStablePlacement(tokenEntry);
     return this._ensureTokenMesh(tokenEntry, scene);
   }
 
@@ -550,6 +552,7 @@ export class Token3DAdapter {
       if (!gm || !gm.is3DModeActive?.()) return;
       const tokens = gm.placedTokens || [];
       for (const t of tokens) {
+        if (gm.campaignWorld && t.mapId !== gm.campaignMapId) continue;
         const mesh = t.__threeMesh;
         if (!mesh || this.isMovementInProgress(t)) continue;
         const state = this._movementStates.get(t);
@@ -566,6 +569,8 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    if (this.gameManager.campaignView?.focusTokenId === tokenEntry.id)
+      this.gameManager.campaignView.focus(null);
     this.gameManager.characterServices?.falling?.cancel(tokenEntry);
     this.gameManager.characterServices?.combat?.forget(tokenEntry);
     this._movementRoutes.delete(tokenEntry);
@@ -748,6 +753,7 @@ installFallMethods(Token3DAdapter.prototype);
 installProneMotionMethods(Token3DAdapter.prototype);
 installFallingRulesMotionMethods(Token3DAdapter.prototype);
 installFlightMotionMethods(Token3DAdapter.prototype);
+installSurfaceMotionMethods(Token3DAdapter.prototype);
 installNavigationMethods(Token3DAdapter.prototype);
 installMovementRangeMethods(Token3DAdapter.prototype);
 installMovementStyleMethods(Token3DAdapter.prototype);

@@ -112,7 +112,36 @@ Campaign autosave stores committed terrain, not previews or undo stacks.
 Existing version-1 campaign scenes and older unversioned terrain snapshots remain
 compatible. Terrain state, tool selection, biome metadata and height queries now
 share one owner, following [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md).
-This foundation does not yet add caves, bridge underpasses or stacked floors.
+The foundation now includes the retained construction proof and connected-map
+records described below.
+
+### Map-building foundation and paused construction proof
+
+TerrainEngine supports solid boxes, hollow box cuts, multiple floor supports
+and geometry Undo/Redo. On a new blank 25-by-25 map, Terrain Mode's
+**Construction prototype** can add a bridge, cave and two-storey proof layout.
+Its numeric box controls are retained for validation, but development of that
+workflow is paused.
+
+The chosen replacement is **Build + height + a closed straight-line outline**,
+generating hollow buildings and separate connected floor grids every 10 feet.
+Carving, curves and manual floor removal are deferred.
+
+Version-3 campaign checkpoints now preserve independent map records with physical
+anchors, scale and orientation, one creature collection, inactive map poses and
+shared combat state. Local view records keep focus and camera histories separate.
+Versions 1 and 2 remain supported and are not automatically converted.
+
+This checkpoint does not yet provide map/focus controls, rendered cross-grid
+creature projections, Enter / Use stairs links, cross-grid flight/falling or
+networked players. Targeting integration is companion work and is not required
+by the standalone terrain/map core. Campaign spatial sight queries remain
+independent of the targeting implementation.
+
+Constructed-map traversal currently supports stairs, walking, flight and falling,
+with five-foot body clearance. Hidden geometry remains physical. Curves, gizmos,
+constructed-wall climbing and full-size creature collision are future work;
+ordinary heightfield maps retain their original traversal.
 
 To build a wall:
 

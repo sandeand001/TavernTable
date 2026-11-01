@@ -194,8 +194,8 @@ export async function enableHybridRender(gm) {
                   evt.clientY,
                   targetEl
                 );
-                let hoverToken = null;
-                if (ground?.grid) {
+                let hoverToken = ground?.token || null;
+                if (!hoverToken && !ground?.surface && ground?.grid) {
                   const gx = Math.round(ground.grid.gx);
                   const gy = Math.round(ground.grid.gy);
                   if (Number.isFinite(gx) && Number.isFinite(gy) && gm.findExistingTokenAt) {
@@ -233,8 +233,8 @@ export async function enableHybridRender(gm) {
                 );
                 if (gm.interactionManager?.isSpacePressed || gm.interactionManager?.isDragging)
                   return;
-                let token = null;
-                if (ground?.grid) {
+                let token = ground?.token || null;
+                if (!token && !ground?.surface && ground?.grid) {
                   const gx = Math.round(ground.grid.gx);
                   const gy = Math.round(ground.grid.gy);
                   if (Number.isFinite(gx) && Number.isFinite(gy) && gm.findExistingTokenAt) {

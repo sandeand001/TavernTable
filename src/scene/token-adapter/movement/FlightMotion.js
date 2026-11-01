@@ -6,6 +6,7 @@ import {
 } from '../../../config/TokenMovementConfig.js';
 import {
   buildFlightRange,
+  buildMovementRange,
   facingAngleFromDirection,
   getMovementRoute,
   getTokenCharacterRecord,
@@ -104,7 +105,7 @@ function getFlightCommandAvailability(token, kind, feet = FLIGHT_TAKEOFF_FEET) {
     world.y +
     ((kind === 'lower' ? -cost : cost) * this.gameManager.spatial.tileWorldSize) /
       FEET_PER_GRID_SQUARE;
-  const groundY = groundHeight.call(this, token.gridX, token.gridY);
+  const groundY = groundHeight.call(this, token.gridX, token.gridY, world.y);
   if (kind === 'takeoff' && Math.abs(world.y - groundY) > 1e-7) {
     return unavailable('Reach the ground before taking flight.');
   }
@@ -125,7 +126,7 @@ function getFlightCommandAvailability(token, kind, feet = FLIGHT_TAKEOFF_FEET) {
   return { visible, allowed: true, cost };
 }
 
-function groundHeight(gridX, gridY) {
+function groundHeight(gridX, gridY, belowWorldY = Infinity) {
   const gm = this.gameManager;
   if (
     !Number.isInteger(gridX) ||
@@ -141,6 +142,14 @@ function groundHeight(gridX, gridY) {
   ) {
     throw new Error('Flight requires a valid board position and terrain scale');
   }
+  if (gm.terrainEngine?.geometry.hasVolumes) {
+    const scale = FEET_PER_GRID_SQUARE / gm.spatial.tileWorldSize;
+    const support = gm.terrainEngine.geometry.findSupport((gridX + 0.5) * 5, (gridY + 0.5) * 5, {
+      belowFeet: belowWorldY * scale + 1e-6,
+    });
+    if (!support) throw new Error('Flight has no supported landing surface below this elevation');
+    return support.heightFeet / scale;
+  }
   const height = gm.getTerrainHeight(gridX, gridY);
   if (!Number.isFinite(height)) throw new Error('Flight requires valid terrain heights');
   return height * gm.spatial.elevationUnit;
@@ -148,7 +157,22 @@ function groundHeight(gridX, gridY) {
 
 function flightCellBlocked(token, gridX, gridY, worldY, allowLanding = false, sweptTopY = null) {
   const gm = this.gameManager;
-  const groundY = groundHeight.call(this, gridX, gridY);
+  if (gm.terrainEngine?.geometry.hasVolumes) {
+    const scale = FEET_PER_GRID_SQUARE / gm.spatial.tileWorldSize;
+    const inset = 1e-5;
+    if (
+      !gm.terrainEngine.geometry.isSpaceClear({
+        min: { x: gridX * 5 + inset, y: worldY * scale, z: gridY * 5 + inset },
+        max: {
+          x: (gridX + 1) * 5 - inset,
+          y: (sweptTopY ?? worldY + gm.spatial.tileWorldSize) * scale,
+          z: (gridY + 1) * 5 - inset,
+        },
+      })
+    )
+      return true;
+  }
+  const groundY = groundHeight.call(this, gridX, gridY, worldY);
   if (allowLanding ? worldY < groundY - 1e-7 : worldY <= groundY + 1e-7) return true;
   const bodyHeight = gm.spatial.tileWorldSize;
   const topY = sweptTopY ?? worldY + bodyHeight;
@@ -194,7 +218,7 @@ function getTokenFlightRange(token) {
       if (flightCellBlocked.call(this, token, x, y, world.y)) blocked.add(`${x},${y}`);
     }
   }
-  return buildFlightRange({
+  const inputs = {
     cols: gm.cols,
     rows: gm.rows,
     startGridX: start.gridX,
@@ -205,7 +229,15 @@ function getTokenFlightRange(token) {
     getHeight: (x, y) => gm.getTerrainHeight(x, y),
     blocked,
     flightWorldY: world.y,
-  });
+  };
+  if (gm.terrainEngine?.geometry.hasVolumes) {
+    return {
+      ...buildMovementRange({ ...inputs, elevationUnit: 0, getHeight: () => 0, mode: 'walk' }),
+      travelMode: 'fly',
+      flightWorldY: world.y,
+    };
+  }
+  return buildFlightRange(inputs);
 }
 
 function getFlightStatus(token) {
@@ -218,7 +250,8 @@ function getFlightStatus(token) {
     flying: token.flightActive === true,
     speed,
     heightFeet:
-      ((world.y - groundHeight.call(this, token.gridX, token.gridY)) * FEET_PER_GRID_SQUARE) /
+      ((world.y - groundHeight.call(this, token.gridX, token.gridY, world.y)) *
+        FEET_PER_GRID_SQUARE) /
       this.gameManager.spatial.tileWorldSize,
     remaining: flightAllowance.call(this, token),
   };
@@ -400,7 +433,8 @@ function advanceFlightMotion(state, delta) {
   state.flightMotion = null;
   state.phase = 'idle';
   this._commitPlannedMovementCost(job);
-  const landed = Math.abs(world.y - groundHeight.call(this, token.gridX, token.gridY)) < 1e-7;
+  const landed =
+    Math.abs(world.y - groundHeight.call(this, token.gridX, token.gridY, world.y)) < 1e-7;
   if (landed) {
     delete token.flightActive;
     this._unlockTokenWorldAuthority(state);
@@ -440,7 +474,7 @@ function stopFlightMovement(state) {
 function dropFlight(state) {
   const token = state.token;
   const world = this._resolveTokenWorldPosition(token);
-  const target = { ...world, y: groundHeight.call(this, token.gridX, token.gridY) };
+  const target = { ...world, y: groundHeight.call(this, token.gridX, token.gridY, world.y) };
   const drop = Math.max(world.y - target.y, 0);
   if (!this.gameManager.characterServices?.falling) {
     throw new Error('The falling rules service is not ready');

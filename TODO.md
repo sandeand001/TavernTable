@@ -32,10 +32,36 @@
       game and terrain dimensions consistent, and reset/load trigger scene updates.
       Cover editing input, biome/flora generation, and adapter attach/detach without
       relying on legacy 2D fixtures.
-- [ ] **Prove layered shared-world geometry** - Add multiple walkable surfaces
-      and bounded solid/void edits. Validate a usable bridge underpass, cave with
-      a ceiling, and two-storey building with stairs and an open shaft before
-      expanding the full shape/construction toolbox.
+- [x] **Add geometry and multi-surface foundations** - Ordered solid/void boxes,
+      finite floor slabs, multiple supports and ceilings, clearance queries,
+      stair traversal, platform falling, real meshing and versioned persistence.
+- [ ] **Paused shared-world construction proof** - Retain the bridge/cave/building
+      layout and numeric box controls without expanding that authoring workflow.
+      Separate connected grids replace the original shared-board layering plan.
+
+---
+
+## Connected-grid Building
+
+- [x] **Map records and persistence** - Physical origins, quarter-turn rotation,
+      grid scale, one creature identity, independent local view records and
+      version-3 campaign saves/backups. Preserve legacy scenes without automatic
+      conversion; map references do not grant movement or elevation changes.
+- [x] **Physical spatial queries** - Transform positions and facing between maps,
+      query actual supports and walls/openings without loading their renderers.
+- [ ] **Cross-grid targeting integration** - Connect campaign coordinates and
+      stored geometry/structure cover to the companion targeting work.
+- [ ] **Live map focus and synchronized projections** - Map/focus controls,
+      per-map cameras and visible off-map sprites mirroring the original creature.
+      Picking/targeting must not create another gameplay identity.
+- [ ] **Physical connections** - Explicit Enter / Use stairs interactions and
+      cross-grid flight/falling with existing clearance, landing and movement rules.
+- [ ] **Build-only outlines** - Close straight-line footprints and choose height
+      in 10-foot increments to generate a hollow exterior and connected floor maps.
+- [ ] **Independent connected participants** - Ownership and synchronization with
+      local player focus and DM cross-map focus; the file server is not multiplayer.
+- [ ] **Later editing** - Curves/circles and manual floor removal for tall rooms.
+      Cut/carving remains undecided and deferred.
 
 ---
 

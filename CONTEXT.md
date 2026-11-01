@@ -184,32 +184,48 @@ allowances and visual actions are not silently converted into turn enforcement.
 Campaign settings and characters use acknowledged, revision-checked IndexedDB
 commits. The scene and session-memory combat/history are deliberately separate.
 
-## Planned map-building direction
+## Connected-grid building direction
 
-These are agreed design concepts, not currently implemented capabilities.
+Separate connected grids replace the original shared-board layering plan.
+The map state, physical-coordinate and persistence foundation is implemented;
+player-facing map controls and the outline builder remain planned.
 
-- **Layered shared world**: one physical 3D board with common coordinates and
-  real elevations. Floors can be edited and viewed separately without becoming
-  disconnected gameplay maps. Stairs, shafts, bridges, flight and falls connect
-  space within that same world.
-- **Level layer**: a named authoring and visibility group, such as a basement,
-  ground floor, upper floor or roof. Layers can be isolated, hidden, locked and
-  duplicated. Hiding a layer for viewing does not remove its physical geometry
-  or change collision and traversal.
-- **Structure**: editable constructed geometry, including walls, floors,
-  ceilings, roofs and openings. A structure can span level layers and belongs
-  to the shared world rather than being a raised terrain rectangle.
-- **Walkable surface**: a valid support at a position and elevation. Multiple
-  surfaces can occupy the same horizontal map position, such as a path beneath
-  a bridge. Navigation, landing, flight clearance and saved token support must
-  distinguish those surfaces.
-- **Volume edit**: a bounded 3D addition or subtraction that can produce solid
-  geometry or actual empty space, including cave chambers, tunnels and arch
-  openings. Lowering a heightfield alone is not a hollow volume.
-- **Hybrid authoring**: retain efficient outdoor terrain sculpting while adding
-  editable construction and targeted volume edits. Terrain ownership continues
-  to follow [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md), not a new
-  parallel state store.
-- **Grid-aware detail**: preserve five-foot-grid gameplay while allowing smooth
-  curves, thinner walls and sub-grid construction dimensions. Shape detail does
-  not silently change movement distances or rules.
+- **Connected grid**: an independently editable and viewable map inside one
+  campaign, such as an exterior, building interior, floor or larger area.
+- **Campaign spatial record**: one creature identity and map-local position,
+  translated into physical campaign feet using the map's origin, quarter-turn
+  orientation and grid scale. Camera zoom does not change physical distance.
+- **Participant view**: independent focused creature, displayed map and per-map
+  camera history. Following a creature changes only that view when it transfers.
+  Targeting another creature does not change viewing focus. Local view records
+  are implemented; connected-player ownership and networking are not.
+- **Cross-grid projection**: planned synchronized rendering of an off-map creature,
+  not a second token or character record. Position, facing and animation refer
+  to the original creature. Physical sight queries distinguish walls and openings;
+  sprite rendering, picking and full player visibility remain further work.
+- **Grid connection**: planned Enter / Use stairs interactions between aligned
+  maps. Transfers preserve creature identity, resources and combat/movement state.
+  Changing the grid reference never grants a free elevation jump or a fresh turn.
+  Cross-grid flight, falling, sight and attacks must use physical connections.
+- **Building outline**: the planned Build-only tool with height in 10-foot floor
+  increments and a closed straight-line footprint, completed when endpoints meet.
+  It generates a hollow exterior and separate floor maps. Carving is deferred;
+  curves, circles and manual floor removal are later extensions.
+- **Connected checkpoint**: version-3 scene data containing map records, one
+  campaign-wide creature collection, shared combat and a local default view.
+  Capture/restore, acknowledged IndexedDB saves and backups retain inactive maps.
+  Versions 1 and 2 remain supported without automatic conversion.
+- **Interior floor**: a finite half-foot slab, not earth extending downward
+  through other floors. Openings remove actual support rather than leaving a
+  phantom floor below.
+
+The retained numeric box-volume construction proof is paused, not the desired
+builder workflow. It implements solids/cuts, multiple supports, stairs, cave
+ceilings, bridge underpasses and next-floor landing. Version-2 scenes preserve
+its geometry and support IDs; hidden layers remain physical. Constructed-wall
+climbing, broader shape editing and full-size creature collision are not included.
+Heightfield-only maps keep their original traversal.
+
+Terrain ownership still follows
+[ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md): one authoritative
+terrain owner per grid, with renderer adapters rather than parallel height stores.

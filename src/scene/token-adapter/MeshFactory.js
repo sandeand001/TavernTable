@@ -19,6 +19,7 @@ import { GameErrors } from '../../utils/error/ErrorHandler.js';
 function _ensureTokenMesh(tokenEntry, scene) {
   if (!tokenEntry || tokenEntry.__threeMesh) return;
   const gm = this.gameManager;
+  if (gm?.campaignWorld && tokenEntry.mapId !== gm.campaignMapId) return;
 
   if (gm && gm.__threeTestDouble) {
     try {

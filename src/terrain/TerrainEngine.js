@@ -9,6 +9,7 @@ import {
   isAllDefaultHeight,
 } from './generation/BiomeElevationGenerator.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
+import { TerrainGeometry } from './TerrainGeometry.js';
 
 function validateDimensions(cols, rows) {
   if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) {
@@ -96,6 +97,9 @@ export class TerrainEngine {
     this._placeablesPanelVisible = false;
     this._placeableRemovalMode = false;
     this._ptBrushSize = this._brush.brushSize;
+    this._feetPerLevel = 2.5;
+    this._geometry = this._createGeometry(cols, rows);
+    this._visibleLayers = null;
     this._listeners = Object.fromEntries(
       [
         'tileChanged',
@@ -133,7 +137,25 @@ export class TerrainEngine {
     validateDimensions(cols, rows);
     this.cancelBrushStroke();
     if (cols === this.cols && rows === this.rows) return false;
+    const geometry = this._createGeometry(cols, rows);
+    const volumes = this.geometry
+      .save()
+      .volumes.map((volume) => ({
+        ...volume,
+        bounds: {
+          min: { ...volume.bounds.min },
+          max: {
+            ...volume.bounds.max,
+            x: Math.min(cols * 5, volume.bounds.max.x),
+            z: Math.min(rows * 5, volume.bounds.max.z),
+          },
+        },
+      }))
+      .filter(({ bounds }) => bounds.min.x < bounds.max.x && bounds.min.z < bounds.max.z);
+    geometry.load({ version: 1, volumes });
     this._dataStore.resize(cols, rows);
+    this._geometry = geometry;
+    this._visibleLayers = null;
     this._clearHistory();
     this._emit('resized', { cols, rows });
     this._emitAllTiles();
@@ -329,6 +351,11 @@ export class TerrainEngine {
     const edit = this._undo.pop();
     if (!edit) return false;
     this._redo.push(edit);
+    if (edit.geometry) {
+      this._geometry.load(edit.geometry.before);
+      this._changed('geometry');
+      return true;
+    }
     const changes = edit.changes.map(({ x, y, before, after }) => ({
       x,
       y,
@@ -343,6 +370,11 @@ export class TerrainEngine {
     const edit = this._redo.pop();
     if (!edit) return false;
     this._undo.push(edit);
+    if (edit.geometry) {
+      this._geometry.load(edit.geometry.after);
+      this._changed('geometry');
+      return true;
+    }
     return this._commitChanges(edit.changes, edit.label, { history: false, kind: 'redo' });
   }
 
@@ -484,6 +516,62 @@ export class TerrainEngine {
     this._emit('placeableChanged', { gridX, gridY, placeableId, variant });
   }
 
+  configureGeometryScale(feetPerLevel) {
+    if (!Number.isFinite(feetPerLevel) || feetPerLevel < 0) {
+      throw new RangeError('Map geometry requires a finite non-negative terrain scale');
+    }
+    this._feetPerLevel = feetPerLevel;
+  }
+
+  configureGeometryBase(terrainThicknessFeet) {
+    if (
+      terrainThicknessFeet !== null &&
+      (!Number.isFinite(terrainThicknessFeet) || terrainThicknessFeet <= 0)
+    )
+      throw new RangeError('A floor slab requires a positive finite thickness');
+    this.geometry.terrainThicknessFeet = terrainThicknessFeet;
+  }
+
+  addVolume(volume, operation = 'add') {
+    if (!['add', 'subtract'].includes(operation)) {
+      throw new RangeError('Choose Add or Subtract for a volume edit');
+    }
+    return this.addVolumes([{ ...volume, operation }]);
+  }
+
+  addVolumes(volumes) {
+    if (!Array.isArray(volumes) || volumes.length === 0) {
+      throw new TypeError('At least one solid or cut volume is required');
+    }
+    this.cancelBrushStroke();
+    const before = this.geometry.save();
+    const after = { version: 1, volumes: [...before.volumes, ...volumes] };
+    this.geometry.load(after);
+    this._undo.push({
+      label:
+        volumes.length > 1
+          ? 'Add structure group'
+          : volumes[0].operation === 'add'
+            ? 'Add solid volume'
+            : 'Carve volume',
+      geometry: { before, after },
+    });
+    if (this._undo.length > TERRAIN_CONFIG.HISTORY_LIMIT) this._undo.shift();
+    this._redo = [];
+    this._changed('geometry');
+  }
+
+  setVisibleLayers(layers) {
+    if (
+      layers !== null &&
+      (!Array.isArray(layers) || layers.some((layer) => typeof layer !== 'string' || !layer.trim()))
+    ) {
+      throw new TypeError('Visible layers must be named layers or null for all layers');
+    }
+    this._visibleLayers = layers === null ? null : [...new Set(layers)];
+    this._changed('visibility');
+  }
+
   save() {
     return {
       version: 1,
@@ -493,6 +581,7 @@ export class TerrainEngine {
       elevationScale: this._elevationScale,
       treeDensityMultiplier: this._treeDensityMultiplier,
       richShadingEnabled: this._richShadingEnabled,
+      ...(this.geometry.hasVolumes ? { geometry: this.geometry.save() } : {}),
     };
   }
 
@@ -501,6 +590,8 @@ export class TerrainEngine {
       throw new Error('Unsupported terrain snapshot version');
     }
     const { cols, rows } = validateHeights(state.heights);
+    const geometry = this._createGeometry(cols, rows);
+    if (state.geometry !== undefined) geometry.load(state.geometry);
     const biomeKey = state.biomeKey ?? null;
     const biomeSeed = state.biomeSeed ?? this._biomeSeed;
     const elevationScale = state.elevationScale ?? TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
@@ -516,6 +607,8 @@ export class TerrainEngine {
     const resized = cols !== this.cols || rows !== this.rows;
     if (resized) this._dataStore.resize(cols, rows);
     this._dataStore.restoreHeights(state.heights);
+    this._geometry = geometry;
+    this._visibleLayers = null;
     this._biomeKey = biomeKey;
     this._biomeSeed = biomeSeed;
     this._elevationScale = elevationScale;
@@ -583,6 +676,22 @@ export class TerrainEngine {
 
   get cols() {
     return this._dataStore.cols;
+  }
+  get geometry() {
+    return this._geometry;
+  }
+  get visibleLayers() {
+    return this._visibleLayers === null ? null : [...this._visibleLayers];
+  }
+
+  _createGeometry(cols, rows) {
+    return new TerrainGeometry({
+      widthFeet: cols * 5,
+      depthFeet: rows * 5,
+      terrainThicknessFeet: this._geometry?.terrainThicknessFeet ?? null,
+      getTerrainHeightFeet: (x, z) =>
+        this.getHeightAt(Math.floor(x / 5), Math.floor(z / 5)) * this._feetPerLevel,
+    });
   }
   get rows() {
     return this._dataStore.rows;

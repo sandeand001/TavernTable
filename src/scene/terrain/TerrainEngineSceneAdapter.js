@@ -20,7 +20,15 @@ export class TerrainEngineSceneAdapter {
     const gm = this.gameManager;
     this._unsubs.push(
       e.onChanged(({ kind }) => {
-        if (kind !== 'treeDensity') gm.notifyTerrainHeightsChanged();
+        if (kind === 'visibility') {
+          gm.terrainRebuilder?.request();
+          if (gm.token3DAdapter) gm.token3DAdapter._movementRangeDirty = true;
+          return;
+        }
+        if (kind !== 'treeDensity') {
+          e.configureGeometryScale((gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize);
+          gm.notifyTerrainHeightsChanged();
+        }
       }),
       e.onBrushMoved((preview) => this._renderPreview(preview)),
       e.onActivationChanged(({ active }) => {

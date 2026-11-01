@@ -62,6 +62,15 @@ function _getDirectionalVectorFromYaw(yaw, directionSign = 1) {
 }
 
 function _sampleWorldHeight(x, z, fallbackY = 0) {
+  const mapGeometry = this.gameManager?.terrainEngine?.geometry;
+  if (mapGeometry?.hasVolumes) {
+    const scale = 5 / this.gameManager.spatial.tileWorldSize;
+    const support = mapGeometry.findSupport(x * scale, z * scale, {
+      belowFeet: fallbackY * scale + 1e-5,
+    });
+    if (!support) throw new Error('No map surface supports this creature position');
+    return support.heightFeet / scale;
+  }
   try {
     const gm = this.gameManager;
     const spatial = gm?.spatial;
