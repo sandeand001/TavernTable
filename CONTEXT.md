@@ -1,7 +1,8 @@
 # TavernTable domain context
 
 - **Scene**: the browser-local board, terrain, placed tokens and camera state.
-  Reloading does not currently preserve an edited scene.
+  Campaign autosave preserves committed scene checkpoints, not unfinished
+  terrain previews, routes or animation frames.
 - **Terrain editing colors**: temporary elevation visualization while Terrain
   Mode is active. Leaving the mode restores normal/biome colors without
   discarding edited heights.
@@ -11,6 +12,19 @@
   elevation is absolute and exact, raising or cutting cells, including below
   zero for trenches. It is not a
   separate building object and uses ordinary terrain traversal.
+- **Terrain owner**: TerrainEngine holds the authoritative heightfield, tool,
+  brush and biome state. Live editing, game height queries, resizing and campaign
+  capture/restore use its public interface. TerrainCoordinator wires the input
+  and 3D scene adapters; it does not hold a parallel height store.
+- **Terrain edit**: a complete, release-to-apply height gesture. Previews do not
+  change gameplay support or saved heights. Escape, blur, leaving the canvas,
+  changing tools or brush size, and leaving Terrain Mode cancel the preview.
+  Wall height and fill style can update a pending rectangle without committing it.
+- **Terrain history**: session-local Undo/Redo for the last 100 committed height
+  edits, including Reset Terrain. A whole gesture is one edit. New committed
+  edits replace the redo branch; canceled previews and no-op edits do not.
+  Loading, resizing or generating a map clears this history. It does not undo
+  placeable removal, dice rolls, character actions or movement.
 - **Creature token**: one logical gameplay instance with a stable ID, grid/world
   position, facing, movement settings and character-sheet tab.
 - **Campaign**: a named, browser-local workspace with an explicitly chosen,
@@ -163,9 +177,39 @@
 - **Action catalog**: the shared source of animation and manual-playback metadata,
   so adding a clip does not require independent loading, menu and dispatch edits.
 
-Terrain ownership migration, multiplayer, full combat rules
+Multi-level map geometry, multiplayer, full combat rules
 and guided character progression remain separate work. Free-play movement
 allowances and visual actions are not silently converted into turn enforcement.
 
 Campaign settings and characters use acknowledged, revision-checked IndexedDB
 commits. The scene and session-memory combat/history are deliberately separate.
+
+## Planned map-building direction
+
+These are agreed design concepts, not currently implemented capabilities.
+
+- **Layered shared world**: one physical 3D board with common coordinates and
+  real elevations. Floors can be edited and viewed separately without becoming
+  disconnected gameplay maps. Stairs, shafts, bridges, flight and falls connect
+  space within that same world.
+- **Level layer**: a named authoring and visibility group, such as a basement,
+  ground floor, upper floor or roof. Layers can be isolated, hidden, locked and
+  duplicated. Hiding a layer for viewing does not remove its physical geometry
+  or change collision and traversal.
+- **Structure**: editable constructed geometry, including walls, floors,
+  ceilings, roofs and openings. A structure can span level layers and belongs
+  to the shared world rather than being a raised terrain rectangle.
+- **Walkable surface**: a valid support at a position and elevation. Multiple
+  surfaces can occupy the same horizontal map position, such as a path beneath
+  a bridge. Navigation, landing, flight clearance and saved token support must
+  distinguish those surfaces.
+- **Volume edit**: a bounded 3D addition or subtraction that can produce solid
+  geometry or actual empty space, including cave chambers, tunnels and arch
+  openings. Lowering a heightfield alone is not a hollow volume.
+- **Hybrid authoring**: retain efficient outdoor terrain sculpting while adding
+  editable construction and targeted volume edits. Terrain ownership continues
+  to follow [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md), not a new
+  parallel state store.
+- **Grid-aware detail**: preserve five-foot-grid gameplay while allowing smooth
+  curves, thinner walls and sub-grid construction dimensions. Shape detail does
+  not silently change movement distances or rules.

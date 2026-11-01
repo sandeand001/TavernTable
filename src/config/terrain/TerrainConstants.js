@@ -22,6 +22,7 @@ export const TERRAIN_CONFIG = {
   DEFAULT_BRUSH_SIZE: 1,
   MIN_BRUSH_SIZE: 1,
   MAX_BRUSH_SIZE: 5,
+  HISTORY_LIMIT: 100,
 
   // ── Height Color Scale ────────────────────────────────────────
   HEIGHT_COLOR_SCALE: {

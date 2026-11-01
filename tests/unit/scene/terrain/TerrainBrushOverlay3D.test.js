@@ -9,9 +9,6 @@ describe('TerrainBrushOverlay3D', () => {
       return Number.isFinite(heights[key]) ? heights[key] : 0;
     };
     const gameManager = {
-      terrainCoordinator: {
-        getTerrainHeight: jest.fn(getHeight),
-      },
       getTerrainHeight: jest.fn(getHeight),
       spatial: {
         tileWorldSize: 1,

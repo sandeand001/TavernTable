@@ -84,7 +84,7 @@ describe('InteractionManager.getGridCoordinatesFromClick', () => {
     const gm = {
       is3DModeActive: () => true,
       token3DAdapter: adapter,
-      terrainCoordinator: { getSelectedPlaceable: () => null },
+      terrainEngine: { getSelectedPlaceable: () => null },
       handleTokenInteraction: jest.fn(),
     };
     const manager = new InteractionManager(gm);
@@ -105,7 +105,7 @@ describe('InteractionManager.getGridCoordinatesFromClick', () => {
     const token = { id: 'token-2', gridX: 14, gridY: 10 };
     const gm = {
       selectedTokenType: 'remove',
-      terrainCoordinator: { getSelectedPlaceable: () => null },
+      terrainEngine: { getSelectedPlaceable: () => null },
       removeToken: jest.fn(),
       handleTokenInteraction: jest.fn(),
     };
@@ -136,7 +136,7 @@ describe('InteractionManager.getGridCoordinatesFromClick', () => {
       selectedTokenType: 'mannequin',
       is3DModeActive: () => true,
       token3DAdapter: adapter,
-      terrainCoordinator: { getSelectedPlaceable: () => null },
+      terrainEngine: { getSelectedPlaceable: () => null },
     };
     const manager = new InteractionManager(gm);
     manager._resolvePointerTarget = jest.fn(async () => ({ gridX: 20, gridY: 4, token: null }));
@@ -166,7 +166,7 @@ describe('InteractionManager.getGridCoordinatesFromClick', () => {
       selectedTokenType: 'mannequin',
       is3DModeActive: () => true,
       token3DAdapter: adapter,
-      terrainCoordinator: { getSelectedPlaceable: () => null },
+      terrainEngine: { getSelectedPlaceable: () => null },
     });
     manager._resolvePointerTarget = jest.fn(async () => ({
       gridX: 3,

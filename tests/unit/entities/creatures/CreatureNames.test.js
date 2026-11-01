@@ -3,7 +3,7 @@ import { renameCreature } from '../../../../src/entities/creatures/CreatureNames
 
 test('an unlinked custom name is validated, saved and not replaced by later duplicate numbering', async () => {
   const gameManager = {
-    terrainCoordinator: { dataStore: { get: () => 0 } },
+    getTerrainHeight: () => 0,
     spatial: { gridToWorld: (x, y) => ({ x, y: 0, z: y }) },
     sceneAutosave: { changed: jest.fn(), flush: jest.fn(async () => {}) },
   };

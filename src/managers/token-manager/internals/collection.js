@@ -44,7 +44,7 @@ export function addTokenToCollection(
     world: (() => {
       try {
         const gm = c.gameManager;
-        const height = gm?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
+        const height = gm?.getTerrainHeight?.(gridX, gridY) ?? 0;
         if (gm?.spatial && typeof gm.spatial.gridToWorld === 'function') {
           return gm.spatial.gridToWorld(gridX + 0.5, gridY + 0.5, height);
         }

@@ -94,6 +94,26 @@ Open **Terrain** and enable **Terrain Mode**. Elevation colors are an editing
 aid only: turning the mode off restores the normal grid color or the selected
 biome palette while keeping the edited heights.
 
+Raise, Lower and Wall now preview the complete gesture without changing
+gameplay heights. Release on the board to commit it as one edit. Escape, losing
+focus, leaving the canvas, changing tools or brush size, or turning Terrain Mode
+off discards the unfinished preview. Wall height and Filled/Outline settings can
+be adjusted while a wall preview is open without applying it.
+
+**Undo** and **Redo** are in **Edit History**. **Ctrl+Z** undoes;
+**Ctrl+Shift+Z** or **Ctrl+Y** redoes (Command works instead of Ctrl on macOS).
+Shortcuts are active only while editing terrain and do not replace text-field
+undo. One undo restores a complete gesture, including overlapping brush cells.
+Reset Terrain is also undoable. History keeps the last **100 terrain height
+edits** for the current session; loading, resizing or generating a map starts a
+new history. Placeable removal is not part of terrain height history.
+
+Campaign autosave stores committed terrain, not previews or undo stacks.
+Existing version-1 campaign scenes and older unversioned terrain snapshots remain
+compatible. Terrain state, tool selection, biome metadata and height queries now
+share one owner, following [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md).
+This foundation does not yet add caves, bridge underpasses or stacked floors.
+
 To build a wall:
 
 1. Select **Wall**.

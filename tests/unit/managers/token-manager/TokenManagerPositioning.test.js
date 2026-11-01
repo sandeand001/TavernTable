@@ -17,11 +17,7 @@ describe('snapTokenToGrid', () => {
         interactionManager: {
           pickTopmostGridCellAt: jest.fn(() => ({ gridX: 2, gridY: 1 })),
         },
-        terrainCoordinator: {
-          dataStore: {
-            get: jest.fn(() => height),
-          },
-        },
+        getTerrainHeight: jest.fn(() => height),
       },
       placedTokens: [placedEntry],
     };
@@ -64,11 +60,7 @@ describe('snapTokenToGrid', () => {
         cols: 20,
         rows: 20,
         interactionManager: null,
-        terrainCoordinator: {
-          dataStore: {
-            get: jest.fn(() => height),
-          },
-        },
+        getTerrainHeight: jest.fn(() => height),
       },
       placedTokens: [placedEntry],
     };
@@ -120,11 +112,7 @@ describe('snapTokenToGrid', () => {
       interactionManager: {
         pickTopmostGridCellAt: jest.fn(() => ({ gridX: 3, gridY: 4 })),
       },
-      terrainCoordinator: {
-        dataStore: {
-          get: jest.fn(() => 0),
-        },
-      },
+      getTerrainHeight: jest.fn(() => 0),
       spatial: {
         gridToWorld: jest.fn(() => ({ x: 3.5, y: 0.5, z: 4.5 })),
       },

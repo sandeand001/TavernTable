@@ -89,9 +89,9 @@ export class TerrainRebuilder {
     const neutralColor = GRID_CONFIG?.TILE_COLOR ?? 0x444444;
     const gmBiomeGetter = (gx, gy, elev) => {
       const h = Number.isFinite(elev) ? elev : 0;
-      const terrainModeActive =
-        (gm?.terrainCoordinator?.isTerrainModeActive ?? false) ||
-        (typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive());
+      const terrainModeActive = gm.terrainEngine
+        ? gm.terrainEngine.isActive
+        : typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive();
       if (terrainModeActive) {
         const palette = TERRAIN_CONFIG.HEIGHT_COLOR_SCALE || {};
         const clamped = Math.max(
@@ -105,13 +105,12 @@ export class TerrainRebuilder {
         if (color == null) color = 0x6b7280;
         return color;
       }
-      const biomeKey =
-        (typeof window !== 'undefined' && window.selectedBiome) ||
-        gm?.terrainCoordinator?._lastGeneratedBiomeKey ||
-        'grassland';
+      const biomeKey = gm.terrainEngine
+        ? gm.terrainEngine.biomeKey
+        : typeof window !== 'undefined' && window.selectedBiome;
       const userSelectedBiome =
         typeof window !== 'undefined' && window.__TT_USER_SELECTED_BIOME__ === true;
-      if (!userSelectedBiome) {
+      if (!biomeKey || (!gm.terrainEngine && !userSelectedBiome)) {
         return neutralColor;
       }
       try {

@@ -18,7 +18,7 @@ function buildBasicSidebarDOM() {
 function createGameManagerSpies() {
   return {
     disableTerrainMode: jest.fn(),
-    terrainCoordinator: {
+    terrainEngine: {
       setPlaceablesPanelVisible: jest.fn(),
       setPlaceableRemovalMode: jest.fn(),
     },
@@ -43,7 +43,7 @@ describe('SidebarController terrain mode auto-reset', () => {
       toolsEl.style.display = toggleEl.checked ? 'block' : 'none';
       if (!toggleEl.checked) {
         window.gameManager.disableTerrainMode();
-        window.gameManager.terrainCoordinator.setPlaceableRemovalMode(false);
+        window.gameManager.terrainEngine.setPlaceableRemovalMode(false);
         removalToggle.checked = false;
       }
     });
@@ -65,9 +65,7 @@ describe('SidebarController terrain mode auto-reset', () => {
     expect(toolsEl.style.display).toBe('none');
     expect(removalToggle.checked).toBe(false);
     expect(window.gameManager.disableTerrainMode).toHaveBeenCalledTimes(1);
-    expect(window.gameManager.terrainCoordinator.setPlaceableRemovalMode).toHaveBeenCalledWith(
-      false
-    );
+    expect(window.gameManager.terrainEngine.setPlaceableRemovalMode).toHaveBeenCalledWith(false);
   });
 
   test('fallback path disables terrain mode even without bound change handler', () => {
@@ -91,8 +89,6 @@ describe('SidebarController terrain mode auto-reset', () => {
     expect(toolsEl.style.display).toBe('none');
     expect(removalToggle.checked).toBe(false);
     expect(window.gameManager.disableTerrainMode).toHaveBeenCalledTimes(1);
-    expect(window.gameManager.terrainCoordinator.setPlaceableRemovalMode).toHaveBeenCalledWith(
-      false
-    );
+    expect(window.gameManager.terrainEngine.setPlaceableRemovalMode).toHaveBeenCalledWith(false);
   });
 });

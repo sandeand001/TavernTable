@@ -1,6 +1,6 @@
 /**
  * UIController elevation slider smoke test
- * Verifies slider updates display text and triggers TerrainCoordinator.setElevationScale
+ * Verifies slider updates display text and triggers TerrainEngine.setElevationScale
  */
 
 // Import the module to register DOMContentLoaded listener and expose handlers
@@ -18,10 +18,9 @@ function setupDOM() {
 describe('UI elevation scale slider', () => {
   beforeEach(() => {
     setupDOM();
-    // Minimal gameManager with terrainCoordinator stub
     window.gameManager = {
-      terrainCoordinator: {
-        getElevationScale: jest.fn(() => 5),
+      terrainEngine: {
+        elevationScale: 5,
         setElevationScale: jest.fn(),
       },
     };
@@ -43,11 +42,11 @@ describe('UI elevation scale slider', () => {
     expect(valueEl.textContent).toContain('9');
 
     // Debounce not elapsed yet, no call
-    expect(window.gameManager.terrainCoordinator.setElevationScale).not.toHaveBeenCalled();
+    expect(window.gameManager.terrainEngine.setElevationScale).not.toHaveBeenCalled();
 
     // Advance timers to flush debounce
     jest.advanceTimersByTime(150);
-    expect(window.gameManager.terrainCoordinator.setElevationScale).toHaveBeenCalledWith(9);
+    expect(window.gameManager.terrainEngine.setElevationScale).toHaveBeenCalledWith(9);
 
     jest.useRealTimers();
   });

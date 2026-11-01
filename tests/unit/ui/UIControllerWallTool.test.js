@@ -1,5 +1,6 @@
 import '../../../src/ui/UIController.js';
 import { TerrainCoordinator } from '../../../src/coordinators/TerrainCoordinator.js';
+import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
 import { TERRAIN_CONFIG } from '../../../src/config/terrain/TerrainConstants.js';
 import {
   ErrorHandler,
@@ -8,6 +9,7 @@ import {
 } from '../../../src/utils/error/ErrorHandler.js';
 
 let coordinator;
+let terrain;
 
 beforeEach(() => {
   document.body.innerHTML = `
@@ -25,6 +27,9 @@ beforeEach(() => {
       </select>
     </div>
     <div id="creature-content"></div>
+    <button id="terrain-undo-btn" disabled>Undo</button>
+    <button id="terrain-redo-btn" disabled>Redo</button>
+    <small id="terrain-history-status"></small>
   `;
   const gm = {
     cols: 8,
@@ -34,15 +39,18 @@ beforeEach(() => {
       clearTerrainBrushPreview: jest.fn(),
     },
   };
+  terrain = new TerrainEngine(gm.cols, gm.rows);
+  gm.terrainEngine = terrain;
   coordinator = new TerrainCoordinator(gm);
-  coordinator.isTerrainModeActive = true;
   gm.terrainCoordinator = coordinator;
-  gm.setTerrainTool = (tool) => coordinator.setTerrainTool(tool);
+  gm.setTerrainTool = (tool) => terrain.setTool(tool);
   window.gameManager = gm;
+  terrain.activate();
   document.dispatchEvent(new Event('DOMContentLoaded'));
 });
 
 afterEach(() => {
+  coordinator.dispose();
   jest.restoreAllMocks();
   document.body.replaceChildren();
   delete window.gameManager;
@@ -50,7 +58,7 @@ afterEach(() => {
 
 test('Wall selection exposes its height control and hides the unrelated brush size', () => {
   document.getElementById('terrain-wall-btn').click();
-  expect(coordinator.brush.tool).toBe('wall');
+  expect(terrain.tool).toBe('wall');
   expect(document.getElementById('terrain-wall-controls').hidden).toBe(false);
   expect(document.getElementById('terrain-brush-size-controls').hidden).toBe(true);
   expect(document.getElementById('terrain-wall-btn').getAttribute('aria-pressed')).toBe('true');
@@ -71,10 +79,14 @@ test('the height dropdown offers every supported level and updates the actual wa
   for (const level of levels) {
     select.value = level;
     select.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(coordinator.wallTopLevel).toBe(Number(level));
-    expect(coordinator.brush.wallTopLevel).toBe(Number(level));
+    expect(terrain.wallTopLevel).toBe(Number(level));
   }
-  expect(coordinator.dataStore.working.flat().every((height) => height === 0)).toBe(true);
+  expect(
+    terrain
+      .save()
+      .heights.flat()
+      .every((height) => height === 0)
+  ).toBe(true);
 });
 
 test('the box style dropdown switches Filled and Outline without changing terrain', () => {
@@ -82,15 +94,19 @@ test('the box style dropdown switches Filled and Outline without changing terrai
   const select = document.getElementById('terrain-wall-fill');
   expect(Array.from(select.options, (option) => option.value)).toEqual(['filled', 'outline']);
   expect(select.value).toBe('filled');
-  expect(coordinator.wallFillMode).toBe('filled');
+  expect(terrain.wallFillMode).toBe('filled');
   select.value = 'outline';
   select.dispatchEvent(new Event('change', { bubbles: true }));
-  expect(coordinator.wallFillMode).toBe('outline');
-  expect(coordinator.brush.wallFillMode).toBe('outline');
+  expect(terrain.wallFillMode).toBe('outline');
   document.getElementById('terrain-raise-btn').click();
   document.getElementById('terrain-wall-btn').click();
   expect(select.value).toBe('outline');
-  expect(coordinator.dataStore.working.flat().every((height) => height === 0)).toBe(true);
+  expect(
+    terrain
+      .save()
+      .heights.flat()
+      .every((height) => height === 0)
+  ).toBe(true);
 });
 
 test('an invalid box style is reported and restores the last valid choice', () => {
@@ -102,7 +118,7 @@ test('an invalid box style is reported and restores the last valid choice', () =
   select.value = 'invalid';
   select.dispatchEvent(new Event('change', { bubbles: true }));
   expect(select.value).toBe('filled');
-  expect(coordinator.wallFillMode).toBe('filled');
+  expect(terrain.wallFillMode).toBe('filled');
   expect(errors).toHaveBeenCalledWith(
     expect.any(RangeError),
     ERROR_SEVERITY.WARNING,
@@ -124,7 +140,7 @@ test.each(['', '11', '-11', '2.5'])(
     }
     input.value = value;
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(coordinator.wallTopLevel).toBe(3);
+    expect(terrain.wallTopLevel).toBe(3);
     expect(input.value).toBe('3');
     expect(errors).toHaveBeenCalledWith(
       expect.any(RangeError),
@@ -137,11 +153,11 @@ test.each(['', '11', '-11', '2.5'])(
 
 test('keyboard tool changes keep the height panel and pressed buttons synchronized', () => {
   document.getElementById('terrain-wall-btn').click();
-  coordinator._inputHandlers.handleKeyDown({
+  coordinator.input.handleKeyDown({
     code: 'KeyL',
     preventDefault: jest.fn(),
   });
-  expect(coordinator.brush.tool).toBe('lower');
+  expect(terrain.tool).toBe('lower');
   expect(document.getElementById('terrain-wall-controls').hidden).toBe(true);
   expect(document.getElementById('terrain-brush-size-controls').hidden).toBe(false);
   expect(document.getElementById('terrain-wall-btn').getAttribute('aria-pressed')).toBe('false');
@@ -154,21 +170,21 @@ test.each(['terrain-wall-height', 'terrain-wall-fill'])(
     document.getElementById('terrain-wall-btn').click();
     const input = document.getElementById(id);
     const preventDefault = jest.fn();
-    coordinator._inputHandlers.handleKeyDown({
+    coordinator.input.handleKeyDown({
       code: 'KeyR',
       target: input,
       preventDefault,
     });
-    expect(coordinator.brush.tool).toBe('wall');
+    expect(terrain.tool).toBe('wall');
     expect(preventDefault).not.toHaveBeenCalled();
   }
 );
 
 test('repeated UI attachment does not duplicate height or wall button handlers', () => {
   document.dispatchEvent(new Event('DOMContentLoaded'));
-  const height = jest.spyOn(coordinator, 'setWallTopLevel');
-  const fill = jest.spyOn(coordinator, 'setWallFillMode');
-  const tool = jest.spyOn(coordinator, 'setTerrainTool');
+  const height = jest.spyOn(terrain, 'setWallTopLevel');
+  const fill = jest.spyOn(terrain, 'setWallFillMode');
+  const tool = jest.spyOn(terrain, 'setTool');
   document.getElementById('terrain-wall-btn').click();
   const input = document.getElementById('terrain-wall-height');
   input.value = '5';
@@ -184,4 +200,31 @@ test('repeated UI attachment does not duplicate height or wall button handlers',
   expect(fillSelect.value).toBe('outline');
   expect(fillSelect.options).toHaveLength(2);
   expect(input.options).toHaveLength(TERRAIN_CONFIG.MAX_HEIGHT - TERRAIN_CONFIG.MIN_HEIGHT + 1);
+});
+
+test('Undo and Redo buttons follow the real terrain history and update gameplay heights', () => {
+  const undo = document.getElementById('terrain-undo-btn');
+  const redo = document.getElementById('terrain-redo-btn');
+  expect(undo.disabled).toBe(true);
+  expect(redo.disabled).toBe(true);
+  terrain.setHeightAt(1, 1, 4);
+  expect(undo.disabled).toBe(false);
+  undo.click();
+  expect(terrain.getHeightAt(1, 1)).toBe(0);
+  expect(undo.disabled).toBe(true);
+  expect(redo.disabled).toBe(false);
+  redo.click();
+  expect(terrain.getHeightAt(1, 1)).toBe(4);
+  expect(redo.disabled).toBe(true);
+});
+
+test('the history status distinguishes a preview from a committed edit', () => {
+  terrain.beginBrushStroke(1, 1);
+  expect(document.getElementById('terrain-history-status').textContent).toContain('Preview only');
+  expect(terrain.getHeightAt(1, 1)).toBe(0);
+  terrain.commitBrushStroke();
+  expect(document.getElementById('terrain-history-status').textContent).not.toContain(
+    'Preview only'
+  );
+  expect(terrain.getHeightAt(1, 1)).toBe(1);
 });

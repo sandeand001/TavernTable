@@ -37,17 +37,7 @@ export function ensureInstancing(gm) {
                 if (!pool) return { ok: false, reason: 'no_pool' };
                 const snapshot = pool.debugSnapshot ? pool.debugSnapshot() : {};
                 const hidden = pool.validateHidden ? pool.validateHidden() : { ok: true };
-                // Count 2D plant sprites
-                let spritePlants = 0;
-                try {
-                  const tm = gm.terrainCoordinator?.terrainManager;
-                  for (const arr of tm?.placeables?.values() || []) {
-                    for (const s of arr) if (s?.placeableType === 'plant') spritePlants += 1;
-                  }
-                } catch (_) {
-                  /* ignore */
-                }
-                return { snapshot, hidden, spritePlants };
+                return { snapshot, hidden, spritePlants: 0 };
               } catch (e) {
                 return { ok: false, error: e?.message };
               }
@@ -76,39 +66,6 @@ export function ensureInstancing(gm) {
 export function enableInstancedPlaceables(gm) {
   gm.features.instancedPlaceables = true;
   const pool = gm.ensureInstancing();
-  // Retro-fit any already placed plant sprites into the pool so they become visible in 3D
-  try {
-    const tm = gm.terrainCoordinator?.terrainManager;
-    if (tm?.placeables && pool) {
-      for (const [key, list] of tm.placeables.entries()) {
-        for (const sprite of list) {
-          try {
-            if (!sprite || sprite.__instancedRef) continue;
-            if (sprite.__is3DPlaceable) continue;
-            // Only plants
-            if (sprite.placeableType && sprite.placeableType !== 'plant') continue;
-            const [gxStr, gyStr] = key.split(',');
-            const gx = Number(gxStr);
-            const gy = Number(gyStr);
-            if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
-            const rec = {
-              gridX: gx,
-              gridY: gy,
-              type: 'plant',
-              variantKey: sprite.variantKey || sprite.placeableId || 'plant',
-            };
-            sprite.__instancedRef = rec;
-            const p = pool.addPlaceable(rec);
-            if (p && typeof p.then === 'function') p.catch(() => {});
-          } catch (_) {
-            /* ignore per-sprite retrofit issue */
-          }
-        }
-      }
-    }
-  } catch (_) {
-    /* ignore retrofit failures */
-  }
   // Attach a lightweight pointer hover listener (once) to drive preview highlighting in 3D
   try {
     if (!gm._instancingPreviewListener && typeof window !== 'undefined') {

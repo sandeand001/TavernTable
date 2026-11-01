@@ -14,22 +14,28 @@
       live 3D preview, release-to-place, and
       cancellation before committing. Set the exact target elevation, including
       cutting higher terrain and negative-level trenches.
+- [x] **Transactional height editing and history** - Raise, Lower and Wall
+      preview without changing gameplay or saved heights; commit on release and
+      cancel safely. Undo/Redo restores whole gestures and Reset Terrain, with a
+      100-edit session history and explicit load/resize/generation resets.
 
 ---
 
-## Terrain Ownership Follow-up
+## Terrain Foundation
 
-- [ ] **Complete the accepted terrain-engine migration** - Follow
-      [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md). The engine and the
-      legacy coordinator currently maintain separate height stores. Move live
-      callers to the engine's state and event seam; do not merely extract more
-      pass-through helpers. This larger refactor was explicitly deferred from the
-      October 2026 housekeeping pass.
-- [ ] **Add public-interface integration coverage for the migration** - Verify
+- [x] **Complete the accepted terrain-engine migration** - Follow
+      [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md). Live callers use
+      the engine's authoritative state and event seam; the coordinator only wires
+      input and scene adapters.
+- [x] **Add public-interface integration coverage for the migration** - Verify
       that game height queries and tool selection use the engine, resizing keeps
       game and terrain dimensions consistent, and reset/load trigger scene updates.
       Cover editing input, biome/flora generation, and adapter attach/detach without
       relying on legacy 2D fixtures.
+- [ ] **Prove layered shared-world geometry** - Add multiple walkable surfaces
+      and bounded solid/void edits. Validate a usable bridge underpass, cave with
+      a ceiling, and two-storey building with stairs and an open shaft before
+      expanding the full shape/construction toolbox.
 
 ---
 

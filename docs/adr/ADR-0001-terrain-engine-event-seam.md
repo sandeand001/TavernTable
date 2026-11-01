@@ -3,11 +3,13 @@
 **Status:** Accepted  
 **Date:** 2026-05-03
 
-**Implementation status (2026-10-23):** Partial. TerrainEngine and its scene
-adapter exist, but the live TerrainCoordinator still maintains a separate height
-store and remains the entry point for much of the editing workflow. Completing
-this migration is a [follow-up task](../../TODO.md), not part of the October 2026
-housekeeping pass. The decision below remains the intended design.
+**Implementation status:** Completed for the existing heightfield editor.
+Live editing, game height queries, resizing, reset, biome generation and campaign
+capture/restore use TerrainEngine. TerrainCoordinator only wires its input and
+3D scene adapters. The engine also owns non-mutating gesture previews and bounded,
+session-local height Undo/Redo. Public-interface tests cover editing, persistence,
+biome/flora behavior and real terrain geometry without legacy 2D fixtures.
+Multiple walkable surfaces and cuttable 3D volumes remain a separate extension.
 
 ---
 

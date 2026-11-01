@@ -4,7 +4,7 @@ import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibr
 import CombatSession from '../../../src/entities/characters/CombatSession.js';
 import { linkTokenCharacter } from '../../../src/entities/creatures/TokenMovement.js';
 import { Token3DAdapter } from '../../../src/scene/Token3DAdapter.js';
-import { TerrainDataStore } from '../../../src/terrain/TerrainDataStore.js';
+import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import CampaignStore from '../../../src/campaigns/CampaignStore.js';
 import CampaignCharacters from '../../../src/campaigns/CampaignCharacters.js';
@@ -26,21 +26,17 @@ function createWorld(library, characterId) {
     movementSettings: { mode: 'run', type: 'default' },
   };
   linkTokenCharacter(token, library, characterId);
-  const dataStore = new TerrainDataStore(5, 5);
-  dataStore.set(2, 2, 7);
+  const terrain = new TerrainEngine(5, 5);
+  terrain.setHeightAt(2, 2, 7);
+  terrain.setBiomeSeed(42);
   const gm = {
     cols: 5,
     rows: 5,
     placedTokens: [token],
-    terrainCoordinator: {
-      dataStore,
-      _biomeSeed: 42,
-      getElevationScale: () => 8,
-      getTreeDensityMultiplier: () => 1,
-    },
+    terrainEngine: terrain,
     spatial: { tileWorldSize: 1, elevationUnit: 0.3 },
     tokenManager: { _nextTokenId: 1, _tokenTypeCounts: new Map([[token.type, 1]]) },
-    getTerrainHeight: (x, y) => dataStore.get(x, y),
+    getTerrainHeight: (x, y) => terrain.getHeightAt(x, y),
     threeSceneManager: { snapshotView: () => sceneState().camera },
   };
   const adapter = new Token3DAdapter(gm);
@@ -48,10 +44,10 @@ function createWorld(library, characterId) {
   adapter.setSelectedToken(token);
   const combat = new CombatSession({ library });
   gm.characterServices = { library, combat };
-  return { gm, adapter, combat, token, dataStore };
+  return { gm, adapter, combat, token, terrain };
 }
 
-test('captures working terrain, canonical linked names, selected token and completed combat data', async () => {
+test('captures committed terrain, canonical linked names, selected token and completed combat data', async () => {
   localStorage.clear();
   const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
   const characterId = library.create('Before');
@@ -86,10 +82,6 @@ test('restoration uses the actual token lifecycle API and restores an empty save
   gm.tokenManager.placedTokens.push(token);
   Object.defineProperty(gm, 'placedTokens', { get: () => gm.tokenManager.placedTokens });
   gm.resizeGrid = jest.fn();
-  gm.terrainCoordinator.setTreeDensityMultiplier = jest.fn();
-  gm.terrainCoordinator.setBiomeSeed = jest.fn();
-  gm.terrainCoordinator.setElevationScale = jest.fn();
-  gm.terrainCoordinator.applyBiomePaletteToBaseGrid = jest.fn();
   gm.notifyTerrainHeightsChanged = jest.fn();
   gm.placeableMeshPool = { restorePlacements: jest.fn(async () => {}) };
   gm.ensureInstancing = () => gm.placeableMeshPool;
@@ -100,7 +92,7 @@ test('restoration uses the actual token lifecycle API and restores an empty save
   try {
     await restoreCampaignScene(gm, scene, library, combat);
     expect(gm.placedTokens).toEqual([]);
-    expect(gm.terrainCoordinator.dataStore.working).toEqual(scene.terrain.heights);
+    expect(gm.terrainEngine.save().heights).toEqual(scene.terrain.heights);
     expect(gm.threeSceneManager.restoreView).toHaveBeenCalledWith(scene.camera);
   } finally {
     adapter.disposeMovementRange();
@@ -117,7 +109,7 @@ test('autosave acknowledges a complete board and rejects conflicting scene/chara
   const catalog = { ruleset: '2014', entries: [], classes: [], enabledEntryIds: [] };
   const library = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
   const id = await library.create('Before');
-  const { gm, adapter, combat, token, dataStore } = createWorld(library, id);
+  const { gm, adapter, combat, token, terrain } = createWorld(library, id);
   const autosave = new CampaignAutosave({
     gameManager: gm,
     library,
@@ -127,7 +119,7 @@ test('autosave acknowledges a complete board and rejects conflicting scene/chara
   try {
     await autosave.start();
     expect(autosave.status.state).toBe('saved');
-    dataStore.set(2, 2, 9);
+    terrain.setHeightAt(2, 2, 9);
     await library.edit(id, { name: 'Saved name' });
     expect(token.name).toBe('Saved name');
     combat.startTurn(token);
@@ -147,7 +139,7 @@ test('autosave acknowledges a complete board and rejects conflicting scene/chara
       charactersRevision: reopened.revision,
       scene: reopened.savedScene,
     });
-    dataStore.set(2, 2, 10);
+    terrain.setHeightAt(2, 2, 10);
     await expect(autosave.flush()).rejects.toThrow(/another window|changed/);
     expect(autosave.status.state).toBe('error');
     await expect(library.edit(id, { name: 'Rejected' })).rejects.toThrow(/another window|changed/);

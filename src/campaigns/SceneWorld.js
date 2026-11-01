@@ -11,7 +11,6 @@ export async function captureCampaignScene(
   { combat = gameManager.characterServices.combat, change = null, result = null, rollLog = [] } = {}
 ) {
   const gm = gameManager;
-  const coordinator = gm.terrainCoordinator;
   const pool = gm.placeableMeshPool;
   await Promise.all(gm._pendingInstancingPromises || []);
   await pool?.whenSettled?.();
@@ -57,17 +56,18 @@ export async function captureCampaignScene(
   );
   if (!savedCombat.states.some((row) => row.tokenId === savedCombat.activeTokenId))
     savedCombat.activeTokenId = null;
+  const terrainState = gm.terrainEngine.save();
   const scene = {
     version: 1,
     ruleset: library.ruleset,
     grid: { cols: gm.cols, rows: gm.rows, tileWorldSize: gm.spatial.tileWorldSize },
     terrain: {
-      heights: coordinator.dataStore.working.map((row) => [...row]),
-      biome: globalThis.window?.selectedBiome || null,
-      seed: coordinator._biomeSeed,
-      elevationScale: coordinator.getElevationScale(),
+      heights: terrainState.heights,
+      biome: terrainState.biomeKey,
+      seed: terrainState.biomeSeed,
+      elevationScale: terrainState.elevationScale,
       worldElevationUnit: gm.spatial.elevationUnit,
-      treeDensity: coordinator.getTreeDensityMultiplier(),
+      treeDensity: terrainState.treeDensityMultiplier,
       richShading: JSON.parse(JSON.stringify(globalThis.window?.richShadingSettings || {})),
       placeables: pool ? readPlaceablePlacements(pool) : [],
     },
@@ -121,23 +121,19 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
   for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
   gm.resizeGrid(scene.grid.cols, scene.grid.rows);
   gm.spatial.tileWorldSize = scene.grid.tileWorldSize;
-  const coordinator = gm.terrainCoordinator;
-  coordinator.dataStore.restoreHeights(terrain.heights);
   if (globalThis.window) {
     window.selectedBiome = terrain.biome;
     window.richShadingSettings = JSON.parse(JSON.stringify(terrain.richShading));
   }
-  coordinator._lastGeneratedBiomeKey = terrain.biome;
-  coordinator.setTreeDensityMultiplier(terrain.treeDensity);
-  coordinator.setBiomeSeed(terrain.seed);
-  coordinator.setElevationScale(terrain.elevationScale, { repaintBiome: false });
-  gm.spatial.elevationUnit = terrain.worldElevationUnit;
-  gm.terrainEngine?.load({
+  gm.terrainEngine.load({
     heights: terrain.heights,
     biomeKey: terrain.biome,
     biomeSeed: terrain.seed,
+    elevationScale: terrain.elevationScale,
+    treeDensityMultiplier: terrain.treeDensity,
+    richShadingEnabled: terrain.richShading.enabled === true,
   });
-  coordinator.applyBiomePaletteToBaseGrid();
+  gm.spatial.elevationUnit = terrain.worldElevationUnit;
   gm.notifyTerrainHeightsChanged();
   const pool = gm.ensureInstancing();
   if (!pool && terrain.placeables.length)

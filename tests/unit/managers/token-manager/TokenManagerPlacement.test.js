@@ -15,11 +15,7 @@ describe('placeNewToken', () => {
       gameManager: {
         tileWidth,
         tileHeight,
-        terrainCoordinator: {
-          dataStore: {
-            get: jest.fn(() => height),
-          },
-        },
+        getTerrainHeight: jest.fn(() => height),
       },
       addTokenToCollection: jest.fn(),
       createCreatureByType: jest.fn(() => ({ sprite: { x: 0, y: 0, zIndex: 0 } })),
@@ -50,7 +46,7 @@ describe('placeNewToken', () => {
       gameManager: {
         tileWidth: 64,
         tileHeight: 32,
-        terrainCoordinator: { dataStore: { get: jest.fn(() => 0) } },
+        getTerrainHeight: jest.fn(() => 0),
       },
       addTokenToCollection: jest.fn(),
       createCreatureByType: jest.fn(() => null),

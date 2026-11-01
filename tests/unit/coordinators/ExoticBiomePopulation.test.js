@@ -1,12 +1,11 @@
-import GameManager from '../../../src/core/GameManager.js';
+import { createTerrainWorld, floraContext } from '../../helpers/terrainWorld.js';
 import { BIOME_FLORA_PROFILES } from '../../../src/config/terrain/FloraProfiles.js';
 import { ALL_BIOMES } from '../../../src/config/biome/BiomeConstants.js';
 import { autoPopulateBiomeFlora } from '../../../src/coordinators/terrain-coordinator/internals/flora.js';
 
 function generate(biomeKey, seed = 12345) {
-  const gm = new GameManager({ cols: 25, rows: 25 });
   const placements = [];
-  gm.placeableMeshPool = {
+  const world = createTerrainWorld(25, 25, {
     addPlaceable: (item) => {
       placements.push(item);
       return Promise.resolve();
@@ -14,9 +13,13 @@ function generate(biomeKey, seed = 12345) {
     purgeAll: () => {
       placements.length = 0;
     },
-  };
-  expect(gm.terrainCoordinator.generateBiomeElevation(biomeKey, { seed })).toBe(true);
-  return placements;
+  });
+  try {
+    expect(world.engine.generateBiomeElevation(biomeKey, { seed })).toBe(true);
+    return placements;
+  } finally {
+    world.dispose();
+  }
 }
 
 describe('Biome-appropriate exotic populations', () => {
@@ -57,27 +60,29 @@ describe('Biome-appropriate exotic populations', () => {
   });
 
   test('the solid rift floor permits below-zero assets without populating ordinary water', () => {
-    const gm = new GameManager({ cols: 12, rows: 12 });
     const placements = [];
-    gm.placeableMeshPool = {
+    const world = createTerrainWorld(12, 12, {
       addPlaceable: (item) => {
         placements.push(item);
         return Promise.resolve();
       },
-    };
-    gm.terrainCoordinator.getTerrainHeight = () => -2;
-    autoPopulateBiomeFlora(gm.terrainCoordinator, 'eldritchRift', 12345);
-    expect(placements.length).toBeGreaterThan(0);
-
-    placements.length = 0;
-    autoPopulateBiomeFlora(gm.terrainCoordinator, 'grassland', 12345);
-    expect(placements).toHaveLength(0);
-
-    autoPopulateBiomeFlora(gm.terrainCoordinator, 'bloodMarsh', 12345);
-    expect(placements.length).toBeGreaterThan(0);
-    placements.length = 0;
-    gm.terrainCoordinator.getTerrainHeight = () => -4;
-    autoPopulateBiomeFlora(gm.terrainCoordinator, 'bloodMarsh', 12345);
-    expect(placements).toHaveLength(0);
+    });
+    try {
+      world.engine.load({ heights: Array.from({ length: 12 }, () => Array(12).fill(-2)) });
+      const context = floraContext(world.gm);
+      autoPopulateBiomeFlora(context, 'eldritchRift', 12345);
+      expect(placements.length).toBeGreaterThan(0);
+      placements.length = 0;
+      autoPopulateBiomeFlora(context, 'grassland', 12345);
+      expect(placements).toHaveLength(0);
+      autoPopulateBiomeFlora(context, 'bloodMarsh', 12345);
+      expect(placements.length).toBeGreaterThan(0);
+      placements.length = 0;
+      world.engine.load({ heights: Array.from({ length: 12 }, () => Array(12).fill(-4)) });
+      autoPopulateBiomeFlora(context, 'bloodMarsh', 12345);
+      expect(placements).toHaveLength(0);
+    } finally {
+      world.dispose();
+    }
   });
 });

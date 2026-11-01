@@ -28,6 +28,7 @@ import {
   getFacingButton,
   getTerrainToolButtons,
   getTerrainWallControls,
+  getTerrainHistoryControls,
   getGridSizeInputs,
   getTerrainResetButton,
   getElevationScaleControls,
@@ -381,7 +382,7 @@ function toggleTerrainMode() {
         window.gameManager.disableTerrainMode();
         try {
           // Also force-disable placeable removal mode when leaving terrain mode
-          window.gameManager?.terrainCoordinator?.setPlaceableRemovalMode?.(false);
+          window.gameManager?.terrainEngine?.setPlaceableRemovalMode?.(false);
           const removalToggle = document.getElementById('placeable-removal-toggle');
           if (removalToggle) {
             removalToggle.checked = false;
@@ -478,15 +479,15 @@ function attachDynamicUIHandlers() {
       }
       wallHeightSelect.replaceChildren(options);
       wallHeightSelect.addEventListener('change', () => {
-        const coordinator = window.gameManager?.terrainCoordinator;
+        const engine = window.gameManager?.terrainEngine;
         try {
-          if (!coordinator) throw new Error('Terrain editing is not ready yet');
+          if (!engine) throw new Error('Terrain editing is not ready yet');
           const level = wallHeightSelect.value === '' ? NaN : Number(wallHeightSelect.value);
-          coordinator.setWallTopLevel(level);
-          wallHeightSelect.value = String(coordinator.wallTopLevel);
+          engine.setWallTopLevel(level);
+          wallHeightSelect.value = String(engine.wallTopLevel);
         } catch (error) {
-          if (Number.isInteger(coordinator?.wallTopLevel)) {
-            wallHeightSelect.value = String(coordinator.wallTopLevel);
+          if (Number.isInteger(engine?.wallTopLevel)) {
+            wallHeightSelect.value = String(engine.wallTopLevel);
           }
           new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
             context: 'setWallTopLevel',
@@ -497,14 +498,14 @@ function attachDynamicUIHandlers() {
     }
     if (wallFillSelect && !wallFillSelect.dataset.boundWallFillHandler) {
       wallFillSelect.addEventListener('change', () => {
-        const coordinator = window.gameManager?.terrainCoordinator;
+        const engine = window.gameManager?.terrainEngine;
         try {
-          if (!coordinator) throw new Error('Terrain editing is not ready yet');
-          coordinator.setWallFillMode(wallFillSelect.value);
-          wallFillSelect.value = coordinator.wallFillMode;
+          if (!engine) throw new Error('Terrain editing is not ready yet');
+          engine.setWallFillMode(wallFillSelect.value);
+          wallFillSelect.value = engine.wallFillMode;
         } catch (error) {
-          if (typeof coordinator?.wallFillMode === 'string') {
-            wallFillSelect.value = coordinator.wallFillMode;
+          if (typeof engine?.wallFillMode === 'string') {
+            wallFillSelect.value = engine.wallFillMode;
           }
           new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
             context: 'setWallFillMode',
@@ -513,7 +514,30 @@ function attachDynamicUIHandlers() {
       });
       wallFillSelect.dataset.boundWallFillHandler = 'true';
     }
-    syncTerrainToolControls(window.gameManager?.terrainCoordinator?.brush?.tool || 'raise');
+    syncTerrainToolControls(window.gameManager?.terrainEngine?.tool || 'raise');
+
+    const history = getTerrainHistoryControls();
+    for (const [operation, button] of [
+      ['undo', history.undoBtn],
+      ['redo', history.redoBtn],
+    ]) {
+      if (!button || button.dataset.boundHistoryHandler) continue;
+      button.addEventListener('click', () => {
+        try {
+          const engine = window.gameManager?.terrainEngine;
+          if (!engine) throw new Error('Terrain editing is not ready yet');
+          engine[operation]();
+          syncTerrainHistoryControls();
+        } catch (error) {
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            context: 'terrainHistory',
+            operation,
+          });
+        }
+      });
+      button.dataset.boundHistoryHandler = 'true';
+    }
+    syncTerrainHistoryControls();
 
     // Terrain reset
     const resetTerrainBtn = getTerrainResetButton();
@@ -546,8 +570,8 @@ function attachDynamicUIHandlers() {
       const applyScale = (val) => {
         const unit = clampElevationUnit(val);
         if (unit == null) return;
-        if (window.gameManager?.terrainCoordinator?.setElevationScale) {
-          window.gameManager.terrainCoordinator.setElevationScale(unit);
+        if (window.gameManager?.terrainEngine?.setElevationScale) {
+          window.gameManager.terrainEngine.setElevationScale(unit);
         }
       };
       elevSlider.addEventListener('input', (e) => {
@@ -567,9 +591,7 @@ function attachDynamicUIHandlers() {
       });
       // Initialize from current config if available
       try {
-        const current = clampElevationUnit(
-          window.gameManager?.terrainCoordinator?.getElevationScale?.()
-        );
+        const current = clampElevationUnit(window.gameManager?.terrainEngine?.elevationScale);
         if (current != null) {
           elevSlider.value = String(current);
           updateDisplay(current);
@@ -593,7 +615,7 @@ function attachDynamicUIHandlers() {
       const applyMultiplier = (pct) => {
         const multiplier = clampPercent(pct) / 100;
         window.treeDensityMultiplier = multiplier;
-        window.gameManager?.terrainCoordinator?.setTreeDensityMultiplier?.(multiplier);
+        window.gameManager?.terrainEngine?.setTreeDensityMultiplier?.(multiplier);
       };
       treeSlider.addEventListener('input', (e) => {
         const pct = clampPercent(e.target.value);
@@ -606,7 +628,7 @@ function attachDynamicUIHandlers() {
         applyMultiplier(pct);
       });
       try {
-        const current = window.gameManager?.terrainCoordinator?.getTreeDensityMultiplier?.();
+        const current = window.gameManager?.terrainEngine?.treeDensityMultiplier;
         if (Number.isFinite(current)) {
           const pct = clampPercent(current * 100);
           treeSlider.value = String(pct);
@@ -683,8 +705,24 @@ function attachDynamicUIHandlers() {
 function wireTerrainStyleControls() {}
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('taverntable:terrainToolChanged', (event) => {
-    syncTerrainToolControls(event.detail?.tool);
+  window.addEventListener('taverntable:terrainEditorChanged', (event) => {
+    const engine = window.gameManager?.terrainEngine;
+    if (!engine || event.detail?.engine !== engine) return;
+    syncTerrainToolControls(engine.tool);
+    syncTerrainHistoryControls();
+    updateBrushSizeDisplay();
+    const elevation = getElevationScaleControls();
+    if (elevation.slider) elevation.slider.value = String(engine.elevationScale);
+    if (elevation.valueEl) elevation.valueEl.textContent = `${engine.elevationScale} px/level`;
+    const density = getTreeDensityControls();
+    const percent = Math.round(engine.treeDensityMultiplier * 100);
+    if (density.slider) density.slider.value = String(percent);
+    if (density.valueEl) density.valueEl.textContent = `${percent}%`;
+    const { toggleEl, toolsEl } = getTerrainModeEls();
+    if (toggleEl) toggleEl.checked = engine.isActive;
+    if (toolsEl) toolsEl.style.display = engine.isActive ? 'block' : 'none';
+    const removal = document.getElementById('placeable-removal-toggle');
+    if (removal) removal.checked = engine.isPlaceableRemovalMode();
   });
   window.addEventListener('taverntable:tokenRadial', (event) => {
     try {
@@ -745,10 +783,32 @@ function syncTerrainToolControls(tool) {
   const { controlsEl, heightInput, fillSelect, brushControlsEl } = getTerrainWallControls();
   if (controlsEl) controlsEl.hidden = tool !== 'wall';
   if (brushControlsEl) brushControlsEl.hidden = tool === 'wall';
-  const level = window.gameManager?.terrainCoordinator?.wallTopLevel;
+  const level = window.gameManager?.terrainEngine?.wallTopLevel;
   if (heightInput && Number.isInteger(level)) heightInput.value = String(level);
-  const fillMode = window.gameManager?.terrainCoordinator?.wallFillMode;
+  const fillMode = window.gameManager?.terrainEngine?.wallFillMode;
   if (fillSelect && typeof fillMode === 'string') fillSelect.value = fillMode;
+}
+
+function syncTerrainHistoryControls() {
+  const engine = window.gameManager?.terrainEngine;
+  const { undoBtn, redoBtn, statusEl } = getTerrainHistoryControls();
+  if (undoBtn) {
+    undoBtn.disabled = !engine?.canUndo;
+    undoBtn.title = engine?.undoLabel ? `Undo: ${engine.undoLabel} (Ctrl+Z)` : 'Nothing to undo';
+  }
+  if (redoBtn) {
+    redoBtn.disabled = !engine?.canRedo;
+    redoBtn.title = engine?.redoLabel
+      ? `Redo: ${engine.redoLabel} (Ctrl+Shift+Z)`
+      : 'Nothing to redo';
+  }
+  if (statusEl) {
+    statusEl.textContent = engine?.hasPendingStroke
+      ? 'Preview only. Release on the map to apply, or press Escape to cancel.'
+      : engine?.canUndo || engine?.canRedo
+        ? 'Terrain height history is available for this editing session.'
+        : 'No terrain height edits to undo.';
+  }
 }
 
 /**
@@ -764,7 +824,7 @@ function setTerrainTool(tool) {
     // Update tool in game manager
     window.gameManager.setTerrainTool(tool);
 
-    syncTerrainToolControls(window.gameManager.terrainCoordinator?.brush?.tool || tool);
+    syncTerrainToolControls(window.gameManager.terrainEngine?.tool || tool);
 
     logger.log(LOG_LEVEL.DEBUG, 'Terrain tool selected', LOG_CATEGORY.USER, {
       context: 'setTerrainTool',
@@ -786,12 +846,12 @@ function setTerrainTool(tool) {
  */
 function increaseBrushSize() {
   try {
-    if (!window.gameManager || !window.gameManager.terrainCoordinator) {
+    if (!window.gameManager || !window.gameManager.terrainEngine) {
       throw new Error('Terrain system not available');
     }
 
     // Increase brush size in game
-    window.gameManager.terrainCoordinator.increaseBrushSize();
+    window.gameManager.terrainEngine.increaseBrush();
 
     // Update UI display
     updateBrushSizeDisplay();
@@ -801,7 +861,7 @@ function increaseBrushSize() {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'increaseBrushSize',
       stage: 'brush_size_increase',
-      terrainCoordinatorAvailable: !!window.gameManager?.terrainCoordinator,
+      terrainEngineAvailable: !!window.gameManager?.terrainEngine,
     });
   }
 }
@@ -811,12 +871,12 @@ function increaseBrushSize() {
  */
 function decreaseBrushSize() {
   try {
-    if (!window.gameManager || !window.gameManager.terrainCoordinator) {
+    if (!window.gameManager || !window.gameManager.terrainEngine) {
       throw new Error('Terrain system not available');
     }
 
     // Decrease brush size in game
-    window.gameManager.terrainCoordinator.decreaseBrushSize();
+    window.gameManager.terrainEngine.decreaseBrush();
 
     // Update UI display
     updateBrushSizeDisplay();
@@ -831,7 +891,7 @@ function decreaseBrushSize() {
     new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
       context: 'decreaseBrushSize',
       stage: 'brush_size_decrease',
-      terrainCoordinatorAvailable: !!window.gameManager?.terrainCoordinator,
+      terrainEngineAvailable: !!window.gameManager?.terrainEngine,
     });
   }
 }
@@ -848,8 +908,8 @@ function updateBrushSizeDisplay() {
       return;
     }
 
-    if (window.gameManager && window.gameManager.terrainCoordinator) {
-      const brushSize = window.gameManager.terrainCoordinator.brushSize;
+    if (window.gameManager && window.gameManager.terrainEngine) {
+      const brushSize = window.gameManager.terrainEngine.brushSize;
       brushDisplay.textContent = `${brushSize}x${brushSize}`;
     }
   } catch (error) {
@@ -864,8 +924,8 @@ function updatePTBrushSizeDisplay() {
   try {
     const el = document.getElementById('pt-brush-size-display');
     if (!el) return;
-    if (window.gameManager && window.gameManager.terrainCoordinator) {
-      const ptSize = window.gameManager.terrainCoordinator.ptBrushSize;
+    if (window.gameManager && window.gameManager.terrainEngine) {
+      const ptSize = window.gameManager.terrainEngine.ptBrushSize;
       el.textContent = `${ptSize}x${ptSize}`;
     }
   } catch (error) {
@@ -889,7 +949,7 @@ function resetTerrain() {
     // Confirm with user before resetting
     if (
       confirm(
-        'Are you sure you want to reset all terrain to default height? This action cannot be undone.'
+        'Reset all terrain to default height? You can undo this during the current editing session.'
       )
     ) {
       window.gameManager.resetTerrain();

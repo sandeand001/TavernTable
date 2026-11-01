@@ -1244,11 +1244,17 @@ body {
   box-shadow: 0 10px 22px rgba(10, 16, 28, 0.45);
 }
 
-.terrain-tool-btn:hover {
+.terrain-tool-btn:hover:not(:disabled) {
   background: linear-gradient(180deg, rgba(95, 110, 142, 0.88), rgba(40, 48, 62, 0.95));
   transform: translateY(-2px);
   border-color: rgba(77, 166, 255, 0.45);
   box-shadow: 0 14px 26px rgba(12, 20, 34, 0.55);
+}
+
+.terrain-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .terrain-tool-btn.active {

@@ -79,9 +79,7 @@ export default class CampaignAutosave {
         },
         saved: (captured) => this._saved(captured),
       });
-      this.disposers.push(
-        this.gameManager.terrainCoordinator.dataStore.subscribe(() => this.changed('terrain'))
-      );
+      this.disposers.push(this.gameManager.terrainEngine.onChanged(() => this.changed('terrain')));
       this.disposers.push(this.combat.subscribe(() => this.changed('combat')));
       const interact = () => this.changed('settings');
       for (const event of ['pointerup', 'keyup', 'change']) {

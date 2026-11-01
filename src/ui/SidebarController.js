@@ -177,7 +177,7 @@ class SidebarController {
     } else if (tabId === 'terrain') {
       this.buildTerrainPlaceablesMenuSafely();
       try {
-        window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(true);
+        window.gameManager?.terrainEngine?.setPlaceablesPanelVisible?.(true);
       } catch (_) {
         /* ignore */
       }
@@ -188,7 +188,7 @@ class SidebarController {
     }
     if (tabId !== 'terrain') {
       try {
-        window.gameManager?.terrainCoordinator?.setPlaceablesPanelVisible?.(false);
+        window.gameManager?.terrainEngine?.setPlaceablesPanelVisible?.(false);
       } catch (_) {
         /* ignore */
       }
@@ -209,7 +209,7 @@ class SidebarController {
         if (toolsEl) toolsEl.style.display = 'none';
         try {
           window.gameManager?.disableTerrainMode?.();
-          window.gameManager?.terrainCoordinator?.setPlaceableRemovalMode?.(false);
+          window.gameManager?.terrainEngine?.setPlaceableRemovalMode?.(false);
         } catch (_) {
           /* ignore */
         }
@@ -314,16 +314,19 @@ class SidebarController {
             btn.appendChild(span);
           }
           btn.addEventListener('click', () => {
-            if (window.gameManager?.terrainCoordinator?.isPlaceableRemovalMode?.()) return;
-            const current =
-              window.gameManager?.terrainCoordinator?.getSelectedPlaceable?.() ||
-              window.selectedTerrainPlaceable ||
-              null;
+            if (window.gameManager?.terrainEngine?.isPlaceableRemovalMode?.()) return;
+            const current = window.gameManager?.terrainEngine?.getSelectedPlaceable?.() || null;
             const next = current === id ? null : id;
             try {
-              window.gameManager?.terrainCoordinator?.setSelectedPlaceable?.(next);
+              const engine = window.gameManager?.terrainEngine;
+              if (!engine) throw new Error('Terrain editing is not ready yet');
+              engine.setSelectedPlaceable(next);
             } catch (e) {
-              /* ignore set failure */
+              new ErrorHandler().handle(e, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+                context: 'selectTerrainPlaceable',
+                placeableId: id,
+              });
+              return;
             }
             window.selectedTerrainPlaceable = next;
             root
@@ -368,49 +371,29 @@ class SidebarController {
 
     if (btn && !btn.dataset.boundClick) {
       btn.addEventListener('click', async () => {
-        const biome = window.selectedBiome;
-        if (!biome) return;
         try {
-          try {
-            window.gameManager?.placeableMeshPool?.clearAll?.();
-          } catch (e) {
-            // ignore clear error
+          const engine = window.gameManager?.terrainEngine;
+          if (!engine) throw new Error('Terrain editing is not ready yet');
+          if (!engine.biomeKey) throw new Error('Choose a biome before generating a map');
+          if (engine.isActive || engine.isGenerating) {
+            throw new Error('Finish terrain editing before generating a new map');
           }
-          if (
-            !window.gameManager?.terrainCoordinator ||
-            window.gameManager.terrainCoordinator._isGenerating
-          )
-            return;
           btn.disabled = true;
           btn.classList.add('disabled');
           if (lock && !lock.checked) {
             const newSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
-            try {
-              window.gameManager?.terrainCoordinator?.setBiomeSeed?.(newSeed);
-            } catch (e) {
-              // ignore seed set error
-            }
+            engine.setBiomeSeed(newSeed);
           }
-          let ok = false;
-          try {
-            ok = await window.gameManager?.terrainCoordinator?.generateBiomeElevation?.(biome);
-          } catch (e) {
-            // ignore generate error
+          if (!(await engine.generateBiomeElevation(engine.biomeKey))) {
+            throw new Error('Terrain generation could not begin');
           }
-          if (ok) {
-            try {
-              window.gameManager?.terrainCoordinator?.applyBiomePaletteToBaseGrid?.();
-            } catch (e) {
-              // ignore palette error
-            }
-          }
+        } catch (error) {
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            context: 'generateTerrainMap',
+          });
         } finally {
-          try {
-            btn.disabled = false;
-            btn.classList.remove('disabled');
-          } catch (e) {
-            // ignore
-          }
+          btn.disabled = false;
+          btn.classList.remove('disabled');
         }
       });
       btn.dataset.boundClick = 'true';
@@ -432,17 +415,15 @@ class SidebarController {
 
     if (reseed && !reseed.dataset.boundClick) {
       reseed.addEventListener('click', () => {
-        if (!window.gameManager?.terrainCoordinator) return;
         const newSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
         try {
-          window.gameManager?.terrainCoordinator?.setBiomeSeed?.(newSeed);
-        } catch (e) {
-          // ignore
-        }
-        try {
-          window.gameManager?.terrainCoordinator?.applyBiomePaletteToBaseGrid?.();
-        } catch (e) {
-          // ignore
+          const engine = window.gameManager?.terrainEngine;
+          if (!engine) throw new Error('Terrain editing is not ready yet');
+          engine.setBiomeSeed(newSeed);
+        } catch (error) {
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            context: 'reseedTerrainBiome',
+          });
         }
       });
       reseed.dataset.boundClick = 'true';
@@ -480,10 +461,9 @@ class SidebarController {
   _refreshTerrainOverlayIfActive() {
     try {
       const gm = window.gameManager;
-      if (gm?.terrainCoordinator && !gm.terrainCoordinator.isTerrainModeActive) {
+      if (gm?.terrainEngine && !gm.terrainEngine.isActive) {
         const enabled = !!window.richShadingSettings?.enabled;
-        if (enabled) gm.terrainCoordinator.applyBiomePaletteToBaseGrid?.();
-        else gm.terrainCoordinator.setRichShadingEnabled?.(false);
+        gm.terrainEngine.setRichShadingEnabled(enabled);
       }
     } catch (e) {
       /* ignore */
@@ -544,17 +524,17 @@ class SidebarController {
   }
 
   selectBiome(biomeKey) {
-    window.selectedBiome = biomeKey;
-    window.gameManager?.sceneAutosave?.changed('biome');
     try {
-      if (
-        window.gameManager?.terrainCoordinator &&
-        !window.gameManager.terrainCoordinator.isTerrainModeActive
-      ) {
-        window.gameManager.terrainCoordinator.applyBiomePaletteToBaseGrid?.();
-      }
-    } catch (e) {
-      /* ignore */
+      const engine = window.gameManager?.terrainEngine;
+      if (!engine) throw new Error('Terrain editing is not ready yet');
+      engine.setBiome(biomeKey, { generateIfFlat: false });
+      window.selectedBiome = engine.biomeKey;
+    } catch (error) {
+      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+        context: 'selectTerrainBiome',
+        biomeKey,
+      });
+      return;
     }
     try {
       const root = getBiomeRootEl();

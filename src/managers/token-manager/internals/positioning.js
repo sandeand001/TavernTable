@@ -216,8 +216,7 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
     );
     let elevationOffset = 0;
     try {
-      const height =
-        c.gameManager?.terrainCoordinator?.dataStore?.get(target.gridX, target.gridY) ?? 0;
+      const height = c.gameManager?.getTerrainHeight?.(target.gridX, target.gridY) ?? 0;
       elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
     } catch (_) {
       /* ignore */
@@ -249,7 +248,7 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
       // Maintain world position snapshot (Phase 0). Use terrain height for elevation if available.
       try {
         const gm = c.gameManager;
-        const height = gm?.terrainCoordinator?.dataStore?.get(target.gridX, target.gridY) ?? 0;
+        const height = gm?.getTerrainHeight?.(target.gridX, target.gridY) ?? 0;
         const worldLockActive = Number(tokenEntry.__ttWorldLock) > 0;
         if (!worldLockActive && gm?.spatial && typeof gm.spatial.gridToWorld === 'function') {
           tokenEntry.world = gm.spatial.gridToWorld(target.gridX + 0.5, target.gridY + 0.5, height);
