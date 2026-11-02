@@ -2,7 +2,6 @@ import {
   field,
   signed,
   title,
-  selected,
   renderIdentitySection,
   renderCoreSection,
   renderEquipmentSection,
@@ -38,6 +37,12 @@ import PlayLayoutControls from '../characters/PlayLayoutControls.js';
 import { PLAY_LAYOUT_STORAGE_PREFIX } from '../../entities/characters/CharacterPlayLayout.js';
 import RollHistory from '../characters/RollHistory.js';
 import { afterCharacterCommit } from '../../entities/characters/storageChanges.js';
+import { characterActionOptions } from '../../entities/characters/combat/actions.js';
+import {
+  TARGET_ALLEGIANCES,
+  TARGET_CREATURE_TYPES,
+  TARGET_CREATURE_SIZES,
+} from '../../config/targeting/SpellProfiles.js';
 
 export default class CharacterSheetContent {
   constructor({ gameManager, services = null, onOpenCompendium = null }) {
@@ -258,6 +263,7 @@ export default class CharacterSheetContent {
   }
 
   clear() {
+    this.services?.targeting?.cancelFor(this.token);
     this._identityEdit = null;
     this.token = null;
     this.movementView = null;
@@ -270,6 +276,7 @@ export default class CharacterSheetContent {
   }
 
   destroy() {
+    this.services?.targeting?.cancelFor(this.token);
     this._identityEdit = null;
     this.disposed = true;
     this.token = null;
@@ -367,12 +374,25 @@ export default class CharacterSheetContent {
             )
             .join('')}</div>
         </div>
-        <label class="sheet-field">Style
-          <select aria-label="Movement type" data-movement-type>
-            <option value="default" ${selected(movement.type === 'default')}>Default</option>
-            <option value="drunk" ${selected(movement.type === 'drunk')}>Drunk</option>
-          </select>
-        </label>
+        <div class="sheet-movement-pace" role="group" aria-label="Movement style">
+          <span>Style</span>
+          <div>${['default', 'drunk']
+            .map(
+              (style) => `<button type="button" data-sheet-action="movement-style"
+            data-style="${style}" aria-label="${title(style)} movement style" aria-pressed="${movement.type === style}">${title(style)}</button>`
+            )
+            .join('')}</div>
+        </div>
+        <div class="sheet-movement-pace" role="group" aria-label="Character roll mode">
+          <span>Roll</span>
+          <div>${['normal', 'advantage', 'disadvantage']
+            .map(
+              (mode) => `<button type="button" data-sheet-action="roll-mode"
+            data-roll-mode="${mode}" aria-label="${title(mode)} rolls" aria-pressed="${this.rollMode === mode}"
+            title="Manual roll mode; automatic target advantage/disadvantage still applies.">${title(mode)}</button>`
+            )
+            .join('')}</div>
+        </div>
       </div>
       <p class="sheet-reference">${this.services.combat.active ? 'Combat: the range uses remaining turn movement.' : 'Free play: speed sets the grid range for each move.'} Walk/Run is not the Dash action.</p>
       <nav class="sheet-section-nav" aria-label="Character sections">
@@ -389,18 +409,6 @@ export default class CharacterSheetContent {
               `<button type="button" data-sheet-section="${value}" aria-pressed="${this.section === value}">${name}</button>`
           )
           .join('')}
-        <label>Roll <select aria-label="Character roll mode">
-          ${[
-            ['normal', 'Normal'],
-            ['advantage', 'Advantage'],
-            ['disadvantage', 'Disadvantage'],
-          ]
-            .map(
-              ([value, name]) =>
-                `<option value="${value}" ${selected(value === this.rollMode)}>${name}</option>`
-            )
-            .join('')}
-        </select></label>
       </nav>
       ${
         ['combat', 'noncombat'].includes(this.section)
@@ -432,7 +440,7 @@ export default class CharacterSheetContent {
         <label class="sheet-field">Bio and notes<textarea aria-label="Bio and notes" data-character-field="notes" rows="10">${escape(character.notes)}</textarea></label>
       </section>
       <p class="sheet-rules-coverage">${library.ruleset} rules. Class/subclass features, conditional spell effects,
-        targeting and guided level-ups are not fully automated. Combat costs are tracked only after Start Turn. Level edits recalculate
+        damage, saves, mechanical spell effects and guided level-ups are not fully automated. Reviewed targeting uses this campaign's edition. Combat costs are tracked only after Start Turn. Level edits recalculate
         proficiency and slots; apply HP/features manually. Manual adjustments remain available.</p>`;
     const draft = this._identityEdit?.characterId === id ? this._identityEdit.element : null;
     reconcileContent(this.main, markup, draft);
@@ -591,20 +599,32 @@ export default class CharacterSheetContent {
       }, 'Loaded saved character.');
     } else if (element === this.fileInput) {
       void this._importFile();
-    } else if (element.matches('[aria-label="Character roll mode"]')) {
-      this.rollMode = element.value;
-    } else if (element.dataset.playSlot) {
-      const id = element.dataset.playSlot;
-      this.playChoices[id] = { ...this.playChoices[id], slotLevel: Number(element.value) };
-      this._run(() => {}, 'Cast level selected.', false);
-    } else if (element.dataset.slotChoice) {
-      this.slotLevels.set(element.dataset.slotChoice, Number(element.value));
-      this._run(() => {}, 'Cast level selected.', false);
-    } else if (element.matches('[data-movement-type]')) {
-      this._run(
-        () => setTokenMovementSettings(this.token, { type: element.value }),
-        'Movement style updated.'
-      );
+    } else if (element.dataset.targetingTag) {
+      this._run(async () => {
+        const token = this.token,
+          key = element.dataset.targetingTag;
+        const allowed =
+          key === 'allegiance'
+            ? TARGET_ALLEGIANCES
+            : key === 'creatureType'
+              ? TARGET_CREATURE_TYPES
+              : key === 'creatureSize'
+                ? TARGET_CREATURE_SIZES
+                : [];
+        if (!allowed.includes(element.value)) throw new Error('Choose a valid targeting tag');
+        const previous = token[key];
+        token[key] = element.value;
+        this.gameManager.sceneAutosave?.changed('targeting tags');
+        try {
+          await this.gameManager.sceneAutosave?.flush();
+        } catch (error) {
+          if (previous === undefined) delete token[key];
+          else token[key] = previous;
+          this.gameManager.sceneAutosave?.changed('targeting tag rollback');
+          throw error;
+        }
+        this.services.targeting?.beginQuery();
+      }, 'Targeting tags saved.');
     } else if (element.dataset.characterCondition) {
       const token = this.token;
       const condition = element.dataset.characterCondition;
@@ -687,6 +707,30 @@ export default class CharacterSheetContent {
     const button = event.target.closest('[data-sheet-action]');
     if (!button) return;
     const action = button.dataset.sheetAction;
+    if (action === 'configure-targeting') {
+      const actionId =
+        button.dataset.actionId ||
+        this.main.querySelector('[aria-label="Action targeting configuration"]').value;
+      const definition = characterActionOptions(this.services.library, this.token).find(
+        (entry) => entry.id === actionId
+      );
+      if (!definition) {
+        this._failure(new Error('Choose an action to configure'), 'targeting');
+        return;
+      }
+      if (!this.services.targeting) {
+        this._failure(new Error('Open the 3D board to configure targeting'), 'targeting');
+        return;
+      }
+      const token = this.token;
+      void this.services.targeting
+        .configure(token, definition)
+        .then((saved) => {
+          if (saved && this.token === token) this._run(() => {}, 'Targeting profile saved.');
+        })
+        .catch((error) => this._failure(error, 'targeting'));
+      return;
+    }
     if (action === 'stand-up') {
       this._run(
         () => this.services.falling.stand(this.token),
@@ -695,20 +739,13 @@ export default class CharacterSheetContent {
       return;
     }
     if (action === 'cast') {
-      const slotLevel = this.slotLevels.get(button.dataset.instanceId);
-      void performPlayAction(
-        this,
-        `spell:${button.dataset.instanceId}`,
-        slotLevel === undefined ? {} : { slotLevel }
-      );
+      void performPlayAction(this, `spell:${button.dataset.instanceId}`);
       return;
     }
     if (action === 'use-action') {
       const card = button.closest('.sheet-play-action');
       const choice = {};
-      const slot = card?.querySelector('[data-play-slot]');
       const amount = card?.querySelector('[data-play-amount]');
-      if (slot) choice.slotLevel = Number(slot.value);
       if (amount) choice.amount = amount.valueAsNumber;
       void performPlayAction(this, button.dataset.actionId, choice);
       return;
@@ -735,8 +772,8 @@ export default class CharacterSheetContent {
             this.dmMovementDraft = null;
             this.dmEconomyDraft = {};
           }
-          if (action === 'turn-start') session.startTurn(this.token);
-          if (action === 'turn-end') session.endTurn();
+          if (action === 'turn-start') return session.startTurn(this.token);
+          if (action === 'turn-end') return session.endTurn();
           if (action === 'combat-end') session.endCombat();
           if (action === 'use-undo') return session.undoLastUse(this.token);
           if (action === 'attack-finish') session.finishAttackAction(this.token);
@@ -769,6 +806,26 @@ export default class CharacterSheetContent {
       this._run(
         () => setTokenMovementSettings(this.token, { mode: button.dataset.mode }),
         'Movement pace updated.'
+      );
+      return;
+    }
+    if (action === 'movement-style') {
+      this._run(
+        () => setTokenMovementSettings(this.token, { type: button.dataset.style }),
+        'Movement style updated.'
+      );
+      return;
+    }
+    if (action === 'roll-mode') {
+      this._run(
+        () => {
+          const mode = button.dataset.rollMode;
+          if (!['normal', 'advantage', 'disadvantage'].includes(mode))
+            throw new Error('Choose Normal, Advantage or Disadvantage for rolls');
+          this.rollMode = mode;
+        },
+        'Roll mode selected.',
+        false
       );
       return;
     }

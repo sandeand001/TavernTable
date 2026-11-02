@@ -10,9 +10,14 @@ import {
   canRemainAirborne,
 } from '../falling.js';
 import { flightAvailability } from '../flight.js';
+import { SPELL_PROFILES_2014 } from '../../config/targeting/SpellProfiles.js';
 
 export default Object.freeze({
   id: '2014',
+  spellTargetProfiles: SPELL_PROFILES_2014,
+  weaponClosePenalty: (entry) => (entry.weapon.proficiency === 'lances' ? 5 : 0),
+  heavyWeaponAbility: () => null,
+  heavyWeaponSizePenalty: (entry) => entry.weapon.properties.includes('heavy'),
   restResources: CHARACTER_REST_RESOURCES,
   standardActions: STANDARD_COMBAT_ACTIONS,
   classActions: CLASS_COMBAT_ACTIONS,

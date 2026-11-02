@@ -85,7 +85,7 @@ describe('Tabbed in-app character sheets', () => {
     expect(sheets.panel.textContent).toContain('Compendium');
     expect(movementControl('Character speed (feet)').value).toBe('30');
     expect(movementControl('Walk movement').getAttribute('aria-pressed')).toBe('true');
-    expect(movementControl('Movement type').value).toBe('default');
+    expect(movementControl('Default movement style').getAttribute('aria-pressed')).toBe('true');
   });
 
   test('keeps only an editable plain-text title and moves character management behind a gear', async () => {
@@ -182,8 +182,7 @@ describe('Tabbed in-app character sheets', () => {
     movementControl('Run movement').click();
     expect(refresh).toHaveBeenCalled();
     refresh.mockClear();
-    movementControl('Movement type').value = 'drunk';
-    movementControl('Movement type').dispatchEvent(new Event('change', { bubbles: true }));
+    movementControl('Drunk movement style').click();
 
     expect(getTokenMovementSettings(first)).toEqual({ speed: 25, mode: 'run', type: 'drunk' });
     expect(refresh).toHaveBeenCalled();
@@ -192,11 +191,11 @@ describe('Tabbed in-app character sheets', () => {
     sheets.open(second);
     expect(movementControl('Character speed (feet)').value).toBe('30');
     expect(movementControl('Walk movement').getAttribute('aria-pressed')).toBe('true');
-    expect(movementControl('Movement type').value).toBe('default');
+    expect(movementControl('Default movement style').getAttribute('aria-pressed')).toBe('true');
     sheets.open(first);
     expect(movementControl('Character speed (feet)').value).toBe('25');
     expect(movementControl('Run movement').getAttribute('aria-pressed')).toBe('true');
-    expect(movementControl('Movement type').value).toBe('drunk');
+    expect(movementControl('Drunk movement style').getAttribute('aria-pressed')).toBe('true');
   });
 
   test.each(['-5', ''])(

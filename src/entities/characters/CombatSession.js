@@ -1,7 +1,12 @@
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { attacksPerAction, characterActionOptions } from './combat/actions.js';
 import { copyRollSummary } from '../../systems/dice/rollSummary.js';
-import { snapshotCombat, restoreCombat } from './combat/persistence.js';
+import {
+  snapshotCombat,
+  restoreCombat,
+  validateTargetingRecord,
+  validateTargetRolls,
+} from './combat/persistence.js';
 import {
   standingAvailability,
   standUp,
@@ -11,6 +16,11 @@ import {
 } from './combat/falling.js';
 import { movementSpeed } from '../../rules/flight.js';
 import { getTokenTravelMode } from '../creatures/TokenMovement.js';
+import {
+  actionTargetingEffect,
+  advanceTargetingEffects,
+  syncTargetingEffects,
+} from './combat/targetingEffects.js';
 
 const EPSILON = 1e-7;
 
@@ -36,6 +46,8 @@ export default class CombatSession {
     this.listeners = new Set();
     this.pending = null;
     this.committing = null;
+    this.effects = [];
+    this.targeting = null;
   }
 
   // -- Manual turns --
@@ -61,39 +73,80 @@ export default class CombatSession {
     this._assertSettled();
     if (this.isMoving(token)) throw new Error('Finish movement before starting this turn');
     if (this.activeToken) throw new Error('End the current turn before starting another');
-    this.active = true;
-    this.activeToken = token;
-    this.turn++;
-    for (const previous of this.states.values()) {
-      previous.customTurnUses = {};
-      previous.undo = [];
-      previous.spellsCast = [];
-    }
-    const state = this._state(token);
-    Object.assign(state, {
-      actions: 1,
-      restrictedActions: 0,
-      bonusActions: 1,
-      reactions: 1,
-      attacksRemaining: 0,
-      movementSpent: 0,
-      movementBonus: 0,
-      dashes: 0,
-      attackActionTaken: false,
-      readied: false,
-      spellsCast: [],
-      customTurnUses: {},
-      actionSurgeUsed: false,
-      bonusAttacksRemaining: 0,
+    return this._advanceTurn(token, 'start', this.turn + 1, (session) => {
+      session.active = true;
+      session.activeToken = token;
+      session.turn++;
+      for (const previous of session.states.values()) {
+        previous.customTurnUses = {};
+        previous.undo = [];
+        previous.spellsCast = [];
+      }
+      const state = session._state(token);
+      Object.assign(state, {
+        actions: 1,
+        restrictedActions: 0,
+        bonusActions: 1,
+        reactions: 1,
+        attacksRemaining: 0,
+        movementSpent: 0,
+        movementBonus: 0,
+        dashes: 0,
+        attackActionTaken: false,
+        readied: false,
+        spellsCast: [],
+        customTurnUses: {},
+        actionSurgeUsed: false,
+        bonusAttacksRemaining: 0,
+      });
     });
-    this._publish();
   }
 
   endTurn() {
     if (!this.activeToken) throw new Error('No turn is active');
     this._assertSettled();
-    this.activeToken = null;
-    this._publish();
+    return this._advanceTurn(this.activeToken, 'end', this.turn, (session) => {
+      session.activeToken = null;
+    });
+  }
+
+  _advanceTurn(token, phase, nextTurn, advance) {
+    const expiredFlight = this.effects.find(
+      (effect) =>
+        effect.kind === 'flight' &&
+        effect.casterTokenId === token.id &&
+        effect.expiry === phase &&
+        effect.remainingTurns === 1 &&
+        nextTurn > effect.createdTurn &&
+        nextTurn > effect.lastTickTurn &&
+        this.library.get(effect.characterId).concentration === effect.concentrationSpellId
+    );
+    const apply = (_, session = this) => {
+      advance(session);
+      advanceTargetingEffects(session, token, phase);
+    };
+    if (!expiredFlight) {
+      apply();
+      this._publish();
+      return;
+    }
+    const ticket = Object.freeze({
+      token,
+      characterId: expiredFlight.characterId,
+      effectExpiry: true,
+    });
+    this.pending = ticket;
+    let managed = false;
+    try {
+      const persisted = this._persistWithScene(
+        () => this.library.endConcentration(expiredFlight.characterId),
+        apply
+      );
+      managed = true;
+      return this._afterPersistence(ticket, persisted, apply);
+    } finally {
+      if (!managed) this._releasePersistence(ticket);
+    }
   }
 
   endCombat() {
@@ -236,6 +289,7 @@ export default class CombatSession {
   // -- Action reservations --
   availableActions(token, choices = {}) {
     this._character(token);
+    this.targeting?.beginQuery();
     return characterActionOptions(this.library, token, choices).filter((action) =>
       this._available(token, action)
     );
@@ -255,6 +309,7 @@ export default class CombatSession {
       (entry) => entry.id === actionId
     );
     if (!action) throw new Error('Unknown character action');
+    this.targeting?.beginQuery();
     if (!this._available(token, action))
       throw new Error('That action is unavailable or its cost is spent');
     const ticket = Object.freeze({
@@ -280,40 +335,97 @@ export default class CombatSession {
     return ticket;
   }
 
-  commitAction(ticket, rollText = '', rollResult = null) {
+  _currentAction(ticket) {
+    const character = this._character(ticket.token);
+    const action = characterActionOptions(this.library, ticket.token, {
+      [ticket.action.id]: ticket.choice,
+    }).find((entry) => entry.id === ticket.action.id);
+    const attackCount =
+      action?.cost === 'attack'
+        ? attacksPerAction(
+            character,
+            this.library.actions.snapshot(character.id).attackCountOverride
+          )
+        : null;
+    if (
+      character.id !== ticket.characterId ||
+      character.classId !== ticket.classId ||
+      character.level !== ticket.level ||
+      ticket.turn !== this.turn ||
+      ticket.attackCount !== attackCount ||
+      JSON.stringify(action) !== JSON.stringify(ticket.action)
+    )
+      throw new Error(
+        'The character or action changed while resolving the use; no costs were spent'
+      );
+    return { character, action, attackCount };
+  }
+
+  changeSpellLevel(ticket, slotLevel) {
+    if (this.pending !== ticket || this.committing || this.library.isSaving)
+      throw new Error('This spell reservation is no longer available to change');
+    const { action } = this._currentAction(ticket);
+    if (
+      action.kind !== 'spell' ||
+      !action.usesSlot ||
+      !Number.isInteger(slotLevel) ||
+      !action.slotLevels.includes(slotLevel)
+    )
+      throw new Error('Choose an available spell slot level');
+    const choice = { ...ticket.choice, slotLevel };
+    const updated = characterActionOptions(this.library, ticket.token, {
+      [action.id]: choice,
+    }).find((entry) => entry.id === action.id);
+    this.targeting?.beginQuery();
+    if (!updated || !this._available(ticket.token, updated, true))
+      throw new Error('The selected spell slot or action is no longer available');
+    const revised = Object.freeze({ ...ticket, action: updated, choice });
+    this.pending = revised;
+    return revised;
+  }
+
+  commitAction(
+    ticket,
+    rollText = '',
+    rollResult = null,
+    targetingSelection = null,
+    targetRolls = []
+  ) {
     if (this.pending !== ticket) throw new Error('This action reservation is no longer active');
     let managed = false;
     try {
       if (this.library.isSaving)
         throw new Error('Finish saving character changes before committing this use');
       const summary = rollResult === null ? null : copyRollSummary(rollResult);
-      const character = this._character(ticket.token);
-      const action = characterActionOptions(this.library, ticket.token, {
-        [ticket.action.id]: ticket.choice,
-      }).find((entry) => entry.id === ticket.action.id);
-      const attackCount =
-        action?.cost === 'attack'
-          ? attacksPerAction(
-              character,
-              this.library.actions.snapshot(character.id).attackCountOverride
-            )
-          : null;
-      if (
-        character.id !== ticket.characterId ||
-        character.classId !== ticket.classId ||
-        character.level !== ticket.level ||
-        ticket.turn !== this.turn ||
-        ticket.attackCount !== attackCount ||
-        JSON.stringify(action) !== JSON.stringify(ticket.action)
-      ) {
-        throw new Error('The character or action changed while rolling; no costs were spent');
-      }
+      const { character, action, attackCount } = this._currentAction(ticket);
+      if (action.targeting?.flightGrant && !this.targeting)
+        throw new Error('Fly requires confirmed targets from the board targeting service');
+      this.targeting?.beginQuery();
       if (!this._available(ticket.token, action, true))
         throw new Error('The action cost is no longer available');
+      const selected =
+        action.targeting && this.targeting
+          ? this.targeting.validate(ticket.token, action, targetingSelection)
+          : targetingSelection;
+      if (typeof rollText !== 'string' || rollText.length > 10000)
+        throw new Error('The action roll text is invalid');
+      if (selected) validateTargetingRecord(selected);
+      const completedTargetRolls = validateTargetRolls(targetRolls, selected);
       const state = this._state(ticket.token);
       const before = this._actionSnapshot(state);
       const sequence = globalThis.crypto.randomUUID();
+      const plannedEffect = actionTargetingEffect(this, ticket.token, action, selected, sequence);
+      const replacesConcentration = action.kind === 'spell' && action.spellConcentration;
+      const replacedEffects = replacesConcentration
+        ? this.effects
+            .filter((effect) => effect.characterId === character.id && effect.concentrationSpellId)
+            .map((effect) => JSON.parse(JSON.stringify(effect)))
+        : [];
       const apply = (receipt, session = this) => {
+        if (session !== this && plannedEffect?.kind === 'flight') {
+          this._currentAction(ticket);
+          this.targeting.validate(ticket.token, action, selected);
+        }
         const state = session._state(ticket.token);
         if (session.active) {
           if (action.cost === 'attack') {
@@ -358,12 +470,26 @@ export default class CombatSession {
           turn: session.active ? session.turn : null,
           rollText,
           ...(summary ? { rollResult: summary } : {}),
+          ...(selected ? { targetingSelection: selected } : {}),
+          ...(completedTargetRolls.length ? { targetRolls: completedTargetRolls } : {}),
         };
+        if (replacesConcentration) {
+          session.effects = session.effects.filter(
+            (effect) => effect.characterId !== character.id || !effect.concentrationSpellId
+          );
+        }
+        if (plannedEffect) session.effects = [...session.effects, plannedEffect];
         if (!session.histories.has(character.id)) session.histories.set(character.id, []);
         session.histories.get(character.id).unshift(result);
         state.recent.unshift(result);
         state.recent = state.recent.slice(0, 10);
-        state.undo.push({ before, receipt, sequence: result.sequence, characterId: character.id });
+        state.undo.push({
+          before,
+          receipt,
+          sequence: result.sequence,
+          characterId: character.id,
+          replacedEffects,
+        });
         state.undo = state.undo.slice(-10);
         return result;
       };
@@ -421,6 +547,11 @@ export default class CombatSession {
         state.undo.pop();
         const recent = state.recent.find((row) => row.sequence === entry.sequence);
         if (recent) recent.undone = true;
+        session.effects = session.effects.filter((effect) => effect.id !== entry.sequence);
+        if (entry.replacedEffects?.length)
+          session.effects.push(
+            ...entry.replacedEffects.map((effect) => JSON.parse(JSON.stringify(effect)))
+          );
       };
       const persisted = this._persistWithScene(
         () => this.library.actions.undo(entry.receipt),
@@ -458,6 +589,7 @@ export default class CombatSession {
         states,
         histories,
         listeners: new Set(),
+        effects: this.effects.map((effect) => JSON.parse(JSON.stringify(effect))),
         _movementSnapshot: new Map(
           [...this.states].map(([token, state]) => [token, state.movementSpent])
         ),
@@ -546,6 +678,8 @@ export default class CombatSession {
     if (this.committing || this.library.isSaving) return false;
     if (this.pending && !ignorePending) return false;
     if (this.library.rules.cannotTakeActions(this._character(token))) return false;
+    if (action.targeting && this.targeting && !this.targeting.availability(token, action).allowed)
+      return false;
     if (action.spellReady === false) return false;
     if (action.resourceId) {
       const resource = this.library.rest
@@ -695,12 +829,19 @@ export default class CombatSession {
     this._publish();
   }
 
-  forget(token) {
+  forget(token, { preserveTargetEffects = false } = {}) {
     for (const [id, ticket] of this.moves) {
       if (ticket.token === token) this.moves.delete(id);
     }
     if (this.pending?.token === token) this.pending = null;
     this.states.delete(token);
+    this.effects = this.effects.flatMap((effect) => {
+      if ((effect.followCaster || effect.kind === 'flight') && effect.casterTokenId === token.id)
+        return [];
+      if (effect.kind !== 'flight' || preserveTargetEffects) return [effect];
+      const targetTokenIds = effect.targetTokenIds.filter((id) => id !== token.id);
+      return targetTokenIds.length ? [{ ...effect, targetTokenIds }] : [];
+    });
     if (this.activeToken === token) this.activeToken = null;
     this._publish();
   }
@@ -714,11 +855,70 @@ export default class CombatSession {
     }
   }
 
+  syncEffects() {
+    syncTargetingEffects(this);
+  }
+
+  endEffect(effectId) {
+    this._assertSettled();
+    const effect = this.effects.find((effect) => effect.id === effectId);
+    if (!effect) throw new Error('That spell effect is no longer active');
+    if (effect.kind !== 'flight') {
+      this.effects = this.effects.filter((effect) => effect.id !== effectId);
+      this._publish();
+      return;
+    }
+    const character = this.library.get(effect.characterId);
+    const ticket = Object.freeze({ characterId: character.id, endEffect: effectId });
+    this.pending = ticket;
+    let managed = false;
+    try {
+      const apply = (_, session = this) => {
+        session.effects = session.effects.filter(
+          (candidate) =>
+            candidate.id !== effectId &&
+            !(
+              candidate.characterId === effect.characterId &&
+              candidate.concentrationSpellId === effect.concentrationSpellId
+            )
+        );
+      };
+      const persisted = this._persistWithScene(
+        () =>
+          character.concentration === effect.concentrationSpellId
+            ? this.library.endConcentration(character.id)
+            : this.library.edit(character.id, {}),
+        apply
+      );
+      managed = true;
+      return this._afterPersistence(ticket, persisted, apply);
+    } finally {
+      if (!managed) this._releasePersistence(ticket);
+    }
+  }
+
+  movementCharacter(token, character) {
+    const fallTraits = { ...character.fallTraits };
+    for (const effect of this.effects) {
+      if (
+        effect.kind !== 'flight' ||
+        !effect.targetTokenIds.includes(token.id) ||
+        (this.targeting && !this.targeting.hasTokenId(effect.casterTokenId, effect.characterId)) ||
+        this.library.get(effect.characterId).concentration !== effect.concentrationSpellId
+      )
+        continue;
+      fallTraits.flySpeed = Math.max(fallTraits.flySpeed ?? 0, effect.flySpeed);
+      fallTraits.hover = fallTraits.hover === true || effect.hover;
+      fallTraits.magicalSupport = fallTraits.magicalSupport === true || effect.magicalSupport;
+    }
+    return { ...character, fallTraits };
+  }
+
   _character(token) {
     if (!token || !this.hasToken(token) || !token.characterSheetId) {
       throw new Error('Load a saved character for a creature in this scene');
     }
-    return this.library.get(token.characterSheetId);
+    return this.movementCharacter(token, this.library.get(token.characterSheetId));
   }
 
   _state(token) {

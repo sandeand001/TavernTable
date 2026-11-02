@@ -70,7 +70,7 @@
   **Attacks left** is derived from unspent actions and any ongoing Attack-action
   sequence, honoring class/level and manual attack-count overrides. The internal
   ongoing sequence starts at zero; it must not grant free attacks at turn start.
-- **Flight**: a per-token airborne travel state using the saved character's active
+- **Flight**: a per-token airborne travel state using the character's effective
   flying speed. Take flight rises 5 feet. Raise/Lower offer 5, 10, 15 and 20 feet,
   spending one foot of flying movement per vertical foot. Horizontal routes retain
   absolute altitude, not a free terrain-following offset. Walking and flying share
@@ -78,8 +78,11 @@
   Lowering exactly to ground lands normally. Drop relinquishes flight for a
   zero-movement-cost fall and ignores flight's own damage protection, not Feather
   Fall or other protections. It does not erase the ability or cancel concentration.
-  Flight grants from spells/items remain manually applied through Flying speed;
-  source/target effect automation is separate from casting and inventory ownership.
+  Base/manual flight stays in Flying speed; reviewed Fly supplies a separate
+  scene-owned grant to selected token IDs. Use the higher active speed and combine
+  Hover/support without modifying base traits or granting every character clone flight.
+  Other spell/item flight remains manual. Loss of support or a lower speed interrupts
+  a route at its stable checkpoint, refunds its unfinished tail, and falls if unsupported.
   A hovering animation is visual; the Can hover rules trait remains independent.
   Campaign checkpoints save completed stable airborne waypoints and their costs,
   not unfinished routes, animation frames or unresolved falls.
@@ -102,8 +105,52 @@
   `ignoreFlight` without disabling Feather Fall or Slow Fall. The selected
   edition owns incapacitated flight and Stunned movement differences.
 - **Combat use**: a declared attack, spell or feature that reserves its cost,
-  resolves any roll, revalidates the actor, then commits persistent and turn
-  costs. Cancelled/stale/failed rolls spend nothing. Targets and effects are manual.
+  selects targets, resolves any roll, revalidates the actor/board, then commits
+  persistent and turn costs. Cancelled/stale/failed uses spend nothing; each completed
+  projectile retains its own single-use roll context even when the use is canceled.
+  Hits, damage and saves remain manual. Reviewed Fly automatically applies its
+  temporary flight grant; other spell mechanical effects remain manual.
+- **Targeting profile**: an edition-local reviewed definition or an explicit static
+  override in the action companion. The first set reviews 27 spells per edition;
+  unsupported spells require explicit manual confirmation rather than guessed rules.
+  Profiles describe range, minimum/maximum allocations, repeated projectiles,
+  creature restrictions, sight, area shape/origin and visual duration. Weapon modes
+  distinguish reach, thrown and normal/long range, including enhanced variants.
+  Candidate legality is shared by availability, preview and final confirmation.
+- **Fly effect**: willing Touch targets, including self, explicitly confirmed by
+  the caster; Friendly does not imply willing. One target at level 3, plus one
+  per higher slot. Grants flying speed 60 for 100 later caster turns (10 minutes),
+  tied to the caster's owned spell concentration ID. 2024 grants Hover; 2014 magic
+  holds its targets aloft even when Prone or unable to move. Casting grants the
+  capability, not takeoff. Replacement, concentration ending, expiry, End spell
+  and Undo remove the source; preserve natural flight and other active grants.
+  Casts and concentration-changing expiry/end operations stage the scene ledger
+  with character costs. Character-only copies and unlinked token base-trait saves
+  never contain temporary grants. Restore effects before flight support checks.
+- **Targeting tags**: saved per-token allegiance, biological creature type and size,
+  not humanoid appearance IDs. Defaults are Neutral/Humanoid/Medium. Friendly/Hostile
+  are relative sides; neutral tokens are not automatically hostile. Heavy weapons
+  use the selected edition's size/attribute rule.
+- **Combat controls**: Action/Bonus/Reaction choices are separate from free skill
+  checks. Combat omits duplicate Search/Study cards while keeping their domain
+  definitions and action costs; a DM correction can account for a declared check
+  action. Empty Bonus sections explain unavailable/spent options. Saved play
+  ordering remains intact. Pace/Style/manual Roll mode use pressed buttons;
+  targeting tags live only on Core. Spell cards distinguish fixed base level
+  from the expended slot level, and only unreviewed targeting gets a compact gear.
+- **Casting level selection**: available slot-level buttons live in the targeting
+  popup, not spell cards. Preview choices recalculate upcasting while keeping the
+  original reservation immutable. Confirmation revalidates that reservation before
+  replacing its casting choice; committed costs use the confirmed level. A canceled
+  preview spends nothing. Roll-only spell damage retains the last confirmed level.
+- **Targeting geometry**: 3D five-foot grid distance, feet/center-point area inclusion,
+  and terrain/instanced-structure clear-path bounds. Full creature volumes, partial
+  cover, door openings and 2014 around-corner propagation require manual confirmation.
+- **Active spell area**: a plain visual record in combat checkpoints, never renderer
+  objects or automatic damage/conditions/movement/visibility. Durations tick only on
+  later matching caster-token start/end turns. Concentration replacement/ending,
+  manual ending and Undo synchronize the visuals. Fixed areas can outlive token
+  removal; caster-following areas cannot. Selection previews are never saved.
 - **Custom ability**: a saved activation/reminder with either its own use limit
   and reset policy or a link to an existing class pool, never a duplicate pool.
   Definitions/attack overrides and non-turn usage live in an action companion;
@@ -138,8 +185,9 @@
   states. Ownership alone grants no equipped bonuses. Supported active effects
   derive effective values without overwriting base ability scores.
 - **Prepared spell**: a saved spellbook choice, separate from casting. Casting
-  spends an available slot and tracks concentration; targeting, timed effects,
-  extra projectiles and application of damage/healing remain manual.
+  spends an available slot and tracks concentration. Reviewed profiles automate
+  targeting, projectile attack rolls and lingering-area visuals, not hits, saves,
+  damage/healing or mechanical timed effects.
 - **Sheet roll**: a shared-dice request using the current derived modifier.
   Generic checks/saves and follow-up damage/healing do not cast, apply effects
   or spend another action. Declared Attack/Cast buttons use the combat ledger.

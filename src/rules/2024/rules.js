@@ -10,6 +10,7 @@ import {
   canRemainAirborne,
 } from '../falling.js';
 import { flightAvailability } from '../flight.js';
+import { SPELL_PROFILES_2024 } from '../../config/targeting/SpellProfiles.js';
 
 function shortRestChoices(character, resources) {
   const pool = resources.find((resource) => resource.id === 'sorcery-points');
@@ -59,6 +60,15 @@ function shortRestRecovery({ character, resources, choices }) {
 
 export default Object.freeze({
   id: '2024',
+  spellTargetProfiles: SPELL_PROFILES_2024,
+  weaponClosePenalty: () => 0,
+  heavyWeaponSizePenalty: () => false,
+  heavyWeaponAbility: (entry) =>
+    entry.weapon.properties.includes('heavy')
+      ? entry.weapon.range === 'melee'
+        ? 'strength'
+        : 'dexterity'
+      : null,
   restResources,
   standardActions: STANDARD_ACTIONS,
   classActions: CLASS_ACTIONS,

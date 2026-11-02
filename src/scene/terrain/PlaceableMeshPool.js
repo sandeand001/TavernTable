@@ -53,6 +53,32 @@ export class PlaceableMeshPool {
 
   // ── Three.js Initialization ──────────────────────────────────────
 
+  targetingCoverBounds() {
+    if (!this._groups.size) return [];
+    const three = this._three;
+    if (!three) throw new Error('Wait for building cover geometry to finish loading');
+    const matrix = new three.Matrix4();
+    const bounds = new three.Box3();
+    const result = [];
+    for (const [key, metadata] of this._metadata) {
+      const mesh = this._groups.get(key)?.instancedMesh;
+      if (!mesh) throw new Error('A building cover group is missing');
+      mesh.updateMatrixWorld(true);
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      for (const [index, entry] of metadata) {
+        if (!['structure', 'building'].includes(entry.source?.type)) continue;
+        mesh.getMatrixAt(index, matrix);
+        matrix.premultiply(mesh.matrixWorld);
+        bounds.copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
+        result.push({
+          min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+          max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
+        });
+      }
+    }
+    return result;
+  }
+
   async _ensureThree() {
     if (this._three) return this._three;
     try {

@@ -117,7 +117,9 @@ test('sections and cards reorder with keyboard controls while Non-combat keeps i
     );
   const actions = () =>
     Array.from(
-      sheets.root.querySelectorAll('[data-play-section="action"] [data-play-card]'),
+      sheets.root.querySelectorAll(
+        '[data-play-section="action"] [data-play-category="actions"] [data-play-card]'
+      ),
       (item) => item.dataset.playCard
     );
   expect(sections().indexOf('bonus')).toBeLessThan(sections().indexOf('action'));
@@ -133,9 +135,7 @@ test('sections and cards reorder with keyboard controls while Non-combat keeps i
     sheets.root.querySelector('[data-play-section="skills"] [aria-label="Roll Stealth"]')
   ).toBeNull();
   customize();
-  const mode = sheets.root.querySelector('[aria-label="Character roll mode"]');
-  mode.value = 'advantage';
-  mode.dispatchEvent(new Event('change', { bubbles: true }));
+  button('Advantage rolls').click();
   button('Roll Stealth').click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(sheets.gameManager.characterServices.combat.status(token).actions).toBe(1);
@@ -155,7 +155,11 @@ test('drag handles move sections and cards, including pinning and unpinning, wit
   customize();
   expect(button('Drag Dodge')).not.toBeNull();
   drop(button('Drag Dodge'), sheets.root.querySelector('[data-play-card="dash"]'));
-  expect(library.layouts.page(token.characterSheetId, 'combat').cardOrder.action[0]).toBe('dodge');
+  expect(
+    library.layouts
+      .page(token.characterSheetId, 'combat')
+      .cardOrder.action.filter((id) => ['dodge', 'dash'].includes(id))
+  ).toEqual(['dodge', 'dash']);
   drop(
     button('Drag Bonus action section'),
     sheets.root.querySelector('[data-play-section="action"]')
@@ -171,6 +175,61 @@ test('drag handles move sections and cards, including pinning and unpinning, wit
     sheets.root.querySelector('[data-play-section="action"] [data-play-card="dodge"]')
   ).not.toBeNull();
   expect(sheets.gameManager.characterServices.combat.status(token).actions).toBe(1);
+});
+
+test('combat categories preserve saved spell order, keyboard moves and Favorites in the 2014 ruleset', async () => {
+  await sheets.open(token);
+  const id = token.characterSheetId;
+  library.edit(id, { classId: 'wizard', level: 5, abilities: { intelligence: 16 } });
+  const bolt = library.add(id, 'spell:fire-bolt'),
+    missile = library.add(id, 'spell:magic-missile');
+  library.prepare(id, missile, true);
+  library.layouts.savePage(id, 'combat', {
+    sectionOrder: ['reaction', 'action'],
+    cardOrder: { action: [`spell:${missile}`, 'dodge', `spell:${bolt}`, 'dash'] },
+    favorites: [],
+  });
+  await sheets.open(token);
+  sheets.root.querySelector('[data-sheet-section="combat"]').click();
+  button('Start turn').click();
+  const spells = () =>
+    [
+      ...sheets.root.querySelectorAll(
+        '[data-play-section="action"] [data-play-category="spells"] [data-play-card]'
+      ),
+    ].map((card) => card.dataset.playCard);
+  expect(spells()).toEqual([`spell:${missile}`, `spell:${bolt}`]);
+  customize();
+  expect(button('Move Magic Missile earlier').disabled).toBe(true);
+  button('Move Fire Bolt earlier').click();
+  expect(spells()).toEqual([`spell:${bolt}`, `spell:${missile}`]);
+  expect(button('Move Magic Missile later').disabled).toBe(true);
+  button('Favorite Fire Bolt').click();
+  expect(spells()).toEqual([`spell:${missile}`]);
+  expect(
+    sheets.root.querySelector(`[data-play-section="favorites"] [data-play-card="spell:${bolt}"]`)
+  ).not.toBeNull();
+  expect(sheets.root.querySelectorAll(`[data-play-card="spell:${bolt}"]`)).toHaveLength(1);
+  drop(button('Drag Fire Bolt'), sheets.root.querySelector(`[data-play-card="spell:${missile}"]`));
+  expect(spells()).toEqual([`spell:${bolt}`, `spell:${missile}`]);
+  expect(library.layouts.page(id, 'combat').favorites).toEqual([]);
+  expect(sheets.gameManager.characterServices.combat.status(token).actions).toBe(1);
+  expect(library.get(id).slotsUsed.every((used) => used === 0)).toBe(true);
+});
+
+test('dropping a card into a different combat category reports the invalid destination', async () => {
+  const errors = jest.spyOn(ErrorHandler.prototype, 'handle').mockImplementation(() => {});
+  await sheets.open(token);
+  sheets.root.querySelector('[data-sheet-section="combat"]').click();
+  button('Start turn').click();
+  customize();
+  const before = library.layouts.page(token.characterSheetId, 'combat');
+  drop(button('Drag Dash'), sheets.root.querySelector('[data-play-card="attack:unarmed"]'));
+  expect(errors).toHaveBeenCalled();
+  expect(library.layouts.page(token.characterSheetId, 'combat')).toEqual(before);
+  expect(
+    sheets.root.querySelector('[data-play-category="actions"] [data-play-card="dash"]')
+  ).not.toBeNull();
 });
 
 test('reset confirms before clearing only the current page and never changes character resources', async () => {

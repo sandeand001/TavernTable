@@ -101,7 +101,15 @@ export default class CampaignCharacters {
     this.actions = this._companion(
       'actions',
       ['list', 'snapshot', 'resourceRows', 'key'],
-      ['upsert', 'remove', 'setRemaining', 'setAttackCount', 'consume', 'undo']
+      [
+        'upsert',
+        'remove',
+        'setRemaining',
+        'setAttackCount',
+        'setTargetingProfile',
+        'consume',
+        'undo',
+      ]
     );
     this.layouts = this._companion(
       'layouts',

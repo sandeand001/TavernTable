@@ -1,3 +1,5 @@
+import { targetingProfile } from '../../../rules/targeting/profiles.js';
+
 const signed = (value) => `${value >= 0 ? '+' : ''}${value}`;
 
 export function attacksPerAction(character, override = null) {
@@ -189,12 +191,14 @@ export function characterActionOptions(library, token, choices = {}) {
       cost,
       kind: 'spell',
       spellId: owned.id,
+      spellEntryId: entry.id,
+      spellConcentration: entry.concentration,
       spellLevel: entry.level,
       usesSlot: entry.level > 0,
       slotLevel,
       slotLevels: slots,
       spellReady,
-      note: `${entry.castingTime}; ${entry.range}; ${entry.duration}. Resolve targets and effects manually. ${(entry.automationNotes || []).join(' ')}`,
+      note: `${entry.castingTime}; ${entry.range}; ${entry.duration}. ${(entry.automationNotes || []).join(' ')}`,
       roll:
         spell.attackBonus === null
           ? null
@@ -232,5 +236,21 @@ export function characterActionOptions(library, token, choices = {}) {
       reset: entry.reset,
     });
   }
-  return actions;
+  const overrides = library.actions.snapshot(character.id).targetingOverrides || {};
+  return actions.map((action) => {
+    const targeting = targetingProfile(library, character, action, overrides);
+    return {
+      ...action,
+      targeting,
+      ...(action.kind === 'spell'
+        ? {
+            note: `${action.note} ${
+              targeting?.flightGrant
+                ? `Fly automatically grants ${targeting.flightGrant.flySpeed}-foot flying speed${targeting.flightGrant.hover ? ' and Hover' : ''} to confirmed willing targets. Take flight is a separate movement choice.`
+                : 'Resolve damage, saves and mechanical effects manually.'
+            }`,
+          }
+        : {}),
+    };
+  });
 }

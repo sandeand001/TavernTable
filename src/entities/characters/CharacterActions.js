@@ -1,5 +1,6 @@
 import { commitStorageChanges } from './storageChanges.js';
 import { REST_STORAGE_PREFIX } from './CharacterRest.js';
+import { validateTargetingProfile } from '../../rules/targeting/profiles.js';
 
 export const ACTION_STORAGE_PREFIX = 'taverntable.character-actions.v1.';
 const COSTS = ['action', 'bonus', 'reaction', 'free'];
@@ -110,6 +111,16 @@ export default class CharacterActions {
   setAttackCount(id, count) {
     const state = this.snapshot(id);
     state.attackCountOverride = count;
+    this._save(state);
+  }
+
+  setTargetingProfile(id, actionId, profile) {
+    if (typeof actionId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(actionId))
+      throw new Error('Choose a valid action to configure targeting');
+    const state = this.snapshot(id);
+    state.targetingOverrides = { ...(state.targetingOverrides || {}) };
+    if (profile === null) delete state.targetingOverrides[actionId];
+    else state.targetingOverrides[actionId] = validateTargetingProfile(profile);
     this._save(state);
   }
 
@@ -318,7 +329,14 @@ export default class CharacterActions {
       state?.version !== 1 ||
       state.characterId !== id ||
       Object.keys(state).some(
-        (key) => !['version', 'characterId', 'entries', 'attackCountOverride'].includes(key)
+        (key) =>
+          ![
+            'version',
+            'characterId',
+            'entries',
+            'attackCountOverride',
+            'targetingOverrides',
+          ].includes(key)
       ) ||
       !Array.isArray(state.entries) ||
       state.entries.length > 100 ||
@@ -330,6 +348,20 @@ export default class CharacterActions {
       throw new Error(
         'Saved custom abilities have an unsupported or invalid format; they were not reset'
       );
+    }
+    if (state.targetingOverrides !== undefined) {
+      if (
+        !state.targetingOverrides ||
+        typeof state.targetingOverrides !== 'object' ||
+        Array.isArray(state.targetingOverrides) ||
+        Object.keys(state.targetingOverrides).length > 500
+      )
+        throw new Error('Saved targeting overrides are invalid');
+      for (const [actionId, profile] of Object.entries(state.targetingOverrides)) {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(actionId))
+          throw new Error('Saved targeting override references are invalid');
+        validateTargetingProfile(profile);
+      }
     }
     const ids = new Set();
     for (const entry of state.entries) {

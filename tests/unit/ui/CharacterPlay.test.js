@@ -147,9 +147,7 @@ test('Combat hides spent action choices, retains the second attack and keeps dam
   expect(combatTab).not.toBeNull();
   combatTab.click();
   sheets.root.querySelector('[aria-label="Start turn"]').click();
-  const mode = sheets.root.querySelector('[aria-label="Character roll mode"]');
-  mode.value = 'advantage';
-  mode.dispatchEvent(new Event('change', { bubbles: true }));
+  sheets.root.querySelector('[aria-label="Advantage rolls"]').click();
   jest.spyOn(Math, 'random').mockReturnValue(0.5);
   const selector = `[data-sheet-action="use-action"][data-action-id="attack:${sword}"]`;
   sheets.root.querySelector(selector).click();

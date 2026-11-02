@@ -34,6 +34,9 @@ export async function captureCampaignScene(
       name: character?.name ?? token.name,
       nameMode: character ? 'character' : token.nameMode === 'automatic' ? 'automatic' : 'custom',
       characterId,
+      allegiance: token.allegiance || 'neutral',
+      creatureType: token.creatureType || 'humanoid',
+      creatureSize: token.creatureSize || 'medium',
       movement: {
         mode: movement.mode,
         type: movement.type,
@@ -56,6 +59,20 @@ export async function captureCampaignScene(
   savedCombat.states = savedCombat.states.filter(
     (row) => row.characterId === links.get(row.tokenId)
   );
+  savedCombat.effects = (savedCombat.effects || [])
+    .filter(
+      (effect) =>
+        characterIds.has(effect.characterId) &&
+        (!(effect.followCaster || effect.kind === 'flight') || links.has(effect.casterTokenId)) &&
+        (effect.kind !== 'flight' || links.get(effect.casterTokenId) === effect.characterId) &&
+        (!effect.concentrationSpellId ||
+          library.get(effect.characterId).concentration === effect.concentrationSpellId)
+    )
+    .flatMap((effect) => {
+      if (effect.kind !== 'flight') return [effect];
+      const targetTokenIds = effect.targetTokenIds.filter((tokenId) => links.has(tokenId));
+      return targetTokenIds.length ? [{ ...effect, targetTokenIds }] : [];
+    });
   if (!savedCombat.states.some((row) => row.tokenId === savedCombat.activeTokenId))
     savedCombat.activeTokenId = null;
   const terrainState = gm.terrainEngine.save();
@@ -126,12 +143,16 @@ export function applySceneCharacterLinks(gameManager, scene, library) {
       }
       changed.push(token);
     }
-    if (previousId !== creature.characterId) gameManager.characterServices.combat.forget(token);
+    if (previousId !== creature.characterId)
+      gameManager.characterServices.combat.forget(token, {
+        preserveTargetEffects: previousId === null && creature.characterId !== null,
+      });
   }
   const ids = new Set(library.list().map((character) => character.id));
   for (const id of gameManager.characterServices.combat.histories.keys()) {
     if (!ids.has(id)) gameManager.characterServices.combat.histories.delete(id);
   }
+  gameManager.characterServices.combat.syncEffects();
   return changed;
 }
 
@@ -192,6 +213,9 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
     token.id = creature.id;
     token.instanceNumber = creature.instanceNumber;
     token.movementSettings = { ...creature.movement };
+    token.allegiance = creature.allegiance || 'neutral';
+    token.creatureType = creature.creatureType || 'humanoid';
+    token.creatureSize = creature.creatureSize || 'medium';
     if (creature.fallTraits) token.fallTraits = { ...creature.fallTraits };
     if (creature.characterId)
       TokenMovement.linkTokenCharacter(token, library, creature.characterId);

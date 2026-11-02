@@ -92,6 +92,7 @@ export default class CharacterSheetWindow {
   }
 
   hide() {
+    this.characterContent.services?.targeting?.cancelFor(this.activeToken);
     this._commitNameEdit();
     this.heading.blur();
     this._endGesture();

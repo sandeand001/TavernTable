@@ -23,6 +23,8 @@ export const FALL_TRAITS_DEFAULTS = Object.freeze({
 });
 
 export const MOVEMENT_CONDITIONS = Object.freeze([
+  'blinded',
+  'invisible',
   'prone',
   'grappled',
   'restrained',

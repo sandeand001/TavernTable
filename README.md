@@ -352,8 +352,9 @@ Equipment/spell **Details** buttons on the sheet open the same sidebar entry.
   the physical d20 when available; advantage/disadvantage and damage rolls are
   digital. Rolling damage does not cast a spell or spend another slot.
 - **Reference** labels mean inventory/rules text only, not automated effects.
-  Even supported spells require manual targeting, effect application, duration
-  and extra-projectile handling. Prepared-spell limits, armor proficiency
+  Reviewed targeting profiles automate selection and projectile attack rolls,
+  not hits, damage, saves or effect application. Unreviewed spells explicitly
+  require manual targeting or a configured profile. Prepared-spell limits, armor proficiency
   restrictions, ammunition, charges and conditional rules are not enforced.
 
 This is a first version, not a complete 5e rules engine. Common class costs and
@@ -371,6 +372,12 @@ header and read-only check/save buttons instead of editable ability boxes.
   no automatic initiative order. **End Combat / Free Play** removes turn
   enforcement without restoring persistent spell slots or limited uses.
 - Actions, bonus actions, reactions and remaining attacks have separate budgets.
+  Combat choices are grouped into **Attacks**, **Spells** and **Other actions**
+  inside each action-cost section. Spell attacks stay under Spells; weapon attacks,
+  unarmed strikes, Grapple and Shove appear under Attacks. Empty categories are hidden.
+  The **Bonus action** section remains visible even if this character has no
+  available bonus-action abilities, and explains when its budget is spent.
+  It follows Action in the default layout; saved custom section ordering is retained.
   **Attacks left** includes the attacks available if you spend your remaining
   actions on attacking, plus attacks left in an Attack action already started.
   It starts at the class/level count (or manual override), decreases as attacks
@@ -390,6 +397,11 @@ header and read-only check/save buttons instead of editable ability boxes.
   **Undo last use** refunds tracked costs, not dice results or target effects,
   and cannot refund Dash movement that has already been used.
 - Casting uses the spell's action/bonus/reaction timing, preparation and slots.
+  The targeting popup's **Cast at level** buttons choose the **spell slot level**
+  to expend, not the spell's fixed base level. Only levels with a usable slot are
+  shown, with remaining counts. Higher levels update supported projectile counts
+  and area sizes before confirmation, plus the committed damage follow-ups. Changing levels spends
+  nothing; cantrips explicitly say they use no spell slot.
   A 2014 campaign enforces its bonus-action casting restriction. A 2024 campaign
   instead allows only one expended spell slot per global turn, including off-turn
   reaction casting. Off-turn reactions use their own pool. Longer casting/activation times are
@@ -415,9 +427,19 @@ header and read-only check/save buttons instead of editable ability boxes.
   save button only rolls: unconsciousness, stabilization and special exceptions
   remain manual. End combat before taking rests or resetting daily uses.
 
-The turn ledger is scene memory, not a saved encounter. Reloading does not restore
-combat, token links or board edits. Persistent custom abilities and rest-limited
-usage remain with their saved character.
+Pace, Style and Roll use pressed buttons rather than drop-downs. Style changes
+Default/Drunk animation; Roll selects manual Normal/Advantage/Disadvantage and
+still combines with automatic targeting modifiers. Neither spends movement or
+an action. Creature allegiance, biological type and size are editable only on Core.
+Search/Study cards are omitted from the Combat action menu because their checks
+are available below. Those ordinary skill rolls remain free; use a Manual / DM
+action correction if a check represents a Search or Study action. Tactical Hide
+and class bonus-action options remain tracked choices.
+
+The live turn ledger is scene memory captured in acknowledged campaign checkpoints.
+Reopening a campaign restores committed budgets, history, token links and board edits,
+never an in-flight selection or unfinished dice roll. Character-only backups carry
+custom abilities and rest-limited usage, not a board encounter.
 
 2024 automation also uses the revised Action Surge restriction, target-save/DC
 Grapple and Shove workflows, Martial Arts dice and independent bonus strikes,
@@ -425,13 +447,123 @@ level-10 Flurry credits, Paladin bonus-action features/Channel Divinity, class
 resource recovery and level-1 Paladin/Ranger spell slots. Weapon Mastery and
 unimplemented conditional effects remain explicitly manual/reference-only.
 
+### Attack and spell targeting
+
+On the spatial board, weapon attacks appear only when another viable token is in
+range with a clear path. Choose a target before rolling or spending the use. Melee,
+reach, thrown and normal/long ranged distances are separate; a dagger's melee and
+thrown modes can be selected in the targeting panel. Long range and conscious hostile
+creatures within 5 feet impose ranged disadvantage, not a blanket minimum range.
+Nearby allies do not impose it. The panel also accounts for tracked Prone, Blinded
+and Invisible conditions. Manual advantage/disadvantage combines with these flags.
+The close-combat rule applies to ranged **spell attack rolls** such as Fire Bolt
+in both editions, regardless of how far away the chosen target is. It does not
+penalize a spell's saving throw or Magic Missile's automatic hits. A spell with a
+single listed range has no weapon-style normal/long-range penalty.
+Grapple and Shove also require another creature in reach and no more than one size
+larger; their edition-specific contest/save and outcomes remain manual.
+
+- **Core > Targeting tags:** set each token's Friendly/Hostile/Neutral side,
+  biological creature type and size. Untagged tokens default to Neutral, Humanoid
+  and Medium; these are not inferred from their appearance. Matching non-neutral
+  sides are allies, opposite sides are enemies. Healing profiles prefer allies
+  without forbidding otherwise legal healing of enemies.
+- **Select targets:** click a token or its panel button. Repeated-target spells
+  let each click allocate another projectile, with a minus button to remove one.
+  Allocate all Magic Missile darts, Scorching Ray rays or Eldritch Blast beams
+  before confirming. Each attack projectile rolls separately; damage rolls and
+  applying the results remain manual.
+- **Choose casting level:** levelled spells select their slot in this same popup,
+  not on the spell card. Existing targets and locked areas are retained while the
+  preview updates. If changing level makes an allocation too large or incomplete,
+  correct the allocations before Confirm. Cancellation creates no area and spends
+  no slot or action. Spellbook roll-only damage follows the last confirmed cast level.
+- **Beneficial Fly:** select willing creatures within **Touch (5 feet)**, including
+  the caster, and check the willingness confirmation. Allegiance does not establish
+  willingness; a willing enemy can be selected with the Any filter. A level 3 cast
+  targets one creature, with one additional target per higher slot level.
+  Confirmation automatically grants **60-foot flying speed**, without taking off
+  or overwriting base flight. The 2024 spell grants **Hover**; the 2014 spell
+  instead keeps its targets aloft by magic, including while Prone or unable to move.
+  Use **Take flight** on the recipient's radial menu to begin flying.
+- **Preview an area:** move the pointer over the board and left-click to lock it.
+  Caster-origin cones/lines begin along the creature's actual facing. Point-origin
+  cones, lines and cubes use two clicks: origin, then direction. The panel shows
+  affected creatures and supports chosen exclusions where the spell allows them.
+  Point origins can be elevated above terrain. Empty areas are valid casts.
+- **Confirm / Cancel:** confirmation rechecks current positions, range, cover,
+  target counts and resources before committing. Cancel or Escape spends nothing.
+  Canceling a later projectile retains every already-completed roll, but does not
+  spend the spell slot or action. Right-button camera gestures remain available.
+- **Lingering visuals:** Grease, Entangle, Fog Cloud, Darkness and Spirit Guardians
+  leave an area until its configured duration expires. Only the corresponding
+  caster's later turns count, not other creatures' turns or repeated UI refreshes.
+  Ice Storm's residual terrain lasts through the end of the next caster turn.
+  Following areas move with their caster; fixed areas stay placed. Concentration
+  replacement/ending removes the appropriate visuals. **End area** removes one
+  manually without refunding the cast or ending concentration/conditions; those
+  mechanical changes use the sheet's separate controls. Undo removes the new visual and restores
+  a concentration area that the undone cast replaced.
+- **Fly lifetime:** the active-effects panel lists recipients and the remaining
+  **100 caster turns (10 minutes)**. Its cyan rings follow recipients along the ground
+  beneath them, aligned with the yellow selection ring instead of rising during flight.
+  They remain visible outside portrait-token rims and do not draw through creature visuals.
+  Ending/replacing concentration, **End spell**, expiry or Undo removes the
+  temporary grant. Duration expiry and End spell also end its concentration.
+  An airborne recipient falls through the normal damage/Prone rules unless another
+  active flight source can keep it aloft. Natural flight and other casters' Fly
+  grants remain intact. Undo restores a replaced concentration grant or area.
+- Areas, remaining durations, tags and completed target/roll records survive
+  campaign checkpoints and campaign backups. A fixed area may survive caster-token
+  removal; use End area when its caster no longer has a token to take turns.
+
+The first reviewed set contains **27 profiles per edition**: Acid Splash, Bane,
+Bless, Burning Hands, Cone of Cold, Cure Wounds, Darkness, Eldritch Blast, Entangle,
+Fire Bolt, Fireball, Flame Strike, Fly, Fog Cloud, Grease, Healing Word, Hold Person,
+Ice Storm, Lightning Bolt, Magic Missile, Ray of Frost, Scorching Ray, Shatter,
+Shield, Sleep, Spirit Guardians and Thunderwave. Upcasting and cantrip beam counts
+come from the chosen cast level/character level. Edition differences include
+2014 Acid Splash's paired targets versus the 2024 sphere, revised Sleep's smaller
+area and concentration, Hold Person's removed upcast spread restriction, and the
+2024 Spirit Guardians emanation profile. Classic lances retain their close-range
+penalty; Heavy weapons use creature size in 2014 and Strength/Dexterity in 2024.
+Magical +1/+2/+3 weapon variants retain their base reach/thrown targeting.
+
+**Core > Targeting configuration** opens static
+overrides for other spells/custom abilities: range/minimum range, target/projectile
+counts, sight, shape/dimensions, origin, exclusions and duration/expiry. Weapon
+mode edits retain other modes; feature overrides can ignore close-quarters or
+long-range disadvantage. Reset returns to the campaign's reviewed rules. Static
+overrides do not infer future upcasting or subclass/feat mechanics.
+An unreviewed spell has a small targeting **gear** on its play card; ordinary
+weapon and reviewed-spell cards do not carry large configuration buttons.
+
+This is targeting assistance, not complete automatic adjudication. Range uses
+five-foot grid diagonals, including altitude; area inclusion uses token feet/center
+points rather than full creature volumes. Cover checks use terrain columns and
+transformed structure bounds, not doors/openings, partial-cover AC/save bonuses or
+other creatures as cover. Confirm boundary cases and large-creature emanation
+coverage manually. 2014 Fireball/Fog Cloud corner-spreading coverage is explicitly
+flagged for manual confirmation, not simulated propagation. Lingering areas are
+**visual only**: they do not automatically obscure vision, alter movement, deal
+damage, make saves or apply/end conditions. Sleep and other creature-held effects
+do not leave a persistent area merely because their conditions have a duration.
+Concentration areas follow the owned spell's concentration flag, disappear when
+another concentration spell replaces it or concentration is ended, and do not
+erase another caster's area or non-concentration zones. Concentration saves after
+damage and other mechanical ending conditions still require manual resolution.
+Fly's temporary flight grant is mechanical, not just a visual. Other beneficial
+spells can select legal targets using reviewed/configured profiles, but their
+healing, buffs and conditions still require manual application.
+
 ### Arrange play pages and Favorites
 
 On **Combat** or **Non-combat**, choose **Customize layout**:
 
 - Drag a section's handle to move it before another section. Drag card handles
   to reorder cards within their section. **Earlier / Later** buttons provide
-  the same controls with the keyboard.
+  the same controls with the keyboard. In Combat, cards reorder within their
+  automatic category; Favorites retains its freely arranged order.
 - Choose **Favorite**, or drag a card into **Favorites**, to move it there
   without a duplicate in its original section. **Unfavorite** returns it to its
   normal section; dragging it back can also choose its position.
@@ -610,16 +742,20 @@ onto the terrain beneath the flyer rather than floating at flight altitude.
 **Drop** relinquishes flight and starts the shared falling lifecycle without a
 movement cost. Sufficient falls roll damage and may leave the creature Prone;
 Feather Fall, Slow Fall and other protections still apply. Drop does not erase
-natural flying speed or cancel a spell. Losing an active flight capability also
-causes a fall after the current committed waypoint. Completed airborne positions
+natural flying speed or cancel a spell. Losing flight during a route interrupts it
+at the last stable waypoint and refunds its unfinished tail; losing support starts
+a fall. A reduced flying speed also interrupts the route so it can be replanned
+against the remaining allowance. Completed airborne positions
 and movement costs survive campaign save/reopen; unfinished animations/routes do
 not replay.
 
-Flying speed is currently a manual active-effect setting: it can represent
-natural flight or an already-applied spell/item effect. Preparing/casting a spell
-or owning/equipping an item does not automatically select flight targets or
-manage effect duration. Restore the remaining granted speed, or clear it if no
-flight grant remains, when an effect ends. **Can hover** is a
+The sheet's Flying speed field represents **base/manual flight**. The reviewed
+**Fly** spell adds a scene-owned, token-specific temporary grant, using the higher
+of base and granted speeds. It persists with concentration, recipients and duration
+in campaign saves/backups, but never becomes a character-only exported trait or
+grants every token sharing a character record flight. Other spell/item flight
+effects still require manual application and cleanup; preparing/owning them does
+not activate them. **Can hover** is a
 rules protection, independent of the stationary hover animation.
 
 Flight uses lazy, retargeted **Floating.fbx** and **Flying.fbx** locomotion

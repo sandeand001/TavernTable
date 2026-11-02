@@ -4,6 +4,11 @@ import { copyRollSummary } from '../systems/dice/rollSummary.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { validateSavedPlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { validateMovementEffects } from '../rules/falling.js';
+import {
+  TARGET_ALLEGIANCES,
+  TARGET_CREATURE_TYPES,
+  TARGET_CREATURE_SIZES,
+} from '../config/targeting/SpellProfiles.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -167,6 +172,11 @@ export function validateScene(scene, { ruleset, library }) {
       !inside(creature.gridX, creature.gridY) ||
       !finite(creature.facingAngle) ||
       !record(creature.movement) ||
+      (creature.allegiance !== undefined && !TARGET_ALLEGIANCES.includes(creature.allegiance)) ||
+      (creature.creatureType !== undefined &&
+        !TARGET_CREATURE_TYPES.includes(creature.creatureType)) ||
+      (creature.creatureSize !== undefined &&
+        !TARGET_CREATURE_SIZES.includes(creature.creatureSize)) ||
       !['walk', 'run'].includes(creature.movement.mode) ||
       !['default', 'drunk'].includes(creature.movement.type) ||
       (creature.characterId === null && !finite(creature.movement.speed, 0, 1000)) ||

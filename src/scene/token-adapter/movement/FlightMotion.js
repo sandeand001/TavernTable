@@ -27,19 +27,20 @@ function flightRules() {
 
 // -- Eligibility and clearance --
 function flightCharacter(token) {
-  const character = getTokenCharacterRecord(token);
-  if (character) return character;
-  if (token.characterSheetId) {
+  let character = getTokenCharacterRecord(token);
+  if (!character && token.characterSheetId) {
     const library = this.gameManager.characterServices?.library;
     if (!library) throw new Error('The flying creature has no character service');
-    return library.get(token.characterSheetId);
+    character = library.get(token.characterSheetId);
   }
-  return {
+  character ||= {
     speed: getTokenMovementSettings(token).speed,
     hp: token.hp || { current: 1 },
     conditions: getTokenConditions(token),
     fallTraits: getTokenFallTraits(token),
   };
+  const combat = this.gameManager.characterServices?.combat;
+  return combat ? combat.movementCharacter(token, character) : character;
 }
 
 function flightAllowance(token) {
@@ -350,6 +351,7 @@ function beginFlightMove(token, points, range = null) {
   const job = {
     token,
     flight: true,
+    flightSpeed: movementSpeed(flightCharacter.call(this, token), 'fly'),
     points,
     index: 0,
     current: null,
@@ -404,13 +406,23 @@ function beginFlightSegment(state, job) {
 function advanceFlightMotion(state, delta) {
   const token = state.token;
   const motion = state.flightMotion;
+  const character = flightCharacter.call(this, token);
+  const rules = flightRules.call(this);
+  const supported = rules.canRemainAirborne(character);
   if (!motion) {
-    if (!flightRules.call(this).canRemainAirborne(flightCharacter.call(this, token)))
-      dropFlight.call(this, state);
+    if (!supported) dropFlight.call(this, state);
     return;
   }
   const job = this._movementRoutes.get(token);
   if (!job?.flight) throw new Error('The active flight has no committed movement route');
+  if (
+    !rules.flightAvailability(character).allowed ||
+    movementSpeed(character, 'fly') < job.flightSpeed
+  ) {
+    stopFlightMovement.call(this, state);
+    if (token.flightActive && !supported) dropFlight.call(this, state);
+    return;
+  }
   motion.elapsed += delta;
   const progress = Math.min(motion.elapsed / motion.duration, 1);
   const world = this._lerp3(motion.start, motion.target, progress);

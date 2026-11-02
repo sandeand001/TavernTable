@@ -81,13 +81,43 @@ function sectionControls(id, label, editing, index, length) {
   </div>`;
 }
 
+function actionCategory(action) {
+  if (action.kind === 'spell' || action.isSpell) return 'spells';
+  if (
+    action.kind === 'weapon' ||
+    ['attack', 'bonus-attack'].includes(action.cost) ||
+    action.roll?.attack
+  )
+    return 'attacks';
+  return 'actions';
+}
+
+function categorizedActions(actions, context, sectionId, sectionLabel) {
+  return [
+    ['attacks', 'Attacks'],
+    ['spells', 'Spells'],
+    ['actions', 'Other actions'],
+  ]
+    .map(([id, label]) => {
+      const entries = actions.filter((action) => actionCategory(action) === id);
+      if (!entries.length) return '';
+      return `<div class="sheet-play-action-category" role="group" aria-label="${label} (${sectionLabel})"
+        data-play-category="${id}" data-sheet-key="play-category:${sectionId}:${id}">
+        <h5>${label}</h5>
+        <div class="sheet-play-action-grid">${actionCards(entries, context)}</div>
+      </div>`;
+    })
+    .join('');
+}
+
 function actionCards(actions, context) {
-  const { stats, resources, customs, status, choices, editingLayout } = context;
+  const { resources, customs, status, choices, editingLayout } = context;
   const disabled = editingLayout ? 'disabled' : '';
   return actions
     .map((action, index) => {
       const attributes = `data-sheet-key="play:${escape(action.id)}" data-play-card="${escape(action.id)}"
-        data-play-home="${action.home}" data-play-label="${escape(action.label)}"`;
+        data-play-home="${action.home}" data-play-label="${escape(action.label)}"
+        data-play-category-id="${actionCategory(action)}"`;
       if (action.kind === 'check') {
         return `<article class="sheet-play-roll-card" ${attributes}>${cardControls(action, context, index, actions.length)}
           <button type="button" data-sheet-action="roll" data-roll-kind="${action.rollKind}"
@@ -109,7 +139,7 @@ function actionCards(actions, context) {
       const choice = choices[action.id] || {};
       return `<article class="sheet-play-action" ${attributes}>${cardControls(action, context, index, actions.length)}
       <button type="button" data-sheet-action="use-action" data-action-id="${escape(action.id)}"
-        aria-label="Use ${escape(action.label)}" title="${escape(action.note || 'Apply targets and effects manually')}" ${disabled}>
+        aria-label="Use ${escape(action.label)}" title="${escape(action.note || 'Resolve action effects manually')}" ${disabled}>
         <strong>${escape(action.label)}</strong><small>${escape(
           action.cost === 'attack'
             ? 'Attack action / remaining attack'
@@ -117,25 +147,20 @@ function actionCards(actions, context) {
               ? 'Remaining bonus attack'
               : action.cost === 'long'
                 ? 'Long casting / activation time'
-                : `${title(action.cost)}${action.kind === 'spell' && action.spellLevel ? `; slot ${action.slotLevel}` : ''}`
+                : `${title(action.cost)}${action.kind === 'spell' ? (action.spellLevel ? `; Level ${action.spellLevel} spell` : '; Cantrip (no spell slot)') : ''}${action.spellConcentration ? '; Concentration' : ''}`
         )}
           ${resource ? ` | ${resource.maximum === null ? 'Unlimited' : resource.remaining} ${escape(resource.name)}` : ''}</small>
         ${custom && custom.maximum !== null ? `<small>${remaining}/${custom.maximum} uses</small>` : ''}
       </button>
-      ${editingLayout && action.available === false ? '<small class="sheet-layout-unavailable">Currently unavailable</small>' : ''}
+      ${action.targeting?.kind === 'manual' ? '<small class="sheet-targeting-manual">Manual targeting — no reviewed profile</small>' : ''}
       ${
-        action.kind === 'spell' && action.spellLevel > 0
-          ? `<label>Slot
-        <select data-play-slot="${escape(action.id)}" aria-label="Combat slot for ${escape(action.label)}" ${disabled}>
-          ${action.slotLevels
-            .map(
-              (level) => `<option value="${level}" ${level === action.slotLevel ? 'selected' : ''}>
-            ${level} (${stats.spellSlots[level - 1].remaining} left)</option>`
-            )
-            .join('')}
-        </select></label>`
+        action.kind === 'spell' && action.targeting?.kind === 'manual'
+          ? `<button type="button" class="sheet-targeting-config" data-sheet-action="configure-targeting"
+        data-action-id="${escape(action.id)}" aria-label="Configure targeting for ${escape(action.label)}"
+        title="Configure this spell's unreviewed targeting profile" ${disabled}><span aria-hidden="true">&#9881;</span></button>`
           : ''
       }
+      ${editingLayout && action.available === false ? '<small class="sheet-layout-unavailable">Currently unavailable</small>' : ''}
       ${
         action.variableCost
           ? `<label>Points
@@ -171,7 +196,12 @@ function playSections(context, available, options) {
   const cards = [
     ...definitions
       .filter((action) =>
-        combat ? home(action) && (editingLayout || status.active) : useful(action)
+        combat
+          ? home(action) &&
+            (editingLayout || status.active) &&
+            !action.id.startsWith('search-') &&
+            !action.id.startsWith('study-')
+          : useful(action)
       )
       .map((action) => ({
         ...action,
@@ -223,7 +253,8 @@ function playSections(context, available, options) {
         ),
         id === 'favorites' ? layout.favorites : layout.cardOrder[id]
       );
-      if (!entries.length && !editingLayout && !['utility', 'items'].includes(id)) return '';
+      if (!entries.length && !editingLayout && !['utility', 'items', 'bonus'].includes(id))
+        return '';
       if (['saves', 'skills', 'abilities'].includes(id)) {
         const open = id === 'abilities' ? opened[id] : opened[id] !== false;
         return `<section class="sheet-play-checks" ${attributes}>${tools}
@@ -233,10 +264,32 @@ function playSections(context, available, options) {
       }
       return `<section class="sheet-play-action-group" aria-label="${label === 'Favorites' ? 'Favorite' : label} options" ${attributes}>
       <h4>${label}${id === 'bonus' && status.bonusAttacksRemaining ? ` (${status.bonusAttacksRemaining} strikes left)` : ''}</h4>${tools}
-      <div class="sheet-play-action-grid">${
-        actionCards(entries, context) ||
-        `<p>${id === 'favorites' ? 'Choose Favorite on a card to pin it here.' : 'No options currently available.'}</p>`
-      }</div>
+      ${
+        (combat && ['action', 'bonus', 'reaction', 'free'].includes(id)
+          ? categorizedActions(entries, context, id, label)
+          : entries.length
+            ? `<div class="sheet-play-action-grid">${actionCards(entries, context)}</div>`
+            : '') ||
+        `<p>${
+          id === 'favorites'
+            ? 'Choose Favorite on a card to pin it here.'
+            : id === 'bonus'
+              ? !status.active
+                ? 'Start a turn to see bonus-action options.'
+                : status.busy
+                  ? 'Finish the current use or save to see bonus-action options.'
+                  : !status.isTurn
+                    ? 'Bonus actions are available on this creature’s turn.'
+                    : status.bonusActions === 0
+                      ? 'Bonus action spent this turn.'
+                      : cards.some(
+                            (card) => card.home === 'bonus' && layout.favorites.includes(card.id)
+                          )
+                        ? 'Available bonus-action options are in Favorites.'
+                        : 'No available bonus-action options for this character.'
+              : 'No options currently available.'
+        }</p>`
+      }
     </section>`;
     })
     .join('');
@@ -284,7 +337,7 @@ export function renderPlayView(context) {
       <button type="button" data-play-layout-action="toggle" aria-label="Customize play layout"
         aria-pressed="${editingLayout}" ${!editingLayout && status.busy ? 'disabled' : ''}>${editingLayout ? 'Done customizing' : 'Customize layout'}</button>
       ${editingLayout ? '<button type="button" data-play-layout-action="reset" aria-label="Reset this page layout">Reset this page</button>' : ''}
-      ${editingLayout ? '<small>Drag handles or use Earlier/Later. Drop cards into Favorites to pin them. Changes save automatically; play buttons are disabled.</small>' : ''}
+      ${editingLayout ? `<small>Drag handles or use Earlier/Later${combat ? ' within each category' : ''}. Drop cards into Favorites to pin them. Changes save automatically; play buttons are disabled.</small>` : ''}
     </div>
     ${
       status.downed
@@ -360,8 +413,8 @@ export function renderPlayView(context) {
     <div class="sheet-play-action-groups" aria-label="Available ${combat ? 'combat' : 'non-combat'} options">
       ${playSections(playContext, available, options)}
     </div>
-    <p class="sheet-reference">Costs and tracked uses are enforced; targets, trigger conditions, positioning and effects remain manual.
+    <p class="sheet-reference">Costs and tracked uses are enforced; reviewed targeting is checked. Fly grants temporary flight automatically. Hits, saves, trigger conditions and other mechanical effects remain manual.
       <button type="button" data-sheet-section="core">Configure abilities in Core</button></p>
-    <p class="sheet-reference">Ordinary checks and saves do not spend actions. Use Hide/Search when declaring those actions.</p>
+    <p class="sheet-reference">Ordinary checks and saves below are free rolls. Search/Study cards are omitted here; use a Manual / DM action correction when a check represents an action. Hide remains a tracked combat choice.</p>
   </section>`;
 }

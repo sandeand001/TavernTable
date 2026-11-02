@@ -28,7 +28,10 @@ export default class FallingController {
       if (record.characterId && record.characterId !== character.id)
         throw new Error('The falling creature changed its linked character');
       record.characterId = character.id;
-      record.protection ||= this.library.rules.fallProtection(character, { ignoreFlight });
+      record.protection ||= this.library.rules.fallProtection(
+        this.combat.movementCharacter(token, character),
+        { ignoreFlight }
+      );
       const protection = record.protection;
       const slowFall = this.combat.slowFallAvailability(token);
       if (record.useSlowFall === undefined) {

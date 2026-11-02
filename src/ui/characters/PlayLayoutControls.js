@@ -296,6 +296,10 @@ export default class PlayLayoutControls {
           );
         }
         const beforeCard = event.target.closest('[data-play-card]');
+        const category = event.target.closest('[data-play-category]')?.dataset.playCategory;
+        if (category && category !== source.dataset.playCategoryId) {
+          throw new Error('Cards stay within their combat category, or can be pinned in Favorites');
+        }
         if (beforeCard === source) return;
         const before = beforeCard?.dataset.playCard ?? null;
         if (group === 'favorites') {

@@ -1,4 +1,8 @@
-import { captureCampaignScene, restoreCampaignScene } from '../../../src/campaigns/SceneWorld.js';
+import {
+  captureCampaignScene,
+  restoreCampaignScene,
+  applySceneCharacterLinks,
+} from '../../../src/campaigns/SceneWorld.js';
 import { encodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import CombatSession from '../../../src/entities/characters/CombatSession.js';
@@ -12,6 +16,11 @@ import CampaignAutosave from '../../../src/campaigns/CampaignAutosave.js';
 import { decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import { TokenManager } from '../../../src/managers/TokenManager.js';
+import {
+  targetingAvailability,
+  validateTargetSelection,
+} from '../../../src/rules/targeting/assessment.js';
+import classic from '../../../assets/data/resources/srd-2014-5.1-seed.1.json';
 
 function createWorld(library, characterId) {
   const token = {
@@ -46,6 +55,130 @@ function createWorld(library, characterId) {
   gm.characterServices = { library, combat };
   return { gm, adapter, combat, token, terrain };
 }
+
+function flyWorld() {
+  localStorage.clear();
+  const library = new CharacterLibrary({
+    ruleset: '2014',
+    catalog: classic.entries,
+    classes: classic.classes,
+    storage: localStorage,
+  });
+  const id = library.create('Caster');
+  library.edit(id, { classId: 'wizard', level: 5 });
+  const world = createWorld(library, id);
+  const recipient = {
+    id: 'token-2',
+    instanceNumber: 2,
+    type: world.token.type,
+    name: 'Recipient',
+    nameMode: 'custom',
+    gridX: 2,
+    gridY: 1,
+    facingAngle: 0,
+    world: { x: 2.5, y: 0, z: 1.5 },
+    movementSettings: { speed: 30, mode: 'walk', type: 'default' },
+    fallTraits: { flySpeed: 20 },
+  };
+  world.gm.placedTokens.push(recipient);
+  world.gm.tokenManager._nextTokenId = 2;
+  world.gm.tokenManager._tokenTypeCounts.set(world.token.type, 2);
+  const board = () => ({
+    tokens: world.gm.placedTokens.map((token) => ({
+      id: token.id,
+      name: token.name,
+      world: token.world,
+      allegiance: 'friendly',
+      creatureType: 'humanoid',
+      conditions: [],
+      abilities: {},
+    })),
+    tileSize: 1,
+    clearPath: () => true,
+  });
+  world.combat.targeting = {
+    beginQuery: () => {},
+    hasTokenId: (id, characterId = null) =>
+      world.gm.placedTokens.some(
+        (token) => token.id === id && (!characterId || token.characterSheetId === characterId)
+      ),
+    availability: (token, action) => {
+      const current = board();
+      return targetingAvailability(
+        current,
+        current.tokens.find((row) => row.id === token.id),
+        action.targeting
+      );
+    },
+    validate: (token, action, selection) => {
+      const current = board();
+      return validateTargetSelection(
+        current,
+        current.tokens.find((row) => row.id === token.id),
+        action.targeting,
+        selection
+      );
+    },
+  };
+  const owned = library.add(id, 'spell:fly');
+  library.prepare(id, owned, true);
+  world.combat.commitAction(world.combat.prepareAction(world.token, `spell:${owned}`), '', null, {
+    targets: [{ tokenId: recipient.id, count: 1 }],
+    willingConfirmed: true,
+  });
+  return { ...world, library, recipient };
+}
+
+test('Fly scene saves contain temporary grants separately from unlinked creature base flight', async () => {
+  const { gm, library, recipient, adapter, combat } = flyWorld();
+  try {
+    expect(
+      combat.movementCharacter(recipient, { fallTraits: recipient.fallTraits }).fallTraits.flySpeed
+    ).toBe(60);
+    const scene = await captureCampaignScene(gm, library);
+    expect(scene.creatures[1].fallTraits.flySpeed).toBe(20);
+    expect(scene.combat.effects[0]).toMatchObject({
+      kind: 'flight',
+      targetTokenIds: [recipient.id],
+    });
+    expect(() => encodeScene(scene, { ruleset: '2014', library })).not.toThrow();
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
+
+test('linking a previously unlinked Fly recipient preserves its scene grant without saving it into the character', async () => {
+  const { gm, library, recipient, adapter, combat } = flyWorld();
+  try {
+    const characterId = library.create('Recipient', { fallTraits: recipient.fallTraits });
+    const scene = await captureCampaignScene(gm, library, {
+      change: { linkTokenId: recipient.id },
+      result: characterId,
+    });
+    applySceneCharacterLinks(gm, scene, library);
+    expect(recipient.characterSheetId).toBe(characterId);
+    expect(combat.effects).toHaveLength(1);
+    expect(combat.movementCharacter(recipient, library.get(characterId)).fallTraits.flySpeed).toBe(
+      60
+    );
+    expect(library.get(characterId).fallTraits.flySpeed).toBe(20);
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
+
+test('loading a different character into the caster token invalidates its old Fly source', async () => {
+  const { gm, library, token, adapter, combat } = flyWorld();
+  try {
+    linkTokenCharacter(token, library, library.create('Different caster'));
+    const scene = await captureCampaignScene(gm, library);
+    expect(scene.combat.effects).toEqual([]);
+    combat.syncEffects();
+    expect(combat.effects).toEqual([]);
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
 
 test('captures committed terrain, canonical linked names, selected token and completed combat data', async () => {
   localStorage.clear();

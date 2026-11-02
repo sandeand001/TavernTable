@@ -99,6 +99,17 @@ function _sampleWorldHeight(x, z, fallbackY = 0) {
   }
 }
 
+function getTokenGroundPosition(tokenEntry) {
+  const world = this._resolveTokenWorldPosition(tokenEntry);
+  const gm = this.gameManager;
+  const remote = gm.campaignWorld && tokenEntry.mapId !== gm.campaignMapId;
+  const y = remote
+    ? gm.campaignWorld.findLocalSupport(tokenEntry.mapId, world)?.heightWorld
+    : this._sampleWorldHeight(world.x, world.z, world.y);
+  if (!Number.isFinite(y)) throw new Error('A creature ground projection needs a valid height');
+  return { ...world, y };
+}
+
 function _estimateHeightFromWorld(worldY, gridX, gridY) {
   if (Number.isFinite(worldY)) {
     try {
@@ -401,6 +412,7 @@ export function installSpatialUtilsMethods(prototype) {
   prototype._computeMovementBounds = _computeMovementBounds;
   prototype._getDirectionalVectorFromYaw = _getDirectionalVectorFromYaw;
   prototype._sampleWorldHeight = _sampleWorldHeight;
+  prototype.getTokenGroundPosition = getTokenGroundPosition;
   prototype._estimateHeightFromWorld = _estimateHeightFromWorld;
   prototype._isGridWithinBounds = _isGridWithinBounds;
   prototype._findTerrainTransition = _findTerrainTransition;

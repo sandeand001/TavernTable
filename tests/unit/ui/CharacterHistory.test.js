@@ -78,9 +78,7 @@ test('attacks, free checks and follow-up damage all enter history without duplic
   library.equip(token.characterSheetId, sword, true);
   await sheets.open(token);
   sheets.root.querySelector('[data-sheet-section="combat"]').click();
-  const mode = sheets.root.querySelector('[aria-label="Character roll mode"]');
-  mode.value = 'advantage';
-  mode.dispatchEvent(new Event('change', { bubbles: true }));
+  sheets.root.querySelector('[aria-label="Advantage rolls"]').click();
   sheets.root.querySelector('[aria-label="Start turn"]').click();
   sheets.root.querySelector(`[data-action-id="attack:${sword}"]`).click();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -291,9 +289,7 @@ test('sheet history shows attack and damage totals on one line with details only
   library.equip(token.characterSheetId, sword, true);
   await sheets.open(token);
   sheets.root.querySelector('[data-sheet-section="combat"]').click();
-  const mode = sheets.root.querySelector('[aria-label="Character roll mode"]');
-  mode.value = 'advantage';
-  mode.dispatchEvent(new Event('change', { bubbles: true }));
+  sheets.root.querySelector('[aria-label="Advantage rolls"]').click();
   sheets.root.querySelector('[aria-label="Start turn"]').click();
   sheets.root.querySelector(`[data-action-id="attack:${sword}"]`).click();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -318,9 +314,7 @@ test('compact weapon results retain their opportunity-attack context and reactio
   library.equip(token.characterSheetId, sword, true);
   await sheets.open(token);
   sheets.root.querySelector('[data-sheet-section="combat"]').click();
-  const mode = sheets.root.querySelector('[aria-label="Character roll mode"]');
-  mode.value = 'advantage';
-  mode.dispatchEvent(new Event('change', { bubbles: true }));
+  sheets.root.querySelector('[aria-label="Advantage rolls"]').click();
   sheets.root.querySelector('[aria-label="Start turn"]').click();
   sheets.root.querySelector('[aria-label="End turn"]').click();
   sheets.root.querySelector(`[aria-label="Use Opportunity attack: Longsword"]`).click();
