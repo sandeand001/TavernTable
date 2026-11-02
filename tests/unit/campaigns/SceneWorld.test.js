@@ -6,7 +6,10 @@ import {
 import { encodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import CombatSession from '../../../src/entities/characters/CombatSession.js';
-import { linkTokenCharacter } from '../../../src/entities/creatures/TokenMovement.js';
+import {
+  linkTokenCharacter,
+  unlinkTokenCharacter,
+} from '../../../src/entities/creatures/TokenMovement.js';
 import { Token3DAdapter } from '../../../src/scene/Token3DAdapter.js';
 import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
 import { sceneState } from '../../helpers/sceneState.js';
@@ -310,5 +313,69 @@ test('autosave acknowledges a complete board and rejects conflicting scene/chara
     autosave.dispose();
     adapter.disposeMovementRange();
     store.close();
+  }
+});
+
+test('capture refreshes legacy automatic Monk names without reusing deleted instance numbers', async () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
+  const { gm, adapter, token } = createWorld(library, library.create('Monk'));
+  unlinkTokenCharacter(token, { mode: 'walk', type: 'default', speed: 30 });
+  token.type = 'monk';
+  token.name = 'Monk 1';
+  token.nameMode = 'automatic';
+  gm.tokenManager._tokenTypeCounts = new Map([['monk', 3]]);
+  try {
+    const scene = await captureCampaignScene(gm, library);
+    expect(scene.creatures[0]).toMatchObject({
+      id: 'token-1',
+      type: 'monk',
+      instanceNumber: 1,
+      name: 'Zombie 1',
+      nameMode: 'automatic',
+    });
+    expect(scene.tokenCounters.types).toEqual([['monk', 3]]);
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
+
+test('restore updates automatic zombie names but preserves custom and saved character names', async () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
+  const characterId = library.create('Monk');
+  const { gm, adapter, token, combat } = createWorld(library, characterId);
+  gm.tokenManager = new TokenManager(gm);
+  gm.tokenManager.placedTokens.push(token);
+  Object.defineProperty(gm, 'placedTokens', { get: () => gm.tokenManager.placedTokens });
+  gm.resizeGrid = jest.fn();
+  gm.notifyTerrainHeightsChanged = jest.fn();
+  gm.placeableMeshPool = { restorePlacements: jest.fn(async () => {}) };
+  gm.ensureInstancing = () => gm.placeableMeshPool;
+  gm.threeSceneManager.restoreView = jest.fn();
+  gm.stateCoordinator = { setViewMode: jest.fn() };
+  jest.spyOn(adapter, 'restoreStablePlacement').mockResolvedValue(undefined);
+  const scene = sceneState();
+  const base = scene.creatures[0];
+  scene.creatures = ['automatic', 'custom', 'character'].map((nameMode, index) => ({
+    ...base,
+    id: `token-${index + 1}`,
+    type: 'monk',
+    instanceNumber: index + 1,
+    name: index === 0 ? 'Monk 1' : 'Monk',
+    nameMode,
+    characterId: nameMode === 'character' ? characterId : null,
+    gridX: index + 1,
+    pose: { kind: 'ground', world: { x: index + 1.5, y: 0, z: 1.5 } },
+  }));
+  scene.tokenCounters = { nextId: 3, types: [['monk', 3]] };
+  try {
+    await restoreCampaignScene(gm, scene, library, combat);
+    expect(gm.placedTokens.map(({ name }) => name)).toEqual(['Zombie 1', 'Monk', 'Monk']);
+    expect(gm.placedTokens.map(({ id }) => id)).toEqual(['token-1', 'token-2', 'token-3']);
+    expect(library.get(characterId).name).toBe('Monk');
+    expect(gm.tokenManager._tokenTypeCounts.get('monk')).toBe(3);
+  } finally {
+    adapter.disposeMovementRange();
   }
 });

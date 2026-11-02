@@ -45,6 +45,8 @@ import { installSpatialUtilsMethods } from './token-adapter/spatial/SpatialUtils
 import { installWorldAuthorityMethods } from './token-adapter/spatial/WorldAuthority.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { installSavedPlacementMethods } from './token-adapter/SavedPlacements.js';
+import { installTacticalTokenMethods } from './token-adapter/TacticalTokens.js';
+import { installMovementRedirectMethods } from './token-adapter/pathing/MovementRedirects.js';
 
 export class Token3DAdapter {
   // ── Constructor & Initialization ─────────────────────────────────────────────
@@ -81,6 +83,9 @@ export class Token3DAdapter {
     this._pathingLogArchive = [];
     this._manualAnimationRevertTimers = new WeakMap();
     this._manualAnimationStates = new WeakMap();
+    this._tacticalTokens = new Map();
+    this._tacticalTokenFailures = new WeakSet();
+    this._tacticalView = false;
   }
 
   // ── Pathing & Debug Logging (installed via PathingLogger mixin) ──────────
@@ -154,6 +159,15 @@ export class Token3DAdapter {
                 });
               }
             }
+          }
+
+          try {
+            this._syncTacticalTokens();
+          } catch (error) {
+            GameErrors.rendering(error, {
+              component: 'Token3DAdapter',
+              operation: 'updateTacticalTokens',
+            });
           }
 
           try {
@@ -571,11 +585,13 @@ export class Token3DAdapter {
     if (!tokenEntry) return;
     if (this.gameManager.campaignView?.focusTokenId === tokenEntry.id)
       this.gameManager.campaignView.focus(null);
+    this._landingMovementRedirects?.delete(tokenEntry);
     this.gameManager.characterServices?.falling?.cancel(tokenEntry);
     this.gameManager.characterServices?.combat?.forget(tokenEntry);
     this._movementRoutes.delete(tokenEntry);
     this._savedPlacements?.delete(tokenEntry);
     this._movementRangeDirty = true;
+    this._discardTacticalToken(tokenEntry);
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
     if (!tokenEntry.__threeMesh) return;
     const mesh = tokenEntry.__threeMesh;
@@ -655,7 +671,7 @@ export class Token3DAdapter {
       let minDistance = Infinity;
 
       for (const tokenEntry of tokens) {
-        const mesh = tokenEntry?.__threeMesh;
+        const mesh = this.getTokenVisual(tokenEntry);
         if (!mesh || mesh.visible === false) {
           continue;
         }
@@ -764,3 +780,5 @@ installStepFactoryMethods(Token3DAdapter.prototype);
 installSpatialUtilsMethods(Token3DAdapter.prototype);
 installResumeProbeMethods(Token3DAdapter.prototype);
 installSavedPlacementMethods(Token3DAdapter.prototype);
+installTacticalTokenMethods(Token3DAdapter.prototype);
+installMovementRedirectMethods(Token3DAdapter.prototype);

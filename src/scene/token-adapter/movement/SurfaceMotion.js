@@ -228,6 +228,7 @@ function advanceSurfaceMotion(state, delta) {
   state.phase = 'idle';
   this._commitPlannedMovementCost(job);
   this.recordStablePlacement(state.token);
+  if (this._applyMovementRedirect(state.token)) return;
   if (job.index < job.points.length) this._beginSurfaceSegment(state, job);
   else {
     this._finishPlannedMovement(state.token);
@@ -246,6 +247,7 @@ function completeSurfaceFall(token, job) {
   job.surfaceFalling = false;
   this._commitPlannedMovementCost(job);
   this.recordStablePlacement(token);
+  if (this._applyMovementRedirect(token)) return;
   if (job.index < job.points.length) {
     const nextState = state || this._ensureMovementState(token);
     this._lockTokenWorldAuthority(nextState);

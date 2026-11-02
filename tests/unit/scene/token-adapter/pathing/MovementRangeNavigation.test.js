@@ -75,7 +75,241 @@ function finish(adapter, token, observe = () => {}) {
   expect(adapter.isMovementInProgress(token)).toBe(false);
 }
 
+function advanceUntil(adapter, predicate) {
+  for (let frame = 0; frame < 2400 && !predicate(); frame++) {
+    adapter._updateForwardMovements(1 / 60);
+    adapter._updatePlannedMovements();
+  }
+  expect(predicate()).toBe(true);
+}
+
+describe('Redirecting an active click route', () => {
+  test('a redirect during a harmless fall takes over at landing, not the old distant endpoint', () => {
+    const { adapter, token } = fixture((x) => (x <= 2 ? 8 : 0));
+    setTokenMovementSettings(token, { speed: 30, mode: 'run' });
+    expect(adapter.requestMoveToGrid(token, 8, 4)).toBeTruthy();
+    advanceUntil(adapter, () => adapter._movementStates.get(token)?.phase === 'fall');
+    expect(adapter.requestMoveToGrid(token, 3, 7)).toMatchObject({ queued: true });
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 3.5, y: 0, z: 7.5 });
+  });
+
+  test('a queued redirect waits at its safe point while character data is saving', () => {
+    localStorage.clear();
+    const { adapter, token, gm } = fixture();
+    const library = new CharacterLibrary({ ruleset: '2014', storage: localStorage, catalog: [] });
+    linkTokenCharacter(token, library, library.create('Nora'));
+    const combat = new CombatSession({
+      library,
+      isMoving: (entry) => adapter.isMovementInProgress(entry),
+    });
+    gm.characterServices = { library, combat };
+    combat.startTurn(token);
+    adapter.requestMoveToGrid(token, 8, 4);
+    advanceUntil(adapter, () => token.world.x > 3.6 && token.world.x < 4.4);
+    library.isSaving = true;
+    expect(adapter.requestMoveToGrid(token, 4, 7)).toBeTruthy();
+    advanceUntil(adapter, () => adapter._movementRoutes.get(token)?.redirectReady === true);
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 4.5 });
+    for (let frame = 0; frame < 60; frame++) {
+      adapter._updateForwardMovements(1 / 60);
+      adapter._updatePlannedMovements();
+    }
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 4.5 });
+    library.isSaving = false;
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 7.5 });
+    expect(combat.status(token).movement.spent).toBe(25);
+  });
+
+  test('a malformed redirect does not cancel or charge the existing route again', () => {
+    const { adapter, token } = fixture();
+    setTokenMovementSettings(token, { speed: 30 });
+    adapter.requestMoveToGrid(token, 8, 4);
+    advanceUntil(adapter, () => token.world.x > 3.6 && token.world.x < 4.4);
+    expect(adapter.requestMoveToGrid(token, NaN, 7)).toBeNull();
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 8.5, y: 0, z: 4.5 });
+  });
+
+  test('only the latest click before a safe step takes over', () => {
+    const { adapter, token } = fixture();
+    setTokenMovementSettings(token, { speed: 30 });
+    adapter.requestMoveToGrid(token, 8, 4);
+    advanceUntil(adapter, () => token.world.x > 3.6 && token.world.x < 4.4);
+    expect(adapter.requestMoveToGrid(token, 4, 7)).toBeTruthy();
+    expect(adapter.requestMoveToGrid(token, 4, 5)).toBeTruthy();
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 5.5 });
+  });
+
+  test('an occupied destination is replaced by the closest legal approach', () => {
+    const { adapter, token, gm } = fixture();
+    setTokenMovementSettings(token, { speed: 30 });
+    gm.placedTokens.push({
+      id: 'blocker',
+      gridX: 4,
+      gridY: 7,
+      world: { x: 4.5, y: 0, z: 7.5 },
+    });
+    adapter.requestMoveToGrid(token, 8, 4);
+    advanceUntil(adapter, () => token.world.x > 3.6 && token.world.x < 4.4);
+    expect(adapter.requestMoveToGrid(token, 4, 7)).toBeTruthy();
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 6.5 });
+  });
+
+  test('climbing changes course from the next safe wall hold and accounts for ascent and descent', () => {
+    localStorage.clear();
+    const { adapter, token, gm } = fixture((x) => (x >= 3 ? 24 : 0));
+    const library = new CharacterLibrary({ ruleset: '2014', storage: localStorage, catalog: [] });
+    const id = library.create('Climber');
+    library.edit(id, { speed: 80 });
+    linkTokenCharacter(token, library, id);
+    const combat = new CombatSession({
+      library,
+      isMoving: (entry) => adapter.isMovementInProgress(entry),
+    });
+    gm.characterServices = { library, combat };
+    combat.startTurn(token);
+    expect(
+      adapter.requestMoveToSurface(token, {
+        point: { x: 3, y: 4, z: 4.5 },
+        normal: { x: -1, y: 0, z: 0 },
+      })
+    ).toBeTruthy();
+    advanceUntil(adapter, () => {
+      const motion = adapter._movementStates.get(token)?.wallMotion;
+      return motion?.stage === 'surface' && motion.cursorY > 1.2 && motion.cursorY < 1.8;
+    });
+    expect(adapter.requestMoveToGrid(token, 2, 6)).toBeTruthy();
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 2.5, y: 0, z: 6.5 });
+    expect(combat.status(token).movement.spent).toBe(55);
+    expect(combat.moves.size).toBe(0);
+  });
+
+  test.each(['walk', 'run'])(
+    'a new click takes over at the next safe step and refunds only untraveled combat movement (%s)',
+    (mode) => {
+      localStorage.clear();
+      const { adapter, token, gm } = fixture();
+      const library = new CharacterLibrary({
+        ruleset: '2014',
+        storage: localStorage,
+        catalog: [],
+      });
+      linkTokenCharacter(token, library, library.create('Nora'));
+      const combat = new CombatSession({
+        library,
+        isMoving: (entry) => adapter.isMovementInProgress(entry),
+      });
+      gm.characterServices = { library, combat };
+      setTokenMovementSettings(token, { mode });
+      combat.startTurn(token);
+      expect(adapter.requestMoveToGrid(token, 8, 4).cost).toBe(30);
+      advanceUntil(adapter, () => token.world.x > 3.6 && token.world.x < 4.4);
+      const before = { ...token.world };
+      expect(adapter.requestMoveToGrid(token, 4, 7)).toBeTruthy();
+      expect(token.world).toEqual(before);
+      finish(adapter, token);
+      expect(token.world).toEqual({ x: 4.5, y: 0, z: 7.5 });
+      expect(combat.status(token).movement).toMatchObject({ spent: 25, remaining: 5 });
+      expect(combat.moves.size).toBe(0);
+    }
+  );
+
+  test('redirecting after the last affordable step cannot grant any extra movement', () => {
+    localStorage.clear();
+    const { adapter, token, gm } = fixture();
+    const library = new CharacterLibrary({ ruleset: '2014', storage: localStorage, catalog: [] });
+    linkTokenCharacter(token, library, library.create('Nora'));
+    const combat = new CombatSession({
+      library,
+      isMoving: (entry) => adapter.isMovementInProgress(entry),
+    });
+    gm.characterServices = { library, combat };
+    combat.startTurn(token);
+    adapter.requestMoveToGrid(token, 8, 4);
+    advanceUntil(adapter, () => token.world.x > 7.6 && token.world.x < 8.4);
+    expect(adapter.requestMoveToGrid(token, 8, 7)).toBeTruthy();
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 8.5, y: 0, z: 4.5 });
+    expect(combat.status(token).movement).toMatchObject({ spent: 30, remaining: 0 });
+    expect(combat.moves.size).toBe(0);
+  });
+
+  test('repeated free-play redirects keep one allowance and clamp the final click to legal reach', () => {
+    localStorage.clear();
+    const { adapter, token, gm } = fixture();
+    const library = new CharacterLibrary({
+      ruleset: '2014',
+      storage: localStorage,
+      catalog: [],
+    });
+    linkTokenCharacter(token, library, library.create('Nora'));
+    gm.characterServices = {
+      library,
+      combat: new CombatSession({
+        library,
+        isMoving: (entry) => adapter.isMovementInProgress(entry),
+      }),
+    };
+    expect(adapter.requestMoveToGrid(token, 8, 4).cost).toBe(30);
+    advanceUntil(adapter, () => token.world.x > 3.6 && token.world.x < 4.4);
+    expect(adapter.requestMoveToGrid(token, 4, 7)).toBeTruthy();
+    advanceUntil(adapter, () => token.world.z > 5.1 && token.world.z < 5.4);
+    expect(adapter.requestMoveToGrid(token, 4, 11)).toBeTruthy();
+    finish(adapter, token);
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 8.5 });
+  });
+});
+
 describe('Distance-limited click navigation', () => {
+  test.each(['walk', 'run'])(
+    'a diagonal route around one creature reaches its far side within 30 feet (%s)',
+    (mode) => {
+      const { adapter, token, gm } = fixture();
+      setTokenMovementSettings(token, { speed: 30, mode });
+      gm.placedTokens.push({
+        id: 'mutant',
+        type: 'mutant',
+        gridX: 6,
+        gridY: 9,
+        world: { x: 6.5, y: 0, z: 9.5 },
+      });
+      const range = adapter.getTokenMovementRange(token);
+      expect(range.tiles.has('6,10')).toBe(true);
+      expect(range.tiles.get('6,10').cost).toBe(30);
+      expect(range.tiles.has('6,9')).toBe(false);
+      const request = adapter.requestMoveToGrid(token, 6, 10);
+      expect(request.cost).toBe(30);
+      finish(adapter, token, () => {
+        const { x, z } = token.world;
+        expect(x > 6 + 1e-8 && x < 7 - 1e-8 && z > 9 + 1e-8 && z < 10 - 1e-8).toBe(false);
+      });
+      expect(token.world).toEqual({ x: 6.5, y: 0, z: 10.5 });
+      adapter.disposeMovementRange();
+    }
+  );
+
+  test.each(['plant', 'structure'])(
+    'the far side of a solid %s still requires the longer route around its corner',
+    (placeableType) => {
+      const { adapter, token, gm } = fixture();
+      setTokenMovementSettings(token, { speed: 30 });
+      gm.terrainManager = {
+        placeables: new Map([['6,9', [{ placeableType }]]]),
+      };
+      const range = adapter.getTokenMovementRange(token);
+      expect(range.tiles.has('6,9')).toBe(false);
+      expect(range.tiles.has('6,10')).toBe(false);
+      setTokenMovementSettings(token, { speed: 35 });
+      expect(adapter.getTokenMovementRange(token).tiles.get('6,10').cost).toBe(35);
+      adapter.disposeMovementRange();
+    }
+  );
+
   test('combat range and actual successive routes use the same remaining turn allowance', () => {
     localStorage.clear();
     const { adapter, token, gm } = fixture();
@@ -245,14 +479,12 @@ describe('Distance-limited click navigation', () => {
     }
   );
 
-  test('ignores a new destination until the current action has finished', () => {
+  test('a destination changed before the first step replaces the original route', () => {
     const { adapter, token } = fixture();
     adapter.requestMoveToGrid(token, 12, 4);
-    const state = adapter._movementStates.get(token);
-    expect(adapter.requestMoveToGrid(token, 3, 4)).toBeNull();
-    expect(state.lastRequestedGoal.gridX).toBe(12);
+    expect(adapter.requestMoveToGrid(token, 3, 4)).toMatchObject({ queued: true });
     finish(adapter, token);
-    expect(token.gridX).toBe(12);
+    expect(token.gridX).toBe(3);
   });
 
   test('a wall click stops smoothly at a nearby five-foot height and remains attached', () => {

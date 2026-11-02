@@ -108,6 +108,7 @@ export function notifyCharacterChanged(gameManager, characterId, entryKind = nul
   syncLinkedCreatureNames(gameManager, characterId);
   for (const token of gameManager.placedTokens) {
     if (token.characterSheetId === characterId) {
+      gameManager.token3DAdapter?.refreshTokenAppearance?.(token);
       gameManager.token3DAdapter?.syncProneState?.(token);
     }
   }

@@ -65,6 +65,14 @@ function haltFallRoute(state) {
   if (job) {
     job.spent = this._getFallMovementCost(job);
     job.segmentCharged = true;
+    if (job.redirect) {
+      this._landingMovementRedirects ||= new Map();
+      this._landingMovementRedirects.set(state.token, {
+        destination: job.redirect,
+        allowance: Math.max(0, job.settings.speed - job.spent),
+      });
+      job.continuing = true;
+    }
     this._finishPlannedMovement(state.token);
   }
   this._clearPathState(state);

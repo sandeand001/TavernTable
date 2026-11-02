@@ -1,9 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { TOKEN_MOVEMENT_DEFAULTS } from '../../../config/TokenMovementConfig.js';
-import {
-  getCreatureTypeLabel,
-  normalizeCreatureType,
-} from '../../../entities/creatures/creatureHelpers.js';
+import { normalizeCreatureType } from '../../../entities/creatures/creatureHelpers.js';
+import { getAutomaticCreatureName } from '../../../entities/creatures/CreatureNames.js';
 
 // ── Token Registration ─────────────────────────────────────────
 
@@ -24,16 +22,11 @@ export function addTokenToCollection(
   const instanceNumber = (c._tokenTypeCounts.get(canonicalType) || 0) + 1;
   c._tokenTypeCounts.set(canonicalType, instanceNumber);
   c._nextTokenId = (c._nextTokenId || 0) + 1;
-  const typeLabel = getCreatureTypeLabel(canonicalType);
 
   const newTokenData = {
     id: checkpoint ? checkpoint.id : `token-${c._nextTokenId}`,
     instanceNumber: checkpoint ? checkpoint.instanceNumber : instanceNumber,
-    name: checkpoint
-      ? checkpoint.name
-      : instanceNumber === 1
-        ? typeLabel
-        : `${typeLabel} ${instanceNumber}`,
+    name: checkpoint ? checkpoint.name : getAutomaticCreatureName(canonicalType, instanceNumber),
     nameMode: checkpoint ? checkpoint.nameMode : 'automatic',
     movementSettings: { ...TOKEN_MOVEMENT_DEFAULTS },
     creature: creature,
@@ -70,7 +63,7 @@ export function addTokenToCollection(
     );
     for (const token of duplicates) {
       if (!token.characterSheetId && (!token.nameMode || token.nameMode === 'automatic')) {
-        token.name = `${typeLabel} ${token.instanceNumber}`;
+        token.name = getAutomaticCreatureName(canonicalType, token.instanceNumber, instanceNumber);
       }
     }
     if (typeof window !== 'undefined') {

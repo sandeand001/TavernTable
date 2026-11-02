@@ -31,6 +31,11 @@ export function renderIdentitySection(context, character) {
   const className =
     context.services.library.classes.get(character.classId)?.name || 'Custom / no class';
   return `<section class="sheet-identity-card" aria-label="Character information">
+    ${
+      character.portraitImage
+        ? `<img class="sheet-identity-portrait" src="${escape(character.portraitImage)}" alt="${escape(character.name)} portrait">`
+        : ''
+    }
     <div class="sheet-identity-fields">
       <div class="sheet-identity-field"><span>Class:</span><output aria-label="Class">${escape(className)}</output></div>
       ${[

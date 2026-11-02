@@ -27,6 +27,10 @@
   placeable removal, dice rolls, character actions or movement.
 - **Creature token**: one logical gameplay instance with a stable ID, grid/world
   position, facing, movement settings and character-sheet tab.
+- **Tactical token view**: a camera-driven rendering substitution, not a new
+  gameplay instance. Enter at 80 degrees above ground; leave below 78 degrees.
+  Circular name/portrait tokens retain the creature's position, selection and
+  movement while its original model and animation state remain available.
 - **Campaign**: a named, browser-local workspace with an explicitly chosen,
   immutable 2014 or 2024 ruleset. Startup offers Create/Open rather than silently
   resuming. Each campaign owns one automatically saved board. Switching flushes
@@ -57,12 +61,23 @@
 - **Saved character**: a persistent rules record, independent of a
   creature token's name, appearance and ephemeral scene ID. A token can load a
   record through `characterSheetId`; saving the record does not save the board.
+- **Character images**: optional embedded raster images owned by the saved
+  character and shared by its linked tokens. The center-cropped portrait is used
+  for tactical tokens and sheet identity; separate proportional artwork belongs
+  on Bio & notes. Uploads stay browser-local and travel in character/campaign
+  backups. Renderer textures and temporary image-loading state are never saved.
 - **Character speed**: the saved record's authoritative ground-distance setting for
   linked tokens and their grid ranges, editable only on Core. Combat displays
   remaining movement as feet/allowance and a progress bar. Pace (Walk/Run) and animation style
   (Default/Drunk) remain per token. Free play has a per-move allowance; manual
   combat shares remaining movement across committed routes. Walk/Run is not Dash,
   and there is no separate editable board-speed field.
+- **Movement redirection**: the latest destination click replaces an active
+  route at its next safe step, climbing hold or landing. Completed costs remain;
+  the old untraveled reservation is refunded. An unreachable destination chooses
+  the closest legal reachable point. Redirects retain one free-play journey's
+  allowance and the existing combat turn budget, never resetting movement.
+  Pending destinations are session-local and are not replayed from checkpoints.
 - **Manual combat turn**: a scene-memory owner and action/bonus/reaction/attack
   ledger. Start/End Turn is explicit, not initiative ordering. Starting a turn
   refreshes that creature's budgets and global turn-limited custom uses; ending

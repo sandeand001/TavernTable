@@ -105,6 +105,7 @@ export function buildFlightRange({
   getHeight,
   elevationUnit,
   blocked = new Set(),
+  occupied = new Set(),
   ...grid
 }) {
   if (
@@ -129,6 +130,7 @@ export function buildFlightRange({
     elevationUnit: 0,
     getHeight: () => 0,
     blocked: obstacles,
+    occupied,
   });
   return { ...range, travelMode: 'fly', flightWorldY };
 }
@@ -143,6 +145,7 @@ export function buildMovementRange({
   elevationUnit,
   getHeight,
   blocked = new Set(),
+  occupied = new Set(),
   maxDiagonalHeightDifference = Infinity,
   minClimbHeightDifference = elevationUnit > 0
     ? (MAX_STEP_HEIGHT_FEET * tileWorldSize) / (FEET_PER_GRID_SQUARE * elevationUnit)
@@ -183,6 +186,7 @@ export function buildMovementRange({
   }
   if (prone && wallStart) throw new Error('Stand up before requesting wall movement');
   if (prone) mode = 'run';
+  const obstacles = new Set([...blocked, ...occupied]);
   const heights = new Map();
   const heightAt = (x, y) => {
     const key = `${x},${y}`;
@@ -267,7 +271,7 @@ export function buildMovementRange({
         exit === 'low' && mode === 'run'
           ? 0
           : Math.abs(cell.height - start.height) * verticalCostPerLevel;
-      if (blocked.has(key) || cost > speed + 1e-9) continue;
+      if (obstacles.has(key) || cost > speed + 1e-9) continue;
       const seed = { ...cell, cost, distance: 0, wallExit: exit, wall: startingWall };
       tiles.set(key, seed);
       previous.set(key, startKey);
@@ -295,12 +299,19 @@ export function buildMovementRange({
       const x = current.gridX + dx;
       const y = current.gridY + dy;
       const key = `${x},${y}`;
-      if (x < 0 || y < 0 || x >= cols || y >= rows || blocked.has(key)) continue;
+      if (x < 0 || y < 0 || x >= cols || y >= rows || obstacles.has(key)) continue;
       const height = heightAt(x, y);
       if (prone && height - current.height > minClimbHeightDifference + 1e-9) continue;
       const diagonal = dx !== 0 && dy !== 0;
       if (diagonal) {
-        if (blocked.has(`${x},${current.gridY}`) || blocked.has(`${current.gridX},${y}`)) continue;
+        const sideX = `${x},${current.gridY}`;
+        const sideY = `${current.gridX},${y}`;
+        if (
+          blocked.has(sideX) ||
+          blocked.has(sideY) ||
+          (occupied.has(sideX) && occupied.has(sideY))
+        )
+          continue;
         const cornerHeights = [
           current.height,
           height,
@@ -347,8 +358,8 @@ export function buildMovementRange({
           y < 0 ||
           x >= cols ||
           y >= rows ||
-          blocked.has(`${ox},${oy}`) ||
-          blocked.has(key)
+          obstacles.has(`${ox},${oy}`) ||
+          obstacles.has(key)
         )
           continue;
         const obstacleHeight = heightAt(ox, oy);
@@ -398,7 +409,7 @@ export function buildMovementRange({
       const face = faceAt(cell.gridX, cell.gridY, cell.gridX + dx, cell.gridY + dy);
       if (!face) continue;
       if (prone) continue;
-      if (blocked.has(`${face.low.gridX},${face.low.gridY}`)) continue;
+      if (obstacles.has(`${face.low.gridX},${face.low.gridY}`)) continue;
       const baseCost = cell.cost + FEET_PER_GRID_SQUARE;
       const reach = (speed - baseCost) / verticalCostPerLevel;
       if (cell.height === face.low.height) {

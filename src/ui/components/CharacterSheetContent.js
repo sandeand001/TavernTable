@@ -43,6 +43,8 @@ import {
   TARGET_CREATURE_TYPES,
   TARGET_CREATURE_SIZES,
 } from '../../config/targeting/SpellProfiles.js';
+import { CHARACTER_BACKUP_LIMIT } from '../../config/characters/CharacterImages.js';
+import CharacterImagesEditor from '../characters/CharacterImagesEditor.js';
 
 export default class CharacterSheetContent {
   constructor({ gameManager, services = null, onOpenCompendium = null }) {
@@ -100,7 +102,7 @@ export default class CharacterSheetContent {
     this.librarySelect = this.root.querySelector('[aria-label="Saved characters"]');
     this.status = this.root.querySelector('[role="status"]');
     this.rollStatus = this.root.querySelector('[aria-label="Character roll result"]');
-    this.fileInput = this.root.querySelector('input[type="file"]');
+    this.fileInput = this.root.querySelector('[aria-label="Import character JSON"]');
     this.backupPanel = this.root.querySelector('[data-sheet-backup]');
     this.backupText = this.root.querySelector('[aria-label="Character JSON backup"]');
     this.healthBar = new HealthBar({
@@ -129,6 +131,24 @@ export default class CharacterSheetContent {
     });
     this.layoutControls = new PlayLayoutControls(this);
     this.historyPanel = new RollHistory({ onError: (error) => this._failure(error, 'history') });
+    this.imageEditor = new CharacterImagesEditor({
+      onSave: (id, field, image) =>
+        this._run(
+          () => {
+            if (id !== this.characterId)
+              throw new Error('Reopen this character before changing its images');
+            return afterCharacterCommit(this.services.library.edit(id, { [field]: image }), () => {
+              notifyCharacterChanged(this.gameManager, id, null, this);
+            });
+          },
+          'Character image saved.',
+          false
+        ),
+      onError: (error) => this._failure(error, 'characterImage'),
+    });
+    this.root
+      .querySelector('.sheet-library-toolbar')
+      .insertAdjacentElement('afterend', this.imageEditor.root);
     this.root.append(this.historyPanel.root);
     this.root.addEventListener('change', (event) => this._change(event));
     this.root.addEventListener('focusin', (event) => this._startIdentityEdit(event.target));
@@ -272,6 +292,7 @@ export default class CharacterSheetContent {
     this.customActions.clear();
     this.layoutControls.clear();
     this.historyPanel.clear();
+    this.imageEditor.clear();
     this.root.classList.remove('sheet-with-history');
   }
 
@@ -286,6 +307,7 @@ export default class CharacterSheetContent {
     this.customActions.destroy();
     this.layoutControls.destroy();
     this.historyPanel.destroy();
+    this.imageEditor.destroy();
     window.removeEventListener('storage', this._storageChanged);
     window.removeEventListener('taverntable:characterChanged', this._characterChanged);
     window.removeEventListener('taverntable:combatChanged', this._combatChanged);
@@ -321,6 +343,7 @@ export default class CharacterSheetContent {
     const { library } = this.services;
     const id = this.characterId;
     const character = linkTokenCharacter(this.token, library, id);
+    this.gameManager.token3DAdapter?.refreshTokenAppearance?.(this.token, character);
     const stats = library.stats(id);
     const movement = getTokenMovementSettings(this.token);
     const previous = this.movementView;
@@ -436,6 +459,11 @@ export default class CharacterSheetContent {
         ${this._spells(character, stats)}
       </section>
       <section class="sheet-section" ${this.section !== 'notes' ? 'hidden' : ''}>
+        ${
+          character.artworkImage
+            ? `<figure class="sheet-character-art"><img src="${escape(character.artworkImage)}" alt="${escape(character.name)} character artwork" loading="lazy"></figure>`
+            : ''
+        }
         ${field('Experience', 'experience', character.experience, 'number', 'min="0" max="1000000000" step="1"')}
         <label class="sheet-field">Bio and notes<textarea aria-label="Bio and notes" data-character-field="notes" rows="10">${escape(character.notes)}</textarea></label>
       </section>
@@ -448,6 +476,7 @@ export default class CharacterSheetContent {
     if (this.healthBar.root.parentNode !== healthHost) healthHost.append(this.healthBar.root);
     if (this.restControls.root.parentNode !== healthHost) healthHost.append(this.restControls.root);
     this.healthBar.update(character);
+    this.imageEditor.update(character);
     this.restControls.update(character, this.services.library);
     const customHost = this.main.querySelector('[data-sheet-island="custom-editor"]');
     if (this.customActions.root.parentNode !== customHost)
@@ -931,6 +960,7 @@ export default class CharacterSheetContent {
 
   _syncSavingControls() {
     const busy = !!this.services?.library.isSaving || !!this.services?.combat.committing;
+    this.imageEditor.setSaving(busy);
     this.root.setAttribute('aria-busy', String(busy));
     this.librarySelect.disabled = busy;
     for (const action of ['new', 'delete', 'import', 'export']) {
@@ -1003,7 +1033,8 @@ export default class CharacterSheetContent {
     const file = this.fileInput.files?.[0];
     if (!file) return;
     try {
-      if (file.size > 1000000) throw new Error('Character backups must be smaller than 1 MB');
+      if (file.size > CHARACTER_BACKUP_LIMIT)
+        throw new Error('Character backups must be smaller than 4 MB');
       const text =
         typeof file.text === 'function'
           ? await file.text()

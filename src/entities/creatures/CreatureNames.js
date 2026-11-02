@@ -1,3 +1,10 @@
+import { getCreatureTypeLabel } from './creatureHelpers.js';
+
+export function getAutomaticCreatureName(type, instanceNumber, typeCount = instanceNumber) {
+  const label = getCreatureTypeLabel(type);
+  return typeCount > 1 ? `${label} ${instanceNumber}` : label;
+}
+
 export function validateCreatureName(name) {
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
     throw new Error('A creature name must contain 1 to 100 characters');

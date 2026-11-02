@@ -177,6 +177,14 @@ function _completeFallPhase(state, profile) {
   this._movementRangeDirty = true;
   this._clearFallStepState(state, { force: true });
   state.fallTrajectory = null;
+  const job = this._movementRoutes.get(state.token);
+  if (job?.redirect) {
+    job.spent = this._getFallMovementCost(job);
+    job.segmentCharged = true;
+    state.phase = 'idle';
+    state.__fallResumeContext = null;
+    if (this._applyMovementRedirect(state.token)) return;
+  }
 
   const resumed = this._resumeMovementAfterFall(state);
   if (resumed) {

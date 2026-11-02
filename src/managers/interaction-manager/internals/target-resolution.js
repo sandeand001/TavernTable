@@ -318,7 +318,7 @@ export function get3DTokenScreenPosition(mgr, tokenEntry) {
   try {
     const gm = mgr.gameManager;
     const threeMgr = gm?.threeSceneManager;
-    const mesh = tokenEntry?.__threeMesh;
+    const mesh = gm?.token3DAdapter?.getTokenVisual?.(tokenEntry) || tokenEntry?.__threeMesh;
     if (!mesh || !threeMgr?.camera || !threeMgr?.renderer || !threeMgr?.three) {
       return null;
     }

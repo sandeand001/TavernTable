@@ -156,7 +156,21 @@ function groundHeight(gridX, gridY, belowWorldY = Infinity) {
   return height * gm.spatial.elevationUnit;
 }
 
-function flightCellBlocked(token, gridX, gridY, worldY, allowLanding = false, sweptTopY = null) {
+function flightCreatureCellBlocked(token, gridX, gridY, worldY, sweptTopY = null) {
+  const gm = this.gameManager;
+  const bodyHeight = gm.spatial.tileWorldSize;
+  const topY = sweptTopY ?? worldY + bodyHeight;
+  for (const other of gm.placedTokens) {
+    if (other === token || other.gridX !== gridX || other.gridY !== gridY) continue;
+    const otherY = this._resolveTokenWorldPosition(other).y;
+    if (worldY < otherY + bodyHeight - 1e-7 && topY > otherY + 1e-7) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function flightSolidCellBlocked(gridX, gridY, worldY, allowLanding = false, sweptTopY = null) {
   const gm = this.gameManager;
   if (gm.terrainEngine?.geometry.hasVolumes) {
     const scale = FEET_PER_GRID_SQUARE / gm.spatial.tileWorldSize;
@@ -175,15 +189,6 @@ function flightCellBlocked(token, gridX, gridY, worldY, allowLanding = false, sw
   }
   const groundY = groundHeight.call(this, gridX, gridY, worldY);
   if (allowLanding ? worldY < groundY - 1e-7 : worldY <= groundY + 1e-7) return true;
-  const bodyHeight = gm.spatial.tileWorldSize;
-  const topY = sweptTopY ?? worldY + bodyHeight;
-  for (const other of gm.placedTokens) {
-    if (other === token || other.gridX !== gridX || other.gridY !== gridY) continue;
-    const otherY = this._resolveTokenWorldPosition(other).y;
-    if (worldY < otherY + bodyHeight - 1e-7 && topY > otherY + 1e-7) {
-      return true;
-    }
-  }
   for (const entry of gm.terrainManager?.placeables?.get(`${gridX},${gridY}`) || []) {
     if (!['plant', 'structure'].includes(entry.placeableType)) continue;
     const handle = entry.__meshPoolHandle;
@@ -207,16 +212,26 @@ function flightCellBlocked(token, gridX, gridY, worldY, allowLanding = false, sw
   return false;
 }
 
-function getTokenFlightRange(token) {
+function flightCellBlocked(token, gridX, gridY, worldY, allowLanding = false, sweptTopY = null) {
+  return (
+    flightSolidCellBlocked.call(this, gridX, gridY, worldY, allowLanding, sweptTopY) ||
+    flightCreatureCellBlocked.call(this, token, gridX, gridY, worldY, sweptTopY)
+  );
+}
+
+function getTokenFlightRange(token, allowance = null) {
   const character = flightCharacter.call(this, token);
   if (!flightRules.call(this).flightAvailability(character).allowed) return null;
   const gm = this.gameManager;
   const world = this._resolveTokenWorldPosition(token);
   const start = this._mapWorldToGrid(world) || token;
   const blocked = new Set();
+  const occupied = new Set();
   for (let y = 0; y < gm.rows; y++) {
     for (let x = 0; x < gm.cols; x++) {
-      if (flightCellBlocked.call(this, token, x, y, world.y)) blocked.add(`${x},${y}`);
+      if (flightSolidCellBlocked.call(this, x, y, world.y)) blocked.add(`${x},${y}`);
+      else if (flightCreatureCellBlocked.call(this, token, x, y, world.y))
+        occupied.add(`${x},${y}`);
     }
   }
   const inputs = {
@@ -224,11 +239,12 @@ function getTokenFlightRange(token) {
     rows: gm.rows,
     startGridX: start.gridX,
     startGridY: start.gridY,
-    speed: flightAllowance.call(this, token),
+    speed: Math.min(flightAllowance.call(this, token), allowance ?? Infinity),
     tileWorldSize: gm.spatial.tileWorldSize,
     elevationUnit: gm.spatial.elevationUnit,
     getHeight: (x, y) => gm.getTerrainHeight(x, y),
     blocked,
+    occupied,
     flightWorldY: world.y,
   };
   if (gm.terrainEngine?.geometry.hasVolumes) {
@@ -339,7 +355,10 @@ function requestFlyingMovement(token, destination, range) {
 function beginFlightMove(token, points, range = null) {
   this.recordStablePlacement(token);
   const combat = this.gameManager.characterServices?.combat;
-  const settings = { ...getTokenMovementSettings(token), speed: flightAllowance.call(this, token) };
+  const settings = {
+    ...getTokenMovementSettings(token),
+    speed: range?.speed ?? flightAllowance.call(this, token),
+  };
   const profile = this._tokenAnimationData.get(token)?.profile;
   const pace = settings.mode === 'run' ? profile?.runSpeed : profile?.walkSpeed;
   if (!Number.isFinite(pace) || pace <= 0) {
@@ -452,6 +471,7 @@ function advanceFlightMotion(state, delta) {
     this._unlockTokenWorldAuthority(state);
   }
   this.recordStablePlacement(token);
+  if (this._applyMovementRedirect(token)) return;
   const canContinue = flightRules.call(this).canRemainAirborne(flightCharacter.call(this, token));
   if (job.index < job.points.length && canContinue && !landed) {
     beginFlightSegment.call(this, state, job);

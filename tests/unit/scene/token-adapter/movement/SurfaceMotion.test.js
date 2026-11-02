@@ -112,6 +112,32 @@ test('a live creature walks the approved stair route, spends its cost and saves 
   }
 });
 
+test('a stair route accepts a new destination and changes course on the next supported step', () => {
+  const context = fixture();
+  const { token, adapter, combat } = context;
+  try {
+    expect(
+      adapter.requestMoveToSurface(token, {
+        point: { x: 6.5, y: 1.8, z: 2.5 },
+        normal: { x: 0, y: 1, z: 0 },
+        surfaceId: 'bridge',
+      })
+    ).toBeTruthy();
+    for (let frame = 0; frame < 1200 && token.world.z <= 0.6; frame++) {
+      adapter._updateForwardMovements(1 / 60);
+      adapter._updatePlannedMovements();
+    }
+    expect(token.world.z).toBeGreaterThan(0.6);
+    expect(adapter.requestMoveToGrid(token, 0, 3)).toBeTruthy();
+    finish(context);
+    expect(token.world).toEqual({ x: 0.5, y: 0, z: 3.5 });
+    expect(combat.status(token).movement.spent).toBe(15);
+    expect(combat.moves.size).toBe(0);
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
+
 test('Drop lands on the next floor, charges no movement and applies damage for only that drop', async () => {
   const context = fixture();
   const { gm, token, adapter, combat } = context;
@@ -165,58 +191,75 @@ test('Drop lands on the next floor, charges no movement and applies damage for o
   }
 });
 
-test('walking off an upper platform uses falling rules instead of interpolating down a slope', async () => {
-  const context = fixture();
-  const { gm, engine, token, adapter, combat } = context;
-  const library = gm.characterServices.library;
-  library.edit(token.characterSheetId, { hp: { max: 40, current: 40 } });
-  engine.addVolume({
-    id: 'high-platform',
-    layerId: 'upper',
-    bounds: { min: { x: 40, y: 19, z: 10 }, max: { x: 45, y: 20, z: 15 } },
-  });
-  gm.characterServices.falling = new FallingController({
-    gameManager: gm,
-    library,
-    combat,
-    getCharacter: (entry) => getTokenCharacter(gm, entry, gm.characterServices),
-    onChanged: jest.fn(),
-  });
-  const data = adapter._tokenAnimationData.get(token);
-  for (const key of ['fall', 'fallLoop', 'proneLanding', 'prone']) {
-    data.actions[key] = {
-      time: 0,
-      paused: false,
-      isScheduled: () => false,
-      getClip: () => ({ duration: 0.8, tracks: [] }),
-    };
-  }
-  data.clips = Object.fromEntries(Object.keys(data.actions).map((key) => [key, 0.8]));
-  data.landingContactTimes = { fall: 0.15, proneLanding: 0 };
-  data.current = 'idle';
-  token.gridX = 8;
-  token.gridY = 2;
-  token.world = { x: 8.5, y: 4, z: 2.5 };
-  try {
-    const request = adapter.requestMoveToGrid(token, 9, 2);
-    expect(request?.cost).toBe(5);
-    for (let frame = 0; frame < 3600 && adapter.isMovementInProgress(token); frame++) {
-      adapter._updateForwardMovements(1 / 60);
-      adapter._updatePlannedMovements();
-      await Promise.resolve();
+test.each([false, true])(
+  'walking off an upper platform resolves falling before any redirect (%s)',
+  async (redirect) => {
+    const context = fixture();
+    const { gm, engine, token, adapter, combat } = context;
+    const library = gm.characterServices.library;
+    library.edit(token.characterSheetId, { hp: { max: 40, current: 40 } });
+    engine.addVolume({
+      id: 'high-platform',
+      layerId: 'upper',
+      bounds: { min: { x: 40, y: 19, z: 10 }, max: { x: 45, y: 20, z: 15 } },
+    });
+    gm.characterServices.falling = new FallingController({
+      gameManager: gm,
+      library,
+      combat,
+      getCharacter: (entry) => getTokenCharacter(gm, entry, gm.characterServices),
+      onChanged: jest.fn(),
+    });
+    const data = adapter._tokenAnimationData.get(token);
+    for (const key of ['fall', 'fallLoop', 'proneLanding', 'prone']) {
+      data.actions[key] = {
+        time: 0,
+        paused: false,
+        isScheduled: () => false,
+        getClip: () => ({ duration: 0.8, tracks: [] }),
+      };
     }
-    expect(adapter.isMovementInProgress(token)).toBe(false);
-    expect(rollDiceExpression).toHaveBeenLastCalledWith(
-      expect.objectContaining({ expression: '2d6' })
-    );
-    expect(library.get(token.characterSheetId).hp.current).toBe(36);
-    expect(library.get(token.characterSheetId).conditions).toContain('prone');
-    expect(combat.status(token).movement.spent).toBe(5);
-    expect(token.world).toEqual({ x: 9.5, y: 0, z: 2.5 });
-  } finally {
-    adapter.disposeMovementRange();
+    data.clips = Object.fromEntries(Object.keys(data.actions).map((key) => [key, 0.8]));
+    data.landingContactTimes = { fall: 0.15, proneLanding: 0 };
+    data.current = 'idle';
+    token.gridX = 8;
+    token.gridY = 2;
+    token.world = { x: 8.5, y: 4, z: 2.5 };
+    try {
+      const request = adapter.requestMoveToGrid(token, 9, 2);
+      expect(request?.cost).toBe(5);
+      if (redirect) {
+        for (
+          let frame = 0;
+          frame < 1800 && adapter._movementStates.get(token)?.phase !== 'fall';
+          frame++
+        ) {
+          adapter._updateForwardMovements(1 / 60);
+          adapter._updatePlannedMovements();
+          await Promise.resolve();
+        }
+        expect(adapter._movementStates.get(token)?.phase).toBe('fall');
+        expect(adapter.requestMoveToGrid(token, 9, 4)).toMatchObject({ queued: true });
+        expect(token.world.y).toBeGreaterThan(0);
+      }
+      for (let frame = 0; frame < 3600 && adapter.isMovementInProgress(token); frame++) {
+        adapter._updateForwardMovements(1 / 60);
+        adapter._updatePlannedMovements();
+        await Promise.resolve();
+      }
+      expect(adapter.isMovementInProgress(token)).toBe(false);
+      expect(rollDiceExpression).toHaveBeenLastCalledWith(
+        expect.objectContaining({ expression: '2d6' })
+      );
+      expect(library.get(token.characterSheetId).hp.current).toBe(36);
+      expect(library.get(token.characterSheetId).conditions).toContain('prone');
+      expect(combat.status(token).movement.spent).toBe(redirect ? 25 : 5);
+      expect(token.world).toEqual({ x: 9.5, y: 0, z: redirect ? 4.5 : 2.5 });
+    } finally {
+      adapter.disposeMovementRange();
+    }
   }
-});
+);
 
 test('a hidden solid with no support below flight altitude blocks its cell without breaking the whole range', () => {
   const { gm, engine, token, adapter } = fixture();

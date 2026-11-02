@@ -33,6 +33,8 @@ function _updateForwardMovements(delta) {
     state.mesh = mesh;
 
     try {
+      const job = this._movementRoutes.get(tokenEntry);
+      if (job?.redirect && !job.redirectReady) this._prepareMovementRedirect(tokenEntry, job);
       this._advanceRotationState(state, delta);
 
       if (tokenEntry.flightActive) {
@@ -99,6 +101,8 @@ function _updateForwardMovements(delta) {
           break;
         }
       }
+
+      if (this._movementStates.get(tokenEntry) !== state) continue;
 
       if (state.pathActive && state.pathReached) {
         this._completePath(state);

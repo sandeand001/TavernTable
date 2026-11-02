@@ -54,7 +54,7 @@ and cached models.
   enough flat landing space and room within the approved route. Remaining movement follow-ups are in
   [TODO.md](./TODO.md).
 - The creature palette includes Mannequin, Knight, Mutant, Female Archer,
-  Armored Knight and Monk, using one shared humanoid animation and movement pipeline.
+  Armored Knight and Zombie, using one shared humanoid animation and movement pipeline.
   The picker grows with the roster; shorter windows use the sidebar scrollbar.
 - Creature right-click menus retain emotes, add eight visual-only **Actions**,
   and open an in-app tabbed character sheet. Other planned commands share a
@@ -87,6 +87,13 @@ Switching views preserves the current focus and zoom, and returning to 3D
 restores the previous orbit angle. Top-down pitch stays locked while rotating.
 Mouse-wheel zoom remains anchored to the ground beneath the cursor. Camera
 changes do not rescale terrain heights or token movement.
+
+At a camera pitch of **80 degrees or higher**, creatures and characters switch
+to circular tactical tokens, whether you use the top-down toggle or rotate
+overhead manually. Tokens show their name and, when supplied, their portrait.
+Tilting below **78 degrees** restores the original models; this small buffer
+prevents flickering near the switch point. Selection and hover highlight the
+token's rim. Movement, facing, character links and combat state are unchanged.
 
 ## Terrain editing and walls
 
@@ -172,11 +179,17 @@ Dodge and Cast Spell. Other unfinished commands are represented by one disabled
 **Not yet available** option.
 
 The Knight (Mixamo's **Knight D Pelegrini**), Mutant, Female Archer
-(**Erika Archer**), Armored Knight (**Paladin J Nordstrom**) and Monk
+(**Erika Archer**), Armored Knight (**Paladin J Nordstrom**) and Zombie
 (**Yaku J Ignite**) use the same one-square footprint, movement settings, wall
 climbing, ledge hangs and falling rules as Mannequin. They are appearances, not
 separate movement implementations. App labels describe appearances; source names
 remain provenance metadata.
+
+Zombie is the undead **Yaku J Ignite** appearance previously labeled Monk.
+Its legacy creature ID is preserved for saved boards; automatic token names
+refresh to Zombie when a board is saved or reopened. Custom names and saved
+character names are retained. This appearance label is independent of the
+**Monk** character-sheet class.
 
 The new actions are animation previews, not combat or movement rules:
 
@@ -244,6 +257,16 @@ The first creature of a type is initially unnumbered. Placing a second gives
 them names such as **Mannequin 1** and **Mannequin 2**, including in existing sheet
 tabs and the creature menu. Further copies increment the number independently
 for each creature type; deleted numbers are not reused during the app session.
+
+Open any creature's sheet and its **Character settings** gear to find
+**Character images**. Upload or remove a **Token portrait (headshot)** and,
+optionally, separate **Character artwork (full body)**. JPEG, PNG and WebP
+uploads under 10 MB are resized locally: portraits are center-cropped to a
+square up to 512 pixels, while artwork retains its proportions up to 1024 pixels
+on its longest side. Prepared images are saved as JPEGs with a white background
+for transparency. The portrait appears on tactical tokens and the sheet's
+information card; artwork appears on **Bio & notes**. Every token linked to
+the same saved character shares its images. No upload goes to an image server.
 
 ### Campaigns and rulesets
 
@@ -620,7 +643,9 @@ copyable snapshot; if an embedded host does not offer downloads, save that text
 as a `.json` file. Export again after later edits. Version-5 character backups include
 the ruleset, required source pins, Hit
 Dice, class-resource usage, custom abilities/usage, attack overrides, play layouts
-and Favorites. **Import JSON** creates a validated same-ruleset copy, preserving
+and Favorites, plus optional portraits and character artwork. Character JSON
+backups may be up to 4 MB and include the image data, not temporary file links.
+**Import JSON** creates a validated same-ruleset copy, preserving
 owned instance IDs so layouts remain meaningful. Unscoped legacy backups and
 cross-edition conversion are intentionally not supported by the campaign UI.
 Clearing browser data removes local campaigns and characters. Different
@@ -720,6 +745,19 @@ Pace/style can update during movement without retargeting the committed route.
 Free play uses a per-move allowance; manual combat shares one remaining allowance
 across committed moves. Run is not Dash.
 
+**Changing destination while moving:** click another map location at any time
+during a click-to-move route. The latest click replaces the remaining route at
+the next safe point: a completed ground/stair step, stable climbing hold, or
+jump/fall landing. There is no separate Stop control; choosing a nearby
+destination shortens the journey. Out-of-range or occupied destinations are
+adjusted to the closest legal point in the remaining reachable area.
+
+Completed movement stays charged, and the unused tail of the previous route is
+refunded before the replacement route is reserved. Repeated redirects are one
+continuous free-play move, not fresh allowances; combat continues using the same
+turn budget. Jumps and falls finish safely before turning, and any landing
+damage/conditions are applied before the new route is planned.
+
 **Flight:** a creature with an active flying speed gets **Take flight** in its
 radial menu. This rises **5 feet** and spends **5 feet** of flying movement.
 While airborne, it is replaced by **Raise**, **Lower** and **Drop**. Raise and
@@ -770,8 +808,13 @@ Select a creature to outline the perimeter of its reachable area, without fillin
 the tiles. Excluded holes receive their own boundary, and the outline follows
 terrain height and reachable sections of sheer walls. Each straight or diagonal
 step costs **5 feet**, so 50 feet permits ten flat-ground steps. Routes account
-for intervening terrain, other creatures, and existing blocking-placeable data;
-cliff corners require a face-on approach rather than diagonal corner cutting.
+for intervening terrain, other creatures, and existing blocking-placeable data.
+You can move diagonally past the corner of one creature without entering its
+occupied space, so a reachable square behind it does not require an extra
+five-foot detour. Two occupied side cells still prevent squeezing between
+creatures. Solid plant/structure corners and cliff corners remain blocked;
+cliffs require a face-on approach. Flight uses the same distinction at the
+creatures' actual overlapping altitude.
 
 **Facing:** left-click and drag directly on an idle creature to turn it to one of
 eight grid-relative directions. The heading follows the drag in both perspective

@@ -391,7 +391,7 @@ export default class RadialMenu {
     try {
       const gm = window.gameManager;
       const threeMgr = gm?.threeSceneManager;
-      const mesh = token.__threeMesh;
+      const mesh = gm?.token3DAdapter?.getTokenVisual?.(token) || token.__threeMesh;
       if (mesh && threeMgr?.camera && threeMgr?.renderer && threeMgr?.three) {
         this._projectVector = this._projectVector || new threeMgr.three.Vector3();
         const vector = this._projectVector;

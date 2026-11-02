@@ -16,6 +16,39 @@ const catalog = {
   enabledEntryIds: [],
 };
 
+test('large portrait and artwork data commit atomically and survive character and campaign backups', async () => {
+  const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
+  try {
+    const campaign = await store.create({ name: 'Image backups', ruleset: '2014' });
+    const library = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
+    const id = await library.create('Portable portrait');
+    const portraitImage = `data:image/jpeg;base64,/9j/${'A'.repeat(600000)}`;
+    const artworkImage = `data:image/jpeg;base64,/9j/${'B'.repeat(600000)}`;
+    const saving = library.edit(id, { portraitImage, artworkImage });
+    expect(library.get(id).portraitImage).toBeUndefined();
+    await saving;
+    const reopened = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
+    expect(reopened.get(id)).toMatchObject({ portraitImage, artworkImage });
+    const characterBackup = library.export(id);
+    expect(characterBackup.length).toBeGreaterThan(1000000);
+    const copyId = await library.import(characterBackup);
+    expect(library.get(copyId)).toMatchObject({ portraitImage, artworkImage });
+    const campaignBackup = await store.exportBackup(campaign.id);
+    const importedCampaign = await store.importBackup(campaignBackup);
+    const imported = await CampaignCharacters.open({
+      store,
+      campaignId: importedCampaign.id,
+      catalog,
+    });
+    expect(imported.get(id)).toMatchObject({ portraitImage, artworkImage });
+    store.close();
+    await expect(library.edit(id, { portraitImage: null })).rejects.toThrow('closed');
+    expect(library.get(id).portraitImage).toBe(portraitImage);
+  } finally {
+    store.close();
+  }
+});
+
 test('campaign characters expose only acknowledged writes, queue changes, and survive reopening', async () => {
   const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
   const campaign = await store.create({ name: 'Characters', ruleset: '2014' });

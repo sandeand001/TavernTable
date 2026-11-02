@@ -1,5 +1,6 @@
 import { normalizeCreatureType } from '../config/CharacterCatalog.js';
 import * as TokenMovement from '../entities/creatures/TokenMovement.js';
+import { getAutomaticCreatureName } from '../entities/creatures/CreatureNames.js';
 import { readStablePlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { readPlaceablePlacements, captureCameraView } from '../scene/SceneSnapshotReaders.js';
 import { snapshotCombat } from '../entities/characters/combat/persistence.js';
@@ -26,13 +27,23 @@ export async function captureCampaignScene(
     if (!characterIds.has(characterId)) characterId = null;
     const character = characterId ? library.get(characterId) : null;
     const movement = TokenMovement.getTokenMovementSettings(token);
+    const type = normalizeCreatureType(token.type);
+    const automaticName = token.nameMode === 'automatic';
     return {
       id: token.id,
       ...(gm.campaignWorld ? { mapId: token.mapId } : {}),
-      type: normalizeCreatureType(token.type),
+      type,
       instanceNumber: token.instanceNumber,
-      name: character?.name ?? token.name,
-      nameMode: character ? 'character' : token.nameMode === 'automatic' ? 'automatic' : 'custom',
+      name:
+        character?.name ??
+        (automaticName
+          ? getAutomaticCreatureName(
+              type,
+              token.instanceNumber,
+              gm.tokenManager._tokenTypeCounts?.get(type)
+            )
+          : token.name),
+      nameMode: character ? 'character' : automaticName ? 'automatic' : 'custom',
       characterId,
       allegiance: token.allegiance || 'neutral',
       creatureType: token.creatureType || 'humanoid',
@@ -221,13 +232,21 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
       TokenMovement.linkTokenCharacter(token, library, creature.characterId);
     restored.push({ token, creature });
   }
+  const typeCounts = new Map(scene.tokenCounters.types);
   for (const { token, creature } of restored) {
-    token.name = creature.name;
+    token.name =
+      creature.nameMode === 'automatic'
+        ? getAutomaticCreatureName(
+            creature.type,
+            creature.instanceNumber,
+            typeCounts.get(creature.type)
+          )
+        : creature.name;
     token.nameMode = creature.nameMode;
     await gm.token3DAdapter.restoreStablePlacement(token, creature);
   }
   gm.tokenManager._nextTokenId = scene.tokenCounters.nextId;
-  gm.tokenManager._tokenTypeCounts = new Map(scene.tokenCounters.types);
+  gm.tokenManager._tokenTypeCounts = typeCounts;
   combat.restore(scene.combat, gm.placedTokens);
   const selection = world ? scene.view.focusTokenId : scene.selection;
   const camera = world ? scene.view.camera : scene.camera;
