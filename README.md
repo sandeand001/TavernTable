@@ -119,36 +119,114 @@ Campaign autosave stores committed terrain, not previews or undo stacks.
 Existing version-1 campaign scenes and older unversioned terrain snapshots remain
 compatible. Terrain state, tool selection, biome metadata and height queries now
 share one owner, following [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md).
-The foundation now includes the retained construction proof and connected-map
-records described below.
+That foundation remains in place. The layered construction proof below is
+retained but paused.
 
-### Map-building foundation and paused construction proof
+### Connected-map building
 
-TerrainEngine supports solid boxes, hollow box cuts, multiple floor supports
-and geometry Undo/Redo. On a new blank 25-by-25 map, Terrain Mode's
-**Construction prototype** can add a bridge, cave and two-storey proof layout.
-Its numeric box controls are retained for validation, but development of that
-workflow is paused.
+**The simplified builder is not yet implemented.** The planned builder
+uses Build, a height choice and a closed straight-line outline, generating
+separate connected grids for interiors and floors every 10 feet. Doorways and
+stairs require Enter / Use stairs interactions. Each participant keeps their
+own character focus, map and camera; the DM can focus characters across maps.
+Cross-grid sight, attacks, flight and falling are required from the outset.
+Cut/carving is deferred. See [domain context](./CONTEXT.md) and
+[the revised backlog](./TODO.md) for the plan. The numeric construction proof
+described below is paused, not that future workflow.
 
-The chosen replacement is **Build + height + a closed straight-line outline**,
-generating hollow buildings and separate connected floor grids every 10 feet.
-Carving, curves and manual floor removal are deferred.
+The first connected-map foundation is implemented behind the existing workflow:
+version-3 campaign checkpoints preserve independent map records and one creature
+collection, physical-coordinate transforms, inactive map poses and shared combat.
+Existing version-1/2 campaigns remain valid and are not automatically converted.
+Explicit migration also preserves existing spell-area sizes and positions.
+Cross-grid targeting accounts for finite floors, walls, openings and saved
+structure cover without loading another map's character sprites; spell previews
+transform back into the displayed grid. Independent local view objects keep
+focus and camera histories separate.
 
-Version-3 campaign checkpoints now preserve independent map records with physical
-anchors, scale and orientation, one creature collection, inactive map poses and
-shared combat state. Local view records keep focus and camera histories separate.
-Versions 1 and 2 remain supported and are not automatically converted.
+Visible off-map creatures now render as synchronized projections of the same
+creature, with translated position, elevation, facing and animation. Picking
+resolves to the original ID. The focused character's current sight checks gate
+visibility, including walls, floors, Blinded and invisible; ordinary camera
+occlusion still applies. Projections do not add another gameplay token.
+Movement occupancy likewise uses physical translations and body elevations,
+not the foreign map's raw cell numbers, so interior creatures do not create
+phantom blocked squares outside.
 
-This checkpoint does not yet provide map/focus controls, rendered cross-grid
-creature projections, Enter / Use stairs links, cross-grid flight/falling or
-networked players. Targeting integration is companion work and is not required
-by the standalone terrain/map core. Campaign spatial sight queries remain
-independent of the targeting implementation.
+Visible projections also bring a bounded strip of supporting terrain along their
+line of sight, using the source map's real ground and floor heights. The creature's
+own supporting surface remains visible at narrow window edges. This is render-only
+context, not an extra editable grid or a new movement path, and it disappears when
+the focused character loses sight of the creature.
 
-Constructed-map traversal currently supports stairs, walking, flight and falling,
-with five-foot body clearance. Hidden geometry remains physical. Curves, gizmos,
-constructed-wall climbing and full-size creature collision are future work;
-ordinary heightfield maps retain their original traversal.
+Interior floor views also show a roofless cutaway of their physical walls,
+including the real window and doorway openings. Shared exterior structures are
+projected into the interior grid, and higher floors/roof layers do not cover the
+current room. The wall layout remains visible while browsing without character
+focus. This is a read-only view, not a second editable copy: exterior roofs and
+the physical geometry used by sight rules remain intact.
+
+#### Maps & focus
+
+Connected-map campaigns now show **Maps & focus** in the campaign bar:
+
+- **Map** browses a different grid without moving any creatures and clears
+  viewing focus.
+- **Focus creature** switches to that creature's actual map and centers it.
+  **No focus - browse map** leaves the current map open without creature focus.
+- **Center focused creature** recenters the camera without reloading terrain.
+
+Each map remembers its camera framing, including across campaign reopening.
+Browsing or focusing preserves creature identities, positions, character resources,
+movement spent, the active turn and shared roll history. Opening a character sheet
+or activating its tab explicitly focuses the creature's actual map and position,
+not its mirrored model. This also applies to keyboard tabs and pop-out sheets.
+Tab activation selects that sprite and refreshes turn/action availability as
+soon as the view is ready; another sprite click is not needed to use End Turn.
+Passive map selection and targeting do not change viewing focus or another local
+view.
+
+Controls wait for complete scene changes and reject switching during movement,
+pending actions or unfinished terrain gestures. Failed switches restore the
+previous view; partial map loads are never autosaved. Legacy version-1/2
+single-board campaigns keep their existing workflow and hide these controls.
+
+Enter / Use stairs locomotion links, cross-grid flight/falling gameplay, the
+outline builder and authenticated networked participants remain subsequent
+chunks. Changing the viewed map is not a creature transfer.
+
+#### Paused layered construction prototype
+
+The first shared-world prototype adds **solid boxes**, **hollow box cuts**, and
+multiple support floors at the same horizontal position. Open Terrain Mode and
+scroll to **Construction prototype**. Enter east/south position, bottom elevation,
+width, depth and height in feet, choose Add or Carve, and apply the volume.
+Geometry edits share the session's Undo/Redo history.
+
+For a new blank **25 by 25** map, **Add proof structures** creates:
+
+- A bridge deck and stair approach, with a separate ground path underneath.
+- A hollow cave chamber and entrance beneath a solid roof.
+- A two-storey building with stairs, balcony doors and an open shaft.
+
+**View layers** isolates a named layer; **Cutaway: hide roof layer** exposes the
+interiors while retaining the other floors. Hidden geometry remains physical:
+it still supports creatures, blocks flight and determines landing surfaces.
+Select a creature and click a floor top to move to that specific support,
+including upper floors reached through stairs. Walking spends the existing
+five-foot grid costs; prone movement remains doubled. Flight and ledge falls use
+the next support below rather than the earth beneath all levels.
+
+Version-2 campaign scenes save the constructed volumes and stable floor IDs.
+Version-1 heightfield scenes remain supported. Reopening restores the complete
+view; layer isolation and Undo/Redo stay session-local.
+
+This is a **prototype, not the complete builder suite**. It currently uses box
+volumes and grid-center navigation with five-foot body clearance. Existing
+heightfield-only maps retain their original climbing/vaulting pipeline; constructed
+maps currently use stairs, supported walking, flight and falling. Smooth curves,
+domes, arches, drag gizmos, object resizing, climbable constructed walls, and
+size-specific full creature collision are later work.
 
 To build a wall:
 

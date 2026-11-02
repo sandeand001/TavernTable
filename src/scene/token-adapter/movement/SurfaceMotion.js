@@ -18,6 +18,17 @@ function getTokenSurfaceRange(token, allowance = null) {
     : combat && token.characterSheetId
       ? combat.freeMovementAllowance(token)
       : settings.speed;
+  const occupied = (gm.placedTokens || [])
+    .filter((other) => other !== token)
+    .map((other) => {
+      const position = this.getTokenViewPosition(other);
+      const remote = gm.campaignWorld && other.mapId !== gm.campaignMapId;
+      return {
+        gridX: remote ? Math.floor(position.x / gm.spatial.tileWorldSize) : other.gridX,
+        gridY: remote ? Math.floor(position.z / gm.spatial.tileWorldSize) : other.gridY,
+        heightFeet: position.y * feetPerWorld,
+      };
+    });
   const range = buildSurfaceRange({
     geometry: gm.terrainEngine.geometry,
     start: {
@@ -28,11 +39,13 @@ function getTokenSurfaceRange(token, allowance = null) {
     speedFeet: Math.min(available, allowance ?? Infinity),
     prone: getTokenConditions(token).includes('prone'),
     isOccupied: (x, y, height, bodyHeight) =>
-      (gm.placedTokens || []).some((other) => {
-        if (other === token || other.gridX !== x || other.gridY !== y) return false;
-        const otherHeight = this._resolveTokenWorldPosition(other).y * feetPerWorld;
-        return height < otherHeight + bodyHeight - 1e-7 && height + bodyHeight > otherHeight + 1e-7;
-      }),
+      occupied.some(
+        (other) =>
+          other.gridX === x &&
+          other.gridY === y &&
+          height < other.heightFeet + bodyHeight - 1e-7 &&
+          height + bodyHeight > other.heightFeet + 1e-7
+      ),
   });
   for (const cell of range.tiles.values()) {
     cell.world = {

@@ -45,6 +45,7 @@ import { installSpatialUtilsMethods } from './token-adapter/spatial/SpatialUtils
 import { installWorldAuthorityMethods } from './token-adapter/spatial/WorldAuthority.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { installSavedPlacementMethods } from './token-adapter/SavedPlacements.js';
+import { installMapProjectionMethods } from './token-adapter/MapProjections.js';
 import { installTacticalTokenMethods } from './token-adapter/TacticalTokens.js';
 import { installMovementRedirectMethods } from './token-adapter/pathing/MovementRedirects.js';
 
@@ -106,6 +107,7 @@ export class Token3DAdapter {
       const gm = this.gameManager;
       if (gm?.threeSceneManager?.addAnimationCallback && !this._frameCallback) {
         this._frameCallback = () => {
+          if (this.gameManager.campaignViewBusy || this.gameManager.campaignMapTransition) return;
           const gmRef = this.gameManager;
           const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
           let delta = 0;
@@ -162,6 +164,12 @@ export class Token3DAdapter {
           }
 
           try {
+            void this.syncMapProjections().catch((error) => {
+              GameErrors.rendering(error, {
+                component: 'MapProjections',
+                operation: 'loadCreature',
+              });
+            });
             this._syncTacticalTokens();
           } catch (error) {
             GameErrors.rendering(error, {
@@ -360,8 +368,18 @@ export class Token3DAdapter {
 
   // ── Public Movement & Navigation API ─────────────────────────────────────────────
 
+  _isMapInputBlocked(token) {
+    const gm = this.gameManager;
+    return (
+      gm.sceneAutosave?.ready === false ||
+      gm.campaignViewBusy ||
+      !!gm.campaignMapFailure ||
+      (gm.campaignWorld && token?.mapId !== gm.campaignMapId)
+    );
+  }
+
   beginForwardMovement(tokenEntry, sourceKey = '__forward') {
-    if (this.gameManager.sceneAutosave?.ready === false) return;
+    if (this._isMapInputBlocked(tokenEntry)) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, 1, sourceKey);
   }
@@ -371,7 +389,7 @@ export class Token3DAdapter {
   }
 
   beginBackwardMovement(tokenEntry, sourceKey = '__backward') {
-    if (this.gameManager.sceneAutosave?.ready === false) return;
+    if (this._isMapInputBlocked(tokenEntry)) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, -1, sourceKey);
   }
@@ -397,7 +415,7 @@ export class Token3DAdapter {
   // ── Navigation & Path Orchestration (installed via Navigation mixin) ──
 
   beginRotation(tokenEntry, direction = 1, sourceKey = '__rotate') {
-    if (this.gameManager.sceneAutosave?.ready === false) return;
+    if (this._isMapInputBlocked(tokenEntry)) return;
     try {
       if (!tokenEntry) return;
       this._releaseManualAnimationForMovement(tokenEntry);
@@ -583,6 +601,8 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    this._mapProjectionVisible?.delete(tokenEntry);
+    this.disposeMapProjectionTerrain();
     if (this.gameManager.campaignView?.focusTokenId === tokenEntry.id)
       this.gameManager.campaignView.focus(null);
     this._landingMovementRedirects?.delete(tokenEntry);
@@ -591,12 +611,21 @@ export class Token3DAdapter {
     this._movementRoutes.delete(tokenEntry);
     this._savedPlacements?.delete(tokenEntry);
     this._movementRangeDirty = true;
-    this._discardTacticalToken(tokenEntry);
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
-    if (!tokenEntry.__threeMesh) return;
+    this.releaseTokenVisual(tokenEntry);
+    delete tokenEntry.flightActive;
+    delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
+  }
+
+  releaseTokenVisual(tokenEntry) {
+    if (!tokenEntry) return;
+    this._discardTacticalToken(tokenEntry);
+    if (!tokenEntry.__threeMesh) {
+      delete tokenEntry.__threeMeshPromise;
+      return;
+    }
     const mesh = tokenEntry.__threeMesh;
     if (this._hoverToken === tokenEntry) this._hoverToken = null;
-    if (this._selectedToken === tokenEntry) this._selectedToken = null;
     this._clearManualAnimationRevert(tokenEntry);
     this._clearManualAnimationState(tokenEntry);
     this._discardSelectionIndicator(tokenEntry);
@@ -656,8 +685,6 @@ export class Token3DAdapter {
 
     delete tokenEntry.__threeMesh;
     delete tokenEntry.__threeMeshPromise;
-    delete tokenEntry.flightActive;
-    delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
   }
 
   pickTokenByRay(raycaster, { precise = false } = {}) {
@@ -780,5 +807,6 @@ installStepFactoryMethods(Token3DAdapter.prototype);
 installSpatialUtilsMethods(Token3DAdapter.prototype);
 installResumeProbeMethods(Token3DAdapter.prototype);
 installSavedPlacementMethods(Token3DAdapter.prototype);
+installMapProjectionMethods(Token3DAdapter.prototype);
 installTacticalTokenMethods(Token3DAdapter.prototype);
 installMovementRedirectMethods(Token3DAdapter.prototype);

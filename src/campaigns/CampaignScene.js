@@ -4,12 +4,12 @@ import { copyRollSummary } from '../systems/dice/rollSummary.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import { validateSavedPlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { validateMovementEffects } from '../rules/falling.js';
+import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
 import {
   TARGET_ALLEGIANCES,
   TARGET_CREATURE_TYPES,
   TARGET_CREATURE_SIZES,
 } from '../config/targeting/SpellProfiles.js';
-import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
@@ -37,6 +37,25 @@ function jsonSettings(value, depth = 0) {
         !['__proto__', 'constructor', 'prototype'].includes(key) && jsonSettings(item, depth + 1)
     )
   );
+}
+
+function validateCamera(camera) {
+  if (
+    !record(camera) ||
+    !vector(camera.target) ||
+    !finite(camera.yaw) ||
+    !finite(camera.pitch, -Math.PI, Math.PI) ||
+    !finite(camera.zoom, 0.001, 10000) ||
+    typeof camera.topDown !== 'boolean' ||
+    typeof camera.isometric !== 'boolean' ||
+    typeof camera.manualLock !== 'boolean' ||
+    (camera.orbit !== null &&
+      (!record(camera.orbit) ||
+        !finite(camera.orbit.yaw) ||
+        !finite(camera.orbit.pitch, -Math.PI, Math.PI) ||
+        typeof camera.orbit.manualLock !== 'boolean'))
+  )
+    failure('camera');
 }
 
 function validateBoard(grid, terrain, version, base = 'ground') {
@@ -300,22 +319,18 @@ export function validateScene(scene, { ruleset, library }) {
       failure('creature naming counters');
   }
   const camera = scene.version === 3 ? scene.view.camera : scene.camera;
-  if (
-    !record(camera) ||
-    !vector(camera.target) ||
-    !finite(camera.yaw) ||
-    !finite(camera.pitch, -Math.PI, Math.PI) ||
-    !finite(camera.zoom, 0.001, 10000) ||
-    typeof camera.topDown !== 'boolean' ||
-    typeof camera.isometric !== 'boolean' ||
-    typeof camera.manualLock !== 'boolean' ||
-    (camera.orbit !== null &&
-      (!record(camera.orbit) ||
-        !finite(camera.orbit.yaw) ||
-        !finite(camera.orbit.pitch, -Math.PI, Math.PI) ||
-        typeof camera.orbit.manualLock !== 'boolean'))
-  )
-    failure('camera');
+  validateCamera(camera);
+  if (scene.version === 3 && scene.view.cameras !== undefined) {
+    if (!Array.isArray(scene.view.cameras) || scene.view.cameras.length > boards.size)
+      failure('map camera history');
+    const cameras = new Set();
+    for (const entry of scene.view.cameras) {
+      if (!record(entry) || !boards.has(entry.mapId) || cameras.has(entry.mapId))
+        failure('map camera references');
+      cameras.add(entry.mapId);
+      validateCamera(entry.camera);
+    }
+  }
   const selection = scene.version === 3 ? scene.view.focusTokenId : scene.selection;
   if (selection !== null && !ids.has(selection)) failure('selected creature');
   if (

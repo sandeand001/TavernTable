@@ -13,6 +13,20 @@ export function finitePoint(point) {
   );
 }
 
+function creaturePoint(world, tileSize, height) {
+  if (!finitePoint(world) || !Number.isFinite(tileSize) || tileSize <= 0)
+    throw new Error('Creature sight requires a valid position and physical grid scale');
+  return { ...world, y: world.y + tileSize * height };
+}
+
+export function creatureEye(world, tileSize) {
+  return creaturePoint(world, tileSize, 0.8);
+}
+
+export function creatureCenter(world, tileSize) {
+  return creaturePoint(world, tileSize, 0.5);
+}
+
 export function facingDirection(actor) {
   const angle = actor.facingAngle ?? 0;
   if (!Number.isFinite(angle)) throw new Error('Spell aiming requires a valid creature facing');

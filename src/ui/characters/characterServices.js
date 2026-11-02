@@ -31,8 +31,14 @@ export function connectCharacterServices(gameManager, services) {
   const combat = new CombatSession({
     library: services.library,
     hasToken: (token) => gameManager.placedTokens.includes(token),
-    isMoving: (token) => gameManager.token3DAdapter?.isMovementInProgress?.(token) || false,
+    isMoving: (token) =>
+      gameManager.campaignViewBusy ||
+      !!gameManager.campaignMapFailure ||
+      gameManager.token3DAdapter?.isMovementInProgress?.(token) ||
+      false,
     isSceneMoving: () =>
+      gameManager.campaignViewBusy ||
+      !!gameManager.campaignMapFailure ||
       gameManager.placedTokens.some(
         (token) => gameManager.token3DAdapter?.isMovementInProgress?.(token) || false
       ),

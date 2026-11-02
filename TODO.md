@@ -32,36 +32,85 @@
       game and terrain dimensions consistent, and reset/load trigger scene updates.
       Cover editing input, biome/flora generation, and adapter attach/detach without
       relying on legacy 2D fixtures.
-- [x] **Add geometry and multi-surface foundations** - Ordered solid/void boxes,
-      finite floor slabs, multiple supports and ceilings, clearance queries,
-      stair traversal, platform falling, real meshing and versioned persistence.
-- [ ] **Paused shared-world construction proof** - Retain the bridge/cave/building
-      layout and numeric box controls without expanding that authoring workflow.
-      Separate connected grids replace the original shared-board layering plan.
+- [ ] **Paused layered shared-world proof** - Solid/void geometry, multiple
+      supports, a bridge/cave/two-storey example and traversal tests are
+      implemented. Final validation is paused; preserve the proof without
+      extending its numeric volume editor. Separate connected grids replace
+      the shared-board layering direction.
 
 ---
 
-## Connected-grid Building
+## Connected-grid Map Building
 
-- [x] **Map records and persistence** - Physical origins, quarter-turn rotation,
-      grid scale, one creature identity, independent local view records and
-      version-3 campaign saves/backups. Preserve legacy scenes without automatic
-      conversion; map references do not grant movement or elevation changes.
-- [x] **Physical spatial queries** - Transform positions and facing between maps,
-      query actual supports and walls/openings without loading their renderers.
-- [ ] **Cross-grid targeting integration** - Connect campaign coordinates and
-      stored geometry/structure cover to the companion targeting work.
-- [ ] **Live map focus and synchronized projections** - Map/focus controls,
-      per-map cameras and visible off-map sprites mirroring the original creature.
-      Picking/targeting must not create another gameplay identity.
-- [ ] **Physical connections** - Explicit Enter / Use stairs interactions and
-      cross-grid flight/falling with existing clearance, landing and movement rules.
-- [ ] **Build-only outlines** - Close straight-line footprints and choose height
-      in 10-foot increments to generate a hollow exterior and connected floor maps.
-- [ ] **Independent connected participants** - Ownership and synchronization with
-      local player focus and DM cross-map focus; the file server is not multiplayer.
-- [ ] **Later editing** - Curves/circles and manual floor removal for tall rooms.
-      Cut/carving remains undecided and deferred.
+- [x] **Connected-map records and persistence foundation** - Independent map
+      records carry physical anchors, quarter-turn rotation and render scale.
+      Version-3 saves/backups preserve one creature collection, map-local poses,
+      shared combat and inactive terrain/structure cover. Explicit legacy
+      migration preserves positions and existing spell areas/history. Model
+      transfers keep physical position and identity without refreshing movement
+      or teleporting between floor elevations.
+- [x] **Campaign-space targeting foundation** - Target range and obstruction
+      queries include unrendered map geometry, finite interior slabs and openings,
+      plus unsaved edits from the active terrain owner. Spell picks and overlay
+      rendering use inverse physical/view transforms. Test projection eligibility
+      in both directions without creating duplicate gameplay tokens.
+- [x] **Local map/focus controls** - Maps & focus browses maps or explicitly
+      focuses/centers an existing creature. Preserve canonical identity, positions,
+      resources, turn budgets and shared roll history without creature transfers.
+      Persist independent per-map cameras across reopening. Guard unfinished
+      movement/actions/terrain gestures, roll back failed switches and never save
+      a partial map load. Same-map refocusing keeps terrain Undo intact.
+- [ ] **Independent participant views** - Separate shared creature locations
+      from each participant's focused character, displayed map and camera. A
+      player follows their own character; the DM can focus any character on any
+      map without moving other viewers. Implement the ownership and shared-session
+      synchronization needed for actual connected players.
+      Independent local focus, live map/focus controls and persistent per-map
+      camera histories are implemented and tested; authenticated networking remains.
+- [x] **Render synchronized cross-grid projections** - Render visible off-map
+      characters at their translated position, facing and animation. Resolve
+      clicks and targeting to their original ID; do not duplicate state or grant
+      sight through walls, floors or visually hidden roofs. Model loads are
+      shared across refreshes and stale loads cannot reveal hidden/removed actors.
+- [x] **Map-aware creature occupancy** - Translate foreign cells and body heights
+      for supported, heightfield and flight movement. Preserve actual physical
+      blockers without leaking local interior coordinates into exterior ranges.
+      Keep local placement/selection lookups scoped to their map.
+- [x] **Canonical character-sheet focus** - Opening a sheet, clicking/keyboard
+      switching its tabs or focusing the remaining neighboring tab switches to
+      the creature's actual map and position. Keep passive projected-token
+      selection separate, preserve state, and refresh/unlock view controls.
+      Report failed focus visibly without claiming success.
+      Publish busy/ready combat availability for tab/view transitions so End Turn
+      does not remain disabled after returning to the active creature. Exercise
+      production services, same/cross-map tabs, keyboard and pop-out controls.
+- [x] **Supporting terrain for visible projections** - Render a bounded preview
+      of actual source-map terrain along character sight lines, including real
+      support at narrow window edges. Preserve elevations/rotation/scale, avoid
+      overlapping the active floor, remove hidden contexts and dispose resources.
+      Keep this visual context separate from editable/navigation terrain.
+- [x] **Roofless interior wall views** - Show shared physical walls and actual
+      window/door openings on interior grids, including unfocused/empty maps.
+      Keep upper storeys and ceiling/roof coverage out of the current view,
+      preserve map rotations/scales, and handle interior-owned structures too.
+      Retain original exterior roofs, physics/sight data and source ownership;
+      cutaway meshes are cached, cleaned up and never saved as new geometry.
+- [ ] **Connections and cross-grid physical rules** - Doors and stairs use
+      explicit Enter / Use stairs interactions. Align grids in physical space
+      so sight, attacks, flight and falling across openings work from the outset,
+      including obstruction, clearance, landing and existing movement costs.
+- [ ] **Build-only outline tool** - Replace the numeric construction workflow
+      with Build, height in 10-foot floor increments and a closed straight-line
+      footprint. Generate a hollow exterior and separate floor grids from that
+      outline. Complete when the endpoints meet; support preview/cancellation
+      and an atomic build without partial structures or maps.
+- [ ] **Magical portal transfers (later)** - Floating circular gates/vortices
+      transport creatures between locations. No seeing or targeting through
+      the portal. Keep this separate from physical doorway/stair connections;
+      implement the two-floor physical travel/sight slice first.
+- [ ] **Later builder extensions** - Add manual floor removal for tall rooms,
+      curves/circles and further shape editing after the basic workflow.
+      Cut/carving remains undecided and is not required for the first builder.
 
 ---
 
@@ -247,6 +296,7 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 
 ## Deferred Platform Work
 
-- Desktop packaging and shared-session multiplayer are future considerations,
-  after the local gameplay and editing workflow is more complete.
+- Desktop packaging remains deferred. Shared-session multiplayer is part of
+  the planned connected-grid participant-view work above; the current runtime
+  remains browser-local.
 - Procedural biome shader painting remains a future enhancement under ADR-0001.

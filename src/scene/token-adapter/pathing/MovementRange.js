@@ -93,6 +93,7 @@ function applyMovementStyle(token) {
 function getTokenMovementRange(token, allowance = null) {
   if (!token || this.isMovementInProgress(token)) return null;
   const gm = this.gameManager;
+  if (gm.campaignViewBusy || gm.campaignMapFailure) return null;
   if (gm.campaignWorld && token.mapId !== gm.campaignMapId) return null;
   const combat = gm.characterServices?.combat;
   if (gm.characterServices?.library?.isSaving || combat?.pending || combat?.committing) return null;
@@ -112,9 +113,21 @@ function getTokenMovementRange(token, allowance = null) {
   const occupied = new Set();
   for (const other of gm.placedTokens || []) {
     if (other !== token) {
-      occupied.add(`${other.gridX},${other.gridY}`);
+      const remote = gm.campaignWorld && other.mapId !== gm.campaignMapId;
+      let gridX = other.gridX,
+        gridY = other.gridY;
+      if (remote) {
+        const position = this.getTokenViewPosition(other);
+        ({ gridX, gridY } = gm.spatial.worldToGrid(position.x, position.z));
+        if (gridX < 0 || gridY < 0 || gridX >= gm.cols || gridY >= gm.rows) continue;
+        const floor = gm.getTerrainHeight(gridX, gridY) * gm.spatial.elevationUnit;
+        if (!Number.isFinite(floor)) throw new Error('Creature occupancy requires a valid floor');
+        const body = gm.spatial.tileWorldSize;
+        if (position.y >= floor + body - 1e-7 || position.y + body <= floor + 1e-7) continue;
+      }
+      occupied.add(`${gridX},${gridY}`);
       const face = this._movementStates.get(other)?.wallMotion?.face;
-      if (face) occupied.add(`${face.low.gridX},${face.low.gridY}`);
+      if (face && !remote) occupied.add(`${face.low.gridX},${face.low.gridY}`);
     }
   }
   const blocked = new Set();
@@ -225,6 +238,9 @@ function _requestPlannedMovement(token, destination, options = {}) {
   try {
     if (!this.gameManager.placedTokens.includes(token))
       throw new Error('Movement token is no longer in this session');
+    if (this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
+    if (this.gameManager.campaignViewBusy)
+      throw new Error('Wait for the map view to finish changing before moving');
     if (this.gameManager.campaignWorld && token.mapId !== this.gameManager.campaignMapId)
       throw new Error('Focus the creature on its own grid before requesting movement');
     if (this.gameManager.sceneAutosave?.ready === false)

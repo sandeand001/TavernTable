@@ -147,6 +147,48 @@ test('a connected checkpoint cannot stand on phantom support beneath a floor ope
   expect(() => decodeScene(JSON.stringify(saved), validation)).toThrow(/floor support/i);
 });
 
+test('legacy spell areas migrate to physical feet exactly once without changing their size', () => {
+  const validation = context();
+  const characterId = validation.library.create('Caster');
+  const scene = sceneState({ characterId, name: 'Caster' });
+  scene.combat.effects = [
+    {
+      version: 1,
+      id: 'effect-1',
+      casterTokenId: 'token-1',
+      characterId,
+      label: 'Cloud',
+      sourceId: 'spell:fog-cloud',
+      remainingTurns: 10,
+      expiry: 'start',
+      createdTurn: 0,
+      lastTickTurn: 0,
+      concentrationSpellId: null,
+      followCaster: false,
+      exclusions: [],
+      area: {
+        shape: 'sphere',
+        origin: { x: 2, y: 1, z: 3 },
+        direction: { x: 1, y: 0, z: 0 },
+        size: 4,
+        width: 1,
+        height: 1,
+      },
+    },
+  ];
+  const world = CampaignWorld.fromScene(scene, validation);
+  expect(world.save().combat.effects[0].area).toEqual({
+    shape: 'sphere',
+    origin: { x: 10, y: 5, z: 15 },
+    direction: { x: 1, y: 0, z: 0 },
+    size: 20,
+    width: 5,
+    height: 5,
+  });
+  expect(CampaignWorld.fromScene(world.save(), validation).save()).toEqual(world.save());
+  expect(scene.combat.effects[0].area.size).toBe(4);
+});
+
 test.each([
   [
     'a missing map',
@@ -255,3 +297,20 @@ test('campaign sight queries use physical geometry without depending on the targ
   expect(world.hasLineOfSight(start, end)).toBe(true);
   expect(world.hasLineOfSight(end, start)).toBe(true);
 });
+
+test.each(['missing-map', 'invalid-camera', 'duplicate-map'])(
+  'saved camera history rejects %s without resetting the campaign',
+  (invalid) => {
+    const validation = context();
+    const world = CampaignWorld.fromScene(sceneState(), validation);
+    world.addMap(floorMap('other-map', { x: 25, y: 0, z: 0 }));
+    const saved = world.save();
+    saved.view.cameras = [
+      { mapId: 'map-main', camera: JSON.parse(JSON.stringify(saved.view.camera)) },
+    ];
+    if (invalid === 'missing-map') saved.view.cameras[0].mapId = 'missing';
+    if (invalid === 'invalid-camera') saved.view.cameras[0].camera.zoom = 0;
+    if (invalid === 'duplicate-map') saved.view.cameras.push(saved.view.cameras[0]);
+    expect(() => decodeScene(JSON.stringify(saved), validation)).toThrow(/camera/i);
+  }
+);

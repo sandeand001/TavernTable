@@ -7,6 +7,8 @@ import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 import { TerrainVolumeMeshBuilder } from './TerrainVolumeMeshBuilder.js';
+import { getTerrainLayerColor } from './TerrainMaterialFactory.js';
+import { createInteriorCutaway } from './InteriorCutaway.js';
 
 export class TerrainRebuilder {
   // ── Constructor ───────────────────────────────────────────────────
@@ -127,9 +129,17 @@ export class TerrainRebuilder {
     };
     const wallColor = 0x050505;
     const wantsWalls = !!(threeNs && threeNs.BufferGeometry);
+    const cutaway = gm.terrainEngine?.geometry.hasVolumes ? createInteriorCutaway(gm) : null;
     const geo = gm.terrainEngine?.geometry.hasVolumes
       ? new TerrainVolumeMeshBuilder().build({
-          geometry: gm.terrainEngine.geometry,
+          geometry: cutaway
+            ? cutaway.query(
+                gm.terrainEngine.geometry,
+                cutaway.map,
+                gm.terrainEngine.geometry.getPartition(),
+                { includeFloor: true }
+              )
+            : gm.terrainEngine.geometry,
           three: threeNs,
           worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
           visibleLayers: gm.terrainEngine.visibleLayers,
@@ -142,15 +152,7 @@ export class TerrainRebuilder {
                 feetPerLevel > 0 ? height / feetPerLevel : 0
               );
             }
-            return (
-              {
-                bridge: 0x9c744b,
-                cave: 0x858e91,
-                ground: 0x808179,
-                upper: 0xb9a98a,
-                roof: 0x784c43,
-              }[span.layerId] ?? 0x99938c
-            );
+            return getTerrainLayerColor(span.layerId);
           },
         })
       : this.builder.build({

@@ -1,7 +1,7 @@
 import { normalizeCreatureType } from '../config/CharacterCatalog.js';
 import * as TokenMovement from '../entities/creatures/TokenMovement.js';
 import { getAutomaticCreatureName } from '../entities/creatures/CreatureNames.js';
-import { readStablePlacement } from '../scene/token-adapter/SavedPlacements.js';
+import { readStablePlacement, SceneNotReadyError } from '../scene/token-adapter/SavedPlacements.js';
 import { readPlaceablePlacements, captureCameraView } from '../scene/SceneSnapshotReaders.js';
 import { snapshotCombat } from '../entities/characters/combat/persistence.js';
 import { validateScene } from './CampaignScene.js';
@@ -13,6 +13,9 @@ export async function captureCampaignScene(
   { combat = gameManager.characterServices.combat, change = null, result = null, rollLog = [] } = {}
 ) {
   const gm = gameManager;
+  if (gm.campaignMapFailure) throw gm.campaignMapFailure;
+  if (gm.campaignMapTransition)
+    throw new SceneNotReadyError('Waiting for the map view to finish changing');
   const pool = gm.placeableMeshPool;
   await Promise.all(gm._pendingInstancingPromises || []);
   await pool?.whenSettled?.();
@@ -88,6 +91,9 @@ export async function captureCampaignScene(
     savedCombat.activeTokenId = null;
   const terrainState = gm.terrainEngine.save();
   const placeables = pool ? readPlaceablePlacements(pool) : [];
+  const structureCover = placeables.some((entry) => ['structure', 'building'].includes(entry.type))
+    ? pool.targetingCoverBounds()
+    : [];
   const scene = {
     version: terrainState.geometry ? 2 : 1,
     ruleset: library.ruleset,
@@ -102,6 +108,7 @@ export async function captureCampaignScene(
       treeDensity: terrainState.treeDensityMultiplier,
       richShading: JSON.parse(JSON.stringify(globalThis.window?.richShadingSettings || {})),
       placeables,
+      ...(structureCover.length ? { coverBounds: structureCover } : {}),
     },
     creatures,
     tokenCounters: {
@@ -123,11 +130,7 @@ export async function captureCampaignScene(
     saved.tokenCounters = scene.tokenCounters;
     saved.combat = savedCombat;
     saved.rollLog = scene.rollLog;
-    saved.view = {
-      mapId: gm.campaignMapId,
-      focusTokenId: gm.campaignView.focusTokenId,
-      camera: scene.camera,
-    };
+    saved.view = gm.campaignView.snapshot(scene.camera);
     return validateScene(saved, { ruleset: library.ruleset, library });
   }
   return validateScene(scene, { ruleset: library.ruleset, library });
@@ -175,38 +178,13 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
       ? CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library })
       : null;
   const map = world ? world.getMap(scene.view.mapId) : scene;
-  const terrain = map.terrain;
   for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
   gm.campaignWorld = world;
   gm.campaignMapId = world ? scene.view.mapId : null;
   gm.campaignView = world
     ? world.createView({ mapId: scene.view.mapId, focusTokenId: scene.view.focusTokenId })
     : null;
-  gm.resizeGrid(map.grid.cols, map.grid.rows);
-  gm.spatial.tileWorldSize = map.grid.tileWorldSize;
-  if (globalThis.window) {
-    window.selectedBiome = terrain.biome;
-    window.richShadingSettings = JSON.parse(JSON.stringify(terrain.richShading));
-  }
-  gm.terrainEngine.configureGeometryBase(world && map.base === 'floor' ? 0.5 : null);
-  gm.terrainEngine.load({
-    heights: terrain.heights,
-    biomeKey: terrain.biome,
-    biomeSeed: terrain.seed,
-    elevationScale: terrain.elevationScale,
-    treeDensityMultiplier: terrain.treeDensity,
-    richShadingEnabled: terrain.richShading.enabled === true,
-    ...(terrain.geometry ? { geometry: terrain.geometry } : {}),
-  });
-  gm.spatial.elevationUnit = terrain.worldElevationUnit;
-  gm.terrainEngine.configureGeometryScale(
-    (terrain.worldElevationUnit * 5) / gm.spatial.tileWorldSize
-  );
-  gm.notifyTerrainHeightsChanged();
-  const pool = gm.ensureInstancing();
-  if (!pool && terrain.placeables.length)
-    throw new Error('The saved terrain placement renderer is unavailable');
-  if (pool) await pool.restorePlacements(terrain.placeables);
+  await applyMapTerrain(gm, map);
   const restored = [];
   for (const creature of scene.creatures) {
     const model = gm.tokenManager.createCreatureByType(creature.type);
@@ -257,4 +235,160 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
     remember: false,
   });
   gm.threeSceneManager.restoreView(camera);
+  if (world) await gm.token3DAdapter.syncMapProjections();
+}
+
+async function applyMapTerrain(gm, map) {
+  const terrain = map.terrain;
+  gm.spatial.tileWorldSize = map.grid.tileWorldSize;
+  gm.spatial.elevationUnit = terrain.worldElevationUnit;
+  gm.resizeGrid(map.grid.cols, map.grid.rows);
+  if (globalThis.window) {
+    window.selectedBiome = terrain.biome;
+    window.richShadingSettings = JSON.parse(JSON.stringify(terrain.richShading));
+  }
+  gm.terrainEngine.configureGeometryBase(map.base === 'floor' ? 0.5 : null);
+  gm.terrainEngine.configureGeometryScale(
+    (terrain.worldElevationUnit * 5) / map.grid.tileWorldSize
+  );
+  gm.terrainEngine.load({
+    heights: terrain.heights,
+    biomeKey: terrain.biome,
+    biomeSeed: terrain.seed,
+    elevationScale: terrain.elevationScale,
+    treeDensityMultiplier: terrain.treeDensity,
+    richShadingEnabled: terrain.richShading.enabled === true,
+    ...(terrain.geometry ? { geometry: terrain.geometry } : {}),
+  });
+  gm.notifyTerrainHeightsChanged();
+  const pool = gm.ensureInstancing();
+  if (!pool && terrain.placeables.length)
+    throw new Error('The saved terrain placement renderer is unavailable');
+  if (pool) await pool.restorePlacements(terrain.placeables);
+}
+
+async function restoreMapVisuals(gm, checkpoint, mapId) {
+  const map = gm.campaignWorld.getMap(mapId);
+  gm.token3DAdapter.clearMapProjectionTerrain?.();
+  gm.token3DAdapter.disposeTacticalTokens?.();
+  for (const token of gm.placedTokens) {
+    if (token.__threeMesh) token.__threeMesh.visible = false;
+  }
+  await Promise.all(gm.placedTokens.map((token) => token.__threeMeshPromise));
+  if (map.grid.tileWorldSize !== gm.spatial.tileWorldSize)
+    for (const token of gm.placedTokens) gm.token3DAdapter.releaseTokenVisual(token);
+  await applyMapTerrain(gm, map);
+  const placements = new Map(checkpoint.creatures.map((creature) => [creature.id, creature]));
+  for (const token of gm.placedTokens) {
+    if (token.mapId !== mapId) continue;
+    const placement = placements.get(token.id);
+    await gm.token3DAdapter.onTokenAdded(token, placement);
+    await gm.token3DAdapter.restoreStablePlacement(token, placement);
+  }
+  for (const token of gm.placedTokens) if (token.mapId === mapId) token.__threeMesh.visible = true;
+}
+
+function notifyCampaignViewState(gm) {
+  // Publish readiness here because view changes pause the normal animation ticks.
+  gm.characterServices.combat.syncMovementStatus();
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(
+      new CustomEvent('taverntable:campaignViewStateChanged', { detail: { gameManager: gm } })
+    );
+}
+
+export async function changeCampaignView(gm, { mapId = null, focusTokenId = null } = {}) {
+  if (!gm.campaignWorld || !gm.campaignView)
+    throw new Error('This campaign does not have connected maps');
+  if (gm.campaignMapFailure) throw gm.campaignMapFailure;
+  if (gm.campaignViewBusy) throw new Error('Wait for the current map change to finish');
+  const combat = gm.characterServices.combat;
+  if (
+    gm.sceneAutosave?.ready === false ||
+    gm.characterServices.library.isSaving ||
+    combat.pending ||
+    combat.committing ||
+    combat.moves.size ||
+    gm.terrainEngine.hasPendingStroke ||
+    gm.placedTokens.some((token) => gm.token3DAdapter.isMovementInProgress(token))
+  )
+    throw new Error('Finish the current movement, action or terrain preview before changing maps');
+  const focused =
+    focusTokenId === null ? null : gm.placedTokens.find((token) => token.id === focusTokenId);
+  if (focusTokenId !== null && !focused) throw new Error('The focused creature no longer exists');
+  const targetId = focused?.mapId || mapId || gm.campaignMapId;
+  if (mapId !== null && focused && mapId !== focused.mapId)
+    throw new Error('The focused creature belongs to another map');
+  gm.campaignWorld.getMap(targetId);
+  const changingMap = targetId !== gm.campaignMapId;
+  const selectedBefore = gm.token3DAdapter.getSelectedToken();
+  let before = null;
+  gm.campaignViewBusy = true;
+  try {
+    notifyCampaignViewState(gm);
+    await gm.sceneAutosave?.flush();
+    before = await captureCampaignScene(gm, gm.characterServices.library, {
+      rollLog: gm.sceneAutosave ? gm.sceneAutosave.getRollLog() : gm.campaignWorld.save().rollLog,
+    });
+    gm.campaignWorld.acceptCheckpoint(before);
+    gm.campaignView.setCamera(before.view.camera);
+    gm.campaignMapTransition = true;
+    if (changingMap) {
+      gm.token3DAdapter.setHoverToken(null);
+      gm.token3DAdapter.refreshMovementRange();
+    }
+    gm.campaignView.showMap(targetId);
+    if (focused) gm.campaignView.focus(focused.id);
+    gm.campaignMapId = targetId;
+    if (changingMap) {
+      await restoreMapVisuals(gm, before, targetId);
+    }
+    const camera = gm.campaignView.camera;
+    if (!gm.campaignView.hasCamera) camera.zoom = 1;
+    if (focused) camera.target = { ...focused.world };
+    else if (!gm.campaignView.hasCamera)
+      camera.target = {
+        x: (gm.cols * gm.spatial.tileWorldSize) / 2,
+        y: 0,
+        z: (gm.rows * gm.spatial.tileWorldSize) / 2,
+      };
+    gm.stateCoordinator.setViewMode(camera.topDown ? 'topdown' : 'isometric', {
+      remember: false,
+    });
+    gm.threeSceneManager.restoreView(camera);
+    gm.campaignMapTransition = false;
+    await gm.token3DAdapter.setSelectedToken(focused);
+    await gm.token3DAdapter.syncMapProjections();
+    gm.sceneAutosave?.changed('map view');
+    await gm.sceneAutosave?.flush();
+  } catch (error) {
+    if (before) {
+      try {
+        gm.campaignMapTransition = true;
+        gm.campaignWorld.acceptCheckpoint(before);
+        gm.campaignView.showMap(before.view.mapId);
+        if (before.view.focusTokenId) gm.campaignView.focus(before.view.focusTokenId);
+        gm.campaignMapId = before.view.mapId;
+        if (changingMap) await restoreMapVisuals(gm, before, before.view.mapId);
+        gm.stateCoordinator.setViewMode(before.view.camera.topDown ? 'topdown' : 'isometric', {
+          remember: false,
+        });
+        gm.threeSceneManager.restoreView(before.view.camera);
+        gm.campaignMapTransition = false;
+        await gm.token3DAdapter.setSelectedToken(selectedBefore);
+      } catch (restoreError) {
+        gm.campaignMapFailure = new AggregateError(
+          [error, restoreError],
+          'The map view could not be restored. Reload this page to reopen the last saved campaign.'
+        );
+        throw gm.campaignMapFailure;
+      }
+    }
+    throw error;
+  } finally {
+    gm.campaignMapTransition = false;
+    gm.campaignViewBusy = false;
+    notifyCampaignViewState(gm);
+    gm.token3DAdapter.refreshMovementRange();
+  }
 }

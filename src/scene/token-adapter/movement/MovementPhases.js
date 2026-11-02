@@ -20,6 +20,8 @@ function _updateForwardMovements(delta) {
   const bounds = this._computeMovementBounds();
   const entries = Array.from(this._movementStates.entries());
   for (const [tokenEntry, state] of entries) {
+    if (this.gameManager.campaignWorld && tokenEntry.mapId !== this.gameManager.campaignMapId)
+      continue;
     if (!state) {
       this._movementStates.delete(tokenEntry);
       continue;

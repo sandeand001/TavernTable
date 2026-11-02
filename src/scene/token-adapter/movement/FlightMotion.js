@@ -59,6 +59,12 @@ function getFlightCommandAvailability(token, kind, feet = FLIGHT_TAKEOFF_FEET) {
     (kind === 'takeoff' ? !flying : flying);
   const unavailable = (reason) => ({ visible, allowed: false, reason });
   if (!visible) return unavailable('This flight command is not available.');
+  if (this.gameManager.campaignWorld && token.mapId !== this.gameManager.campaignMapId)
+    return unavailable('Focus this creature on its own map before changing elevation.');
+  if (this.gameManager.campaignMapFailure)
+    return unavailable(this.gameManager.campaignMapFailure.message);
+  if (this.gameManager.campaignViewBusy)
+    return unavailable('Wait for the map view to finish changing.');
   if (!this.gameManager.placedTokens.includes(token)) {
     return unavailable('This creature is no longer on the board.');
   }
@@ -161,8 +167,14 @@ function flightCreatureCellBlocked(token, gridX, gridY, worldY, sweptTopY = null
   const bodyHeight = gm.spatial.tileWorldSize;
   const topY = sweptTopY ?? worldY + bodyHeight;
   for (const other of gm.placedTokens) {
-    if (other === token || other.gridX !== gridX || other.gridY !== gridY) continue;
-    const otherY = this._resolveTokenWorldPosition(other).y;
+    if (other === token) continue;
+    const position = this.getTokenViewPosition(other);
+    const cell =
+      gm.campaignWorld && other.mapId !== gm.campaignMapId
+        ? gm.spatial.worldToGrid(position.x, position.z)
+        : other;
+    if (cell.gridX !== gridX || cell.gridY !== gridY) continue;
+    const otherY = position.y;
     if (worldY < otherY + bodyHeight - 1e-7 && topY > otherY + 1e-7) {
       return true;
     }
@@ -263,13 +275,19 @@ function getFlightStatus(token) {
   const speed = movementSpeed(character, 'fly');
   if (speed === 0 && !token.flightActive) return null;
   const world = this._resolveTokenWorldPosition(token);
+  const gm = this.gameManager;
+  const remote = gm.campaignWorld && token.mapId !== gm.campaignMapId;
+  const ground = remote
+    ? gm.campaignWorld.findLocalSupport(token.mapId, world)?.heightWorld
+    : groundHeight.call(this, token.gridX, token.gridY, world.y);
+  if (!Number.isFinite(ground)) throw new Error('Flight height requires a supported map surface');
+  const unitsPerFoot = remote
+    ? gm.campaignWorld.getViewTransform(token.mapId).scale
+    : gm.spatial.tileWorldSize / FEET_PER_GRID_SQUARE;
   return {
     flying: token.flightActive === true,
     speed,
-    heightFeet:
-      ((world.y - groundHeight.call(this, token.gridX, token.gridY, world.y)) *
-        FEET_PER_GRID_SQUARE) /
-      this.gameManager.spatial.tileWorldSize,
+    heightFeet: (world.y - ground) / unitsPerFoot,
     remaining: flightAllowance.call(this, token),
   };
 }

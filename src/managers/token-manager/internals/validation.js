@@ -6,7 +6,10 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/err
 
 export function validateTokenPositions(c, cols, rows) {
   try {
-    const outOfBounds = c.placedTokens.filter(
+    const tokens = c.placedTokens.filter(
+      (token) => !c.gameManager?.campaignWorld || token.mapId === c.gameManager.campaignMapId
+    );
+    const outOfBounds = tokens.filter(
       (token) => !CoordinateUtils.isValidGridPosition(token.gridX, token.gridY, cols, rows)
     );
 
@@ -16,9 +19,9 @@ export function validateTokenPositions(c, cols, rows) {
     }
 
     logger.debug(
-      `All ${c.placedTokens.length} tokens are within grid bounds`,
+      `All ${tokens.length} current-map tokens are within grid bounds`,
       {
-        tokenCount: c.placedTokens.length,
+        tokenCount: tokens.length,
         gridSize: { cols, rows },
       },
       LOG_CATEGORY.SYSTEM

@@ -172,6 +172,7 @@
   left: 440px;
   z-index: 110;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   max-width: calc(100vw - 830px);
@@ -198,6 +199,72 @@
 
 .campaign-tools output:empty {
   display: none;
+}
+
+.campaign-map-controls {
+  position: relative;
+}
+
+.campaign-map-controls summary {
+  padding: 8px 12px;
+  color: #eee;
+  background: #3a404d;
+  border: 1px solid #596374;
+  border-radius: 5px;
+  list-style: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.campaign-map-panel {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px;
+  background: #191b22;
+  border: 1px solid #596374;
+  border-radius: 7px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+
+.campaign-map-panel label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.campaign-map-panel select {
+  width: 100%;
+  padding: 8px;
+  color: #eee;
+  background: #282d38;
+  border: 1px solid #596374;
+  border-radius: 5px;
+  font: inherit;
+}
+
+.campaign-map-panel output {
+  display: block;
+  margin-top: 10px;
+}
+
+.campaign-map-panel output[data-state='error'] {
+  color: #ffb4a9;
+}
+
+.campaign-map-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 30000;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgb(0 0 0 / 25%);
+  font:
+    16px system-ui,
+    sans-serif;
+  cursor: progress;
 }
 
 @media (width <= 1050px) {

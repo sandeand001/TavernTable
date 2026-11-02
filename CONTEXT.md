@@ -21,7 +21,7 @@
   changing tools or brush size, and leaving Terrain Mode cancel the preview.
   Wall height and fill style can update a pending rectangle without committing it.
 - **Terrain history**: session-local Undo/Redo for the last 100 committed height
-  edits, including Reset Terrain. A whole gesture is one edit. New committed
+  or geometry edits, including Reset Terrain heights. A whole gesture is one edit. New committed
   edits replace the redo branch; canceled previews and no-op edits do not.
   Loading, resizing or generating a map clears this history. It does not undo
   placeable removal, dice rolls, character actions or movement.
@@ -33,7 +33,8 @@
   movement while its original model and animation state remain available.
 - **Campaign**: a named, browser-local workspace with an explicitly chosen,
   immutable 2014 or 2024 ruleset. Startup offers Create/Open rather than silently
-  resuming. Each campaign owns one automatically saved board. Switching flushes
+  resuming. Saved scenes contain either a legacy board or a connected map
+  collection, never a separate campaign per floor. Switching campaigns flushes
   acknowledged changes; reopening restores terrain, creatures/links, camera and
   committed combat/history instead of starting another campaign's scene.
 - **Campaign-owned character**: a character belongs to exactly one campaign.
@@ -247,48 +248,166 @@ allowances and visual actions are not silently converted into turn enforcement.
 Campaign settings and characters use acknowledged, revision-checked IndexedDB
 commits. The scene and session-memory combat/history are deliberately separate.
 
-## Connected-grid building direction
+## Connected-grid map-building direction (foundation implemented)
 
-Separate connected grids replace the original shared-board layering plan.
-The map state, physical-coordinate and persistence foundation is implemented;
-player-facing map controls and the outline builder remain planned.
+The user has replaced the layered shared-world direction with separate grids
+for buildings, floors and larger areas. The connected-map data, physical-coordinate,
+persistence and targeting foundation is implemented. The existing construction
+proof remains paused and is not the chosen builder workflow. Sight-gated cross-grid
+character projections now render the original creature's model. Live Maps & focus
+controls switch local views without transferring creatures. Connection-driven
+locomotion, the outline builder and actual multiplayer remain further
+implementation chunks.
 
-- **Connected grid**: an independently editable and viewable map inside one
-  campaign, such as an exterior, building interior, floor or larger area.
-- **Campaign spatial record**: one creature identity and map-local position,
-  translated into physical campaign feet using the map's origin, quarter-turn
-  orientation and grid scale. Camera zoom does not change physical distance.
-- **Participant view**: independent focused creature, displayed map and per-map
-  camera history. Following a creature changes only that view when it transfers.
-  Targeting another creature does not change viewing focus. Local view records
-  are implemented; connected-player ownership and networking are not.
-- **Cross-grid projection**: planned synchronized rendering of an off-map creature,
-  not a second token or character record. Position, facing and animation refer
-  to the original creature. Physical sight queries distinguish walls and openings;
-  sprite rendering, picking and full player visibility remain further work.
-- **Grid connection**: planned Enter / Use stairs interactions between aligned
-  maps. Transfers preserve creature identity, resources and combat/movement state.
-  Changing the grid reference never grants a free elevation jump or a fresh turn.
-  Cross-grid flight, falling, sight and attacks must use physical connections.
-- **Building outline**: the planned Build-only tool with height in 10-foot floor
-  increments and a closed straight-line footprint, completed when endpoints meet.
-  It generates a hollow exterior and separate floor maps. Carving is deferred;
-  curves, circles and manual floor removal are later extensions.
-- **Connected checkpoint**: version-3 scene data containing map records, one
-  campaign-wide creature collection, shared combat and a local default view.
-  Capture/restore, acknowledged IndexedDB saves and backups retain inactive maps.
-  Versions 1 and 2 remain supported without automatic conversion.
-- **Interior floor**: a finite half-foot slab, not earth extending downward
-  through other floors. Openings remove actual support rather than leaving a
-  phantom floor below.
+- **Connected grid**: an independently editable and viewable tactical map within
+  one campaign. A building interior, another floor or a larger area can have its
+  own grid. Character location belongs to the campaign world, not to whichever
+  map a participant happens to be viewing.
+- **Building outline**: a closed, straight-line footprint drawn on the map.
+  Meeting the first endpoint completes the outline. The simplified tool starts
+  with Build and a height choice, using 10-foot floor increments. It generates
+  a hollow building and separate floor grids rather than filling a solid box.
+  Cut/carving is undecided and deferred; curves, circles and manual floor
+  removal are later work.
+- **Grid connection**: a link between locations in different grids. Doorways
+  and stairs use explicit Enter / Use stairs interactions, transferring only
+  the acting creature. Only views following that creature switch maps;
+  unrelated participants keep their current view.
+- **Magical portal (planned)**: a transport-only connection represented by a
+  floating circular gate or vortex, not an ordinary doorway/window opening.
+  Portals do not transmit sight or targeting to the destination. Implement
+  physical doors/stairs and two-floor sight validation before this later feature.
+- **Spatial relationship**: the aligned position, orientation and elevation
+  connecting grids in physical feet. Separate grids are not disconnected
+  spaces: sight, attacks, flight and falling across openings are required from
+  the outset. Walls, floors, ceilings and openings still determine obstruction,
+  clearance and landing. Physical links are part of the foundation, not a
+  later replacement for doorway-only teleportation.
+- **Campaign spatial record**: one creature ID with a map-local position,
+  transformed into campaign coordinates in physical feet. Maps carry an origin,
+  quarter-turn orientation and physical render scale; camera zoom does not change
+  distances. A projection is derived view data referring to that same creature,
+  never a second token with its own HP, effects, occupancy or movement budget.
+- **Cross-grid projection**: one viewer-local rendering of an off-map creature,
+  using its original identity, translated position, elevation, facing and animation.
+  The focused character's physical sight query gates the model; Blinded observers,
+  invisible targets, walls and floors can hide it. Rendering and ray picking refer
+  to the original creature, never an added gameplay token. Ordinary camera
+  occlusion still applies. Hiding a roof or moving the DM camera does not grant sight.
+  Networked animation synchronization and broader vision rules remain future work.
+- **Projection terrain context**: render-only supporting ground/floors from the
+  visible creature's source-map checkpoint. A bounded sight corridor can join the
+  viewed grid to the projection where actual terrain exists, instead of leaving
+  an isolated floating sprite. Preserve actual elevations, rotations and scales,
+  avoid duplicate active-map surfaces, and keep the creature's real support at
+  narrow window edges. Character sight gates the context; hidden/invisible
+  creatures and unfocused views do not reveal it. It never adds editable cells,
+  navigation supports, gameplay creatures or saved geometry to the viewed map.
+- **Interior wall cutaway**: a floor-map view renders the existing physical
+  enclosure and its actual window/door cuts without ceiling coverage. Project
+  shared source geometry into the current map and clip it to the room/story;
+  interior-owned geometry uses the same roofless mesh query. The local wall
+  layout is shown even without a focused creature, separately from sight-gated
+  exterior sprites and their terrain context. Never delete physical roofs,
+  duplicate authoritative walls, add navigation supports or save the cutaway
+  meshes. Exterior rendering and character-sight geometry remain unchanged.
+- **Map-aware occupancy**: translate foreign creature positions into the viewed
+  grid and compare actual body elevations before blocking movement. Ground,
+  supported-surface and flight ranges do not reserve another map's raw local
+  coordinates. Real nearby creatures still block at their physical location,
+  independently of whether a projection is visible. Local placement/selection
+  lookup is scoped to the current map.
+- **Participant view**: that participant's focused creature, displayed grid
+  and camera. These are separate from shared character locations. A player can
+  stay focused on their own character; the DM can explicitly focus a character
+  on any map. A view follows its focused creature across transfers, but another
+  character's transfer must not change it. Targeting a creature on another grid
+  does not by itself change viewing focus.
+- **Map view change**: a local view transaction, not a creature transfer or turn
+  transition. Browsing clears focus; explicit creature focus selects its actual
+  map and centers its local position. The live Maps & focus controls preserve
+  canonical creatures, character resources, movement spent, combat and shared
+  roll history. Each map's camera survives save/reopen independently of other
+  local views. Same-map refocusing does not reload terrain or clear its Undo.
+  Unfinished movement, actions and terrain gestures block a switch. Failed loads
+  roll back the old view; a failed rollback blocks saving and actions until reload
+  rather than persisting a partial scene.
+  Opening or explicitly activating a character-sheet tab uses this transaction
+  to focus its canonical map and local position, never a projected render
+  position. Passive token-selection events still update sheets without changing
+  viewing focus. Sheet-driven changes use the same loading/ready notifications
+  and controls as direct Maps & focus changes.
+  Publish combat movement/availability state at both view-transition boundaries:
+  the animation loop is paused during the switch and cannot observe its temporary
+  busy state. A tab must leave the canonical sprite selected and its turn controls
+  ready without another sprite click, while preserving the active turn and costs.
+- **Cross-grid creature transfer**: relocation of the same logical creature,
+  not deletion and recreation or a character copy. Its stable ID, linked
+  character, HP, conditions, concentration, resources and combat/movement ledger
+  survive the transfer. Changing grids does not refresh a turn or grant movement.
 
-The retained numeric box-volume construction proof is paused, not the desired
-builder workflow. It implements solids/cuts, multiple supports, stairs, cave
-ceilings, bridge underpasses and next-floor landing. Version-2 scenes preserve
-its geometry and support IDs; hidden layers remain physical. Constructed-wall
-climbing, broader shape editing and full-size creature collision are not included.
-Heightfield-only maps keep their original traversal.
+New campaigns still start browser-local and single-board. Version-3 scene
+checkpoints store independent maps, one campaign-wide creature collection,
+shared combat state, a local default view and optional per-map camera histories;
+live capture/restore,
+IndexedDB saves and backups preserve inactive maps and their creature poses.
+Versions 1 and 2 remain supported without automatic conversion. Explicit
+migration preserves physical distances and rescales existing spell-area/history
+coordinates exactly once. Participant-view objects keep focus and camera histories
+independent, but are not authenticated network participants. Live map/focus
+controls are hidden for legacy single-board scenes; those scenes are not
+automatically converted.
 
-Terrain ownership still follows
-[ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md): one authoritative
-terrain owner per grid, with renderer adapters rather than parallel height stores.
+Cross-grid targeting uses campaign feet, actual geometry from every relevant map,
+the active terrain owner's unsaved edits, and stored cover bounds for unrendered
+structures. Spell picks transform into campaign coordinates; overlays transform
+back into the displayed map. Interior base floors are finite half-foot slabs,
+not columns of earth extending through floors below.
+
+Connected-player ownership and synchronization still require explicit work;
+the development file server is not a multiplayer session server.
+Terrain ownership continues to follow
+[ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md): each grid needs one
+authoritative terrain owner, not duplicate gameplay and renderer height stores.
+
+## Paused shared-world prototype
+
+The retained proof implements bounded solid boxes, hollow box cuts, multiple
+support floors, stairs, physical flight clearance and next-floor landing on one
+board. Final prototype validation was paused when the direction changed.
+The following terms describe that prototype, not the connected-grid plan.
+
+- **Constructed geometry checkpoint**: version-2 campaign scene data contains
+  ordered Add/Subtract volumes and stable creature support IDs. Legacy version-1
+  heightfield scenes remain valid. Views and Undo/Redo are session-local.
+- **Surface navigation**: constructed maps route between clear floor supports
+  and stair tops, spending existing five-foot grid costs (double while prone).
+  A drop from a platform uses the shared falling lifecycle. Constructed-wall
+  climbing and size-specific full-volume creature collision remain future work;
+  heightfield-only maps retain their existing traversal pipeline.
+
+- **Layered shared world**: one physical 3D board with common coordinates and
+  real elevations. Floors can be edited and viewed separately without becoming
+  disconnected gameplay maps. Stairs, shafts, bridges, flight and falls connect
+  space within that same world.
+- **Level layer**: a named authoring and visibility group, such as a basement,
+  ground floor, upper floor or roof. The prototype can isolate and hide layers;
+  locking and duplication remain planned. Hiding a layer does not remove its physical geometry
+  or change collision and traversal.
+- **Prototype structure**: editable constructed geometry, including walls, floors,
+  ceilings, roofs and openings. A structure can span level layers and belongs
+  to the shared world rather than being a raised terrain rectangle.
+- **Walkable surface**: a valid support at a position and elevation. Multiple
+  surfaces can occupy the same horizontal map position, such as a path beneath
+  a bridge. Navigation, landing, flight clearance and saved token support must
+  distinguish those surfaces.
+- **Volume edit**: a bounded 3D addition or subtraction that can produce solid
+  geometry or actual empty space, including cave chambers, tunnels and arch
+  openings. Lowering a heightfield alone is not a hollow volume.
+- **Hybrid authoring (prototype)**: combine outdoor terrain sculpting with
+  editable construction and targeted volume edits. The revised builder keeps
+  outdoor sculpting and simplifies construction; carving is not currently
+  required.
+- **Grid-aware detail**: preserve five-foot-grid gameplay while allowing smooth
+  curves, thinner walls and sub-grid construction dimensions. Shape detail does
+  not silently change movement distances or rules.

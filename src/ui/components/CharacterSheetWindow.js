@@ -1,4 +1,5 @@
 import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js';
+import { changeCampaignView } from '../../campaigns/SceneWorld.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
 import CharacterSheetContent from './CharacterSheetContent.js';
 
@@ -403,27 +404,58 @@ export default class CharacterSheetWindow {
       if (!this._destroyed && this.activeToken === token) this._syncNameEditing();
     });
     if (syncToken) {
-      void this._selectMapToken(token);
-      this._focusCamera(token);
+      if (this.gameManager.campaignWorld) {
+        this.ready = this.ready.then(async (result) => {
+          if (
+            result !== false &&
+            !this._destroyed &&
+            this.activeToken === token &&
+            !this.root.hidden
+          ) {
+            if ((await this._focusCamera(token)) === false) return false;
+          }
+          return result;
+        });
+      } else {
+        void this._selectMapToken(token);
+        void this._focusCamera(token);
+      }
     }
   }
 
-  _focusCamera(token) {
-    const manager = this.gameManager.threeSceneManager;
-    if (typeof manager?.setCameraTarget !== 'function') return;
+  async _focusCamera(token) {
+    const gm = this.gameManager;
+    const connected = !!gm.campaignWorld;
     try {
-      const world =
-        this.gameManager.token3DAdapter?._resolveTokenWorldPosition?.(token) || token.world;
+      if (connected) {
+        this.root.inert = true;
+        this.root.setAttribute('aria-busy', 'true');
+        await changeCampaignView(gm, { focusTokenId: token.id });
+        return true;
+      }
+      const manager = gm.threeSceneManager;
+      if (typeof manager?.setCameraTarget !== 'function') return;
+      const world = gm.token3DAdapter?._resolveTokenWorldPosition?.(token) || token.world;
       if (!world || ![world.x, world.y, world.z].every(Number.isFinite)) {
         throw new Error('Creature camera focus requires a valid current world position');
       }
       manager.setCameraTarget(world.x, world.z, world.y);
     } catch (error) {
+      if (connected) {
+        this.characterContent._failure(error, 'focusCreature');
+        return false;
+      }
       new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.UI, {
         component: 'CharacterSheetWindow',
         operation: 'focusCreature',
         tokenId: token.id,
       });
+      return false;
+    } finally {
+      if (connected) {
+        this.root.inert = false;
+        this.root.setAttribute('aria-busy', 'false');
+      }
     }
   }
 

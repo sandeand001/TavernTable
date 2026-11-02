@@ -17,6 +17,19 @@ export default class TargetingOverlay {
     this.signature = '';
   }
 
+  setViewTransform(transform = null) {
+    if (transform) {
+      this.group.position.set(transform.position.x, transform.position.y, transform.position.z);
+      this.group.rotation.y = transform.yaw;
+      this.group.scale.setScalar(transform.scale);
+    } else {
+      this.group.position.set(0, 0, 0);
+      this.group.rotation.y = 0;
+      this.group.scale.setScalar(1);
+    }
+    this.group.updateMatrixWorld(true);
+  }
+
   update(board, actor, profile, selection, effects) {
     const signature = JSON.stringify({
       actor,

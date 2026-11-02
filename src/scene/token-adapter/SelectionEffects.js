@@ -150,7 +150,7 @@ function _applyOrientationImmediate(tokenEntry, angle) {
   const is3DToken = !!mesh?.userData?.__tt3DToken;
   if (mesh && is3DToken) {
     const baseYaw = mesh.userData.__ttBaseYaw || 0;
-    const yaw = baseYaw + globalFlip + angle;
+    const yaw = baseYaw + globalFlip + this.getTokenViewFacing(tokenEntry, angle);
     try {
       if (mesh.rotation) {
         mesh.rotation.y = yaw;

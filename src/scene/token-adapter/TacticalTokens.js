@@ -9,6 +9,7 @@ const TEXTURE_SIZE = 512;
 // -- Public visuals and lifecycle --
 
 function getTokenVisual(token) {
+  if (this.isTokenProjection(token) && !this.isTokenProjectionVisible(token)) return null;
   const tactical = this._tacticalTokens.get(token)?.mesh;
   return tactical?.visible ? tactical : token?.__threeMesh || null;
 }
@@ -71,6 +72,11 @@ function _syncTacticalTokens() {
   this._tacticalView = down + 1e-10 >= (this._tacticalView ? EXIT_DOWN : ENTER_DOWN);
   const tile = this.gameManager.spatial?.tileWorldSize || 1;
   for (const token of this.gameManager.placedTokens || []) {
+    if (this.isTokenProjection(token) && !this.isTokenProjectionVisible(token)) {
+      this._discardTacticalToken(token);
+      if (token.__threeMesh) token.__threeMesh.visible = false;
+      continue;
+    }
     let visual = this._tacticalTokens.get(token);
     if (this._tacticalView && !visual && !this._tacticalTokenFailures.has(token)) {
       try {
@@ -98,7 +104,7 @@ function _syncTacticalTokens() {
     }
     if (this._tacticalView && model) model.visible = false;
     if (!this._tacticalView) continue;
-    const world = this._resolveTokenWorldPosition(token);
+    const world = this.getTokenViewPosition(token);
     visual.mesh.position.set(world.x, world.y + tile * 0.12, world.z);
     visual.mesh.scale.setScalar(tile);
     camera.getWorldQuaternion(visual.mesh.quaternion);

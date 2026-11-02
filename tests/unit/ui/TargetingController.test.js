@@ -1,4 +1,4 @@
-import { Scene } from 'three';
+import { Scene, Vector3 } from 'three';
 import TargetingController from '../../../src/ui/characters/TargetingController.js';
 import CombatSession from '../../../src/entities/characters/CombatSession.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
@@ -7,6 +7,8 @@ import { rollDiceExpression } from '../../../src/systems/dice/dice.js';
 import CharacterSheetWindow from '../../../src/ui/components/CharacterSheetWindow.js';
 import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCatalog.js';
 import data from '../../../assets/data/resources/srd-2024-5.2.1-seed.1.json';
+import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
+import { sceneState } from '../../helpers/sceneState.js';
 
 jest.mock('../../../src/systems/dice/dice.js', () => ({ rollDiceExpression: jest.fn() }));
 
@@ -103,6 +105,44 @@ test('only one overlay is created by concurrent requests, and no idle frame scan
   controller.finish();
   controller.frame();
   expect(gm.getTerrainHeight).not.toHaveBeenCalled();
+});
+
+test('connected-map spell picking stores physical coordinates while its overlay stays on the viewed grid', async () => {
+  const scene = sceneState({
+    ruleset: '2024',
+    characterId: caster.characterSheetId,
+    name: 'Caster',
+  });
+  scene.terrain.heights = scene.terrain.heights.map((row) => row.map(() => 0));
+  scene.creatures = [caster, target].map((token, index) => ({
+    ...scene.creatures[0],
+    id: token.id,
+    characterId: token.characterSheetId,
+    instanceNumber: index + 1,
+    name: index ? 'Enemy' : 'Caster',
+    gridX: index + 1,
+    pose: { kind: 'ground', world: { ...token.world } },
+  }));
+  scene.tokenCounters.types[0][1] = 2;
+  const validation = { ruleset: '2024', library };
+  let world = CampaignWorld.fromScene(scene, validation);
+  const saved = world.save();
+  saved.maps[0].originFeet = { x: 100, y: 10, z: 40 };
+  saved.maps[0].quarterTurns = 1;
+  world = CampaignWorld.fromScene(saved, validation);
+  gm.campaignWorld = world;
+  gm.campaignMapId = 'map-main';
+  caster.mapId = target.mapId = 'map-main';
+  const selection = await choose(addSpell('spell:fog-cloud'));
+  controller.updatePoint({ x: 2.5, y: 0, z: 2.5 }, true);
+  expect(controller.active.selection.origin).toEqual({ x: 87.5, y: 10, z: 52.5 });
+  controller.overlay.group.updateMatrixWorld(true);
+  const displayed = controller.overlay.group.localToWorld(new Vector3(87.5, 10, 52.5));
+  expect(displayed.x).toBeCloseTo(2.5);
+  expect(displayed.y).toBeCloseTo(0);
+  expect(displayed.z).toBeCloseTo(2.5);
+  controller.cancel();
+  await selection.result;
 });
 
 test('disposing during overlay loading cannot attach a renderer after disposal', async () => {

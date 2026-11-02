@@ -487,7 +487,7 @@ export default class TargetingController {
       if (state.baseOrigin)
         state.selection.origin = {
           ...state.baseOrigin,
-          y: state.baseOrigin.y + (value * this.gameManager.spatial.tileWorldSize) / 5,
+          y: state.baseOrigin.y + (value * this.board().tileSize) / 5,
         };
     }
     this.render();
@@ -536,6 +536,8 @@ export default class TargetingController {
   updatePoint(point, locked) {
     const state = this.active;
     if (!state || (!locked && state.locked)) return;
+    const gm = this.gameManager;
+    if (gm.campaignWorld) point = gm.campaignWorld.toCampaignPosition(gm.campaignMapId, point);
     const directional = ['cone', 'line', 'cube'].includes(state.profile.shape);
     if (state.profile.anchor === 'caster' || state.aiming) {
       state.selection.aim = { ...point };
@@ -547,9 +549,11 @@ export default class TargetingController {
       state.baseOrigin = { ...point };
       state.selection.origin = {
         ...point,
-        y: point.y + ((state.elevation || 0) * this.gameManager.spatial.tileWorldSize) / 5,
+        y: point.y + ((state.elevation || 0) * this.board().tileSize) / 5,
       };
-      const facing = facingDirection(state.token);
+      const facing = facingDirection(
+        this.board().tokens.find((token) => token.id === state.token.id)
+      );
       state.selection.aim = {
         x: point.x + facing.x,
         y: state.selection.origin.y,
@@ -569,6 +573,10 @@ export default class TargetingController {
 
   renderOverlay() {
     if (!this.overlay || this.disposed) return;
+    const gm = this.gameManager;
+    this.overlay.setViewTransform(
+      gm.campaignWorld ? gm.campaignWorld.getViewTransform(gm.campaignMapId) : null
+    );
     const state = this.active || this.preview;
     const positions =
       state || this.session.effects.length

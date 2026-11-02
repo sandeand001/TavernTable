@@ -34,6 +34,25 @@ function _resolveTokenWorldPosition(tokenEntry) {
   }
 }
 
+function getTokenViewPosition(token) {
+  const gm = this.gameManager;
+  if (!gm.campaignWorld || token.mapId === gm.campaignMapId)
+    return this._resolveTokenWorldPosition(token);
+  return gm.campaignWorld.toMapPosition(
+    gm.campaignMapId,
+    gm.campaignWorld.toCampaignPosition(token.mapId, token.world)
+  );
+}
+
+function getTokenViewFacing(token, angle = token.facingAngle ?? 0) {
+  const gm = this.gameManager;
+  if (!gm.campaignWorld || token.mapId === gm.campaignMapId) return angle;
+  return (
+    gm.campaignWorld.toCampaignFacing(token.mapId, angle) +
+    gm.campaignWorld.getViewTransform(gm.campaignMapId).yaw
+  );
+}
+
 function _computeMovementBounds() {
   try {
     const gm = this.gameManager;
@@ -409,6 +428,8 @@ function _syncTokenAndMeshWorld(state, world, options = {}) {
 
 export function installSpatialUtilsMethods(prototype) {
   prototype._resolveTokenWorldPosition = _resolveTokenWorldPosition;
+  prototype.getTokenViewPosition = getTokenViewPosition;
+  prototype.getTokenViewFacing = getTokenViewFacing;
   prototype._computeMovementBounds = _computeMovementBounds;
   prototype._getDirectionalVectorFromYaw = _getDirectionalVectorFromYaw;
   prototype._sampleWorldHeight = _sampleWorldHeight;

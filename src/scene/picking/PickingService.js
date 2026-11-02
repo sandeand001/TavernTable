@@ -205,16 +205,21 @@ export class PickingService {
       const point = tokenResult.point || token.world;
       if (!point || ![point.x, point.y, point.z].every(Number.isFinite))
         throw new Error('A picked creature requires a valid hit position');
+      const position =
+        gm.campaignWorld && token.mapId !== gm.campaignMapId
+          ? adapter.getTokenViewPosition(token)
+          : null;
+      const cell = position ? gm.spatial.worldToGrid(position.x, position.z) : token;
       const hasGrid =
-        Number.isInteger(token.gridX) &&
-        Number.isInteger(token.gridY) &&
-        token.gridX >= 0 &&
-        token.gridY >= 0 &&
-        token.gridX < gm.cols &&
-        token.gridY < gm.rows;
+        Number.isInteger(cell.gridX) &&
+        Number.isInteger(cell.gridY) &&
+        cell.gridX >= 0 &&
+        cell.gridY >= 0 &&
+        cell.gridX < gm.cols &&
+        cell.gridY < gm.rows;
       return {
         world: { x: point.x, y: point.y, z: point.z },
-        grid: hasGrid ? { gx: token.gridX, gy: token.gridY } : null,
+        grid: hasGrid ? { gx: cell.gridX, gy: cell.gridY } : null,
         token,
         tokenHitPoint: tokenResult.point || null,
         tokenDistance: Number.isFinite(tokenResult.distance) ? tokenResult.distance : null,

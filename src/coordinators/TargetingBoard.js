@@ -2,7 +2,12 @@ import {
   getTokenCharacterRecord,
   getTokenConditions,
 } from '../entities/creatures/TokenMovement.js';
-import { clearSegment, finitePoint } from '../rules/targeting/geometry.js';
+import {
+  clearSegment,
+  finitePoint,
+  creatureEye,
+  creatureCenter,
+} from '../rules/targeting/geometry.js';
 import {
   TARGET_ALLEGIANCES,
   TARGET_CREATURE_TYPES,
@@ -14,23 +19,37 @@ export function targetingPositions(gameManager, groundTokenIds = []) {
     spatial = gm.spatial;
   if (!spatial || !Number.isFinite(spatial.tileWorldSize) || spatial.tileWorldSize <= 0)
     throw new Error('Targeting needs the board’s physical grid scale');
-  const tileSize = spatial.tileWorldSize;
+  const tileSize = gm.campaignWorld ? 5 : spatial.tileWorldSize;
   const projected = new Set(groundTokenIds);
   const tokens = gm.placedTokens.map((token) => {
-    const world =
+    const local =
       token.world ||
-      spatial.gridToWorld(
-        token.gridX + 0.5,
-        token.gridY + 0.5,
-        gm.getTerrainHeight(token.gridX, token.gridY)
-      );
+      (gm.campaignWorld
+        ? (() => {
+            const map = gm.campaignWorld.getMap(token.mapId);
+            return {
+              x: (token.gridX + 0.5) * map.grid.tileWorldSize,
+              y: map.terrain.heights[token.gridY][token.gridX] * map.terrain.worldElevationUnit,
+              z: (token.gridY + 0.5) * map.grid.tileWorldSize,
+            };
+          })()
+        : spatial.gridToWorld(
+            token.gridX + 0.5,
+            token.gridY + 0.5,
+            gm.getTerrainHeight(token.gridX, token.gridY)
+          ));
+    const world = gm.campaignWorld
+      ? gm.campaignWorld.toCampaignPosition(token.mapId, local)
+      : local;
     if (!finitePoint(world)) throw new Error('A target creature has no valid position');
     const position = { id: token.id, world: { ...world } };
     if (projected.has(token.id)) {
       const ground = gm.token3DAdapter?.getTokenGroundPosition?.(token);
       if (!finitePoint(ground))
         throw new Error('A flight indicator needs a valid ground projection');
-      position.groundWorld = { ...ground };
+      position.groundWorld = gm.campaignWorld
+        ? gm.campaignWorld.toCampaignPosition(token.mapId, ground)
+        : { ...ground };
     }
     return position;
   });
@@ -62,7 +81,9 @@ export function targetingBoard(gameManager, groundTokenIds = []) {
       allegiance,
       creatureType,
       creatureSize,
-      facingAngle: token.facingAngle ?? 0,
+      facingAngle: gm.campaignWorld
+        ? gm.campaignWorld.toCampaignFacing(token.mapId, token.facingAngle ?? 0)
+        : (token.facingAngle ?? 0),
       hpCurrent: character?.hp.current ?? null,
       conditions: [...getTokenConditions(token)],
       abilities: character ? gm.characterServices.library.stats(character.id).abilityScores : {},
@@ -70,30 +91,39 @@ export function targetingBoard(gameManager, groundTokenIds = []) {
       gridY: token.gridY,
     };
   });
-  const obstacles = [];
-  for (let y = 0; y < gm.rows; y++)
-    for (let x = 0; x < gm.cols; x++) {
-      const height = gm.getTerrainHeight(x, y);
-      if (!Number.isFinite(height)) throw new Error('Targeting terrain height is invalid');
-      const low = spatial.gridToWorld(x, y, height),
-        high = spatial.gridToWorld(x + 1, y + 1, height);
-      obstacles.push({
-        min: { x: Math.min(low.x, high.x), y: -1000000, z: Math.min(low.z, high.z) },
-        max: {
-          x: Math.max(low.x, high.x),
-          y: low.y - tileSize * 0.002,
-          z: Math.max(low.z, high.z),
-        },
-      });
-    }
-  if (gm.placeableMeshPool) obstacles.push(...gm.placeableMeshPool.targetingCoverBounds());
-  const eye = (token) => ({ ...token.world, y: token.world.y + tileSize * 0.8 });
-  const center = (token) => ({ ...token.world, y: token.world.y + tileSize * 0.5 });
+  const liveCover = gm.placeableMeshPool ? gm.placeableMeshPool.targetingCoverBounds() : null;
+  const obstacles = gm.campaignWorld
+    ? gm.campaignWorld.getObstacles({
+        mapId: gm.campaignMapId,
+        geometry: gm.terrainEngine?.geometry ?? null,
+        coverBounds: liveCover,
+      })
+    : [];
+  if (!gm.campaignWorld)
+    for (let y = 0; y < gm.rows; y++)
+      for (let x = 0; x < gm.cols; x++) {
+        const height = gm.getTerrainHeight(x, y);
+        if (!Number.isFinite(height)) throw new Error('Targeting terrain height is invalid');
+        const low = spatial.gridToWorld(x, y, height),
+          high = spatial.gridToWorld(x + 1, y + 1, height);
+        obstacles.push({
+          min: { x: Math.min(low.x, high.x), y: -1000000, z: Math.min(low.z, high.z) },
+          max: {
+            x: Math.max(low.x, high.x),
+            y: low.y - tileSize * 0.002,
+            z: Math.max(low.z, high.z),
+          },
+        });
+      }
+  if (!gm.campaignWorld && liveCover) obstacles.push(...liveCover);
+  const eye = (token) => creatureEye(token.world, tileSize);
+  const center = (token) => creatureCenter(token.world, tileSize);
   return {
     tokens,
     tileSize,
     coverKey: JSON.stringify(obstacles),
     inside: (point) => {
+      if (gm.campaignWorld) return gm.campaignWorld.contains(point);
       const grid = spatial.worldToGrid(point.x, point.z);
       return grid.gridX >= 0 && grid.gridY >= 0 && grid.gridX < gm.cols && grid.gridY < gm.rows;
     },

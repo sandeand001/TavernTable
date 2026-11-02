@@ -90,6 +90,15 @@ export default class CampaignWorld {
     return copy(this._map(id));
   }
 
+  getMapGeometry(id) {
+    // Shared checkpoint geometry is queried here; edits still belong to the map owner.
+    return this._geometry(id);
+  }
+
+  listMaps() {
+    return this._scene.maps.map(({ id, name }) => ({ id, name }));
+  }
+
   getCreature(id) {
     return copy(this._creature(id));
   }
@@ -282,7 +291,9 @@ export default class CampaignWorld {
     const ray = new Ray(start, direction.divideScalar(distance));
     const box = new Box3();
     const hit = new Vector3();
-    for (const bounds of this.getObstacles(geometry)) {
+    const obstacles = geometry.obstacles ?? this.getObstacles(geometry);
+    if (!Array.isArray(obstacles)) throw new Error('Campaign sight requires physical obstacles');
+    for (const bounds of obstacles) {
       box.min.set(bounds.min.x, bounds.min.y, bounds.min.z);
       box.max.set(bounds.max.x, bounds.max.y, bounds.max.z);
       if (box.containsPoint(start)) return false;
@@ -297,9 +308,12 @@ export default class CampaignWorld {
     if (observer.mapId !== viewMapId)
       throw new Error('The viewing creature is not on this campaign map');
     const eye = this.getCampaignPosition(observerId);
+    const geometry = { obstacles: this.getObstacles() };
     return this._scene.creatures
       .filter((creature) => creature.mapId !== viewMapId)
-      .filter((creature) => this.hasLineOfSight(eye, this.getCampaignPosition(creature.id)))
+      .filter((creature) =>
+        this.hasLineOfSight(eye, this.getCampaignPosition(creature.id), geometry)
+      )
       .map((creature) => this.projectCreature(creature.id, viewMapId));
   }
 
@@ -351,8 +365,12 @@ class CampaignView {
     this._world = world;
     this._mapId = mapId;
     this._focusTokenId = null;
-    this._initialCamera = copy(world.save().view.camera);
-    this._cameras = new Map();
+    const saved = world.save().view;
+    this._initialCamera = copy(saved.camera);
+    this._cameras = new Map(
+      (saved.cameras || []).map(({ mapId, camera }) => [mapId, copy(camera)])
+    );
+    this._cameras.set(saved.mapId, copy(saved.camera));
     if (focusTokenId !== null) this.focus(focusTokenId);
   }
 
@@ -368,6 +386,21 @@ class CampaignView {
 
   get camera() {
     return copy(this._cameras.get(this.mapId) || this._initialCamera);
+  }
+
+  get hasCamera() {
+    return this._cameras.has(this.mapId);
+  }
+
+  snapshot(camera = this.camera) {
+    const cameras = new Map(this._cameras);
+    cameras.set(this.mapId, copy(camera));
+    return {
+      mapId: this.mapId,
+      focusTokenId: this.focusTokenId,
+      camera: copy(camera),
+      cameras: [...cameras].map(([mapId, value]) => ({ mapId, camera: copy(value) })),
+    };
   }
 
   setCamera(camera) {
