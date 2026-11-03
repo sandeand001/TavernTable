@@ -1,24 +1,47 @@
+import * as three from 'three';
 import GameManager from '../../../src/core/GameManager.js';
+import { TerrainMeshBuilder } from '../../../src/scene/terrain/TerrainMeshBuilder.js';
+import { TerrainRebuilder } from '../../../src/scene/terrain/TerrainRebuilder.js';
 
-describe('TerrainMesh integration (Phase 2)', () => {
-  test('rebuild request invoked after terrain height change in hybrid mode (graceful if three unavailable)', async () => {
-    const gm = new GameManager({ cols: 4, rows: 4 });
-    // stub minimal pieces required by TerrainCoordinator initialization
-    gm.gridContainer = { addChild() {}, removeChildren() {} };
-    await gm.terrainCoordinator.initializeTerrainData();
-    // Enable hybrid (may degrade in headless test env); ensure no throw
-    await gm.enableHybridRender();
-    // Ensure a height mutation actually occurs: activate terrain mode and set a tool.
-    try {
-      gm.enableTerrainMode();
-      gm.setTerrainTool('raise');
-    } catch (_) {
-      // Non-fatal for environments where terrain mode prerequisites not fully stubbed
-    }
-    const rebuilder = gm.terrainRebuilder;
-    if (!rebuilder) return; // degraded path skip
-    const spy = jest.spyOn(rebuilder, 'request');
-    gm.terrainCoordinator.modifyTerrainHeightAtCell(0, 0);
-    expect(spy).toHaveBeenCalled();
+test('committed engine heights reach the real terrain mesh without a GPU or legacy coordinator store', () => {
+  jest.useFakeTimers();
+  const gm = new GameManager({ cols: 5, rows: 5 });
+  const canvas = document.createElement('canvas');
+  gm.threeSceneManager = {
+    canvas,
+    three,
+    scene: new three.Scene(),
+    setTerrainBrushPreview: jest.fn(),
+    clearTerrainBrushPreview: jest.fn(),
+  };
+  gm.is3DModeActive = () => true;
+  const builder = new TerrainMeshBuilder({
+    tileWorldSize: 1,
+    elevationUnit: 0.5,
+    hardEdges: true,
   });
+  gm.terrainRebuilder = new TerrainRebuilder({ gameManager: gm, builder });
+  gm.terrainCoordinator.attachScene();
+  try {
+    const request = jest.spyOn(gm.terrainRebuilder, 'request');
+    gm.terrainEngine.setHeightAt(1, 1, 4);
+    expect(request).toHaveBeenCalled();
+    jest.runOnlyPendingTimers();
+    const mesh = gm.threeSceneManager.scene.getObjectByName('TerrainMesh');
+    expect(mesh).toBeDefined();
+    const positions = mesh.geometry.getAttribute('position');
+    const heights = Array.from({ length: positions.count }, (_, index) => positions.getY(index));
+    expect(Math.max(...heights)).toBe(2);
+    gm.terrainEngine.undo();
+    jest.runOnlyPendingTimers();
+    const restored = mesh.geometry.getAttribute('position');
+    expect(
+      Array.from({ length: restored.count }, (_, index) => restored.getY(index)).every(
+        (height) => height === 0
+      )
+    ).toBe(true);
+  } finally {
+    gm.terrainCoordinator.dispose();
+    jest.useRealTimers();
+  }
 });

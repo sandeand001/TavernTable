@@ -32,7 +32,7 @@ function applyMovementStyle(token) {
       return;
     }
     const settings = getTokenMovementSettings(token);
-    if (job.flight) {
+    if (job.flight || job.layered) {
       job.settings.mode = job.range.prone ? 'run' : settings.mode;
       job.settings.type = settings.type;
       this._movementRangeDirty = true;
@@ -90,26 +90,48 @@ function applyMovementStyle(token) {
   }
 }
 
-function getTokenMovementRange(token) {
+function getTokenMovementRange(token, allowance = null) {
   if (!token || this.isMovementInProgress(token)) return null;
+  if (token.openingHold || token.surfaceHold) return null;
   const gm = this.gameManager;
+  if (gm.campaignViewBusy || gm.campaignMapFailure) return null;
+  if (gm.campaignWorld && token.mapId !== gm.campaignMapId) return null;
   const combat = gm.characterServices?.combat;
   if (gm.characterServices?.library?.isSaving || combat?.pending || combat?.committing) return null;
   if (combat?.active && combat.activeToken !== token) return null;
-  if (token.flightActive) return this.getTokenFlightRange(token);
+  if (token.flightActive) return this.getTokenFlightRange(token, allowance);
+  if (gm.terrainEngine?.geometry.hasVolumes) return this.getTokenSurfaceRange(token, allowance);
   const world = this._resolveTokenWorldPosition(token);
   const start = this._mapWorldToGrid(world) || token;
   const settings = getTokenMovementSettings(token);
+  const available = combat?.active
+    ? combat.movementAllowance(token)
+    : combat && token.characterSheetId
+      ? combat.freeMovementAllowance(token)
+      : settings.speed;
   const threshold = this._getWallClimbThreshold();
   const anchor = this._movementStates.get(token)?.wallMotion;
-  const blocked = new Set();
+  const occupied = new Set();
   for (const other of gm.placedTokens || []) {
     if (other !== token) {
-      blocked.add(`${other.gridX},${other.gridY}`);
+      const remote = gm.campaignWorld && other.mapId !== gm.campaignMapId;
+      let gridX = other.gridX,
+        gridY = other.gridY;
+      if (remote) {
+        const position = this.getTokenViewPosition(other);
+        ({ gridX, gridY } = gm.spatial.worldToGrid(position.x, position.z));
+        if (gridX < 0 || gridY < 0 || gridX >= gm.cols || gridY >= gm.rows) continue;
+        const floor = gm.getTerrainHeight(gridX, gridY) * gm.spatial.elevationUnit;
+        if (!Number.isFinite(floor)) throw new Error('Creature occupancy requires a valid floor');
+        const body = gm.spatial.tileWorldSize;
+        if (position.y >= floor + body - 1e-7 || position.y + body <= floor + 1e-7) continue;
+      }
+      occupied.add(`${gridX},${gridY}`);
       const face = this._movementStates.get(other)?.wallMotion?.face;
-      if (face) blocked.add(`${face.low.gridX},${face.low.gridY}`);
+      if (face && !remote) occupied.add(`${face.low.gridX},${face.low.gridY}`);
     }
   }
+  const blocked = new Set();
   for (const [key, entries] of gm.terrainManager?.placeables || []) {
     if (entries.some((entry) => ['plant', 'structure'].includes(entry.placeableType)))
       blocked.add(key);
@@ -119,17 +141,14 @@ function getTokenMovementRange(token) {
     rows: gm.rows,
     startGridX: start.gridX,
     startGridY: start.gridY,
-    speed: combat?.active
-      ? combat.movementAllowance(token)
-      : combat && token.characterSheetId
-        ? combat.freeMovementAllowance(token)
-        : settings.speed,
+    speed: Math.min(available, allowance ?? Infinity),
     prone: getTokenConditions(token).includes('prone'),
     mode: settings.mode,
     tileWorldSize: gm.spatial.tileWorldSize,
     elevationUnit: gm.spatial.elevationUnit,
     getHeight: (x, y) => gm.getTerrainHeight(x, y),
     blocked,
+    occupied,
     // A cliff needs a face-on approach; do not cut across its corner.
     maxDiagonalHeightDifference: threshold + 1e-8,
     minClimbHeightDifference: threshold,
@@ -211,25 +230,82 @@ function requestMoveToGrid(token, gridX, gridY) {
   return this._requestPlannedMovement(token, { gridX, gridY });
 }
 
-function requestMoveToSurface(token, surface) {
-  return this._requestPlannedMovement(token, { surface });
+function requestMoveToSurface(token, surface, { closest = false } = {}) {
+  return this._requestPlannedMovement(token, { surface }, { closest });
 }
 
-function _requestPlannedMovement(token, destination) {
+function _requestPlannedMovement(token, destination, options = {}) {
+  const previousJob = this._movementRoutes.get(token);
   try {
+    const gm = this.gameManager;
+    if (
+      destination.frameMapId &&
+      destination.frameMapId !== gm.campaignMapId &&
+      gm.campaignWorld &&
+      destination.surface
+    ) {
+      const { point, normal } = destination.surface;
+      const convert = (value) =>
+        gm.campaignWorld.toMapPosition(
+          gm.campaignMapId,
+          gm.campaignWorld.toCampaignPosition(destination.frameMapId, value)
+        );
+      const target = convert(point);
+      const outward = convert({
+        x: point.x + normal.x,
+        y: point.y + normal.y,
+        z: point.z + normal.z,
+      });
+      const distance = Math.hypot(outward.x - target.x, outward.y - target.y, outward.z - target.z);
+      if (!(distance > 0))
+        throw new Error('The saved movement destination has no valid surface normal');
+      destination = {
+        ...destination,
+        frameMapId: gm.campaignMapId,
+        surface: {
+          ...destination.surface,
+          point: target,
+          normal: {
+            x: (outward.x - target.x) / distance,
+            y: (outward.y - target.y) / distance,
+            z: (outward.z - target.z) / distance,
+          },
+        },
+      };
+    }
+    if (destination.flightApproach && !token.flightActive)
+      throw new Error('Take flight before approaching an airborne opening');
     if (!this.gameManager.placedTokens.includes(token))
       throw new Error('Movement token is no longer in this session');
+    if (this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
+    if (this.gameManager.campaignViewBusy)
+      throw new Error('Wait for the map view to finish changing before moving');
+    if (this.gameManager.campaignWorld && token.mapId !== this.gameManager.campaignMapId)
+      throw new Error('Focus the creature on its own grid before requesting movement');
     if (this.gameManager.sceneAutosave?.ready === false)
       throw new Error('Wait for the campaign to finish opening before moving');
     const services = this.gameManager.characterServices;
-    if (services?.library?.isSaving || services?.combat?.pending || services?.combat?.committing)
-      throw new Error('Finish the current character change or action before requesting movement');
-    this.recordStablePlacement?.(token);
     if (this.isMovementInProgress(token)) {
+      const queued = this._queueMovementRedirect(token, destination);
+      if (queued) return queued;
       this._logPathing('movement:range-rejected', { reason: 'already-moving', tokenId: token.id });
       return null;
     }
-    const range = this.getTokenMovementRange(token);
+    if (services?.library?.isSaving || services?.combat?.pending || services?.combat?.committing)
+      throw new Error('Finish the current character change or action before requesting movement');
+    if (destination.dropHold) return this.requestSurfaceDrop(token, destination.surface);
+    this.recordStablePlacement?.(token);
+    if (
+      this.gameManager.campaignWorld &&
+      destination.surface &&
+      (token.openingHold ||
+        token.surfaceHold ||
+        (!token.flightActive &&
+          this.gameManager.terrainEngine?.geometry.hasVolumes &&
+          Math.abs(destination.surface.normal?.y) < 0.45))
+    )
+      return this._requestSurfaceClimb(token, destination, options);
+    const range = this.getTokenMovementRange(token, options.allowance);
     if (!range) {
       this._logPathing('movement:range-rejected', {
         reason: 'turn-unavailable',
@@ -237,7 +313,10 @@ function _requestPlannedMovement(token, destination) {
       });
       return null;
     }
-    if (token.flightActive) return this._requestFlyingMovement(token, destination, range);
+    if (options.closest && !destination.flightApproach)
+      destination = this._closestMovementDestination(token, destination, range);
+    if (token.flightActive) return this._requestFlyingMovement(token, destination, range, options);
+    if (range.layered) return this._requestSurfaceMovement(token, destination, range);
     let route;
     let wallTarget = null;
     if (destination.surface) {
@@ -281,9 +360,7 @@ function _requestPlannedMovement(token, destination) {
       return null;
     }
     const combat = this.gameManager.characterServices?.combat;
-    const settings = { ...getTokenMovementSettings(token) };
-    if (combat?.active) settings.speed = combat.movementAllowance(token);
-    else if (combat && token.characterSheetId) settings.speed = combat.freeMovementAllowance(token);
+    const settings = { ...getTokenMovementSettings(token), speed: range.speed };
     if (range.prone) settings.mode = 'run';
     const world = this._resolveTokenWorldPosition(token);
     if (
@@ -316,8 +393,11 @@ function _requestPlannedMovement(token, destination) {
   } catch (error) {
     const state = this._movementStates.get(token);
     const hadRoute = this._movementRoutes.has(token);
-    this._finishPlannedMovement(token);
-    if (hadRoute && state?.wallMotion && !state.wallMotion.holding) this._cancelWallMovement(state);
+    if (!previousJob || this._movementRoutes.get(token) !== previousJob) {
+      this._finishPlannedMovement(token);
+      if (hadRoute && state?.wallMotion && !state.wallMotion.holding)
+        this._cancelWallMovement(state);
+    }
     GameErrors.input(error, {
       component: 'TokenMovement',
       operation: 'requestMove',
@@ -437,7 +517,7 @@ function _hasReachedPlannedMovementGoal(token, job) {
 function _extendPlannedLandingGoal(state) {
   const job = this._movementRoutes.get(state.token);
   const step = state.activeStep;
-  if (!job || !state.pathActive || !state.pathGoal || !step) return false;
+  if (!job || job.redirect || !state.pathActive || !state.pathGoal || !step) return false;
   const original = job.current;
   if (!original || original.kind === 'wall' || original.wallExit || original.vault) return false;
   const directionX = Math.sign(step.targetWorld.x - step.startWorld.x);
@@ -490,6 +570,7 @@ function _advancePlannedMovement(state) {
   const job = this._movementRoutes.get(state.token);
   if (!job || !this._hasReachedPlannedMovementGoal(state.token, job)) return false;
   this._commitPlannedMovementCost(job);
+  if (this._applyMovementRedirect(state.token)) return true;
   if (job.index < job.points.length) {
     this._beginPlannedMovementSegment(state.token, job);
     return true;
@@ -500,6 +581,7 @@ function _advancePlannedMovement(state) {
 }
 
 function _updatePlannedMovements() {
+  this._resumeLandingMovementRedirects();
   const gm = this.gameManager;
   const spatialKey = [gm.cols, gm.rows, gm.spatial?.tileWorldSize, gm.spatial?.elevationUnit].join(
     ':'
@@ -511,7 +593,15 @@ function _updatePlannedMovements() {
     this._movementRangeDirty = true;
   }
   for (const [token, job] of this._movementRoutes) {
-    if (job.flight) continue;
+    if (job.redirectReady) {
+      this._applyMovementRedirect(token);
+      continue;
+    }
+    if (job.flight || job.physicalClimb) continue;
+    if (job.layered) {
+      this._completeSurfaceFall(token, job);
+      continue;
+    }
     const cellKey = `${token.gridX},${token.gridY}`;
     if (job.cellKey !== cellKey) {
       job.cellKey = cellKey;
@@ -525,6 +615,7 @@ function _updatePlannedMovements() {
         throw new Error('Movement stopped before reaching its approved route waypoint');
       }
       this._commitPlannedMovementCost(job);
+      if (this._applyMovementRedirect(token)) continue;
       if (job.index < job.points.length) this._beginPlannedMovementSegment(token, job);
       else {
         this._finishPlannedMovement(token);
@@ -573,6 +664,7 @@ function _isPlannedLandingPositionAllowed(state, world) {
 }
 
 function disposeMovementRange() {
+  this._landingMovementRedirects?.clear();
   this._movementRangeOverlay?.dispose();
   this._movementRangeOverlay = null;
   this._movementRange = null;
@@ -616,7 +708,8 @@ function _finishPlannedMovement(token, interrupted = false) {
     job.combat.finishMovement(ticket, cost);
   }
   if (job && !interrupted) this.recordStablePlacement?.(token);
-  if (job && !job.combat?.active && token.characterSheetId) job.combat?.completeFreeMovement(token);
+  if (job && !job.continuing && !job.combat?.active && token.characterSheetId)
+    job.combat?.completeFreeMovement(token);
 }
 
 function _stopPlannedMovement(token) {

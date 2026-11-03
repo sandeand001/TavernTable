@@ -1,9 +1,7 @@
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { TOKEN_MOVEMENT_DEFAULTS } from '../../../config/TokenMovementConfig.js';
-import {
-  getCreatureTypeLabel,
-  normalizeCreatureType,
-} from '../../../entities/creatures/creatureHelpers.js';
+import { normalizeCreatureType } from '../../../entities/creatures/creatureHelpers.js';
+import { getAutomaticCreatureName } from '../../../entities/creatures/CreatureNames.js';
 
 // ── Token Registration ─────────────────────────────────────────
 
@@ -13,7 +11,8 @@ export function addTokenToCollection(
   gridX,
   gridY,
   selectedTokenType = null,
-  placedTokens = null
+  placedTokens = null,
+  checkpoint = null
 ) {
   // Use provided parameters or fall back to instance properties
   const tokenType = selectedTokenType || c.selectedTokenType;
@@ -23,13 +22,12 @@ export function addTokenToCollection(
   const instanceNumber = (c._tokenTypeCounts.get(canonicalType) || 0) + 1;
   c._tokenTypeCounts.set(canonicalType, instanceNumber);
   c._nextTokenId = (c._nextTokenId || 0) + 1;
-  const typeLabel = getCreatureTypeLabel(canonicalType);
 
   const newTokenData = {
-    id: `token-${c._nextTokenId}`,
-    instanceNumber,
-    name: instanceNumber === 1 ? typeLabel : `${typeLabel} ${instanceNumber}`,
-    nameMode: 'automatic',
+    id: checkpoint ? checkpoint.id : `token-${c._nextTokenId}`,
+    instanceNumber: checkpoint ? checkpoint.instanceNumber : instanceNumber,
+    name: checkpoint ? checkpoint.name : getAutomaticCreatureName(canonicalType, instanceNumber),
+    nameMode: checkpoint ? checkpoint.nameMode : 'automatic',
     movementSettings: { ...TOKEN_MOVEMENT_DEFAULTS },
     creature: creature,
     gridX: gridX,
@@ -42,9 +40,10 @@ export function addTokenToCollection(
     // Phase 0 (3D Transition): canonical world position snapshot
     // We derive elevation from terrain data store (if present) so future 3D scene can place the mesh/billboard.
     world: (() => {
+      if (checkpoint) return { ...checkpoint.pose.world };
       try {
         const gm = c.gameManager;
-        const height = gm?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
+        const height = gm?.getTerrainHeight?.(gridX, gridY) ?? 0;
         if (gm?.spatial && typeof gm.spatial.gridToWorld === 'function') {
           return gm.spatial.gridToWorld(gridX + 0.5, gridY + 0.5, height);
         }
@@ -54,6 +53,8 @@ export function addTokenToCollection(
       return { x: 0, y: 0, z: 0 };
     })(),
   };
+  if (c.gameManager?.campaignWorld)
+    newTokenData.mapId = checkpoint ? checkpoint.mapId : c.gameManager.campaignMapId;
   tokens.push(newTokenData);
   c.gameManager?.sceneAutosave?.changed('creature placed');
   if (instanceNumber > 1) {
@@ -62,7 +63,7 @@ export function addTokenToCollection(
     );
     for (const token of duplicates) {
       if (!token.characterSheetId && (!token.nameMode || token.nameMode === 'automatic')) {
-        token.name = `${typeLabel} ${token.instanceNumber}`;
+        token.name = getAutomaticCreatureName(canonicalType, token.instanceNumber, instanceNumber);
       }
     }
     if (typeof window !== 'undefined') {
@@ -92,8 +93,8 @@ export function addTokenToCollection(
       gm.token3DAdapter &&
       typeof gm.token3DAdapter.onTokenAdded === 'function'
     ) {
-      gm.token3DAdapter.onTokenAdded(newTokenData);
-      if (typeof gm.token3DAdapter.setSelectedToken === 'function') {
+      gm.token3DAdapter.onTokenAdded(newTokenData, checkpoint);
+      if (!checkpoint && typeof gm.token3DAdapter.setSelectedToken === 'function') {
         gm.token3DAdapter.setSelectedToken(newTokenData);
       }
     }

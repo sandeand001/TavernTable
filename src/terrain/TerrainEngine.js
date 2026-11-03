@@ -1,311 +1,478 @@
-/**
- * TerrainEngine.js — Single authoritative module for all terrain state and logic.
- *
- * Owns: height data, brush state, biome, placeables selection, activation state.
- * Does NOT own: any rendering (PIXI, Three.js). Communicates outward via events only.
- *
- * See docs/adr/ADR-0001-terrain-engine-event-seam.md
- */
-
-// ── Imports ────────────────────────────────────────────────────────────────
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TerrainDataStore } from './TerrainDataStore.js';
 import { TerrainBrushController } from './brush/TerrainBrushController.js';
+import { computeBrushFootprint, normalizeBrushSize } from './brush/BrushCommon.js';
 import {
   generateBiomeElevationField,
   getBiomeElevationScaleHint,
   isAllDefaultHeight,
 } from './generation/BiomeElevationGenerator.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
+import { TerrainGeometry } from './TerrainGeometry.js';
 
-// ── Constants ──────────────────────────────────────────────────────────────
-const DEFAULT_BIOME_SEED = () =>
-  typeof window !== 'undefined' && Number.isFinite(window.richShadingSettings?.seed)
-    ? window.richShadingSettings.seed >>> 0
-    : Math.floor(Math.random() * 1e9) >>> 0;
+function validateDimensions(cols, rows) {
+  if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) {
+    throw new RangeError('Terrain dimensions must be positive integers');
+  }
+}
 
-// ── TerrainEngine ──────────────────────────────────────────────────────────
+function validateHeights(heights) {
+  if (!Array.isArray(heights) || !heights.length || !Array.isArray(heights[0])) {
+    throw new TypeError('Terrain heights must be a non-empty rectangular array');
+  }
+  const rows = heights.length;
+  const cols = heights[0].length;
+  validateDimensions(cols, rows);
+  if (
+    heights.some(
+      (row) =>
+        !Array.isArray(row) ||
+        row.length !== cols ||
+        row.some(
+          (height) =>
+            !Number.isFinite(height) ||
+            height < TERRAIN_CONFIG.MIN_HEIGHT ||
+            height > TERRAIN_CONFIG.MAX_HEIGHT
+        )
+    )
+  ) {
+    throw new RangeError('Terrain heights must be rectangular and within the supported range');
+  }
+  return { cols, rows };
+}
+
+function validateSeed(seed) {
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) {
+    throw new RangeError('The biome seed must be an unsigned 32-bit integer');
+  }
+}
+
+function validateBiome(biomeKey) {
+  if (biomeKey !== null && (typeof biomeKey !== 'string' || !biomeKey.trim())) {
+    throw new TypeError('The biome must be a non-empty key or null');
+  }
+}
+
+function validateScale(scale) {
+  if (!Number.isFinite(scale) || scale < 0) {
+    throw new RangeError('Elevation scale must be a finite non-negative number');
+  }
+}
+
+function validateDensity(density) {
+  if (!Number.isFinite(density) || density < 0) {
+    throw new RangeError('Tree density must be a finite non-negative number');
+  }
+}
+
 export class TerrainEngine {
-  // ── Constructor ───────────────────────────────────────────────────────────
-
-  /**
-   * @param {number} cols
-   * @param {number} rows
-   * @param {number[][]} [baseHeights] - optional pre-loaded height array
-   */
   constructor(cols, rows, baseHeights = null) {
-    this._dataStore = new TerrainDataStore(cols, rows, baseHeights);
+    validateDimensions(cols, rows);
+    if (baseHeights !== null) {
+      const dimensions = validateHeights(baseHeights);
+      if (dimensions.cols !== cols || dimensions.rows !== rows) {
+        throw new Error('Initial terrain heights do not match the grid dimensions');
+      }
+    }
+    this._dataStore = new TerrainDataStore(cols, rows);
+    if (baseHeights !== null) this._dataStore.restoreHeights(baseHeights);
     this._brush = new TerrainBrushController(this._dataStore);
-
-    // Activation
     this._isActive = false;
-    this._isDragging = false;
-    this._lastModifiedCell = null;
-
-    // Biome
+    this._stroke = null;
+    this._hover = null;
+    this._undo = [];
+    this._redo = [];
+    this._isGenerating = false;
     this._biomeKey = null;
-    this._biomeSeed = DEFAULT_BIOME_SEED();
+    const settings = typeof window !== 'undefined' ? window.richShadingSettings : null;
+    this._biomeSeed = Number.isInteger(settings?.seed)
+      ? settings.seed >>> 0
+      : Math.floor(Math.random() * 0x100000000) >>> 0;
     this._elevationScale = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
-    this._richShadingEnabled = false;
-    this._treeDensityMultiplier =
-      typeof window !== 'undefined' && Number.isFinite(window.treeDensityMultiplier)
-        ? Math.max(0, window.treeDensityMultiplier)
-        : 1;
-
-    // Placeables
+    this._richShadingEnabled = !!settings?.enabled;
+    const density = typeof window !== 'undefined' ? window.treeDensityMultiplier : null;
+    this._treeDensityMultiplier = Number.isFinite(density) && density >= 0 ? density : 1;
     this._selectedPlaceable = null;
     this._placeablesPanelVisible = false;
     this._placeableRemovalMode = false;
     this._ptBrushSize = this._brush.brushSize;
-
-    // Events — arrays of subscriber callbacks
-    this._listeners = {
-      tileChanged: [],
-      heightChanged: [],
-      brushMoved: [],
-      brushCommitted: [],
-      activationChanged: [],
-      placeableChanged: [],
-      biomeChanged: [],
-      resized: [],
-    };
-
-    logger.log(LOG_LEVEL.DEBUG, 'TerrainEngine created', LOG_CATEGORY.SYSTEM, {
-      context: 'TerrainEngine.constructor',
-      cols,
-      rows,
-    });
+    this._feetPerLevel = 2.5;
+    this._geometry = this._createGeometry(cols, rows);
+    this._visibleLayers = null;
+    this._listeners = Object.fromEntries(
+      [
+        'tileChanged',
+        'heightChanged',
+        'brushMoved',
+        'brushCommitted',
+        'activationChanged',
+        'placeableChanged',
+        'biomeChanged',
+        'biomeGenerated',
+        'resized',
+        'scaleChanged',
+        'changed',
+        'editorChanged',
+      ].map((event) => [event, new Set()])
+    );
   }
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
-
-  /**
-   * Enter terrain editing mode.
-   */
   activate() {
     if (this._isActive) return;
     this._isActive = true;
     this._emit('activationChanged', { active: true });
-    logger.log(LOG_LEVEL.DEBUG, 'TerrainEngine activated', LOG_CATEGORY.SYSTEM);
+    this.refreshAppearance();
   }
 
-  /**
-   * Exit terrain editing mode. Commits any pending stroke.
-   */
   deactivate() {
+    this.cancelBrushStroke();
     if (!this._isActive) return;
-    this._commitPendingStroke();
     this._isActive = false;
-    this._isDragging = false;
-    this._lastModifiedCell = null;
     this._emit('activationChanged', { active: false });
-    logger.log(LOG_LEVEL.DEBUG, 'TerrainEngine deactivated', LOG_CATEGORY.SYSTEM);
+    this.refreshAppearance();
   }
 
-  /**
-   * Resize the terrain grid, preserving existing heights where possible.
-   * @param {number} cols
-   * @param {number} rows
-   */
   resize(cols, rows) {
+    validateDimensions(cols, rows);
+    this.cancelBrushStroke();
+    if (cols === this.cols && rows === this.rows) return false;
+    const geometry = this._createGeometry(cols, rows);
+    const volumes = this.geometry
+      .save()
+      .volumes.map((volume) => ({
+        ...volume,
+        bounds: {
+          min: { ...volume.bounds.min },
+          max: {
+            ...volume.bounds.max,
+            x: Math.min(cols * 5, volume.bounds.max.x),
+            z: Math.min(rows * 5, volume.bounds.max.z),
+          },
+        },
+      }))
+      .filter(({ bounds }) => bounds.min.x < bounds.max.x && bounds.min.z < bounds.max.z);
+    geometry.load({ version: 1, volumes });
     this._dataStore.resize(cols, rows);
+    this._geometry = geometry;
+    this._visibleLayers = null;
+    this._clearHistory();
     this._emit('resized', { cols, rows });
     this._emitAllTiles();
+    this._changed('resize');
+    return true;
   }
 
-  /**
-   * Reset all terrain heights to the default value.
-   */
   reset() {
-    this._dataStore.resetAll();
-    this._lastModifiedCell = null;
-    this._emitAllTiles();
-    logger.log(LOG_LEVEL.DEBUG, 'TerrainEngine reset', LOG_CATEGORY.SYSTEM);
-  }
-
-  // ── Public API — Height ───────────────────────────────────────────────────
-
-  /**
-   * @param {number} gridX
-   * @param {number} gridY
-   * @returns {number}
-   */
-  getHeightAt(gridX, gridY) {
-    return this._dataStore.get(gridX, gridY);
-  }
-
-  /**
-   * Directly set a single cell's height and emit events.
-   * @param {number} gridX
-   * @param {number} gridY
-   * @param {number} height
-   */
-  setHeightAt(gridX, gridY, height) {
-    const clamped = TerrainHeightUtils.clampHeight(height);
-    this._dataStore.set(gridX, gridY, clamped);
-    this._emitTile(gridX, gridY);
-    this._emit('heightChanged', { gridX, gridY, height: clamped });
-  }
-
-  // ── Public API — Brush ────────────────────────────────────────────────────
-
-  setTool(tool) {
-    this._brush.setTool(tool);
-  }
-
-  setBrushSize(size) {
-    this._brush.brushSize = size;
-  }
-
-  increaseBrush() {
-    this._brush.increaseBrush();
-  }
-
-  decreaseBrush() {
-    this._brush.decreaseBrush();
-  }
-
-  /**
-   * Returns the grid cells the brush would cover at this position (non-mutating).
-   * @param {number} gridX
-   * @param {number} gridY
-   * @returns {Array<{x: number, y: number}>}
-   */
-  getBrushFootprint(gridX, gridY) {
-    return this._brush.getFootprintCells(gridX, gridY);
-  }
-
-  /**
-   * Apply the active brush at the given position. Emits events for modified cells.
-   * Returns true if any cells changed.
-   * @param {number} gridX
-   * @param {number} gridY
-   * @returns {boolean}
-   */
-  applyBrushAt(gridX, gridY) {
-    // Snapshot before-heights for the footprint so we can diff after the stroke.
-    const footprint = this._brush.getFootprintCells(gridX, gridY);
-    const snapshot = footprint.map((cell) => ({
-      x: cell.x,
-      y: cell.y,
-      before: this._dataStore.get(cell.x, cell.y),
-    }));
-
-    // applyAt handles the full footprint internally — call it exactly once.
-    const changed = this._brush.applyAt(gridX, gridY);
-
-    if (changed) {
-      for (const s of snapshot) {
-        const after = this._dataStore.get(s.x, s.y);
-        if (after !== s.before) {
-          this._emitTile(s.x, s.y);
-          this._emit('heightChanged', { gridX: s.x, gridY: s.y, height: after });
+    this.cancelBrushStroke();
+    const changes = [];
+    for (let y = 0; y < this.rows; y++) {
+      for (let x = 0; x < this.cols; x++) {
+        const before = this.getHeightAt(x, y);
+        if (before !== TERRAIN_CONFIG.DEFAULT_HEIGHT) {
+          changes.push({ x, y, before, after: TERRAIN_CONFIG.DEFAULT_HEIGHT });
         }
       }
     }
-
-    this._lastModifiedCell = { x: gridX, y: gridY };
-    this._isDragging = true;
-    return !!changed;
+    if (!changes.length) {
+      this._emitAllTiles();
+      return false;
+    }
+    return this._commitChanges(changes, 'Reset terrain', { allTiles: true });
   }
 
-  /**
-   * Signal that the brush has moved to a new hover position without applying.
-   * Renderers use this to show a preview.
-   * @param {number} gridX
-   * @param {number} gridY
-   */
-  moveBrushTo(gridX, gridY) {
-    const cells = this._brush.getFootprintCells(gridX, gridY);
-    this._emit('brushMoved', { gridX, gridY, cells });
+  isValidGridPosition(x, y) {
+    return (
+      Number.isInteger(x) &&
+      Number.isInteger(y) &&
+      x >= 0 &&
+      y >= 0 &&
+      x < this.cols &&
+      y < this.rows
+    );
   }
 
-  /**
-   * Commit the current working heights to the base (end of a drag stroke).
-   */
-  commitBrushStroke() {
-    this._commitPendingStroke();
+  getHeightAt(x, y) {
+    return this._dataStore.get(x, y);
   }
 
-  // ── Public API — Biome ────────────────────────────────────────────────────
-
-  /**
-   * Set the active biome and optionally generate terrain elevation if the grid
-   * is still at its default height.
-   * @param {string} biomeKey
-   * @param {{ seed?: number, generateIfFlat?: boolean }} [options]
-   */
-  setBiome(biomeKey, options = {}) {
-    this._biomeKey = biomeKey;
-
-    if (options.seed !== undefined) {
-      this._biomeSeed = options.seed;
-    }
-
-    const hint = getBiomeElevationScaleHint(biomeKey);
-    if (hint) {
-      this._elevationScale = hint;
-      TerrainHeightUtils.setElevationUnit(hint);
-    }
-
-    const shouldGenerate =
-      options.generateIfFlat !== false && isAllDefaultHeight(this._dataStore.working);
-
-    if (shouldGenerate) {
-      this.generateBiomeElevation(biomeKey, options);
-    }
-
-    this._emit('biomeChanged', { biomeKey, biomeSeed: this._biomeSeed });
-    this._emitAllTiles();
+  setHeightAt(x, y, height) {
+    this._validatePosition(x, y);
+    if (!Number.isFinite(height)) throw new TypeError('Terrain height must be finite');
+    if (this._stroke) throw new Error('Finish or cancel the terrain preview before editing');
+    const after = TerrainHeightUtils.clampHeight(height);
+    const before = this.getHeightAt(x, y);
+    if (after === before) return false;
+    return this._commitChanges([{ x, y, before, after }], 'Set terrain height');
   }
 
-  /**
-   * Overwrite the entire height map with generated biome elevation.
-   * @param {string} biomeKey
-   * @param {{ seed?: number, relief?: number, roughness?: number }} [options]
-   */
-  generateBiomeElevation(biomeKey, options = {}) {
-    const seed = options.seed ?? this._biomeSeed;
-    const { rows, cols } = this._dataStore;
-    const newHeights = generateBiomeElevationField(biomeKey, rows, cols, { ...options, seed });
-
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        this._dataStore.set(x, y, newHeights[y][x]);
-      }
+  setTool(tool) {
+    if (!['raise', 'lower', 'wall'].includes(tool)) {
+      throw new RangeError(`Unknown terrain tool: ${tool}`);
     }
-    this._dataStore.applyWorkingToBase();
-    this._emitAllTiles();
-    logger.log(LOG_LEVEL.DEBUG, 'TerrainEngine: biome elevation generated', LOG_CATEGORY.SYSTEM, {
-      biomeKey,
-      seed,
+    if (this.tool === tool) return;
+    this._changeBrush(() => this._brush.setTool(tool));
+  }
+
+  setBrushSize(size) {
+    const normalized = normalizeBrushSize(size);
+    if (this.brushSize === normalized) return;
+    this._changeBrush(() => {
+      this._brush.brushSize = normalized;
     });
   }
 
-  /**
-   * @param {number} seed
-   */
+  increaseBrush() {
+    this.setBrushSize(this.brushSize + 1);
+  }
+
+  decreaseBrush() {
+    this.setBrushSize(this.brushSize - 1);
+  }
+
+  setWallTopLevel(level) {
+    if (
+      !Number.isInteger(level) ||
+      level < TERRAIN_CONFIG.MIN_HEIGHT ||
+      level > TERRAIN_CONFIG.MAX_HEIGHT
+    ) {
+      throw new RangeError('Wall top level must be an integer within the terrain range');
+    }
+    if (this.wallTopLevel === level) return;
+    this._brush.setWallTopLevel(level);
+    this._refreshWallPreview();
+  }
+
+  setWallFillMode(mode) {
+    if (!['filled', 'outline'].includes(mode)) {
+      throw new RangeError('Wall box style must be Filled or Outline');
+    }
+    if (this.wallFillMode === mode) return;
+    this._brush.setWallFillMode(mode);
+    this._refreshWallPreview();
+  }
+
+  getBrushFootprint(x, y) {
+    return this._brush.getFootprintCells(x, y);
+  }
+
+  getPlaceableBrushFootprint(x, y) {
+    return computeBrushFootprint(x, y, this._ptBrushSize, {
+      cols: this.cols,
+      rows: this.rows,
+    });
+  }
+
+  setPlaceableBrushSize(size) {
+    this._ptBrushSize = normalizeBrushSize(size);
+    this._editorChanged();
+    this._refreshPreview();
+  }
+
+  beginBrushStroke(x, y) {
+    this._validatePosition(x, y);
+    this.cancelBrushStroke();
+    this._stroke = { changes: new Map(), lastCell: null };
+    if (this.tool === 'wall') this._brush.beginWallStroke(x, y);
+    return this.updateBrushStroke(x, y);
+  }
+
+  updateBrushStroke(x, y) {
+    this._validatePosition(x, y);
+    if (!this._stroke) throw new Error('A terrain preview must begin before it can be updated');
+    const key = `${x},${y}`;
+    if (this._stroke.lastCell === key) return false;
+    if (this.tool === 'wall') this._stroke.changes.clear();
+    let changed = false;
+    for (const cell of this.getBrushFootprint(x, y)) {
+      const cellKey = `${cell.x},${cell.y}`;
+      const previous = this._stroke.changes.get(cellKey);
+      const before = previous?.before ?? this.getHeightAt(cell.x, cell.y);
+      const current = previous?.after ?? before;
+      const after = this._brush.getPreviewHeight(cell.x, cell.y, current);
+      this._stroke.changes.set(cellKey, { ...cell, before, after });
+      changed ||= after !== current;
+    }
+    this._stroke.lastCell = key;
+    this._hover = { x, y };
+    this._editorChanged();
+    this._refreshPreview();
+    return changed;
+  }
+
+  applyBrushAt(x, y) {
+    if (this._stroke) return this.updateBrushStroke(x, y);
+    this.beginBrushStroke(x, y);
+    return this.commitBrushStroke();
+  }
+
+  commitBrushStroke() {
+    if (!this._stroke) return false;
+    const changes = [...this._stroke.changes.values()].filter((cell) => cell.before !== cell.after);
+    this._stroke = null;
+    this._brush.cancelWallStroke();
+    if (!changes.length) {
+      this._editorChanged();
+      this._refreshPreview();
+      return false;
+    }
+    const label = { raise: 'Raise terrain', lower: 'Lower terrain', wall: 'Draw terrain wall' }[
+      this.tool
+    ];
+    this._commitChanges(changes, label);
+    this._emit('brushCommitted', {
+      affectedCells: changes.map(({ x, y, after }) => ({ x, y, height: after })),
+    });
+    return true;
+  }
+
+  cancelBrushStroke() {
+    const pending = !!this._stroke;
+    this._stroke = null;
+    this._brush.cancelWallStroke();
+    this.clearBrushPreview();
+    if (pending) this._editorChanged();
+    return pending;
+  }
+
+  moveBrushTo(x, y) {
+    this._validatePosition(x, y);
+    this._hover = { x, y };
+    this._refreshPreview();
+  }
+
+  clearBrushPreview() {
+    this._hover = null;
+    this._emit('brushMoved', { cells: [] });
+  }
+
+  undo() {
+    if (this._stroke) return this.cancelBrushStroke();
+    const edit = this._undo.pop();
+    if (!edit) return false;
+    this._redo.push(edit);
+    if (edit.geometry) {
+      this._geometry.load(edit.geometry.before);
+      this._changed('geometry');
+      return true;
+    }
+    const changes = edit.changes.map(({ x, y, before, after }) => ({
+      x,
+      y,
+      before: after,
+      after: before,
+    }));
+    return this._commitChanges(changes, edit.label, { history: false, kind: 'undo' });
+  }
+
+  redo() {
+    if (this._stroke) return false;
+    const edit = this._redo.pop();
+    if (!edit) return false;
+    this._undo.push(edit);
+    if (edit.geometry) {
+      this._geometry.load(edit.geometry.after);
+      this._changed('geometry');
+      return true;
+    }
+    return this._commitChanges(edit.changes, edit.label, { history: false, kind: 'redo' });
+  }
+
+  setBiome(biomeKey, options = {}) {
+    validateBiome(biomeKey);
+    const seed = options.seed ?? this._biomeSeed;
+    validateSeed(seed);
+    if (
+      options.generateIfFlat !== false &&
+      !this.isActive &&
+      isAllDefaultHeight(this._dataStore.working) &&
+      biomeKey !== null
+    ) {
+      return this.generateBiomeElevation(biomeKey, { ...options, seed });
+    }
+    this._biomeKey = biomeKey;
+    this._biomeSeed = seed;
+    this._emit('biomeChanged', { biomeKey, biomeSeed: seed });
+    this.refreshAppearance();
+    return true;
+  }
+
+  generateBiomeElevationIfFlat(biomeKey, options = {}) {
+    if (this.isActive || this.isGenerating || !isAllDefaultHeight(this._dataStore.working)) {
+      return false;
+    }
+    return this.generateBiomeElevation(biomeKey, options);
+  }
+
+  generateBiomeElevation(biomeKey, options = {}) {
+    if (this.isActive || this.isGenerating) return false;
+    validateBiome(biomeKey);
+    if (biomeKey === null) throw new Error('Choose a biome before generating terrain');
+    const seed = options.seed ?? this._biomeSeed;
+    validateSeed(seed);
+    this._isGenerating = true;
+    try {
+      const heights = generateBiomeElevationField(biomeKey, this.rows, this.cols, {
+        ...options,
+        seed,
+      });
+      validateHeights(heights);
+      this.cancelBrushStroke();
+      this._dataStore.restoreHeights(heights);
+      this._biomeKey = biomeKey;
+      this._biomeSeed = seed;
+      this._clearHistory();
+      const hint = getBiomeElevationScaleHint(biomeKey);
+      if (Number.isFinite(hint) && hint !== this._elevationScale) {
+        this._elevationScale = hint;
+        TerrainHeightUtils.setElevationUnit(hint);
+        this._emit('scaleChanged', { elevationScale: hint });
+      }
+      this._emit('biomeChanged', { biomeKey, biomeSeed: seed });
+      this._emitAllTiles();
+      this._emit('biomeGenerated', { biomeKey, biomeSeed: seed });
+      this._changed('generation');
+      return true;
+    } finally {
+      this._isGenerating = false;
+      this._editorChanged();
+    }
+  }
+
   setBiomeSeed(seed) {
-    this._biomeSeed = seed >>> 0;
+    validateSeed(seed);
+    this._biomeSeed = seed;
+    this._emit('biomeChanged', { biomeKey: this.biomeKey, biomeSeed: seed });
+    this.refreshAppearance();
   }
 
   setRichShadingEnabled(enabled) {
     this._richShadingEnabled = !!enabled;
-    this._emitAllTiles();
+    this.refreshAppearance();
   }
 
   setTreeDensityMultiplier(value) {
-    this._treeDensityMultiplier = Math.max(0, Number.isFinite(value) ? value : 1);
+    validateDensity(value);
+    if (this._treeDensityMultiplier === value) return;
+    this._treeDensityMultiplier = value;
+    this._changed('treeDensity');
   }
 
-  setElevationScale(pixelsPerLevel) {
-    this._elevationScale = pixelsPerLevel;
-    TerrainHeightUtils.setElevationUnit(pixelsPerLevel);
+  setElevationScale(scale) {
+    validateScale(scale);
+    if (this._elevationScale === scale) return;
+    this.cancelBrushStroke();
+    this._elevationScale = scale;
+    TerrainHeightUtils.setElevationUnit(scale);
+    this._emit('scaleChanged', { elevationScale: scale });
     this._emitAllTiles();
+    this._changed('scale');
   }
 
-  // ── Public API — Placeables ───────────────────────────────────────────────
+  refreshAppearance() {
+    this._emitAllTiles();
+    this._changed('appearance');
+  }
 
   getSelectedPlaceable() {
     return this._selectedPlaceable;
@@ -313,166 +480,230 @@ export class TerrainEngine {
 
   setSelectedPlaceable(id) {
     if (this._placeableRemovalMode) return false;
-    if (id === null || id === undefined || id === '') {
-      this._selectedPlaceable = null;
-      return true;
+    if (id !== null && id !== undefined && id !== '' && typeof id !== 'string') {
+      throw new TypeError('A selected placeable must be a key or null');
     }
-    if (typeof id === 'string') {
-      this._selectedPlaceable = id;
-      this._placeableRemovalMode = false;
-      return true;
-    }
-    return false;
+    this.cancelBrushStroke();
+    this._selectedPlaceable = id || null;
+    this._editorChanged();
+    return true;
   }
 
   isPlaceablesPanelVisible() {
-    return !!this._placeablesPanelVisible;
+    return this._placeablesPanelVisible;
   }
 
   setPlaceablesPanelVisible(visible) {
     this._placeablesPanelVisible = !!visible;
-    if (!this._placeablesPanelVisible) {
-      this._selectedPlaceable = null;
-    }
+    if (!visible) this._selectedPlaceable = null;
+    this.cancelBrushStroke();
+    this._editorChanged();
   }
 
   setPlaceableRemovalMode(enabled) {
     this._placeableRemovalMode = !!enabled;
-    if (this._placeableRemovalMode) {
-      this._selectedPlaceable = null;
-    }
+    if (enabled) this._selectedPlaceable = null;
+    this.cancelBrushStroke();
+    this._editorChanged();
   }
 
   isPlaceableRemovalMode() {
-    return !!this._placeableRemovalMode;
+    return this._placeableRemovalMode;
   }
 
-  /**
-   * Signal that a placeable was added or removed at a cell.
-   * Rendering adapters listen to this to update their mesh pools.
-   * @param {number} gridX
-   * @param {number} gridY
-   * @param {string|null} placeableId - null means removed
-   * @param {string} [variant]
-   */
   emitPlaceableChanged(gridX, gridY, placeableId, variant = null) {
+    this._validatePosition(gridX, gridY);
     this._emit('placeableChanged', { gridX, gridY, placeableId, variant });
   }
 
-  // ── Public API — Persistence ──────────────────────────────────────────────
+  configureGeometryScale(feetPerLevel) {
+    if (!Number.isFinite(feetPerLevel) || feetPerLevel < 0) {
+      throw new RangeError('Map geometry requires a finite non-negative terrain scale');
+    }
+    this._feetPerLevel = feetPerLevel;
+  }
 
-  /**
-   * Serialize current terrain state for save/load.
-   * @returns {{ heights: number[][], biomeKey: string|null, biomeSeed: number }}
-   */
+  configureGeometryBase(terrainThicknessFeet) {
+    if (
+      terrainThicknessFeet !== null &&
+      (!Number.isFinite(terrainThicknessFeet) || terrainThicknessFeet <= 0)
+    )
+      throw new RangeError('A floor slab requires a positive finite thickness');
+    this.geometry.terrainThicknessFeet = terrainThicknessFeet;
+  }
+
+  addVolume(volume, operation = 'add') {
+    if (!['add', 'subtract'].includes(operation)) {
+      throw new RangeError('Choose Add or Subtract for a volume edit');
+    }
+    return this.addVolumes([{ ...volume, operation }]);
+  }
+
+  addVolumes(volumes) {
+    if (!Array.isArray(volumes) || volumes.length === 0) {
+      throw new TypeError('At least one solid or cut volume is required');
+    }
+    this.cancelBrushStroke();
+    const before = this.geometry.save();
+    const after = { version: 1, volumes: [...before.volumes, ...volumes] };
+    this.geometry.load(after);
+    this._undo.push({
+      label:
+        volumes.length > 1
+          ? 'Add structure group'
+          : volumes[0].operation === 'add'
+            ? 'Add solid volume'
+            : 'Carve volume',
+      geometry: { before, after },
+    });
+    if (this._undo.length > TERRAIN_CONFIG.HISTORY_LIMIT) this._undo.shift();
+    this._redo = [];
+    this._changed('geometry');
+  }
+
+  setVisibleLayers(layers) {
+    if (
+      layers !== null &&
+      (!Array.isArray(layers) || layers.some((layer) => typeof layer !== 'string' || !layer.trim()))
+    ) {
+      throw new TypeError('Visible layers must be named layers or null for all layers');
+    }
+    this._visibleLayers = layers === null ? null : [...new Set(layers)];
+    this._changed('visibility');
+  }
+
   save() {
     return {
+      version: 1,
       heights: this._dataStore.base.map((row) => [...row]),
       biomeKey: this._biomeKey,
       biomeSeed: this._biomeSeed,
+      elevationScale: this._elevationScale,
+      treeDensityMultiplier: this._treeDensityMultiplier,
+      richShadingEnabled: this._richShadingEnabled,
+      ...(this.geometry.hasVolumes ? { geometry: this.geometry.save() } : {}),
     };
   }
 
-  /**
-   * Restore terrain state from a previously saved snapshot.
-   * @param {{ heights: number[][], biomeKey?: string, biomeSeed?: number }} state
-   */
   load(state) {
-    if (!state?.heights) return;
-    const rows = state.heights.length;
-    const cols = state.heights[0]?.length ?? 0;
-    if (!rows || !cols) return;
-
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        this._dataStore.set(x, y, state.heights[y][x]);
-      }
+    if (!state || (state.version !== undefined && state.version !== 1)) {
+      throw new Error('Unsupported terrain snapshot version');
     }
-    this._dataStore.applyWorkingToBase();
-
-    if (state.biomeKey) this._biomeKey = state.biomeKey;
-    if (state.biomeSeed !== undefined) this._biomeSeed = state.biomeSeed;
-
+    const { cols, rows } = validateHeights(state.heights);
+    const geometry = this._createGeometry(cols, rows);
+    if (state.geometry !== undefined) geometry.load(state.geometry);
+    const biomeKey = state.biomeKey ?? null;
+    const biomeSeed = state.biomeSeed ?? this._biomeSeed;
+    const elevationScale = state.elevationScale ?? TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
+    const treeDensity = state.treeDensityMultiplier ?? 1;
+    validateBiome(biomeKey);
+    validateSeed(biomeSeed);
+    validateScale(elevationScale);
+    validateDensity(treeDensity);
+    if (state.richShadingEnabled !== undefined && typeof state.richShadingEnabled !== 'boolean') {
+      throw new TypeError('Saved terrain shading state must be a boolean');
+    }
+    this.cancelBrushStroke();
+    const resized = cols !== this.cols || rows !== this.rows;
+    if (resized) this._dataStore.resize(cols, rows);
+    this._dataStore.restoreHeights(state.heights);
+    this._geometry = geometry;
+    this._visibleLayers = null;
+    this._biomeKey = biomeKey;
+    this._biomeSeed = biomeSeed;
+    this._elevationScale = elevationScale;
+    this._treeDensityMultiplier = treeDensity;
+    this._richShadingEnabled = state.richShadingEnabled ?? false;
+    this._clearHistory();
+    if (resized) this._emit('resized', { cols, rows });
+    this._emit('biomeChanged', { biomeKey, biomeSeed });
+    TerrainHeightUtils.setElevationUnit(elevationScale);
+    this._emit('scaleChanged', { elevationScale });
     this._emitAllTiles();
+    this._changed('load');
   }
 
-  // ── Event Subscription ────────────────────────────────────────────────────
+  getStatistics() {
+    const heights = this._dataStore.working.flat();
+    return {
+      cols: this.cols,
+      rows: this.rows,
+      modifiedCells: heights.filter((height) => height !== TERRAIN_CONFIG.DEFAULT_HEIGHT).length,
+      minHeight: Math.min(...heights),
+      maxHeight: Math.max(...heights),
+      tool: this.tool,
+      brushSize: this.brushSize,
+      active: this.isActive,
+    };
+  }
 
-  /**
-   * Fired when a tile's visual data changes (height, biome, effects).
-   * Payload: { gridX, gridY, tileData }
-   * tileData: { height, biomeKey, elevationScale }
-   */
   onTileChanged(callback) {
     return this._subscribe('tileChanged', callback);
   }
-
-  /**
-   * Fired when a cell's height value changes.
-   * Payload: { gridX, gridY, height }
-   */
   onHeightChanged(callback) {
     return this._subscribe('heightChanged', callback);
   }
-
-  /**
-   * Fired when the brush hover position changes (no mutation).
-   * Payload: { gridX, gridY, cells: Array<{x,y}> }
-   */
   onBrushMoved(callback) {
     return this._subscribe('brushMoved', callback);
   }
-
-  /**
-   * Fired when a brush stroke is committed to the base height array.
-   * Payload: { affectedCells: Array<{x, y, height}> }
-   */
   onBrushCommitted(callback) {
     return this._subscribe('brushCommitted', callback);
   }
-
-  /**
-   * Fired when terrain mode activates or deactivates.
-   * Payload: { active: boolean }
-   */
   onActivationChanged(callback) {
     return this._subscribe('activationChanged', callback);
   }
-
-  /**
-   * Fired when a placeable is placed or removed.
-   * Payload: { gridX, gridY, placeableId: string|null, variant: string|null }
-   */
   onPlaceableChanged(callback) {
     return this._subscribe('placeableChanged', callback);
   }
-
-  /**
-   * Fired when the active biome changes.
-   * Payload: { biomeKey, biomeSeed }
-   */
   onBiomeChanged(callback) {
     return this._subscribe('biomeChanged', callback);
   }
-
-  /**
-   * Fired when the grid is resized.
-   * Payload: { cols, rows }
-   */
+  onBiomeGenerated(callback) {
+    return this._subscribe('biomeGenerated', callback);
+  }
   onResized(callback) {
     return this._subscribe('resized', callback);
   }
-
-  // ── Accessors ─────────────────────────────────────────────────────────────
+  onScaleChanged(callback) {
+    return this._subscribe('scaleChanged', callback);
+  }
+  onChanged(callback) {
+    return this._subscribe('changed', callback);
+  }
+  onEditorChanged(callback) {
+    return this._subscribe('editorChanged', callback);
+  }
 
   get cols() {
     return this._dataStore.cols;
+  }
+  get geometry() {
+    return this._geometry;
+  }
+  get visibleLayers() {
+    return this._visibleLayers === null ? null : [...this._visibleLayers];
+  }
+
+  _createGeometry(cols, rows) {
+    return new TerrainGeometry({
+      widthFeet: cols * 5,
+      depthFeet: rows * 5,
+      terrainThicknessFeet: this._geometry?.terrainThicknessFeet ?? null,
+      getTerrainHeightFeet: (x, z) =>
+        this.getHeightAt(Math.floor(x / 5), Math.floor(z / 5)) * this._feetPerLevel,
+    });
   }
   get rows() {
     return this._dataStore.rows;
   }
   get isActive() {
     return this._isActive;
+  }
+  get hasPendingStroke() {
+    return this._stroke !== null;
+  }
+  get isGenerating() {
+    return this._isGenerating;
   }
   get biomeKey() {
     return this._biomeKey;
@@ -489,122 +720,176 @@ export class TerrainEngine {
   get brushSize() {
     return this._brush.brushSize;
   }
+  get wallTopLevel() {
+    return this._brush.wallTopLevel;
+  }
+  get wallFillMode() {
+    return this._brush.wallFillMode;
+  }
+  get ptBrushSize() {
+    return this._ptBrushSize;
+  }
   get treeDensityMultiplier() {
     return this._treeDensityMultiplier;
   }
-
-  // ── Private Helpers ───────────────────────────────────────────────────────
-
-  /**
-   * Subscribe to a named event. Returns an unsubscribe function.
-   * @param {string} event
-   * @param {Function} callback
-   * @returns {Function} unsubscribe
-   */
-  _subscribe(event, callback) {
-    if (!this._listeners[event]) {
-      logger.log(LOG_LEVEL.WARN, `TerrainEngine: unknown event "${event}"`, LOG_CATEGORY.SYSTEM);
-      return () => {};
-    }
-    this._listeners[event].push(callback);
-    return () => {
-      this._listeners[event] = this._listeners[event].filter((cb) => cb !== callback);
-    };
+  get canUndo() {
+    return this.hasPendingStroke || this._undo.length > 0;
+  }
+  get canRedo() {
+    return !this.hasPendingStroke && this._redo.length > 0;
+  }
+  get undoLabel() {
+    return this.hasPendingStroke ? 'Cancel preview' : this._undo.at(-1)?.label;
+  }
+  get redoLabel() {
+    return this._redo.at(-1)?.label;
   }
 
-  /**
-   * @param {string} event
-   * @param {object} payload
-   */
-  _emit(event, payload) {
-    const subs = this._listeners[event];
-    if (!subs?.length) return;
-    for (const cb of subs) {
-      try {
-        cb(payload);
-      } catch (err) {
-        logger.log(
-          LOG_LEVEL.ERROR,
-          `TerrainEngine: listener error on "${event}"`,
-          LOG_CATEGORY.SYSTEM,
-          { err }
+  _validatePosition(x, y) {
+    if (!this.isValidGridPosition(x, y)) {
+      throw new RangeError(`Terrain position (${x}, ${y}) is outside the grid`);
+    }
+  }
+
+  _changeBrush(change) {
+    const hover = this._hover;
+    this.cancelBrushStroke();
+    change();
+    this._hover = hover;
+    this._editorChanged();
+    this._refreshPreview();
+  }
+
+  _refreshWallPreview() {
+    if (this._stroke && this.tool === 'wall' && this._hover) {
+      this._stroke.lastCell = null;
+      this.updateBrushStroke(this._hover.x, this._hover.y);
+    } else {
+      this._editorChanged();
+      this._refreshPreview();
+    }
+  }
+
+  _commitChanges(changes, label, { history = true, allTiles = false, kind = 'edit' } = {}) {
+    if (!changes.length) return false;
+    for (const { x, y, after } of changes) this._dataStore.set(x, y, after);
+    this._dataStore.applyWorkingToBase();
+    if (history) {
+      this._undo.push({ label, changes });
+      if (this._undo.length > TERRAIN_CONFIG.HISTORY_LIMIT) this._undo.shift();
+      this._redo = [];
+    }
+    for (const { x, y, after } of changes) {
+      this._emit('heightChanged', { gridX: x, gridY: y, height: after });
+      if (!allTiles) this._emitTile(x, y);
+    }
+    if (allTiles) this._emitAllTiles();
+    this._changed(kind, changes);
+    this._refreshPreview();
+    return true;
+  }
+
+  _clearHistory() {
+    this._undo = [];
+    this._redo = [];
+  }
+
+  _refreshPreview() {
+    if (!this._hover) return;
+    const { x, y } = this._hover;
+    const placeable =
+      this._placeableRemovalMode || (this._selectedPlaceable && this._placeablesPanelVisible);
+    const cells = this._stroke
+      ? [...this._stroke.changes.values()].map(({ x, y, before, after }) => ({
+          x,
+          y,
+          currentHeight: before,
+          previewHeight: after,
+        }))
+      : (placeable ? this.getPlaceableBrushFootprint(x, y) : this.getBrushFootprint(x, y)).map(
+          (cell) => {
+            const currentHeight = this.getHeightAt(cell.x, cell.y);
+            return {
+              ...cell,
+              currentHeight,
+              previewHeight: placeable
+                ? currentHeight
+                : this._brush.getPreviewHeight(cell.x, cell.y, currentHeight),
+            };
+          }
         );
-      }
-    }
-  }
-
-  /**
-   * Emit a tileChanged event for a single cell with its current data.
-   * @param {number} gridX
-   * @param {number} gridY
-   */
-  _emitTile(gridX, gridY) {
-    this._emit('tileChanged', {
-      gridX,
-      gridY,
-      tileData: this._buildTileData(gridX, gridY),
+    this._emit('brushMoved', {
+      gridX: x,
+      gridY: y,
+      cells,
+      tool: this.tool,
+      heightStep: placeable ? 0 : this._brush.heightStep,
     });
   }
 
-  /**
-   * Emit tileChanged for every cell in the grid. Used after bulk operations.
-   */
+  _editorChanged() {
+    this._emit('editorChanged', {
+      active: this.isActive,
+      tool: this.tool,
+      brushSize: this.brushSize,
+      wallTopLevel: this.wallTopLevel,
+      wallFillMode: this.wallFillMode,
+      pending: this.hasPendingStroke,
+      canUndo: this.canUndo,
+      canRedo: this.canRedo,
+      undoLabel: this.undoLabel,
+      redoLabel: this.redoLabel,
+    });
+  }
+
+  _changed(kind, changes = []) {
+    this._editorChanged();
+    this._emit('changed', {
+      kind,
+      affectedCells: changes.map(({ x, y, after }) => ({ x, y, height: after })),
+    });
+  }
+
+  _subscribe(event, callback) {
+    if (typeof callback !== 'function') throw new TypeError('Terrain listeners must be functions');
+    this._listeners[event].add(callback);
+    return () => this._listeners[event].delete(callback);
+  }
+
+  _emit(event, payload) {
+    for (const callback of [...this._listeners[event]]) {
+      try {
+        callback(payload);
+      } catch (error) {
+        logger.log(LOG_LEVEL.ERROR, `Terrain listener failed: ${event}`, LOG_CATEGORY.SYSTEM, {
+          error,
+        });
+      }
+    }
+  }
+
+  _emitTile(x, y) {
+    this._emit('tileChanged', {
+      gridX: x,
+      gridY: y,
+      tileData: {
+        height: this.getHeightAt(x, y),
+        biomeKey: this.biomeKey,
+        elevationScale: this.elevationScale,
+        richShading: this._richShadingEnabled,
+        neighborHeights: {
+          north: this.getHeightAt(x, y - 1),
+          south: this.getHeightAt(x, y + 1),
+          east: this.getHeightAt(x + 1, y),
+          west: this.getHeightAt(x - 1, y),
+        },
+      },
+    });
+  }
+
   _emitAllTiles() {
-    const { cols, rows } = this._dataStore;
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        this._emitTile(x, y);
-      }
-    }
-  }
-
-  /**
-   * Build the tileData payload for a given cell.
-   * @param {number} gridX
-   * @param {number} gridY
-   * @returns {{ height: number, biomeKey: string|null, elevationScale: number }}
-   */
-  _buildTileData(gridX, gridY) {
-    const height = this._dataStore.get(gridX, gridY);
-    const neighborHeights = {
-      north: this._dataStore.get(gridX, gridY - 1),
-      south: this._dataStore.get(gridX, gridY + 1),
-      east: this._dataStore.get(gridX + 1, gridY),
-      west: this._dataStore.get(gridX - 1, gridY),
-    };
-    return {
-      height,
-      biomeKey: this._biomeKey,
-      elevationScale: this._elevationScale,
-      richShading: this._richShadingEnabled,
-      neighborHeights,
-    };
-  }
-
-  /**
-   * Commit the working height array to base and fire brushCommitted.
-   */
-  _commitPendingStroke() {
-    if (!this._isDragging && this._lastModifiedCell === null) return;
-
-    const { cols, rows } = this._dataStore;
-    const affected = [];
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const working = this._dataStore.get(x, y);
-        const base = this._dataStore.base[y]?.[x];
-        if (working !== base) {
-          affected.push({ x, y, height: working });
-        }
-      }
-    }
-
-    this._dataStore.applyWorkingToBase();
-    this._isDragging = false;
-    this._lastModifiedCell = null;
-
-    if (affected.length > 0) {
-      this._emit('brushCommitted', { affectedCells: affected });
+    for (let y = 0; y < this.rows; y++) {
+      for (let x = 0; x < this.cols; x++) this._emitTile(x, y);
     }
   }
 }

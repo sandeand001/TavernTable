@@ -17,7 +17,7 @@ function makePool(initialCapacity = 8) {
   const gameManager = {
     is3DModeActive: () => true,
     threeSceneManager: { scene },
-    terrainCoordinator: { _lastGeneratedBiomeKey: 'grassland', _biomeSeed: 42 },
+    terrainEngine: { biomeKey: 'grassland', biomeSeed: 42 },
     modelAssetCache: { getModel: jest.fn(async () => model.clone()) },
     spatial: {
       tileWorldSize: 1,
@@ -98,10 +98,10 @@ describe('Biome-specific model appearances', () => {
     const loading = new Promise((resolve) => {
       release = resolve;
     });
-    gameManager.terrainCoordinator._lastGeneratedBiomeKey = 'arcaneLeyNexus';
+    gameManager.terrainEngine.biomeKey = 'arcaneLeyNexus';
     gameManager.modelAssetCache.getModel.mockReturnValue(loading);
     const pending = pool.addPlaceable({ ...placement(undefined) });
-    gameManager.terrainCoordinator._lastGeneratedBiomeKey = 'grassland';
+    gameManager.terrainEngine.biomeKey = 'grassland';
     release(model);
 
     const handle = await pending;
@@ -160,5 +160,27 @@ describe('Biome-specific model appearances', () => {
     const second = makePool();
     await second.pool.restorePlacements(saved);
     expect(await second.pool.snapshotPlacements()).toEqual(saved);
+  });
+
+  test('grid removal hides plant instances and preserves buildings and neighboring cells', async () => {
+    const { pool } = makePool();
+    const plant = placement('grassland', 1);
+    const handle = await pool.addPlaceable(plant);
+    await pool.addPlaceable({ ...placement('grassland', 1), type: 'structure' });
+    await pool.addPlaceable(placement('grassland', 2));
+    expect(pool.removePlantsAt(1, 2)).toBe(1);
+    expect(pool.removePlantsAt(1, 2)).toBe(0);
+    const saved = await pool.snapshotPlacements();
+    expect(saved).toHaveLength(2);
+    expect(saved.some((entry) => entry.type === 'structure' && entry.gridX === 1)).toBe(true);
+    expect(saved.some((entry) => entry.type === 'plant' && entry.gridX === 2)).toBe(true);
+    const group = pool._groups.get(handle.key);
+    const matrix = group.instancedMesh.instanceMatrix.array.slice(
+      handle.index * 16,
+      (handle.index + 1) * 16
+    );
+    expect(matrix[0]).toBe(0);
+    expect(matrix[5]).toBe(0);
+    expect(matrix[10]).toBe(0);
   });
 });

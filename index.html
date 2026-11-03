@@ -1,377 +1,612 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TavernTable - Isometric D&D Grid</title>
-  <meta name="description"
-    content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling">
-  <link rel="stylesheet" href="src/ui/styles.css">
-  <!-- Pinned native ESM dependencies; no application bundler. -->
-  <script type="importmap">
-    {
-      "imports": {
-        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/examples/jsm/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js",
-        "three/examples/jsm/loaders/FBXLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js",
-        "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js",
-        "three/examples/jsm/utils/SkeletonUtils.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/SkeletonUtils.js",
-        "three/examples/jsm/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js"
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TavernTable - Isometric D&D Grid</title>
+    <meta
+      name="description"
+      content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling"
+    />
+    <link rel="stylesheet" href="src/ui/styles.css" />
+    <!-- Pinned native ESM dependencies; no application bundler. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/examples/jsm/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js",
+          "three/examples/jsm/loaders/FBXLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js",
+          "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js",
+          "three/examples/jsm/utils/SkeletonUtils.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/SkeletonUtils.js",
+          "three/examples/jsm/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js"
+        }
       }
-    }
-  </script>
-</head>
+    </script>
+  </head>
 
-<body>
-  <!-- Main Game Canvas Container -->
-  <div id="game-container" aria-label="Game canvas for TavernTable grid"></div>
+  <body>
+    <!-- Main Game Canvas Container -->
+    <div id="game-container" aria-label="Game canvas for TavernTable grid"></div>
 
-  <!-- 3D Dice Container -->
-  <div id="dice-3d-container" aria-label="3D dice rolling area"></div>
+    <!-- 3D Dice Container -->
+    <div id="dice-3d-container" aria-label="3D dice rolling area"></div>
 
-  <!-- Dice Rolling Panel -->
-  <div id="dice-panel" role="complementary" aria-label="Dice rolling controls">
-    <div>🎲 Roll Dice:</div>
-    <div class="dice-count-container">
-      <label for="dice-count" class="dice-count-label">Count:</label>
-      <input type="number" id="dice-count" min="1" max="10" value="1" aria-describedby="dice-help" data-dice-count>
-    </div>
-    <button data-dice data-sides="4" aria-label="Roll 4-sided die">d4</button>
-    <button data-dice data-sides="6" aria-label="Roll 6-sided die">d6</button>
-    <button data-dice data-sides="8" aria-label="Roll 8-sided die">d8</button>
-    <button data-dice data-sides="10" aria-label="Roll 10-sided die">d10</button>
-    <button data-dice data-sides="12" aria-label="Roll 12-sided die">d12</button>
-    <button data-dice data-sides="20" aria-label="Roll 20-sided die">d20</button>
-    <div id="dice-result" aria-live="polite" data-dice-result>Result: -</div>
-    <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
-  </div>
-
-  <!-- Token and Game Controls Panel -->
-  <div id="token-panel" role="complementary" aria-label="Game controls and creature tokens">
-    <!-- This panel will be moved to the right sidebar -->
-  </div>
-
-  <!-- Right Sidebar Menu System -->
-  <div id="right-sidebar" role="complementary" aria-label="Game management sidebar">
-    <!-- Tab Navigation -->
-    <div id="sidebar-tabs" role="tablist" aria-label="Game menu tabs">
-      <button class="tab-button active" data-tab="dice-log" role="tab" aria-selected="true"
-        aria-controls="dice-log-panel">🎲 Dice Log</button>
-      <button class="tab-button" data-tab="creatures" role="tab" aria-selected="false"
-        aria-controls="creatures-panel">🗡️ Creatures</button>
-      <button id="compendium-tab" class="tab-button" data-tab="compendium" role="tab"
-        aria-selected="false" aria-controls="compendium-panel" title="Compendium">&#128218; Compendium</button>
-      <button class="tab-button" data-tab="terrain" role="tab" aria-selected="false" aria-controls="terrain-panel">🏔️
-        Terrain</button>
-      <button class="tab-button" data-tab="biomes" role="tab" aria-selected="false" aria-controls="biomes-panel">🌍
-        Biomes</button>
-      <button class="tab-button" data-tab="settings" role="tab" aria-selected="false" aria-controls="settings-panel">⚙️
-        Settings</button>
+    <!-- Dice Rolling Panel -->
+    <div id="dice-panel" role="complementary" aria-label="Dice rolling controls">
+      <div>🎲 Roll Dice:</div>
+      <div class="dice-count-container">
+        <label for="dice-count" class="dice-count-label">Count:</label>
+        <input
+          type="number"
+          id="dice-count"
+          min="1"
+          max="10"
+          value="1"
+          aria-describedby="dice-help"
+          data-dice-count
+        />
+      </div>
+      <button data-dice data-sides="4" aria-label="Roll 4-sided die">d4</button>
+      <button data-dice data-sides="6" aria-label="Roll 6-sided die">d6</button>
+      <button data-dice data-sides="8" aria-label="Roll 8-sided die">d8</button>
+      <button data-dice data-sides="10" aria-label="Roll 10-sided die">d10</button>
+      <button data-dice data-sides="12" aria-label="Roll 12-sided die">d12</button>
+      <button data-dice data-sides="20" aria-label="Roll 20-sided die">d20</button>
+      <div id="dice-result" aria-live="polite" data-dice-result>Result: -</div>
+      <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
     </div>
 
-    <!-- Tab Content Panels -->
-    <div id="sidebar-content">
-      <!-- Dice Log Panel -->
-      <div id="dice-log-panel" class="tab-panel active" role="tabpanel" aria-labelledby="dice-log-tab">
-        <div class="panel-header">🎲 Dice Roll History</div>
-        <div id="dice-log-content">
-          <div class="dice-log-entry">Welcome! Roll some dice to see history here.</div>
-        </div>
-        <div class="panel-footer">
-          <button class="clear-button">Clear History</button>
-        </div>
+    <!-- Token and Game Controls Panel -->
+    <div id="token-panel" role="complementary" aria-label="Game controls and creature tokens">
+      <!-- This panel will be moved to the right sidebar -->
+    </div>
+
+    <!-- Right Sidebar Menu System -->
+    <div id="right-sidebar" role="complementary" aria-label="Game management sidebar">
+      <!-- Tab Navigation -->
+      <div id="sidebar-tabs" role="tablist" aria-label="Game menu tabs">
+        <button
+          class="tab-button active"
+          data-tab="dice-log"
+          role="tab"
+          aria-selected="true"
+          aria-controls="dice-log-panel"
+        >
+          🎲 Dice Log
+        </button>
+        <button
+          class="tab-button"
+          data-tab="creatures"
+          role="tab"
+          aria-selected="false"
+          aria-controls="creatures-panel"
+        >
+          🗡️ Creatures
+        </button>
+        <button
+          id="compendium-tab"
+          class="tab-button"
+          data-tab="compendium"
+          role="tab"
+          aria-selected="false"
+          aria-controls="compendium-panel"
+          title="Compendium"
+        >
+          &#128218; Compendium
+        </button>
+        <button
+          class="tab-button"
+          data-tab="terrain"
+          role="tab"
+          aria-selected="false"
+          aria-controls="terrain-panel"
+        >
+          🏔️ Terrain
+        </button>
+        <button
+          class="tab-button"
+          data-tab="biomes"
+          role="tab"
+          aria-selected="false"
+          aria-controls="biomes-panel"
+        >
+          🌍 Biomes
+        </button>
+        <button
+          class="tab-button"
+          data-tab="settings"
+          role="tab"
+          aria-selected="false"
+          aria-controls="settings-panel"
+        >
+          ⚙️ Settings
+        </button>
       </div>
 
-      <div id="compendium-panel" class="tab-panel" role="tabpanel" aria-labelledby="compendium-tab"></div>
-
-      <!-- Creatures Panel -->
-      <div id="creatures-panel" class="tab-panel" role="tabpanel" aria-labelledby="creatures-tab">
-        <div class="panel-header">🧙 Tokens</div>
-
-        <!-- Creature Token Selection -->
-        <div class="section">
-          <div class="section-title">Creature Token</div>
-          <div id="creature-content" role="group" aria-label="Creature token selection"></div>
-        </div>
-
-        <!-- Token Removal -->
-        <div class="section">
-          <div class="section-title">Placement Mode</div>
-          <button id="token-remove" class="action-button facing-button"
-            aria-label="Enable remove mode to delete tokens">🚫
-            Remove</button>
-        </div>
-
-      </div>
-
-      <!-- Terrain Panel -->
-      <div id="terrain-panel" class="tab-panel" role="tabpanel" aria-labelledby="terrain-tab">
-        <div class="panel-header">🏔️ Terrain Tools</div>
-
-        <!-- Grid Configuration -->
-        <div class="section">
-          <div class="section-title">Grid Configuration</div>
-          <div class="grid-controls-row">
-            <label class="grid-label" for="grid-width">Width:</label>
-            <input type="number" id="grid-width" min="5" max="50" value="25" class="grid-input"
-              aria-describedby="grid-help">
-            <label class="grid-label" for="grid-height">Height:</label>
-            <input type="number" id="grid-height" min="5" max="50" value="25" class="grid-input"
-              aria-describedby="grid-help">
+      <!-- Tab Content Panels -->
+      <div id="sidebar-content">
+        <!-- Dice Log Panel -->
+        <div
+          id="dice-log-panel"
+          class="tab-panel active"
+          role="tabpanel"
+          aria-labelledby="dice-log-tab"
+        >
+          <div class="panel-header">🎲 Dice Roll History</div>
+          <div id="dice-log-content">
+            <div class="dice-log-entry">Welcome! Roll some dice to see history here.</div>
           </div>
-          <button id="apply-grid-size" class="action-button" aria-label="Apply new grid dimensions">🔄 Resize
-            Grid</button>
+          <div class="panel-footer">
+            <button class="clear-button">Clear History</button>
+          </div>
         </div>
 
-        <!-- Terrain Tools -->
-        <div class="section">
-          <div class="section-title">Terrain Tools</div>
+        <div
+          id="compendium-panel"
+          class="tab-panel"
+          role="tabpanel"
+          aria-labelledby="compendium-tab"
+        ></div>
 
-          <!-- Terrain Mode Toggle -->
-          <div class="terrain-mode">
-            <label class="toggle-switch">
-              <input type="checkbox" id="terrain-mode-toggle">
-              <span class="toggle-slider"></span>
-              <span class="toggle-label">Terrain Mode</span>
-            </label>
+        <!-- Creatures Panel -->
+        <div id="creatures-panel" class="tab-panel" role="tabpanel" aria-labelledby="creatures-tab">
+          <div class="panel-header">🧙 Tokens</div>
+
+          <!-- Creature Token Selection -->
+          <div class="section">
+            <div class="section-title">Creature Token</div>
+            <div id="creature-content" role="group" aria-label="Creature token selection"></div>
           </div>
 
-          <!-- Terrain Tools (shown only when Terrain Mode active) -->
-          <div id="terrain-tools" class="terrain-tools-container" style="display: none;">
-            <div class="tool-group" style="margin-bottom:0.75rem; display:flex; gap:0.75rem; align-items:center;">
-              <!-- Placeable Removal Mode Toggle (active only within Terrain Mode UI) -->
+          <!-- Token Removal -->
+          <div class="section">
+            <div class="section-title">Placement Mode</div>
+            <button
+              id="token-remove"
+              class="action-button facing-button"
+              aria-label="Enable remove mode to delete tokens"
+            >
+              🚫 Remove
+            </button>
+          </div>
+        </div>
+
+        <!-- Terrain Panel -->
+        <div id="terrain-panel" class="tab-panel" role="tabpanel" aria-labelledby="terrain-tab">
+          <div class="panel-header">🏔️ Terrain Tools</div>
+
+          <!-- Grid Configuration -->
+          <div class="section">
+            <div class="section-title">Grid Configuration</div>
+            <div class="grid-controls-row">
+              <label class="grid-label" for="grid-width">Width:</label>
+              <input
+                type="number"
+                id="grid-width"
+                min="5"
+                max="50"
+                value="25"
+                class="grid-input"
+                aria-describedby="grid-help"
+              />
+              <label class="grid-label" for="grid-height">Height:</label>
+              <input
+                type="number"
+                id="grid-height"
+                min="5"
+                max="50"
+                value="25"
+                class="grid-input"
+                aria-describedby="grid-help"
+              />
+            </div>
+            <button
+              id="apply-grid-size"
+              class="action-button"
+              aria-label="Apply new grid dimensions"
+            >
+              🔄 Resize Grid
+            </button>
+          </div>
+
+          <!-- Terrain Tools -->
+          <div class="section">
+            <div class="section-title">Terrain Tools</div>
+
+            <!-- Terrain Mode Toggle -->
+            <div class="terrain-mode">
               <label class="toggle-switch">
-                <input type="checkbox" id="placeable-removal-toggle">
+                <input type="checkbox" id="terrain-mode-toggle" />
                 <span class="toggle-slider"></span>
-                <span class="toggle-label">Remove Placeables</span>
+                <span class="toggle-label">Terrain Mode</span>
               </label>
             </div>
-            <div class="tool-group">
-              <div class="section-subtitle">Tools</div>
-              <div class="tool-buttons">
-                <button id="terrain-raise-btn" class="terrain-tool-btn active" aria-label="Raise terrain height" aria-pressed="true">⬆️
-                  Raise</button>
-                <button id="terrain-lower-btn" class="terrain-tool-btn" aria-label="Lower terrain height" aria-pressed="false">⬇️
-                  Lower</button>
-                <button id="terrain-wall-btn" class="terrain-tool-btn" aria-label="Draw a terrain wall" aria-pressed="false">Wall</button>
-              </div>
-              <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center;"></div>
-            </div>
 
-            <div id="terrain-wall-controls" class="tool-group" hidden>
-              <div class="section-subtitle">Wall Settings</div>
-              <div class="setting-item">
-                <label for="terrain-wall-height">Top level:</label>
-                <select id="terrain-wall-height" class="grid-input" aria-label="Wall top elevation level"
-                  aria-describedby="terrain-wall-help">
-                  <option value="3" selected>3</option>
-                </select>
+            <!-- Terrain Tools (shown only when Terrain Mode active) -->
+            <div id="terrain-tools" class="terrain-tools-container" style="display: none">
+              <div
+                class="tool-group"
+                style="margin-bottom: 0.75rem; display: flex; gap: 0.75rem; align-items: center"
+              >
+                <!-- Placeable Removal Mode Toggle (active only within Terrain Mode UI) -->
+                <label class="toggle-switch">
+                  <input type="checkbox" id="placeable-removal-toggle" />
+                  <span class="toggle-slider"></span>
+                  <span class="toggle-label">Remove Placeables</span>
+                </label>
               </div>
-              <div class="setting-item">
-                <label for="terrain-wall-fill">Box style:</label>
-                <select id="terrain-wall-fill" class="grid-input" aria-label="Wall box style"
-                  aria-describedby="terrain-wall-help">
-                  <option value="filled" selected>Filled</option>
-                  <option value="outline">Outline</option>
-                </select>
+              <div class="tool-group">
+                <div class="section-subtitle">Tools</div>
+                <div class="tool-buttons">
+                  <button
+                    id="terrain-raise-btn"
+                    class="terrain-tool-btn active"
+                    aria-label="Raise terrain height"
+                    aria-pressed="true"
+                  >
+                    ⬆️ Raise
+                  </button>
+                  <button
+                    id="terrain-lower-btn"
+                    class="terrain-tool-btn"
+                    aria-label="Lower terrain height"
+                    aria-pressed="false"
+                  >
+                    ⬇️ Lower
+                  </button>
+                  <button
+                    id="terrain-wall-btn"
+                    class="terrain-tool-btn"
+                    aria-label="Draw a terrain wall"
+                    aria-pressed="false"
+                  >
+                    Wall
+                  </button>
+                </div>
+                <div
+                  style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center"
+                ></div>
               </div>
-              <small id="terrain-wall-help" class="small-text">Drag opposite corners and release to build.
-                Filled changes the whole box; Outline changes only its one-cell-wide edge.
-                A single row or column makes a line. Selected cells are set to the chosen level,
-                raising or cutting terrain. Escape cancels an unfinished drag.</small>
-            </div>
 
-            <div id="terrain-brush-size-controls" class="tool-group">
-              <div class="section-subtitle">Brush Size</div>
-              <div class="brush-controls">
-                <button id="brush-decrease" class="brush-btn" aria-label="Decrease brush size">➖</button>
-                <span id="brush-size-display" class="brush-size">1x1</span>
-                <button id="brush-increase" class="brush-btn" aria-label="Increase brush size">➕</button>
+              <div id="terrain-wall-controls" class="tool-group" hidden>
+                <div class="section-subtitle">Wall Settings</div>
+                <div class="setting-item">
+                  <label for="terrain-wall-height">Top level:</label>
+                  <select
+                    id="terrain-wall-height"
+                    class="grid-input"
+                    aria-label="Wall top elevation level"
+                    aria-describedby="terrain-wall-help"
+                  >
+                    <option value="3" selected>3</option>
+                  </select>
+                </div>
+                <div class="setting-item">
+                  <label for="terrain-wall-fill">Box style:</label>
+                  <select
+                    id="terrain-wall-fill"
+                    class="grid-input"
+                    aria-label="Wall box style"
+                    aria-describedby="terrain-wall-help"
+                  >
+                    <option value="filled" selected>Filled</option>
+                    <option value="outline">Outline</option>
+                  </select>
+                </div>
+                <small id="terrain-wall-help" class="small-text"
+                  >Drag opposite corners and release to build. Filled changes the whole box; Outline
+                  changes only its one-cell-wide edge. A single row or column makes a line. Selected
+                  cells are set to the chosen level, raising or cutting terrain. Escape cancels an
+                  unfinished drag.</small
+                >
               </div>
-            </div>
 
-            <div class="tool-group">
-              <div class="section-subtitle">Height Indicator</div>
-              <div class="height-indicator">
-                <span class="height-label">Current Level:</span>
-                <span id="terrain-height-display" class="height-value">0</span>
-                <div class="height-scale" aria-label="Terrain height scale -10 to 10">
-                  <span class="scale-mark" data-height="-10">-10</span>
-                  <span class="scale-mark" data-height="-9">-9</span>
-                  <span class="scale-mark" data-height="-8">-8</span>
-                  <span class="scale-mark" data-height="-7">-7</span>
-                  <span class="scale-mark" data-height="-6">-6</span>
-                  <span class="scale-mark" data-height="-5">-5</span>
-                  <span class="scale-mark" data-height="-4">-4</span>
-                  <span class="scale-mark" data-height="-3">-3</span>
-                  <span class="scale-mark" data-height="-2">-2</span>
-                  <span class="scale-mark" data-height="-1">-1</span>
-                  <span class="scale-mark current" data-height="0">0</span>
-                  <span class="scale-mark" data-height="1">1</span>
-                  <span class="scale-mark" data-height="2">2</span>
-                  <span class="scale-mark" data-height="3">3</span>
-                  <span class="scale-mark" data-height="4">4</span>
-                  <span class="scale-mark" data-height="5">5</span>
-                  <span class="scale-mark" data-height="6">6</span>
-                  <span class="scale-mark" data-height="7">7</span>
-                  <span class="scale-mark" data-height="8">8</span>
-                  <span class="scale-mark" data-height="9">9</span>
-                  <span class="scale-mark" data-height="10">10</span>
+              <div id="terrain-brush-size-controls" class="tool-group">
+                <div class="section-subtitle">Brush Size</div>
+                <div class="brush-controls">
+                  <button id="brush-decrease" class="brush-btn" aria-label="Decrease brush size">
+                    ➖
+                  </button>
+                  <span id="brush-size-display" class="brush-size">1x1</span>
+                  <button id="brush-increase" class="brush-btn" aria-label="Increase brush size">
+                    ➕
+                  </button>
                 </div>
               </div>
-            </div>
 
-            <div class="tool-group">
-              <div class="section-subtitle">Elevation Perception</div>
-              <div class="setting-item">
-                <label for="elevation-scale-range">Pixels per level:</label>
-                <input type="range" id="elevation-scale-range" min="0" max="20" step="1" value="8" class="range-input"
-                  aria-label="Adjust elevation visual scale">
-                <span id="elevation-scale-value" class="range-value">8 px/level</span>
+              <div class="tool-group">
+                <div class="section-subtitle">Edit History</div>
+                <div class="tool-buttons">
+                  <button
+                    id="terrain-undo-btn"
+                    type="button"
+                    class="terrain-tool-btn"
+                    aria-label="Undo terrain edit"
+                    disabled
+                  >
+                    Undo
+                  </button>
+                  <button
+                    id="terrain-redo-btn"
+                    type="button"
+                    class="terrain-tool-btn"
+                    aria-label="Redo terrain edit"
+                    disabled
+                  >
+                    Redo
+                  </button>
+                </div>
+                <small
+                  id="terrain-history-status"
+                  class="small-text"
+                  role="status"
+                  aria-live="polite"
+                  >No terrain or construction edits to undo.</small
+                >
+                <small class="small-text"
+                  >Release to apply. Escape cancels a preview. Ctrl+Z undoes; Ctrl+Shift+Z or Ctrl+Y
+                  redoes. History keeps the last 100 height or geometry edits and resets when loading, resizing,
+                  or generating a map.</small
+                >
               </div>
-              <small class="small-text">Adjusts how dramatic vertical differences appear; affects terrain overlays and
-                token vertical placement.</small>
-            </div>
 
-            <div class="tool-group">
-              <div class="section-subtitle">Sunlight</div>
-              <div class="setting-item">
-                <label for="sun-time-range">Sun Time:</label>
-                <input type="range" id="sun-time-range" min="0" max="1439" step="1" value="720" class="range-input"
-                  aria-label="Adjust sun time of day for 3D lighting">
-                <span id="sun-time-value" class="range-value">12:00</span>
+              <div class="tool-group">
+                <div class="section-subtitle">Height Indicator</div>
+                <div class="height-indicator">
+                  <span class="height-label">Current Level:</span>
+                  <span id="terrain-height-display" class="height-value">0</span>
+                  <div class="height-scale" aria-label="Terrain height scale -10 to 10">
+                    <span class="scale-mark" data-height="-10">-10</span>
+                    <span class="scale-mark" data-height="-9">-9</span>
+                    <span class="scale-mark" data-height="-8">-8</span>
+                    <span class="scale-mark" data-height="-7">-7</span>
+                    <span class="scale-mark" data-height="-6">-6</span>
+                    <span class="scale-mark" data-height="-5">-5</span>
+                    <span class="scale-mark" data-height="-4">-4</span>
+                    <span class="scale-mark" data-height="-3">-3</span>
+                    <span class="scale-mark" data-height="-2">-2</span>
+                    <span class="scale-mark" data-height="-1">-1</span>
+                    <span class="scale-mark current" data-height="0">0</span>
+                    <span class="scale-mark" data-height="1">1</span>
+                    <span class="scale-mark" data-height="2">2</span>
+                    <span class="scale-mark" data-height="3">3</span>
+                    <span class="scale-mark" data-height="4">4</span>
+                    <span class="scale-mark" data-height="5">5</span>
+                    <span class="scale-mark" data-height="6">6</span>
+                    <span class="scale-mark" data-height="7">7</span>
+                    <span class="scale-mark" data-height="8">8</span>
+                    <span class="scale-mark" data-height="9">9</span>
+                    <span class="scale-mark" data-height="10">10</span>
+                  </div>
+                </div>
               </div>
-              <small class="small-text">Scrub through the day-night cycle to reposition sunlight and shadows.</small>
-            </div>
 
-            <div class="tool-group">
-              <div class="section-subtitle">Actions</div>
-              <button id="terrain-reset-btn" class="action-button terrain-reset"
-                aria-label="Reset all terrain to default height">🔄 Reset Terrain</button>
-            </div>
+              <section
+                id="terrain-construction"
+                class="tool-group"
+                aria-label="Terrain construction"
+              ></section>
 
-            <!-- Biome selection moved to dedicated Biomes tab (panel relocated outside terrain panel) -->
+              <div class="tool-group">
+                <div class="section-subtitle">Elevation Perception</div>
+                <div class="setting-item">
+                  <label for="elevation-scale-range">Pixels per level:</label>
+                  <input
+                    type="range"
+                    id="elevation-scale-range"
+                    min="0"
+                    max="20"
+                    step="1"
+                    value="8"
+                    class="range-input"
+                    aria-label="Adjust elevation visual scale"
+                  />
+                  <span id="elevation-scale-value" class="range-value">8 px/level</span>
+                </div>
+                <small class="small-text"
+                  >Adjusts how dramatic vertical differences appear; affects terrain overlays and
+                  token vertical placement.</small
+                >
+              </div>
 
-            <!-- Placeables were moved outside the toggled tools so they remain reachable
+              <div class="tool-group">
+                <div class="section-subtitle">Sunlight</div>
+                <div class="setting-item">
+                  <label for="sun-time-range">Sun Time:</label>
+                  <input
+                    type="range"
+                    id="sun-time-range"
+                    min="0"
+                    max="1439"
+                    step="1"
+                    value="720"
+                    class="range-input"
+                    aria-label="Adjust sun time of day for 3D lighting"
+                  />
+                  <span id="sun-time-value" class="range-value">12:00</span>
+                </div>
+                <small class="small-text"
+                  >Scrub through the day-night cycle to reposition sunlight and shadows.</small
+                >
+              </div>
+
+              <div class="tool-group">
+                <div class="section-subtitle">Actions</div>
+                <button
+                  id="terrain-reset-btn"
+                  class="action-button terrain-reset"
+                  aria-label="Reset all terrain to default height"
+                >
+                  🔄 Reset Terrain
+                </button>
+              </div>
+
+              <!-- Biome selection moved to dedicated Biomes tab (panel relocated outside terrain panel) -->
+
+              <!-- Placeables were moved outside the toggled tools so they remain reachable
                  in the Terrain panel without requiring Terrain Mode to be active. The
                  runtime UI will still inject items into the same `#terrain-placeables-root`. -->
-            <!-- Placeables categories root (header removed per new spec; categories stack directly) -->
-            <div id="terrain-placeables-root" class="placeables-root" aria-label="Terrain placeables menu"></div>
+              <!-- Placeables categories root (header removed per new spec; categories stack directly) -->
+              <div
+                id="terrain-placeables-root"
+                class="placeables-root"
+                aria-label="Terrain placeables menu"
+              ></div>
+            </div>
           </div>
-        </div>
 
-        <!-- Placeable Tiles UI removed. Placeable assets and runtime managers remain available; the
+          <!-- Placeable Tiles UI removed. Placeable assets and runtime managers remain available; the
        UI elements were intentionally removed to simplify the sidebar. -->
-      </div>
-
-      <!-- Biomes Panel (sibling to terrain/settings panels) -->
-      <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
-        <div class="panel-header">🌍 Biomes</div>
-        <div class="section">
-          <div class="section-title">Biome Palette & Generation</div>
-          <!-- Consolidated toolbar: palette mode, generation & seed controls -->
-          <div class="setting-row biome-toolbar"
-            style="display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:0.75rem;">
-            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
-              <button id="generate-map" type="button" class="primary-button"
-                title="Generate terrain and place assets for the selected biome">Generate</button>
-              <label class="toggle-switch" for="biome-seed-lock"
-                title="Lock seed so repeated generate uses same pattern">
-                <input type="checkbox" id="biome-seed-lock" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Lock seed</span>
-              </label>
-              <button id="biome-reseed" type="button" class="action-button"
-                title="Pick a new random seed">Reseed</button>
-            </div>
-            <small class="small-text" style="flex-basis:100%;">Generate creates terrain and places biome assets.
-              Exotic appearances apply to generated assets. Unlock seed to randomize each time.</small>
-          </div>
-          <div class="section-subtitle" style="margin:0 0 0.25rem;">Biomes</div>
-          <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
-            <!-- Biome group buttons injected at runtime -->
-          </div>
-          <div class="section-subtitle" style="margin-top:1rem;">Asset Density</div>
-          <div id="tree-density-controls" class="setting-group" role="group" aria-label="Biome asset density controls">
-            <div class="setting-item">
-              <label for="tree-density-slider">Asset Density:</label>
-              <input type="range" id="tree-density-slider" min="0" max="200" step="5" value="100" class="range-input"
-                aria-label="Adjust tree, plant, and rock density prior to biome generation">
-              <span id="tree-density-value" class="range-value">100%</span>
-            </div>
-            <small class="small-text">Adjust before generating: 0% removes generated trees, plants, and rocks;
-              200% doubles biome asset density.</small>
-          </div>
-          <div class="section-subtitle" style="margin-top:1rem;">Notes</div>
-          <p class="small-text">Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
-            edit heights; exit to view biome coloring. 3D terrain uses the same Color Mode (Baseline or 2D Fidelity).
-            Expressive / Atlas prototypes were removed.</p>
         </div>
-      </div>
 
-      <!-- Settings Panel -->
-      <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
-        <div class="panel-header">⚙️ Game Settings</div>
+        <!-- Biomes Panel (sibling to terrain/settings panels) -->
+        <div id="biomes-panel" class="tab-panel" role="tabpanel" aria-labelledby="biomes-tab">
+          <div class="panel-header">🌍 Biomes</div>
+          <div class="section">
+            <div class="section-title">Biome Palette & Generation</div>
+            <!-- Consolidated toolbar: palette mode, generation & seed controls -->
+            <div
+              class="setting-row biome-toolbar"
+              style="
+                display: flex;
+                gap: 0.5rem;
+                align-items: flex-end;
+                flex-wrap: wrap;
+                margin-bottom: 0.75rem;
+              "
+            >
+              <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap">
+                <button
+                  id="generate-map"
+                  type="button"
+                  class="primary-button"
+                  title="Generate terrain and place assets for the selected biome"
+                >
+                  Generate
+                </button>
+                <label
+                  class="toggle-switch"
+                  for="biome-seed-lock"
+                  title="Lock seed so repeated generate uses same pattern"
+                >
+                  <input type="checkbox" id="biome-seed-lock" />
+                  <span class="toggle-slider"></span>
+                  <span class="toggle-label">Lock seed</span>
+                </label>
+                <button
+                  id="biome-reseed"
+                  type="button"
+                  class="action-button"
+                  title="Pick a new random seed"
+                >
+                  Reseed
+                </button>
+              </div>
+              <small class="small-text" style="flex-basis: 100%"
+                >Generate creates terrain and places biome assets. Exotic appearances apply to
+                generated assets. Unlock seed to randomize each time.</small
+              >
+            </div>
+            <div class="section-subtitle" style="margin: 0 0 0.25rem">Biomes</div>
+            <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
+              <!-- Biome group buttons injected at runtime -->
+            </div>
+            <div class="section-subtitle" style="margin-top: 1rem">Asset Density</div>
+            <div
+              id="tree-density-controls"
+              class="setting-group"
+              role="group"
+              aria-label="Biome asset density controls"
+            >
+              <div class="setting-item">
+                <label for="tree-density-slider">Asset Density:</label>
+                <input
+                  type="range"
+                  id="tree-density-slider"
+                  min="0"
+                  max="200"
+                  step="5"
+                  value="100"
+                  class="range-input"
+                  aria-label="Adjust tree, plant, and rock density prior to biome generation"
+                />
+                <span id="tree-density-value" class="range-value">100%</span>
+              </div>
+              <small class="small-text"
+                >Adjust before generating: 0% removes generated trees, plants, and rocks; 200%
+                doubles biome asset density.</small
+              >
+            </div>
+            <div class="section-subtitle" style="margin-top: 1rem">Notes</div>
+            <p class="small-text">
+              Biome palette applies to base grid outside of Terrain Edit mode. Enter Terrain mode to
+              edit heights; exit to view biome coloring. 3D terrain uses the same Color Mode
+              (Baseline or 2D Fidelity). Expressive / Atlas prototypes were removed.
+            </p>
+          </div>
+        </div>
 
-        <!-- Settings content moved into injected Hybrid3DControls; legacy display and help sections removed intentionally. -->
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="tab-panel" role="tabpanel" aria-labelledby="settings-tab">
+          <div class="panel-header">⚙️ Game Settings</div>
+
+          <!-- Settings content moved into injected Hybrid3DControls; legacy display and help sections removed intentionally. -->
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Error Display Container (created by ErrorHandler) -->
-  <div id="error-display" aria-live="assertive"></div>
+    <!-- Error Display Container (created by ErrorHandler) -->
+    <div id="error-display" aria-live="assertive"></div>
 
-  <!-- External Libraries -->
+    <!-- External Libraries -->
 
-  <!-- Module load status is managed by UIController; no inline safety stubs needed -->
+    <!-- Module load status is managed by UIController; no inline safety stubs needed -->
 
-  <!-- Core Configuration and Utilities (ES6) -->
-  <script type="module" src="./src/config/GameConstants.js"></script>
-  <script type="module" src="./src/config/biome/BiomeConstants.js"></script>
-  <script type="module" src="./src/utils/error/ErrorHandler.js"></script>
-  <script type="module" src="./src/utils/Validation.js"></script>
-  <script type="module" src="./src/utils/logger/Logger.js"></script>
-  <script type="module" src="./src/utils/coordinates/CoordinateUtils.js"></script>
+    <!-- Core Configuration and Utilities (ES6) -->
+    <script type="module" src="./src/config/GameConstants.js"></script>
+    <script type="module" src="./src/config/biome/BiomeConstants.js"></script>
+    <script type="module" src="./src/utils/error/ErrorHandler.js"></script>
+    <script type="module" src="./src/utils/Validation.js"></script>
+    <script type="module" src="./src/utils/logger/Logger.js"></script>
+    <script type="module" src="./src/utils/coordinates/CoordinateUtils.js"></script>
 
-  <!-- Manager Classes (ES6) -->
-  <script type="module" src="./src/managers/TokenManager.js"></script>
-  <script type="module" src="./src/managers/InteractionManager.js"></script>
+    <!-- Manager Classes (ES6) -->
+    <script type="module" src="./src/managers/TokenManager.js"></script>
+    <script type="module" src="./src/managers/InteractionManager.js"></script>
 
-  <!-- Core Game Modules (ES6) -->
-  <script type="module" src="./src/core/GameManager.js"></script>
+    <!-- Core Game Modules (ES6) -->
+    <script type="module" src="./src/core/GameManager.js"></script>
 
-  <!-- Creature System (ES6) -->
-  <script type="module" src="./src/entities/creatures/CreatureToken.js"></script>
-  <script type="module" src="./src/entities/creatures/CreatureFactory.js"></script>
-  <script type="module" src="./src/entities/creatures/index.js"></script>
+    <!-- Creature System (ES6) -->
+    <script type="module" src="./src/entities/creatures/CreatureToken.js"></script>
+    <script type="module" src="./src/entities/creatures/CreatureFactory.js"></script>
+    <script type="module" src="./src/entities/creatures/index.js"></script>
 
-  <!-- Game Systems (ES6) -->
-  <script type="module" src="./src/systems/DragController.js"></script>
-  <script type="module" src="./src/systems/dice/dice.js"></script>
+    <!-- Game Systems (ES6) -->
+    <script type="module" src="./src/systems/DragController.js"></script>
+    <script type="module" src="./src/systems/dice/dice.js"></script>
 
-  <!-- Main Application Entry Point -->
-  <script type="module" src="./src/ui/UIController.js"></script>
-  <script type="module" src="./src/ui/SidebarController.js"></script>
-  <script type="module" src="./src/ui/controls/SettingsViewToggle.js"></script>
-  <script type="module" src="./src/ui/controls/HybridRenderToggle.js"></script>
-  <script type="module" src="./src/ui/controls/Hybrid3DControls.js"></script>
+    <!-- Main Application Entry Point -->
+    <script type="module" src="./src/ui/UIController.js"></script>
+    <script type="module" src="./src/ui/SidebarController.js"></script>
+    <script type="module" src="./src/ui/controls/SettingsViewToggle.js"></script>
+    <script type="module" src="./src/ui/controls/HybridRenderToggle.js"></script>
+    <script type="module" src="./src/ui/controls/Hybrid3DControls.js"></script>
 
-  <style>
-    /* Screen reader only class for accessibility */
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-    }
-  </style>
-</body>
-
+    <style>
+      /* Screen reader only class for accessibility */
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    </style>
+  </body>
 </html>

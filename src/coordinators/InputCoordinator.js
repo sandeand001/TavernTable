@@ -39,14 +39,14 @@ export class InputCoordinator {
 
       const terrainActive =
         typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive();
-      const terrainCoordinator = gm.terrainCoordinator;
+      const terrain = gm.terrainEngine;
       const placeableSelected =
-        typeof terrainCoordinator?.getSelectedPlaceable === 'function'
-          ? !!terrainCoordinator.getSelectedPlaceable()
+        typeof terrain?.getSelectedPlaceable === 'function'
+          ? !!terrain.getSelectedPlaceable()
           : false;
       const panelVisible =
-        typeof terrainCoordinator?.isPlaceablesPanelVisible === 'function'
-          ? !!terrainCoordinator.isPlaceablesPanelVisible()
+        typeof terrain?.isPlaceablesPanelVisible === 'function'
+          ? !!terrain.isPlaceablesPanelVisible()
           : false;
 
       if (terrainActive || (placeableSelected && panelVisible)) {
@@ -103,10 +103,10 @@ export class InputCoordinator {
   handleTokenInteraction(gridX, gridY) {
     try {
       // If a terrain placeable is currently selected, token placement must be disabled.
-      const terrainCoordinator = this.gameManager.terrainCoordinator;
+      const terrain = this.gameManager.terrainEngine;
       const selectedPlaceable =
-        terrainCoordinator && typeof terrainCoordinator.getSelectedPlaceable === 'function'
-          ? terrainCoordinator.getSelectedPlaceable()
+        terrain && typeof terrain.getSelectedPlaceable === 'function'
+          ? terrain.getSelectedPlaceable()
           : window.selectedTerrainPlaceable;
       if (selectedPlaceable) {
         logger.debug('Token placement blocked because a terrain placeable is selected');
@@ -179,10 +179,10 @@ export class InputCoordinator {
    */
   placeNewToken(gridX, gridY) {
     // Defensive: also check here in case placeNewToken is called programmatically.
-    const terrainCoordinator = this.gameManager.terrainCoordinator;
+    const terrain = this.gameManager.terrainEngine;
     const selectedPlaceable =
-      terrainCoordinator && typeof terrainCoordinator.getSelectedPlaceable === 'function'
-        ? terrainCoordinator.getSelectedPlaceable()
+      terrain && typeof terrain.getSelectedPlaceable === 'function'
+        ? terrain.getSelectedPlaceable()
         : window.selectedTerrainPlaceable;
     if (selectedPlaceable) {
       logger.debug('placeNewToken aborted because a terrain placeable is selected');

@@ -34,6 +34,25 @@ function _resolveTokenWorldPosition(tokenEntry) {
   }
 }
 
+function getTokenViewPosition(token) {
+  const gm = this.gameManager;
+  if (!gm.campaignWorld || token.mapId === gm.campaignMapId)
+    return this._resolveTokenWorldPosition(token);
+  return gm.campaignWorld.toMapPosition(
+    gm.campaignMapId,
+    gm.campaignWorld.toCampaignPosition(token.mapId, token.world)
+  );
+}
+
+function getTokenViewFacing(token, angle = token.facingAngle ?? 0) {
+  const gm = this.gameManager;
+  if (!gm.campaignWorld || token.mapId === gm.campaignMapId) return angle;
+  return (
+    gm.campaignWorld.toCampaignFacing(token.mapId, angle) +
+    gm.campaignWorld.getViewTransform(gm.campaignMapId).yaw
+  );
+}
+
 function _computeMovementBounds() {
   try {
     const gm = this.gameManager;
@@ -62,6 +81,24 @@ function _getDirectionalVectorFromYaw(yaw, directionSign = 1) {
 }
 
 function _sampleWorldHeight(x, z, fallbackY = 0) {
+  const gm = this.gameManager;
+  if (gm.campaignWorld) {
+    const support = gm.campaignWorld.findSupportBelow(
+      gm.campaignWorld.toCampaignPosition(gm.campaignMapId, { x, y: fallbackY, z }),
+      { mapId: gm.campaignMapId, geometry: gm.terrainEngine?.geometry }
+    );
+    if (!support) throw new Error('No physical campaign surface supports this position');
+    return gm.campaignWorld.toMapPosition(gm.campaignMapId, support.positionFeet).y;
+  }
+  const mapGeometry = this.gameManager?.terrainEngine?.geometry;
+  if (mapGeometry?.hasVolumes) {
+    const scale = 5 / this.gameManager.spatial.tileWorldSize;
+    const support = mapGeometry.findSupport(x * scale, z * scale, {
+      belowFeet: fallbackY * scale + 1e-5,
+    });
+    if (!support) throw new Error('No map surface supports this creature position');
+    return support.heightFeet / scale;
+  }
   try {
     const gm = this.gameManager;
     const spatial = gm?.spatial;
@@ -88,6 +125,22 @@ function _sampleWorldHeight(x, z, fallbackY = 0) {
   } catch (_) {
     return fallbackY;
   }
+}
+
+function getTokenGroundPosition(tokenEntry) {
+  const world = this._resolveTokenWorldPosition(tokenEntry);
+  const gm = this.gameManager;
+  if (gm.campaignWorld) {
+    const support = gm.campaignWorld.findSupportBelow(
+      gm.campaignWorld.toCampaignPosition(tokenEntry.mapId, world),
+      { mapId: gm.campaignMapId, geometry: gm.terrainEngine?.geometry }
+    );
+    if (!support) throw new Error('A creature ground projection needs physical support');
+    return gm.campaignWorld.toMapPosition(gm.campaignMapId, support.positionFeet);
+  }
+  const y = this._sampleWorldHeight(world.x, world.z, world.y);
+  if (!Number.isFinite(y)) throw new Error('A creature ground projection needs a valid height');
+  return { ...world, y };
 }
 
 function _estimateHeightFromWorld(worldY, gridX, gridY) {
@@ -389,9 +442,12 @@ function _syncTokenAndMeshWorld(state, world, options = {}) {
 
 export function installSpatialUtilsMethods(prototype) {
   prototype._resolveTokenWorldPosition = _resolveTokenWorldPosition;
+  prototype.getTokenViewPosition = getTokenViewPosition;
+  prototype.getTokenViewFacing = getTokenViewFacing;
   prototype._computeMovementBounds = _computeMovementBounds;
   prototype._getDirectionalVectorFromYaw = _getDirectionalVectorFromYaw;
   prototype._sampleWorldHeight = _sampleWorldHeight;
+  prototype.getTokenGroundPosition = getTokenGroundPosition;
   prototype._estimateHeightFromWorld = _estimateHeightFromWorld;
   prototype._isGridWithinBounds = _isGridWithinBounds;
   prototype._findTerrainTransition = _findTerrainTransition;

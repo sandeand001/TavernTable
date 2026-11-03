@@ -138,11 +138,7 @@ export function createGroundSampler(manager, metrics, fallbackHeight = DEFAULT_R
       : (level) => level * elevationUnit;
 
   const terrainSample =
-    typeof gm?.getTerrainHeight === 'function'
-      ? (x, y) => gm.getTerrainHeight(x, y)
-      : typeof gm?.terrainCoordinator?.getTerrainHeight === 'function'
-        ? (x, y) => gm.terrainCoordinator.getTerrainHeight(x, y)
-        : null;
+    typeof gm?.getTerrainHeight === 'function' ? (x, y) => gm.getTerrainHeight(x, y) : null;
 
   return (worldX, worldZ, fallback = fallbackHeight) => {
     try {

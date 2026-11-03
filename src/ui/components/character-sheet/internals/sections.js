@@ -1,9 +1,15 @@
 import { ABILITIES, SKILLS } from '../../../../entities/characters/CharacterLibrary.js';
 import { escapeHtml as escape } from '../../../characters/escapeHtml.js';
+import { characterActionOptions } from '../../../../entities/characters/combat/actions.js';
 import {
   FALL_TRAITS_DEFAULTS,
   MOVEMENT_CONDITIONS,
 } from '../../../../config/TokenMovementConfig.js';
+import {
+  TARGET_ALLEGIANCES,
+  TARGET_CREATURE_TYPES,
+  TARGET_CREATURE_SIZES,
+} from '../../../../config/targeting/SpellProfiles.js';
 
 // -- Shared sheet markup --
 export const signed = (value) => `${value >= 0 ? '+' : ''}${value}`;
@@ -25,6 +31,11 @@ export function renderIdentitySection(context, character) {
   const className =
     context.services.library.classes.get(character.classId)?.name || 'Custom / no class';
   return `<section class="sheet-identity-card" aria-label="Character information">
+    ${
+      character.portraitImage
+        ? `<img class="sheet-identity-portrait" src="${escape(character.portraitImage)}" alt="${escape(character.name)} portrait">`
+        : ''
+    }
     <div class="sheet-identity-fields">
       <div class="sheet-identity-field"><span>Class:</span><output aria-label="Class">${escape(className)}</output></div>
       ${[
@@ -73,6 +84,18 @@ export function renderCoreSection(context, character, stats) {
         <section class="sheet-card"><h4>Movement</h4>
           ${field('Character speed (feet)', 'speed', character.speed, 'number', 'min="0" max="1000" step="1"')}
           <p class="sheet-reference">Base speed for this character. Combat shows remaining turn movement.</p>
+          <h4>Creature targeting tags</h4>
+          <div class="sheet-target-tags" data-sheet-key="targeting-tags" role="group" aria-label="Targeting tags">
+            <label>Allegiance<select aria-label="Creature allegiance" data-targeting-tag="allegiance">
+              ${TARGET_ALLEGIANCES.map((tag) => `<option value="${tag}" ${selected((context.token.allegiance || 'neutral') === tag)}>${title(tag)}</option>`).join('')}
+            </select></label>
+            <label>Creature type<select aria-label="Targeting creature type" data-targeting-tag="creatureType">
+              ${TARGET_CREATURE_TYPES.map((type) => `<option value="${type}" ${selected((context.token.creatureType || 'humanoid') === type)}>${title(type)}</option>`).join('')}
+            </select></label>
+            <label>Size<select aria-label="Targeting creature size" data-targeting-tag="creatureSize">
+              ${TARGET_CREATURE_SIZES.map((size) => `<option value="${size}" ${selected((context.token.creatureSize || 'medium') === size)}>${title(size)}</option>`).join('')}
+            </select></label>
+          </div>
           <h4>Conditions and falling</h4>
           <div class="sheet-movement-conditions">
             ${MOVEMENT_CONDITIONS.map(
@@ -98,12 +121,28 @@ export function renderCoreSection(context, character, stats) {
             .join('')}
           <p class="sheet-reference">Flying speed grants Take flight on the creature radial menu. Take flight rises 5 feet; Raise and Lower spend their chosen distance.
             Drop relinquishes flight for a zero-movement-cost fall, with normal damage and Prone rules.
-            Natural flight and already-applied spell or item flight use this manual speed setting; casting or owning an item does not apply its effect automatically.
-            Available flight otherwise prevents ledge-fall damage; non-hovering flight cannot help while movement is restricted or Prone.
+            This speed setting is base/manual flight. Casting Fly automatically grants separate, temporary flight to selected willing creatures, including self, without changing this field.
+            Other spell and item flight still requires manual application; owning an item does not activate its effect.
+            Available flight otherwise prevents ledge-fall damage. Hover, or magical support such as 2014 Fly, keeps a creature aloft while Prone or unable to move.
             Can hover is a rules protection, not the stationary flying animation.
             Feather Fall is an already-applied effect and ends on landing; this toggle does not cast or spend a spell slot.
             Monk Slow Fall (level 4+) prompts for a reaction at the start of a damaging fall.
             Other protections and condition changes are manual.</p>
+          <h4>Targeting configuration</h4>
+          <label class="sheet-field">Action<select aria-label="Action targeting configuration">
+            ${characterActionOptions(context.services.library, context.token)
+              .filter(
+                (action) =>
+                  action.cost === 'attack' ||
+                  ['weapon', 'spell', 'custom', 'ability'].includes(action.kind)
+              )
+              .map(
+                (action) => `<option value="${escape(action.id)}">${escape(action.label)}</option>`
+              )
+              .join('')}
+          </select></label>
+          <button type="button" data-sheet-action="configure-targeting">Edit targeting profile</button>
+          <p class="sheet-reference">Reviewed targeting follows this campaign's edition. Configure unsupported abilities here; overrides are static and can be reset.</p>
           <h4>Saving throws</h4>
           ${ABILITIES.map(
             (ability) => `<div class="sheet-check-row">
@@ -255,26 +294,19 @@ export function renderSpellsSection(context, character, stats) {
                 !!stats.castingAbility &&
                 (entry.level === 0 ||
                   ((!stats.preparesSpells || owned.prepared) &&
-                    stats.spellSlots[level - 1]?.remaining > 0));
+                    available.some((slotLevel) => stats.spellSlots[slotLevel - 1]?.remaining > 0)));
               return `<article class="sheet-spell-row" data-sheet-key="spell:${owned.id}">
             <h5>${escape(entry.name)} <small>${entry.level ? `Level ${entry.level}` : 'Cantrip'} / ${escape(entry.school)}</small></h5>
             <p>${escape(entry.castingTime)} / ${escape(entry.range)} / ${escape(entry.duration)}${entry.concentration ? ' / concentration' : ''}</p>
             ${entry.level > 0 && stats.preparesSpells ? `<label><input type="checkbox" data-spell-id="${owned.id}" data-spell-action="prepare" aria-label="Prepare ${escape(entry.name)}" ${checked(owned.prepared)}> Prepared</label>` : ''}
-            ${
-              entry.level > 0
-                ? `<label>Cast level <select data-slot-choice="${owned.id}" aria-label="Slot for ${escape(entry.name)}">
-              ${(available.length ? available : [entry.level]).map((value) => `<option value="${value}" ${selected(level === value)}>${value} (${stats.spellSlots[value - 1]?.remaining || 0} left)</option>`).join('')}
-            </select></label>`
-                : ''
-            }
-            <button type="button" data-sheet-action="cast" data-instance-id="${owned.id}" ${canCast ? '' : 'disabled'} title="${canCast ? 'Use the tracked casting cost, spend the slot and track concentration; apply targets/effects manually' : 'Choose a casting ability, prepare if required, and ensure a slot remains'}">Cast${entry.level ? ' / use slot' : ''}</button>
+            <button type="button" data-sheet-action="cast" data-instance-id="${owned.id}" ${canCast ? '' : 'disabled'} title="${canCast ? 'Confirm targeting, use the tracked casting cost, spend the slot and track concentration; apply mechanical effects manually' : 'Check casting ability, preparation, slots and viable targets'}">Cast${entry.level ? ' / use slot' : ''}</button>
             ${spell.attackBonus != null ? `<button type="button" data-sheet-action="roll" data-roll-kind="spell-attack" data-key="${owned.id}" title="Roll only: does not cast, spend a slot or use another action. Use Cast first.">Roll-only attack ${signed(spell.attackBonus)}</button>` : ''}
             ${spell.saveDC != null ? `<span>${title(spell.saveAbility)} save DC ${spell.saveDC}</span>` : ''}
             ${spell.damage.map((part, index) => (part.notation ? `<button type="button" data-sheet-action="roll" data-roll-kind="spell-damage" data-key="${owned.id}" data-part="${index}">${escape(part.notation)} ${escape(part.type)}</button>` : '')).join('')}
             ${spell.healing ? `<button type="button" data-sheet-action="roll" data-roll-kind="healing" data-key="${owned.id}">Heal ${escape(spell.healing)}</button>` : ''}
             <button type="button" data-sheet-action="details" data-entry-id="${escape(entry.id)}">Details</button>
             <button type="button" data-sheet-action="remove" data-instance-id="${owned.id}" aria-label="Remove ${escape(entry.name)}">Remove</button>
-            <small class="sheet-reference">Slot/concentration tracking only. Apply spell effects, targets, extra projectiles and duration manually.</small>
+            <small class="sheet-reference">Reviewed targeting, projectile attacks and area visuals are guided. Other targeting, damage, saves and mechanical effects remain manual.</small>
           </article>`;
             })
             .join('') || '<p>No spells yet. Search the compendium and add one.</p>'

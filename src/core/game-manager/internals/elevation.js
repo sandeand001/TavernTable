@@ -55,6 +55,9 @@ export function sync3DElevationScaling(gm, options = {}) {
     }
 
     gm.spatial.reconfigure({ elevationUnit: worldElevationUnit });
+    gm.terrainEngine?.configureGeometryScale(
+      (gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize
+    );
     gm._lastAppliedWorldElevationUnit = worldElevationUnit;
     gm._lastPixelsPerLevelApplied = pixelsPerLevel2D;
     if (gm.terrainRebuilder?.builder) {

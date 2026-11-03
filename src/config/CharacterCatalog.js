@@ -71,12 +71,13 @@ export const CHARACTER_DEFINITIONS = [
     },
   },
   {
+    // Retain the legacy appearance ID so saved boards keep the same model.
     id: 'monk',
-    label: 'Monk',
-    icon: '\uD83E\uDD4B',
+    label: 'Zombie',
+    icon: '\uD83E\uDDDF',
     color: 0xb88b67,
     scale: 0.06,
-    aliases: [],
+    aliases: ['zombie'],
     mixamoName: 'Yaku J Ignite',
     model: {
       path: 'assets/animated-sprites/Yaku J Ignite.fbx',

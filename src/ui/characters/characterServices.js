@@ -9,6 +9,7 @@ import {
 } from '../../entities/creatures/TokenMovement.js';
 import CombatSession from '../../entities/characters/CombatSession.js';
 import FallingController from './FallingController.js';
+import TargetingController from './TargetingController.js';
 
 const pendingCharacters = new WeakMap();
 
@@ -26,11 +27,18 @@ export function connectCharacterServices(gameManager, services) {
   )
     return gameManager.characterServices;
   gameManager.characterServices?.falling?.dispose();
+  gameManager.characterServices?.targeting?.dispose();
   const combat = new CombatSession({
     library: services.library,
     hasToken: (token) => gameManager.placedTokens.includes(token),
-    isMoving: (token) => gameManager.token3DAdapter?.isMovementInProgress?.(token) || false,
+    isMoving: (token) =>
+      gameManager.campaignViewBusy ||
+      !!gameManager.campaignMapFailure ||
+      gameManager.token3DAdapter?.isMovementInProgress?.(token) ||
+      false,
     isSceneMoving: () =>
+      gameManager.campaignViewBusy ||
+      !!gameManager.campaignMapFailure ||
       gameManager.placedTokens.some(
         (token) => gameManager.token3DAdapter?.isMovementInProgress?.(token) || false
       ),
@@ -44,6 +52,15 @@ export function connectCharacterServices(gameManager, services) {
     getCharacter: (token) => getTokenCharacter(gameManager, token, connected),
     onChanged: (id) => notifyCharacterChanged(gameManager, id),
   });
+  if (gameManager.spatial && typeof gameManager.getTerrainHeight === 'function') {
+    connected.targeting = new TargetingController({
+      gameManager,
+      library: services.library,
+      session: combat,
+      onChanged: (id) => notifyCharacterChanged(gameManager, id),
+    });
+    combat.targeting = connected.targeting;
+  }
   combat.subscribe(() => {
     gameManager.token3DAdapter?.refreshMovementRange?.();
     window.dispatchEvent(new CustomEvent('taverntable:combatChanged', { detail: { gameManager } }));
@@ -92,9 +109,12 @@ export function getTokenCharacter(gameManager, token, services) {
 }
 
 export function notifyCharacterChanged(gameManager, characterId, entryKind = null, origin = null) {
+  gameManager.characterServices?.targeting?.beginQuery();
+  gameManager.characterServices?.combat?.syncEffects();
   syncLinkedCreatureNames(gameManager, characterId);
   for (const token of gameManager.placedTokens) {
     if (token.characterSheetId === characterId) {
+      gameManager.token3DAdapter?.refreshTokenAppearance?.(token);
       gameManager.token3DAdapter?.syncProneState?.(token);
     }
   }

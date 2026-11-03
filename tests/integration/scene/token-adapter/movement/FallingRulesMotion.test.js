@@ -155,12 +155,12 @@ test('Slow Fall pauses at the ledge, doubles airborne animation time and softens
   f.library.edit(f.token.characterSheetId, { classId: 'monk', level: 4 });
   f.services.combat.startTurn(f.token);
   f.adapter.requestMoveToGrid(f.token, 9, 3);
-  await until(f, () => !!document.querySelector('[role="dialog"]'));
+  await until(f, () => !!document.querySelector('.sheet-fall-prompt'));
   const held = { ...f.token.world };
   for (let frame = 0; frame < 90; frame++) stepHumanoid(f, 1 / 30);
   expect(f.token.world).toEqual(held);
   expect(f.library.get(f.token.characterSheetId).hp.current).toBe(100);
-  [...document.querySelectorAll('[role="dialog"] button')]
+  [...document.querySelectorAll('.sheet-fall-prompt button')]
     .find((button) => button.textContent === 'Use Slow Fall (reaction)')
     .click();
   await until(f, () => f.adapter._movementStates.get(f.token)?.phase === 'fall');

@@ -312,7 +312,6 @@ export class TerrainBrushOverlay3D {
     if (!dummy) return;
 
     const gm = this.gameManager;
-    const terrainCoordinator = gm?.terrainCoordinator;
 
     const drawnCells = [];
     let instanceIndex = 0;
@@ -321,7 +320,7 @@ export class TerrainBrushOverlay3D {
       const { gx, gy, currentHeight, previewHeight } = entry;
       const baseHeight = Number.isFinite(currentHeight)
         ? currentHeight
-        : (terrainCoordinator?.getTerrainHeight?.(gx, gy) ?? gm?.getTerrainHeight?.(gx, gy) ?? 0);
+        : (gm?.getTerrainHeight?.(gx, gy) ?? 0);
       const targetHeight = Number.isFinite(previewHeight) ? previewHeight : baseHeight;
       const baseWorld = baseHeight * elevationUnit;
       const previewWorld = targetHeight * elevationUnit;

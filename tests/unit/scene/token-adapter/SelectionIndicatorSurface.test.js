@@ -1,5 +1,7 @@
 import * as three from 'three';
 import { Token3DAdapter } from '../../../../src/scene/Token3DAdapter.js';
+import { targetingPositions } from '../../../../src/coordinators/TargetingBoard.js';
+import TargetingOverlay from '../../../../src/scene/targeting/TargetingOverlay.js';
 
 const fixtures = [];
 
@@ -74,6 +76,55 @@ afterEach(() => {
 });
 
 describe('Selection ring support-surface alignment', () => {
+  test.each([0.5, 1, 2])(
+    'blue and yellow flight rings share a ground anchor through altitude and terrain changes at tile scale %s',
+    async (tileSize) => {
+      const { adapter, token, mesh, spatial } = fixture(1, 0, 0, tileSize);
+      adapter.gameManager.token3DAdapter = adapter;
+      adapter.gameManager.getTerrainHeight = jest.fn(() => 4);
+      token.flightActive = true;
+      const overlay = new TargetingOverlay(three, new three.Scene());
+      const update = async () => {
+        await adapter._showSelectionIndicator(token);
+        const positions = targetingPositions(adapter.gameManager, [token.id]);
+        overlay.update(positions, null, null, null, [
+          { kind: 'flight', targetTokenIds: [token.id] },
+        ]);
+        const blue = overlay.group.getObjectsByProperty('isMesh', true)[0];
+        expect(blue.position.distanceTo(ringPose(token).center)).toBeLessThan(1e-6);
+        expect(positions.tokens[0].world.y).toBe(token.world.y);
+        return blue.position.clone();
+      };
+      try {
+        const initial = await update();
+        expect(initial.y).toBeCloseTo(1.2 + spatial.tileWorldSize * 0.015);
+        token.world.y += 4;
+        mesh.position.y += 4;
+        expect((await update()).distanceTo(initial)).toBeLessThan(1e-6);
+        token.world.x += tileSize;
+        mesh.position.x += tileSize;
+        adapter.gameManager.getTerrainHeight.mockReturnValue(2);
+        const moved = await update();
+        expect(moved.x).toBeCloseTo(initial.x + tileSize);
+        expect(moved.y).toBeCloseTo(0.6 + spatial.tileWorldSize * 0.015);
+      } finally {
+        overlay.dispose();
+      }
+    }
+  );
+
+  test('flight-ring projection chooses a support below the creature rather than a roof overhead', () => {
+    const { adapter, token, spatial } = fixture();
+    const findSupport = jest.fn(() => ({ heightFeet: 5 }));
+    adapter.gameManager.terrainEngine = { geometry: { hasVolumes: true, findSupport } };
+    const ground = adapter.getTokenGroundPosition(token);
+    const scale = 5 / spatial.tileWorldSize;
+    expect(findSupport).toHaveBeenCalledWith(token.world.x * scale, token.world.z * scale, {
+      belowFeet: token.world.y * scale + 1e-5,
+    });
+    expect(ground).toEqual({ x: token.world.x, y: 1, z: token.world.z });
+  });
+
   test.each([
     [1, 0, 0, 1],
     [-1, 0, 0, 1],

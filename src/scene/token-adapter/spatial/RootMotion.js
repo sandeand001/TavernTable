@@ -44,6 +44,18 @@ function _neutralizeRootMotion(tokenEntry) {
   const roots = this._rootBones.get(tokenEntry);
   if (!roots || !roots.length) return;
   const state = this._movementStates.get(tokenEntry);
+  if (state?.openingCrossing && state.openingCrossing.clip !== 'ledgeHang') {
+    for (const { bone, basePosition } of roots) {
+      bone.position.x = basePosition.x;
+      bone.position.z = basePosition.z;
+      if (['climbWall', 'climbWallDown'].includes(state.openingCrossing.clip))
+        bone.position.y = basePosition.y;
+    }
+    return;
+  }
+  if (tokenEntry.openingHold || tokenEntry.surfaceHold) {
+    for (const { bone, basePosition } of roots) bone.position.y = basePosition.y;
+  }
   if (
     tokenEntry.flightActive ||
     (state?.phase === 'fall-choice' && state.activeStep?.ignoreFlight)
@@ -67,7 +79,11 @@ function _neutralizeRootMotion(tokenEntry) {
   if (this._neutralizeProneRoot(tokenEntry, roots)) return;
   if (this._neutralizeTraversalRoot(tokenEntry, roots)) return;
   const mesh = state?.mesh || tokenEntry.__threeMesh;
-  const wallClip = state?.wallMotion?.clip;
+  const wallClip =
+    state?.wallMotion?.clip ||
+    (tokenEntry.openingHold || tokenEntry.surfaceHold
+      ? this._tokenAnimationData.get(tokenEntry)?.openingHoldClip || 'ledgeHang'
+      : null);
   const isRecovery = state?.phase === 'climb-recover' || wallClip === 'climbRecover';
   if (mesh?.userData?.__ttRecoveryGroundOffset || isRecovery) {
     this._applyMeshWorldPosition(mesh, this._resolveTokenWorldPosition(tokenEntry));

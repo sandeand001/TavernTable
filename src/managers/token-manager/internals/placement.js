@@ -71,7 +71,7 @@ export function placeNewToken(c, gridX, gridY, gridContainer) {
 
     let elevationOffset = 0;
     try {
-      const height = c.gameManager?.terrainCoordinator?.dataStore?.get(gridX, gridY) ?? 0;
+      const height = c.gameManager?.getTerrainHeight?.(gridX, gridY) ?? 0;
       elevationOffset = TerrainHeightUtils.calculateElevationOffset(height);
     } catch (_) {
       /* ignore */

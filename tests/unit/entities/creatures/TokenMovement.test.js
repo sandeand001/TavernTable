@@ -142,6 +142,56 @@ describe('Character movement settings and range', () => {
     expect(cliff.tiles.get('1,1').cost).toBe(20);
   });
 
+  test.each([
+    [1, 1, 'x'],
+    [1, 1, 'y'],
+    [1, -1, 'x'],
+    [1, -1, 'y'],
+    [-1, 1, 'x'],
+    [-1, 1, 'y'],
+    [-1, -1, 'x'],
+    [-1, -1, 'y'],
+  ])('can move diagonally (%i,%i) past one creature on the %s side', (dx, dy, side) => {
+    const occupiedKey = side === 'x' ? `${1 + dx},1` : `1,${1 + dy}`;
+    const result = range({
+      cols: 3,
+      rows: 3,
+      startGridX: 1,
+      startGridY: 1,
+      speed: 5,
+      occupied: new Set([occupiedKey]),
+    });
+    expect(result.tiles.get(`${1 + dx},${1 + dy}`).cost).toBe(5);
+    expect(result.tiles.has(occupiedKey)).toBe(false);
+    expect(getMovementRoute(result, 1 + dx, 1 + dy)).toHaveLength(1);
+  });
+
+  test('two occupied side cells still prevent squeezing diagonally between creatures', () => {
+    const result = range({
+      cols: 2,
+      rows: 2,
+      startGridX: 0,
+      startGridY: 0,
+      speed: 5,
+      occupied: new Set(['1,0', '0,1']),
+    });
+    expect(result.tiles.has('1,1')).toBe(false);
+    expect(result.tiles.size).toBe(1);
+  });
+
+  test('a solid side cell still requires going around its corner, even with a creature nearby', () => {
+    const result = range({
+      cols: 2,
+      rows: 2,
+      startGridX: 0,
+      startGridY: 0,
+      speed: 5,
+      blocked: new Set(['1,0']),
+      occupied: new Set(['0,1']),
+    });
+    expect(result.tiles.has('1,1')).toBe(false);
+  });
+
   test('uses board bounds and supports non-unit tiles and elevation scales', () => {
     const result = range({
       cols: 2,

@@ -1,662 +1,264 @@
-/* eslint-disable indent */
-// UI domHelpers removed; DOM access is injected via coordinator.domPorts to satisfy layering.
-import { buildBrushHighlightDescriptor } from '../../terrain/brush/TerrainBrushHighlighter.js';
-import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/logger/Logger.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
+import { GameErrors } from '../../utils/error/ErrorHandler.js';
 
-/**
- * TerrainInputHandlers - Extracted input setup and handlers for TerrainCoordinator
- * Façade-backed: TerrainCoordinator delegates to this module without behavior changes.
- */
 export class TerrainInputHandlers {
-  constructor(coordinator) {
-    this.c = coordinator; // reference to TerrainCoordinator
-    // Track last hovered grid coords to support live preview refresh on tool/size changes
-    this.lastGridCoords = null;
+  constructor(gameManager, domPorts = {}) {
+    this.gameManager = gameManager;
+    this.engine = gameManager.terrainEngine;
+    this.domPorts = {
+      getTerrainHeightDisplay: () => document.getElementById('terrain-height-display'),
+      getScaleMarks: () => document.querySelectorAll('.scale-mark'),
+      ...domPorts,
+    };
+    this._canvas = null;
+    this._events = [];
+    this._placeableStroke = null;
+    this._unsubs = [
+      this.engine.onEditorChanged((state) => {
+        if (!state.active) this.resetHeightIndicator();
+        window.dispatchEvent(
+          new CustomEvent('taverntable:terrainEditorChanged', {
+            detail: { ...state, engine: this.engine },
+          })
+        );
+      }),
+      this.engine.onActivationChanged(({ active }) => {
+        if (this._canvas) this._canvas.style.cursor = active ? 'crosshair' : 'default';
+      }),
+      this.engine.onBrushMoved(({ gridX, gridY, cells }) => {
+        if (this.engine.isActive && this.engine.isValidGridPosition(gridX, gridY)) {
+          this.updateHeightIndicator(gridX, gridY);
+        } else if (!cells.length) {
+          this.resetHeightIndicator();
+        }
+      }),
+    ];
   }
 
-  // ── Internal Helpers ───────────────────────────────────────────────
-
-  /** Small helper to avoid duplicating the scale mark selector */
-  _getScaleMarks() {
-    return this.c?.domPorts?.getScaleMarks ? this.c.domPorts.getScaleMarks() : [];
-  }
-
-  // ── Event Setup ───────────────────────────────────────────────────
-
-  /** Set up terrain-specific input event handlers */
   setup() {
-    try {
-      // Mouse events for terrain painting
-      this.c.gameManager
-        .getEventCanvas()
-        .addEventListener('mousedown', this.handleMouseDown.bind(this));
-      this.c.gameManager
-        .getEventCanvas()
-        .addEventListener('mousemove', this.handleMouseMove.bind(this));
-      this.c.gameManager
-        .getEventCanvas()
-        .addEventListener('mouseup', this.handleMouseUp.bind(this));
-      this.c.gameManager
-        .getEventCanvas()
-        .addEventListener('mouseleave', this.handleMouseLeave.bind(this));
-      // Ensure drag always ends even if mouseup occurs outside the canvas
-      // Use capture to guarantee we receive the event before it is possibly stopped elsewhere
-      window.addEventListener('mouseup', this.handleMouseUp.bind(this), true);
-      // Extra safety: if the window loses focus during a drag, end the session
-      window.addEventListener('blur', () => this.cancelStroke(), true);
-
-      // Keyboard shortcuts for terrain tools
-      document.addEventListener('keydown', this.handleKeyDown.bind(this));
-
-      logger.debug(
-        'Terrain input handlers configured',
-        {
-          context: 'TerrainInputHandlers.setup',
-          stage: 'input_configuration',
-          eventTypes: ['mousedown', 'mousemove', 'mouseup', 'mouseleave', 'keydown'],
-          handlersBound: true,
-        },
-        LOG_CATEGORY.SYSTEM
-      );
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.HIGH, ERROR_CATEGORY.INIT, {
-        context: 'TerrainInputHandlers.setup',
-        eventCanvasAvailable: !!this.c?.gameManager?.getEventCanvas?.(),
-      });
-      throw error;
+    const canvas = this.gameManager.getEventCanvas();
+    if (!canvas) throw new Error('Terrain input requires the game canvas');
+    if (canvas === this._canvas && this._events.length) return;
+    this._detachEvents();
+    this._canvas = canvas;
+    canvas.style.cursor = this.engine.isActive ? 'crosshair' : 'default';
+    for (const [target, type, handler, capture = false] of [
+      [canvas, 'mousedown', (event) => this.handleMouseDown(event)],
+      [canvas, 'mousemove', (event) => this.handleMouseMove(event)],
+      [canvas, 'mouseup', (event) => this.handleMouseUp(event)],
+      [canvas, 'mouseleave', () => this.handleMouseLeave()],
+      [window, 'mouseup', (event) => this.handleMouseUp(event), true],
+      [window, 'blur', () => this.cancelStroke(), true],
+      [document, 'keydown', (event) => this.handleKeyDown(event)],
+    ]) {
+      target.addEventListener(type, handler, capture);
+      this._events.push(() => target.removeEventListener(type, handler, capture));
     }
   }
 
-  // ── Mouse Handlers ────────────────────────────────────────────────
+  dispose() {
+    this.cancelStroke();
+    this._detachEvents();
+    for (const unsubscribe of this._unsubs) unsubscribe();
+    this._unsubs = [];
+  }
 
-  /** Handle mouse down events for terrain modification */
+  _detachEvents() {
+    for (const dispose of this._events) dispose();
+    this._events = [];
+    this._canvas = null;
+  }
+
+  _available() {
+    const gm = this.gameManager;
+    return (
+      gm.getViewMode?.() !== 'topdown' &&
+      !gm.interactionManager?.isDragging &&
+      !gm.interactionManager?.isSpacePressed
+    );
+  }
+
+  getGridCoordinatesFromEvent(event) {
+    const gm = this.gameManager;
+    let cell = null;
+    if (gm.is3DModeActive?.() && gm.pickingService?.pickGroundSync) {
+      const picked = gm.pickingService.pickGroundSync(
+        event.clientX,
+        event.clientY,
+        gm.threeSceneManager.canvas
+      );
+      if (picked?.grid) {
+        cell = { gridX: Math.round(picked.grid.gx), gridY: Math.round(picked.grid.gy) };
+      }
+    } else if (gm.interactionManager?.getGridCoordinatesFromClick) {
+      cell = gm.interactionManager.getGridCoordinatesFromClick(event);
+    }
+    return cell && this.engine.isValidGridPosition(cell.gridX, cell.gridY) ? cell : null;
+  }
+
   handleMouseDown(event) {
     try {
-      // Only handle left mouse button
-      if (event.button !== 0) return;
-      const im = this.c.gameManager?.interactionManager;
-      if (im?.isSpacePressed || im?.isDragging) return;
-
-      // Placeable removal mode: intercept first. Removes plant/tree placeables at click footprint.
-      if (
-        this.c.isPlaceableRemovalMode &&
-        (typeof this.c.isPlaceableRemovalMode === 'function'
-          ? this.c.isPlaceableRemovalMode()
-          : this.c._placeableRemovalMode)
-      ) {
-        const gridCoords = this.c.getGridCoordinatesFromEvent(event);
-        if (!gridCoords) return;
-        // Build footprint using placeables brush size for consistency
-        const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
-        const desc = buildBrushHighlightDescriptor({
-          brush: ptBrush,
-          center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
-          terrainModeActive: this.c.isTerrainModeActive,
-        });
-        const cells =
-          desc.cells && desc.cells.length
-            ? desc.cells
-            : [{ x: gridCoords.gridX, y: gridCoords.gridY }];
-        let removedAny = false;
-        for (const c of cells) {
-          try {
-            const key = `${c.x},${c.y}`;
-            const arr = this.c.terrainManager?.placeables?.get(key) || [];
-            // Remove only plant/tree type sprites. Collect their ids first to avoid mutating during iteration.
-            const targets = arr.filter(
-              (s) =>
-                s?.placeableType === 'plant' ||
-                (typeof s?.id === 'string' && s.id.startsWith('tree-'))
-            );
-            for (const sprite of targets) {
-              try {
-                this.c.terrainManager?.removeTerrainItem(
-                  c.x,
-                  c.y,
-                  sprite.id || sprite.placeableId || null
-                );
-                removedAny = true;
-              } catch (_) {
-                /* ignore individual removal errors */
-              }
-            }
-          } catch (_) {
-            /* ignore cell errors */
-          }
-        }
-        if (removedAny) {
-          try {
-            this.c.terrainManager?.flushUpdateQueue?.();
-          } catch (_) {
-            /* ignore */
-          }
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        return; // Do not fall through to placement/height editing
-      }
-
-      // If a terrain placeable is selected in the UI, allow placement even when
-      // terrain mode is not active. Read selection from the coordinator-managed API
-      // when available so placement can occur outside terrain mode.
-      // If the Placeable Tiles menu is toggled off, do not allow placeables to be placed.
-      // Read the currently selected placeable from the coordinator or global state.
-      // Do NOT gate selection on the placeable-tiles visibility toggle: users should be able
-      // to place placeables even when terrain mode is off and the panel visibility is controlled separately.
-      const uiSelected =
-        this.c && typeof this.c.getSelectedPlaceable === 'function'
-          ? this.c.getSelectedPlaceable()
-          : typeof window !== 'undefined'
-            ? window.selectedTerrainPlaceable
-            : null;
-      // If the placeables panel is hidden, do not allow placeable placement/preview
-      // Note: We intentionally don't gate placement on panel visibility to avoid first-click no-op.
-      if (!this.c.isTerrainModeActive && !uiSelected) {
-        // not in terrain mode and no placeable selected → ignore
-        return;
-      }
-      // Note: allow placement even if the placeables panel is hidden, as long as a
-      // placeable is selected. This avoids the first-click-no-op issue when the
-      // UI state isn't fully synced yet. Preview will still honor visibility.
-
-      const gridCoords = this.c.getGridCoordinatesFromEvent(event);
-      if (!gridCoords) {
-        return;
-      }
-
-      this.c.isDragging = true;
-      // Reset drag bookkeeping at the start of a new stroke
-      this.c.lastModifiedCell = `${gridCoords.gridX},${gridCoords.gridY}`;
-
-      // If a terrain placeable is selected in the UI, place it instead of modifying height
-      const selected = uiSelected;
-      if (selected) {
-        try {
-          // Place across brush footprint so placement matches the visual highlighter
-          // When building the brush footprint for placement outside terrain mode
-          // we still want the same footprint semantics; pass the current terrainMode flag
-          // Use a temporary brush descriptor so Placeable Tiles use independent PT brush size
-          const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
-          const desc = buildBrushHighlightDescriptor({
-            brush: ptBrush,
-            center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
-            terrainModeActive: this.c.isTerrainModeActive,
-          });
-          const cells =
-            desc.cells && desc.cells.length
-              ? desc.cells
-              : [{ x: gridCoords.gridX, y: gridCoords.gridY }];
-          let anyPlaced = false;
-          const treePlacements = [];
-          for (const c of cells) {
-            try {
-              const placement = this.c.terrainManager?.placeTerrainItem(c.x, c.y, selected);
-              const placementSuccess = !!placement;
-              anyPlaced = anyPlaced || placementSuccess;
-              if (
-                placement &&
-                typeof placement === 'object' &&
-                placement.success &&
-                placement.treePlacement
-              ) {
-                treePlacements.push({
-                  gridX: c.x,
-                  gridY: c.y,
-                  treeId: placement.resolvedId,
-                });
-              }
-            } catch (_) {
-              /* continue */
-            }
-          }
-          if (treePlacements.length) {
-            logger.log(LOG_LEVEL.INFO, 'terrainTreePlacement', LOG_CATEGORY.USER, {
-              requestedId: selected,
-              pointerGridX: gridCoords.gridX,
-              pointerGridY: gridCoords.gridY,
-              treePlacements,
-              brushCellCount: cells.length,
-            });
-          }
-          logger.trace(
-            'Placed terrain item via UI selection (brush footprint)',
-            {
-              centerX: gridCoords.gridX,
-              centerY: gridCoords.gridY,
-              id: selected,
-              placedAny: anyPlaced,
-              cellCount: cells.length,
-              treePlacements,
-            },
-            LOG_CATEGORY.USER
-          );
-        } catch (e) {
-          /* non-fatal */
-        }
-      } else if (this.c.brush.tool === 'wall') {
-        this.c.brush.beginWallStroke(gridCoords.gridX, gridCoords.gridY);
-        this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
-        this._rerenderPreviewAtLastHover();
+      if (event.button !== 0 || !this._available()) return;
+      const e = this.engine;
+      const selected = e.getSelectedPlaceable();
+      if (!e.isActive && !selected) return;
+      const cell = this.getGridCoordinatesFromEvent(event);
+      if (!cell) return;
+      if (e.isPlaceableRemovalMode()) {
+        this._changePlaceables(cell, null);
+      } else if (selected) {
+        this._changePlaceables(cell, selected);
+        this._placeableStroke = { id: selected, key: `${cell.gridX},${cell.gridY}` };
       } else {
-        this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
+        e.beginBrushStroke(cell.gridX, cell.gridY);
       }
-
       event.preventDefault();
       event.stopPropagation();
     } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainInputHandlers.handleMouseDown',
-        stage: 'terrain_mouse_down',
-        isTerrainModeActive: this.c.isTerrainModeActive,
-        buttonPressed: event?.button,
-      });
+      this._failed(error, 'pointer-down');
     }
   }
 
-  /** Handle mouse move events for continuous terrain painting */
   handleMouseMove(event) {
     try {
-      const im = this.c.gameManager?.interactionManager;
-      if (im?.isSpacePressed || im?.isDragging) {
+      const e = this.engine;
+      if (!this._available()) {
         this.cancelStroke();
         return;
       }
-      const gridCoords = this.c.getGridCoordinatesFromEvent(event);
-
-      // Update height indicator when in terrain mode
-      if (this.c.isTerrainModeActive && gridCoords) {
-        this.updateHeightIndicator(gridCoords.gridX, gridCoords.gridY);
-      }
-
-      // Read selected placeable and panel visibility
-      const uiSelected =
-        this.c && typeof this.c.getSelectedPlaceable === 'function'
-          ? this.c.getSelectedPlaceable()
-          : typeof window !== 'undefined'
-            ? window.selectedTerrainPlaceable
-            : null;
-      const panelVisible =
-        this.c && typeof this.c.isPlaceablesPanelVisible === 'function'
-          ? this.c.isPlaceablesPanelVisible()
-          : true;
-
-      // Render preview: prefer placeable preview when a placeable is selected, otherwise render terrain elevation preview
-      if (gridCoords && uiSelected && panelVisible) {
-        const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
-        const desc = buildBrushHighlightDescriptor({
-          brush: ptBrush,
-          center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
-          terrainModeActive: this.c.isTerrainModeActive,
-        });
-        this._renderBrushPreview(desc, false);
-        this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
-      } else if (gridCoords && this.c.isTerrainModeActive) {
-        const desc = buildBrushHighlightDescriptor({
-          brush: this.c.brush,
-          center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
-          terrainModeActive: true,
-        });
-        this._renderBrushPreview(desc);
-        this.lastGridCoords = { x: gridCoords.gridX, y: gridCoords.gridY };
-      } else {
-        this.lastGridCoords = null;
-        this._clearPreview();
-      }
-
-      // Only process if we're actively dragging. Allow drag edits when
-      // - terrain mode is active OR
-      // - a placeable is selected in the UI and the placeables panel is visible
-      //   (so placeables can be painted even when not in terrain edit mode).
-      // Also require that the primary button is currently pressed to avoid lingering edits
-      // And never edit while the grid panning interaction is active or Space is pressed
-      if (this.c.brush.wallStart) {
-        if (
-          !this.c.isTerrainModeActive ||
-          !(event.buttons & 1) ||
-          im?.isDragging ||
-          im?.isSpacePressed ||
-          this.c.isPlaceableRemovalMode?.()
-        ) {
-          this.cancelStroke();
-        }
+      const cell = this.getGridCoordinatesFromEvent(event);
+      if (!cell) {
+        e.clearBrushPreview();
         return;
       }
-      if (
-        !this.c.isDragging ||
-        !(this.c.isTerrainModeActive || (uiSelected && panelVisible)) ||
-        !(event.buttons & 1) ||
-        (im && (im.isDragging || im.isSpacePressed)) ||
-        (this.c.isPlaceableRemovalMode && this.c.isPlaceableRemovalMode()) // drag removal not supported
-      ) {
+      if (e.isActive) this.updateHeightIndicator(cell.gridX, cell.gridY);
+      if (e.hasPendingStroke) {
+        if (!(event.buttons & 1) || !e.isActive) this.cancelStroke();
+        else e.updateBrushStroke(cell.gridX, cell.gridY);
         return;
       }
-
-      if (!gridCoords) {
-        return;
-      }
-
-      // Avoid modifying the same cell repeatedly during a single drag
-      const cellKey = `${gridCoords.gridX},${gridCoords.gridY}`;
-      if (this.c.lastModifiedCell === cellKey) {
-        return;
-      }
-
-      // If a terrain placeable is selected and the panel is visible, paint it across dragged cells
-      const selected =
-        this.c && typeof this.c.getSelectedPlaceable === 'function'
-          ? this.c.getSelectedPlaceable()
-          : typeof window !== 'undefined'
-            ? window.selectedTerrainPlaceable
-            : null;
-      if (selected && panelVisible) {
-        try {
-          // On drag, paint placeable across the brush footprint for consistency with preview
-          const ptBrush = Object.assign({}, this.c.brush, { brushSize: this.c.ptBrushSize });
-          const desc = buildBrushHighlightDescriptor({
-            brush: ptBrush,
-            center: { gridX: gridCoords.gridX, gridY: gridCoords.gridY },
-            terrainModeActive: this.c.isTerrainModeActive,
-          });
-          const cells =
-            desc.cells && desc.cells.length
-              ? desc.cells
-              : [{ x: gridCoords.gridX, y: gridCoords.gridY }];
-          for (const c of cells) {
-            try {
-              this.c.terrainManager?.placeTerrainItem(c.x, c.y, selected);
-            } catch (_) {
-              /* ignore individual failures */
-            }
+      const selected = e.getSelectedPlaceable();
+      if (this._placeableStroke) {
+        if (!(event.buttons & 1) || selected !== this._placeableStroke.id) {
+          this._placeableStroke = null;
+        } else {
+          const key = `${cell.gridX},${cell.gridY}`;
+          if (key !== this._placeableStroke.key) {
+            this._changePlaceables(cell, selected);
+            this._placeableStroke.key = key;
           }
-        } catch (_) {
-          /* ignore */
         }
-      } else {
-        this.c.modifyTerrainAtPosition(gridCoords.gridX, gridCoords.gridY);
       }
-      this.c.lastModifiedCell = cellKey;
+      if (e.isActive || (selected && e.isPlaceablesPanelVisible())) {
+        e.moveBrushTo(cell.gridX, cell.gridY);
+      } else e.clearBrushPreview();
     } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainInputHandlers.handleMouseMove',
-        stage: 'terrain_mouse_move',
-        isDragging: this.c.isDragging,
-        isTerrainModeActive: this.c.isTerrainModeActive,
-      });
+      this._failed(error, 'pointer-move');
     }
   }
 
-  /** Handle mouse up events to stop terrain painting */
   handleMouseUp(event) {
     try {
-      if (event.button === 0 && this.c.isDragging) {
-        let validWallRelease = true;
-        try {
-          if (this.c.brush.tool === 'wall' && this.c.brush.wallStart) {
-            validWallRelease = false;
-            const canvas = this.c.gameManager.getEventCanvas();
-            const canvasRelease =
-              event.target === canvas || canvas.contains?.(event.target) === true;
-            const im = this.c.gameManager.interactionManager;
-            if (
-              canvasRelease &&
-              this.c.isTerrainModeActive &&
-              !im?.isDragging &&
-              !im?.isSpacePressed &&
-              !this.c.isPlaceableRemovalMode?.()
-            ) {
-              const cell = this.c.getGridCoordinatesFromEvent(event);
-              if (cell) {
-                this.c.modifyTerrainAtPosition(cell.gridX, cell.gridY);
-                this.lastGridCoords = { x: cell.gridX, y: cell.gridY };
-                validWallRelease = true;
-              }
-            }
-          }
-        } finally {
-          this.c.brush.cancelWallStroke?.();
-          this.c.isDragging = false;
-          this.c.lastModifiedCell = null;
-        }
-        if (!validWallRelease) {
-          this.lastGridCoords = null;
-          this._clearPreview();
-        }
-        // Complete any pending terrain updates immediately
-        try {
-          this.c.terrainManager?.flushUpdateQueue();
-        } catch {
-          /* ignore */
-        }
-        this._rerenderPreviewAtLastHover();
-
-        logger.trace(
-          'Terrain painting session completed',
-          {
-            context: 'TerrainInputHandlers.handleMouseUp',
-            stage: 'painting_complete',
-            tool: this.c.brush.tool,
-            brushSize: this.c.brush.brushSize,
-          },
-          LOG_CATEGORY.USER
-        );
+      if (event.button !== 0) return;
+      this._placeableStroke = null;
+      if (!this.engine.hasPendingStroke) return;
+      const canvas = this.gameManager.getEventCanvas();
+      const onCanvas = event.target === canvas || canvas.contains?.(event.target) === true;
+      const cell =
+        onCanvas && this._available() && this.engine.isActive
+          ? this.getGridCoordinatesFromEvent(event)
+          : null;
+      if (!cell) {
+        this.cancelStroke();
+        return;
       }
+      this.engine.updateBrushStroke(cell.gridX, cell.gridY);
+      this.engine.commitBrushStroke();
+      this.updateHeightIndicator(cell.gridX, cell.gridY);
     } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainInputHandlers.handleMouseUp',
-        stage: 'terrain_mouse_up',
-        isDragging: this.c.isDragging,
-      });
+      this._failed(error, 'pointer-up');
     }
   }
 
-  /** Handle mouse leave events to stop terrain painting */
   handleMouseLeave() {
     this.cancelStroke();
-    // If leaving the canvas, finish any pending updates to prevent later application
-    try {
-      this.c.terrainManager?.flushUpdateQueue();
-    } catch {
-      /* ignore */
-    }
+    this.resetHeightIndicator();
   }
 
   cancelStroke() {
-    this.c.isDragging = false;
-    this.c.lastModifiedCell = null;
-    this.c.brush.cancelWallStroke?.();
-    this._clearPreview();
+    this._placeableStroke = null;
+    this.engine.cancelBrushStroke();
   }
 
-  // ── Keyboard Handlers ─────────────────────────────────────────────
-
-  /** Handle keyboard shortcuts for terrain tools */
   handleKeyDown(event) {
     try {
-      if (event.code === 'Space' && this.c.gameManager?.interactionManager?.isSpacePressed) {
-        this.cancelStroke();
-        return;
-      }
-      if (!this.c.isTerrainModeActive) {
-        return;
-      }
-
-      if (this.c.brush.wallStart && ['Escape', 'Space'].includes(event.code)) {
-        this.cancelStroke();
-        if (event.code === 'Escape') event.preventDefault();
-        return;
-      }
+      if (!this.engine.isActive || this.gameManager.getViewMode?.() === 'topdown') return;
       const target = event.target;
-      if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) {
+      if (
+        target?.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) ||
+        target?.closest?.('[role="dialog"], dialog')
+      )
+        return;
+      if (['Escape', 'Space'].includes(event.code)) {
+        const pending = this.engine.hasPendingStroke;
+        this.cancelStroke();
+        if (pending && event.code === 'Escape') event.preventDefault();
         return;
       }
-
-      switch (event.code) {
-        case 'KeyR':
-          if (!event.ctrlKey && !event.altKey) {
-            this.c.setTerrainTool('raise');
-            event.preventDefault();
-            // Re-render preview at last hover
-            this._rerenderPreviewAtLastHover();
-          }
-          break;
-        case 'KeyL':
-          if (!event.ctrlKey && !event.altKey) {
-            this.c.setTerrainTool('lower');
-            event.preventDefault();
-            // Re-render preview at last hover
-            this._rerenderPreviewAtLastHover();
-          }
-          break;
-        case 'BracketLeft': // [
-          if (this.c.brush.tool !== 'wall') this.c.decreaseBrushSize();
-          event.preventDefault();
-          this._rerenderPreviewAtLastHover();
-          break;
-        case 'BracketRight': // ]
-          if (this.c.brush.tool !== 'wall') this.c.increaseBrushSize();
-          event.preventDefault();
-          this._rerenderPreviewAtLastHover();
-          break;
-      }
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.INPUT, {
-        context: 'TerrainInputHandlers.handleKeyDown',
-        stage: 'terrain_keyboard',
-        key: event?.code,
-        isTerrainModeActive: this.c.isTerrainModeActive,
-      });
-    }
-  }
-
-  // ── Preview Helpers ───────────────────────────────────────────────
-
-  _renderBrushPreview(desc, terrainHeight = true) {
-    const sceneManager = this.c.gameManager.threeSceneManager;
-    if (typeof sceneManager?.setTerrainBrushPreview === 'function') {
-      const cells = desc.cells.map((cell) => {
-        const currentHeight = this.c.getTerrainHeight(cell.x, cell.y);
-        return {
-          ...cell,
-          currentHeight,
-          previewHeight: terrainHeight
-            ? this.c.brush.getPreviewHeight(cell.x, cell.y)
-            : currentHeight,
-        };
-      });
-      sceneManager.setTerrainBrushPreview(cells, {
-        ...desc.style,
-        previewMode: 'terrain-height',
-        brushTool: this.c.brush.tool,
-        heightStep: this.c.brush.heightStep,
-      });
-    } else {
-      this.c.terrainManager?.renderBrushPreview(desc.cells, desc.style);
-    }
-  }
-
-  _clearPreview() {
-    try {
-      this.c.gameManager.threeSceneManager?.clearTerrainBrushPreview?.();
-      this.c.terrainManager?.clearBrushPreview?.();
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.UI, {
-        context: 'TerrainInputHandlers.clearPreview',
-      });
-    }
-  }
-
-  /**
-   * Re-render the brush preview at the last known hover coordinates
-   * if terrain mode is active and a valid position is cached.
-   * Keeps preview persistent during painting and key changes.
-   */
-  _rerenderPreviewAtLastHover() {
-    try {
-      if (!this.c.isTerrainModeActive || !this.lastGridCoords) return;
-      const { x, y } = this.lastGridCoords;
-      if (!this.c.isValidGridPosition(x, y)) return;
-      const desc = buildBrushHighlightDescriptor({
-        brush: this.c.brush,
-        center: { gridX: x, gridY: y },
-        terrainModeActive: this.c.isTerrainModeActive,
-      });
-      if (desc.cells.length) {
-        this._renderBrushPreview(desc);
-      }
-    } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.UI, {
-        context: 'TerrainInputHandlers.refreshPreview',
-      });
-    }
-  }
-
-  // ── Height Indicator UI ───────────────────────────────────────────
-
-  /** Update the height indicator in the UI to show terrain level at cursor position */
-  updateHeightIndicator(gridX, gridY) {
-    try {
-      if (!this.c.isValidGridPosition(gridX, gridY)) {
+      const modified = event.ctrlKey || event.metaKey;
+      if (modified && ['KeyZ', 'KeyY'].includes(event.code) && !event.altKey) {
+        const redo = event.code === 'KeyY' || event.shiftKey;
+        if (redo) this.engine.redo();
+        else this.engine.undo();
+        event.preventDefault();
         return;
       }
-
-      const currentHeight = this.c.getTerrainHeight(gridX, gridY);
-
-      // Update height value display
-      const heightDisplay = this.c?.domPorts?.getTerrainHeightDisplay
-        ? this.c.domPorts.getTerrainHeightDisplay()
-        : null;
-      if (heightDisplay) {
-        heightDisplay.textContent = currentHeight.toString();
-        heightDisplay.style.color =
-          currentHeight === 0 ? '#6b7280' : currentHeight > 0 ? '#10b981' : '#8b5cf6';
-      }
-
-      // Update height scale visual indicator
-      const scaleMarks = this._getScaleMarks();
-      scaleMarks.forEach((mark) => {
-        const markHeight = parseInt(mark.getAttribute('data-height'));
-        if (markHeight === currentHeight) {
-          mark.classList.add('current');
-        } else {
-          mark.classList.remove('current');
-        }
-      });
+      if (modified || event.altKey) return;
+      if (event.code === 'KeyR') this.engine.setTool('raise');
+      else if (event.code === 'KeyL') this.engine.setTool('lower');
+      else if (event.code === 'BracketLeft' && this.engine.tool !== 'wall') {
+        this.engine.decreaseBrush();
+      } else if (event.code === 'BracketRight' && this.engine.tool !== 'wall') {
+        this.engine.increaseBrush();
+      } else return;
+      event.preventDefault();
     } catch (error) {
-      new ErrorHandler().handle(error, ERROR_SEVERITY.LOW, ERROR_CATEGORY.UI, {
-        context: 'TerrainInputHandlers.updateHeightIndicator',
-        coordinates: { gridX, gridY },
-        terrainHeight: this.c.getTerrainHeight(gridX, gridY),
-      });
+      this._failed(error, 'keyboard');
     }
   }
 
-  /** Reset the height indicator to default state */
+  _changePlaceables({ gridX, gridY }, id) {
+    for (const { x, y } of this.engine.getPlaceableBrushFootprint(gridX, gridY)) {
+      this.engine.emitPlaceableChanged(x, y, id);
+    }
+  }
+
+  updateHeightIndicator(x, y) {
+    if (!this.engine.isValidGridPosition(x, y)) return;
+    const height = this.engine.getHeightAt(x, y);
+    const display = this.domPorts.getTerrainHeightDisplay();
+    if (display) {
+      display.textContent = String(height);
+      display.style.color = height === 0 ? '#6b7280' : height > 0 ? '#10b981' : '#8b5cf6';
+    }
+    for (const mark of this.domPorts.getScaleMarks()) {
+      mark.classList.toggle('current', Number(mark.getAttribute('data-height')) === height);
+    }
+  }
+
   resetHeightIndicator() {
-    try {
-      const heightDisplay = this.c?.domPorts?.getTerrainHeightDisplay
-        ? this.c.domPorts.getTerrainHeightDisplay()
-        : null;
-      if (heightDisplay) {
-        heightDisplay.textContent = '0';
-        heightDisplay.style.color = '#6b7280';
-      }
-
-      const scaleMarks = this._getScaleMarks();
-      scaleMarks.forEach((mark) => {
-        const markHeight = parseInt(mark.getAttribute('data-height'));
-        if (markHeight === 0) {
-          mark.classList.add('current');
-        } else {
-          mark.classList.remove('current');
-        }
-      });
-    } catch (error) {
-      // Silently handle UI errors
-      logger.log(LOG_LEVEL.DEBUG, 'Error resetting height indicator', LOG_CATEGORY.UI, {
-        context: 'TerrainInputHandlers.resetHeightIndicator',
-        error: error.message,
-      });
+    const display = this.domPorts.getTerrainHeightDisplay();
+    if (display) {
+      display.textContent = '0';
+      display.style.color = '#6b7280';
     }
+    for (const mark of this.domPorts.getScaleMarks()) {
+      mark.classList.toggle('current', Number(mark.getAttribute('data-height')) === 0);
+    }
+  }
+
+  _failed(error, operation) {
+    this.cancelStroke();
+    GameErrors.input(error, { component: 'TerrainInputHandlers', operation });
   }
 }

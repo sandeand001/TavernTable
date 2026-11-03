@@ -1,5 +1,6 @@
 import { InteractionManager } from '../../../src/managers/InteractionManager.js';
 import { TerrainInputHandlers } from '../../../src/coordinators/terrain-coordinator/TerrainInputHandlers.js';
+import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
 
 let view;
 let manager;
@@ -39,7 +40,7 @@ beforeEach(() => {
     threeSceneManager: { panBy: jest.fn() },
     is3DModeActive: () => true,
     isTerrainModeActive: () => false,
-    terrainCoordinator: { cancelStroke: jest.fn() },
+    terrainEngine: { cancelBrushStroke: jest.fn() },
   };
   manager = new InteractionManager(gm);
   gm.interactionManager = manager;
@@ -125,19 +126,21 @@ test.each(['input', 'textarea', 'select', 'button', 'contenteditable'])(
 );
 
 test('Space pan wins over terrain painting and placeable removal', () => {
-  const coordinator = {
-    gameManager: gm,
-    isTerrainModeActive: true,
-    isPlaceableRemovalMode: () => true,
-    getGridCoordinatesFromEvent: jest.fn(() => ({ gridX: 1, gridY: 1 })),
-  };
-  const terrain = new TerrainInputHandlers(coordinator);
-  view.addEventListener('mousedown', (event) => terrain.handleMouseDown(event));
-  space('keydown');
-  mouse(view, 'mousedown', 100, 100, { buttons: 1 });
-  expect(manager.isDragging).toBe(true);
-  expect(coordinator.getGridCoordinatesFromEvent).not.toHaveBeenCalled();
-  expect(coordinator.isDragging).not.toBe(true);
-  terrain.handleMouseDown({ button: 0 });
-  expect(coordinator.getGridCoordinatesFromEvent).not.toHaveBeenCalled();
+  gm.terrainEngine = new TerrainEngine(5, 5);
+  gm.terrainEngine.activate();
+  gm.terrainEngine.setPlaceableRemovalMode(true);
+  const terrain = new TerrainInputHandlers(gm);
+  const pick = jest.spyOn(terrain, 'getGridCoordinatesFromEvent');
+  try {
+    view.addEventListener('mousedown', (event) => terrain.handleMouseDown(event));
+    space('keydown');
+    mouse(view, 'mousedown', 100, 100, { buttons: 1 });
+    expect(manager.isDragging).toBe(true);
+    expect(pick).not.toHaveBeenCalled();
+    expect(gm.terrainEngine.hasPendingStroke).toBe(false);
+    terrain.handleMouseDown({ button: 0 });
+    expect(pick).not.toHaveBeenCalled();
+  } finally {
+    terrain.dispose();
+  }
 });

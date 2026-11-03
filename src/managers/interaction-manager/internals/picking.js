@@ -14,7 +14,7 @@ export function isPointInCellDiamond(c, gx, gy, lx, ly) {
 
   let elevOffset = 0;
   try {
-    const h = c.gameManager?.terrainCoordinator?.dataStore?.get(gx, gy) ?? 0;
+    const h = c.gameManager?.getTerrainHeight?.(gx, gy) ?? 0;
     if (Number.isFinite(h)) {
       elevOffset = TerrainHeightUtils.calculateElevationOffset(h);
     }
@@ -38,42 +38,6 @@ export function isPointInCellDiamond(c, gx, gy, lx, ly) {
  * Returns { gridX, gridY } or null. Extracted from InteractionManager.
  */
 export function pickTopmostGridCellAt(c, localX, localY) {
-  const hitTileTop = (tile) => {
-    const isTerrainTop = tile.isTerrainTile === true;
-    if (!isTerrainTop) return false;
-    const halfW = c.gameManager.tileWidth / 2;
-    const halfH = c.gameManager.tileHeight / 2;
-    const cx = tile.x + halfW;
-    const cy = tile.y + halfH;
-    const dx = Math.abs(localX - cx);
-    const dy = Math.abs(localY - cy);
-    return dx / halfW + dy / halfH <= 1;
-  };
-
-  const terrainContainer = c.gameManager?.terrainCoordinator?.terrainManager?.terrainContainer;
-  if (
-    terrainContainer &&
-    terrainContainer.visible &&
-    terrainContainer.children &&
-    terrainContainer.children.length
-  ) {
-    const terrainTops = terrainContainer.children
-      .filter(
-        (t) =>
-          t &&
-          t.visible &&
-          t.isTerrainTile === true &&
-          t.isOverlayFace !== true &&
-          t.isShadowTile !== true
-      )
-      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
-    for (const t of terrainTops) {
-      if (hitTileTop(t)) {
-        return { gridX: t.gridX, gridY: t.gridY };
-      }
-    }
-  }
-
   const coarse = c.convertToGridCoordinates({ localX, localY });
   if (!c.isValidGridPosition(coarse)) return null;
 
@@ -102,7 +66,7 @@ export function pickTopmostGridCellAt(c, localX, localY) {
     const baseY = (can.gx + can.gy) * halfH;
     let elev = 0;
     try {
-      const h = c.gameManager?.terrainCoordinator?.dataStore?.get(can.gx, can.gy) ?? 0;
+      const h = c.gameManager?.getTerrainHeight?.(can.gx, can.gy) ?? 0;
       if (Number.isFinite(h)) elev = TerrainHeightUtils.calculateElevationOffset(h);
     } catch (_) {
       /* ignore elevation lookup */

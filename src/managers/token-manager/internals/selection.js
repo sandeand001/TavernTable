@@ -33,6 +33,7 @@ export function findExistingTokenAt(c, gridX, gridY) {
   // a token if it exactly occupies the requested grid cell.
   return c.placedTokens.find(
     (token) =>
+      (!c.gameManager?.campaignWorld || token.mapId === c.gameManager.campaignMapId) &&
       Number.isFinite(token.gridX) &&
       Number.isFinite(token.gridY) &&
       token.gridX === gridX &&

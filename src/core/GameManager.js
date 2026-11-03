@@ -109,9 +109,6 @@ class GameManager {
     this.inputCoordinator = new InputCoordinator(this);
     this.terrainCoordinator = new TerrainCoordinator(this);
 
-    // TerrainEngineSceneAdapter — wired after threeSceneManager is ready (see init.js)
-    this.terrainEngineSceneAdapter = null;
-
     // Managers will be initialized after app creation in initialize()
     this.tokenManager = null;
     this.interactionManager = null;
@@ -502,20 +499,17 @@ class GameManager {
    * Enable terrain modification mode
    */
   enableTerrainMode() {
-    this.terrainEngine?.activate();
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.enableTerrainMode();
+    if (this.getViewMode() === 'topdown') {
+      throw new Error('Switch to the isometric view before editing terrain');
     }
+    this.terrainEngine.activate();
   }
 
   /**
    * Disable terrain modification mode
    */
   disableTerrainMode() {
-    this.terrainEngine?.deactivate();
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.disableTerrainMode();
-    }
+    this.terrainEngine.deactivate();
   }
 
   /**
@@ -523,9 +517,7 @@ class GameManager {
    * @param {string} tool - Tool name ('raise', 'lower', or 'wall')
    */
   setTerrainTool(tool) {
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.setTerrainTool(tool);
-    }
+    this.terrainEngine.setTool(tool);
   }
 
   /**
@@ -535,7 +527,7 @@ class GameManager {
    * @returns {number} Terrain height
    */
   getTerrainHeight(gridX, gridY) {
-    return this.terrainCoordinator ? this.terrainCoordinator.getTerrainHeight(gridX, gridY) : 0;
+    return this.terrainEngine.getHeightAt(gridX, gridY);
   }
 
   /**
@@ -550,10 +542,7 @@ class GameManager {
    * Reset all terrain heights to default
    */
   resetTerrain() {
-    this.terrainEngine?.reset();
-    if (this.terrainCoordinator) {
-      this.terrainCoordinator.resetTerrain();
-    }
+    return this.terrainEngine.reset();
   }
 
   /**
@@ -561,7 +550,7 @@ class GameManager {
    * @returns {Object} Terrain system statistics
    */
   getTerrainStatistics() {
-    return this.terrainCoordinator ? this.terrainCoordinator.getTerrainStatistics() : null;
+    return this.terrainEngine.getStatistics();
   }
 
   /**
@@ -569,7 +558,7 @@ class GameManager {
    * @returns {boolean} True if terrain mode is active
    */
   isTerrainModeActive() {
-    return this.terrainCoordinator ? this.terrainCoordinator.isTerrainModeActive : false;
+    return this.terrainEngine.isActive;
   }
 
   getViewMode() {
@@ -602,16 +591,7 @@ class GameManager {
         max: GRID_CONFIG.MAX_ROWS,
       });
 
-      // Update grid dimensions through state coordinator
-      this.stateCoordinator.updateGridDimensions(sanitizedCols, sanitizedRows);
-
-      // Update terrain engine dimensions
-      this.terrainEngine?.resize(sanitizedCols, sanitizedRows);
-
-      // Update terrain system for new grid dimensions
-      if (this.terrainCoordinator) {
-        this.terrainCoordinator.handleGridResize(sanitizedCols, sanitizedRows);
-      }
+      this.terrainEngine.resize(sanitizedCols, sanitizedRows);
 
       // Check if any tokens are now outside the new grid bounds
       this.stateCoordinator.validateTokenPositions();
@@ -644,9 +624,8 @@ class GameManager {
 
   // ── Event Handlers ─────────────────────────────────────────
 
-  /** Phase 2 hook: invoked by TerrainCoordinator after height edits to schedule 3D rebuild. */
+  /** Refresh terrain geometry and attached tokens after a committed terrain change. */
   notifyTerrainHeightsChanged() {
-    this.sceneAutosave?.changed('terrain');
     if (!this.terrainRebuilder || !this.threeSceneManager || !this.is3DModeActive()) {
       return;
     }
@@ -757,6 +736,8 @@ class GameManager {
   /** Disable hybrid (dispose three + listeners) mainly for tests / teardown */
   disableHybridRender() {
     if (!this.is3DModeActive()) return;
+    this.terrainEngine.cancelBrushStroke();
+    this.terrainCoordinator.detachScene();
     try {
       this.remove3DInteractionListeners();
     } catch (_) {

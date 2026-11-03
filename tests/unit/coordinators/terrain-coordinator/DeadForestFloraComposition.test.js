@@ -1,4 +1,4 @@
-import GameManager from '../../../../src/core/GameManager.js';
+import { createTerrainWorld, floraContext } from '../../../helpers/terrainWorld.js';
 import { autoPopulateBiomeFlora } from '../../../../src/coordinators/terrain-coordinator/internals/flora.js';
 
 /**
@@ -9,11 +9,8 @@ import { autoPopulateBiomeFlora } from '../../../../src/coordinators/terrain-coo
 
 describe('Dead / Burnt forest flora composition', () => {
   function generate(seed, biomeKey = 'deadForest') {
-    const gm = new GameManager({ rows: 24, cols: 24 });
-    gm.gridContainer = { addChild: () => {} };
-    const tc = gm.terrainCoordinator;
     const plants = [];
-    gm.placeableMeshPool = {
+    const world = createTerrainWorld(24, 24, {
       addPlaceable(p) {
         plants.push(p);
         return Promise.resolve();
@@ -21,11 +18,19 @@ describe('Dead / Burnt forest flora composition', () => {
       purgeAll() {
         plants.length = 0;
       },
-    };
-    // Provide a trivial heightmap mostly above water
-    tc.getTerrainHeight = (x, y) => 1 + ((x * 37 + y * 17 + seed) % 3) * 0.1;
-    autoPopulateBiomeFlora(tc, biomeKey, seed);
-    return plants;
+    });
+    try {
+      world.engine.load({
+        heights: Array.from({ length: 24 }, (_, y) =>
+          Array.from({ length: 24 }, (_, x) => 1 + ((x * 37 + y * 17 + seed) % 3) * 0.1)
+        ),
+        biomeSeed: seed,
+      });
+      autoPopulateBiomeFlora(floraContext(world.gm), biomeKey, seed);
+      return plants;
+    } finally {
+      world.dispose();
+    }
   }
 
   test('bare trees dominate (>75%) with at least one survivor present across seeds', () => {

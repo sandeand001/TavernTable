@@ -98,12 +98,8 @@ export class StateCoordinator {
     const gm = this.gameManager;
 
     try {
-      if (
-        mode === 'topdown' &&
-        gm?.terrainCoordinator?.isTerrainModeActive &&
-        typeof gm.terrainCoordinator.disableTerrainMode === 'function'
-      ) {
-        gm.terrainCoordinator.disableTerrainMode();
+      if (mode === 'topdown' && gm?.terrainEngine?.isActive) {
+        gm.disableTerrainMode();
       }
     } catch (_) {
       /* non-fatal */

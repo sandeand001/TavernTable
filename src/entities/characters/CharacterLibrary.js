@@ -4,6 +4,11 @@ import CharacterPlayLayout from './CharacterPlayLayout.js';
 import { rulesFor } from '../../rules/rulesets.js';
 import { validateMovementEffects } from '../../rules/falling.js';
 import { FALL_TRAITS_DEFAULTS } from '../../config/TokenMovementConfig.js';
+import {
+  CHARACTER_BACKUP_LIMIT,
+  CHARACTER_IMAGE_FIELDS,
+} from '../../config/characters/CharacterImages.js';
+import { validateCharacterImage } from './characterImages.js';
 
 const STORAGE_PREFIX = 'taverntable.character.v1.';
 export const ABILITIES = [
@@ -88,8 +93,8 @@ export class CharacterLibrary {
   }
 
   import(text) {
-    if (typeof text !== 'string' || text.length > 1000000) {
-      throw new Error('Choose a TavernTable character JSON backup smaller than 1 MB');
+    if (typeof text !== 'string' || text.length > CHARACTER_BACKUP_LIMIT) {
+      throw new Error('Choose a TavernTable character JSON backup smaller than 4 MB');
     }
     const data = JSON.parse(text);
     if (
@@ -206,6 +211,7 @@ export class CharacterLibrary {
       'slotsUsed',
       'slotOverrides',
       'notes',
+      ...CHARACTER_IMAGE_FIELDS,
     ];
     const merged = ['abilities', 'hp', 'skills', 'saveOverrides', 'slotOverrides', 'fallTraits'];
     for (const [field, value] of Object.entries(updates)) {
@@ -664,11 +670,13 @@ export class CharacterLibrary {
       'spells',
       'notes',
       'equipment',
+      ...CHARACTER_IMAGE_FIELDS,
     ];
     if (Object.keys(character).some((field) => !allowed.includes(field))) {
       throw new Error('Character data contains unsupported fields');
     }
     validateMovementEffects(character);
+    for (const field of CHARACTER_IMAGE_FIELDS) validateCharacterImage(character[field]);
     for (const field of ['skills', 'saveOverrides', 'slotOverrides']) {
       if (
         !character[field] ||

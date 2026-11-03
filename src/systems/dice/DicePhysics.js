@@ -94,32 +94,6 @@ function collectCollisionObstacles(
     /* ignore token sampling errors */
   }
 
-  try {
-    const placeables = gm?.terrainCoordinator?.terrainManager?.placeables;
-    if (placeables && typeof placeables.forEach === 'function') {
-      placeables.forEach((list, key) => {
-        if (!Array.isArray(list) || !list.length) return;
-        const [gxRaw, gyRaw] = (key || '').split(',');
-        const gx = Number(gxRaw);
-        const gy = Number(gyRaw);
-        const world = toWorld(gx + 0.5, gy + 0.5, 0);
-        const primary = list[0] || {};
-        const spanX = Number(primary.tileSpanX ?? primary.width ?? primary.tileWidth) || 1;
-        const spanZ = Number(primary.tileSpanZ ?? primary.height ?? primary.tileHeight) || 1;
-        const footprint = Math.max(spanX, spanZ, 1);
-        const baseRadius = (footprint * tileSize) / 2;
-        pushObstacle({
-          type: primary.placeableType || primary.type || 'placeable',
-          x: world.x,
-          z: world.z,
-          radius: baseRadius + tileSize * 0.15,
-        });
-      });
-    }
-  } catch (_) {
-    /* ignore placeable sampling errors */
-  }
-
   return obstacles.filter((obs) => Number.isFinite(obs.x) && Number.isFinite(obs.z));
 }
 

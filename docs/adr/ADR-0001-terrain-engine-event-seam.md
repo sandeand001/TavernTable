@@ -3,11 +3,35 @@
 **Status:** Accepted  
 **Date:** 2026-05-03
 
-**Implementation status (2026-10-23):** Partial. TerrainEngine and its scene
-adapter exist, but the live TerrainCoordinator still maintains a separate height
-store and remains the entry point for much of the editing workflow. Completing
-this migration is a [follow-up task](../../TODO.md), not part of the October 2026
-housekeeping pass. The decision below remains the intended design.
+**Implementation status:** Completed for the existing heightfield editor.
+Live editing, game height queries, resizing, reset, biome generation and campaign
+capture/restore use TerrainEngine. TerrainCoordinator only wires its input and
+3D scene adapters. The engine also owns non-mutating gesture previews and bounded,
+session-local height Undo/Redo. Public-interface tests cover editing, persistence,
+biome/flora behavior and real terrain geometry without legacy 2D fixtures.
+The bounded solid/void and multi-surface proof is retained but paused. The user
+has replaced shared-board layering with separate connected building/floor/area
+grids, independent participant views, and cross-grid physical rules. The planned
+builder uses a closed outline and height instead of the numeric box editor;
+carving is deferred. This changes map topology, not the ownership decision below:
+each grid still needs one authoritative terrain owner and renderer adapters.
+The connected-map foundation now stores physical map anchors and independent
+map checkpoints in version-3 scenes. Targeting reads unsaved active-map geometry
+from TerrainEngine and inactive-map geometry from validated checkpoints; they
+are not competing live terrain stores. Interior floors use finite slabs rather
+than extending solid earth through lower maps. Live map-view controls switch the
+active terrain checkpoint and renderer presentation without replacing canonical
+creatures or restoring combat. Per-map cameras persist, and sight-gated creature
+projections share the original identity. Failed view changes roll back rather
+than saving incomplete terrain. Connected locomotion, the outline builder and
+networked participant ownership remain separate implementation chunks.
+Sight-gated supporting terrain for projections queries read-only foreign-map
+checkpoint geometry. Its cached scene meshes never become a second terrain owner,
+editable cells or navigation supports in the active grid.
+Interior wall cutaways follow the same rule: render-only, floor-scoped queries
+reveal the original wall openings while suppressing ceiling coverage. The
+authoritative structure, exterior roof and physical sight geometry are not
+removed or copied into another terrain owner.
 
 ---
 

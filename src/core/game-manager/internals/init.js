@@ -8,7 +8,6 @@ import { ThreeSceneManager } from '../../../scene/ThreeSceneManager.js';
 import { CameraRig } from '../../../scene/camera/CameraRig.js';
 import { TerrainMeshBuilder } from '../../../scene/terrain/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../../../scene/terrain/TerrainRebuilder.js';
-import { TerrainEngineSceneAdapter } from '../../../scene/terrain/TerrainEngineSceneAdapter.js';
 import { PlaceableMeshPool } from '../../../scene/terrain/PlaceableMeshPool.js';
 import ModelAssetCache from '../../ModelAssetCache.js';
 import { PickingService } from '../../../scene/picking/PickingService.js';
@@ -171,19 +170,7 @@ export async function enableHybridRender(gm) {
       /* non-fatal terrain mesh init failure */
     }
 
-    // Wire TerrainEngineSceneAdapter (ADR-0001) — after rebuilder is available
-    try {
-      if (gm.terrainEngine && !gm.terrainEngineSceneAdapter) {
-        gm.terrainEngineSceneAdapter = new TerrainEngineSceneAdapter({
-          engine: gm.terrainEngine,
-          threeSceneManager: gm.threeSceneManager,
-          rebuilder: gm.terrainRebuilder || null,
-        });
-        gm.terrainEngineSceneAdapter.attach();
-      }
-    } catch (_) {
-      /* non-fatal */
-    }
+    gm.terrainCoordinator.attachScene();
 
     // Phase 3 (initial scaffold): attach Token3DAdapter for existing tokens
     try {
@@ -207,8 +194,8 @@ export async function enableHybridRender(gm) {
                   evt.clientY,
                   targetEl
                 );
-                let hoverToken = null;
-                if (ground?.grid) {
+                let hoverToken = ground?.token || null;
+                if (!hoverToken && !ground?.surface && ground?.grid) {
                   const gx = Math.round(ground.grid.gx);
                   const gy = Math.round(ground.grid.gy);
                   if (Number.isFinite(gx) && Number.isFinite(gy) && gm.findExistingTokenAt) {
@@ -246,8 +233,8 @@ export async function enableHybridRender(gm) {
                 );
                 if (gm.interactionManager?.isSpacePressed || gm.interactionManager?.isDragging)
                   return;
-                let token = null;
-                if (ground?.grid) {
+                let token = ground?.token || null;
+                if (!token && !ground?.surface && ground?.grid) {
                   const gx = Math.round(ground.grid.gx);
                   const gy = Math.round(ground.grid.gy);
                   if (Number.isFinite(gx) && Number.isFinite(gy) && gm.findExistingTokenAt) {

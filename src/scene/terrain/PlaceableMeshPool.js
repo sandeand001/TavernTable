@@ -53,6 +53,32 @@ export class PlaceableMeshPool {
 
   // ── Three.js Initialization ──────────────────────────────────────
 
+  targetingCoverBounds() {
+    if (!this._groups.size) return [];
+    const three = this._three;
+    if (!three) throw new Error('Wait for building cover geometry to finish loading');
+    const matrix = new three.Matrix4();
+    const bounds = new three.Box3();
+    const result = [];
+    for (const [key, metadata] of this._metadata) {
+      const mesh = this._groups.get(key)?.instancedMesh;
+      if (!mesh) throw new Error('A building cover group is missing');
+      mesh.updateMatrixWorld(true);
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      for (const [index, entry] of metadata) {
+        if (!['structure', 'building'].includes(entry.source?.type)) continue;
+        mesh.getMatrixAt(index, matrix);
+        matrix.premultiply(mesh.matrixWorld);
+        bounds.copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
+        result.push({
+          min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+          max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
+        });
+      }
+    }
+    return result;
+  }
+
   async _ensureThree() {
     if (this._three) return this._three;
     try {
@@ -191,8 +217,8 @@ export class PlaceableMeshPool {
     }
     // Capture epoch so we can detect if a clear happened while awaiting dynamic imports.
     const epochAtStart = this._clearEpoch;
-    const biomeKey = placeable?.biomeKey ?? gm.terrainCoordinator?._lastGeneratedBiomeKey;
-    const biomeSeed = placeable?.biomeSeed ?? gm.terrainCoordinator?._biomeSeed;
+    const biomeKey = placeable?.biomeKey ?? gm.terrainEngine?.biomeKey;
+    const biomeSeed = placeable?.biomeSeed ?? gm.terrainEngine?.biomeSeed;
     const appearance = resolvePlaceableAppearance(biomeKey, {
       modelKey: placeable?.modelKey,
       variantKey: placeable?.variantKey,
@@ -399,6 +425,11 @@ export class PlaceableMeshPool {
     if (!group.freeIndices.includes(handle.index)) {
       group.freeIndices.push(handle.index);
     }
+    const hidden = new this._three.Object3D();
+    hidden.scale.set(0, 0, 0);
+    hidden.updateMatrix();
+    group.instancedMesh.setMatrixAt(handle.index, hidden.matrix);
+    group.instancedMesh.instanceMatrix.needsUpdate = true;
     // Remove metadata
     try {
       const metaGroup = this._metadata.get(handle.key);
@@ -408,6 +439,23 @@ export class PlaceableMeshPool {
     }
     delete placeable.__meshPoolHandle;
     this._updateMetrics();
+    this.gameManager.sceneAutosave?.changed('terrain placement removed');
+  }
+
+  removePlantsAt(gridX, gridY) {
+    if (!Number.isInteger(gridX) || !Number.isInteger(gridY) || gridX < 0 || gridY < 0) {
+      throw new RangeError('Terrain plant removal requires a valid grid position');
+    }
+    let removed = 0;
+    for (const [key, metadata] of this._metadata) {
+      for (const [index, entry] of [...metadata]) {
+        if (entry.gx === gridX && entry.gy === gridY && entry.source?.type === 'plant') {
+          this.removePlaceable({ __meshPoolHandle: { key, index } });
+          removed++;
+        }
+      }
+    }
+    return removed;
   }
 
   // ── Group Creation & Capacity ────────────────────────────────────

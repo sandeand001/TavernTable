@@ -152,12 +152,12 @@ test('a cast concentration spell can be ended without restoring or consuming ano
   change('Character class', 'wizard');
   change('Level', '5');
   const search = compendium.root.querySelector('[aria-label="Search compendium"]');
-  search.value = 'fly';
+  search.value = 'haste';
   search.dispatchEvent(new Event('input', { bubbles: true }));
-  compendium.root.querySelector('[data-entry-id="spell:fly"] [aria-label="Add Fly"]').click();
-  sheets.root.querySelector('[aria-label="Prepare Fly"]').click();
+  compendium.root.querySelector('[data-entry-id="spell:haste"] [aria-label="Add Haste"]').click();
+  sheets.root.querySelector('[aria-label="Prepare Haste"]').click();
   sheets.root.querySelector('[data-sheet-action="cast"]').click();
-  expect(sheets.root.textContent).toContain('Concentrating on Fly');
+  expect(sheets.root.textContent).toContain('Concentrating on Haste');
   sheets.root.querySelector('[data-sheet-action="end-concentration"]').click();
   expect(services.library.get(token.characterSheetId).concentration).toBe('');
   expect(services.library.stats(token.characterSheetId).spellSlots[2].used).toBe(1);
@@ -232,9 +232,7 @@ test('Core owns editable speed while Walk/Run and style remain available on the 
   speed.value = '20';
   speed.dispatchEvent(new Event('change', { bubbles: true }));
   sheets.root.querySelector('[aria-label="Run movement"]').click();
-  const style = sheets.root.querySelector('[aria-label="Movement type"]');
-  style.value = 'drunk';
-  style.dispatchEvent(new Event('change', { bubbles: true }));
+  sheets.root.querySelector('[aria-label="Drunk movement style"]').click();
   expect(services.library.get(token.characterSheetId).speed).toBe(20);
   expect(getTokenMovementSettings(token)).toEqual({ speed: 20, mode: 'run', type: 'drunk' });
   expect(sheets.root.querySelectorAll('[data-character-field="speed"]')).toHaveLength(1);
@@ -248,7 +246,9 @@ test('Core owns editable speed while Walk/Run and style remain available on the 
     expect(
       sheets.root.querySelector('[aria-label="Run movement"]').getAttribute('aria-pressed')
     ).toBe('true');
-    expect(sheets.root.querySelector('[aria-label="Movement type"]').value).toBe('drunk');
+    expect(
+      sheets.root.querySelector('[aria-label="Drunk movement style"]').getAttribute('aria-pressed')
+    ).toBe('true');
   }
   sheets.root.querySelector('[data-sheet-section="core"]').click();
   expect(sheets.root.querySelector('[data-character-field="speed"]').value).toBe('20');

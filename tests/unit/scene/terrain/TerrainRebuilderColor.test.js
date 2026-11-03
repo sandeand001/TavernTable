@@ -94,7 +94,6 @@ describe('TerrainRebuilder biome color fallback', () => {
       cols: 1,
       rows: 1,
       getTerrainHeight: () => 0,
-      terrainCoordinator: { isTerrainModeActive: false },
       isTerrainModeActive: () => false,
       threeSceneManager: {
         scene: makeSceneStub(),

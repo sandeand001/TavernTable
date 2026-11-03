@@ -47,6 +47,7 @@ export function canRemainAirborne(character, { ruleset = '2014' } = {}) {
   return (
     traits.flySpeed > 0 &&
     (traits.hover ||
+      (ruleset === '2014' && traits.magicalSupport === true) ||
       (!movementImpaired(character, { ruleset }) &&
         !(character.conditions || []).includes('prone') &&
         !(ruleset === '2024' && cannotTakeActions(character))))

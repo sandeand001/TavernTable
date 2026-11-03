@@ -131,6 +131,28 @@ test.each(cases)(
   30000
 );
 
+test('a new destination during a vault waits for its landing before changing direction', async () => {
+  const item = { type: 'mannequin', dx: 1, dz: 0 };
+  const f = await fixture(item, 1);
+  f.gm.getTerrainHeight = (x) => (x === 6 ? 1 : 0);
+  setTokenMovementSettings(f.token, { mode: 'run', speed: 30 });
+  expect(f.adapter.requestMoveToGrid(f.token, 9, 4)).toBeTruthy();
+  const original = f.adapter._movementRoutes.get(f.token);
+  expect(f.adapter._movementStates.get(f.token).traversal.kind).toBe('vault');
+  const before = { ...f.token.world };
+  expect(f.adapter.requestMoveToGrid(f.token, 7, 6)).toMatchObject({ queued: true });
+  expect(f.token.world).toEqual(before);
+  let continuedAfterLanding = false;
+  finishHumanoid(f, () => {
+    const motion = f.adapter._movementStates.get(f.token)?.traversal;
+    if (motion?.kind === 'vault') expect(f.token.world.z).toBeCloseTo(4.5, 6);
+    else if (f.token.world.z > 4.51) continuedAfterLanding = true;
+  });
+  expect(continuedAfterLanding).toBe(true);
+  expect(f.token.world).toEqual({ x: 7.5, y: 0, z: 6.5 });
+  expect(original.spent).toBeCloseTo(14.02, 6);
+}, 30000);
+
 test.each(cases)(
   '$type turns toward its $side climb after a perpendicular ground approach',
   async (item) => {

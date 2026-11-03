@@ -79,9 +79,7 @@ export default class CampaignAutosave {
         },
         saved: (captured) => this._saved(captured),
       });
-      this.disposers.push(
-        this.gameManager.terrainCoordinator.dataStore.subscribe(() => this.changed('terrain'))
-      );
+      this.disposers.push(this.gameManager.terrainEngine.onChanged(() => this.changed('terrain')));
       this.disposers.push(this.combat.subscribe(() => this.changed('combat')));
       const interact = () => this.changed('settings');
       for (const event of ['pointerup', 'keyup', 'change']) {
@@ -149,6 +147,7 @@ export default class CampaignAutosave {
   }
 
   _saved(captured) {
+    this.gameManager.campaignWorld?.acceptCheckpoint(captured.scene);
     this.acknowledged = Math.max(this.acknowledged, captured.generation);
     this.waiting = null;
     this._publish();
@@ -181,7 +180,7 @@ export default class CampaignAutosave {
     return this.writing;
   }
 
-  async flush() {
+  async flush({ waitForScene = true } = {}) {
     if (!this.ready || this.closed)
       throw new Error('The campaign is not ready to save; its saved board was not overwritten');
     clearTimeout(this.timer);
@@ -191,7 +190,7 @@ export default class CampaignAutosave {
         await this.library.flush();
         if (this.writing || this.dirty) await (this.writing || this._save());
       } catch (error) {
-        if (!(error instanceof SceneNotReadyError)) throw error;
+        if (!(error instanceof SceneNotReadyError) || !waitForScene) throw error;
         await pause(100);
       }
     } while (this.dirty || this.writing);

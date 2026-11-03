@@ -526,6 +526,11 @@ async function playTokenAction(tokenEntry, commandId) {
   if (!data) throw new Error('Creature animations are not ready yet');
   if (data.loadingManualAction) throw new Error('Another creature action is still loading');
   const requireGrounded = () => {
+    if (this.gameManager.campaignWorld && tokenEntry.mapId !== this.gameManager.campaignMapId)
+      throw new Error('Focus this creature on its own map before playing an action');
+    if (this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
+    if (this.gameManager.campaignViewBusy)
+      throw new Error('Wait for the map view to finish changing');
     if (
       this.isMovementInProgress(tokenEntry) ||
       this.isWallAttached(tokenEntry) ||
@@ -599,6 +604,17 @@ async function playTokenAction(tokenEntry, commandId) {
 
 function playTokenAnimation(tokenEntry, animationKey, options = {}) {
   if (!tokenEntry || !animationKey) return false;
+  if (this.gameManager.campaignViewBusy || this.gameManager.campaignMapFailure) {
+    GameErrors.input(
+      this.gameManager.campaignMapFailure || new Error('Wait for the map view to finish changing'),
+      {
+        component: 'Token3DAdapter',
+        operation: 'playTokenAnimation',
+        tokenId: tokenEntry.id,
+      }
+    );
+    return false;
+  }
   if (getTokenConditions(tokenEntry).includes('prone')) {
     GameErrors.input(new Error('Stand up from Prone before playing a visual action'), {
       component: 'Token3DAdapter',

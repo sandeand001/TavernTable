@@ -6,6 +6,7 @@ import * as three from 'three';
 import GameManager from '../../../src/core/GameManager.js';
 import ModelAssetCache from '../../../src/core/ModelAssetCache.js';
 import { PlaceableMeshPool } from '../../../src/scene/terrain/PlaceableMeshPool.js';
+import { TerrainEngineSceneAdapter } from '../../../src/scene/terrain/TerrainEngineSceneAdapter.js';
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..');
 
@@ -54,7 +55,12 @@ describe('Generated biome trunks with actual model assets', () => {
   ])('%s seed %s leaves every rendered trunk base on supported ground', async (biome, seed) => {
     const gm = new GameManager({ cols: 25, rows: 25 });
     gm.renderMode = '3d';
-    gm.threeSceneManager = { scene: new three.Scene(), isReady: () => true };
+    gm.threeSceneManager = {
+      scene: new three.Scene(),
+      isReady: () => true,
+      clearTerrainBrushPreview: jest.fn(),
+      setTerrainBrushPreview: jest.fn(),
+    };
     gm.modelAssetCache = new ModelAssetCache();
     const pool = new PlaceableMeshPool({ gameManager: gm });
     gm.placeableMeshPool = pool;
@@ -66,49 +72,60 @@ describe('Generated biome trunks with actual model assets', () => {
       return pending;
     };
 
-    expect(gm.terrainCoordinator.generateBiomeElevation(biome, { seed })).toBe(true);
-    const handles = await Promise.all(placements.map(({ pending }) => pending));
-    expect(handles.filter(Boolean).length).toBeGreaterThan(0);
-    const matrix = new three.Matrix4();
-    const point = new three.Vector3();
-    const origin = gm.spatial.gridToWorld(0, 0, 0);
-    const tileSize = gm.spatial.tileWorldSize;
-    let checkedTrunks = 0;
+    const adapter = new TerrainEngineSceneAdapter({
+      engine: gm.terrainEngine,
+      gameManager: gm,
+      threeSceneManager: gm.threeSceneManager,
+    });
+    adapter.attach();
+    try {
+      expect(gm.terrainEngine.generateBiomeElevation(biome, { seed })).toBe(true);
+      const handles = await Promise.all(placements.map(({ pending }) => pending));
+      expect(handles.filter(Boolean).length).toBeGreaterThan(0);
+      const matrix = new three.Matrix4();
+      const point = new three.Vector3();
+      const origin = gm.spatial.gridToWorld(0, 0, 0);
+      const tileSize = gm.spatial.tileWorldSize;
+      let checkedTrunks = 0;
 
-    for (let i = 0; i < placements.length; i++) {
-      const { item } = placements[i];
-      const handle = handles[i];
-      if (!handle || !item.placeableId.startsWith('tree-')) continue;
-      const instance = pool._groups.get(handle.key).instancedMesh;
-      instance.getMatrixAt(handle.index, matrix);
-      const scale = new three.Vector3().setFromMatrixScale(matrix);
-      expect(scale.x).toBeGreaterThanOrEqual(0.65 - 1e-6);
-      expect(scale.x).toBeLessThanOrEqual(1);
-      expect(scale.y).toBeCloseTo(scale.x);
-      expect(scale.z).toBeCloseTo(scale.x);
-      instance.geometry.computeBoundingBox();
-      const bounds = instance.geometry.boundingBox;
-      const ceiling = bounds.min.y + (bounds.max.y - bounds.min.y) * 0.02 + 1e-7;
-      const positions = instance.geometry.attributes.position;
-      const baseHeight = gm.getTerrainHeight(item.gridX, item.gridY);
-      let checkedVertices = 0;
-      for (let vertex = 0; vertex < positions.count; vertex++) {
-        point.fromBufferAttribute(positions, vertex);
-        if (point.y > ceiling) continue;
-        point.applyMatrix4(matrix);
-        const x = Math.floor((point.x - origin.x) / tileSize);
-        const y = Math.floor((point.z - origin.z) / tileSize);
-        expect(x).toBeGreaterThanOrEqual(0);
-        expect(y).toBeGreaterThanOrEqual(0);
-        expect(x).toBeLessThan(gm.cols);
-        expect(y).toBeLessThan(gm.rows);
-        expect(gm.getTerrainHeight(x, y)).toBeCloseTo(baseHeight, 4);
-        checkedVertices++;
+      for (let i = 0; i < placements.length; i++) {
+        const { item } = placements[i];
+        const handle = handles[i];
+        if (!handle || !item.placeableId.startsWith('tree-')) continue;
+        const instance = pool._groups.get(handle.key).instancedMesh;
+        instance.getMatrixAt(handle.index, matrix);
+        const scale = new three.Vector3().setFromMatrixScale(matrix);
+        expect(scale.x).toBeGreaterThanOrEqual(0.65 - 1e-6);
+        expect(scale.x).toBeLessThanOrEqual(1);
+        expect(scale.y).toBeCloseTo(scale.x);
+        expect(scale.z).toBeCloseTo(scale.x);
+        instance.geometry.computeBoundingBox();
+        const bounds = instance.geometry.boundingBox;
+        const ceiling = bounds.min.y + (bounds.max.y - bounds.min.y) * 0.02 + 1e-7;
+        const positions = instance.geometry.attributes.position;
+        const baseHeight = gm.getTerrainHeight(item.gridX, item.gridY);
+        let checkedVertices = 0;
+        for (let vertex = 0; vertex < positions.count; vertex++) {
+          point.fromBufferAttribute(positions, vertex);
+          if (point.y > ceiling) continue;
+          point.applyMatrix4(matrix);
+          const x = Math.floor((point.x - origin.x) / tileSize);
+          const y = Math.floor((point.z - origin.z) / tileSize);
+          expect(x).toBeGreaterThanOrEqual(0);
+          expect(y).toBeGreaterThanOrEqual(0);
+          expect(x).toBeLessThan(gm.cols);
+          expect(y).toBeLessThan(gm.rows);
+          expect(gm.getTerrainHeight(x, y)).toBeCloseTo(baseHeight, 4);
+          checkedVertices++;
+        }
+        expect(checkedVertices).toBeGreaterThan(0);
+        checkedTrunks++;
       }
-      expect(checkedVertices).toBeGreaterThan(0);
-      checkedTrunks++;
+      if (biome !== 'oasis') expect(checkedTrunks).toBeGreaterThan(0);
+    } finally {
+      adapter.detach();
+      gm.terrainCoordinator.dispose();
+      pool.dispose();
     }
-    if (biome !== 'oasis') expect(checkedTrunks).toBeGreaterThan(0);
-    pool.dispose();
   });
 });

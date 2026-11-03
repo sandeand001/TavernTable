@@ -54,7 +54,7 @@ and cached models.
   enough flat landing space and room within the approved route. Remaining movement follow-ups are in
   [TODO.md](./TODO.md).
 - The creature palette includes Mannequin, Knight, Mutant, Female Archer,
-  Armored Knight and Monk, using one shared humanoid animation and movement pipeline.
+  Armored Knight and Zombie, using one shared humanoid animation and movement pipeline.
   The picker grows with the roster; shorter windows use the sidebar scrollbar.
 - Creature right-click menus retain emotes, add eight visual-only **Actions**,
   and open an in-app tabbed character sheet. Other planned commands share a
@@ -88,11 +88,261 @@ restores the previous orbit angle. Top-down pitch stays locked while rotating.
 Mouse-wheel zoom remains anchored to the ground beneath the cursor. Camera
 changes do not rescale terrain heights or token movement.
 
+At a camera pitch of **80 degrees or higher**, creatures and characters switch
+to circular tactical tokens, whether you use the top-down toggle or rotate
+overhead manually. Tokens show their name and, when supplied, their portrait.
+Tilting below **78 degrees** restores the original models; this small buffer
+prevents flickering near the switch point. Selection and hover highlight the
+token's rim. Movement, facing, character links and combat state are unchanged.
+
 ## Terrain editing and walls
 
 Open **Terrain** and enable **Terrain Mode**. Elevation colors are an editing
 aid only: turning the mode off restores the normal grid color or the selected
 biome palette while keeping the edited heights.
+
+Raise, Lower and Wall now preview the complete gesture without changing
+gameplay heights. Release on the board to commit it as one edit. Escape, losing
+focus, leaving the canvas, changing tools or brush size, or turning Terrain Mode
+off discards the unfinished preview. Wall height and Filled/Outline settings can
+be adjusted while a wall preview is open without applying it.
+
+**Undo** and **Redo** are in **Edit History**. **Ctrl+Z** undoes;
+**Ctrl+Shift+Z** or **Ctrl+Y** redoes (Command works instead of Ctrl on macOS).
+Shortcuts are active only while editing terrain and do not replace text-field
+undo. One undo restores a complete gesture, including overlapping brush cells.
+Reset Terrain is also undoable. History keeps the last **100 terrain height
+edits** for the current session; loading, resizing or generating a map starts a
+new history. Placeable removal is not part of terrain height history.
+
+Campaign autosave stores committed terrain, not previews or undo stacks.
+Existing version-1 campaign scenes and older unversioned terrain snapshots remain
+compatible. Terrain state, tool selection, biome metadata and height queries now
+share one owner, following [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md).
+That foundation remains in place. The layered construction proof below is
+retained but paused.
+
+### Connected-map building
+
+**The simplified builder is not yet implemented.** The planned builder
+uses Build, a height choice and a closed straight-line outline, generating
+separate connected grids for interiors and floors every 10 feet. Doorways and
+stairs require Enter / Use stairs interactions. Each participant keeps their
+own character focus, map and camera; the DM can focus characters across maps.
+Cross-grid sight, attacks, flight and falling are required from the outset.
+Cut/carving is deferred. See [domain context](./CONTEXT.md) and
+[the revised backlog](./TODO.md) for the plan. The numeric construction proof
+described below is paused, not that future workflow.
+
+The first connected-map foundation is implemented behind the existing workflow:
+version-3 campaign checkpoints preserve independent map records and one creature
+collection, physical-coordinate transforms, inactive map poses and shared combat.
+Existing version-1/2 campaigns remain valid and are not automatically converted.
+Explicit migration also preserves existing spell-area sizes and positions.
+Cross-grid targeting accounts for finite floors, walls, openings and saved
+structure cover without loading another map's character sprites; spell previews
+transform back into the displayed grid. Independent local view objects keep
+focus and camera histories separate.
+
+Visible off-map creatures now render as synchronized projections of the same
+creature, with translated position, elevation, facing and animation. Picking
+resolves to the original ID. The focused character's current sight checks gate
+visibility, including walls, floors, Blinded and invisible; ordinary camera
+occlusion still applies. Projections do not add another gameplay token.
+Movement occupancy likewise uses physical translations and body elevations,
+not the foreign map's raw cell numbers, so interior creatures do not create
+phantom blocked squares outside.
+
+Visible projections also bring a bounded strip of supporting terrain along their
+line of sight, using the source map's real ground and floor heights. The creature's
+own supporting surface remains visible at narrow window edges. This is render-only
+context, not an extra editable grid or a new movement path, and it disappears when
+the focused character loses sight of the creature.
+
+Interior floor views also show a roofless cutaway of their physical walls,
+including the real window and doorway openings. Shared exterior structures are
+projected into the interior grid, and higher floors/roof layers do not cover the
+current room. The wall layout remains visible while browsing without character
+focus. This is a read-only view, not a second editable copy: exterior roofs and
+the physical geometry used by sight rules remain intact.
+
+#### Doorways and stairs
+
+Connected scenes can now contain saved physical doorway and stair connections.
+Select a creature, then **left-click the actual opening or staircase**. From more
+than five feet away, the creature walks toward the entrance using normal pathing,
+up to its remaining movement. If it cannot reach the entrance, it stops at the
+closest reachable point. If it reaches the entrance but cannot afford the
+remaining route, it stops without offering traversal.
+
+Otherwise, a small popup asks for confirmation, with the cost on **Enter** /
+**Use stairs** and a **Cancel** button. Nearby clicks open this popup
+directly. There is no radial-menu travel action, automatic transfer, or turn
+refresh. The approach is charged as ordinary walking; cancelling the offer never
+refunds movement already walked. Escape, another destination or another creature
+selection cancels a pending offer.
+Outside combat, the existing allowance refresh after each completed walking move
+is unchanged.
+
+Normal movement handles approach obstacles, occupancy, elevation and prone costs.
+Blocked openings, occupied landings and unfinished actions still show their
+unavailability reasons. Confirmation rechecks the current route and allowance.
+Sprite clicks, camera gestures and spell targeting keep their existing behavior.
+
+Travel keeps the same creature and character, resources, active turn and movement
+ledger. A confirmed crossing follows the locally selected sprite as well as an
+explicitly focused creature; opening its character sheet is not required.
+Other independently watching views stay put. The destination and paid
+movement are saved together; a failed load or save restores the source and refunds
+the reservation. Stair openings viewed from above show the actual lower treads as
+read-only context. Upper-window sight samples a creature's centre and head, while
+solid floors, walls and roofs still block it.
+
+The [two-floor development example](./src/campaigns/examples/ConnectedTravelExample.js)
+provides an exterior, two interior grids, windows, a five-foot doorway route and
+a twenty-foot staircase with normal grid-aligned landings. Connections reference
+existing physical opening/stair geometry; arbitrary existing holes do not
+automatically become transfers. Connection authoring belongs to the planned
+builder.
+
+#### Flight, windows, balconies and falls
+
+The same click-to-confirm interaction supports flying through doors, windows and
+wall openings. An **already-airborne** creature flies toward a body-fitting entry
+height, paying for both elevation changes and horizontal approach, then receives
+**Fly through** if enough movement remains. Confirmation preserves physical
+altitude, flight, the canonical creature and its active turn. It does not grant
+automatic takeoff or cross a boundary without confirmation.
+Ordinary ground and balcony clicks also work while airborne: they retain
+altitude above lower surfaces, while higher surface/wall destinations pay for
+the required vertical alignment. A creature with flying speed can Take flight
+directly from a physical wall hold instead of first returning to ground.
+
+Nonflying creatures can **Climb in** and **Climb out** through configured windows
+and climbable bare wall openings. Stand up before climbing, as with ordinary
+wall climbing. Climbing costs two feet of movement per foot,
+with route totals rounded up to five feet. The window crossing itself costs
+**5 feet in either direction** when already at the opening. Any approach or
+ascent to reach it is charged separately; the animation's hoist/settling arc is
+not additional movement. A low opening can end on nearby
+support; an unsupported high exit ends in a saved, physically attached hold.
+An opening click offers crossing only: **Enter/Exit**. It does not own all
+future control of the creature.
+
+- Click solid wall to choose a handhold and climb to that point. Actual wall-climb/down
+  clips play through intermediate positions; long climbs stop at paid safe
+  holds and can continue on later turns.
+- While held, click ground or a supported platform for **Climb down/onto surface**
+  or **Drop**. After reaching the ground, any remaining approach uses ordinary
+  movement. A new wall or ground destination can redirect the current climb at
+  its next safe checkpoint, without resetting movement or revisiting a window.
+- Same-wall lateral routes currently reuse the available climbing clips; dedicated
+  sideways animations and general corner traversal remain future work.
+- Window gaps are not imaginary handholds. A downward route can explicitly
+  confirm **drop and re-grab**, using the first reachable real wall below.
+  The unsupported distance costs no movement and uses normal falling damage and
+  protections at the catch, but does not make an attached creature Prone.
+  Damage uses only the unsupported distance before each catch, not height above
+  ground. A five-foot gap causes no falling damage even high on a building.
+  Prompts keep only the action confirmation and movement/error feedback, without
+  explanatory falling-rule paragraphs.
+  Upward/sideways gaps still require a supported route.
+
+Stable grips reference physical geometry, not an original window, and survive
+save/reopen and map-focus changes. A following view switches to the destination
+before window entry/exit plays the existing climb/recovery animation (reversed
+for exiting). Movement and saving stay locked until the supported landing or
+exterior hold is reached. The final placement and cost are saved together;
+animation/load/save failure restores the source and refunds the reservation.
+Other independently watching views are not forced to switch.
+Up/down climbing keeps its authored animation phase across paid waypoints and
+held-pose resumption instead of restarting the clip at every checkpoint.
+
+**Drop** from a hold costs no movement and animates the actual fall. Shared falling rules
+handle damage, Prone, Feather Fall, Slow Fall and other protections; deliberate
+release does not use flying speed itself to cancel the fall. Existing flight
+**Drop** uses that same pipeline. Falls through upper-floor holes find real
+support on lower maps, committing the landing and damage together. A failed
+landing save stays unresolved and offers Retry without rolling or damaging twice.
+
+Balconies are clickable elevated slabs with physical railings, not cosmetic
+attachments. Existing surface navigation handles walking on them; valid wall
+routes can climb to them across turns and clear real railings before landing.
+Unsupported overhangs are not climbable air. An unrailed edge can lead to a real
+fall. Floors, walls and roofs still block flight and sight even when hidden by
+an interior cutaway. Exterior views render real interior floor slabs even when
+no creature is visible inside, so window views do not show an empty shell.
+
+The [three-floor opening example](./src/campaigns/examples/ConnectedOpeningsExample.js)
+adds low and high windows, a bare ground arch, an elevated wall opening and a
+balcony with a deliberate unrailed test gap. Connections reference the actual
+subtractive aperture; climbable windows also identify their exterior map.
+Arbitrary holes do not automatically become traversal links. No travel actions
+were added to the radial menu, and magical portals remain separate later work.
+
+#### Maps & focus
+
+Connected-map campaigns now show **Maps & focus** in the campaign bar:
+
+- **Map** browses a different grid without moving any creatures and clears
+  viewing focus.
+- **Focus creature** switches to that creature's actual map and centers it.
+  **No focus - browse map** leaves the current map open without creature focus.
+- **Center focused creature** recenters the camera without reloading terrain.
+
+Each map remembers its camera framing, including across campaign reopening.
+Browsing or focusing preserves creature identities, positions, character resources,
+movement spent, the active turn and shared roll history. Opening a character sheet
+or activating its tab explicitly focuses the creature's actual map and position,
+not its mirrored model. This also applies to keyboard tabs and pop-out sheets.
+Tab activation selects that sprite and refreshes turn/action availability as
+soon as the view is ready; another sprite click is not needed to use End Turn.
+Passive map selection and targeting do not change viewing focus or another local
+view.
+
+Controls wait for complete scene changes and reject switching during movement,
+pending actions or unfinished terrain gestures. Failed switches restore the
+previous view; partial map loads are never autosaved. Legacy version-1/2
+single-board campaigns keep their existing workflow and hide these controls.
+Focus changes wait for an in-flight character save. An invalid source checkpoint
+reports its save problem and releases the view controls instead of waiting
+indefinitely with a paused scene.
+
+The outline builder, magical portals and authenticated networked participants
+remain subsequent chunks. Changing the viewed map is not a creature transfer.
+
+#### Paused layered construction prototype
+
+The first shared-world prototype adds **solid boxes**, **hollow box cuts**, and
+multiple support floors at the same horizontal position. Open Terrain Mode and
+scroll to **Construction prototype**. Enter east/south position, bottom elevation,
+width, depth and height in feet, choose Add or Carve, and apply the volume.
+Geometry edits share the session's Undo/Redo history.
+
+For a new blank **25 by 25** map, **Add proof structures** creates:
+
+- A bridge deck and stair approach, with a separate ground path underneath.
+- A hollow cave chamber and entrance beneath a solid roof.
+- A two-storey building with stairs, balcony doors and an open shaft.
+
+**View layers** isolates a named layer; **Cutaway: hide roof layer** exposes the
+interiors while retaining the other floors. Hidden geometry remains physical:
+it still supports creatures, blocks flight and determines landing surfaces.
+Select a creature and click a floor top to move to that specific support,
+including upper floors reached through stairs. Walking spends the existing
+five-foot grid costs; prone movement remains doubled. Flight and ledge falls use
+the next support below rather than the earth beneath all levels.
+
+Version-2 campaign scenes save the constructed volumes and stable floor IDs.
+Version-1 heightfield scenes remain supported. Reopening restores the complete
+view; layer isolation and Undo/Redo stay session-local.
+
+This is a **prototype, not the complete builder suite**. It currently uses box
+volumes and grid-center navigation with five-foot body clearance. Existing
+heightfield-only maps retain their original climbing/vaulting pipeline; constructed
+maps currently use stairs, supported walking, flight and falling. Smooth curves,
+domes, arches, drag gizmos, object resizing, climbable constructed walls, and
+size-specific full creature collision are later work.
 
 To build a wall:
 
@@ -123,11 +373,17 @@ Dodge and Cast Spell. Other unfinished commands are represented by one disabled
 **Not yet available** option.
 
 The Knight (Mixamo's **Knight D Pelegrini**), Mutant, Female Archer
-(**Erika Archer**), Armored Knight (**Paladin J Nordstrom**) and Monk
+(**Erika Archer**), Armored Knight (**Paladin J Nordstrom**) and Zombie
 (**Yaku J Ignite**) use the same one-square footprint, movement settings, wall
 climbing, ledge hangs and falling rules as Mannequin. They are appearances, not
 separate movement implementations. App labels describe appearances; source names
 remain provenance metadata.
+
+Zombie is the undead **Yaku J Ignite** appearance previously labeled Monk.
+Its legacy creature ID is preserved for saved boards; automatic token names
+refresh to Zombie when a board is saved or reopened. Custom names and saved
+character names are retained. This appearance label is independent of the
+**Monk** character-sheet class.
 
 The new actions are animation previews, not combat or movement rules:
 
@@ -195,6 +451,16 @@ The first creature of a type is initially unnumbered. Placing a second gives
 them names such as **Mannequin 1** and **Mannequin 2**, including in existing sheet
 tabs and the creature menu. Further copies increment the number independently
 for each creature type; deleted numbers are not reused during the app session.
+
+Open any creature's sheet and its **Character settings** gear to find
+**Character images**. Upload or remove a **Token portrait (headshot)** and,
+optionally, separate **Character artwork (full body)**. JPEG, PNG and WebP
+uploads under 10 MB are resized locally: portraits are center-cropped to a
+square up to 512 pixels, while artwork retains its proportions up to 1024 pixels
+on its longest side. Prepared images are saved as JPEGs with a white background
+for transparency. The portrait appears on tactical tokens and the sheet's
+information card; artwork appears on **Bio & notes**. Every token linked to
+the same saved character shares its images. No upload goes to an image server.
 
 ### Campaigns and rulesets
 
@@ -303,8 +569,9 @@ Equipment/spell **Details** buttons on the sheet open the same sidebar entry.
   the physical d20 when available; advantage/disadvantage and damage rolls are
   digital. Rolling damage does not cast a spell or spend another slot.
 - **Reference** labels mean inventory/rules text only, not automated effects.
-  Even supported spells require manual targeting, effect application, duration
-  and extra-projectile handling. Prepared-spell limits, armor proficiency
+  Reviewed targeting profiles automate selection and projectile attack rolls,
+  not hits, damage, saves or effect application. Unreviewed spells explicitly
+  require manual targeting or a configured profile. Prepared-spell limits, armor proficiency
   restrictions, ammunition, charges and conditional rules are not enforced.
 
 This is a first version, not a complete 5e rules engine. Common class costs and
@@ -322,6 +589,12 @@ header and read-only check/save buttons instead of editable ability boxes.
   no automatic initiative order. **End Combat / Free Play** removes turn
   enforcement without restoring persistent spell slots or limited uses.
 - Actions, bonus actions, reactions and remaining attacks have separate budgets.
+  Combat choices are grouped into **Attacks**, **Spells** and **Other actions**
+  inside each action-cost section. Spell attacks stay under Spells; weapon attacks,
+  unarmed strikes, Grapple and Shove appear under Attacks. Empty categories are hidden.
+  The **Bonus action** section remains visible even if this character has no
+  available bonus-action abilities, and explains when its budget is spent.
+  It follows Action in the default layout; saved custom section ordering is retained.
   **Attacks left** includes the attacks available if you spend your remaining
   actions on attacking, plus attacks left in an Attack action already started.
   It starts at the class/level count (or manual override), decreases as attacks
@@ -341,6 +614,11 @@ header and read-only check/save buttons instead of editable ability boxes.
   **Undo last use** refunds tracked costs, not dice results or target effects,
   and cannot refund Dash movement that has already been used.
 - Casting uses the spell's action/bonus/reaction timing, preparation and slots.
+  The targeting popup's **Cast at level** buttons choose the **spell slot level**
+  to expend, not the spell's fixed base level. Only levels with a usable slot are
+  shown, with remaining counts. Higher levels update supported projectile counts
+  and area sizes before confirmation, plus the committed damage follow-ups. Changing levels spends
+  nothing; cantrips explicitly say they use no spell slot.
   A 2014 campaign enforces its bonus-action casting restriction. A 2024 campaign
   instead allows only one expended spell slot per global turn, including off-turn
   reaction casting. Off-turn reactions use their own pool. Longer casting/activation times are
@@ -366,9 +644,19 @@ header and read-only check/save buttons instead of editable ability boxes.
   save button only rolls: unconsciousness, stabilization and special exceptions
   remain manual. End combat before taking rests or resetting daily uses.
 
-The turn ledger is scene memory, not a saved encounter. Reloading does not restore
-combat, token links or board edits. Persistent custom abilities and rest-limited
-usage remain with their saved character.
+Pace, Style and Roll use pressed buttons rather than drop-downs. Style changes
+Default/Drunk animation; Roll selects manual Normal/Advantage/Disadvantage and
+still combines with automatic targeting modifiers. Neither spends movement or
+an action. Creature allegiance, biological type and size are editable only on Core.
+Search/Study cards are omitted from the Combat action menu because their checks
+are available below. Those ordinary skill rolls remain free; use a Manual / DM
+action correction if a check represents a Search or Study action. Tactical Hide
+and class bonus-action options remain tracked choices.
+
+The live turn ledger is scene memory captured in acknowledged campaign checkpoints.
+Reopening a campaign restores committed budgets, history, token links and board edits,
+never an in-flight selection or unfinished dice roll. Character-only backups carry
+custom abilities and rest-limited usage, not a board encounter.
 
 2024 automation also uses the revised Action Surge restriction, target-save/DC
 Grapple and Shove workflows, Martial Arts dice and independent bonus strikes,
@@ -376,13 +664,123 @@ level-10 Flurry credits, Paladin bonus-action features/Channel Divinity, class
 resource recovery and level-1 Paladin/Ranger spell slots. Weapon Mastery and
 unimplemented conditional effects remain explicitly manual/reference-only.
 
+### Attack and spell targeting
+
+On the spatial board, weapon attacks appear only when another viable token is in
+range with a clear path. Choose a target before rolling or spending the use. Melee,
+reach, thrown and normal/long ranged distances are separate; a dagger's melee and
+thrown modes can be selected in the targeting panel. Long range and conscious hostile
+creatures within 5 feet impose ranged disadvantage, not a blanket minimum range.
+Nearby allies do not impose it. The panel also accounts for tracked Prone, Blinded
+and Invisible conditions. Manual advantage/disadvantage combines with these flags.
+The close-combat rule applies to ranged **spell attack rolls** such as Fire Bolt
+in both editions, regardless of how far away the chosen target is. It does not
+penalize a spell's saving throw or Magic Missile's automatic hits. A spell with a
+single listed range has no weapon-style normal/long-range penalty.
+Grapple and Shove also require another creature in reach and no more than one size
+larger; their edition-specific contest/save and outcomes remain manual.
+
+- **Core > Targeting tags:** set each token's Friendly/Hostile/Neutral side,
+  biological creature type and size. Untagged tokens default to Neutral, Humanoid
+  and Medium; these are not inferred from their appearance. Matching non-neutral
+  sides are allies, opposite sides are enemies. Healing profiles prefer allies
+  without forbidding otherwise legal healing of enemies.
+- **Select targets:** click a token or its panel button. Repeated-target spells
+  let each click allocate another projectile, with a minus button to remove one.
+  Allocate all Magic Missile darts, Scorching Ray rays or Eldritch Blast beams
+  before confirming. Each attack projectile rolls separately; damage rolls and
+  applying the results remain manual.
+- **Choose casting level:** levelled spells select their slot in this same popup,
+  not on the spell card. Existing targets and locked areas are retained while the
+  preview updates. If changing level makes an allocation too large or incomplete,
+  correct the allocations before Confirm. Cancellation creates no area and spends
+  no slot or action. Spellbook roll-only damage follows the last confirmed cast level.
+- **Beneficial Fly:** select willing creatures within **Touch (5 feet)**, including
+  the caster, and check the willingness confirmation. Allegiance does not establish
+  willingness; a willing enemy can be selected with the Any filter. A level 3 cast
+  targets one creature, with one additional target per higher slot level.
+  Confirmation automatically grants **60-foot flying speed**, without taking off
+  or overwriting base flight. The 2024 spell grants **Hover**; the 2014 spell
+  instead keeps its targets aloft by magic, including while Prone or unable to move.
+  Use **Take flight** on the recipient's radial menu to begin flying.
+- **Preview an area:** move the pointer over the board and left-click to lock it.
+  Caster-origin cones/lines begin along the creature's actual facing. Point-origin
+  cones, lines and cubes use two clicks: origin, then direction. The panel shows
+  affected creatures and supports chosen exclusions where the spell allows them.
+  Point origins can be elevated above terrain. Empty areas are valid casts.
+- **Confirm / Cancel:** confirmation rechecks current positions, range, cover,
+  target counts and resources before committing. Cancel or Escape spends nothing.
+  Canceling a later projectile retains every already-completed roll, but does not
+  spend the spell slot or action. Right-button camera gestures remain available.
+- **Lingering visuals:** Grease, Entangle, Fog Cloud, Darkness and Spirit Guardians
+  leave an area until its configured duration expires. Only the corresponding
+  caster's later turns count, not other creatures' turns or repeated UI refreshes.
+  Ice Storm's residual terrain lasts through the end of the next caster turn.
+  Following areas move with their caster; fixed areas stay placed. Concentration
+  replacement/ending removes the appropriate visuals. **End area** removes one
+  manually without refunding the cast or ending concentration/conditions; those
+  mechanical changes use the sheet's separate controls. Undo removes the new visual and restores
+  a concentration area that the undone cast replaced.
+- **Fly lifetime:** the active-effects panel lists recipients and the remaining
+  **100 caster turns (10 minutes)**. Its cyan rings follow recipients along the ground
+  beneath them, aligned with the yellow selection ring instead of rising during flight.
+  They remain visible outside portrait-token rims and do not draw through creature visuals.
+  Ending/replacing concentration, **End spell**, expiry or Undo removes the
+  temporary grant. Duration expiry and End spell also end its concentration.
+  An airborne recipient falls through the normal damage/Prone rules unless another
+  active flight source can keep it aloft. Natural flight and other casters' Fly
+  grants remain intact. Undo restores a replaced concentration grant or area.
+- Areas, remaining durations, tags and completed target/roll records survive
+  campaign checkpoints and campaign backups. A fixed area may survive caster-token
+  removal; use End area when its caster no longer has a token to take turns.
+
+The first reviewed set contains **27 profiles per edition**: Acid Splash, Bane,
+Bless, Burning Hands, Cone of Cold, Cure Wounds, Darkness, Eldritch Blast, Entangle,
+Fire Bolt, Fireball, Flame Strike, Fly, Fog Cloud, Grease, Healing Word, Hold Person,
+Ice Storm, Lightning Bolt, Magic Missile, Ray of Frost, Scorching Ray, Shatter,
+Shield, Sleep, Spirit Guardians and Thunderwave. Upcasting and cantrip beam counts
+come from the chosen cast level/character level. Edition differences include
+2014 Acid Splash's paired targets versus the 2024 sphere, revised Sleep's smaller
+area and concentration, Hold Person's removed upcast spread restriction, and the
+2024 Spirit Guardians emanation profile. Classic lances retain their close-range
+penalty; Heavy weapons use creature size in 2014 and Strength/Dexterity in 2024.
+Magical +1/+2/+3 weapon variants retain their base reach/thrown targeting.
+
+**Core > Targeting configuration** opens static
+overrides for other spells/custom abilities: range/minimum range, target/projectile
+counts, sight, shape/dimensions, origin, exclusions and duration/expiry. Weapon
+mode edits retain other modes; feature overrides can ignore close-quarters or
+long-range disadvantage. Reset returns to the campaign's reviewed rules. Static
+overrides do not infer future upcasting or subclass/feat mechanics.
+An unreviewed spell has a small targeting **gear** on its play card; ordinary
+weapon and reviewed-spell cards do not carry large configuration buttons.
+
+This is targeting assistance, not complete automatic adjudication. Range uses
+five-foot grid diagonals, including altitude; area inclusion uses token feet/center
+points rather than full creature volumes. Cover checks use terrain columns and
+transformed structure bounds, not doors/openings, partial-cover AC/save bonuses or
+other creatures as cover. Confirm boundary cases and large-creature emanation
+coverage manually. 2014 Fireball/Fog Cloud corner-spreading coverage is explicitly
+flagged for manual confirmation, not simulated propagation. Lingering areas are
+**visual only**: they do not automatically obscure vision, alter movement, deal
+damage, make saves or apply/end conditions. Sleep and other creature-held effects
+do not leave a persistent area merely because their conditions have a duration.
+Concentration areas follow the owned spell's concentration flag, disappear when
+another concentration spell replaces it or concentration is ended, and do not
+erase another caster's area or non-concentration zones. Concentration saves after
+damage and other mechanical ending conditions still require manual resolution.
+Fly's temporary flight grant is mechanical, not just a visual. Other beneficial
+spells can select legal targets using reviewed/configured profiles, but their
+healing, buffs and conditions still require manual application.
+
 ### Arrange play pages and Favorites
 
 On **Combat** or **Non-combat**, choose **Customize layout**:
 
 - Drag a section's handle to move it before another section. Drag card handles
   to reorder cards within their section. **Earlier / Later** buttons provide
-  the same controls with the keyboard.
+  the same controls with the keyboard. In Combat, cards reorder within their
+  automatic category; Favorites retains its freely arranged order.
 - Choose **Favorite**, or drag a card into **Favorites**, to move it there
   without a duplicate in its original section. **Unfavorite** returns it to its
   normal section; dragging it back can also choose its position.
@@ -439,7 +837,9 @@ copyable snapshot; if an embedded host does not offer downloads, save that text
 as a `.json` file. Export again after later edits. Version-5 character backups include
 the ruleset, required source pins, Hit
 Dice, class-resource usage, custom abilities/usage, attack overrides, play layouts
-and Favorites. **Import JSON** creates a validated same-ruleset copy, preserving
+and Favorites, plus optional portraits and character artwork. Character JSON
+backups may be up to 4 MB and include the image data, not temporary file links.
+**Import JSON** creates a validated same-ruleset copy, preserving
 owned instance IDs so layouts remain meaningful. Unscoped legacy backups and
 cross-edition conversion are intentionally not supported by the campaign UI.
 Clearing browser data removes local campaigns and characters. Different
@@ -539,6 +939,19 @@ Pace/style can update during movement without retargeting the committed route.
 Free play uses a per-move allowance; manual combat shares one remaining allowance
 across committed moves. Run is not Dash.
 
+**Changing destination while moving:** click another map location at any time
+during a click-to-move route. The latest click replaces the remaining route at
+the next safe point: a completed ground/stair step, stable climbing hold, or
+jump/fall landing. There is no separate Stop control; choosing a nearby
+destination shortens the journey. Out-of-range or occupied destinations are
+adjusted to the closest legal point in the remaining reachable area.
+
+Completed movement stays charged, and the unused tail of the previous route is
+refunded before the replacement route is reserved. Repeated redirects are one
+continuous free-play move, not fresh allowances; combat continues using the same
+turn budget. Jumps and falls finish safely before turning, and any landing
+damage/conditions are applied before the new route is planned.
+
 **Flight:** a creature with an active flying speed gets **Take flight** in its
 radial menu. This rises **5 feet** and spends **5 feet** of flying movement.
 While airborne, it is replaced by **Raise**, **Lower** and **Drop**. Raise and
@@ -561,16 +974,20 @@ onto the terrain beneath the flyer rather than floating at flight altitude.
 **Drop** relinquishes flight and starts the shared falling lifecycle without a
 movement cost. Sufficient falls roll damage and may leave the creature Prone;
 Feather Fall, Slow Fall and other protections still apply. Drop does not erase
-natural flying speed or cancel a spell. Losing an active flight capability also
-causes a fall after the current committed waypoint. Completed airborne positions
+natural flying speed or cancel a spell. Losing flight during a route interrupts it
+at the last stable waypoint and refunds its unfinished tail; losing support starts
+a fall. A reduced flying speed also interrupts the route so it can be replanned
+against the remaining allowance. Completed airborne positions
 and movement costs survive campaign save/reopen; unfinished animations/routes do
 not replay.
 
-Flying speed is currently a manual active-effect setting: it can represent
-natural flight or an already-applied spell/item effect. Preparing/casting a spell
-or owning/equipping an item does not automatically select flight targets or
-manage effect duration. Restore the remaining granted speed, or clear it if no
-flight grant remains, when an effect ends. **Can hover** is a
+The sheet's Flying speed field represents **base/manual flight**. The reviewed
+**Fly** spell adds a scene-owned, token-specific temporary grant, using the higher
+of base and granted speeds. It persists with concentration, recipients and duration
+in campaign saves/backups, but never becomes a character-only exported trait or
+grants every token sharing a character record flight. Other spell/item flight
+effects still require manual application and cleanup; preparing/owning them does
+not activate them. **Can hover** is a
 rules protection, independent of the stationary hover animation.
 
 Flight uses lazy, retargeted **Floating.fbx** and **Flying.fbx** locomotion
@@ -585,8 +1002,13 @@ Select a creature to outline the perimeter of its reachable area, without fillin
 the tiles. Excluded holes receive their own boundary, and the outline follows
 terrain height and reachable sections of sheer walls. Each straight or diagonal
 step costs **5 feet**, so 50 feet permits ten flat-ground steps. Routes account
-for intervening terrain, other creatures, and existing blocking-placeable data;
-cliff corners require a face-on approach rather than diagonal corner cutting.
+for intervening terrain, other creatures, and existing blocking-placeable data.
+You can move diagonally past the corner of one creature without entering its
+occupied space, so a reachable square behind it does not require an extra
+five-foot detour. Two occupied side cells still prevent squeezing between
+creatures. Solid plant/structure corners and cliff corners remain blocked;
+cliffs require a face-on approach. Flight uses the same distinction at the
+creatures' actual overlapping altitude.
 
 **Facing:** left-click and drag directly on an idle creature to turn it to one of
 eight grid-relative directions. The heading follows the drag in both perspective

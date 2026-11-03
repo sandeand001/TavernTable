@@ -1,4 +1,7 @@
 import { copyRollSummary } from '../../../systems/dice/rollSummary.js';
+import { restoreTargetingEffects } from './targetingEffects.js';
+import { validateTargetingProfile } from '../../../rules/targeting/profiles.js';
+import { finitePoint, validateAreaGeometry } from '../../../rules/targeting/geometry.js';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
@@ -53,6 +56,7 @@ export function snapshotCombat(
     activeTokenId: session.activeToken?.id ?? null,
     states,
     histories: [...session.histories].map(([characterId, entries]) => ({ characterId, entries })),
+    effects: session.effects || [],
   });
 }
 
@@ -69,7 +73,10 @@ export function restoreCombat(data, tokens, library) {
     (data.activeTokenId !== null && !identifier(data.activeTokenId)) ||
     (!data.active && data.activeTokenId !== null) ||
     Object.keys(data).some(
-      (key) => !['version', 'active', 'turn', 'activeTokenId', 'states', 'histories'].includes(key)
+      (key) =>
+        !['version', 'active', 'turn', 'activeTokenId', 'states', 'histories', 'effects'].includes(
+          key
+        )
     )
   )
     fail();
@@ -115,6 +122,10 @@ export function restoreCombat(data, tokens, library) {
       }
       const entry = clone(source);
       if (entry.rollResult !== undefined) entry.rollResult = copyRollSummary(entry.rollResult);
+      if (entry.targetingSelection !== undefined) validateTargetingRecord(entry.targetingSelection);
+      if (entry.targetRolls !== undefined) {
+        entry.targetRolls = validateTargetRolls(entry.targetRolls, entry.targetingSelection);
+      }
       entries.set(entry.sequence, entry);
       saved.push(entry);
     }
@@ -174,5 +185,68 @@ export function restoreCombat(data, tokens, library) {
   }
   const activeToken = data.activeTokenId === null ? null : byId.get(data.activeTokenId);
   if (data.activeTokenId !== null && (!activeToken || !states.has(activeToken))) fail();
-  return { active: data.active, activeToken, turn: data.turn, states, histories };
+  return {
+    active: data.active,
+    activeToken,
+    turn: data.turn,
+    states,
+    histories,
+    effects: restoreTargetingEffects(data.effects, data.turn, library, byId),
+  };
+}
+
+export function validateTargetingRecord(selection) {
+  if (
+    !record(selection) ||
+    typeof selection.manual !== 'boolean' ||
+    !Array.isArray(selection.targets) ||
+    selection.targets.length > 2000 ||
+    selection.targets.some(
+      (target) =>
+        !record(target) ||
+        !identifier(target.tokenId) ||
+        !integer(target.count, 1, 100) ||
+        !text(target.name, 500)
+    )
+  )
+    fail();
+  if (selection.profile !== undefined) validateTargetingProfile(selection.profile);
+  if (
+    (selection.willingConfirmed !== undefined && typeof selection.willingConfirmed !== 'boolean') ||
+    (selection.profile?.requiresWilling && selection.willingConfirmed !== true)
+  )
+    fail();
+  if (selection.area !== null && selection.area !== undefined) {
+    validateAreaGeometry(selection.area);
+  }
+  if (selection.origin !== undefined && !finitePoint(selection.origin)) fail();
+  if (selection.aim !== undefined && selection.aim !== null && !finitePoint(selection.aim)) fail();
+}
+
+export function validateTargetRolls(rolls, selection) {
+  if (!Array.isArray(rolls) || rolls.length > 100) fail();
+  const allocations = selection
+    ? new Map(selection.targets.map((target) => [target.tokenId, target.count]))
+    : null;
+  return rolls.map((roll) => {
+    if (
+      !record(roll) ||
+      !identifier(roll.tokenId) ||
+      !text(roll.label, 500) ||
+      !expression(roll.expression) ||
+      !text(roll.text) ||
+      Object.keys(roll).some(
+        (key) => !['tokenId', 'label', 'expression', 'text', 'summary'].includes(key)
+      )
+    )
+      fail();
+    if (allocations) {
+      if (!(allocations.get(roll.tokenId) > 0)) fail();
+      allocations.set(roll.tokenId, allocations.get(roll.tokenId) - 1);
+    }
+    return {
+      ...clone(roll),
+      ...(roll.summary !== undefined ? { summary: copyRollSummary(roll.summary) } : {}),
+    };
+  });
 }

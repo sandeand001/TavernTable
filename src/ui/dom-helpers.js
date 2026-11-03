@@ -36,6 +36,14 @@ export function getTerrainWallControls() {
   };
 }
 
+export function getTerrainHistoryControls() {
+  return {
+    undoBtn: document.getElementById('terrain-undo-btn'),
+    redoBtn: document.getElementById('terrain-redo-btn'),
+    statusEl: document.getElementById('terrain-history-status'),
+  };
+}
+
 // ── Grid Controls ──────────────────────────────────────
 /** Returns grid size input elements. */
 export function getGridSizeInputs() {

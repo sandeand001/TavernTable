@@ -205,8 +205,24 @@ export class TokenManager {
    * @param {number} gridY - Grid Y coordinate
    * @param {string} selectedTokenType - Currently selected token type
    * @param {Array} placedTokens - Array to add token to
+   * @param {Object|null} checkpoint - Validated campaign placement, before rendering begins
    */
-  addTokenToCollection(creature, gridX, gridY, selectedTokenType = null, placedTokens = null) {
-    return _addTokenToCollection(this, creature, gridX, gridY, selectedTokenType, placedTokens);
+  addTokenToCollection(
+    creature,
+    gridX,
+    gridY,
+    selectedTokenType = null,
+    placedTokens = null,
+    checkpoint = null
+  ) {
+    return _addTokenToCollection(
+      this,
+      creature,
+      gridX,
+      gridY,
+      selectedTokenType,
+      placedTokens,
+      checkpoint
+    );
   }
 }

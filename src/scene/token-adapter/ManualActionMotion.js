@@ -85,6 +85,15 @@ function findCoverWall(token, minimumHeight = 0) {
 function getManualActionAvailability(token, commandId) {
   const definition = getManualAction(commandId);
   if (!definition) return { allowed: false, reason: 'Unknown creature action.' };
+  if (this.gameManager.campaignWorld && token?.mapId !== this.gameManager.campaignMapId)
+    return {
+      allowed: false,
+      reason: 'Focus this creature on its own map before playing an action.',
+    };
+  if (this.gameManager.campaignMapFailure)
+    return { allowed: false, reason: this.gameManager.campaignMapFailure.message };
+  if (this.gameManager.campaignViewBusy)
+    return { allowed: false, reason: 'Wait for the map view to finish changing.' };
   if (token?.flightActive) {
     return { allowed: false, reason: 'Reach the ground before playing a grounded visual action.' };
   }

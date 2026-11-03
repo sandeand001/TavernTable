@@ -934,6 +934,7 @@ export class ThreeSceneManager {
   // ── Cleanup ───────────────────────────────────────────────────────────
 
   dispose() {
+    this.gameManager?.token3DAdapter?.disposeTacticalTokens?.();
     try {
       if (this._animationHandle) cancelAnimationFrame(this._animationHandle);
     } catch (_) {

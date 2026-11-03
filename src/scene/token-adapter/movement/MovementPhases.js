@@ -20,6 +20,8 @@ function _updateForwardMovements(delta) {
   const bounds = this._computeMovementBounds();
   const entries = Array.from(this._movementStates.entries());
   for (const [tokenEntry, state] of entries) {
+    if (this.gameManager.campaignWorld && tokenEntry.mapId !== this.gameManager.campaignMapId)
+      continue;
     if (!state) {
       this._movementStates.delete(tokenEntry);
       continue;
@@ -33,6 +35,8 @@ function _updateForwardMovements(delta) {
     state.mesh = mesh;
 
     try {
+      const job = this._movementRoutes.get(tokenEntry);
+      if (job?.redirect && !job.redirectReady) this._prepareMovementRedirect(tokenEntry, job);
       this._advanceRotationState(state, delta);
 
       if (tokenEntry.flightActive) {
@@ -46,6 +50,15 @@ function _updateForwardMovements(delta) {
       }
 
       switch (state.phase) {
+        case 'opening-crossing':
+          this._advanceOpeningCrossing(state, delta);
+          break;
+        case 'surface-climb':
+          this._advanceSurfaceClimb(state, delta);
+          break;
+        case 'surface':
+          this._advanceSurfaceMotion(state, delta);
+          break;
         case 'start':
           this._advanceStartPhase(state, delta, bounds);
           break;
@@ -62,6 +75,8 @@ function _updateForwardMovements(delta) {
           this._advanceWallMovement(state, delta);
           break;
         case 'climb-hold':
+          if (tokenEntry.surfaceHold && this._tokenAnimationData.get(tokenEntry)?.gripBlending)
+            this.syncSurfaceGripVisual(tokenEntry);
           break;
         case 'climb':
           this._advanceClimbPhase(state, delta);
@@ -97,6 +112,8 @@ function _updateForwardMovements(delta) {
         }
       }
 
+      if (this._movementStates.get(tokenEntry) !== state) continue;
+
       if (state.pathActive && state.pathReached) {
         this._completePath(state);
         continue;
@@ -117,9 +134,14 @@ function _updateForwardMovements(delta) {
       }
     } catch (error) {
       const phase = state.phase;
-      if (tokenEntry.flightActive || state.flightMotion) {
+      if (state.openingCrossing) this.cancelOpeningCrossing(tokenEntry, error);
+      else if (tokenEntry.flightActive || state.flightMotion) {
         if (this._movementRoutes.get(tokenEntry)?.flight) this._stopFlightMovement(state);
         else state.phase = 'flight-error';
+      } else if (state.surfaceMotion) {
+        this._stopSurfaceMovement(state);
+      } else if (this._movementRoutes.get(tokenEntry)?.physicalClimb) {
+        this._stopSurfaceClimb(state);
       } else if (state.traversal) {
         state.traversal = null;
         this._finishPlannedMovement(tokenEntry, true);

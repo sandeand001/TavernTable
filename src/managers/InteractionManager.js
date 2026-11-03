@@ -309,14 +309,14 @@ export class InteractionManager {
       const terrainActive =
         this.gameManager.isTerrainModeActive && this.gameManager.isTerrainModeActive();
       // Only treat placeables as blocking when a placeable is actually selected AND the Placeable Tiles panel is visible.
-      const terrainCoordinator = this.gameManager?.terrainCoordinator;
+      const terrain = this.gameManager?.terrainEngine;
       const placeableSelected =
-        typeof terrainCoordinator?.getSelectedPlaceable === 'function'
-          ? !!terrainCoordinator.getSelectedPlaceable()
+        typeof terrain?.getSelectedPlaceable === 'function'
+          ? !!terrain.getSelectedPlaceable()
           : false;
       const panelVisible =
-        typeof terrainCoordinator?.isPlaceablesPanelVisible === 'function'
-          ? !!terrainCoordinator.isPlaceablesPanelVisible()
+        typeof terrain?.isPlaceablesPanelVisible === 'function'
+          ? !!terrain.isPlaceablesPanelVisible()
           : false;
 
       if (terrainActive || (placeableSelected && panelVisible)) {
@@ -763,7 +763,7 @@ export class InteractionManager {
     try {
       const candidateX = Math.round(gridXf);
       const candidateY = Math.round(gridYf);
-      const height = this.gameManager?.terrainCoordinator?.dataStore?.get(candidateX, candidateY);
+      const height = this.gameManager?.getTerrainHeight?.(candidateX, candidateY);
       if (Number.isFinite(height) && height !== 0) {
         const elevOffset = TerrainHeightUtils.calculateElevationOffset(height);
         if (elevOffset !== 0) {

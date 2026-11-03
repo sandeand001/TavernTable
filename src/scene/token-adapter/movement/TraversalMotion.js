@@ -4,6 +4,7 @@ import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovem
 const EPSILON = 1e-8;
 const mix = (a, b, t) => a + (b - a) * t;
 const clamp = (value) => Math.min(1, Math.max(0, value));
+export { at as sampleTraversalMotion };
 
 function sampleClip(template, clip, rootInfo, three) {
   const rig = cloneHumanoidRig(template, three);
@@ -128,9 +129,19 @@ function _startShortTraversal(token, cell, kind) {
   const spatial = this.gameManager.spatial;
   const goal = spatial.gridToWorld(cell.gridX + 0.5, cell.gridY + 0.5, cell.height);
   if (cell.vault) {
-    const occupied = this.gameManager.placedTokens.some(
-      (other) => other !== token && other.gridX === cell.gridX && other.gridY === cell.gridY
-    );
+    const occupied = this.gameManager.placedTokens.some((other) => {
+      if (other === token) return false;
+      if (!this.gameManager.campaignWorld || other.mapId === this.gameManager.campaignMapId)
+        return other.gridX === cell.gridX && other.gridY === cell.gridY;
+      const position = this.getTokenViewPosition(other);
+      const mapped = spatial.worldToGrid(position.x, position.z);
+      return (
+        mapped.gridX === cell.gridX &&
+        mapped.gridY === cell.gridY &&
+        position.y < goal.y + spatial.tileWorldSize - EPSILON &&
+        position.y + spatial.tileWorldSize > goal.y + EPSILON
+      );
+    });
     const entries =
       this.gameManager.terrainManager?.placeables?.get(`${cell.gridX},${cell.gridY}`) || [];
     if (

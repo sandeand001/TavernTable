@@ -6,6 +6,9 @@
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
+import { TerrainVolumeMeshBuilder } from './TerrainVolumeMeshBuilder.js';
+import { getTerrainLayerColor } from './TerrainMaterialFactory.js';
+import { createInteriorCutaway } from './InteriorCutaway.js';
 
 export class TerrainRebuilder {
   // ── Constructor ───────────────────────────────────────────────────
@@ -89,9 +92,9 @@ export class TerrainRebuilder {
     const neutralColor = GRID_CONFIG?.TILE_COLOR ?? 0x444444;
     const gmBiomeGetter = (gx, gy, elev) => {
       const h = Number.isFinite(elev) ? elev : 0;
-      const terrainModeActive =
-        (gm?.terrainCoordinator?.isTerrainModeActive ?? false) ||
-        (typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive());
+      const terrainModeActive = gm.terrainEngine
+        ? gm.terrainEngine.isActive
+        : typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive();
       if (terrainModeActive) {
         const palette = TERRAIN_CONFIG.HEIGHT_COLOR_SCALE || {};
         const clamped = Math.max(
@@ -105,13 +108,12 @@ export class TerrainRebuilder {
         if (color == null) color = 0x6b7280;
         return color;
       }
-      const biomeKey =
-        (typeof window !== 'undefined' && window.selectedBiome) ||
-        gm?.terrainCoordinator?._lastGeneratedBiomeKey ||
-        'grassland';
+      const biomeKey = gm.terrainEngine
+        ? gm.terrainEngine.biomeKey
+        : typeof window !== 'undefined' && window.selectedBiome;
       const userSelectedBiome =
         typeof window !== 'undefined' && window.__TT_USER_SELECTED_BIOME__ === true;
-      if (!userSelectedBiome) {
+      if (!biomeKey || (!gm.terrainEngine && !userSelectedBiome)) {
         return neutralColor;
       }
       try {
@@ -127,14 +129,40 @@ export class TerrainRebuilder {
     };
     const wallColor = 0x050505;
     const wantsWalls = !!(threeNs && threeNs.BufferGeometry);
-    const geo = this.builder.build({
-      cols,
-      rows,
-      getHeight,
-      three: threeNs,
-      getBiomeColor: gmBiomeGetter,
-      getWallColor: wantsWalls ? () => wallColor : undefined,
-    });
+    const cutaway = gm.terrainEngine?.geometry.hasVolumes ? createInteriorCutaway(gm) : null;
+    const geo = gm.terrainEngine?.geometry.hasVolumes
+      ? new TerrainVolumeMeshBuilder().build({
+          geometry: cutaway
+            ? cutaway.query(
+                gm.terrainEngine.geometry,
+                cutaway.map,
+                gm.terrainEngine.geometry.getPartition(),
+                { includeFloor: true }
+              )
+            : gm.terrainEngine.geometry,
+          three: threeNs,
+          worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
+          visibleLayers: gm.terrainEngine.visibleLayers,
+          getColor: (x, z, height, span) => {
+            if (span.id === 'terrain') {
+              const feetPerLevel = (gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize;
+              return gmBiomeGetter(
+                Math.floor(x / 5),
+                Math.floor(z / 5),
+                feetPerLevel > 0 ? height / feetPerLevel : 0
+              );
+            }
+            return getTerrainLayerColor(span.layerId);
+          },
+        })
+      : this.builder.build({
+          cols,
+          rows,
+          getHeight,
+          three: threeNs,
+          getBiomeColor: gmBiomeGetter,
+          getWallColor: wantsWalls ? () => wallColor : undefined,
+        });
     // Debug sample of first vertex color to help diagnose "all black" issues.
     try {
       if (typeof window !== 'undefined' && !window.__TT_LAST_TERRAIN_COLOR_SAMPLE__) {

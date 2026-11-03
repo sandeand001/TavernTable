@@ -1,5 +1,6 @@
 import { CharacterLibrary } from '../entities/characters/CharacterLibrary.js';
 import { edition } from '../rules/editions.js';
+import { CHARACTER_BACKUP_LIMIT } from '../config/characters/CharacterImages.js';
 
 class SnapshotStorage {
   constructor(records) {
@@ -101,7 +102,15 @@ export default class CampaignCharacters {
     this.actions = this._companion(
       'actions',
       ['list', 'snapshot', 'resourceRows', 'key'],
-      ['upsert', 'remove', 'setRemaining', 'setAttackCount', 'consume', 'undo']
+      [
+        'upsert',
+        'remove',
+        'setRemaining',
+        'setAttackCount',
+        'setTargetingProfile',
+        'consume',
+        'undo',
+      ]
     );
     this.layouts = this._companion(
       'layouts',
@@ -211,8 +220,8 @@ export default class CampaignCharacters {
   }
 
   async import(text, { linkTokenId } = {}) {
-    if (typeof text !== 'string' || text.length > 1000000) {
-      throw new Error('Choose a character JSON backup smaller than 1 MB');
+    if (typeof text !== 'string' || text.length > CHARACTER_BACKUP_LIMIT) {
+      throw new Error('Choose a character JSON backup smaller than 4 MB');
     }
     const data = JSON.parse(text);
     if (data?.format !== 'taverntable-character' || data.version !== 5) {

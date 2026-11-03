@@ -1,6 +1,16 @@
-// TerrainMaterialFactory.js - Phase 2 placeholder for future biome-aware materials.
-// Current responsibility: return a basic material instance while providing an API
-// seam for later biome tint / splat map upgrades.
+// Shared terrain materials and constructed-surface colors.
+
+export function getTerrainLayerColor(layerId) {
+  return (
+    {
+      bridge: 0x9c744b,
+      cave: 0x858e91,
+      ground: 0x808179,
+      upper: 0xb9a98a,
+      roof: 0x784c43,
+    }[layerId] ?? 0x99938c
+  );
+}
 
 export function createTerrainMaterial(three, { color = 0x777766 } = {}) {
   try {

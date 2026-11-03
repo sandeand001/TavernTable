@@ -1,5 +1,6 @@
 import { edition } from '../rules/editions.js';
 import { openDatabase, requestResult, transact } from '../storage/indexedDB.js';
+import { CHARACTER_BACKUP_LIMIT } from '../config/characters/CharacterImages.js';
 
 export default class CampaignStore {
   constructor({ indexedDB = globalThis.indexedDB, packs, name = 'taverntable.campaigns.v1' }) {
@@ -384,7 +385,8 @@ export default class CampaignStore {
           !row.key ||
           row.key.length > 300 ||
           typeof row.value !== 'string' ||
-          row.value.length > 1000000
+          row.value.length >
+            (row.key.startsWith('taverntable.character.v1.') ? CHARACTER_BACKUP_LIMIT : 1000000)
       )
     ) {
       throw new Error('The character database change has invalid records or revision');

@@ -92,8 +92,7 @@ export class TerrainBrushController {
     return computeBrushFootprint(gridX, gridY, this.brushSize, this._getBounds());
   }
 
-  getPreviewHeight(gridX, gridY) {
-    const current = this.dataStore.get(gridX, gridY);
+  getPreviewHeight(gridX, gridY, current = this.dataStore.get(gridX, gridY)) {
     if (this.tool === 'wall') return this.wallTopLevel;
     if (this.tool === 'lower')
       return Math.max(current - this.heightStep, TERRAIN_CONFIG.MIN_HEIGHT);

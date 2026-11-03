@@ -19,6 +19,8 @@ import { GameErrors } from '../../utils/error/ErrorHandler.js';
 function _ensureTokenMesh(tokenEntry, scene) {
   if (!tokenEntry || tokenEntry.__threeMesh) return;
   const gm = this.gameManager;
+  if (this.isTokenProjection(tokenEntry) && !this.isTokenProjectionVisible(tokenEntry)) return;
+  if (tokenEntry.__threeMeshPromise) return tokenEntry.__threeMeshPromise;
 
   if (gm && gm.__threeTestDouble) {
     try {
@@ -152,7 +154,7 @@ async function _create3DToken(tokenEntry, scene, config) {
     return container;
   } catch (error) {
     if (container) scene.remove(container);
-    if (container && tokenEntry.__threeMesh === container) this.onTokenRemoved(tokenEntry);
+    if (container && tokenEntry.__threeMesh === container) this.releaseTokenVisual(tokenEntry);
     GameErrors.rendering(error, {
       component: 'Token3DAdapter',
       operation: 'create3DToken',
@@ -265,8 +267,10 @@ function _buildPathVariants(path) {
 }
 
 async function _loadModelTemplate(typeKey, config) {
-  const key = typeKey?.toLowerCase?.();
-  if (!key) return null;
+  const type = typeKey?.toLowerCase?.();
+  if (!type) return null;
+  const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
+  const key = `${type}@${tileSize}`;
   if (!this._modelCache.has(key)) {
     const promise = (async () => {
       const three = await this._getThree();
@@ -286,7 +290,7 @@ async function _loadModelTemplate(typeKey, config) {
       if (!loaded) return null;
       const rig = cloneHumanoidRig(loaded, three);
       const templateRoot = new three.Group();
-      templateRoot.name = `TokenTemplate:${key}`;
+      templateRoot.name = `TokenTemplate:${type}`;
       templateRoot.add(loaded);
 
       const centerBox = new three.Box3().setFromObject(templateRoot);
@@ -301,7 +305,6 @@ async function _loadModelTemplate(typeKey, config) {
       const sizeBox = new three.Box3().setFromObject(templateRoot);
       const size = new three.Vector3();
       sizeBox.getSize(size);
-      const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
       const span = (config.tileSpan ?? 1) * tileSize;
       const margin = Number.isFinite(config.margin) ? config.margin : 0.92;
       const desired = span * margin;
@@ -379,6 +382,9 @@ function _applyCommonMetadata(mesh, tokenEntry, options = {}) {
   mesh.userData.__ttBaseYaw = Number.isFinite(options.baseYaw) ? options.baseYaw : 0;
   mesh.userData.__ttTokenType = type;
   mesh.userData.__ttTintMaterials = this._collectTintTargets(mesh);
+  if (this.gameManager.campaignMapTransition) mesh.visible = false;
+  else if (this.isTokenProjection(tokenEntry))
+    mesh.visible = this.isTokenProjectionVisible(tokenEntry);
   return mesh;
 }
 
@@ -388,7 +394,10 @@ function _getMeshVerticalOffset(mesh) {
   const manual = Number.isFinite(mesh.userData.__ttManualVerticalOffset)
     ? mesh.userData.__ttManualVerticalOffset
     : 0;
-  return base + manual;
+  const grip = Number.isFinite(mesh.userData.__ttOpeningGripOffset)
+    ? mesh.userData.__ttOpeningGripOffset
+    : 0;
+  return base + manual + grip;
 }
 
 function _attachSelectionCollider(container, three, config = {}) {
@@ -445,6 +454,10 @@ function _updateSelectionColliderHeight(container) {
 }
 
 function _positionMesh(mesh, tokenEntry) {
+  if (this.isTokenProjection(tokenEntry)) {
+    this._applyMeshWorldPosition(mesh, this.getTokenViewPosition(tokenEntry));
+    return true;
+  }
   try {
     const gm = this.gameManager;
     if (!gm || !gm.spatial) return false;

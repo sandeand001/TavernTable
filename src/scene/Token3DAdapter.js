@@ -30,6 +30,7 @@ import { installFallMethods } from './token-adapter/movement/FallPhases.js';
 import { installProneMotionMethods } from './token-adapter/movement/ProneMotion.js';
 import { installFallingRulesMotionMethods } from './token-adapter/movement/FallingRulesMotion.js';
 import { installFlightMotionMethods } from './token-adapter/movement/FlightMotion.js';
+import { installSurfaceMotionMethods } from './token-adapter/movement/SurfaceMotion.js';
 import { installMovementStyleMethods } from './token-adapter/movement/MovementStyle.js';
 import { installMovementPhaseMethods } from './token-adapter/movement/MovementPhases.js';
 import { installStepFactoryMethods } from './token-adapter/movement/StepFactory.js';
@@ -44,6 +45,12 @@ import { installSpatialUtilsMethods } from './token-adapter/spatial/SpatialUtils
 import { installWorldAuthorityMethods } from './token-adapter/spatial/WorldAuthority.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { installSavedPlacementMethods } from './token-adapter/SavedPlacements.js';
+import { installOpeningHoldVisualMethods } from './token-adapter/OpeningHoldVisual.js';
+import { installSurfaceClimbMethods } from './token-adapter/movement/SurfaceClimbMotion.js';
+import { installOpeningCrossingMethods } from './token-adapter/movement/OpeningCrossingMotion.js';
+import { installMapProjectionMethods } from './token-adapter/MapProjections.js';
+import { installTacticalTokenMethods } from './token-adapter/TacticalTokens.js';
+import { installMovementRedirectMethods } from './token-adapter/pathing/MovementRedirects.js';
 
 export class Token3DAdapter {
   // ── Constructor & Initialization ─────────────────────────────────────────────
@@ -80,6 +87,9 @@ export class Token3DAdapter {
     this._pathingLogArchive = [];
     this._manualAnimationRevertTimers = new WeakMap();
     this._manualAnimationStates = new WeakMap();
+    this._tacticalTokens = new Map();
+    this._tacticalTokenFailures = new WeakSet();
+    this._tacticalView = false;
   }
 
   // ── Pathing & Debug Logging (installed via PathingLogger mixin) ──────────
@@ -100,6 +110,12 @@ export class Token3DAdapter {
       const gm = this.gameManager;
       if (gm?.threeSceneManager?.addAnimationCallback && !this._frameCallback) {
         this._frameCallback = () => {
+          if (
+            (this.gameManager.campaignViewBusy || this.gameManager.campaignMapTransition) &&
+            !this.gameManager.campaignFallSettling &&
+            !this.gameManager.campaignTraversalAnimating
+          )
+            return;
           const gmRef = this.gameManager;
           const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
           let delta = 0;
@@ -156,6 +172,21 @@ export class Token3DAdapter {
           }
 
           try {
+            void this.syncMapProjections().catch((error) => {
+              GameErrors.rendering(error, {
+                component: 'MapProjections',
+                operation: 'loadCreature',
+              });
+            });
+            this._syncTacticalTokens();
+          } catch (error) {
+            GameErrors.rendering(error, {
+              component: 'Token3DAdapter',
+              operation: 'updateTacticalTokens',
+            });
+          }
+
+          try {
             this._syncFacingDirection();
           } catch (_) {
             /* ignore */
@@ -195,12 +226,13 @@ export class Token3DAdapter {
     for (const t of tokens) this._ensureTokenMesh(t, scene);
   }
 
-  onTokenAdded(tokenEntry) {
+  onTokenAdded(tokenEntry, checkpoint = null) {
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) return;
     const scene = gm.threeSceneManager?.scene;
     if (!scene) return;
-    this.recordStablePlacement(tokenEntry);
+    if (gm.campaignWorld && tokenEntry.mapId !== gm.campaignMapId) return;
+    if (!checkpoint) this.recordStablePlacement(tokenEntry);
     return this._ensureTokenMesh(tokenEntry, scene);
   }
 
@@ -344,8 +376,18 @@ export class Token3DAdapter {
 
   // ── Public Movement & Navigation API ─────────────────────────────────────────────
 
+  _isMapInputBlocked(token) {
+    const gm = this.gameManager;
+    return (
+      gm.sceneAutosave?.ready === false ||
+      gm.campaignViewBusy ||
+      !!gm.campaignMapFailure ||
+      (gm.campaignWorld && token?.mapId !== gm.campaignMapId)
+    );
+  }
+
   beginForwardMovement(tokenEntry, sourceKey = '__forward') {
-    if (this.gameManager.sceneAutosave?.ready === false) return;
+    if (this._isMapInputBlocked(tokenEntry)) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, 1, sourceKey);
   }
@@ -355,7 +397,7 @@ export class Token3DAdapter {
   }
 
   beginBackwardMovement(tokenEntry, sourceKey = '__backward') {
-    if (this.gameManager.sceneAutosave?.ready === false) return;
+    if (this._isMapInputBlocked(tokenEntry)) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, -1, sourceKey);
   }
@@ -381,7 +423,7 @@ export class Token3DAdapter {
   // ── Navigation & Path Orchestration (installed via Navigation mixin) ──
 
   beginRotation(tokenEntry, direction = 1, sourceKey = '__rotate') {
-    if (this.gameManager.sceneAutosave?.ready === false) return;
+    if (this._isMapInputBlocked(tokenEntry)) return;
     try {
       if (!tokenEntry) return;
       this._releaseManualAnimationForMovement(tokenEntry);
@@ -550,12 +592,14 @@ export class Token3DAdapter {
       if (!gm || !gm.is3DModeActive?.()) return;
       const tokens = gm.placedTokens || [];
       for (const t of tokens) {
+        if (gm.campaignWorld && t.mapId !== gm.campaignMapId) continue;
         const mesh = t.__threeMesh;
         if (!mesh || this.isMovementInProgress(t)) continue;
         const state = this._movementStates.get(t);
         if (state?.wallMotion?.holding && this._resyncHeldWall(state)) continue;
         const world = this._resolveTokenWorldPosition(t);
-        if (!t.flightActive) world.y = this._sampleWorldHeight(world.x, world.z, world.y);
+        if (!t.flightActive && !t.openingHold && !t.surfaceHold)
+          world.y = this._sampleWorldHeight(world.x, world.z, world.y);
         this._syncTokenAndMeshWorld({ token: t, mesh }, world);
       }
       this._movementRangeDirty = true;
@@ -566,16 +610,33 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    this.cancelOpeningCrossing(tokenEntry, new Error('The crossing creature was removed'));
+    this._mapProjectionVisible?.delete(tokenEntry);
+    this.disposeMapProjectionTerrain();
+    if (this.gameManager.campaignView?.focusTokenId === tokenEntry.id)
+      this.gameManager.campaignView.focus(null);
+    this._landingMovementRedirects?.delete(tokenEntry);
     this.gameManager.characterServices?.falling?.cancel(tokenEntry);
     this.gameManager.characterServices?.combat?.forget(tokenEntry);
     this._movementRoutes.delete(tokenEntry);
     this._savedPlacements?.delete(tokenEntry);
     this._movementRangeDirty = true;
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
-    if (!tokenEntry.__threeMesh) return;
+    this.releaseTokenVisual(tokenEntry);
+    delete tokenEntry.flightActive;
+    delete tokenEntry.surfaceHold;
+    delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
+  }
+
+  releaseTokenVisual(tokenEntry) {
+    if (!tokenEntry) return;
+    this._discardTacticalToken(tokenEntry);
+    if (!tokenEntry.__threeMesh) {
+      delete tokenEntry.__threeMeshPromise;
+      return;
+    }
     const mesh = tokenEntry.__threeMesh;
     if (this._hoverToken === tokenEntry) this._hoverToken = null;
-    if (this._selectedToken === tokenEntry) this._selectedToken = null;
     this._clearManualAnimationRevert(tokenEntry);
     this._clearManualAnimationState(tokenEntry);
     this._discardSelectionIndicator(tokenEntry);
@@ -635,8 +696,6 @@ export class Token3DAdapter {
 
     delete tokenEntry.__threeMesh;
     delete tokenEntry.__threeMeshPromise;
-    delete tokenEntry.flightActive;
-    delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
   }
 
   pickTokenByRay(raycaster, { precise = false } = {}) {
@@ -650,7 +709,7 @@ export class Token3DAdapter {
       let minDistance = Infinity;
 
       for (const tokenEntry of tokens) {
-        const mesh = tokenEntry?.__threeMesh;
+        const mesh = this.getTokenVisual(tokenEntry);
         if (!mesh || mesh.visible === false) {
           continue;
         }
@@ -748,6 +807,7 @@ installFallMethods(Token3DAdapter.prototype);
 installProneMotionMethods(Token3DAdapter.prototype);
 installFallingRulesMotionMethods(Token3DAdapter.prototype);
 installFlightMotionMethods(Token3DAdapter.prototype);
+installSurfaceMotionMethods(Token3DAdapter.prototype);
 installNavigationMethods(Token3DAdapter.prototype);
 installMovementRangeMethods(Token3DAdapter.prototype);
 installMovementStyleMethods(Token3DAdapter.prototype);
@@ -758,3 +818,9 @@ installStepFactoryMethods(Token3DAdapter.prototype);
 installSpatialUtilsMethods(Token3DAdapter.prototype);
 installResumeProbeMethods(Token3DAdapter.prototype);
 installSavedPlacementMethods(Token3DAdapter.prototype);
+installOpeningHoldVisualMethods(Token3DAdapter.prototype);
+installSurfaceClimbMethods(Token3DAdapter.prototype);
+installOpeningCrossingMethods(Token3DAdapter.prototype);
+installMapProjectionMethods(Token3DAdapter.prototype);
+installTacticalTokenMethods(Token3DAdapter.prototype);
+installMovementRedirectMethods(Token3DAdapter.prototype);

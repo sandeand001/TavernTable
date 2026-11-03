@@ -32,6 +32,14 @@ export class MovementRangeOverlay {
       throw new Error('A ground-projected flight outline requires terrain heights');
     }
     const positions = [];
+    const surfaceNeighbors = new Map();
+    if (range.layered) {
+      for (const cell of range.tiles.values()) {
+        const key = `${cell.gridX},${cell.gridY}`;
+        if (!surfaceNeighbors.has(key)) surfaceNeighbors.set(key, []);
+        surfaceNeighbors.get(key).push(cell);
+      }
+    }
     const corners = new Map();
     const wallEdges = new Map();
     const wallCorners = new Set();
@@ -63,16 +71,30 @@ export class MovementRangeOverlay {
       const world = spatial.gridToWorld(gridX, gridY, height);
       const y = world.y + this.tileSize * 0.008;
       positions.push(world.x, y, world.z);
-      const key = `${gridX},${gridY}`;
+      const key = range.layered ? `${gridX},${gridY}@${height}` : `${gridX},${gridY}`;
       if (!corners.has(key)) corners.set(key, { x: world.x, z: world.z, heights: new Set() });
       corners.get(key).heights.add(y);
     };
     for (const cell of range.tiles.values()) {
+      if (
+        range.layered &&
+        range.visibleLayers !== null &&
+        range.visibleLayers !== undefined &&
+        !range.visibleLayers.includes(cell.layerId)
+      )
+        continue;
       const height =
         range.travelMode === 'fly' ? getTerrainHeight(cell.gridX, cell.gridY) : cell.height;
       if (!Number.isFinite(height)) throw new Error('Movement outline terrain height is invalid');
       for (const edge of EDGES) {
         const neighborKey = `${cell.gridX + edge.dx},${cell.gridY + edge.dy}`;
+        if (
+          range.layered &&
+          surfaceNeighbors
+            .get(neighborKey)
+            ?.some((neighbor) => Math.abs(neighbor.heightFeet - cell.heightFeet) < 1e-6)
+        )
+          continue;
         const wall = wallEdges.get(`${cell.gridX},${cell.gridY}>${neighborKey}`);
         if (
           wall?.intervals.some(

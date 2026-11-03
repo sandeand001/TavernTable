@@ -1,5 +1,6 @@
 import { FEET_PER_GRID_SQUARE } from '../../../config/TokenMovementConfig.js';
 import { GameErrors } from '../../../utils/error/ErrorHandler.js';
+import { finishCampaignPhysicalLanding } from '../../../campaigns/SceneWorld.js';
 
 // -- Pause before descent while choosing a reaction --
 function _beginRuleFall(state, step) {
@@ -16,7 +17,10 @@ function _beginRuleFall(state, step) {
   const data = this._tokenAnimationData.get(state.token);
   if (data.actions[data.current]) data.actions[data.current].paused = true;
   falling
-    .begin(state.token, distanceFeet, { ignoreFlight: step.ignoreFlight === true })
+    .begin(state.token, distanceFeet, {
+      ignoreFlight: step.ignoreFlight === true,
+      catching: step.catchingWall === true,
+    })
     .then(
       (context) => {
         if (this._movementStates.get(state.token) !== state || state.activeStep !== step) {
@@ -39,14 +43,33 @@ function _resolveRuleLanding(state, finish) {
   if (!state.fallRules) return false;
   if (state.fallLandingPending) return true;
   const context = state.fallRules;
+  const catchLanding = state.activeStep?.surfaceCatch;
+  const landing = catchLanding || state.activeStep?.campaignLanding;
   state.phase = 'fall-resolve';
   state.fallLandingPending = true;
-  if (context.damage > 0 || context.wasProne) haltFallRoute.call(this, state);
-  this.recordStablePlacement(state.token);
+  if (!catchLanding && (context.damage > 0 || context.wasProne || landing))
+    haltFallRoute.call(this, state);
+  if (!landing) this.recordStablePlacement(state.token);
   this.gameManager.characterServices.falling
-    .land(state.token, context)
+    .land(state.token, context, { placement: landing })
     .then(
-      () => {
+      async () => {
+        if (catchLanding) {
+          try {
+            this._finishSurfaceCatch(state);
+          } catch (error) {
+            this.gameManager.campaignMapFailure = new AggregateError(
+              [error],
+              'The wall catch was saved, but its presentation could not finish. Reload to reopen the saved grip.'
+            );
+            throw this.gameManager.campaignMapFailure;
+          }
+          return;
+        }
+        if (landing) {
+          await finishCampaignPhysicalLanding(this.gameManager, state.token, landing);
+          return;
+        }
         if (this._movementStates.get(state.token) !== state) return;
         state.phase = 'fall';
         state.fallRules = null;
@@ -65,6 +88,14 @@ function haltFallRoute(state) {
   if (job) {
     job.spent = this._getFallMovementCost(job);
     job.segmentCharged = true;
+    if (job.redirect) {
+      this._landingMovementRedirects ||= new Map();
+      this._landingMovementRedirects.set(state.token, {
+        destination: job.redirect,
+        allowance: Math.max(0, job.settings.speed - job.spent),
+      });
+      job.continuing = true;
+    }
     this._finishPlannedMovement(state.token);
   }
   this._clearPathState(state);

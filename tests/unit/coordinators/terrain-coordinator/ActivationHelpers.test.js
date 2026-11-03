@@ -1,64 +1,9 @@
-import { ActivationHelpers } from '../../../../src/coordinators/terrain-coordinator/ActivationHelpers.js';
 import * as three from 'three';
-import { TerrainDataStore } from '../../../../src/terrain/TerrainDataStore.js';
 import { TerrainMeshBuilder } from '../../../../src/scene/terrain/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../../../../src/scene/terrain/TerrainRebuilder.js';
-import {
-  applyTerrainModeGridTint,
-  restoreTerrainModeGridTint,
-} from '../../../../src/coordinators/terrain-coordinator/internals/rendering/gridTint.js';
+import { createTerrainWorld } from '../../../helpers/terrainWorld.js';
 
-describe('ActivationHelpers.enableTerrainMode', () => {
-  test('validates, activates, and loads state in order', () => {
-    const callOrder = [];
-    const c = {
-      _validateTerrainSystemForActivation: () => callOrder.push('validate'),
-      _activateTerrainMode: () => callOrder.push('activate'),
-      _loadTerrainStateAndDisplay: () => callOrder.push('load'),
-      brush: { tool: 'raise', brushSize: 1 },
-    };
-
-    new ActivationHelpers(c).enableTerrainMode();
-
-    expect(callOrder).toEqual(['validate', 'activate', 'load']);
-  });
-});
-
-describe('ActivationHelpers.disableTerrainMode', () => {
-  test('clears flags, applies base integration, resets UI, and repaints biome', () => {
-    const c = {
-      isTerrainModeActive: true,
-      isDragging: true,
-      lastModifiedCell: '0,0',
-      gameManager: {},
-      applyTerrainToBaseGrid: jest.fn(),
-      resetHeightIndicator: jest.fn(),
-      applyBiomePaletteToBaseGrid: jest.fn(),
-    };
-
-    global.window = global.window || {};
-    window.selectedBiome = 'forest';
-
-    const helpers = new ActivationHelpers(c);
-    helpers.disableTerrainMode();
-
-    // Flags cleared
-    expect(c.isTerrainModeActive).toBe(false);
-    expect(c.isDragging).toBe(false);
-    expect(c.lastModifiedCell).toBeNull();
-
-    // Base integration
-    expect(c.applyTerrainToBaseGrid).toHaveBeenCalled();
-
-    // UI reset
-    expect(c.resetHeightIndicator).toHaveBeenCalled();
-
-    // Biome repaint called when a biome is selected and terrain mode is off
-    expect(c.applyBiomePaletteToBaseGrid).toHaveBeenCalled();
-  });
-});
-
-describe('terrain editing color lifecycle', () => {
+describe('Terrain editing color lifecycle through the authoritative engine', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     delete window.selectedBiome;
@@ -73,50 +18,23 @@ describe('terrain editing color lifecycle', () => {
   });
 
   function fixture() {
-    const dataStore = new TerrainDataStore(1, 1);
-    const gm = {
-      cols: 1,
-      rows: 1,
-      threeSceneManager: {
-        scene: new three.Scene(),
-        three,
-        setTerrainMeshOpacity: jest.fn(),
-      },
-    };
-    const c = {
-      gameManager: gm,
-      dataStore,
-      isTerrainModeActive: false,
-      applyTerrainToBaseGrid: () => dataStore.applyWorkingToBase(),
-      applyBiomePaletteToBaseGrid: jest.fn(),
-      resetHeightIndicator: jest.fn(),
-      applyTerrainModeGridTint: () => applyTerrainModeGridTint(c),
-      restoreTerrainModeGridTint: () => restoreTerrainModeGridTint(c),
-    };
-    gm.terrainCoordinator = c;
-    gm.getTerrainHeight = (x, y) =>
-      c.isTerrainModeActive ? dataStore.get(x, y) : dataStore.base[y][x];
-    const rebuilder = new TerrainRebuilder({
+    const world = createTerrainWorld(1, 1, null);
+    const gm = world.gm;
+    gm.threeSceneManager.scene = new three.Scene();
+    gm.threeSceneManager.three = three;
+    gm.terrainRebuilder = new TerrainRebuilder({
       gameManager: gm,
       builder: new TerrainMeshBuilder({ forceAdvanced: true, hardEdges: true }),
       debounceMs: 120,
     });
-    gm.terrainRebuilder = rebuilder;
-    gm.notifyTerrainHeightsChanged = () => rebuilder.request({ three });
-    rebuilder.rebuild({ three });
-    const color = () =>
-      Array.from(
-        gm.threeSceneManager.scene
-          .getObjectByName('TerrainMesh')
-          .geometry.getAttribute('color')
-          .array.slice(0, 3)
-      );
-    const height = () =>
-      gm.threeSceneManager.scene
-        .getObjectByName('TerrainMesh')
-        .geometry.getAttribute('position')
-        .getY(0);
-    return { c, gm, color, height };
+    gm.notifyTerrainHeightsChanged = () => gm.terrainRebuilder.request({ three });
+    gm.terrainRebuilder.rebuild({ three });
+    const geometry = () => gm.threeSceneManager.scene.getObjectByName('TerrainMesh').geometry;
+    return {
+      ...world,
+      color: () => Array.from(geometry().getAttribute('color').array.slice(0, 3)),
+      height: () => geometry().getAttribute('position').getY(0),
+    };
   }
 
   test.each([
@@ -125,58 +43,59 @@ describe('terrain editing color lifecycle', () => {
     { level: -4, delay: 0 },
     { level: -4, delay: 1000 },
   ])(
-    'editing level $level then leaving after $delay ms restores color without losing mesh heights',
+    'editing level $level then leaving after $delay ms restores color without losing heights',
     ({ level, delay }) => {
-      const { c, gm, color, height } = fixture();
-      const original = color();
-      c.isTerrainModeActive = true;
-      c.applyTerrainModeGridTint();
-      c.dataStore.set(0, 0, level);
-      gm.notifyTerrainHeightsChanged();
-      jest.runOnlyPendingTimers();
-      expect(color()).not.toEqual(original);
-      jest.advanceTimersByTime(delay);
-
-      new ActivationHelpers(c).disableTerrainMode();
-      jest.runOnlyPendingTimers();
-
-      expect(c.dataStore.base[0][0]).toBe(level);
-      expect(c.isTerrainModeActive).toBe(false);
-      expect(color()).toEqual(original);
-      expect(height()).toBeCloseTo(level * 0.5);
+      const world = fixture();
+      try {
+        const original = world.color();
+        world.engine.activate();
+        world.engine.setHeightAt(0, 0, level);
+        jest.runOnlyPendingTimers();
+        expect(world.color()).not.toEqual(original);
+        jest.advanceTimersByTime(delay);
+        world.engine.deactivate();
+        jest.runOnlyPendingTimers();
+        expect(world.engine.save().heights[0][0]).toBe(level);
+        expect(world.engine.isActive).toBe(false);
+        expect(world.color()).toEqual(original);
+        expect(world.height()).toBeCloseTo(level * 0.5);
+      } finally {
+        world.dispose();
+      }
     }
   );
 
-  test('entering and leaving Terrain Mode refreshes colors even without a height edit', () => {
-    const { c, color } = fixture();
-    const original = color();
-    c.isTerrainModeActive = true;
-    c.applyTerrainModeGridTint();
-    jest.runOnlyPendingTimers();
-    expect(color()).not.toEqual(original);
-
-    new ActivationHelpers(c).disableTerrainMode();
-    jest.runOnlyPendingTimers();
-    expect(color()).toEqual(original);
+  test('entering and leaving Terrain Mode refreshes colors without a height edit', () => {
+    const world = fixture();
+    try {
+      const original = world.color();
+      world.engine.activate();
+      jest.runOnlyPendingTimers();
+      expect(world.color()).not.toEqual(original);
+      world.engine.deactivate();
+      jest.runOnlyPendingTimers();
+      expect(world.color()).toEqual(original);
+    } finally {
+      world.dispose();
+    }
   });
 
-  test('leaving Terrain Mode restores the selected biome rather than a neutral override', () => {
-    window.selectedBiome = 'forest';
-    window.__TT_USER_SELECTED_BIOME__ = true;
-    const { c, gm, color, height } = fixture();
-    c.dataStore.set(0, 0, 3);
-    c.applyTerrainToBaseGrid();
-    gm.terrainRebuilder.rebuild({ three });
-    const original = color();
-
-    c.isTerrainModeActive = true;
-    c.applyTerrainModeGridTint();
-    jest.runOnlyPendingTimers();
-    expect(color()).not.toEqual(original);
-    new ActivationHelpers(c).disableTerrainMode();
-    jest.runOnlyPendingTimers();
-
-    expect(color()).toEqual(original);
-    expect(height()).toBeCloseTo(1.5);
+  test('leaving Terrain Mode restores the selected biome instead of a neutral override', () => {
+    const world = fixture();
+    try {
+      world.engine.setHeightAt(0, 0, 3);
+      world.engine.setBiome('forest', { generateIfFlat: false });
+      jest.runOnlyPendingTimers();
+      const original = world.color();
+      world.engine.activate();
+      jest.runOnlyPendingTimers();
+      expect(world.color()).not.toEqual(original);
+      world.engine.deactivate();
+      jest.runOnlyPendingTimers();
+      expect(world.color()).toEqual(original);
+      expect(world.height()).toBeCloseTo(1.5);
+    } finally {
+      world.dispose();
+    }
   });
 });

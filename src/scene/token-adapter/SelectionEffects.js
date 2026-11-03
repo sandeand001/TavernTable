@@ -150,7 +150,7 @@ function _applyOrientationImmediate(tokenEntry, angle) {
   const is3DToken = !!mesh?.userData?.__tt3DToken;
   if (mesh && is3DToken) {
     const baseYaw = mesh.userData.__ttBaseYaw || 0;
-    const yaw = baseYaw + globalFlip + angle;
+    const yaw = baseYaw + globalFlip + this.getTokenViewFacing(tokenEntry, angle);
     try {
       if (mesh.rotation) {
         mesh.rotation.y = yaw;
@@ -367,10 +367,9 @@ function _updateSelectionIndicatorTransform(tokenEntry) {
   const state = this._movementStates.get(tokenEntry);
   const motion = state?.wallMotion;
   if (tokenEntry.flightActive) {
-    const world = this._resolveTokenWorldPosition(tokenEntry);
-    const ground = this._sampleWorldHeight(world.x, world.z);
+    const ground = this.getTokenGroundPosition(tokenEntry);
     const position = (marker.userData.__ttFlightProjection ||= marker.position.clone());
-    position.set(world.x, ground + this.gameManager.spatial.tileWorldSize * 0.015, world.z);
+    position.set(ground.x, ground.y + this.gameManager.spatial.tileWorldSize * 0.015, ground.z);
     mesh.updateWorldMatrix(true, false);
     marker.position.copy(mesh.worldToLocal(position));
     marker.rotation.set(-Math.PI / 2, 0, 0);
