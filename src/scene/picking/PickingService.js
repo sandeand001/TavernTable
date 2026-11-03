@@ -6,6 +6,7 @@
 //  - Terrain hits are authoritative; bounded plane fallback only before the mesh exists
 
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import { connectionFeatureBounds } from '../../campaigns/CampaignConnections.js';
 
 export class PickingService {
   // ── Constructor ───────────────────────────────────────────────────
@@ -88,18 +89,17 @@ export class PickingService {
 
   // ── Core Picking Logic ───────────────────────────────────────────
 
-  _executeGroundPick(three, clientX, clientY, targetElement = null) {
-    if (!three) return null;
-    if (!this._ensureCorePickingObjects(three)) return null;
+  _preparePointerRay(three, clientX, clientY, targetElement = null) {
+    if (!three || !this._ensureCorePickingObjects(three)) return false;
     const gm = this.gameManager;
-    if (!gm || !gm.is3DModeActive?.()) return null;
+    if (!gm || !gm.is3DModeActive?.()) return false;
     const cam = gm.threeSceneManager?.camera;
     const canvas =
       targetElement ||
       gm.threeSceneManager?.canvas ||
       gm.app?.view ||
       (typeof document !== 'undefined' ? document.body : null);
-    if (!cam || !canvas || typeof canvas.getBoundingClientRect !== 'function') return null;
+    if (!cam || !canvas || typeof canvas.getBoundingClientRect !== 'function') return false;
     if (!Number.isFinite(clientX) || !Number.isFinite(clientY))
       throw new Error('Picking requires finite pointer coordinates');
 
@@ -108,17 +108,22 @@ export class PickingService {
     const scaleY = canvas.height ? canvas.height / rect.height : 1;
     const width = canvas.width || rect.width || 0;
     const height = canvas.height || rect.height || 0;
-    if (!width || !height) return null;
+    if (!width || !height) return false;
 
     const canvasX = (clientX - rect.left) * scaleX;
     const canvasY = (clientY - rect.top) * scaleY;
-    if (canvasX < 0 || canvasY < 0 || canvasX > width || canvasY > height) return null;
+    if (canvasX < 0 || canvasY < 0 || canvasX > width || canvasY > height) return false;
 
     const ndcX = (canvasX / width) * 2 - 1;
     const ndcY = -(canvasY / height) * 2 + 1;
     this._v2.set(ndcX, ndcY);
     this._raycaster.setFromCamera(this._v2, cam);
+    return true;
+  }
 
+  _executeGroundPick(three, clientX, clientY, targetElement = null) {
+    if (!this._preparePointerRay(three, clientX, clientY, targetElement)) return null;
+    const gm = this.gameManager;
     let worldX;
     let worldY;
     let worldZ;
@@ -128,10 +133,16 @@ export class PickingService {
     const tileSize = gm?.spatial?.tileWorldSize || 1;
     const safeTileSize = tileSize > 0 ? tileSize : 1;
     const terrainMesh = gm.threeSceneManager?.scene?.getObjectByName?.('TerrainMesh') || null;
+    const contextMeshes = ['MapInteriorWalls', 'MapPhysicalFloors']
+      .map((name) => gm.threeSceneManager?.scene?.getObjectByName?.(name))
+      .filter((mesh) => mesh?.visible);
 
     if (terrainMesh && terrainMesh.visible !== false) {
       this._terrainIntersections.length = 0;
       this._raycaster.intersectObject(terrainMesh, true, this._terrainIntersections);
+      for (const mesh of contextMeshes)
+        this._raycaster.intersectObject(mesh, true, this._terrainIntersections);
+      this._terrainIntersections.sort((a, b) => a.distance - b.distance);
       if (this._terrainIntersections.length) {
         const firstHit = this._terrainIntersections[0];
         if (firstHit?.point) {
@@ -162,6 +173,7 @@ export class PickingService {
               wallNormal.negate();
             surface = {
               kind: 'wall',
+              mapId: firstHit.object.userData.campaignMapId || gm.campaignMapId,
               point: { x: worldX, y: worldY, z: worldZ },
               normal: { x: wallNormal.x, y: wallNormal.y, z: wallNormal.z },
             };
@@ -181,6 +193,7 @@ export class PickingService {
                 : null;
             surface = {
               kind: wallNormal.y > 0.9 ? 'floor' : 'ceiling',
+              mapId: firstHit.object.userData.campaignMapId || gm.campaignMapId,
               surfaceId: support?.id ?? null,
               point: { x: worldX, y: worldY, z: worldZ },
               normal: { x: wallNormal.x, y: wallNormal.y, z: wallNormal.z },
@@ -320,6 +333,73 @@ export class PickingService {
   }
 
   // ── Public API ────────────────────────────────────────────────────
+
+  pickConnectionSync(clientX, clientY, targetElement = null) {
+    try {
+      const gm = this.gameManager;
+      const world = gm.campaignWorld;
+      const three = this._getThreeSync();
+      if (!world || !this._preparePointerRay(three, clientX, clientY, targetElement)) return null;
+      const mapId = gm.campaignMapId;
+      const ray = this._raycaster.ray;
+      const origin = world.toCampaignPosition(mapId, ray.origin);
+      const forward = world.toCampaignPosition(mapId, {
+        x: ray.origin.x + ray.direction.x,
+        y: ray.origin.y + ray.direction.y,
+        z: ray.origin.z + ray.direction.z,
+      });
+      const physicalRay = new three.Ray(
+        new three.Vector3(origin.x, origin.y, origin.z),
+        new three.Vector3(
+          forward.x - origin.x,
+          forward.y - origin.y,
+          forward.z - origin.z
+        ).normalize()
+      );
+      const box = new three.Box3();
+      const point = new three.Vector3();
+      let closest = null;
+      for (const connection of world.getConnections(mapId)) {
+        for (const bounds of connectionFeatureBounds(world, connection, {
+          mapId,
+          geometry: gm.terrainEngine.geometry,
+        })) {
+          box.min.set(bounds.min.x, bounds.min.y, bounds.min.z);
+          box.max.set(bounds.max.x, bounds.max.y, bounds.max.z);
+          if (!physicalRay.intersectBox(box, point)) continue;
+          const local = world.toMapPosition(mapId, point);
+          const distance = ray.origin.distanceTo(new three.Vector3(local.x, local.y, local.z));
+          if (!closest || distance < closest.distance)
+            closest = { connection, distance, world: local };
+        }
+      }
+      if (!closest) return null;
+      const epsilon = gm.spatial.tileWorldSize * 1e-4;
+      const tokenHit = gm.token3DAdapter?.pickTokenByRay(this._raycaster, { precise: true });
+      if (tokenHit?.token && tokenHit.distance <= closest.distance + epsilon) return null;
+      const surfaces = new Set(['TerrainMesh', 'MapInteriorWalls', 'MapProjectionTerrain']);
+      const occluders = [];
+      gm.threeSceneManager.scene.traverseVisible((object) => {
+        if (!object.isMesh) return;
+        for (let ancestor = object; ancestor; ancestor = ancestor.parent) {
+          if (surfaces.has(ancestor.name) || ancestor.name.startsWith('Placeables:')) {
+            occluders.push(object);
+            break;
+          }
+        }
+      });
+      const terrainHit = this._raycaster.intersectObjects(occluders, false)[0];
+      return terrainHit && terrainHit.distance < closest.distance - epsilon ? null : closest;
+    } catch (error) {
+      GameErrors.input(error, {
+        component: 'PickingService',
+        operation: 'pickConnectionSync',
+        clientX,
+        clientY,
+      });
+      return null;
+    }
+  }
 
   registerLayer(fn) {
     if (typeof fn === 'function') this._layers.push(fn);

@@ -13,8 +13,8 @@ export default class FallingController {
   }
 
   // -- Fall lifecycle --
-  begin(token, distanceFeet, { ignoreFlight = false } = {}) {
-    if (typeof ignoreFlight !== 'boolean') {
+  begin(token, distanceFeet, { ignoreFlight = false, catching = false } = {}) {
+    if (typeof ignoreFlight !== 'boolean' || typeof catching !== 'boolean') {
       throw new Error('A fall requires an explicit flight protection policy');
     }
     const dice = this.library.rules.fallingDice(distanceFeet);
@@ -74,13 +74,13 @@ export default class FallingController {
         rawDamage: protection.avoidDamage ? 0 : record.roll.total,
         reduction: protection.reduction + (record.slowReduction || 0),
         avoidDamage: protection.avoidDamage,
-        proneImmune: protection.proneImmune,
+        proneImmune: protection.proneImmune || catching,
       });
       record.context = Object.freeze({
         id: record.id,
         characterId: character.id,
         ...outcome,
-        proneImmune: protection.proneImmune,
+        proneImmune: protection.proneImmune || catching,
         avoidDamage: protection.avoidDamage,
         featherFall: protection.featherFall,
         reason: protection.reason,
@@ -94,13 +94,13 @@ export default class FallingController {
     return record.begin;
   }
 
-  land(token, context) {
+  land(token, context, { placement = null } = {}) {
     const record = this.pending.get(token);
     if (!record || record.context !== context) throw new Error('This fall is no longer pending');
     if (!record.land) {
       record.land = this._retry(token, async () => {
         this._assertCurrent(token, context.characterId);
-        const result = await this.combat.applyFall(token, context);
+        const result = await this.combat.applyFall(token, context, { placement });
         this.pending.delete(token);
         this.onChanged(context.characterId);
         this.gameManager.sceneAutosave?.changed('fall landing');

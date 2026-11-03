@@ -20,6 +20,7 @@ function _queueMovementRedirect(token, destination) {
     )
       throw new Error('Choose a valid map surface for the new destination');
     target = {
+      ...destination,
       surface: { ...destination.surface, point: { ...point }, normal: { ...normal } },
     };
   } else {
@@ -44,6 +45,7 @@ function _prepareMovementRedirect(token, job) {
   if (
     !state ||
     job.flight ||
+    job.physicalClimb ||
     job.layered ||
     state.traversal ||
     state.activeStep ||
@@ -171,6 +173,8 @@ function _closestMovementDestination(token, destination, range) {
     y: this._resolveTokenWorldPosition(token).y,
     z: (destination.gridY + 0.5) * tile,
   };
+  if (!['x', 'y', 'z'].every((axis) => Number.isFinite(requested[axis])))
+    throw new Error('Choose a valid map surface for the new destination');
   if (!destination.surface && !range.layered && range.travelMode !== 'fly') {
     if (
       destination.gridX >= 0 &&
@@ -238,7 +242,7 @@ function _closestMovementDestination(token, destination, range) {
   if (!best) throw new Error('No legal movement destination remains after changing course');
   if (best.distance > EPSILON) {
     logger.info(
-      'Moving to the closest reachable point after a destination change',
+      'Moving to the closest reachable point',
       { tokenId: token.id, requested: { ...requested }, destination: best.target, cost: best.cost },
       LOG_CATEGORY.INTERACTION
     );

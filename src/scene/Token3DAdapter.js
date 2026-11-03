@@ -45,6 +45,9 @@ import { installSpatialUtilsMethods } from './token-adapter/spatial/SpatialUtils
 import { installWorldAuthorityMethods } from './token-adapter/spatial/WorldAuthority.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { installSavedPlacementMethods } from './token-adapter/SavedPlacements.js';
+import { installOpeningHoldVisualMethods } from './token-adapter/OpeningHoldVisual.js';
+import { installSurfaceClimbMethods } from './token-adapter/movement/SurfaceClimbMotion.js';
+import { installOpeningCrossingMethods } from './token-adapter/movement/OpeningCrossingMotion.js';
 import { installMapProjectionMethods } from './token-adapter/MapProjections.js';
 import { installTacticalTokenMethods } from './token-adapter/TacticalTokens.js';
 import { installMovementRedirectMethods } from './token-adapter/pathing/MovementRedirects.js';
@@ -107,7 +110,12 @@ export class Token3DAdapter {
       const gm = this.gameManager;
       if (gm?.threeSceneManager?.addAnimationCallback && !this._frameCallback) {
         this._frameCallback = () => {
-          if (this.gameManager.campaignViewBusy || this.gameManager.campaignMapTransition) return;
+          if (
+            (this.gameManager.campaignViewBusy || this.gameManager.campaignMapTransition) &&
+            !this.gameManager.campaignFallSettling &&
+            !this.gameManager.campaignTraversalAnimating
+          )
+            return;
           const gmRef = this.gameManager;
           const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
           let delta = 0;
@@ -590,7 +598,8 @@ export class Token3DAdapter {
         const state = this._movementStates.get(t);
         if (state?.wallMotion?.holding && this._resyncHeldWall(state)) continue;
         const world = this._resolveTokenWorldPosition(t);
-        if (!t.flightActive) world.y = this._sampleWorldHeight(world.x, world.z, world.y);
+        if (!t.flightActive && !t.openingHold && !t.surfaceHold)
+          world.y = this._sampleWorldHeight(world.x, world.z, world.y);
         this._syncTokenAndMeshWorld({ token: t, mesh }, world);
       }
       this._movementRangeDirty = true;
@@ -601,6 +610,7 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    this.cancelOpeningCrossing(tokenEntry, new Error('The crossing creature was removed'));
     this._mapProjectionVisible?.delete(tokenEntry);
     this.disposeMapProjectionTerrain();
     if (this.gameManager.campaignView?.focusTokenId === tokenEntry.id)
@@ -614,6 +624,7 @@ export class Token3DAdapter {
     if (this._selectedToken === tokenEntry) this._selectedToken = null;
     this.releaseTokenVisual(tokenEntry);
     delete tokenEntry.flightActive;
+    delete tokenEntry.surfaceHold;
     delete tokenEntry[TOKEN_WORLD_LOCK_PROP];
   }
 
@@ -807,6 +818,9 @@ installStepFactoryMethods(Token3DAdapter.prototype);
 installSpatialUtilsMethods(Token3DAdapter.prototype);
 installResumeProbeMethods(Token3DAdapter.prototype);
 installSavedPlacementMethods(Token3DAdapter.prototype);
+installOpeningHoldVisualMethods(Token3DAdapter.prototype);
+installSurfaceClimbMethods(Token3DAdapter.prototype);
+installOpeningCrossingMethods(Token3DAdapter.prototype);
 installMapProjectionMethods(Token3DAdapter.prototype);
 installTacticalTokenMethods(Token3DAdapter.prototype);
 installMovementRedirectMethods(Token3DAdapter.prototype);

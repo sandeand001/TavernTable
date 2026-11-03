@@ -1,18 +1,20 @@
 import { validateScene, validateMapBoard } from './CampaignScene.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
 import { Box3, Ray, Vector3 } from 'three';
+import { planConnection, connectionEntryDistance } from './CampaignConnections.js';
+import {
+  localWorldToCampaign,
+  campaignToLocalWorld,
+  campaignFeetBounds,
+} from './CampaignCoordinates.js';
+import { isOpeningHoldValid } from './CampaignOpeningClimb.js';
+import { isSurfaceGripValid, openingSurfaceGrip } from './CampaignSurfaceClimb.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const finitePoint = (value) =>
   value !== null &&
   typeof value === 'object' &&
   ['x', 'y', 'z'].every((axis) => Number.isFinite(value[axis]));
-const rotate = (point, turns) => {
-  if (turns === 0) return { ...point };
-  if (turns === 1) return { x: -point.z, y: point.y, z: point.x };
-  if (turns === 2) return { x: -point.x, y: point.y, z: -point.z };
-  return { x: point.z, y: point.y, z: -point.x };
-};
 
 export default class CampaignWorld {
   static fromScene(scene, context) {
@@ -120,35 +122,37 @@ export default class CampaignWorld {
     this._commit(next);
   }
 
+  addConnection(connection) {
+    const next = this.save();
+    next.connections = [...(next.connections || []), copy(connection)];
+    this._commit(next);
+  }
+
+  getConnections(mapId = null, localWorld = null) {
+    if (mapId !== null) this._map(mapId);
+    return copy(this._scene.connections || []).filter(
+      (connection) =>
+        (mapId === null || connection.ends.some((end) => end.mapId === mapId)) &&
+        (localWorld === null ||
+          connectionEntryDistance(this, connection, mapId, localWorld) <= 5 + 1e-6)
+    );
+  }
+
+  planConnection(id, mapId, localWorld, options = {}) {
+    const connection = this.getConnections().find((entry) => entry.id === id);
+    if (!connection) throw new Error('The map connection no longer exists');
+    return planConnection(this, connection, mapId, localWorld, options);
+  }
+
   toCampaignPosition(mapId, localWorld) {
     if (!finitePoint(localWorld)) throw new Error('The map-local creature position is invalid');
-    const map = this._map(mapId);
-    const scale = 5 / map.grid.tileWorldSize;
-    const offset = rotate(
-      { x: localWorld.x * scale, y: localWorld.y * scale, z: localWorld.z * scale },
-      map.quarterTurns
-    );
-    return {
-      x: map.originFeet.x + offset.x,
-      y: map.originFeet.y + offset.y,
-      z: map.originFeet.z + offset.z,
-    };
+    return localWorldToCampaign(this._map(mapId), localWorld);
   }
 
   toMapPosition(mapId, campaignPosition) {
     if (!finitePoint(campaignPosition))
       throw new Error('The campaign creature position is invalid');
-    const map = this._map(mapId);
-    const offset = rotate(
-      {
-        x: campaignPosition.x - map.originFeet.x,
-        y: campaignPosition.y - map.originFeet.y,
-        z: campaignPosition.z - map.originFeet.z,
-      },
-      (4 - map.quarterTurns) % 4
-    );
-    const scale = map.grid.tileWorldSize / 5;
-    return { x: offset.x * scale, y: offset.y * scale, z: offset.z * scale };
+    return campaignToLocalWorld(this._map(mapId), campaignPosition);
   }
 
   getViewTransform(mapId) {
@@ -171,15 +175,7 @@ export default class CampaignWorld {
   }
 
   _campaignBounds(map, bounds) {
-    const a = rotate(bounds.min, map.quarterTurns);
-    const b = rotate(bounds.max, map.quarterTurns);
-    const min = {},
-      max = {};
-    for (const axis of ['x', 'y', 'z']) {
-      min[axis] = map.originFeet[axis] + Math.min(a[axis], b[axis]);
-      max[axis] = map.originFeet[axis] + Math.max(a[axis], b[axis]);
-    }
-    return { min, max };
+    return campaignFeetBounds(map, bounds);
   }
 
   toCampaignBounds(mapId, bounds) {
@@ -214,10 +210,17 @@ export default class CampaignWorld {
     return geometry;
   }
 
-  getObstacles({ mapId = null, geometry: activeGeometry = null, coverBounds = null } = {}) {
+  getObstacles({
+    mapId = null,
+    geometry: activeGeometry = null,
+    coverBounds = null,
+    excludeMapId = null,
+  } = {}) {
     if (mapId !== null) this._map(mapId);
+    if (excludeMapId !== null) this._map(excludeMapId);
     const obstacles = [];
     for (const map of this._scene.maps) {
+      if (map.id === excludeMapId) continue;
       const geometry = activeGeometry && map.id === mapId ? activeGeometry : this._geometry(map.id);
       const axes = geometry.getPartition();
       for (let x = 1; x < axes.x.length; x++)
@@ -267,6 +270,72 @@ export default class CampaignWorld {
     return { ...support, heightWorld: support.heightFeet / scale };
   }
 
+  findSupportBelow(point, { mapId = null, geometry: activeGeometry = null } = {}) {
+    if (!finitePoint(point)) throw new Error('Campaign support requires a valid physical position');
+    if (mapId !== null) this._map(mapId);
+    if (activeGeometry && mapId === null)
+      throw new Error('Live support geometry requires its owning map');
+    let best = null;
+    let priority = -1;
+    for (const map of this._scene.maps) {
+      const local = this.toMapPosition(map.id, point);
+      const scale = 5 / map.grid.tileWorldSize;
+      const x = local.x * scale;
+      const z = local.z * scale;
+      if (x < 0 || z < 0 || x >= map.grid.cols * 5 || z >= map.grid.rows * 5) continue;
+      const geometry = activeGeometry && map.id === mapId ? activeGeometry : this._geometry(map.id);
+      const support = geometry.findSupport(x, z, { belowFeet: local.y * scale + 1e-6 });
+      if (!support) continue;
+      const height = map.originFeet.y + support.heightFeet;
+      const rank = (map.id === mapId ? 2 : 0) + (map.base === 'floor' ? 1 : 0);
+      if (
+        best &&
+        (height < best.positionFeet.y - 1e-6 ||
+          (Math.abs(height - best.positionFeet.y) <= 1e-6 && rank <= priority))
+      )
+        continue;
+      const positionFeet = { x: point.x, y: height, z: point.z };
+      best = {
+        mapId: map.id,
+        surfaceId: support.id,
+        layerId: support.layerId,
+        positionFeet,
+        world: this.toMapPosition(map.id, positionFeet),
+      };
+      priority = rank;
+    }
+    return best;
+  }
+
+  isOpeningHoldValid(
+    mapId,
+    localWorld,
+    openingId,
+    { mapId: activeMapId = null, geometry = null } = {}
+  ) {
+    return isOpeningHoldValid(
+      this._scene.maps,
+      this._scene.connections || [],
+      { mapId, pose: { kind: 'ledge', world: localWorld, openingId } },
+      (id) => (id === activeMapId && geometry ? geometry : this._geometry(id))
+    );
+  }
+
+  isSurfaceGripValid(mapId, localWorld, grip, { mapId: activeMapId = null, geometry = null } = {}) {
+    return isSurfaceGripValid(
+      this._scene.maps,
+      {
+        mapId,
+        pose: { kind: 'grip', world: localWorld, grip },
+      },
+      (id) => (id === activeMapId && geometry ? geometry : this._geometry(id))
+    );
+  }
+
+  openingSurfaceGrip(mapId, localWorld, openingId, options = {}) {
+    return openingSurfaceGrip(this, mapId, localWorld, openingId, options);
+  }
+
   contains(point) {
     if (!finitePoint(point)) throw new Error('The campaign point is invalid');
     return this._scene.maps.some((map) => {
@@ -284,22 +353,24 @@ export default class CampaignWorld {
     if (!finitePoint(observerFeet) || !finitePoint(targetFeet))
       throw new Error('Campaign sight requires valid physical creature positions');
     const start = new Vector3(observerFeet.x, observerFeet.y + 4, observerFeet.z);
-    const end = new Vector3(targetFeet.x, targetFeet.y + 2.5, targetFeet.z);
-    const direction = end.clone().sub(start);
-    const distance = direction.length();
-    if (distance < 1e-7) return true;
-    const ray = new Ray(start, direction.divideScalar(distance));
     const box = new Box3();
     const hit = new Vector3();
     const obstacles = geometry.obstacles ?? this.getObstacles(geometry);
     if (!Array.isArray(obstacles)) throw new Error('Campaign sight requires physical obstacles');
-    for (const bounds of obstacles) {
-      box.min.set(bounds.min.x, bounds.min.y, bounds.min.z);
-      box.max.set(bounds.max.x, bounds.max.y, bounds.max.z);
-      if (box.containsPoint(start)) return false;
-      if (ray.intersectBox(box, hit) && start.distanceTo(hit) < distance - 1e-7) return false;
-    }
-    return true;
+    return [2.5, 4.5].some((height) => {
+      const end = new Vector3(targetFeet.x, targetFeet.y + height, targetFeet.z);
+      const direction = end.clone().sub(start);
+      const distance = direction.length();
+      if (distance < 1e-7) return true;
+      const ray = new Ray(start, direction.divideScalar(distance));
+      for (const bounds of obstacles) {
+        box.min.set(bounds.min.x, bounds.min.y, bounds.min.z);
+        box.max.set(bounds.max.x, bounds.max.y, bounds.max.z);
+        if (box.containsPoint(start)) return false;
+        if (ray.intersectBox(box, hit) && start.distanceTo(hit) < distance - 1e-7) return false;
+      }
+      return true;
+    });
   }
 
   visibleProjections(observerId, viewMapId) {

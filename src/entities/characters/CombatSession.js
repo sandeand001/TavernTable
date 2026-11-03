@@ -564,7 +564,7 @@ export default class CombatSession {
     }
   }
 
-  _persistWithScene(operation, apply) {
+  _persistWithScene(operation, apply, scenePlacements = null) {
     if (!this.library.withCombatSnapshot) return operation();
     return this.library.withCombatSnapshot((engine) => {
       const histories = new Map(
@@ -589,6 +589,7 @@ export default class CombatSession {
         states,
         histories,
         listeners: new Set(),
+        scenePlacements,
         effects: this.effects.map((effect) => JSON.parse(JSON.stringify(effect))),
         _movementSnapshot: new Map(
           [...this.states].map(([token, state]) => [token, state.movementSpent])
@@ -746,8 +747,8 @@ export default class CombatSession {
     return useSlowFall(this, token, fallId);
   }
 
-  applyFall(token, context) {
-    return applyFall(this, token, context);
+  applyFall(token, context, options = {}) {
+    return applyFall(this, token, context, options);
   }
 
   freeMovementAllowance(token, travelMode = getTokenTravelMode(token)) {
@@ -801,6 +802,19 @@ export default class CombatSession {
       throw new Error('Finish the current action or movement first');
     }
     const allowance = this.movementAllowance(token, travelMode);
+    return this._reserveMovement(token, cost, allowance);
+  }
+
+  beginConnectionMovement(token, cost, travelMode = getTokenTravelMode(token)) {
+    if (this.active) return this.beginMovement(token, cost, travelMode);
+    this._assertSettled();
+    const character = this._character(token);
+    if (this.library.rules.movementImpaired(character))
+      throw new Error('This creature cannot move');
+    return this._reserveMovement(token, cost, this.freeMovementAllowance(token, travelMode), true);
+  }
+
+  _reserveMovement(token, cost, allowance, free = false) {
     if (!Number.isFinite(cost) || cost < 0 || cost > allowance + EPSILON) {
       throw new Error('Not enough movement remains this turn');
     }
@@ -810,6 +824,7 @@ export default class CombatSession {
       turn: this.turn,
       cost,
       allowance,
+      ...(free ? { free: true } : {}),
     });
     this._state(token).movementSpent += cost;
     this.moves.set(ticket.id, ticket);

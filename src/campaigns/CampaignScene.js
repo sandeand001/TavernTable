@@ -5,6 +5,9 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { validateSavedPlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { validateMovementEffects } from '../rules/falling.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
+import { validateConnections } from './CampaignConnections.js';
+import { isOpeningHoldValid } from './CampaignOpeningClimb.js';
+import { isSurfaceGripValid } from './CampaignSurfaceClimb.js';
 import {
   TARGET_ALLEGIANCES,
   TARGET_CREATURE_TYPES,
@@ -169,6 +172,7 @@ export function validateScene(scene, { ruleset, library }) {
         failure('map structure cover; load and capture the original board before migration');
     }
     if (!record(scene.view) || !boards.has(scene.view.mapId)) failure('participant map view');
+    validateConnections(scene.connections, scene.maps);
   } else {
     legacyBoard = validateBoard(scene.grid, scene.terrain, scene.version);
   }
@@ -200,11 +204,22 @@ export function validateScene(scene, { ruleset, library }) {
       !['default', 'drunk'].includes(creature.movement.type) ||
       (creature.characterId === null && !finite(creature.movement.speed, 0, 1000)) ||
       !record(creature.pose) ||
-      !['ground', 'wall', 'flight'].includes(creature.pose.kind) ||
+      !['ground', 'wall', 'flight', 'ledge', 'grip'].includes(creature.pose.kind) ||
       !vector(creature.pose.world)
     )
       failure('creature identity or position');
     validateSavedPlacement(creature);
+    if (
+      creature.pose.kind === 'ledge' &&
+      (scene.version !== 3 ||
+        !isOpeningHoldValid(
+          scene.maps,
+          scene.connections || [],
+          creature,
+          (id) => boards.get(id)?.geometry
+        ))
+    )
+      failure('physical opening/ledge attachment');
     if (
       scene.version === 3 &&
       creature.pose.kind !== 'wall' &&
@@ -212,6 +227,12 @@ export function validateScene(scene, { ruleset, library }) {
         Math.floor(creature.pose.world.z / grid.tileWorldSize) !== creature.gridY)
     )
       failure('creature local grid position');
+    if (
+      creature.pose.kind === 'grip' &&
+      (scene.version !== 3 ||
+        !isSurfaceGripValid(scene.maps, creature, (id) => boards.get(id)?.geometry))
+    )
+      failure('physical wall grip attachment');
     if (
       scene.version === 3 &&
       creature.pose.kind === 'ground' &&

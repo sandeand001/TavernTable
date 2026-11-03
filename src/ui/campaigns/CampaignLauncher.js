@@ -3,6 +3,7 @@ import { edition, supportedEditions } from '../../rules/editions.js';
 import { escapeHtml as escape } from '../characters/escapeHtml.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
 import CampaignMapControls from './CampaignMapControls.js';
+import CampaignTraversalPopup from './CampaignTraversalPopup.js';
 
 export default class CampaignLauncher {
   constructor({ workspace = null } = {}) {
@@ -328,6 +329,7 @@ export function mountCampaignControls(gameManager, services) {
     bar.setAttribute('aria-busy', String(state.state === 'loading' || state.state === 'saving'));
   });
   const maps = new CampaignMapControls({ gameManager });
+  new CampaignTraversalPopup({ gameManager }).attach();
   bar.append(name, rules, maps.root, back, status, retry);
   back.addEventListener('click', async () => {
     try {

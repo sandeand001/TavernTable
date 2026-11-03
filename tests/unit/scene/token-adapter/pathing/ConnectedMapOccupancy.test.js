@@ -146,6 +146,10 @@ test('flight collision uses translated physical positions and heights across gri
     inside.originFeet.y = 10;
     gm.campaignWorld.acceptCheckpoint(saved);
     range = adapter.getTokenMovementRange(actor);
+    expect(reachable(range, 3, 2)).toBe(false);
+    inside.originFeet.y = 15;
+    gm.campaignWorld.acceptCheckpoint(saved);
+    range = adapter.getTokenMovementRange(actor);
     expect(reachable(range, 3, 2)).toBe(true);
   } finally {
     adapter.disposeMovementRange();

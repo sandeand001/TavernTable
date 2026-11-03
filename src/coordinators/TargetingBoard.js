@@ -48,7 +48,7 @@ export function targetingPositions(gameManager, groundTokenIds = []) {
       if (!finitePoint(ground))
         throw new Error('A flight indicator needs a valid ground projection');
       position.groundWorld = gm.campaignWorld
-        ? gm.campaignWorld.toCampaignPosition(token.mapId, ground)
+        ? gm.campaignWorld.toCampaignPosition(gm.campaignMapId, ground)
         : { ...ground };
     }
     return position;
@@ -127,7 +127,10 @@ export function targetingBoard(gameManager, groundTokenIds = []) {
       const grid = spatial.worldToGrid(point.x, point.z);
       return grid.gridX >= 0 && grid.gridY >= 0 && grid.gridX < gm.cols && grid.gridY < gm.rows;
     },
-    clearPath: (actor, target) => clearSegment(eye(actor), center(target), obstacles),
+    clearPath: (actor, target) =>
+      gm.campaignWorld
+        ? gm.campaignWorld.hasLineOfSight(actor.world, target.world, { obstacles })
+        : clearSegment(eye(actor), center(target), obstacles),
     clearPoint: (actor, point) =>
       clearSegment(eye(actor), { ...point, y: point.y + tileSize * 0.01 }, obstacles),
     clearArea: (origin, target) =>

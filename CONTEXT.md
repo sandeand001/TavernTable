@@ -345,6 +345,129 @@ implementation chunks.
   not deletion and recreation or a character copy. Its stable ID, linked
   character, HP, conditions, concentration, resources and combat/movement ledger
   survive the transfer. Changing grids does not refresh a turn or grant movement.
+- **Physical connection**: an optional version-3 scene record connecting two maps
+  through an existing doorway, staircase, window or wall opening. Each end stores
+  map-local physical feet; intermediate route points use campaign feet.
+  A feature reference names
+  the owning map and its opening/stair volume IDs, rather than duplicating
+  authoritative geometry. Validate references on load/save and derive click bounds
+  from those volumes using the maps' physical transforms.
+  A climbable `window` references exactly one subtractive aperture and declares
+  `outsideMapId`; it can represent a bare wall opening, not only a glazed window.
+  A supported walk-through arch uses `opening`. Do not infer traversability from
+  every arbitrary carve.
+- **Traversal popup**: left-click a physical opening or staircase to offer
+  Enter / Exit / Use stairs / Fly through for the selected canonical
+  creature (or the focused creature when none is selected).
+  Keep the prompt to a short question and cost-bearing action buttons.
+  Show "Not enough movement." when unaffordable and retain genuine blocker/error
+  messages; do not append rule explanations, actor/destination prose or falling
+  paragraphs. Nearby clicks open the popup directly. A distant click explicitly
+  requests an approach using normal supported movement, not a transfer: move
+  toward the source entrance as far as the remaining allowance permits.
+  Stop short if unreachable within that allowance; on arrival, offer traversal
+  only if its remaining movement cost is affordable. Continue showing actual
+  blocked-route reasons rather than treating every unavailable route as exhausted
+  movement. Cancel, Escape and outside clicks dismiss an offer without transferring;
+  completed walking is never refunded. A new destination, selection or view change
+  supersedes the pending offer. No radial action, automatic proximity transfer,
+  copied actor, free turn or alternative movement engine.
+  Combat approach and traversal share the same turn ledger. Free play keeps its
+  existing per-move allowance refresh after the completed walk, before offering
+  traversal; do not introduce a combined-click speed cap outside combat.
+  Preserve foreground sprite picking, opaque visual occlusion, camera gestures,
+  terrain editing and active spell targeting.
+  Confirmation revalidates the live route. The creature must be within
+  five feet and on the viewed map; combat transfers require its active turn.
+  Walking requires support; flying requires an already-airborne creature with
+  effective flying speed. Flying approach explicitly pays vertical alignment
+  and horizontal travel, then waits for confirmation. Door/window crossings
+  preserve campaign-space altitude; stair flight pays its explicit route rises.
+  Validate continuous support, real stair rises, swept standing clearance,
+  occupied landings and remaining allowance. Include the approach, elevation and
+  prone costs using the existing five-foot movement convention.
+  Reserve movement, keep a safe source checkpoint, and acknowledge the destination
+  with its completed cost before finishing the reservation. Restore/refund a
+  failed load/save; a failed rollback requires reload and blocks partial saves.
+  Free-play physical travel completes the per-move allowance, but a zero-distance
+  map-only switch must not erase the cost of standing.
+  A locally selected sprite also follows its confirmed crossing or physical
+  lower-map landing, even without sheet/map focus. Unselected background actors
+  do not move a view deliberately watching another creature.
+  Other views and canonical actor identity,
+  resources, combat and turn remain intact. Transfers remain atomic save
+  operations. For ground window crossings, the following view switches first,
+  then plays grounded climb/recovery clips forward for entering and reversed for
+  exiting. Keep partial poses unsavable, permit presentation frames while input
+  stays busy-blocked, and settle the final pose before committing the cost.
+  Background transfers do not steal an independent view. Above a stairwell, render only the real connected
+  lower treads as read-only context; the current floor still occludes them.
+- **Opening hold**: saved `ledge` pose with map-local `world` and `openingId`,
+  bound to the exterior of a real climbable aperture. Validate the wall/sill grip,
+  exterior body clearance and owning map before capture/restore. Unsupported
+  Climb out ends in this hold, not an automatic fall. A normal window crossing
+  costs 5 ft in/out, separately from paid approach/ascent. Do not bill the
+  animation clearance arc or force a nearby valid handhold to the opening centre.
+  Wall ascent/descent spend double movement with five-foot-rounded totals; as with ordinary
+  wall climbing, clear Prone first. Insufficient movement can stop at a safe
+  jamb/wall hold across turns. Same-map progress
+  must not rebuild terrain or erase editor history. Preserve height through
+  normal height resyncs. Render a paused ledge or wall pose, neutralize embedded
+  clip translation and align actual hands to the physical grip in the viewed
+  map frame, including projections.
+  Opening clicks now offer crossing only; ground/platform clicks provide the
+  follow-up climb or free Drop actions. Drop clears attachment, animates descent
+  and uses shared falling reactions, protections,
+  damage and Prone. Like deliberate flight Drop, it relinquishes flight's own
+  protection but not Feather Fall or Slow Fall.
+- **Physical wall grip**: version-3 `grip` pose stores creature-local `world`
+  and `{ mapId, pointFeet, normal, offsetFeet }` for a hand contact on real
+  owner-map geometry. Validate the axis-aligned normal, finite reach, hand
+  contact, body clearance and map transforms independently of any connection.
+  Old opening holds remain readable and can become independent grips when moving.
+  Window clicks offer crossing only. Ground/platform clicks while held offer a
+  climb route or free Drop; wall clicks approach, climb and redirect at paid safe
+  checkpoints. Preserve normal movement reservations and five-foot-rounded costs,
+  including interrupted routes and the last climb waypoint before a free fall.
+  Use the authored upward/downward clips rather than teleporting between holds.
+  Keep their unwrapped cycle clocks through safe waypoints and resume held clips
+  at the sampled phase. Use the existing authored root-height curves for physical
+  progress, with short blends only when changing clips/attaching, not hard resets.
+  Available clips also animate basic same-wall lateral travel; dedicated lateral
+  clips and general corner routing are not yet implemented.
+  Solid support is required throughout attached routes. Confirm vertical opening
+  gaps before releasing into a shared animated fall and automatic physical catch.
+  Apply normal catch damage/protections atomically with the new grip, suppressing
+  Prone only for that catch, not by granting a character immunity. Each
+  catch measures only unsupported descent to its grip, never distance to ground.
+  Keep confirmations brief; catch distances and full-release Drop remain distinct
+  in the rules and roll history. A failed catch save pauses and retries without rerolling; failed post-ack presentation
+  requires reload and blocks overwriting the acknowledged grip. If damage leaves
+  the creature unable to hold, release it into the normal falling pipeline.
+  Platform routes can mantle reachable lips or clear nearby real railings from
+  a supported wall hold, but never invent a climbing face beneath an overhang.
+  Ground-to-window partial approaches also use animated wall movement. Full
+  cross-map interactions remain separately confirmed transfers.
+- **Physical support across maps**: query real finite floors/platforms below the
+  campaign-space position, using live geometry only for its owner. Interior
+  floor holes are not imaginary local ground, and balconies remain physical
+  support even when another map owns them. Hidden floors/roofs still block
+  flight, navigation and sight.
+  Adapter ground-ring positions use the viewed map frame; convert from that
+  frame, not the creature's home map, for campaign-space targeting. Read-only
+  queries without a live terrain owner use the saved physical geometry.
+  Exterior physical floor slabs render independently of visible creature context;
+  they retain source ownership, real occlusion and read-only geometry. Picking
+  interior cutaway walls and these slabs retains the owning map reference.
+  For a lower-map fall landing, stage the destination placement only in that
+  fall's character/combat commit so HP, Prone and landing persist atomically.
+  Keep the safe source checkpoint while unresolved; retry failed storage without
+  rerolling or double damage. After acknowledgement, settle other motion before
+  rebuilding a following view. A post-commit presentation failure requires
+  reload, never a false rollback of acknowledged damage or position.
+  A view change may wait for an already-running character save. Its checkpoint
+  flushes must not indefinitely retry SceneNotReady while the view has paused the
+  very frames needed to settle; expose the error and release view-busy state.
 
 New campaigns still start browser-local and single-board. Version-3 scene
 checkpoints store independent maps, one campaign-wide creature collection,
@@ -361,7 +484,9 @@ automatically converted.
 Cross-grid targeting uses campaign feet, actual geometry from every relevant map,
 the active terrain owner's unsaved edits, and stored cover bounds for unrendered
 structures. Spell picks transform into campaign coordinates; overlays transform
-back into the displayed map. Interior base floors are finite half-foot slabs,
+back into the displayed map. Connected creature sight checks target centre and
+head heights from the same observer eye, allowing upper windows without ignoring
+physical floors, roofs or walls. Interior base floors are finite half-foot slabs,
 not columns of earth extending through floors below.
 
 Connected-player ownership and synchronization still require explicit work;
@@ -382,9 +507,11 @@ The following terms describe that prototype, not the connected-grid plan.
   heightfield scenes remain valid. Views and Undo/Redo are session-local.
 - **Surface navigation**: constructed maps route between clear floor supports
   and stair tops, spending existing five-foot grid costs (double while prone).
-  A drop from a platform uses the shared falling lifecycle. Constructed-wall
-  climbing and size-specific full-volume creature collision remain future work;
-  heightfield-only maps retain their existing traversal pipeline.
+  A drop from a platform uses the shared falling lifecycle. Connected version-3
+  scenes also support physical wall grips/climbs; standalone version-2 scenes
+  retain their supported-floor navigation for this slice. Size-specific
+  full-volume creature collision remains future work; heightfield-only maps
+  retain their existing traversal pipeline.
 
 - **Layered shared world**: one physical 3D board with common coordinates and
   real elevations. Floors can be edited and viewed separately without becoming

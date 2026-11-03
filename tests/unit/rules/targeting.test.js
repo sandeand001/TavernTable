@@ -146,31 +146,6 @@ describe.each([
     );
   });
 
-  test('Fire Bolt at 30 feet has no distance penalty, but a hostile within 5 feet of the caster imposes disadvantage', () => {
-    const profile = spell('spell:fire-bolt').targeting;
-    const distant = token('distant', 6, 0, 0, 'hostile');
-    const adjacent = token('adjacent', 1, 0, 0, 'hostile');
-    expect(targetStatus(board([actor, distant]), actor, distant, profile)).toMatchObject({
-      allowed: true,
-      distance: 30,
-      disadvantage: [],
-    });
-    expect(targetStatus(board([actor, distant, adjacent]), actor, distant, profile)).toMatchObject({
-      allowed: true,
-      distance: 30,
-      disadvantage: ['Hostile creature within 5 ft'],
-    });
-    adjacent.world.x = 2;
-    expect(
-      targetStatus(board([actor, distant, adjacent]), actor, distant, profile).disadvantage
-    ).toEqual([]);
-    adjacent.world.x = 1;
-    adjacent.allegiance = 'friendly';
-    expect(
-      targetStatus(board([actor, distant, adjacent]), actor, distant, profile).disadvantage
-    ).toEqual([]);
-  });
-
   test('daggers offer separate melee and thrown distances; lance close penalties are edition-specific', () => {
     const dagger = weaponEntryProfile(library.catalog.get('item:dagger'), rulesFor(ruleset));
     expect(dagger.modes).toContainEqual({ id: 'thrown', normal: 20, long: 60 });
@@ -216,6 +191,31 @@ describe.each([
     });
     expect(selection.targets).toEqual([]);
     expect(selection.area).toMatchObject({ shape: 'sphere', size: 4 });
+  });
+
+  test('Fire Bolt at 30 feet has no distance penalty, but a hostile within 5 feet of the caster imposes disadvantage', () => {
+    const profile = spell('spell:fire-bolt').targeting;
+    const distant = token('distant', 6, 0, 0, 'hostile');
+    const adjacent = token('adjacent', 1, 0, 0, 'hostile');
+    expect(targetStatus(board([actor, distant]), actor, distant, profile)).toMatchObject({
+      allowed: true,
+      distance: 30,
+      disadvantage: [],
+    });
+    expect(targetStatus(board([actor, distant, adjacent]), actor, distant, profile)).toMatchObject({
+      allowed: true,
+      distance: 30,
+      disadvantage: ['Hostile creature within 5 ft'],
+    });
+    adjacent.world.x = 2;
+    expect(
+      targetStatus(board([actor, distant, adjacent]), actor, distant, profile).disadvantage
+    ).toEqual([]);
+    adjacent.world.x = 1;
+    adjacent.allegiance = 'friendly';
+    expect(
+      targetStatus(board([actor, distant, adjacent]), actor, distant, profile).disadvantage
+    ).toEqual([]);
   });
 
   test('Grapple and Shove require a different creature in reach and no more than one size larger', () => {

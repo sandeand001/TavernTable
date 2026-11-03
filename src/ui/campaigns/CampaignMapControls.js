@@ -88,6 +88,8 @@ export default class CampaignMapControls {
     const focusId = gm.campaignView.focusTokenId;
     this.focus.value = focusId || '';
     const busy = this.pending || gm.campaignViewBusy;
+    this.loading.classList.toggle('campaign-map-presenting', !!gm.campaignTraversalAnimating);
+    this.loading.textContent = gm.campaignTraversalAnimating ? '' : 'Changing map view...';
     if (busy) {
       if (!this.loading.isConnected) document.body.append(this.loading);
     } else this.loading.remove();
@@ -97,7 +99,9 @@ export default class CampaignMapControls {
     this.root.setAttribute('aria-busy', String(!!busy));
     const error = this.error || gm.campaignMapFailure;
     this.status.textContent = busy
-      ? 'Changing map view...'
+      ? gm.campaignTraversalAnimating
+        ? 'Climbing...'
+        : 'Changing map view...'
       : error
         ? error.message
         : `Viewing ${names.get(gm.campaignMapId)}.${focusId ? ` Focused on ${getTokenDisplayName(gm.placedTokens.find((token) => token.id === focusId))}.` : ' Browsing without creature focus.'}`;

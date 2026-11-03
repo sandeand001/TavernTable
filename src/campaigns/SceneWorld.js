@@ -6,15 +6,22 @@ import { readPlaceablePlacements, captureCameraView } from '../scene/SceneSnapsh
 import { snapshotCombat } from '../entities/characters/combat/persistence.js';
 import { validateScene } from './CampaignScene.js';
 import CampaignWorld from './CampaignWorld.js';
+import { prepareConnectionTravel } from './CampaignTravel.js';
 
 export async function captureCampaignScene(
   gameManager,
   library,
-  { combat = gameManager.characterServices.combat, change = null, result = null, rollLog = [] } = {}
+  {
+    combat = gameManager.characterServices.combat,
+    change = null,
+    result = null,
+    rollLog = [],
+    placements = combat.scenePlacements || null,
+  } = {}
 ) {
   const gm = gameManager;
   if (gm.campaignMapFailure) throw gm.campaignMapFailure;
-  if (gm.campaignMapTransition)
+  if (gm.campaignMapTransition && !placements?.size)
     throw new SceneNotReadyError('Waiting for the map view to finish changing');
   const pool = gm.placeableMeshPool;
   await Promise.all(gm._pendingInstancingPromises || []);
@@ -24,6 +31,7 @@ export async function captureCampaignScene(
   }
   const characterIds = new Set(library.list().map((character) => character.id));
   const creatures = gm.placedTokens.map((token) => {
+    const staged = placements?.get(token.id);
     let characterId = token.characterSheetId || null;
     if (change?.type === 'replace' && characterId === change.oldId) characterId = result;
     if (change?.linkTokenId === token.id) characterId = result;
@@ -34,7 +42,7 @@ export async function captureCampaignScene(
     const automaticName = token.nameMode === 'automatic';
     return {
       id: token.id,
-      ...(gm.campaignWorld ? { mapId: token.mapId } : {}),
+      ...(gm.campaignWorld ? { mapId: staged ? staged.mapId : token.mapId } : {}),
       type,
       instanceNumber: token.instanceNumber,
       name:
@@ -59,14 +67,21 @@ export async function captureCampaignScene(
       ...(character || !token.fallTraits
         ? {}
         : { fallTraits: TokenMovement.getTokenFallTraits(token) }),
-      ...readStablePlacement(gm.token3DAdapter, token),
+      ...(staged ? staged.placement : readStablePlacement(gm.token3DAdapter, token)),
     };
   });
   const links = new Map(creatures.map((creature) => [creature.id, creature.characterId]));
+  const movementCosts = gm.token3DAdapter.getCheckpointMovementCosts?.() || new Map();
+  const travel = gm.campaignTravel;
+  if (travel?.arrived && travel.ticket) movementCosts.set(travel.token.id, travel.cost);
   const savedCombat = snapshotCombat(combat, {
-    movementCosts: gm.token3DAdapter.getCheckpointMovementCosts?.(),
+    movementCosts,
     movementSession: gm.characterServices?.combat || combat,
   });
+  if (travel?.arrived && travel.free && travel.cost > 0) {
+    const state = savedCombat.states.find((entry) => entry.tokenId === travel.token.id);
+    if (state) state.movementSpent = 0;
+  }
   savedCombat.histories = savedCombat.histories.filter((group) =>
     characterIds.has(group.characterId)
   );
@@ -131,6 +146,24 @@ export async function captureCampaignScene(
     saved.combat = savedCombat;
     saved.rollLog = scene.rollLog;
     saved.view = gm.campaignView.snapshot(scene.camera);
+    const followedId = placements?.has(saved.view.focusTokenId)
+      ? saved.view.focusTokenId
+      : scene.selection;
+    const landing = placements?.get(followedId);
+    if (landing) {
+      const previous = saved.view.cameras?.find((entry) => entry.mapId === landing.mapId)?.camera;
+      const camera = JSON.parse(JSON.stringify(previous || saved.view.camera));
+      camera.target = { ...landing.placement.pose.world };
+      if (!previous) camera.zoom = 1;
+      const cameras = new Map(
+        (saved.view.cameras || []).map((entry) => [entry.mapId, entry.camera])
+      );
+      cameras.set(landing.mapId, camera);
+      saved.view.focusTokenId = followedId;
+      saved.view.mapId = landing.mapId;
+      saved.view.camera = camera;
+      saved.view.cameras = [...cameras].map(([mapId, value]) => ({ mapId, camera: value }));
+    }
     return validateScene(saved, { ruleset: library.ruleset, library });
   }
   return validateScene(scene, { ruleset: library.ruleset, library });
@@ -297,6 +330,232 @@ function notifyCampaignViewState(gm) {
     );
 }
 
+function viewFollowsCreature(gm, token, selected) {
+  return gm.campaignView.focusTokenId === token.id || selected === token;
+}
+
+function settleOtherCampaignMovement(gm, token) {
+  const moving = () =>
+    gm.placedTokens.some(
+      (actor) => actor !== token && gm.token3DAdapter.isMovementInProgress(actor)
+    );
+  if (!moving()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const frame = () => {
+      if (moving()) return;
+      gm.threeSceneManager.removeAnimationCallback(frame);
+      resolve();
+    };
+    gm.threeSceneManager.addAnimationCallback(frame);
+  });
+}
+
+export async function finishCampaignPhysicalLanding(gm, token, landing) {
+  const selected = gm.token3DAdapter.getSelectedToken();
+  const follows = viewFollowsCreature(gm, token, selected);
+  gm.campaignViewBusy = true;
+  gm.campaignMapTransition = true;
+  gm.campaignFallSettling = true;
+  try {
+    notifyCampaignViewState(gm);
+    await settleOtherCampaignMovement(gm, token);
+    gm.campaignFallSettling = false;
+    const scene = await captureCampaignScene(gm, gm.characterServices.library, {
+      placements: new Map([[token.id, landing]]),
+      rollLog: gm.sceneAutosave?.getRollLog() || gm.campaignWorld.save().rollLog,
+    });
+    gm.campaignView.setCamera(gm.threeSceneManager.snapshotView());
+    gm.campaignWorld.acceptCheckpoint(scene);
+    token.mapId = landing.mapId;
+    token.gridX = landing.placement.gridX;
+    token.gridY = landing.placement.gridY;
+    token.facingAngle = landing.placement.facingAngle;
+    token.world = { ...landing.placement.pose.world };
+    delete token.flightActive;
+    delete token.openingHold;
+    if (follows) {
+      gm.campaignView.showMap(landing.mapId);
+      gm.campaignView.focus(token.id);
+      gm.campaignMapId = landing.mapId;
+      await restoreMapVisuals(gm, scene, landing.mapId);
+      gm.campaignView.setCamera(scene.view.camera);
+      gm.stateCoordinator.setViewMode(scene.view.camera.topDown ? 'topdown' : 'isometric', {
+        remember: false,
+      });
+      gm.threeSceneManager.restoreView(scene.view.camera);
+    } else {
+      gm.token3DAdapter.releaseTokenVisual(token);
+      await gm.token3DAdapter.restoreStablePlacement(token, landing.placement);
+    }
+    gm.campaignMapTransition = false;
+    await gm.token3DAdapter.setSelectedToken(
+      follows ? token : selected?.mapId === gm.campaignMapId ? selected : null
+    );
+    await gm.token3DAdapter.syncMapProjections();
+    gm.sceneAutosave?.changed('physical fall landing');
+    await gm.sceneAutosave?.flush();
+  } catch (error) {
+    gm.campaignMapFailure = new AggregateError(
+      [error],
+      'The landing was committed, but its view could not finish. Reload to reopen the saved landing.'
+    );
+    throw gm.campaignMapFailure;
+  } finally {
+    gm.campaignFallSettling = false;
+    gm.campaignMapTransition = false;
+    gm.campaignViewBusy = false;
+    notifyCampaignViewState(gm);
+    gm.token3DAdapter.refreshMovementRange();
+  }
+}
+
+export async function travelCampaignConnection(gm, token, connectionId, options = {}) {
+  const plan = prepareConnectionTravel(gm, token, connectionId, options);
+  if (plan.fall) {
+    gm.token3DAdapter.releaseOpeningHold(token);
+    return { connectionId, mapId: token.mapId, costFeet: 0, fallStarted: true };
+  }
+  if (
+    plan.kind === 'window' &&
+    plan.targetMapId === token.mapId &&
+    ['ledge', 'grip'].includes(plan.targetPose?.kind) &&
+    options.action !== 'down'
+  ) {
+    const movement = gm.token3DAdapter.requestClimbTowardOpening(
+      token,
+      connectionId,
+      plan.targetPose
+    );
+    if (!movement) throw new Error('The physical approach to this window could not start');
+    return { connectionId, mapId: token.mapId, costFeet: movement.cost, movementStarted: true };
+  }
+  const session = gm.characterServices.combat;
+  const ticket = token.characterSheetId
+    ? session.beginConnectionMovement(token, plan.costFeet, plan.travelMode)
+    : null;
+  const selected = gm.token3DAdapter.getSelectedToken();
+  const follows = viewFollowsCreature(gm, token, selected);
+  const changesMap = follows && plan.targetMapId !== gm.campaignMapId;
+  let before = null;
+  let committed = false;
+  gm.campaignViewBusy = true;
+  gm.campaignTravel = { token, ticket, cost: plan.costFeet, free: plan.free, arrived: false };
+  try {
+    notifyCampaignViewState(gm);
+    await gm.sceneAutosave?.flush();
+    before = await captureCampaignScene(gm, gm.characterServices.library, {
+      rollLog: gm.sceneAutosave?.getRollLog() || gm.campaignWorld.save().rollLog,
+    });
+    gm.campaignWorld.acceptCheckpoint(before);
+    gm.campaignView.setCamera(before.view.camera);
+    const next = gm.campaignWorld.save();
+    const moved = next.creatures.find((actor) => actor.id === token.id);
+    const target = gm.campaignWorld.getMap(plan.targetMapId);
+    moved.mapId = plan.targetMapId;
+    moved.pose = { ...(plan.targetPose || { kind: 'ground' }), world: { ...plan.targetWorld } };
+    moved.gridX = Math.floor(plan.targetWorld.x / target.grid.tileWorldSize);
+    moved.gridY = Math.floor(plan.targetWorld.z / target.grid.tileWorldSize);
+    moved.facingAngle = plan.targetFacingAngle ?? moved.facingAngle + plan.facingDelta;
+    if (follows) {
+      next.view.mapId = plan.targetMapId;
+      next.view.focusTokenId = token.id;
+    }
+    gm.campaignMapTransition = true;
+    gm.campaignWorld.acceptCheckpoint(next);
+    token.mapId = moved.mapId;
+    token.gridX = moved.gridX;
+    token.gridY = moved.gridY;
+    token.world = { ...moved.pose.world };
+    token.facingAngle = moved.facingAngle;
+    if (moved.pose.kind === 'flight') token.flightActive = true;
+    else delete token.flightActive;
+    if (changesMap) {
+      gm.campaignView.showMap(moved.mapId);
+      gm.campaignView.focus(token.id);
+      gm.campaignMapId = moved.mapId;
+      await restoreMapVisuals(gm, next, moved.mapId);
+      const camera = gm.campaignView.camera;
+      if (!gm.campaignView.hasCamera) camera.zoom = 1;
+      camera.target = { ...moved.pose.world };
+      gm.stateCoordinator.setViewMode(camera.topDown ? 'topdown' : 'isometric', {
+        remember: false,
+      });
+      gm.threeSceneManager.restoreView(camera);
+    } else await gm.token3DAdapter.restoreStablePlacement(token, moved);
+    if (plan.openingCrossing && follows) {
+      const original = before.creatures.find((entry) => entry.id === token.id);
+      const animation = gm.token3DAdapter.playOpeningCrossing(token, plan, original);
+      gm.campaignTraversalAnimating = true;
+      notifyCampaignViewState(gm);
+      await animation;
+      await gm.token3DAdapter.restoreStablePlacement(token, moved);
+    }
+    gm.campaignTravel.arrived = true;
+    gm.campaignMapTransition = false;
+    await gm.token3DAdapter.setSelectedToken(
+      follows ? token : selected?.mapId === gm.campaignMapId ? selected : null
+    );
+    await gm.token3DAdapter.syncMapProjections();
+    gm.sceneAutosave?.changed('connection travel');
+    await gm.sceneAutosave?.flush();
+    committed = true;
+    if (ticket) session.finishMovement(ticket, plan.costFeet);
+    if (plan.free && token.characterSheetId && plan.costFeet > 0)
+      session.completeFreeMovement(token);
+    return { connectionId, mapId: token.mapId, costFeet: plan.costFeet };
+  } catch (error) {
+    gm.token3DAdapter.cancelOpeningCrossing(token, error);
+    gm.campaignTraversalAnimating = false;
+    if (committed) {
+      gm.campaignMapFailure = new AggregateError(
+        [error],
+        'Travel was saved, but its presentation could not finish. Reload to reopen the saved location.'
+      );
+      throw gm.campaignMapFailure;
+    }
+    try {
+      if (before) {
+        gm.campaignMapTransition = true;
+        gm.campaignTravel.arrived = false;
+        gm.campaignWorld.acceptCheckpoint(before);
+        const original = before.creatures.find((actor) => actor.id === token.id);
+        token.mapId = original.mapId;
+        token.gridX = original.gridX;
+        token.gridY = original.gridY;
+        token.world = { ...original.pose.world };
+        token.facingAngle = original.facingAngle;
+        if (original.pose.kind === 'flight') token.flightActive = true;
+        else delete token.flightActive;
+        gm.campaignView.showMap(before.view.mapId);
+        if (before.view.focusTokenId) gm.campaignView.focus(before.view.focusTokenId);
+        gm.campaignMapId = before.view.mapId;
+        if (changesMap) await restoreMapVisuals(gm, before, before.view.mapId);
+        else await gm.token3DAdapter.restoreStablePlacement(token, original);
+        gm.threeSceneManager.restoreView(before.view.camera);
+        gm.campaignMapTransition = false;
+        await gm.token3DAdapter.setSelectedToken(selected);
+        await gm.token3DAdapter.syncMapProjections();
+      }
+    } catch (rollbackError) {
+      gm.campaignMapFailure = new AggregateError(
+        [error, rollbackError],
+        'Travel could not be restored. Reload to reopen the last saved location.'
+      );
+      throw gm.campaignMapFailure;
+    } finally {
+      if (ticket && session.moves.get(ticket.id) === ticket) session.finishMovement(ticket, 0);
+    }
+    throw error;
+  } finally {
+    gm.campaignTravel = null;
+    gm.campaignTraversalAnimating = false;
+    gm.campaignMapTransition = false;
+    gm.campaignViewBusy = false;
+    notifyCampaignViewState(gm);
+    gm.token3DAdapter.refreshMovementRange();
+  }
+}
+
 export async function changeCampaignView(gm, { mapId = null, focusTokenId = null } = {}) {
   if (!gm.campaignWorld || !gm.campaignView)
     throw new Error('This campaign does not have connected maps');
@@ -305,7 +564,6 @@ export async function changeCampaignView(gm, { mapId = null, focusTokenId = null
   const combat = gm.characterServices.combat;
   if (
     gm.sceneAutosave?.ready === false ||
-    gm.characterServices.library.isSaving ||
     combat.pending ||
     combat.committing ||
     combat.moves.size ||
@@ -326,7 +584,7 @@ export async function changeCampaignView(gm, { mapId = null, focusTokenId = null
   gm.campaignViewBusy = true;
   try {
     notifyCampaignViewState(gm);
-    await gm.sceneAutosave?.flush();
+    await gm.sceneAutosave?.flush({ waitForScene: false });
     before = await captureCampaignScene(gm, gm.characterServices.library, {
       rollLog: gm.sceneAutosave ? gm.sceneAutosave.getRollLog() : gm.campaignWorld.save().rollLog,
     });
@@ -360,7 +618,7 @@ export async function changeCampaignView(gm, { mapId = null, focusTokenId = null
     await gm.token3DAdapter.setSelectedToken(focused);
     await gm.token3DAdapter.syncMapProjections();
     gm.sceneAutosave?.changed('map view');
-    await gm.sceneAutosave?.flush();
+    await gm.sceneAutosave?.flush({ waitForScene: false });
   } catch (error) {
     if (before) {
       try {

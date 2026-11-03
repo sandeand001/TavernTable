@@ -115,7 +115,7 @@ export function useSlowFall(session, token, fallId) {
 }
 
 // -- Irreversible landing effects --
-export function applyFall(session, token, context) {
+export function applyFall(session, token, context, { placement = null } = {}) {
   const character = session._character(token);
   if (character.id !== context.characterId)
     throw new Error('The falling creature changed its linked character');
@@ -146,7 +146,8 @@ export function applyFall(session, token, context) {
     };
     const persisted = session._persistWithScene(
       () => session.library.applyFall(character.id, context),
-      apply
+      apply,
+      placement ? new Map([[token.id, placement]]) : null
     );
     managed = true;
     return session._afterPersistence(ticket, persisted, apply);

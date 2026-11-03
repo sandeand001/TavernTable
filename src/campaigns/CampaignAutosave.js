@@ -180,7 +180,7 @@ export default class CampaignAutosave {
     return this.writing;
   }
 
-  async flush() {
+  async flush({ waitForScene = true } = {}) {
     if (!this.ready || this.closed)
       throw new Error('The campaign is not ready to save; its saved board was not overwritten');
     clearTimeout(this.timer);
@@ -190,7 +190,7 @@ export default class CampaignAutosave {
         await this.library.flush();
         if (this.writing || this.dirty) await (this.writing || this._save());
       } catch (error) {
-        if (!(error instanceof SceneNotReadyError)) throw error;
+        if (!(error instanceof SceneNotReadyError) || !waitForScene) throw error;
         await pause(100);
       }
     } while (this.dirty || this.writing);

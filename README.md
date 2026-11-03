@@ -166,6 +166,120 @@ current room. The wall layout remains visible while browsing without character
 focus. This is a read-only view, not a second editable copy: exterior roofs and
 the physical geometry used by sight rules remain intact.
 
+#### Doorways and stairs
+
+Connected scenes can now contain saved physical doorway and stair connections.
+Select a creature, then **left-click the actual opening or staircase**. From more
+than five feet away, the creature walks toward the entrance using normal pathing,
+up to its remaining movement. If it cannot reach the entrance, it stops at the
+closest reachable point. If it reaches the entrance but cannot afford the
+remaining route, it stops without offering traversal.
+
+Otherwise, a small popup asks for confirmation, with the cost on **Enter** /
+**Use stairs** and a **Cancel** button. Nearby clicks open this popup
+directly. There is no radial-menu travel action, automatic transfer, or turn
+refresh. The approach is charged as ordinary walking; cancelling the offer never
+refunds movement already walked. Escape, another destination or another creature
+selection cancels a pending offer.
+Outside combat, the existing allowance refresh after each completed walking move
+is unchanged.
+
+Normal movement handles approach obstacles, occupancy, elevation and prone costs.
+Blocked openings, occupied landings and unfinished actions still show their
+unavailability reasons. Confirmation rechecks the current route and allowance.
+Sprite clicks, camera gestures and spell targeting keep their existing behavior.
+
+Travel keeps the same creature and character, resources, active turn and movement
+ledger. A confirmed crossing follows the locally selected sprite as well as an
+explicitly focused creature; opening its character sheet is not required.
+Other independently watching views stay put. The destination and paid
+movement are saved together; a failed load or save restores the source and refunds
+the reservation. Stair openings viewed from above show the actual lower treads as
+read-only context. Upper-window sight samples a creature's centre and head, while
+solid floors, walls and roofs still block it.
+
+The [two-floor development example](./src/campaigns/examples/ConnectedTravelExample.js)
+provides an exterior, two interior grids, windows, a five-foot doorway route and
+a twenty-foot staircase with normal grid-aligned landings. Connections reference
+existing physical opening/stair geometry; arbitrary existing holes do not
+automatically become transfers. Connection authoring belongs to the planned
+builder.
+
+#### Flight, windows, balconies and falls
+
+The same click-to-confirm interaction supports flying through doors, windows and
+wall openings. An **already-airborne** creature flies toward a body-fitting entry
+height, paying for both elevation changes and horizontal approach, then receives
+**Fly through** if enough movement remains. Confirmation preserves physical
+altitude, flight, the canonical creature and its active turn. It does not grant
+automatic takeoff or cross a boundary without confirmation.
+Ordinary ground and balcony clicks also work while airborne: they retain
+altitude above lower surfaces, while higher surface/wall destinations pay for
+the required vertical alignment. A creature with flying speed can Take flight
+directly from a physical wall hold instead of first returning to ground.
+
+Nonflying creatures can **Climb in** and **Climb out** through configured windows
+and climbable bare wall openings. Stand up before climbing, as with ordinary
+wall climbing. Climbing costs two feet of movement per foot,
+with route totals rounded up to five feet. The window crossing itself costs
+**5 feet in either direction** when already at the opening. Any approach or
+ascent to reach it is charged separately; the animation's hoist/settling arc is
+not additional movement. A low opening can end on nearby
+support; an unsupported high exit ends in a saved, physically attached hold.
+An opening click offers crossing only: **Enter/Exit**. It does not own all
+future control of the creature.
+
+- Click solid wall to choose a handhold and climb to that point. Actual wall-climb/down
+  clips play through intermediate positions; long climbs stop at paid safe
+  holds and can continue on later turns.
+- While held, click ground or a supported platform for **Climb down/onto surface**
+  or **Drop**. After reaching the ground, any remaining approach uses ordinary
+  movement. A new wall or ground destination can redirect the current climb at
+  its next safe checkpoint, without resetting movement or revisiting a window.
+- Same-wall lateral routes currently reuse the available climbing clips; dedicated
+  sideways animations and general corner traversal remain future work.
+- Window gaps are not imaginary handholds. A downward route can explicitly
+  confirm **drop and re-grab**, using the first reachable real wall below.
+  The unsupported distance costs no movement and uses normal falling damage and
+  protections at the catch, but does not make an attached creature Prone.
+  Damage uses only the unsupported distance before each catch, not height above
+  ground. A five-foot gap causes no falling damage even high on a building.
+  Prompts keep only the action confirmation and movement/error feedback, without
+  explanatory falling-rule paragraphs.
+  Upward/sideways gaps still require a supported route.
+
+Stable grips reference physical geometry, not an original window, and survive
+save/reopen and map-focus changes. A following view switches to the destination
+before window entry/exit plays the existing climb/recovery animation (reversed
+for exiting). Movement and saving stay locked until the supported landing or
+exterior hold is reached. The final placement and cost are saved together;
+animation/load/save failure restores the source and refunds the reservation.
+Other independently watching views are not forced to switch.
+Up/down climbing keeps its authored animation phase across paid waypoints and
+held-pose resumption instead of restarting the clip at every checkpoint.
+
+**Drop** from a hold costs no movement and animates the actual fall. Shared falling rules
+handle damage, Prone, Feather Fall, Slow Fall and other protections; deliberate
+release does not use flying speed itself to cancel the fall. Existing flight
+**Drop** uses that same pipeline. Falls through upper-floor holes find real
+support on lower maps, committing the landing and damage together. A failed
+landing save stays unresolved and offers Retry without rolling or damaging twice.
+
+Balconies are clickable elevated slabs with physical railings, not cosmetic
+attachments. Existing surface navigation handles walking on them; valid wall
+routes can climb to them across turns and clear real railings before landing.
+Unsupported overhangs are not climbable air. An unrailed edge can lead to a real
+fall. Floors, walls and roofs still block flight and sight even when hidden by
+an interior cutaway. Exterior views render real interior floor slabs even when
+no creature is visible inside, so window views do not show an empty shell.
+
+The [three-floor opening example](./src/campaigns/examples/ConnectedOpeningsExample.js)
+adds low and high windows, a bare ground arch, an elevated wall opening and a
+balcony with a deliberate unrailed test gap. Connections reference the actual
+subtractive aperture; climbable windows also identify their exterior map.
+Arbitrary holes do not automatically become traversal links. No travel actions
+were added to the radial menu, and magical portals remain separate later work.
+
 #### Maps & focus
 
 Connected-map campaigns now show **Maps & focus** in the campaign bar:
@@ -190,10 +304,12 @@ Controls wait for complete scene changes and reject switching during movement,
 pending actions or unfinished terrain gestures. Failed switches restore the
 previous view; partial map loads are never autosaved. Legacy version-1/2
 single-board campaigns keep their existing workflow and hide these controls.
+Focus changes wait for an in-flight character save. An invalid source checkpoint
+reports its save problem and releases the view controls instead of waiting
+indefinitely with a paused scene.
 
-Enter / Use stairs locomotion links, cross-grid flight/falling gameplay, the
-outline builder and authenticated networked participants remain subsequent
-chunks. Changing the viewed map is not a creature transfer.
+The outline builder, magical portals and authenticated networked participants
+remain subsequent chunks. Changing the viewed map is not a creature transfer.
 
 #### Paused layered construction prototype
 

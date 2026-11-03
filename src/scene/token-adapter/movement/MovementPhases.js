@@ -50,6 +50,12 @@ function _updateForwardMovements(delta) {
       }
 
       switch (state.phase) {
+        case 'opening-crossing':
+          this._advanceOpeningCrossing(state, delta);
+          break;
+        case 'surface-climb':
+          this._advanceSurfaceClimb(state, delta);
+          break;
         case 'surface':
           this._advanceSurfaceMotion(state, delta);
           break;
@@ -69,6 +75,8 @@ function _updateForwardMovements(delta) {
           this._advanceWallMovement(state, delta);
           break;
         case 'climb-hold':
+          if (tokenEntry.surfaceHold && this._tokenAnimationData.get(tokenEntry)?.gripBlending)
+            this.syncSurfaceGripVisual(tokenEntry);
           break;
         case 'climb':
           this._advanceClimbPhase(state, delta);
@@ -126,11 +134,14 @@ function _updateForwardMovements(delta) {
       }
     } catch (error) {
       const phase = state.phase;
-      if (tokenEntry.flightActive || state.flightMotion) {
+      if (state.openingCrossing) this.cancelOpeningCrossing(tokenEntry, error);
+      else if (tokenEntry.flightActive || state.flightMotion) {
         if (this._movementRoutes.get(tokenEntry)?.flight) this._stopFlightMovement(state);
         else state.phase = 'flight-error';
       } else if (state.surfaceMotion) {
         this._stopSurfaceMovement(state);
+      } else if (this._movementRoutes.get(tokenEntry)?.physicalClimb) {
+        this._stopSurfaceClimb(state);
       } else if (state.traversal) {
         state.traversal = null;
         this._finishPlannedMovement(tokenEntry, true);

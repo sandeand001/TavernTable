@@ -1,5 +1,6 @@
 import { getTokenMovementSettings } from '../../entities/creatures/TokenMovement.js';
 import { TOKEN_WORLD_LOCK_PROP } from '../../config/token-adapter/MannequinConfig.js';
+import { validGripReference, isSurfaceGripValid } from '../../campaigns/CampaignSurfaceClimb.js';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const VECTOR_KEYS = [
@@ -38,9 +39,17 @@ export function validateSavedPlacement(placement) {
   if (
     !finiteVector(pose?.world) ||
     !Number.isFinite(placement.facingAngle) ||
-    !['ground', 'wall', 'flight'].includes(pose.kind)
+    !['ground', 'wall', 'flight', 'ledge', 'grip'].includes(pose.kind)
   )
     throw new Error('The saved creature placement is invalid');
+  if (pose.kind === 'grip' && !validGripReference(pose.grip))
+    throw new Error('The saved physical wall grip is invalid');
+  if (
+    pose.kind === 'ledge' &&
+    (typeof pose.openingId !== 'string' ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(pose.openingId))
+  )
+    throw new Error('The saved opening ledge reference is invalid');
   if (pose.kind === 'wall') {
     const saved = pose.wall;
     if (
@@ -75,6 +84,18 @@ function currentPlacement(adapter, token) {
     facingAngle: token.facingAngle ?? 0,
     pose: { kind: token.flightActive ? 'flight' : 'ground', world: { ...world } },
   };
+  if (token.surfaceHold) {
+    placement.pose = { kind: 'grip', world: { ...world }, grip: clone(token.surfaceHold) };
+    return placement;
+  }
+  if (token.openingHold) {
+    placement.pose = {
+      kind: 'ledge',
+      world: { ...world },
+      openingId: token.openingHold.openingId,
+    };
+    return placement;
+  }
   if (
     !token.flightActive &&
     !motion?.holding &&
@@ -152,6 +173,26 @@ function recordStablePlacement(token) {
   return true;
 }
 
+function flightGround(adapter, token, world) {
+  const gm = adapter.gameManager;
+  if (gm.campaignWorld) {
+    const support = gm.campaignWorld.findSupportBelow(
+      gm.campaignWorld.toCampaignPosition(token.mapId, world),
+      { mapId: gm.campaignMapId, geometry: gm.terrainEngine.geometry }
+    );
+    return support ? gm.campaignWorld.toMapPosition(token.mapId, support.positionFeet).y : null;
+  }
+  const geometry = gm.terrainEngine?.geometry;
+  const scale = 5 / gm.spatial.tileWorldSize;
+  if (geometry?.hasVolumes)
+    return (
+      geometry.findSupport(world.x * scale, world.z * scale, {
+        belowFeet: world.y * scale,
+      })?.heightFeet / scale
+    );
+  return gm.getTerrainHeight(token.gridX, token.gridY) * gm.spatial.elevationUnit;
+}
+
 function getStablePlacement(token) {
   this._savedPlacements ||= new Map();
   const gm = this.gameManager;
@@ -159,7 +200,22 @@ function getStablePlacement(token) {
     const placement = this._savedPlacements.get(token)?.placement;
     if (!placement)
       throw new SceneNotReadyError('Waiting for the creature checkpoint on its own grid');
-    if (placement.pose.kind === 'wall') {
+    if (placement.pose.kind === 'grip') {
+      assertSurfaceGrip(this, token, placement);
+    } else if (placement.pose.kind === 'ledge') {
+      if (
+        !gm.campaignWorld.isOpeningHoldValid(
+          token.mapId,
+          placement.pose.world,
+          placement.pose.openingId,
+          {
+            mapId: gm.campaignMapId,
+            geometry: gm.terrainEngine.geometry,
+          }
+        )
+      )
+        throw new SceneNotReadyError('Waiting for a valid physical opening hold');
+    } else if (placement.pose.kind === 'wall') {
       const map = gm.campaignWorld.getMap(token.mapId);
       if (
         [placement.pose.wall.face.low, placement.pose.wall.face.high].some(
@@ -167,17 +223,16 @@ function getStablePlacement(token) {
         )
       )
         throw new SceneNotReadyError('Waiting for safe wall support on the creature grid');
+    } else if (placement.pose.kind === 'flight') {
+      const ground = flightGround(this, token, placement.pose.world);
+      if (!Number.isFinite(ground) || placement.pose.world.y <= ground + 1e-7)
+        throw new SceneNotReadyError('Waiting for clear air above physical campaign support');
     } else {
       const support = gm.campaignWorld.findLocalSupport(token.mapId, placement.pose.world, {
-        surfaceId: placement.pose.kind === 'ground' ? (placement.pose.surfaceId ?? null) : null,
-        clearanceFeet: placement.pose.kind === 'ground' ? 5 : 0,
+        surfaceId: placement.pose.surfaceId ?? null,
+        clearanceFeet: 5,
       });
-      if (
-        !support ||
-        (placement.pose.kind === 'ground'
-          ? Math.abs(support.heightWorld - placement.pose.world.y) > 1e-4
-          : placement.pose.world.y <= support.heightWorld + 1e-7)
-      )
+      if (!support || Math.abs(support.heightWorld - placement.pose.world.y) > 1e-4)
         throw new SceneNotReadyError('Waiting for safe support on the creature grid');
     }
     return clone(placement);
@@ -186,7 +241,19 @@ function getStablePlacement(token) {
   const saved = this._savedPlacements.get(token);
   if (!saved)
     throw new SceneNotReadyError('Waiting for a completed creature movement step before saving');
-  if (saved.placement.pose.kind === 'wall') {
+  if (saved.placement.pose.kind === 'grip') {
+    assertSurfaceGrip(this, token, saved.placement);
+  } else if (saved.placement.pose.kind === 'ledge') {
+    if (
+      !gm.campaignWorld?.isOpeningHoldValid(
+        token.mapId,
+        saved.placement.pose.world,
+        saved.placement.pose.openingId,
+        { mapId: gm.campaignMapId, geometry: gm.terrainEngine.geometry }
+      )
+    )
+      throw new SceneNotReadyError('Waiting for a valid physical opening hold');
+  } else if (saved.placement.pose.kind === 'wall') {
     for (const cell of [saved.placement.pose.wall.face.low, saved.placement.pose.wall.face.high]) {
       if (
         Math.abs(this.gameManager.getTerrainHeight(cell.gridX, cell.gridY) - cell.height) > 1e-6
@@ -198,17 +265,7 @@ function getStablePlacement(token) {
     }
   } else if (saved.placement.pose.kind === 'flight') {
     const placement = saved.placement;
-    const geometry = this.gameManager.terrainEngine?.geometry;
-    const scale = 5 / this.gameManager.spatial.tileWorldSize;
-    const support = geometry?.hasVolumes
-      ? geometry.findSupport(placement.pose.world.x * scale, placement.pose.world.z * scale, {
-          belowFeet: placement.pose.world.y * scale,
-        })
-      : null;
-    const ground = geometry?.hasVolumes
-      ? support?.heightFeet / scale
-      : this.gameManager.getTerrainHeight(placement.gridX, placement.gridY) *
-        this.gameManager.spatial.elevationUnit;
+    const ground = flightGround(this, token, placement.pose.world);
     if (!Number.isFinite(ground)) {
       throw new SceneNotReadyError('Waiting for clear air above a valid floor');
     }
@@ -246,16 +303,45 @@ export function readStablePlacement(adapter, token) {
   return getStablePlacement.call(adapter, token);
 }
 
+function assertSurfaceGrip(adapter, token, placement) {
+  const gm = adapter.gameManager;
+  const world = gm.campaignWorld;
+  if (
+    !world ||
+    !isSurfaceGripValid(
+      world.listMaps().map(({ id }) => world.getMap(id)),
+      {
+        mapId: token.mapId,
+        pose: placement.pose,
+      },
+      (id) => (id === gm.campaignMapId ? gm.terrainEngine.geometry : world.getMapGeometry(id))
+    )
+  )
+    throw new SceneNotReadyError('The creature needs a valid physical wall grip before saving');
+}
+
 async function restoreStablePlacement(token, placement) {
   validateSavedPlacement(placement);
   const gm = this.gameManager;
+  if (placement.pose.kind === 'grip') token.surfaceHold = clone(placement.pose.grip);
+  else delete token.surfaceHold;
   if (gm.campaignWorld && token.mapId !== gm.campaignMapId) {
+    const wasOpeningHold =
+      !!token.openingHold || !!this._tokenAnimationData.get(token)?.openingHoldClip;
+    this.clearOpeningHoldVisual(token);
     token.gridX = placement.gridX;
     token.gridY = placement.gridY;
     token.facingAngle = placement.facingAngle;
     token.world = { ...placement.pose.world };
     if (placement.pose.kind === 'flight') token.flightActive = true;
     else delete token.flightActive;
+    if (placement.pose.kind === 'ledge')
+      token.openingHold = { openingId: placement.pose.openingId };
+    else delete token.openingHold;
+    if (wasOpeningHold && placement.pose.kind === 'ground' && this.hasAnimation(token, 'idle')) {
+      this._setAnimation(token, 'idle', { force: true, fadeIn: 0, fadeOut: 0 });
+      this.syncProneState(token);
+    }
     this._savedPlacements ||= new Map();
     this._savedPlacements.set(token, {
       placement: {
@@ -275,18 +361,37 @@ async function restoreStablePlacement(token, placement) {
     throw new Error('The saved creature placement is invalid');
   }
   if (!token.__threeMesh) throw new Error('The saved creature model did not load');
+  this.clearOpeningHoldVisual(token);
   this._movementRoutes.delete(token);
   this._movementStates.delete(token);
   delete token[TOKEN_WORLD_LOCK_PROP];
   const state = this._ensureMovementState(token);
   if (placement.pose.kind === 'flight') token.flightActive = true;
   else delete token.flightActive;
+  if (placement.pose.kind === 'ledge') token.openingHold = { openingId: placement.pose.openingId };
+  else delete token.openingHold;
   token.gridX = placement.gridX;
   token.gridY = placement.gridY;
   token.facingAngle = placement.facingAngle;
   this._syncTokenAndMeshWorld(state, { ...world });
   this._applyOrientationImmediate(token, placement.facingAngle);
-  if (placement.pose.kind === 'wall') {
+  if (placement.pose.kind === 'grip') {
+    assertSurfaceGrip(this, token, placement);
+    state.phase = 'climb-hold';
+    this._lockTokenWorldAuthority(state);
+    this.syncSurfaceGripVisual(token);
+  } else if (placement.pose.kind === 'ledge') {
+    if (
+      !gm.campaignWorld?.isOpeningHoldValid(token.mapId, world, placement.pose.openingId, {
+        mapId: gm.campaignMapId,
+        geometry: gm.terrainEngine.geometry,
+      })
+    )
+      throw new Error('The saved opening hold has no physical attachment');
+    state.phase = 'climb-hold';
+    this._lockTokenWorldAuthority(state);
+    this.syncOpeningHoldVisual(token);
+  } else if (placement.pose.kind === 'wall') {
     const saved = placement.pose.wall;
     if (
       !saved ||
@@ -321,7 +426,23 @@ async function restoreStablePlacement(token, placement) {
     await this._ensureFlightAnimations(token);
     state.phase = 'idle';
     this._setAnimation(token, 'hover', { force: true, fadeIn: 0, fadeOut: 0 });
-  } else if (placement.pose.kind !== 'ground') throw new Error('Unsupported saved creature pose');
+  } else if (placement.pose.kind === 'ground') {
+    state.phase = 'idle';
+    const data = this._tokenAnimationData.get(token);
+    if (
+      [
+        'ledgeHang',
+        'climb',
+        'climbWall',
+        'climbWallDown',
+        'climbRecover',
+        'climbShort',
+        'recoverShort',
+      ].includes(data?.current)
+    )
+      this._setAnimation(token, 'idle', { force: true, fadeIn: 0, fadeOut: 0 });
+    data?.mixer.update(0);
+  } else throw new Error('Unsupported saved creature pose');
   this._neutralizeRootMotion(token);
   this.syncProneState(token);
   token.__threeMesh.updateMatrixWorld?.(true);

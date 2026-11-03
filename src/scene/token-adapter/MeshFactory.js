@@ -394,7 +394,10 @@ function _getMeshVerticalOffset(mesh) {
   const manual = Number.isFinite(mesh.userData.__ttManualVerticalOffset)
     ? mesh.userData.__ttManualVerticalOffset
     : 0;
-  return base + manual;
+  const grip = Number.isFinite(mesh.userData.__ttOpeningGripOffset)
+    ? mesh.userData.__ttOpeningGripOffset
+    : 0;
+  return base + manual + grip;
 }
 
 function _attachSelectionCollider(container, three, config = {}) {

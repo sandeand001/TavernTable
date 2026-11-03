@@ -78,6 +78,14 @@ test('targeting distinguishes floors in physical feet without making an upper fl
   expect(gm.placedTokens).toHaveLength(2);
 });
 
+test('read-only flight indicators find saved physical support without a live terrain editor', () => {
+  const gm = connectedBoard();
+  gm.placedTokens[0].world = { x: 3, y: 4, z: 1.5 };
+  gm.token3DAdapter = new Token3DAdapter(gm);
+  const positions = targetingPositions(gm, [gm.placedTokens[0].id]);
+  expect(positions.tokens[0].groundWorld).toEqual({ x: 15, y: 10, z: 7.5 });
+});
+
 test('flight-ring anchors use each recipient map and preserve campaign scale, rotation and altitude', () => {
   const gm = connectedBoard();
   const saved = gm.campaignWorld.save();
@@ -88,7 +96,12 @@ test('flight-ring anchors use each recipient map and preserve campaign scale, ro
     ruleset: '2014',
     library: gm.characterServices.library,
   });
+  gm.terrainEngine = new TerrainEngine(gm.cols, gm.rows);
+  gm.terrainEngine.configureGeometryScale(gm.spatial.elevationUnit * 5);
+  for (let row = 0; row < gm.rows; row++)
+    for (let col = 0; col < gm.cols; col++) gm.terrainEngine.setHeightAt(col, row, 1);
   gm.getTerrainHeight = () => 1;
+  gm.placedTokens[0].world.x = 0.5;
   gm.placedTokens[0].world.y = 4;
   gm.placedTokens[1].world.y = 3;
   gm.token3DAdapter = new Token3DAdapter(gm);
@@ -102,6 +115,9 @@ test('flight-ring anchors use each recipient map and preserve campaign scale, ro
     groundWorld: { x: 22.5, y: 10, z: 12.5 },
   });
   expect(gm.placedTokens[1].world.y).toBe(3);
+  gm.placedTokens[0].world.x = 3;
+  const overFloor = targetingPositions(gm, [gm.placedTokens[0].id]);
+  expect(overFloor.tokens[0].groundWorld.y).toBe(10);
 });
 
 test('cross-grid projections require a clear opening and visibility works in both directions', () => {

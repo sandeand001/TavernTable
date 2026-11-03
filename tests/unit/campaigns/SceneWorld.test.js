@@ -210,31 +210,6 @@ test('captures committed terrain, canonical linked names, selected token and com
   }
 });
 
-test('restoration uses the actual token lifecycle API and restores an empty saved board without stale creatures', async () => {
-  localStorage.clear();
-  const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
-  const { gm, adapter, token, combat } = createWorld(library, library.create('Old'));
-  gm.tokenManager = new TokenManager(gm);
-  gm.tokenManager.placedTokens.push(token);
-  Object.defineProperty(gm, 'placedTokens', { get: () => gm.tokenManager.placedTokens });
-  gm.resizeGrid = jest.fn();
-  gm.notifyTerrainHeightsChanged = jest.fn();
-  gm.placeableMeshPool = { restorePlacements: jest.fn(async () => {}) };
-  gm.ensureInstancing = () => gm.placeableMeshPool;
-  gm.threeSceneManager.restoreView = jest.fn();
-  gm.stateCoordinator = { setViewMode: jest.fn() };
-  const scene = sceneState();
-  scene.creatures = [];
-  try {
-    await restoreCampaignScene(gm, scene, library, combat);
-    expect(gm.placedTokens).toEqual([]);
-    expect(gm.terrainEngine.save().heights).toEqual(scene.terrain.heights);
-    expect(gm.threeSceneManager.restoreView).toHaveBeenCalledWith(scene.camera);
-  } finally {
-    adapter.disposeMovementRange();
-  }
-});
-
 test('campaign checkpoints retain constructed volumes and the creature support floor', async () => {
   localStorage.clear();
   const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
@@ -260,59 +235,6 @@ test('campaign checkpoints retain constructed volumes and the creature support f
     expect(reopened.creatures[0].pose.world.y).toBe(2);
   } finally {
     adapter.disposeMovementRange();
-  }
-});
-
-test('autosave acknowledges a complete board and rejects conflicting scene/character updates without overwriting it', async () => {
-  const store = new CampaignStore({
-    indexedDB: testIndexedDB(),
-    packs: [{ id: 'srd-2014', ruleset: '2014', version: '5.1', core: true }],
-  });
-
-  const campaign = await store.create({ name: 'World save', ruleset: '2014' });
-  const catalog = { ruleset: '2014', entries: [], classes: [], enabledEntryIds: [] };
-  const library = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
-  const id = await library.create('Before');
-  const { gm, adapter, combat, token, terrain } = createWorld(library, id);
-  const autosave = new CampaignAutosave({
-    gameManager: gm,
-    library,
-    combat,
-    getRollLog: () => [{ message: 'Check: 17', type: 'roll', timestamp: '12:01', id: 1 }],
-  });
-  try {
-    await autosave.start();
-    expect(autosave.status.state).toBe('saved');
-    terrain.setHeightAt(2, 2, 9);
-    await library.edit(id, { name: 'Saved name' });
-    expect(token.name).toBe('Saved name');
-    combat.startTurn(token);
-    await combat.useAction(token, 'attack:unarmed');
-    await autosave.flush();
-    const reopened = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
-    const saved = decodeScene(reopened.savedScene, { ruleset: '2014', library: reopened });
-    expect(saved.terrain.heights[2][2]).toBe(9);
-    expect(saved.creatures[0].name).toBe('Saved name');
-    expect(saved.combat.histories[0].entries).toHaveLength(1);
-    expect(saved.combat.states[0].budget.actions).toBe(0);
-    expect(saved.rollLog[0].message).toBe('Check: 17');
-    expect(autosave.status.state).toBe('saved');
-    await store.commitScene(campaign.id, {
-      ruleset: '2014',
-      revision: reopened.sceneRevision,
-      charactersRevision: reopened.revision,
-      scene: reopened.savedScene,
-    });
-    terrain.setHeightAt(2, 2, 10);
-    await expect(autosave.flush()).rejects.toThrow(/another window|changed/);
-    expect(autosave.status.state).toBe('error');
-    await expect(library.edit(id, { name: 'Rejected' })).rejects.toThrow(/another window|changed/);
-    expect(library.get(id).name).toBe('Saved name');
-    expect((await store.readScene(campaign.id)).scene).toBe(reopened.savedScene);
-  } finally {
-    autosave.dispose();
-    adapter.disposeMovementRange();
-    store.close();
   }
 });
 
@@ -377,5 +299,83 @@ test('restore updates automatic zombie names but preserves custom and saved char
     expect(gm.tokenManager._tokenTypeCounts.get('monk')).toBe(3);
   } finally {
     adapter.disposeMovementRange();
+  }
+});
+
+test('restoration uses the actual token lifecycle API and restores an empty saved board without stale creatures', async () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
+  const { gm, adapter, token, combat } = createWorld(library, library.create('Old'));
+  gm.tokenManager = new TokenManager(gm);
+  gm.tokenManager.placedTokens.push(token);
+  Object.defineProperty(gm, 'placedTokens', { get: () => gm.tokenManager.placedTokens });
+  gm.resizeGrid = jest.fn();
+  gm.notifyTerrainHeightsChanged = jest.fn();
+  gm.placeableMeshPool = { restorePlacements: jest.fn(async () => {}) };
+  gm.ensureInstancing = () => gm.placeableMeshPool;
+  gm.threeSceneManager.restoreView = jest.fn();
+  gm.stateCoordinator = { setViewMode: jest.fn() };
+  const scene = sceneState();
+  scene.creatures = [];
+  try {
+    await restoreCampaignScene(gm, scene, library, combat);
+    expect(gm.placedTokens).toEqual([]);
+    expect(gm.terrainEngine.save().heights).toEqual(scene.terrain.heights);
+    expect(gm.threeSceneManager.restoreView).toHaveBeenCalledWith(scene.camera);
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
+
+test('autosave acknowledges a complete board and rejects conflicting scene/character updates without overwriting it', async () => {
+  const store = new CampaignStore({
+    indexedDB: testIndexedDB(),
+    packs: [{ id: 'srd-2014', ruleset: '2014', version: '5.1', core: true }],
+  });
+
+  const campaign = await store.create({ name: 'World save', ruleset: '2014' });
+  const catalog = { ruleset: '2014', entries: [], classes: [], enabledEntryIds: [] };
+  const library = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
+  const id = await library.create('Before');
+  const { gm, adapter, combat, token, terrain } = createWorld(library, id);
+  const autosave = new CampaignAutosave({
+    gameManager: gm,
+    library,
+    combat,
+    getRollLog: () => [{ message: 'Check: 17', type: 'roll', timestamp: '12:01', id: 1 }],
+  });
+  try {
+    await autosave.start();
+    expect(autosave.status.state).toBe('saved');
+    terrain.setHeightAt(2, 2, 9);
+    await library.edit(id, { name: 'Saved name' });
+    expect(token.name).toBe('Saved name');
+    combat.startTurn(token);
+    await combat.useAction(token, 'attack:unarmed');
+    await autosave.flush();
+    const reopened = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
+    const saved = decodeScene(reopened.savedScene, { ruleset: '2014', library: reopened });
+    expect(saved.terrain.heights[2][2]).toBe(9);
+    expect(saved.creatures[0].name).toBe('Saved name');
+    expect(saved.combat.histories[0].entries).toHaveLength(1);
+    expect(saved.combat.states[0].budget.actions).toBe(0);
+    expect(saved.rollLog[0].message).toBe('Check: 17');
+    expect(autosave.status.state).toBe('saved');
+    await store.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: reopened.sceneRevision,
+      charactersRevision: reopened.revision,
+      scene: reopened.savedScene,
+    });
+    terrain.setHeightAt(2, 2, 10);
+    await expect(autosave.flush()).rejects.toThrow(/another window|changed/);
+    expect(autosave.status.state).toBe('error');
+    await expect(library.edit(id, { name: 'Rejected' })).rejects.toThrow(/another window|changed/);
+    expect(library.get(id).name).toBe('Saved name');
+    expect((await store.readScene(campaign.id)).scene).toBe(reopened.savedScene);
+  } finally {
+    autosave.dispose();
+    adapter.disposeMovementRange();
+    store.close();
   }
 });

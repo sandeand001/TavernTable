@@ -448,7 +448,7 @@ function wallPointAtHeight(adapter, motion, height) {
   };
 }
 
-function wallHeightAtClock(motion, clock) {
+export function wallHeightAtClock(motion, clock) {
   const cycles = Math.floor(clock / motion.wallDuration);
   const time = clock - cycles * motion.wallDuration;
   let progress = time / motion.wallDuration;
@@ -464,7 +464,7 @@ function wallHeightAtClock(motion, clock) {
   return motion.loopOriginY + motion.loopDirection * (cycles + progress) * motion.wallHeight;
 }
 
-function wallClockAtHeight(motion, height) {
+export function wallClockAtHeight(motion, height) {
   const cycles = Math.floor(
     (height - motion.loopOriginY) / (motion.loopDirection * motion.wallHeight)
   );
@@ -540,7 +540,9 @@ function _resyncHeldWall(state) {
 
 export function installWallMovementMethods(prototype) {
   prototype.isWallAttached = function (token) {
-    return !!this._movementStates.get(token)?.wallMotion;
+    return (
+      !!token.openingHold || !!token.surfaceHold || !!this._movementStates.get(token)?.wallMotion
+    );
   };
   prototype._startWallMovement = _startWallMovement;
   prototype._advanceWallMovement = _advanceWallMovement;

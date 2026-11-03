@@ -231,6 +231,7 @@ function _finalizePostFallState(state, profileOverride = null) {
 
 function _checkFallTransitions(state) {
   if (!state || state.phase !== 'fall') return;
+  if (state.activeStep?.catchingWall) return;
   const trajectory = state.fallTrajectory;
   if (trajectory) {
     if (

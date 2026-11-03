@@ -81,6 +81,15 @@ function _getDirectionalVectorFromYaw(yaw, directionSign = 1) {
 }
 
 function _sampleWorldHeight(x, z, fallbackY = 0) {
+  const gm = this.gameManager;
+  if (gm.campaignWorld) {
+    const support = gm.campaignWorld.findSupportBelow(
+      gm.campaignWorld.toCampaignPosition(gm.campaignMapId, { x, y: fallbackY, z }),
+      { mapId: gm.campaignMapId, geometry: gm.terrainEngine?.geometry }
+    );
+    if (!support) throw new Error('No physical campaign surface supports this position');
+    return gm.campaignWorld.toMapPosition(gm.campaignMapId, support.positionFeet).y;
+  }
   const mapGeometry = this.gameManager?.terrainEngine?.geometry;
   if (mapGeometry?.hasVolumes) {
     const scale = 5 / this.gameManager.spatial.tileWorldSize;
@@ -121,10 +130,15 @@ function _sampleWorldHeight(x, z, fallbackY = 0) {
 function getTokenGroundPosition(tokenEntry) {
   const world = this._resolveTokenWorldPosition(tokenEntry);
   const gm = this.gameManager;
-  const remote = gm.campaignWorld && tokenEntry.mapId !== gm.campaignMapId;
-  const y = remote
-    ? gm.campaignWorld.findLocalSupport(tokenEntry.mapId, world)?.heightWorld
-    : this._sampleWorldHeight(world.x, world.z, world.y);
+  if (gm.campaignWorld) {
+    const support = gm.campaignWorld.findSupportBelow(
+      gm.campaignWorld.toCampaignPosition(tokenEntry.mapId, world),
+      { mapId: gm.campaignMapId, geometry: gm.terrainEngine?.geometry }
+    );
+    if (!support) throw new Error('A creature ground projection needs physical support');
+    return gm.campaignWorld.toMapPosition(gm.campaignMapId, support.positionFeet);
+  }
+  const y = this._sampleWorldHeight(world.x, world.z, world.y);
   if (!Number.isFinite(y)) throw new Error('A creature ground projection needs a valid height');
   return { ...world, y };
 }

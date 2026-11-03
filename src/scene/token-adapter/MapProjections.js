@@ -11,7 +11,7 @@ function disposeMapProjectionTerrain() {
 
 function syncMapProjectionTerrain() {
   const gm = this.gameManager;
-  if (gm.campaignMapTransition || gm.campaignMapFailure) {
+  if ((gm.campaignMapTransition && !gm.campaignTraversalAnimating) || gm.campaignMapFailure) {
     this.clearMapProjectionTerrain();
     return;
   }
@@ -24,7 +24,9 @@ function syncMapProjectionTerrain() {
   if (this._mapProjectionTerrain && this._mapProjectionTerrain.world !== gm.campaignWorld)
     this.disposeMapProjectionTerrain();
   if (
-    (targets.length || Number.isFinite(gm.terrainEngine.geometry.terrainThicknessFeet)) &&
+    (targets.length ||
+      Number.isFinite(gm.terrainEngine.geometry.terrainThicknessFeet) ||
+      gm.campaignWorld.listMaps().some(({ id }) => gm.campaignWorld.getMap(id).base === 'floor')) &&
     !this._mapProjectionTerrain
   )
     this._mapProjectionTerrain = new MapProjectionTerrain(gm);
@@ -92,6 +94,8 @@ async function syncMapProjections() {
       if (this.isTokenProjectionVisible(token)) {
         this._positionMesh(token.__threeMesh, token);
         this.updateTokenOrientation(token);
+        if (token.openingHold) this.syncOpeningHoldVisual(token);
+        if (token.surfaceHold) this.syncSurfaceGripVisual(token);
       }
     }
   }

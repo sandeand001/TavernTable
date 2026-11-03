@@ -127,6 +127,7 @@ export function targetingAvailability(board, actor, value) {
       .find((entry) => entry.allowed);
     if (status) candidates.push({ tokenId: target.id, name: target.name, ...status });
   }
+
   const required = profile.allowRepeat ? 1 : profile.minTargets;
   return {
     allowed: candidates.length >= required,

@@ -95,10 +95,50 @@
       preserve map rotations/scales, and handle interior-owned structures too.
       Retain original exterior roofs, physics/sight data and source ownership;
       cutaway meshes are cached, cleaned up and never saved as new geometry.
-- [ ] **Connections and cross-grid physical rules** - Doors and stairs use
-      explicit Enter / Use stairs interactions. Align grids in physical space
-      so sight, attacks, flight and falling across openings work from the outset,
-      including obstruction, clearance, landing and existing movement costs.
+- [x] **Clickable physical doorway and stair transfers** - Click an actual
+      opening/staircase for an Enter / Use stairs confirmation popup, not a radial
+      action or proximity trigger. Persist validated geometry references and
+      supported routes, charge approach/elevation/prone costs, reject blockers and
+      unaffordable travel, and preserve canonical actors, resources, turn and other
+      views. Save the destination with its paid ledger; roll back/refund failures.
+      Include the two-floor proof, grid-aligned landings, actual treads visible
+      through the upper stairwell, and centre/head sight through upper windows
+      without losing solid floor/roof occlusion.
+- [x] **Automatic entrance approach** - A distant door/stair click uses normal
+      pathing to walk toward its source entrance, stopping at the closest point
+      reachable with the remaining movement. Offer explicit traversal only when
+      close enough and affordable; otherwise stop without crossing or resetting
+      the turn. Preserve obstacle/occupancy rules and charge walking normally.
+      New destinations, actor selections and Escape cancel the pending offer
+      without refunding walking. Retain the existing free-play per-move allowance
+      refresh. Verify actual animated movement and exact costs.
+- [x] **Physical flight, windows, balconies and falls** - Confirm Fly through
+      after paid 3D approach alignment, preserving physical altitude and flight.
+      Add low/high window and bare-opening climbing, supported balcony landings,
+      saved exterior holds, partial ascents/descents and free Drop through the
+      shared falling pipeline. Preserve real wall/floor clearance and movement
+      ledgers without granting a free turn or elevation jump. Commit cross-floor
+      landing and fall damage together; retry failed saves without double damage.
+      Include the three-floor/balcony proof and actual humanoid animation tests.
+      Cross-map crossings remain explicit atomic save operations, not seamless
+      automatic transfers.
+- [x] **Surface-based flight and wall controls** - Route real ground/balcony picks
+      into normal flying movement. Replace window-bound hold controls with wall
+      targets and ground/platform Climb / Drop choices. Animate physical wall
+      travel, partial progress, safe redirects, platform mantles and confirmed
+      window-gap drops/re-grabs. Save independent physical grips and atomic catch
+      damage, retain exact movement costs, allow Take flight from a grip, and
+      render empty interiors' physical floors. Wait for in-flight saves on focus
+      changes without latching Changing map on an invalid checkpoint.
+- [x] **Short animated window crossings** - Charge 5 ft to enter/exit when already
+      at the opening, with genuine approach/ascent charged separately. Avoid
+      synthetic hoist/settling charges and unnecessary centring detours. Switch
+      a following view to the destination, animate with existing climb/recovery
+      clips, then persist the final pose and movement. Keep confirmations brief
+      and retain clear insufficient-movement/blocker errors.
+- [ ] **Dedicated lateral climbing and corner routes** - Add suitable sideways
+      clips and broader multi-face routing; current supported same-wall movement
+      reuses available climb animations and never treats gaps as solid handholds.
 - [ ] **Build-only outline tool** - Replace the numeric construction workflow
       with Build, height in 10-foot floor increments and a closed straight-line
       footprint. Generate a hollow exterior and separate floor grids from that

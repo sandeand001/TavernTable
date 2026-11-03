@@ -18,6 +18,9 @@ export default class MapProjectionTerrain {
     this.walls = new this.three.Group();
     this.walls.name = 'MapInteriorWalls';
     this.walls.visible = false;
+    this.floors = new this.three.Group();
+    this.floors.name = 'MapPhysicalFloors';
+    this.floorMeshes = new Map();
     this.material = new this.three.MeshLambertMaterial({
       vertexColors: true,
       side: this.three.DoubleSide,
@@ -28,6 +31,7 @@ export default class MapProjectionTerrain {
     this.unsubscribe = gameManager.terrainEngine.onChanged(() => this.revision++);
     gameManager.threeSceneManager.scene.add(this.root);
     gameManager.threeSceneManager.scene.add(this.walls);
+    gameManager.threeSceneManager.scene.add(this.floors);
   }
 
   clear() {
@@ -35,6 +39,8 @@ export default class MapProjectionTerrain {
     this.signature = null;
     this.walls.visible = false;
     this.wallSignature = null;
+    this.floors.visible = false;
+    this.floorSignature = null;
   }
 
   dispose() {
@@ -46,12 +52,16 @@ export default class MapProjectionTerrain {
     this.sources.clear();
     for (const mesh of this.wallMeshes.values()) mesh.geometry.dispose();
     this.wallMeshes.clear();
+    for (const mesh of this.floorMeshes.values()) mesh.geometry.dispose();
+    this.floorMeshes.clear();
     this.material.dispose();
     this.root.removeFromParent();
     this.walls.removeFromParent();
+    this.floors.removeFromParent();
   }
 
   update(observer, targets) {
+    this._updatePhysicalFloors();
     this._updateInteriorWalls();
     if (!observer || !targets.length) {
       this.root.visible = false;
@@ -152,6 +162,38 @@ export default class MapProjectionTerrain {
     this.signature = signature;
   }
 
+  _updatePhysicalFloors() {
+    const maps = this.world
+      .listMaps()
+      .map(({ id }) => this.world.getMap(id))
+      .filter((map) => map.id !== this.gm.campaignMapId && map.base === 'floor');
+    const references = maps.map((map) => this.world.getMapGeometry(map.id));
+    const signature = `${this.gm.campaignMapId}:${this.revision}`;
+    if (
+      signature === this.floorSignature &&
+      references.length === this.floorReferences?.length &&
+      references.every((reference, index) => reference === this.floorReferences[index])
+    )
+      return;
+    for (const mesh of this.floorMeshes.values()) {
+      mesh.geometry.dispose();
+      mesh.removeFromParent();
+    }
+    this.floorMeshes.clear();
+    if (!Number.isFinite(this.gm.terrainEngine.geometry.terrainThicknessFeet))
+      for (let index = 0; index < maps.length; index++)
+        this._addInteriorMesh(
+          maps[index],
+          references[index],
+          maps[index].id,
+          this.floors,
+          this.floorMeshes
+        );
+    this.floors.visible = this.floorMeshes.size > 0;
+    this.floorSignature = signature;
+    this.floorReferences = references;
+  }
+
   _updateInteriorWalls() {
     if (!Number.isFinite(this.gm.terrainEngine.geometry.terrainThicknessFeet)) {
       this.walls.visible = false;
@@ -172,29 +214,68 @@ export default class MapProjectionTerrain {
       mesh.removeFromParent();
     }
     this.wallMeshes.clear();
+    const connections = this.world.getConnections(this.gm.campaignMapId);
     for (const map of cutaway.maps) {
       if (map.id === this.gm.campaignMapId || !cutaway.intersects(map)) continue;
       const reference = this.world.getMapGeometry(map.id);
-      const geometry = new TerrainVolumeMeshBuilder().build({
-        geometry: cutaway.query(reference, map, this._partition(map, reference)),
-        three: this.three,
-        worldUnitsPerFoot: 1,
-        getColor: (_x, _z, _height, span) =>
-          getTerrainLayerColor(span.layerId === 'roof' ? 'ground' : span.layerId),
-      });
-      if (geometry.getAttribute('position').count === 0) {
-        geometry.dispose();
-        continue;
+      const partition = this._partition(map, reference);
+      this._addInteriorMesh(map, cutaway.query(reference, map, partition), map.id);
+      const ids = new Set(
+        connections
+          .filter(
+            (connection) => connection.kind === 'stairs' && connection.feature.mapId === map.id
+          )
+          .flatMap((connection) => connection.feature.volumeIds)
+      );
+      if (ids.size && map.originFeet.y < cutaway.map.originFeet.y - EPSILON) {
+        const bounds = reference
+          .save()
+          .volumes.filter((volume) => ids.has(volume.id) && volume.operation === 'add')
+          .map((volume) => volume.bounds);
+        const stairs = {
+          getPartition: () => partition,
+          getSolidSpansAt: (x, z) => {
+            const regions = bounds.filter(
+              ({ min, max }) => x >= min.x && x < max.x && z >= min.z && z < max.z
+            );
+            return reference.getSolidSpansAt(x, z).flatMap((span) =>
+              regions
+                .map(({ min, max }) => ({
+                  ...span,
+                  bottom: Math.max(span.bottom, min.y),
+                  top: Math.min(span.top, max.y),
+                }))
+                .filter((span) => span.top - span.bottom > EPSILON)
+            );
+          },
+        };
+        this._addInteriorMesh(map, stairs, `${map.id}:stairs`);
       }
-      geometry.applyMatrix4(this._transform(map, this.gm.campaignMapId));
-      const mesh = new this.three.Mesh(geometry, this.material);
-      mesh.name = `MapInteriorWalls:${map.id}`;
-      this.walls.add(mesh);
-      this.wallMeshes.set(map.id, mesh);
     }
     this.walls.visible = this.wallMeshes.size > 0;
     this.wallReferences = references;
     this.wallSignature = signature;
+  }
+
+  _addInteriorMesh(map, query, key, group = this.walls, registry = this.wallMeshes) {
+    const geometry = new TerrainVolumeMeshBuilder().build({
+      geometry: query,
+      three: this.three,
+      worldUnitsPerFoot: 1,
+      getColor: (_x, _z, _height, span) =>
+        getTerrainLayerColor(span.layerId === 'roof' ? 'ground' : span.layerId),
+    });
+    if (geometry.getAttribute('position').count === 0) {
+      geometry.dispose();
+      return;
+    }
+    geometry.applyMatrix4(this._transform(map, this.gm.campaignMapId));
+    const mesh = new this.three.Mesh(geometry, this.material);
+    mesh.name = `${group.name}:${key}`;
+    mesh.userData.campaignMapId = map.id;
+    if (key !== map.id) mesh.renderOrder = -1;
+    group.add(mesh);
+    registry.set(key, mesh);
   }
 
   _transform(map, targetMapId = null) {

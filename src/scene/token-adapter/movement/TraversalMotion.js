@@ -4,6 +4,7 @@ import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovem
 const EPSILON = 1e-8;
 const mix = (a, b, t) => a + (b - a) * t;
 const clamp = (value) => Math.min(1, Math.max(0, value));
+export { at as sampleTraversalMotion };
 
 function sampleClip(template, clip, rootInfo, three) {
   const rig = cloneHumanoidRig(template, three);

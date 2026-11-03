@@ -6,6 +6,56 @@ import {
 import { buildSurfaceRange, getSurfaceRoute } from '../../../terrain/SurfaceNavigation.js';
 import { MAX_STEP_HEIGHT_FEET } from '../../../config/TokenMovementConfig.js';
 
+function navigationGeometry(gm) {
+  if (!gm.campaignWorld) return gm.terrainEngine.geometry;
+  const world = gm.campaignWorld;
+  const mapId = gm.campaignMapId;
+  const unit = gm.spatial.tileWorldSize / 5;
+  const foreign = world.getObstacles({ excludeMapId: mapId });
+  const local = (point) => ({ x: point.x * unit, y: point.y * unit, z: point.z * unit });
+  return {
+    get widthFeet() {
+      return gm.terrainEngine.geometry.widthFeet;
+    },
+    get depthFeet() {
+      return gm.terrainEngine.geometry.depthFeet;
+    },
+    findSupport(x, z, options) {
+      const support = gm.terrainEngine.geometry.findSupport(x, z, options);
+      if (!support) return null;
+      if (Number.isFinite(options.belowFeet)) {
+        const physical = world.findSupportBelow(
+          world.toCampaignPosition(mapId, {
+            x: x * unit,
+            y: options.belowFeet * unit,
+            z: z * unit,
+          }),
+          { mapId, geometry: gm.terrainEngine.geometry }
+        );
+        if (
+          physical &&
+          world.toMapPosition(mapId, physical.positionFeet).y / unit > support.heightFeet + 1e-6
+        )
+          return null;
+      }
+      return support;
+    },
+    isSpaceClear(bounds) {
+      if (!gm.terrainEngine.geometry.isSpaceClear(bounds)) return false;
+      const body = world.toCampaignBounds(mapId, {
+        min: local(bounds.min),
+        max: local(bounds.max),
+      });
+      return !foreign.some((obstacle) =>
+        ['x', 'y', 'z'].every(
+          (axis) =>
+            body.min[axis] < obstacle.max[axis] - 1e-6 && body.max[axis] > obstacle.min[axis] + 1e-6
+        )
+      );
+    },
+  };
+}
+
 function getTokenSurfaceRange(token, allowance = null) {
   const gm = this.gameManager;
   const world = this._resolveTokenWorldPosition(token);
@@ -30,7 +80,7 @@ function getTokenSurfaceRange(token, allowance = null) {
       };
     });
   const range = buildSurfaceRange({
-    geometry: gm.terrainEngine.geometry,
+    geometry: navigationGeometry(gm),
     start: {
       gridX: token.gridX,
       gridY: token.gridY,
@@ -89,7 +139,11 @@ function requestSurfaceMovement(token, destination, range) {
         }
       : {}
   );
-  if (!route) throw new Error('That floor is outside the reachable supported movement range');
+  if (!route) {
+    if (gm.campaignWorld && picked?.point.y > token.world.y + 1e-6)
+      return this._requestSurfaceClimb(token, destination);
+    throw new Error('That floor is outside the reachable supported movement range');
+  }
   if (!route.length) return { goal: null, cost: 0, distance: 0, speedMode: range.mode };
   const data = this._tokenAnimationData.get(token);
   if (!token.__threeMesh || !data?.actions.walk || !data?.profile) {
@@ -186,7 +240,7 @@ function advanceSurfaceMotion(state, delta) {
   const job = this._movementRoutes.get(state.token);
   const motion = state.surfaceMotion;
   if (!job?.layered || !motion) throw new Error('Surface movement has no approved route');
-  const geometry = this.gameManager.terrainEngine.geometry;
+  const geometry = job.range.geometry;
   const point = job.current;
   const support = geometry.findSupport((point.gridX + 0.5) * 5, (point.gridY + 0.5) * 5, {
     belowFeet: point.heightFeet + 1e-6,

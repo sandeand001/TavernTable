@@ -408,6 +408,88 @@ test('flight travel rate completes fifteen feet within 0.85 seconds without chan
   expect(combat.status(token).movement.spent).toBe(20);
 });
 
+test('flight redirects at its next waypoint without landing or charging the abandoned route', async () => {
+  const context = fixture();
+  const { adapter, token, combat } = context;
+  await adapter.applyFlightCommand(token, 'takeoff');
+  await finish(context);
+  expect(adapter.requestMoveToGrid(token, 12, 2).cost).toBe(50);
+  for (let frame = 0; frame < 1200 && token.world.x <= 3.6; frame++) {
+    adapter._updateForwardMovements(1 / 60);
+    adapter._updatePlannedMovements();
+  }
+  expect(token.world.x).toBeGreaterThan(3.6);
+  expect(token.world.x).toBeLessThan(4.5);
+  expect(adapter.requestMoveToGrid(token, 4, 5)).toBeTruthy();
+  await finish(context);
+  expect(token.world).toEqual({ x: 4.5, y: 1, z: 5.5 });
+  expect(token.flightActive).toBe(true);
+  expect(combat.status(token).movement.spent).toBe(30);
+  expect(combat.moves.size).toBe(0);
+});
+
+test('flight can route diagonally past a creature at the same altitude without entering its space', async () => {
+  const context = fixture();
+  const { adapter, token, combat, library, gm } = context;
+  gm.rows = 12;
+  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 35 } });
+  gm.placedTokens.push({
+    id: 'mutant',
+    type: 'mutant',
+    gridX: 6,
+    gridY: 7,
+    world: { x: 6.5, y: 1, z: 7.5 },
+    flightActive: true,
+  });
+  await adapter.applyFlightCommand(token, 'takeoff');
+  await finish(context);
+  const range = adapter.getTokenMovementRange(token);
+  expect(range.tiles.has('6,7')).toBe(false);
+  expect(range.tiles.get('6,8').cost).toBe(30);
+  expect(adapter.requestMoveToGrid(token, 6, 8).cost).toBe(30);
+  await finish(context, () => {
+    const { x, z } = token.world;
+    expect(x > 6 + 1e-8 && x < 7 - 1e-8 && z > 7 + 1e-8 && z < 8 - 1e-8).toBe(false);
+  });
+  expect(token.world).toEqual({ x: 6.5, y: 1, z: 8.5 });
+  expect(combat.status(token).movement.spent).toBe(35);
+});
+
+test('a solid obstacle at the same altitude keeps its flight corner blocked', async () => {
+  const context = fixture();
+  const { adapter, token, library, gm } = context;
+  gm.rows = 12;
+  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 35 } });
+  gm.terrainManager = {
+    placeables: new Map([['6,7', [{ placeableType: 'structure' }]]]),
+  };
+  await adapter.applyFlightCommand(token, 'takeoff');
+  await finish(context);
+  const range = adapter.getTokenMovementRange(token);
+  expect(range.tiles.has('6,7')).toBe(false);
+  expect(range.tiles.has('6,8')).toBe(false);
+});
+
+test('a creature in a solid obstacle does not turn that obstacle into a passable flight corner', async () => {
+  const context = fixture();
+  const { adapter, token, library, gm } = context;
+  gm.rows = 12;
+  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 35 } });
+  gm.placedTokens.push({
+    id: 'mutant',
+    type: 'mutant',
+    gridX: 6,
+    gridY: 7,
+    world: { x: 6.5, y: 1, z: 7.5 },
+  });
+  gm.terrainManager = {
+    placeables: new Map([['6,7', [{ placeableType: 'structure' }]]]),
+  };
+  await adapter.applyFlightCommand(token, 'takeoff');
+  await finish(context);
+  expect(adapter.getTokenMovementRange(token).tiles.has('6,8')).toBe(false);
+});
+
 test('Take flight rises exactly five feet and shares prior ground movement without changing base speed', async () => {
   const context = fixture();
   const { adapter, token, combat, library, gm } = context;
@@ -669,86 +751,4 @@ test('an unlinked natural flyer retains its flight ability when a drop creates i
     conditions: ['prone'],
   });
   expect(combat.status(token).movement.spent).toBe(0);
-});
-
-test('flight redirects at its next waypoint without landing or charging the abandoned route', async () => {
-  const context = fixture();
-  const { adapter, token, combat } = context;
-  await adapter.applyFlightCommand(token, 'takeoff');
-  await finish(context);
-  expect(adapter.requestMoveToGrid(token, 12, 2).cost).toBe(50);
-  for (let frame = 0; frame < 1200 && token.world.x <= 3.6; frame++) {
-    adapter._updateForwardMovements(1 / 60);
-    adapter._updatePlannedMovements();
-  }
-  expect(token.world.x).toBeGreaterThan(3.6);
-  expect(token.world.x).toBeLessThan(4.5);
-  expect(adapter.requestMoveToGrid(token, 4, 5)).toBeTruthy();
-  await finish(context);
-  expect(token.world).toEqual({ x: 4.5, y: 1, z: 5.5 });
-  expect(token.flightActive).toBe(true);
-  expect(combat.status(token).movement.spent).toBe(30);
-  expect(combat.moves.size).toBe(0);
-});
-
-test('flight can route diagonally past a creature at the same altitude without entering its space', async () => {
-  const context = fixture();
-  const { adapter, token, combat, library, gm } = context;
-  gm.rows = 12;
-  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 35 } });
-  gm.placedTokens.push({
-    id: 'mutant',
-    type: 'mutant',
-    gridX: 6,
-    gridY: 7,
-    world: { x: 6.5, y: 1, z: 7.5 },
-    flightActive: true,
-  });
-  await adapter.applyFlightCommand(token, 'takeoff');
-  await finish(context);
-  const range = adapter.getTokenMovementRange(token);
-  expect(range.tiles.has('6,7')).toBe(false);
-  expect(range.tiles.get('6,8').cost).toBe(30);
-  expect(adapter.requestMoveToGrid(token, 6, 8).cost).toBe(30);
-  await finish(context, () => {
-    const { x, z } = token.world;
-    expect(x > 6 + 1e-8 && x < 7 - 1e-8 && z > 7 + 1e-8 && z < 8 - 1e-8).toBe(false);
-  });
-  expect(token.world).toEqual({ x: 6.5, y: 1, z: 8.5 });
-  expect(combat.status(token).movement.spent).toBe(35);
-});
-
-test('a solid obstacle at the same altitude keeps its flight corner blocked', async () => {
-  const context = fixture();
-  const { adapter, token, library, gm } = context;
-  gm.rows = 12;
-  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 35 } });
-  gm.terrainManager = {
-    placeables: new Map([['6,7', [{ placeableType: 'structure' }]]]),
-  };
-  await adapter.applyFlightCommand(token, 'takeoff');
-  await finish(context);
-  const range = adapter.getTokenMovementRange(token);
-  expect(range.tiles.has('6,7')).toBe(false);
-  expect(range.tiles.has('6,8')).toBe(false);
-});
-
-test('a creature in a solid obstacle does not turn that obstacle into a passable flight corner', async () => {
-  const context = fixture();
-  const { adapter, token, library, gm } = context;
-  gm.rows = 12;
-  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 35 } });
-  gm.placedTokens.push({
-    id: 'mutant',
-    type: 'mutant',
-    gridX: 6,
-    gridY: 7,
-    world: { x: 6.5, y: 1, z: 7.5 },
-  });
-  gm.terrainManager = {
-    placeables: new Map([['6,7', [{ placeableType: 'structure' }]]]),
-  };
-  await adapter.applyFlightCommand(token, 'takeoff');
-  await finish(context);
-  expect(adapter.getTokenMovementRange(token).tiles.has('6,8')).toBe(false);
 });
