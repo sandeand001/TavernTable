@@ -99,30 +99,7 @@ export default class ResourceStore {
         entries: await this.entries(source),
       }))
     );
-    const entries = loaded.flatMap(({ source, entries: records }) =>
-      records.map((entry) => ({ ...entry, sourcePack: source.id, sourceVersion: source.version }))
-    );
-    if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
-      throw new Error('Resource packs contain overlapping identifiers; the catalog was not loaded');
-    }
-    const core = loaded.find(({ source }) => source.id === edition(this.ruleset).corePack);
-    return {
-      version: 1,
-      ruleset: this.ruleset,
-      entries,
-      classes: core.metadata.classes,
-      enabledEntryIds: loaded
-        .filter(({ source }) => source.enabled)
-        .flatMap(({ entries: records }) => records.map((entry) => entry.id)),
-      packs: loaded.map(({ source, metadata }) => ({ ...metadata, enabled: source.enabled })),
-      provenance: {
-        attribution: loaded
-          .map(({ metadata }) => metadata.provenance?.attribution)
-          .filter(Boolean)
-          .join('\n'),
-        sources: loaded.map(({ metadata }) => metadata.provenance),
-      },
-    };
+    return createResourceCatalog(this.ruleset, loaded);
   }
 
   // -- Database lifecycle --
@@ -170,4 +147,31 @@ export default class ResourceStore {
     }
     return `${source.id}@${source.version}`;
   }
+}
+
+export function createResourceCatalog(ruleset, loaded) {
+  const entries = loaded.flatMap(({ source, entries: records }) =>
+    records.map((entry) => ({ ...entry, sourcePack: source.id, sourceVersion: source.version }))
+  );
+  if (new Set(entries.map((entry) => entry.id)).size !== entries.length)
+    throw new Error('Resource packs contain overlapping identifiers; the catalog was not loaded');
+  const core = loaded.find(({ source }) => source.id === edition(ruleset).corePack);
+  if (!core) throw new Error('The campaign is missing its required core resource pack');
+  return {
+    version: 1,
+    ruleset,
+    entries,
+    classes: core.metadata.classes,
+    enabledEntryIds: loaded
+      .filter(({ source }) => source.enabled)
+      .flatMap(({ entries: records }) => records.map((entry) => entry.id)),
+    packs: loaded.map(({ source, metadata }) => ({ ...metadata, enabled: source.enabled })),
+    provenance: {
+      attribution: loaded
+        .map(({ metadata }) => metadata.provenance?.attribution)
+        .filter(Boolean)
+        .join('\n'),
+      sources: loaded.map(({ metadata }) => metadata.provenance),
+    },
+  };
 }

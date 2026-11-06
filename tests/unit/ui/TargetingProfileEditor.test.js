@@ -26,8 +26,8 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-test('unreviewed spells can acquire a static point profile, persisted separately from the character', async () => {
-  const owned = library.add(token.characterSheetId, 'spell:misty-step');
+test('manual spells can acquire a static point profile, persisted separately from the character', async () => {
+  const owned = library.add(token.characterSheetId, 'spell:dancing-lights');
   library.prepare(token.characterSheetId, owned, true);
   const id = `spell:${owned}`;
   expect(action(id).targeting.kind).toBe('manual');
@@ -90,7 +90,7 @@ test('editing Fly keeps its automatic grant, willingness requirement and creatur
   });
 });
 
-test('changing an area into token targeting does not retain impossible area or lingering fields', async () => {
+test('changing an area into token targeting converts its duration into a recipient reminder', async () => {
   const owned = library.add(token.characterSheetId, 'spell:grease');
   library.prepare(token.characterSheetId, owned, true);
   const id = `spell:${owned}`;
@@ -102,7 +102,8 @@ test('changing an area into token targeting does not retain impossible area or l
     kind: 'tokens',
     shape: null,
     sizeFeet: 0,
-    lingerTurns: 0,
+    lingerTurns: 10,
+    durationTarget: 'targets',
     allowExclusions: false,
   });
 });

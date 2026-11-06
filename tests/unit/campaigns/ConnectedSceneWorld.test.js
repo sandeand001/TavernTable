@@ -31,6 +31,7 @@ test('live campaign restore and capture retain inactive grids, exact local poses
   combat.adjustMovement(actor, 20);
   const legacy = sceneState({ characterId, name: 'Alice' });
   legacy.terrain.heights = legacy.terrain.heights.map((row) => row.map(() => 0));
+  legacy.terrain.sightBounds = [];
   legacy.combat = combat.snapshot();
   const world = CampaignWorld.fromScene(legacy, { ruleset: '2014', library });
   world.addMap({

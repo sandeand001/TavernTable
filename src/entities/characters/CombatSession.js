@@ -20,6 +20,7 @@ import {
   actionTargetingEffect,
   advanceTargetingEffects,
   syncTargetingEffects,
+  effectMoveAction,
 } from './combat/targetingEffects.js';
 
 const EPSILON = 1e-7;
@@ -30,12 +31,14 @@ export default class CombatSession {
     isMoving = () => false,
     isSceneMoving = () => false,
     hasToken = () => true,
+    getLocationId = () => null,
   }) {
     this.library = library;
     this.isMoving = isMoving;
     this.isSceneMoving = isSceneMoving;
     this.lastSceneMoving = false;
     this.hasToken = hasToken;
+    this.getLocationId = getLocationId;
     this.active = false;
     this.activeToken = null;
     this.turn = 0;
@@ -111,9 +114,9 @@ export default class CombatSession {
   }
 
   _advanceTurn(token, phase, nextTurn, advance) {
-    const expiredFlight = this.effects.find(
+    const expiredConcentration = this.effects.find(
       (effect) =>
-        effect.kind === 'flight' &&
+        effect.concentrationSpellId &&
         effect.casterTokenId === token.id &&
         effect.expiry === phase &&
         effect.remainingTurns === 1 &&
@@ -125,21 +128,21 @@ export default class CombatSession {
       advance(session);
       advanceTargetingEffects(session, token, phase);
     };
-    if (!expiredFlight) {
+    if (!expiredConcentration) {
       apply();
       this._publish();
       return;
     }
     const ticket = Object.freeze({
       token,
-      characterId: expiredFlight.characterId,
+      characterId: expiredConcentration.characterId,
       effectExpiry: true,
     });
     this.pending = ticket;
     let managed = false;
     try {
       const persisted = this._persistWithScene(
-        () => this.library.endConcentration(expiredFlight.characterId),
+        () => this.library.endConcentration(expiredConcentration.characterId),
         apply
       );
       managed = true;
@@ -287,12 +290,29 @@ export default class CombatSession {
   }
 
   // -- Action reservations --
+  _actionOptions(token, choices = {}) {
+    const actions = characterActionOptions(this.library, token, choices);
+    const character = this.library.get(token.characterSheetId);
+    const movable = this.effects.filter(
+      (effect) =>
+        effect.movement &&
+        effect.casterTokenId === token.id &&
+        effect.characterId === character.id &&
+        (!this.active || !effect.movement.laterTurnsOnly || this.turn > effect.createdTurn) &&
+        (!effect.concentrationSpellId || character.concentration === effect.concentrationSpellId) &&
+        character.spells.some(
+          (spell) => spell.id === effect.sourceSpellId && spell.entryId === effect.sourceId
+        )
+    );
+    if (!movable.length || !this.targeting) return actions;
+    const { tileSize } = this.targeting.board();
+    return [...actions, ...movable.map((effect) => effectMoveAction(effect, tileSize))];
+  }
+
   availableActions(token, choices = {}) {
     this._character(token);
     this.targeting?.beginQuery();
-    return characterActionOptions(this.library, token, choices).filter((action) =>
-      this._available(token, action)
-    );
+    return this._actionOptions(token, choices).filter((action) => this._available(token, action));
   }
 
   prepareAction(token, actionId, choice = {}) {
@@ -302,10 +322,11 @@ export default class CombatSession {
     if (
       !choice ||
       typeof choice !== 'object' ||
-      Object.keys(choice).some((key) => !['slotLevel', 'amount'].includes(key))
+      Object.keys(choice).some((key) => !['slotLevel', 'amount', 'variant'].includes(key))
     )
       throw new Error('Unsupported action choice');
-    const action = characterActionOptions(this.library, token, { [actionId]: choice }).find(
+    this.targeting?.beginQuery();
+    const action = this._actionOptions(token, { [actionId]: choice }).find(
       (entry) => entry.id === actionId
     );
     if (!action) throw new Error('Unknown character action');
@@ -315,6 +336,7 @@ export default class CombatSession {
     const ticket = Object.freeze({
       id: globalThis.crypto.randomUUID(),
       token,
+      tokenId: token.id,
       action,
       characterId: character.id,
       characterName: character.name,
@@ -337,7 +359,8 @@ export default class CombatSession {
 
   _currentAction(ticket) {
     const character = this._character(ticket.token);
-    const action = characterActionOptions(this.library, ticket.token, {
+    this.targeting?.beginQuery();
+    const action = this._actionOptions(ticket.token, {
       [ticket.action.id]: ticket.choice,
     }).find((entry) => entry.id === ticket.action.id);
     const attackCount =
@@ -348,6 +371,7 @@ export default class CombatSession {
           )
         : null;
     if (
+      ticket.tokenId !== ticket.token.id ||
       character.id !== ticket.characterId ||
       character.classId !== ticket.classId ||
       character.level !== ticket.level ||
@@ -362,24 +386,31 @@ export default class CombatSession {
   }
 
   changeSpellLevel(ticket, slotLevel) {
+    if (!ticket.action.usesSlot) throw new Error('Cantrips do not use spell slot levels');
+    return this.changeSpellChoices(ticket, { ...ticket.choice, slotLevel });
+  }
+
+  changeSpellChoices(ticket, choice) {
     if (this.pending !== ticket || this.committing || this.library.isSaving)
       throw new Error('This spell reservation is no longer available to change');
     const { action } = this._currentAction(ticket);
     if (
       action.kind !== 'spell' ||
-      !action.usesSlot ||
-      !Number.isInteger(slotLevel) ||
-      !action.slotLevels.includes(slotLevel)
+      !choice ||
+      typeof choice !== 'object' ||
+      Array.isArray(choice) ||
+      Object.keys(choice).some((key) => !['slotLevel', 'amount', 'variant'].includes(key)) ||
+      (action.usesSlot &&
+        (!Number.isInteger(choice.slotLevel) || !action.slotLevels.includes(choice.slotLevel)))
     )
       throw new Error('Choose an available spell slot level');
-    const choice = { ...ticket.choice, slotLevel };
-    const updated = characterActionOptions(this.library, ticket.token, {
+    const updated = this._actionOptions(ticket.token, {
       [action.id]: choice,
     }).find((entry) => entry.id === action.id);
     this.targeting?.beginQuery();
     if (!updated || !this._available(ticket.token, updated, true))
       throw new Error('The selected spell slot or action is no longer available');
-    const revised = Object.freeze({ ...ticket, action: updated, choice });
+    const revised = Object.freeze({ ...ticket, action: updated, choice: { ...choice } });
     this.pending = revised;
     return revised;
   }
@@ -416,15 +447,28 @@ export default class CombatSession {
       const sequence = globalThis.crypto.randomUUID();
       const plannedEffect = actionTargetingEffect(this, ticket.token, action, selected, sequence);
       const replacesConcentration = action.kind === 'spell' && action.spellConcentration;
-      const replacedEffects = replacesConcentration
-        ? this.effects
-            .filter((effect) => effect.characterId === character.id && effect.concentrationSpellId)
-            .map((effect) => JSON.parse(JSON.stringify(effect)))
-        : [];
+      const replaces = (effect) =>
+        (replacesConcentration &&
+          effect.characterId === character.id &&
+          effect.concentrationSpellId) ||
+        (action.kind === 'spell' &&
+          action.targeting?.replacePrevious &&
+          effect.casterTokenId === ticket.token.id &&
+          effect.sourceId === action.spellEntryId);
+      const replacedEffects = this.effects
+        .filter(replaces)
+        .map((effect) => JSON.parse(JSON.stringify(effect)));
       const apply = (receipt, session = this) => {
-        if (session !== this && plannedEffect?.kind === 'flight') {
+        if (session !== this) {
           this._currentAction(ticket);
-          this.targeting.validate(ticket.token, action, selected);
+          if (
+            this.library.rules.cannotTakeActions(this._character(ticket.token)) ||
+            this.isMoving(ticket.token) ||
+            this.isSceneMoving()
+          )
+            throw new Error('The caster can no longer perform this use; no costs were spent');
+          if (action.targeting && this.targeting)
+            this.targeting.validate(ticket.token, action, selected);
         }
         const state = session._state(ticket.token);
         if (session.active) {
@@ -473,12 +517,15 @@ export default class CombatSession {
           ...(selected ? { targetingSelection: selected } : {}),
           ...(completedTargetRolls.length ? { targetRolls: completedTargetRolls } : {}),
         };
-        if (replacesConcentration) {
-          session.effects = session.effects.filter(
-            (effect) => effect.characterId !== character.id || !effect.concentrationSpellId
-          );
-        }
-        if (plannedEffect) session.effects = [...session.effects, plannedEffect];
+        session.effects = session.effects.filter((effect) => !replaces(effect));
+        if (action.kind === 'spell-effect') {
+          session.effects = session.effects.map((effect) => {
+            if (effect.id !== action.spellEffectId) return effect;
+            return effect.kind === 'point'
+              ? { ...effect, origin: JSON.parse(JSON.stringify(selected.origin)) }
+              : { ...effect, area: JSON.parse(JSON.stringify(selected.area)) };
+          });
+        } else if (plannedEffect) session.effects = [...session.effects, plannedEffect];
         if (!session.histories.has(character.id)) session.histories.set(character.id, []);
         session.histories.get(character.id).unshift(result);
         state.recent.unshift(result);
@@ -489,6 +536,18 @@ export default class CombatSession {
           sequence: result.sequence,
           characterId: character.id,
           replacedEffects,
+          ...(action.kind === 'spell-effect'
+            ? {
+                movedEffect: {
+                  before: JSON.parse(JSON.stringify(action.effectSnapshot)),
+                  after: JSON.parse(
+                    JSON.stringify(
+                      session.effects.find((effect) => effect.id === action.spellEffectId)
+                    )
+                  ),
+                },
+              }
+            : {}),
         });
         state.undo = state.undo.slice(-10);
         return result;
@@ -530,6 +589,12 @@ export default class CombatSession {
     if (!entry || entry.characterId !== character.id)
       throw new Error('No matching action use can be undone');
     if (
+      entry.movedEffect &&
+      JSON.stringify(this.effects.find((effect) => effect.id === entry.movedEffect.after.id)) !==
+        JSON.stringify(entry.movedEffect.after)
+    )
+      throw new Error('The moved spell effect ended or changed; its movement cannot be undone');
+    if (
       state.movementSpent >
       movementSpeed(character, getTokenTravelMode(token)) * (1 + entry.before.dashes) +
         entry.before.movementBonus +
@@ -548,6 +613,12 @@ export default class CombatSession {
         const recent = state.recent.find((row) => row.sequence === entry.sequence);
         if (recent) recent.undone = true;
         session.effects = session.effects.filter((effect) => effect.id !== entry.sequence);
+        if (entry.movedEffect)
+          session.effects = session.effects.map((effect) =>
+            effect.id === entry.movedEffect.before.id
+              ? JSON.parse(JSON.stringify(entry.movedEffect.before))
+              : effect
+          );
         if (entry.replacedEffects?.length)
           session.effects.push(
             ...entry.replacedEffects.map((effect) => JSON.parse(JSON.stringify(effect)))
@@ -851,9 +922,12 @@ export default class CombatSession {
     if (this.pending?.token === token) this.pending = null;
     this.states.delete(token);
     this.effects = this.effects.flatMap((effect) => {
-      if ((effect.followCaster || effect.kind === 'flight') && effect.casterTokenId === token.id)
+      if (
+        (effect.followCaster || effect.kind === 'flight' || effect.movement) &&
+        effect.casterTokenId === token.id
+      )
         return [];
-      if (effect.kind !== 'flight' || preserveTargetEffects) return [effect];
+      if (!['flight', 'targets'].includes(effect.kind) || preserveTargetEffects) return [effect];
       const targetTokenIds = effect.targetTokenIds.filter((id) => id !== token.id);
       return targetTokenIds.length ? [{ ...effect, targetTokenIds }] : [];
     });
@@ -874,11 +948,43 @@ export default class CombatSession {
     syncTargetingEffects(this);
   }
 
-  endEffect(effectId) {
+  removeEffectRecipient(effectId, tokenId) {
+    this._assertSettled();
+    const effect = this.effects.find((entry) => entry.id === effectId);
+    if (effect?.kind !== 'targets' || !effect.targetTokenIds.includes(tokenId))
+      throw new Error('That spell reminder no longer includes this target');
+    if (effect.targetTokenIds.length === 1) return this.endEffect(effectId);
+    const expected = JSON.stringify(effect);
+    const ticket = Object.freeze({ characterId: effect.characterId, removeRecipient: tokenId });
+    this.pending = ticket;
+    let managed = false;
+    try {
+      const apply = (_, session = this) => {
+        const current = session.effects.find((entry) => entry.id === effectId);
+        if (JSON.stringify(current) !== expected)
+          throw new Error('The spell reminder changed before the target removal could be saved');
+        session.effects = session.effects.map((entry) =>
+          entry.id === effectId
+            ? { ...entry, targetTokenIds: entry.targetTokenIds.filter((id) => id !== tokenId) }
+            : entry
+        );
+      };
+      const persisted = this._persistWithScene(
+        () => this.library.edit(effect.characterId, {}),
+        apply
+      );
+      managed = true;
+      return this._afterPersistence(ticket, persisted, apply);
+    } finally {
+      if (!managed) this._releasePersistence(ticket);
+    }
+  }
+
+  endEffect(effectId, { endConcentration = false } = {}) {
     this._assertSettled();
     const effect = this.effects.find((effect) => effect.id === effectId);
     if (!effect) throw new Error('That spell effect is no longer active');
-    if (effect.kind !== 'flight') {
+    if (!['flight', 'targets', 'point'].includes(effect.kind) && !endConcentration) {
       this.effects = this.effects.filter((effect) => effect.id !== effectId);
       this._publish();
       return;
@@ -893,6 +999,7 @@ export default class CombatSession {
           (candidate) =>
             candidate.id !== effectId &&
             !(
+              effect.concentrationSpellId &&
               candidate.characterId === effect.characterId &&
               candidate.concentrationSpellId === effect.concentrationSpellId
             )
@@ -900,7 +1007,7 @@ export default class CombatSession {
       };
       const persisted = this._persistWithScene(
         () =>
-          character.concentration === effect.concentrationSpellId
+          effect.concentrationSpellId && character.concentration === effect.concentrationSpellId
             ? this.library.endConcentration(character.id)
             : this.library.edit(character.id, {}),
         apply

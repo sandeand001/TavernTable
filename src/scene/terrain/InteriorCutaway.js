@@ -1,3 +1,6 @@
+import { clipCellToBounds } from '../../terrain/ConvexGeometry.js';
+import { buildingLevels, buildingLevelHeight } from '../../terrain/BuildingModel.js';
+
 const EPSILON = 1e-6;
 
 function footprint(world, map, cols = map.grid.cols, rows = map.grid.rows) {
@@ -28,7 +31,7 @@ export function createInteriorCutaway(gm) {
   if (!gm.campaignWorld || !Number.isFinite(gm.terrainEngine?.geometry.terrainThicknessFeet))
     return null;
   const world = gm.campaignWorld;
-  const maps = world.listMaps().map(({ id }) => world.getMap(id));
+  const maps = world.listLocationMaps(gm.campaignMapId).map(({ id }) => world.getMap(id));
   const map = maps.find((entry) => entry.id === gm.campaignMapId);
   const region = footprint(world, map, gm.cols, gm.rows);
   const above = maps.filter((entry) => {
@@ -44,7 +47,17 @@ export function createInteriorCutaway(gm) {
       Math.min(region.maxZ, bounds.maxZ) - Math.max(region.minZ, bounds.minZ) > EPSILON
     );
   });
+  const owner = map.building && maps.find((entry) => entry.id === map.building.ownerMapId);
+  const spec = owner?.terrain.geometry?.structures?.find(
+    (entry) => entry.id === map.building.structureId
+  );
+  const level = spec && buildingLevels(spec).find((entry) => entry.id === map.building.floor);
+  const managedCeiling =
+    level && !level.roofDeck
+      ? map.originFeet.y + buildingLevelHeight(spec, level.id) - 0.5
+      : Infinity;
   const ceilingFeet = Math.min(
+    managedCeiling,
     Infinity,
     ...above.map(
       (entry) => entry.originFeet.y - world.getMapGeometry(entry.id).terrainThicknessFeet
@@ -82,8 +95,62 @@ export function createInteriorCutaway(gm) {
       const roofs = geometry
         .save()
         .volumes.filter((volume) => volume.operation === 'add' && volume.layerId === 'roof');
+      const limitsAt = (x, z) => {
+        const local = world.toMapPosition(
+          map.id,
+          world.toCampaignPosition(source.id, sourcePoint(x, z))
+        );
+        const gx = Math.max(
+          0,
+          Math.min(gm.cols - 1, Math.floor(local.x / gm.spatial.tileWorldSize))
+        );
+        const gz = Math.max(
+          0,
+          Math.min(gm.rows - 1, Math.floor(local.z / gm.spatial.tileWorldSize))
+        );
+        const floor =
+          map.originFeet.y -
+          source.originFeet.y +
+          gm.terrainEngine.getHeightAt(gx, gz) *
+            gm.spatial.elevationUnit *
+            (5 / gm.spatial.tileWorldSize);
+        let ceiling = ceilingFeet - source.originFeet.y;
+        for (const { bounds: roof } of roofs)
+          if (
+            roof.min.y > floor + EPSILON &&
+            x >= roof.min.x &&
+            x < roof.max.x &&
+            z >= roof.min.z &&
+            z < roof.max.z
+          )
+            ceiling = Math.min(ceiling, roof.min.y);
+        return { floor, ceiling };
+      };
       return {
+        hasCurves: geometry.hasCurves,
         getPartition: () => partition,
+        getSolidCells() {
+          const cells = geometry.getSolidCells();
+          const result = [];
+          for (let i = 1; i < partition.x.length; i++)
+            for (let j = 1; j < partition.z.length; j++) {
+              const x0 = Math.max(bounds.minX, partition.x[i - 1]);
+              const x1 = Math.min(bounds.maxX, partition.x[i]);
+              const z0 = Math.max(bounds.minZ, partition.z[j - 1]);
+              const z1 = Math.min(bounds.maxZ, partition.z[j]);
+              if (x1 - x0 <= EPSILON || z1 - z0 <= EPSILON) continue;
+              const { floor, ceiling } = limitsAt((x0 + x1) / 2, (z0 + z1) / 2);
+              const clip = {
+                min: { x: x0, y: includeFloor ? -Infinity : floor, z: z0 },
+                max: { x: x1, y: ceiling, z: z1 },
+              };
+              for (const cell of cells) {
+                const clipped = clipCellToBounds(cell, clip);
+                if (clipped) result.push(clipped);
+              }
+            }
+          return result;
+        },
         getSolidSpansAt(x, z) {
           const i = partition.x.findIndex((value) => value > x);
           const j = partition.z.findIndex((value) => value > z);
@@ -96,34 +163,7 @@ export function createInteriorCutaway(gm) {
             })
           )
             return [];
-          const local = world.toMapPosition(
-            map.id,
-            world.toCampaignPosition(source.id, sourcePoint(x, z))
-          );
-          const gx = Math.max(
-            0,
-            Math.min(gm.cols - 1, Math.floor(local.x / gm.spatial.tileWorldSize))
-          );
-          const gz = Math.max(
-            0,
-            Math.min(gm.rows - 1, Math.floor(local.z / gm.spatial.tileWorldSize))
-          );
-          const floor =
-            map.originFeet.y -
-            source.originFeet.y +
-            gm.terrainEngine.getHeightAt(gx, gz) *
-              gm.spatial.elevationUnit *
-              (5 / gm.spatial.tileWorldSize);
-          let ceiling = ceilingFeet - source.originFeet.y;
-          for (const { bounds: roof } of roofs)
-            if (
-              roof.min.y > floor + EPSILON &&
-              x >= roof.min.x &&
-              x < roof.max.x &&
-              z >= roof.min.z &&
-              z < roof.max.z
-            )
-              ceiling = Math.min(ceiling, roof.min.y);
+          const { floor, ceiling } = limitsAt(x, z);
           // Clip the mesh query without removing physical roofs or walls.
           return geometry
             .getSolidSpansAt(x, z)

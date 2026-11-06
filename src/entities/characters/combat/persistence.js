@@ -212,6 +212,9 @@ export function validateTargetingRecord(selection) {
     fail();
   if (selection.profile !== undefined) validateTargetingProfile(selection.profile);
   if (
+    (selection.variant !== undefined &&
+      (typeof selection.variant !== 'string' ||
+        selection.variant !== selection.profile?.variant)) ||
     (selection.willingConfirmed !== undefined && typeof selection.willingConfirmed !== 'boolean') ||
     (selection.profile?.requiresWilling && selection.willingConfirmed !== true)
   )

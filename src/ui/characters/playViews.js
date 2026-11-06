@@ -82,7 +82,7 @@ function sectionControls(id, label, editing, index, length) {
 }
 
 function actionCategory(action) {
-  if (action.kind === 'spell' || action.isSpell) return 'spells';
+  if (['spell', 'spell-effect'].includes(action.kind) || action.isSpell) return 'spells';
   if (
     action.kind === 'weapon' ||
     ['attack', 'bonus-attack'].includes(action.cost) ||
@@ -152,12 +152,12 @@ function actionCards(actions, context) {
           ${resource ? ` | ${resource.maximum === null ? 'Unlimited' : resource.remaining} ${escape(resource.name)}` : ''}</small>
         ${custom && custom.maximum !== null ? `<small>${remaining}/${custom.maximum} uses</small>` : ''}
       </button>
-      ${action.targeting?.kind === 'manual' ? '<small class="sheet-targeting-manual">Manual targeting — no reviewed profile</small>' : ''}
+      ${action.targeting?.kind === 'manual' ? `<small class="sheet-targeting-manual" title="${escape(action.targeting.reason)}">Manual targeting</small>` : ''}
       ${
         action.kind === 'spell' && action.targeting?.kind === 'manual'
           ? `<button type="button" class="sheet-targeting-config" data-sheet-action="configure-targeting"
         data-action-id="${escape(action.id)}" aria-label="Configure targeting for ${escape(action.label)}"
-        title="Configure this spell's unreviewed targeting profile" ${disabled}><span aria-hidden="true">&#9881;</span></button>`
+        title="Configure this spell's targeting profile" ${disabled}><span aria-hidden="true">&#9881;</span></button>`
           : ''
       }
       ${editingLayout && action.available === false ? '<small class="sheet-layout-unavailable">Currently unavailable</small>' : ''}
@@ -191,7 +191,7 @@ function playSections(context, available, options) {
             ? 'free'
             : null;
   const useful = (action) =>
-    ['spell', 'custom', 'ability'].includes(action.kind) ||
+    ['spell', 'spell-effect', 'custom', 'ability'].includes(action.kind) ||
     ['hide', 'help', 'search-perception', 'search-investigation'].includes(action.id);
   const cards = [
     ...definitions

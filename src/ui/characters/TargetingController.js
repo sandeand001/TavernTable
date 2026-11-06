@@ -1,10 +1,17 @@
 import { targetingBoard, targetingPositions } from '../../coordinators/TargetingBoard.js';
+import { DEFAULT_LOCATION_ID } from '../../campaigns/CampaignLocations.js';
 import {
   targetingAvailability,
   validateTargetSelection,
   targetStatus,
+  affectedAreaTargets,
 } from '../../rules/targeting/assessment.js';
-import { targetRelation, facingDirection } from '../../rules/targeting/geometry.js';
+import {
+  targetRelation,
+  facingDirection,
+  boardDistance,
+  areaPlacement,
+} from '../../rules/targeting/geometry.js';
 import TargetingOverlay from '../../scene/targeting/TargetingOverlay.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { escapeHtml as escape } from './escapeHtml.js';
@@ -36,13 +43,29 @@ export default class TargetingController {
     this.root.addEventListener('click', (event) => this.click(event));
     this.root.addEventListener('change', (event) => this.change(event));
     this.effectRoot.addEventListener('click', async (event) => {
-      const button = event.target.closest('[data-end-area], [data-end-flight]');
+      const button = event.target.closest(
+        '[data-end-area], [data-end-flight], [data-end-spell], [data-move-effect], [data-remove-recipient]'
+      );
       if (!button) return;
       try {
-        const effectId = button.dataset.endArea || button.dataset.endFlight;
+        if (button.dataset.moveEffect) {
+          await this.moveEffect(button.dataset.moveEffect);
+          return;
+        }
+        if (button.dataset.removeRecipient) {
+          const effect = this.session.effects.find((entry) => entry.id === button.dataset.effectId);
+          await this.session.removeEffectRecipient(
+            button.dataset.effectId,
+            button.dataset.removeRecipient
+          );
+          if (effect?.concentrationSpellId) this.onChanged?.(effect.characterId);
+          return;
+        }
+        const effectId =
+          button.dataset.endArea || button.dataset.endFlight || button.dataset.endSpell;
         const effect = this.session.effects.find((effect) => effect.id === effectId);
-        await this.session.endEffect(effectId);
-        if (effect?.kind === 'flight') this.onChanged?.(effect.characterId);
+        await this.session.endEffect(effectId, { endConcentration: !!button.dataset.endSpell });
+        if (effect?.concentrationSpellId) this.onChanged?.(effect.characterId);
       } catch (error) {
         this.failure(error);
       }
@@ -96,13 +119,18 @@ export default class TargetingController {
   beginQuery() {
     this.boardCache = null;
   }
-  flightRecipients() {
+  effectRecipients() {
     return this.session.effects.flatMap((effect) =>
       effect.kind === 'flight' ? effect.targetTokenIds : []
     );
   }
   board() {
-    return (this.boardCache ||= targetingBoard(this.gameManager, this.flightRecipients()));
+    return (this.boardCache ||= targetingBoard(this.gameManager, this.effectRecipients()));
+  }
+  actorFor(token, action, board) {
+    const actor = board.tokens.find((entry) => entry.id === token.id);
+    if (!actor || !action.spellEffectId) return actor;
+    return { ...actor, world: { ...action.effectOrigin } };
   }
   hasTokenId(id, characterId = null) {
     return this.gameManager.placedTokens.some(
@@ -114,14 +142,43 @@ export default class TargetingController {
     if (this.session.isMoving(token) || this.session.isSceneMoving())
       return { allowed: false, reason: 'Finish scene movement before targeting', candidates: [] };
     const board = this.board();
-    const actor = board.tokens.find((entry) => entry.id === token.id);
+    const actor = this.actorFor(token, action, board);
+    if (
+      !actor ||
+      (action.spellEffectId &&
+        !this.visibleEffects().some((effect) => effect.id === action.spellEffectId))
+    )
+      return {
+        allowed: false,
+        reason: 'This creature or spell effect is in another location',
+        candidates: [],
+      };
     return targetingAvailability(board, actor, action.targeting);
   }
   validate(token, action, selection) {
     this.beginQuery();
+    if (action.spellEffectId) {
+      const effect = this.session.effects.find((entry) => entry.id === action.spellEffectId);
+      if (!effect || JSON.stringify(effect) !== JSON.stringify(action.effectSnapshot))
+        throw new Error('This spell effect ended or changed while selecting its destination');
+      if (!this.visibleEffects().some((entry) => entry.id === effect.id))
+        throw new Error('This spell effect is in another location');
+    }
     const board = this.board(),
-      actor = board.tokens.find((entry) => entry.id === token.id);
-    return validateTargetSelection(board, actor, action.targeting, selection);
+      actor = this.actorFor(token, action, board);
+    if (!actor) throw new Error('The acting creature is in another location');
+    const result = validateTargetSelection(board, actor, action.targeting, selection);
+    if (action.spellEffectId && action.casterRangeFeet !== null) {
+      const caster = board.tokens.find((entry) => entry.id === token.id);
+      if (
+        boardDistance(caster.world, result.origin, board.tileSize) >
+        action.casterRangeFeet + 1e-7
+      )
+        throw new Error(
+          `The destination must remain within ${action.casterRangeFeet} feet of the caster`
+        );
+    }
+    return result;
   }
 
   async ensureOverlay() {
@@ -167,12 +224,16 @@ export default class TargetingController {
           error: '',
           locked: false,
           aiming: false,
+          elevation: profile.defaultElevationFeet || 0,
           selection: {
-            targets: [],
+            targets: profile.requireCasterTarget ? [{ tokenId: token.id, count: 1 }] : [],
             exclusions: [],
             mode,
             placed: profile.anchor === 'caster',
             ...(profile.requiresWilling ? { willingConfirmed: false } : {}),
+            ...(profile.variant !== null && profile.variant !== undefined
+              ? { variant: profile.variant }
+              : {}),
             ...(ticket.action.kind === 'spell' && ticket.action.usesSlot
               ? { slotLevel: ticket.action.slotLevel }
               : {}),
@@ -233,23 +294,54 @@ export default class TargetingController {
   }
 
   selectSpellLevel(slotLevel) {
+    this.selectCastingChoice({ slotLevel });
+  }
+
+  selectVariant(variant) {
+    this.selectCastingChoice({ variant });
+  }
+
+  selectCastingChoice(change) {
     const state = this.active;
     if (!state) throw new Error('Open the spell targeting popup before choosing a level');
     try {
       if (this.library.isSaving || this.session.committing || this.session.pending !== state.ticket)
         throw new Error('Finish the current save before choosing a casting level');
+      const slotLevel = change.slotLevel ?? state.selection.slotLevel ?? state.action.slotLevel;
+      const variant = change.variant ?? state.selection.variant;
       if (
-        !Number.isInteger(slotLevel) ||
-        !this.spellSlotLevels(state).some((slot) => slot.level === slotLevel)
+        state.action.usesSlot &&
+        (!Number.isInteger(slotLevel) ||
+          !this.spellSlotLevels(state).some((slot) => slot.level === slotLevel))
       )
         throw new Error('Choose an available spell slot level');
+      if (
+        change.variant !== undefined &&
+        !state.profile.variantOptions?.some((option) => option.id === change.variant)
+      )
+        throw new Error('Choose an available spell template');
       const action = characterActionOptions(this.library, state.token, {
-        [state.ticket.action.id]: { ...state.ticket.choice, slotLevel },
+        [state.ticket.action.id]: {
+          ...state.ticket.choice,
+          slotLevel,
+          ...(variant !== undefined ? { variant } : {}),
+        },
       }).find((entry) => entry.id === state.ticket.action.id);
       if (!action?.spellReady) throw new Error('The selected casting level is no longer available');
       state.action = action;
       state.profile = action.targeting;
-      state.selection.slotLevel = action.slotLevel;
+      if (action.usesSlot) state.selection.slotLevel = action.slotLevel;
+      if (action.targeting.variant !== null && action.targeting.variant !== undefined)
+        state.selection.variant = action.targeting.variant;
+      if (
+        change.variant !== undefined &&
+        ['cone', 'line', 'cube', 'wall'].includes(action.targeting.shape) &&
+        state.selection.origin
+      ) {
+        state.selection.placed = false;
+        state.locked = false;
+        state.aiming = true;
+      }
       state.error = '';
       this.render();
       this.renderOverlay();
@@ -267,7 +359,7 @@ export default class TargetingController {
     const state = this.active;
     if (!state) return;
     const board = this.board(),
-      actor = board.tokens.find((entry) => entry.id === state.token.id);
+      actor = this.actorFor(state.token, state.action, board);
     if (!actor || this.session.pending !== state.ticket) {
       this.cancel();
       return;
@@ -278,12 +370,33 @@ export default class TargetingController {
     const rangeLabel = selectedMode
       ? `${selectedMode.normal === selectedMode.long ? selectedMode.long : `${selectedMode.normal}/${selectedMode.long}`} ft ${selectedMode.id} range`
       : `${profile.rangeFeet} ft range`;
-    const allocationLabel = `${profile.minTargets === profile.maxTargets ? '' : 'up to '}${profile.maxTargets} ${profile.allowRepeat ? 'projectiles / attacks' : profile.maxTargets === 1 ? 'target' : 'targets'}`;
+    const allocationLabel =
+      profile.kind === 'self'
+        ? 'Caster only'
+        : profile.kind === 'point'
+          ? 'Object / location marker'
+          : `${profile.minTargets === profile.maxTargets ? '' : 'up to '}${profile.maxTargets} ${profile.allowRepeat ? 'projectiles / attacks' : profile.maxTargets === 1 ? 'target' : 'targets'}`;
+    const areaLabel = ['sphere', 'hemisphere', 'emanation', 'cylinder', 'ring'].includes(
+      profile.shape
+    )
+      ? `${profile.sizeFeet} ft radius ${profile.shape}${['cylinder', 'ring'].includes(profile.shape) ? `; ${profile.heightFeet} ft high` : ''}${profile.shape === 'ring' ? `; ${profile.widthFeet} ft thick` : ''}`
+      : profile.shape === 'wall'
+        ? `${profile.sizeFeet} ft long x ${profile.heightFeet} ft high x ${profile.widthFeet} ft thick wall`
+        : `${profile.sizeFeet} ft ${profile.shape}`;
     const chosen = new Map(selection.targets.map((target) => [target.tokenId, target.count]));
     let valid = false,
-      assessed = null;
+      assessed = null,
+      potentialTargets = [];
     state.validation = '';
     try {
+      if (profile.kind === 'area' && (profile.anchor === 'caster' || selection.origin))
+        potentialTargets = affectedAreaTargets(
+          board,
+          actor,
+          profile,
+          areaPlacement(profile, actor, selection, board.tileSize),
+          selection.exclusions
+        ).map((target) => ({ tokenId: target.id, name: target.name }));
       if (
         state.action.kind === 'spell' &&
         state.action.usesSlot &&
@@ -316,7 +429,7 @@ export default class TargetingController {
         (state.filter === 'friendly' && relation === 'self')
       );
     });
-    this.root.innerHTML = `<header><h3>${escape(state.action.label)}: choose targets</h3>
+    this.root.innerHTML = `<header><h3>${escape(state.action.label)}: choose ${state.action.spellEffectId ? 'destination' : 'targets'}</h3>
       <button type="button" data-target-action="cancel" aria-label="Cancel targeting">Cancel</button></header>
       ${
         state.action.kind === 'spell'
@@ -334,12 +447,33 @@ export default class TargetingController {
             : '<p>Cantrip (no spell slot)</p>'
           : ''
       }
-      <p>${profile.kind === 'manual' ? escape(profile.reason) : `${rangeLabel} | ${profile.kind === 'area' ? `${profile.sizeFeet} ft ${profile.shape}` : allocationLabel}`}</p>
+      ${
+        profile.variantOptions?.length
+          ? `<div class="targeting-cast-level" role="group" aria-label="Template for ${escape(state.action.label)}"><strong>Template</strong><div>${profile.variantOptions
+              .map(
+                (option) =>
+                  `<button type="button" data-target-variant="${escape(option.id)}" aria-pressed="${option.id === selection.variant}">${escape(option.label)}</button>`
+              )
+              .join('')}</div></div>`
+          : ''
+      }
+      <p>${profile.kind === 'manual' ? escape(profile.reason) : `${rangeLabel} | ${profile.kind === 'area' ? areaLabel : allocationLabel}`}</p>
+      ${
+        profile.durationLabel && (profile.lingerTurns > 0 || profile.indefiniteDuration)
+          ? `<p>Duration: ${escape(profile.durationLabel)}${profile.durationTarget === 'targets' || profile.durationTarget === 'caster' ? ' — visual reminder only; apply effects manually.' : ''}</p>`
+          : ''
+      }
       ${profile.coverageNote ? `<p>${escape(profile.coverageNote)}</p>` : ''}
+      ${
+        profile.maxAreaTargets !== null && profile.maxAreaTargets !== undefined
+          ? `<p>Choose up to ${profile.maxAreaTargets} recipients by clicking other creatures to exclude them.</p>`
+          : ''
+      }
+      ${state.action.spellEffectId ? `<p>${escape(state.action.note)}</p>` : ''}
       ${
         profile.kind === 'area' || profile.kind === 'point'
           ? `<p>${
-              profile.anchor === 'point' && ['cone', 'line', 'cube'].includes(profile.shape)
+              profile.anchor === 'point' && ['cone', 'line', 'cube', 'wall'].includes(profile.shape)
                 ? 'Click to place the origin, then aim and click to lock its direction.'
                 : 'Move the pointer to preview. Left-click to place/lock the area.'
             } Confirm commits the cast.</p>`
@@ -360,7 +494,7 @@ export default class TargetingController {
       ${
         profile.kind === 'area' || profile.kind === 'point'
           ? `<label>Origin elevation above terrain (ft)<input type="number"
-        min="0" max="1000" step="1" value="${state.elevation || 0}" aria-label="Spell origin elevation" data-target-elevation></label>`
+        min="0" max="100000" step="1" value="${state.elevation || 0}" aria-label="Spell origin elevation" data-target-elevation></label>`
           : ''
       }
       <div class="targeting-candidates">${
@@ -390,12 +524,12 @@ export default class TargetingController {
       }
       ${
         profile.kind === 'area'
-          ? `<p data-target-count>Area includes ${assessed?.targets.length || 0} creatures.</p>
-        <ul>${(assessed?.targets || []).map((target) => `<li>${escape(target.name)}</li>`).join('')}</ul>`
+          ? `<p data-target-count>Area includes ${(assessed?.targets || potentialTargets).length} creatures.</p>
+        <ul>${(assessed?.targets || potentialTargets).map((target) => `<li>${escape(target.name)}</li>`).join('')}</ul>`
           : ''
       }
       <p role="status">${escape(state.error || (!valid ? state.validation || 'Choose a target or area' : profile.flightGrant ? 'Ready to confirm. Fly will grant temporary flight; Take flight remains a separate movement choice.' : 'Ready to confirm. Damage and saves remain manual.'))}</p>
-      <button type="button" data-target-action="confirm" aria-label="Confirm targets" ${valid ? '' : 'disabled'}>${profile.kind === 'manual' ? 'Confirm manual targeting' : 'Confirm targets / cast'}</button>`;
+      <button type="button" data-target-action="confirm" aria-label="Confirm targets" ${valid ? '' : 'disabled'}>${state.action.spellEffectId ? 'Confirm move' : profile.kind === 'manual' ? 'Confirm manual targeting' : 'Confirm targets / cast'}</button>`;
   }
 
   click(event) {
@@ -404,6 +538,11 @@ export default class TargetingController {
     const slotLevel = event.target.closest('[data-target-slot-level]')?.dataset.targetSlotLevel;
     if (slotLevel !== undefined) {
       this.selectSpellLevel(Number(slotLevel));
+      return;
+    }
+    const variant = event.target.closest('[data-target-variant]')?.dataset.targetVariant;
+    if (variant !== undefined) {
+      this.selectVariant(variant);
       return;
     }
     const action = event.target.closest('[data-target-action]')?.dataset.targetAction;
@@ -420,6 +559,7 @@ export default class TargetingController {
         );
         this.preview = {
           token: state.token,
+          action: state.action,
           profile: state.profile,
           selection: { ...state.selection },
         };
@@ -478,8 +618,8 @@ export default class TargetingController {
     if (event.target.hasAttribute('data-target-filter')) state.filter = event.target.value;
     if (event.target.hasAttribute('data-target-elevation')) {
       const value = event.target.valueAsNumber;
-      if (!Number.isInteger(value) || value < 0 || value > 1000) {
-        state.error = 'Elevation must be 0 to 1000 feet';
+      if (!Number.isInteger(value) || value < 0 || value > 100000) {
+        state.error = 'Elevation must be 0 to 100000 feet';
         this.render();
         return;
       }
@@ -538,7 +678,7 @@ export default class TargetingController {
     if (!state || (!locked && state.locked)) return;
     const gm = this.gameManager;
     if (gm.campaignWorld) point = gm.campaignWorld.toCampaignPosition(gm.campaignMapId, point);
-    const directional = ['cone', 'line', 'cube'].includes(state.profile.shape);
+    const directional = ['cone', 'line', 'cube', 'wall'].includes(state.profile.shape);
     if (state.profile.anchor === 'caster' || state.aiming) {
       state.selection.aim = { ...point };
       if (locked) {
@@ -578,12 +718,13 @@ export default class TargetingController {
       gm.campaignWorld ? gm.campaignWorld.getViewTransform(gm.campaignMapId) : null
     );
     const state = this.active || this.preview;
+    const effects = this.visibleEffects();
     const positions =
       state || this.session.effects.length
-        ? targetingPositions(this.gameManager, this.flightRecipients())
+        ? targetingPositions(this.gameManager, this.effectRecipients())
         : null;
     if (!state) {
-      this.overlay.update(positions, null, null, null, this.session.effects);
+      this.overlay.update(positions, null, null, null, effects);
       return;
     }
     if (
@@ -603,14 +744,38 @@ export default class TargetingController {
     )
       this.beginQuery();
     const board = this.board();
-    const actor = state && board.tokens.find((entry) => entry.id === state.token.id);
-    this.overlay.update(board, actor, state?.profile, state?.selection, this.session.effects);
+    const actor = state && this.actorFor(state.token, state.action, board);
+    this.overlay.update(board, actor, state?.profile, state?.selection, effects);
+  }
+
+  visibleEffects() {
+    const gm = this.gameManager;
+    if (!gm.campaignWorld) return this.session.effects;
+    const activeLocation = gm.campaignWorld.getLocationId(gm.campaignMapId);
+    return this.session.effects.filter((effect) => {
+      if (['flight', 'targets'].includes(effect.kind)) return true;
+      const caster = gm.placedTokens.find((token) => token.id === effect.casterTokenId);
+      const locationId =
+        effect.followCaster && caster
+          ? gm.campaignWorld.getLocationId(caster.mapId)
+          : (effect.locationId ??
+            (caster ? gm.campaignWorld.getLocationId(caster.mapId) : DEFAULT_LOCATION_ID));
+      return locationId === activeLocation;
+    });
   }
   renderEffects() {
     if (this.disposed) return;
     if (this.overlay) this.renderOverlay();
-    this.effectRoot.hidden = this.session.effects.length === 0;
-    this.effectRoot.innerHTML = `<h4>Active spell effects</h4>${this.session.effects
+    const effects = this.visibleEffects();
+    this.effectRoot.hidden = effects.length === 0;
+    const busy =
+      this.session.pending ||
+      this.session.committing ||
+      this.library.isSaving ||
+      this.session.moves.size > 0 ||
+      this.session.isSceneMoving();
+    const actionsByCaster = new Map();
+    this.effectRoot.innerHTML = `<h4>Active spell effects</h4>${effects
       .map((effect) => {
         if (effect.kind === 'flight') {
           const names = effect.targetTokenIds.map((id) => {
@@ -622,17 +787,86 @@ export default class TargetingController {
           return `<div><strong>${escape(effect.label)}</strong>
         <span>${effect.flySpeed} ft flying speed${effect.hover ? ' + Hover' : ''}: ${escape(names.join(', '))}</span>
         <span>Concentration | ${effect.remainingTurns} caster turns remaining</span>
-        <button type="button" data-end-flight="${escape(effect.id)}" aria-label="End ${escape(effect.label)}"
+        <button type="button" data-end-flight="${escape(effect.id)}" aria-label="End ${escape(effect.label)}" ${busy ? 'disabled' : ''}
         title="End concentration and remove this temporary flight grant. Airborne targets fall unless another source supports them.">End spell</button></div>`;
         }
-        return `<div><strong>${escape(effect.label)}</strong> <span>${effect.remainingTurns} caster turns remaining</span>
-      <button type="button" data-end-area="${escape(effect.id)}" aria-label="End ${escape(effect.label)} area" title="Remove this visual area; end concentration and mechanical effects separately on the sheet when appropriate.">End area</button></div>`;
+        const duration =
+          effect.remainingTurns === null
+            ? escape(effect.durationLabel)
+            : `${effect.remainingTurns} caster turns remaining`;
+        const recipients =
+          effect.kind === 'targets'
+            ? effect.targetTokenIds
+                .map((id) => {
+                  const name =
+                    this.gameManager.placedTokens.find((token) => token.id === id)?.name || id;
+                  return `<li>${escape(name)}
+                    <button type="button" data-effect-id="${escape(effect.id)}" data-remove-recipient="${escape(id)}"
+                      aria-label="Remove ${escape(name)} from ${escape(effect.label)}" ${busy ? 'disabled' : ''}
+                      title="Remove this declared-target reminder after resolving saves or early endings. Removing the last target ends its concentration.">Remove target</button></li>`;
+                })
+                .join('')
+            : '';
+        const caster = this.gameManager.placedTokens.find(
+          (token) =>
+            token.id === effect.casterTokenId && token.characterSheetId === effect.characterId
+        );
+        const movable = effect.movement && caster;
+        if (movable && !busy && !actionsByCaster.has(caster.id))
+          actionsByCaster.set(
+            caster.id,
+            new Set(this.session.availableActions(caster).map((action) => action.id))
+          );
+        const moveAction =
+          movable && !busy && actionsByCaster.get(caster.id).has(`effect-move:${effect.id}`);
+        return `<div><strong>${escape(effect.label)}</strong> <span>${duration}</span>
+          ${recipients ? `<span>Declared targets. Visual reminder only; conditions and statistics are manual.</span><ul>${recipients}</ul>` : ''}
+          ${
+            movable
+              ? `<button type="button" data-move-effect="${escape(effect.id)}"
+            aria-label="Move ${escape(effect.label)}" ${moveAction ? '' : 'disabled'}>
+            Move (${effect.movement.magicAction ? 'Magic action' : effect.movement.cost === 'bonus' ? 'Bonus action' : 'Action'})</button>`
+              : ''
+          }
+          ${
+            effect.concentrationSpellId || ['targets', 'point'].includes(effect.kind)
+              ? `<button type="button" data-end-spell="${escape(effect.id)}" aria-label="End ${escape(effect.label)}" ${busy ? 'disabled' : ''}>${effect.concentrationSpellId ? 'End spell' : effect.kind === 'point' ? 'Remove marker' : 'Remove reminder'}</button>`
+              : ''
+          }
+          ${!effect.kind ? `<button type="button" data-end-area="${escape(effect.id)}" aria-label="End ${escape(effect.label)} area" ${busy ? 'disabled' : ''} title="Remove this visual area only; concentration and mechanical effects remain unchanged.">End area</button>` : ''}
+        </div>`;
       })
       .join('')}`;
     if (this.session.effects.length && !this.overlay)
       void this.ensureOverlay()
         .then(() => this.renderOverlay())
         .catch((error) => this.failure(error));
+  }
+  async moveEffect(effectId) {
+    const effect = this.session.effects.find((entry) => entry.id === effectId);
+    const token =
+      effect &&
+      this.gameManager.placedTokens.find(
+        (entry) =>
+          entry.id === effect.casterTokenId && entry.characterSheetId === effect.characterId
+      );
+    if (!effect?.movement || !token)
+      throw new Error('This spell effect no longer has a movable caster');
+    let ticket;
+    try {
+      ticket = this.session.prepareAction(token, `effect-move:${effect.id}`);
+      const selection = await this.choose(token, ticket);
+      if (selection.cancelled) return null;
+      const used = await this.session.commitAction(ticket, '', null, selection);
+      this.onChanged?.(effect.characterId);
+      return used;
+    } catch (error) {
+      if (ticket && this.session.pending === ticket && this.session.committing !== ticket)
+        this.session.cancelAction(ticket);
+      throw error;
+    } finally {
+      this.finish();
+    }
   }
   failure(error) {
     this.visualError = error.message;

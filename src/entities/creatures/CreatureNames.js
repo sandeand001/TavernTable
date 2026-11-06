@@ -12,7 +12,7 @@ export function validateCreatureName(name) {
   return name.trim();
 }
 
-export function notifyCreatureNames(gameManager, tokens) {
+export function notifyCreatureNames(gameManager, tokens, { saved = false } = {}) {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('taverntable:tokenNamesChanged', {
@@ -20,18 +20,22 @@ export function notifyCreatureNames(gameManager, tokens) {
       })
     );
   }
-  gameManager.sceneAutosave?.changed('names');
+  if (!saved) gameManager.sceneAutosave?.changed('names');
 }
 
 export function syncLinkedCreatureNames(gameManager, characterId) {
   const tokens = gameManager.placedTokens.filter((token) => token.characterSheetId === characterId);
   if (!tokens.length) return;
   const character = gameManager.characterServices.library.get(characterId);
-  for (const token of tokens) {
+  const changed = tokens.filter(
+    (token) => token.name !== character.name || token.nameMode !== 'character'
+  );
+  if (!changed.length) return;
+  for (const token of changed) {
     token.name = character.name;
     token.nameMode = 'character';
   }
-  notifyCreatureNames(gameManager, tokens);
+  notifyCreatureNames(gameManager, changed);
 }
 
 export async function renameCreature(gameManager, token, name) {

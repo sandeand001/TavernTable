@@ -19,6 +19,9 @@
  */
 
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
+import { SETTLEMENT_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
+import { getSettlementProfile } from '../../config/biome/SettlementProfiles.js';
+import { generateCastleSiteHeights } from './CastleSites.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
 import { pickRecipe } from './internals/biomeShapeFunctions.js';
 
@@ -290,6 +293,10 @@ export function isAllDefaultHeight(heightArray, defaultHeight = TERRAIN_CONFIG.D
 }
 
 export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) {
+  if (getSettlementProfile(biomeKey)?.site)
+    return generateCastleSiteHeights(biomeKey, rows, cols, options);
+  if (SETTLEMENT_BIOME_KEYS.includes(biomeKey))
+    return TerrainHeightUtils.createHeightArray(rows, cols, 0);
   const seed = Number.isFinite(options.seed)
     ? options.seed
     : Math.floor((options.seed || Date.now()) % 2147483647);

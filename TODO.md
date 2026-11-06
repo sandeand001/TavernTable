@@ -2,6 +2,10 @@
 
 > Current backlog. Setup and the last verified test baseline are in
 > [README.md](./README.md). Historical audits are not the current task list.
+> Current platform work:
+> [local hosting, JSON backups and multiplayer](#local-hosting-backups-and-multiplayer).
+> Next construction priorities:
+> [settlements, natural caves and campaign locations](#settlements-natural-caves-and-campaign-locations).
 
 ---
 
@@ -67,6 +71,8 @@
       synchronization needed for actual connected players.
       Independent local focus, live map/focus controls and persistent per-map
       camera histories are implemented and tested; authenticated networking remains.
+      Track the active networking rollout under
+      [Local Hosting, Backups and Multiplayer](#local-hosting-backups-and-multiplayer).
 - [x] **Render synchronized cross-grid projections** - Render visible off-map
       characters at their translated position, facing and animation. Resolve
       clicks and targeting to their original ID; do not duplicate state or grant
@@ -139,8 +145,61 @@
 - [ ] **Dedicated lateral climbing and corner routes** - Add suitable sideways
       clips and broader multi-face routing; current supported same-wall movement
       reuses available climb animations and never treats gaps as solid handholds.
-- [ ] **Build-only outline tool** - Replace the numeric construction workflow
-      with Build, height in 10-foot floor increments and a closed straight-line
+- [x] **Curved shape foundation and playable proof** - Shared clipped ellipsoid
+      and cylinder volumes support real cave chambers, arched tubes, hollow domes,
+      walkable crenellated walls and round towers. Preserve physical support,
+      ceiling/body clearance, sight, flight, connected-map transforms, cutaways,
+      normal movement costs, Undo/Redo and legacy-compatible saving.
+- [x] **Action-boundary routine autosave** - Retain safe movement waypoints in
+      memory, but write routine scene changes only after the full action stops or
+      finishes. Wait truthfully during movement, recheck queued/async captures,
+      preserve atomic damage/resource/scene commits and derive saved local cells
+      from the actual physical position rather than a transient movement target.
+- [x] **Visual structure builder and resizing** - Replace numeric construction
+      with illustrated cards, shared plain/battlement walls, arbitrary-angle drag
+      previews and selectable diameter/height edits. Commit complete groups with
+      undo, persistence, creature/connection guards and paid angled-wall climbing.
+- [x] **Complete parametric building assemblies** - Generate a finite connected
+      floor every 10 feet for new buildings/turrets, real switchback stairs,
+      automatic editable windows, manually wall-dragged balconies with doors and
+      rails, and physical roof/deck choices. Add anchored side/corner/height
+      handles, 5-foot sizing with Shift fine adjustment, compound topology
+      Undo/Redo and an explicit legacy-shell upgrade. Preserve interior edits,
+      canonical actors/resources, independent views and action-boundary saves;
+      cache unchanged floor geometry instead of rebuilding it on idle frames.
+- [x] **Footprint-matched roofs and resizable wall features** - Offer rectangular
+      and round building bases, square-fitting dome/pyramid profiles and round
+      caps, with legacy-profile preservation. Add post-placement window
+      width/height/sill and balcony width/depth handles, numeric sizing, true
+      selection without edits, cancellation and release-only commits. Support
+      small and multi-storey windows with floor-specific interactions, real slab
+      grips, clearance denials, nearest wide-window entry and persisted Undo/Redo.
+- [x] **Flexible floors, tall rooms and underground construction** - Add stable
+      custom levels, 5-foot room-height increments, whole upper-slab removal,
+      multiple rectangular floor openings/fill, and real supported stair flights
+      for larger gaps. Add independent cellars extending beyond building bounds
+      with optional connected stairs or animated ladders. Protect occupied edits,
+      preserve interior data and movement/resources through Undo/save, and use
+      real lower-floor falls. Restore the Castle wall preset with parallel flush
+      stairs and castle-style Turret defaults with a playable crenellated deck.
+- [x] **Movable battlement stairs and underground editor visibility** - Add
+      independent stair direction/side/position, direct position handle and
+      compact automatic switchbacks for tall walls. Preserve real tread/landing
+      navigation, step/headroom checks and paid movement. Add Show underground
+      before cellar selection, through-ground ghosts, selectable outlines and
+      chosen-level handles with reversible render-only materials and cached
+      previews. Identify structures on-map and highlight cellar targets in gold;
+      filter targets by actual access/inner-footprint fit.
+- [x] **Whole-structure movement and solid switchbacks** - Add centre drag handles
+      for placed buildings and other shapes. Carry interior maps/lattice/content,
+      but preserve all creatures' world positions and reject occupied-structure
+      edits. Make new switchbacks solid masonry with the highest flight nearest
+      the wall; spread higher flights outward instead of floating above or burying
+      lower runs. Preserve earlier saved recipes until explicit editing.
+- [x] **Biome geometry features** - Seed bounded caves/tunnels, dedicated town,
+      city, fortress and ruined-city layouts, and occasional forest/desert castle
+      ruins. Theme masonry/roofs/rock, preserve manual work and avoid flora overlap.
+- [ ] **Connected-floor outline tool (later)** - Extend Build with a closed straight-line
       footprint. Generate a hollow exterior and separate floor grids from that
       outline. Complete when the endpoints meet; support preview/cancellation
       and an atomic build without partial structures or maps.
@@ -148,9 +207,233 @@
       transport creatures between locations. No seeing or targeting through
       the portal. Keep this separate from physical doorway/stair connections;
       implement the two-floor physical travel/sight slice first.
-- [ ] **Later builder extensions** - Add manual floor removal for tall rooms,
-      curves/circles and further shape editing after the basic workflow.
+- [ ] **Later builder extensions** - Add curved outline/circle authoring
+      and further shape editing after the basic
+      workflow. Direct parametric footprint/diameter/storey resizing, windows,
+      balconies, roof styles and any-angle straight walls are implemented.
+      Tall rooms, floor removal/cutouts and independent cellars are implemented.
       Cut/carving remains undecided and is not required for the first builder.
+
+---
+
+## Settlements, Natural Caves and Campaign Locations
+
+Captured 2026-11-05. These are open improvements, not claims that the current
+building/map foundations already provide the finished experience. Check an item
+only after its acceptance criteria are verified.
+
+Confirmed direction: start with S1 (restrained windows) and S2 (actual castle
+layout variation). S1b window composition and the S4 terrain-castle sites are now
+implemented as well. S3 and the independent S5 location branch remain open,
+with S6 after S5. Use a hybrid interior model: ordinary floors stay physically aligned;
+special castle/dungeon interiors may be explicitly separate, larger encounter
+maps. This does not convert existing buildings or authorize automatic creature
+transfers.
+
+### Near-term generation and architecture
+
+- [x] **S1 - Restrained, architecture-aware windows** - Reduce automatic window
+      density, especially on large buildings and dense city blocks. Use deliberate
+      spacing, solid wall sections and different opening patterns for homes,
+      civic buildings, keeps and defensive towers. Castle turrets should not have
+      ordinary outward-facing windows by default; keep suitable courtyard-facing
+      openings. Treat possible arrow slits as a separate later choice, not
+      automatically traversable full-size windows.
+      Acceptance: compare small/large buildings, city skylines and every castle
+      tower orientation; verify the intended sparse counts and actual opening
+      clearance. Retain manual window authoring/resizing and preserve existing
+      saved/manual features until explicit editing or regeneration.
+      Verified: optional window-layout recipe caps new automatic openings at
+      two per facade/floor, with inward-only castle-turret faces. Representative
+      dense-city/castle renders have approximately 50-65% fewer windows. Legacy
+      saves, manual edits, feature resizing, Undo and real window travel retain
+      regression coverage. This completes density and defensive-facing rules,
+      not variable window dimensions or richer facade composition (S1b).
+- [x] **S1b - Variable window sizes and intentional facade patterns** - Use the
+      existing resizable-window model in generation, not only manual authoring.
+      The former automatic windows defaulted to 5 by 5 feet with a 2-foot
+      sill and repeated castle openings in a single vertical column.
+      Vary width, height, sill elevation, position and per-floor patterns
+      through deterministic architectural recipes. Compose large hall windows,
+      smaller domestic openings, deliberate blank wall sections and appropriate
+      multi-storey windows instead of simply randomizing every aperture.
+      Keep the sparse-window and inward-facing turret rules from S1.
+      Acceptance: compare generated homes, civic buildings, keeps and towers
+      across multiple sizes/seeds; demonstrate real dimension and arrangement
+      variation, not only counts or tint, with no universal repeated column.
+      Generated features must remain selectable/resizable through the same
+      controls as manual windows. Preserve actual body clearance, stairs,
+      balconies, floor slabs, sight and managed connections. Tall windows must
+      not silently remove intervening floors. Preserve existing saved/manual
+      features until explicit editing or regeneration, and retain performance
+      budgets, exact locked-seed repeatability and save/reopen coverage.
+      Verified: seeded version-2 recipes vary dimensions, sills, positions, blank
+      rows and tall hall features. The normal size controls create manual
+      overrides for generated windows; Undo, old recipes, real per-floor
+      connections and intact floor slabs are covered. Native cliff-castle
+      inspection confirmed 26 distinct generated opening sizes in one seed.
+- [x] **S2 - Genuinely variable castle generation** - Replace the mostly fixed
+      castle composition with seeded structural choices: overall footprint, keep
+      dimensions and height, wall height and shape, number/placement of towers
+      and buildings, courtyards, gatehouses and complexity. Retain an intentional
+      architectural hierarchy rather than scattering unrelated random pieces.
+      Acceptance: multiple unlocked seeds must produce visibly and measurably
+      different geometry, not only names, colours or heraldry. A locked seed must
+      reproduce exactly. Generated doors, stairs and wall walks remain usable,
+      with bounded geometry/map counts and no destructive occupied edits.
+      Verified: sixteen sampled seeds yield sixteen structural fingerprints;
+      citadel/bailey/palace variants change real dimensions, tower/building
+      counts, heights, flared curtains and supporting buildings. Door/stair
+      support, complex-variant actual-rig travel, repeatability, save/reopen,
+      authoring guards and navigation budgets are covered. Site-specific
+      cliffside/mountain work is tracked separately in S4a/S4b below.
+- [ ] **S3 - Natural caves, not surface moon bases** - Generate irregular,
+      excavated chambers and passages within rock/terrain instead of assembling
+      exposed dome-and-tube shells. Vary chamber proportions, tunnel direction
+      and width, entrance shape, floor/ceiling relief and rocky silhouettes while
+      keeping a clear connected route. Retain domes/tubes as useful manual shapes;
+      do not silently remodel existing saved structures.
+      Acceptance: exterior entrances look like rock openings; interior/cutaway
+      views reveal readable natural chambers. Test continuous support, headroom,
+      turns and actual creature movement through joins. Avoid expensive world-CSG
+      rebuilding during previews or idle frames.
+      Prerequisite progress: S4b now uses irregular rock hulls and real excavated
+      approaches/halls. The general Cavern and other natural-cave biome recipes
+      still need this separate redesign; they are not marked complete.
+
+### Site-specific castles
+
+Both variants now have explicit generation choices under Settlements, separate
+from the ordinary level-site Castle / Fortress recipe. The rejected broad
+plateau/fort-beside-rocks pass has been replaced with a narrow ravine-spur
+citadel and an ascending, terraced mountain fortress. Final checks are recorded
+below; broader visual polish remains tracked by S8.
+
+- [x] **S4a - Cliffside castle** - After S2, integrate a generated castle with a
+      real cliff edge: varied elevation, supported foundations and courtyards,
+      a convincing approach/gate and defensible exposed faces. Keep the cliff,
+      drops and possible ledges physical rather than purely decorative.
+      Acceptance: multiple seeds and map sizes preserve supported access, real
+      falling rules, usable stairs and a clearly different silhouette from the
+      flat-ground castle.
+      Implemented: selectable Cliffside Castle, narrow rock spur with three
+      architectural base levels, close-fitting curtains and an arched approach
+      bridge over negative terrain. Supported gates, paid ascent to the high
+      keep, actual-character entry/falls and reopening are verified. Final
+      focused regressions pass; seed repetition and save/reopen retain exact
+      site geometry. Visual direction was reworked after feedback rather than
+      retaining the rejected flat plateau.
+- [x] **S4b - Mountain-integrated castle** - After S2 and S3, combine exposed
+      ramparts/keeps with excavated halls, entrances and chambers embedded in the
+      mountain. Terrain must meet the architecture without filling its rooms or
+      leaving floating foundations.
+      Acceptance: outside/inside transitions and cutaways are usable; rock
+      ceilings, floors and walls remain authoritative for collision, sight and
+      falling. This is a site recipe, not just another colour palette.
+      Implemented: selectable Mountain Fortress with 0/15/30/45-foot baileys,
+      real retaining stairs/terrace exits, ridge-side summit keep, bridge approach
+      and excavated Stoneheart hall/vault. Craggy support is physical; stairs
+      are not buried in it. Native exterior/interior views and actual-rig
+      entry/falls are verified. A paid supported route connects all ascent levels
+      to the summit approach. Final focused regressions pass and native
+      save/reopen retains the exact 26-map example. This supplies the mountain
+      excavation prerequisite, not the still-open general cave redesign or S6
+      room dressing/encounter interiors.
+
+### Campaign locations and richer interiors
+
+- [x] **S5a - Independent location-map model** - Extend the existing connected-map
+      foundation to distinguish physically aligned floors/areas from independent
+      campaign locations such as a town, wilderness site, dungeon or castle
+      interior. Separate physical spaces explicitly; do not simulate separation
+      by inventing giant coordinate offsets or letting unrelated maps overlap.
+      An overall location is a separate rendered space; its physically connected
+      rooms, floors and cellars are internal areas, not separate destinations
+      requiring individual player publication.
+      Acceptance: locations persist within one campaign, but cannot accidentally
+      share sight, attacks, occupancy, support, flight or falling. Normal
+      building floors/windows/balconies keep their existing physical alignment.
+- [ ] **S5b - DM location management and creature transfers** - After S5a, add a
+      usable workflow to create, name, open and revisit locations, then send
+      selected creatures or the party to a chosen destination/arrival area.
+      Support a split party in different independent locations. Keep separate
+      controls for browsing a location as DM and moving selected characters or
+      the whole party: DM browsing never moves characters or other viewers.
+      Move the actual character/sprite, then move the controlling player's view
+      with that character; do not merely switch access while leaving the actor
+      in another location. A player with assigned characters in different
+      locations can switch Active character and follow the selected one.
+      Acceptance: preserve the same creature IDs, character links, HP, resources
+      and inventory; validate arrivals without overlapping creatures or placing
+      them inside solids. Save transfers atomically, retain each location's
+      terrain/content/camera and protect unfinished actions. Decide explicitly
+      how narrative travel interacts with active combat rather than silently
+      resetting turns or movement.
+      Implemented: create/save separate empty locations and browse their internal
+      areas through Maps & focus, without moving or recreating actors. Explicit
+      selected-character/party transfer controls and combat-travel policy remain.
+- [x] **S5c - Character-driven location and area access** - Replace the initial
+      per-grid publishing policy with access derived from the player's selected
+      assigned character's location. Connected rooms, floors, cellars and other
+      areas within that location are accessible through legal traversal without
+      the DM separately publishing each area. The DM controls travel between
+      independent locations by moving characters, not by sharing an arbitrary
+      location browser. Preserve independent player cameras and single-character
+      physical line of sight; area access does not reveal unseen creatures.
+      Acceptance: entering an unlocked connected area follows the character
+      without another permission step; changing the DM's view affects no player;
+      selecting another assigned character follows that character's location.
+      Implemented: server-authorized areas derive from the active assigned
+      creature's location, without per-area publishing. Authoritative map changes
+      move that player's view; other location data stays isolated. Player movement
+      commands and area locks are separate pending tasks.
+- [ ] **S5d - DM-controlled area access locks** - Let the DM lock/unlock access
+      to internal areas independently of physical door/window state. Players
+      cannot bypass an access restriction by changing camera, browsed area or
+      client requests. The DM can remove the restriction whenever appropriate.
+      Keep access restrictions separate from physical locks, sight occlusion and
+      deferred fog-of-war/exploration rules.
+- [ ] **S5e - Physical opening locks and open/closed state** - Add independent
+      locked/unlocked and open/closed states for doors, gates, hatches and
+      applicable windows. Players can operate unlocked openings within reach of
+      their active assigned character; the DM can always override. Locks remain
+      until the DM unlocks them or adjudicates a successful unlock/pick/force
+      attempt. Unlocking alone must not open the passage.
+      Make sight material-aware: closed opaque doors block passage and sight;
+      closed glass can block passage while remaining see-through; opaque
+      shutters/curtains block sight. Opening/closing must update the actual
+      traversal and sight queries, not just hide or show a rendered mesh.
+      Acceptance: persist states in host saves/JSON backups, synchronize changes,
+      revalidate reach/ownership/access on the host, reject conflicting
+      interactions, and refresh affected routes and visibility without resetting
+      character resources, movement or turns.
+- [ ] **S6 - Designed castle and dungeon interiors** - After S5, create interiors
+      that feel like complete encounter maps: entrance/guard rooms, throne or
+      great halls, barracks, kitchens, storage, stairs, corridors, secret routes
+      and furnishing/cover. Vary room scale, height and purpose instead of
+      presenting an empty rectangular grid.
+      Confirmed hybrid model: allow explicitly non-to-scale interiors larger than
+      their exterior as independent locations, while ordinary aligned floors
+      continue to obey physical traversal. Do not silently stretch a connected
+      floor and break its window/balcony/sight relationships.
+      Acceptance: entrances and exits return to the correct location, generated
+      rooms are reachable and playable, arrival points remain supported, and
+      saves/Undo cannot replace current character state with old resources.
+
+### Parked UX work and verification gates
+
+- [ ] **S7 - Creation-control refinement** - Revisit structure creation, selection
+      and direct manipulation after the generation/map workflows settle. Keep
+      this parked item visible; the current illustrated builder is a foundation,
+      not the final creation UX.
+- [ ] **S8 - Representative-scene and performance gates** - Apply across S1-S7:
+      compare village, dense city, flat/cliff/mountain castle and natural cave
+      scenes at their intended sizes. Validate real input/pathfinding latency,
+      not only GPU frame rate; retain spatial-query acceleration, batched/cached
+      rendering and action-boundary saves. Keep readable generation errors and
+      preserve user-authored maps and occupied structures. Verify each milestone
+      with deterministic tests, visual inspection and save/reopen before marking
+      it complete.
 
 ---
 
@@ -172,6 +455,20 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 - [x] **Multiple in-line falls animation** — Verified two consecutive ten-level drops. Unsafe rolls use a braced landing; the next fall begins normally and releases its world lock before movement resumes.
 - [ ] **Broader fall edge cases** — Continue stress-testing irregular/diagonal terrain and retargeting during animated transitions. World-space edge tracing replaces the old stored-grid/same-elevation guard, but the validated cliff fixtures are not exhaustive coverage.
 - [ ] **Walk animation not playing for short paths** — Loaded-clip short walking paths now replay correctly. Reproduce the original cold-loading slide before declaring this report resolved.
+
+---
+
+## Map View and Menus
+
+- [x] **Move campaign/session controls into Settings** - Put the campaign name
+      and ruleset, save status/retry, Campaigns, Players & sharing, Sign out and
+      JSON backups under Settings instead of the floating center menu.
+- [x] **Keep only DM map controls over the map** - Leave a compact Maps & focus
+      tab for the DM; do not expose it to players.
+- [x] **Collapsible dice panel and sidebar** - Collapse either menu independently
+      to a small reopening tab. Remember the choices in this browser, preserve
+      the current tab/dice history, and let the map fill the window when the
+      sidebar is hidden. Verify keyboard controls and narrow-screen layouts.
 
 ---
 
@@ -317,6 +614,11 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
       Knight and Mutant rendering in VS Code. Fix the capability preflight to
       accept working software-backed WebGL rather than reject performance caveats;
       retain genuine unsupported-browser detection and add regression coverage.
+- [x] **Hardware-first graphics with explicit fallback** - Prefer a
+      high-performance WebGL 2 GPU on the current device, not a particular GPU
+      model. Verify the actual adapter, display graphics status, retain a visible
+      software fallback, and recheck after context restoration. Chrome and the
+      restarted VS Code browser were verified using hardware rendering.
 - [x] **Eight-direction facing gesture** - Left-drag an idle creature to set a
       camera-aware snapped heading without moving it or breaking ordinary clicks.
 - [x] **Natural dodge recovery and wall cover** - Animate the sidestep and return;
@@ -334,9 +636,162 @@ in [HANDOFF.md](./HANDOFF.md). Broader or unreproduced reports remain open.
 
 ---
 
+## Local Hosting, Backups and Multiplayer
+
+The local disk-backed host, automatic JSON backups and initial authenticated
+player workspace are implemented and locally verified. Full player gameplay and
+end-to-end internet deployment remain planned work; the player viewer is a
+deliberately read-only first slice, not a complete multiplayer combat platform.
+
+### Completed foundation
+
+- [x] **Automatic disk-backed campaign saves** - Persist campaign metadata,
+      saved characters, layouts and committed scene/combat state in SQLite
+      outside browser profiles. Acknowledge saves only after disk commit; report
+      host failures rather than silently reverting to browser-only storage.
+- [x] **Cross-browser and restart durability** - Verify the same saved character
+      and scene state after host-process restart and from a fresh Chrome profile.
+      Chrome and VS Code use the same host data directory. Preserve stale-write
+      checks and atomic character/resource-plus-scene commits.
+- [x] **Saved characters independent of tokens** - Existing character records
+      can be saved, loaded and imported without recreating them each time a
+      creature is placed or a campaign reopens. Multiplayer assignments must
+      reference these persistent character IDs, not temporary token instances.
+- [ ] **Retrievable saved player-character roster** - Add a campaign-scoped
+      Player Characters section alongside the creature/token menu. Browse saved
+      characters, open their sheets and place/retrieve their sprites without
+      recreating character records or resetting HP, equipment, resources or
+      layouts. Distinguish an unplaced character from its existing scene token;
+      focus an already placed character instead of silently duplicating it.
+      The DM can manage the full roster; players can retrieve only assigned
+      characters through permission-checked placement/transfer commands.
+      Retain character IDs, assignments and appearances across save/load,
+      reconnect and JSON backup/restore. Removing a sprite must not delete its
+      saved character.
+- [x] **Explicit migration from browser-only storage** - Offer non-destructive
+      Copy to host and validated campaign import/export. Never overwrite browser
+      originals or claim that switching storage recovers lost in-memory data.
+
+### Implemented local session milestone
+
+- [x] **Automatic JSON snapshots** - Back up changed campaigns
+      every five minutes and retain 20 snapshots per campaign. Include source
+      pins, characters, resources, layouts, terrain, creatures and committed
+      combat/history; exclude bundled catalogs, authentication keys and invites.
+      Verify scheduling, rotation, failure handling and complete snapshots through
+      automated tests and the actual host.
+- [x] **Backup controls and visible failures** - Add Back up now,
+      backup history, JSON download and Restore as copy in the picker and active
+      campaign controls. Flush active saves before a manual snapshot. Keep the
+      primary save receipt separate from backup failures, surface automatic
+      backup errors, and never overwrite the active campaign during restore.
+- [x] **Host and player authentication** - Give the DM full
+      campaign control. Use private, reusable, revocable player invitations and
+      authenticated sessions rather than handing players the host's unrestricted
+      save credential. Keep the host access key outside served files and source
+      control. Verify sign-in, expiry, logout, reissue and revocation.
+- [x] **Persistent character assignments** - Persist player
+      identities and assignments across reconnection and host restart. Players
+      may edit their assigned sheets, including manual stats, HP, notes and
+      equipment; they must not recreate characters on each connection. Reject
+      edits to unassigned characters, ownership escalation and campaign-wide
+      replacement writes.
+- [x] **Initial DM sharing controls (transitional access policy)** - Let the DM create/revoke
+      invitations, assign existing saved characters and explicitly publish maps.
+      New and restored campaign copies remain private until deliberately shared.
+      Do not transmit unpublished map data or unassigned characters' private
+      notes to players.
+      Per-grid publication was the initial policy. S5a/S5c now replace individual
+      internal-area publishing with character-driven location access; invitations
+      and ownership are preserved.
+
+### First working local multiplayer milestone
+
+- [x] **Host login and player joining UI** - Provide usable host sign-in,
+      invitation joining, returning-player identity and assigned-character
+      selection. Reuse existing character-sheet editing rather than introduce
+      temporary characters or a second saved-character model.
+- [x] **Published player views** - Give players independent camera/map views of
+      maps explicitly published by the DM. The initial player viewer is a
+      read-only published-terrain/tactical-token view; label unsupported
+      movement/combat controls clearly. Never expose the canonical private
+      campaign snapshot as a shortcut.
+      The initial publication policy has been replaced by S5a/S5c location access,
+      not expanded into more per-area publication controls.
+- [ ] **Role-aware top-down tactical view (in progress)** - Let the DM see all characters and
+      creatures across the map, including interiors and stacked floors, with
+      at-a-glance structure names and floor/level labels. Players see their own
+      assigned character and only other characters/creatures within that
+      character's line of sight, not visibility determined by their camera.
+      Respect physical terrain, walls, floors, roofs and openings across connected
+      maps. Enforce player visibility in authorized data delivery, not merely by
+      hiding tokens already sent to the client. Verify DM/player views, overlapping
+      floors and clear/blocked sight lines.
+      DM overview markers/location labels and authoritative active-character
+      physical sight filtering are being integrated with the multiplayer viewer.
+      The player Active character selector now sends the real authorized observer
+      token ID, preserves it while browsing maps/opening sheets, and clears stale
+      markers/responses when the selected viewpoint changes or is revoked.
+      Keep DM markers within the viewed map and directly above/below its physical
+      footprint, not unrelated campaign locations. Provide a Focus link beside
+      each marker to open its actual map and center its creature.
+      Capture opaque tree/rock sight bounds; older maps need a DM reopen/save
+      before publishing their physical sight.
+- [ ] **Extended vision and exploration effects** - Add fog of war and explored
+      terrain memory, lighting/darkness and vision distances, darkvision,
+      invisibility/see-invisibility, Blinded and special senses after physical
+      line of sight. Keep these separate from camera position and enforce them
+      in authorized player data, not only renderer visibility.
+- [x] **Authenticated live updates** - Notify authorized clients when assigned
+      character data or shared views change. Refresh at safe checkpoints,
+      preserve local cameras and unfinished field edits, handle reconnects, and
+      retain revision checks rather than silently overwrite another participant.
+- [x] **Multi-client permission and persistence verification** - Test a DM and
+      separate local player browsers, character save/load after reconnect,
+      assignment changes, revocation, unpublished-map privacy and stale writes.
+      Exercise automatic backup scheduling, retention, restore-as-copy and
+      disk/host failure paths through the actual host and UI.
+
+### Following multiplayer and hosting work
+
+- [ ] **Location/access rollout and regression coverage** - Implement S5a-S5e
+      above alongside the authoritative gameplay commands. Verify split-party
+      isolation, explicit DM group transfers, character-following player views,
+      switching assigned characters across locations, automatic connected-area
+      access, DM access gates, reachable opening interactions and material-aware
+      sight changes. Cover save/reopen, reconnect, JSON restore and concurrent
+      requests without leaking unrelated locations or restoring stale resources.
+- [ ] **Authoritative player gameplay commands** - Enable player token movement,
+      turns, attacks and spell targeting only through permission-checked commands.
+      Preserve range/cover and 2014/2024 rules, action economy, shared movement,
+      falling/Prone/standing, flight, concentration and caster-turn durations.
+      Sending unrestricted scene saves from player clients is not acceptable.
+- [ ] **Movement presentation and reconnect recovery** - Synchronize approved
+      routes/poses rather than animation frames, interpolate remote movement,
+      and restore the latest acknowledged checkpoint without replaying or
+      charging unfinished actions twice.
+- [ ] **Secure internet access to the locally hosted game** - Test locally
+      first, then configure an explicit HTTPS public origin through a trusted
+      tunnel or reverse proxy. Preserve origin/host checks, secure session
+      cookies, authenticated transport and DM-only administration. Keep the
+      actual host loopback-bound; do not automatically open firewall ports,
+      publish an unauthenticated endpoint or claim internet readiness without
+      end-to-end verification.
+- [ ] **Player-view parity and visibility rules** - Extend published views with
+      full model/animation, placeable and spell-visual support as appropriate;
+      add explicit fog-of-war/hidden-content rules rather than rely on hiding
+      meshes whose private data was already sent.
+- [ ] **Multiplayer performance budgets** - Reuse geometry and assets, bound
+      snapshot/notification traffic and caches, and keep per-client graphics
+      quality independent of authoritative gameplay. Revisit the performance
+      audit before adding particle-heavy VFX.
+
+---
+
 ## Deferred Platform Work
 
-- Desktop packaging remains deferred. Shared-session multiplayer is part of
-  the planned connected-grid participant-view work above; the current runtime
-  remains browser-local.
+- Desktop packaging and managed cloud hosting remain deferred. The current
+  runtime uses a local disk-backed host; the active multiplayer rollout is
+  tracked above. A later desktop package should reuse the same host/session
+  modules rather than require a separate game-state implementation.
 - Procedural biome shader painting remains a future enhancement under ADR-0001.

@@ -75,11 +75,15 @@ export async function performPlayAction(context, actionId, choice = {}) {
       }
       if (
         ticket.action.kind === 'spell' &&
-        ticket.action.usesSlot &&
-        selection.slotLevel !== undefined &&
-        selection.slotLevel !== ticket.action.slotLevel
+        ((selection.slotLevel !== undefined && selection.slotLevel !== ticket.action.slotLevel) ||
+          (selection.variant !== undefined &&
+            selection.variant !== ticket.action.targeting.variant))
       ) {
-        ticket = session.changeSpellLevel(ticket, selection.slotLevel);
+        ticket = session.changeSpellChoices(ticket, {
+          ...ticket.choice,
+          ...(selection.slotLevel !== undefined ? { slotLevel: selection.slotLevel } : {}),
+          ...(selection.variant !== undefined ? { variant: selection.variant } : {}),
+        });
       }
     }
     const character = context.services.library.get(characterId);

@@ -113,3 +113,51 @@ test('legacy single-board campaigns do not expose nonfunctional connected-map co
   controls.render();
   expect(controls.root.hidden).toBe(true);
 });
+
+test('creating and browsing an independent location does not move, recreate or reset existing actors', async () => {
+  const actors = [...gm.placedTokens];
+  const before = gm.campaignWorld.save().creatures;
+  let persisted;
+  gm.characterServices.library.saveScene = jest.fn(async (capture) => {
+    persisted = capture();
+    return { captured: persisted, receipt: { revision: 1 } };
+  });
+  controls.render();
+  controls.newLocation.querySelector('input').value = 'Separate dungeon';
+  await controls.createLocation();
+  expect(persisted.scene.locations).toHaveLength(2);
+  expect(persisted.scene.creatures).toMatchObject(before);
+  expect(gm.campaignMapId).toBe('map-main');
+  expect(gm.placedTokens).toEqual(actors);
+  const remote = gm.campaignWorld
+    .listLocations()
+    .find((location) => location.name === 'Separate dungeon');
+  const selector = controls.root.querySelector('[aria-label="Viewed location"]');
+  selector.value = remote.id;
+  selector.dispatchEvent(new Event('change', { bubbles: true }));
+  await settle();
+  expect(gm.campaignWorld.getLocationId(gm.campaignMapId)).toBe(remote.id);
+  expect(gm.campaignView.focusTokenId).toBeNull();
+  expect(gm.placedTokens[0]).toBe(actors[0]);
+  expect(gm.placedTokens[1]).toBe(actors[1]);
+  expect(gm.placedTokens.map((token) => token.mapId)).toEqual(before.map((token) => token.mapId));
+  expect([...controls.map.options].map((option) => option.textContent)).toEqual(['Main area']);
+});
+
+test('a failed location save leaves the current world and actors unchanged and reports the error', async () => {
+  const notification = jest.spyOn(GameErrors, 'input').mockImplementation(() => {});
+  const before = gm.campaignWorld.save();
+  gm.characterServices.library.saveScene = jest.fn(async () => {
+    throw new Error('Host disk unavailable');
+  });
+  controls.newLocation.querySelector('input').value = 'Must not appear';
+  try {
+    await controls.createLocation();
+    expect(gm.campaignWorld.save()).toEqual(before);
+    expect(gm.campaignViewBusy).toBe(false);
+    expect(controls.status.textContent).toContain('Host disk unavailable');
+    expect(notification).toHaveBeenCalled();
+  } finally {
+    notification.mockRestore();
+  }
+});

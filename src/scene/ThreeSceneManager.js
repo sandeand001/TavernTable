@@ -28,6 +28,8 @@ export class ThreeSceneManager {
     this.renderer = null;
     this.canvas = null;
     this._animationHandle = null;
+    this._debugAnimationHandle = null;
+    this._debugOverlayElement = null;
     this._animCallbacks = [];
     this._sunLight = null;
     this._sunTarget = null;
@@ -104,6 +106,14 @@ export class ThreeSceneManager {
     };
     this._loggedFirstFrame = false;
     this._degradeNotified = false;
+    this._graphicsInfo = {
+      mode: 'not-initialized',
+      api: 'WebGL 2',
+      renderer: null,
+      vendor: null,
+      powerPreference: null,
+      fallbackUsed: false,
+    };
     try {
       if (typeof globalThis !== 'undefined' && globalThis.__TT_REGISTER_THREE__) {
         globalThis.__TT_REGISTER_THREE__(this);
@@ -306,11 +316,7 @@ export class ThreeSceneManager {
       });
       if (!this._testMode) {
         try {
-          this.renderer = new three.WebGLRenderer({
-            canvas: this.canvas,
-            antialias: true,
-            alpha: true,
-          });
+          this.renderer = this._createRenderer(three);
         } catch (rendererError) {
           this._handleDegraded('Failed to create WebGL renderer', {
             reason: 'renderer_creation_failed',
@@ -475,10 +481,149 @@ export class ThreeSceneManager {
       startTime,
       frameCount,
       averageFrameMs: Number.isFinite(avg) ? +avg.toFixed(3) : 0,
+      graphics: { ...this._graphicsInfo },
     };
   }
 
+  getGraphicsStatus() {
+    const labels = {
+      'not-initialized': 'Not initialized',
+      hardware: 'GPU',
+      software: 'Software fallback',
+      unverified: 'GPU requested (adapter unverified)',
+      unavailable: 'WebGL 2 unavailable',
+    };
+    const { mode, renderer } = this._graphicsInfo;
+    return `${labels[mode]}${renderer ? `: ${renderer}` : ''}`;
+  }
+
   // ── Private Helpers ───────────────────────────────────────────────────────────
+
+  _setGraphicsInfo(info) {
+    this._graphicsInfo = info;
+    const status =
+      typeof document !== 'undefined' ? document.getElementById('graphics-status') : null;
+    if (status) {
+      status.textContent = this.getGraphicsStatus();
+      status.dataset.mode = info.mode;
+    }
+  }
+
+  _getPreferredWebGLContext(canvas) {
+    const attributes = { alpha: true, antialias: true, powerPreference: 'high-performance' };
+    const hardware = canvas.getContext('webgl2', {
+      ...attributes,
+      failIfMajorPerformanceCaveat: true,
+    });
+    if (hardware) return { context: hardware, fallbackUsed: false };
+    return {
+      context: canvas.getContext('webgl2', {
+        ...attributes,
+        failIfMajorPerformanceCaveat: false,
+      }),
+      fallbackUsed: true,
+    };
+  }
+
+  _createRenderer(three) {
+    this._clearGraphicsContextListeners();
+    const { context, fallbackUsed } = this._getPreferredWebGLContext(this.canvas);
+    if (!context) throw new Error('WebGL 2 is unavailable, including its software fallback');
+    let renderer;
+    try {
+      // Supplying the context prevents Three.js from creating an unconfigured fallback probe.
+      renderer = new three.WebGLRenderer({
+        canvas: this.canvas,
+        context,
+        alpha: true,
+        antialias: true,
+        powerPreference: 'high-performance',
+      });
+    } catch (error) {
+      try {
+        context.getExtension('WEBGL_lose_context')?.loseContext();
+      } catch (cleanupError) {
+        errorHandler.handle(cleanupError, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.RENDERING, {
+          context: 'ThreeSceneManager.releaseFailedContext',
+        });
+      }
+      throw error;
+    }
+    this._updateGraphicsInfo(context, fallbackUsed);
+    this._graphicsCanvas = this.canvas;
+    this._boundGraphicsContextLost = () => {
+      this._setGraphicsInfo({
+        ...this._graphicsInfo,
+        mode: 'unavailable',
+        renderer: null,
+        vendor: null,
+      });
+      errorHandler.handle(
+        new Error('Graphics context lost; waiting for the browser to restore rendering'),
+        ERROR_SEVERITY.WARNING,
+        ERROR_CATEGORY.RENDERING,
+        { context: 'ThreeSceneManager.contextLost' }
+      );
+    };
+    this._boundGraphicsContextRestored = () =>
+      this._updateGraphicsInfo(renderer.getContext(), fallbackUsed);
+    this.canvas.addEventListener('webglcontextlost', this._boundGraphicsContextLost);
+    this.canvas.addEventListener('webglcontextrestored', this._boundGraphicsContextRestored);
+    return renderer;
+  }
+
+  _updateGraphicsInfo(context, fallbackUsed) {
+    const debug = context.getExtension('WEBGL_debug_renderer_info');
+    const name = context.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : context.RENDERER);
+    const vendor = context.getParameter(debug ? debug.UNMASKED_VENDOR_WEBGL : context.VENDOR);
+    const software =
+      typeof name === 'string' &&
+      /SwiftShader|llvmpipe|softpipe|Microsoft Basic Render Driver|\bWARP\b|software rasterizer/i.test(
+        name
+      );
+    const verified =
+      debug &&
+      typeof name === 'string' &&
+      name.length > 0 &&
+      !/^(WebKit WebGL|unknown)$/i.test(name);
+    this._setGraphicsInfo({
+      mode: software ? 'software' : verified ? 'hardware' : 'unverified',
+      api: 'WebGL 2',
+      renderer: typeof name === 'string' ? name : null,
+      vendor: typeof vendor === 'string' ? vendor : null,
+      powerPreference: context.getContextAttributes()?.powerPreference ?? null,
+      fallbackUsed: fallbackUsed || software,
+    });
+    logger.log(LOG_LEVEL.INFO, this.getGraphicsStatus(), LOG_CATEGORY.SYSTEM, {
+      context: 'ThreeSceneManager.createRenderer',
+      ...this._graphicsInfo,
+    });
+    if (software) {
+      errorHandler.handle(
+        new Error('Hardware graphics are unavailable in this browser; using software rendering'),
+        ERROR_SEVERITY.WARNING,
+        ERROR_CATEGORY.RENDERING,
+        {
+          context: 'ThreeSceneManager.createRenderer',
+          renderer: this._graphicsInfo.renderer,
+          suggestion:
+            'Enable hardware acceleration in your browser or host. If the embedded browser restricts GPUs, open the game in a hardware-accelerated Chrome or Edge window.',
+        }
+      );
+    }
+  }
+
+  _clearGraphicsContextListeners() {
+    if (!this._graphicsCanvas) return;
+    this._graphicsCanvas.removeEventListener('webglcontextlost', this._boundGraphicsContextLost);
+    this._graphicsCanvas.removeEventListener(
+      'webglcontextrestored',
+      this._boundGraphicsContextRestored
+    );
+    this._graphicsCanvas = null;
+    this._boundGraphicsContextLost = null;
+    this._boundGraphicsContextRestored = null;
+  }
 
   _hasUsableWebGLContext() {
     try {
@@ -491,12 +636,7 @@ export class ThreeSceneManager {
       }
       if (typeof document === 'undefined') return false;
       const canvas = document.createElement('canvas');
-      // Match the renderer's default: software-backed WebGL is still usable.
-      const attrs = { failIfMajorPerformanceCaveat: false };
-      const gl =
-        canvas.getContext('webgl2', attrs) ||
-        canvas.getContext('webgl', attrs) ||
-        canvas.getContext('experimental-webgl', attrs);
+      const { context: gl } = this._getPreferredWebGLContext(canvas);
       if (gl && typeof gl.getExtension === 'function') {
         try {
           const lose = gl.getExtension('WEBGL_lose_context');
@@ -512,6 +652,7 @@ export class ThreeSceneManager {
   }
 
   _handleDegraded(message, extra = {}) {
+    this._disposeDebugOverlay();
     this.degraded = true;
     if (message) {
       this.degradeReason = message;
@@ -519,6 +660,14 @@ export class ThreeSceneManager {
       this.degradeReason = 'Three.js unavailable';
     }
     this.initialized = false;
+    this._clearGraphicsContextListeners();
+    this._setGraphicsInfo({
+      ...this._graphicsInfo,
+      mode: 'unavailable',
+      renderer: null,
+      vendor: null,
+      powerPreference: null,
+    });
     try {
       if (this._animationHandle) {
         try {
@@ -913,27 +1062,38 @@ export class ThreeSceneManager {
         pointerEvents: 'none',
       });
       document.body.appendChild(overlay);
+      this._debugOverlayElement = overlay;
     } catch (_) {
       /* noop */
     }
     const updateOverlay = () => {
+      if (!this.initialized) return;
       try {
         const stats = this.getRenderStats();
         const place = (window.__TT_METRICS__ && window.__TT_METRICS__.placeables) || {};
         if (overlay) {
-          overlay.textContent = `3D frames:${stats.frameCount} avg:${stats.averageFrameMs.toFixed(2)}ms placeableGroups:${place.groups || 0} instances:${place.liveInstances || 0}`;
+          overlay.textContent = `3D frames:${stats.frameCount} avg:${stats.averageFrameMs.toFixed(2)}ms graphics:${stats.graphics.mode} placeableGroups:${place.groups || 0} instances:${place.liveInstances || 0}`;
         }
       } catch (_) {
         /* noop */
       }
-      requestAnimationFrame(updateOverlay);
+      this._debugAnimationHandle = requestAnimationFrame(updateOverlay);
     };
-    requestAnimationFrame(updateOverlay);
+    this._debugAnimationHandle = requestAnimationFrame(updateOverlay);
+  }
+
+  _disposeDebugOverlay() {
+    if (this._debugAnimationHandle !== null) cancelAnimationFrame(this._debugAnimationHandle);
+    this._debugAnimationHandle = null;
+    this._debugOverlayElement?.remove();
+    this._debugOverlayElement = null;
   }
 
   // ── Cleanup ───────────────────────────────────────────────────────────
 
   dispose() {
+    this._disposeDebugOverlay();
+    this._clearGraphicsContextListeners();
     this.gameManager?.token3DAdapter?.disposeTacticalTokens?.();
     try {
       if (this._animationHandle) cancelAnimationFrame(this._animationHandle);
@@ -1001,6 +1161,14 @@ export class ThreeSceneManager {
     this.canvas = null;
     this.gameManager?.token3DAdapter?.disposeMovementRange?.();
     this.initialized = false;
+    this._setGraphicsInfo({
+      ...this._graphicsInfo,
+      mode: 'not-initialized',
+      renderer: null,
+      vendor: null,
+      powerPreference: null,
+      fallbackUsed: false,
+    });
   }
 }
 

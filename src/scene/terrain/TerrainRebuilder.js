@@ -7,8 +7,15 @@ import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 import { TerrainVolumeMeshBuilder } from './TerrainVolumeMeshBuilder.js';
-import { getTerrainLayerColor } from './TerrainMaterialFactory.js';
+import { getTerrainLayerColor, getBuildingFloorAppearance } from './TerrainMaterialFactory.js';
 import { createInteriorCutaway } from './InteriorCutaway.js';
+import {
+  configureConstructionMaterial,
+  hasConstructionMaterials,
+} from './ConstructionMaterials.js';
+import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import { buildConstructionDetails } from './ConstructionDetails.js';
+import { CONSTRUCTION_MATERIALS } from '../../config/biome/ConstructionPalettes.js';
 
 export class TerrainRebuilder {
   // ── Constructor ───────────────────────────────────────────────────
@@ -56,8 +63,8 @@ export class TerrainRebuilder {
     this._lastFlushTime = Date.now();
     try {
       this.rebuild(args);
-    } catch (_) {
-      /* swallow build errors early phase */
+    } catch (error) {
+      GameErrors.gameState(error, { component: 'TerrainRebuilder', operation: 'rebuild' });
     }
   }
 
@@ -90,6 +97,7 @@ export class TerrainRebuilder {
     const getHeight = (x, y) => gm.getTerrainHeight(x, y);
     const t0 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
     const neutralColor = GRID_CONFIG?.TILE_COLOR ?? 0x444444;
+    const floorAppearance = getBuildingFloorAppearance(gm.campaignWorld, gm.campaignMapId);
     const gmBiomeGetter = (gx, gy, elev) => {
       const h = Number.isFinite(elev) ? elev : 0;
       const terrainModeActive = gm.terrainEngine
@@ -108,6 +116,7 @@ export class TerrainRebuilder {
         if (color == null) color = 0x6b7280;
         return color;
       }
+      if (floorAppearance) return floorAppearance.floorColor;
       const biomeKey = gm.terrainEngine
         ? gm.terrainEngine.biomeKey
         : typeof window !== 'undefined' && window.selectedBiome;
@@ -143,7 +152,21 @@ export class TerrainRebuilder {
           three: threeNs,
           worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
           visibleLayers: gm.terrainEngine.visibleLayers,
+          getStyle: (_x, _z, _y, span) =>
+            CONSTRUCTION_MATERIALS[
+              floorAppearance && span.materialColor === undefined
+                ? floorAppearance.floorMaterial
+                : (span.materialStyle ?? 'none')
+            ],
           getColor: (x, z, height, span) => {
+            if (span.materialColor !== undefined)
+              return getTerrainLayerColor(
+                span.layerId,
+                gm.terrainEngine.biomeKey,
+                span.materialRole,
+                span.materialColor
+              );
+            if (floorAppearance) return floorAppearance.floorColor;
             if (span.id === 'terrain') {
               const feetPerLevel = (gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize;
               return gmBiomeGetter(
@@ -152,7 +175,12 @@ export class TerrainRebuilder {
                 feetPerLevel > 0 ? height / feetPerLevel : 0
               );
             }
-            return getTerrainLayerColor(span.layerId);
+            return getTerrainLayerColor(
+              span.layerId,
+              gm.terrainEngine.biomeKey,
+              span.materialRole,
+              span.materialColor
+            );
           },
         })
       : this.builder.build({
@@ -163,6 +191,16 @@ export class TerrainRebuilder {
           getBiomeColor: gmBiomeGetter,
           getWallColor: wantsWalls ? () => wallColor : undefined,
         });
+    if (floorAppearance && !geo.getAttribute('constructionMaterial'))
+      geo.setAttribute(
+        'constructionMaterial',
+        new threeNs.Float32BufferAttribute(
+          new Float32Array(geo.getAttribute('position').count).fill(
+            CONSTRUCTION_MATERIALS[floorAppearance.floorMaterial]
+          ),
+          1
+        )
+      );
     // Debug sample of first vertex color to help diagnose "all black" issues.
     try {
       if (typeof window !== 'undefined' && !window.__TT_LAST_TERRAIN_COLOR_SAMPLE__) {
@@ -288,6 +326,46 @@ export class TerrainRebuilder {
       } catch (_) {
         /* ignore reposition */
       }
+    }
+    if (hasConstructionMaterials(geo))
+      configureConstructionMaterial(mesh.material, gm.spatial.tileWorldSize / 5);
+    mesh.castShadow = !!gm.terrainEngine?.geometry.hasVolumes;
+    const specs =
+      gm.terrainEngine?.geometry.getStructures().filter((spec) => spec.appearance) ?? [];
+    const detailsSignature = JSON.stringify([
+      specs,
+      gm.spatial?.tileWorldSize,
+      gm.terrainEngine?.visibleLayers,
+    ]);
+    if (specs.length || mesh.userData?.constructionDetailsSignature) {
+      mesh.userData ??= {};
+      if (detailsSignature !== mesh.userData.constructionDetailsSignature) {
+        const old = mesh.getObjectByName('ConstructionDetails');
+        if (old) {
+          old.geometry.dispose();
+          old.removeFromParent();
+        }
+        if (specs.length) {
+          const detailsGeometry = buildConstructionDetails({
+            specs,
+            three: threeNs,
+            worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
+            visibleLayers: gm.terrainEngine.visibleLayers,
+          });
+          if (detailsGeometry) {
+            const details = new threeNs.Mesh(detailsGeometry, mesh.material);
+            details.name = 'ConstructionDetails';
+            details.raycast = () => {};
+            details.userData.renderOnly = true;
+            details.castShadow = true;
+            details.receiveShadow = true;
+            mesh.add(details);
+          }
+        }
+        mesh.userData.constructionDetailsSignature = detailsSignature;
+      }
+      const details = mesh.getObjectByName('ConstructionDetails');
+      if (details) details.material = mesh.material;
     }
     try {
       const currentOpacity = Number.isFinite(gm?.threeSceneManager?._terrainMeshOpacity)

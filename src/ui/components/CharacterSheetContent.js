@@ -736,6 +736,35 @@ export default class CharacterSheetContent {
     const button = event.target.closest('[data-sheet-action]');
     if (!button) return;
     const action = button.dataset.sheetAction;
+    if (
+      this.services.sessionRole === 'player' &&
+      [
+        'new',
+        'delete',
+        'import',
+        'cast',
+        'use-action',
+        'stand-up',
+        'roll',
+        'recent-roll',
+        'turn-start',
+        'turn-end',
+        'combat-end',
+        'use-undo',
+        'attack-finish',
+        'movement-adjust',
+        'economy-adjust',
+        'configure-targeting',
+      ].includes(action)
+    ) {
+      this._failure(
+        new Error(
+          'Player gameplay commands are not enabled in this milestone; edit your assigned sheet or ask the DM.'
+        ),
+        'playerAccess'
+      );
+      return;
+    }
     if (action === 'configure-targeting') {
       const actionId =
         button.dataset.actionId ||
@@ -832,17 +861,19 @@ export default class CharacterSheetContent {
       return;
     }
     if (action === 'movement-mode') {
-      this._run(
-        () => setTokenMovementSettings(this.token, { mode: button.dataset.mode }),
-        'Movement pace updated.'
-      );
+      this._run(() => {
+        if (getTokenMovementSettings(this.token).mode === button.dataset.mode) return;
+        setTokenMovementSettings(this.token, { mode: button.dataset.mode });
+        this.gameManager.sceneAutosave?.changed('movement pace');
+      }, 'Movement pace updated.');
       return;
     }
     if (action === 'movement-style') {
-      this._run(
-        () => setTokenMovementSettings(this.token, { type: button.dataset.style }),
-        'Movement style updated.'
-      );
+      this._run(() => {
+        if (getTokenMovementSettings(this.token).type === button.dataset.style) return;
+        setTokenMovementSettings(this.token, { type: button.dataset.style });
+        this.gameManager.sceneAutosave?.changed('movement style');
+      }, 'Movement style updated.');
       return;
     }
     if (action === 'roll-mode') {
@@ -979,6 +1010,22 @@ export default class CharacterSheetContent {
         !this.services.combat.standingAvailability(this.token).allowed
       )
         input.disabled = true;
+    }
+    this._restrictPlayerControls();
+  }
+
+  _restrictPlayerControls() {
+    if (this.services.sessionRole !== 'player') return;
+    for (const control of this.root.querySelectorAll(
+      '[data-sheet-action="new"],[data-sheet-action="delete"],[data-sheet-action="import"],' +
+        '[data-sheet-action="cast"],[data-sheet-action="use-action"],[data-sheet-action="stand-up"],' +
+        '[data-sheet-action="roll"],[data-sheet-action="recent-roll"],' +
+        '[data-sheet-section="combat"],[data-sheet-section="noncombat"],' +
+        '[data-character-condition],[data-character-field^="fallTraits."]'
+    )) {
+      control.disabled = true;
+      control.title =
+        'This milestone supports assigned-sheet editing; gameplay commands require DM adjudication.';
     }
   }
 

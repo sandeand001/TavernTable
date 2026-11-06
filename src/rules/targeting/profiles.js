@@ -2,12 +2,66 @@ import {
   THROWN_WEAPON_RANGES,
   TARGET_AREA_SHAPES,
   TARGET_CREATURE_TYPES,
+  TARGETING_LIMITS,
 } from '../../config/targeting/SpellProfiles.js';
 import { edition } from '../editions.js';
 
 const integer = (value, minimum, maximum) =>
   Number.isInteger(value) && value >= minimum && value <= maximum;
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const MAX_RANGE = TARGETING_LIMITS.rangeFeet;
+const MAX_TURNS = TARGETING_LIMITS.durationTurns;
+const positive = (value, max) => Number.isFinite(value) && value > 0 && value <= max;
+
+export function validateEffectMovement(movement) {
+  if (
+    !record(movement) ||
+    !positive(movement.distanceFeet, MAX_RANGE) ||
+    !['action', 'bonus'].includes(movement.cost) ||
+    typeof movement.magicAction !== 'boolean' ||
+    (movement.laterTurnsOnly !== undefined && typeof movement.laterTurnsOnly !== 'boolean') ||
+    (movement.casterRangeFeet !== null && !positive(movement.casterRangeFeet, MAX_RANGE)) ||
+    Object.keys(movement).some(
+      (key) =>
+        !['distanceFeet', 'cost', 'magicAction', 'casterRangeFeet', 'laterTurnsOnly'].includes(key)
+    )
+  )
+    throw new Error('Spell effect movement has invalid distance or action cost');
+  return movement;
+}
+
+function spellRange(entry) {
+  const range = entry.range.trim();
+  if (/^self$/i.test(range)) return 0;
+  if (/^touch$/i.test(range)) return 5;
+  const value = /^(\d+(?:\.\d+)?)\s+(feet|foot|miles?|mile)$/i.exec(range);
+  if (!value) throw new Error(`The reviewed ${entry.name} profile needs an explicit range`);
+  return Number(value[1]) * (/mile/i.test(value[2]) ? 5280 : 1);
+}
+
+function spellDuration(entry, spec, slot) {
+  if (!spec.durationFromSpell)
+    return { turns: spec.lingerTurns || 0, label: spec.durationLabel || '' };
+  const override = spec.durationTurnsBySlot?.[slot];
+  if (override !== undefined) {
+    if (!integer(override, 1, MAX_TURNS))
+      throw new Error('The reviewed upcast duration is invalid');
+    return { turns: override, label: `${override} caster turns` };
+  }
+  if (spec.manualUpcastDuration && slot > entry.level)
+    return { turns: 0, indefinite: true, label: 'Upcast duration: end manually' };
+  const duration = entry.duration.trim();
+  if (/^instantaneous$/i.test(duration)) return { turns: 0, label: duration };
+  if (/^until dispelled\b/i.test(duration) || /^special$/i.test(duration))
+    return { turns: 0, indefinite: true, label: `${duration} (end manually)` };
+  const timed = /^(?:up to\s+)?(\d+)\s+(round|minute|hour|day)s?$/i.exec(duration);
+  if (!timed) throw new Error(`The reviewed ${entry.name} profile needs an explicit duration`);
+  const turns =
+    Number(timed[1]) * { round: 1, minute: 10, hour: 600, day: 14400 }[timed[2].toLowerCase()];
+  if (!integer(turns, 1, MAX_TURNS))
+    throw new Error('The spell duration is outside supported bounds');
+  return { turns, label: duration };
+}
 
 // -- Reviewed profiles and explicit overrides --
 export function targetingProfile(
@@ -57,7 +111,29 @@ export function targetingProfile(
       reason: 'No reviewed targeting profile. Configure one or explicitly use manual targeting.',
     };
   }
+  if (spec.kind === 'manual')
+    return validateTargetingProfile({ version: 1, kind: 'manual', reason: spec.reason });
   const slot = action.slotLevel ?? entry.level;
+  if (spec.manualFromSlot && slot >= spec.manualFromSlot)
+    return validateTargetingProfile({
+      version: 1,
+      kind: 'manual',
+      reason: spec.upcastReason,
+    });
+  const variants = spec.variants || [];
+  const variant = action.targetingVariant || variants[0]?.id || null;
+  if (variant !== null) {
+    const selected = variants.find((option) => option.id === variant);
+    if (!selected) throw new Error('Choose a supported spell template');
+    spec = { ...spec, ...selected };
+  }
+  const duration = spellDuration(entry, spec, slot);
+  const rangeFeet =
+    (spec.rangeFeet === 'spell' ? spellRange(entry) : spec.rangeFeet) *
+    (spec.rangeDoubleLevels
+      ? 2 ** spec.rangeDoubleLevels.filter((level) => character.level >= level).length
+      : 1);
+  const attack = spec.attack ?? (action.roll?.attack === true && spec.kind === 'tokens');
   const targets = spec.targets
     ? spec.targets[0] + Math.max(0, slot - spec.targets[1]) * spec.targets[2]
     : spec.beams
@@ -69,15 +145,17 @@ export function targetingProfile(
   return validateTargetingProfile({
     version: 1,
     kind: spec.kind,
-    rangeFeet: spec.rangeFeet,
+    rangeFeet,
     maxTargets: targets,
     minTargets: spec.allowRepeat ? targets : 1,
     allowRepeat: spec.allowRepeat === true,
     requiresSight: spec.requiresSight === true,
     requiresWilling: spec.requiresWilling === true,
+    requireCasterTarget: spec.requireCasterTarget === true,
     flightGrant: spec.flightGrant || null,
     preferred: spec.preferred || 'any',
     creatureTypes: spec.creatureTypes || [],
+    creatureSizes: spec.creatureSizes || [],
     excludedTypes: spec.excludedTypes || [],
     spreadFeet: spec.spreadFeet ?? null,
     anchor: spec.anchor || 'point',
@@ -88,13 +166,28 @@ export function targetingProfile(
     followCaster: spec.followCaster === true,
     excludeCaster: spec.excludeCaster === true,
     allowExclusions: spec.allowExclusions === true,
+    maxAreaTargets: spec.maxAreaTargets ?? null,
+    areaTargetsRequireSight: spec.areaTargetsRequireSight === true,
     exclusionsRequireSight: spec.exclusionsRequireSight === true,
-    lingerTurns: spec.lingerTurns || 0,
+    lingerTurns: duration.turns,
+    indefiniteDuration: duration.indefinite === true,
+    durationLabel: duration.label,
+    durationTarget: spec.durationTarget || null,
+    movement: spec.movement || null,
+    variant,
+    variantOptions: variants.map(({ id, label }) => ({ id, label })),
+    defaultElevationFeet: spec.defaultElevationFeet || 0,
+    minOriginHeightFeet: spec.minOriginHeightFeet || 0,
+    ignoreOriginCover: spec.ignoreOriginCover === true,
+    replacePrevious: spec.replacePrevious === true,
     expiry: spec.expiry || 'start',
     concentration: entry.concentration,
     areaCover: spec.areaCover !== false,
     coverageNote: spec.coverageNote || '',
-    attack: action.roll?.attack === true,
+    attack,
+    ...(attack && (spec.meleeAttack || entry.attackType === 'melee')
+      ? { modes: [{ id: 'melee', normal: rangeFeet, long: rangeFeet }] }
+      : {}),
   });
 }
 
@@ -177,9 +270,11 @@ export function validateTargetingProfile(value) {
     maxSizeDifference: null,
     requiresSight: false,
     requiresWilling: false,
+    requireCasterTarget: false,
     flightGrant: null,
     preferred: 'any',
     creatureTypes: [],
+    creatureSizes: [],
     excludedTypes: [],
     spreadFeet: null,
     anchor: 'point',
@@ -190,7 +285,19 @@ export function validateTargetingProfile(value) {
     followCaster: false,
     excludeCaster: false,
     allowExclusions: false,
+    maxAreaTargets: null,
+    areaTargetsRequireSight: false,
     lingerTurns: 0,
+    indefiniteDuration: false,
+    durationLabel: '',
+    durationTarget: null,
+    movement: null,
+    variant: null,
+    variantOptions: [],
+    defaultElevationFeet: 0,
+    minOriginHeightFeet: 0,
+    ignoreOriginCover: false,
+    replacePrevious: false,
     expiry: 'start',
     concentration: false,
     areaCover: true,
@@ -204,6 +311,7 @@ export function validateTargetingProfile(value) {
     ignoreLongRangeDisadvantage: false,
     ...value,
   };
+  if (profile.movement !== null) validateEffectMovement(profile.movement);
   if (
     Object.keys(profile).some(
       (key) =>
@@ -219,9 +327,11 @@ export function validateTargetingProfile(value) {
           'maxSizeDifference',
           'requiresSight',
           'requiresWilling',
+          'requireCasterTarget',
           'flightGrant',
           'preferred',
           'creatureTypes',
+          'creatureSizes',
           'excludedTypes',
           'spreadFeet',
           'anchor',
@@ -232,7 +342,19 @@ export function validateTargetingProfile(value) {
           'followCaster',
           'excludeCaster',
           'allowExclusions',
+          'maxAreaTargets',
+          'areaTargetsRequireSight',
           'lingerTurns',
+          'indefiniteDuration',
+          'durationLabel',
+          'durationTarget',
+          'movement',
+          'variant',
+          'variantOptions',
+          'defaultElevationFeet',
+          'minOriginHeightFeet',
+          'ignoreOriginCover',
+          'replacePrevious',
           'expiry',
           'concentration',
           'areaCover',
@@ -248,18 +370,59 @@ export function validateTargetingProfile(value) {
         ].includes(key)
     ) ||
     !['tokens', 'area', 'point', 'self'].includes(profile.kind) ||
-    !integer(profile.rangeFeet, 0, 10000) ||
+    !integer(profile.rangeFeet, 0, MAX_RANGE) ||
     !integer(profile.minRangeFeet, 0, profile.rangeFeet) ||
-    !integer(profile.maxTargets, 1, 100) ||
+    !integer(
+      profile.maxTargets,
+      1,
+      profile.allowRepeat || profile.attack ? 100 : TARGETING_LIMITS.targets
+    ) ||
     !integer(profile.minTargets, 1, profile.maxTargets) ||
     (profile.maxSizeDifference !== null && !integer(profile.maxSizeDifference, 0, 5)) ||
     !['any', 'friendly', 'hostile'].includes(profile.preferred) ||
     !['point', 'caster'].includes(profile.anchor) ||
     !['start', 'end'].includes(profile.expiry) ||
-    !integer(profile.lingerTurns, 0, 100000) ||
-    !integer(profile.sizeFeet, 0, 1000) ||
-    !integer(profile.widthFeet, 1, 1000) ||
-    !integer(profile.heightFeet, 1, 1000) ||
+    !integer(profile.lingerTurns, 0, MAX_TURNS) ||
+    !Number.isFinite(profile.sizeFeet) ||
+    profile.sizeFeet < 0 ||
+    profile.sizeFeet > 100000 ||
+    !positive(profile.widthFeet, 100000) ||
+    !positive(profile.heightFeet, 100000) ||
+    !integer(profile.defaultElevationFeet, 0, 100000) ||
+    !integer(profile.minOriginHeightFeet, 0, 100000) ||
+    typeof profile.durationLabel !== 'string' ||
+    profile.durationLabel.length > 200 ||
+    ![null, 'area', 'targets', 'caster', 'point'].includes(profile.durationTarget) ||
+    (profile.indefiniteDuration && (!profile.durationLabel || profile.lingerTurns !== 0)) ||
+    (profile.durationTarget === 'area' && profile.kind !== 'area') ||
+    (profile.durationTarget === 'point' && profile.kind !== 'point') ||
+    (profile.maxAreaTargets !== null &&
+      (!integer(profile.maxAreaTargets, 1, TARGETING_LIMITS.targets) ||
+        profile.kind !== 'area' ||
+        !profile.allowExclusions)) ||
+    (profile.requireCasterTarget &&
+      (profile.kind !== 'tokens' || profile.excludeSelf || profile.attack)) ||
+    !Array.isArray(profile.creatureSizes) ||
+    profile.creatureSizes.some(
+      (size) => !['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan'].includes(size)
+    ) ||
+    !Array.isArray(profile.variantOptions) ||
+    profile.variantOptions.length > 10 ||
+    new Set(profile.variantOptions.map((option) => option?.id)).size !==
+      profile.variantOptions.length ||
+    profile.variantOptions.some(
+      (option) =>
+        !record(option) ||
+        typeof option.id !== 'string' ||
+        !/^[a-z][a-z0-9-]{0,49}$/.test(option.id) ||
+        typeof option.label !== 'string' ||
+        !option.label.trim() ||
+        option.label.length > 100 ||
+        Object.keys(option).some((key) => !['id', 'label'].includes(key))
+    ) ||
+    (profile.variant === null
+      ? profile.variantOptions.length !== 0
+      : !profile.variantOptions.some((option) => option.id === profile.variant)) ||
     (profile.spreadFeet !== null && !integer(profile.spreadFeet, 0, 10000)) ||
     (profile.shape !== null && !TARGET_AREA_SHAPES.includes(profile.shape)) ||
     (profile.kind === 'area' && (!profile.shape || profile.sizeFeet === 0)) ||
@@ -272,9 +435,11 @@ export function validateTargetingProfile(value) {
       'excludeSelf',
       'requiresSight',
       'requiresWilling',
+      'requireCasterTarget',
       'followCaster',
       'excludeCaster',
       'allowExclusions',
+      'areaTargetsRequireSight',
       'exclusionsRequireSight',
       'concentration',
       'areaCover',
@@ -282,6 +447,9 @@ export function validateTargetingProfile(value) {
       'heavySmall',
       'ignoreCloseRangeDisadvantage',
       'ignoreLongRangeDisadvantage',
+      'indefiniteDuration',
+      'ignoreOriginCover',
+      'replacePrevious',
     ].some((key) => typeof profile[key] !== 'boolean') ||
     ['creatureTypes', 'excludedTypes'].some(
       (key) =>
@@ -294,7 +462,14 @@ export function validateTargetingProfile(value) {
         profile.followCaster ||
         profile.excludeCaster ||
         profile.allowExclusions ||
-        (profile.lingerTurns > 0 && !profile.flightGrant))) ||
+        ((profile.lingerTurns > 0 || profile.indefiniteDuration) &&
+          !profile.flightGrant &&
+          profile.durationTarget === null))) ||
+    (profile.shape === 'ring' && profile.widthFeet >= profile.sizeFeet) ||
+    (profile.movement !== null &&
+      (!['area', 'point'].includes(profile.durationTarget) ||
+        profile.followCaster ||
+        !(profile.lingerTurns > 0 || profile.indefiniteDuration))) ||
     (profile.requiresWilling && !['tokens', 'self'].includes(profile.kind)) ||
     (profile.flightGrant !== null &&
       (!record(profile.flightGrant) ||
@@ -322,7 +497,7 @@ export function validateTargetingProfile(value) {
             !record(mode) ||
             !['melee', 'thrown', 'ranged'].includes(mode.id) ||
             Object.keys(mode).some((key) => !['id', 'normal', 'long'].includes(key)) ||
-            !integer(mode.normal, 1, 10000) ||
+            !integer(mode.normal, 1, MAX_RANGE) ||
             !integer(mode.long, mode.normal, profile.rangeFeet) ||
             (mode.id === 'melee' && mode.normal !== mode.long)
         )))

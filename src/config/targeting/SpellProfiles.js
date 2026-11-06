@@ -25,13 +25,22 @@ export const COMMON_SPELL_PROFILES = Object.freeze({
     requiresWilling: true,
     lingerTurns: 100,
   },
-  'spell:bless': { kind: 'tokens', rangeFeet: 30, targets: [3, 1, 1], preferred: 'friendly' },
+  'spell:bless': {
+    kind: 'tokens',
+    rangeFeet: 30,
+    targets: [3, 1, 1],
+    preferred: 'friendly',
+    durationFromSpell: true,
+    durationTarget: 'targets',
+  },
   'spell:bane': {
     kind: 'tokens',
     rangeFeet: 30,
     targets: [3, 1, 1],
     requiresSight: true,
     preferred: 'hostile',
+    durationFromSpell: true,
+    durationTarget: 'targets',
   },
   'spell:hold-person': {
     kind: 'tokens',
@@ -40,6 +49,8 @@ export const COMMON_SPELL_PROFILES = Object.freeze({
     requiresSight: true,
     creatureTypes: ['humanoid'],
     preferred: 'hostile',
+    durationFromSpell: true,
+    durationTarget: 'targets',
   },
   'spell:burning-hands': {
     kind: 'area',
@@ -121,10 +132,16 @@ export const COMMON_SPELL_PROFILES = Object.freeze({
     exclusionsRequireSight: true,
     lingerTurns: 100,
   },
-  'spell:shield': { kind: 'self', rangeFeet: 0 },
+  'spell:shield': {
+    kind: 'self',
+    rangeFeet: 0,
+    durationFromSpell: true,
+    durationTarget: 'caster',
+  },
 });
 
 export const SPELL_PROFILES_2014 = Object.freeze({
+  ...CORE_SPELL_PROFILES_2014,
   ...COMMON_SPELL_PROFILES,
   'spell:fly': {
     ...COMMON_SPELL_PROFILES['spell:fly'],
@@ -162,6 +179,7 @@ export const SPELL_PROFILES_2014 = Object.freeze({
 });
 
 export const SPELL_PROFILES_2024 = Object.freeze({
+  ...CORE_SPELL_PROFILES_2024,
   ...COMMON_SPELL_PROFILES,
   'spell:fly': {
     ...COMMON_SPELL_PROFILES['spell:fly'],
@@ -224,4 +242,15 @@ export const TARGET_AREA_SHAPES = Object.freeze([
   'line',
   'cylinder',
   'emanation',
+  'wall',
+  'ring',
+  'hemisphere',
 ]);
+import { CORE_SPELL_PROFILES_2014, CORE_SPELL_PROFILES_2024 } from './CoreSpellProfiles.js';
+
+export const TARGETING_LIMITS = Object.freeze({
+  rangeFeet: 5000000,
+  areaFeet: 100000,
+  durationTurns: 10000000,
+  targets: 2000,
+});

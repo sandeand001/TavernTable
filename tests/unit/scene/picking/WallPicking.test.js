@@ -94,6 +94,62 @@ describe('Actual terrain-face wall picking', () => {
     expect(hit.token).toBeNull();
   });
 
+  test('animated model setup discards stale skin bounds before precise picking without rebuilding them on every click', async () => {
+    const geometry = new three.BoxGeometry(40, 180, 40);
+    geometry.translate(0, 90, 0);
+    const vertices = geometry.attributes.position.count;
+    const weights = new Float32Array(vertices * 4);
+    for (let vertex = 0; vertex < vertices; vertex++) weights[vertex * 4] = 1;
+    geometry.setAttribute(
+      'skinIndex',
+      new three.Uint16BufferAttribute(new Uint16Array(vertices * 4), 4)
+    );
+    geometry.setAttribute('skinWeight', new three.Float32BufferAttribute(weights, 4));
+    const body = new three.SkinnedMesh(geometry, new three.MeshBasicMaterial());
+    const hips = new three.Bone();
+    hips.name = 'mixamorigHips';
+    body.add(hips);
+    body.bind(new three.Skeleton([hips]));
+    const clone = new three.Group();
+    clone.add(body);
+    clone.scale.setScalar(0.005);
+    const token = {
+      id: 'animated',
+      type: 'mannequin',
+      gridX: 0,
+      gridY: 0,
+      world: { x: 0.84, y: 0, z: 0.5 },
+      facingAngle: 0,
+    };
+    gm.placedTokens.push(token);
+    const adapter = new Token3DAdapter(gm);
+    gm.token3DAdapter = adapter;
+    adapter._threePromise = Promise.resolve(three);
+    jest.spyOn(adapter, '_loadModelTemplate').mockResolvedValue({ template: clone });
+    jest.spyOn(adapter, '_cloneTemplate').mockResolvedValue(clone);
+    jest.spyOn(adapter, '_refreshVisualState').mockResolvedValue(undefined);
+    jest.spyOn(adapter, '_setupAnimationSet').mockImplementation(async () => {
+      scene.updateMatrixWorld(true);
+      body.boundingBox = new three.Box3(
+        new three.Vector3(-0.2, 0, -0.2),
+        new three.Vector3(0.2, 0.9, 0.2)
+      );
+      body.boundingSphere = new three.Sphere(new three.Vector3(0, 0.5, 0), 0.53);
+    });
+    expect(await adapter._create3DToken(token, scene, { path: 'fixture.fbx' })).not.toBeNull();
+    const computeSphere = jest.spyOn(body, 'computeBoundingSphere');
+    camera.position.y = 0.45;
+    camera.lookAt(1, 0.45, 0.5);
+    camera.updateMatrixWorld(true);
+    scene.updateMatrixWorld(true);
+    const ray = new three.Raycaster();
+    ray.setFromCamera(new three.Vector2(0, 0), camera);
+    expect(adapter.pickTokenByRay(ray, { precise: true })?.token.id).toBe(token.id);
+    expect(picking.pickGroundSync(100, 100).token?.id).toBe(token.id);
+    expect(adapter.pickTokenByRay(ray, { precise: true })?.token.id).toBe(token.id);
+    expect(computeSphere).toHaveBeenCalledTimes(1);
+  });
+
   test('production heightfield walls resolve the high side even when triangle winding faces inward', () => {
     const mesh = scene.getObjectByName('TerrainMesh');
     mesh.geometry.dispose();

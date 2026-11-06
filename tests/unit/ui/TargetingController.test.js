@@ -9,6 +9,7 @@ import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCa
 import data from '../../../assets/data/resources/srd-2024-5.2.1-seed.1.json';
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { GameErrors } from '../../../src/utils/error/ErrorHandler.js';
 
 jest.mock('../../../src/systems/dice/dice.js', () => ({ rollDiceExpression: jest.fn() }));
 
@@ -150,6 +151,86 @@ test('disposing during overlay loading cannot attach a renderer after disposal',
   controller.dispose();
   await loading;
   expect(gm.threeSceneManager.scene.children).toEqual([]);
+});
+
+test('Moonbeam placement and its Move button share the real targeting flow without another cast', async () => {
+  const errors = jest.spyOn(GameErrors, 'gameState').mockImplementation(() => {});
+  const id = addSpell('spell:moonbeam');
+  session.startTurn(caster);
+  const casting = performPlayAction(context, id);
+  await settle();
+  expect(controller.root.textContent).toContain('5 ft radius cylinder; 40 ft high');
+  controller.updatePoint({ x: 5.5, y: 0, z: 1.5 }, true);
+  confirm();
+  const cast = await casting;
+  expect(errors).not.toHaveBeenCalled();
+  expect(session.effects[0].area.origin).toEqual({ x: 5.5, y: 0, z: 1.5 });
+  expect(controller.effectRoot.querySelector('[data-move-effect]').disabled).toBe(true);
+  session.endTurn();
+  session.startTurn(caster);
+  const slots = [...library.get(caster.characterSheetId).slotsUsed];
+  controller.effectRoot.querySelector('[data-move-effect]').click();
+  await settle();
+  expect(controller.active.action.kind).toBe('spell-effect');
+  expect(controller.root.querySelector('[data-target-slot-level]')).toBeNull();
+  expect(controller.root.textContent).toContain('Confirm move');
+  controller.updatePoint({ x: 17.5, y: 0, z: 1.5 }, true);
+  expect(controller.root.querySelector('[data-target-action="confirm"]').disabled).toBe(false);
+  confirm();
+  await settle();
+  expect(session.effects[0]).toMatchObject({
+    id: cast.sequence,
+    remainingTurns: 9,
+    area: { origin: { x: 17.5, y: 0, z: 1.5 } },
+  });
+  expect(library.get(caster.characterSheetId).slotsUsed).toEqual(slots);
+  expect(session.status(caster).actions).toBe(0);
+  expect(errors).not.toHaveBeenCalled();
+});
+
+test('wall-template buttons preview a ring without changing the original reservation or spending early', async () => {
+  const id = addSpell('spell:wall-of-fire');
+  session.startTurn(caster);
+  const casting = performPlayAction(context, id);
+  await settle();
+  const ticket = session.pending;
+  expect(ticket.action.targeting.shape).toBe('wall');
+  controller.root.querySelector('[data-target-variant="ring"]').click();
+  expect(controller.active.profile).toMatchObject({
+    shape: 'ring',
+    sizeFeet: 10,
+    heightFeet: 20,
+    widthFeet: 1,
+  });
+  expect(ticket.action.targeting.shape).toBe('wall');
+  expect(session.status(caster).actions).toBe(1);
+  expect(library.get(caster.characterSheetId).slotsUsed.every((used) => used === 0)).toBe(true);
+  controller.updatePoint({ x: 5.5, y: 0, z: 1.5 }, true);
+  confirm();
+  const cast = await casting;
+  expect(cast.targetingVariant).toBe('ring');
+  expect(cast.targetingSelection.variant).toBe('ring');
+  expect(session.effects[0].area).toMatchObject({ shape: 'ring', size: 2, width: 0.2, height: 4 });
+});
+
+test('a location marker cannot be moved beyond the caster range, and cancellation spends nothing', async () => {
+  const id = addSpell('spell:mage-hand');
+  const casting = performPlayAction(context, id);
+  await settle();
+  controller.updatePoint({ x: 2.5, y: 0, z: 1.5 }, true);
+  confirm();
+  await casting;
+  const before = JSON.stringify(session.effects);
+  const moving = controller.moveEffect(session.effects[0].id);
+  await settle();
+  controller.updatePoint({ x: 8.5, y: 0, z: 1.5 }, true);
+  expect(controller.root.querySelector('[data-target-action="confirm"]').disabled).toBe(true);
+  expect(controller.root.textContent).toContain('within 30 feet of the caster');
+  controller.cancel();
+  await moving;
+  expect(JSON.stringify(session.effects)).toBe(before);
+  expect(session.pending).toBeNull();
+  expect(library.get(caster.characterSheetId).slotsUsed.every((used) => used === 0)).toBe(true);
 });
 
 test('casting-level buttons update Magic Missile allocations and spend only the confirmed higher slot', async () => {

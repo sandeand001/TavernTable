@@ -39,6 +39,10 @@ function attach3DControls() {
   section.innerHTML = `
     <div class="section-title">3D Experimental Controls</div>
     <p class="small-text">Hold Space and left-drag the map to pan. Right-drag rotates and tilts; the mouse wheel zooms.</p>
+    <div class="setting-item" style="display:flex;flex-direction:column;gap:6px;">
+      <span>Graphics driver</span>
+      <output id="graphics-status" class="small-text" aria-live="polite" style="overflow-wrap:anywhere;">Not initialized</output>
+    </div>
     <div class="setting-item">
       <label class="toggle-switch" for="bootstrap-grid-toggle">
         <input type="checkbox" id="bootstrap-grid-toggle" checked />
@@ -62,6 +66,9 @@ function attach3DControls() {
   } else {
     settingsPanel.appendChild(section);
   }
+
+  el('graphics-status').textContent =
+    window.gameManager?.threeSceneManager?.getGraphicsStatus?.() || 'Not initialized';
 
   const bootstrapToggle = el('bootstrap-grid-toggle');
   if (bootstrapToggle) {

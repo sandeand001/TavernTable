@@ -1,8 +1,17 @@
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 import { TerrainVolumeMeshBuilder } from '../terrain/TerrainVolumeMeshBuilder.js';
-import { getTerrainLayerColor } from '../terrain/TerrainMaterialFactory.js';
+import {
+  getTerrainLayerColor,
+  getBuildingFloorAppearance,
+} from '../terrain/TerrainMaterialFactory.js';
+import { CONSTRUCTION_MATERIALS } from '../../config/biome/ConstructionPalettes.js';
 import { createInteriorCutaway } from '../terrain/InteriorCutaway.js';
+import { clipCellToBounds } from '../../terrain/ConvexGeometry.js';
+import {
+  configureConstructionMaterial,
+  hasConstructionMaterials,
+} from '../terrain/ConstructionMaterials.js';
 
 const CONTEXT_RADIUS_FEET = 10;
 const EPSILON = 1e-6;
@@ -21,6 +30,7 @@ export default class MapProjectionTerrain {
     this.floors = new this.three.Group();
     this.floors.name = 'MapPhysicalFloors';
     this.floorMeshes = new Map();
+    this.floorBatch = null;
     this.material = new this.three.MeshLambertMaterial({
       vertexColors: true,
       side: this.three.DoubleSide,
@@ -54,6 +64,9 @@ export default class MapProjectionTerrain {
     this.wallMeshes.clear();
     for (const mesh of this.floorMeshes.values()) mesh.geometry.dispose();
     this.floorMeshes.clear();
+    this.floorBatch?.geometry.dispose();
+    this.floorBatch?.removeFromParent();
+    this.floorBatch = null;
     this.material.dispose();
     this.root.removeFromParent();
     this.walls.removeFromParent();
@@ -88,6 +101,7 @@ export default class MapProjectionTerrain {
     )
       return;
     const sightGeometry = {
+      mapId: observer.mapId,
       obstacles: this.world.getObstacles({
         mapId: this.gm.campaignMapId,
         geometry: this.gm.terrainEngine.geometry,
@@ -142,13 +156,20 @@ export default class MapProjectionTerrain {
       const mask = faces.map((face) => face.start).join(',');
       if (mask !== source.mask) {
         const geometry = new this.three.BufferGeometry();
-        for (const key of ['position', 'normal', 'color']) {
+        for (const key of ['position', 'normal', 'color', 'constructionMaterial']) {
           const original = source.full.getAttribute(key);
           const values = [];
           for (const face of faces)
-            for (let i = face.start * 3; i < (face.start + 6) * 3; i++)
+            for (
+              let i = face.start * original.itemSize;
+              i < (face.start + face.count) * original.itemSize;
+              i++
+            )
               values.push(original.array[i]);
-          geometry.setAttribute(key, new this.three.Float32BufferAttribute(values, 3));
+          geometry.setAttribute(
+            key,
+            new this.three.Float32BufferAttribute(values, original.itemSize)
+          );
         }
         geometry.applyMatrix4(source.toView);
         geometry.computeBoundingSphere();
@@ -163,12 +184,13 @@ export default class MapProjectionTerrain {
   }
 
   _updatePhysicalFloors() {
+    const signature = `${this.gm.campaignMapId}:${this.revision}:${this.world.mapRevision}`;
+    if (signature === this.floorSignature) return;
     const maps = this.world
-      .listMaps()
+      .listLocationMaps(this.gm.campaignMapId)
       .map(({ id }) => this.world.getMap(id))
       .filter((map) => map.id !== this.gm.campaignMapId && map.base === 'floor');
     const references = maps.map((map) => this.world.getMapGeometry(map.id));
-    const signature = `${this.gm.campaignMapId}:${this.revision}`;
     if (
       signature === this.floorSignature &&
       references.length === this.floorReferences?.length &&
@@ -180,6 +202,9 @@ export default class MapProjectionTerrain {
       mesh.removeFromParent();
     }
     this.floorMeshes.clear();
+    this.floorBatch?.geometry.dispose();
+    this.floorBatch?.removeFromParent();
+    this.floorBatch = null;
     if (!Number.isFinite(this.gm.terrainEngine.geometry.terrainThicknessFeet))
       for (let index = 0; index < maps.length; index++)
         this._addInteriorMesh(
@@ -189,9 +214,44 @@ export default class MapProjectionTerrain {
           this.floors,
           this.floorMeshes
         );
+    this._batchPhysicalFloors();
     this.floors.visible = this.floorMeshes.size > 0;
     this.floorSignature = signature;
     this.floorReferences = references;
+  }
+
+  _batchPhysicalFloors() {
+    if (!this.floorMeshes.size) return;
+    const sources = [...this.floorMeshes.values()];
+    const count = sources.reduce(
+      (total, mesh) => total + mesh.geometry.getAttribute('position').count,
+      0
+    );
+    const geometry = new this.three.BufferGeometry();
+    for (const key of ['position', 'normal', 'color', 'constructionMaterial']) {
+      const itemSize = sources[0].geometry.getAttribute(key).itemSize;
+      const values = new Float32Array(count * itemSize);
+      let offset = 0;
+      for (const mesh of sources) {
+        const attribute = mesh.geometry.getAttribute(key);
+        values.set(attribute.array, offset);
+        offset += attribute.array.length;
+      }
+      geometry.setAttribute(key, new this.three.Float32BufferAttribute(values, itemSize));
+    }
+    geometry.computeBoundingSphere();
+    const batch = new this.three.Mesh(geometry, this.material);
+    batch.name = 'MapPhysicalFloors:batch';
+    // Keep per-map meshes as the picking authority while rendering all slabs in one draw.
+    batch.raycast = (raycaster, intersections) => {
+      for (const mesh of sources) mesh.raycast(raycaster, intersections);
+    };
+    for (const mesh of sources) {
+      mesh.updateMatrixWorld(true);
+      mesh.removeFromParent();
+    }
+    this.floors.add(batch);
+    this.floorBatch = batch;
   }
 
   _updateInteriorWalls() {
@@ -200,8 +260,11 @@ export default class MapProjectionTerrain {
       this.wallSignature = null;
       return;
     }
-    const references = this.world.listMaps().map(({ id }) => this.world.getMapGeometry(id));
-    const signature = `${this.gm.campaignMapId}:${this.revision}`;
+    const signature = `${this.gm.campaignMapId}:${this.revision}:${this.world.mapRevision}`;
+    if (signature === this.wallSignature) return;
+    const references = this.world
+      .listLocationMaps(this.gm.campaignMapId)
+      .map(({ id }) => this.world.getMapGeometry(id));
     if (
       signature === this.wallSignature &&
       references.length === this.wallReferences?.length &&
@@ -233,6 +296,13 @@ export default class MapProjectionTerrain {
           .volumes.filter((volume) => ids.has(volume.id) && volume.operation === 'add')
           .map((volume) => volume.bounds);
         const stairs = {
+          hasCurves: reference.hasCurves,
+          getSolidCells: () =>
+            reference
+              .getSolidCells()
+              .flatMap((cell) =>
+                bounds.map((clip) => clipCellToBounds(cell, clip)).filter(Boolean)
+              ),
           getPartition: () => partition,
           getSolidSpansAt: (x, z) => {
             const regions = bounds.filter(
@@ -258,17 +328,37 @@ export default class MapProjectionTerrain {
   }
 
   _addInteriorMesh(map, query, key, group = this.walls, registry = this.wallMeshes) {
+    const floorAppearance = getBuildingFloorAppearance(this.world, map.id);
     const geometry = new TerrainVolumeMeshBuilder().build({
       geometry: query,
       three: this.three,
       worldUnitsPerFoot: 1,
+      getStyle: (_x, _z, _y, span) =>
+        CONSTRUCTION_MATERIALS[
+          floorAppearance && span.materialColor === undefined
+            ? floorAppearance.floorMaterial
+            : (span.materialStyle ?? 'none')
+        ],
       getColor: (_x, _z, _height, span) =>
-        getTerrainLayerColor(span.layerId === 'roof' ? 'ground' : span.layerId),
+        floorAppearance && span.materialColor === undefined
+          ? floorAppearance.floorColor
+          : getTerrainLayerColor(
+              span.layerId === 'roof' ? 'ground' : span.layerId,
+              map.terrain.biome,
+              span.materialRole,
+              span.materialColor
+            ),
     });
     if (geometry.getAttribute('position').count === 0) {
       geometry.dispose();
       return;
     }
+    if (hasConstructionMaterials(geometry))
+      configureConstructionMaterial(
+        this.material,
+        (this.gm.spatial?.tileWorldSize ??
+          this.world.getMap(this.gm.campaignMapId).grid.tileWorldSize) / 5
+      );
     geometry.applyMatrix4(this._transform(map, this.gm.campaignMapId));
     const mesh = new this.three.Mesh(geometry, this.material);
     mesh.name = `${group.name}:${key}`;
@@ -338,23 +428,44 @@ export default class MapProjectionTerrain {
     const feetPerLevel = (map.terrain.worldElevationUnit * 5) / map.grid.tileWorldSize;
     const full = new TerrainVolumeMeshBuilder().build({
       geometry: {
+        hasCurves: reference.hasCurves,
+        getSolidCells: () => reference.getSolidCells({ partition }),
         getPartition: () => partition,
         getSolidSpansAt: (x, z) => reference.getSolidSpansAt(x, z),
       },
       three: this.three,
       worldUnitsPerFoot: 1,
       getColor: (_x, _z, height, span) =>
-        span.id === 'terrain'
-          ? map.terrain.biome
-            ? getBiomeColorWithHydrology(map.terrain.biome, height / feetPerLevel)
-            : GRID_CONFIG.TILE_COLOR
-          : getTerrainLayerColor(span.layerId),
+        span.materialColor !== undefined
+          ? getTerrainLayerColor(
+              span.layerId,
+              map.terrain.biome,
+              span.materialRole,
+              span.materialColor
+            )
+          : span.id === 'terrain'
+            ? map.terrain.biome
+              ? getBiomeColorWithHydrology(map.terrain.biome, height / feetPerLevel)
+              : GRID_CONFIG.TILE_COLOR
+            : getTerrainLayerColor(
+                span.layerId,
+                map.terrain.biome,
+                span.materialRole,
+                span.materialColor
+              ),
     });
+    if (hasConstructionMaterials(full))
+      configureConstructionMaterial(
+        this.material,
+        (this.gm.spatial?.tileWorldSize ??
+          this.world.getMap(this.gm.campaignMapId).grid.tileWorldSize) / 5
+      );
     const toView = this._transform(map, this.gm.campaignMapId);
     const toCampaign = this._transform(map);
     const positions = full.getAttribute('position');
     const faces = [];
-    for (let start = 0; start < positions.count; start += 6) {
+    const faceSize = reference.hasCurves ? 3 : 6;
+    for (let start = 0; start < positions.count; start += faceSize) {
       const center = new this.three.Vector3();
       let low = Infinity;
       let high = -Infinity;
@@ -362,7 +473,7 @@ export default class MapProjectionTerrain {
       let maxX = -Infinity;
       let minZ = Infinity;
       let maxZ = -Infinity;
-      for (let i = start; i < start + 6; i++) {
+      for (let i = start; i < start + faceSize; i++) {
         const point = new this.three.Vector3().fromBufferAttribute(positions, i);
         center.add(point);
         low = Math.min(low, point.y);
@@ -372,12 +483,13 @@ export default class MapProjectionTerrain {
         minZ = Math.min(minZ, point.z);
         maxZ = Math.max(maxZ, point.z);
       }
-      center.divideScalar(6);
+      center.divideScalar(faceSize);
       const viewScale = 5 / this.gm.spatial.tileWorldSize;
       const viewY = (y) =>
         new this.three.Vector3(center.x, y, center.z).applyMatrix4(toView).y * viewScale;
       faces.push({
         start,
+        count: faceSize,
         center,
         low,
         high,

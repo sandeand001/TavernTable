@@ -1,29 +1,67 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 import { shouldIgnoreKeyTarget } from './keyboard.js';
 
+function beginSpacePan(c) {
+  c._facingGesture?.cancel();
+  c.gameManager.cancelTokenDrag?.();
+  c.gameManager.terrainEngine?.cancelBrushStroke?.();
+  c._pendingRadialContext = null;
+  if (c.isRotating3D) c.stop3DRotation();
+  const view = c.gameManager.getEventCanvas();
+  if (!c.isSpacePressed) {
+    c._spacePanCursor = c.isDragging
+      ? c.gameManager.terrainEngine?.isActive
+        ? 'crosshair'
+        : 'default'
+      : view.style.cursor || 'default';
+    c.isSpacePressed = true;
+    if (view.tabIndex < 0) view.tabIndex = 0;
+    view.focus?.({ preventScroll: true });
+    if (typeof window !== 'undefined')
+      window.dispatchEvent(
+        new CustomEvent('taverntable:mapPanStarted', {
+          detail: { gameManager: c.gameManager },
+        })
+      );
+  }
+  view.style.cursor = c.isDragging ? 'grabbing' : 'grab';
+}
+
 export function handlePanKeyDown(c, event) {
   if (
     event.code !== 'Space' ||
     event.altKey ||
     event.ctrlKey ||
     event.metaKey ||
-    shouldIgnoreKeyTarget(event.target) ||
     c.gameManager.sceneAutosave?.ready === false
   )
     return false;
-  c._facingGesture?.cancel();
-  c.gameManager.cancelTokenDrag?.();
-  c._pendingRadialContext = null;
-  if (c.isRotating3D) c.stop3DRotation();
-  c.isSpacePressed = true;
-  c.gameManager.getEventCanvas().style.cursor = c.isDragging ? 'grabbing' : 'grab';
+  // Controls keep their keyboard input, but a subsequent canvas drag can claim the held key.
+  c.isSpaceKeyHeld = true;
+  if (shouldIgnoreKeyTarget(event.target)) return false;
+  beginSpacePan(c);
+  return true;
+}
+
+export function handlePanPointerDown(c, event) {
+  if (
+    event.button !== 0 ||
+    !(c.isSpacePressed || c.isSpaceKeyHeld) ||
+    c.gameManager.sceneAutosave?.ready === false
+  )
+    return false;
+  beginSpacePan(c);
   return true;
 }
 
 export function releasePanKey(c) {
+  const active = c.isSpacePressed;
   c.isSpacePressed = false;
+  c.isSpaceKeyHeld = false;
   if (c.isDragging) c.stopGridDragging();
-  else if (!c.isRotating3D) c.gameManager.getEventCanvas().style.cursor = 'default';
+  if (active && !c.isRotating3D)
+    c.gameManager.getEventCanvas().style.cursor = c._spacePanCursor || 'default';
+  delete c._spacePanCursor;
 }
 
 // ── Drag Start ──────────────────────────────────────────────────

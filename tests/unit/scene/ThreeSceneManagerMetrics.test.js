@@ -1,6 +1,22 @@
 import { ThreeSceneManager } from '../../../src/scene/ThreeSceneManager.js';
 
 describe('ThreeSceneManager metrics', () => {
+  test('disposal releases the overlay frame loop before a viewer is recreated', async () => {
+    const manager = new ThreeSceneManager({});
+    await manager.initialize();
+    const overlay = document.getElementById('three-debug-overlay');
+    const handle = manager._debugAnimationHandle;
+    const cancel = jest.spyOn(globalThis, 'cancelAnimationFrame');
+    manager.dispose();
+    expect(cancel).toHaveBeenCalledWith(handle);
+    expect(overlay.isConnected).toBe(false);
+    const replacement = new ThreeSceneManager({});
+    await replacement.initialize();
+    expect(document.getElementById('three-debug-overlay')).not.toBe(overlay);
+    replacement.dispose();
+    cancel.mockRestore();
+  });
+
   test('the metrics overlay cannot intercept sidebar pointer input', async () => {
     const manager = new ThreeSceneManager({});
     await manager.initialize();

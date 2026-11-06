@@ -1,4 +1,4 @@
-import { TARGET_AREA_SHAPES } from '../../config/targeting/SpellProfiles.js';
+import { TARGET_AREA_SHAPES, TARGETING_LIMITS } from '../../config/targeting/SpellProfiles.js';
 import { validateTargetingProfile } from '../../rules/targeting/profiles.js';
 import { escapeHtml as escape } from './escapeHtml.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
@@ -42,8 +42,14 @@ export default class TargetingProfileEditor {
         ? action.targeting
         : validateTargetingProfile({ version: 1, kind: 'tokens', rangeFeet: 30 });
     this.base = profile;
-    const number = (label, name, value, max = 10000) => `<label>${label}<input type="number"
-      name="${name}" aria-label="${label}" min="0" max="${max}" step="1" value="${value}"></label>`;
+    const number = (
+      label,
+      name,
+      value,
+      max = TARGETING_LIMITS.rangeFeet,
+      step = '1'
+    ) => `<label>${label}<input type="number"
+      name="${name}" aria-label="${label}" min="0" max="${max}" step="${step}" value="${value}"></label>`;
     const checked = (value) => (value ? 'checked' : '');
     this.root.innerHTML = `<form><h3>Targeting: ${escape(action.label)}</h3>
       <p>Manual overrides are static settings. Reviewed edition profiles resume when reset. Damage and saves remain manual.</p>
@@ -68,10 +74,11 @@ export default class TargetingProfileEditor {
         <label><input type="checkbox" name="ignoreLongRangeDisadvantage" ${checked(profile.ignoreLongRangeDisadvantage)}> Feature ignores long-range disadvantage</label>`
           : ''
       }
-      ${number('Maximum targets / projectiles', 'maxTargets', profile.maxTargets, 100)}
-      ${number('Minimum targets / projectiles', 'minTargets', profile.minTargets, 100)}
+      ${number('Maximum targets / projectiles', 'maxTargets', profile.maxTargets, TARGETING_LIMITS.targets)}
+      ${number('Minimum targets / projectiles', 'minTargets', profile.minTargets, TARGETING_LIMITS.targets)}
       ${number('Maximum target size steps above caster (blank = any)', 'maxSizeDifference', profile.maxSizeDifference ?? '', 5)}
       <label><input type="checkbox" name="excludeSelf" ${checked(profile.excludeSelf)}> Creature targeting excludes caster</label>
+      <label><input type="checkbox" name="requireCasterTarget" ${checked(profile.requireCasterTarget)}> Creature selection must include caster</label>
       <label><input type="checkbox" name="allowRepeat" ${checked(profile.allowRepeat)} ${profile.flightGrant ? 'disabled' : ''}> Allow multiple projectiles against one target</label>
       <label><input type="checkbox" name="requiresSight" ${checked(profile.requiresSight)}> Must see selected creatures</label>
       <label><input type="checkbox" name="requiresWilling" ${checked(profile.requiresWilling)} ${profile.flightGrant ? 'disabled' : ''}> Selected creatures must be willing</label>
@@ -95,14 +102,19 @@ export default class TargetingProfileEditor {
             `<option value="${anchor}" ${anchor === profile.anchor ? 'selected' : ''}>${anchor}</option>`
         )
         .join('')}</select></label>
-      ${number('Area radius / side / length (feet)', 'sizeFeet', profile.sizeFeet, 1000)}
-      ${number('Line width (feet)', 'widthFeet', profile.widthFeet, 1000)}
-      ${number('Cylinder height (feet)', 'heightFeet', profile.heightFeet, 1000)}
-      ${number('Lingering duration (caster turns)', 'lingerTurns', profile.lingerTurns, 100000)}
+      ${number('Area radius / side / length (feet)', 'sizeFeet', profile.sizeFeet, TARGETING_LIMITS.areaFeet, 'any')}
+      ${number('Line / wall thickness (feet)', 'widthFeet', profile.widthFeet, TARGETING_LIMITS.areaFeet, 'any')}
+      ${number('Area height (feet)', 'heightFeet', profile.heightFeet, TARGETING_LIMITS.areaFeet, 'any')}
+      ${number('Minimum origin height above caster (feet)', 'minOriginHeightFeet', profile.minOriginHeightFeet, TARGETING_LIMITS.areaFeet)}
+      ${number('Lingering duration (caster turns)', 'lingerTurns', profile.lingerTurns, TARGETING_LIMITS.durationTurns)}
+      ${!profile.flightGrant ? '<p>Tracked durations are visual reminders only; they do not apply conditions, statistics or movement abilities.</p>' : ''}
+      <label><input type="checkbox" name="indefiniteDuration" ${checked(profile.indefiniteDuration)} ${profile.flightGrant ? 'disabled' : ''}> Duration ends manually / until dispelled</label>
+      <label><input type="checkbox" name="ignoreOriginCover" ${checked(profile.ignoreOriginCover)}> Ignore origin total cover (sight requirements still apply)</label>
       <label>Expires at caster turn<select name="expiry" aria-label="Area expiry phase"><option value="start" ${profile.expiry === 'start' ? 'selected' : ''}>Start</option><option value="end" ${profile.expiry === 'end' ? 'selected' : ''}>End</option></select></label>
       <label><input type="checkbox" name="followCaster" ${checked(profile.followCaster)}> Area follows caster</label>
       <label><input type="checkbox" name="excludeCaster" ${checked(profile.excludeCaster)}> Exclude caster from area</label>
       <label><input type="checkbox" name="allowExclusions" ${checked(profile.allowExclusions)}> Choose creatures to exclude</label>
+      ${number('Maximum area recipients (blank = all)', 'maxAreaTargets', profile.maxAreaTargets ?? '', TARGETING_LIMITS.targets)}
       <label><input type="checkbox" name="exclusionsRequireSight" ${checked(profile.exclusionsRequireSight)}> Excluded creatures must be visible</label>
       <p role="status"></p>
       <button type="submit">Save targeting profile</button>
@@ -126,6 +138,21 @@ export default class TargetingProfileEditor {
         const kind = at('kind').value,
           area = kind === 'area';
         const anchor = at('anchor').value;
+        const indefiniteDuration = !this.base.flightGrant && at('indefiniteDuration').checked;
+        const lingerTurns = indefiniteDuration ? 0 : at('lingerTurns').valueAsNumber;
+        const durationTarget = this.base.flightGrant
+          ? null
+          : area
+            ? ['targets', 'caster'].includes(this.base.durationTarget)
+              ? this.base.durationTarget
+              : 'area'
+            : kind === 'self'
+              ? 'caster'
+              : kind === 'point'
+                ? 'point'
+                : 'targets';
+        const maxAreaTargets =
+          area && at('maxAreaTargets').value !== '' ? at('maxAreaTargets').valueAsNumber : null;
         let modes;
         if (kind === 'tokens' && this.action.roll?.attack) {
           const selected = {
@@ -155,6 +182,7 @@ export default class TargetingProfileEditor {
               ? at('maxSizeDifference').valueAsNumber
               : null,
           excludeSelf: kind === 'tokens' && at('excludeSelf').checked,
+          requireCasterTarget: kind === 'tokens' && at('requireCasterTarget').checked,
           allowRepeat: kind === 'tokens' && at('allowRepeat').checked,
           requiresSight: at('requiresSight').checked,
           requiresWilling: ['tokens', 'self'].includes(kind) && at('requiresWilling').checked,
@@ -164,11 +192,32 @@ export default class TargetingProfileEditor {
           sizeFeet: area ? at('sizeFeet').valueAsNumber : 0,
           widthFeet: at('widthFeet').valueAsNumber,
           heightFeet: at('heightFeet').valueAsNumber,
-          lingerTurns: area || this.base.flightGrant ? at('lingerTurns').valueAsNumber : 0,
+          lingerTurns,
+          indefiniteDuration,
+          durationLabel: indefiniteDuration
+            ? this.base.indefiniteDuration
+              ? this.base.durationLabel
+              : 'Until ended manually'
+            : lingerTurns > 0
+              ? `${lingerTurns} caster turns`
+              : '',
+          durationTarget,
+          movement:
+            ['area', 'point'].includes(kind) &&
+            (lingerTurns > 0 || indefiniteDuration) &&
+            !(area && at('followCaster').checked)
+              ? this.base.movement
+              : null,
+          variant: null,
+          variantOptions: [],
+          minOriginHeightFeet: at('minOriginHeightFeet').valueAsNumber,
+          ignoreOriginCover: at('ignoreOriginCover').checked,
           expiry: at('expiry').value,
           followCaster: area && at('followCaster').checked,
           excludeCaster: area && at('excludeCaster').checked,
-          allowExclusions: area && at('allowExclusions').checked,
+          allowExclusions: area && (at('allowExclusions').checked || maxAreaTargets !== null),
+          maxAreaTargets,
+          areaTargetsRequireSight: area && this.base.areaTargetsRequireSight,
           exclusionsRequireSight: area && at('exclusionsRequireSight').checked,
           attack: this.action.roll?.attack === true,
           modes,

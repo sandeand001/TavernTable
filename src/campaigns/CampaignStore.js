@@ -1,17 +1,20 @@
 import { edition } from '../rules/editions.js';
-import { openDatabase, requestResult, transact } from '../storage/indexedDB.js';
 import { CHARACTER_BACKUP_LIMIT } from '../config/characters/CharacterImages.js';
+import IndexedDBCampaignStorage from './IndexedDBCampaignStorage.js';
 
 export default class CampaignStore {
-  constructor({ indexedDB = globalThis.indexedDB, packs, name = 'taverntable.campaigns.v1' }) {
+  constructor({
+    indexedDB = globalThis.indexedDB,
+    packs,
+    name = 'taverntable.campaigns.v1',
+    storage = null,
+  }) {
     if (!Array.isArray(packs) || new Set(packs.map((pack) => pack.id)).size !== packs.length) {
       throw new Error('The resource pack manifest is invalid or contains duplicates');
     }
-    this.factory = indexedDB;
     this.packs = new Map(packs.map((pack) => [pack.id, pack]));
-    this.name = name;
-    this.database = null;
-    this.opening = null;
+    this.storage = storage || new IndexedDBCampaignStorage(indexedDB, name);
+    this.storageInfo = { kind: 'browser' };
     this.closed = false;
   }
 
@@ -30,17 +33,13 @@ export default class CampaignStore {
       createdAt: new Date().toISOString(),
     };
     this._validate(record);
-    const database = await this._database();
-    await transact(database, ['campaigns'], 'readwrite', (transaction) =>
-      requestResult(transaction.objectStore('campaigns').add(record))
-    );
+    await this._transaction('readwrite', (transaction) => transaction.writeCampaign(record, true));
     return this._public(record);
   }
 
   async get(id) {
-    const database = await this._database();
-    const record = await transact(database, ['campaigns'], 'readonly', (transaction) =>
-      requestResult(transaction.objectStore('campaigns').get(id))
+    const record = await this._transaction('readonly', (transaction) =>
+      transaction.getCampaign(id)
     );
     if (!record) throw new Error('The campaign was not found');
     this._validate(record);
@@ -48,9 +47,8 @@ export default class CampaignStore {
   }
 
   async list() {
-    const database = await this._database();
-    const records = await transact(database, ['campaigns'], 'readonly', (transaction) =>
-      requestResult(transaction.objectStore('campaigns').getAll())
+    const records = await this._transaction('readonly', (transaction) =>
+      transaction.listCampaigns()
     );
     records.forEach((record) => this._validate(record));
     return records
@@ -66,10 +64,8 @@ export default class CampaignStore {
     }
     if (Object.keys(updates).some((key) => !['name', 'packIds'].includes(key)))
       throw new Error('Unsupported campaign changes');
-    const database = await this._database();
-    return transact(database, ['campaigns'], 'readwrite', async (transaction) => {
-      const store = transaction.objectStore('campaigns');
-      const record = await requestResult(store.get(id));
+    return this._transaction('readwrite', async (transaction) => {
+      const record = await transaction.getCampaign(id);
       if (!record) throw new Error('The campaign was not found');
       this._validate(record);
       if (updates.name !== undefined) {
@@ -81,21 +77,18 @@ export default class CampaignStore {
         record.charactersRevision++;
       }
       this._validate(record);
-      await requestResult(store.put(record));
+      await transaction.writeCampaign(record);
       return this._public(record);
     });
   }
 
   // -- Atomic, campaign-owned character state --
   async readCharacters(id) {
-    const database = await this._database();
-    return transact(database, ['campaigns', 'characters'], 'readonly', async (transaction) => {
-      const campaign = await requestResult(transaction.objectStore('campaigns').get(id));
+    return this._transaction('readonly', async (transaction) => {
+      const campaign = await transaction.getCampaign(id);
       if (!campaign) throw new Error('The campaign was not found');
       this._validate(campaign);
-      const rows = await requestResult(
-        transaction.objectStore('characters').index('campaignId').getAll(id)
-      );
+      const rows = await transaction.readCharacters(id);
       return {
         campaign: this._public(campaign),
         revision: campaign.charactersRevision,
@@ -108,9 +101,8 @@ export default class CampaignStore {
   }
 
   async readScene(id) {
-    const database = await this._database();
-    return transact(database, ['campaigns'], 'readonly', async (transaction) => {
-      const campaign = await requestResult(transaction.objectStore('campaigns').get(id));
+    return this._transaction('readonly', async (transaction) => {
+      const campaign = await transaction.getCampaign(id);
       if (!campaign) throw new Error('The campaign was not found');
       this._validate(campaign);
       return {
@@ -129,10 +121,8 @@ export default class CampaignStore {
     if (!Number.isSafeInteger(charactersRevision) || charactersRevision < 0) {
       throw new Error('The scene change has an invalid character revision');
     }
-    const database = await this._database();
-    return transact(database, ['campaigns'], 'readwrite', async (transaction) => {
-      const campaigns = transaction.objectStore('campaigns');
-      const campaign = await requestResult(campaigns.get(id));
+    return this._transaction('readwrite', async (transaction) => {
+      const campaign = await transaction.getCampaign(id);
       if (!campaign) throw new Error('The campaign was not found');
       this._validate(campaign);
       if (campaign.ruleset !== ruleset)
@@ -143,7 +133,7 @@ export default class CampaignStore {
         );
       }
       this._writeScene(campaign, revision, scene);
-      await requestResult(campaigns.put(campaign));
+      await transaction.writeCampaign(campaign);
       return { revision: campaign.sceneRevision, savedAt: campaign.sceneSavedAt };
     });
   }
@@ -158,10 +148,8 @@ export default class CampaignStore {
       if (!scene || typeof scene !== 'object') throw new Error('Invalid scene change');
       this._sceneInput(scene.revision, scene.value);
     }
-    const database = await this._database();
-    return transact(database, ['campaigns', 'characters'], 'readwrite', async (transaction) => {
-      const campaigns = transaction.objectStore('campaigns');
-      const campaign = await requestResult(campaigns.get(id));
+    return this._transaction('readwrite', async (transaction) => {
+      const campaign = await transaction.getCampaign(id);
       if (!campaign) throw new Error('The campaign was not found');
       this._validate(campaign);
       if (campaign.ruleset !== ruleset)
@@ -172,12 +160,9 @@ export default class CampaignStore {
         );
       }
       if (scene !== undefined) this._writeScene(campaign, scene.revision, scene.value);
-      const characters = transaction.objectStore('characters');
-      const previous = await requestResult(characters.index('campaignId').getAll(id));
-      for (const row of previous) characters.delete([id, row.key]);
-      for (const row of records) characters.put({ campaignId: id, key: row.key, value: row.value });
+      await transaction.replaceCharacters(id, records);
       campaign.charactersRevision++;
-      campaigns.put(campaign);
+      await transaction.writeCampaign(campaign);
       return {
         revision: campaign.charactersRevision,
         sceneRevision: campaign.sceneRevision ?? 0,
@@ -233,48 +218,22 @@ export default class CampaignStore {
     delete campaign.sceneRevision;
     delete campaign.sceneSavedAt;
     if (data.scene !== null) this._writeScene(campaign, 0, data.scene);
-    const database = await this._database();
-    await transact(database, ['campaigns', 'characters'], 'readwrite', (transaction) => {
-      transaction.objectStore('campaigns').add(campaign);
-      for (const row of data.records) {
-        transaction.objectStore('characters').add({ campaignId: campaign.id, ...row });
-      }
+    await this._transaction('readwrite', async (transaction) => {
+      await transaction.writeCampaign(campaign, true);
+      await transaction.replaceCharacters(campaign.id, data.records);
     });
     return this._public(campaign);
   }
 
   // -- Database lifecycle --
-  async _database() {
+  async _transaction(mode, operation) {
     if (this.closed) throw new Error('The campaign database is closed');
-    if (this.database) return this.database;
-    if (!this.opening) {
-      this.opening = openDatabase(this.factory, this.name, (database) => {
-        database.createObjectStore('campaigns', { keyPath: 'id' });
-        const characters = database.createObjectStore('characters', {
-          keyPath: ['campaignId', 'key'],
-        });
-        characters.createIndex('campaignId', 'campaignId');
-      })
-        .then((database) => {
-          if (this.closed) {
-            database.close();
-            throw new Error('The campaign database is closed');
-          }
-          this.database = database;
-          database.onversionchange = () => this.close();
-          return database;
-        })
-        .finally(() => {
-          this.opening = null;
-        });
-    }
-    return this.opening;
+    return this.storage.transaction(mode, operation);
   }
 
   close() {
     this.closed = true;
-    this.database?.close();
-    this.database = null;
+    return this.storage.close();
   }
 
   // -- Immutable ruleset and source selection --

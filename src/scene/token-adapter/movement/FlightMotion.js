@@ -3,6 +3,7 @@ import {
   FLIGHT_ELEVATION_STEPS,
   FLIGHT_TAKEOFF_FEET,
   FLIGHT_PACE_MULTIPLIER,
+  MAX_STEP_HEIGHT_FEET,
 } from '../../../config/TokenMovementConfig.js';
 import {
   buildFlightRange,
@@ -16,6 +17,9 @@ import {
 } from '../../../entities/creatures/TokenMovement.js';
 import { flightAvailability, movementSpeed } from '../../../rules/flight.js';
 import { canRemainAirborne } from '../../../rules/falling.js';
+import { boundsIntersectSolid } from '../../../terrain/ConvexGeometry.js';
+import { isFloorSurface } from '../../../terrain/SurfaceNavigation.js';
+import { campaignLandingForSupport } from '../SavedPlacements.js';
 
 const PROTOTYPE_FLIGHT_RULES = Object.freeze({ flightAvailability, canRemainAirborne });
 
@@ -114,11 +118,23 @@ function getFlightCommandAvailability(token, kind, feet = FLIGHT_TAKEOFF_FEET) {
     world.y +
     ((kind === 'lower' ? -cost : cost) * this.gameManager.spatial.tileWorldSize) /
       FEET_PER_GRID_SQUARE;
-  const groundY = groundHeight.call(this, token.gridX, token.gridY, world.y);
+  const groundY = groundHeight.call(this, token.gridX, token.gridY, world.y, world);
   if (kind === 'takeoff' && !physicalHold && Math.abs(world.y - groundY) > 1e-7) {
     return unavailable('Reach the ground before taking flight.');
   }
   if (targetY < groundY - 1e-7) return unavailable('That descent would go below the ground.');
+  let groundSupportBelow = null;
+  const geometry = this.gameManager.terrainEngine?.geometry;
+  if (kind === 'takeoff' && !physicalHold && geometry?.hasCurves) {
+    const scale = 5 / this.gameManager.spatial.tileWorldSize;
+    const support = geometry.findSupport(world.x * scale, world.z * scale, {
+      belowFeet: world.y * scale + 1e-6,
+      clearanceFeet: 5,
+    });
+    if (!support) return unavailable('There is not enough clearance at that elevation.');
+    if (geometry.isCurvedSupport(support.id))
+      groundSupportBelow = support.heightFeet + MAX_STEP_HEIGHT_FEET;
+  }
   if (
     flightCellBlocked.call(
       this,
@@ -127,15 +143,21 @@ function getFlightCommandAvailability(token, kind, feet = FLIGHT_TAKEOFF_FEET) {
       token.gridY,
       Math.min(world.y, targetY),
       true,
-      Math.max(world.y, targetY) + this.gameManager.spatial.tileWorldSize
+      Math.max(world.y, targetY) + this.gameManager.spatial.tileWorldSize,
+      groundSupportBelow
     )
   ) {
     return unavailable('There is not enough clearance at that elevation.');
   }
-  return { visible, allowed: true, cost };
+  return {
+    visible,
+    allowed: true,
+    cost,
+    ...(groundSupportBelow === null ? {} : { groundSupportBelow }),
+  };
 }
 
-function groundHeight(gridX, gridY, belowWorldY = Infinity) {
+function groundHeight(gridX, gridY, belowWorldY = Infinity, atWorld = null) {
   const gm = this.gameManager;
   if (
     !Number.isInteger(gridX) ||
@@ -155,9 +177,9 @@ function groundHeight(gridX, gridY, belowWorldY = Infinity) {
     if (!Number.isFinite(belowWorldY))
       throw new Error('Campaign flight requires a finite reference elevation');
     const world = {
-      x: (gridX + 0.5) * gm.spatial.tileWorldSize,
+      x: atWorld?.x ?? (gridX + 0.5) * gm.spatial.tileWorldSize,
       y: belowWorldY,
-      z: (gridY + 0.5) * gm.spatial.tileWorldSize,
+      z: atWorld?.z ?? (gridY + 0.5) * gm.spatial.tileWorldSize,
     };
     const support = gm.campaignWorld.findSupportBelow(
       gm.campaignWorld.toCampaignPosition(gm.campaignMapId, world),
@@ -168,9 +190,13 @@ function groundHeight(gridX, gridY, belowWorldY = Infinity) {
   }
   if (gm.terrainEngine?.geometry.hasVolumes) {
     const scale = FEET_PER_GRID_SQUARE / gm.spatial.tileWorldSize;
-    const support = gm.terrainEngine.geometry.findSupport((gridX + 0.5) * 5, (gridY + 0.5) * 5, {
-      belowFeet: belowWorldY * scale + 1e-6,
-    });
+    const support = gm.terrainEngine.geometry.findSupport(
+      atWorld ? atWorld.x * scale : (gridX + 0.5) * 5,
+      atWorld ? atWorld.z * scale : (gridY + 0.5) * 5,
+      {
+        belowFeet: belowWorldY * scale + 1e-6,
+      }
+    );
     if (!support) throw new Error('Flight has no supported landing surface below this elevation');
     return support.heightFeet / scale;
   }
@@ -185,6 +211,8 @@ function flightCreatureCellBlocked(token, gridX, gridY, worldY, sweptTopY = null
   const topY = sweptTopY ?? worldY + bodyHeight;
   for (const other of gm.placedTokens) {
     if (other === token) continue;
+    if (gm.campaignWorld && !gm.campaignWorld.sharesLocation(other.mapId, gm.campaignMapId))
+      continue;
     const position = this.getTokenViewPosition(other);
     const cell =
       gm.campaignWorld && other.mapId !== gm.campaignMapId
@@ -203,7 +231,7 @@ function campaignFlightObstacles() {
   const gm = this.gameManager;
   const world = gm.campaignWorld;
   const references = world
-    .listMaps()
+    .listLocationMaps(gm.campaignMapId)
     .filter(({ id }) => id !== gm.campaignMapId)
     .map(({ id }) => world.getMapGeometry(id));
   const cached = this._campaignFlightObstacles;
@@ -219,20 +247,30 @@ function campaignFlightObstacles() {
   return obstacles;
 }
 
-function flightSolidCellBlocked(gridX, gridY, worldY, allowLanding = false, sweptTopY = null) {
+function flightSolidCellBlocked(
+  gridX,
+  gridY,
+  worldY,
+  allowLanding = false,
+  sweptTopY = null,
+  groundSupportBelow = null
+) {
   const gm = this.gameManager;
   if (gm.terrainEngine?.geometry.hasVolumes) {
     const scale = FEET_PER_GRID_SQUARE / gm.spatial.tileWorldSize;
     const inset = 1e-5;
+    const body = {
+      min: { x: gridX * 5 + inset, y: worldY * scale, z: gridY * 5 + inset },
+      max: {
+        x: (gridX + 1) * 5 - inset,
+        y: (sweptTopY ?? worldY + gm.spatial.tileWorldSize) * scale,
+        z: (gridY + 1) * 5 - inset,
+      },
+    };
     if (
-      !gm.terrainEngine.geometry.isSpaceClear({
-        min: { x: gridX * 5 + inset, y: worldY * scale, z: gridY * 5 + inset },
-        max: {
-          x: (gridX + 1) * 5 - inset,
-          y: (sweptTopY ?? worldY + gm.spatial.tileWorldSize) * scale,
-          z: (gridY + 1) * 5 - inset,
-        },
-      })
+      !(groundSupportBelow === null
+        ? gm.terrainEngine.geometry.isSpaceClear(body)
+        : gm.terrainEngine.geometry.isGroundSpaceClear(body, groundSupportBelow))
     )
       return true;
   }
@@ -248,14 +286,7 @@ function flightSolidCellBlocked(gridX, gridY, worldY, allowLanding = false, swep
       },
     });
     if (
-      campaignFlightObstacles
-        .call(this)
-        .some((bounds) =>
-          ['x', 'y', 'z'].every(
-            (axis) =>
-              body.min[axis] < bounds.max[axis] - 1e-6 && body.max[axis] > bounds.min[axis] + 1e-6
-          )
-        )
+      campaignFlightObstacles.call(this).some((bounds) => boundsIntersectSolid(body, bounds, 1e-6))
     )
       return true;
   }
@@ -284,10 +315,25 @@ function flightSolidCellBlocked(gridX, gridY, worldY, allowLanding = false, swep
   return false;
 }
 
-function flightCellBlocked(token, gridX, gridY, worldY, allowLanding = false, sweptTopY = null) {
+function flightCellBlocked(
+  token,
+  gridX,
+  gridY,
+  worldY,
+  allowLanding = false,
+  sweptTopY = null,
+  groundSupportBelow = null
+) {
   return (
-    flightSolidCellBlocked.call(this, gridX, gridY, worldY, allowLanding, sweptTopY) ||
-    flightCreatureCellBlocked.call(this, token, gridX, gridY, worldY, sweptTopY)
+    flightSolidCellBlocked.call(
+      this,
+      gridX,
+      gridY,
+      worldY,
+      allowLanding,
+      sweptTopY,
+      groundSupportBelow
+    ) || flightCreatureCellBlocked.call(this, token, gridX, gridY, worldY, sweptTopY)
   );
 }
 
@@ -412,7 +458,13 @@ async function applyFlightCommand(token, kind, feet = FLIGHT_TAKEOFF_FEET) {
         FEET_PER_GRID_SQUARE,
   };
   beginFlightMove.call(this, token, [
-    { gridX: token.gridX, gridY: token.gridY, world: target, cost },
+    {
+      gridX: token.gridX,
+      gridY: token.gridY,
+      world: target,
+      cost,
+      groundSupportBelow: availability.groundSupportBelow ?? null,
+    },
   ]);
   return true;
 }
@@ -511,7 +563,7 @@ function requestFlyingMovement(token, destination, range, options = {}) {
         options
       );
     }
-    if (normal.y < 0.9)
+    if (!isFloorSurface(destination.surface))
       throw new Error('Choose an exposed wall or a walkable surface, not a ceiling');
     const grid = this.gameManager.spatial.worldToGrid(point.x, point.z);
     if (point.y > range.flightWorldY + 1e-6)
@@ -639,7 +691,8 @@ function advanceFlightMotion(state, delta) {
       job.current.gridY,
       Math.min(motion.start.y, motion.target.y),
       true,
-      Math.max(motion.start.y, motion.target.y) + this.gameManager.spatial.tileWorldSize
+      Math.max(motion.start.y, motion.target.y) + this.gameManager.spatial.tileWorldSize,
+      job.current.groundSupportBelow ?? null
     )
   ) {
     throw new Error('The flight destination is no longer clear');
@@ -651,7 +704,7 @@ function advanceFlightMotion(state, delta) {
   state.phase = 'idle';
   this._commitPlannedMovementCost(job);
   const landed =
-    Math.abs(world.y - groundHeight.call(this, token.gridX, token.gridY, world.y)) < 1e-7;
+    Math.abs(world.y - groundHeight.call(this, token.gridX, token.gridY, world.y, world)) < 1e-7;
   if (landed) {
     delete token.flightActive;
     this._unlockTokenWorldAuthority(state);
@@ -712,20 +765,7 @@ function dropFlight(state, { point = null } = {}) {
     : support
       ? gm.campaignWorld.toMapPosition(token.mapId, support.positionFeet)
       : { ...world, y: groundHeight.call(this, token.gridX, token.gridY, world.y) };
-  let campaignLanding = null;
-  if (support && support.mapId !== token.mapId) {
-    const map = gm.campaignWorld.getMap(support.mapId);
-    const source = gm.campaignWorld.getMap(token.mapId);
-    campaignLanding = {
-      mapId: support.mapId,
-      placement: {
-        gridX: Math.floor(support.world.x / map.grid.tileWorldSize),
-        gridY: Math.floor(support.world.z / map.grid.tileWorldSize),
-        facingAngle: token.facingAngle + ((map.quarterTurns - source.quarterTurns) * Math.PI) / 2,
-        pose: { kind: 'ground', world: support.world, surfaceId: support.surfaceId },
-      },
-    };
-  }
+  const campaignLanding = campaignLandingForSupport(gm.campaignWorld, token, support);
   const drop = Math.max(world.y - target.y, 0);
   if (!this.gameManager.characterServices?.falling) {
     throw new Error('The falling rules service is not ready');

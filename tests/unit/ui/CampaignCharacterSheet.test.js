@@ -10,6 +10,7 @@ globalThis.TextDecoder ??= TextDecoder;
 
 test('real campaign sheets acknowledge creation, edits, equipment, recovery and layouts before showing success', async () => {
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch: fetchBundledResource,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,
@@ -85,6 +86,7 @@ test.each(['2014', '2024'])(
   'the %s information card acknowledges edits and restores all identity values after reopening',
   async (ruleset) => {
     const workspace = await CampaignWorkspace.load({
+      storage: 'browser',
       fetch: fetchBundledResource,
       indexedDB: testIndexedDB(),
       crypto: webcrypto,
@@ -141,6 +143,7 @@ test.each(['2014', '2024'])(
 
 test('one plain-text title edits the name across all pages, updating linked labels and persisting without a prompt', async () => {
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch: fetchBundledResource,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,
@@ -211,6 +214,7 @@ test('one plain-text title edits the name across all pages, updating linked labe
 
 test('a pending title rename remains bound to its original character, and a failed save changes no stored name', async () => {
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch: fetchBundledResource,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,
@@ -258,6 +262,7 @@ test('a pending title rename remains bound to its original character, and a fail
 
 test('2024 short-rest UI spends Sorcerous Restoration only when its optional choice is selected', async () => {
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch: fetchBundledResource,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,

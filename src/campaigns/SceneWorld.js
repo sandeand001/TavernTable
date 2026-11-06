@@ -7,8 +7,29 @@ import { snapshotCombat } from '../entities/characters/combat/persistence.js';
 import { validateScene } from './CampaignScene.js';
 import CampaignWorld from './CampaignWorld.js';
 import { prepareConnectionTravel } from './CampaignTravel.js';
+import { reconcileBuildingScene } from './BuildingAssembly.js';
 
-export async function captureCampaignScene(
+export function isCampaignActionInProgress(gameManager, { allowMovementCheckpoint = false } = {}) {
+  const combat = gameManager.characterServices?.combat;
+  return !!(
+    gameManager.campaignMapTransition ||
+    combat?.pending ||
+    combat?.committing ||
+    (!allowMovementCheckpoint &&
+      gameManager.placedTokens.some((token) =>
+        gameManager.token3DAdapter.isMovementInProgress(token)
+      ))
+  );
+}
+
+export async function captureCampaignScene(gameManager, library, options = {}) {
+  if (gameManager.campaignMapFailure) throw gameManager.campaignMapFailure;
+  await Promise.all(gameManager._pendingInstancingPromises || []);
+  await gameManager.placeableMeshPool?.whenSettled?.();
+  return captureReadyCampaignScene(gameManager, library, options);
+}
+
+export function captureReadyCampaignScene(
   gameManager,
   library,
   {
@@ -17,6 +38,9 @@ export async function captureCampaignScene(
     result = null,
     rollLog = [],
     placements = combat.scenePlacements || null,
+    completedActionsOnly = false,
+    geometryOverride = undefined,
+    buildingContext = null,
   } = {}
 ) {
   const gm = gameManager;
@@ -24,8 +48,8 @@ export async function captureCampaignScene(
   if (gm.campaignMapTransition && !placements?.size)
     throw new SceneNotReadyError('Waiting for the map view to finish changing');
   const pool = gm.placeableMeshPool;
-  await Promise.all(gm._pendingInstancingPromises || []);
-  await pool?.whenSettled?.();
+  if (completedActionsOnly && isCampaignActionInProgress(gm))
+    throw new SceneNotReadyError('Waiting for the current action to finish...');
   if (change?.linkTokenId && !gm.placedTokens.some((token) => token.id === change.linkTokenId)) {
     throw new Error('The creature was removed before its character could be saved');
   }
@@ -92,20 +116,33 @@ export async function captureCampaignScene(
     .filter(
       (effect) =>
         characterIds.has(effect.characterId) &&
-        (!(effect.followCaster || effect.kind === 'flight') || links.has(effect.casterTokenId)) &&
-        (effect.kind !== 'flight' || links.get(effect.casterTokenId) === effect.characterId) &&
+        (!effect.movement ||
+          library
+            .get(effect.characterId)
+            .spells.some(
+              (spell) => spell.id === effect.sourceSpellId && spell.entryId === effect.sourceId
+            )) &&
+        (!(effect.followCaster || effect.kind === 'flight' || effect.movement) ||
+          links.has(effect.casterTokenId)) &&
+        (!(effect.kind === 'flight' || effect.movement) ||
+          links.get(effect.casterTokenId) === effect.characterId) &&
         (!effect.concentrationSpellId ||
           library.get(effect.characterId).concentration === effect.concentrationSpellId)
     )
     .flatMap((effect) => {
-      if (effect.kind !== 'flight') return [effect];
+      if (!['flight', 'targets'].includes(effect.kind)) return [effect];
       const targetTokenIds = effect.targetTokenIds.filter((tokenId) => links.has(tokenId));
       return targetTokenIds.length ? [{ ...effect, targetTokenIds }] : [];
     });
   if (!savedCombat.states.some((row) => row.tokenId === savedCombat.activeTokenId))
     savedCombat.activeTokenId = null;
   const terrainState = gm.terrainEngine.save();
+  if (geometryOverride !== undefined) {
+    if (geometryOverride.volumes.length) terrainState.geometry = geometryOverride;
+    else delete terrainState.geometry;
+  }
   const placeables = pool ? readPlaceablePlacements(pool) : [];
+  const sightBounds = pool?.sightBlockingBounds?.() || [];
   const structureCover = placeables.some((entry) => ['structure', 'building'].includes(entry.type))
     ? pool.targetingCoverBounds()
     : [];
@@ -116,6 +153,9 @@ export async function captureCampaignScene(
     terrain: {
       heights: terrainState.heights,
       ...(terrainState.geometry ? { geometry: terrainState.geometry } : {}),
+      ...(terrainState.structureGenerationEnabled === false
+        ? { structureGenerationEnabled: false }
+        : {}),
       biome: terrainState.biomeKey,
       seed: terrainState.biomeSeed,
       elevationScale: terrainState.elevationScale,
@@ -123,6 +163,7 @@ export async function captureCampaignScene(
       treeDensity: terrainState.treeDensityMultiplier,
       richShading: JSON.parse(JSON.stringify(globalThis.window?.richShadingSettings || {})),
       placeables,
+      sightBounds,
       ...(structureCover.length ? { coverBounds: structureCover } : {}),
     },
     creatures,
@@ -164,9 +205,23 @@ export async function captureCampaignScene(
       saved.view.camera = camera;
       saved.view.cameras = [...cameras].map(([mapId, value]) => ({ mapId, camera: value }));
     }
-    return validateScene(saved, { ruleset: library.ruleset, library });
+    const context = { ruleset: library.ruleset, library };
+    return validateScene(
+      reconcileBuildingScene(saved, context, {
+        ownerMapId: gm.campaignMapId,
+        restoreContext: buildingContext,
+      }),
+      context
+    );
   }
-  return validateScene(scene, { ruleset: library.ruleset, library });
+  const context = { ruleset: library.ruleset, library };
+  return validateScene(
+    reconcileBuildingScene(scene, context, {
+      ownerMapId: 'map-main',
+      restoreContext: buildingContext,
+    }),
+    context
+  );
 }
 
 export function applySceneCharacterLinks(gameManager, scene, library) {
@@ -291,6 +346,7 @@ async function applyMapTerrain(gm, map) {
     elevationScale: terrain.elevationScale,
     treeDensityMultiplier: terrain.treeDensity,
     richShadingEnabled: terrain.richShading.enabled === true,
+    ...(terrain.structureGenerationEnabled === false ? { structureGenerationEnabled: false } : {}),
     ...(terrain.geometry ? { geometry: terrain.geometry } : {}),
   });
   gm.notifyTerrainHeightsChanged();
@@ -485,6 +541,13 @@ export async function travelCampaignConnection(gm, token, connectionId, options 
     if (plan.openingCrossing && follows) {
       const original = before.creatures.find((entry) => entry.id === token.id);
       const animation = gm.token3DAdapter.playOpeningCrossing(token, plan, original);
+      gm.campaignTraversalAnimating = true;
+      notifyCampaignViewState(gm);
+      await animation;
+      await gm.token3DAdapter.restoreStablePlacement(token, moved);
+    } else if (plan.connectionMotion && follows) {
+      const original = before.creatures.find((entry) => entry.id === token.id);
+      const animation = gm.token3DAdapter.playConnectionRoute(token, plan, original);
       gm.campaignTraversalAnimating = true;
       notifyCampaignViewState(gm);
       await animation;

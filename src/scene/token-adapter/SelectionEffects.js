@@ -102,6 +102,7 @@ async function setSelectedToken(tokenEntry) {
     );
   }
   if (previous === this._selectedToken) return;
+  this.gameManager.sceneAutosave?.changed('selection');
   if (previous) {
     await this._refreshVisualState(previous);
   }
@@ -124,6 +125,7 @@ function updateTokenOrientation(tokenEntry) {
   }
 
   this._applyOrientationImmediate(tokenEntry, normalized);
+  this.recordStablePlacement?.(tokenEntry);
   if (state) {
     state.pendingFacingAngle = undefined;
   }

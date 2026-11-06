@@ -72,6 +72,7 @@ export class TerrainInputHandlers {
     const gm = this.gameManager;
     return (
       gm.getViewMode?.() !== 'topdown' &&
+      !this.engine.constructionTool &&
       !gm.interactionManager?.isDragging &&
       !gm.interactionManager?.isSpacePressed
     );
@@ -121,6 +122,7 @@ export class TerrainInputHandlers {
   handleMouseMove(event) {
     try {
       const e = this.engine;
+      if (e.constructionTool) return;
       if (!this._available()) {
         this.cancelStroke();
         return;

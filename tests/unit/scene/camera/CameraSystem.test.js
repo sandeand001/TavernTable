@@ -83,6 +83,26 @@ test('campaign camera state preserves focus, zoom, top-down mode and its return 
   });
 });
 
+test('unchanged reframes and zoom animation frames do not repeatedly dirty saved camera state', () => {
+  const camera = new CameraHarness();
+  const changed = jest.fn();
+  camera.gameManager.sceneAutosave = { changed };
+  camera.reframe();
+  changed.mockClear();
+  camera.reframe();
+  camera.reframe();
+  expect(changed).not.toHaveBeenCalled();
+  camera._zoomEase = 0.1;
+  camera.setZoom(1.7);
+  expect(changed).toHaveBeenCalledTimes(1);
+  for (let frame = 0; frame < 60; frame++) camera._updateZoom(16);
+  expect(changed).toHaveBeenCalledTimes(1);
+  camera.setCameraTarget(8, 11, 3);
+  expect(changed).toHaveBeenCalledTimes(2);
+  camera.setCameraTarget(8, 11, 3);
+  expect(changed).toHaveBeenCalledTimes(2);
+});
+
 function project(manager, point) {
   manager.camera.updateMatrixWorld(true);
   const ndc = point.clone().project(manager.camera);

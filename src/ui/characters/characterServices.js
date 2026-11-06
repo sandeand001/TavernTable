@@ -30,6 +30,7 @@ export function connectCharacterServices(gameManager, services) {
   gameManager.characterServices?.targeting?.dispose();
   const combat = new CombatSession({
     library: services.library,
+    getLocationId: (token) => gameManager.campaignWorld?.getLocationId(token.mapId) ?? null,
     hasToken: (token) => gameManager.placedTokens.includes(token),
     isMoving: (token) =>
       gameManager.campaignViewBusy ||

@@ -1,6 +1,48 @@
 import { InteractionManager } from '../../../src/managers/InteractionManager.js';
 
 describe('InteractionManager.getGridCoordinatesFromClick', () => {
+  test.each([false, true])(
+    'left-clicking a creature opens its radial menu; already selected=%s',
+    async (alreadySelected) => {
+      const token = { id: 'creature', gridX: 2, gridY: 3 };
+      const adapter = {
+        getSelectedToken: () => (alreadySelected ? token : null),
+        setSelectedToken: jest.fn(),
+        requestMoveToGrid: jest.fn(),
+      };
+      const manager = new InteractionManager({
+        is3DModeActive: () => true,
+        token3DAdapter: adapter,
+        terrainEngine: { getSelectedPlaceable: () => null },
+      });
+      manager._resolvePointerTarget = jest.fn(async () => ({
+        token,
+        gridX: 2,
+        gridY: 3,
+      }));
+      const requested = jest.fn();
+      window.addEventListener('taverntable:tokenRadial', requested);
+      try {
+        manager.handleLeftClick({ button: 0, clientX: 120, clientY: 80 });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(adapter.setSelectedToken).toHaveBeenCalledWith(token);
+        expect(adapter.requestMoveToGrid).not.toHaveBeenCalled();
+        expect(requested).toHaveBeenCalledTimes(1);
+        expect(requested.mock.calls[0][0].detail).toMatchObject({
+          token,
+          tokenId: token.id,
+          gridX: 2,
+          gridY: 3,
+          screenX: 120,
+          screenY: 80,
+        });
+      } finally {
+        window.removeEventListener('taverntable:tokenRadial', requested);
+      }
+    }
+  );
+
   test('prefers picking service when 3D mode active', () => {
     const gm = {
       is3DModeActive: jest.fn(() => true),

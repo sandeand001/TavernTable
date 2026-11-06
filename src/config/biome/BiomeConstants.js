@@ -85,8 +85,17 @@ export const BIOME_GROUPS = {
   // ── Wasteland Biomes ─────────────────────────────────────────
   Wasteland: [
     { key: 'wasteland', label: 'Blighted Wasteland', emoji: '☢️', rarity: 'rare' },
-    { key: 'ruinedUrban', label: 'Ruined Urban', emoji: '🏚️', rarity: 'rare' },
     { key: 'graveyard', label: 'Graveyard / Necropolis', emoji: '🪦', rarity: 'uncommon' },
+  ],
+  Settlements: [
+    { key: 'town', label: 'Village / Town', rarity: 'common' },
+    { key: 'city', label: 'City', rarity: 'common' },
+    { key: 'castle', label: 'Castle / Fortress', rarity: 'uncommon' },
+    { key: 'cliffsideCastle', label: 'Cliffside Castle', rarity: 'rare' },
+    { key: 'mountainCastle', label: 'Mountain Fortress', rarity: 'rare' },
+    { key: 'ruinedTown', label: 'Ruined Village / Town', rarity: 'uncommon' },
+    { key: 'ruinedUrban', label: 'Ruined City', emoji: '🏚️', rarity: 'rare' },
+    { key: 'ruinedCastle', label: 'Ruined Castle / Fortress', rarity: 'rare' },
   ],
   // ── Exotic Biomes ─────────────────────────────────────────────
   Exotic: [
@@ -97,5 +106,6 @@ export const BIOME_GROUPS = {
 
 // ── Derived Lookups ───────────────────────────────────────────
 export const ALL_BIOMES = Object.values(BIOME_GROUPS).flat();
+export const SETTLEMENT_BIOME_KEYS = Object.freeze(BIOME_GROUPS.Settlements.map(({ key }) => key));
 
 // CLEANUP NOTE (2025-09-19): Removed unused helper findBiome (no in-repo callers).

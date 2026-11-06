@@ -3,12 +3,19 @@ import {
   ConnectionUnavailableError,
   connectionEndpointFeet as endpoint,
   connectionFeatureBounds,
+  connectionOpeningAxis,
+  connectionGroundEntry,
+  connectionWideCoordinate,
 } from './CampaignConnectionGeometry.js';
 import { planWindowClimb } from './CampaignOpeningClimb.js';
+import { boundsIntersectSolid } from '../terrain/ConvexGeometry.js';
+import { buildingLevels } from '../terrain/BuildingModel.js';
+import { facingAngleFromDirection } from '../entities/creatures/TokenMovement.js';
 
 export {
   ConnectionUnavailableError,
   connectionFeatureBounds,
+  connectionGroundEntry,
 } from './CampaignConnectionGeometry.js';
 
 const EPSILON = 1e-6;
@@ -36,7 +43,7 @@ export function validateConnections(connections, maps) {
       typeof connection.name !== 'string' ||
       !connection.name.trim() ||
       connection.name.length > 100 ||
-      !['door', 'stairs', 'window', 'opening'].includes(connection.kind) ||
+      !['door', 'stairs', 'ladder', 'window', 'opening'].includes(connection.kind) ||
       (connection.enabled !== undefined && typeof connection.enabled !== 'boolean') ||
       !Array.isArray(connection.ends) ||
       connection.ends.length !== 2 ||
@@ -76,6 +83,21 @@ export function validateConnections(connections, maps) {
       feature.volumeIds.some((id) => !volumes.has(id))
     )
       invalid();
+    if (connection.building !== undefined) {
+      const ref = connection.building,
+        buildingOwner = byId.get(ref?.ownerMapId);
+      const spec = buildingOwner?.terrain.geometry?.structures?.find(
+        (entry) => entry.id === ref?.structureId
+      );
+      if (
+        !spec?.building ||
+        !Number.isInteger(ref.floor) ||
+        !buildingLevels(spec).some((level) => level.id === ref.floor) ||
+        !['entry', 'window', 'stairs', 'balcony', 'access'].includes(ref.kind) ||
+        typeof ref.featureId !== 'string'
+      )
+        invalid();
+    }
     if (
       connection.kind === 'window' &&
       (feature.volumeIds.length !== 1 ||
@@ -97,7 +119,10 @@ export function connectionEntryDistance(world, connection, mapId, localWorld, op
           mapId,
           connectionFlightEntry(world, connection, mapId, localWorld, options)
         )
-      : endpoint(world, end);
+      : world.toCampaignPosition(
+          mapId,
+          connectionGroundEntry(world, connection, mapId, localWorld, options)
+        );
   return distance(world.toCampaignPosition(mapId, localWorld), entry);
 }
 
@@ -111,8 +136,17 @@ export function connectionFlightEntry(world, connection, mapId, localWorld, opti
   let closest = null;
   for (const bounds of connectionFeatureBounds(world, connection, options)) {
     if (bounds.max.y - bounds.min.y < 5 - EPSILON) continue;
-    const wide = bounds.max.x - bounds.min.x < bounds.max.z - bounds.min.z ? 'z' : 'x';
-    const center = (bounds.min[wide] + bounds.max[wide]) / 2;
+    const wide =
+      connectionOpeningAxis(world.getMap(connection.feature.mapId), connection, bounds) === 'x'
+        ? 'z'
+        : 'x';
+    if (bounds.max[wide] - bounds.min[wide] < 1 - EPSILON) continue;
+    const center = connectionWideCoordinate(
+      world.getMap(connection.feature.mapId),
+      connection,
+      bounds,
+      current
+    );
     const ceiling = bounds.max.y - 5;
     const floors = connection.ends.map((side) => {
       const point = endpoint(world, side);
@@ -128,15 +162,21 @@ export function connectionFlightEntry(world, connection, mapId, localWorld, opti
   }
   if (!closest) unavailable('This opening has insufficient clearance for flight');
   const widthAxis =
-    closest.bounds.max.x - closest.bounds.min.x < closest.bounds.max.z - closest.bounds.min.z
+    connectionOpeningAxis(world.getMap(connection.feature.mapId), connection, closest.bounds) ===
+    'x'
       ? 'z'
       : 'x';
-  position[widthAxis] = (closest.bounds.min[widthAxis] + closest.bounds.max[widthAxis]) / 2;
+  position[widthAxis] = connectionWideCoordinate(
+    world.getMap(connection.feature.mapId),
+    connection,
+    closest.bounds,
+    current
+  );
   return world.toMapPosition(mapId, { ...position, y: closest.height });
 }
 
 function supported(world, position, options, minimumHeight = position.y) {
-  return world.listMaps().some(({ id }) => {
+  return world.listLocationMaps(options.mapId).some(({ id }) => {
     const map = world.getMap(id);
     const local = world.toMapPosition(id, position);
     const scale = 5 / map.grid.tileWorldSize;
@@ -151,11 +191,47 @@ function supported(world, position, options, minimumHeight = position.y) {
   });
 }
 
+function stairAttachment(world, start, route, options) {
+  let best = null;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1],
+      b = route[i];
+    const delta = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const square = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+    const ratio = square
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            ((start.x - a.x) * delta.x + (start.y - a.y) * delta.y + (start.z - a.z) * delta.z) /
+              square
+          )
+        )
+      : 0;
+    const point = { x: a.x + delta.x * ratio, y: a.y + delta.y * ratio, z: a.z + delta.z * ratio };
+    if (Math.abs(point.y - start.y) > MAX_STEP_HEIGHT_FEET + EPSILON) continue;
+    const support = world.findSupportBelow(
+      { ...point, y: Math.max(point.y, start.y) + MAX_STEP_HEIGHT_FEET },
+      options
+    );
+    if (!support) continue;
+    point.y = support.positionFeet.y;
+    const gap = distance(start, point);
+    if (gap > 5 + EPSILON || Math.abs(point.y - start.y) > MAX_STEP_HEIGHT_FEET + EPSILON) continue;
+    if (!best || gap < best.gap - EPSILON) best = { point, index: i, gap };
+  }
+  return best;
+}
+
 export function planConnection(world, connection, mapId, localWorld, options = {}) {
+  options = { mapId, ...options };
+  if (!world.sharesLocation(mapId, options.mapId))
+    throw new Error('Connection travel cannot cross independent locations');
   if (!point(localWorld)) throw new Error('Connection travel requires a valid creature position');
   if (options.travelMode !== undefined && !['ground', 'fly'].includes(options.travelMode))
     throw new Error('Connection travel requires a ground or flying movement mode');
   const flying = options.travelMode === 'fly';
+  const ladder = connection.kind === 'ladder';
   if (connection.enabled === false) unavailable('This connection is unavailable');
   const featureBounds = connectionFeatureBounds(world, connection, options);
   if (connection.kind === 'window' && !flying)
@@ -165,7 +241,16 @@ export function planConnection(world, connection, mapId, localWorld, options = {
   let entry = endpoint(world, connection.ends[index]);
   let exit = endpoint(world, connection.ends[1 - index]);
   const start = world.toCampaignPosition(mapId, localWorld);
-  if (flying && connection.kind !== 'stairs') {
+  let middle = index === 0 ? connection.pathFeet : [...connection.pathFeet].reverse();
+  if (connection.kind === 'stairs' && !flying) {
+    const route = [entry, ...middle, exit],
+      attachment = stairAttachment(world, start, route, options);
+    if (attachment) {
+      entry = attachment.point;
+      middle = route.slice(attachment.index, -1);
+    }
+  }
+  if (flying && connection.kind !== 'stairs' && !ladder) {
     entry = world.toCampaignPosition(
       mapId,
       connectionFlightEntry(world, connection, mapId, localWorld, options)
@@ -189,38 +274,40 @@ export function planConnection(world, connection, mapId, localWorld, options = {
   if (
     flying &&
     connection.kind !== 'stairs' &&
+    !ladder &&
     !featureBounds.some(
       (bounds) => start.y >= bounds.min.y - EPSILON && start.y + 5 <= bounds.max.y + EPSILON
     )
   )
     unavailable('Fly to an elevation where the creature fits through this opening');
-  const middle = index === 0 ? connection.pathFeet : [...connection.pathFeet].reverse();
   const flightPoint = (position) => ({
     ...position,
-    y: connection.kind === 'stairs' ? position.y + start.y - entry.y : start.y,
+    y: connection.kind === 'stairs' || ladder ? position.y + start.y - entry.y : start.y,
   });
   const routeFeet = [
     start,
     ...[entry, ...middle, exit].map((position) => (flying ? flightPoint(position) : position)),
   ].filter((value, i, all) => i === 0 || distance(value, all[i - 1]) > EPSILON);
   const obstacles = world.getObstacles(options);
-  const occupants = (options.occupants || []).map((actor) => {
-    const position = world.toCampaignPosition(actor.mapId, actor.world);
-    return {
-      min: { x: position.x - 2, y: position.y + EPSILON, z: position.z - 2 },
-      max: { x: position.x + 2, y: position.y + 5 - EPSILON, z: position.z + 2 },
-    };
-  });
+  const occupants = (options.occupants || [])
+    .filter((actor) => world.sharesLocation(actor.mapId, mapId))
+    .map((actor) => {
+      const position = world.toCampaignPosition(actor.mapId, actor.world);
+      return {
+        min: { x: position.x - 2, y: position.y + EPSILON, z: position.z - 2 },
+        max: { x: position.x + 2, y: position.y + 5 - EPSILON, z: position.z + 2 },
+      };
+    });
   let cost = 0;
   for (let i = 0; i < routeFeet.length; i++) {
     const current = routeFeet[i];
-    if (!flying && !supported(world, current, options))
+    if (!flying && !ladder && !supported(world, current, options))
       unavailable('This connection has an unsupported step or landing');
     const previous = routeFeet[Math.max(0, i - 1)];
-    if (!flying && Math.abs(current.y - previous.y) > MAX_STEP_HEIGHT_FEET + EPSILON)
+    if (!flying && !ladder && Math.abs(current.y - previous.y) > MAX_STEP_HEIGHT_FEET + EPSILON)
       unavailable('This connection needs real stair steps rather than a free elevation jump');
     const samples = Math.max(1, Math.ceil(distance(previous, current) / 0.5));
-    for (let sample = 0; !flying && sample <= samples; sample++) {
+    for (let sample = 0; !flying && !ladder && sample <= samples; sample++) {
       const ratio = sample / samples;
       if (
         !supported(
@@ -237,7 +324,8 @@ export function planConnection(world, connection, mapId, localWorld, options = {
         unavailable('This connection crosses unsupported space');
     }
     const bottom =
-      (flying ? Math.min(previous.y, current.y) : Math.max(previous.y, current.y)) + EPSILON;
+      (flying || ladder ? Math.min(previous.y, current.y) : Math.max(previous.y, current.y)) +
+      EPSILON;
     const body = {
       min: {
         x: Math.min(previous.x, current.x) - 0.5,
@@ -250,17 +338,31 @@ export function planConnection(world, connection, mapId, localWorld, options = {
         z: Math.max(previous.z, current.z) + 0.5,
       },
     };
-    const intersects = (bounds) =>
-      ['x', 'y', 'z'].every(
-        (axis) => body.min[axis] < bounds.max[axis] && body.max[axis] > bounds.min[axis]
-      );
+    const intersects = (bounds) => boundsIntersectSolid(body, bounds, 0);
     if (obstacles.some(intersects))
       unavailable('A wall, closed opening or low ceiling blocks this connection');
     if (occupants.some(intersects)) unavailable('Another creature blocks this connection');
-    cost += distance(previous, current);
+    cost +=
+      ladder && !flying
+        ? Math.max(Math.abs(previous.x - current.x), Math.abs(previous.z - current.z)) +
+          2 * Math.abs(previous.y - current.y)
+        : distance(previous, current);
   }
   const targetMapId = connection.ends[1 - index].mapId;
   const targetWorld = world.toMapPosition(targetMapId, flying ? flightPoint(exit) : exit);
+  let ladderFacing = null;
+  if (ladder) {
+    const height = Math.max(...featureBounds.map((bounds) => bounds.max.y - bounds.min.y));
+    const rails = featureBounds.filter((bounds) => bounds.max.y - bounds.min.y >= height - EPSILON);
+    const column = connection.pathFeet[0];
+    const ahead = world.toMapPosition(targetMapId, {
+      x: rails.reduce((total, rail) => total + (rail.min.x + rail.max.x) / 2, 0) / rails.length,
+      y: exit.y,
+      z: rails.reduce((total, rail) => total + (rail.min.z + rail.max.z) / 2, 0) / rails.length,
+    });
+    const origin = world.toMapPosition(targetMapId, { ...column, y: exit.y });
+    ladderFacing = facingAngleFromDirection(ahead.x - origin.x, ahead.z - origin.z);
+  }
   if (!flying) {
     const support = world.findLocalSupport(targetMapId, targetWorld, { clearanceFeet: 5 });
     if (!support || Math.abs(support.heightWorld - targetWorld.y) > EPSILON)
@@ -272,6 +374,8 @@ export function planConnection(world, connection, mapId, localWorld, options = {
     targetMapId,
     targetWorld,
     routeFeet,
+    ...(ladder ? { connectionMotion: 'ladder' } : {}),
+    ...(ladderFacing !== null ? { targetFacingAngle: ladderFacing } : {}),
     costFeet: Math.max(0, Math.ceil(cost / 5 - EPSILON) * 5),
     ...(flying ? { travelMode: 'fly', targetPose: { kind: 'flight', world: targetWorld } } : {}),
     facingDelta:

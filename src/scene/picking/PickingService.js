@@ -7,6 +7,7 @@
 
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { connectionFeatureBounds } from '../../campaigns/CampaignConnections.js';
+import { WALKABLE_ROOF_NORMAL_Y } from '../../terrain/SurfaceNavigation.js';
 
 export class PickingService {
   // ── Constructor ───────────────────────────────────────────────────
@@ -184,15 +185,18 @@ export class PickingService {
           } else if (wallNormal && gm.terrainEngine?.geometry.hasVolumes) {
             const scale = 5 / safeTileSize;
             const support =
-              wallNormal.y > 0.9
+              wallNormal.y >= WALKABLE_ROOF_NORMAL_Y - 1e-6
                 ? gm.terrainEngine.geometry.findSupport(
                     Math.min(gm.cols * 5 - 1e-6, Math.max(0, worldX * scale)),
                     Math.min(gm.rows * 5 - 1e-6, Math.max(0, worldZ * scale)),
                     { belowFeet: worldY * scale + 1e-5 }
                   )
                 : null;
+            const walkable =
+              wallNormal.y > 0.9 ||
+              (support?.layerId === 'roof' && wallNormal.y >= WALKABLE_ROOF_NORMAL_Y - 1e-6);
             surface = {
-              kind: wallNormal.y > 0.9 ? 'floor' : 'ceiling',
+              kind: walkable ? 'floor' : 'ceiling',
               mapId: firstHit.object.userData.campaignMapId || gm.campaignMapId,
               surfaceId: support?.id ?? null,
               point: { x: worldX, y: worldY, z: worldZ },
@@ -211,7 +215,12 @@ export class PickingService {
         ? adapter.pickTokenByRay(this._raycaster, { precise: true })
         : adapter.pickTokenByRay(this._raycaster)
       : null;
-    if (surface && tokenResult?.distance > terrainDistance + tileSize * 1e-4) tokenResult = null;
+    if (
+      surface &&
+      !adapter?.isTacticalOverview?.() &&
+      tokenResult?.distance > terrainDistance + tileSize * 1e-4
+    )
+      tokenResult = null;
     const tokenOnlyPick = () => {
       if (!tokenResult?.token) return null;
       const token = tokenResult.token;

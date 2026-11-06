@@ -113,6 +113,8 @@ function getTokenMovementRange(token, allowance = null) {
   const anchor = this._movementStates.get(token)?.wallMotion;
   const occupied = new Set();
   for (const other of gm.placedTokens || []) {
+    if (gm.campaignWorld && !gm.campaignWorld.sharesLocation(other.mapId, gm.campaignMapId))
+      continue;
     if (other !== token) {
       const remote = gm.campaignWorld && other.mapId !== gm.campaignMapId;
       let gridX = other.gridX,
@@ -696,7 +698,7 @@ function _getFallMovementCost(job) {
   );
 }
 
-function _finishPlannedMovement(token, interrupted = false) {
+function _finishPlannedMovement(token, interrupted = false, { recordPlacement = true } = {}) {
   const job = this._movementRoutes.get(token);
   this._movementRoutes.delete(token);
   if (job?.combatMove) {
@@ -707,7 +709,7 @@ function _finishPlannedMovement(token, interrupted = false) {
       : job.spent;
     job.combat.finishMovement(ticket, cost);
   }
-  if (job && !interrupted) this.recordStablePlacement?.(token);
+  if (job && !interrupted && recordPlacement) this.recordStablePlacement?.(token);
   if (job && !job.continuing && !job.combat?.active && token.characterSheetId)
     job.combat?.completeFreeMovement(token);
 }

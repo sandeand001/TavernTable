@@ -72,6 +72,34 @@ function withSpectralVariants(weightMap) {
 
 // ── Biome Flora Profiles ──────────────────────────────────────
 const BIOME_FLORA_PROFILES = [
+  {
+    re: /^(cliffsideCastle|mountainCastle)$/i,
+    density: 0.003,
+    spacing: 5,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
+    weights: pickIds(/birch|conifer|bare/),
+  },
+  {
+    re: /^town$/i,
+    density: 0.01,
+    spacing: 4,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
+    weights: pickIds(/birch|bush|oval|willow/),
+  },
+  {
+    re: /^city$/i,
+    density: 0.006,
+    spacing: 5,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
+    weights: pickIds(/birch|bush|oval/),
+  },
+  {
+    re: /^castle$/i,
+    density: 0.003,
+    spacing: 5,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
+    weights: pickIds(/birch|oval/),
+  },
   { re: /(sandDunes|saltFlats|desertHot|desertCold)/i, density: 0, spacing: 0 },
   { re: /(glacier|frozenLake|packIce|ocean|coralReef)/i, density: 0, spacing: 0 },
   { re: /(crystalFields|obsidianPlain)/i, density: 0, spacing: 0 },
@@ -117,7 +145,14 @@ const BIOME_FLORA_PROFILES = [
     }),
   },
   {
-    re: /(ashWastes|wasteland|graveyard|ruinedUrban)/i,
+    re: /^(ruinedTown|ruinedUrban|ruinedCastle)$/i,
+    density: 0.02,
+    spacing: 4,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
+    weights: pickIds(/bare|yellow|small/),
+  },
+  {
+    re: /(ashWastes|wasteland|graveyard)/i,
     density: 0.02,
     spacing: 4,
     weights: pickIds(/bare|yellow|small/),

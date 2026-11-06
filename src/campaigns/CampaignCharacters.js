@@ -27,6 +27,12 @@ class SnapshotStorage {
   }
 }
 
+export function campaignRecordCharacterId(key) {
+  return typeof key === 'string'
+    ? /^taverntable\.character(?:-rest|-actions|-layout)?\.v1\.(.+)$/.exec(key)?.[1] || null
+    : null;
+}
+
 function characterSnapshot(campaign, catalog, records) {
   if (!catalog || catalog.ruleset !== campaign.ruleset) {
     throw new Error('The character catalog belongs to a different campaign ruleset');
@@ -40,8 +46,8 @@ function characterSnapshot(campaign, catalog, records) {
   });
   const ids = new Set(engine.list().map((character) => character.id));
   for (const { key } of records) {
-    const match = /^taverntable\.character(?:-rest|-actions|-layout)?\.v1\.(.+)$/.exec(key);
-    if (!match || !ids.has(match[1])) {
+    const id = campaignRecordCharacterId(key);
+    if (!id || !ids.has(id)) {
       throw new Error('Campaign character data contains unknown or orphaned records');
     }
   }
@@ -130,6 +136,19 @@ export default class CampaignCharacters {
   }
   get isSaving() {
     return this.pendingWrites > 0;
+  }
+  reload(state) {
+    if (this.isSaving || this.pendingScenes)
+      throw new Error('Finish the current save before refreshing character data');
+    if (state.campaign.id !== this.campaign.id || state.campaign.ruleset !== this.ruleset)
+      throw new Error('The character refresh belongs to a different campaign');
+    this.engine = characterSnapshot(state.campaign, this.sourceCatalog, state.records);
+    this.campaign = state.campaign;
+    this.revision = state.revision;
+    this.savedScene = state.scene;
+    this.sceneRevision = state.sceneRevision;
+    this.sceneSavedAt = state.sceneSavedAt;
+    this.failure = null;
   }
   list() {
     return this.engine.list();

@@ -33,11 +33,17 @@ export function targetStatus(board, actor, target, profile, modeId = null) {
     reason = 'This spell requires a different creature type';
   else if (profile.excludedTypes.includes(target.creatureType))
     reason = 'This creature type is excluded by the spell';
+  else if (profile.creatureSizes.length && !profile.creatureSizes.includes(target.creatureSize))
+    reason = 'This spell requires a different creature size';
   else if (distance + EPSILON < profile.minRangeFeet)
     reason = `Inside minimum range (${profile.minRangeFeet} ft)`;
   else if (distance > maximum + EPSILON)
     reason = `Out of range (${Number(distance.toFixed(2))}/${maximum} ft)`;
-  else if (profile.requiresSight && !canSee(actor, target))
+  else if (
+    profile.requiresSight &&
+    !(profile.requireCasterTarget && relation === 'self') &&
+    !canSee(actor, target)
+  )
     reason = 'The caster cannot see this target';
   else if (!board.clearPath(actor, target))
     reason = 'Total cover blocks a clear path to this target';
@@ -147,6 +153,8 @@ export function affectedAreaTargets(board, actor, profile, area, exclusions = []
       !exclusions.includes(token.id) &&
       !profile.excludedTypes.includes(token.creatureType) &&
       (!profile.creatureTypes.length || profile.creatureTypes.includes(token.creatureType)) &&
+      (!profile.creatureSizes.length || profile.creatureSizes.includes(token.creatureSize)) &&
+      (!profile.areaTargetsRequireSight || canSee(actor, token)) &&
       inArea(token.world, area) &&
       (!profile.areaCover || board.clearArea(area.origin, token))
   );
@@ -184,7 +192,15 @@ export function validateTargetSelection(board, actor, value, selection) {
         throw new Error('The spell origin is inside minimum range');
       if (profile.requiresSight && (actor.conditions || []).includes('blinded'))
         throw new Error('The caster cannot see the spell origin');
-      if (!board.clearPoint(actor, origin)) throw new Error('Total cover blocks the spell origin');
+      if ((!profile.ignoreOriginCover || profile.requiresSight) && !board.clearPoint(actor, origin))
+        throw new Error('Total cover blocks the spell origin');
+      if (
+        profile.minOriginHeightFeet > 0 &&
+        origin.y - actor.world.y < (profile.minOriginHeightFeet * board.tileSize) / 5 - EPSILON
+      )
+        throw new Error(
+          `The spell origin must be at least ${profile.minOriginHeightFeet} feet above the caster`
+        );
     }
     const area =
       profile.kind === 'area' ? areaPlacement(profile, actor, selection, board.tileSize) : null;
@@ -213,6 +229,10 @@ export function validateTargetSelection(board, actor, value, selection) {
           name: token.name,
         }))
       : [];
+    if (profile.maxAreaTargets !== null && targets.length > profile.maxAreaTargets)
+      throw new Error(
+        `Exclude creatures until at most ${profile.maxAreaTargets} recipients remain`
+      );
     return {
       manual: false,
       targets,
@@ -221,6 +241,7 @@ export function validateTargetSelection(board, actor, value, selection) {
       aim: selection.aim ? { ...selection.aim } : null,
       exclusions: [...exclusions],
       profile,
+      ...(profile.variant !== null ? { variant: profile.variant } : {}),
     };
   }
   if (!Array.isArray(selection.targets) || !selection.targets.length)
@@ -252,6 +273,8 @@ export function validateTargetSelection(board, actor, value, selection) {
     throw new Error(
       `This ability requires at least ${profile.minTargets} allocated targets or projectiles`
     );
+  if (profile.requireCasterTarget && !targets.some((target) => target.tokenId === actor.id))
+    throw new Error('This spell must include the caster among its targets');
   if (profile.spreadFeet !== null) {
     for (const first of targets)
       for (const second of targets) {

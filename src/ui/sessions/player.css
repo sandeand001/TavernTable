@@ -1,0 +1,63 @@
+.player-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  background: #111827;
+  color: #e5e7eb;
+}
+
+.player-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.player-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.player-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.player-sidebar {
+  width: 18rem;
+  max-width: 35vw;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.player-sidebar button,
+.player-sidebar select {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+#player-map-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: calc(100vh - 5rem);
+}
+
+#graphics-status {
+  overflow-wrap: anywhere;
+}
+
+.player-compendium {
+  position: fixed;
+  inset: 5rem 1rem 1rem auto;
+  z-index: 1200;
+  width: min(28rem, 90vw);
+  overflow: auto;
+  padding: 1rem;
+  background: #1f2937;
+  border: 1px solid #6b7280;
+}

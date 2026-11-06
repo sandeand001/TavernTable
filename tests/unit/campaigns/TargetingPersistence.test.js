@@ -1,6 +1,7 @@
 import CampaignStore from '../../../src/campaigns/CampaignStore.js';
 import CampaignCharacters from '../../../src/campaigns/CampaignCharacters.js';
 import CombatSession from '../../../src/entities/characters/CombatSession.js';
+import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import {
   targetingAvailability,
@@ -53,11 +54,17 @@ beforeEach(async () => {
   };
   session = new CombatSession({ library });
   session.targeting = {
+    board,
     beginQuery: () => {},
     hasTokenId: (id) => id === caster.id,
     availability: (token, action) => targetingAvailability(board(), actor, action.targeting),
     validate: (token, action, selection) =>
-      validateTargetSelection(board(), actor, action.targeting, selection),
+      validateTargetSelection(
+        board(),
+        action.effectOrigin ? { ...actor, world: action.effectOrigin } : actor,
+        action.targeting,
+        selection
+      ),
   };
   library.bindScene({
     capture: (engine, context) => {
@@ -78,6 +85,104 @@ beforeEach(async () => {
 });
 
 afterEach(() => store.close());
+
+test('Moonbeam movement, action cost and unchanged slot/duration are acknowledged in one scene write', async () => {
+  const moonbeam = await addSpell('spell:moonbeam');
+  session.startTurn(caster);
+  const castResult = await cast(moonbeam);
+  session.endTurn();
+  await session.startTurn(caster);
+  const before = JSON.parse(JSON.stringify(session.effects[0]));
+  const slots = [...library.get(caster.characterSheetId).slotsUsed];
+  const moving = session.commitAction(
+    session.prepareAction(caster, `effect-move:${castResult.sequence}`),
+    '',
+    null,
+    { origin: { x: 4.5, y: 0, z: 3.5 }, targets: [] }
+  );
+  expect(session.effects[0]).toEqual(before);
+  expect(session.status(caster).actions).toBe(1);
+  await moving;
+  expect(session.effects[0]).toMatchObject({
+    id: castResult.sequence,
+    remainingTurns: before.remainingTurns,
+    area: { origin: { x: 4.5, y: 0, z: 3.5 } },
+  });
+  const reopened = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
+  const scene = decodeScene(reopened.savedScene, { ruleset: '2024', library: reopened });
+  expect(scene.combat.effects).toEqual(session.effects);
+  expect(scene.combat.states[0].budget.actions).toBe(0);
+  expect(reopened.get(caster.characterSheetId).slotsUsed).toEqual(slots);
+  expect(reopened.get(caster.characterSheetId).concentration).toBe(before.concentrationSpellId);
+  await session.undoLastUse(caster);
+  expect(session.effects[0]).toEqual(before);
+  const undoScene = decodeScene(library.savedScene, { ruleset: '2024', library });
+  expect(undoScene.combat.effects).toEqual([before]);
+  expect(undoScene.combat.states[0].budget.actions).toBe(1);
+});
+
+test('failed and queued-stale Moonbeam moves do not spend a slot or overwrite a newer area edit', async () => {
+  const moonbeam = await addSpell('spell:moonbeam');
+  session.startTurn(caster);
+  const castResult = await cast(moonbeam);
+  session.endTurn();
+  await session.startTurn(caster);
+  const moving = session.commitAction(
+    session.prepareAction(caster, `effect-move:${castResult.sequence}`),
+    '',
+    null,
+    { origin: { x: 4.5, y: 0, z: 3.5 }, targets: [] }
+  );
+  session.effects[0] = {
+    ...session.effects[0],
+    area: { ...session.effects[0].area, origin: { x: 4, y: 0, z: 3.5 } },
+  };
+  await expect(moving).rejects.toThrow('changed');
+  expect(session.effects[0].area.origin.x).toBe(4);
+  expect(session.status(caster).actions).toBe(1);
+  const before = JSON.parse(JSON.stringify(session.effects));
+  store.close();
+  await expect(
+    session.commitAction(
+      session.prepareAction(caster, `effect-move:${castResult.sequence}`),
+      '',
+      null,
+      { origin: { x: 4.5, y: 0, z: 3.5 }, targets: [] }
+    )
+  ).rejects.toThrow('closed');
+  expect(session.effects).toEqual(before);
+  expect(session.status(caster).actions).toBe(1);
+  expect(library.get(caster.characterSheetId).slotsUsed[1]).toBe(1);
+});
+
+test('point and recipient reminders reopen without leaking into character-only exports', async () => {
+  const hand = await addSpell('spell:mage-hand');
+  await cast(hand);
+  const haste = await addSpell('spell:haste');
+  await session.commitAction(session.prepareAction(caster, haste), '', null, {
+    targets: [{ tokenId: caster.id, count: 1 }],
+    willingConfirmed: true,
+  });
+  const reopened = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
+  const scene = decodeScene(reopened.savedScene, { ruleset: '2024', library: reopened });
+  expect(scene.combat.effects.map((effect) => effect.kind)).toEqual(['point', 'targets']);
+  const restored = new CombatSession({ library: reopened });
+  restored.restore(scene.combat, [caster]);
+  expect(restored.effects).toEqual(session.effects);
+  const exported = JSON.parse(library.export(caster.characterSheetId));
+  expect(JSON.stringify(exported)).not.toContain('targetTokenIds');
+  expect(library.get(caster.characterSheetId).speed).toBe(30);
+});
+
+test('legacy point marker coordinates migrate to campaign feet without scaling movement allowances', async () => {
+  const hand = await addSpell('spell:mage-hand');
+  await cast(hand);
+  const scene = decodeScene(library.savedScene, { ruleset: '2024', library });
+  const world = CampaignWorld.fromScene(scene, { ruleset: '2024', library });
+  const marker = world.save().combat.effects[0];
+  expect(marker.origin).toEqual({ x: 17.5, y: 0, z: 17.5 });
+  expect(marker.movement.distanceFeet).toBe(30);
+});
 
 const castFly = (spellId) =>
   session.commitAction(session.prepareAction(caster, spellId), '', null, {
@@ -132,6 +237,21 @@ test('Fly rechecks recipients when its queued scene commit begins and spends not
   const fly = await addSpell('spell:fly');
   session.startTurn(caster);
   const saving = castFly(fly);
+  actor = { ...actor, id: 'replacement' };
+  await expect(saving).rejects.toThrow('left the board');
+  expect(session.effects).toEqual([]);
+  expect(library.get(caster.characterSheetId).slotsUsed[2]).toBe(0);
+  expect(library.get(caster.characterSheetId).concentration).toBe('');
+  expect(session.status(caster).actions).toBe(1);
+});
+
+test('ordinary recipient spells also recheck queued targets before any costs are committed', async () => {
+  const haste = await addSpell('spell:haste');
+  session.startTurn(caster);
+  const saving = session.commitAction(session.prepareAction(caster, haste), '', null, {
+    targets: [{ tokenId: caster.id, count: 1 }],
+    willingConfirmed: true,
+  });
   actor = { ...actor, id: 'replacement' };
   await expect(saving).rejects.toThrow('left the board');
   expect(session.effects).toEqual([]);

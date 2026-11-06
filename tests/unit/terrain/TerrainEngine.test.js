@@ -322,6 +322,36 @@ describe('TerrainEngine', () => {
       expect(e.canRedo).toBe(false);
     });
 
+    test('shrinking past a ruined structure discards its dangling breach cuts but keeps retained physical groups', () => {
+      const e = new TerrainEngine(12, 12);
+      e.placeStructure({
+        id: 'outside-ruin',
+        kind: 'building',
+        xFeet: 20,
+        zFeet: 40,
+        lengthFeet: 25,
+        widthFeet: 20,
+        heightFeet: 10,
+        ruined: true,
+      });
+      e.placeStructure({
+        id: 'retained',
+        kind: 'wall',
+        xFeet: 10,
+        zFeet: 10,
+        lengthFeet: 10,
+        widthFeet: 2,
+      });
+      expect(e.resize(6, 6)).toBe(true);
+      expect(e.geometry.getStructures().map((spec) => spec.id)).toEqual(['retained']);
+      expect(e.geometry.save().volumes.every((volume) => volume.structureId === 'retained')).toBe(
+        true
+      );
+      const reopened = new TerrainEngine(1, 1);
+      reopened.load(e.save());
+      expect(reopened.save()).toEqual(e.save());
+    });
+
     test('history retains exactly the configured number of committed edits', () => {
       const e = new TerrainEngine(3, 3);
       for (let i = 0; i < TERRAIN_CONFIG.HISTORY_LIMIT + 5; i++) {
@@ -336,6 +366,20 @@ describe('TerrainEngine', () => {
   });
 
   describe('validated snapshots', () => {
+    test('an empty finite floor retains its explicit geometry snapshot for connected cellar saves', () => {
+      const engine = new TerrainEngine(5, 5);
+      engine.configureGeometryBase(0.5);
+      const saved = engine.save();
+      expect(saved.geometry).toEqual({ version: 1, volumes: [] });
+      const restored = new TerrainEngine(5, 5);
+      restored.configureGeometryBase(0.5);
+      restored.load(saved);
+      expect(restored.save()).toEqual(saved);
+      expect(restored.geometry.getSolidSpansAt(7.5, 7.5)).toEqual([
+        { id: 'terrain', layerId: 'ground', bottom: -0.5, top: 0 },
+      ]);
+    });
+
     test('versioned and legacy snapshots restore exact non-square dimensions and metadata', () => {
       const e = new TerrainEngine(3, 2);
       e.setHeightAt(2, 1, 6);

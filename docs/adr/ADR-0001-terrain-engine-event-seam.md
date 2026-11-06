@@ -33,6 +33,114 @@ reveal the original wall openings while suppressing ceiling coverage. The
 authoritative structure, exterior roof and physical sight geometry are not
 removed or copied into another terrain owner.
 
+The curved-shape proof extends that same owner with clipped ellipsoid/cylinder
+volumes and ordered convex solid/void queries. The renderer consumes those
+boundaries; it does not own separate curved collision geometry. Physical campaign
+queries transform the actual convex constraints instead of treating a curved
+structure's bounding box as solid. Curved snapshots are geometry version 2, with
+legacy box-only version 1 retained. The cave/dome/tube/battlement/tower recipes
+are deterministic domain data shared by illustrated manual placement, safe
+parameter resizing and seeded biome features. Editable groups use geometry
+version 3, including arbitrary-angle prism walls. The UI previews only candidate
+shapes, not a second world model; authoritative solids bake on commit. Generation
+preserves manual groups and uses explicit intact/ruined town, city and fortress
+profiles with organic village greens/lanes, dense city districts and markets, and
+layered castles with grand keeps, bailey towers and arched gatehouses. Building
+appearance is saved domain data; colour/material provenance survives clipping,
+while procedural surface patterns and batched façade ornament remain render-only.
+Linked floor rendering also batches its geometry without discarding per-map pick
+identity; both batches retain cached geometry between unchanged frames.
+Biome budgets replace the original universal eight-piece settlement limit.
+Automatic opening density is an optional versioned building recipe, with
+architecture-specific spacing and allowed local sides. Legacy saved profiles keep
+their old pattern; manual features remain independent of automatic side masks.
+Window-layout version 2 saves an architectural composition seed and varies
+actual editable dimensions and per-floor arrangements, including tall apertures.
+Version-1 and missing-layout recipes remain unchanged on load or resize.
+Castle seeds vary actual coherent topology and dimensions through a separate
+architecture stream, while rotated wall/stair footprints constrain placement.
+Explicit cliff/mountain site recipes replace flat foundations with narrow rock
+spurs, negative ravines, arched viaducts and stepped mountain baileys. Shared
+convex rock/excavation supplies real support, ceilings, sight and falling;
+connected halls keep their ordinary map ownership/alignment. A versioned terrace
+exit on retaining stairs opens the opposite parapet so it joins the upper site.
+The general natural-cave generator and non-to-scale designed interiors remain
+separate later milestones.
+Only untouched default canvases (or their unedited auto-sized successors) may grow
+to the biome's recommended size; populated/custom maps retain their dimensions.
+Natural landmarks include intact and broken buildings on dry, gentle sites.
+Bounded cave networks share a floor and union their shells before subtracting
+rooms and passage bores; member edits preserve interleaved CSG slots instead of
+moving early cuts ahead of later shells. Structure/volume budgets and physical
+layout caps apply even on large maps. Saved maps only adopt new generation
+recipes on explicit Generate. Closed-outline connected-floor authoring remains later work.
+
+Parametric buildings/turrets now derive linked floor maps and physical connections
+from their versioned authoring definition. The exterior owns its shell; finite
+interior maps own slabs and stairs. Pitched roofs add convex-polyhedron domain
+data, not renderer-only collision shortcuts. Direct handles and wall-feature
+gestures remain candidate previews until release/Apply.
+
+An opaque geometry-edit participant, wired by the scene adapter, prepares the
+campaign topology before the engine applies an edit. Apply/rollback coordinates
+both owners atomically. History stores managed interior maps and their cameras,
+not character resources or combat snapshots; fine resizing keeps the interior
+grid lattice and physical actor positions. The engine does not import campaign
+or renderer services. Topology changes wait for pending scene writes, and
+actor-only checkpoints retain unchanged map geometry and idle render meshes.
+Five-foot footprint indices restrict point and body queries to nearby ordered
+operations/solid fragments, including foreign-map obstacles. Exact narrow-phase
+geometry remains authoritative, and indices invalidate with terrain edits.
+Range searches memoize support only within the search and reject visited states
+before expensive clearance, not across changes to actors or turn budgets.
+Unreachable distant stair anchors are excluded conservatively, and the same
+footprint broad phase avoids global support searches when no foreign solid can
+stand above the local surface. Exact physical checks still decide the result.
+Generate failures are visible in its control area; rejected attempts preserve
+the random seed as well as geometry and actor state.
+Legacy shells require explicit upgrade rather than implicit load-time mutation.
+
+Profile version 2 adds footprint-matched rectangular roof hulls and reusable
+post-placement window/balcony manipulation without adding another geometry owner.
+Legacy profile data remains loadable with its original roof recipe. A tall window
+is one authoring cut with derived room-clipped connections, not duplicated window
+definitions or removed floors. Physical floor slabs can own exterior grip contacts;
+reframing tracks the contact's owner independently from the actor's map. Shape
+limits live in the domain model and are shared by normalization and resize math.
+Pointer previews remain small candidate meshes/handles, never world-CSG rebuilds.
+
+Custom-level profile version 3 removes the fixed-height assumption from derived
+maps and connections. Stable numeric IDs identify floors independently of their
+elevations; the battlement deck reserves ID 100. Whole-floor removal, rectangular
+cutouts, room heights and cellar excavation remain domain data under the same
+atomic participant/history boundary. Larger stair gaps repeat supported flights
+instead of scaling risers. Cellar access adds a validated real stair/ladder route,
+not a teleport or a second actor. A pending cross-map fall landing cannot publish
+an intermediate stable checkpoint in its source map.
+
+Underground editor reveal is presentation state, not terrain visibility or a
+second collision owner. Its adapter clones/restores materials and projects cellar
+definitions/validated local floor geometry without modifying physical support or
+sight. Structure identifiers and connection-target highlighting follow the same
+read-only rule. Cellar candidate filtering shares a physical hatch/landing-fit
+helper with topology validation, rather than a UI-only distance heuristic.
+
+Authored wall stair layouts supply bounded physical navigation anchors for turns
+and angled treads that grid centres cannot represent. They remain queries of
+domain geometry and retain ordinary edge costs, step limits and swept-body
+clearance. The renderer does not invent traversable stair surfaces.
+Finite cellar walls and floor cutaways likewise keep their actual vertical
+extent. Only the artificial bottom of unbounded earth is capped for rendering;
+transient cell provenance distinguishes that bottom after convex clipping,
+without changing physical support or the persisted geometry format.
+
+Whole-structure translation carries owned floor content and camera frames, unlike
+footprint resizing's physical-position-preserving lattice reframe. Authoring does
+not transfer creatures: occupied structures reject edits until vacated. New wall
+stair recipe version 2 uses solid, progressively wallward flights rather than
+overlapping filled runs or unsupported thin exterior treads; earlier recipes stay
+loadable until explicitly edited.
+
 ---
 
 ## Context

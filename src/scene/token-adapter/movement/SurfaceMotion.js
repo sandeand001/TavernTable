@@ -3,16 +3,32 @@ import {
   getTokenConditions,
   getTokenMovementSettings,
 } from '../../../entities/creatures/TokenMovement.js';
-import { buildSurfaceRange, getSurfaceRoute } from '../../../terrain/SurfaceNavigation.js';
+import {
+  buildSurfaceRange,
+  getSurfaceRoute,
+  isFloorSurface,
+} from '../../../terrain/SurfaceNavigation.js';
 import { MAX_STEP_HEIGHT_FEET } from '../../../config/TokenMovementConfig.js';
+import {
+  boundsIntersectSolid,
+  sweptBodyCell,
+  cellIntersectsSolid,
+} from '../../../terrain/ConvexGeometry.js';
+import { campaignLandingForSupport } from '../SavedPlacements.js';
+import { FootprintIndex } from '../../../terrain/FootprintIndex.js';
 
 function navigationGeometry(gm) {
-  if (!gm.campaignWorld) return gm.terrainEngine.geometry;
   const world = gm.campaignWorld;
   const mapId = gm.campaignMapId;
   const unit = gm.spatial.tileWorldSize / 5;
-  const foreign = world.getObstacles({ excludeMapId: mapId });
+  const foreign = new FootprintIndex(world ? world.getObstacles({ excludeMapId: mapId }) : []);
+  const supports = new Map();
   const local = (point) => ({ x: point.x * unit, y: point.y * unit, z: point.z * unit });
+  const foreignClear = (bounds) => {
+    if (!world) return true;
+    const body = world.toCampaignBounds(mapId, { min: local(bounds.min), max: local(bounds.max) });
+    return !foreign.inBounds(body).some((obstacle) => boundsIntersectSolid(body, obstacle, 1e-6));
+  };
   return {
     get widthFeet() {
       return gm.terrainEngine.geometry.widthFeet;
@@ -20,38 +36,69 @@ function navigationGeometry(gm) {
     get depthFeet() {
       return gm.terrainEngine.geometry.depthFeet;
     },
+    isCurvedSupport: (id) => gm.terrainEngine.geometry.isCurvedSupport(id),
+    getNavigationPoints: () => gm.terrainEngine.geometry.getNavigationPoints(),
+    isGroundSpaceClear: (bounds, belowFeet) =>
+      gm.terrainEngine.geometry.isGroundSpaceClear(bounds, belowFeet) && foreignClear(bounds),
     findSupport(x, z, options) {
-      const support = gm.terrainEngine.geometry.findSupport(x, z, options);
-      if (!support) return null;
-      if (Number.isFinite(options.belowFeet)) {
-        const physical = world.findSupportBelow(
-          world.toCampaignPosition(mapId, {
-            x: x * unit,
-            y: options.belowFeet * unit,
-            z: z * unit,
-          }),
-          { mapId, geometry: gm.terrainEngine.geometry }
-        );
-        if (
-          physical &&
-          world.toMapPosition(mapId, physical.positionFeet).y / unit > support.heightFeet + 1e-6
-        )
-          return null;
+      const key = `${x}:${z}:${options.belowFeet}:${options.clearanceFeet ?? 0}:${options.surfaceId ?? ''}`;
+      if (supports.has(key)) return supports.get(key);
+      let support = gm.terrainEngine.geometry.findSupport(x, z, options);
+      const point =
+        world && Number.isFinite(options.belowFeet)
+          ? world.toCampaignPosition(mapId, {
+              x: x * unit,
+              y: options.belowFeet * unit,
+              z: z * unit,
+            })
+          : null;
+      const higherForeign =
+        point &&
+        (!support ||
+          foreign
+            .atPoint(point.x, point.z)
+            .some(
+              (obstacle) =>
+                obstacle.min.x <= point.x + 1e-6 &&
+                obstacle.max.x >= point.x - 1e-6 &&
+                obstacle.min.z <= point.z + 1e-6 &&
+                obstacle.max.z >= point.z - 1e-6 &&
+                obstacle.min.y <= point.y + 1e-6 &&
+                obstacle.max.y > point.y - options.belowFeet + support.heightFeet + 1e-6
+            ));
+      const physical =
+        point && higherForeign
+          ? world.findSupportBelow(point, { mapId, geometry: gm.terrainEngine.geometry })
+          : null;
+      if (!support && physical) {
+        const local = world.toMapPosition(mapId, physical.positionFeet);
+        support = {
+          id: physical.surfaceId || 'terrain',
+          heightFeet: local.y / unit,
+          layerId: 'ground',
+          requiresTransfer: true,
+        };
       }
+      if (
+        support &&
+        physical &&
+        world.toMapPosition(mapId, physical.positionFeet).y / unit > support.heightFeet + 1e-6
+      )
+        support = null;
+      supports.set(key, support);
       return support;
     },
     isSpaceClear(bounds) {
-      if (!gm.terrainEngine.geometry.isSpaceClear(bounds)) return false;
-      const body = world.toCampaignBounds(mapId, {
-        min: local(bounds.min),
-        max: local(bounds.max),
-      });
-      return !foreign.some((obstacle) =>
-        ['x', 'y', 'z'].every(
-          (axis) =>
-            body.min[axis] < obstacle.max[axis] - 1e-6 && body.max[axis] > obstacle.min[axis] + 1e-6
-        )
-      );
+      return gm.terrainEngine.geometry.isSpaceClear(bounds) && foreignClear(bounds);
+    },
+    isSweptSpaceClear(start, end, radius, bottom, top) {
+      if (!gm.terrainEngine.geometry.isSweptSpaceClear(start, end, radius, bottom, top))
+        return false;
+      if (!world) return true;
+      const a = world.toCampaignPosition(mapId, local({ ...start, y: bottom }));
+      const b = world.toCampaignPosition(mapId, local({ ...end, y: top }));
+      const body = sweptBodyCell(a, b, radius, a.y + 1e-6, b.y - 1e-6);
+      return !foreign.inBounds(body.bounds).some((obstacle) => cellIntersectsSolid(body, obstacle));
     },
   };
 }
@@ -69,7 +116,11 @@ function getTokenSurfaceRange(token, allowance = null) {
       ? combat.freeMovementAllowance(token)
       : settings.speed;
   const occupied = (gm.placedTokens || [])
-    .filter((other) => other !== token)
+    .filter(
+      (other) =>
+        other !== token &&
+        (!gm.campaignWorld || gm.campaignWorld.sharesLocation(other.mapId, gm.campaignMapId))
+    )
     .map((other) => {
       const position = this.getTokenViewPosition(other);
       const remote = gm.campaignWorld && other.mapId !== gm.campaignMapId;
@@ -85,6 +136,8 @@ function getTokenSurfaceRange(token, allowance = null) {
       gridX: token.gridX,
       gridY: token.gridY,
       heightFeet: world.y * feetPerWorld,
+      xFeet: world.x * feetPerWorld,
+      zFeet: world.z * feetPerWorld,
     },
     speedFeet: Math.min(available, allowance ?? Infinity),
     prone: getTokenConditions(token).includes('prone'),
@@ -99,9 +152,9 @@ function getTokenSurfaceRange(token, allowance = null) {
   });
   for (const cell of range.tiles.values()) {
     cell.world = {
-      x: (cell.gridX + 0.5) * gm.spatial.tileWorldSize,
+      x: (cell.xFeet ?? (cell.gridX + 0.5) * 5) / feetPerWorld,
       y: cell.heightFeet / feetPerWorld,
-      z: (cell.gridY + 0.5) * gm.spatial.tileWorldSize,
+      z: (cell.zFeet ?? (cell.gridY + 0.5) * 5) / feetPerWorld,
     };
     cell.height = gm.spatial.elevationUnit > 0 ? cell.world.y / gm.spatial.elevationUnit : 0;
   }
@@ -119,7 +172,7 @@ function requestSurfaceMovement(token, destination, range) {
     if (
       !picked.point ||
       !picked.normal ||
-      picked.normal.y < 0.9 ||
+      !isFloorSurface(picked) ||
       ![picked.point.x, picked.point.y, picked.point.z].every(Number.isFinite)
     ) {
       throw new Error('Choose a walkable floor or stair top on the layered map');
@@ -134,8 +187,10 @@ function requestSurfaceMovement(token, destination, range) {
     gridY,
     picked
       ? {
-          surfaceId: picked.surfaceId ?? null,
-          heightFeet: (picked.point.y * 5) / gm.spatial.tileWorldSize,
+          surfaceId: range.geometry.isCurvedSupport?.(picked.surfaceId) ? picked.surfaceId : null,
+          heightFeet: range.geometry.isCurvedSupport?.(picked.surfaceId)
+            ? null
+            : (picked.point.y * 5) / gm.spatial.tileWorldSize,
         }
       : {}
   );
@@ -228,6 +283,11 @@ function beginSurfaceSegment(state, job) {
     target: point.world,
     elapsed: 0,
     duration: Math.max((Math.hypot(dx, dz) / speed) * (job.range.prone ? 2 : 1), 0.16),
+    followSurface:
+      job.range.geometry.isCurvedSupport?.(point.surfaceId) ||
+      job.range.geometry.isCurvedSupport?.(
+        job.index === 1 ? job.range.start.surfaceId : job.points[job.index - 2].surfaceId
+      ),
     fall:
       ((start.y - point.world.y) * 5) / this.gameManager.spatial.tileWorldSize >
       MAX_STEP_HEIGHT_FEET + 1e-7,
@@ -242,11 +302,15 @@ function advanceSurfaceMotion(state, delta) {
   if (!job?.layered || !motion) throw new Error('Surface movement has no approved route');
   const geometry = job.range.geometry;
   const point = job.current;
-  const support = geometry.findSupport((point.gridX + 0.5) * 5, (point.gridY + 0.5) * 5, {
-    belowFeet: point.heightFeet + 1e-6,
-    clearanceFeet: 5,
-    surfaceId: point.surfaceId,
-  });
+  const support = geometry.findSupport(
+    point.xFeet ?? (point.gridX + 0.5) * 5,
+    point.zFeet ?? (point.gridY + 0.5) * 5,
+    {
+      belowFeet: point.heightFeet + 1e-6,
+      clearanceFeet: 5,
+      surfaceId: point.surfaceId,
+    }
+  );
   if (!support || Math.abs(support.heightFeet - point.heightFeet) > 1e-5) {
     throw new Error('The approved floor changed before the creature could arrive');
   }
@@ -254,6 +318,15 @@ function advanceSurfaceMotion(state, delta) {
   const progress = Math.min(motion.elapsed / motion.duration, 1);
   const world = this._lerp3(motion.start, motion.target, progress);
   if (motion.fall) world.y = motion.start.y;
+  else if (motion.followSurface) {
+    const scale = 5 / this.gameManager.spatial.tileWorldSize;
+    const underfoot = geometry.findSupport(world.x * scale, world.z * scale, {
+      belowFeet: Math.max(motion.start.y, motion.target.y) * scale + MAX_STEP_HEIGHT_FEET,
+      clearanceFeet: 5,
+    });
+    if (!underfoot) throw new Error('The curved route no longer has clear floor support');
+    world.y = underfoot.heightFeet / scale;
+  }
   this._syncTokenAndMeshWorld(state, world);
   this._applyTokenGridFromWorld(state.token, world);
   if (progress < 1) return;
@@ -265,6 +338,12 @@ function advanceSurfaceMotion(state, delta) {
     state.climbContinuationGoal = null;
     const target = { ...motion.target };
     const drop = world.y - target.y;
+    const gm = this.gameManager;
+    const support = gm.campaignWorld?.findSupportBelow(
+      gm.campaignWorld.toCampaignPosition(state.token.mapId, { ...target, y: world.y }),
+      { mapId: gm.campaignMapId, geometry: gm.terrainEngine.geometry }
+    );
+    const campaignLanding = campaignLandingForSupport(gm.campaignWorld, state.token, support);
     state.activeStep = {
       tokenEntry: state.token,
       mesh: state.mesh,
@@ -285,6 +364,7 @@ function advanceSurfaceMotion(state, delta) {
       fallTriggered: false,
       fallTriggerProgress: 0,
       landingVariant: 'fall',
+      ...(campaignLanding ? { campaignLanding } : {}),
     };
     state.stepFinalized = false;
     state.phaseElapsed = 0;

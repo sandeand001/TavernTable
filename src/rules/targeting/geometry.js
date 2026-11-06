@@ -1,6 +1,7 @@
 import { FEET_PER_GRID_SQUARE } from '../../config/TokenMovementConfig.js';
 import { TARGET_ALLEGIANCES } from '../../config/targeting/SpellProfiles.js';
 import { TARGET_AREA_SHAPES } from '../../config/targeting/SpellProfiles.js';
+import { segmentIntersectsSolid } from '../../terrain/ConvexGeometry.js';
 
 const EPSILON = 1e-7;
 
@@ -42,7 +43,8 @@ export function validateAreaGeometry(area) {
     !finitePoint(area.origin) ||
     !finitePoint(area.direction) ||
     Math.abs(Math.hypot(area.direction.x, area.direction.y, area.direction.z) - 1) > EPSILON ||
-    (area.shape === 'cube' && Math.abs(area.direction.y) > EPSILON) ||
+    (['cube', 'wall'].includes(area.shape) && Math.abs(area.direction.y) > EPSILON) ||
+    (area.shape === 'ring' && area.width >= area.size) ||
     ['size', 'width', 'height'].some(
       (key) => !Number.isFinite(area[key]) || area[key] <= 0 || area[key] > 100000
     ) ||
@@ -84,23 +86,18 @@ export function clearSegment(start, end, obstacles) {
       ['x', 'y', 'z'].some((axis) => box.min[axis] > box.max[axis])
     )
       throw new Error('Cover bounds are invalid');
-    let low = 0,
-      high = 1;
-    for (const axis of ['x', 'y', 'z']) {
-      const delta = end[axis] - start[axis];
-      if (Math.abs(delta) < EPSILON) {
-        if (start[axis] < box.min[axis] || start[axis] > box.max[axis]) {
-          high = -1;
-          break;
-        }
-      } else {
-        const a = (box.min[axis] - start[axis]) / delta,
-          b = (box.max[axis] - start[axis]) / delta;
-        low = Math.max(low, Math.min(a, b));
-        high = Math.min(high, Math.max(a, b));
-      }
-    }
-    if (low <= high && high > EPSILON && low < 1 - EPSILON) return false;
+    if (
+      box.planes !== undefined &&
+      (!Array.isArray(box.planes) ||
+        box.planes.some(
+          (plane) =>
+            !finitePoint(plane.normal) ||
+            !Number.isFinite(plane.distance) ||
+            Math.abs(Math.hypot(plane.normal.x, plane.normal.y, plane.normal.z) - 1) > 1e-5
+        ))
+    )
+      throw new Error('Cover planes are invalid');
+    if (segmentIntersectsSolid(start, end, box)) return false;
   }
   return true;
 }
@@ -112,7 +109,7 @@ export function areaPlacement(profile, actor, selection, tileSize) {
   const facing = facingDirection(actor);
   const aim = selection.aim || { x: origin.x + facing.x, y: origin.y, z: origin.z + facing.z };
   if (!finitePoint(aim)) throw new Error('Spell direction is invalid');
-  const vertical = profile.shape === 'cube' ? 0 : aim.y - origin.y;
+  const vertical = ['cube', 'wall'].includes(profile.shape) ? 0 : aim.y - origin.y;
   const length = Math.hypot(aim.x - origin.x, vertical, aim.z - origin.z);
   const direction =
     length > EPSILON
@@ -137,6 +134,14 @@ export function inArea(point, area) {
   const distance = Math.hypot(x, y, z),
     horizontal = Math.hypot(x, z);
   if (area.shape === 'sphere' || area.shape === 'emanation') return distance <= area.size + EPSILON;
+  if (area.shape === 'hemisphere') return y >= -EPSILON && distance <= area.size + EPSILON;
+  if (area.shape === 'ring')
+    return (
+      horizontal >= area.size - area.width - EPSILON &&
+      horizontal <= area.size + EPSILON &&
+      y >= -EPSILON &&
+      y <= area.height + EPSILON
+    );
   if (area.shape === 'cylinder')
     return horizontal <= area.size + EPSILON && y >= -EPSILON && y <= area.height + EPSILON;
   if (area.shape === 'square')
@@ -166,16 +171,16 @@ export function inArea(point, area) {
       Math.abs(up) <= area.width / 2 + EPSILON
     );
   }
-  if (area.shape === 'cube') {
+  if (area.shape === 'cube' || area.shape === 'wall') {
     const flat = Math.hypot(area.direction.x, area.direction.z) || 1;
     const along = (x * area.direction.x + z * area.direction.z) / flat;
     const side = (x * -area.direction.z + z * area.direction.x) / flat;
     return (
       along >= -EPSILON &&
       along <= area.size + EPSILON &&
-      Math.abs(side) <= area.size / 2 + EPSILON &&
+      Math.abs(side) <= (area.shape === 'wall' ? area.width : area.size) / 2 + EPSILON &&
       y >= -EPSILON &&
-      y <= area.size + EPSILON
+      y <= (area.shape === 'wall' ? area.height : area.size) + EPSILON
     );
   }
   throw new Error('Unknown spell area shape');

@@ -26,7 +26,7 @@ function syncMapProjectionTerrain() {
   if (
     (targets.length ||
       Number.isFinite(gm.terrainEngine.geometry.terrainThicknessFeet) ||
-      gm.campaignWorld.listMaps().some(({ id }) => gm.campaignWorld.getMap(id).base === 'floor')) &&
+      gm.campaignWorld.hasFloorMaps) &&
     !this._mapProjectionTerrain
   )
     this._mapProjectionTerrain = new MapProjectionTerrain(gm);
@@ -39,6 +39,9 @@ function isTokenProjection(token) {
 }
 
 function isTokenProjectionVisible(token) {
+  const gm = this.gameManager;
+  if (gm.campaignWorld && !gm.campaignWorld.sharesLocation(token.mapId, gm.campaignMapId))
+    return false;
   return !this.isTokenProjection(token) || this._mapProjectionVisible?.has(token) === true;
 }
 
@@ -62,6 +65,7 @@ async function syncMapProjections() {
   ) {
     const position = gm.campaignWorld.toCampaignPosition(observer.mapId, observer.world);
     geometry = {
+      mapId: observer.mapId,
       obstacles: gm.campaignWorld.getObstacles({
         mapId: gm.campaignMapId,
         geometry: gm.terrainEngine.geometry,
@@ -70,6 +74,7 @@ async function syncMapProjections() {
     };
     for (const token of projections) {
       if (
+        gm.campaignWorld.sharesLocation(observer.mapId, token.mapId) &&
         !getTokenConditions(token).includes('invisible') &&
         gm.campaignWorld.hasLineOfSight(
           position,

@@ -1,6 +1,6 @@
 # TavernTable domain context
 
-- **Scene**: the browser-local board, terrain, placed tokens and camera state.
+- **Scene**: the active board, terrain, placed tokens and camera state.
   Campaign autosave preserves committed scene checkpoints, not unfinished
   terrain previews, routes or animation frames.
 - **Terrain editing colors**: temporary elevation visualization while Terrain
@@ -20,6 +20,11 @@
   change gameplay support or saved heights. Escape, blur, leaving the canvas,
   changing tools or brush size, and leaving Terrain Mode cancel the preview.
   Wall height and fill style can update a pending rectangle without committing it.
+- **Map pan chord**: Space + left-drag gives the camera priority over terrain,
+  placement and construction input. A canvas grab can claim Space already held
+  after using a UI control, without stealing the control's normal keyboard input.
+  Cancel unfinished strokes/drags, retain the selected tool and restore its cursor
+  when the pan ends.
 - **Terrain history**: session-local Undo/Redo for the last 100 committed height
   or geometry edits, including Reset Terrain heights. A whole gesture is one edit. New committed
   edits replace the redo branch; canceled previews and no-op edits do not.
@@ -27,11 +32,26 @@
   placeable removal, dice rolls, character actions or movement.
 - **Creature token**: one logical gameplay instance with a stable ID, grid/world
   position, facing, movement settings and character-sheet tab.
+- **Creature interaction**: a short left-click selects a creature and opens its
+  radial menu; right-click also opens the menu. Left-drag turns an idle creature
+  without opening a menu, while right-drag retains camera orbit.
 - **Tactical token view**: a camera-driven rendering substitution, not a new
   gameplay instance. Enter at 80 degrees above ground; leave below 78 degrees.
   Circular name/portrait tokens retain the creature's position, selection and
   movement while its original model and animation state remain available.
-- **Campaign**: a named, browser-local workspace with an explicitly chosen,
+- **DM tactical overview**: overhead markers show canonical creatures on the
+  displayed map and directly above/below its physical footprint, including
+  roof/floor-occluded interiors, not unrelated campaign locations. Screen-space
+  offsets and leader lines separate stacked floors; labels use structure and
+  floor/level metadata. Focus links open the creature's map and center its camera
+  without moving or copying gameplay instances.
+- **Player physical sight**: published creature rows are filtered on the host
+  from one active assigned creature, never the camera or combined party.
+  Preserve published-map authorization and physical terrain/wall/floor/opening
+  occlusion. Saved opaque tree/rock bounds add sight blockers without treating
+  leaves as solids; legacy asset maps need a DM capture before publication.
+  Fog of war, darkness, invisibility and other vision effects remain deferred.
+- **Campaign**: a named, host-persisted workspace with an explicitly chosen,
   immutable 2014 or 2024 ruleset. Startup offers Create/Open rather than silently
   resuming. Saved scenes contain either a legacy board or a connected map
   collection, never a separate campaign per floor. Switching campaigns flushes
@@ -42,11 +62,54 @@
   Character, rest, custom-ability and layout changes must commit atomically before
   the UI reports success or combat spends its in-memory costs.
 - **Saved scene checkpoint**: plain versioned campaign data, never renderer objects,
-  promises or in-flight animation frames. Restore the last completed safe ground
-  step or stable wall/ledge hold and its movement cost. Completed rolls and turn
+  promises or in-flight animation frames. Actual saved-state changes schedule
+  routine autosave after two quiet seconds, with a ten-second maximum wait.
+  Short moves save at completion; long moves also save their last safe position
+  and matching movement costs at that deadline, never at every waypoint.
+  Safe ground steps and wall/ledge holds remain in memory for interruption/rollback;
+  restoring a checkpoint never replays its unfinished route. Atomic
+  character/resource/fall transactions still include their safe scene and cost.
+  Finite-floor maps retain an explicit geometry snapshot even with no volume
+  edits, so cellar access survives capture, focus changes and reopening.
+  Completed rolls and turn
   budgets resume; unfinished rolls/routes are not replayed. Undo receipts and open
   sheet windows remain session-local. A creature's linked character and sheet tab
   share its name.
+- **Local campaign host**: a loopback-only Node 24.4+ process serving the app and
+  persisting campaigns in SQLite outside browser profiles and the served project.
+  A successful save receipt follows a committed disk transaction with full
+  synchronous durability. Chrome and VS Code share the host's data directory;
+  renderer objects, catalog caches and unfinished animations are not saved.
+  Host failure never silently falls back to IndexedDB. Authenticated DM/player
+  sessions require same-origin cookie identity and a session-specific CSRF
+  credential for writes. The initial player scope is assigned sheets and
+  published read-only views, not authoritative movement/combat. Reload and sign
+  in again after a host restart. Browser-only storage remains
+  explicit for tests and migration, with non-destructive Copy to host and JSON
+  backup import/export. Agent-created browser tabs may have in-memory storage;
+  flushing such a profile does not make it survive an editor restart.
+- **Automatic JSON snapshot**: an independent complete campaign backup after
+  committed changes, scheduled every five minutes and bounded to 20 files per
+  campaign. Manual backup flushes active changes first; restore creates a
+  separate private campaign. Backup failure is reported separately from the
+  acknowledged primary save. Credentials and access assignments are not included.
+- **Player invitation**: a reusable, revocable private credential for one
+  campaign/player identity. Reissue/revocation invalidates previous access
+  without deleting the player's saved characters. Invitations/assignments persist;
+  browser session cookies expire or require renewal after host restart.
+- **Character assignment**: permission to edit an existing campaign-owned saved
+  character ID, independent of temporary scene tokens. Player writes merge only
+  assigned records, preserve unrelated records, validate against pinned rules and
+  cannot replace campaign scenes or grant permissions.
+- **Player location access**: derive public render data and visible creature
+  positions from one active assigned creature's physical location. Connected
+  areas in that location do not require individual publishing permission.
+  Other locations and unassigned private sheets are not transmitted as part of
+  that view. Cameras are participant-local; switching assigned characters can
+  switch locations, while opening a sheet alone does not change the observer.
+  The first viewer is deliberately passive; area access is not fog-of-war within
+  that map. Internet access requires a configured exact HTTPS origin through a
+  trusted proxy/tunnel; no listener or firewall exposure is created automatically.
 - **Source pack**: an attributed, edition-compatible content collection pinned to
   an explicit version. Core SRD content is always enabled; optional packs are
   opt-in. Disabling a pack prevents new additions without erasing owned content
@@ -58,14 +121,14 @@
 - **Bundled seed**: reviewed, versioned resource data downloaded during development,
   validated and shipped with the app. Runtime installation uses same-origin files,
   never live provider APIs or automatic mid-campaign content updates. Campaign
-  backups include settings and characters, not the bundled databases or scene.
+  backups include settings, characters and committed scenes, not bundled databases.
 - **Saved character**: a persistent rules record, independent of a
   creature token's name, appearance and ephemeral scene ID. A token can load a
   record through `characterSheetId`; saving the record does not save the board.
 - **Character images**: optional embedded raster images owned by the saved
   character and shared by its linked tokens. The center-cropped portrait is used
   for tactical tokens and sheet identity; separate proportional artwork belongs
-  on Bio & notes. Uploads stay browser-local and travel in character/campaign
+  on Bio & notes. Uploads stay in the local host's records and travel in character/campaign
   backups. Renderer textures and temporary image-loading state are never saved.
 - **Character speed**: the saved record's authoritative ground-distance setting for
   linked tokens and their grid ranges, editable only on Core. Combat displays
@@ -100,8 +163,10 @@
   Other spell/item flight remains manual. Loss of support or a lower speed interrupts
   a route at its stable checkpoint, refunds its unfinished tail, and falls if unsupported.
   A hovering animation is visual; the Can hover rules trait remains independent.
-  Campaign checkpoints save completed stable airborne waypoints and their costs,
-  not unfinished routes, animation frames or unresolved falls.
+  Safe airborne waypoints and their costs remain in memory during the move.
+  Routine saves include the last safe airborne waypoint and its costs at the
+  ten-second deadline during long flights, and save again after completion.
+  Unfinished routes, animation frames and unresolved fall outcomes are never saved.
 - **Falling**: an actual vertical terrain/airborne drop, measured in feet.
   At impact, roll 1d6 per complete 10 feet, capped at 20d6; apply temporary HP
   first, then current HP. Positive damage imposes Prone unless immune. Damage
@@ -127,8 +192,10 @@
   Hits, damage and saves remain manual. Reviewed Fly automatically applies its
   temporary flight grant; other spell mechanical effects remain manual.
 - **Targeting profile**: an edition-local reviewed definition or an explicit static
-  override in the action companion. The first set reviews 27 spells per edition;
-  unsupported spells require explicit manual confirmation rather than guessed rules.
+  override in the action companion. All 319 classic and 339 revised core spells
+  have an explicit initial-casting definition: 297/313 structured profiles and
+  22/26 specific manual cases at base level. Complex or unsupported modes require
+  explicit manual confirmation rather than guessed rules.
   Profiles describe range, minimum/maximum allocations, repeated projectiles,
   creature restrictions, sight, area shape/origin and visual duration. Weapon modes
   distinguish reach, thrown and normal/long range, including enhanced variants.
@@ -153,20 +220,37 @@
   action. Empty Bonus sections explain unavailable/spent options. Saved play
   ordering remains intact. Pace/Style/manual Roll mode use pressed buttons;
   targeting tags live only on Core. Spell cards distinguish fixed base level
-  from the expended slot level, and only unreviewed targeting gets a compact gear.
+  from the expended slot level, and manual/complex targeting gets a compact gear.
 - **Casting level selection**: available slot-level buttons live in the targeting
   popup, not spell cards. Preview choices recalculate upcasting while keeping the
   original reservation immutable. Confirmation revalidates that reservation before
   replacing its casting choice; committed costs use the confirmed level. A canceled
   preview spends nothing. Roll-only spell damage retains the last confirmed level.
+- **Spell template choice**: supported wall/ring/sphere/dome options are preview
+  choices in the same popup. Confirmation revalidates the original reservation
+  before committing the chosen template and slot. Static overrides are one
+  explicit template; resetting restores the reviewed choices.
+- **Spell reminder**: a scene-only recipient list or point marker with a caster-turn
+  duration or an explicitly manual-ended lifetime. It does not apply HP, conditions,
+  movement grants or other statistics. Declared-target reminders can be pruned
+  after manual saves; the last removal ends matching concentration. Recasting
+  Mage Hand, Light, Minor Illusion or Simulacrum replaces the previous matching
+  source marker and Undo restores it.
+- **Spell-effect movement**: a source-owned ongoing effect action, not another cast.
+  Measure from its previous origin, preserve duration and concentration, and spend
+  the reviewed Action/Bonus action. 2024 Magic actions obey Action Surge restrictions
+  but do not enter the spell-casting/slot-use ledger. Moonbeam becomes movable on
+  later turns. Stage location, history and costs atomically; failed, canceled or
+  stale movements spend nothing, and Undo cannot resurrect an ended effect.
 - **Targeting geometry**: 3D five-foot grid distance, feet/center-point area inclusion,
   and terrain/instanced-structure clear-path bounds. Full creature volumes, partial
   cover, door openings and 2014 around-corner propagation require manual confirmation.
 - **Active spell area**: a plain visual record in combat checkpoints, never renderer
-  objects or automatic damage/conditions/movement/visibility. Durations tick only on
+  objects or automatic damage/conditions/creature movement/visibility. Durations tick only on
   later matching caster-token start/end turns. Concentration replacement/ending,
   manual ending and Undo synchronize the visuals. Fixed areas can outlive token
-  removal; caster-following areas cannot. Selection previews are never saved.
+  removal; caster-following and movable source-bound areas cannot. Until-dispelled
+  areas have no invented finite timer. Selection previews are never saved.
 - **Custom ability**: a saved activation/reminder with either its own use limit
   and reset policy or a link to an existing class pool, never a duplicate pool.
   Definitions/attack overrides and non-turn usage live in an action companion;
@@ -245,30 +329,43 @@ Multi-level map geometry, multiplayer, full combat rules
 and guided character progression remain separate work. Free-play movement
 allowances and visual actions are not silently converted into turn enforcement.
 
-Campaign settings and characters use acknowledged, revision-checked IndexedDB
-commits. The scene and session-memory combat/history are deliberately separate.
+Campaign settings, characters and scene checkpoints use acknowledged,
+revision-checked host transactions. The same campaign rules support an explicit
+IndexedDB adapter for legacy migration and tests. Session-local Undo receipts and
+unfinished visuals are not substituted for committed scene/combat history.
 
 ## Connected-grid map-building direction (foundation implemented)
 
 The user has replaced the layered shared-world direction with separate grids
 for buildings, floors and larger areas. The connected-map data, physical-coordinate,
-persistence and targeting foundation is implemented. The existing construction
-proof remains paused and is not the chosen builder workflow. Sight-gated cross-grid
+persistence and targeting foundation is implemented. The visual parametric Build
+palette replaces numeric construction controls; automatic outline-to-floor-grid
+authoring remains separate work. Sight-gated cross-grid
 character projections now render the original creature's model. Live Maps & focus
-controls switch local views without transferring creatures. Connection-driven
-locomotion, the outline builder and actual multiplayer remain further
-implementation chunks.
+controls switch local views without transferring creatures. Physical connection
+travel and parametric building assemblies are implemented; the closed-outline
+builder and actual multiplayer remain further implementation chunks.
 
-- **Connected grid**: an independently editable and viewable tactical map within
-  one campaign. A building interior, another floor or a larger area can have its
+- **Campaign location**: a separately rendered physical space within a campaign.
+  Optional version-3 `locations` records and per-map `locationId` distinguish
+  independent spaces without invented giant offsets. Legacy maps share one
+  implicit location until explicit location creation. Spatial queries, targeting,
+  occupancy, projections and spell visuals remain within one location; a raw
+  coordinate is not an identity shared by every location.
+- **Connected grid**: an independently editable and viewable tactical area within
+  one location. A building interior, another floor or a larger area can have its
   own grid. Character location belongs to the campaign world, not to whichever
   map a participant happens to be viewing.
 - **Building outline**: a closed, straight-line footprint drawn on the map.
   Meeting the first endpoint completes the outline. The simplified tool starts
   with Build and a height choice, using 10-foot floor increments. It generates
   a hollow building and separate floor grids rather than filling a solid box.
-  Cut/carving is undecided and deferred; curves, circles and manual floor
-  removal are later work.
+  Cut/carving in the builder is undecided and deferred; curved outline editing
+  and circles are later work; whole-floor removal and rectangular cutouts are
+  already available for parametric structures. The separate curved-volume
+  foundation and playable shape proof do not implement that closed-outline
+  workflow. Parametric rectangular buildings and turrets already generate
+  connected floors through the illustrated Build controls.
 - **Grid connection**: a link between locations in different grids. Doorways
   and stairs use explicit Enter / Use stairs interactions, transferring only
   the acting creature. Only views following that creature switch maps;
@@ -278,7 +375,7 @@ implementation chunks.
   Portals do not transmit sight or targeting to the destination. Implement
   physical doors/stairs and two-floor sight validation before this later feature.
 - **Spatial relationship**: the aligned position, orientation and elevation
-  connecting grids in physical feet. Separate grids are not disconnected
+  connecting grids within one location in physical feet. These connected grids are not disconnected
   spaces: sight, attacks, flight and falling across openings are required from
   the outset. Walls, floors, ceilings and openings still determine obstruction,
   clearance and landing. Physical links are part of the foundation, not a
@@ -323,6 +420,12 @@ implementation chunks.
   on any map. A view follows its focused creature across transfers, but another
   character's transfer must not change it. Targeting a creature on another grid
   does not by itself change viewing focus.
+- **DM location browsing**: selecting or creating an independent location changes
+  no actor position, character resource or player viewpoint. Empty-location
+  creation is acknowledged on disk before updating the local world. Player views
+  follow their active assigned character's authoritative location/area changes.
+  Selected-character/party relocation commands and their active-combat policy
+  remain a separate milestone; ordinary physical transfers cannot cross locations.
 - **Map view change**: a local view transaction, not a creature transfer or turn
   transition. Browsing clears focus; explicit creature focus selects its actual
   map and centers its local position. The live Maps & focus controls preserve
@@ -469,11 +572,11 @@ implementation chunks.
   flushes must not indefinitely retry SceneNotReady while the view has paused the
   very frames needed to settle; expose the error and release view-busy state.
 
-New campaigns still start browser-local and single-board. Version-3 scene
+New campaigns still start single-board. Version-3 scene
 checkpoints store independent maps, one campaign-wide creature collection,
 shared combat state, a local default view and optional per-map camera histories;
 live capture/restore,
-IndexedDB saves and backups preserve inactive maps and their creature poses.
+host saves and backups preserve inactive maps and their creature poses.
 Versions 1 and 2 remain supported without automatic conversion. Explicit
 migration preserves physical distances and rescales existing spell-area/history
 coordinates exactly once. Participant-view objects keep focus and camera histories
@@ -490,7 +593,7 @@ physical floors, roofs or walls. Interior base floors are finite half-foot slabs
 not columns of earth extending through floors below.
 
 Connected-player ownership and synchronization still require explicit work;
-the development file server is not a multiplayer session server.
+the durable local host is not an authenticated multiplayer session server.
 Terrain ownership continues to follow
 [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md): each grid needs one
 authoritative terrain owner, not duplicate gameplay and renderer height stores.
@@ -538,3 +641,248 @@ The following terms describe that prototype, not the connected-grid plan.
 - **Grid-aware detail**: preserve five-foot-grid gameplay while allowing smooth
   curves, thinner walls and sub-grid construction dimensions. Shape detail does
   not silently change movement distances or rules.
+
+## Visual construction and biome structures (implemented)
+
+Clipped ellipsoids, rotated cylinders and convex prisms extend the terrain owner's ordered
+Add/Subtract volumes. Their faceted convex boundaries are shared by rendering,
+support/ceiling queries, body clearance and physical campaign sight/flight queries.
+They are not decorative meshes or staircase heightfield approximations. The
+primitive's center/radii remain independent of its clipping bounds so shrinking
+a board crops a shape rather than squashing it.
+
+Editable structure records and grouped volumes use geometry version 3. Curves
+without authoring records use version 2; legacy box-only version-1 geometry
+and the existing campaign-scene versions remain supported. Visibility is still
+presentation-only. Undo/Redo, save/reopen, stable surface IDs, physical feet,
+map rotation/scale and normal movement accounting are preserved.
+Gentle curved ground routes follow the physical support between grid centers.
+Fall landings retain their actual position rather than snapping to a different
+support height at the cell center. Walking/takeoff clearance accounts for the
+supporting slope without relaxing headroom, foreign-map obstruction or step limits.
+
+The illustrated Build palette places walls, turrets, domes, rectangular buildings,
+caves and tunnels. Plain walls and battlements share one arbitrary-angle drag
+workflow with ghost preview. Select / resize edits diameter, height and applicable
+length/width through direct side/corner/top handles as well as numeric fields.
+Handle release commits; numeric fields require Apply. Footprints snap to 5-foot
+sizes, or half-foot sizes with Shift, with the opposite edge anchored.
+Placement, resizing and removal are atomic
+Undo/Redo actions. Changing a structure cannot trap a creature, remove its support
+or grip, or break a manually linked opening. Angled wall climbing uses real
+horizontal unit normals and swept-body geometry, preserving movement accounting.
+General curved-wall wraparound and corner routing remain later work.
+
+New rectangular buildings/turrets have a versioned building definition. Default
+spacing is 10 feet; custom profiles support taller rooms. Roof rise is not another storey. A linked assembly
+owns one finite floor map per storey, stable managed door/window/stair connections,
+automatic editable windows, and manually wall-dragged balconies with deck, rails
+and doorway. Flat/gabled/hipped/conical/domed/open roofs use the same physical
+geometry as support, collision and sight. Convex polyhedra represent pitched roofs.
+Turret apertures use the four cardinal wall directions. Stair voids and landing
+clearance constrain automatic openings and balcony doors.
+Optional `building.windowLayout` version 1 records residential/civic/fortress
+spacing and allowed local wall sides. Version 2 adds a saved composition seed
+and deterministic dimensions, sill heights, staggered arrangements, blank rows
+and tall hall features. New construction/generation opts into version 2; old
+version-1 recipes and saved profiles without the field keep their previous grid.
+Sparse layouts cap automatic windows at two per facade/floor, and generated
+castle turret sides are chosen by their physical inward normals. Manual window
+definitions override the automatic pattern and remain editable on any wall.
+
+The exterior remains the shell owner; interior maps own their slabs and stairs,
+not duplicated upper floors in exterior geometry. Small interiors use the normal
+minimum tactical grid dimensions with unused margins physically carved away.
+Stretching preserves the interior grid lattice, manual content, physical actor
+positions and per-floor cameras. A synchronous prepared geometry participant
+coordinates topology with the terrain edit. Rejected edits leave both unchanged;
+Undo/Redo archives managed interior maps/cameras, never HP, resources or combat.
+Occupied removed floors and manual connections are protected. New assemblies
+cannot be nested inside owned interior floors. Serialize topology edits against
+pending scene writes so an old acknowledgement cannot replace newer floors.
+Legacy shells keep their old semantics until an explicit upgrade preview/Apply.
+
+Building profile version 3 stores stable level identifiers, explicit physical
+elevations and per-level rectangular openings. New ordinary buildings still start
+at 10-foot intervals. Room heights are editable in 5-foot steps with a 10-foot
+minimum; changing one shifts higher levels and the roof. Removing an upper slab
+preserves higher IDs/elevations. Adding a level never reuses a removed ID. The
+base/lowest floor stays, and custom windows/balconies anchored to a removed floor
+must be moved or removed first. Occupied moved/removed/cut floors are rejected
+atomically. Manual interior geometry moves vertically with its level, while
+footprint reframing retains the existing grid lattice.
+
+Stairs are real thin-tread switchbacks with 1.25-foot risers. Repeat alternating
+flights and supported intermediate landings for larger gaps; never stretch eight
+steps into unsafe jumps. A battlement roof adds stable deck ID 100 at shell height,
+with connected stairs and masonry parapets/merlons, not a decorative cone.
+The Turret card defaults to this castle crown; Building -> Round retains roofed
+round buildings. A separate Castle wall preset exposes battlements with optional
+parallel, flush side stairs. Their actual run constrains minimum wall length.
+
+Wall stairs have independent ascent direction, wall side and along-wall offset,
+not an implicit dependency on the wall's rotation. Normalization validates the
+full stair footprint. Automatic layouts use straight runs through 10 feet and
+55-foot-long switchbacks above 10 feet, with risers up to 1.25 feet and sufficient
+landing/body clearance. New stair recipe version 2 uses solid masonry flights
+stepping progressively wallward, with the highest flight adjacent to the wall.
+Each flight needs 7.5 feet outward; higher runs spread out rather than filling
+walking space under stacked flights. Saved earlier recipes remain loadable;
+explicit editing opts into version 2. Saved walls without layout metadata retain straight
+geometry until explicit editing. A position handle slides the stairs; field/button
+previews and release-only commits share existing guards, history and persistence.
+
+Grid centres alone are insufficient at stacked stair turns and arbitrary wall
+angles. Terrain geometry exposes bounded physical tread/landing anchor points
+only for authored wall stairs. Surface navigation joins nearby anchors with the
+same paid five-foot edges, step-height/body/occupancy checks and physical support.
+Exact swept-body hulls replace over-conservative diagonal AABBs where necessary;
+they never relax headroom or permit a free rise. Animation and saved placement
+use each approved physical waypoint rather than substituting its tile centre.
+
+Placed structures have centre move handles as well as resize handles. Whole-building
+translation moves its finite floor grids, lattice, furniture, manual terrain and
+saved local cameras together, including fine half-foot shifts. Footprint stretching
+remains a separate grid-reframing operation. Creatures never move with an authoring
+edit: editing an occupied structure is rejected until the creatures leave, whether
+they are assigned to a managed floor or physically occupy the exterior shell.
+Manual links must be unlinked before relocation; independently authored cellar
+connections must still fit their real access. Undo restores the prior complete
+assembly without reverting character resources or positions.
+
+Cellars are separate editable/excavated structure groups. They may extend beyond
+an overlying building, own finite negative-elevation floor maps and preserve the
+surface except for deliberate hatches/cuts. Access may be absent, stairs or a
+ladder, attached to the exterior or an explicitly chosen building ground floor.
+The access hole, landing and stair run must fit their maps and prevalidate body
+clearance. Ladder travel animates the real route with doubled vertical cost and
+the same canonical turn, identity and save transaction. Editing stays on the
+exterior; an Edit cellar selector makes buried groups selectable. Interior
+cutaways use the real level ceiling, including the natural ground cap over a cellar.
+Curved-mesh rendering preserves finite wall/cutaway bottoms all the way to the
+displayed cellar floor. An artificial render cap applies only to unbounded earth;
+its original bottom provenance survives convex clipping without entering saves.
+
+Show underground is a manual Terrain Mode toggle available before selection;
+choosing the Cellar tool also enables it. A render-only scene adapter reveals all
+cellar outlines and the selected level, with visible candidate previews and
+underground resize/move handles. It clones/restores exterior materials, caches
+outlines/active floor geometry, bounds large preview grids, and avoids authoritative
+world-CSG work on idle frames or pointer drags. Normal rendering returns on disable,
+deactivation, interior map changes and disposal. Reveal picking selects a buried
+floor without changing gameplay raycasts, support, physical sight or saved state.
+
+Structure display names are shared by map generation, editor menus and clickable
+on-map labels. Selected structures retain blue outlines; a cellar's chosen
+connection target has a separate gold outline/label without changing selection.
+Candidate targets must contain the actual access hatch and landing inside their
+inner footprint at the same elevation, rather than merely being on the same board.
+Round/rotated footprints are checked physically, and unavailable previous links
+remain explicit instead of silently defaulting to another building. Final topology
+edits still validate real connection support, obstacles and body clearance.
+
+Partial openings are 5-foot-snapped rectangles on a selected level plane, previewed
+without rebuilding world solids and committed on release. Filling, whole-floor
+removal, level heights and cellar access share compound history. Ground-floor
+cutouts remove the corresponding exterior cap as well as the finite slab.
+Falling through a hole transfers to the actual lower support, using the same
+landing-placement helper as flight. Do not capture a stable placement in the old
+map between finishing a fall route and atomically committing its new-map landing.
+Ordinary shallow crossings to foreign stairs/floors still require their explicit
+connection, rather than saving a pose on unsupported local terrain.
+
+Building profile version 2 matches rectangular conical/domed roofs to the whole
+footprint (pyramid or squared curved vault), while round turret bodies retain round
+caps. Rectangular hipped roofs have a real ridge. Version-1 profiles keep their
+stored silhouette until an explicit roof/base/feature edit opts into version 2.
+The base chooser changes the whole building between rectangular and round, reusing
+the existing building/turret recipes and stable structure/floor identities.
+Incompatible off-centre features on a round base are rejected, not silently moved.
+
+Selected windows and balconies have reusable edge/corner/centre gizmos. Selection
+does not mutate a definition or reset its dimensions. Pointer drags use relative
+plane deltas, preserve the opposite edge (or a round feature's centre), preview
+without querying whole-world boolean solids, and commit only on release. Size
+fields are a secondary precise control. Window dimensions can reach half a foot
+and extend across storeys; sill/roof/post constraints remain authoritative.
+Window dragging uses half-foot steps and Shift tenth-foot steps; balcony resizing
+uses five-foot steps and Shift half-foot steps. Cancellation restores the draft.
+
+Tall window definitions remain one authoring feature and one real facade cut.
+Managed connections clip their interaction bounds to each overlapping room,
+leaving all floor slabs intact. Narrow openings derive their normal from the
+defined wall, not the shortest bounding-box side. Insufficient body clearance
+produces an explicit denial. Wide rectangular apertures use the nearby clear
+lateral position for ground/flight entry. Slab-edge holds may reference an
+interior floor while the canonical actor remains outside; saved grip contacts
+must reframe with their actual owner, separately from the actor's current map.
+
+Crossings reuse physical entrance clicks and existing paid travel, climbing,
+flight and falling; no radial traversal commands. A window crossing costs 5 feet
+at its attachment, with actual approach/ascent charged separately. Window-drop
+damage uses the actual fall from the hanging pose to the first physical support,
+including balconies, rather than the height of the storey or exterior ground.
+Actor-only checkpoints retain cached local map geometry. Map revisions invalidate
+physical-floor/interior-wall meshes only when maps or the active terrain change;
+idle frames must not repeatedly deep-copy boards or rebuild their meshes.
+Point/swept clearance queries use a shared five-foot footprint broad phase for
+ordered local operations, final solid fragments and foreign campaign obstacles.
+Exact convex checks still decide collision; candidate indices invalidate with
+terrain/geometry changes. Range-local support memoization and early visited-state
+checks reduce repeated work without caching stale occupancy or turn allowances.
+
+Structure recipes are deterministic, renderer-independent volume data shared by
+manual authoring and seeded generation. Town, City and Castle/Fortress have
+separate ruined variants, including Ruined Town and Ruined Castle. Settlement
+ordinary foundations remain level. Towns use irregular green-side cottages, winding lanes,
+gardens and local landmarks; cities use dense trade districts, alleys, a civic
+hall and market. Grand castles layer a high keep, outer bastions, inner bailey
+towers and a raised gatehouse over a real arched entrance. Compact maps retain
+usable smaller fortifications. Ruin openings leave stair attachment points clear.
+Castle geometry now follows a separate deterministic architecture stream:
+citadel/bailey/palace compositions vary keep/wall dimensions and heights, flared
+side walls, towers, supporting buildings and gatehouse presence. Locked seeds
+repeat exactly; names/colours are not the only differences. Planner bounds include
+actual wall rotation and stair footprints so optional buildings do not occupy
+the stairs. Existing saved layouts only change on explicit generation/editing.
+Cliffside Castle and Mountain Fortress are explicit terrain-site biomes with
+60-square defaults and a 20-square minimum. Cliff architecture follows a narrow
+rock spur with negative ravines and an arched approach bridge. Mountain defenses
+climb 0/15/30/45-foot craggy terraces, with a summit keep and physically excavated
+lower halls/vaults. Terrain is shared convex geometry, not a backdrop. Retaining
+stairs use a terrace exit that opens the opposite parapet as well as the stair
+side, so the ascent actually joins its upper platform. Ordinary wall stairs keep
+their saved walkway exit. Revised site recipes use a distinct generated-ID
+namespace on regeneration; existing saved/manual structures are not remodeled.
+Per-structure appearance/names are saved; tint, material and generated-source
+metadata survive convex clipping. Original procedural materials share a shader,
+and façade details batch into a non-pickable, render-only mesh on terrain rebuild,
+never a second collision model or an idle-frame authoring pass.
+Linked floor slabs render in a merged batch, with the per-map source meshes kept
+as the picking authority. Visibility masks retain construction material attributes.
+Eligible natural terrain can contain connected cave/tunnel networks or sparse
+intact/broken building landmarks on dry, gentle sites without changing the biome.
+Joined caves share a floor and apply all room/bore cuts after their additive
+shells. Editing interleaved structure volumes preserves their CSG slots, so a
+chamber edit cannot silently seal its neighbours. Masonry, roofs and rock follow biome palettes.
+Generation runs only on explicit Generate, never on a palette change or load.
+The Generate control displays its pending/success/error status inline, including
+occupied-structure and unsupported-creature denials; it must not fail only in
+the console. Generation passes a new random seed transactionally, so failed
+attempts retain the prior seed and board. Only one selected biome is aria-pressed.
+It preserves manual structures/ground and adopts resized generated structures as
+manual. The Structures & landmarks option persists with the map. A generation
+pass uses biome budgets: natural 8/220, town 16/800, city 32/1200, castle 20/1100
+(structures/volumes), with finite floor-map budgets and the campaign map limit.
+Flora avoids structures and paved/site feature footprints.
+Generate may enlarge only a fresh empty default 25-square canvas, or an unedited
+canvas already automatically sized in this session: town35, city45, castle50,
+terrain castles60.
+Manual edits, custom dimensions or creatures prevent automatic resizing, and
+failed enlargement restores the previous scene. Existing saved maps do not adopt
+new layouts or appearances merely by loading.
+
+Previews tessellate only the small candidate shape, not the world's boolean
+geometry. Coalesce pointer updates to one render-frame preview; bake authoritative
+solids on commit. Preserve old low-level geometry as-is rather than attempting an
+ambiguous automatic conversion to editable records.

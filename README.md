@@ -11,14 +11,13 @@ Open this project directory in VS Code: the directory containing this file and
 
 Requirements:
 
-- Node.js with npm.
-- Python 3 available as `python`.
+- Node.js 24.4 or newer with npm (the local host uses built-in SQLite).
 - A modern browser with WebGL 2.
 - Internet access for the pinned Three.js modules and the large d20's cannon-es
   physics module loaded from jsDelivr.
 
-Verified development environment: Windows, Node.js 24.4.1, npm 11.4.2, and
-Python 3.13.14.
+Verified development environment: Windows, Node.js 24.4.1 and npm 11.4.2.
+Node 24.4 currently prints an experimental-feature notice for its SQLite module.
 
 Run these commands from the project directory:
 
@@ -31,9 +30,17 @@ Open <http://localhost:3000>. Stop the server with `Ctrl+C`.
 If port 3000 is occupied, use `npm run serve:alt1` and open
 <http://localhost:3001>.
 
-There is no application build step. Python serves the HTML, JavaScript, and
-assets; open the app through HTTP rather than opening the HTML file directly.
-The server is a development file server, not a multiplayer session server.
+Sign in as the DM with the private key in the host's `host-access-key` file.
+The terminal prints that file's location; on Windows the default is
+`%LOCALAPPDATA%\TavernTable\host-access-key`. Do not send this key to players.
+Players use their own invitation links instead.
+
+There is no application build step. The Node host serves the application and
+acknowledges campaign saves only after committing them to disk. Open the app
+through this host rather than a static file server or an HTML file directly.
+It binds to loopback only. Initial authenticated player sessions are available;
+the full authoritative movement/combat command stage is not yet implemented.
+No internet endpoint or firewall rule is created automatically.
 
 After changing code, hard-refresh the browser (`Ctrl+Shift+R`) and regenerate the
 map. There is no hot reload, and an open tab can retain old JavaScript modules
@@ -56,19 +63,246 @@ and cached models.
 - The creature palette includes Mannequin, Knight, Mutant, Female Archer,
   Armored Knight and Zombie, using one shared humanoid animation and movement pipeline.
   The picker grows with the roster; shorter windows use the sidebar scrollbar.
-- Creature right-click menus retain emotes, add eight visual-only **Actions**,
-  and open an in-app tabbed character sheet. Other planned commands share a
+- Click a creature to select it and open its radial menu; right-click also works.
+  Menus retain emotes, add eight visual-only **Actions**, and open an in-app
+  tabbed character sheet. Other planned commands share a
   disabled placeholder.
 - The single large d20 uses rigid-body physics and reads its actual resting face.
   Other dice types and multiple-die rolls retain their existing behavior.
+- **Roll Dice** and the right-side **Menu** each collapse with their header button.
+  Only small tabs remain; click them to reopen. Collapse both for a full-width map.
+  These choices are remembered in this browser, and opening a Compendium entry
+  automatically reopens the sidebar.
+- Campaign identity, save/retry status, **Campaigns**, **Players & sharing**,
+  **Sign out**, and **JSON backups** are under **Settings > Campaign & session**.
+  Only the DM's compact **Maps & focus** control remains over the map.
 - The terrain-engine migration is **partially implemented**.
   [TerrainEngine](./src/terrain/TerrainEngine.js) exists, but the live
   [TerrainCoordinator](./src/coordinators/TerrainCoordinator.js) still owns a
   separate height store. Do not treat the accepted
   [terrain design](./docs/adr/ADR-0001-terrain-engine-event-seam.md) as completed.
-- There is no complete scene save/load interface, shared-session multiplayer,
-  or packaged desktop release. The engine's terrain snapshot methods are not a
-  complete application persistence feature.
+- Campaign autosave restores the committed scene and characters from the local
+  host. Initial authenticated sessions share assigned character sheets and
+  published read-only player views; full player gameplay and desktop packaging
+  remain future work.
+
+## Durable campaign storage
+
+Normal startup requires the local host. The picker displays the actual data
+directory, and **Saved to host** means the server acknowledged a committed disk
+transaction, not a write to a temporary browser profile.
+
+- Windows default: `%LOCALAPPDATA%\TavernTable\campaigns.sqlite`.
+- Other systems: `$XDG_DATA_HOME/TavernTable/campaigns.sqlite`, or
+  `~/.local/share/TavernTable/campaigns.sqlite` when that variable is unset.
+- Override the directory with `TAVERNTABLE_DATA_DIR` or
+  `node tools/local-host.js --port 3000 --data-dir "C:\CampaignData"`.
+  Data must remain outside the served project directory.
+
+Chrome, Edge and VS Code use the same host campaigns even if their browser
+profiles or local ports differ, provided the host processes use the same data
+directory. Bundled catalog caches remain browser-local and can be reinstalled.
+Browser/editor restarts do not remove acknowledged host saves. A missing,
+unwritable or disconnected host reports an error instead of silently switching
+campaigns back to IndexedDB. After a host restart, reload the page to reconnect.
+
+Existing browser-only campaigns are not erased or automatically overwritten:
+the picker offers **Copy to host** for each one visible in that browser profile.
+This validates a complete backup and creates a separate host campaign. Campaign
+**Export** remains the portable, independent backup mechanism. Stop the host
+before copying its data directory for a consistent whole-database backup; retain
+the directory's SQLite companion files if they are present.
+
+The host uses the same edition/source validation, atomic character-and-scene
+transactions and stale-write checks as browser storage. Two tabs cannot silently
+overwrite newer campaign revisions; reopen a stale campaign before continuing.
+The host bounds each JSON request to 64 MiB in addition to the existing scene,
+character and backup limits; oversized requests fail explicitly.
+Authenticated sessions enforce DM/player access. The first player milestone is
+assigned-sheet editing and read-only published terrain/tactical-token views,
+not unrestricted world writes or a complete authoritative combat server.
+
+Application source under `src/` is explicitly ES modules so Node can reuse the
+browser's campaign validation. Existing tooling outside `src/` remains CommonJS.
+
+Assistant-created VS Code browser tabs can have in-memory agent storage even
+when the ordinary browser setting is persistent. Flushing IndexedDB does not
+make such a profile survive an editor restart. Browser-only mode is now an
+explicit programmatic test/migration option (`storage: 'browser'`), not normal
+startup's fallback. Previously lost in-memory campaigns cannot be reconstructed
+by switching storage modes.
+
+## Automatic JSON backups
+
+The host snapshots changed campaigns every **five minutes**, keeping the latest
+**20 snapshots per campaign** under `backups/<campaign-id>/` in its data directory.
+Only complete, committed campaign data is copied. Unchanged campaigns do not
+continually create duplicate scheduled snapshots.
+
+Use **JSON backups** in the campaign picker or above an open board to:
+
+- **Back up now**: flush the current campaign's acknowledged changes, then write
+  an independent JSON snapshot.
+- **Download JSON**: download a selected snapshot.
+- **Restore as copy**: validate and import a snapshot into a separate campaign.
+  The current campaign is never overwritten, and the restored copy starts
+  private with no invitations or published maps.
+
+Snapshots include saved characters, source pins, layouts, resources, terrain,
+creatures and committed combat/history. They do not include bundled catalogs,
+host credentials, player invitation secrets or access assignments. Those access
+records are durable separately in `access.sqlite`; the host key is a separate
+private file. Protect the entire host data directory when making a whole-host
+backup, and stop the host before copying its SQLite files.
+
+The primary SQLite save and a JSON snapshot are separate acknowledgments.
+**Saved to host** remains true for an acknowledged primary save if a later JSON
+backup fails. The board's JSON-backup indicator and backup dialog report that
+failure explicitly; they do not falsely roll back character costs or pretend a
+failed backup succeeded. A host shutdown attempts to flush pending snapshots,
+but an abrupt power/process loss can leave JSON history up to one interval old.
+
+## Initial local multiplayer sessions
+
+1. Sign in as the DM and open a campaign.
+2. Create or load saved characters normally; characters do not need to be
+   recreated when players reconnect.
+3. Open **Players & sharing** above the board. Create a private invitation for
+   each player and assign their existing saved characters.
+4. Place each assigned character in its location. Its connected rooms/floors
+   become accessible automatically; there is no separate per-area publication
+   step. Other independent locations and unassigned characters' private records
+   are not sent as part of that location view.
+5. Open each player's private link in another browser/profile or private window.
+   The same browser profile shares its sign-in across tabs, so use separate
+   profiles to test distinct people.
+
+Players can open and edit only assigned saved sheets, including manual stats,
+HP, notes and equipment. Reusable invitations reconnect to the same player and
+character IDs. Reissuing/revoking a link invalidates old links and sessions.
+Assignments, invitations and map publication survive host restarts; browser
+sign-ins are intentionally renewed after a restart. Sign out before deliberately
+switching identities in the same browser profile.
+
+The initial player page uses an independent GPU-preferred published-terrain
+viewer with tactical token markers. A player's camera/map selection is not a
+world write and does not move the DM or another player. Public presentation data
+contains rendered geometry rather than private building-authoring records.
+Terrain buffers are cached; routine character updates do not resend/rebuild
+unchanged terrain. Unpublishing a view or ending access removes its viewer and
+releases its renderer resources.
+
+Use **Character viewpoint > Active character** to choose one of the
+server-authorized, assigned creatures. This uses the actual
+creature token ID, not a temporary sheet token. Opening another saved sheet or
+browsing a different internal area does not change the active sight origin.
+Selecting an assigned character in another location switches to that location.
+Visibility is never combined across all assigned characters.
+
+The server returns the allowed viewpoints and selected observer with each
+update. Removing an assignment or publication refreshes those options; a
+forbidden area first requests the selected character's current location; a
+revoked character selection requests a new authorized default. With no placed,
+assigned observer, sheets remain editable but no location geometry or creature
+sightings are shown.
+Old markers are cleared while changing viewpoints, and outdated in-flight
+responses cannot restore them. Authorized tactical markers draw over visual
+roofs/floors so camera occlusion is not mistaken for character line of sight.
+
+This is a deliberately gated first slice:
+
+- Player movement, attacks, casting and combat turns remain disabled until
+  authoritative commands preserve ownership, ranges, cover, movement/action costs
+  and edition-specific rules. The player cannot submit arbitrary scene saves.
+- World conditions, flight protection and concentration still require DM
+  adjudication. Manual assigned-sheet editing is not a replacement for validated
+  gameplay commands.
+- Full models/animations, decorative placeables and spell visuals are not yet
+  player-view parity features. The DM retains the existing complete editor.
+- An accessible internal area shares its rendered terrain in full; this is not
+  fog-of-war or a promise to hide secret regions within that area. DM area gates
+  and interactive door/window locks remain planned work.
+- Live updates use authenticated same-origin event notifications and HTTP
+  commands in the existing Node host. This avoids introducing a second state
+  owner/framework during the first slice. Conflicting writes are rejected, not
+  silently merged; finish an in-progress action/save or reopen before retrying.
+
+### Independent locations and connected areas
+
+A **location** is a separate physical/rendered space, such as a village or a
+dungeon. Its aligned rooms, floors and cellars are **connected areas**, not
+independently published worlds. Different locations can reuse local coordinates
+without sharing sight, targeting, collision, support, flight or falling.
+
+In **Maps & focus**, use **Create empty location** to save a new independent
+location with an empty main area. **Location** selects the DM's browsing space;
+**Map** selects an area inside it. These controls do not move or recreate
+characters and do not move other viewers. The explicit selected-character/party
+transfer workflow remains the next stage, along with authorized player movement.
+
+The player's **Current location** and **Area** options derive from the active
+assigned creature. Internal areas need no additional publication checkbox.
+The view follows authoritative changes to that creature's map; switching the
+DM's own browsing location does not affect it.
+
+Existing single-board and connected-map saves load as one implicit location,
+without rewriting their physical coordinates. Explicit locations use an
+optional `locations` collection and per-map `locationId` in version-3 scenes;
+new generated floors inherit their exterior's location. Saves, JSON snapshots
+and imports preserve this grouping. Physical doorway/stair links cannot connect
+independent locations; cross-location movement needs an explicit DM relocation,
+not an enormous coordinate offset or an ordinary physical transfer.
+
+### Secure internet hosting setup
+
+Local testing does not publish the game to the internet. To prepare a trusted
+HTTPS tunnel/reverse proxy, configure its exact public origin:
+
+```powershell
+node tools/local-host.js --port 3000 --public-origin https://table.example.com
+```
+
+`TAVERNTABLE_PUBLIC_ORIGIN` provides the same setting. The proxy must preserve the
+public Host header and set `X-Forwarded-Proto: https`; proxy requests without the
+configured HTTPS origin are rejected. The actual Node listener stays bound to
+loopback. Player cookies are HttpOnly/SameSite and Secure for the public origin;
+host administration sign-in is allowed only directly on the host computer.
+Private invitation secrets use URL fragments and are removed from the address
+after joining, not sent as query strings in ordinary HTTP logs.
+
+Provisioning a domain, trusted tunnel/proxy and end-to-end remote validation is
+still a deployment task. Do not expose the raw HTTP listener by port forwarding
+or assume that setting the origin alone provisions TLS or creates a tunnel.
+
+## Graphics driver and fallback
+
+Rendering requests a high-performance WebGL 2 GPU context first, rejecting major
+performance caveats. If that request cannot be satisfied, the same input canvas
+tries a relaxed WebGL 2 context so software rendering can remain a fallback.
+Software fallback produces a visible warning rather than being reported as GPU
+rendering. If WebGL 2 is completely unavailable, the existing fallback input
+surface remains available.
+
+**Settings > Graphics driver** shows the active adapter and whether it is GPU,
+software fallback, or unverified because the browser hides adapter information.
+The debug frame overlay also reports the rendering mode. These are runtime
+diagnostics, not saved campaign settings. Context loss marks graphics unavailable
+while the browser attempts recovery; restoration rechecks the actual adapter.
+
+Enable graphics acceleration in Chrome and prefer the dedicated GPU in Windows
+Graphics settings when needed. The application's high-performance preference
+cannot override a browser or embedded host that forces software rendering.
+For VS Code on Windows, a changed per-application Graphics preference requires a
+full VS Code restart, not merely a page refresh. Verify **Graphics driver** after
+restarting rather than assuming that a high-performance setting guarantees GPU use.
+Microsoft Basic Render Driver, WARP, SwiftShader and llvmpipe indicate software,
+not the installed NVIDIA/AMD/Intel GPU. Hardware rendering does not move terrain
+editing, rules, animation control or persistence work off the CPU.
+
+Wait for campaign autosave to report **Saved** before restarting a browser or
+host. Host-backed campaigns are shared across browsers using the same host data
+directory. Legacy browser-only campaigns remain profile-specific until explicitly
+copied to host storage.
 
 ## Camera views
 
@@ -80,7 +314,11 @@ Hold the **right mouse button and drag** over the map to rotate and tilt it.
 Hold **Space + left mouse button and drag** to grab and pan the map in either
 view. The cursor changes to a hand; release Space or the mouse to stop. Panning
 does not move creatures, change their facing, or paint terrain. Space shortcuts
-are ignored while typing in sheet fields or using other keyboard controls.
+also work in **Terrain Mode**, including after using terrain/build controls.
+A canvas drag can claim an already-held Space key and returns keyboard focus to
+the map. Unfinished brush strokes and construction drags are canceled without
+changing the selected tool; releasing Space restores the editing cursor.
+Typing and normal control activation still work until you grab the map.
 Controls remain attached when the 3D renderer recovers from a fallback surface.
 
 Switching views preserves the current focus and zoom, and returning to 3D
@@ -94,6 +332,25 @@ overhead manually. Tokens show their name and, when supplied, their portrait.
 Tilting below **78 degrees** restores the original models; this small buffer
 prevents flickering near the switch point. Selection and hover highlight the
 token's rim. Movement, facing, character links and combat state are unchanged.
+
+On the DM's connected-map overview, tactical markers show creatures on the
+displayed map and directly above/below its physical footprint, including through
+roofs and floors. Interior views do not show unrelated structures elsewhere in
+the campaign. Name labels identify the owning structure and floor/level;
+overlapping markers are offset with leader lines to their true positions.
+Choose **Focus** beside a marker to open that creature's actual map and center
+the camera on it. This changes presentation only, not creature positions, map
+ownership or movement.
+
+The multiplayer publication API filters creature data using the **active assigned
+character's physical line of sight**, not the player's camera or combined party
+vision. Solid terrain, walls, floors and roofs block sight; physical openings can
+permit it. Captured opaque tree/rock bounds also block sight, but leaf canopies
+are not treated as solid boxes. For older maps with these assets, the DM must
+reopen and save each map to capture its sight blockers before publishing.
+This first pass does not add terrain fog of war, darkness, invisibility or
+special senses. The active-character selector is wired into the authenticated
+player viewer; extended vision and exploration effects remain in the backlog.
 
 ## Terrain editing and walls
 
@@ -119,25 +376,23 @@ Campaign autosave stores committed terrain, not previews or undo stacks.
 Existing version-1 campaign scenes and older unversioned terrain snapshots remain
 compatible. Terrain state, tool selection, biome metadata and height queries now
 share one owner, following [ADR-0001](./docs/adr/ADR-0001-terrain-engine-event-seam.md).
-That foundation remains in place. The layered construction proof below is
-retained but paused.
+That foundation also owns the visual structure builder below.
 
 ### Connected-map building
 
-**The simplified builder is not yet implemented.** The planned builder
-uses Build, a height choice and a closed straight-line outline, generating
-separate connected grids for interiors and floors every 10 feet. Doorways and
+The image-based **Build** palette places and edits physical structures on the
+current map. New rectangular buildings and turrets generate separate connected
+interior grids every 10 feet, with stairs, windows and a selectable roof. Doorways and
 stairs require Enter / Use stairs interactions. Each participant keeps their
 own character focus, map and camera; the DM can focus characters across maps.
-Cross-grid sight, attacks, flight and falling are required from the outset.
-Cut/carving is deferred. See [domain context](./CONTEXT.md) and
-[the revised backlog](./TODO.md) for the plan. The numeric construction proof
-described below is paused, not that future workflow.
+Cross-grid sight, attacks, flight and falling use their physical geometry.
+Free-form carving and the closed-outline footprint tool remain deferred. See
+[domain context](./CONTEXT.md) and [the backlog](./TODO.md).
 
 The first connected-map foundation is implemented behind the existing workflow:
 version-3 campaign checkpoints preserve independent map records and one creature
 collection, physical-coordinate transforms, inactive map poses and shared combat.
-Existing version-1/2 campaigns remain valid and are not automatically converted.
+Existing version-1/2 campaigns remain valid and are not automatically converted on load.
 Explicit migration also preserves existing spell-area sizes and positions.
 Cross-grid targeting accounts for finite floors, walls, openings and saved
 structure cover without loading another map's character sprites; spell previews
@@ -282,7 +537,7 @@ were added to the radial menu, and magical portals remain separate later work.
 
 #### Maps & focus
 
-Connected-map campaigns now show **Maps & focus** in the campaign bar:
+Connected-map campaigns show a compact **Maps & focus** tab for the DM only:
 
 - **Map** browses a different grid without moving any creatures and clears
   viewing focus.
@@ -311,61 +566,289 @@ indefinitely with a paused scene.
 The outline builder, magical portals and authenticated networked participants
 remain subsequent chunks. Changing the viewed map is not a creature transfer.
 
-#### Paused layered construction prototype
+#### Visual structure builder
 
-The first shared-world prototype adds **solid boxes**, **hollow box cuts**, and
-multiple support floors at the same horizontal position. Open Terrain Mode and
-scroll to **Construction prototype**. Enter east/south position, bottom elevation,
-width, depth and height in feet, choose Add or Carve, and apply the volume.
-Geometry edits share the session's Undo/Redo history.
+Open **Terrain Mode → Build**. Illustrated cards select **Wall**, **Turret**,
+**Dome**, **Building**, **Cave**, **Tunnel**, **Castle wall** or **Cellar**. This replaces the numeric
+Add/Carve/proof panel and consolidates the old Wall button into the same workflow;
+Raise/Lower sculpting and flora controls remain.
 
-For a new blank **25 by 25** map, **Add proof structures** creates:
+- Drag a wall or tunnel to choose its length and direction, including diagonals.
+  A translucent ghost and a length readout preview the placement; release commits.
+  **Escape** cancels without changing physical geometry.
+- Walls offer **Plain wall** or **Battlements**, plus an optional door opening.
+- **Castle wall** is the direct battlement preset, including optional **Parallel
+  wall stairs** sitting flush along one side. Drag its length normally. Stairs
+  need enough wall length for their actual run; disabling the stairs permits
+  shorter walls.
+- Select a wall to **Flip ascent direction**, **Swap wall side**, or edit
+  **Stair position along wall** without rotating the wall itself. The blue stair
+  handle also slides the stairs along the wall. Button/field changes preview
+  until **Apply size**; handle drags commit on release. Stair movement uses
+  5-foot steps, or half-foot steps with **Shift**, and stays within the wall.
+- **Automatic** stair layout uses straight stairs up to 10 feet and compact
+  switchbacks above that. Solid masonry flights ascend progressively toward the
+  wall, with the highest flight nearest it—not floating treads above a lower run.
+  Switchbacks need 55 feet along the wall and 7.5 feet outward per flight
+  (15 feet outward for a 20-foot wall, 45 feet for a 60-foot wall), with risers up
+  to 1.25 feet and wide turn landings.
+  **Straight** remains available explicitly. Existing saved straight stairs keep
+  their geometry until edited; choose **Automatic → Apply size** to update one.
+- **Turret** places a castle-style crenellated tower, with a walkable battlement
+  deck and stairs to it. For a roofed round building, use **Building → Round** and
+  select its roof. Existing conical turrets keep their saved roof; select
+  **Battlements → Apply size** to change one.
+- **Ruined** gives built shapes broken crowns and breaches, including manually
+  placed forest/desert ruins.
+- Click to place round structures or buildings. **Rotate 90°** changes entrance
+  direction before placement.
+- **Building base** offers **Square / rectangular** and **Round** footprints.
+  Round uses the turret body and diameter controls. Existing buildings can preview
+  a base change and commit it with **Apply size**; occupied or incompatible edits
+  are rejected without relocating creatures or discarding interior work.
+- Choose **Select / resize**, then click a built structure. Domes and turrets have
+  diameter handles; rectangular structures have side/corner handles. Drag to
+  stretch with the opposite edge anchored. Footprints snap in 5-foot increments;
+  hold **Shift** for half-foot sizing. Drag the top handle for height.
+  New buildings start with 10-foot storeys; custom room heights are supported below.
+  Handle drags commit on release,
+  not during the preview. Numeric fields remain available with **Apply size** /
+  **Cancel**; canceled gestures never become later edits.
+- The **centre handle moves a placed building or structure**. It uses 5-foot
+  movement, or half-foot movement with **Shift**, and commits on release.
+  Building floors, stairs, interior terrain/furniture and saved room views move
+  with it; independent cellars stay where they were authored. Existing connections
+  must still physically fit, or be unlinked before moving.
+- Each new building/turret storey owns a finite, separately editable floor grid.
+  A 30-foot building has floors at 0, 10 and 20 feet; roof rise is separate.
+  Automatic switchback stairs link successive floors. Use **Maps & focus** to
+  inspect a floor without moving a creature, or click the actual entrance/stairs
+  to travel normally.
+- **Floors and room height** edits individual levels. Choose a **Level**, enter
+  its height in 5-foot steps (minimum 10 feet), then **Preview height → Apply size**.
+  Higher levels and the roof move together. Interior terrain/objects move with
+  their floor; occupied levels must be vacated before raising or lowering them.
+- **Remove whole floor → Apply size** removes an upper slab without lowering the
+  floors above it, creating a taller open room. The base floor remains. Move or
+  remove custom windows/balconies anchored to that floor first.
+- **Draw floor opening** highlights the selected floor plane. Click-drag one or
+  more 5-foot-snapped rectangles; release commits the cut, and **Escape** cancels.
+  **Fill selected opening** closes a cut again. Openings are physical: walking or
+  falling through one lands on the actual support below, with normal fall rules.
+  An opening in the ground floor can open the surface cap into a cellar below.
+- **Add level** previews another upper floor, or a deeper cellar floor. Use
+  **Apply size** to commit. Height/removal/cut edits share compound Undo/Redo.
+- Choose an illustrated **Flat**, **Gabled**, **Hipped**, **Conical**, **Domed** or
+  **Open / none** roof, or a **Battlements** deck. Roofs are physical geometry, not decoration; movement
+  follows the existing slope, step and clearance rules. New rectangular conical
+  roofs use a pyramidal profile and rectangular domes use a squared curved vault,
+  covering the footprint corners. Round bases retain true round cones/domes.
+- Windows are automatic and editable. Select the building, choose **Window** and
+  a feature floor, then click a wall to add one or an existing window to select it.
+  Blue edge/corner handles change width and height; the centre handle moves it
+  along the wall or adjusts its sill. Window sizing snaps to half a foot, or a
+  tenth of a foot with **Shift**. Precise width/height/sill fields are also
+  available with **Apply feature size**. Merely selecting a feature changes nothing.
+- Windows can be small openings or span several storeys. Existing floor slabs
+  remain intact. Each reached storey has its own correctly clipped interaction;
+  upper exits can grip the real floor edge. Wide rectangular windows can be
+  crossed at the nearby clear portion rather than forcing a return to the centre.
+  Small openings retain real sight/collision geometry, but cannot be traversed
+  when the creature lacks clearance. **Remove feature** deletes the selected
+  window; the floor selector and **Apply size** can move it to another floor.
+- Balconies are manual: choose **Balcony**, select an upper floor, click its wall
+  and drag sideways/outwards for width/depth. Release adds a real deck, railing
+  and connected doorway. Click an existing deck, railing or doorway to select it;
+  blue deck handles resize width/depth after placement. The centre moves it along
+  its wall. Balcony sizing uses 5-foot steps, or half-foot steps with **Shift**,
+  with numeric fields for precise changes. They use the existing walking, flight
+  and falling rules.
+- Placement, resizing and removal each share the normal one-edit Undo/Redo history.
+  Building edits include their floor maps/connections in that transaction.
+  Existing interior edits survive stretching. Creatures always keep their world
+  positions: an occupied structure cannot be moved or otherwise edited until its
+  creatures leave.
+  Undo restores removed interior data without restoring old HP or turn resources.
+  Edits that trap creatures, remove occupied floors/support/grips, or break manual
+  connections are rejected. Edit an assembly from its exterior map.
+- **Show interiors (hide roofs)** changes presentation only. Hidden roofs still
+  block sight, flight and falling. New hollow structures include real floors.
 
-- A bridge deck and stair approach, with a separate ground path underneath.
-- A hollow cave chamber and entrance beneath a solid roof.
-- A two-storey building with stairs, balcony doors and an open shaft.
+The same faceted geometry drives rendering, support, ceilings, body clearance and
+sight. Angled wall grips retain their real horizontal unit normal and use paid
+up/down and same-face sideways climbing. Curved ground movement follows its real
+support, including off-center landings. General wraparound/corner climbing,
+freehand curved walls and creature-size-specific collision remain later work.
 
-**View layers** isolates a named layer; **Cutaway: hide roof layer** exposes the
-interiors while retaining the other floors. Hidden geometry remains physical:
-it still supports creatures, blocks flight and determines landing surfaces.
-Select a creature and click a floor top to move to that specific support,
-including upper floors reached through stairs. Walking spends the existing
-five-foot grid costs; prone movement remains doubled. Flight and ledge falls use
-the next support below rather than the earth beneath all levels.
+Geometry version 3 saves editable structure records and their grouped volumes.
+Earlier box/curved geometry and campaign scenes remain supported; old low-level
+proof geometry is retained, not silently rebuilt into new editable shapes.
+Older editable building shells offer **Preview upgrade to storeys**. Review and
+**Apply size** to add floors, windows and stairs; opening an old campaign does not
+silently convert its structures.
+Version-1 building profiles also retain their saved roof silhouette. Reapply a
+roof or base choice and **Apply size** to update a round-on-rectangular roof;
+explicit feature edits use the newer profile as well. If the browser still shows
+the old controls, wait for **Saved** and hard-refresh with **Ctrl+Shift+R**.
+Existing earlier switchbacks retain their saved recipe until an explicit edit;
+**Automatic → Apply size** updates them to the solid wallward layout.
 
-Version-2 campaign scenes save the constructed volumes and stable floor IDs.
-Version-1 heightfield scenes remain supported. Reopening restores the complete
-view; layer isolation and Undo/Redo stay session-local.
+#### Cellars and underground levels
 
-This is a **prototype, not the complete builder suite**. It currently uses box
-volumes and grid-center navigation with five-foot body clearance. Existing
-heightfield-only maps retain their original climbing/vaulting pipeline; constructed
-maps currently use stairs, supported walking, flight and falling. Smooth curves,
-domes, arches, drag gizmos, object resizing, climbable constructed walls, and
-size-specific full creature collision are later work.
+**Build → Cellar** places a separate, resizable underground footprint. It can be
+larger than the building above or placed independently, with real excavation and
+finite floor grids at negative elevations. Depth, room heights, added levels and
+partial floor openings use the same level controls. The surface stays intact
+except for deliberately authored access/openings.
 
-To build a wall:
+**Access** can be **Unlinked**, **Stairs**, or **Ladder**. Choose **Exterior surface**
+or a building in **Connect to**. Access coordinates are relative to the cellar
+centre; after placement, **Place access on map** positions the hatch on the
+ground-floor plane. The landing/hatch and stair run must fit their connected maps
+and have real body clearance. A failed edit leaves the previous geometry intact.
+Ladders use the climbing animations and normal doubled vertical movement cost;
+long routes may need more movement or Dash.
 
-1. Select **Wall**.
-2. Choose **Top level** under **Wall Settings** (-10 to 10, in whole terrain levels).
-   This is the target elevation, not an amount added on each pass.
-3. Choose **Box style**: **Filled** changes the whole rectangle; **Outline**
-   changes only its one-cell-wide perimeter and leaves the inside unchanged.
-4. Drag from one corner to the opposite corner in either direction. A single-row
-   or single-column drag still makes a line, and a click edits one cell.
-5. Release on the board to apply the complete preview.
+**Show underground** is available at the top of Build before selecting anything.
+It reveals the saved cellar outlines and changes the exterior to a faint wireframe
+while Terrain Mode is active. Click a revealed cellar to select it; **Level**
+chooses the underground floor shown with a grid and handles. The centre handle
+moves the cellar; side/corner handles resize it. Choosing **Cellar** also enables
+the view, and placement ghosts remain visible through the surface.
+Turning the view off, leaving Terrain Mode, or browsing an interior restores the
+normal materials. This is an editor-only view: it does not remove ground, change
+collision/sight, move creatures, or save wireframe settings. Passive outlines and
+selected-floor meshes are cached rather than rebuilding world geometry per frame.
 
-Every selected cell is set to the exact chosen level: lower terrain is
-raised and higher terrain is cut down, including cuts below zero for negative
-levels. Repeating a wall at the same level does not stack height. Escape, losing
-focus, leaving the canvas, switching tools, or turning Terrain Mode off cancels an unfinished
-wall without editing heights. Raise/Lower retain their existing brush sizing;
-wall rectangles use the dragged corners instead. Walls and trenches are terrain, so the existing
-climbing and vaulting rules apply without a separate wall-object system.
+Buildings and turrets have clickable on-map identifiers in Terrain Mode, matching
+the **Building 1 / Turret 2** names in menus. The selected cellar's connection target
+is outlined and labelled **gold**. **Connect to** lists only nearby structures whose
+actual inner footprint contains the current hatch and landing, including rotated
+and round targets. Move the cellar preview near the desired building first, then
+choose it, or position the access after placement. A previous target that no longer
+fits stays visibly unavailable rather than silently switching; Apply still checks
+the real route and body clearance.
+
+Use **Edit cellar** to select a buried structure from the exterior as an alternative, and
+**Maps & focus** to inspect its underground rooms. Character travel still uses
+the actual stairs/ladder and confirmation popup, never a radial command.
+Room data, access, cutouts, movement and the canonical actor survive save/reopen.
+
+#### Biome structures and landmarks
+
+The **Biomes** tab includes **Village / Town**, **City**, **Castle / Fortress**,
+**Cliffside Castle**, **Mountain Fortress**,
+**Ruined Village / Town**, **Ruined City** and **Ruined Castle / Fortress**.
+**Structures & landmarks** controls inclusion when **Generate** is
+explicitly used; opening a map or changing its palette never inserts buildings.
+Seed lock reproduces the same layout without accumulating duplicate structures.
+
+Settlement profiles have different architectural compositions, not a shared row
+of identical buildings:
+
+- **Village / Town**: irregular cottages around a green and fountain, winding
+  lanes, an inn, forge, bellhouse and gated garden plots. Warm plaster,
+  half-timbering, signs and varied clay, wood and slate roofs give houses their
+  own identities.
+- **City**: denser two- and three-storey trade districts, alleys and avenues,
+  a mercantile hall, bell tower and six-stall market square. Brick, stone and
+  painted plaster are coordinated by district rather than applying one colour
+  to every building.
+- **Castle / Fortress**: seeded citadel, bailey and palace compositions with
+  different keep footprints/heights, rectangular or flared curtain walls, tower
+  counts/heights, gatehouses and supporting buildings such as guardhouses,
+  barracks, chapels and great halls. Solid wall stairs and the arched main gate
+  remain playable. Large castles keep their architectural hierarchy rather than
+  scattering random parts; small maps receive compact fortifications. Unlock the
+  seed before **Generate** to vary the actual structure, not only its colours.
+- **Cliffside Castle**: a narrow rock-spur citadel, close-fitting cliff curtains,
+  rising crown keep and arched approach viaduct. The surrounding ravine extends
+  below zero; it is real falling space, not a decorative moat around a lawn.
+- **Mountain Fortress**: lower and upper baileys climb craggy terraces at 0, 15,
+  30 and 45 feet on the full-sized site. Retaining-wall stairs reach the summit
+  keep, architecture meets the ridge, and excavated halls/vaults have real rock
+  ceilings and connected interior maps. An arched bridge crosses the negative
+  valley to the lower gate. Smaller custom maps use compact site variants.
+- **Ruins**: the same seeded town/city footprints with varied roof loss,
+  breaches, rubble and collapsed upper-floor sections. Floor openings keep stair
+  attachment points intact; destruction is real geometry, not just darker tint.
+
+Fresh empty default canvases grow to **35 x 35** for villages, **45 x 45** for
+cities, **50 x 50** for ordinary castles and **60 x 60** for the cliff/mountain
+sites. Terrain castles require at least **20 x 20** squares. An automatically sized, unedited settlement
+can grow for the next selected biome during the same session, but never shrinks
+automatically. Populated maps, custom sizes and manually edited terrain/structures
+keep their dimensions. Palette selection alone never resizes a map.
+
+Building appearance is saved with its authoring definition. Original procedural
+plaster, masonry, timber, slate and paving patterns share vertex-coloured
+materials. Façade frames, beams, cornices and banners are batched render-only
+details; they do not change aperture clearance or add traversal shortcuts.
+Exterior views batch the linked floor slabs into one draw while retaining the
+original per-map meshes for accurate picking; growing the castle does not require
+one render submission per storey.
+
+New buildings use restrained automatic windows: residential, civic and fortress
+layouts have different spacing and at most two automatic windows per wall per
+floor. New seeded recipes also vary width, height, sill and position, with
+deliberate blank wall sections and occasional tall hall windows rather than one
+identical column on every floor. Tall openings do not remove floor slabs.
+New standalone turrets place automatic windows on their entrance side;
+generated castle towers restrict them to courtyard-facing walls. Ordinary
+traversable openings retain their existing clearance rules; arrow slits are not
+silently substituted. You can still add, move, resize or remove manual windows
+on any wall.
+
+The optional versioned window-layout recipe is saved with the building.
+Version 2 saves its composition seed; version-1 spacing recipes and existing
+saved buildings without a recipe keep their old automatic windows, including
+on resize; loading never removes manual features or silently changes a facade.
+New construction or explicit regeneration uses the new recipes.
+Generated variable windows use the normal feature controls: resize one to save a
+manual override, or remove it without respawning its automatic counterpart.
+
+Suitable hills, mountains and underground biomes can contain three joined
+chambers, connecting passages and a surface entrance. The chambers share one
+floor, and their rooms and tunnel bores are carved after the joined rock shells
+so intersections stay open. Editing one chamber preserves that carving order.
+Eligible natural landscapes, including forests, deserts and grassland, can
+occasionally contain intact homes, broken buildings or castle remnants on dry,
+gentle sites without changing the underlying biome. Oasis and coastal sites also
+leave the shoreline vegetation band clear. Masonry, roofs and rock use
+biome-aware palettes, including weathered forest stone and desert sandstone.
+Generated flora avoids structures, streets, plazas, stalls and garden fences.
+
+Regeneration preserves manually authored structures and the ground beneath them.
+Resizing a generated structure adopts it as manual work. Natural landmarks retain
+the eight-structure / 220-volume budget. Settlement budgets allow meaningful
+density while remaining bounded: **16 / 800** for towns, **32 / 1200** for cities
+and **20 / 1100** for castles (structures / generated volumes). Linked floor-map
+budgets are also bounded. Unsuitable or protected sites are skipped.
+New layouts and appearances apply on **Generate**, not when reopening an existing
+saved map. Lightweight drag ghosts do not rebuild the world's collision solids.
+Palette selection alone changes colours; it does not replace the existing castle
+or other generated structures. Generation progress, success and the actual failure
+reason appear directly beside **Generate**. Occupied structures cannot be replaced:
+move the creature off the structure, or remove test creatures before regenerating
+the whole board. Generation also refuses changes that would remove a creature's
+support or put it inside solid geometry. Rejected geometry changes retain the previous
+terrain, creature positions and seed.
+Full geometry is rebuilt on commit, not on every pointer event.
+Idle floor rendering reuses its meshes and map geometry; actor-only checkpoints
+do not invalidate that geometry cache. This does not guarantee a particular frame
+rate on software rendering.
+Movement queries use five-foot footprint buckets to find candidate volumes and
+solid fragments before running the same exact geometry checks. Each range search
+reuses support results and skips already-approved states before clearance work;
+this avoids main-thread input stalls on larger settlements without changing
+movement costs, animation speeds, collision or cross-map falling.
+Stair anchors outside the reachable movement horizon are skipped, and cross-map
+support searches run only when nearby foreign geometry can supersede local
+support. More complex castle variants retain the same navigation safety rules.
 
 ## Creature menus and character sheets
 
-Right-click a creature and choose **Character Sheet** to open its sheet
+Left- or right-click a creature and choose **Character Sheet** to open its sheet
 inside the app. Use **Pop out** in the sheet title bar to move the sheets to a
 separate browser window, which you can drag to another monitor. **Emotes** retain their existing
 animations. **Actions** offers Wave, Sit, Take Cover, Jump, Punch, Hit Reaction,
@@ -480,6 +963,16 @@ separate resource databases, not a filter over a mixed catalog.
   placed flora, creatures and character links, names, facing, movement settings,
   selection and camera. **Saving... / Saved** above the board reports acknowledged
   local storage; errors remain visible with a retry control.
+  Routine saves follow actual saved-state changes, not unrelated clicks or
+  typing. Edits are grouped after **2 seconds of quiet**, with a **10-second
+  maximum wait** during continuous activity. Short moves save after completion;
+  longer moves also save their last safe position and matching movement costs
+  at that deadline, rather than writing at every waypoint. Safe checkpoints
+  remain in memory for interruption and recovery. The status shows
+  **Waiting for the current action to finish...** while the latest action is not
+  yet saved. Explicit campaign changes wait for completion too. Character
+  resources, fall damage and their scene/turn state still commit atomically; those
+  transactions are not postponed or split apart.
 - Creature and saved-character names are shared. Click the standalone name above
   the sheet to edit it directly, without a visible text box. **Enter** or leaving
   the title saves; **Escape** cancels. The title and tabs are the only name
@@ -499,8 +992,12 @@ separate resource databases, not a filter over a mixed catalog.
 - **Initiative** is a smaller roll card beside the character information, separate
   from the grouped AC, proficiency and passive-perception cards. On narrow sheets
   it moves below the information card. Its modifier and roll behavior are unchanged.
-- Reopening restores the last completed safe movement checkpoint, including stable
-  wall climbs and ledge hangs, rather than replaying an interrupted animation.
+- Reopening restores the last acknowledged safe checkpoint, including a stable
+  wall climb or ledge hang, rather than replaying an interrupted animation.
+  While the tab is running and storage is healthy, routine changes reach a
+  checkpoint within 10 seconds, including during long moves. Force-closing can
+  still lose changes that have not yet been acknowledged; storage failures remain
+  visible rather than reporting a successful save.
   Active combat resumes its turn, remaining movement/actions/attacks and completed
   sheet/shared roll history. Unfinished dice requests are not replayed or charged.
   Undo receipts, open sheet tabs, window positions and transient visual animations
@@ -513,8 +1010,9 @@ separate resource databases, not a filter over a mixed catalog.
   bundled catalogs. Version-2 backups include the scene; older version-1 campaign
   backups remain importable without a board. Import creates a separate campaign
   and validates its edition, resource versions, characters and scene references.
-- Data is browser-local IndexedDB. No account, local backend, multiplayer or online
-  database is introduced. Clearing site data removes local campaigns; keep backups.
+- Campaign data is stored by the local host in SQLite. Clearing browser data
+  removes catalog caches and any unmigrated browser-only campaigns, not host saves.
+  No online account or multiplayer synchronization is introduced.
 
 ### Character data and compendium
 
@@ -705,22 +1203,46 @@ larger; their edition-specific contest/save and outcomes remain manual.
   Use **Take flight** on the recipient's radial menu to begin flying.
 - **Preview an area:** move the pointer over the board and left-click to lock it.
   Caster-origin cones/lines begin along the creature's actual facing. Point-origin
-  cones, lines and cubes use two clicks: origin, then direction. The panel shows
+  cones, lines, cubes and straight walls use two clicks: origin, then direction. The panel shows
   affected creatures and supports chosen exclusions where the spell allows them.
   Point origins can be elevated above terrain. Empty areas are valid casts.
+  **Template** buttons choose supported wall/ring/sphere/dome alternatives before
+  confirmation. Mass Cure Wounds and Slow require excluding creatures until their
+  recipient limit is satisfied. Location/object spells preview a small point marker;
+  that marker is not a creature, terrain object or spell damage radius.
 - **Confirm / Cancel:** confirmation rechecks current positions, range, cover,
   target counts and resources before committing. Cancel or Escape spends nothing.
   Canceling a later projectile retains every already-completed roll, but does not
   spend the spell slot or action. Right-button camera gestures remain available.
 - **Lingering visuals:** Grease, Entangle, Fog Cloud, Darkness and Spirit Guardians
-  leave an area until its configured duration expires. Only the corresponding
+  are joined by Moonbeam, Web, Black Tentacles, Sleet Storm, magical walls and other
+  reviewed areas. Only the corresponding
   caster's later turns count, not other creatures' turns or repeated UI refreshes.
   Ice Storm's residual terrain lasts through the end of the next caster turn.
   Following areas move with their caster; fixed areas stay placed. Concentration
-  replacement/ending removes the appropriate visuals. **End area** removes one
-  manually without refunding the cast or ending concentration/conditions; those
-  mechanical changes use the sheet's separate controls. Undo removes the new visual and restores
+  replacement/ending removes the appropriate visuals. Duration expiry also ends
+  matching concentration. **End spell** ends concentration and removes its visuals;
+  **End area** removes only a visual without refunding the cast or ending concentration.
+  Conditions and other mechanical changes remain separate manual controls. Undo removes the new visual and restores
   a concentration area that the undone cast replaced.
+- **Move an existing spell:** use **Move** in Active spell effects or its available
+  spell-action card. Moonbeam moves up to **60 feet from its previous origin** on
+  later turns, costing an Action in 2014 or a Magic action in 2024. This is not a
+  new casting: it spends no slot, does not reset duration and respects 2024 Action
+  Surge's Magic-action restriction. Flaming Sphere moves up to 30 feet for a Bonus
+  action. Arcane Eye, Mage Hand, Unseen Servant and image markers have reviewed
+  movement controls with their applicable destination limits. Paths, obstruction
+  interactions, conditional endings and triggered attacks/saves/damage remain manual.
+  Cancel and failed/stale saves spend nothing; Undo restores the previous position
+  and cost. A moved effect cannot be undone after it has ended or otherwise changed.
+- **Recipient and location reminders:** Haste, Mage Armor, Bless and similar spells
+  track declared token targets without applying statistics or conditions. Purple
+  rings follow recipients; point markers track stationary chosen locations.
+  **Remove target** corrects reminders after manual saves or early endings, without
+  spending another use; removing the last target also ends matching concentration.
+  Until-dispelled and special durations remain explicitly manual-ended. Higher-slot
+  durations that need individual adjudication are labeled rather than given a
+  guessed timer. Outside manually advanced caster turns, no wall-clock timer runs.
 - **Fly lifetime:** the active-effects panel lists recipients and the remaining
   **100 caster turns (10 minutes)**. Its cyan rings follow recipients along the ground
   beneath them, aligned with the yellow selection ring instead of rising during flight.
@@ -734,15 +1256,29 @@ larger; their edition-specific contest/save and outcomes remain manual.
   campaign checkpoints and campaign backups. A fixed area may survive caster-token
   removal; use End area when its caster no longer has a token to take turns.
 
-The first reviewed set contains **27 profiles per edition**: Acid Splash, Bane,
-Bless, Burning Hands, Cone of Cold, Cure Wounds, Darkness, Eldritch Blast, Entangle,
-Fire Bolt, Fireball, Flame Strike, Fly, Fog Cloud, Grease, Healing Word, Hold Person,
-Ice Storm, Lightning Bolt, Magic Missile, Ray of Frost, Scorching Ray, Shatter,
-Shield, Sleep, Spirit Guardians and Thunderwave. Upcasting and cantrip beam counts
-come from the chosen cast level/character level. Edition differences include
+Every bundled **core SRD spell** has an explicit initial-casting profile or a specific
+manual explanation. This pass does not expand optional third-party spell packs.
+
+| Core coverage at base spell level | 2014 | 2024 |
+| --------------------------------- | ---: | ---: |
+| Catalog spells                    |  319 |  339 |
+| Structured initial targeting      |  297 |  313 |
+| Explicit complex/manual cases     |   22 |   26 |
+
+Manual cases include chained targets (Chain Lightning, conditional Chromatic Orb),
+multiple independent origins (Meteor Swarm, Dancing Lights), connected cube layouts
+(Fire Storm), combined movable construct attacks (Spiritual Weapon, Arcane Hand/Sword),
+mixed transformation modes, remote destinations and bespoke Wish effects. Their
+popup explains the missing control instead of presenting a misleading single
+template. Major Image's permanent/no-concentration upcasts and Bestow Curse's
+level-5+ concentration exceptions also stay explicitly manual.
+
+Supported upcasting and cantrip counts come from the chosen cast level/character level.
+Edition differences include
 2014 Acid Splash's paired targets versus the 2024 sphere, revised Sleep's smaller
-area and concentration, Hold Person's removed upcast spread restriction, and the
-2024 Spirit Guardians emanation profile. Classic lances retain their close-range
+area and concentration, Hold Person's removed upcast spread restriction, Sleet Storm's
+changed radius/height, Chill Touch's ranged-to-melee change, revised Holy Aura and
+the 2024 conjuration emanations. Classic lances retain their close-range
 penalty; Heavy weapons use creature size in 2014 and Strength/Dexterity in 2024.
 Magical +1/+2/+3 weapon variants retain their base reach/thrown targeting.
 
@@ -752,7 +1288,7 @@ counts, sight, shape/dimensions, origin, exclusions and duration/expiry. Weapon
 mode edits retain other modes; feature overrides can ignore close-quarters or
 long-range disadvantage. Reset returns to the campaign's reviewed rules. Static
 overrides do not infer future upcasting or subclass/feat mechanics.
-An unreviewed spell has a small targeting **gear** on its play card; ordinary
+Manual/complex spell profiles have a small targeting **gear** on their play cards; ordinary
 weapon and reviewed-spell cards do not carry large configuration buttons.
 
 This is targeting assistance, not complete automatic adjudication. Range uses
@@ -763,7 +1299,12 @@ other creatures as cover. Confirm boundary cases and large-creature emanation
 coverage manually. 2014 Fireball/Fog Cloud corner-spreading coverage is explicitly
 flagged for manual confirmation, not simulated propagation. Lingering areas are
 **visual only**: they do not automatically obscure vision, alter movement, deal
-damage, make saves or apply/end conditions. Sleep and other creature-held effects
+damage, make saves or apply/end conditions. Spell-wall templates do not create
+terrain, collision, physical cover or openings. Summoning markers do not instantiate
+creature stat blocks or automate commands; multiple creature positions and counts
+remain manual. Later Sunbeam/Call Lightning attacks, automatic cloud drift and
+other spell-specific repeated actions remain manual unless a control is shown.
+Sleep and other creature-held effects
 do not leave a persistent area merely because their conditions have a duration.
 Concentration areas follow the owned spell's concentration flag, disappear when
 another concentration spell replaces it or concentration is ended, and do not
@@ -828,8 +1369,8 @@ History remains across End Combat, rests and campaign reopening through scene
 autosave; character-only JSON backups do not contain it. Undo marks the use's
 costs as undone without deleting the actual roll results.
 
-**Saving and backups:** records live in browser storage for the current address
-and browser profile, not in an account or server. Reopening its campaign restores
+**Saving and backups:** records live in the local host's campaign database, not
+only in browser storage. Reopening its campaign restores
 the saved board and character links. To load another record, open the sheet's gear
 and choose **Saved character**. **Export JSON** in that same settings panel requests
 a file download and also shows the complete,
@@ -842,8 +1383,9 @@ backups may be up to 4 MB and include the image data, not temporary file links.
 **Import JSON** creates a validated same-ruleset copy, preserving
 owned instance IDs so layouts remain meaningful. Unscoped legacy backups and
 cross-edition conversion are intentionally not supported by the campaign UI.
-Clearing browser data removes local campaigns and characters. Different
-ports, `localhost` and `127.0.0.1` have separate storage.
+Clearing browser data does not delete acknowledged host campaigns and characters.
+Different browser profiles share host saves when using the same host data
+directory. Browser-only legacy data and catalog caches are still origin-specific.
 
 Catalogs are bundled locally and seeded into edition-local IndexedDB databases.
 No Roll20 account or runtime rules-provider API is needed.
@@ -1012,8 +1554,9 @@ creatures' actual overlapping altitude.
 
 **Facing:** left-click and drag directly on an idle creature to turn it to one of
 eight grid-relative directions. The heading follows the drag in both perspective
-and tactical views, even after camera rotation. Ordinary clicks retain selection
-and movement behavior, and right-drag still orbits the camera. Turning does not
+and tactical views, even after camera rotation. A short creature click selects it
+and opens its radial menu; a facing drag does not. Ground clicks retain movement
+behavior, and right-drag still orbits the camera. Turning does not
 move the creature or cost movement. Escape or focus loss cancels a facing drag;
 facing is protected during movement, wall attachment and committed actions.
 Short climbs, descents, vaults and wall-aligned cover share the same world-facing
@@ -1124,7 +1667,7 @@ unused route movement is refunded rather than charging the entire requested path
 - Moving while Prone **crawls at double movement cost**. Stand before climbing or
   vaulting. Weapon, unarmed and spell attack rolls automatically receive
   disadvantage; an independently selected advantage cancels it. Advantage or
-  disadvantage for attacks *against* a prone target remains manual targeting.
+  disadvantage for attacks _against_ a prone target remains manual targeting.
 - In free play, standing reduces the **next per-move allowance**. Completing that
   move refreshes the usual allowance. In combat, it reduces the shared turn
   budget and never refreshes that budget.

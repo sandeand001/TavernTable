@@ -18,7 +18,6 @@
  */
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TOKEN_COMMANDS, getTokenCommand } from '../config/TokenCommandConfig.js';
 import { CHARACTER_DEFINITIONS } from '../config/CharacterCatalog.js';
 import { MANUAL_ACTIONS } from '../config/HumanoidActionCatalog.js';
@@ -465,57 +464,14 @@ function attachDynamicUIHandlers() {
       ['wall', wallBtn],
     ]) {
       if (button && !button.dataset.boundTerrainHandler) {
-        button.addEventListener('click', () => setTerrainTool(tool));
+        button.addEventListener('click', () => {
+          if (tool === 'wall') window.gameManager?.terrainEngine?.setConstructionTool('wall');
+          else setTerrainTool(tool);
+        });
         button.dataset.boundTerrainHandler = 'true';
       }
     }
 
-    const { heightInput: wallHeightSelect, fillSelect: wallFillSelect } = getTerrainWallControls();
-    if (wallHeightSelect && !wallHeightSelect.dataset.boundWallHandler) {
-      const options = document.createDocumentFragment();
-      for (let level = TERRAIN_CONFIG.MIN_HEIGHT; level <= TERRAIN_CONFIG.MAX_HEIGHT; level++) {
-        const option = document.createElement('option');
-        option.value = String(level);
-        option.textContent = String(level);
-        options.append(option);
-      }
-      wallHeightSelect.replaceChildren(options);
-      wallHeightSelect.addEventListener('change', () => {
-        const engine = window.gameManager?.terrainEngine;
-        try {
-          if (!engine) throw new Error('Terrain editing is not ready yet');
-          const level = wallHeightSelect.value === '' ? NaN : Number(wallHeightSelect.value);
-          engine.setWallTopLevel(level);
-          wallHeightSelect.value = String(engine.wallTopLevel);
-        } catch (error) {
-          if (Number.isInteger(engine?.wallTopLevel)) {
-            wallHeightSelect.value = String(engine.wallTopLevel);
-          }
-          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
-            context: 'setWallTopLevel',
-          });
-        }
-      });
-      wallHeightSelect.dataset.boundWallHandler = 'true';
-    }
-    if (wallFillSelect && !wallFillSelect.dataset.boundWallFillHandler) {
-      wallFillSelect.addEventListener('change', () => {
-        const engine = window.gameManager?.terrainEngine;
-        try {
-          if (!engine) throw new Error('Terrain editing is not ready yet');
-          engine.setWallFillMode(wallFillSelect.value);
-          wallFillSelect.value = engine.wallFillMode;
-        } catch (error) {
-          if (typeof engine?.wallFillMode === 'string') {
-            wallFillSelect.value = engine.wallFillMode;
-          }
-          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
-            context: 'setWallFillMode',
-          });
-        }
-      });
-      wallFillSelect.dataset.boundWallFillHandler = 'true';
-    }
     syncTerrainToolControls(window.gameManager?.terrainEngine?.tool || 'raise');
 
     const history = getTerrainHistoryControls();
@@ -728,6 +684,8 @@ if (typeof window !== 'undefined') {
     syncTerrainToolControls(engine.tool);
     syncTerrainHistoryControls();
     updateBrushSizeDisplay();
+    const structures = document.getElementById('biome-structures-toggle');
+    if (structures) structures.checked = engine.structureGenerationEnabled;
     const elevation = getElevationScaleControls();
     if (elevation.slider) elevation.slider.value = String(engine.elevationScale);
     if (elevation.valueEl) elevation.valueEl.textContent = `${engine.elevationScale} px/level`;
@@ -786,6 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Public API (Terrain Controls) ──────────────────────────
 
 function syncTerrainToolControls(tool) {
+  const construction = window.gameManager?.terrainEngine?.constructionTool;
   const { raiseBtn, lowerBtn, wallBtn } = getTerrainToolButtons();
   for (const [value, button] of [
     ['raise', raiseBtn],
@@ -793,17 +752,12 @@ function syncTerrainToolControls(tool) {
     ['wall', wallBtn],
   ]) {
     if (!button) continue;
-    const active = tool === value;
+    const active = construction ? construction === 'wall' && value === 'wall' : tool === value;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   }
-  const { controlsEl, heightInput, fillSelect, brushControlsEl } = getTerrainWallControls();
-  if (controlsEl) controlsEl.hidden = tool !== 'wall';
-  if (brushControlsEl) brushControlsEl.hidden = tool === 'wall';
-  const level = window.gameManager?.terrainEngine?.wallTopLevel;
-  if (heightInput && Number.isInteger(level)) heightInput.value = String(level);
-  const fillMode = window.gameManager?.terrainEngine?.wallFillMode;
-  if (fillSelect && typeof fillMode === 'string') fillSelect.value = fillMode;
+  const { brushControlsEl } = getTerrainWallControls();
+  if (brushControlsEl) brushControlsEl.hidden = !!construction || tool === 'wall';
 }
 
 function syncTerrainHistoryControls() {

@@ -74,6 +74,35 @@ test('one action definition supplies the menu, clip and playback metadata withou
   expect(HUMANOID_ANIMATIONS.actionJump.path).toContain('Jumping.fbx');
 });
 
+test('the actual mannequin body is precisely selectable after model setup', async () => {
+  const f = await fixture({ type: 'mannequin', height: 0 });
+  f.mesh.updateMatrixWorld(true);
+  const skin = f.skins[0];
+  const points = [0, 1, 2].map((vertex) =>
+    skin
+      .getVertexPosition(
+        skin.geometry.index ? skin.geometry.index.getX(vertex) : vertex,
+        new three.Vector3()
+      )
+      .applyMatrix4(skin.matrixWorld)
+  );
+  const target = points[0]
+    .clone()
+    .add(points[1])
+    .add(points[2])
+    .multiplyScalar(1 / 3);
+  const normal = points[1]
+    .clone()
+    .sub(points[0])
+    .cross(points[2].clone().sub(points[0]))
+    .normalize();
+  const ray = new three.Raycaster(
+    target.clone().addScaledVector(normal, 0.02),
+    normal.clone().negate()
+  );
+  expect(f.adapter.pickTokenByRay(ray, { precise: true })?.token.id).toBe(f.token.id);
+});
+
 test('unsupported and independent same-named rigs fail explicitly', () => {
   expect(() => cloneHumanoidRig(new three.Group(), three)).toThrow(/missing required/);
   const root = new three.Group();

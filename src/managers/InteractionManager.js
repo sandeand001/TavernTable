@@ -21,6 +21,7 @@ import {
   updateGridDragPosition as _updateDrag,
   stopGridDragging as _stopDrag,
   handlePanKeyDown,
+  handlePanPointerDown,
   releasePanKey,
 } from './interaction-manager/internals/pan.js';
 import {
@@ -63,6 +64,7 @@ export class InteractionManager {
     this.gridStartX = 0;
     this.gridStartY = 0;
     this.isSpacePressed = false;
+    this.isSpaceKeyHeld = false;
 
     // 3D rotation (when Three scene active)
     this.isRotating3D = false;
@@ -129,14 +131,18 @@ export class InteractionManager {
    */
   setupMouseDown() {
     const view = this.gameManager.getEventCanvas();
-    view.addEventListener(
-      'pointerdown',
-      (event) => {
-        // Keep compatibility mouse events for panning, but bypass token pointer gestures.
-        if (event.button === 0 && this.isSpacePressed) event.stopImmediatePropagation();
-      },
-      true
-    );
+    if (!this._panPointerCaptureAttached) {
+      this._panPointerCaptureAttached = true;
+      const capturePan = (event) => {
+        const canvas = this.gameManager.getEventCanvas();
+        if (!canvas || (event.target !== canvas && !canvas.contains?.(event.target))) return;
+        if (handlePanPointerDown(this, event) && event.type === 'pointerdown')
+          event.stopPropagation();
+      };
+      // Claim map drags before terrain/build handlers, retaining compatibility mouse events.
+      document.addEventListener('pointerdown', capturePan, true);
+      document.addEventListener('mousedown', capturePan, true);
+    }
     view.addEventListener(
       'mousedown',
       (event) => {
@@ -261,6 +267,7 @@ export class InteractionManager {
     });
 
     document.addEventListener('keyup', (event) => {
+      if (event.code === 'Space') this.isSpaceKeyHeld = false;
       if (event.code === 'Space' && this.isSpacePressed) {
         releasePanKey(this);
         event.preventDefault();
@@ -280,7 +287,11 @@ export class InteractionManager {
       if (document.visibilityState === 'hidden') releasePanKey(this);
     });
     document.addEventListener('focusin', (event) => {
-      if (this.isSpacePressed && this._shouldIgnoreKeyTarget(event.target)) releasePanKey(this);
+      if (this.isSpacePressed && this._shouldIgnoreKeyTarget(event.target)) {
+        const held = this.isSpaceKeyHeld;
+        releasePanKey(this);
+        this.isSpaceKeyHeld = held;
+      }
     });
   }
 
@@ -367,6 +378,12 @@ export class InteractionManager {
 
           if (tokenEntry) {
             this._selectTokenEntry(tokenEntry);
+            this._dispatchRadialMenuRequest({
+              token: tokenEntry,
+              gridX,
+              gridY,
+              screenPosition: { x: event.clientX, y: event.clientY },
+            });
             return;
           }
 

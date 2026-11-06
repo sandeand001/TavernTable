@@ -21,7 +21,12 @@ export function targetingPositions(gameManager, groundTokenIds = []) {
     throw new Error('Targeting needs the board’s physical grid scale');
   const tileSize = gm.campaignWorld ? 5 : spatial.tileWorldSize;
   const projected = new Set(groundTokenIds);
-  const tokens = gm.placedTokens.map((token) => {
+  const localTokens = gm.campaignWorld
+    ? gm.placedTokens.filter((token) =>
+        gm.campaignWorld.sharesLocation(token.mapId, gm.campaignMapId)
+      )
+    : gm.placedTokens;
+  const tokens = localTokens.map((token) => {
     const local =
       token.world ||
       (gm.campaignWorld
@@ -61,36 +66,40 @@ export function targetingBoard(gameManager, groundTokenIds = []) {
     spatial = gm.spatial;
   const positions = targetingPositions(gm, groundTokenIds);
   const tileSize = positions.tileSize;
-  const tokens = gm.placedTokens.map((token, index) => {
-    const character =
-      getTokenCharacterRecord(token) ||
-      (token.characterSheetId ? gm.characterServices.library.get(token.characterSheetId) : null);
-    const position = positions.tokens[index];
-    const allegiance = token.allegiance || 'neutral';
-    const creatureType = token.creatureType || 'humanoid';
-    const creatureSize = token.creatureSize || 'medium';
-    if (
-      !TARGET_ALLEGIANCES.includes(allegiance) ||
-      !TARGET_CREATURE_TYPES.includes(creatureType) ||
-      !TARGET_CREATURE_SIZES.includes(creatureSize)
-    )
-      throw new Error('Creature targeting tags are invalid');
-    return {
-      ...position,
-      name: character?.name || token.name || token.type,
-      allegiance,
-      creatureType,
-      creatureSize,
-      facingAngle: gm.campaignWorld
-        ? gm.campaignWorld.toCampaignFacing(token.mapId, token.facingAngle ?? 0)
-        : (token.facingAngle ?? 0),
-      hpCurrent: character?.hp.current ?? null,
-      conditions: [...getTokenConditions(token)],
-      abilities: character ? gm.characterServices.library.stats(character.id).abilityScores : {},
-      gridX: token.gridX,
-      gridY: token.gridY,
-    };
-  });
+  const indexed = new Map(positions.tokens.map((token) => [token.id, token]));
+  const tokens = gm.placedTokens
+    .filter((token) => indexed.has(token.id))
+    .map((token) => {
+      const character =
+        getTokenCharacterRecord(token) ||
+        (token.characterSheetId ? gm.characterServices.library.get(token.characterSheetId) : null);
+      const position = indexed.get(token.id);
+      const allegiance = token.allegiance || 'neutral';
+      const creatureType = token.creatureType || 'humanoid';
+      const creatureSize = token.creatureSize || 'medium';
+      if (
+        !TARGET_ALLEGIANCES.includes(allegiance) ||
+        !TARGET_CREATURE_TYPES.includes(creatureType) ||
+        !TARGET_CREATURE_SIZES.includes(creatureSize)
+      )
+        throw new Error('Creature targeting tags are invalid');
+      return {
+        ...position,
+        ...(gm.campaignWorld ? { mapId: token.mapId } : {}),
+        name: character?.name || token.name || token.type,
+        allegiance,
+        creatureType,
+        creatureSize,
+        facingAngle: gm.campaignWorld
+          ? gm.campaignWorld.toCampaignFacing(token.mapId, token.facingAngle ?? 0)
+          : (token.facingAngle ?? 0),
+        hpCurrent: character?.hp.current ?? null,
+        conditions: [...getTokenConditions(token)],
+        abilities: character ? gm.characterServices.library.stats(character.id).abilityScores : {},
+        gridX: token.gridX,
+        gridY: token.gridY,
+      };
+    });
   const liveCover = gm.placeableMeshPool ? gm.placeableMeshPool.targetingCoverBounds() : null;
   const obstacles = gm.campaignWorld
     ? gm.campaignWorld.getObstacles({
@@ -123,13 +132,17 @@ export function targetingBoard(gameManager, groundTokenIds = []) {
     tileSize,
     coverKey: JSON.stringify(obstacles),
     inside: (point) => {
-      if (gm.campaignWorld) return gm.campaignWorld.contains(point);
+      if (gm.campaignWorld) return gm.campaignWorld.contains(point, gm.campaignMapId);
       const grid = spatial.worldToGrid(point.x, point.z);
       return grid.gridX >= 0 && grid.gridY >= 0 && grid.gridX < gm.cols && grid.gridY < gm.rows;
     },
     clearPath: (actor, target) =>
       gm.campaignWorld
-        ? gm.campaignWorld.hasLineOfSight(actor.world, target.world, { obstacles })
+        ? gm.campaignWorld.hasLineOfSight(actor.world, target.world, {
+            obstacles,
+            mapId: actor.mapId,
+            targetMapId: target.mapId,
+          })
         : clearSegment(eye(actor), center(target), obstacles),
     clearPoint: (actor, point) =>
       clearSegment(eye(actor), { ...point, y: point.y + tileSize * 0.01 }, obstacles),

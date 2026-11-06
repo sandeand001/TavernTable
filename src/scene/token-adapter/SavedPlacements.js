@@ -32,6 +32,21 @@ const NUMBER_KEYS = [
 
 export class SceneNotReadyError extends Error {}
 
+export function campaignLandingForSupport(world, token, support) {
+  if (!world || !support || support.mapId === token.mapId) return null;
+  const map = world.getMap(support.mapId),
+    source = world.getMap(token.mapId);
+  return {
+    mapId: support.mapId,
+    placement: {
+      gridX: Math.floor(support.world.x / map.grid.tileWorldSize),
+      gridY: Math.floor(support.world.z / map.grid.tileWorldSize),
+      facingAngle: token.facingAngle + ((map.quarterTurns - source.quarterTurns) * Math.PI) / 2,
+      pose: { kind: 'ground', world: support.world, surfaceId: support.surfaceId },
+    },
+  };
+}
+
 export function validateSavedPlacement(placement) {
   const pose = placement?.pose;
   const finiteVector = (vector) =>
@@ -84,6 +99,20 @@ function currentPlacement(adapter, token) {
     facingAngle: token.facingAngle ?? 0,
     pose: { kind: token.flightActive ? 'flight' : 'ground', world: { ...world } },
   };
+  if (
+    !motion?.holding &&
+    (adapter.gameManager.campaignWorld || adapter.gameManager.terrainEngine?.geometry.hasVolumes)
+  ) {
+    const gm = adapter.gameManager;
+    const tileWorldSize =
+      gm.campaignWorld && token.mapId !== gm.campaignMapId
+        ? gm.campaignWorld.getMap(token.mapId).grid.tileWorldSize
+        : gm.spatial.tileWorldSize;
+    if (!Number.isFinite(tileWorldSize) || tileWorldSize <= 0)
+      throw new Error('Creature placement requires a valid physical grid scale');
+    placement.gridX = Math.floor(world.x / tileWorldSize);
+    placement.gridY = Math.floor(world.z / tileWorldSize);
+  }
   if (token.surfaceHold) {
     placement.pose = { kind: 'grip', world: { ...world }, grip: clone(token.surfaceHold) };
     return placement;
@@ -303,13 +332,36 @@ export function readStablePlacement(adapter, token) {
   return getStablePlacement.call(adapter, token);
 }
 
+function reframeStablePlacement(token, placement) {
+  validateSavedPlacement(placement);
+  if (placement.mapId === undefined) delete token.mapId;
+  else token.mapId = placement.mapId;
+  token.gridX = placement.gridX;
+  token.gridY = placement.gridY;
+  token.facingAngle = placement.facingAngle;
+  token.world = { ...placement.pose.world };
+  if (placement.pose.kind === 'grip') token.surfaceHold = clone(placement.pose.grip);
+  if (placement.pose.kind === 'ledge') token.openingHold = { openingId: placement.pose.openingId };
+  this._savedPlacements ||= new Map();
+  this._savedPlacements.set(token, {
+    placement: {
+      gridX: placement.gridX,
+      gridY: placement.gridY,
+      facingAngle: placement.facingAngle,
+      pose: clone(placement.pose),
+    },
+    job: null,
+    spent: 0,
+  });
+}
+
 function assertSurfaceGrip(adapter, token, placement) {
   const gm = adapter.gameManager;
   const world = gm.campaignWorld;
   if (
     !world ||
     !isSurfaceGripValid(
-      world.listMaps().map(({ id }) => world.getMap(id)),
+      world.listLocationMaps(token.mapId).map(({ id }) => world.getMap(id)),
       {
         mapId: token.mapId,
         pose: placement.pose,
@@ -451,6 +503,7 @@ async function restoreStablePlacement(token, placement) {
 }
 
 export function installSavedPlacementMethods(prototype) {
+  prototype.reframeStablePlacement = reframeStablePlacement;
   prototype.recordStablePlacement = recordStablePlacement;
   prototype.getStablePlacement = getStablePlacement;
   prototype.restoreStablePlacement = restoreStablePlacement;

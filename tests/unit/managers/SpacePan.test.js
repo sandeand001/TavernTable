@@ -144,3 +144,80 @@ test('Space pan wins over terrain painting and placeable removal', () => {
     terrain.dispose();
   }
 });
+
+test.each(['button', 'input', 'select'])(
+  'Space held after focusing a terrain %s still starts a map pan without painting',
+  (tag) => {
+    gm.terrainEngine = new TerrainEngine(5, 5);
+    gm.terrainEngine.activate();
+    gm.isTerrainModeActive = () => gm.terrainEngine.isActive;
+    const terrain = new TerrainInputHandlers(gm);
+    jest.spyOn(terrain, 'getGridCoordinatesFromEvent').mockReturnValue({ gridX: 1, gridY: 1 });
+    terrain.setup();
+    const constructionPointer = jest.fn();
+    view.addEventListener('pointerdown', constructionPointer, true);
+    const control = document.createElement(tag);
+    document.body.append(control);
+    control.focus();
+    const before = gm.terrainEngine.save();
+    const tool = gm.terrainEngine.tool;
+    try {
+      expect(space('keydown', control).defaultPrevented).toBe(false);
+      expect(manager.isSpacePressed).toBe(false);
+      mouse(view, 'pointerdown', 100, 100, { buttons: 1 });
+      mouse(view, 'mousedown', 100, 100, { buttons: 1 });
+      expect(manager.isDragging).toBe(true);
+      expect(document.activeElement).toBe(view);
+      expect(constructionPointer).not.toHaveBeenCalled();
+      space('keydown', view, { repeat: true });
+      expect(view.style.cursor).toBe('grabbing');
+      mouse(view, 'mousemove', 130, 125, { buttons: 1 });
+      expect(gm.threeSceneManager.panBy).toHaveBeenCalledWith(30, 25, { x: 100, y: 100 });
+      mouse(document, 'mouseup', 130, 125, { buttons: 0 });
+      space('keyup', document.activeElement);
+      expect(manager.isDragging).toBe(false);
+      expect(manager.isSpacePressed).toBe(false);
+      expect(manager.isSpaceKeyHeld).toBe(false);
+      expect(gm.terrainEngine.save()).toEqual(before);
+      expect(gm.terrainEngine.tool).toBe(tool);
+      expect(gm.terrainEngine.isActive).toBe(true);
+      expect(view.style.cursor).toBe('crosshair');
+    } finally {
+      view.removeEventListener('pointerdown', constructionPointer, true);
+      terrain.dispose();
+    }
+  }
+);
+
+test.each(['keyup', 'blur'])(
+  '%s clears Space held over a control before the next canvas click',
+  (type) => {
+    const control = document.createElement('button');
+    document.body.append(control);
+    control.focus();
+    space('keydown', control);
+    if (type === 'blur') window.dispatchEvent(new Event('blur'));
+    else expect(space('keyup', control).defaultPrevented).toBe(false);
+    mouse(view, 'pointerdown', 100, 100, { buttons: 1 });
+    mouse(view, 'mousedown', 100, 100, { buttons: 1 });
+    expect(manager.isDragging).toBe(false);
+    expect(manager.isSpaceKeyHeld).toBe(false);
+    expect(manager.handleLeftClick).toHaveBeenCalledTimes(1);
+  }
+);
+
+test('focusing a control pauses panning without forgetting Space is still held', () => {
+  space('keydown');
+  const control = document.createElement('button');
+  document.body.append(control);
+  control.focus();
+  expect(manager.isSpacePressed).toBe(false);
+  expect(manager.isSpaceKeyHeld).toBe(true);
+  mouse(view, 'pointerdown', 100, 100, { buttons: 1 });
+  mouse(view, 'mousedown', 100, 100, { buttons: 1 });
+  expect(manager.isDragging).toBe(true);
+  mouse(document, 'mouseup', 100, 100, { buttons: 0 });
+  space('keyup', view);
+  expect(manager.isSpaceKeyHeld).toBe(false);
+  expect(manager.isDragging).toBe(false);
+});

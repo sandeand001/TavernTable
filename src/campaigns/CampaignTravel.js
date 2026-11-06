@@ -2,6 +2,7 @@ import {
   ConnectionUnavailableError,
   connectionEntryDistance,
   connectionFlightEntry,
+  connectionGroundEntry,
 } from './CampaignConnections.js';
 import {
   getTokenConditions,
@@ -118,9 +119,11 @@ function actionLabel(connection, token, mapId, action) {
     return mapId === connection.outsideMapId ? 'Climb in' : 'Climb out';
   return connection.kind === 'stairs'
     ? 'Use stairs'
-    : connection.kind === 'opening'
-      ? 'Go through'
-      : 'Enter';
+    : connection.kind === 'ladder'
+      ? 'Use ladder'
+      : connection.kind === 'opening'
+        ? 'Go through'
+        : 'Enter';
 }
 
 export function getConnectionTravelOption(gm, token, id, { action = 'cross' } = {}) {
@@ -140,17 +143,15 @@ export function getConnectionTravelOption(gm, token, id, { action = 'cross' } = 
   try {
     assertConnectionActor(gm, token, false, id);
     if (connection.enabled === false) denied('This connection is unavailable');
-    const unit = gm.campaignWorld.getMap(source.mapId).grid.tileWorldSize / 5;
     const approachPoint = token.flightActive
       ? connectionFlightEntry(gm.campaignWorld, connection, source.mapId, token.world, {
           mapId: gm.campaignMapId,
           geometry: gm.terrainEngine.geometry,
         })
-      : {
-          x: source.positionFeet.x * unit,
-          y: source.positionFeet.y * unit,
-          z: source.positionFeet.z * unit,
-        };
+      : connectionGroundEntry(gm.campaignWorld, connection, source.mapId, token.world, {
+          mapId: gm.campaignMapId,
+          geometry: gm.terrainEngine.geometry,
+        });
     if (
       !token.openingHold &&
       !token.surfaceHold &&

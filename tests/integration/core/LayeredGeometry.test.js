@@ -3,6 +3,7 @@ import { createTerrainWorld } from '../../helpers/terrainWorld.js';
 import { TerrainMeshBuilder } from '../../../src/scene/terrain/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../../../src/scene/terrain/TerrainRebuilder.js';
 import { PickingService } from '../../../src/scene/picking/PickingService.js';
+import { createCurvedExamples } from '../../../src/terrain/CurvedExamples.js';
 
 test('adding a volume through the terrain owner rebuilds a real playable bridge mesh', () => {
   const world = createTerrainWorld(10, 10, null);
@@ -55,6 +56,7 @@ test('real screen picking identifies the clicked floor instead of collapsing it 
     builder: new TerrainMeshBuilder({ hardEdges: true }),
     debounceMs: 0,
   });
+
   gm.terrainRebuilder = rebuilder;
   gm.notifyTerrainHeightsChanged = () => rebuilder.rebuild({ three });
   try {
@@ -71,6 +73,46 @@ test('real screen picking identifies the clicked floor instead of collapsing it 
       point: { y: 2 },
       normal: { y: 1 },
     });
+  } finally {
+    world.dispose();
+  }
+});
+
+test('the real terrain rebuild and screen picker follow a curved dome and its visual cutaway', () => {
+  const world = createTerrainWorld(25, 25, null);
+  const gm = world.gm;
+  const canvas = gm.threeSceneManager.canvas;
+  canvas.width = 400;
+  canvas.height = 400;
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 400 });
+  gm.threeSceneManager.scene = new three.Scene();
+  gm.threeSceneManager.three = three;
+  const camera = new three.PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(19.5, 15, 6.5);
+  camera.up.set(0, 0, -1);
+  camera.lookAt(19.5, 0, 6.5);
+  camera.updateMatrixWorld(true);
+  gm.threeSceneManager.camera = camera;
+  const rebuilder = new TerrainRebuilder({
+    gameManager: gm,
+    builder: new TerrainMeshBuilder({ hardEdges: true }),
+    debounceMs: 0,
+  });
+  gm.terrainRebuilder = rebuilder;
+  gm.notifyTerrainHeightsChanged = () => rebuilder.rebuild({ three });
+  try {
+    world.engine.addVolumes(createCurvedExamples({ widthFeet: 125, depthFeet: 125 }));
+    gm.threeSceneManager.scene.updateMatrixWorld(true);
+    const picker = new PickingService({ gameManager: gm });
+    const roof = picker.pickGroundSync(200, 200, canvas);
+    const support = world.engine.geometry.findSupport(97.5, 32.5, { belowFeet: 30 });
+    expect(roof.surface.kind).toBe('floor');
+    expect(roof.surface.point.y).toBeCloseTo(support.heightFeet / 5, 5);
+    world.engine.setVisibleLayers(['ground', 'cave', 'dome', 'castle']);
+    gm.threeSceneManager.scene.updateMatrixWorld(true);
+    const floor = picker.pickGroundSync(200, 200, canvas);
+    expect(floor.surface).toMatchObject({ kind: 'floor', point: { y: 0 } });
+    expect(world.engine.geometry.findSupport(97.5, 32.5, { belowFeet: 30 })).toEqual(support);
   } finally {
     world.dispose();
   }

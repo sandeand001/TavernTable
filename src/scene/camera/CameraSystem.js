@@ -7,6 +7,13 @@ import { captureCameraView } from '../SceneSnapshotReaders.js';
 const PERSPECTIVE_FOV = 35;
 const TOP_DOWN_PITCH = (89.9 * Math.PI) / 180;
 
+function notifyCameraChanged(manager) {
+  const state = JSON.stringify(captureCameraView(manager));
+  if (manager._autosaveCameraState === state) return;
+  manager._autosaveCameraState = state;
+  manager.gameManager?.sceneAutosave?.changed('camera');
+}
+
 function _getCameraViewport() {
   const canvas = this.canvas || this.renderer?.domElement;
   const container = canvas?.parentElement;
@@ -579,7 +586,7 @@ function reframe() {
       span: Math.max(this.gameManager?.cols || 25, this.gameManager?.rows || 25) * 0.6,
     });
     this._updateSunCoverage();
-    this.gameManager?.sceneAutosave?.changed('camera');
+    notifyCameraChanged(this);
   } catch (error) {
     GameErrors.rendering(error, { component: 'CameraSystem', operation: 'reframe' });
   }
@@ -606,7 +613,7 @@ function setZoom(z) {
   if (!Number.isFinite(z)) return;
   const clamped = Math.min(this._maxZoom, Math.max(this._minZoom, z));
   this._targetZoom = clamped;
-  this.gameManager?.sceneAutosave?.changed('camera');
+  notifyCameraChanged(this);
 }
 function getZoom() {
   return this._zoom;
@@ -710,7 +717,7 @@ function setCameraTarget(cx, cz, cy = this.getCameraTarget().y) {
   const rows = this.gameManager?.rows || 25;
   const span = Math.max(cols, rows) * 0.6;
   this._applyCameraBase({ cx, cz, span });
-  this.gameManager?.sceneAutosave?.changed('camera');
+  notifyCameraChanged(this);
 }
 
 /**

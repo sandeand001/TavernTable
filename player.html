@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TavernTable - Player</title>
+    <link rel="stylesheet" href="src/ui/styles.css" />
+    <link rel="stylesheet" href="src/ui/sessions/player.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.170.0/"
+        }
+      }
+    </script>
+  </head>
+  <body class="player-workspace">
+    <header class="player-header">
+      <h1>TavernTable player</h1>
+      <output role="status" aria-label="Player session status">Connecting...</output>
+      <button type="button" data-player-reconnect>Reconnect</button>
+      <button type="button" data-player-signout>Sign out</button>
+    </header>
+    <main class="player-layout">
+      <aside class="player-sidebar">
+        <h2>Assigned saved characters</h2>
+        <div data-assigned-characters></div>
+        <h2>Character viewpoint</h2>
+        <label>Active character<select aria-label="Active character" disabled></select></label>
+        <p data-player-observer-notice>
+          Waiting for the host to provide your assigned character viewpoints.
+        </p>
+        <h2>Current location</h2>
+        <output aria-label="Current location">Waiting for an assigned character.</output>
+        <label>Area<select aria-label="Location area"></select></label>
+        <p data-player-map-notice>Your assigned character has not been placed in a location yet.</p>
+        <p>
+          This first player milestone supports saved-sheet editing and independent location
+          terrain/tactical-token views. Movement, combat, world conditions and concentration still
+          require DM adjudication.
+        </p>
+        <p>Drag the view to orbit; wheel to zoom. Your camera does not move anyone else's.</p>
+        <p>
+          Creature visibility uses physical line of sight from the active character only,
+          independent of the camera or browsed map. Fog, darkness and invisibility effects are not
+          included yet.
+        </p>
+        <output id="graphics-status" aria-live="polite"></output>
+        <a href="assets/data/resources/NOTICES.txt" target="_blank" rel="noopener"
+          >Sources &amp; licenses</a
+        >
+      </aside>
+      <section id="player-map-view" aria-label="Location area viewer" hidden></section>
+    </main>
+    <script type="module" src="src/ui/sessions/PlayerApplication.js"></script>
+  </body>
+</html>
