@@ -28,6 +28,7 @@ export function addTokenToCollection(
     instanceNumber: checkpoint ? checkpoint.instanceNumber : instanceNumber,
     name: checkpoint ? checkpoint.name : getAutomaticCreatureName(canonicalType, instanceNumber),
     nameMode: checkpoint ? checkpoint.nameMode : 'automatic',
+    ...(checkpoint?.characterId ? { characterSheetId: checkpoint.characterId } : {}),
     movementSettings: { ...TOKEN_MOVEMENT_DEFAULTS },
     creature: creature,
     gridX: gridX,

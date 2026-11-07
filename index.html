@@ -9,6 +9,7 @@
       content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling"
     />
     <link rel="stylesheet" href="src/ui/styles.css" />
+    <link rel="stylesheet" href="src/ui/characters/roster.css" />
     <!-- Pinned native ESM dependencies; no application bundler. -->
     <script type="importmap">
       {
@@ -196,6 +197,12 @@
             <div class="section-title">Creature Token</div>
             <div id="creature-content" role="group" aria-label="Creature token selection"></div>
           </div>
+
+          <section
+            id="saved-character-roster"
+            class="section"
+            aria-label="Saved characters"
+          ></section>
 
           <!-- Token Removal -->
           <div class="section">

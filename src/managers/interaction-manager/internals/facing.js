@@ -48,6 +48,8 @@ export class TokenFacingGesture {
     if (
       event.button !== 0 ||
       this.manager.isSpacePressed ||
+      gm.tokenManager?.selectedSavedCharacterId ||
+      gm.campaignViewBusy ||
       gm.isTerrainModeActive?.() ||
       gm.selectedTokenType === 'remove' ||
       !gm.is3DModeActive?.() ||

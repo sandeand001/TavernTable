@@ -119,7 +119,29 @@ export class InteractionManager {
    */
   setupMouseInteractions() {
     this._facingGesture?.detach();
-    this._facingGesture = new TokenFacingGesture(this).attach(this.gameManager.getEventCanvas());
+    const view = this.gameManager.getEventCanvas();
+    this._savedPlacementCanvas?.removeEventListener(
+      'mousedown',
+      this._savedPlacementPointerDown,
+      true
+    );
+    this._savedPlacementPointerDown ||= (event) => {
+      const gm = this.gameManager;
+      if (
+        event.button !== 0 ||
+        this.isSpacePressed ||
+        (!gm.tokenManager?.selectedSavedCharacterId &&
+          !gm.campaignViewBusy &&
+          !gm.campaignMapFailure &&
+          !gm.inputCoordinator?.savedCharacterPending)
+      )
+        return;
+      event.stopImmediatePropagation();
+      this.handleLeftClick(event);
+    };
+    this._savedPlacementCanvas = view;
+    view.addEventListener('mousedown', this._savedPlacementPointerDown, true);
+    this._facingGesture = new TokenFacingGesture(this).attach(view);
     this.setupMouseDown();
     this.setupMouseMove();
     this.setupMouseUp();
@@ -315,6 +337,21 @@ export class InteractionManager {
       if (event.button !== 0) {
         return;
       }
+      const gm = this.gameManager;
+      if (gm.campaignMapFailure) throw gm.campaignMapFailure;
+      if (gm.campaignViewBusy || gm.inputCoordinator?.savedCharacterPending)
+        throw new Error('Wait for the current map change or character placement to finish');
+      if (gm.tokenManager?.selectedSavedCharacterId) {
+        if (!gm.inputCoordinator?.handleSavedCharacterPlacement)
+          throw new Error('Saved character placement is not ready');
+        void gm.inputCoordinator.handleSavedCharacterPlacement(
+          gm.tokenManager.selectedSavedCharacterId,
+          gm.tokenManager.selectedSavedCharacterAppearance,
+          event.clientX,
+          event.clientY
+        );
+        return;
+      }
 
       // Check if terrain mode is active OR a placeable is actively selected (and panel visible)
       const terrainActive =
@@ -355,13 +392,14 @@ export class InteractionManager {
         return;
       }
 
-      const gm = this.gameManager;
       const selectedTokenType =
         typeof gm?.selectedTokenType === 'string' ? gm.selectedTokenType : null;
       const isRemoveMode = selectedTokenType === 'remove';
 
       Promise.resolve(this._resolvePointerTarget(event))
         .then((target) => {
+          if (gm.campaignViewBusy || gm.inputCoordinator?.savedCharacterPending)
+            throw new Error('Wait for the current map change or character placement to finish');
           const safeTarget = target || {};
           const gridX = Number.isFinite(safeTarget.gridX) ? safeTarget.gridX : null;
           const gridY = Number.isFinite(safeTarget.gridY) ? safeTarget.gridY : null;

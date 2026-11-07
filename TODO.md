@@ -196,6 +196,15 @@
       edits. Make new switchbacks solid masonry with the highest flight nearest
       the wall; spread higher flights outward instead of floating above or burying
       lower runs. Preserve earlier saved recipes until explicit editing.
+- [ ] **Snap buildings into compound structures** - Snap compatible building
+      faces/edges together to create connected wings, L/U-shaped buildings,
+      courtyards and other interesting footprints instead of isolated boxes.
+      Preview alignment and allow cancellation before committing. Define
+      shared-wall/opening handling and floor-height connections explicitly so
+      joined buildings are usable spaces, not overlapping sealed shells.
+      Reuse existing construction parts; preserve editing, Undo/Redo, interiors
+      and campaign persistence. Do not silently move occupied structures or
+      replace existing manual work.
 - [x] **Biome geometry features** - Seed bounded caves/tunnels, dedicated town,
       city, fortress and ruined-city layouts, and occasional forest/desert castle
       ruins. Theme masonry/roofs/rock, preserve manual work and avoid flora overlap.
@@ -223,8 +232,9 @@ building/map foundations already provide the finished experience. Check an item
 only after its acceptance criteria are verified.
 
 Confirmed direction: start with S1 (restrained windows) and S2 (actual castle
-layout variation). S1b window composition and the S4 terrain-castle sites are now
-implemented as well. S3 and the independent S5 location branch remain open,
+layout variation). S1b window composition is implemented. S4 has been reopened
+after a second visual rejection; passing traversal tests did not establish
+convincing castles or landforms. S3 and the independent S5 location branch remain open,
 with S6 after S5. Use a hybrid interior model: ordinary floors stay physically aligned;
 special castle/dungeon interiors may be explicitly separate, larger encounter
 maps. This does not convert existing buildings or authorize automatic creature
@@ -287,6 +297,22 @@ transfers.
       support, complex-variant actual-rig travel, repeatability, save/reopen,
       authoring guards and navigation budgets are covered. Site-specific
       cliffside/mountain work is tracked separately in S4a/S4b below.
+      This verifies structural variation, not final visual acceptance of the
+      ordinary castle building itself; its architectural redesign is S2b.
+- [ ] **S2b - Grand, connected Castle/Fortress architecture** - Redesign the
+      ordinary castle's main keep/building itself, not just its terrain, outer
+      walls or colours. User feedback: a box with four grain-silo-like towers
+      still does not read as a castle. Compose joined keep wings, halls,
+      gatehouses and courtyards with varied heights, rooflines and proportions;
+      towers should support that composition rather than define the whole
+      building. Reuse shared snapping/compound-building assembly rules instead
+      of duplicating them in generation. Evaluate a larger empty/default grid
+      for grand layouts, not merely a scaled-up version of the same box.
+      Preserve manually sized/populated maps and existing scenes until explicit
+      generation/editing. Acceptance: compare the main castle silhouette and
+      connected interiors across seeds and supported grid sizes; retain usable
+      entrances/stairs, deterministic generation and save/reopen, and obtain
+      user visual acceptance. This is separate from S4's cliff/mountain landforms.
 - [ ] **S3 - Natural caves, not surface moon bases** - Generate irregular,
       excavated chambers and passages within rock/terrain instead of assembling
       exposed dome-and-tube shells. Vary chamber proportions, tunnel direction
@@ -297,48 +323,60 @@ transfers.
       views reveal readable natural chambers. Test continuous support, headroom,
       turns and actual creature movement through joins. Avoid expensive world-CSG
       rebuilding during previews or idle frames.
-      Prerequisite progress: S4b now uses irregular rock hulls and real excavated
-      approaches/halls. The general Cavern and other natural-cave biome recipes
+      Prerequisite progress: S4b uses real excavated approaches/halls within a
+      painted mountain heightfield. The general Cavern and other natural-cave biome recipes
       still need this separate redesign; they are not marked complete.
 
 ### Site-specific castles
 
-Both variants now have explicit generation choices under Settlements, separate
-from the ordinary level-site Castle / Fortress recipe. The rejected broad
-plateau/fort-beside-rocks pass has been replaced with a narrow ravine-spur
-citadel and an ascending, terraced mountain fortress. Final checks are recorded
-below; broader visual polish remains tracked by S8.
+Both variants have explicit generation choices under Settlements. Reopened
+2026-11-06: the user rejected the rock-spur/terraced rework too. The actual
+50 x 50 board took a sparse fallback with no towers, and the 60 x 60 version
+still did not establish the requested visual distinction. Rebuild the landforms
+with existing raised/lowered grid cells, not added rock solids, and make both
+compositions recognizably fortified castles. Visual acceptance remains open;
+do not equate passing physical tests with satisfying the artistic requirement.
 
-- [x] **S4a - Cliffside castle** - After S2, integrate a generated castle with a
+- [ ] **S4a - Cliffside castle** - After S2, integrate a generated castle with a
       real cliff edge: varied elevation, supported foundations and courtyards,
       a convincing approach/gate and defensible exposed faces. Keep the cliff,
       drops and possible ledges physical rather than purely decorative.
       Acceptance: multiple seeds and map sizes preserve supported access, real
       falling rules, usable stairs and a clearly different silhouette from the
       flat-ground castle.
-      Implemented: selectable Cliffside Castle, narrow rock spur with three
-      architectural base levels, close-fitting curtains and an arched approach
-      bridge over negative terrain. Supported gates, paid ascent to the high
-      keep, actual-character entry/falls and reopening are verified. Final
-      focused regressions pass; seed repetition and save/reopen retain exact
-      site geometry. Visual direction was reworked after feedback rather than
-      retaining the rejected flat plateau.
-- [x] **S4b - Mountain-integrated castle** - After S2 and S3, combine exposed
+      Grid-based redesign implemented; visual acceptance pending: a high
+      painted escarpment using positive and
+      negative heights, with a substantial battlement keep, full curtain,
+      corner/gate towers and arched approach. Standard 50 x 50 and 60 x 60
+      canvases retain the full castle composition; compact boards still retain
+      a keep, four towers and a complete curtain, not the former lone house/gate.
+      Keep painted heights editable through the normal brush and Undo.
+      Entrance/foundation and save/reopen checks cover 20-, 40-, 50- and
+      60-square sizes, including rotated rectangular boards. Paid ascent and
+      real-character entry/reopening cover the standard sites. A real-character
+      50-foot fall requests 5d6 damage, applies prone and charges only the
+      five-foot horizontal move. Final native visual acceptance is still required.
+- [ ] **S4b - Mountain-integrated castle** - After S2 and S3, combine exposed
       ramparts/keeps with excavated halls, entrances and chambers embedded in the
       mountain. Terrain must meet the architecture without filling its rooms or
       leaving floating foundations.
       Acceptance: outside/inside transitions and cutaways are usable; rock
       ceilings, floors and walls remain authoritative for collision, sight and
       falling. This is a site recipe, not just another colour palette.
-      Implemented: selectable Mountain Fortress with 0/15/30/45-foot baileys,
-      real retaining stairs/terrace exits, ridge-side summit keep, bridge approach
-      and excavated Stoneheart hall/vault. Craggy support is physical; stairs
-      are not buried in it. Native exterior/interior views and actual-rig
-      entry/falls are verified. A paid supported route connects all ascent levels
-      to the summit approach. Final focused regressions pass and native
-      save/reopen retains the exact 26-map example. This supplies the mountain
-      excavation prerequisite, not the still-open general cave redesign or S6
-      room dressing/encounter interiors.
+      Grid-based redesign implemented; visual acceptance pending: a coherent
+      painted mountain rises above/behind
+      a fortress emerging from its lower face, rather than a second cliff
+      platform. Below-zero wards and excavated Stoneheart hall have real
+      ceilings, approaches and paid stair access. Preserve the mountain
+      heightfield underneath below-zero structures instead of flattening it
+      during generation. Use only existing construction/excavation geometry;
+      no added mountain/terrace rock solids or new shape types.
+      Standard and compact fortifications, real-character travel, cutaways
+      and reopening are verified. Compact sites retain the embedded keep,
+      four towers and complete curtain; the separate buried hall is reserved
+      for larger sites where its approaches fit. Final native visual
+      acceptance remains open. General cave generation and S6 room dressing
+      are separate unfinished work.
 
 ### Campaign locations and richer interiors
 
@@ -434,6 +472,16 @@ below; broader visual polish remains tracked by S8.
       preserve user-authored maps and occupied structures. Verify each milestone
       with deterministic tests, visual inspection and save/reopen before marking
       it complete.
+      Castle correction: include the user's actual 50 x 50 canvas, not only
+      larger recommended defaults. Compare cliff and mountain views together;
+      assert editable heightfield relief and full fortification at smaller
+      sizes. Keep S4 visual acceptance open until the user accepts the result.
+      This pass: 95 focused unit cases and seven actual-FBX travel/fall cases
+      pass. Native 50- and 60-square source renders each retain all 19 recipe
+      structures/eight towers, exact terrain save/reopen and working shaders.
+      Native local 30-foot range queries measured 13.8-28 ms on their first
+      run and 4.4-18.5 ms warmed; this is not a claim about full campaign input
+      latency. Existing campaigns were not regenerated and no host restarted.
 
 ---
 
@@ -668,6 +716,15 @@ deliberately read-only first slice, not a complete multiplayer combat platform.
       Retain character IDs, assignments and appearances across save/load,
       reconnect and JSON backup/restore. Removing a sprite must not delete its
       saved character.
+      Implemented slice: DM roster placement below the creature palette,
+      saved-sheet reuse for unplaced records, existing-token Focus and guarded
+      retrieval/removal preserve character resources, layouts and images.
+      Focused validation reports 18 suites / 184 tests passing.
+      Remaining: authoritative assigned-player placement/transfer commands and
+      the full interactive player client. Placed token models and character
+      portraits persist; an unknown unplaced record requires an explicit next
+      sprite choice. That next-placement choice is session-local, not a saved
+      off-board model preference across reload/export.
 - [x] **Explicit migration from browser-only storage** - Offer non-destructive
       Copy to host and validated campaign import/export. Never overwrite browser
       originals or claim that switching storage recovers lost in-memory data.

@@ -10,6 +10,7 @@ import { reconcileBuildingScene } from '../../../src/campaigns/BuildingAssembly.
 import { captureCampaignScene } from '../../../src/campaigns/SceneWorld.js';
 import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { TerrainEngineSceneAdapter } from '../../../src/scene/terrain/TerrainEngineSceneAdapter.js';
+import { getTokenConditions } from '../../../src/entities/creatures/TokenMovement.js';
 import * as dice from '../../../src/systems/dice/dice.js';
 
 let restoreFiles;
@@ -18,17 +19,17 @@ beforeAll(() => {
 });
 afterAll(() => restoreFiles());
 
-async function fixture(key, seed = 42, cliffStart = false) {
+async function fixture(key, seed = 42, cliffStart = false, size = 60) {
   let actor;
   const gm = await createConnectedTravelBoard({
     sceneFactory: (options) => {
       const base = createTwoFloorTravelScene(options),
-        engine = new TerrainEngine(60, 60);
+        engine = new TerrainEngine(size, size);
       engine.generateBiomeElevation(key, { seed });
       base.maps = [base.maps[0]];
       base.connections = [];
       base.creatures = base.creatures.slice(0, 1);
-      Object.assign(base.maps[0].grid, { cols: 60, rows: 60 });
+      Object.assign(base.maps[0].grid, { cols: size, rows: size });
       Object.assign(base.maps[0].terrain, {
         heights: engine.save().heights,
         geometry: engine.geometry.save(),
@@ -60,8 +61,8 @@ async function fixture(key, seed = 42, cliffStart = false) {
       if (cliffStart) {
         const heights = engine.save().heights;
         const plateau = Math.max(...heights.flat());
-        outer: for (let z = 2; z < 58; z++)
-          for (let x = 2; x < 58; x++) {
+        outer: for (let z = 2; z < size - 2; z++)
+          for (let x = 2; x < size - 2; x++) {
             if (heights[z][x] !== plateau) continue;
             for (const [dx, dz] of [
               [1, 0],
@@ -120,14 +121,16 @@ async function fixture(key, seed = 42, cliffStart = false) {
 }
 
 test.each([
-  ['cliffsideCastle', 1],
-  ['cliffsideCastle', 42],
-  ['mountainCastle', 1],
-  ['mountainCastle', 42],
+  ['cliffsideCastle', 1, 60],
+  ['cliffsideCastle', 42, 60],
+  ['mountainCastle', 1, 60],
+  ['mountainCastle', 42, 60],
+  ['cliffsideCastle', 42, 50],
+  ['mountainCastle', 42, 50],
 ])(
-  '%s seed %i supports real animated entry and reopening without changing character resources or turn',
-  async (key, seed) => {
-    const { gm, token, adapter } = await fixture(key, seed);
+  '%s seed %i on %i tiles supports real animated entry and reopening without changing character resources or turn',
+  async (key, seed, size) => {
+    const { gm, token, adapter } = await fixture(key, seed, false, size);
     let reopened, editor;
     try {
       gm.threeSceneManager.clearTerrainBrushPreview = jest.fn();
@@ -183,9 +186,9 @@ test('walking off a generated cliff resolves the real lower terrain and paid fal
   const context = await fixture('cliffsideCastle', 42, true),
     { gm, token, adapter, start } = context;
   const roll = jest.spyOn(dice, 'rollDiceExpression').mockResolvedValue({
-    expression: '1d6',
-    total: 4,
-    text: '1d6 = 4',
+    expression: '5d6',
+    total: 15,
+    text: '5d6 = 15',
   });
   try {
     const combat = gm.characterServices.combat;
@@ -200,8 +203,9 @@ test('walking off a generated cliff resolves the real lower terrain and paid fal
     }
     expect(adapter.isMovementInProgress(token)).toBe(false);
     expect(token.world.y).toBeLessThanOrEqual(-2);
-    expect(roll).toHaveBeenCalled();
-    expect(gm.characterServices.library.get(token.characterSheetId).hp.current).toBe(36);
+    expect(roll.mock.calls[0][0]).toMatchObject({ expression: '5d6' });
+    expect(gm.characterServices.library.get(token.characterSheetId).hp.current).toBe(25);
+    expect(getTokenConditions(token)).toContain('prone');
     expect(combat.status(token).movement.spent).toBe(5);
     await captureCampaignScene(gm, gm.characterServices.library);
   } finally {

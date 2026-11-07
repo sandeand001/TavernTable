@@ -13,6 +13,11 @@ import { TerrainVolumeMeshBuilder } from '../../../src/scene/terrain/TerrainVolu
 import { generateCampaignBiome } from '../../../src/campaigns/CampaignBiomeGeneration.js';
 import { wallStairLayout } from '../../../src/terrain/WallStairs.js';
 import { buildSurfaceRange, getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
+import {
+  createCastleSiteLayout,
+  generateCastleSiteHeights,
+} from '../../../src/terrain/generation/CastleSites.js';
+import { TERRAIN_CONFIG } from '../../../src/config/terrain/TerrainConstants.js';
 import * as three from 'three';
 
 function fixture(key, seed = 42, cols = 60, rows = 60) {
@@ -35,6 +40,147 @@ function worldFor(engine) {
   scene.creatures = [];
   return { context, scene: reconcileBuildingScene(scene, context) };
 }
+
+test.each([
+  ['cliffsideCastle', 20],
+  ['cliffsideCastle', 50],
+  ['cliffsideCastle', 60],
+  ['mountainCastle', 20],
+  ['mountainCastle', 50],
+  ['mountainCastle', 60],
+])(
+  '%s on %i tiles retains a fortified keep, a full curtain and at least four towers',
+  (key, size) => {
+    const structures = fixture(key, 42, size, size).geometry.getStructures();
+    expect(structures.filter((s) => s.kind === 'turret').length).toBeGreaterThanOrEqual(4);
+    expect(structures.filter((s) => s.kind === 'wall').length).toBeGreaterThanOrEqual(4);
+    const keep = structures.find((s) => s.name.endsWith('High Keep'));
+    expect(keep.building.roof).toBe('battlement');
+    if (size >= 50) {
+      expect(keep.lengthFeet).toBeGreaterThanOrEqual(40);
+      expect(keep.widthFeet).toBeGreaterThanOrEqual(30);
+    }
+  }
+);
+
+test.each(['cliffsideCastle', 'mountainCastle'])(
+  '%s preserves its painted landform through structure generation',
+  (key) => {
+    expect(fixture(key, 42, 50, 50).save().heights).toEqual(
+      generateCastleSiteHeights(key, 50, 50, { seed: 42 })
+    );
+  }
+);
+
+test.each(['cliffsideCastle', 'mountainCastle'])(
+  '%s landforms respond to the existing elevation brush and Undo physically',
+  (key) => {
+    const engine = fixture(key, 42, 50, 50),
+      heights = engine.save().heights,
+      bounds = engine.geometry.getStructures().map(structureBounds);
+    const index = heights.flat().findIndex((height, index) => {
+      const x = (index % 50) * 5 + 2.5,
+        z = Math.floor(index / 50) * 5 + 2.5;
+      return (
+        height >= 8 &&
+        !bounds.some(
+          (b) => x >= b.min.x - 5 && x <= b.max.x + 5 && z >= b.min.z - 5 && z <= b.max.z + 5
+        )
+      );
+    });
+    expect(index).toBeGreaterThanOrEqual(0);
+    const x = index % 50,
+      z = Math.floor(index / 50),
+      before = heights[z][x];
+    engine.setBrushSize(1);
+    engine.setTool('lower');
+    engine.beginBrushStroke(x, z);
+    engine.commitBrushStroke();
+    expect(engine.getHeightAt(x, z)).toBe(before - 1);
+    expect(
+      engine.geometry.findSupport(x * 5 + 2.5, z * 5 + 2.5, { belowFeet: before * 2.5 })?.heightFeet
+    ).toBeCloseTo((before - 1) * 2.5);
+    expect(engine.undo()).toBe(true);
+    expect(engine.getHeightAt(x, z)).toBe(before);
+    expect(
+      engine.geometry.findSupport(x * 5 + 2.5, z * 5 + 2.5, { belowFeet: before * 2.5 })?.heightFeet
+    ).toBeCloseTo(before * 2.5);
+  }
+);
+
+test.each(['cliffsideCastle', 'mountainCastle'])(
+  '%s retains real supported stairs with the existing five-feet-per-level setting',
+  (key) => {
+    const engine = new TerrainEngine(50, 50);
+    engine.configureGeometryBase(1);
+    engine.generateBiomeElevation(key, { seed: 42 });
+    expect(engine.save().heights).toEqual(generateCastleSiteHeights(key, 50, 50, { seed: 42 }));
+    for (const spec of engine.geometry.getStructures().filter((s) => s.wallStairs))
+      for (const local of wallStairLayout(spec).path) {
+        const point = buildingLocalToFeet(spec, local);
+        expect(
+          engine.geometry.findSupport(point.x, point.z, {
+            belowFeet: point.y + 1e-5,
+            clearanceFeet: 5,
+          })?.heightFeet
+        ).toBeCloseTo(point.y);
+      }
+  }
+);
+
+test.each(['cliffsideCastle', 'mountainCastle'])(
+  '%s uses editable raised and lowered grid cells rather than added rock landforms',
+  (key) => {
+    const heights = generateCastleSiteHeights(key, 50, 50, { seed: 42 }).flat();
+    expect(Math.max(...heights)).toBeGreaterThanOrEqual(8);
+    expect(Math.min(...heights)).toBeLessThanOrEqual(-8);
+    expect(heights.every((h) => Number.isInteger(h))).toBe(true);
+    expect(Math.min(...heights)).toBeGreaterThanOrEqual(TERRAIN_CONFIG.MIN_HEIGHT);
+    expect(Math.max(...heights)).toBeLessThanOrEqual(TERRAIN_CONFIG.MAX_HEIGHT);
+    expect(heights.filter((h) => h > 0).length).toBeGreaterThan(heights.length * 0.15);
+    const layout = createCastleSiteLayout({
+      biomeKey: key,
+      seed: 42,
+      width: 250,
+      depth: 250,
+    });
+    expect(
+      layout.volumes.filter((v) => v.operation === 'add' && v.materialRole === 'rock')
+    ).toEqual([]);
+  }
+);
+
+test('the cliff castle crest has a tall painted escarpment beneath its elevated keep', () => {
+  const heights = generateCastleSiteHeights('cliffsideCastle', 50, 50, { seed: 42 });
+  let edges = 0;
+  for (let z = 0; z < 50; z++)
+    for (let x = 0; x < 50; x++)
+      for (const other of [heights[z + 1]?.[x], heights[z][x + 1]])
+        if (Number.isFinite(other) && Math.abs(heights[z][x] - other) >= 16) edges++;
+  expect(edges).toBeGreaterThanOrEqual(20);
+  const { structures } = createCastleSiteLayout({
+    biomeKey: 'cliffsideCastle',
+    seed: 42,
+    width: 250,
+    depth: 250,
+  });
+  expect(structures.find((s) => s.name.endsWith('High Keep')).baseFeet).toBeGreaterThanOrEqual(20);
+});
+
+test('the mountain is painted above and behind an embedded hall, not perched beside it', () => {
+  const heights = generateCastleSiteHeights('mountainCastle', 50, 50, { seed: 42 });
+  const { structures } = createCastleSiteLayout({
+    biomeKey: 'mountainCastle',
+    seed: 42,
+    width: 250,
+    depth: 250,
+  });
+  const hall = structures.find((s) => s.name === 'Stoneheart Great Hall');
+  expect(
+    heights[Math.floor(hall.zFeet / 5)][Math.floor(hall.xFeet / 5)] * 2.5
+  ).toBeGreaterThanOrEqual(hall.baseFeet + hall.heightFeet + 5);
+  expect(structures.find((s) => s.name.endsWith('High Keep')).baseFeet).toBeLessThanOrEqual(0);
+});
 
 test.each(['cliffsideCastle', 'mountainCastle'])(
   '%s is a selectable site biome with its own supported defaults and terrain palette',
@@ -82,26 +228,30 @@ test.each(['cliffsideCastle', 'mountainCastle'])(
 );
 
 test.each(['cliffsideCastle', 'mountainCastle'])(
-  '%s uses negative ravines, arched approach bridges and architecture at multiple physical heights',
+  '%s has painted relief, distinct physical approaches and supported terrace stairs',
   (key) => {
     const engine = fixture(key),
       snapshot = engine.save(),
       specs = engine.geometry.getStructures();
     const negative = snapshot.heights.flat().filter((h) => h < 0).length;
-    expect(negative).toBeGreaterThan(engine.cols * engine.rows * 0.5);
+    expect(negative).toBeGreaterThan(engine.cols * engine.rows * 0.15);
     expect(
       new Set(specs.filter((s) => s.building).map((s) => s.baseFeet)).size
-    ).toBeGreaterThanOrEqual(3);
-    expect(Math.max(...specs.map((s) => s.baseFeet))).toBeGreaterThanOrEqual(
-      key === 'mountainCastle' ? 45 : 20
-    );
+    ).toBeGreaterThanOrEqual(key === 'mountainCastle' ? 2 : 3);
     const bridges = snapshot.geometry.volumes.filter((v) => v.layerId === 'bridge');
-    expect(bridges.length).toBeGreaterThan(0);
-    expect(
-      snapshot.geometry.volumes.some(
-        (v) => v.layerId === 'bridge-arch' && v.operation === 'subtract'
-      )
-    ).toBe(true);
+    if (key === 'cliffsideCastle') {
+      expect(Math.max(...specs.map((s) => s.baseFeet))).toBeGreaterThanOrEqual(25);
+      expect(bridges.length).toBeGreaterThan(0);
+      expect(
+        snapshot.geometry.volumes.some(
+          (v) => v.layerId === 'bridge-arch' && v.operation === 'subtract'
+        )
+      ).toBe(true);
+    } else {
+      expect(specs.find((s) => s.name.endsWith('High Keep')).baseFeet).toBeLessThanOrEqual(0);
+      expect(bridges).toHaveLength(0);
+      expect(Math.max(...snapshot.heights.flat())).toBeGreaterThanOrEqual(8);
+    }
     for (const spec of specs.filter((s) => s.wallStairs))
       for (const local of wallStairLayout(spec).path) {
         const point = buildingLocalToFeet(spec, local);
@@ -111,9 +261,8 @@ test.each(['cliffsideCastle', 'mountainCastle'])(
         });
         expect({
           name: spec.name,
-          point,
           supported: !!support && Math.abs(support.heightFeet - point.y) < 1e-4,
-        }).toEqual({ name: spec.name, point, supported: true });
+        }).toEqual({ name: spec.name, supported: true });
       }
   },
   60000
@@ -232,9 +381,11 @@ test.each([1, 7, 42])(
 
 test.each([
   ['cliffsideCastle', 1, 60, 60],
+  ['cliffsideCastle', 42, 50, 50],
   ['cliffsideCastle', 7, 40, 50],
   ['cliffsideCastle', 42, 20, 20],
   ['mountainCastle', 1, 60, 60],
+  ['mountainCastle', 42, 50, 50],
   ['mountainCastle', 7, 50, 40],
   ['mountainCastle', 42, 20, 20],
 ])(
@@ -255,12 +406,14 @@ test.each([
         y: 0,
         z: buildingDimensions(spec).width / 2 + 2.5,
       });
-      expect(
-        engine.geometry.findSupport(point.x, point.z, {
-          belowFeet: point.y + 1e-4,
-          clearanceFeet: 5,
-        })?.heightFeet
-      ).toBeCloseTo(point.y);
+      const support = engine.geometry.findSupport(point.x, point.z, {
+        belowFeet: point.y + 1e-4,
+        clearanceFeet: 5,
+      });
+      expect({
+        name: spec.name,
+        supported: !!support && Math.abs(support.heightFeet - point.y) < 1e-4,
+      }).toEqual({ name: spec.name, supported: true });
     }
     const { scene, context } = worldFor(engine),
       world = CampaignWorld.fromScene(scene, context);

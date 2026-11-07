@@ -130,7 +130,7 @@ export function generateBiomeStructures({
           : next[gz][gx];
     let id;
     do {
-      id = `generated-${biomeKey}-${seed}-${settlement?.site ? 'ridge-' : ''}${++serial}`;
+      id = `generated-${biomeKey}-${seed}-${settlement?.site ? 'elevation-' : ''}${++serial}`;
     } while (used.has(id));
     const spec = createStructure({
       id,
@@ -207,7 +207,7 @@ export function generateBiomeStructures({
       const proposal = propose(kind, xFeet, zFeet, extra);
       append([proposal], {
         overlap: settlement.kind !== 'town',
-        ground: proposal.spec.baseFeet > 0 ? 'keep' : 'flat',
+        ground: settlement.site || proposal.spec.baseFeet > 0 ? 'keep' : 'flat',
       });
     }
     for (const volume of layout.volumes)

@@ -666,6 +666,7 @@ class SidebarController {
       btn.classList.remove('selected');
       btn.setAttribute('aria-pressed', 'false');
     });
+    if (window.gameManager?.tokenManager?.selectedSavedCharacterId) return;
     const selectedButton = getTokenButtonByType(selectedToken);
     if (selectedButton) {
       selectedButton.classList.add('selected');

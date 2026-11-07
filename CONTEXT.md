@@ -125,6 +125,18 @@
 - **Saved character**: a persistent rules record, independent of a
   creature token's name, appearance and ephemeral scene ID. A token can load a
   record through `characterSheetId`; saving the record does not save the board.
+- **Saved character roster**: the Tokens menu lists all campaign records for the DM;
+  player workspaces retain assigned-only access. Unplaced sheets reuse the same
+  library through isolated presentation tokens, never canonical world actors or a
+  new rules record. Placing first acknowledges a validated scene checkpoint,
+  then creates a linked sprite without resetting character resources. Existing
+  actors are focused/opened, not duplicated or moved. Removing a sprite retains
+  its record. Unplaced sheets cannot spend world actions or stand without movement.
+  A next-placement model choice is explicit UI-local state for this workspace
+  session; placed actor `type` and character portraits keep their existing
+  persistence. No serialized saved-character model preference is introduced.
+  Unknown unplaced records require an explicit canonical next-sprite choice;
+  neither a portrait nor the current palette default supplies a saved model.
 - **Character images**: optional embedded raster images owned by the saved
   character and shared by its linked tokens. The center-cropped portrait is used
   for tactical tokens and sheet identity; separate proportional artwork belongs
@@ -846,14 +858,18 @@ repeat exactly; names/colours are not the only differences. Planner bounds inclu
 actual wall rotation and stair footprints so optional buildings do not occupy
 the stairs. Existing saved layouts only change on explicit generation/editing.
 Cliffside Castle and Mountain Fortress are explicit terrain-site biomes with
-60-square defaults and a 20-square minimum. Cliff architecture follows a narrow
-rock spur with negative ravines and an arched approach bridge. Mountain defenses
-climb 0/15/30/45-foot craggy terraces, with a summit keep and physically excavated
-lower halls/vaults. Terrain is shared convex geometry, not a backdrop. Retaining
-stairs use a terrace exit that opens the opposite parapet as well as the stair
-side, so the ascent actually joins its upper platform. Ordinary wall stairs keep
-their saved walkway exit. Revised site recipes use a distinct generated-ID
-namespace on regeneration; existing saved/manual structures are not remodeled.
+60-square defaults and a 20-square minimum. Full castles fit both 50- and
+60-square boards; compact sites retain a keep, four towers and a complete
+curtain. Cliff architecture stands on a high painted escarpment with positive
+and negative elevations and an arched approach. Mountain architecture emerges
+from the lower face of a painted mountain, with below-zero wards and, on larger
+sites, an embedded hall. Preserve the mountain heightfield beneath below-zero
+structures. Landforms use existing editable grid heights, not new shape types
+or added mountain/terrace solids. Buildings, halls and supported stair exits
+reuse existing construction/excavation geometry; ordinary wall stairs keep their
+saved walkway exit. Revised site recipes use a distinct generated-ID namespace
+on regeneration. Existing saved/manual structures and landforms are not
+remodeled on load; changes require explicit generation or editing.
 Per-structure appearance/names are saved; tint, material and generated-source
 metadata survive convex clipping. Original procedural materials share a shader,
 and façade details batch into a non-pickable, render-only mesh on terrain rebuild,

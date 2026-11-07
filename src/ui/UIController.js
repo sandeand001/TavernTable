@@ -51,6 +51,10 @@ import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLau
 import { connectCharacterServices } from './characters/characterServices.js';
 import CampaignAutosave from '../campaigns/CampaignAutosave.js';
 import { TerrainConstructionPanel } from './TerrainConstructionPanel.js';
+import SavedCharacterRoster, {
+  SAVED_CHARACTER_DRAG_MIME,
+} from './characters/SavedCharacterRoster.js';
+import { captureCampaignScene, changeCampaignView } from '../campaigns/SceneWorld.js';
 
 // ── Constants ──────────────────────────────────────────────────
 const TOKEN_DRAG_MIME = 'application/taverntable-token';
@@ -61,6 +65,22 @@ let radialMenuInstance = null;
 let characterSheetWindow = null;
 let applicationStartup = null;
 let terrainConstruction = null;
+
+async function openCharacterSheet(gm, token) {
+  if (!characterSheetWindow || characterSheetWindow.gameManager !== gm) {
+    characterSheetWindow?.destroy();
+    characterSheetWindow = new CharacterSheetWindow({
+      gameManager: gm,
+      initialBounds: { left: 32, top: 56, width: 860, height: 760 },
+      onOpenCompendium: (entryId) => {
+        if (!window.sidebarController?.openCompendium)
+          throw new Error('The compendium sidebar is not available');
+        return window.sidebarController.openCompendium(entryId);
+      },
+    }).attach();
+  }
+  return characterSheetWindow.open(token);
+}
 
 function getRadialMenuInstance() {
   if (!radialMenuInstance) {
@@ -82,20 +102,7 @@ async function handleRadialCommand(actionId, token) {
     const gm = window.gameManager;
     if (actionId === 'character-sheet') {
       if (!gm) throw new Error('Character sheets require an active game session');
-      if (!characterSheetWindow || characterSheetWindow.gameManager !== gm) {
-        characterSheetWindow?.destroy();
-        characterSheetWindow = new CharacterSheetWindow({
-          gameManager: gm,
-          initialBounds: { left: 32, top: 56, width: 860, height: 760 },
-          onOpenCompendium: (entryId) => {
-            if (!window.sidebarController?.openCompendium) {
-              throw new Error('The compendium sidebar is not available');
-            }
-            return window.sidebarController.openCompendium(entryId);
-          },
-        }).attach();
-      }
-      characterSheetWindow.open(token);
+      await openCharacterSheet(gm, token);
       return;
     }
     if (!gm || typeof gm.applyTokenCommand !== 'function') {
@@ -152,16 +159,28 @@ function hasTokenDragPayload(event) {
   if (!dt) return false;
   try {
     if (dt.types && typeof dt.types.includes === 'function') {
-      return dt.types.includes(TOKEN_DRAG_MIME) || dt.types.includes('text/plain');
+      return (
+        dt.types.includes(SAVED_CHARACTER_DRAG_MIME) ||
+        dt.types.includes(TOKEN_DRAG_MIME) ||
+        dt.types.includes('text/plain')
+      );
     }
     if (Array.isArray(dt.types)) {
-      return dt.types.includes(TOKEN_DRAG_MIME) || dt.types.includes('text/plain');
+      return (
+        dt.types.includes(SAVED_CHARACTER_DRAG_MIME) ||
+        dt.types.includes(TOKEN_DRAG_MIME) ||
+        dt.types.includes('text/plain')
+      );
     }
   } catch (_) {
     /* ignore */
   }
   try {
-    return !!(dt.getData(TOKEN_DRAG_MIME) || dt.getData('text/plain'));
+    return !!(
+      dt.getData(SAVED_CHARACTER_DRAG_MIME) ||
+      dt.getData(TOKEN_DRAG_MIME) ||
+      dt.getData('text/plain')
+    );
   } catch (_) {
     return false;
   }
@@ -184,6 +203,7 @@ function setupTokenDrag(button, tokenType) {
   button.setAttribute('draggable', 'true');
   button.addEventListener('dragstart', (event) => {
     if (!event?.dataTransfer) return;
+    window.gameManager?.tokenManager?.cancelSavedCharacterPlacement();
     event.dataTransfer.effectAllowed = 'copy';
     try {
       event.dataTransfer.setData(TOKEN_DRAG_MIME, tokenType);
@@ -215,9 +235,27 @@ function ensureTokenDropTargets() {
     target.addEventListener('drop', (event) => {
       if (!hasTokenDragPayload(event)) return;
       event.preventDefault();
+      const coordinator = window.gameManager?.inputCoordinator;
+      const savedCharacter = event.dataTransfer?.getData(SAVED_CHARACTER_DRAG_MIME);
+      if (
+        savedCharacter ||
+        Array.from(event.dataTransfer?.types || []).includes(SAVED_CHARACTER_DRAG_MIME)
+      ) {
+        event.stopPropagation();
+        if (!coordinator?.handleSavedCharacterDrop) {
+          new ErrorHandler().handle(
+            new Error('Saved character placement is not ready'),
+            ERROR_SEVERITY.WARNING,
+            ERROR_CATEGORY.INPUT,
+            { context: 'savedCharacterDrop' }
+          );
+          return;
+        }
+        void coordinator.handleSavedCharacterDrop(savedCharacter, event.clientX, event.clientY);
+        return;
+      }
       const tokenType = getTokenDragType(event);
       if (!tokenType) return;
-      const coordinator = window.gameManager?.inputCoordinator;
       if (!coordinator?.handleTokenDrop) return;
       const result = coordinator.handleTokenDrop(tokenType, event.clientX, event.clientY);
       if (result && typeof result.catch === 'function') {
@@ -1002,6 +1040,26 @@ async function startCampaignApplication() {
     }
     pauseControls();
     await autosave.start(services.scene);
+    const rosterHost = document.getElementById('saved-character-roster');
+    if (!rosterHost) throw new Error('The saved character roster mount is missing');
+    manager.savedCharacterRoster?.destroy();
+    manager.savedCharacterRoster = new SavedCharacterRoster({
+      gameManager: manager,
+      services: manager.characterServices,
+      onOpenPlaced: async (token) => {
+        if (manager.campaignWorld) await changeCampaignView(manager, { focusTokenId: token.id });
+        else {
+          const scene = await captureCampaignScene(manager, services.library);
+          manager.threeSceneManager.restoreView({
+            ...scene.camera,
+            target: { ...token.world },
+          });
+          await manager.token3DAdapter.setSelectedToken(token);
+        }
+        return openCharacterSheet(manager, token);
+      },
+      onSelectionChanged: () => window.sidebarController?.refreshCreatureSelection(),
+    }).attach(rosterHost);
     for (const [element, inert] of previousInert) element.inert = inert;
     loading.remove();
   } catch (error) {

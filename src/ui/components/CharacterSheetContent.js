@@ -116,7 +116,7 @@ export default class CharacterSheetContent {
         }, 'Hit points updated.'),
     });
     this.restControls = new RestControls({
-      canRest: () => !this.services?.combat?.active,
+      canRest: () => this.services?.sheetContext !== 'library' && !this.services?.combat?.active,
       roll: (request) => rollForSheet(this, request),
       onChanged: (id, message) => {
         if (id === this.token?.characterSheetId && !this.disposed) {
@@ -623,6 +623,8 @@ export default class CharacterSheetContent {
     if (this._cancelingIdentityEdit === element) return;
     if (element === this.librarySelect) {
       this._run(() => {
+        if (this.services.sheetContext === 'library')
+          throw new Error('Open another saved character from the campaign roster');
         this.services.library.get(element.value);
         this.token.characterSheetId = element.value;
       }, 'Loaded saved character.');
@@ -630,6 +632,8 @@ export default class CharacterSheetContent {
       void this._importFile();
     } else if (element.dataset.targetingTag) {
       this._run(async () => {
+        if (this.services.sheetContext === 'library')
+          throw new Error('Place this character on the board to edit its creature targeting tags');
         const token = this.token,
           key = element.dataset.targetingTag;
         const allowed =
@@ -660,6 +664,8 @@ export default class CharacterSheetContent {
       const wasChecked = getTokenConditions(token).includes(condition);
       const result = this._run(() => {
         if (condition === 'prone' && !element.checked) {
+          if (this.services.sheetContext === 'library')
+            throw new Error('Place this character on the board to stand using its movement');
           return this.services.falling.stand(token);
         }
         const adapter = this.gameManager.token3DAdapter;
@@ -737,7 +743,7 @@ export default class CharacterSheetContent {
     if (!button) return;
     const action = button.dataset.sheetAction;
     if (
-      this.services.sessionRole === 'player' &&
+      (this.services.sessionRole === 'player' || this.services.sheetContext === 'library') &&
       [
         'new',
         'delete',
@@ -759,7 +765,9 @@ export default class CharacterSheetContent {
     ) {
       this._failure(
         new Error(
-          'Player gameplay commands are not enabled in this milestone; edit your assigned sheet or ask the DM.'
+          this.services.sheetContext === 'library'
+            ? 'Place this character on the board to use movement, rolls or gameplay actions.'
+            : 'Player gameplay commands are not enabled in this milestone; edit your assigned sheet or ask the DM.'
         ),
         'playerAccess'
       );
@@ -967,6 +975,13 @@ export default class CharacterSheetContent {
     };
     try {
       if (!this.services) throw new Error('Wait for character data to finish loading');
+      if (notify && this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
+      if (
+        notify &&
+        (this.gameManager.campaignViewBusy ||
+          this.gameManager.inputCoordinator?.savedCharacterPending)
+      )
+        throw new Error('Wait for the current map change or character placement to finish');
       const result = operation();
       const complete = () => {
         if (this.disposed || this.token !== token) return false;
@@ -990,10 +1005,15 @@ export default class CharacterSheetContent {
   }
 
   _syncSavingControls() {
-    const busy = !!this.services?.library.isSaving || !!this.services?.combat.committing;
+    const busy =
+      !!this.services?.library.isSaving ||
+      !!this.services?.combat.committing ||
+      !!this.gameManager.campaignViewBusy ||
+      !!this.gameManager.campaignMapFailure ||
+      !!this.gameManager.inputCoordinator?.savedCharacterPending;
     this.imageEditor.setSaving(busy);
     this.root.setAttribute('aria-busy', String(busy));
-    this.librarySelect.disabled = busy;
+    this.librarySelect.disabled = busy || this.services.sheetContext === 'library';
     for (const action of ['new', 'delete', 'import', 'export']) {
       this.root.querySelector(`[data-sheet-action="${action}"]`).disabled = busy;
     }
@@ -1007,25 +1027,30 @@ export default class CharacterSheetContent {
       if (
         input.dataset.characterCondition === 'prone' &&
         getTokenConditions(this.token).includes('prone') &&
-        !this.services.combat.standingAvailability(this.token).allowed
+        (this.services.sheetContext === 'library' ||
+          !this.services.combat.standingAvailability(this.token).allowed)
       )
         input.disabled = true;
     }
-    this._restrictPlayerControls();
+    this._restrictContextControls();
   }
 
-  _restrictPlayerControls() {
-    if (this.services.sessionRole !== 'player') return;
+  _restrictContextControls() {
+    const libraryContext = this.services.sheetContext === 'library';
+    const player = this.services.sessionRole === 'player';
+    if (!player && !libraryContext) return;
     for (const control of this.root.querySelectorAll(
       '[data-sheet-action="new"],[data-sheet-action="delete"],[data-sheet-action="import"],' +
         '[data-sheet-action="cast"],[data-sheet-action="use-action"],[data-sheet-action="stand-up"],' +
         '[data-sheet-action="roll"],[data-sheet-action="recent-roll"],' +
-        '[data-sheet-section="combat"],[data-sheet-section="noncombat"],' +
-        '[data-character-condition],[data-character-field^="fallTraits."]'
+        '[data-sheet-section="combat"],[data-sheet-section="noncombat"]' +
+        (libraryContext ? ',[data-targeting-tag]' : '') +
+        (player ? ',[data-character-condition],[data-character-field^="fallTraits."]' : '')
     )) {
       control.disabled = true;
-      control.title =
-        'This milestone supports assigned-sheet editing; gameplay commands require DM adjudication.';
+      control.title = libraryContext
+        ? 'Use the campaign roster to place this character before using gameplay actions.'
+        : 'This milestone supports assigned-sheet editing; gameplay commands require DM adjudication.';
     }
   }
 

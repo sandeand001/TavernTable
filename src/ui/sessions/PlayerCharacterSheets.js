@@ -8,21 +8,50 @@ import CharacterSheetWindow from '../components/CharacterSheetWindow.js';
 import CompendiumSidebar from '../characters/CompendiumSidebar.js';
 import { notifyCharacterChanged } from '../characters/characterServices.js';
 
-export default class PlayerCharacterSheets {
-  constructor({ connection, state, catalog, onChanged = () => {} }) {
+export class SavedCharacterSheets {
+  constructor({
+    connection,
+    state,
+    catalog,
+    library = null,
+    gameManager = null,
+    onChanged = () => {},
+  }) {
+    if (
+      library &&
+      (library.store?.identity?.role === 'player' ||
+        gameManager?.characterServices?.sessionRole === 'player')
+    )
+      throw new Error('Shared campaign-library sheets require the DM workspace');
     this.onChanged = onChanged;
-    this.library = new CampaignCharacters({
-      ...state,
-      catalog,
-      store: new AssignedCharacterStore(connection, state.campaign.id),
-    });
+    this.sourceManager = gameManager;
+    this.sharedLibrary = library !== null;
+    this.library =
+      library ||
+      new CampaignCharacters({
+        ...state,
+        catalog,
+        store: new AssignedCharacterStore(connection, state.campaign.id),
+      });
     this.manager = {
       placedTokens: [],
+      get campaignViewBusy() {
+        return (
+          !!gameManager?.campaignViewBusy || !!gameManager?.inputCoordinator?.savedCharacterPending
+        );
+      },
+      get campaignMapFailure() {
+        return gameManager?.campaignMapFailure || null;
+      },
       token3DAdapter: {
         getSelectedToken: () => this.selected || null,
         setSelectedToken: (token) => {
           if (!this.manager.placedTokens.includes(token))
-            throw new Error('This character is not assigned to the player');
+            throw new Error(
+              this.sharedLibrary
+                ? 'This character is not in the saved campaign library'
+                : 'This character is not assigned to the player'
+            );
           this.selected = token;
         },
         isMovementInProgress: () => false,
@@ -35,18 +64,24 @@ export default class PlayerCharacterSheets {
       isSceneMoving: () => false,
     });
     this.services = {
-      campaign: state.campaign,
+      campaign: this.library.campaign,
       library: this.library,
-      catalog: new CompendiumCatalog(catalog),
+      catalog: new CompendiumCatalog(this.library.sourceCatalog),
       combat,
-      sessionRole: 'player',
+      sessionRole: this.sharedLibrary ? 'dm' : 'player',
+      sheetContext: this.sharedLibrary ? 'library' : 'assigned',
     };
     this.manager.characterServices = this.services;
     this._syncTokens();
     this._characterChanged = (event) => {
-      if (event.detail?.gameManager === this.manager) this.onChanged();
+      if (event.detail?.gameManager === this.manager && !this.refreshing)
+        this.onChanged(event.detail.characterId);
     };
     window.addEventListener('taverntable:characterChanged', this._characterChanged);
+    this._worldChanged = (event) => {
+      if (this.sourceManager && event.detail?.gameManager === this.sourceManager) this.refresh();
+    };
+    window.addEventListener('taverntable:campaignViewStateChanged', this._worldChanged);
     this.sheets = new CharacterSheetWindow({
       gameManager: this.manager,
       characterServices: this.services,
@@ -58,22 +93,34 @@ export default class PlayerCharacterSheets {
     const previous = new Map(
       this.manager.placedTokens.map((token) => [token.characterSheetId, token])
     );
-    this.manager.placedTokens = this.library.list().map((character) => {
-      const token = previous.get(character.id) || {
-        id: `assigned-sheet-${character.id}`,
-        type: 'mannequin',
-        characterSheetId: character.id,
-        nameMode: 'character',
-      };
-      token.name = character.name;
-      return token;
-    });
+    this.manager.placedTokens = this.library
+      .list()
+      .filter(
+        (character) =>
+          !this.sharedLibrary ||
+          !this.sourceManager?.placedTokens.some((token) => token.characterSheetId === character.id)
+      )
+      .map((character) => {
+        const token = previous.get(character.id) || {
+          id: `${this.sharedLibrary ? 'saved' : 'assigned'}-sheet-${character.id}`,
+          type: 'mannequin',
+          characterSheetId: character.id,
+          nameMode: 'character',
+        };
+        token.name = character.name;
+        return token;
+      });
     if (this.selected && !this.manager.placedTokens.includes(this.selected)) this.selected = null;
   }
 
   async open(id) {
     const token = this.manager.placedTokens.find((entry) => entry.characterSheetId === id);
-    if (!token) throw new Error('This saved character is not assigned to the player');
+    if (!token)
+      throw new Error(
+        this.sharedLibrary
+          ? 'This character is not in the saved campaign library'
+          : 'This saved character is not assigned to the player'
+      );
     this.selected = token;
     await this.sheets.open(token);
   }
@@ -82,7 +129,10 @@ export default class PlayerCharacterSheets {
     if (!this.compendium) {
       const root = document.createElement('section');
       root.className = 'player-compendium';
-      root.setAttribute('aria-label', 'Assigned character compendium');
+      root.setAttribute(
+        'aria-label',
+        this.sharedLibrary ? 'Saved character compendium' : 'Assigned character compendium'
+      );
       const close = document.createElement('button');
       close.type = 'button';
       close.textContent = 'Close compendium';
@@ -104,25 +154,34 @@ export default class PlayerCharacterSheets {
   }
 
   refresh(state) {
-    const before = this.manager.placedTokens;
-    const incomingIds = [
-      ...new Set(state.records.map((row) => campaignRecordCharacterId(row.key))),
-    ].sort();
-    const currentIds = this.library
-      .list()
-      .map((character) => character.id)
-      .sort();
-    if (
-      state.revision !== this.library.revision ||
-      this.library.failure ||
-      JSON.stringify(incomingIds) !== JSON.stringify(currentIds)
-    )
-      this.library.reload(state);
-    this._syncTokens();
-    for (const token of before)
-      if (!this.manager.placedTokens.includes(token)) this.sheets.closeTab(token);
-    for (const character of this.library.list()) notifyCharacterChanged(this.manager, character.id);
-    this.services.campaign = state.campaign;
+    this.refreshing = true;
+    try {
+      const before = this.manager.placedTokens;
+      if (!this.sharedLibrary) {
+        if (!state) throw new Error('Player sheet refresh requires authorized campaign state');
+        const incomingIds = [
+          ...new Set(state.records.map((row) => campaignRecordCharacterId(row.key))),
+        ].sort();
+        const currentIds = this.library
+          .list()
+          .map((character) => character.id)
+          .sort();
+        if (
+          state.revision !== this.library.revision ||
+          this.library.failure ||
+          JSON.stringify(incomingIds) !== JSON.stringify(currentIds)
+        )
+          this.library.reload(state);
+      }
+      this._syncTokens();
+      for (const token of before)
+        if (!this.manager.placedTokens.includes(token)) this.sheets.closeTab(token);
+      for (const character of this.library.list())
+        notifyCharacterChanged(this.manager, character.id);
+      this.services.campaign = this.library.campaign;
+    } finally {
+      this.refreshing = false;
+    }
     this.onChanged();
   }
 
@@ -130,8 +189,11 @@ export default class PlayerCharacterSheets {
     if (this.destroyed) return;
     this.destroyed = true;
     window.removeEventListener('taverntable:characterChanged', this._characterChanged);
+    window.removeEventListener('taverntable:campaignViewStateChanged', this._worldChanged);
     this.sheets.destroy();
     this.compendium?.destroy();
     this.compendiumRoot?.remove();
   }
 }
+
+export default SavedCharacterSheets;

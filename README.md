@@ -761,14 +761,18 @@ of identical buildings:
   remain playable. Large castles keep their architectural hierarchy rather than
   scattering random parts; small maps receive compact fortifications. Unlock the
   seed before **Generate** to vary the actual structure, not only its colours.
-- **Cliffside Castle**: a narrow rock-spur citadel, close-fitting cliff curtains,
-  rising crown keep and arched approach viaduct. The surrounding ravine extends
-  below zero; it is real falling space, not a decorative moat around a lawn.
-- **Mountain Fortress**: lower and upper baileys climb craggy terraces at 0, 15,
-  30 and 45 feet on the full-sized site. Retaining-wall stairs reach the summit
-  keep, architecture meets the ridge, and excavated halls/vaults have real rock
-  ceilings and connected interior maps. An arched bridge crosses the negative
-  valley to the lower gate. Smaller custom maps use compact site variants.
+- **Cliffside Castle**: a fortified keep, complete curtain and towers stand on a
+  high escarpment painted with positive and negative grid elevations. An arched
+  approach crosses the ravine; its drops are real falling space, not decorative
+  rock piles.
+- **Mountain Fortress**: a fortress emerges from the lower face of a painted
+  mountain, with below-zero wards and, on full-sized sites, a connected embedded
+  hall. The mountain heightfield remains intact beneath underground structures.
+  Both terrain-site variants retain full castle compositions on 50 x 50 and
+  60 x 60 boards; compact variants keep a four-tower fortification. Landforms use
+  existing editable grid heights, not new shape types or added landform solids.
+  Existing saved scenes are not remodeled on load; changes require explicit
+  generation or editing.
 - **Ruins**: the same seeded town/city footprints with varied roof loss,
   breaches, rubble and collapsed upper-floor sections. Floor openings keep stair
   attachment points intact; destruction is real geometry, not just darker tint.
@@ -1022,6 +1026,28 @@ changes save automatically. In the sheet's gear menu, **Saved character** loads 
 existing record onto the current creature. **New** starts another record without
 deleting the old one. A map token's appearance is independent of its saved
 character; their linked name is shared.
+
+The **Tokens** menu has a **Saved Characters** roster directly below the creature
+palette. The DM can search all campaign characters, create or import an unplaced
+record, and open its sheet without making a new sprite. Players still see only
+their assigned records; opening a sheet never changes their active observer.
+
+- **Place**, then click a supported floor, or drag **Place** onto the board.
+  Occupied or blocked cells are rejected, not replaced. Retrieval reuses the saved
+  character ID, HP, equipment, spells and sheet layouts. Removing its sprite keeps
+  the character in the roster.
+- Already-placed characters offer **Open sheet** and **Focus sprite**, reusing the
+  existing actor rather than copying or teleporting it.
+- Unplaced sheets edit saved character data, not world movement, targeting,
+  standing, rolls, rests or combat actions. Place the character to use those controls.
+- **Next sprite** chooses a canonical palette appearance for placement. A placed
+  sprite or a choice made in this workspace supplies its known model; otherwise
+  explicitly choose **Next sprite** before **Place** is enabled. Portraits do not
+  select a 3D model. A placed
+  sprite's appearance and saved character portraits/artwork retain their existing
+  scene and backup persistence. An unplaced next-placement choice is **workspace
+  session only**, not a permanent character-model preference or a field in character
+  JSON. No existing sprite or portrait is replaced by changing that choice.
 
 The **System Reference Document (SRD)** is published, reusable D&D rules content,
 not the complete paid rulebooks. The local **2014 SRD** compendium contains
