@@ -33,7 +33,45 @@ const signature = (result) =>
     }))
   );
 
-test('sixteen castle seeds vary real structure dimensions, heights, wall shapes and building/tower counts', () => {
+test.each([
+  [25, 42],
+  [40, 1],
+])(
+  'compact castle %i-square seed %i keeps its main keep above the connected wing rooflines',
+  (size, seed) => {
+    const engine = new TerrainEngine(size, size);
+    engine.generateBiomeElevation('castle', { seed });
+    const structures = engine.geometry.getStructures(),
+      keep = structures.find((spec) => spec.name.endsWith('High Keep')),
+      wings = structures.filter((spec) => /Keep West Wing|Keep East Hall/.test(spec.name));
+    expect(wings).toHaveLength(2);
+    for (const wing of wings) expect(structureBounds(wing).max.y).toBeLessThan(keep.heightFeet);
+  }
+);
+
+test.each([1, 7, 42])(
+  'compact castle seed %i keeps its front bastions smaller and lower than the principal keep',
+  (seed) => {
+    const engine = new TerrainEngine(25, 25);
+    engine.generateBiomeElevation('castle', { seed });
+    const structures = engine.geometry.getStructures(),
+      keep = structures.find((spec) => spec.name.endsWith('High Keep')),
+      bastions = structures.filter((spec) => spec.kind === 'turret'),
+      curtainHeight = Math.max(
+        ...structures.filter((spec) => spec.kind === 'wall').map((spec) => spec.heightFeet)
+      );
+    expect(bastions).toHaveLength(2);
+    for (const bastion of bastions) {
+      expect((Math.PI * bastion.diameterFeet ** 2) / 4).toBeLessThan(
+        keep.lengthFeet * keep.widthFeet
+      );
+      expect(bastion.heightFeet).toBeLessThan(keep.heightFeet);
+      expect(bastion.heightFeet).toBeGreaterThan(curtainHeight);
+    }
+  }
+);
+
+test('sixteen castle seeds vary real dimensions, heights, wall shapes and building counts without detached inner silo towers', () => {
   const seeds = Array.from({ length: 16 }, (_, index) => index + 1),
     layouts = seeds.map(layout);
   expect(new Set(layouts.map(signature)).size).toBeGreaterThanOrEqual(12);
@@ -45,6 +83,17 @@ test('sixteen castle seeds vary real structure dimensions, heights, wall shapes 
   expect(
     new Set(
       layouts.map((result) => result.structures.filter((spec) => spec.kind === 'turret').length)
+    ).size
+  ).toBe(1);
+  for (const result of layouts)
+    expect(result.structures.filter((spec) => spec.kind === 'turret')).toHaveLength(4);
+  expect(
+    new Set(
+      layouts.flatMap((result) =>
+        result.structures
+          .filter((spec) => spec.kind === 'turret')
+          .map((spec) => `${spec.diameterFeet}:${spec.heightFeet}`)
+      )
     ).size
   ).toBeGreaterThanOrEqual(3);
   expect(

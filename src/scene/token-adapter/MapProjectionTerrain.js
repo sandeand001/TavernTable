@@ -429,7 +429,7 @@ export default class MapProjectionTerrain {
     const full = new TerrainVolumeMeshBuilder().build({
       geometry: {
         hasCurves: reference.hasCurves,
-        getSolidCells: () => reference.getSolidCells({ partition }),
+        getSolidCells: () => reference.getSolidCells(),
         getPartition: () => partition,
         getSolidSpansAt: (x, z) => reference.getSolidSpansAt(x, z),
       },

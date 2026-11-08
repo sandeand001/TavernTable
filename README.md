@@ -550,10 +550,11 @@ Browsing or focusing preserves creature identities, positions, character resourc
 movement spent, the active turn and shared roll history. Opening a character sheet
 or activating its tab explicitly focuses the creature's actual map and position,
 not its mirrored model. This also applies to keyboard tabs and pop-out sheets.
-Tab activation selects that sprite and refreshes turn/action availability as
-soon as the view is ready; another sprite click is not needed to use End Turn.
-Passive map selection and targeting do not change viewing focus or another local
-view.
+All local creature-selection routes focus that creature's actual map and position,
+including clicks on projected sprites, roster controls and sheet tabs. Turn/action
+availability refreshes when the view is ready; selection never resets or advances
+the active turn. Map browsing without selecting a creature and targeting do not
+change viewing focus or another local view.
 
 Controls wait for complete scene changes and reject switching during movement,
 pending actions or unfinished terrain gestures. Failed switches restore the
@@ -619,6 +620,26 @@ Raise/Lower sculpting and flora controls remain.
   Building floors, stairs, interior terrain/furniture and saved room views move
   with it; independent cellars stay where they were authored. Existing connections
   must still physically fit, or be unlinked before moving.
+- Rectangular buildings can share real interiors. Bring a building within
+  **10 feet** of another compatible face, select it, choose **Connect interiors
+  to**, then **Preview connected interiors -> Apply size**. Matching floor
+  elevations gain a supported opening through both walls; a face needs at least
+  10 feet of overlap. **Cancel** changes no saved geometry, rooms or connections.
+  The preview compiles both member floors and their opening topology. Apply
+  revalidates current occupancy/resources rather than replaying preview state.
+  Occupied floors and unrelated protected construction reject the edit.
+- A connection is one Undo/Redo edit, including both poses, floor maps and
+  openings. Reopening retains the member-floor identities. Normal walking and
+  member-floor crossing use the actual movement allowance, not free teleporting.
+  Joined interior cutaways show the connected room footprints, not the empty
+  corners of a large bounding box; each room keeps its own ceiling limit.
+  An unsafe occupied Undo is rejected without
+  moving the creature or restoring old resources.
+- Use **Disconnect interiors for editing** before moving or reshaping a linked
+  member independently. Its shared walls close without moving the building;
+  Undo restores the connection. Whole-compound rigid movement is not a separate
+  tool. Manual snapping adopts both generated members so later regeneration
+  preserves the authored connection.
 - Each new building/turret storey owns a finite, separately editable floor grid.
   A 30-foot building has floors at 0, 10 and 20 feet; roof rise is separate.
   Automatic switchback stairs link successive floors. Use **Maps & focus** to
@@ -771,11 +792,31 @@ of identical buildings:
   Both terrain-site variants retain full castle compositions on 50 x 50 and
   60 x 60 boards; compact variants keep a four-tower fortification. Landforms use
   existing editable grid heights, not new shape types or added landform solids.
+  Terrace stairs follow the active terrain elevation scale, including rises below
+  five feet, without changing the painted landform.
   Existing saved scenes are not remodeled on load; changes require explicit
   generation or editing.
 - **Ruins**: the same seeded town/city footprints with varied roof loss,
   breaches, rubble and collapsed upper-floor sections. Floor openings keep stair
   attachment points intact; destruction is real geometry, not just darker tint.
+
+All four castle variants also generate a real **Cellar** beneath the keep, with
+a storage level **10 feet down** and a dungeon **20 feet down**. The underground
+wing extends beyond the keep without leaving the map or exposing rooms through
+the cliff/mountain surface. Full-sized dungeons have **four to six chambers**,
+including a guard chamber, holding cells and vaults, around a central corridor;
+small sites use compact, connected layouts. Walls and arched doorways are ordinary
+editable construction, not painted room outlines.
+
+Real stairs connect **keep -> storage cellar -> dungeon**, with separate stairwells
+that preserve the keep's original entrances and above-ground stairs. Open the named
+**Storage cellar** or **Dungeon** area through **Maps & focus**, or use
+**Terrain -> Build -> Show underground** to select and resize the Cellar.
+Edit dungeon walls through the normal Build controls while viewing its floor.
+Seed-locked regeneration preserves the layout and existing room edits. A different
+seed or biome that would erase manually edited dungeon rooms is rejected rather
+than silently discarding them. Existing saved castles do not acquire underground
+areas merely by opening; explicitly **Generate** to use the new recipes.
 
 Fresh empty default canvases grow to **35 x 35** for villages, **45 x 45** for
 cities, **50 x 50** for ordinary castles and **60 x 60** for the cliff/mountain
@@ -811,6 +852,13 @@ New construction or explicit regeneration uses the new recipes.
 Generated variable windows use the normal feature controls: resize one to save a
 manual override, or remove it without respawning its automatic counterpart.
 
+New ordinary **Castle / Fortress** layouts use the same shared-wall connection
+rules for their main building. Grand layouts join a high keep, residential wing,
+great hall, court wings, gatehouse and northern watch around an open-sky courtyard;
+their heights and rooflines differ. Compact 25- and 40-square layouts retain
+connected halls without cramped wing stairs. Existing grid sizing is unchanged,
+and reopening never remodels a saved castle. Visual acceptance remains open.
+
 Suitable hills, mountains and underground biomes can contain three joined
 chambers, connecting passages and a surface entrance. The chambers share one
 floor, and their rooms and tunnel bores are carved after the joined rock shells
@@ -826,7 +874,7 @@ Regeneration preserves manually authored structures and the ground beneath them.
 Resizing a generated structure adopts it as manual work. Natural landmarks retain
 the eight-structure / 220-volume budget. Settlement budgets allow meaningful
 density while remaining bounded: **16 / 800** for towns, **32 / 1200** for cities
-and **20 / 1100** for castles (structures / generated volumes). Linked floor-map
+and **21 / 1100** for castles (structures / generated volumes). Linked floor-map
 budgets are also bounded. Unsuitable or protected sites are skipped.
 New layouts and appearances apply on **Generate**, not when reopening an existing
 saved map. Lightweight drag ghosts do not rebuild the world's collision solids.

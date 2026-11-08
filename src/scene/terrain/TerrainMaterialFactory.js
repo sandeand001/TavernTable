@@ -1,8 +1,16 @@
 import { getConstructionPalette } from '../../config/biome/ConstructionPalettes.js';
+import { getBuildingFloorReference } from './InteriorCutaway.js';
 
 export function getBuildingFloorAppearance(world, mapId) {
   if (!world || !mapId) return null;
   const map = world.getMap(mapId);
+  if (typeof world.getBuildingFloorRenderContext === 'function') {
+    if (!getBuildingFloorReference(world, map)) return null;
+    const context = world.getBuildingFloorRenderContext(mapId);
+    if (!context || !Object.hasOwn(context, 'floorAppearance'))
+      throw new Error('The public building floor appearance is missing');
+    return context.floorAppearance;
+  }
   if (!map.building) return null;
   return (
     world

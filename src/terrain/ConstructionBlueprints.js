@@ -71,6 +71,10 @@ const KEYS = [
 ];
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+export function structureMinimumHeight(spec) {
+  return spec.kind === 'wall' ? (spec.wallStairs ? 0.5 : 5) : 7;
+}
+
 export function createStructure(input, { legacy = false } = {}) {
   const type = STRUCTURE_TYPES.find((entry) => entry.kind === input?.kind);
   if (
@@ -134,7 +138,7 @@ export function createStructure(input, { legacy = false } = {}) {
       'widthFeet',
       'angleRadians',
     ].some((key) => !Number.isFinite(spec[key])) ||
-    spec.heightFeet < 5 ||
+    spec.heightFeet < structureMinimumHeight(spec) ||
     spec.heightFeet > 100 ||
     spec.diameterFeet < 15 ||
     spec.diameterFeet > 500 ||
@@ -143,7 +147,7 @@ export function createStructure(input, { legacy = false } = {}) {
     spec.widthFeet < 1 ||
     spec.widthFeet > 500 ||
     (spec.kind === 'wall' && spec.style === 'battlement' && spec.widthFeet < 7) ||
-    (spec.kind !== 'wall' && (spec.widthFeet < 10 || spec.heightFeet < 7)) ||
+    (spec.kind !== 'wall' && spec.widthFeet < 10) ||
     !['plain', 'battlement'].includes(spec.style) ||
     !['manual', 'generated'].includes(spec.source) ||
     typeof spec.ruined !== 'boolean' ||
@@ -415,6 +419,38 @@ export function structureBounds(spec) {
     max: Object.fromEntries(
       ['x', 'y', 'z'].map((axis) => [axis, Math.max(...add.map((v) => v.bounds.max[axis]))])
     ),
+  };
+}
+
+export function replaceStructureGeometry(snapshot, spec) {
+  if (!snapshot.structures?.some((entry) => entry.id === spec.id))
+    throw new Error('Choose an existing structure before replacing its geometry');
+  const replacement = structureVolumes(spec);
+  const first = snapshot.volumes.findIndex((volume) => volume.structureId === spec.id);
+  const owned = new Set(
+    snapshot.volumes.filter((volume) => volume.structureId === spec.id).map((volume) => volume.id)
+  );
+  if (first < 0) throw new Error('The saved structure has no physical geometry');
+  const scattered = snapshot.volumes
+    .slice(first, first + owned.size)
+    .some((volume) => volume.structureId !== spec.id);
+  const byId = new Map(replacement.map((volume) => [volume.id, volume]));
+  const last = snapshot.volumes.findLastIndex((volume) => volume.structureId === spec.id);
+  const volumes = [];
+  for (let i = 0; i < snapshot.volumes.length; i++) {
+    const volume = snapshot.volumes[i];
+    if (!scattered && i === first) volumes.push(...replacement);
+    if (volume.structureId !== spec.id) volumes.push(volume);
+    else if (scattered) {
+      if (byId.has(volume.id)) volumes.push(byId.get(volume.id));
+      if (i === last) volumes.push(...replacement.filter((entry) => !owned.has(entry.id)));
+    }
+  }
+  return {
+    ...snapshot,
+    version: 3,
+    structures: snapshot.structures.map((entry) => (entry.id === spec.id ? spec : entry)),
+    volumes,
   };
 }
 

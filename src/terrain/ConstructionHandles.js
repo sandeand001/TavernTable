@@ -1,4 +1,4 @@
-import { createStructure } from './ConstructionBlueprints.js';
+import { createStructure, structureMinimumHeight } from './ConstructionBlueprints.js';
 import {
   buildingForHeight,
   buildingDimensions,
@@ -99,9 +99,11 @@ export function stretchStructureHeight(original, deltaFeet) {
               )
             ) + 10
         : original.kind === 'wall'
-          ? 5
+          ? structureMinimumHeight(original)
           : 10,
-      snap(original.heightFeet + deltaFeet, step)
+      original.wallStairs
+        ? original.heightFeet + snap(deltaFeet, step)
+        : snap(original.heightFeet + deltaFeet, step)
     )
   );
   return createStructure(

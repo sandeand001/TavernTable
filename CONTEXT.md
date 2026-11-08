@@ -775,6 +775,22 @@ Curved-mesh rendering preserves finite wall/cutaway bottoms all the way to the
 displayed cellar floor. An artificial render cap applies only to unbounded earth;
 its original bottom provenance survives convex clipping without entering saves.
 
+Castle, cliffside, mountain and ruined-castle generation now adds one native
+Cellar with storage and deeper dungeon levels, extending beyond its keep. Safe
+placement respects the active terrain scale, map margins and other underground
+structures. The optional `building.cellarLayout` version-1 recipe saves a
+`castle-dungeon` style and seed. Managed floor creation uses it to build real
+room walls and doorways and name the storage/dungeon areas. Existing floor
+geometry is preserved rather than regenerated on load or resize; manually
+authored Cellars without the recipe remain unchanged.
+
+Generation passes an explicit authored-cellar protection context through the
+building editor. Removing generated underground maps that contain edited walls,
+painted terrain, furniture or custom names fails atomically. Ordinary editing,
+removal and Undo retain their existing semantics. Seed-locked generation reuses
+the saved floor identities and room content; stair access and internal floor
+crossings use the existing paid, physically supported travel.
+
 Show underground is a manual Terrain Mode toggle available before selection;
 choosing the Cellar tool also enables it. A render-only scene adapter reveals all
 cellar outlines and the selected level, with visible candidate previews and
@@ -848,15 +864,45 @@ manual authoring and seeded generation. Town, City and Castle/Fortress have
 separate ruined variants, including Ruined Town and Ruined Castle. Settlement
 ordinary foundations remain level. Towns use irregular green-side cottages, winding lanes,
 gardens and local landmarks; cities use dense trade districts, alleys, a civic
-hall and market. Grand castles layer a high keep, outer bastions, inner bailey
-towers and a raised gatehouse over a real arched entrance. Compact maps retain
-usable smaller fortifications. Ruin openings leave stair attachment points clear.
+hall and market. Ordinary grand castles join a high keep, residential wing,
+great hall, court wings, gatehouse and northern watch around an open-sky
+courtyard, retaining outer bastions and real arched access. Compact maps retain
+connected halls without cramped wing stairs. Ruin openings leave stair attachment
+points clear.
 Castle geometry now follows a separate deterministic architecture stream:
 citadel/bailey/palace compositions vary keep/wall dimensions and heights, flared
 side walls, towers, supporting buildings and gatehouse presence. Locked seeds
 repeat exactly; names/colours are not the only differences. Planner bounds include
 actual wall rotation and stair footprints so optional buildings do not occupy
 the stairs. Existing saved layouts only change on explicit generation/editing.
+Rectangular building snaps use immutable, cancellable previews and matched
+same-elevation floors. Commit adds ordinary subtractive openings and existing
+`kind: 'opening'` connections between stable managed-floor IDs; transient
+`buildingJoins` transaction context is not a saved scene/schema field. Scene v3
+and buildingAssemblies v1 remain unchanged. Atomic construction Undo includes
+poses, floor maps, cameras and owned joins, never historical character resources.
+Preview prepares the same assembly transaction without applying it and exposes
+a copied, frozen `buildingContext` for authoring only. Commit prepares again
+against current actors/resources; unsafe occupied Undo rejects without resetting
+positions or paid movement.
+Manual snaps adopt both generated members and reject occupied/protected geometry.
+Disconnecting a member restores its shared walls before independent editing.
+Joined cutaways follow enabled same-level connections and union the individual
+room footprints, not an enclosing box. Foreign source rendering uses the native
+CSG cells rather than globally refining a large board at every construction cut.
+Projected-facing updates remain visual-only and never checkpoint an actor against
+the viewed map's geometry. Public render adapters use authorized
+`map.floorContext` owner/member/level references, never private `map.building`.
+They supply
+`getBuildingFloorRenderContext(mapId)` with resolved world-foot ceiling (explicit
+null for an unbounded deck), terrain thickness and floor appearance; missing
+public context fails visibly rather than reading private structure definitions.
+The shared `getBuildingFloorRenderContext(world, mapId)` export delegates to that
+hook in public mode; native worlds retain canonical resolution of only
+ceiling/thickness/floor appearance for authority projection. Public adapters read
+authorized render data directly instead of invoking private scene restoration.
+Do not publish `building.signature`: it contains the complete sorted authoring
+definition, not an opaque hash. Ordinary castle visual signoff remains open.
 Cliffside Castle and Mountain Fortress are explicit terrain-site biomes with
 60-square defaults and a 20-square minimum. Full castles fit both 50- and
 60-square boards; compact sites retain a keep, four towers and a complete
@@ -888,7 +934,7 @@ the console. Generation passes a new random seed transactionally, so failed
 attempts retain the prior seed and board. Only one selected biome is aria-pressed.
 It preserves manual structures/ground and adopts resized generated structures as
 manual. The Structures & landmarks option persists with the map. A generation
-pass uses biome budgets: natural 8/220, town 16/800, city 32/1200, castle 20/1100
+pass uses biome budgets: natural 8/220, town 16/800, city 32/1200, castle 21/1100
 (structures/volumes), with finite floor-map budgets and the campaign map limit.
 Flora avoids structures and paved/site feature footprints.
 Generate may enlarge only a fresh empty default 25-square canvas, or an unedited

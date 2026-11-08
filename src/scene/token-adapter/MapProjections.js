@@ -98,7 +98,7 @@ async function syncMapProjections() {
       token.__threeMesh.visible = this.isTokenProjectionVisible(token);
       if (this.isTokenProjectionVisible(token)) {
         this._positionMesh(token.__threeMesh, token);
-        this.updateTokenOrientation(token);
+        this._applyOrientationImmediate(token, token.facingAngle ?? 0);
         if (token.openingHold) this.syncOpeningHoldVisual(token);
         if (token.surfaceHold) this.syncSurfaceGripVisual(token);
       }

@@ -128,6 +128,33 @@ test('arbitrary wall drags preview without changing terrain and retain the plain
   });
 });
 
+test('short terrace stair height fields remain valid when selecting and applying a generated rise', () => {
+  const { world, root, pointer } = fixture();
+  world.engine.placeStructure({
+    id: 'short-stair',
+    kind: 'wall',
+    style: 'battlement',
+    wallStairs: true,
+    wallStairExit: 'terrace',
+    xFeet: 60,
+    zFeet: 60,
+    heightFeet: 3,
+    lengthFeet: 30,
+    widthFeet: 8,
+  });
+  root.querySelector('[data-build-select]').click();
+  pointer('pointerdown', 60, 60);
+  const height = root.querySelector('[name="heightFeet"]');
+  expect(height.value).toBe('3');
+  expect(height.min).toBe('0.5');
+  expect(height.step).toBe('0.5');
+  expect(height.checkValidity()).toBe(true);
+  root
+    .querySelector('form')
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  expect(world.engine.geometry.getStructures()[0].heightFeet).toBe(3);
+});
+
 test('select/resize changes diameter only on Apply, Cancel leaves saved geometry untouched', () => {
   const { world, root, pointer } = fixture();
   root.querySelector('[data-build-kind="dome"]').click();
@@ -727,6 +754,74 @@ test('a placed building moves with its centre handle only on release and Undo re
   pointer('pointerup', 70, 65);
   expect(world.engine.geometry.getStructures()[0]).toMatchObject({ xFeet: 70, zFeet: 65 });
   world.engine.undo();
+  expect(world.engine.save()).toEqual(before);
+});
+
+test('a connected-interior preview can be canceled through the UI without applying on a later submit', () => {
+  const { world, root, pointer } = fixture();
+  for (const spec of [
+    { id: 'keep', xFeet: 40, lengthFeet: 40 },
+    { id: 'wing', xFeet: 82.5, lengthFeet: 30 },
+  ])
+    world.engine.placeStructure({
+      ...spec,
+      kind: 'building',
+      zFeet: 40,
+      widthFeet: 30,
+      heightFeet: 10,
+      building: { version: 2, roof: 'flat', stairs: false, autoWindows: false },
+    });
+  root.querySelector('[data-build-select]').click();
+  pointer('pointerdown', 82.5, 40);
+  pointer('pointerup', 82.5, 40);
+  const before = world.engine.save(),
+    target = root.querySelector('[name="joinTarget"]');
+  expect(target).not.toBeNull();
+  target.value = 'keep';
+  target.dispatchEvent(new Event('change', { bubbles: true }));
+  root.querySelector('[data-building-join-preview]').click();
+  expect(root.querySelector('[data-construction-status]').textContent).toMatch(
+    /connected interior preview/i
+  );
+  expect(world.engine.save()).toEqual(before);
+  root.querySelector('[data-build-cancel]').click();
+  root
+    .querySelector('form')
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  expect(world.engine.save()).toEqual(before);
+});
+
+test('Apply commits the previewed connected interiors once and Undo restores both walls and the source pose', () => {
+  const { world, root, pointer } = fixture();
+  for (const spec of [
+    { id: 'keep', xFeet: 40, lengthFeet: 40 },
+    { id: 'wing', xFeet: 82.5, lengthFeet: 30 },
+  ])
+    world.engine.placeStructure({
+      ...spec,
+      kind: 'building',
+      zFeet: 40,
+      widthFeet: 30,
+      heightFeet: 10,
+      building: { version: 2, roof: 'flat', stairs: false, autoWindows: false },
+    });
+  root.querySelector('[data-build-select]').click();
+  pointer('pointerdown', 82.5, 40);
+  pointer('pointerup', 82.5, 40);
+  const before = world.engine.save();
+  root.querySelector('[name="joinTarget"]').value = 'keep';
+  root.querySelector('[data-building-join-preview]').click();
+  root
+    .querySelector('form')
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  expect(world.engine.geometry.getStructures().find((spec) => spec.id === 'wing').xFeet).toBe(75);
+  expect(
+    world.engine.geometry.isSpaceClear({
+      min: { x: 57.5, y: 1e-5, z: 37.5 },
+      max: { x: 62.5, y: 6, z: 42.5 },
+    })
+  ).toBe(true);
+  expect(world.engine.undo()).toBe(true);
   expect(world.engine.save()).toEqual(before);
 });
 

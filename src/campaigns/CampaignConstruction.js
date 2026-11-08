@@ -1,7 +1,37 @@
 import { isSurfaceGripValid } from './CampaignSurfaceClimb.js';
 import { campaignToMapFeet, localWorldToCampaign } from './CampaignCoordinates.js';
+import { isBuildingJoinConnection, isGeneratedBuildingJoin } from '../terrain/BuildingSnaps.js';
+import { captureBuildingContext } from './BuildingAssembly.js';
 
-export function validateConstructionEdit(gm, geometry) {
+export function unlinkBuildingInteriors(gm, structureId) {
+  const world = gm.campaignWorld,
+    ownerId = gm.campaignMapId;
+  if (!world || !ownerId || world.getMap(ownerId).building)
+    throw new Error('Return to the exterior map to disconnect building interiors');
+  const scene = world.save(),
+    floorIds = new Set(
+      scene.maps
+        .filter(
+          (map) => map.building?.ownerMapId === ownerId && map.building.structureId === structureId
+        )
+        .map((map) => map.id)
+    );
+  const connections = scene.connections.filter(
+    (connection) =>
+      isBuildingJoinConnection(connection, ownerId) &&
+      connection.ends.some((end) => floorIds.has(end.mapId))
+  );
+  if (!connections.length) return false;
+  const removed = new Set(connections.map((connection) => connection.id)),
+    context = captureBuildingContext(scene, ownerId);
+  context.connections = context.connections.filter((connection) => !removed.has(connection.id));
+  return gm.terrainEngine.removeBuildingJoins(
+    [...new Set(connections.flatMap((connection) => connection.feature.volumeIds))],
+    context
+  );
+}
+
+export function validateConstructionEdit(gm, geometry, context = null) {
   if (
     gm.sceneAutosave?.ready === false ||
     gm.campaignViewBusy ||
@@ -16,13 +46,22 @@ export function validateConstructionEdit(gm, geometry) {
   const world = gm.campaignWorld;
   if (world) {
     const volumes = new Map(geometry.save().volumes.map((volume) => [volume.id, volume]));
-    const original = new Map(
-      gm.terrainEngine.geometry.save().volumes.map((volume) => [volume.id, volume])
-    );
+    const previous = gm.terrainEngine.geometry.save();
+    const original = new Map(previous.volumes.map((volume) => [volume.id, volume]));
     for (const connection of world.getConnections())
       if (connection.feature.mapId === gm.campaignMapId && !connection.building)
         for (const id of connection.feature.volumeIds)
-          if (JSON.stringify(volumes.get(id)) !== JSON.stringify(original.get(id)))
+          if (
+            JSON.stringify(volumes.get(id)) !== JSON.stringify(original.get(id)) &&
+            !(
+              isBuildingJoinConnection(connection, gm.campaignMapId) &&
+              ((context?.ownerMapId === gm.campaignMapId && Array.isArray(context.connections)) ||
+                (context?.replacingGeneratedJoins === true &&
+                  isGeneratedBuildingJoin(connection, gm.campaignMapId, previous, (id) =>
+                    world.getMap(id)
+                  )))
+            )
+          )
             throw new Error(
               'This structure has a connected opening or stairway; unlink it before resizing'
             );

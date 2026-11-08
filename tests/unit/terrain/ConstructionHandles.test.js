@@ -39,6 +39,23 @@ test('round structures stretch their diameter around the anchored opposite edge'
   expect(next.zFeet).toBe(60);
 });
 
+test('short terrace stair height handles preserve an unmoved grip and retain their lower bound', () => {
+  const spec = createStructure({
+    id: 'short-stair',
+    kind: 'wall',
+    style: 'battlement',
+    wallStairs: true,
+    wallStairExit: 'terrace',
+    xFeet: 60,
+    zFeet: 60,
+    heightFeet: 3,
+    lengthFeet: 80,
+  });
+  expect(stretchStructureHeight(spec, 0)).toEqual(spec);
+  expect(stretchStructureHeight(spec, 5).heightFeet).toBe(8);
+  expect(stretchStructureHeight(spec, -5).heightFeet).toBe(0.5);
+});
+
 function house() {
   return createStructure({
     id: 'house',

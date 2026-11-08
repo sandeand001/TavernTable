@@ -9,6 +9,8 @@ import { getConstructionAppearance } from '../../config/biome/ConstructionPalett
 import { buildingLevels, createWindowLayout } from '../BuildingModel.js';
 import { createSettlementLayout } from './SettlementLayouts.js';
 import { createCastleSiteLayout } from './CastleSites.js';
+import { createCastleCellarLayout } from './CastleCellars.js';
+import { createBuildingSnapPreview } from '../BuildingSnaps.js';
 
 const LANDMARK_BIOMES = new Set([
   'grassland',
@@ -112,6 +114,7 @@ export function generateBiomeStructures({
     for (const [x, z] of cellsIn(bounds)) next[z][x] = previousHeights[z][x];
   const structures = [];
   const siteVolumes = [];
+  const joinPairs = [];
   let floorMaps = 0;
   const occupied = [];
   const random = createSeededRNG((Math.imul(seed, 0x85ebca6b) ^ 0xc2b2ae35) >>> 0, 157);
@@ -202,13 +205,47 @@ export function generateBiomeStructures({
       depth,
       feetPerLevel,
     });
-    for (const input of layout.structures) {
+    const proposed = [];
+    for (const [index, input] of layout.structures.entries()) {
       const { kind, xFeet, zFeet, ...extra } = input;
       const proposal = propose(kind, xFeet, zFeet, extra);
-      append([proposal], {
-        overlap: settlement.kind !== 'town',
-        ground: settlement.site || proposal.spec.baseFeet > 0 ? 'keep' : 'flat',
+      if (
+        append([proposal], {
+          overlap: settlement.kind !== 'town',
+          ground: settlement.site || proposal.spec.baseFeet > 0 ? 'keep' : 'flat',
+        })
+      )
+        proposed[index] = proposal.spec;
+    }
+    for (const join of layout.joins || []) {
+      const source = proposed[join.sourceIndex],
+        target = proposed[join.targetIndex];
+      if (!source || !target)
+        throw new Error(
+          'The complete connected castle main building cannot fit around existing construction'
+        );
+      joinPairs.push({ sourceId: source.id, targetId: target.id });
+    }
+    if (settlement.kind === 'castle') {
+      const keepIndex = layout.structures.findIndex((spec) => spec.name?.endsWith('High Keep'));
+      const keep = keepIndex >= 0 ? proposed[keepIndex] : proposed.find((spec) => spec?.building);
+      if (!keep)
+        throw new Error(
+          'The castle keep is blocked by existing construction; its cellar cannot be generated'
+        );
+      const { kind, xFeet, zFeet, ...extra } = createCastleCellarLayout(keep, {
+        biomeKey,
+        seed,
+        width,
+        depth,
+        heights: next,
+        feetPerLevel,
+        structures: [...preserved, ...structures],
       });
+      if (!append([propose(kind, xFeet, zFeet, extra)], { overlap: true, ground: 'keep' }))
+        throw new Error(
+          'The castle cellar exceeds the site budget or conflicts with protected construction'
+        );
     }
     for (const volume of layout.volumes)
       if (!protectedBounds.some((other) => intersects(volume.bounds, other)))
@@ -359,12 +396,28 @@ export function generateBiomeStructures({
     );
   if (generated.length > budget.volumes)
     throw new Error('Generated structures exceed the map geometry budget');
+  let geometrySnapshot = {
+    version: 3,
+    structures: [...preserved, ...structures],
+    volumes: [...protectedVolumes, ...generated],
+  };
+  const joins = [];
+  for (const pair of joinPairs) {
+    const source = geometrySnapshot.structures.find((spec) => spec.id === pair.sourceId);
+    const preview = createBuildingSnapPreview(
+      geometrySnapshot,
+      pair.sourceId,
+      { xFeet: source.xFeet, zFeet: source.zFeet, angleRadians: source.angleRadians },
+      { targetId: pair.targetId, source: 'generated' }
+    );
+    geometrySnapshot = preview.geometry;
+    joins.push(...preview.joins);
+  }
+  if (generated.length + joins.length > budget.volumes)
+    throw new Error('Generated castle joins exceed the map geometry budget');
   return {
     heights: next,
-    geometry: {
-      version: 3,
-      structures: [...preserved, ...structures],
-      volumes: [...protectedVolumes, ...generated],
-    },
+    geometry: geometrySnapshot,
+    ...(joins.length ? { joins } : {}),
   };
 }

@@ -1,4 +1,10 @@
-import { STRUCTURE_TYPES, createStructure } from '../terrain/ConstructionBlueprints.js';
+import {
+  STRUCTURE_TYPES,
+  createStructure,
+  structureMinimumHeight,
+} from '../terrain/ConstructionBlueprints.js';
+import { unlinkBuildingInteriors } from '../campaigns/CampaignConstruction.js';
+import { isBuildingJoinConnection } from '../terrain/BuildingSnaps.js';
 import { ConstructionPreview } from '../scene/terrain/ConstructionPreview.js';
 import { ConstructionGizmos } from '../scene/terrain/ConstructionGizmos.js';
 import { UndergroundConstructionView } from '../scene/terrain/UndergroundConstructionView.js';
@@ -54,6 +60,7 @@ export class TerrainConstructionPanel {
     this.selectedFeature = null;
     this.selectedId = null;
     this.draft = null;
+    this.snapPreview = null;
     this.pointer = null;
     this.pendingFrame = null;
     this.disposers = [];
@@ -164,6 +171,12 @@ export class TerrainConstructionPanel {
             </div>
           </div>
         </div>
+        <div data-building-join-controls hidden>
+          <label>Connect interiors to<select name="joinTarget" class="grid-input"></select></label>
+          <button type="button" class="terrain-tool-btn" data-building-join-preview>Preview connected interiors</button>
+          <button type="button" class="terrain-tool-btn" data-building-join-remove hidden>Disconnect interiors for editing</button>
+          <small class="small-text">Move within 10 feet of a compatible building face, preview, then Apply. Both shared walls open; Cancel changes nothing.</small>
+        </div>
         <div class="construction-actions" data-edit-actions hidden>
           <button type="submit" class="terrain-tool-btn">Apply size</button>
           <button type="button" class="terrain-tool-btn" data-build-cancel>Cancel</button>
@@ -177,6 +190,25 @@ export class TerrainConstructionPanel {
     this.status = root.querySelector('[data-construction-status]');
     this.help = root.querySelector('[data-build-help]');
     this.floorTool = null;
+    this._listen(root.querySelector('[data-building-join-preview]'), 'click', () =>
+      this._perform(() => this._previewBuildingJoin())
+    );
+    this._listen(this.form.elements.namedItem('joinTarget'), 'change', () =>
+      this._perform(() => this._queuePreview())
+    );
+    this._listen(root.querySelector('[data-building-join-remove]'), 'click', () =>
+      this._perform(() => {
+        this._requireIdle();
+        this._cancelSnapPreview();
+        const changed = unlinkBuildingInteriors(this.gameManager, this.selectedId);
+        this._select(
+          this.engine.geometry.getStructures().find((spec) => spec.id === this.selectedId)
+        );
+        this.status.textContent = changed
+          ? 'Interiors disconnected. Edit this member normally; Undo restores the connection.'
+          : 'This building has no connected interiors.';
+      })
+    );
     this._listen(root.querySelector('[data-underground-view]'), 'change', (event) =>
       this._perform(() => {
         if (event.target.checked && !['select', 'cellar'].includes(this.engine.constructionTool))
@@ -225,6 +257,7 @@ export class TerrainConstructionPanel {
     );
     this._listen(this.form, 'input', (event) =>
       this._perform(() => {
+        if (event.target.name === 'joinTarget') return;
         if (
           event.target.matches('[name="editFloor"],[name="roomHeightFeet"],[name="floorOpening"]')
         )
@@ -241,6 +274,10 @@ export class TerrainConstructionPanel {
       event.preventDefault();
       this._perform(() => {
         this._requireIdle();
+        if (this.snapPreview) {
+          this._commitDraft();
+          return;
+        }
         if (this.selectedFeature) this._readFeatureDraft();
         const room = this.form.elements.namedItem('roomHeightFeet');
         if (
@@ -1307,13 +1344,44 @@ export class TerrainConstructionPanel {
     this.status.textContent = 'Structure placed. Choose Select / resize to edit it.';
   }
 
-  _queuePreview() {
+  _cancelSnapPreview() {
+    if (this.snapPreview) this.engine.cancelStructureSnap(this.snapPreview);
+    this.snapPreview = null;
+  }
+
+  _previewBuildingJoin() {
+    this._requireIdle();
+    if (!this.selectedId || this.draft?.kind !== 'building')
+      throw new Error('Select a rectangular building before connecting its interiors');
+    const targetId = this.form.elements.namedItem('joinTarget').value;
+    if (!targetId) throw new Error('Choose another building to connect');
+    this._cancelSnapPreview();
+    this.snapPreview = this.engine.previewStructureSnap(
+      this.selectedId,
+      {
+        xFeet: this.draft.xFeet,
+        zFeet: this.draft.zFeet,
+        angleRadians: this.draft.angleRadians,
+      },
+      { targetId }
+    );
+    this.draft = JSON.parse(JSON.stringify(this.snapPreview.structure));
+    this._fill();
+    this._render();
+    this._queuePreview(true);
+    this.status.textContent =
+      'Connected interior preview. Apply to commit both walls and floors, or Cancel.';
+  }
+
+  _queuePreview(retainSnap = false) {
+    if (!retainSnap) this._cancelSnapPreview();
     if (this.pendingFrame !== null) return;
     this.pendingFrame = requestAnimationFrame(() => {
       this.pendingFrame = null;
       this._perform(() => {
         if (this.draft && this.engine.isActive && this.engine.constructionTool) {
-          this.preview.show(this.draft, { wireframe: !!this.selectedId });
+          if (this.snapPreview) this.preview.showSnap(this.snapPreview);
+          else this.preview.show(this.draft, { wireframe: !!this.selectedId });
           const feature = this._selectedFeatureData();
           if (this.floorTool === 'cut') {
             const level = buildingLevels(this.draft).find(
@@ -1425,7 +1493,9 @@ export class TerrainConstructionPanel {
     const feature = this.selectedFeature;
     const featureTool = this.featureTool;
     const floorTool = this.floorTool;
-    const changed = this.engine.resizeStructure(this.selectedId, fields);
+    const changed = this.snapPreview
+      ? this.engine.commitStructureSnap(this.snapPreview)
+      : this.engine.resizeStructure(this.selectedId, fields);
     this._select(this.engine.geometry.getStructures().find((spec) => spec.id === this.selectedId));
     this.featureTool = featureTool;
     this.floorTool = floorTool;
@@ -1796,6 +1866,8 @@ export class TerrainConstructionPanel {
   cancel() {
     const pending = !!this.pointer;
     const drag = this.pointer;
+    const snap = this.snapPreview;
+    this._cancelSnapPreview();
     if (this.pendingFrame !== null) cancelAnimationFrame(this.pendingFrame);
     this.pendingFrame = null;
     if (this.pointer && this.canvas?.hasPointerCapture?.(this.pointer.id))
@@ -1810,6 +1882,10 @@ export class TerrainConstructionPanel {
     if (drag?.mode) {
       this.draft = drag.original;
       this.selectedFeature = drag.selectedFeature;
+      this._fill();
+      this._render();
+    } else if (snap && this.selectedId) {
+      this.draft = this.engine.geometry.getStructures().find((spec) => spec.id === this.selectedId);
       this._fill();
       this._render();
     }
@@ -1903,6 +1979,32 @@ export class TerrainConstructionPanel {
         String(this.engine.constructionTool === 'wall' && this.draft?.style === 'battlement')
       );
     this.root.querySelector('[data-edit-actions]').hidden = !this.selectedId;
+    const joinable = !!this.selectedId && this.draft?.kind === 'building';
+    this.root.querySelector('[data-building-join-controls]').hidden = !joinable;
+    const joinTarget = this.form.elements.namedItem('joinTarget'),
+      selectedTarget = joinTarget.value;
+    const targets = this.engine.geometry
+      .getStructures()
+      .filter((spec) => spec.id !== this.selectedId && spec.kind === 'building' && spec.building);
+    joinTarget.replaceChildren(
+      new Option('Choose a building', ''),
+      ...targets.map((spec) => new Option(structureDisplayName(spec), spec.id))
+    );
+    joinTarget.value = targets.some((spec) => spec.id === selectedTarget) ? selectedTarget : '';
+    joinTarget.disabled = !joinable;
+    const world = this.gameManager.campaignWorld;
+    this.root.querySelector('[data-building-join-remove]').hidden = !(
+      joinable &&
+      world
+        ?.getConnections()
+        .some(
+          (connection) =>
+            isBuildingJoinConnection(connection, this.gameManager.campaignMapId) &&
+            connection.ends.some(
+              (end) => world.getMap(end.mapId).building?.structureId === this.selectedId
+            )
+        )
+    );
     const building = this.draft?.building;
     this.root.querySelector('[data-building-options]').hidden = !building;
     this.root.querySelector('[data-building-upgrade]').hidden = !(
@@ -1947,9 +2049,9 @@ export class TerrainConstructionPanel {
     if (this.draft) {
       const height = this.form.elements.namedItem('heightFeet');
       const custom = building?.version === 3;
-      height.min = building ? (custom ? '10' : '1') : this.draft.kind === 'wall' ? '5' : '7';
+      height.min = building ? (custom ? '10' : '1') : String(structureMinimumHeight(this.draft));
       height.max = building ? '10' : '100';
-      height.step = custom ? '5' : '1';
+      height.step = custom ? '5' : this.draft.wallStairs ? '0.5' : '1';
       if (custom) height.max = '100';
       this.root.querySelector('[data-height-label]').textContent = building
         ? custom

@@ -18,7 +18,7 @@ const castle = Object.freeze({
   kind: 'castle',
   cols: 50,
   rows: 50,
-  structures: 20,
+  structures: 21,
   volumes: 1100,
   floorMaps: 64,
 });

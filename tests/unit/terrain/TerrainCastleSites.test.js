@@ -108,23 +108,56 @@ test.each(['cliffsideCastle', 'mountainCastle'])(
   }
 );
 
+test.each([
+  ['cliffsideCastle', 1.5],
+  ['mountainCastle', 1.5],
+  ['cliffsideCastle', 5],
+  ['mountainCastle', 5],
+])('%s retains real supported stairs at %s feet per level', (key, feetPerLevel) => {
+  const engine = new TerrainEngine(50, 50);
+  engine.configureGeometryScale(feetPerLevel);
+  engine.configureGeometryBase(1);
+  engine.generateBiomeElevation(key, { seed: 42 });
+  expect(engine.save().heights).toEqual(generateCastleSiteHeights(key, 50, 50, { seed: 42 }));
+  for (const spec of engine.geometry.getStructures().filter((s) => s.wallStairs))
+    for (const local of wallStairLayout(spec).path) {
+      const point = buildingLocalToFeet(spec, local);
+      expect(
+        engine.geometry.findSupport(point.x, point.z, {
+          belowFeet: point.y + 1e-5,
+          clearanceFeet: 5,
+        })?.heightFeet
+      ).toBeCloseTo(point.y);
+    }
+});
+
 test.each(['cliffsideCastle', 'mountainCastle'])(
-  '%s retains real supported stairs with the existing five-feet-per-level setting',
+  '%s generates its complete layout at the current terrain scale and survives reopening',
   (key) => {
-    const engine = new TerrainEngine(50, 50);
-    engine.configureGeometryBase(1);
+    const engine = new TerrainEngine(60, 60);
+    engine.configureGeometryScale(1.5);
     engine.generateBiomeElevation(key, { seed: 42 });
-    expect(engine.save().heights).toEqual(generateCastleSiteHeights(key, 50, 50, { seed: 42 }));
-    for (const spec of engine.geometry.getStructures().filter((s) => s.wallStairs))
-      for (const local of wallStairLayout(spec).path) {
-        const point = buildingLocalToFeet(spec, local);
-        expect(
-          engine.geometry.findSupport(point.x, point.z, {
-            belowFeet: point.y + 1e-5,
-            clearanceFeet: 5,
-          })?.heightFeet
-        ).toBeCloseTo(point.y);
-      }
+    const layout = createCastleSiteLayout({
+      biomeKey: key,
+      seed: 42,
+      width: 300,
+      depth: 300,
+      feetPerLevel: 1.5,
+    });
+    const structures = engine.geometry.getStructures();
+    expect(structures.filter((spec) => spec.kind !== 'cellar').map((spec) => spec.name)).toEqual(
+      layout.structures.map((spec) => spec.name)
+    );
+    expect(structures.filter((spec) => spec.kind === 'cellar')).toHaveLength(1);
+    expect(structures.filter((spec) => spec.wallStairs && spec.heightFeet === 3).length).toBe(
+      key === 'cliffsideCastle' ? 2 : 1
+    );
+    expect(engine.save().heights).toEqual(generateCastleSiteHeights(key, 60, 60, { seed: 42 }));
+    const saved = engine.save(),
+      restored = new TerrainEngine(60, 60);
+    restored.configureGeometryScale(1.5);
+    restored.load(saved);
+    expect(restored.save()).toEqual(saved);
   }
 );
 
@@ -400,7 +433,7 @@ test.each([
       expect(bounds.min.z).toBeGreaterThanOrEqual(0);
       expect(bounds.max.x).toBeLessThanOrEqual(cols * 5);
       expect(bounds.max.z).toBeLessThanOrEqual(rows * 5);
-      if (!spec.building) continue;
+      if (!spec.building || spec.kind === 'cellar') continue;
       const point = buildingLocalToFeet(spec, {
         x: 0,
         y: 0,

@@ -18,6 +18,40 @@ function wall(changes = {}) {
   });
 }
 
+test.each([0.5, 1.5, 3, 4.5])(
+  'a short terrace stair rising %s feet retains supported steps and survives reopening',
+  (heightFeet) => {
+    const spec = wall({ heightFeet, lengthFeet: 30, wallStairExit: 'terrace' }),
+      layout = wallStairLayout(spec),
+      engine = new TerrainEngine(35, 30);
+    expect(createStructure({ ...spec, source: 'generated' }).heightFeet).toBe(heightFeet);
+    engine.placeStructure(spec);
+    let previous = 0;
+    for (const point of layout.path) {
+      expect(point.y - previous).toBeLessThanOrEqual(1.25 + 1e-6);
+      previous = point.y;
+      expect(
+        engine.geometry.findSupport(spec.xFeet + point.x, spec.zFeet + point.z, {
+          belowFeet: point.y + 1e-6,
+          clearanceFeet: 5,
+        })?.heightFeet
+      ).toBeCloseTo(point.y);
+    }
+    expect(layout.exit.y).toBe(heightFeet);
+    const saved = engine.save(),
+      restored = new TerrainEngine(35, 30);
+    restored.load(saved);
+    expect(restored.save()).toEqual(saved);
+  }
+);
+
+test('short terrace stair validation retains ordinary wall minima and rejects invalid rises', () => {
+  expect(() => wall({ heightFeet: 3, wallStairs: false })).toThrow(/dimensions/i);
+  expect(() => wall({ heightFeet: 0 })).toThrow(/dimensions/i);
+  expect(() => wall({ heightFeet: 0.25 })).toThrow(/dimensions/i);
+  expect(() => wall({ heightFeet: 101 })).toThrow(/dimensions/i);
+});
+
 test.each([20, 30, 60])(
   'new %i-foot switchbacks ascend toward the wall on solid masonry rather than floating over lower flights',
   (heightFeet) => {
