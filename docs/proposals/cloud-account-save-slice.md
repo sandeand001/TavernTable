@@ -138,6 +138,7 @@ object reference:
   private object path
   exact UTF-8 bytes
   SHA-256
+  GCS generation
 ```
 
 Keep large scene strings and character-record arrays in private Storage JSON
@@ -149,7 +150,8 @@ of repeatedly transmitting image bodies.
 Objects have server-generated campaign-scoped/content-addressed paths and
 immutable creation preconditions. Existing content at an immutable path is
 reused only after verifying its identity/integrity; a collision is not permission
-to overwrite it. Reads verify reference size/hash/schema before returning data.
+to overwrite it. Reads bind the captured generation and verify reference
+size/hash/schema before returning data.
 
 All related references and both revisions come from one captured committed
 head. Reading a newer scene with older characters is not allowed. The normal

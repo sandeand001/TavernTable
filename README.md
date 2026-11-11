@@ -257,6 +257,13 @@ Both the stable Jest gate and `npm run test:cloud` are required for cloud
 milestone verification. SDK integrity checks are not disabled for testing.
 See [setup and compatibility evidence](./docs/proposals/cloud-migration-preparation.md#isolated-sdk-and-emulator-feedback-loop).
 
+The pinned Storage emulator does not enforce GCS generation preconditions.
+Its explicit characterization test is not a create-only safety proof.
+The [separately approved real Storage canary](./docs/proposals/cloud-migration-preparation.md#immutable-object-primitive-approved-production-proof)
+verified overwrite rejection and cleanup; production-only error branches also
+have focused external-service fault tests. Normal test commands never run that
+live canary or change IAM.
+
 ## Initial local multiplayer sessions
 
 1. Sign in as the DM and open a campaign.

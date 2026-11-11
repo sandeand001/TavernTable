@@ -120,6 +120,13 @@
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.
   Serialization/cache/reference data is not another live terrain owner.
+- **Private immutable cloud object (storage Module implemented; commit wiring pending)**:
+  server-scoped content-addressed JSON, exact UTF-8 bytes/SHA-256 and GCS generation.
+  Existing content is verified, never silently overwritten or repaired.
+  The pinned Firebase emulator omits GCS create-only enforcement; a separately
+  approved, cleaned-up real canary proved 412 rejection. Normal tests remain
+  demo-only, and production-only fault branches have explicit external-service
+  fixtures. Upload completion alone is not a committed campaign save.
 - **Durable cloud command receipt (create implemented; save publication pending)**: a UID/context-bound
   command ID and intent fingerprint recover the original committed result after
   uncertain delivery. Prepare domain work and verify object uploads outside

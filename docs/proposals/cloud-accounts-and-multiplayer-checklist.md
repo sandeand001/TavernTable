@@ -40,7 +40,8 @@ this checklist.
 campaign metadata API are verified in `feat/cloud-accounts-multiplayer`.
 Immutable object/save publication (`M1-07`) is next, before browser account and
 returning-login integration (`M1-04` / `M1-05`). Nonempty cloud saves are not yet
-implemented; no application deployment or live-project write has occurred.
+implemented. No application deployment or campaign-data write has occurred;
+the narrowly approved synthetic Storage/IAM canary is complete and cleaned up.
 
 ## Approved requirements: do not reopen by accident
 
@@ -227,6 +228,12 @@ Revalidation in the intended environment remains part of M1 and M4.
     nonempty snapshot publication remains `M1-07`, not an implied completed save.
 
 - [ ] **M1-07 - Implement immutable cloud objects and atomic revision-head publication.**
+  - **Status:** in progress. The
+    [explicitly approved real Storage proof](./cloud-migration-preparation.md#immutable-object-primitive-approved-production-proof)
+    verified 412 overwrite rejection and original-byte preservation. The
+    synthetic object and exact-object temporary read grant were removed.
+    The Firebase emulator's missing precondition behavior is characterized, not
+    misreported as an immutable-write guarantee; atomic save publication is next.
   - **Depends:** `M1-01`, `M1-02`, `M1-06`.
   - **Success:** validate canonical state, stage/verify immutable Storage objects,
     then atomically publish head, receipt, and compact change record in Firestore.

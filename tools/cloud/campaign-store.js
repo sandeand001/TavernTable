@@ -3,9 +3,7 @@ const { createHash } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
-
-const uuid = (value) =>
-  typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
+const { isCloudUUID } = require('./cloud-ids.js');
 
 function principalUid(principal) {
   pilotAccountKey(principal?.uid);
@@ -87,7 +85,7 @@ class CloudCampaignStore {
       );
     const { commandId, options } = command;
     if (
-      !uuid(commandId) ||
+      !isCloudUUID(commandId) ||
       !options ||
       typeof options !== 'object' ||
       Array.isArray(options) ||
@@ -133,7 +131,7 @@ class CloudCampaignStore {
           previous?.version !== 1 ||
           previous.uid !== uid ||
           previous.kind !== 'campaign.create' ||
-          !uuid(previous.campaignId) ||
+          !isCloudUUID(previous.campaignId) ||
           previous.result?.id !== previous.campaignId ||
           typeof previous.fingerprint !== 'string' ||
           !/^[a-f0-9]{64}$/.test(previous.fingerprint)
@@ -194,7 +192,7 @@ class CloudCampaignStore {
 
   async _readHead(principal, id) {
     const uid = principalUid(principal);
-    if (!uuid(id))
+    if (!isCloudUUID(id))
       throw new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
     return this._transaction(
       async (transaction) => {

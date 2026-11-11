@@ -348,3 +348,86 @@ focused runs.
 This is private initial metadata, not an immutable object/save completion gate.
 Browser sign-in, complete saves, multiplayer, hosted resources and cutover remain
 their respective unchecked tasks. All proof uses synthetic demo identities/data.
+
+## Immutable object primitive: approved production proof
+
+`M1-07` is started but **not complete**. Initial real Storage tests preserve
+Unicode JSON, independently verify stored SHA-256/byte counts, and reopen through
+fresh backend SDK clients. Same-content concurrent stages also return the same
+reference, but that is not proof of a create-only storage guarantee.
+
+The stronger direct SDK test writes different bytes to an existing path with
+`ifGenerationMatch: 0`. In two independent emulator runs it incorrectly succeeds
+instead of returning 412, including with fresh SDK option objects.
+The installed SDK forwards this precondition in the GCS upload query; the pinned
+Firebase emulator's upload handler does not apply it. Firebase documents that
+its server-side GCS emulation is a subset of production.
+
+The diagnostic initially reported **26 passed / 1 failed**, exposing the missing
+platform behavior rather than proving immutable writes. It is now an explicit
+characterization of the pinned emulator limitation; production enforcement was
+verified separately below. Checksums remain enabled and dependencies/SDK code
+were not patched. The M1 save/publication gate is still incomplete.
+
+The user explicitly approved one disposable sub-KiB synthetic object in the
+existing private bucket. Its 60-byte create succeeded, but the follow-up metadata
+read returned 403 before the overwrite/read proof could execute. The existing
+Cloud CLI independently confirmed missing `storage.objects.get`, not a scope or
+quota denial. Bucket role inspection returned only legacy bucket owner/reader
+bindings; no member identities were printed or recorded.
+
+The initial read-before-delete cleanup hit the same permission denial. A direct
+delete of only the exact approved object succeeded, and a subsequent existence
+check verified that no live object remains. The existing soft-delete policy
+still applies. No additional objects, permission changes, infrastructure,
+campaign migration, deployment or cutover were created.
+
+The user separately approved a temporary read-only IAM binding restricted to
+that exact synthetic object, repeating the same-path check, then removing both
+object and binding. The binding used `roles/storage.objectViewer` with a condition
+matching the exact object resource name and type, never a campaign prefix.
+IAM updates preserved existing bindings and used ETags for concurrency.
+Operator identity and credentials were resolved privately, not printed or saved.
+
+**Verified against real Storage on November 11, 2026:**
+
+- The same-path **60-byte** synthetic create succeeded.
+- An attempted different-byte create-only overwrite returned **HTTP 412**.
+- A generation-pinned, checksum-validated read preserved the exact original bytes.
+- The test object was deleted and its live absence verified.
+- The temporary read grant was removed and its absence verified.
+- Independent Cloud CLI checks confirmed 404 for the object and the original
+  two legacy bucket-role bindings, with no temporary canary condition remaining.
+
+The existing soft-delete policy applies to removed test bytes. No live campaign
+data, deployment, cutover, new infrastructure or lasting permission grant was
+introduced. This narrow approval does not authorize further live tests or IAM
+changes. The planned backend-identity task must explicitly provide object-read
+permission; create/delete access alone is insufficient for verified saves.
+
+The object Adapter's 412 race branch has a focused Jest external-Storage fault
+case; actual successful SDK persistence and integrity remain native integration
+tests. Same-content emulator staging is not substituted for the real 412 proof.
+
+### Implemented immutable object layer
+
+[ImmutableCloudObjects](../../tools/cloud/immutable-objects.js) now stages
+versioned private JSON with server-scoped content-hash paths, create-only upload
+conditions and generation-bound references. It verifies exact UTF-8 bytes,
+SHA-256, scope, kind, schema and generation before returning data. Existing
+candidates are checked before any upload; corrupt content cannot be silently
+replaced or treated as a successful reuse. A raced 412 still requires full
+verification. Unknown SDK failures propagate; known infrastructure/permission
+failures and missing committed objects are explicit unavailable outcomes, not
+empty snapshots or false application-access denials.
+
+**Verified:** **30 native SDK/emulator tests passed**, zero skipped, including
+fresh-client persistence, content corruption without replacement, invalid/foreign
+references, missing objects and concurrent reuse. An actual **32 MiB** encoded
+UTF-8 object round-trips exactly; **one additional byte** is rejected before upload.
+That object cap is distinct from the **24 MiB command-wire** limit.
+**3 Jest fault suites / 5 tests** cover identity, eligibility, campaign metadata,
+production 412 and Storage permission failures; changed-code lint passes.
+
+This layer is not yet a campaign-save acknowledgment: canonical preparation and
+atomic head/receipt/change publication remain in progress under `M1-07`.
