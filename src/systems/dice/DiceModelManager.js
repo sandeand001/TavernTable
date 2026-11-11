@@ -8,6 +8,8 @@ import { diceState, hasWindow, getSceneManager } from './DiceState.js';
 const D20_MODEL_PATH = 'assets/Items/d20-gold.glb';
 const CRIT_FAILURE_COLOR_HEX = 0xb3261e;
 const CRIT_SUCCESS_COLOR_HEX = 0x1f8f3a;
+let authoritativeBlueprint;
+let authoritativeBlueprintPromise;
 
 // ── Three.js & Loader Bootstrap ─────────────────────────────────
 export async function ensureThreeNamespace() {
@@ -65,6 +67,40 @@ export async function ensureBlueprint() {
     });
   }
   return diceState.blueprintPromise;
+}
+
+export async function ensureAuthoritativeBlueprint(geometryKey) {
+  if (typeof geometryKey !== 'string' || !/^[a-f0-9]{64}$/.test(geometryKey))
+    throw new Error('The host supplied an invalid physical dice asset key');
+  if (!authoritativeBlueprint && !authoritativeBlueprintPromise) {
+    authoritativeBlueprintPromise = (async () => {
+      if (!globalThis.crypto?.subtle)
+        throw new Error('Verified physical dice replay requires a secure browser origin');
+      const response = await fetch(D20_MODEL_PATH);
+      if (!response.ok) throw new Error('The original physical d20 model could not be loaded');
+      const bytes = await response.arrayBuffer();
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      const key = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, '0')
+      ).join('');
+      if (key !== geometryKey)
+        throw new Error('The physical dice model does not match the host simulation');
+      await ensureThreeNamespace();
+      const Loader = await ensureLoaderCtor();
+      const gltf = await new Loader().parseAsync(bytes, '');
+      const root = gltf.scene || gltf.scenes?.[0];
+      if (!root) throw new Error('The original physical d20 model contains no scene');
+      authoritativeBlueprint = { key, root };
+      return authoritativeBlueprint;
+    })().catch((error) => {
+      authoritativeBlueprintPromise = null;
+      throw error;
+    });
+  }
+  const loaded = authoritativeBlueprint || (await authoritativeBlueprintPromise);
+  if (loaded.key !== geometryKey)
+    throw new Error('The physical dice model does not match the host simulation');
+  return loaded.root;
 }
 
 // ── Dice Cloning & Material Tuning ──────────────────────────────

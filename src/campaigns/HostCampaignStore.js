@@ -1,5 +1,5 @@
 import CampaignStore from './CampaignStore.js';
-import SessionConnection from './SessionConnection.js';
+import SessionConnection, { sessionJSON } from './SessionConnection.js';
 
 export default class HostCampaignStore extends CampaignStore {
   constructor({ packs, fetch = globalThis.fetch, baseURL = globalThis.location.href, host }) {
@@ -21,7 +21,7 @@ export default class HostCampaignStore extends CampaignStore {
 
   async _request(operation, args = []) {
     if (this.closed) throw new Error('The campaign database is closed');
-    const response = await this.fetch(this.endpoint, {
+    const data = await sessionJSON(this.fetch, this.endpoint, {
       method: 'POST',
       cache: 'no-store',
       headers: {
@@ -30,11 +30,6 @@ export default class HostCampaignStore extends CampaignStore {
       },
       body: JSON.stringify({ operation, args }),
     });
-    const data = await response.json();
-    if (!response.ok)
-      throw new Error(
-        data.error || `The campaign host could not complete the request (${response.status})`
-      );
     if (!Object.hasOwn(data, 'result'))
       throw new Error('The campaign host returned no save receipt');
     return data.result;

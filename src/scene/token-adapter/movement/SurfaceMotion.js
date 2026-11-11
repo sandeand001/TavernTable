@@ -105,16 +105,20 @@ function navigationGeometry(gm) {
 
 function getTokenSurfaceRange(token, allowance = null) {
   const gm = this.gameManager;
+  const publicAllowance = gm.playerInput?.movementAllowance(token);
+  if (gm.playerInput && publicAllowance === null) return null;
   const world = this._resolveTokenWorldPosition(token);
   const feetPerWorld = 5 / gm.spatial.tileWorldSize;
   gm.terrainEngine.configureGeometryScale(gm.spatial.elevationUnit * feetPerWorld);
   const combat = gm.characterServices?.combat;
   const settings = getTokenMovementSettings(token);
-  const available = combat?.active
-    ? combat.movementAllowance(token)
-    : combat && token.characterSheetId
-      ? combat.freeMovementAllowance(token)
-      : settings.speed;
+  const available = gm.playerInput
+    ? publicAllowance
+    : combat?.active
+      ? combat.movementAllowance(token)
+      : combat && token.characterSheetId
+        ? combat.freeMovementAllowance(token)
+        : settings.speed;
   const occupied = (gm.placedTokens || [])
     .filter(
       (other) =>

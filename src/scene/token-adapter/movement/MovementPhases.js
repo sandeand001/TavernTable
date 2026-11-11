@@ -33,6 +33,7 @@ function _updateForwardMovements(delta) {
       continue;
     }
     state.mesh = mesh;
+    if (state.phase === 'approved-walk') continue;
 
     try {
       const job = this._movementRoutes.get(tokenEntry);

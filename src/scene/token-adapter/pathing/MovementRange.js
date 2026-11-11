@@ -96,6 +96,8 @@ function getTokenMovementRange(token, allowance = null) {
   const gm = this.gameManager;
   if (gm.campaignViewBusy || gm.campaignMapFailure) return null;
   if (gm.campaignWorld && token.mapId !== gm.campaignMapId) return null;
+  const publicAllowance = gm.playerInput?.movementAllowance(token);
+  if (gm.playerInput && publicAllowance === null) return null;
   const combat = gm.characterServices?.combat;
   if (gm.characterServices?.library?.isSaving || combat?.pending || combat?.committing) return null;
   if (combat?.active && combat.activeToken !== token) return null;
@@ -104,11 +106,13 @@ function getTokenMovementRange(token, allowance = null) {
   const world = this._resolveTokenWorldPosition(token);
   const start = this._mapWorldToGrid(world) || token;
   const settings = getTokenMovementSettings(token);
-  const available = combat?.active
-    ? combat.movementAllowance(token)
-    : combat && token.characterSheetId
-      ? combat.freeMovementAllowance(token)
-      : settings.speed;
+  const available = gm.playerInput
+    ? publicAllowance
+    : combat?.active
+      ? combat.movementAllowance(token)
+      : combat && token.characterSheetId
+        ? combat.freeMovementAllowance(token)
+        : settings.speed;
   const threshold = this._getWallClimbThreshold();
   const anchor = this._movementStates.get(token)?.wallMotion;
   const occupied = new Set();

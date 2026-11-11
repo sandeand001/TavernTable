@@ -17,6 +17,20 @@ export function normalizeAngle(angle) {
 // ── Token Rotation ─────────────────────────────────────────────
 
 export function rotateToken(c, tokenEntry, deltaRadians) {
+  const game = c?.gameManager;
+  if (game?.playerInput) {
+    if (!tokenEntry || !Number.isFinite(deltaRadians) || !Number.isFinite(tokenEntry.facingAngle))
+      throw new Error('Choose a valid facing for the active assigned character');
+    return game.playerInput.requestFacing(
+      tokenEntry,
+      normalizeAngleInternal(tokenEntry.facingAngle + deltaRadians)
+    );
+  }
+  if (
+    game?.characterServices?.sheetContext === 'world' &&
+    game.characterServices.sessionRole === 'player'
+  )
+    throw new Error('Facing requires a host-authorized player command');
   if (!tokenEntry || !Number.isFinite(deltaRadians) || deltaRadians === 0) {
     return null;
   }

@@ -326,7 +326,95 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
   if (world) await gm.token3DAdapter.syncMapProjections();
 }
 
-async function applyMapTerrain(gm, map) {
+export async function reconcileCampaignScene(gm, scene, library, combat) {
+  validateScene(scene, { ruleset: library.ruleset, library });
+  const camera = gm.threeSceneManager.snapshotView();
+  const selectedId = gm.token3DAdapter.getSelectedToken()?.id || null;
+  const focusId = gm.campaignView?.focusTokenId || selectedId;
+  const previousMapId = gm.campaignMapId;
+  const previousMap = gm.campaignWorld?.getMap(previousMapId);
+  const world =
+    scene.version === 3
+      ? CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library })
+      : null;
+  const mapId = world ? previousMapId || scene.view.mapId : null;
+  const map = world ? world.getMap(mapId) : scene;
+  const assetsChanged = !previousMap || JSON.stringify(previousMap) !== JSON.stringify(map);
+  const ids = new Set(scene.creatures.map(({ id }) => id));
+  for (const token of [...gm.placedTokens])
+    if (!ids.has(token.id)) gm.tokenManager.removeToken(token);
+  gm.campaignWorld = world;
+  gm.campaignMapId = mapId;
+  gm.campaignView = world
+    ? world.createView({
+        mapId,
+        focusTokenId: ids.has(focusId) ? focusId : null,
+      })
+    : null;
+  if (assetsChanged) await applyMapTerrain(gm, map);
+  const typeCounts = new Map(scene.tokenCounters.types);
+  for (const creature of scene.creatures) {
+    let token = gm.placedTokens.find(({ id }) => id === creature.id);
+    if (!token) {
+      const model = gm.tokenManager.createCreatureByType(creature.type);
+      gm.tokenManager.addTokenToCollection(
+        model,
+        creature.gridX,
+        creature.gridY,
+        creature.type,
+        null,
+        creature
+      );
+      token = gm.placedTokens.at(-1);
+      if (!token || token.creature !== model)
+        throw new Error('A shared creature could not be placed');
+    } else if (token.type !== creature.type) {
+      gm.token3DAdapter.onTokenRemoved(token);
+      token.creature = gm.tokenManager.createCreatureByType(creature.type);
+    }
+    Object.assign(token, {
+      id: creature.id,
+      instanceNumber: creature.instanceNumber,
+      type: creature.type,
+      mapId: creature.mapId,
+      name:
+        creature.nameMode === 'automatic'
+          ? getAutomaticCreatureName(
+              creature.type,
+              creature.instanceNumber,
+              typeCounts.get(creature.type)
+            )
+          : creature.name,
+      nameMode: creature.nameMode,
+      gridX: creature.gridX,
+      gridY: creature.gridY,
+      world: { ...creature.pose.world },
+      facingAngle: creature.facingAngle,
+      movementSettings: { ...creature.movement },
+      allegiance: creature.allegiance || 'neutral',
+      creatureType: creature.creatureType || 'humanoid',
+      creatureSize: creature.creatureSize || 'medium',
+      fallTraits: creature.fallTraits ? { ...creature.fallTraits } : undefined,
+    });
+    if (creature.characterId)
+      TokenMovement.linkTokenCharacter(token, library, creature.characterId);
+    else TokenMovement.unlinkTokenCharacter(token, creature.movement);
+    await gm.token3DAdapter.onTokenAdded(token, creature);
+    await gm.token3DAdapter.restoreStablePlacement(token, creature);
+  }
+  gm.tokenManager._nextTokenId = scene.tokenCounters.nextId;
+  gm.tokenManager._tokenTypeCounts = typeCounts;
+  combat.restore(scene.combat, gm.placedTokens);
+  await gm.token3DAdapter.setSelectedToken(
+    gm.placedTokens.find(({ id }) => id === selectedId) || null
+  );
+  gm.stateCoordinator.setViewMode(camera.topDown ? 'topdown' : 'isometric', { remember: false });
+  gm.threeSceneManager.restoreView(camera);
+  gm.campaignView?.setCamera(camera);
+  if (world) await gm.token3DAdapter.syncMapProjections();
+}
+
+export async function applyMapTerrain(gm, map) {
   const terrain = map.terrain;
   gm.spatial.tileWorldSize = map.grid.tileWorldSize;
   gm.spatial.elevationUnit = terrain.worldElevationUnit;

@@ -2,9 +2,10 @@ import {
   captureCampaignScene,
   restoreCampaignScene,
   applySceneCharacterLinks,
+  reconcileCampaignScene,
   isCampaignActionInProgress,
 } from './SceneWorld.js';
-import { encodeScene } from './CampaignScene.js';
+import { decodeScene, encodeScene } from './CampaignScene.js';
 import { SceneNotReadyError } from '../scene/token-adapter/SavedPlacements.js';
 import { notifyCreatureNames } from '../entities/creatures/CreatureNames.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
@@ -45,6 +46,8 @@ export default class CampaignAutosave {
   }
 
   get status() {
+    if (this.sharedConflict)
+      return { state: 'error', text: `Paused / conflict: ${this.sharedConflict.message}` };
     if (this.error) return { state: 'error', text: `Not saved: ${this.error.message}` };
     if (!this.ready) return { state: 'loading', text: 'Restoring campaign...' };
     if (this.waiting) return { state: 'saving', text: this.waiting };
@@ -91,7 +94,15 @@ export default class CampaignAutosave {
         saved: (captured) => this._saved(captured),
       });
       this.disposers.push(this.gameManager.terrainEngine.onChanged(() => this.changed('terrain')));
-      this.disposers.push(this.combat.subscribe(() => this.changed('combat')));
+      let combatSnapshot = JSON.stringify(this.combat.snapshot());
+      this.disposers.push(
+        this.combat.subscribe(() => {
+          const next = JSON.stringify(this.combat.snapshot());
+          if (next === combatSnapshot) return;
+          combatSnapshot = next;
+          this.changed('combat');
+        })
+      );
       const hidden = () => {
         if (document.visibilityState === 'hidden')
           void this.flush().catch((error) => this._failed(error));
@@ -123,12 +134,91 @@ export default class CampaignAutosave {
     this._schedule();
   }
 
+  pauseForSharedUpdate() {
+    if (this.gameManager.characterServices?.sessionRole === 'player')
+      throw new Error('Canonical shared-scene conflicts require the DM workspace');
+    if (!this.sharedConflict) {
+      this.sharedConflict = Object.assign(
+        new Error(
+          'The shared campaign changed while local work was pending. Local work is retained; discard or reapply it against a fresh canonical base before saving.'
+        ),
+        { code: 'shared-scene-conflict' }
+      );
+      GameErrors.gameState(this.sharedConflict, {
+        component: 'CampaignAutosave',
+        operation: 'sharedConflict',
+      });
+    }
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.gameManager.campaignMapFailure = this.sharedConflict;
+    this._publish();
+    return this.sharedConflict;
+  }
+
+  async reconcile(state, { discardLocal = false, expectedGeneration = null } = {}) {
+    const gm = this.gameManager;
+    if (gm.characterServices?.sessionRole === 'player')
+      throw new Error('Canonical scene reconciliation requires the DM workspace');
+    if (
+      !this.ready ||
+      this.closed ||
+      this.writing ||
+      this.library.isSaving ||
+      this.library.pendingScenes ||
+      (!discardLocal &&
+        (this.dirty || this.error || this.sharedConflict || this.library.failure)) ||
+      isCampaignActionInProgress(gm)
+    )
+      throw new SceneNotReadyError(
+        'Finish or resolve the current action/save before applying a shared scene'
+      );
+    if (discardLocal && expectedGeneration !== this.generation)
+      throw new SceneNotReadyError(
+        'Local work changed after confirmation. Confirm the discard again before refreshing.'
+      );
+    if (state.sceneRevision < this.library.sceneRevision || state.revision < this.library.revision)
+      throw new Error('The host returned an outdated shared campaign snapshot');
+    this.ready = false;
+    gm.campaignViewBusy = true;
+    try {
+      gm.token3DAdapter.clearSharedPresentations?.();
+      this.library.reload(state);
+      const scene = decodeScene(state.scene, {
+        ruleset: this.library.ruleset,
+        library: this.library,
+      });
+      await reconcileCampaignScene(gm, scene, this.library, this.combat);
+      this.restoreRollLog(scene.rollLog);
+      gm.campaign = this.library.campaign;
+      if (gm.campaignContext) gm.campaignContext.campaign = this.library.campaign;
+      if (discardLocal) {
+        this.acknowledged = this.generation;
+        this.firstDirtyAt = null;
+        this.waiting = null;
+        this.error = null;
+        this.sharedConflict = null;
+        gm.campaignMapFailure = null;
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
+      this.ready = true;
+    } catch (error) {
+      gm.campaignMapFailure = error;
+      this._failed(error);
+      throw error;
+    } finally {
+      gm.campaignViewBusy = false;
+      this._publish();
+    }
+  }
+
   _checkpointDue() {
     return this.firstDirtyAt !== null && performance.now() - this.firstDirtyAt >= MAX_SAVE_WAIT;
   }
 
   _schedule({ retry = false } = {}) {
-    if (this.closed || !this.ready || this.writing || this.error) return;
+    if (this.closed || !this.ready || this.writing || this.error || this.sharedConflict) return;
     clearTimeout(this.timer);
     this.timer = null;
     if (this.generation <= this.acknowledged) return;
@@ -156,6 +246,7 @@ export default class CampaignAutosave {
   }
 
   async _capture(engine, context = {}) {
+    if (this.sharedConflict) throw this.sharedConflict;
     const generation = this.generation;
     const capturedAt = performance.now();
     const scene = await captureCampaignScene(this.gameManager, engine, {
@@ -163,11 +254,17 @@ export default class CampaignAutosave {
       combat: context.combat || this.combat,
       rollLog: this.getRollLog(),
     });
+    if (this.sharedConflict) throw this.sharedConflict;
+    const presentations =
+      this.library.store.storageInfo?.kind === 'host'
+        ? this.gameManager.token3DAdapter.getSharedPresentations(scene)
+        : [];
     return {
       generation,
       capturedAt,
       scene,
       value: encodeScene(scene, { ruleset: this.library.ruleset, library: engine }),
+      ...(presentations.length ? { presentations } : {}),
     };
   }
 
@@ -182,6 +279,7 @@ export default class CampaignAutosave {
         })
       );
     this.gameManager.campaignWorld?.acceptCheckpoint(captured.scene);
+    this.gameManager.token3DAdapter.acknowledgeSharedPresentations?.(captured.presentations);
     this.acknowledged = Math.max(this.acknowledged, captured.generation);
     this.firstDirtyAt = this.generation > this.acknowledged ? captured.capturedAt : null;
     if (this.firstDirtyAt === null) {
@@ -193,6 +291,7 @@ export default class CampaignAutosave {
   }
 
   _save({ allowMovementCheckpoint = false } = {}) {
+    if (this.sharedConflict) return Promise.reject(this.sharedConflict);
     if (this.writing) return this.writing;
     clearTimeout(this.timer);
     this.timer = null;
@@ -232,6 +331,7 @@ export default class CampaignAutosave {
   }
 
   async flush({ waitForScene = true } = {}) {
+    if (this.sharedConflict) throw this.sharedConflict;
     if (!this.ready || this.closed)
       throw new Error('The campaign is not ready to save; its saved board was not overwritten');
     clearTimeout(this.timer);
@@ -240,6 +340,7 @@ export default class CampaignAutosave {
       do {
         try {
           await this.library.flush();
+          if (this.sharedConflict) throw this.sharedConflict;
           if (isCampaignActionInProgress(this.gameManager)) {
             if (!waitForScene) throw new SceneNotReadyError(ACTION_WAIT);
             if (
@@ -263,6 +364,7 @@ export default class CampaignAutosave {
   }
 
   async retry() {
+    if (this.sharedConflict) throw this.sharedConflict;
     this.error = null;
     this._publish();
     return this.flush();

@@ -23,8 +23,9 @@ export default class CampaignSharingPanel {
       <section><h3>Location access</h3>
       <p>Placing or moving an assigned character grants that player access to the character's location and its connected areas.
       Internal rooms and floors do not need individual publication. Separate locations do not interact physically.</p></section>
-      <p>First milestone: assigned sheets and a read-only location terrain/tactical-token viewer.
-      Player movement and combat require the next authoritative command stage.</p>
+      <p>Players use the same game with host-checked assigned-character commands.
+      The DM grants arrival destinations and starts/advances turns; players may end their own active turn.
+      Sprite placement and retrieval by players are available only outside combat.</p>
       <button type="button" data-close-sharing>Close</button></div>`;
     this.status = this.root.querySelector('output');
     this.root.querySelector('form').addEventListener('submit', (event) => {
@@ -50,6 +51,38 @@ export default class CampaignSharingPanel {
           ]);
           await this.render();
         });
+    });
+    this.root.addEventListener('submit', (event) => {
+      const form = event.target.closest('[data-arrival-character]');
+      if (!form) return;
+      event.preventDefault();
+      void this._perform(async () => {
+        if (this.store.identity?.role !== 'dm')
+          throw new Error('Only the authenticated DM can issue arrival grants');
+        const mapId = form.querySelector('[data-arrival-map]').value;
+        const map = this.arrivalMaps.find((entry) => entry.id === mapId);
+        const gridX = form.querySelector('[data-arrival-x]').valueAsNumber;
+        const gridY = form.querySelector('[data-arrival-y]').valueAsNumber;
+        if (
+          !map ||
+          !Number.isInteger(gridX) ||
+          !Number.isInteger(gridY) ||
+          gridX < 0 ||
+          gridY < 0 ||
+          gridX >= map.grid.cols ||
+          gridY >= map.grid.rows
+        )
+          throw new Error('Choose an existing arrival area and a valid zero-based column/row');
+        await this.store.sessionCall('grantPlacement', [
+          this.campaignId,
+          form.dataset.arrivalPlayer,
+          form.dataset.arrivalCharacter,
+          { mapId, gridX, gridY },
+        ]);
+        this.status.textContent =
+          'Arrival destination granted. The player can preview and place the saved character outside combat.';
+        await this.render();
+      });
     });
     this.root.addEventListener('click', (event) => {
       const button = event.target.closest('button');
@@ -101,7 +134,16 @@ export default class CampaignSharingPanel {
   }
 
   async render() {
-    const state = await this.store.sessionCall('sessionInfo', [this.campaignId]);
+    const [state, board] = await Promise.all([
+      this.store.sessionCall('sessionInfo', [this.campaignId]),
+      this.store.sessionCall('readCharacters', [this.campaignId]),
+    ]);
+    const scene = board.scene === null ? null : JSON.parse(board.scene);
+    this.arrivalMaps = !scene
+      ? []
+      : scene.version === 3
+        ? scene.maps
+        : [{ id: 'map-main', name: 'Main map', grid: scene.grid }];
     this.root.querySelector('[data-player-list]').innerHTML =
       state.players
         .map(
@@ -118,7 +160,26 @@ export default class CampaignSharingPanel {
         ${player.revoked ? 'data-static-disabled disabled' : ''}>${escape(character.name)}</label>`
           )
           .join('') || '<p>Create or load a saved character before assigning it.</p>'
-      }</fieldset></article>`
+      }</fieldset>
+      <section><h4>DM arrival grants</h4>
+      <p>The host checks floor support and occupancy. Grants do not place sprites or reset character data.</p>
+      ${state.characters
+        .filter((character) => player.characterIds.includes(character.id))
+        .map((character) =>
+          this.arrivalMaps.length && !player.revoked
+            ? `
+        <form data-arrival-player="${escape(player.id)}" data-arrival-character="${escape(character.id)}">
+          <strong>${escape(character.name)}</strong>
+          <label>Arrival area<select data-arrival-map aria-label="Arrival area for ${escape(character.name)}">
+            ${this.arrivalMaps.map((map) => `<option value="${escape(map.id)}">${escape(map.name)}</option>`).join('')}
+          </select></label>
+          <label>Column (zero-based)<input type="number" min="0" step="1" value="0" required data-arrival-x></label>
+          <label>Row (zero-based)<input type="number" min="0" step="1" value="0" required data-arrival-y></label>
+          <button type="submit">Grant arrival destination</button>
+        </form>`
+            : '<p>Open and save the campaign board and keep the assignment active before granting an arrival.</p>'
+        )
+        .join('')}</section></article>`
         )
         .join('') || '<p>No player invitations yet.</p>';
   }
@@ -145,7 +206,7 @@ export default class CampaignSharingPanel {
   }
 
   _controls() {
-    for (const control of this.root.querySelectorAll('input,button'))
+    for (const control of this.root.querySelectorAll('input,button,select'))
       control.disabled = this.busy || control.hasAttribute('data-static-disabled');
   }
 

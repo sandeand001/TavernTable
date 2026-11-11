@@ -429,6 +429,7 @@ export class InteractionManager {
           const selectedToken = adapter?.getSelectedToken?.() || null;
           const is3D = gm?.is3DModeActive?.();
           if (is3D && (gridX == null || gridY == null)) return;
+          if (gm.playerInput && is3D) return gm.playerInput.requestMove(selectedToken, safeTarget);
           const canNavigate =
             selectedToken &&
             typeof adapter?.requestMoveToGrid === 'function' &&

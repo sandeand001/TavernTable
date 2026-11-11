@@ -50,6 +50,7 @@ import { installSurfaceClimbMethods } from './token-adapter/movement/SurfaceClim
 import { installOpeningCrossingMethods } from './token-adapter/movement/OpeningCrossingMotion.js';
 import { installMapProjectionMethods } from './token-adapter/MapProjections.js';
 import { installTacticalTokenMethods } from './token-adapter/TacticalTokens.js';
+import { installApprovedMotionMethods } from './token-adapter/movement/ApprovedMotion.js';
 import { installMovementRedirectMethods } from './token-adapter/pathing/MovementRedirects.js';
 
 export class Token3DAdapter {
@@ -140,6 +141,7 @@ export class Token3DAdapter {
           }
 
           if (delta > 0) {
+            this.advanceApprovedMovement(delta);
             this._updateForwardMovements(delta);
             this._updatePlannedMovements();
             this.gameManager?.characterServices?.combat?.syncMovementStatus?.();
@@ -387,6 +389,13 @@ export class Token3DAdapter {
   }
 
   beginForwardMovement(tokenEntry, sourceKey = '__forward') {
+    if (
+      this.gameManager.playerInput ||
+      this.gameManager.characterServices?.sheetContext === 'library'
+    )
+      throw new Error(
+        'Player movement requires a completed host intent, not a local directional controller'
+      );
     if (this._isMapInputBlocked(tokenEntry)) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, 1, sourceKey);
@@ -397,6 +406,13 @@ export class Token3DAdapter {
   }
 
   beginBackwardMovement(tokenEntry, sourceKey = '__backward') {
+    if (
+      this.gameManager.playerInput ||
+      this.gameManager.characterServices?.sheetContext === 'library'
+    )
+      throw new Error(
+        'Player movement requires a completed host intent, not a local directional controller'
+      );
     if (this._isMapInputBlocked(tokenEntry)) return;
     this._releaseManualAnimationForMovement(tokenEntry);
     this._beginDirectionalMovement(tokenEntry, -1, sourceKey);
@@ -423,6 +439,11 @@ export class Token3DAdapter {
   // ── Navigation & Path Orchestration (installed via Navigation mixin) ──
 
   beginRotation(tokenEntry, direction = 1, sourceKey = '__rotate') {
+    if (
+      this.gameManager.playerInput ||
+      this.gameManager.characterServices?.sheetContext === 'library'
+    )
+      throw new Error('Player facing requires a host intent, not a local rotation controller');
     if (this._isMapInputBlocked(tokenEntry)) return;
     try {
       if (!tokenEntry) return;
@@ -610,6 +631,7 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    this.cancelApprovedMovement(tokenEntry);
     this.cancelOpeningCrossing(tokenEntry, new Error('The crossing creature was removed'));
     this._mapProjectionVisible?.delete(tokenEntry);
     this.disposeMapProjectionTerrain();
@@ -823,4 +845,5 @@ installSurfaceClimbMethods(Token3DAdapter.prototype);
 installOpeningCrossingMethods(Token3DAdapter.prototype);
 installMapProjectionMethods(Token3DAdapter.prototype);
 installTacticalTokenMethods(Token3DAdapter.prototype);
+installApprovedMotionMethods(Token3DAdapter.prototype);
 installMovementRedirectMethods(Token3DAdapter.prototype);

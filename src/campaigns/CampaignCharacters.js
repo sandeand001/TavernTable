@@ -313,7 +313,7 @@ export default class CampaignCharacters {
     this.pendingScenes++;
     const committed = this.queue.then(async () => {
       const captured = await capture(this.engine);
-      if (captured.value === this.savedScene) {
+      if (captured.value === this.savedScene && !captured.presentations?.length) {
         const current = await this.store.readScene(this.campaign.id);
         if (
           current.revision !== this.sceneRevision ||
@@ -330,6 +330,7 @@ export default class CampaignCharacters {
         revision: this.sceneRevision,
         charactersRevision: this.revision,
         scene: captured.value,
+        ...(captured.presentations?.length ? { presentations: captured.presentations } : {}),
       });
       this._sceneReceipt(captured, receipt.revision, receipt.savedAt);
       return { captured, receipt };
@@ -384,7 +385,17 @@ export default class CampaignCharacters {
         ruleset: this.ruleset,
         revision: this.revision,
         records: next.storage.snapshot(),
-        ...(captured ? { scene: { revision: this.sceneRevision, value: captured.value } } : {}),
+        ...(captured
+          ? {
+              scene: {
+                revision: this.sceneRevision,
+                value: captured.value,
+                ...(captured.presentations?.length
+                  ? { presentations: captured.presentations }
+                  : {}),
+              },
+            }
+          : {}),
       });
       this.engine = next;
       this.revision = receipt.revision;

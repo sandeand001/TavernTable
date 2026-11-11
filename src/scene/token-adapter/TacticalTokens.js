@@ -26,7 +26,7 @@ function refreshTokenAppearance(token, character) {
   if (!visual) return;
   const record = character ?? getTokenCharacterRecord(token);
   visual.characterId = token.characterSheetId || null;
-  const source = record?.portraitImage || null;
+  const source = record?.portraitImage || token.publicPortraitImage || null;
   if (visual.source === source) return;
   if (visual.loadingImage) {
     visual.loadingImage.onload = null;
@@ -134,7 +134,7 @@ function _syncTacticalTokens() {
     const world = this.getTokenViewPosition(token);
     visual.mesh.position.set(world.x, world.y + tile * 0.12, world.z);
     visual.mesh.scale.setScalar(tile);
-    visual.mesh.material.depthTest = !overview;
+    visual.mesh.material.depthTest = !overview && !this.gameManager.publicPlayerPresentation;
     visual.mesh.renderOrder = overview ? 1000 : 0;
     camera.getWorldQuaternion(visual.mesh.quaternion);
     visual.mesh.updateMatrixWorld(true);
