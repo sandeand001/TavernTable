@@ -82,9 +82,9 @@
   renderer objects, catalog caches and unfinished animations are not saved.
   Host failure never silently falls back to IndexedDB. Authenticated DM/player
   sessions require same-origin cookie identity and a session-specific CSRF
-  credential for writes. The initial player scope is assigned sheets and
-  published read-only views, not authoritative movement/combat. Reload and sign
-  in again after a host restart. Browser-only storage remains
+  credential for writes. Players receive assigned sheets, authorized location
+  views and host-validated gameplay commands, never arbitrary scene writes.
+  Reload and sign in again after a host restart. Browser-only storage remains
   explicit for tests and migration, with non-destructive Copy to host and JSON
   backup import/export. Agent-created browser tabs may have in-memory storage;
   flushing such a profile does not make it survive an editor restart.
@@ -161,6 +161,14 @@
   **Attacks left** is derived from unspent actions and any ongoing Attack-action
   sequence, honoring class/level and manual attack-count overrides. The internal
   ongoing sequence starts at zero; it must not grant free attacks at turn start.
+- **Shared movement presentation**: receiving DM/player models replay committed
+  safe routes with native locomotion variants, without spending costs again.
+  Free play permits assigned movement and refreshes its per-journey allowance;
+  combat keeps active-turn restrictions. Compatible queued routes remain
+  continuous. DM movement metadata travels outside the saved scene; reloading
+  never resumes its animation. Preserve local cameras, shared-draft conflict
+  protection and physical sight; hidden waypoints and unassigned budgets stay
+  private. This is checkpoint-driven replay, not frame-locked live networking.
 - **Flight**: a per-token airborne travel state using the character's effective
   flying speed. Take flight rises 5 feet. Raise/Lower offer 5, 10, 15 and 20 feet,
   spending one foot of flying movement per vertical foot. Horizontal routes retain
@@ -403,7 +411,8 @@ builder and actual multiplayer remain further implementation chunks.
   invisible targets, walls and floors can hide it. Rendering and ray picking refer
   to the original creature, never an added gameplay token. Ordinary camera
   occlusion still applies. Hiding a roof or moving the DM camera does not grant sight.
-  Networked animation synchronization and broader vision rules remain future work.
+  Committed network movement reuses these models; frame-locked synchronization
+  and broader vision rules remain future work.
 - **Projection terrain context**: render-only supporting ground/floors from the
   visible creature's source-map checkpoint. A bounded sight corridor can join the
   viewed grid to the projection where actual terrain exists, instead of leaving
@@ -848,15 +857,42 @@ manual authoring and seeded generation. Town, City and Castle/Fortress have
 separate ruined variants, including Ruined Town and Ruined Castle. Settlement
 ordinary foundations remain level. Towns use irregular green-side cottages, winding lanes,
 gardens and local landmarks; cities use dense trade districts, alleys, a civic
-hall and market. Grand castles layer a high keep, outer bastions, inner bailey
-towers and a raised gatehouse over a real arched entrance. Compact maps retain
-usable smaller fortifications. Ruin openings leave stair attachment points clear.
+hall and market. Ordinary grand castles join a high keep, residential wing,
+great hall, court wings, gatehouse and northern watch around an open-sky
+courtyard, retaining outer bastions and real arched access. Compact maps retain
+connected halls without cramped wing stairs. Ruin openings leave stair attachment
+points clear.
 Castle geometry now follows a separate deterministic architecture stream:
 citadel/bailey/palace compositions vary keep/wall dimensions and heights, flared
 side walls, towers, supporting buildings and gatehouse presence. Locked seeds
 repeat exactly; names/colours are not the only differences. Planner bounds include
 actual wall rotation and stair footprints so optional buildings do not occupy
 the stairs. Existing saved layouts only change on explicit generation/editing.
+Rectangular building snaps use immutable, cancellable previews and matched
+same-elevation floors. Commit adds ordinary subtractive openings and existing
+`kind: 'opening'` connections between stable managed-floor IDs; transient
+`buildingJoins` transaction context is not a saved scene/schema field. Scene v3
+and buildingAssemblies v1 remain unchanged. Atomic construction Undo includes
+poses, floor maps, cameras and owned joins, never historical character resources.
+Preview prepares the same assembly transaction without applying it and exposes
+a copied, frozen `buildingContext` for authoring only. Commit prepares again
+against current actors/resources; unsafe occupied Undo rejects without resetting
+positions or paid movement.
+Manual snaps adopt both generated members and reject occupied/protected geometry.
+Disconnecting a member restores its shared walls before independent editing.
+Joined cutaways follow enabled same-level connections and union the individual
+room footprints, not an enclosing box. Public render adapters use authorized
+`map.floorContext` owner/member/level references, never private `map.building`.
+They supply
+`getBuildingFloorRenderContext(mapId)` with resolved world-foot ceiling (explicit
+null for an unbounded deck), terrain thickness and floor appearance; missing
+public context fails visibly rather than reading private structure definitions.
+The shared `getBuildingFloorRenderContext(world, mapId)` export delegates to that
+hook in public mode; native worlds retain canonical resolution of only
+ceiling/thickness/floor appearance for authority projection. Public adapters read
+authorized render data directly instead of invoking private scene restoration.
+Do not publish `building.signature`: it contains the complete sorted authoring
+definition, not an opaque hash. Ordinary castle visual signoff remains open.
 Cliffside Castle and Mountain Fortress are explicit terrain-site biomes with
 60-square defaults and a 20-square minimum. Full castles fit both 50- and
 60-square boards; compact sites retain a keep, four towers and a complete

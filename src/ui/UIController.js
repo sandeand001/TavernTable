@@ -48,6 +48,8 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/Err
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
 import { rollDice } from '../systems/dice/dice.js';
 import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLauncher.js';
+import { ensureSession } from './sessions/SessionLogin.js';
+import { preparePlayerApplication } from './sessions/PlayerApplication.js';
 import { connectCharacterServices } from './characters/characterServices.js';
 import CampaignAutosave from '../campaigns/CampaignAutosave.js';
 import { TerrainConstructionPanel } from './TerrainConstructionPanel.js';
@@ -124,9 +126,11 @@ async function handleRadialCommand(actionId, token) {
 
 function showRadialMenu(detail = {}) {
   const radial = getRadialMenuInstance();
-  const adapter = window.gameManager?.token3DAdapter;
-  const availability =
-    typeof adapter?.getManualActionAvailability === 'function'
+  const gm = window.gameManager;
+  const adapter = gm?.token3DAdapter;
+  const availability = gm?.playerInput
+    ? gm.playerInput.radialAvailability(detail.token)
+    : typeof adapter?.getManualActionAvailability === 'function'
       ? Object.fromEntries(
           MANUAL_ACTIONS.map(({ id }) => [
             id,
@@ -134,7 +138,7 @@ function showRadialMenu(detail = {}) {
           ])
         )
       : {};
-  if (typeof adapter?.getFlightCommandAvailability === 'function') {
+  if (!gm?.playerInput && typeof adapter?.getFlightCommandAvailability === 'function') {
     for (const action of TOKEN_COMMANDS.filter((entry) => entry.flight)) {
       for (const entry of [action, ...(action.subActions || [])]) {
         availability[entry.id] = adapter.getFlightCommandAvailability(
@@ -990,6 +994,7 @@ function initializeApplication() {
 
 async function startCampaignApplication() {
   let loading = null;
+  let player = null;
   const previousInert = new Map();
   const pauseControls = () => {
     for (const element of document.body.children) {
@@ -998,14 +1003,7 @@ async function startCampaignApplication() {
       element.inert = true;
     }
   };
-  try {
-    // Validate gameManager exists
-    if (!window.gameManager) {
-      throw new Error('GameManager not found. Application cannot start.');
-    }
-
-    const manager = window.gameManager;
-    const services = await new CampaignLauncher().choose();
+  const showLoading = (message) => {
     loading = document.createElement('section');
     loading.className = 'campaign-picker';
     loading.setAttribute('role', 'dialog');
@@ -1015,23 +1013,54 @@ async function startCampaignApplication() {
     const loadingMessage = document.createElement('div');
     loadingMessage.className = 'campaign-shell';
     loadingMessage.setAttribute('role', 'status');
-    loadingMessage.textContent = 'Restoring your campaign. Please wait...';
+    loadingMessage.textContent = message;
     loading.append(loadingMessage);
     document.body.append(loading);
     pauseControls();
     loading.focus();
-    manager.campaignContext = services;
-    manager.campaign = services.campaign;
-    connectCharacterServices(manager, services);
-    const autosave = new CampaignAutosave({
-      gameManager: manager,
-      library: services.library,
-      combat: manager.characterServices.combat,
-      getRollLog: () => window.sidebarController.snapshotDiceLog(),
-      restoreRollLog: (entries) => window.sidebarController.restoreDiceLog(entries),
-    });
-    services.autosave = autosave;
-    mountCampaignControls(manager, services);
+  };
+  try {
+    // Validate gameManager exists
+    if (!window.gameManager) {
+      throw new Error('GameManager not found. Application cannot start.');
+    }
+
+    const manager = window.gameManager;
+    const identity = await ensureSession();
+    if (!['dm', 'player'].includes(identity.role))
+      throw new Error('The host returned an unsupported session role');
+    if (identity.role === 'player') {
+      showLoading('Opening your authorized map. Please wait...');
+      player = await preparePlayerApplication({
+        gameManager: manager,
+        identity,
+        openSheet: (id) => {
+          const token = manager.placedTokens.find(
+            (entry) => entry.owned && entry.characterSheetId === id
+          );
+          return token
+            ? openCharacterSheet(manager, token)
+            : manager.playerApplication.sheets.open(id);
+        },
+      });
+    }
+    const services = player ? null : await new CampaignLauncher().choose();
+    if (!loading) showLoading('Restoring your campaign. Please wait...');
+    let autosave;
+    if (!player) {
+      manager.campaignContext = services;
+      manager.campaign = services.campaign;
+      connectCharacterServices(manager, services);
+      autosave = new CampaignAutosave({
+        gameManager: manager,
+        library: services.library,
+        combat: manager.characterServices.combat,
+        getRollLog: () => window.sidebarController.snapshotDiceLog(),
+        restoreRollLog: (entries) => window.sidebarController.restoreDiceLog(entries),
+      });
+      services.autosave = autosave;
+      mountCampaignControls(manager, services);
+    }
     pauseControls();
     await manager.initialize();
     await manager.enableHybridRender();
@@ -1039,30 +1068,34 @@ async function startCampaignApplication() {
       throw new Error('The 3D world could not finish initializing');
     }
     pauseControls();
-    await autosave.start(services.scene);
-    const rosterHost = document.getElementById('saved-character-roster');
-    if (!rosterHost) throw new Error('The saved character roster mount is missing');
-    manager.savedCharacterRoster?.destroy();
-    manager.savedCharacterRoster = new SavedCharacterRoster({
-      gameManager: manager,
-      services: manager.characterServices,
-      onOpenPlaced: async (token) => {
-        if (manager.campaignWorld) await changeCampaignView(manager, { focusTokenId: token.id });
-        else {
-          const scene = await captureCampaignScene(manager, services.library);
-          manager.threeSceneManager.restoreView({
-            ...scene.camera,
-            target: { ...token.world },
-          });
-          await manager.token3DAdapter.setSelectedToken(token);
-        }
-        return openCharacterSheet(manager, token);
-      },
-      onSelectionChanged: () => window.sidebarController?.refreshCreatureSelection(),
-    }).attach(rosterHost);
+    if (player) await player.start();
+    else {
+      await autosave.start(services.scene);
+      const rosterHost = document.getElementById('saved-character-roster');
+      if (!rosterHost) throw new Error('The saved character roster mount is missing');
+      manager.savedCharacterRoster?.destroy();
+      manager.savedCharacterRoster = new SavedCharacterRoster({
+        gameManager: manager,
+        services: manager.characterServices,
+        onOpenPlaced: async (token) => {
+          if (manager.campaignWorld) await changeCampaignView(manager, { focusTokenId: token.id });
+          else {
+            const scene = await captureCampaignScene(manager, services.library);
+            manager.threeSceneManager.restoreView({
+              ...scene.camera,
+              target: { ...token.world },
+            });
+            await manager.token3DAdapter.setSelectedToken(token);
+          }
+          return openCharacterSheet(manager, token);
+        },
+        onSelectionChanged: () => window.sidebarController?.refreshCreatureSelection(),
+      }).attach(rosterHost);
+    }
     for (const [element, inert] of previousInert) element.inert = inert;
     loading.remove();
   } catch (error) {
+    if (player) await player.destroy();
     if (loading) {
       loading.textContent = '';
       const message = document.createElement('div');

@@ -730,6 +730,74 @@ test('a placed building moves with its centre handle only on release and Undo re
   expect(world.engine.save()).toEqual(before);
 });
 
+test('a connected-interior preview can be canceled through the UI without applying on a later submit', () => {
+  const { world, root, pointer } = fixture();
+  for (const spec of [
+    { id: 'keep', xFeet: 40, lengthFeet: 40 },
+    { id: 'wing', xFeet: 82.5, lengthFeet: 30 },
+  ])
+    world.engine.placeStructure({
+      ...spec,
+      kind: 'building',
+      zFeet: 40,
+      widthFeet: 30,
+      heightFeet: 10,
+      building: { version: 2, roof: 'flat', stairs: false, autoWindows: false },
+    });
+  root.querySelector('[data-build-select]').click();
+  pointer('pointerdown', 82.5, 40);
+  pointer('pointerup', 82.5, 40);
+  const before = world.engine.save(),
+    target = root.querySelector('[name="joinTarget"]');
+  expect(target).not.toBeNull();
+  target.value = 'keep';
+  target.dispatchEvent(new Event('change', { bubbles: true }));
+  root.querySelector('[data-building-join-preview]').click();
+  expect(root.querySelector('[data-construction-status]').textContent).toMatch(
+    /connected interior preview/i
+  );
+  expect(world.engine.save()).toEqual(before);
+  root.querySelector('[data-build-cancel]').click();
+  root
+    .querySelector('form')
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  expect(world.engine.save()).toEqual(before);
+});
+
+test('Apply commits the previewed connected interiors once and Undo restores both walls and the source pose', () => {
+  const { world, root, pointer } = fixture();
+  for (const spec of [
+    { id: 'keep', xFeet: 40, lengthFeet: 40 },
+    { id: 'wing', xFeet: 82.5, lengthFeet: 30 },
+  ])
+    world.engine.placeStructure({
+      ...spec,
+      kind: 'building',
+      zFeet: 40,
+      widthFeet: 30,
+      heightFeet: 10,
+      building: { version: 2, roof: 'flat', stairs: false, autoWindows: false },
+    });
+  root.querySelector('[data-build-select]').click();
+  pointer('pointerdown', 82.5, 40);
+  pointer('pointerup', 82.5, 40);
+  const before = world.engine.save();
+  root.querySelector('[name="joinTarget"]').value = 'keep';
+  root.querySelector('[data-building-join-preview]').click();
+  root
+    .querySelector('form')
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  expect(world.engine.geometry.getStructures().find((spec) => spec.id === 'wing').xFeet).toBe(75);
+  expect(
+    world.engine.geometry.isSpaceClear({
+      min: { x: 57.5, y: 1e-5, z: 37.5 },
+      max: { x: 62.5, y: 6, z: 42.5 },
+    })
+  ).toBe(true);
+  expect(world.engine.undo()).toBe(true);
+  expect(world.engine.save()).toEqual(before);
+});
+
 test('a rejected occupied-building move restores the authoring draft as well as the saved structure', () => {
   const { world, root, panel, pointer } = fixture();
   world.engine.placeStructure({

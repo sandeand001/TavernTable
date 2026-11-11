@@ -17,7 +17,7 @@ import {
 import { campaignLandingForSupport } from '../SavedPlacements.js';
 import { FootprintIndex } from '../../../terrain/FootprintIndex.js';
 
-function navigationGeometry(gm) {
+export function navigationGeometry(gm) {
   const world = gm.campaignWorld;
   const mapId = gm.campaignMapId;
   const unit = gm.spatial.tileWorldSize / 5;
@@ -105,16 +105,20 @@ function navigationGeometry(gm) {
 
 function getTokenSurfaceRange(token, allowance = null) {
   const gm = this.gameManager;
+  const publicAllowance = gm.playerInput?.movementAllowance(token);
+  if (gm.playerInput && publicAllowance === null) return null;
   const world = this._resolveTokenWorldPosition(token);
   const feetPerWorld = 5 / gm.spatial.tileWorldSize;
   gm.terrainEngine.configureGeometryScale(gm.spatial.elevationUnit * feetPerWorld);
   const combat = gm.characterServices?.combat;
   const settings = getTokenMovementSettings(token);
-  const available = combat?.active
-    ? combat.movementAllowance(token)
-    : combat && token.characterSheetId
-      ? combat.freeMovementAllowance(token)
-      : settings.speed;
+  const available = gm.playerInput
+    ? publicAllowance
+    : combat?.active
+      ? combat.movementAllowance(token)
+      : combat && token.characterSheetId
+        ? combat.freeMovementAllowance(token)
+        : settings.speed;
   const occupied = (gm.placedTokens || [])
     .filter(
       (other) =>

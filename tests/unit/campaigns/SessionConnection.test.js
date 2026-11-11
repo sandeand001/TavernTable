@@ -62,3 +62,35 @@ test('live notifications reconnect explicitly and release their authenticated st
   removeSecond();
   expect(source.close).toHaveBeenCalledTimes(1);
 });
+
+test('player command denials retain their typed code, command ID and current revisions without exposing arbitrary response data', async () => {
+  const connection = new SessionConnection({
+    identity: { csrf: 'synthetic' },
+    baseURL: 'http://localhost:3000/',
+    fetch: async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: 'The scene changed',
+        code: 'stale-revision',
+        commandId: 'command-id',
+        current: { sceneRevision: 12, charactersRevision: 7 },
+        privateDetails: 'must not be attached',
+      }),
+    }),
+  });
+  let denial;
+  try {
+    await connection.call('playerCommand', []);
+  } catch (error) {
+    denial = error;
+  }
+  expect(denial).toMatchObject({
+    status: 409,
+    code: 'stale-revision',
+    commandId: 'command-id',
+    current: { sceneRevision: 12, charactersRevision: 7 },
+  });
+  expect(denial).not.toHaveProperty('privateDetails');
+  connection.close();
+});

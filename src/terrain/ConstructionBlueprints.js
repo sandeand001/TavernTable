@@ -418,6 +418,38 @@ export function structureBounds(spec) {
   };
 }
 
+export function replaceStructureGeometry(snapshot, spec) {
+  if (!snapshot.structures?.some((entry) => entry.id === spec.id))
+    throw new Error('Choose an existing structure before replacing its geometry');
+  const replacement = structureVolumes(spec);
+  const first = snapshot.volumes.findIndex((volume) => volume.structureId === spec.id);
+  const owned = new Set(
+    snapshot.volumes.filter((volume) => volume.structureId === spec.id).map((volume) => volume.id)
+  );
+  if (first < 0) throw new Error('The saved structure has no physical geometry');
+  const scattered = snapshot.volumes
+    .slice(first, first + owned.size)
+    .some((volume) => volume.structureId !== spec.id);
+  const byId = new Map(replacement.map((volume) => [volume.id, volume]));
+  const last = snapshot.volumes.findLastIndex((volume) => volume.structureId === spec.id);
+  const volumes = [];
+  for (let i = 0; i < snapshot.volumes.length; i++) {
+    const volume = snapshot.volumes[i];
+    if (!scattered && i === first) volumes.push(...replacement);
+    if (volume.structureId !== spec.id) volumes.push(volume);
+    else if (scattered) {
+      if (byId.has(volume.id)) volumes.push(byId.get(volume.id));
+      if (i === last) volumes.push(...replacement.filter((entry) => !owned.has(entry.id)));
+    }
+  }
+  return {
+    ...snapshot,
+    version: 3,
+    structures: snapshot.structures.map((entry) => (entry.id === spec.id ? spec : entry)),
+    volumes,
+  };
+}
+
 export function wallOpeningProfile(spec) {
   const width = spec.openingWidthFeet ?? 7.5,
     height = spec.openingHeightFeet ?? Math.min(8, spec.heightFeet - 1);

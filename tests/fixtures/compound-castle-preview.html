@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Normal Castle compound visual fixture</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        color: #e4e9ee;
+        background: #17202a;
+        font: 15px system-ui;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+      }
+      p {
+        color: #b9c8d4;
+      }
+      label {
+        margin-right: 16px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        margin: 4px;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      canvas {
+        width: 100%;
+        display: block;
+      }
+      h2 {
+        font-size: 18px;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Normal Castle / Fortress - connected main building</h1>
+    <p>
+      Static source-only QA fixture. No campaign, character, storage or host API is initialized.
+    </p>
+    <label
+      >Squares
+      <select id="size">
+        <option>25</option>
+        <option>40</option>
+        <option selected>50</option>
+        <option>60</option>
+      </select></label
+    >
+    <label>Seed <input id="seed" type="number" value="42" min="0" max="4294967295" /></label>
+    <button id="render" type="button">Render castle</button>
+    <button id="rotate" type="button">Rotate view</button>
+    <p id="status" role="status">Loading...</p>
+    <main>
+      <section>
+        <h2>Native exterior</h2>
+        <canvas id="exterior"></canvas>
+      </section>
+      <section>
+        <h2>Ground-floor structural section</h2>
+        <canvas id="interior"></canvas>
+      </section>
+    </main>
+    <pre id="evidence"></pre>
+    <script type="module">
+      import * as THREE from 'three';
+      import { TerrainEngine } from '../../src/terrain/TerrainEngine.js';
+      import { TerrainVolumeMeshBuilder } from '../../src/scene/terrain/TerrainVolumeMeshBuilder.js';
+      import { configureConstructionMaterial } from '../../src/scene/terrain/ConstructionMaterials.js';
+      import { buildConstructionDetails } from '../../src/scene/terrain/ConstructionDetails.js';
+      import { getTerrainLayerColor } from '../../src/scene/terrain/TerrainMaterialFactory.js';
+      import { getBiomeColorWithHydrology } from '../../src/config/biome/BiomePalettes.js';
+      import { clipCellToBounds } from '../../src/terrain/ConvexGeometry.js';
+
+      const sizeField = document.getElementById('size');
+      const seedField = document.getElementById('seed');
+      const status = document.getElementById('status');
+      const renders = [];
+      let yaw = Math.PI / 4;
+      let engine;
+
+      function clear() {
+        for (const item of renders) {
+          item.geometry.dispose();
+          item.details?.dispose();
+          item.material.dispose();
+          item.renderer.dispose();
+        }
+        renders.length = 0;
+      }
+
+      function view(canvasId, section) {
+        const size = engine.cols;
+        const renderer = new THREE.WebGLRenderer({
+          canvas: document.getElementById(canvasId),
+          antialias: true,
+          preserveDrawingBuffer: true,
+        });
+        const width = Math.floor((innerWidth - 44) / 2);
+        const height = Math.max(480, Math.min(760, innerHeight - 180));
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(1);
+        renderer.setClearColor(0x17202a);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        const scene = new THREE.Scene();
+        scene.add(new THREE.HemisphereLight(0xc8ddf5, 0x53504a, 1.8));
+        const sun = new THREE.DirectionalLight(0xffefd8, 2.4);
+        sun.position.set(-100, 180, 100);
+        scene.add(sun);
+        let query = engine.geometry;
+        if (section) {
+          const bounds = {
+            min: { x: 0, y: -0.5, z: 0 },
+            max: { x: size * 5, y: 9.5, z: size * 5 },
+          };
+          query = {
+            hasCurves: true,
+            getSolidCells: () =>
+              engine.geometry.getSolidCells().flatMap((cell) => {
+                const clipped = clipCellToBounds(cell, bounds);
+                return clipped ? [clipped] : [];
+              }),
+          };
+        }
+        const geometry = new TerrainVolumeMeshBuilder().build({
+          geometry: query,
+          three: THREE,
+          worldUnitsPerFoot: 1,
+          getColor: (_x, _z, y, span) =>
+            span.materialColor !== undefined
+              ? getTerrainLayerColor(span.layerId, 'castle', span.materialRole, span.materialColor)
+              : getBiomeColorWithHydrology('castle', y / 2.5),
+        });
+        const material = configureConstructionMaterial(
+          new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93 }),
+          1
+        );
+        scene.add(new THREE.Mesh(geometry, material));
+        let details = null;
+        if (!section) {
+          details = buildConstructionDetails({
+            specs: engine.geometry.getStructures(),
+            three: THREE,
+            worldUnitsPerFoot: 1,
+          });
+          if (details) scene.add(new THREE.Mesh(details, material));
+        }
+        const span = size * 3.7;
+        const camera = new THREE.OrthographicCamera(
+          (-span * width) / height,
+          (span * width) / height,
+          span,
+          -span,
+          1,
+          2500
+        );
+        const target = new THREE.Vector3(size * 2.5, section ? 0 : 15, size * 2.5);
+        const radius = size * 5;
+        camera.position
+          .copy(target)
+          .add(
+            new THREE.Vector3(
+              Math.cos(yaw) * radius,
+              section ? radius * 1.25 : radius * 0.75,
+              Math.sin(yaw) * radius
+            )
+          );
+        camera.lookAt(target);
+        renderer.render(scene, camera);
+        renders.push({ renderer, geometry, details, material });
+        return {
+          view: canvasId,
+          triangles: renderer.info.render.triangles,
+          calls: renderer.info.render.calls,
+          failedPrograms: renderer.info.programs.filter(
+            (program) => program.diagnostics?.runnable === false
+          ).length,
+        };
+      }
+
+      function render() {
+        clear();
+        try {
+          const size = Number(sizeField.value);
+          const seed = Number(seedField.value);
+          engine = new TerrainEngine(size, size);
+          engine.generateBiomeElevation('castle', { seed });
+          const stats = [view('exterior', false), view('interior', true)];
+          const specs = engine.geometry.getStructures();
+          document.getElementById('evidence').textContent = JSON.stringify(
+            {
+              biome: 'castle',
+              size,
+              seed,
+              stats,
+              parts: specs
+                .filter((part) => part.building)
+                .map((part) => ({
+                  name: part.name,
+                  kind: part.kind,
+                  base: part.baseFeet,
+                  height: part.heightFeet,
+                  roof: part.building.roof,
+                  length: part.lengthFeet,
+                  width: part.widthFeet,
+                })),
+              sharedOpenings: engine.geometry
+                .save()
+                .volumes.filter((volume) => volume.id.startsWith('compound-opening-')).length,
+            },
+            null,
+            2
+          );
+          status.textContent = `Rendered normal Castle ${size} x ${size}, seed ${seed}. Visual review still required.`;
+        } catch (error) {
+          status.textContent = `FAILED: ${error.message}`;
+          throw error;
+        }
+      }
+      document.getElementById('render').addEventListener('click', render);
+      document.getElementById('rotate').addEventListener('click', () => {
+        yaw += Math.PI / 2;
+        render();
+      });
+      window.addEventListener('beforeunload', clear);
+      render();
+    </script>
+  </body>
+</html>
