@@ -3,7 +3,7 @@ import CampaignCharacters from '../../../src/campaigns/CampaignCharacters.js';
 import CampaignStore from '../../../src/campaigns/CampaignStore.js';
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { captureCampaignScene } from '../../../src/campaigns/SceneWorld.js';
-import { decodeScene } from '../../../src/campaigns/CampaignScene.js';
+import { decodeScene, encodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { SceneNotReadyError } from '../../../src/scene/token-adapter/SavedPlacements.js';
 import {
   createConnectedTravelBoard,
@@ -14,13 +14,14 @@ import { testIndexedDB } from '../../helpers/indexedDB.js';
 
 let board;
 
-async function fixture({ timers = false } = {}) {
+async function fixture({ timers = false, shared = false } = {}) {
   const store = new CampaignStore({
     indexedDB: testIndexedDB(),
     packs: [{ id: 'srd-2014', ruleset: '2014', version: '5.1', core: true }],
   });
   board = { store };
   const campaign = await store.create({ name: 'Action-complete saves', ruleset: '2014' });
+  if (shared) store.storageInfo = { kind: 'host' };
   const catalog = { ruleset: '2014', entries: [], classes: [], enabledEntryIds: [] };
   const library = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
   const id = await library.create('Scout');
@@ -68,6 +69,63 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+test('a saved external player step reconciles at an idle checkpoint and cannot be overwritten by the next DM autosave', async () => {
+  const { autosave, gm, store, campaign, library, actor } = await fixture();
+  const before = await store.readCharacters(campaign.id);
+  const next = decodeScene(before.scene, { ruleset: library.ruleset, library });
+  const savedActor = next.creatures.find(({ id }) => id === actor.id);
+  savedActor.gridX = 2;
+  savedActor.pose.world.x = 2.5;
+  const camera = { ...gm.threeSceneManager.snapshotView(), zoom: 1.6 };
+  gm.threeSceneManager.restoreView(camera);
+  const visual = actor.__threeMesh;
+  await store.commitScene(campaign.id, {
+    ruleset: library.ruleset,
+    revision: before.sceneRevision,
+    charactersRevision: before.revision,
+    scene: encodeScene(next, { ruleset: library.ruleset, library }),
+  });
+  const accepted = await store.readCharacters(campaign.id);
+  await autosave.reconcile(accepted);
+  expect(gm.placedTokens[0]).toBe(actor);
+  expect(actor.__threeMesh).toBe(visual);
+  expect(actor.world.x).toBe(2.5);
+  expect(gm.threeSceneManager.snapshotView()).toEqual(camera);
+  expect(library.sceneRevision).toBe(accepted.sceneRevision);
+  autosave.changed('camera');
+  await autosave.flush();
+  const persisted = decodeScene((await store.readScene(campaign.id)).scene, {
+    ruleset: library.ruleset,
+    library,
+  });
+  expect(persisted.creatures.find(({ id }) => id === actor.id).pose.world.x).toBe(2.5);
+});
+
+test('a shared conflict preserves the DM draft until explicit discard against a fresh canonical base', async () => {
+  const { autosave, gm, store, campaign, library, actor } = await fixture();
+  const camera = { ...gm.threeSceneManager.snapshotView(), zoom: 1.8 };
+  gm.threeSceneManager.restoreView(camera);
+  actor.world = { x: 3.5, y: 0, z: 1.5 };
+  actor.gridX = 3;
+  gm.token3DAdapter.recordStablePlacement(actor);
+  autosave.changed('local draft');
+  autosave.pauseForSharedUpdate();
+  const fresh = await store.readCharacters(campaign.id);
+  await expect(autosave.retry()).rejects.toThrow(/shared|discard/i);
+  expect(actor.world.x).toBe(3.5);
+  await autosave.reconcile(fresh, {
+    discardLocal: true,
+    expectedGeneration: autosave.generation,
+  });
+  expect(gm.placedTokens[0]).toBe(actor);
+  expect(actor.world.x).toBe(1.5);
+  expect(gm.threeSceneManager.snapshotView()).toEqual(camera);
+  expect(autosave.dirty).toBe(false);
+  expect(autosave.status.state).toBe('saved');
+  expect(gm.campaignMapFailure).toBeNull();
+  expect(library.sceneRevision).toBe(fresh.sceneRevision);
+});
+
 test('safe checkpoints remain in memory without enqueuing scene writes before the deadline or route end', async () => {
   const {
     autosave,
@@ -108,6 +166,54 @@ test('safe checkpoints remain in memory without enqueuing scene writes before th
   expect(autosave.status.state).toBe('saved');
 });
 
+test('multiplayer regression: DM autosave sends the actual safe route separately from the persisted checkpoint and acknowledges its prefix', async () => {
+  const { autosave, begin, checkpoint, finish, writes, actor } = await fixture({ shared: true });
+  begin();
+  for (const x of [2, 3, 4]) checkpoint(x);
+  finish();
+  await autosave.flush();
+  const change = writes.mock.calls[0][1];
+  expect(change.presentations).toHaveLength(1);
+  expect(change.presentations[0]).toMatchObject({
+    tokenId: actor.id,
+    kind: 'move',
+    motion: { kind: 'walk', completed: true, from: { gridX: 1 } },
+  });
+  expect(change.presentations[0].motion.route.map(({ gridX }) => gridX)).toEqual([2, 3, 4]);
+  expect(JSON.parse(change.scene)).not.toHaveProperty('presentations');
+  writes.mockClear();
+  begin();
+  checkpoint(5);
+  finish();
+  await autosave.flush();
+  expect(writes.mock.calls[0][1].presentations[0].motion.from.gridX).toBe(4);
+  expect(writes.mock.calls[0][1].presentations[0].motion.route.map(({ gridX }) => gridX)).toEqual([
+    5,
+  ]);
+});
+
+test('multiplayer regression: an atomic character-and-scene commit carries pending DM movement too', async () => {
+  const { library, store, begin, checkpoint, finish } = await fixture({ shared: true });
+  const writes = jest.spyOn(store, 'commitCharacters');
+  begin();
+  checkpoint(2);
+  finish();
+  await library.edit(library.list()[0].id, { notes: 'Changed during the completed move' });
+  expect(writes.mock.calls[0][1].scene.presentations[0].motion.route[0].gridX).toBe(2);
+});
+
+test('multiplayer regression: a completed DM round trip is broadcast even when its saved endpoint is unchanged', async () => {
+  const { autosave, begin, checkpoint, finish, writes } = await fixture({ shared: true });
+  begin();
+  checkpoint(2);
+  checkpoint(1);
+  finish();
+  await autosave.flush();
+  expect(writes).toHaveBeenCalledTimes(1);
+  expect(writes.mock.calls[0][1].presentations[0].motion.route.map(({ gridX }) => gridX)).toEqual([
+    2, 1,
+  ]);
+});
 test('an explicit flush waits for action completion and saves a canceled action at its last safe checkpoint', async () => {
   const { autosave, begin, checkpoint, finish, writes, store, campaign, library } = await fixture();
   begin();

@@ -10,7 +10,6 @@ function movementBar(status) {
   const { base, total, remaining, spent } = status.movement;
   const maximum = status.active ? total : base;
   const available = status.active ? remaining : base;
-  const proportion = maximum > 0 ? Math.min(1, Math.max(0, available / maximum)) : 0;
   const description = !status.active
     ? 'Per move in free play. Start a turn to track remaining movement.'
     : status.downed
@@ -18,9 +17,19 @@ function movementBar(status) {
       : !status.isTurn
         ? 'Waiting for your turn.'
         : `${feet(spent)} ft used this turn.`;
+  return movementMeter({
+    maximum,
+    available,
+    description,
+    label: status.active ? 'Remaining movement' : 'Movement per move',
+  });
+}
+
+function movementMeter({ maximum, available, description, label }) {
+  const proportion = maximum > 0 ? Math.min(1, Math.max(0, available / maximum)) : 0;
   return `<div class="sheet-play-movement">
     <div class="sheet-play-movement-heading">
-      <strong>${status.active ? 'Remaining movement' : 'Movement per move'}</strong>
+      <strong>${escape(label)}</strong>
       <span><output aria-label="Movement remaining">${feet(available)}</output> / ${feet(maximum)} ft</span>
     </div>
     <div class="sheet-movement-meter" role="progressbar" aria-label="Remaining movement"
@@ -133,7 +142,7 @@ function actionCards(actions, context) {
       const resource = resources.find((entry) => entry.id === action.resourceId);
       const custom = customs.find((entry) => entry.id === action.customId);
       const remaining =
-        custom?.reset === 'turn' && status.active
+        custom?.reset === 'turn' && status?.active
           ? custom.maximum - (status.customTurnUses[custom.id] || 0)
           : custom?.remaining;
       const choice = choices[action.id] || {};
@@ -150,7 +159,13 @@ function actionCards(actions, context) {
                 : `${title(action.cost)}${action.kind === 'spell' ? (action.spellLevel ? `; Level ${action.spellLevel} spell` : '; Cantrip (no spell slot)') : ''}${action.spellConcentration ? '; Concentration' : ''}`
         )}
           ${resource ? ` | ${resource.maximum === null ? 'Unlimited' : resource.remaining} ${escape(resource.name)}` : ''}</small>
-        ${custom && custom.maximum !== null ? `<small>${remaining}/${custom.maximum} uses</small>` : ''}
+        ${
+          custom && custom.maximum !== null
+            ? context.playerGameplay && custom.reset === 'turn'
+              ? '<small>Turn uses are controlled by the host.</small>'
+              : `<small>${remaining}/${custom.maximum} uses</small>`
+            : ''
+        }
       </button>
       ${action.targeting?.kind === 'manual' ? `<small class="sheet-targeting-manual" title="${escape(action.targeting.reason)}">Manual targeting</small>` : ''}
       ${
@@ -178,8 +193,10 @@ function actionCards(actions, context) {
 function playSections(context, available, options) {
   const { library, token, mode, stats, status, layout, editingLayout, opened } = context;
   const combat = mode === 'combat';
+  const publicView = !!context.playerGameplay;
   const ready = new Set(available.map((action) => action.id));
-  const definitions = editingLayout ? characterActionOptions(library, token, options) : available;
+  const definitions =
+    publicView || editingLayout ? characterActionOptions(library, token, options) : available;
   const home = (action) =>
     ['action', 'attack'].includes(action.cost)
       ? 'action'
@@ -198,7 +215,7 @@ function playSections(context, available, options) {
       .filter((action) =>
         combat
           ? home(action) &&
-            (editingLayout || status.active) &&
+            (publicView || editingLayout || status.active) &&
             !action.id.startsWith('search-') &&
             !action.id.startsWith('study-')
           : useful(action)
@@ -263,7 +280,7 @@ function playSections(context, available, options) {
         </details></section>`;
       }
       return `<section class="sheet-play-action-group" aria-label="${label === 'Favorites' ? 'Favorite' : label} options" ${attributes}>
-      <h4>${label}${id === 'bonus' && status.bonusAttacksRemaining ? ` (${status.bonusAttacksRemaining} strikes left)` : ''}</h4>${tools}
+      <h4>${label}${id === 'bonus' && !publicView && status.bonusAttacksRemaining ? ` (${status.bonusAttacksRemaining} strikes left)` : ''}</h4>${tools}
       ${
         (combat && ['action', 'bonus', 'reaction', 'free'].includes(id)
           ? categorizedActions(entries, context, id, label)
@@ -274,19 +291,21 @@ function playSections(context, available, options) {
           id === 'favorites'
             ? 'Choose Favorite on a card to pin it here.'
             : id === 'bonus'
-              ? !status.active
-                ? 'Start a turn to see bonus-action options.'
-                : status.busy
-                  ? 'Finish the current use or save to see bonus-action options.'
-                  : !status.isTurn
-                    ? 'Bonus actions are available on this creature’s turn.'
-                    : status.bonusActions === 0
-                      ? 'Bonus action spent this turn.'
-                      : cards.some(
-                            (card) => card.home === 'bonus' && layout.favorites.includes(card.id)
-                          )
-                        ? 'Available bonus-action options are in Favorites.'
-                        : 'No available bonus-action options for this character.'
+              ? publicView
+                ? 'The host authorizes available bonus-action choices.'
+                : !status.active
+                  ? 'Start a turn to see bonus-action options.'
+                  : status.busy
+                    ? 'Finish the current use or save to see bonus-action options.'
+                    : !status.isTurn
+                      ? 'Bonus actions are available on this creature’s turn.'
+                      : status.bonusActions === 0
+                        ? 'Bonus action spent this turn.'
+                        : cards.some(
+                              (card) => card.home === 'bonus' && layout.favorites.includes(card.id)
+                            )
+                          ? 'Available bonus-action options are in Favorites.'
+                          : 'No available bonus-action options for this character.'
               : 'No options currently available.'
         }</p>`
       }
@@ -300,13 +319,14 @@ export function renderPlayView(context) {
   const {
     library,
     session,
+    playerGameplay,
     token,
     mode,
     choices = {},
     opened = {},
     editingLayout = false,
   } = context;
-  const status = session.status(token);
+  const status = playerGameplay ? null : session.status(token);
   const stats = library.stats(token.characterSheetId);
   const options = {};
   for (const [id, choice] of Object.entries(choices)) {
@@ -315,12 +335,19 @@ export function renderPlayView(context) {
       if (slot?.remaining > 0) options[id] = { slotLevel: choice.slotLevel };
     }
   }
-  const available = session.availableActions(token, options, { includeQueued: true });
+  const available = playerGameplay
+    ? playerGameplay.availableActions(token)
+    : session.availableActions(token, options, { includeQueued: true });
   const combat = mode === 'combat';
-  const activeName = session.activeToken
-    ? library.get(session.activeToken.characterSheetId).name
-    : null;
+  const activeName =
+    !playerGameplay && session.activeToken
+      ? library.get(session.activeToken.characterSheetId).name
+      : null;
   const layout = library.layouts.page(token.characterSheetId, mode);
+  const publicBudget = playerGameplay?.movementBudget(token);
+  const playerState = playerGameplay?.commands.getState();
+  const publicTurn = playerState?.gameplay.turn;
+  const endTurn = playerGameplay?.commands.availability('turn.end', token.id);
   const playContext = {
     ...context,
     choices,
@@ -335,20 +362,43 @@ export function renderPlayView(context) {
   return `<section class="sheet-play-view ${editingLayout ? 'sheet-layout-editing' : ''}" aria-label="${combat ? 'Combat play' : 'Non-combat play'}">
     <div class="sheet-layout-toolbar">
       <button type="button" data-play-layout-action="toggle" aria-label="Customize play layout"
-        aria-pressed="${editingLayout}" ${!editingLayout && status.busy ? 'disabled' : ''}>${editingLayout ? 'Done customizing' : 'Customize layout'}</button>
+        aria-pressed="${editingLayout}" ${!editingLayout && (playerGameplay ? playerGameplay.commands.pending : status.busy) ? 'disabled' : ''}>${editingLayout ? 'Done customizing' : 'Customize layout'}</button>
       ${editingLayout ? '<button type="button" data-play-layout-action="reset" aria-label="Reset this page layout">Reset this page</button>' : ''}
       ${editingLayout ? `<small>Drag handles or use Earlier/Later${combat ? ' within each category' : ''}. Drop cards into Favorites to pin them. Changes save automatically; play buttons are disabled.</small>` : ''}
     </div>
     ${
-      status.downed
+      !playerGameplay && status.downed
         ? `<p class="sheet-play-downed">0 HP: normal combat actions and voluntary movement are unavailable.
       Resolve unconsciousness, stabilization and special exceptions manually.
       <button type="button" data-sheet-action="roll" data-roll-kind="death" ${editingLayout ? 'disabled' : ''}>Roll death saving throw</button></p>`
         : ''
     }
     ${
-      combat
-        ? `
+      playerGameplay
+        ? `<p class="sheet-play-turn" role="status">${
+            publicTurn?.tokenId === token.id
+              ? 'Your turn. The DM starts and advances turns.'
+              : publicTurn
+                ? 'Waiting for your active turn. The DM advances turns.'
+                : 'The DM starts and advances turns. No active turn is assigned.'
+          }</p>
+      ${
+        combat
+          ? `<div class="sheet-play-turn-controls">
+        <button type="button" data-sheet-action="turn-end" aria-label="End turn"
+          title="${escape(endTurn.reason || endTurn.code.replaceAll('-', ' '))}"
+          ${editingLayout || playerGameplay.commands.pending || !endTurn.allowed ? 'disabled' : ''}>End Turn</button>
+      </div>`
+          : ''
+      }
+      ${movementMeter({
+        maximum: publicBudget.spentFeet + publicBudget.remainingFeet,
+        available: publicBudget.remainingFeet,
+        label: 'Remaining movement',
+        description: `${feet(publicBudget.spentFeet)} ft spent; host authorization is required for every move.`,
+      })}`
+        : combat
+          ? `
       <div class="sheet-play-turn" role="status">${
         !status.active
           ? 'Free play. Start a turn to track combat costs.'
@@ -403,7 +453,7 @@ export function renderPlayView(context) {
           : ''
       }
       ${!status.active && !editingLayout ? '<p>Start a turn to see available combat choices.</p>' : ''}`
-        : `
+          : `
       <p class="sheet-play-turn">${
         status.active
           ? 'Combat is active: this view does not bypass turn or resource costs.'
@@ -413,7 +463,11 @@ export function renderPlayView(context) {
     <div class="sheet-play-action-groups" aria-label="Available ${combat ? 'combat' : 'non-combat'} options">
       ${playSections(playContext, available, options)}
     </div>
-    <p class="sheet-reference">Costs and tracked uses are enforced; reviewed targeting is checked. Fly grants temporary flight automatically. Hits, saves, trigger conditions and other mechanical effects remain manual.
+    <p class="sheet-reference">${
+      playerGameplay
+        ? 'Gameplay controls require advertised host capabilities; no local roll, movement or resource result is submitted as authority.'
+        : 'Costs and tracked uses are enforced; reviewed targeting is checked. Fly grants temporary flight automatically. Hits, saves, trigger conditions and other mechanical effects remain manual.'
+    }
       <button type="button" data-sheet-section="core">Configure abilities in Core</button></p>
     <p class="sheet-reference">Ordinary checks and saves below are free rolls. Search/Study cards are omitted here; use a Manual / DM action correction when a check represents an action. Hide remains a tracked combat choice.</p>
   </section>`;

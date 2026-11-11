@@ -3,6 +3,12 @@ import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 
 /** Apply a quick command selected from the radial menu. */
 export async function applyTokenCommand(gm, tokenEntry, commandId) {
+  if (gm.playerInput) return gm.playerInput.applyRadial(tokenEntry, commandId);
+  if (
+    gm.characterServices?.sessionRole === 'player' &&
+    gm.characterServices.sheetContext === 'world'
+  )
+    throw new Error('Creature gameplay actions require a host-authorized player command');
   if (!commandId) return false;
   const command = getTokenCommand(commandId);
   if (!command) {

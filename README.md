@@ -38,13 +38,14 @@ Players use their own invitation links instead.
 There is no application build step. The Node host serves the application and
 acknowledges campaign saves only after committing them to disk. Open the app
 through this host rather than a static file server or an HTML file directly.
-It binds to loopback only. Initial authenticated player sessions are available;
-the full authoritative movement/combat command stage is not yet implemented.
+It binds to loopback only. Authenticated player sessions use the shared game
+client; world actions require versioned host gameplay capabilities.
 No internet endpoint or firewall rule is created automatically.
 
-After changing code, hard-refresh the browser (`Ctrl+Shift+R`) and regenerate the
-map. There is no hot reload, and an open tab can retain old JavaScript modules
-and cached models.
+After changing code, hard-refresh the browser (`Ctrl+Shift+R`) and reopen the
+saved campaign. Do not regenerate or remodel an existing board just to refresh
+the client. There is no hot reload, and an open tab can retain old JavaScript
+modules and cached models.
 
 ## Current state
 
@@ -81,10 +82,59 @@ and cached models.
   [TerrainCoordinator](./src/coordinators/TerrainCoordinator.js) still owns a
   separate height store. Do not treat the accepted
   [terrain design](./docs/adr/ADR-0001-terrain-engine-event-seam.md) as completed.
-- Campaign autosave restores the committed scene and characters from the local
-  host. Initial authenticated sessions share assigned character sheets and
-  published read-only player views; full player gameplay and desktop packaging
-  remain future work.
+- Campaign autosave restores the DM's committed scene and characters from the
+  local host. The interactive player client reuses the native renderer and
+  receives an authorized public projection, never a private scene restore.
+  Combined-host/external-Chrome multiplayer acceptance and desktop packaging
+  remain separate verification milestones.
+
+## Interactive player contract
+
+Player invitations preserve their private fragment while opening the normal
+game entry. The authenticated session determines the role; URL flags do not.
+The client requires `publicScene.version === 1` and requests
+`playerState({ presentationVersion: 1, ... })`. Missing or invalid public
+geometry, models or capabilities fail visibly instead of falling back to the
+old marker viewer, fake NPC records or client-local gameplay.
+
+- Native terrain, materials, saved flora placements, models and tactical
+  portraits are hydrated separately from host-filtered actor poses.
+  `assetKey` caches authorized location assets, not actor movement or budgets.
+- Commands use the flat versioned `tokenId`/`view` envelope with acknowledged
+  scene/character revisions and a fresh command ID. Only intent is sent.
+  Accepted results include `applied`, a minimal receipt and fresh authorized
+  state. Uncertain submissions retain the same ID for retry; duplicates never
+  replay movement or dice.
+- Completed approved movement is presentation-only. A newer revision cancels
+  obsolete visual replay; this is not host in-flight retarget or cancellation.
+  Actor/model identity and independent cameras survive ordinary refreshes.
+  DM and player moves publish their actual map-local waypoints for authorized
+  receiving clients to animate. Foreign movement never includes private budgets.
+  Busy-only animation notifications do not create another canonical save.
+- The host simulates physical D20s. Player dice display the original gold GLB
+  with its verified geometry key and actual recorded positions/quaternions.
+  No client face, forced orientation or substitute D20 result is submitted.
+  Cocked results require an explicit new user roll.
+- The DM starts/advances turns; players may end only their advertised active
+  turn. Existing trusted self HP, speed and resource edits remain available
+  through assigned-record commits. These allowances are not anti-cheat.
+  Ending combat enables assigned-player free movement without an active turn.
+  Each free move uses the existing free-play allowance, not a spent combat budget.
+- Players reach DM arrival grants from their assigned roster. Actorless
+  previews show only authorized terrain and create no observer, sprite or
+  budget. Unknown unplaced records require a canonical **Next sprite** choice.
+  These choices are UI-local, not a new saved preference. Placement/retrieval
+  obey host capabilities and combat restrictions.
+- Clean saved idle DM views can reconcile accepted canonical updates at a safe
+  checkpoint. Dirty/pending work pauses with an explicit conflict. It is not
+  silently rebased or saved over accepted player actions. Explicit discard
+  confirms the local generation before refetching a fresh canonical base.
+  Initial live notices wait for the first saved checkpoint so restoring the
+  board and its initial save are not mistaken for a conflicting DM draft.
+
+Per-kind eligibility and public floor/join metadata must match the authority
+and construction producers. Fixture and isolated HTTP tests are not a claim
+that a live deployment or external-Chrome multiplayer QA has completed.
 
 ## Durable campaign storage
 
@@ -118,9 +168,9 @@ transactions and stale-write checks as browser storage. Two tabs cannot silently
 overwrite newer campaign revisions; reopen a stale campaign before continuing.
 The host bounds each JSON request to 64 MiB in addition to the existing scene,
 character and backup limits; oversized requests fail explicitly.
-Authenticated sessions enforce DM/player access. The first player milestone is
-assigned-sheet editing and read-only published terrain/tactical-token views,
-not unrestricted world writes or a complete authoritative combat server.
+Authenticated sessions enforce DM/player access. Players use the same game
+renderer and controls, with assigned-sheet access and host-authorized gameplay
+commands rather than unrestricted scene writes or local combat authority.
 
 Application source under `src/` is explicitly ES modules so Node can reuse the
 browser's campaign validation. Existing tooling outside `src/` remains CommonJS.
@@ -206,15 +256,34 @@ Assignments, invitations and map publication survive host restarts; browser
 sign-ins are intentionally renewed after a restart. Sign out before deliberately
 switching identities in the same browser profile.
 
-The initial player page uses an independent GPU-preferred published-terrain
-viewer with tactical token markers. A player's camera/map selection is not a
-world write and does not move the DM or another player. Public presentation data
-contains rendered geometry rather than private building-authoring records.
-Terrain buffers are cached; routine character updates do not resend/rebuild
-unchanged terrain. Unpublishing a view or ending access removes its viewer and
-releases its renderer resources.
+Player invitation links open the normal game page with its native terrain,
+materials, saved flora, animated creature models, tactical tokens, dice panel,
+camera controls, collapsible panels and assigned-character roster. DM authoring
+and private records remain restricted. A player's camera, sheet selection or
+area browsing never changes the active sight origin or another viewer's camera.
+The client requires `publicScene.version === 1` and advertised gameplay
+capabilities; an older host fails explicitly instead of falling back to a
+marker viewer or pretending a local action succeeded.
 
-Use **Character viewpoint > Active character** to choose one of the
+Public location assets exclude canonical characters, combat state, DM notes and
+the DM camera. Cached asset keys keep actor/budget updates from regenerating
+saved flora. Accepted movement uses host-approved routes and budgets; retries
+reuse the same command ID and duplicate receipts never animate or spend again.
+**End Combat / Free Play** enables assigned-player movement without an active
+turn. Each completed free-play journey refreshes its per-move allowance; combat
+still requires the assigned actor's active turn and preserves spent movement.
+Committed routes replay on receiving DM/player models using their locomotion
+variants, including Walk/Run, rather than jumping directly to the destination.
+DM saves carry their actual safe waypoints separately from the scene checkpoint;
+replay never spends another movement budget or changes another viewer's camera.
+Compatible queued moves retain a continuous route and animation phase. A changed
+map or newer non-movement checkpoint replaces obsolete presentation; loading a
+checkpoint does not replay old routes. Hidden origins/waypoints and unassigned
+actors' private movement budgets are not transmitted.
+Routine refetches wait for an acknowledged visual movement checkpoint.
+Ending access removes world sightings and closes character data.
+
+Use **Settings > Active character** to choose one of the
 server-authorized, assigned creatures. This uses the actual
 creature token ID, not a temporary sheet token. Opening another saved sheet or
 browsing a different internal area does not change the active sight origin.
@@ -228,10 +297,11 @@ revoked character selection requests a new authorized default. With no placed,
 assigned observer, sheets remain editable but no location geometry or creature
 sightings are shown.
 Old markers and terrain are concealed while changing viewpoints or receiving
-world updates; outdated in-flight responses cannot restore them. Authorized tactical markers draw over visual
+world updates; outdated in-flight responses cannot restore them. Authorized
+tactical markers draw over visual
 roofs/floors so camera occlusion is not mistaken for character line of sight.
 
-This is a deliberately gated first slice:
+Gameplay remains capability-gated:
 
 - The matching interactive player client supports host-validated assigned
   movement in **Free Play**, with a fresh per-journey allowance, or on the
@@ -245,8 +315,10 @@ This is a deliberately gated first slice:
 - World conditions, flight protection and concentration still require DM
   adjudication. Manual assigned-sheet editing is not a replacement for validated
   gameplay commands.
-- Full models/animations, decorative placeables and spell visuals are not yet
-  player-view parity features. The DM retains the existing complete editor.
+- Terrain, decorative placeables and creature animations reuse the production
+  game systems. Shared rolls and action effects require authoritative receipts;
+  a client physical d20 face is not accepted as proof of a gameplay result.
+  The DM retains the complete editor.
 - Players see their current room and the portions of other rooms visible through
   open physical connections. Closed doors hide the entire room again, including
   its floor, walls and stairs, even after a previous visit. Room visits persist
@@ -256,7 +328,10 @@ This is a deliberately gated first slice:
 - Live updates use authenticated same-origin event notifications and HTTP
   commands in the existing Node host. This avoids introducing a second state
   owner/framework during the first slice. Conflicting writes are rejected, not
-  silently merged; finish an in-progress action/save or reopen before retrying.
+  silently merged; finish an in-progress action/save or resolve its conflict
+  before retrying. An idle, saved DM client reconciles accepted player updates
+  without resetting its camera, loaded actor identities or sheet drafts; its next
+  autosave preserves the accepted canonical actor positions.
 
 ### Independent locations and connected areas
 
@@ -269,7 +344,7 @@ In **Maps & focus**, use **Create empty location** to save a new independent
 location with an empty main area. **Location** selects the DM's browsing space;
 **Map** selects an area inside it. These controls do not move or recreate
 characters and do not move other viewers. The explicit selected-character/party
-transfer workflow remains the next stage, along with authorized player movement.
+transfer workflow remains capability-gated.
 
 The player's **Current location** and **Area** options derive from the active
 assigned creature. Internal areas need no additional publication checkbox.

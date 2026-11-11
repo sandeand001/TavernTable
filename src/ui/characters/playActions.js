@@ -15,6 +15,20 @@ export async function rollForSheet(
   const mode = advantage === disadvantage ? 'normal' : advantage ? 'advantage' : 'disadvantage';
   const token = context.token;
   const characterId = context.characterId;
+  if (context.services.playerGameplay) {
+    if (context.services.sheetContext === 'library')
+      throw new Error('Place this character before using world dice actions');
+    context.rollStatus.textContent = `Waiting for the host: ${request.label}...`;
+    const result = await context.services.playerGameplay.roll(token, {
+      expression: request.expression,
+      label: request.label,
+      mode,
+    });
+    const roll = result.receipt.roll;
+    if (!context.disposed && context.token === token && context.characterId === characterId)
+      context.rollStatus.textContent = roll.text;
+    return roll;
+  }
   const session = context.services.combat;
   const scope = recordHistory ? session.captureRoll(token) : null;
   context.rollStatus.textContent = `Rolling ${request.label}...`;
@@ -42,6 +56,31 @@ export async function rollForSheet(
 export async function performPlayAction(context, actionId, choice = {}) {
   const token = context.token;
   const characterId = context.characterId;
+  if (context.services.playerGameplay) {
+    try {
+      if (context.services.sheetContext === 'library')
+        throw new Error('Place this character before using world actions');
+      context.rollStatus.textContent = 'Waiting for the host to resolve this action...';
+      const result = await context.services.playerGameplay.useAction(token, actionId, choice);
+      if (result.cancelled) {
+        context.rollStatus.textContent =
+          result.reason || 'Targeting cancelled. No action or resources were spent.';
+        return null;
+      }
+      if (!context.disposed && context.token === token && context.characterId === characterId) {
+        context.rollStatus.textContent =
+          result.outcome === 'duplicate'
+            ? 'This action was already accepted. Current host data was refreshed.'
+            : result.receipt.roll?.text || 'The host accepted this action and its resource costs.';
+        context._run(() => {}, 'Host action and resources updated.', false);
+      }
+      return result.receipt;
+    } catch (error) {
+      context.rollStatus.textContent = error.message;
+      context._failure(error, 'playerAction');
+      return null;
+    }
+  }
   const session = context.services.combat;
   const world = context.gameManager.campaignWorld;
   if (session.isActorBusy(token) || session.actionRequests.has(token))

@@ -8,10 +8,38 @@ export async function sessionJSON(fetch, url, options = {}) {
   } catch (error) {
     throw new Error('The local host returned an invalid session response', { cause: error });
   }
-  if (!response.ok)
-    throw Object.assign(new Error(data.error || `Session request failed (${response.status})`), {
-      status: response.status,
-    });
+  if (!response.ok) {
+    const denial = Object.assign(
+      new Error(data.error || `Session request failed (${response.status})`),
+      {
+        status: response.status,
+      }
+    );
+    const invalid = () =>
+      Object.assign(
+        new Error('The local host returned an invalid command denial', { cause: denial }),
+        { status: response.status, code: 'invalid-session-response' }
+      );
+    for (const field of ['code', 'commandId']) {
+      if (!Object.hasOwn(data, field)) continue;
+      if (typeof data[field] !== 'string') throw invalid();
+      denial[field] = data[field];
+    }
+    if (Object.hasOwn(data, 'current')) {
+      if (
+        !data.current ||
+        !['sceneRevision', 'charactersRevision'].every(
+          (field) => Number.isSafeInteger(data.current[field]) && data.current[field] >= 0
+        )
+      )
+        throw invalid();
+      denial.current = {
+        sceneRevision: data.current.sceneRevision,
+        charactersRevision: data.current.charactersRevision,
+      };
+    }
+    throw denial;
+  }
   return data;
 }
 

@@ -62,7 +62,10 @@ async function syncMapProjections() {
   const projections = gm.placedTokens.filter((token) => this.isTokenProjection(token));
   const visible = new Set();
   let geometry = null;
-  if (
+  if (gm.publicPlayerPresentation) {
+    for (const token of projections)
+      if (gm.publicPlayerPresentation.hasActor(token.id)) visible.add(token);
+  } else if (
     observer &&
     projections.length &&
     !gm.terrainEngine.cavern &&

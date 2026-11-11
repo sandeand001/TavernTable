@@ -21,6 +21,19 @@ export function connectCharacterServices(gameManager, services) {
   ) {
     throw new Error('Character services require a matching campaign ruleset and catalog');
   }
+  if (services.sessionRole === 'player' && gameManager.playerInput) {
+    gameManager.characterServices?.falling?.dispose();
+    gameManager.characterServices?.targeting?.dispose();
+    const connected = {
+      ...services,
+      combat: null,
+      falling: null,
+      targeting: null,
+      playerGameplay: gameManager.playerInput,
+    };
+    gameManager.characterServices = connected;
+    return connected;
+  }
   if (
     gameManager.characterServices?.library === services.library &&
     gameManager.characterServices.combat
@@ -88,6 +101,8 @@ export function getTokenCharacter(gameManager, token, services) {
   if (!gameManager.placedTokens.includes(token)) {
     throw new Error('Select a creature in the current scene');
   }
+  if (gameManager.playerInput && (!token.owned || !token.characterSheetId))
+    throw new Error('Only assigned character sheets are available to this player');
   const previousSpeed = getTokenMovementSettings(token).speed;
   const link = (id) => {
     if (!gameManager.placedTokens.includes(token)) {
