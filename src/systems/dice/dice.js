@@ -372,7 +372,7 @@ export function rollDice(sides) {
 
 export async function rollDiceExpression(
   { expression, label = 'Character roll', mode = 'normal' },
-  { random = Math.random, physicalRoll = _maybePlay3DDice } = {}
+  { random = Math.random, physicalRoll = _maybePlay3DDice, physicalAllD20 = false } = {}
 ) {
   if (
     typeof expression !== 'string' ||
@@ -430,6 +430,29 @@ export async function rollDiceExpression(
   let digitalReason = '';
   try {
     for (const term of diceTerms) {
+      if (physicalAllD20 && term.sides === 20) {
+        const count = d20Check && mode !== 'normal' ? 2 : term.count;
+        for (let index = 0; index < count; index++) {
+          const rolled = await physicalRoll({ sides: 20, diceCount: 1 });
+          if (
+            !rolled?.success ||
+            !Number.isInteger(rolled.value) ||
+            rolled.value < 1 ||
+            rolled.value > 20
+          )
+            throw (
+              rolled?.error ||
+              new Error(
+                rolled?.reason === 'cocked'
+                  ? 'The d20 is cocked; roll again'
+                  : 'Unable to read the settled physical d20'
+              )
+            );
+          term.values.push(rolled.value);
+          physical = true;
+        }
+        continue;
+      }
       if (d20Check && mode === 'normal') {
         const rolled = await physicalRoll({ sides: 20, diceCount: 1 });
         if (rolled?.reason === 'cancelled') {
@@ -482,7 +505,7 @@ export async function rollDiceExpression(
     }, 0);
     const values = diceTerms.flatMap((term) => term.values);
     const rolledText = values.length ? ` [${values.join(', ')}]` : '';
-    const text = `${label}: ${notation}${mode !== 'normal' ? ` (${mode}, digital)` : digitalReason}${rolledText} = ${total}`;
+    const text = `${label}: ${notation}${mode !== 'normal' ? ` (${mode}, ${physical ? 'physical' : 'digital'})` : digitalReason}${rolledText} = ${total}`;
     const summary = {
       label,
       total,

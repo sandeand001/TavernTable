@@ -10,6 +10,7 @@ const { CampaignBackups } = require('./campaign-backups.js');
 const { SessionAuthority } = require('./session-authority.js');
 const { HostResources } = require('./host-resources.js');
 const { PlayerCampaigns } = require('./player-campaigns.js');
+const { PlayerGameplay } = require('./player-gameplay.js');
 
 const operations = new Map([
   ['create', 1],
@@ -33,6 +34,8 @@ const operations = new Map([
   ['playerState', 1],
   ['playerCommit', 2],
   ['doorState', 2],
+  ['playerCommand', 2],
+  ['grantPlacement', 4],
 ]);
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -178,6 +181,7 @@ async function startLocalHost({
   });
   const resources = new HostResources({ root, manifest });
   const players = new PlayerCampaigns({ root, store, authority, resources });
+  const gameplay = new PlayerGameplay({ root, players });
   const backups = new CampaignBackups({
     directory: path.join(dataDirectory, 'backups'),
     store,
@@ -186,7 +190,7 @@ async function startLocalHost({
   });
   for (const campaign of await store.list()) backups.changedCampaign(campaign.id);
   const streams = new Set();
-  const broadcast = (campaignId, actorId, kind) => {
+  const broadcast = (campaignId, actorId, kind, revisions = null, presentations = []) => {
     for (const stream of streams) {
       const session = authority.authenticate(stream.cookie, stream.cookieName);
       if (!session) {
@@ -196,7 +200,14 @@ async function startLocalHost({
       const profile = authority.profile(session);
       if (profile.role === 'dm' || profile.campaignId === campaignId)
         stream.response.write(
-          `event: campaign\ndata: ${JSON.stringify({ campaignId, actorId, kind })}\n\n`
+          `event: campaign\ndata: ${JSON.stringify({
+            campaignId,
+            actorId,
+            kind,
+            ...(revisions ? { version: 1, ...revisions } : {}),
+            ...(presentations.length ? { hasPresentations: true } : {}),
+            ...(profile.role === 'dm' && presentations.length ? { presentations } : {}),
+          })}\n\n`
         );
     }
   };
@@ -323,13 +334,16 @@ async function startLocalHost({
           throw failure(400, 'Unsupported campaign operation or arguments');
         if (
           identity.role === 'player' &&
-          !['playerState', 'playerCommit', 'doorState'].includes(command.operation)
+          !['playerState', 'playerCommit', 'doorState', 'playerCommand'].includes(command.operation)
         )
           throw failure(403, 'Players can access only their assigned character workspace');
         const sessionOperations = {
           playerState: (options) => players.state(session, options),
           playerCommit: (id, change) => players.commit(session, id, change),
           doorState: (id, change) => players.doorState(session, id, change),
+          playerCommand: (id, change) => gameplay.command(session, id, change),
+          grantPlacement: (id, playerId, characterId, destination) =>
+            gameplay.grant(session, id, playerId, characterId, destination),
           sessionInfo: async (id) => {
             authority.requireDM(session);
             const state = await store.readCharacters(id);
@@ -377,15 +391,15 @@ async function startLocalHost({
           backupStatus: (id) => backups.status(id),
         };
         if (Object.hasOwn(backupOperations, command.operation)) await store.get(command.args[0]);
-        const trackedChange =
+        const sceneChange =
           command.operation === 'commitScene'
             ? command.args[1]
             : command.operation === 'commitCharacters'
               ? command.args[1]?.scene
               : null;
         let visitedScene = null;
-        if (trackedChange?.trackRoomVisits === true) {
-          visitedScene = JSON.parse(trackedChange.scene ?? trackedChange.value);
+        if (sceneChange?.trackRoomVisits === true) {
+          visitedScene = JSON.parse(sceneChange.scene ?? sceneChange.value);
           if (
             visitedScene?.version !== 3 ||
             !Array.isArray(visitedScene.maps) ||
@@ -393,6 +407,16 @@ async function startLocalHost({
           )
             throw failure(400, 'Room discovery requires a connected scene checkpoint');
         }
+        if (sceneChange && Object.hasOwn(sceneChange, 'presentations'))
+          await players.validatePresentations(
+            command.args[0],
+            sceneChange.presentations,
+            command.operation === 'commitScene' ? sceneChange.scene : sceneChange.value,
+            sceneChange.revision,
+            command.operation === 'commitScene'
+              ? sceneChange.charactersRevision
+              : command.args[1].revision
+          );
         const result = Object.hasOwn(sessionOperations, command.operation)
           ? await sessionOperations[command.operation](...command.args)
           : Object.hasOwn(backupOperations, command.operation)
@@ -404,14 +428,49 @@ async function startLocalHost({
           ['update', 'commitScene', 'commitCharacters', 'doorState'].includes(command.operation)
         )
           backups.changedCampaign(command.args[0]);
-        else if (command.operation === 'playerCommit') backups.changedCampaign(identity.campaignId);
+        else if (
+          command.operation === 'playerCommit' ||
+          (command.operation === 'playerCommand' && result.outcome !== 'duplicate')
+        )
+          backups.changedCampaign(identity.campaignId);
         const changedCampaign = ['create', 'importBackup'].includes(command.operation)
           ? result.id
-          : command.operation === 'playerCommit'
+          : ['playerCommit', 'playerCommand'].includes(command.operation)
             ? identity.campaignId
             : command.args[0];
         if (visitedScene) authority.recordRoomVisits(changedCampaign, visitedScene);
+        const revisions =
+          command.operation === 'playerCommand'
+            ? result.applied
+            : command.operation === 'commitScene'
+              ? {
+                  sceneRevision: result.revision,
+                  charactersRevision: command.args[1].charactersRevision,
+                }
+              : command.operation === 'commitCharacters' && command.args[1]?.scene
+                ? {
+                    sceneRevision: result.sceneRevision,
+                    charactersRevision: result.revision,
+                  }
+                : null;
+        const presentations =
+          result?.outcome === 'duplicate'
+            ? []
+            : command.operation === 'playerCommand' && result.receipt.motion
+              ? [
+                  {
+                    commandId: result.commandId,
+                    tokenId: result.receipt.tokenId,
+                    kind: result.receipt.kind,
+                    costFeet: result.receipt.costFeet,
+                    budget: result.receipt.budget,
+                    motion: result.receipt.motion,
+                  },
+                ]
+              : sceneChange?.presentations || [];
+        const shared = players.rememberPresentations(changedCampaign, presentations, revisions);
         if (
+          result?.outcome !== 'duplicate' &&
           [
             'create',
             'importBackup',
@@ -420,13 +479,15 @@ async function startLocalHost({
             'commitCharacters',
             'playerCommit',
             'doorState',
+            'playerCommand',
             'createInvite',
             'revokeInvite',
             'assignCharacter',
             'publishMap',
+            'grantPlacement',
           ].includes(command.operation)
         )
-          broadcast(changedCampaign, identity.id, command.operation);
+          broadcast(changedCampaign, identity.id, command.operation, revisions, shared);
         jsonResponse(response, 200, { result });
         return;
       }
@@ -475,6 +536,12 @@ async function startLocalHost({
             status >= 500
               ? 'The host could not save/read campaign data. Check its terminal and retry.'
               : error.message,
+          ...(status < 500 &&
+          typeof error.code === 'string' &&
+          /^[a-z][a-z0-9-]{0,100}$/.test(error.code)
+            ? { code: error.code }
+            : {}),
+          ...(status === 409 && error.current ? { current: error.current } : {}),
         });
       }
     }

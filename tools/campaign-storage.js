@@ -20,6 +20,15 @@ class SqliteCampaignStorage {
         value TEXT NOT NULL,
         PRIMARY KEY (campaign_id, key)
       );
+      CREATE TABLE IF NOT EXISTS player_commands (
+        campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+        player_id TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        receipt TEXT NOT NULL,
+        PRIMARY KEY(campaign_id, player_id, command_id)
+      );
     `);
   }
 
@@ -56,6 +65,49 @@ class SqliteCampaignStorage {
               'INSERT INTO characters (campaign_id, key, value) VALUES (?, ?, ?)'
             );
             for (const row of records) insert.run(id, row.key, row.value);
+          },
+          readPlayerCommand: (campaignId, playerId, commandId) => {
+            const row = database
+              .prepare(
+                'SELECT character_id, fingerprint, receipt FROM player_commands WHERE campaign_id = ? AND player_id = ? AND command_id = ?'
+              )
+              .get(campaignId, playerId, commandId);
+            return row
+              ? {
+                  characterId: row.character_id,
+                  fingerprint: row.fingerprint,
+                  receipt: JSON.parse(row.receipt),
+                }
+              : null;
+          },
+          writePlayerCommand: (
+            campaignId,
+            playerId,
+            commandId,
+            characterId,
+            fingerprint,
+            receipt
+          ) => {
+            database
+              .prepare(
+                'INSERT INTO player_commands(campaign_id, player_id, command_id, character_id, fingerprint, receipt) VALUES (?, ?, ?, ?, ?, ?)'
+              )
+              .run(
+                campaignId,
+                playerId,
+                commandId,
+                characterId,
+                fingerprint,
+                JSON.stringify(receipt)
+              );
+          },
+          readActorPlayerCommand: (campaignId, actorTokenId, sceneRevision) => {
+            const row = database
+              .prepare(
+                "SELECT receipt FROM player_commands WHERE campaign_id = ? AND json_extract(receipt, '$.receipt.tokenId') = ? AND json_extract(receipt, '$.applied.sceneRevision') <= ? ORDER BY rowid DESC LIMIT 1"
+              )
+              .get(campaignId, actorTokenId, sceneRevision);
+            return row ? JSON.parse(row.receipt) : null;
           },
         });
         database.exec('COMMIT');

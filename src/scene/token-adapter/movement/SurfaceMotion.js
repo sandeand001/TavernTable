@@ -17,7 +17,7 @@ import {
 import { campaignLandingForSupport } from '../SavedPlacements.js';
 import { FootprintIndex } from '../../../terrain/FootprintIndex.js';
 
-function navigationGeometry(gm) {
+export function navigationGeometry(gm) {
   const world = gm.campaignWorld;
   const mapId = gm.campaignMapId;
   const unit = gm.spatial.tileWorldSize / 5;

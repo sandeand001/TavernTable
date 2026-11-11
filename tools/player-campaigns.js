@@ -4,6 +4,9 @@ const { PublishedMaps } = require('./published-maps.js');
 const { isDeepStrictEqual } = require('node:util');
 
 const reject = (message) => Object.assign(new Error(message), { status: 403 });
+const copy = (value) => JSON.parse(JSON.stringify(value));
+const presentationError = (message) =>
+  Object.assign(new Error(message), { status: 422, code: 'invalid-scene-presentation' });
 
 class PlayerCampaigns {
   constructor({ root, store, authority, resources }) {
@@ -12,6 +15,7 @@ class PlayerCampaigns {
     this.authority = authority;
     this.resources = resources;
     this.published = new PublishedMaps(root);
+    this.presentations = new Map();
   }
 
   async _modules() {
@@ -21,19 +25,24 @@ class PlayerCampaigns {
     ]);
   }
 
-  async _state(session) {
+  async _state(session, store = this.store) {
     const profile = this.authority.profile(session);
     if (profile.role !== 'player')
       throw reject('Join with a player invitation to open assigned characters');
-    const state = await this.store.readCharacters(profile.campaignId);
+    const state = await store.readCharacters(profile.campaignId);
     const catalog = await this.resources.catalog(state.campaign);
     const [{ default: CampaignCharacters }] = await this._modules();
-    const library = new CampaignCharacters({ ...state, store: this.store, catalog });
+    const library = new CampaignCharacters({ ...state, store, catalog });
     return { profile, state, catalog, library };
   }
 
-  async state(session, options = {}) {
-    const { profile, state, library } = await this._state(session);
+  async state(session, options = {}, store = this.store) {
+    const { profile, state, library } = await this._state(session, store);
+    if (
+      options.sinceSceneRevision !== undefined &&
+      (!Number.isSafeInteger(options.sinceSceneRevision) || options.sinceSceneRevision < 0)
+    )
+      throw presentationError('Choose a valid shared scene revision');
     const [{ campaignRecordCharacterId }, { decodeScene }] = await this._modules();
     const scene = state.scene
       ? decodeScene(state.scene, { ruleset: state.campaign.ruleset, library })
@@ -46,8 +55,74 @@ class PlayerCampaigns {
       mapId: options.mapId || null,
       terrainKey: options.terrainKey || null,
       observerTokenId: options.observerTokenId ?? null,
+      presentationVersion: options.presentationVersion ?? null,
+      assetKey: options.assetKey ?? null,
+      placementGrant:
+        options.placementGrantId === undefined
+          ? null
+          : this.authority.placementGrant(session, options.placementGrantId),
+      noObserver: Object.hasOwn(options, 'observerTokenId') && options.observerTokenId === null,
     });
-    return {
+    const { playerGameplayState } = await import(
+      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'ServerGameplay.js')).href
+    );
+    const { validatePlayerState } = await import(
+      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href
+    );
+    const updates = [...(this.presentations.get(profile.campaignId) || [])];
+    if (view.view?.tokens.length)
+      await store.storage.transaction('readonly', (transaction) => {
+        for (const token of view.view.tokens) {
+          const latest = transaction.readActorPlayerCommand(
+            profile.campaignId,
+            token.id,
+            state.sceneRevision
+          );
+          token.visualCommand =
+            latest?.receipt.kind === 'emote'
+              ? {
+                  commandId: latest.commandId,
+                  sceneRevision: latest.applied.sceneRevision,
+                  actionId: latest.receipt.actionId,
+                  animationKey: latest.receipt.animationKey,
+                }
+              : null;
+          const actor = view.publicScene.actors.find((entry) => entry.id === token.id);
+          if (actor) actor.visualCommand = token.visualCommand;
+          if (actor && latest?.receipt.motion)
+            updates.push({
+              commandId: latest.commandId,
+              tokenId: token.id,
+              kind: latest.receipt.kind,
+              sceneRevision: latest.applied.sceneRevision,
+              charactersRevision: latest.applied.charactersRevision,
+              costFeet: latest.receipt.costFeet,
+              budget: latest.receipt.budget,
+              motion: latest.receipt.motion,
+            });
+        }
+      });
+    view.publicScene.updates = await this.visiblePresentations(
+      scene,
+      library,
+      view,
+      updates,
+      state,
+      options.sinceSceneRevision
+    );
+    const currentProfile = this.authority.profile(session);
+    if (
+      currentProfile.campaignId !== profile.campaignId ||
+      !isDeepStrictEqual(currentProfile.characterIds, profile.characterIds)
+    )
+      throw reject('Your character assignments changed; refresh and choose an authorized observer');
+    const gameplay = playerGameplayState(scene, library, profile.characterIds);
+    const visible = new Set(
+      view.publicScene.actors.filter((actor) => actor.owned).map((actor) => actor.id)
+    );
+    gameplay.ownedTokens = gameplay.ownedTokens.filter((actor) => visible.has(actor.tokenId));
+    if (gameplay.turn && !visible.has(gameplay.turn.tokenId)) gameplay.turn.tokenId = null;
+    const snapshot = {
       campaign: state.campaign,
       revision: state.revision,
       records: state.records.filter((row) =>
@@ -56,10 +131,185 @@ class PlayerCampaigns {
       scene: null,
       sceneRevision: state.sceneRevision,
       sceneSavedAt: state.sceneSavedAt,
-      profile,
+      profile: currentProfile,
       visitedRoomIds: this.authority.visitedRoomIds(session),
+      gameplay,
+      placementGrants: this.authority.placementGrants(session),
       ...view,
     };
+    return validatePlayerState(snapshot);
+  }
+
+  async validatePresentations(
+    campaignId,
+    presentations,
+    sceneValue,
+    sceneRevision,
+    charactersRevision
+  ) {
+    if (
+      !Number.isSafeInteger(sceneRevision) ||
+      sceneRevision < 0 ||
+      !Number.isSafeInteger(charactersRevision) ||
+      charactersRevision < 0 ||
+      !Array.isArray(presentations) ||
+      presentations.length > 256 ||
+      new Set(presentations.map((entry) => entry?.commandId)).size !== presentations.length
+    )
+      throw presentationError('Shared scene presentations must be a bounded, unique list');
+    let scene;
+    try {
+      scene = JSON.parse(sceneValue);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      throw Object.assign(presentationError('Shared movement requires a valid scene snapshot'), {
+        cause: error,
+      });
+    }
+    if (
+      !scene ||
+      !Array.isArray(scene.creatures) ||
+      (scene.version === 3 && !Array.isArray(scene.maps))
+    )
+      throw presentationError('Shared movement requires a valid scene snapshot');
+    const before = await this.store.readScene(campaignId);
+    if (before.revision !== sceneRevision)
+      throw Object.assign(new Error('Refresh the shared scene before publishing movement'), {
+        status: 409,
+        code: 'stale-scene-revision',
+      });
+    const previous = before.scene ? JSON.parse(before.scene) : null;
+    const [{ validatePlayerMotion }, { samePlacement, sceneActorPlacement }] = await Promise.all([
+      import(
+        pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href
+      ),
+      import(
+        pathToFileURL(path.join(this.root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js'))
+          .href
+      ),
+    ]);
+    const currentMaps = new Map(this.published.maps(scene).map((map) => [map.id, map]));
+    const previousMaps = new Map(this.published.maps(previous).map((map) => [map.id, map]));
+    const maps = new Map(previousMaps);
+    for (const [id, map] of currentMaps) {
+      const old = maps.get(id);
+      if (!map.grid || !Number.isSafeInteger(map.grid.cols) || !Number.isSafeInteger(map.grid.rows))
+        throw presentationError('Shared movement requires valid map dimensions');
+      maps.set(id, {
+        ...map,
+        grid: {
+          ...map.grid,
+          cols: Math.max(map.grid.cols, old?.grid.cols ?? 0),
+          rows: Math.max(map.grid.rows, old?.grid.rows ?? 0),
+        },
+      });
+    }
+    for (const entry of presentations) {
+      if (
+        !entry ||
+        Object.keys(entry).some(
+          (key) => !['commandId', 'tokenId', 'kind', 'motion'].includes(key)
+        ) ||
+        typeof entry.commandId !== 'string' ||
+        !/^[a-zA-Z0-9_-]{8,100}$/.test(entry.commandId) ||
+        entry.kind !== 'move'
+      )
+        throw presentationError('The shared movement presentation is invalid');
+      try {
+        validatePlayerMotion(entry.motion, maps);
+      } catch (error) {
+        if (!['invalid-player-state', 'invalid-saved-placement'].includes(error.code)) throw error;
+        throw Object.assign(presentationError(error.message), { cause: error });
+      }
+      if (
+        ![entry.motion.from, ...entry.motion.route].every((point) =>
+          [currentMaps.get(point.mapId), previousMaps.get(point.mapId)].some(
+            (map) => map && point.gridX < map.grid.cols && point.gridY < map.grid.rows
+          )
+        )
+      )
+        throw presentationError('A shared waypoint is outside the before/after map bounds');
+      const actor = scene.creatures.find(({ id }) => id === entry.tokenId);
+      const origin = previous?.creatures.find(({ id }) => id === entry.tokenId);
+      if (
+        !actor ||
+        !origin ||
+        !samePlacement(entry.motion.from, sceneActorPlacement(previous, origin)) ||
+        !samePlacement(entry.motion.route.at(-1), sceneActorPlacement(scene, actor))
+      )
+        throw presentationError('Shared movement must connect the previous and committed poses');
+    }
+  }
+
+  rememberPresentations(campaignId, presentations, revisions) {
+    if (!presentations.length) return [];
+    const updates = presentations.map((entry) => ({ ...copy(entry), ...revisions }));
+    this.presentations.set(
+      campaignId,
+      [...(this.presentations.get(campaignId) || []), ...updates].slice(-256)
+    );
+    return updates;
+  }
+
+  async visiblePresentations(scene, library, view, updates, state, sinceSceneRevision) {
+    if (!scene || !view.observerTokenId || !updates.length) return [];
+    const [
+      { default: CampaignWorld },
+      { physicalSightObstacles },
+      { samePlacement, coalesceMovementPresentations },
+    ] = await Promise.all([
+      import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
+      import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CreatureVisibility.js')).href),
+      import(
+        pathToFileURL(path.join(this.root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js'))
+          .href
+      ),
+    ]);
+    const world = CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
+    const observer = scene.creatures.find(({ id }) => id === view.observerTokenId);
+    const observerMapId = scene.version === 3 ? observer.mapId : 'map-main';
+    const origin = world.toCampaignPosition(observerMapId, observer.pose.world);
+    const geometry = {
+      mapId: observerMapId,
+      obstacles: physicalSightObstacles(world, observerMapId),
+    };
+    const maps = new Set(view.maps.map(({ id }) => id));
+    const actors = new Map(view.publicScene.actors.map((actor) => [actor.id, actor]));
+    const visible = new Map();
+    const current = updates.filter(
+      (update) =>
+        update.motion &&
+        update.sceneRevision <= state.sceneRevision &&
+        update.charactersRevision <= state.revision &&
+        (sinceSceneRevision === undefined || update.sceneRevision > sinceSceneRevision)
+    );
+    for (const update of coalesceMovementPresentations(current)) {
+      const actor = actors.get(update.tokenId);
+      if (
+        !actor ||
+        !samePlacement(update.motion.route.at(-1), actor) ||
+        ![update.motion.from, ...update.motion.route].every(
+          (point) =>
+            maps.has(point.mapId) &&
+            point.gridX < world.getMap(point.mapId).grid.cols &&
+            point.gridY < world.getMap(point.mapId).grid.rows &&
+            (actor.owned ||
+              world.hasLineOfSight(
+                origin,
+                world.toCampaignPosition(point.mapId, point.pose.world),
+                geometry
+              ))
+        )
+      )
+        continue;
+      const presented = copy(update);
+      if (!actor.owned) {
+        delete presented.costFeet;
+        delete presented.budget;
+      }
+      visible.set(presented.commandId, presented);
+    }
+    return [...visible.values()];
   }
 
   async doorState(session, campaignId, command) {
@@ -143,7 +393,28 @@ class PlayerCampaigns {
   }
 
   async commit(session, campaignId, change) {
-    const { profile, state, catalog, library: previousLibrary } = await this._state(session);
+    const { default: CampaignStore } = await import(
+      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignStore.js')).href
+    );
+    return this.store.storage.transaction('readwrite', async (transaction) => {
+      const profile = this.authority.profile(session);
+      const store = new CampaignStore({
+        packs: [...this.store.packs.values()],
+        storage: { transaction: (_mode, operation) => operation(transaction) },
+      });
+      const result = await this._commit(session, campaignId, change, store);
+      const current = this.authority.profile(session);
+      if (
+        current.campaignId !== profile.campaignId ||
+        !isDeepStrictEqual(current.characterIds, profile.characterIds)
+      )
+        throw reject('Your character assignments changed; refresh before editing');
+      return result;
+    });
+  }
+
+  async _commit(session, campaignId, change, store) {
+    const { profile, state, catalog, library: previousLibrary } = await this._state(session, store);
     if (campaignId !== profile.campaignId)
       throw reject('This campaign is not assigned to the player');
     if (!change || Object.hasOwn(change, 'scene'))
@@ -184,7 +455,7 @@ class PlayerCampaigns {
       ...change.records,
     ];
     validateCampaignCharacters(state.campaign, catalog, records);
-    const library = new CampaignCharacters({ ...state, records, store: this.store, catalog });
+    const library = new CampaignCharacters({ ...state, records, store, catalog });
     const enabled = new Set(catalog.enabledEntryIds);
     for (const row of change.records.filter((entry) =>
       entry.key.startsWith('taverntable.character.v1.')
@@ -222,7 +493,7 @@ class PlayerCampaigns {
       if (serialized !== state.scene)
         changedScene = { revision: state.sceneRevision, value: serialized };
     }
-    return this.store.commitCharacters(campaignId, {
+    return store.commitCharacters(campaignId, {
       ruleset: change.ruleset,
       revision: change.revision,
       records,
