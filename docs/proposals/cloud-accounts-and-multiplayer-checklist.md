@@ -36,9 +36,10 @@ and the existing billing budget were reported, not end-to-end verified.
 No new cloud verification or infrastructure changes were performed to create
 this checklist.
 
-**Current work:** preparation, first-slice Interface design and the isolated
-SDK/emulator loop are verified in `feat/cloud-accounts-multiplayer`. Next is
-backend verified identity and private-pilot application eligibility (`M1-03`).
+**Current work:** the isolated SDK loop and backend account gate are verified in
+`feat/cloud-accounts-multiplayer`. Browser sign-in/verification/recovery and
+returning identity are next (`M1-04` / `M1-05`); cloud campaign saves are not yet
+implemented.
 
 ## Approved requirements: do not reopen by accident
 
@@ -180,16 +181,21 @@ Revalidation in the intended environment remains part of M1 and M4.
     three real integration cases, three Jest guard cases, direct browser denials
     and complete helper shutdown. No live project was used.
 
-- [ ] **M1-03 - Implement verified UID identity and initial application eligibility.**
-  - **Status:** in progress.
+- [x] **M1-03 - Implement verified UID identity and initial application eligibility.**
   - **Depends:** `M1-02`.
   - **Success:** the backend verifies Firebase identity independently, distinguishes
     application eligibility from ownership, and enforces verified-email/private-group
     access. Local cookie/CSRF behavior remains an explicit separate Adapter.
   - **Verify:** anonymous, forged, expired, unverified, and ineligible requests are
     denied at protected operations, not merely hidden in the UI.
+  - **Completed:** November 11, 2026. **Evidence:**
+    [backend account gate](./cloud-migration-preparation.md#backend-account-gate):
+    real token/approval/disablement/HTTP cases, distinct typed service failures,
+    no global DM claims or local-key fallback. Production-mode token rejection
+    remains a separate hosted gate.
 
 - [ ] **M1-04 - Implement Google and email/password sign-in, verification, and recovery.**
+  - **Status:** in progress.
   - **Depends:** `M1-03`.
   - **Success:** both choices are usable; unverified password accounts cannot use
     campaigns; verification and password recovery return the same account to use.

@@ -266,3 +266,38 @@ and fail-closed emulator configuration; changed-code lint and layering passed.
 This does not replace the required full stable milestone/release gate. No
 application identity/eligibility, provider UI, membership or cloud-save task is
 marked complete by these SDK checks.
+
+## Backend account gate
+
+`M1-03` completed November 11, 2026 for the development backend:
+
+- [CloudAccountAccess](../../tools/cloud/account-access.js) verifies Firebase ID
+  tokens with revocation/disabled-user checks, requires verified email, and reads
+  current server-owned pilot eligibility for every protected request.
+- Operator-owned eligibility records live at
+  `pilotAccounts/{SHA-256(UTF-8 Firebase UID)}` with `{version: 1, uid, enabled}`.
+  Hash keys safely accommodate UID characters; the stored UID/schema is checked.
+  There is no browser enrollment/approval endpoint or first-login owner shortcut.
+- The verified principal is `{uid, emailVerified: true}`, not a global DM role.
+  Custom `role: dm` claims do not grant application eligibility or campaign access.
+- [The HTTP Adapter](../../tools/cloud/account-http.js) exposes authenticated
+  `GET /api/cloud/account`, exact secure/loopback frontend origins and deliberate
+  preflight. It rejects URL credentials/identity claims and unsupported methods.
+  Local cookies/CSRF keys cannot authenticate this route.
+- Invalid credentials, verification/approval denials, service unavailability and
+  malformed policy records remain distinct typed outcomes. Unexpected failures
+  return a safe error and log only a fixed diagnostic category, not raw provider
+  messages/objects, bearer tokens or structured credential data.
+
+**Verified:** the native cloud suite passes **15 tests**, zero skipped. Account
+coverage includes the actual HTTP wire plus forged/missing credentials,
+expiry/issuer/audience, unverified email, global-role claims, live eligibility
+disablement, Firebase account disablement, malformed records, CORS/preflight,
+local-key rejection, query/method rejection and failure redaction. Two Jest
+external-service fault cases verify typed/redacted identity/metadata outages;
+changed-code lint passes.
+
+Emulator token tests establish development routing/claim/policy behavior, not a
+production signature/security sign-off. Production rejecting emulator identity,
+real Google/password browser flows, memberships and campaign-local authorization
+remain their explicit later tasks. This does not enable cloud gameplay or saves.

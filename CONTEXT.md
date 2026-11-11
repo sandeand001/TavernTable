@@ -98,10 +98,14 @@
   Proven linking keeps sign-in methods on one Firebase UID without splitting
   campaign ownership or assignments; matching names/emails do not prove access.
   Initial application participation is invitation/approval controlled.
-- **Verified cloud principal (designed, not implemented)**: backend-verified
+- **Verified cloud principal (initial backend implemented; UI integration pending)**: backend-verified
   Firebase UID, verification and application-eligibility outcomes. Campaign
   ownership/member access is resolved separately, never inferred from names,
   email text or a global DM claim.
+  The development account route checks current server-owned pilot eligibility;
+  verified tokens alone do not enable campaigns. Local cookie/key credentials
+  are not accepted as cloud identity. Campaign-local ownership/membership remains
+  separate work, not an implied global privilege.
 - **Cloud emulator loop (implemented development tooling only)**: explicit
   `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
   conflicting SDK settings fail closed. Real SDK integration uses native Node
