@@ -11,7 +11,7 @@ import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 import { placeSavedCharacter } from '../campaigns/SavedCharacterPlacement.js';
-import { changeCampaignView } from '../campaigns/SceneWorld.js';
+import { changeCampaignView, queueCampaignOperation } from '../campaigns/SceneWorld.js';
 
 // ── InputCoordinator Class ───────────────────────────────
 export class InputCoordinator {
@@ -34,6 +34,21 @@ export class InputCoordinator {
   }
 
   async handleTokenDrop(tokenType, clientX, clientY) {
+    const gm = this.gameManager;
+    const mapId = gm.campaignMapId;
+    try {
+      return await queueCampaignOperation(gm, 'placement', () => {
+        if (gm.campaignMapId !== mapId)
+          throw new Error('The map changed before the queued token drop could run');
+        return this._handleTokenDropNow(tokenType, clientX, clientY);
+      });
+    } catch (error) {
+      GameErrors.input(error, { stage: 'queuedTokenDrop', tokenType });
+      return false;
+    }
+  }
+
+  async _handleTokenDropNow(tokenType, clientX, clientY) {
     try {
       const gm = this.gameManager;
       if (!gm) {
@@ -119,6 +134,44 @@ export class InputCoordinator {
   }
 
   async handleSavedCharacterPlacement(characterId, appearance, clientX, clientY) {
+    const gm = this.gameManager;
+    const mapId = gm.campaignMapId;
+    try {
+      if (
+        gm.characterServices?.sessionRole === 'player' ||
+        gm.characterServices?.library.store?.identity?.role === 'player'
+      )
+        throw new Error('Player character placement requires an authorized DM command');
+      gm.characterServices.library.get(characterId);
+      const existing = gm.placedTokens.find((token) => token.characterSheetId === characterId);
+      if (existing) return await this._focusSavedCharacter(existing, characterId);
+      return await queueCampaignOperation(gm, 'placement', () => {
+        if (gm.campaignMapId !== mapId)
+          throw new Error('The map changed before the queued character placement could run');
+        return this._placeSavedCharacterNow(characterId, appearance, clientX, clientY);
+      });
+    } catch (error) {
+      return this._savedCharacterFailure(error, characterId);
+    }
+  }
+
+  async _focusSavedCharacter(token, characterId) {
+    await this.gameManager.token3DAdapter.setSelectedToken(token);
+    if (this.gameManager.tokenManager.selectedSavedCharacterId === characterId)
+      this.gameManager.tokenManager.cancelSavedCharacterPlacement();
+    this._publishSavedCharacterPlacement({
+      characterId,
+      success: true,
+      message: `${token.name} is already placed; focused its existing sprite.`,
+    });
+    return true;
+  }
+
+  async _placeSavedCharacterNow(characterId, appearance, clientX, clientY) {
+    const existing = this.gameManager.placedTokens.find(
+      (token) => token.characterSheetId === characterId
+    );
+    if (existing) return this._focusSavedCharacter(existing, characterId);
     if (this.savedCharacterPending)
       return this._savedCharacterFailure(new Error('Wait for the current placement to finish'));
     try {
@@ -186,6 +239,8 @@ export class InputCoordinator {
       return this._savedCharacterFailure(error, characterId);
     } finally {
       this.savedCharacterPending = false;
+      gm.campaignRequests?.flush();
+      gm.characterServices?.combat.syncMovementStatus();
       window.dispatchEvent(
         new CustomEvent('taverntable:campaignViewStateChanged', {
           detail: { gameManager: gm },
@@ -221,6 +276,26 @@ export class InputCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   handleTokenInteraction(gridX, gridY) {
+    const gm = this.gameManager;
+    const mapId = gm.campaignMapId;
+    const failure = (error) =>
+      GameErrors.input(error, {
+        stage: 'queuedTokenInteraction',
+        coordinates: { gridX, gridY },
+      });
+    try {
+      const result = queueCampaignOperation(gm, 'pointer', () => {
+        if (gm.campaignMapId !== mapId)
+          throw new Error('The map changed before the queued token edit could run');
+        return this._handleTokenInteractionNow(gridX, gridY);
+      });
+      return typeof result?.then === 'function' ? result.catch(failure) : result;
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  _handleTokenInteractionNow(gridX, gridY) {
     try {
       this._assertTokenInputIdle();
       if (this.gameManager.tokenManager?.selectedSavedCharacterId)

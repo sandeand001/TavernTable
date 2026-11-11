@@ -125,17 +125,20 @@ function currentPlacement(adapter, token) {
     };
     return placement;
   }
-  if (
-    !token.flightActive &&
-    !motion?.holding &&
-    adapter.gameManager.terrainEngine?.geometry.hasVolumes
-  ) {
-    const scale = 5 / adapter.gameManager.spatial.tileWorldSize;
-    const support = adapter.gameManager.terrainEngine.geometry.findSupport(
-      world.x * scale,
-      world.z * scale,
-      { belowFeet: world.y * scale + 1e-5, clearanceFeet: 5 }
-    );
+  const gm = adapter.gameManager;
+  const sourceMap =
+    gm.campaignWorld && token.mapId !== gm.campaignMapId
+      ? gm.campaignWorld.getMap(token.mapId)
+      : null;
+  const geometry = sourceMap
+    ? gm.campaignWorld.getMapGeometry(sourceMap.id)
+    : gm.terrainEngine?.geometry;
+  if (!token.flightActive && !motion?.holding && geometry?.hasVolumes) {
+    const scale = 5 / (sourceMap?.grid.tileWorldSize ?? gm.spatial.tileWorldSize);
+    const support = geometry.findSupport(world.x * scale, world.z * scale, {
+      belowFeet: world.y * scale + 1e-5,
+      clearanceFeet: 5,
+    });
     if (!support || Math.abs(support.heightFeet - world.y * scale) > 1e-4) {
       throw new SceneNotReadyError('Waiting for the creature to reach a supported floor');
     }

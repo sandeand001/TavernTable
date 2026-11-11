@@ -45,6 +45,11 @@ export function validateConnections(connections, maps) {
       connection.name.length > 100 ||
       !['door', 'stairs', 'ladder', 'window', 'opening'].includes(connection.kind) ||
       (connection.enabled !== undefined && typeof connection.enabled !== 'boolean') ||
+      (connection.open !== undefined &&
+        (connection.kind !== 'door' || typeof connection.open !== 'boolean')) ||
+      (connection.locked !== undefined &&
+        (connection.kind !== 'door' || typeof connection.locked !== 'boolean')) ||
+      (connection.open === true && connection.locked === true) ||
       !Array.isArray(connection.ends) ||
       connection.ends.length !== 2 ||
       connection.ends[0]?.mapId === connection.ends[1]?.mapId ||
@@ -99,10 +104,13 @@ export function validateConnections(connections, maps) {
         invalid();
     }
     if (
-      connection.kind === 'window' &&
-      (feature.volumeIds.length !== 1 ||
-        owner.terrain.geometry.volumes.find((volume) => volume.id === feature.volumeIds[0])
-          .operation !== 'subtract')
+      (connection.kind === 'window' && feature.volumeIds.length !== 1) ||
+      (['window', 'door'].includes(connection.kind) &&
+        feature.volumeIds.some(
+          (id) =>
+            owner.terrain.geometry.volumes.find((volume) => volume.id === id).operation !==
+            'subtract'
+        ))
     )
       invalid();
     ids.add(connection.id);
@@ -233,6 +241,8 @@ export function planConnection(world, connection, mapId, localWorld, options = {
   const flying = options.travelMode === 'fly';
   const ladder = connection.kind === 'ladder';
   if (connection.enabled === false) unavailable('This connection is unavailable');
+  if (connection.kind === 'door' && connection.open !== true)
+    unavailable(connection.locked ? 'This door is locked' : 'Open the closed door before crossing');
   const featureBounds = connectionFeatureBounds(world, connection, options);
   if (connection.kind === 'window' && !flying)
     return planWindowClimb(world, connection, mapId, localWorld, options);

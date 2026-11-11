@@ -74,7 +74,11 @@ class PublishedMaps {
         });
       return { maps: [], view: null, observers, observerTokenId: null };
     }
-    const allowed = maps.filter((map) => world.sharesLocation(map.id, visibility.observer.mapId));
+    const allowed = maps.filter(
+      (map) =>
+        world.sharesLocation(map.id, visibility.observer.mapId) &&
+        visibility.visibleMapIds.has(map.id)
+    );
     const selected = mapId
       ? allowed.find((map) => map.id === mapId)
       : allowed.find((map) => map.id === visibility.observer?.mapId) || allowed[0];
@@ -83,22 +87,32 @@ class PublishedMaps {
         status: 403,
       });
     const key = createHash('sha256')
-      .update(JSON.stringify([selected.base, selected.grid, selected.terrain]))
+      .update(
+        JSON.stringify([
+          selected.id,
+          visibility.observer.mapId,
+          visibility.observer.pose.world,
+          [...visibility.visibleMapIds],
+          maps.filter((map) => world.sharesLocation(map.id, selected.id)),
+          scene.connections || [],
+        ])
+      )
       .digest('hex');
     let terrain = null;
     if (key !== terrainKey) {
       terrain = this.cache.get(key);
       if (!terrain) {
-        const { TerrainVolumeMeshBuilder } = await import(
-          pathToFileURL(
-            path.join(this.root, 'src', 'scene', 'terrain', 'TerrainVolumeMeshBuilder.js')
-          ).href
+        const { buildPlayerTerrainView } = await import(
+          pathToFileURL(path.join(this.root, 'src', 'scene', 'terrain', 'PlayerTerrainView.js'))
+            .href
         );
-        const geometry = new TerrainVolumeMeshBuilder().build({
-          geometry: world.getMapGeometry(selected.id),
+        const geometry = buildPlayerTerrainView({
+          world,
+          map: selected,
+          observer: visibility.observer,
+          visibleMapIds: visibility.visibleMapIds,
+          obstacles: visibility.sightGeometry.obstacles,
           three,
-          worldUnitsPerFoot: selected.grid.tileWorldSize / 5,
-          getColor: () => 0x7d8a70,
         });
         const encode = (attribute) =>
           Buffer.from(
@@ -110,6 +124,8 @@ class PublishedMaps {
           encoding: 'float32',
           positions: encode(geometry.getAttribute('position')),
           colors: encode(geometry.getAttribute('color')),
+          normals: encode(geometry.getAttribute('normal')),
+          constructionMaterials: encode(geometry.getAttribute('constructionMaterial')),
         };
         geometry.dispose();
         if (this.cache.size >= 8) this.cache.delete(this.cache.keys().next().value);
@@ -129,10 +145,23 @@ class PublishedMaps {
         pose: token.pose.kind,
       };
     });
+    const { nearbyDoors } = await import(
+      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignDoors.js')).href
+    );
     return {
       maps: allowed.map(({ id, name }) => ({ id, name })),
       observers,
       observerTokenId: visibility.observer?.id || null,
+      doors: nearbyDoors(
+        world,
+        { mapId: visibility.observer.mapId, world: visibility.observer.pose.world },
+        visibility.sightGeometry
+      ).map((connection) => ({
+        id: connection.id,
+        name: connection.name,
+        open: connection.open === true,
+        locked: connection.locked === true,
+      })),
       location: world
         .listLocations()
         .find((location) => location.id === world.getLocationId(visibility.observer.mapId)),

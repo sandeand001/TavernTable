@@ -10,6 +10,7 @@ const roster = document.querySelector('[data-assigned-characters]');
 const mapSelect = document.querySelector('[aria-label="Location area"]');
 const observerSelect = document.querySelector('[aria-label="Active character"]');
 const observerNotice = document.querySelector('[data-player-observer-notice]');
+const doorControls = document.querySelector('[data-player-doors]');
 let sheets;
 let viewer;
 let connection;
@@ -22,9 +23,15 @@ let selectionVersion = 0;
 let selectionRecovery = 0;
 let renderedObserverId = null;
 let renderedObserverMapId = null;
+let doorBusy = false;
+
+function concealView() {
+  viewer?.concealTerrain();
+  viewer?.clearTokens();
+}
 
 function failure(error) {
-  viewer?.clearTokens();
+  concealView();
   status.textContent = error.message;
   GameErrors.input(error, { component: 'PlayerApplication', operation: 'session' });
 }
@@ -63,12 +70,12 @@ function renderObservers(state) {
     (state.observerTokenId === null &&
       (state.observers.length > 0 || state.view?.tokens?.length > 0))
   ) {
-    viewer.clearTokens();
+    concealView();
     throw new Error(
       'The host returned invalid player observer options. Reconnect before viewing creatures.'
     );
   }
-  if (state.observerTokenId !== renderedObserverId) viewer.clearTokens();
+  if (state.observerTokenId !== renderedObserverId) concealView();
   renderedObserverId = state.observerTokenId;
   const mapNames = new Map(state.maps.map((map) => [map.id, map.name]));
   observerSelect.replaceChildren(
@@ -80,7 +87,7 @@ function renderObservers(state) {
     })
   );
   observerSelect.value = state.observerTokenId || '';
-  observerSelect.disabled = state.observers.length === 0;
+  observerSelect.disabled = doorBusy || state.observers.length === 0;
   observerNotice.textContent = state.observerTokenId
     ? 'Sight comes from this character only. Opening a sheet, moving the camera or browsing maps does not change it.'
     : 'The DM must assign and place your saved character in a location before it can provide a viewpoint. Assigned sheets remain available.';
@@ -88,9 +95,72 @@ function renderObservers(state) {
     state.observers.find((observer) => observer.id === state.observerTokenId)?.mapId || null;
 }
 
+function renderDoors(state) {
+  const doors = state.doors ?? [];
+  if (
+    !Array.isArray(doors) ||
+    doors.some(
+      (door) =>
+        !door ||
+        typeof door.id !== 'string' ||
+        !door.id ||
+        typeof door.name !== 'string' ||
+        typeof door.open !== 'boolean' ||
+        typeof door.locked !== 'boolean' ||
+        (door.open && door.locked)
+    ) ||
+    new Set(doors.map((door) => door.id)).size !== doors.length ||
+    (state.observerTokenId === null && doors.length > 0)
+  )
+    throw new Error('The host returned invalid door controls. Reconnect before using a door.');
+  doorControls.replaceChildren();
+  if (!doors.length) {
+    doorControls.textContent = 'No doors within reach of the active character.';
+    return;
+  }
+  for (const door of doors) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.playerDoor = door.id;
+    button.textContent = `${door.name}: ${door.locked ? 'Locked (DM unlock required)' : door.open ? 'Close' : 'Open'}`;
+    button.disabled = doorBusy || door.locked;
+    button.addEventListener('click', () => void useDoor(state, door));
+    doorControls.append(button);
+  }
+}
+
+async function useDoor(state, door) {
+  if (doorBusy || accessEnded) return;
+  doorBusy = true;
+  let error;
+  renderDoors(state);
+  concealView();
+  status.textContent = 'Saving door state on the host...';
+  try {
+    await sheets.library.flush();
+    await connection.call('doorState', [
+      state.campaign.id,
+      {
+        doorId: door.id,
+        observerTokenId: state.observerTokenId,
+        sceneRevision: state.sceneRevision,
+        open: !door.open,
+      },
+    ]);
+  } catch (caught) {
+    error = caught;
+    failure(caught);
+  } finally {
+    doorBusy = false;
+    await refresh();
+    if (error) status.textContent = error.message;
+  }
+}
+
 async function showState(state, version = selectionVersion) {
   if (version !== selectionVersion) return;
   renderObservers(state);
+  renderDoors(state);
   sheets.refresh(state);
   const selected = state.view?.id || '';
   mapSelect.replaceChildren(
@@ -102,7 +172,7 @@ async function showState(state, version = selectionVersion) {
     })
   );
   mapSelect.value = selected;
-  mapSelect.disabled = !state.maps.length;
+  mapSelect.disabled = doorBusy || !state.maps.length;
   document.querySelector('[data-player-map-notice]').hidden = !!state.view;
   const location = document.querySelector('[aria-label="Current location"]');
   if (location)
@@ -147,7 +217,7 @@ async function refresh() {
           continue;
         }
         if (error.status === 403 && recovery < 2) {
-          viewer.clearTokens();
+          concealView();
           mapSelect.value = '';
           selectionRecovery = recovery + 1;
           if (selectionRecovery === 2) observerSelect.value = '';
@@ -177,7 +247,7 @@ async function refresh() {
         observerMapId !== renderedObserverMapId &&
         state.view?.id !== observerMapId
       ) {
-        viewer.clearTokens();
+        concealView();
         mapSelect.value = '';
         selectionRecovery = 1;
         renderedObserverMapId = observerMapId;
@@ -201,6 +271,7 @@ async function refresh() {
       observerSelect.disabled = true;
       observerNotice.textContent =
         'Character viewpoints are unavailable until you reconnect with a valid invitation.';
+      doorControls.replaceChildren();
       await viewer.update(null);
       status.textContent = error.message;
     } else failure(error);
@@ -213,7 +284,7 @@ function changeViewSelection(event) {
   selectionVersion++;
   selectionRecovery = 0;
   if (event.target === observerSelect) mapSelect.value = '';
-  viewer.clearTokens();
+  concealView();
   status.textContent = 'Updating the authorized character view...';
   void refresh();
 }
@@ -247,7 +318,11 @@ async function start() {
       void refresh();
     } else if (event.type === 'invalid-update')
       status.textContent = 'Invalid session update. Reconnect before making further changes.';
-    else if (event.type === 'connected' || event.campaignId === state.campaign.id) void refresh();
+    else if (event.type === 'connected' || event.campaignId === state.campaign.id) {
+      selectionVersion++;
+      concealView();
+      void refresh();
+    }
   });
 }
 

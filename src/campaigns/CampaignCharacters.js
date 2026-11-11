@@ -330,6 +330,7 @@ export default class CampaignCharacters {
         revision: this.sceneRevision,
         charactersRevision: this.revision,
         scene: captured.value,
+        ...(captured.scene?.version === 3 ? { trackRoomVisits: true } : {}),
       });
       this._sceneReceipt(captured, receipt.revision, receipt.savedAt);
       return { captured, receipt };
@@ -384,7 +385,15 @@ export default class CampaignCharacters {
         ruleset: this.ruleset,
         revision: this.revision,
         records: next.storage.snapshot(),
-        ...(captured ? { scene: { revision: this.sceneRevision, value: captured.value } } : {}),
+        ...(captured
+          ? {
+              scene: {
+                revision: this.sceneRevision,
+                value: captured.value,
+                ...(captured.scene?.version === 3 ? { trackRoomVisits: true } : {}),
+              },
+            }
+          : {}),
       });
       this.engine = next;
       this.revision = receipt.revision;

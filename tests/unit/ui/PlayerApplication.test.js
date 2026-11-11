@@ -32,14 +32,17 @@ function state({
   allowedObservers = observers,
   mapId = 'published-a',
   tokens = [],
+  doors = [],
 } = {}) {
   return {
     campaign: { id: 'campaign', name: 'Table' },
     profile: { name: 'Player' },
     revision: 1,
+    sceneRevision: 1,
     records: [],
     observerTokenId,
     observers: allowedObservers,
+    doors,
     maps: [
       { id: 'published-a', name: 'Courtyard' },
       { id: 'published-b', name: 'Tower' },
@@ -71,6 +74,7 @@ beforeEach(() => {
     <output aria-label="Current location"></output>
     <select aria-label="Location area"></select>
     <p data-player-map-notice></p>
+    <div data-player-doors></div>
     <section id="player-map-view"></section>`;
   const { ensureSession } = require('../../../src/ui/sessions/SessionLogin.js');
   const SessionConnection = require('../../../src/campaigns/SessionConnection.js').default;
@@ -117,6 +121,7 @@ beforeEach(() => {
     terrainKey: 'same-terrain',
     update: jest.fn(async () => {}),
     clearTokens: jest.fn(),
+    concealTerrain: jest.fn(),
     destroy: jest.fn(),
   };
   PublishedMapViewer.mockImplementation(() => viewer);
@@ -132,6 +137,34 @@ async function start() {
   require('../../../src/ui/sessions/PlayerApplication.js');
   await settle();
 }
+
+test('nearby door controls use the active observer and current revision, and players cannot open locked doors', async () => {
+  let door = { id: 'door', name: 'Wooden door', open: false, locked: false };
+  connection.call.mockImplementation(async (operation) => {
+    if (operation === 'doorState') {
+      door = { ...door, open: true };
+      return { revision: 2, door };
+    }
+    return state({ doors: [door] });
+  });
+  await start();
+  const button = document.querySelector('[data-player-door="door"]');
+  expect(button).not.toBeNull();
+  expect(button.textContent).toContain('Open');
+  button.click();
+  await settle();
+  expect(connection.call).toHaveBeenCalledWith('doorState', [
+    'campaign',
+    { doorId: 'door', observerTokenId: 'real-token-a', sceneRevision: 1, open: true },
+  ]);
+  expect(viewer.concealTerrain).toHaveBeenCalled();
+  expect(document.querySelector('[data-player-door="door"]').textContent).toContain('Close');
+  door = { ...door, open: false, locked: true };
+  liveUpdate({ type: 'campaign', campaignId: 'campaign', kind: 'doorState' });
+  await settle();
+  expect(document.querySelector('[data-player-door="door"]').disabled).toBe(true);
+  expect(document.querySelector('[data-player-doors]').textContent).toContain('Locked');
+});
 
 test('active character is the server-selected real token, independent from sheets and browsed maps', async () => {
   await start();

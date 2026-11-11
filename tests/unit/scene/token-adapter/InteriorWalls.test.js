@@ -11,6 +11,7 @@ import { createCampaignBoard } from '../../../helpers/campaignBoard.js';
 import { sceneState } from '../../../helpers/sceneState.js';
 import { TerrainMeshBuilder } from '../../../../src/scene/terrain/TerrainMeshBuilder.js';
 import { TerrainRebuilder } from '../../../../src/scene/terrain/TerrainRebuilder.js';
+import MapProjectionTerrain from '../../../../src/scene/token-adapter/MapProjectionTerrain.js';
 
 async function fixture({ interiorOwnsShell = false, stories = 1, quarterTurns = 0 } = {}) {
   localStorage.clear();
@@ -123,6 +124,23 @@ function dispose(gm) {
   gm.token3DAdapter.disposeMapProjectionTerrain();
   gm.token3DAdapter.disposeMovementRange();
 }
+
+test('an interior doorway shows the actual exterior ground without needing an exterior creature', async () => {
+  const gm = await fixture();
+  let terrain;
+  try {
+    await changeCampaignView(gm, { mapId: 'inside' });
+    terrain = new MapProjectionTerrain(gm);
+    terrain.update({ id: 'viewer', mapId: 'inside', world: { x: 1, y: 0, z: 4.6 } }, []);
+    expect(terrain.root.visible).toBe(true);
+    const ground = hits(terrain.root, [-1, 5, 4.6], [0, -1, 0]);
+    expect(ground.length).toBeGreaterThan(0);
+    expect(ground[0].point.y).toBeCloseTo(0);
+  } finally {
+    terrain?.dispose();
+    dispose(gm);
+  }
+});
 
 test('an interior view shows physical walls, window and door openings without its ceiling or duplicated structures', async () => {
   const gm = await fixture();

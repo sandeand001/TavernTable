@@ -32,6 +32,7 @@ const operations = new Map([
   ['publishMap', 3],
   ['playerState', 1],
   ['playerCommit', 2],
+  ['doorState', 2],
 ]);
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -322,12 +323,13 @@ async function startLocalHost({
           throw failure(400, 'Unsupported campaign operation or arguments');
         if (
           identity.role === 'player' &&
-          !['playerState', 'playerCommit'].includes(command.operation)
+          !['playerState', 'playerCommit', 'doorState'].includes(command.operation)
         )
           throw failure(403, 'Players can access only their assigned character workspace');
         const sessionOperations = {
           playerState: (options) => players.state(session, options),
           playerCommit: (id, change) => players.commit(session, id, change),
+          doorState: (id, change) => players.doorState(session, id, change),
           sessionInfo: async (id) => {
             authority.requireDM(session);
             const state = await store.readCharacters(id);
@@ -375,6 +377,22 @@ async function startLocalHost({
           backupStatus: (id) => backups.status(id),
         };
         if (Object.hasOwn(backupOperations, command.operation)) await store.get(command.args[0]);
+        const trackedChange =
+          command.operation === 'commitScene'
+            ? command.args[1]
+            : command.operation === 'commitCharacters'
+              ? command.args[1]?.scene
+              : null;
+        let visitedScene = null;
+        if (trackedChange?.trackRoomVisits === true) {
+          visitedScene = JSON.parse(trackedChange.scene ?? trackedChange.value);
+          if (
+            visitedScene?.version !== 3 ||
+            !Array.isArray(visitedScene.maps) ||
+            !Array.isArray(visitedScene.creatures)
+          )
+            throw failure(400, 'Room discovery requires a connected scene checkpoint');
+        }
         const result = Object.hasOwn(sessionOperations, command.operation)
           ? await sessionOperations[command.operation](...command.args)
           : Object.hasOwn(backupOperations, command.operation)
@@ -382,7 +400,9 @@ async function startLocalHost({
             : await store[command.operation](...command.args);
         if (['create', 'importBackup'].includes(command.operation))
           backups.changedCampaign(result.id);
-        else if (['update', 'commitScene', 'commitCharacters'].includes(command.operation))
+        else if (
+          ['update', 'commitScene', 'commitCharacters', 'doorState'].includes(command.operation)
+        )
           backups.changedCampaign(command.args[0]);
         else if (command.operation === 'playerCommit') backups.changedCampaign(identity.campaignId);
         const changedCampaign = ['create', 'importBackup'].includes(command.operation)
@@ -390,6 +410,7 @@ async function startLocalHost({
           : command.operation === 'playerCommit'
             ? identity.campaignId
             : command.args[0];
+        if (visitedScene) authority.recordRoomVisits(changedCampaign, visitedScene);
         if (
           [
             'create',
@@ -398,6 +419,7 @@ async function startLocalHost({
             'commitScene',
             'commitCharacters',
             'playerCommit',
+            'doorState',
             'createInvite',
             'revokeInvite',
             'assignCharacter',

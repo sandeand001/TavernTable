@@ -70,7 +70,7 @@ test('the map selector browses the actual interior without moving or copying any
   );
 });
 
-test('focusing a creature opens its map while later target selection does not change viewing focus', async () => {
+test('focusing and selecting creatures consistently open their canonical maps', async () => {
   const selector = controls.root.querySelector('[aria-label="Focused creature"]');
   selector.value = 'token-2';
   selector.dispatchEvent(new Event('change', { bubbles: true }));
@@ -79,9 +79,9 @@ test('focusing a creature opens its map while later target selection does not ch
   expect(gm.campaignView.focusTokenId).toBe('token-2');
   expect(gm.token3DAdapter.getSelectedToken()).toBe(gm.placedTokens[1]);
   await gm.token3DAdapter.setSelectedToken(gm.placedTokens[0]);
-  expect(gm.campaignMapId).toBe('inside');
-  expect(gm.campaignView.focusTokenId).toBe('token-2');
-  expect(selector.value).toBe('token-2');
+  expect(gm.campaignMapId).toBe('map-main');
+  expect(gm.campaignView.focusTokenId).toBe('token-1');
+  expect(selector.value).toBe('token-1');
 });
 
 test('a failed map change reports its error and restores the map selector', async () => {

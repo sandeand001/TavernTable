@@ -35,16 +35,23 @@
         <output aria-label="Current location">Waiting for an assigned character.</output>
         <label>Area<select aria-label="Location area"></select></label>
         <p data-player-map-notice>Your assigned character has not been placed in a location yet.</p>
+        <h2>Nearby doors</h2>
+        <div data-player-doors>No doors within reach of the active character.</div>
         <p>
           This first player milestone supports saved-sheet editing and independent location
-          terrain/tactical-token views. Movement, combat, world conditions and concentration still
-          require DM adjudication.
+          terrain/tactical-token views and nearby door controls. Movement, combat, world conditions
+          and concentration still require DM adjudication.
         </p>
         <p>Drag the view to orbit; wheel to zoom. Your camera does not move anyone else's.</p>
         <p>
           Creature visibility uses physical line of sight from the active character only,
           independent of the camera or browsed map. Fog, darkness and invisibility effects are not
           included yet.
+        </p>
+        <p>
+          Doors start closed. Open doors reveal only what your character can see; closing a door
+          hides the whole room again, including visited rooms. Room visits are remembered separately
+          for each player. Only the DM can lock or unlock doors.
         </p>
         <output id="graphics-status" aria-live="polite"></output>
         <a href="assets/data/resources/NOTICES.txt" target="_blank" rel="noopener"

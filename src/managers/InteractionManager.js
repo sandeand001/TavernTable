@@ -12,6 +12,7 @@ import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import { KEYBOARD_TOKEN_CONTROLS_ENABLED } from '../config/TokenMovementConfig.js';
 import { TokenFacingGesture } from './interaction-manager/internals/facing.js';
+import { queueCampaignOperation } from '../campaigns/SceneWorld.js';
 import {
   isPointInCellDiamond as _isPointInCellDiamond,
   pickTopmostGridCellAt as _pickTopmost,
@@ -332,21 +333,38 @@ export class InteractionManager {
    * Handle left mouse click for token interactions
    * @param {MouseEvent} event - Mouse click event
    */
-  handleLeftClick(event) {
+  handleLeftClick(event, intent = null) {
     try {
       if (event.button !== 0) {
         return;
       }
       const gm = this.gameManager;
+      intent ||= {
+        token: gm.token3DAdapter?.getSelectedToken?.() || null,
+        mapId: gm.campaignMapId,
+        characterId: gm.tokenManager?.selectedSavedCharacterId,
+        appearance: gm.tokenManager?.selectedSavedCharacterAppearance,
+      };
       if (gm.campaignMapFailure) throw gm.campaignMapFailure;
-      if (gm.campaignViewBusy || gm.inputCoordinator?.savedCharacterPending)
-        throw new Error('Wait for the current map change or character placement to finish');
-      if (gm.tokenManager?.selectedSavedCharacterId) {
+      if (gm.campaignViewBusy || gm.inputCoordinator?.savedCharacterPending) {
+        return Promise.resolve(
+          queueCampaignOperation(gm, 'pointer', () => {
+            if (gm.campaignMapId !== intent.mapId)
+              throw new Error('The viewed map changed before this click could be applied');
+            return this.handleLeftClick(event, intent);
+          })
+        ).catch((error) =>
+          new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
+            stage: 'queuedPointer',
+          })
+        );
+      }
+      if (intent.characterId) {
         if (!gm.inputCoordinator?.handleSavedCharacterPlacement)
           throw new Error('Saved character placement is not ready');
         void gm.inputCoordinator.handleSavedCharacterPlacement(
-          gm.tokenManager.selectedSavedCharacterId,
-          gm.tokenManager.selectedSavedCharacterAppearance,
+          intent.characterId,
+          intent.appearance,
           event.clientX,
           event.clientY
         );
@@ -396,10 +414,8 @@ export class InteractionManager {
         typeof gm?.selectedTokenType === 'string' ? gm.selectedTokenType : null;
       const isRemoveMode = selectedTokenType === 'remove';
 
-      Promise.resolve(this._resolvePointerTarget(event))
-        .then((target) => {
-          if (gm.campaignViewBusy || gm.inputCoordinator?.savedCharacterPending)
-            throw new Error('Wait for the current map change or character placement to finish');
+      return Promise.resolve(this._resolvePointerTarget(event))
+        .then(async (target) => {
           const safeTarget = target || {};
           const gridX = Number.isFinite(safeTarget.gridX) ? safeTarget.gridX : null;
           const gridY = Number.isFinite(safeTarget.gridY) ? safeTarget.gridY : null;
@@ -415,7 +431,7 @@ export class InteractionManager {
           }
 
           if (tokenEntry) {
-            this._selectTokenEntry(tokenEntry);
+            await this._selectTokenEntry(tokenEntry);
             this._dispatchRadialMenuRequest({
               token: tokenEntry,
               gridX,
@@ -426,7 +442,7 @@ export class InteractionManager {
           }
 
           const adapter = gm?.token3DAdapter;
-          const selectedToken = adapter?.getSelectedToken?.() || null;
+          const selectedToken = intent.token;
           const is3D = gm?.is3DModeActive?.();
           if (is3D && (gridX == null || gridY == null)) return;
           const canNavigate =
@@ -444,9 +460,21 @@ export class InteractionManager {
               target: { gridX, gridY },
             });
 
-            const result = safeTarget.wallSurface
-              ? adapter.requestMoveToSurface?.(selectedToken, safeTarget.wallSurface)
-              : adapter.requestMoveToGrid(selectedToken, gridX, gridY);
+            const move = () => {
+              if (
+                gm.campaignMapId !== intent.mapId ||
+                (gm.placedTokens && !gm.placedTokens.includes(selectedToken))
+              )
+                throw new Error('The creature or map changed before the queued movement could run');
+              return safeTarget.wallSurface
+                ? adapter.requestMoveToSurface?.(selectedToken, safeTarget.wallSurface)
+                : adapter.requestMoveToGrid(selectedToken, gridX, gridY);
+            };
+            const session = gm.characterServices?.combat;
+            const result =
+              session?.isActorBusy(selectedToken) && !adapter.isMovementInProgress?.(selectedToken)
+                ? await session.runWhenReady(selectedToken, move)
+                : move();
             if (result) {
               logger.log('Token navigation accepted', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
                 source: 'grid-click',
@@ -467,7 +495,7 @@ export class InteractionManager {
             return;
           }
 
-          this._clearTokenSelection();
+          await this._clearTokenSelection();
         })
         .catch((error) => {
           try {
@@ -695,14 +723,14 @@ export class InteractionManager {
     if (!tokenEntry) return;
     const adapter = this.gameManager?.token3DAdapter;
     if (adapter?.setSelectedToken) {
-      adapter.setSelectedToken(tokenEntry);
+      return adapter.setSelectedToken(tokenEntry);
     }
   }
 
   _clearTokenSelection() {
     const adapter = this.gameManager?.token3DAdapter;
     if (adapter?.setSelectedToken) {
-      adapter.setSelectedToken(null);
+      return adapter.setSelectedToken(null);
     }
   }
 

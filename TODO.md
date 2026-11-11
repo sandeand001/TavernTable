@@ -445,6 +445,13 @@ do not equate passing physical tests with satisfying the artistic requirement.
       revalidate reach/ownership/access on the host, reject conflicting
       interactions, and refresh affected routes and visibility without resetting
       character resources, movement or turns.
+      Implemented for connected building doors: closed/unlocked defaults,
+      open/close and DM-only locks, fitted opaque leaves in physical obstruction,
+      host-validated five-foot reach and revisions, persistent per-player room
+      visits, and hidden closed-room floors/walls/stairs. Native curved surfaces,
+      strict room boundaries and single floor-surface ownership remove doorway
+      texture/cap artifacts. Gates, hatches, glass/shutters and unlock/pick/force
+      adjudication remain pending.
 - [ ] **S6 - Designed castle and dungeon interiors** - After S5, create interiors
       that feel like complete encounter maps: entrance/guard rooms, throne or
       great halls, barracks, kitchens, storage, stairs, corridors, secret routes

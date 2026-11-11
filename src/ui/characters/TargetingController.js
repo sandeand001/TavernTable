@@ -17,6 +17,7 @@ import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { escapeHtml as escape } from './escapeHtml.js';
 import TargetingProfileEditor from './TargetingProfileEditor.js';
 import { characterActionOptions } from '../../entities/characters/combat/actions.js';
+import ActionRequestQueue from '../../campaigns/ActionRequestQueue.js';
 
 export default class TargetingController {
   constructor({ gameManager, library, session, onChanged }) {
@@ -25,6 +26,9 @@ export default class TargetingController {
     this.session = session;
     this.onChanged = onChanged;
     this.active = null;
+    this.selectionRequests = new ActionRequestQueue({
+      isReady: () => !this.active && !this.selectionRequest,
+    });
     this.preview = null;
     this.boardCache = null;
     this.overlay = null;
@@ -199,6 +203,12 @@ export default class TargetingController {
   }
 
   async choose(token, ticket) {
+    if (!this.selectionRequests.has(token) && !this.active && !this.selectionRequest)
+      return this._chooseNow(token, ticket);
+    return this.selectionRequests.enqueue(token, () => this._chooseNow(token, ticket));
+  }
+
+  async _chooseNow(token, ticket) {
     if (this.active || (this.selectionRequest && !this.selectionRequest.cancelled))
       throw new Error('Finish selecting targets for the current action');
     const request = { token, ticket, cancelled: false };
@@ -206,7 +216,7 @@ export default class TargetingController {
     try {
       if (ticket.action.targeting?.kind !== 'manual') await this.ensureOverlay();
       if (request.cancelled) return { cancelled: true };
-      if (this.disposed || this.session.pending !== ticket)
+      if (this.disposed || !this.session.isActionPending(ticket))
         throw new Error('This target selection is no longer current');
       this.beginQuery();
       const available = this.availability(token, ticket.action);
@@ -250,6 +260,7 @@ export default class TargetingController {
       });
     } finally {
       if (this.selectionRequest === request) this.selectionRequest = null;
+      this.selectionRequests.flush();
     }
   }
 
@@ -261,6 +272,7 @@ export default class TargetingController {
     this.visualError = null;
     this.renderOverlay();
     this.renderEffects();
+    this.selectionRequests.flush();
   }
   cancel() {
     const pending = this.active;
@@ -269,17 +281,18 @@ export default class TargetingController {
     if (request) request.cancelled = true;
     this.finish();
     const ticket = pending?.ticket || request?.ticket;
-    if (this.session.pending === ticket && this.session.committing !== ticket)
+    if (this.session.isActionPending(ticket) && !this.session.isActionCommitting(ticket))
       this.session.cancelAction(ticket);
     pending?.resolve({ cancelled: true });
   }
   cancelFor(token) {
+    this.selectionRequests.cancel(token);
     if (this.active?.token === token || this.selectionRequest?.token === token) this.cancel();
     else if (this.preview?.token === token) this.finish();
     if (this.editor.token === token && this.editor.pending) this.editor.close(false);
   }
   async configure(token, action) {
-    if (this.session.pending || this.library.isSaving)
+    if (this.session.isActorBusy(token))
       throw new Error('Finish the current action before configuring targets');
     return this.editor.open(token, action);
   }
@@ -305,7 +318,10 @@ export default class TargetingController {
     const state = this.active;
     if (!state) throw new Error('Open the spell targeting popup before choosing a level');
     try {
-      if (this.library.isSaving || this.session.committing || this.session.pending !== state.ticket)
+      if (
+        this.session.isActionCommitting(state.ticket) ||
+        !this.session.isActionPending(state.ticket)
+      )
         throw new Error('Finish the current save before choosing a casting level');
       const slotLevel = change.slotLevel ?? state.selection.slotLevel ?? state.action.slotLevel;
       const variant = change.variant ?? state.selection.variant;
@@ -360,7 +376,7 @@ export default class TargetingController {
     if (!state) return;
     const board = this.board(),
       actor = this.actorFor(state.token, state.action, board);
-    if (!actor || this.session.pending !== state.ticket) {
+    if (!actor || !this.session.isActionPending(state.ticket)) {
       this.cancel();
       return;
     }
@@ -861,7 +877,11 @@ export default class TargetingController {
       this.onChanged?.(effect.characterId);
       return used;
     } catch (error) {
-      if (ticket && this.session.pending === ticket && this.session.committing !== ticket)
+      if (
+        ticket &&
+        this.session.isActionPending(ticket) &&
+        !this.session.isActionCommitting(ticket)
+      )
         this.session.cancelAction(ticket);
       throw error;
     } finally {
@@ -885,6 +905,7 @@ export default class TargetingController {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.selectionRequests.dispose();
     this.cancel();
     this.unsubscribe();
     window.removeEventListener('mousedown', this.mouseDown, true);

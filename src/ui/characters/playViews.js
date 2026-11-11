@@ -315,7 +315,7 @@ export function renderPlayView(context) {
       if (slot?.remaining > 0) options[id] = { slotLevel: choice.slotLevel };
     }
   }
-  const available = session.availableActions(token, options);
+  const available = session.availableActions(token, options, { includeQueued: true });
   const combat = mode === 'combat';
   const activeName = session.activeToken
     ? library.get(session.activeToken.characterSheetId).name
@@ -359,9 +359,9 @@ export function renderPlayView(context) {
               : 'Between turns: choose the next creature and start its turn.'
       }</div>
       <div class="sheet-play-turn-controls">
-        ${!session.activeToken ? `<button type="button" data-sheet-action="turn-start" aria-label="Start turn" ${status.busy || editingLayout ? 'disabled' : ''}>Start Turn</button>` : ''}
-        ${session.activeToken ? `<button type="button" data-sheet-action="turn-end" aria-label="End turn" ${status.busy || editingLayout ? 'disabled' : ''}>End ${status.isTurn ? 'Turn' : 'current turn'}</button>` : ''}
-        ${status.active ? `<button type="button" data-sheet-action="combat-end" ${status.busy || editingLayout ? 'disabled' : ''}>End Combat / Free Play</button>` : ''}
+        ${!session.activeToken ? `<button type="button" data-sheet-action="turn-start" aria-label="Start turn" ${editingLayout ? 'disabled' : ''}>Start Turn</button>` : ''}
+        ${session.activeToken ? `<button type="button" data-sheet-action="turn-end" aria-label="End turn" ${editingLayout ? 'disabled' : ''}>End ${status.isTurn ? 'Turn' : 'current turn'}</button>` : ''}
+        ${status.active ? `<button type="button" data-sheet-action="combat-end" ${editingLayout ? 'disabled' : ''}>End Combat / Free Play</button>` : ''}
         ${status.canUndo ? `<button type="button" data-sheet-action="use-undo" ${status.busy || editingLayout ? 'disabled' : ''}>Undo last use</button>` : ''}
         ${status.isTurn && status.attacksRemaining > 0 ? `<button type="button" data-sheet-action="attack-finish" ${editingLayout ? 'disabled' : ''}>Finish attack action (forfeit remaining attacks)</button>` : ''}
       </div>

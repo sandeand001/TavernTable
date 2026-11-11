@@ -308,7 +308,7 @@ test('saved-character misses and malformed drags never fall back to generic repl
   expect(coordinator.savedCharacterPending).toBe(false);
 });
 
-test('an in-flight saved pick blocks concurrent saved, generic and remove inputs without consuming another token identity', async () => {
+test('an in-flight saved pick queues subsequent inputs and a repeated saved request focuses without duplication', async () => {
   const coordinator = rosterInput();
   const actors = [...gm.placedTokens];
   const nextId = gm.tokenManager._nextTokenId;
@@ -321,16 +321,23 @@ test('an in-flight saved pick blocks concurrent saved, generic and remove inputs
   );
   const pending = coordinator.handleSavedCharacterPlacement(characterId, 'knight', 120, 80);
   expect(coordinator.savedCharacterPending).toBe(true);
-  expect(await coordinator.handleSavedCharacterPlacement(characterId, 'knight', 120, 80)).toBe(
-    false
-  );
+  const second = coordinator.handleSavedCharacterPlacement(characterId, 'knight', 120, 80);
   expect(coordinator.savedCharacterPending).toBe(true);
-  expect(await coordinator.handleTokenDrop('mutant', 120, 80)).toBe(false);
-  coordinator.handleTokenInteraction(1, 1);
+  const generic = jest.spyOn(coordinator, '_handleTokenDropNow').mockResolvedValue(true);
+  const edit = jest.spyOn(coordinator, '_handleTokenInteractionNow').mockReturnValue(true);
+  const drop = coordinator.handleTokenDrop('mutant', 120, 80);
+  const remove = coordinator.handleTokenInteraction(1, 1);
+  expect(generic).not.toHaveBeenCalled();
+  expect(edit).not.toHaveBeenCalled();
   expect(gm.placedTokens).toEqual(actors);
   expect(gm.tokenManager._nextTokenId).toBe(nextId);
   finishPick({ grid: { gx: 3, gy: 3 }, world: { x: 3.5, y: 0, z: 3.5 } });
   expect(await pending).toBe(true);
+  expect(await second).toBe(true);
+  expect(await drop).toBe(true);
+  expect(await remove).toBe(true);
+  expect(generic).toHaveBeenCalledTimes(1);
+  expect(edit).toHaveBeenCalledTimes(1);
   expect(gm.tokenManager._nextTokenId).toBe(nextId + 1);
   expect(coordinator.savedCharacterPending).toBe(false);
 });

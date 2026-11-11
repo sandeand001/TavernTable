@@ -7,6 +7,8 @@
  */
 
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import CampaignWorld from '../../campaigns/CampaignWorld.js';
+import { changeCampaignView } from '../../campaigns/SceneWorld.js';
 
 // ── Material Creation ──────────────────────────────────────────────
 
@@ -69,7 +71,7 @@ function _syncFacingDirection() {
   try {
     const tokens = gm.placedTokens || [];
     for (const token of tokens) {
-      this.updateTokenOrientation(token);
+      this._applyOrientationImmediate(token, token.facingAngle ?? 0);
     }
   } catch (_) {
     /* ignore */
@@ -91,6 +93,21 @@ function setHoverToken(tokenEntry) {
 }
 
 async function setSelectedToken(tokenEntry) {
+  const gm = this.gameManager;
+  if (
+    tokenEntry &&
+    gm.campaignWorld instanceof CampaignWorld &&
+    gm.campaignView &&
+    gm.characterServices?.combat &&
+    (tokenEntry.mapId !== gm.campaignMapId || gm.campaignView.focusTokenId !== tokenEntry.id)
+  ) {
+    if (gm.campaignViewBusy || gm.campaignMapTransition || tokenEntry.mapId !== gm.campaignMapId) {
+      await changeCampaignView(gm, { focusTokenId: tokenEntry.id });
+      return;
+    }
+    gm.campaignView.focus(tokenEntry.id);
+  }
+  if (tokenEntry) gm.tokenManager?.cancelSavedCharacterPlacement?.();
   const previous = this._selectedToken;
   this._selectedToken = tokenEntry || null;
   this.refreshMovementRange?.();

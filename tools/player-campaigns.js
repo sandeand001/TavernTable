@@ -38,6 +38,7 @@ class PlayerCampaigns {
     const scene = state.scene
       ? decodeScene(state.scene, { ruleset: state.campaign.ruleset, library })
       : null;
+    if (scene) this.authority.recordRoomVisits(profile.campaignId, scene);
     const view = await this.published.view({
       scene,
       library,
@@ -56,8 +57,89 @@ class PlayerCampaigns {
       sceneRevision: state.sceneRevision,
       sceneSavedAt: state.sceneSavedAt,
       profile,
+      visitedRoomIds: this.authority.visitedRoomIds(session),
       ...view,
     };
+  }
+
+  async doorState(session, campaignId, command) {
+    const profile = this.authority.profile(session);
+    if (profile.role === 'player' && campaignId !== profile.campaignId)
+      throw reject('This campaign is not assigned to the player');
+    if (
+      !command ||
+      typeof command.doorId !== 'string' ||
+      !Number.isSafeInteger(command.sceneRevision) ||
+      command.sceneRevision < 0 ||
+      Object.keys(command).some(
+        (key) => !['doorId', 'sceneRevision', 'observerTokenId', 'open', 'locked'].includes(key)
+      ) ||
+      !['open', 'locked'].some((key) => Object.hasOwn(command, key)) ||
+      ['open', 'locked'].some(
+        (key) => Object.hasOwn(command, key) && typeof command[key] !== 'boolean'
+      )
+    )
+      throw new Error('A door command needs its current scene revision and boolean state');
+    if (profile.role === 'player' && Object.hasOwn(command, 'locked'))
+      throw reject('Only the DM can lock or unlock doors');
+    const state = await this.store.readCharacters(campaignId);
+    if (!state.scene) throw new Error('Save the campaign board before changing a door');
+    if (state.sceneRevision !== command.sceneRevision)
+      throw Object.assign(new Error('The door or board changed. Refresh the view and retry.'), {
+        status: 409,
+      });
+    const catalog = await this.resources.catalog(state.campaign);
+    const [{ default: CampaignCharacters }, { decodeScene, encodeScene }] = await this._modules();
+    const library = new CampaignCharacters({ ...state, store: this.store, catalog });
+    const context = { ruleset: state.campaign.ruleset, library };
+    const scene = decodeScene(state.scene, context);
+    const [{ default: CampaignWorld }, { nearbyDoors }, { playerCreatureVisibility }] =
+      await Promise.all([
+        import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
+        import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignDoors.js')).href),
+        import(
+          pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CreatureVisibility.js')).href
+        ),
+      ]);
+    const world = CampaignWorld.fromScene(scene, context);
+    const door = world.getConnections().find((entry) => entry.id === command.doorId);
+    if (!door || door.kind !== 'door') throw new Error('The campaign door no longer exists');
+    if (profile.role === 'player') {
+      if (typeof command.observerTokenId !== 'string')
+        throw reject('Choose your active assigned character before using a door');
+      const visibility = playerCreatureVisibility({
+        world,
+        creatures: scene.creatures,
+        ownedIds: profile.characterIds,
+        publishedIds: world.listMaps().map(({ id }) => id),
+        observerTokenId: command.observerTokenId,
+      });
+      if (
+        !nearbyDoors(
+          world,
+          { mapId: visibility.observer.mapId, world: visibility.observer.pose.world },
+          visibility.sightGeometry
+        ).some((entry) => entry.id === door.id)
+      )
+        throw reject('Move your active character within 5 feet of the visible door first');
+      if (command.open && door.locked) throw reject('This door is locked. Ask the DM to unlock it');
+    }
+    const changed = world.setDoorState(
+      door.id,
+      Object.fromEntries(
+        ['open', 'locked']
+          .filter((key) => Object.hasOwn(command, key))
+          .map((key) => [key, command[key]])
+      )
+    );
+    const receipt = await this.store.commitScene(campaignId, {
+      ruleset: state.campaign.ruleset,
+      revision: state.sceneRevision,
+      charactersRevision: state.revision,
+      scene: encodeScene(world.save(), context),
+    });
+    this.authority.recordRoomVisits(campaignId, world.save());
+    return { ...receipt, door: changed };
   }
 
   async commit(session, campaignId, change) {

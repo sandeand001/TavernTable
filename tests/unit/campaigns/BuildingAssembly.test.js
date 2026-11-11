@@ -117,6 +117,22 @@ test('resizing preserves manual interior edits and floor identities instead of r
   expect(next.maps.filter((map) => map.building)).toHaveLength(3);
 });
 
+test('building doors start closed and resizing preserves their open and locked states', () => {
+  const { engine, scene, context } = fixture();
+  const assembled = reconcileBuildingScene(scene, context);
+  const world = CampaignWorld.fromScene(assembled, context);
+  const door = world.getConnections().find((connection) => connection.kind === 'door');
+  expect(door).toMatchObject({ open: false, locked: false });
+  world.setDoorState(door.id, { locked: true });
+  const saved = world.save();
+  engine.resizeStructure('house', { lengthFeet: 35 });
+  saved.maps[0].terrain.geometry = engine.geometry.save();
+  const resized = reconcileBuildingScene(saved, context);
+  expect(resized.connections.find((connection) => connection.id === door.id)).toMatchObject({
+    open: false,
+    locked: true,
+  });
+});
 test('stretching reframes a saved interior camera even when the building has no creatures', () => {
   const { engine, scene, context } = fixture();
   const assembled = reconcileBuildingScene(scene, context),
@@ -239,6 +255,7 @@ test.each(['town', 'city', 'castle', 'ruinedTown', 'ruinedUrban', 'ruinedCastle'
         scale = map.grid.tileWorldSize / 5;
       let plan;
       try {
+        if (connection.kind === 'door') world.setDoorState(connection.id, { open: true });
         plan = world.planConnection(connection.id, end.mapId, {
           x: end.positionFeet.x * scale,
           y: end.positionFeet.y * scale,
@@ -278,6 +295,7 @@ test.each(['forestTemperate', 'desertHot', 'grassland'])(
         const end = entry.ends[0],
           map = world.getMap(end.mapId),
           scale = map.grid.tileWorldSize / 5;
+        world.setDoorState(entry.id, { open: true });
         const plan = world.planConnection(entry.id, end.mapId, {
           x: end.positionFeet.x * scale,
           y: end.positionFeet.y * scale,

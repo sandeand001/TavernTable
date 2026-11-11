@@ -1,5 +1,6 @@
 import { clipCellToBounds } from '../../terrain/ConvexGeometry.js';
 import { buildingLevels, buildingLevelHeight } from '../../terrain/BuildingModel.js';
+import TerrainSightMask from './TerrainSightMask.js';
 
 const EPSILON = 1e-6;
 
@@ -25,6 +26,49 @@ function overlaps(a, b) {
     a.minZ <= b.maxZ + EPSILON &&
     a.maxZ >= b.minZ - EPSILON
   );
+}
+
+export function mapTerrainTransform(world, map, three, targetMapId = null) {
+  const unit = map.grid.tileWorldSize / 5;
+  const point = (x, y, z) => {
+    const campaign = world.toCampaignPosition(map.id, {
+      x: x * unit,
+      y: y * unit,
+      z: z * unit,
+    });
+    const value = targetMapId === null ? campaign : world.toMapPosition(targetMapId, campaign);
+    return new three.Vector3(value.x, value.y, value.z);
+  };
+  const origin = point(0, 0, 0);
+  return new three.Matrix4()
+    .makeBasis(point(1, 0, 0).sub(origin), point(0, 1, 0).sub(origin), point(0, 0, 1).sub(origin))
+    .setPosition(origin);
+}
+
+export function clipFloorSurfaceOverlap(geometry, { world, map, three, visibleMapIds = null }) {
+  const solids = world
+    .listLocationMaps(map.id)
+    .filter(
+      ({ id }) =>
+        id !== map.id &&
+        world.getMap(id).base === 'floor' &&
+        (!visibleMapIds || visibleMapIds.has(id))
+    )
+    .flatMap(({ id }) =>
+      world
+        .getMapGeometry(id)
+        .getSolidCells()
+        .map((cell) => world.toCampaignSolid(id, cell))
+    );
+  if (!solids.length) return geometry;
+  const transform = mapTerrainTransform(world, map, three);
+  const scale = 5 / map.grid.tileWorldSize;
+  transform.scale(new three.Vector3(scale, scale, scale));
+  return new TerrainSightMask({ three, unrestricted: true }).apply(geometry, {
+    toCampaign: transform,
+    excludeSolids: solids,
+    excludeSolidsForTriangle: (_start, normal) => normal.y > 0,
+  });
 }
 
 export function createInteriorCutaway(gm) {
@@ -66,6 +110,7 @@ export function createInteriorCutaway(gm) {
   return {
     map,
     maps,
+    ceilingFeet,
     intersects: (source) => overlaps(region, footprint(world, source)),
     query(geometry, source, partition, { includeFloor = false } = {}) {
       const sourceUnit = source.grid.tileWorldSize / 5;
@@ -152,17 +197,7 @@ export function createInteriorCutaway(gm) {
           return result;
         },
         getSolidSpansAt(x, z) {
-          const i = partition.x.findIndex((value) => value > x);
-          const j = partition.z.findIndex((value) => value > z);
-          if (
-            !overlaps(bounds, {
-              minX: partition.x[i - 1],
-              maxX: partition.x[i],
-              minZ: partition.z[j - 1],
-              maxZ: partition.z[j],
-            })
-          )
-            return [];
+          if (x < bounds.minX || x >= bounds.maxX || z < bounds.minZ || z >= bounds.maxZ) return [];
           const { floor, ceiling } = limitsAt(x, z);
           // Clip the mesh query without removing physical roofs or walls.
           return geometry

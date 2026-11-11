@@ -1,6 +1,7 @@
 import { notifyCharacterChanged } from '../characters/characterServices.js';
 import { isCampaignActionInProgress } from '../../campaigns/SceneWorld.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import { prepareSharedDoorScene } from '../../campaigns/CampaignDoorActions.js';
 
 export function attachHostSessionUpdates({ gameManager, services, parent }) {
   const store = services.workspace.store;
@@ -38,15 +39,39 @@ export function attachHostSessionUpdates({ gameManager, services, parent }) {
         JSON.stringify(state.campaign.sourcePacks) !== JSON.stringify(library.campaign.sourcePacks)
       )
         throw new Error('Campaign sources changed in another host window. Reopen this campaign.');
-      if (state.sceneRevision !== library.sceneRevision && lastKind !== 'playerCommit')
-        throw new Error(
-          'The board changed in another host window. Reopen it before further edits.'
-        );
+      let sharedDoors = null;
+      if (state.sceneRevision !== library.sceneRevision) {
+        const scene = JSON.parse(state.scene);
+        if (gameManager.campaignWorld && scene.version === 3)
+          sharedDoors = prepareSharedDoorScene(gameManager, scene);
+        else if (lastKind !== 'playerCommit')
+          throw new Error(
+            'The board changed in another host window. Reopen it before further edits.'
+          );
+      }
       if (state.revision !== library.revision || state.sceneRevision !== library.sceneRevision) {
         library.reload(state);
+        if (sharedDoors) {
+          try {
+            gameManager.campaignWorld.acceptCheckpoint(sharedDoors);
+            await gameManager.token3DAdapter.syncMapProjections();
+            gameManager.characterServices.combat.syncMovementStatus();
+            window.dispatchEvent(
+              new CustomEvent('taverntable:campaignViewStateChanged', {
+                detail: { gameManager },
+              })
+            );
+          } catch (error) {
+            gameManager.campaignMapFailure = new Error(
+              'The shared door state could not update locally. Reload the campaign.',
+              { cause: error }
+            );
+            throw gameManager.campaignMapFailure;
+          }
+        }
         for (const character of library.list()) notifyCharacterChanged(gameManager, character.id);
       }
-      output.textContent = 'Player character data is up to date.';
+      output.textContent = 'Player character and door data is up to date.';
     } catch (error) {
       output.textContent = error.message;
       GameErrors.gameState(error, { component: 'HostSessionUpdates', operation: 'refresh' });

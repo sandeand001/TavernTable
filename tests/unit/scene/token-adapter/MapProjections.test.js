@@ -7,6 +7,63 @@ import { TerrainGeometry } from '../../../../src/terrain/TerrainGeometry.js';
 import { PickingService } from '../../../../src/scene/picking/PickingService.js';
 import { sceneState } from '../../../helpers/sceneState.js';
 import { createDomeVolumes } from '../../../../src/terrain/StructureShapes.js';
+import { reconcileBuildingScene } from '../../../../src/campaigns/BuildingAssembly.js';
+import { getBuildingFloorAppearance } from '../../../../src/scene/terrain/TerrainMaterialFactory.js';
+import {
+  CONSTRUCTION_MATERIALS,
+  getConstructionAppearance,
+} from '../../../../src/config/biome/ConstructionPalettes.js';
+import MapProjectionTerrain from '../../../../src/scene/token-adapter/MapProjectionTerrain.js';
+
+test('projected building floors retain the owning building floor color and construction pattern', () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
+  const engine = new TerrainEngine(25, 25);
+  engine.placeStructure({
+    id: 'keep',
+    kind: 'building',
+    xFeet: 60,
+    zFeet: 60,
+    lengthFeet: 30,
+    widthFeet: 25,
+    heightFeet: 10,
+    building: { roof: 'flat' },
+    appearance: getConstructionAppearance('city', 2),
+  });
+  const scene = sceneState();
+  scene.version = 2;
+  scene.grid = { cols: 25, rows: 25, tileWorldSize: 1 };
+  scene.terrain.heights = engine.save().heights;
+  scene.terrain.geometry = engine.geometry.save();
+  scene.creatures = [];
+  const world = CampaignWorld.fromScene(
+    reconcileBuildingScene(scene, { ruleset: '2014', library }),
+    { ruleset: '2014', library }
+  );
+  const floor = world.listMaps().find(({ id }) => id !== 'map-main');
+  const gm = {
+    campaignWorld: world,
+    campaignMapId: 'map-main',
+    terrainEngine: engine,
+    spatial: { tileWorldSize: 1 },
+    threeSceneManager: { three, scene: new three.Scene() },
+  };
+  const projection = new MapProjectionTerrain(gm);
+  try {
+    const appearance = getBuildingFloorAppearance(world, floor.id);
+    const full = projection._source(floor.id).full;
+    expect([...new Set(full.getAttribute('constructionMaterial').array)]).toEqual([
+      CONSTRUCTION_MATERIALS[appearance.floorMaterial],
+    ]);
+    const expected = new three.Color(appearance.floorColor);
+    const colors = full.getAttribute('color');
+    expect(colors.getX(0)).toBeCloseTo(expected.r);
+    expect(colors.getY(0)).toBeCloseTo(expected.g);
+    expect(colors.getZ(0)).toBeCloseTo(expected.b);
+  } finally {
+    projection.dispose();
+  }
+});
 
 function fixture() {
   localStorage.clear();

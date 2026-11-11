@@ -288,17 +288,18 @@ export class ErrorHandler {
   }
 
   trackErrorFrequency(errorEntry) {
+    if (errorEntry.context.frequencyAlert === true) return;
     const key = `${errorEntry.category}:${errorEntry.message}`;
     const current = this.errorCounts.get(key) || 0;
     this.errorCounts.set(key, current + 1);
 
     // Alert on high frequency errors
-    if (current + 1 >= 5) {
+    if (current + 1 === 5) {
       this.handle(
         `High frequency error detected: ${errorEntry.message}`,
         ERROR_SEVERITY.WARNING,
         ERROR_CATEGORY.SYSTEM,
-        { originalErrorId: errorEntry.id, frequency: current + 1 }
+        { originalErrorId: errorEntry.id, frequency: current + 1, frequencyAlert: true }
       );
     }
   }

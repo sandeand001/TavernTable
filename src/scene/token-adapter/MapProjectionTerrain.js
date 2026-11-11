@@ -1,17 +1,13 @@
-import { GRID_CONFIG } from '../../config/GameConstants.js';
-import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 import { TerrainVolumeMeshBuilder } from '../terrain/TerrainVolumeMeshBuilder.js';
-import {
-  getTerrainLayerColor,
-  getBuildingFloorAppearance,
-} from '../terrain/TerrainMaterialFactory.js';
-import { CONSTRUCTION_MATERIALS } from '../../config/biome/ConstructionPalettes.js';
-import { createInteriorCutaway } from '../terrain/InteriorCutaway.js';
-import { clipCellToBounds } from '../../terrain/ConvexGeometry.js';
+import { getMapTerrainAppearance } from '../terrain/TerrainMaterialFactory.js';
+import { createInteriorCutaway, mapTerrainTransform } from '../terrain/InteriorCutaway.js';
+import { clipCellToBounds, boxPlanes } from '../../terrain/ConvexGeometry.js';
 import {
   configureConstructionMaterial,
   hasConstructionMaterials,
 } from '../terrain/ConstructionMaterials.js';
+import TerrainSightMask from '../terrain/TerrainSightMask.js';
+import { doorLeafCells } from '../../campaigns/CampaignDoors.js';
 
 const CONTEXT_RADIUS_FEET = 10;
 const EPSILON = 1e-6;
@@ -29,6 +25,9 @@ export default class MapProjectionTerrain {
     this.walls.visible = false;
     this.floors = new this.three.Group();
     this.floors.name = 'MapPhysicalFloors';
+    this.doors = new this.three.Group();
+    this.doors.name = 'MapDoors';
+    this.doorMeshes = new Map();
     this.floorMeshes = new Map();
     this.floorBatch = null;
     this.material = new this.three.MeshLambertMaterial({
@@ -42,6 +41,7 @@ export default class MapProjectionTerrain {
     gameManager.threeSceneManager.scene.add(this.root);
     gameManager.threeSceneManager.scene.add(this.walls);
     gameManager.threeSceneManager.scene.add(this.floors);
+    gameManager.threeSceneManager.scene.add(this.doors);
   }
 
   clear() {
@@ -51,6 +51,8 @@ export default class MapProjectionTerrain {
     this.wallSignature = null;
     this.floors.visible = false;
     this.floorSignature = null;
+    this.doors.visible = false;
+    this.doorSignature = null;
   }
 
   dispose() {
@@ -64,6 +66,8 @@ export default class MapProjectionTerrain {
     this.wallMeshes.clear();
     for (const mesh of this.floorMeshes.values()) mesh.geometry.dispose();
     this.floorMeshes.clear();
+    for (const mesh of this.doorMeshes.values()) mesh.geometry.dispose();
+    this.doorMeshes.clear();
     this.floorBatch?.geometry.dispose();
     this.floorBatch?.removeFromParent();
     this.floorBatch = null;
@@ -71,12 +75,17 @@ export default class MapProjectionTerrain {
     this.root.removeFromParent();
     this.walls.removeFromParent();
     this.floors.removeFromParent();
+    this.doors.removeFromParent();
   }
 
   update(observer, targets) {
     this._updatePhysicalFloors();
     this._updateInteriorWalls();
-    if (!observer || !targets.length) {
+    const interior = Number.isFinite(this.gm.terrainEngine.geometry.terrainThicknessFeet);
+    const dmInterior = interior && !this.gm.playerVisibleMapIds;
+    this._updateDoors(this.gm.playerVisibleMapIds ? observer : null);
+    const surroundings = interior || !!this.gm.playerVisibleMapIds;
+    if ((!observer || !targets.length) && !surroundings) {
       this.root.visible = false;
       this.signature = null;
       return;
@@ -86,12 +95,22 @@ export default class MapProjectionTerrain {
       if (!groups.has(token.mapId)) groups.set(token.mapId, []);
       groups.get(token.mapId).push(token);
     }
+    if (surroundings)
+      for (const { id } of this.world.listLocationMaps(this.gm.campaignMapId))
+        if (
+          id !== this.gm.campaignMapId &&
+          (!this.gm.playerVisibleMapIds || this.gm.playerVisibleMapIds.has(id)) &&
+          !groups.has(id)
+        )
+          groups.set(id, []);
     const signature = JSON.stringify([
       this.gm.campaignMapId,
       this.revision,
-      observer.id,
-      observer.world,
-      targets.map((token) => [token.id, token.mapId, token.world]),
+      this.world.mapRevision,
+      dmInterior ? null : observer?.id,
+      dmInterior ? null : observer?.world,
+      [...groups.keys()],
+      dmInterior ? null : targets.map((token) => [token.id, token.mapId, token.world]),
     ]);
     if (
       signature === this.signature &&
@@ -101,19 +120,33 @@ export default class MapProjectionTerrain {
     )
       return;
     const sightGeometry = {
-      mapId: observer.mapId,
-      obstacles: this.world.getObstacles({
-        mapId: this.gm.campaignMapId,
-        geometry: this.gm.terrainEngine.geometry,
-        coverBounds: this.gm.placeableMeshPool?.targetingCoverBounds() ?? null,
-      }),
+      mapId: observer?.mapId ?? this.gm.campaignMapId,
+      obstacles:
+        this.gm.playerSightObstacles ??
+        this.world.getObstacles({
+          mapId: this.gm.campaignMapId,
+          geometry: this.gm.terrainEngine.geometry,
+          coverBounds: this.gm.placeableMeshPool?.targetingCoverBounds() ?? null,
+        }),
     };
-    const observerFeet = this.world.toCampaignPosition(observer.mapId, observer.world);
+    const observerFeet = observer
+      ? this.world.toCampaignPosition(observer.mapId, observer.world)
+      : null;
+    const supportContext = !interior && !this.gm.playerVisibleMapIds;
+    const sight = new TerrainSightMask({
+      three: this.three,
+      observerFeet,
+      obstacles: sightGeometry.obstacles,
+      unrestricted: !observer || supportContext || dmInterior,
+    });
+    const exclusions = interior ? this._interiorExclusions() : [];
     for (const source of this.sources.values()) source.mesh.visible = false;
     for (const [mapId, tokens] of groups) {
       const source = this._source(mapId);
       const scale = 5 / source.map.grid.tileWorldSize;
-      const localObserver = this.world.toMapPosition(mapId, observerFeet);
+      const localObserver = observerFeet
+        ? this.world.toMapPosition(mapId, observerFeet)
+        : { x: 0, z: 0 };
       const start = new this.three.Vector3(localObserver.x * scale, 0, localObserver.z * scale);
       const feet = tokens.map((token) => ({
         x: token.world.x * scale,
@@ -128,59 +161,163 @@ export default class MapProjectionTerrain {
       const sample = new this.three.Vector3();
       const closest = new this.three.Vector3();
       // A visible creature keeps its actual support even if a window hides the tile center.
-      const faces = source.faces.filter(
-        (face) =>
-          feet.some((point) => {
-            sample.set(face.center.x, 0, face.center.z);
-            if (point.line.start.distanceToSquared(point.line.end) <= EPSILON ** 2)
-              closest.copy(point.line.end);
-            else point.line.closestPointToPoint(sample, true, closest);
+      const accepted = new Set(
+        source.faces
+          .filter((face) => {
+            if (interior) return true;
+            if (this._covered(face)) return false;
+            if (this.gm.playerVisibleMapIds) return true;
+            const corridor = feet.some((point) => {
+              sample.set(face.center.x, 0, face.center.z);
+              if (point.line.start.distanceToSquared(point.line.end) <= EPSILON ** 2)
+                closest.copy(point.line.end);
+              else point.line.closestPointToPoint(sample, true, closest);
+              return (
+                face.high <= point.y + EPSILON &&
+                sample.distanceToSquared(closest) <= CONTEXT_RADIUS_FEET ** 2
+              );
+            });
             return (
-              face.high <= point.y + EPSILON &&
-              sample.distanceToSquared(closest) <= CONTEXT_RADIUS_FEET ** 2
+              corridor &&
+              (feet.some(
+                (point) =>
+                  point.support !== undefined &&
+                  Math.abs(face.high - face.low) <= EPSILON &&
+                  Math.abs(face.high - point.support) <= EPSILON &&
+                  point.x >= face.minX - EPSILON &&
+                  point.x <= face.maxX + EPSILON &&
+                  point.z >= face.minZ - EPSILON &&
+                  point.z <= face.maxZ + EPSILON
+              ) ||
+                this.world.hasLineOfSight(observerFeet, face.campaign, sightGeometry))
             );
-          }) &&
-          !this._covered(face) &&
-          (feet.some(
-            (point) =>
-              point.support !== undefined &&
-              Math.abs(face.high - face.low) <= EPSILON &&
-              Math.abs(face.high - point.support) <= EPSILON &&
-              point.x >= face.minX - EPSILON &&
-              point.x <= face.maxX + EPSILON &&
-              point.z >= face.minZ - EPSILON &&
-              point.z <= face.maxZ + EPSILON
-          ) ||
-            this.world.hasLineOfSight(observerFeet, face.campaign, sightGeometry))
+          })
+          .map((face) => face.start)
       );
-      const mask = faces.map((face) => face.start).join(',');
-      if (mask !== source.mask) {
-        const geometry = new this.three.BufferGeometry();
-        for (const key of ['position', 'normal', 'color', 'constructionMaterial']) {
-          const original = source.full.getAttribute(key);
-          const values = [];
-          for (const face of faces)
-            for (
-              let i = face.start * original.itemSize;
-              i < (face.start + face.count) * original.itemSize;
-              i++
-            )
-              values.push(original.array[i]);
-          geometry.setAttribute(
-            key,
-            new this.three.Float32BufferAttribute(values, original.itemSize)
-          );
-        }
-        geometry.applyMatrix4(source.toView);
-        geometry.computeBoundingSphere();
-        source.mesh.geometry.dispose();
-        source.mesh.geometry = geometry;
-        source.mask = mask;
-      }
-      source.mesh.visible = faces.length > 0;
+      const faceSize = source.reference.hasCurves ? 3 : 6;
+      const geometry = sight.apply(source.full, {
+        toCampaign: source.toCampaign,
+        toView: source.toView,
+        acceptTriangle: (start) => accepted.has(Math.floor(start / faceSize) * faceSize),
+        excludeSolids: exclusions,
+      });
+      source.mesh.geometry.dispose();
+      source.mesh.geometry = geometry;
+      source.mesh.visible = geometry.getAttribute('position').count > 0;
     }
     this.root.visible = [...this.sources.values()].some((source) => source.mesh.visible);
     this.signature = signature;
+  }
+
+  _updateDoors(observer) {
+    const signature = JSON.stringify([
+      this.gm.campaignMapId,
+      this.revision,
+      this.world.mapRevision,
+      observer?.mapId,
+      observer?.world,
+    ]);
+    if (signature === this.doorSignature) return;
+    for (const mesh of this.doorMeshes.values()) {
+      mesh.geometry.dispose();
+      mesh.removeFromParent();
+    }
+    this.doorMeshes.clear();
+    const sight = observer
+      ? new TerrainSightMask({
+          three: this.three,
+          observerFeet: this.world.toCampaignPosition(observer.mapId, observer.world),
+          obstacles:
+            this.gm.playerSightObstacles ??
+            this.world.getObstacles({
+              mapId: this.gm.campaignMapId,
+              geometry: this.gm.terrainEngine.geometry,
+            }),
+        })
+      : null;
+    for (const connection of this.world.getConnections()) {
+      if (
+        connection.kind !== 'door' ||
+        !this.world.sharesLocation(connection.feature.mapId, this.gm.campaignMapId)
+      )
+        continue;
+      const map = this.world.getMap(connection.feature.mapId);
+      const cells = doorLeafCells(this.world, connection, {
+        mapId: this.gm.campaignMapId,
+        geometry: this.gm.terrainEngine.geometry,
+      });
+      const full = new TerrainVolumeMeshBuilder().build({
+        geometry: { hasCurves: true, getSolidCells: () => cells },
+        three: this.three,
+        worldUnitsPerFoot: 1,
+      });
+      const local = connection.ends.some((end) => end.mapId === this.gm.campaignMapId);
+      const transform = this._transform(map, this.gm.campaignMapId);
+      const geometry =
+        sight && !local
+          ? sight.apply(full, { toCampaign: this._transform(map), toView: transform })
+          : full.clone().applyMatrix4(transform);
+      full.dispose();
+      const mesh = new this.three.Mesh(geometry, this.material);
+      mesh.name = `MapDoors:${connection.id}`;
+      mesh.userData.connectionId = connection.id;
+      mesh.userData.campaignMapId = map.id;
+      mesh.visible = geometry.getAttribute('position').count > 0;
+      this.doors.add(mesh);
+      this.doorMeshes.set(connection.id, mesh);
+    }
+    configureConstructionMaterial(this.material, this.gm.spatial.tileWorldSize / 5);
+    this.doors.visible = [...this.doorMeshes.values()].some((mesh) => mesh.visible);
+    this.doorSignature = signature;
+  }
+
+  _interiorExclusions() {
+    const gm = this.gm;
+    const map = this.world.getMap(gm.campaignMapId);
+    const a = this.world.toCampaignPosition(map.id, { x: 0, y: 0, z: 0 });
+    const b = this.world.toCampaignPosition(map.id, {
+      x: gm.cols * gm.spatial.tileWorldSize,
+      y: 0,
+      z: gm.rows * gm.spatial.tileWorldSize,
+    });
+    const region = {
+      min: { x: Math.min(a.x, b.x), y: 0, z: Math.min(a.z, b.z) },
+      max: { x: Math.max(a.x, b.x), y: Infinity, z: Math.max(a.z, b.z) },
+    };
+    if (!gm.terrainEngine.geometry.hasCurves) {
+      let height = Infinity;
+      for (let z = 0; z < gm.rows; z++)
+        for (let x = 0; x < gm.cols; x++)
+          height = Math.min(height, gm.terrainEngine.getHeightAt(x, z));
+      region.min.y =
+        map.originFeet.y +
+        (height * gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize -
+        gm.terrainEngine.geometry.terrainThicknessFeet;
+      return [region];
+    }
+    const exclusions = gm.terrainEngine.geometry
+      .getSolidCells()
+      .filter((cell) => cell.layerId !== 'roof')
+      .map((cell) => {
+        const solid = this.world.toCampaignSolid(map.id, cell);
+        return {
+          ...solid,
+          max: { ...solid.max, y: Infinity },
+          planes: [
+            ...(solid.planes ?? boxPlanes(solid)).filter(
+              ({ normal }) => Math.abs(normal.y) < EPSILON
+            ),
+            { normal: { x: 0, y: -1, z: 0 }, distance: -solid.min.y },
+          ],
+        };
+      });
+    const ceiling = createInteriorCutaway(gm).ceilingFeet;
+    if (Number.isFinite(ceiling))
+      exclusions.push({
+        min: { ...region.min, y: ceiling },
+        max: region.max,
+      });
+    return exclusions;
   }
 
   _updatePhysicalFloors() {
@@ -189,7 +326,12 @@ export default class MapProjectionTerrain {
     const maps = this.world
       .listLocationMaps(this.gm.campaignMapId)
       .map(({ id }) => this.world.getMap(id))
-      .filter((map) => map.id !== this.gm.campaignMapId && map.base === 'floor');
+      .filter(
+        (map) =>
+          map.id !== this.gm.campaignMapId &&
+          map.base === 'floor' &&
+          (!this.gm.playerVisibleMapIds || this.gm.playerVisibleMapIds.has(map.id))
+      );
     const references = maps.map((map) => this.world.getMapGeometry(map.id));
     if (
       signature === this.floorSignature &&
@@ -280,6 +422,12 @@ export default class MapProjectionTerrain {
     const connections = this.world.getConnections(this.gm.campaignMapId);
     for (const map of cutaway.maps) {
       if (map.id === this.gm.campaignMapId || !cutaway.intersects(map)) continue;
+      if (
+        map.base === 'floor' &&
+        this.gm.playerVisibleMapIds &&
+        !this.gm.playerVisibleMapIds.has(map.id)
+      )
+        continue;
       const reference = this.world.getMapGeometry(map.id);
       const partition = this._partition(map, reference);
       this._addInteriorMesh(map, cutaway.query(reference, map, partition), map.id);
@@ -328,27 +476,27 @@ export default class MapProjectionTerrain {
   }
 
   _addInteriorMesh(map, query, key, group = this.walls, registry = this.wallMeshes) {
-    const floorAppearance = getBuildingFloorAppearance(this.world, map.id);
-    const geometry = new TerrainVolumeMeshBuilder().build({
+    let geometry = new TerrainVolumeMeshBuilder().build({
       geometry: query,
       three: this.three,
       worldUnitsPerFoot: 1,
-      getStyle: (_x, _z, _y, span) =>
-        CONSTRUCTION_MATERIALS[
-          floorAppearance && span.materialColor === undefined
-            ? floorAppearance.floorMaterial
-            : (span.materialStyle ?? 'none')
-        ],
-      getColor: (_x, _z, _height, span) =>
-        floorAppearance && span.materialColor === undefined
-          ? floorAppearance.floorColor
-          : getTerrainLayerColor(
-              span.layerId === 'roof' ? 'ground' : span.layerId,
-              map.terrain.biome,
-              span.materialRole,
-              span.materialColor
-            ),
+      ...getMapTerrainAppearance(this.world, map),
     });
+    if (group === this.floors) {
+      const solids = this.gm.terrainEngine.geometry
+        .getSolidCells()
+        .map((cell) => this.world.toCampaignSolid(this.gm.campaignMapId, cell));
+      const clipped = new TerrainSightMask({ three: this.three, unrestricted: true }).apply(
+        geometry,
+        {
+          toCampaign: this._transform(map),
+          excludeSolids: solids,
+          excludeSolidsForTriangle: (_start, normal) => normal.y <= 0,
+        }
+      );
+      geometry.dispose();
+      geometry = clipped;
+    }
     if (geometry.getAttribute('position').count === 0) {
       geometry.dispose();
       return;
@@ -369,25 +517,12 @@ export default class MapProjectionTerrain {
   }
 
   _transform(map, targetMapId = null) {
-    const unit = map.grid.tileWorldSize / 5;
-    const point = (x, y, z) => {
-      const campaign = this.world.toCampaignPosition(map.id, {
-        x: x * unit,
-        y: y * unit,
-        z: z * unit,
-      });
-      const value =
-        targetMapId === null ? campaign : this.world.toMapPosition(targetMapId, campaign);
-      return new this.three.Vector3(value.x, value.y, value.z);
-    };
-    const origin = point(0, 0, 0);
-    return new this.three.Matrix4()
-      .makeBasis(point(1, 0, 0).sub(origin), point(0, 1, 0).sub(origin), point(0, 0, 1).sub(origin))
-      .setPosition(origin);
+    return mapTerrainTransform(this.world, map, this.three, targetMapId);
   }
 
   _partition(map, geometry) {
     const axes = geometry.getPartition();
+    if (geometry.hasCurves) return axes;
     const cuts = { x: [...axes.x], z: [...axes.z] };
     // Split at active-map boundaries to avoid coplanar context over its existing ground.
     const active = this.gm.terrainEngine.geometry.getPartition();
@@ -425,34 +560,16 @@ export default class MapProjectionTerrain {
       cached.mesh.geometry.dispose();
       cached.mesh.removeFromParent();
     }
-    const feetPerLevel = (map.terrain.worldElevationUnit * 5) / map.grid.tileWorldSize;
     const full = new TerrainVolumeMeshBuilder().build({
       geometry: {
         hasCurves: reference.hasCurves,
-        getSolidCells: () => reference.getSolidCells({ partition }),
+        getSolidCells: () => reference.getSolidCells(),
         getPartition: () => partition,
         getSolidSpansAt: (x, z) => reference.getSolidSpansAt(x, z),
       },
       three: this.three,
       worldUnitsPerFoot: 1,
-      getColor: (_x, _z, height, span) =>
-        span.materialColor !== undefined
-          ? getTerrainLayerColor(
-              span.layerId,
-              map.terrain.biome,
-              span.materialRole,
-              span.materialColor
-            )
-          : span.id === 'terrain'
-            ? map.terrain.biome
-              ? getBiomeColorWithHydrology(map.terrain.biome, height / feetPerLevel)
-              : GRID_CONFIG.TILE_COLOR
-            : getTerrainLayerColor(
-                span.layerId,
-                map.terrain.biome,
-                span.materialRole,
-                span.materialColor
-              ),
+      ...getMapTerrainAppearance(this.world, map),
     });
     if (hasConstructionMaterials(full))
       configureConstructionMaterial(
@@ -506,7 +623,7 @@ export default class MapProjectionTerrain {
     const mesh = new this.three.Mesh(new this.three.BufferGeometry(), this.material);
     mesh.name = `MapProjectionTerrain:${mapId}`;
     this.root.add(mesh);
-    const source = { reference, map, key, full, faces, toView, mesh, mask: null };
+    const source = { reference, map, key, full, faces, toView, toCampaign, mesh };
     this.sources.set(mapId, source);
     return source;
   }

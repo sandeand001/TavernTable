@@ -21,7 +21,7 @@ beforeAll(() => {
 });
 afterAll(() => restoreFiles());
 
-async function projectedFixture() {
+async function projectedFixture({ activeCols = 12 } = {}) {
   const fixture = await createHumanoidFixture({
     height: 0,
     warmupFrames: 0,
@@ -32,8 +32,8 @@ async function projectedFixture() {
   const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
   const validation = { ruleset: '2014', library };
   const scene = sceneState();
-  scene.grid = { cols: 12, rows: 8, tileWorldSize: 1 };
-  scene.terrain.heights = Array.from({ length: 8 }, () => Array(12).fill(0));
+  scene.grid = { cols: activeCols, rows: 8, tileWorldSize: 1 };
+  scene.terrain.heights = Array.from({ length: 8 }, () => Array(activeCols).fill(0));
   scene.creatures[0].gridX = 2;
   scene.creatures[0].gridY = 2;
   scene.creatures[0].pose = { kind: 'flight', world: { x: 2.5, y: 2, z: 2.5 } };
@@ -45,7 +45,10 @@ async function projectedFixture() {
     quarterTurns: 1,
     base: 'floor',
     grid: { cols: 12, rows: 8, tileWorldSize: 2 },
-    terrain: { ...scene.terrain },
+    terrain: {
+      ...scene.terrain,
+      heights: Array.from({ length: 8 }, () => Array(12).fill(0)),
+    },
   });
   const saved = world.save();
   saved.view.focusTokenId = 'token-1';
@@ -76,9 +79,64 @@ async function projectedFixture() {
   gm.campaignMapId = 'map-main';
   gm.campaignView = world.createView({ focusTokenId: observer.id });
   gm.characterServices = { library };
-  gm.terrainEngine = new TerrainEngine(12, 8);
+  gm.cols = activeCols;
+  gm.terrainEngine = new TerrainEngine(activeCols, 8);
+  gm.getTerrainHeight = (x, z) => gm.terrainEngine.getHeightAt(x, z);
+  if (activeCols < 12)
+    gm.terrainEngine.addVolume({
+      id: 'narrow-hall-floor',
+      bounds: {
+        min: { x: 0, y: -0.1, z: 0 },
+        max: { x: activeCols * 5, y: 0, z: 40 },
+      },
+    });
   return fixture;
 }
+
+test('a B2-sized hall can load a real off-map rig without checking its coordinates against the hall', async () => {
+  const { gm, adapter, token } = await projectedFixture({ activeCols: 5 });
+  adapter.onTokenRemoved(token);
+  const report = jest.spyOn(GameErrors, 'rendering').mockImplementation(() => {});
+  try {
+    await adapter.syncMapProjections();
+    expect(report.mock.calls.map(([error]) => error.stack)).toEqual([]);
+    const visual = adapter.getTokenVisual(token);
+    expect(visual).not.toBeNull();
+    expect(visual.position.toArray()).toEqual([7.5, 2, 4.5]);
+    expect(token.world).toEqual({ x: 11, y: 0, z: 9 });
+    expect(gm.cols).toBe(5);
+  } finally {
+    report.mockRestore();
+    adapter.onTokenRemoved(token);
+    adapter.disposeMapProjectionTerrain();
+    adapter.disposeMovementRange();
+  }
+}, 30000);
+
+test('an off-map checkpoint retains its source support and scale when the displayed terrain has no volumes', async () => {
+  const { gm, adapter, token } = await projectedFixture();
+  const saved = gm.campaignWorld.save();
+  const geometry = gm.campaignWorld.getMapGeometry(token.mapId);
+  geometry.addSolid({
+    id: 'source-platform',
+    bounds: { min: { x: 20, y: 0, z: 15 }, max: { x: 40, y: 2, z: 30 } },
+  });
+  saved.maps.find((map) => map.id === token.mapId).terrain.geometry = geometry.save();
+  token.world.y = 0.8;
+  saved.creatures.find((creature) => creature.id === token.id).pose.world.y = 0.8;
+  gm.campaignWorld.acceptCheckpoint(saved);
+  try {
+    expect(gm.terrainEngine.geometry.hasVolumes).toBe(false);
+    expect(adapter.recordStablePlacement(token)).toBe(true);
+    const checkpoint = adapter.getStablePlacement(token);
+    expect(checkpoint.pose.surfaceId).toBe('source-platform');
+    expect(checkpoint.pose.world).toEqual({ x: 11, y: 0.8, z: 9 });
+  } finally {
+    adapter.onTokenRemoved(token);
+    adapter.disposeMapProjectionTerrain();
+    adapter.disposeMovementRange();
+  }
+}, 30000);
 
 test('a real animated rig projects its floor height and facing without moving the canonical creature', async () => {
   const fixture = await projectedFixture();

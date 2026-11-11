@@ -8,7 +8,7 @@ import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 import { TerrainVolumeMeshBuilder } from './TerrainVolumeMeshBuilder.js';
 import { getTerrainLayerColor, getBuildingFloorAppearance } from './TerrainMaterialFactory.js';
-import { createInteriorCutaway } from './InteriorCutaway.js';
+import { createInteriorCutaway, clipFloorSurfaceOverlap } from './InteriorCutaway.js';
 import {
   configureConstructionMaterial,
   hasConstructionMaterials,
@@ -139,7 +139,7 @@ export class TerrainRebuilder {
     const wallColor = 0x050505;
     const wantsWalls = !!(threeNs && threeNs.BufferGeometry);
     const cutaway = gm.terrainEngine?.geometry.hasVolumes ? createInteriorCutaway(gm) : null;
-    const geo = gm.terrainEngine?.geometry.hasVolumes
+    let geo = gm.terrainEngine?.geometry.hasVolumes
       ? new TerrainVolumeMeshBuilder().build({
           geometry: cutaway
             ? cutaway.query(
@@ -201,6 +201,15 @@ export class TerrainRebuilder {
           1
         )
       );
+    if (gm.campaignWorld && !Number.isFinite(gm.terrainEngine.geometry.terrainThicknessFeet)) {
+      const clipped = clipFloorSurfaceOverlap(geo, {
+        world: gm.campaignWorld,
+        map: gm.campaignWorld.getMap(gm.campaignMapId),
+        three: threeNs,
+      });
+      if (clipped !== geo) geo.dispose();
+      geo = clipped;
+    }
     // Debug sample of first vertex color to help diagnose "all black" issues.
     try {
       if (typeof window !== 'undefined' && !window.__TT_LAST_TERRAIN_COLOR_SAMPLE__) {

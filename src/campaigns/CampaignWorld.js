@@ -1,6 +1,10 @@
 import { validateScene, validateMapBoard } from './CampaignScene.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
-import { pointInsideSolid, segmentIntersectsSolid } from '../terrain/ConvexGeometry.js';
+import {
+  pointInsideSolid,
+  segmentIntersectsSolid,
+  boundsIntersectSolid,
+} from '../terrain/ConvexGeometry.js';
 import { planConnection, connectionEntryDistance } from './CampaignConnections.js';
 import {
   localWorldToCampaign,
@@ -11,6 +15,7 @@ import {
 import { isOpeningHoldValid } from './CampaignOpeningClimb.js';
 import { isSurfaceGripValid, openingSurfaceGrip } from './CampaignSurfaceClimb.js';
 import { DEFAULT_LOCATION_ID, mapLocationId } from './CampaignLocations.js';
+import { doorLeafCells } from './CampaignDoors.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const finitePoint = (value) =>
@@ -153,6 +158,8 @@ export default class CampaignWorld {
   _commit(next) {
     validateScene(next, this._context);
     const sameMaps = JSON.stringify(this._scene.maps) === JSON.stringify(next.maps);
+    const sameConnections =
+      JSON.stringify(this._scene.connections) === JSON.stringify(next.connections);
     const oldMaps = new Map(this._scene.maps.map((map) => [map.id, map]));
     const kept = new Map();
     for (const map of next.maps) {
@@ -165,7 +172,7 @@ export default class CampaignWorld {
     this._scene = next;
     this._mapsById = new Map(next.maps.map((map) => [map.id, map]));
     this._geometries = kept;
-    if (!sameMaps) this._mapRevision++;
+    if (!sameMaps || !sameConnections) this._mapRevision++;
     this._obstacleCache.clear();
   }
 
@@ -196,6 +203,44 @@ export default class CampaignWorld {
     const next = this.save();
     next.connections = [...(next.connections || []), copy(connection)];
     this._commit(next);
+  }
+
+  setDoorState(id, change) {
+    if (
+      !change ||
+      typeof change !== 'object' ||
+      !Object.keys(change).length ||
+      Object.keys(change).some(
+        (key) => !['open', 'locked'].includes(key) || typeof change[key] !== 'boolean'
+      )
+    )
+      throw new Error('A door change requires an open or locked boolean state');
+    const next = this.save();
+    const connection = next.connections?.find((entry) => entry.id === id);
+    if (!connection || connection.kind !== 'door')
+      throw new Error('The campaign door no longer exists');
+    const open = change.open ?? connection.open === true;
+    const locked = change.locked ?? connection.locked === true;
+    if (open && locked) throw new Error('Unlock the locked door before opening it');
+    if (!open && connection.open === true) {
+      const panels = doorLeafCells(this, connection, { open: false }).map((cell) =>
+        this._campaignSolid(this._map(connection.feature.mapId), cell)
+      );
+      for (const creature of this._scene.creatures) {
+        if (!this.sharesLocation(creature.mapId, connection.feature.mapId)) continue;
+        const position = this.getCampaignPosition(creature.id);
+        const body = {
+          min: { x: position.x - 0.5, y: position.y + 1e-5, z: position.z - 0.5 },
+          max: { x: position.x + 0.5, y: position.y + 5 - 1e-5, z: position.z + 0.5 },
+        };
+        if (panels.some((panel) => boundsIntersectSolid(body, panel)))
+          throw new Error('A creature is in the doorway; move it before closing the door');
+      }
+    }
+    connection.open = open;
+    connection.locked = locked;
+    this._commit(next);
+    return { id, open, locked };
   }
 
   getConnections(mapId = null, localWorld = null) {
@@ -261,6 +306,10 @@ export default class CampaignWorld {
     return this._campaignBounds(map, { min: scaled(bounds.min), max: scaled(bounds.max) });
   }
 
+  toCampaignSolid(mapId, cell) {
+    return this._campaignSolid(this._map(mapId), cell);
+  }
+
   _geometry(mapId) {
     let geometry = this._geometries.get(mapId);
     if (geometry) return geometry;
@@ -280,6 +329,32 @@ export default class CampaignWorld {
     return geometry;
   }
 
+  _campaignSolid(map, cell) {
+    const bounds = this._campaignBounds(map, cell.bounds);
+    if (
+      cell.planes.every(({ normal }) =>
+        ['x', 'y', 'z'].some((axis) => Math.abs(normal[axis]) > 1 - 1e-10)
+      )
+    )
+      return bounds;
+    const origin = mapFeetToCampaign(map, { x: 0, y: 0, z: 0 });
+    return {
+      ...bounds,
+      planes: cell.planes.map(({ normal, distance }) => {
+        const endpoint = mapFeetToCampaign(map, normal);
+        const rotated = {
+          x: endpoint.x - origin.x,
+          y: endpoint.y - origin.y,
+          z: endpoint.z - origin.z,
+        };
+        return {
+          normal: rotated,
+          distance: distance + rotated.x * origin.x + rotated.y * origin.y + rotated.z * origin.z,
+        };
+      }),
+    };
+  }
+
   getObstacles({
     mapId = null,
     geometry: activeGeometry = null,
@@ -297,32 +372,7 @@ export default class CampaignWorld {
         const cells = geometry.getSolidCells();
         let cached = this._obstacleCache.get(map.id);
         if (cached?.geometry !== geometry || cached.cells !== cells) {
-          const origin = mapFeetToCampaign(map, { x: 0, y: 0, z: 0 });
-          const transformed = cells.map((cell) => {
-            const bounds = this._campaignBounds(map, cell.bounds);
-            if (
-              cell.planes.every(({ normal }) =>
-                ['x', 'y', 'z'].some((axis) => Math.abs(normal[axis]) > 1 - 1e-10)
-              )
-            )
-              return bounds;
-            return {
-              ...bounds,
-              planes: cell.planes.map(({ normal, distance }) => {
-                const endpoint = mapFeetToCampaign(map, normal);
-                const rotated = {
-                  x: endpoint.x - origin.x,
-                  y: endpoint.y - origin.y,
-                  z: endpoint.z - origin.z,
-                };
-                return {
-                  normal: rotated,
-                  distance:
-                    distance + rotated.x * origin.x + rotated.y * origin.y + rotated.z * origin.z,
-                };
-              }),
-            };
-          });
+          const transformed = cells.map((cell) => this._campaignSolid(map, cell));
           cached = { geometry, cells, obstacles: transformed };
           this._obstacleCache.set(map.id, cached);
         }
@@ -350,6 +400,19 @@ export default class CampaignWorld {
       const cover =
         map.id === mapId && coverBounds !== null ? coverBounds : map.terrain.coverBounds || [];
       for (const bounds of cover) obstacles.push(this.toCampaignBounds(map.id, bounds));
+    }
+    for (const connection of this._scene.connections || []) {
+      if (
+        connection.kind !== 'door' ||
+        !this.sharesLocation(
+          connection.feature.mapId,
+          mapId ?? excludeMapId ?? this._scene.view.mapId
+        )
+      )
+        continue;
+      const owner = this._map(connection.feature.mapId);
+      for (const cell of doorLeafCells(this, connection, { mapId, geometry: activeGeometry }))
+        obstacles.push(this._campaignSolid(owner, cell));
     }
     return obstacles;
   }
@@ -484,6 +547,29 @@ export default class CampaignWorld {
         (solid) => pointInsideSolid(start, solid) || segmentIntersectsSolid(start, end, solid)
       );
     });
+  }
+
+  hasSurfaceLineOfSight(observerFeet, surfaceFeet, geometry = {}) {
+    if (!finitePoint(observerFeet) || !finitePoint(surfaceFeet))
+      throw new Error('Surface sight requires valid physical positions');
+    if (geometry.mapId === undefined && this.listLocations().length > 1)
+      throw new Error('Surface sight requires the observer map');
+    const start = { ...observerFeet, y: observerFeet.y + 4 };
+    const delta = {
+      x: surfaceFeet.x - start.x,
+      y: surfaceFeet.y - start.y,
+      z: surfaceFeet.z - start.z,
+    };
+    const length = Math.hypot(delta.x, delta.y, delta.z);
+    if (length < 1e-5) return true;
+    const end = Object.fromEntries(
+      ['x', 'y', 'z'].map((axis) => [axis, surfaceFeet[axis] - (delta[axis] / length) * 1e-5])
+    );
+    const obstacles = geometry.obstacles ?? this.getObstacles(geometry);
+    if (!Array.isArray(obstacles)) throw new Error('Surface sight requires physical obstacles');
+    return !obstacles.some(
+      (solid) => pointInsideSolid(start, solid) || segmentIntersectsSolid(start, end, solid)
+    );
   }
 
   visibleProjections(observerId, viewMapId) {

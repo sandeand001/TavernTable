@@ -32,6 +32,10 @@ class SessionAuthority {
         campaign_id TEXT NOT NULL, map_id TEXT NOT NULL,
         PRIMARY KEY(campaign_id, map_id)
       );
+      CREATE TABLE IF NOT EXISTS player_rooms (
+        player_id TEXT NOT NULL REFERENCES players(id), map_id TEXT NOT NULL,
+        PRIMARY KEY(player_id, map_id)
+      );
     `);
   }
 
@@ -211,6 +215,29 @@ class SessionAuthority {
         'SELECT character_id AS id FROM assignments WHERE player_id = ? ORDER BY character_id'
       )
       .all(session.playerId)
+      .map((row) => row.id);
+  }
+
+  recordRoomVisits(campaignId, scene) {
+    if (scene.version !== 3) return;
+    const rooms = new Set(scene.maps.filter((map) => map.base === 'floor').map((map) => map.id));
+    const insert = this.database.prepare(`
+      INSERT OR IGNORE INTO player_rooms(player_id, map_id)
+      SELECT players.id, ? FROM players
+      JOIN assignments ON assignments.player_id = players.id
+      WHERE players.campaign_id = ? AND assignments.character_id = ?
+    `);
+    for (const creature of scene.creatures)
+      if (creature.characterId && rooms.has(creature.mapId))
+        insert.run(creature.mapId, campaignId, creature.characterId);
+  }
+
+  visitedRoomIds(session) {
+    const profile = this.profile(session);
+    if (profile.role !== 'player') throw denied('Room discovery belongs to a player');
+    return this.database
+      .prepare('SELECT map_id AS id FROM player_rooms WHERE player_id = ? ORDER BY map_id')
+      .all(profile.playerId)
       .map((row) => row.id);
   }
 

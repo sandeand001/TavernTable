@@ -106,3 +106,17 @@ test('an observer change during renderer initialization cannot add stale creatur
   await viewer.update(view('current-view-only'));
   expect([...viewer.labels.keys()]).toEqual(['current-view-only']);
 });
+
+test('published surfaces retain construction patterns and are concealed while visibility is refreshed', async () => {
+  const state = view('observer');
+  state.terrain.normals = encoded([0, 1, 0, 0, 1, 0, 0, 1, 0]);
+  state.terrain.constructionMaterials = encoded([4, 4, 4]);
+  await viewer.update(state);
+  expect(Array.from(viewer.terrain.geometry.getAttribute('constructionMaterial').array)).toEqual([
+    4, 4, 4,
+  ]);
+  viewer.concealTerrain();
+  expect(viewer.terrain.visible).toBe(false);
+  await viewer.update({ ...state, terrain: null });
+  expect(viewer.terrain.visible).toBe(true);
+});

@@ -530,6 +530,11 @@ export function reconcileBuildingScene(
     for (const entry of restoreContext.cameras || []) restoredCameras.add(entry.mapId);
   }
   const previous = new Map(next.maps.map((map) => [map.id, map]));
+  const previousDoors = new Map(
+    (next.connections || [])
+      .filter((connection) => connection.kind === 'door')
+      .map((connection) => [connection.id, connection])
+  );
   const translatedMaps = new Set();
   const owners = next.maps.filter((map) => !map.building);
   const maps = [...owners],
@@ -743,6 +748,12 @@ export function reconcileBuildingScene(
   }
   if (!byId.has(next.view.mapId)) throw new Error('Leave this building floor before removing it');
   next.maps = maps;
+  for (const connection of connections)
+    if (connection.kind === 'door') {
+      const previous = previousDoors.get(connection.id);
+      connection.open = previous?.open === true;
+      connection.locked = previous?.locked === true;
+    }
   next.connections = connections;
   next.buildingAssemblies = 1;
   if (next.view.cameras)

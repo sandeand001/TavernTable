@@ -123,8 +123,7 @@ function _applyMovementRedirect(token) {
     this._resetMovementState(state, { clearStopFlags: true });
   }
   const services = this.gameManager.characterServices;
-  if (services?.library?.isSaving || services?.combat?.pending || services?.combat?.committing)
-    return true;
+  if (services?.combat?.isActionBusy(token)) return true;
   const destination = job.redirect;
   const allowance = Math.max(0, job.settings.speed - job.spent);
   job.continuing = true;
@@ -144,9 +143,8 @@ function _applyMovementRedirect(token) {
 
 function _resumeLandingMovementRedirects() {
   const services = this.gameManager.characterServices;
-  if (services?.library?.isSaving || services?.combat?.pending || services?.combat?.committing)
-    return;
   for (const [token, redirect] of this._landingMovementRedirects || []) {
+    if (services?.combat?.isActionBusy(token)) continue;
     if (this.isMovementInProgress(token)) continue;
     this._landingMovementRedirects.delete(token);
     if (!this.gameManager.placedTokens.includes(token)) continue;

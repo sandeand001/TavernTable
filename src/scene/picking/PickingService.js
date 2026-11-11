@@ -382,11 +382,34 @@ export class PickingService {
             closest = { connection, distance, world: local };
         }
       }
+      const doors = gm.threeSceneManager.scene.getObjectByName('MapDoors');
+      if (doors?.visible) {
+        const connections = new Map(
+          world.getConnections(mapId).map((connection) => [connection.id, connection])
+        );
+        for (const hit of this._raycaster.intersectObjects(
+          doors.children.filter((object) => object.visible),
+          false
+        )) {
+          const connection = connections.get(hit.object.userData.connectionId);
+          if (connection && (!closest || hit.distance < closest.distance))
+            closest = {
+              connection,
+              distance: hit.distance,
+              world: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+            };
+        }
+      }
       if (!closest) return null;
       const epsilon = gm.spatial.tileWorldSize * 1e-4;
       const tokenHit = gm.token3DAdapter?.pickTokenByRay(this._raycaster, { precise: true });
       if (tokenHit?.token && tokenHit.distance <= closest.distance + epsilon) return null;
-      const surfaces = new Set(['TerrainMesh', 'MapInteriorWalls', 'MapProjectionTerrain']);
+      const surfaces = new Set([
+        'TerrainMesh',
+        'MapInteriorWalls',
+        'MapProjectionTerrain',
+        'MapDoors',
+      ]);
       const occluders = [];
       gm.threeSceneManager.scene.traverseVisible((object) => {
         if (!object.isMesh) return;

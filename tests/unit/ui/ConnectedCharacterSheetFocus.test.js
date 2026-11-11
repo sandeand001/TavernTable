@@ -1,5 +1,10 @@
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
-import { changeCampaignView, restoreCampaignScene } from '../../../src/campaigns/SceneWorld.js';
+import {
+  captureCampaignScene,
+  changeCampaignView,
+  restoreCampaignScene,
+} from '../../../src/campaigns/SceneWorld.js';
+import { TerrainGeometry } from '../../../src/terrain/TerrainGeometry.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCatalog.js';
 import CharacterSheetWindow from '../../../src/ui/components/CharacterSheetWindow.js';
@@ -140,7 +145,7 @@ test.each(['click', 'keyboard', 'pop-out'])(
       expect(gm.characterServices.combat.snapshot()).toEqual(budget);
       expect(gm.placedTokens.map((token) => token.world)).toEqual(positions);
       expect(controls.some((state) => state.busy)).toBe(true);
-      expect(controls.every((state) => state.disabled === state.busy)).toBe(true);
+      expect(controls.every((state) => !state.disabled)).toBe(true);
       const end = sheets.root.querySelector('[data-sheet-action="turn-end"]');
       expect(end.disabled).toBe(false);
       end.click();
@@ -173,6 +178,50 @@ test('opening a projected creature sheet focuses its canonical map without movin
   expect(gm.characterServices.combat.snapshot()).toEqual(budget);
 });
 
+test('geometry-backed cross-map character focus keeps a boundary pose usable for the next turn', async () => {
+  const library = gm.characterServices.library,
+    scene = await captureCampaignScene(gm, library);
+  for (const map of scene.maps) {
+    const width = map.grid.cols * 5,
+      depth = map.grid.rows * 5,
+      geometry = new TerrainGeometry({
+        widthFeet: width,
+        depthFeet: depth,
+        terrainThicknessFeet: map.base === 'floor' ? 0.5 : null,
+        getTerrainHeightFeet: () => 0,
+      });
+    geometry.addSolid({
+      id: 'far-wall',
+      layerId: 'ground',
+      bounds: {
+        min: { x: width - 1, y: 0, z: 0 },
+        max: { x: width, y: 10, z: depth },
+      },
+    });
+    map.terrain.geometry = geometry.save();
+  }
+  scene.maps.find((map) => map.id === 'inside').originFeet.x = 10.1;
+  scene.creatures[0].gridX = 2;
+  scene.creatures[0].pose.world.x = 2;
+  await restoreCampaignScene(gm, scene, library, gm.characterServices.combat);
+  const [scout, guard] = gm.placedTokens;
+  await sheets.open(guard);
+  gm.characterServices.combat.startTurn(guard);
+  gm.characterServices.combat.adjustMovement(guard, 15);
+  const before = gm.characterServices.combat.snapshot(),
+    placement = gm.token3DAdapter.getStablePlacement(scout);
+  await sheets.open(scout);
+  expect(gm.campaignMapId).toBe('map-main');
+  expect(gm.token3DAdapter.getSelectedToken()).toBe(scout);
+  expect(gm.token3DAdapter.getStablePlacement(scout)).toEqual(placement);
+  expect(gm.characterServices.combat.snapshot()).toEqual(before);
+  gm.characterServices.combat.endTurn();
+  sheets.root.querySelector('[data-sheet-section="combat"]').click();
+  sheets.root.querySelector('[data-sheet-action="turn-start"]').click();
+  expect(gm.characterServices.combat.activeToken).toBe(scout);
+  expect(gm.token3DAdapter.getTokenMovementRange(scout)).not.toBeNull();
+});
+
 test.each(['click', 'keyboard', 'neighbor-close'])(
   '%s sheet activation focuses the canonical map rather than a cached projection',
   async (action) => {
@@ -197,16 +246,33 @@ test.each(['click', 'keyboard', 'neighbor-close'])(
   }
 );
 
-test('passive projected-token selection updates the sheet without switching its viewed map or camera', async () => {
+test('projected-token selection focuses its canonical map without resetting the active turn', async () => {
   const [scout, guard] = gm.placedTokens;
   await sheets.open(guard);
-  const camera = gm.threeSceneManager.snapshotView();
+  gm.characterServices.combat.startTurn(guard);
+  gm.characterServices.combat.adjustMovement(guard, 15);
+  const budget = gm.characterServices.combat.snapshot(),
+    positions = gm.placedTokens.map((token) => ({ ...token.world }));
   await gm.token3DAdapter.setSelectedToken(scout);
   await sheets.ready;
   expect(sheets.activeToken).toBe(scout);
-  expect(gm.campaignMapId).toBe('inside');
-  expect(gm.campaignView.focusTokenId).toBe(guard.id);
-  expect(gm.threeSceneManager.snapshotView()).toEqual(camera);
+  expect(gm.campaignMapId).toBe('map-main');
+  expect(gm.campaignView.focusTokenId).toBe(scout.id);
+  expect(gm.threeSceneManager.snapshotView().target).toEqual(scout.world);
+  expect(gm.characterServices.combat.snapshot()).toEqual(budget);
+  expect(gm.placedTokens.map((token) => token.world)).toEqual(positions);
+  sheets.root.querySelector('[data-sheet-section="combat"]').click();
+  const end = sheets.root.querySelector('[data-sheet-action="turn-end"]');
+  expect(end.disabled).toBe(false);
+  end.click();
+  expect(gm.characterServices.combat.activeToken).toBeNull();
+  sheets.root.querySelector('[data-sheet-action="turn-start"]').click();
+  expect(gm.characterServices.combat.activeToken).toBe(scout);
+  expect(gm.characterServices.combat.status(scout).movement.remaining).toBe(30);
+  expect(gm.token3DAdapter.getTokenMovementRange(scout)).not.toBeNull();
+  sheets.root.querySelector('[data-sheet-action="combat-end"]').click();
+  expect(gm.characterServices.combat.active).toBe(false);
+  expect(gm.characterServices.combat.activeToken).toBeNull();
 });
 
 test('sheet-driven view changes refresh and unlock the Maps & focus controls', async () => {

@@ -3,6 +3,8 @@ import { decodeScene, encodeScene } from '../../../src/campaigns/CampaignScene.j
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { TerrainGeometry } from '../../../src/terrain/TerrainGeometry.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { visiblePlayerMapIds } from '../../../src/campaigns/CreatureVisibility.js';
+import { nearbyDoors } from '../../../src/campaigns/CampaignDoors.js';
 
 function fixture() {
   localStorage.clear();
@@ -42,6 +44,7 @@ function fixture() {
     id: 'inn-door',
     name: 'Inn doorway',
     kind: 'door',
+    open: true,
     feature: { mapId: 'map-main', volumeIds: ['doorway'] },
     ends: [
       { mapId: 'map-main', positionFeet: { x: 2.5, y: 0, z: 12.5 } },
@@ -51,6 +54,69 @@ function fixture() {
   };
   return { world, door, context };
 }
+
+test('doors default to closed and block both sight and physical travel', () => {
+  const { world, door } = fixture();
+  delete door.open;
+  world.addConnection(door);
+  expect(world.hasLineOfSight({ x: 2.5, y: 0, z: 12.5 }, { x: 7.5, y: 0, z: 12.5 })).toBe(false);
+  expect(() => world.planConnection('inn-door', 'map-main', { x: 0.5, y: 0, z: 2.5 })).toThrow(
+    /closed/i
+  );
+});
+
+test('opening, closing and locking a door updates physical sight and survives reopening', () => {
+  const { world, door, context } = fixture();
+  world.addConnection({ ...door, open: false });
+  const sight = () => world.hasLineOfSight({ x: 2.5, y: 0, z: 12.5 }, { x: 7.5, y: 0, z: 12.5 });
+  world.setDoorState(door.id, { open: true });
+  expect(sight()).toBe(true);
+  expect(world.planConnection(door.id, 'map-main', { x: 0.5, y: 0, z: 2.5 }).costFeet).toBe(5);
+  world.setDoorState(door.id, { open: false, locked: true });
+  expect(sight()).toBe(false);
+  expect(() => world.setDoorState(door.id, { open: true })).toThrow(/locked/i);
+  const reopened = CampaignWorld.fromScene(
+    decodeScene(encodeScene(world.save(), context), context),
+    context
+  );
+  expect(reopened.getConnections()[0]).toMatchObject({ open: false, locked: true });
+  reopened.setDoorState(door.id, { locked: false });
+  reopened.setDoorState(door.id, { open: true });
+  expect(reopened.getConnections()[0]).toMatchObject({ open: true, locked: false });
+});
+
+test('terrain surface sight targets the surface itself rather than imaginary creature heights', () => {
+  const { world, door } = fixture();
+  world.addConnection(door);
+  const floorBehindWall = { x: 7.5, y: 0, z: 17.5 };
+  expect(world.hasSurfaceLineOfSight({ x: 2.5, y: 0, z: 12.5 }, floorBehindWall)).toBe(false);
+  expect(world.hasSurfaceLineOfSight({ x: 2.5, y: 0, z: 12.5 }, { x: 7.5, y: 0, z: 12.5 })).toBe(
+    true
+  );
+});
+
+test('unentered rooms are hidden until an open doorway provides sight, and closing hides them again', () => {
+  const { world, door } = fixture();
+  world.addConnection({ ...door, open: false });
+  const observer = { mapId: 'map-main', world: { x: 0.5, y: 0, z: 2.5 } };
+  expect(visiblePlayerMapIds(world, observer).has('inside')).toBe(false);
+  world.setDoorState(door.id, { open: true });
+  expect(visiblePlayerMapIds(world, observer).has('inside')).toBe(true);
+  world.setDoorState(door.id, { open: false });
+  expect(visiblePlayerMapIds(world, observer).has('inside')).toBe(false);
+  expect(
+    visiblePlayerMapIds(world, { mapId: 'inside', world: { x: 0.5, y: 0, z: 1.5 } }).has('inside')
+  ).toBe(true);
+});
+
+test('door interaction requires an unobstructed reach of at most five physical feet', () => {
+  const { world, door } = fixture();
+  world.addConnection({ ...door, open: false });
+  const observer = (x, z = 2.5) => ({ mapId: 'map-main', world: { x, y: 0, z } });
+  expect(nearbyDoors(world, observer(0.1)).map(({ id }) => id)).toEqual([door.id]);
+  expect(nearbyDoors(world, observer(0.07))).toEqual([]);
+  expect(nearbyDoors(world, observer(0.5, 3.5))).toEqual([]);
+});
 
 test('a saved doorway plans five feet of real travel in both directions without moving a creature', () => {
   const { world, door, context } = fixture();

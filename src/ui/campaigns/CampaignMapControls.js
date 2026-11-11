@@ -21,6 +21,7 @@ export default class CampaignMapControls {
   constructor({ gameManager }) {
     this.gameManager = gameManager;
     this.pending = false;
+    this.pendingViews = 0;
     this.error = null;
     this.root = document.createElement('details');
     this.root.className = 'campaign-map-controls';
@@ -118,12 +119,13 @@ export default class CampaignMapControls {
     if (busy) {
       if (!this.loading.isConnected) document.body.append(this.loading);
     } else this.loading.remove();
-    const disabled = !!busy || !!gm.campaignMapFailure || gm.sceneAutosave?.ready === false;
+    const unavailable = !!gm.campaignMapFailure || gm.sceneAutosave?.ready === false;
+    const disabled = !!busy || unavailable;
     this.location.disabled =
       this.map.disabled =
       this.focus.disabled =
-        disabled || !gm.campaignWorld;
-    this.center.disabled = disabled || !focusId;
+        unavailable || !gm.campaignWorld;
+    this.center.disabled = unavailable || !focusId;
     for (const control of this.newLocation.querySelectorAll('input,button'))
       control.disabled = disabled || !gm.characterServices?.library?.saveScene;
     this.root.setAttribute('aria-busy', String(!!busy));
@@ -160,7 +162,7 @@ export default class CampaignMapControls {
   }
 
   async change(selection) {
-    if (this.pending) return;
+    this.pendingViews++;
     this.pending = true;
     this.error = null;
     this.render();
@@ -170,7 +172,8 @@ export default class CampaignMapControls {
       this.error = error;
       GameErrors.input(error, { component: 'CampaignMapControls', operation: 'changeView' });
     } finally {
-      this.pending = false;
+      this.pendingViews--;
+      this.pending = this.pendingViews > 0;
       this.render();
     }
   }

@@ -40,8 +40,7 @@ function getSurfaceClimbOption(token, surface, { allowance = null } = {}) {
     if (
       gm.campaignViewBusy ||
       gm.campaignMapFailure ||
-      session.pending ||
-      session.committing ||
+      session.isActionBusy(token) ||
       gm.characterServices.library.isSaving
     )
       throw new ConnectionUnavailableError('Finish the current action or save before climbing');
@@ -569,8 +568,7 @@ export function installSurfaceClimbMethods(prototype) {
       !gm.campaignViewBusy &&
       !gm.campaignMapFailure &&
       (!this.isMovementInProgress(token) || !!moving?.physicalClimb) &&
-      !combat.pending &&
-      !combat.committing &&
+      !combat.isActionBusy(token) &&
       !gm.characterServices.library.isSaving &&
       (!combat.active || combat.activeToken === token);
     return {

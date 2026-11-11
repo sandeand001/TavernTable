@@ -1,5 +1,6 @@
 import { normalizeAngle } from '../../token-manager/internals/orientation.js';
 import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovement.js';
+import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 const HEADING_STEP = Math.PI / 4;
 const DRAG_THRESHOLD_SQUARED = 36;
@@ -90,7 +91,14 @@ export class TokenFacingGesture {
     if (!state.dragged && distance < DRAG_THRESHOLD_SQUARED) return;
     if (!state.dragged) {
       this.manager.gameManager.token3DAdapter.releaseManualActionForFacing?.(state.token);
-      this.manager._selectTokenEntry(state.token);
+      Promise.resolve(this.manager._selectTokenEntry(state.token)).catch((error) => {
+        this.cancel();
+        GameErrors.input(error, {
+          component: 'TokenFacingGesture',
+          operation: 'select',
+          tokenId: state.token.id,
+        });
+      });
     }
     state.dragged = true;
     this.view.style.cursor = 'crosshair';

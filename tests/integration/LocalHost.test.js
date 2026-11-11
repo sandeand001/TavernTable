@@ -276,6 +276,228 @@ test('automatic/manual JSON backup files are discoverable and restore without re
   ).toHaveLength(1);
 }, 30000);
 
+test('doors hide room geometry, enforce nearby player access and DM locks, and persist individual room visits', async () => {
+  let host = await start();
+  const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
+    fetch,
+    indexedDB: testIndexedDB(),
+    crypto: webcrypto,
+    baseURL: host.url + '/',
+  });
+  let campaignId, hero, secondHero;
+  try {
+    const campaign = await workspace.create({ name: 'Castle doors', ruleset: '2024' });
+    const opened = await workspace.open(campaign.id);
+    hero = await opened.library.create('First player');
+    secondHero = await opened.library.create('Second player');
+    const base = sceneState({ ruleset: '2024', characterId: hero, name: 'First player' });
+    base.terrain.heights = Array.from({ length: 5 }, () => Array(5).fill(0));
+    base.creatures[0].gridX = 0;
+    base.creatures[0].gridY = 2;
+    base.creatures[0].pose.world = { x: 0.5, y: 0, z: 2.5 };
+    const geometry = new TerrainGeometry({
+      widthFeet: 25,
+      depthFeet: 25,
+      getTerrainHeightFeet: () => 0,
+    });
+    geometry.addSolid({
+      id: 'wall',
+      materialStyle: 'brick',
+      materialColor: 0xaaaaaa,
+      bounds: { min: { x: 5, y: 0, z: 0 }, max: { x: 6, y: 10, z: 25 } },
+    });
+    geometry.carve({
+      id: 'doorway',
+      bounds: { min: { x: 4.5, y: 0, z: 10 }, max: { x: 6.5, y: 7, z: 15 } },
+    });
+    const scene = {
+      version: 3,
+      ruleset: '2024',
+      maps: [
+        {
+          id: 'outside',
+          name: 'Courtyard',
+          base: 'ground',
+          originFeet: { x: 0, y: 0, z: 0 },
+          quarterTurns: 0,
+          grid: base.grid,
+          terrain: { ...base.terrain, geometry: geometry.save() },
+        },
+        {
+          id: 'room',
+          name: 'UNENTERED ROOM',
+          base: 'floor',
+          originFeet: { x: 5, y: 0, z: 5 },
+          quarterTurns: 0,
+          grid: base.grid,
+          terrain: base.terrain,
+        },
+      ],
+      creatures: [
+        { ...base.creatures[0], mapId: 'outside' },
+        {
+          ...base.creatures[0],
+          id: 'token-2',
+          instanceNumber: 2,
+          characterId: secondHero,
+          name: 'Second player',
+          mapId: 'outside',
+        },
+      ],
+      tokenCounters: { nextId: 2, types: base.tokenCounters.types.map(([type]) => [type, 2]) },
+      combat: base.combat,
+      rollLog: [],
+      view: { mapId: 'outside', focusTokenId: null, camera: base.camera },
+      connections: [
+        {
+          id: 'castle-door',
+          name: 'Wooden door',
+          kind: 'door',
+          feature: { mapId: 'outside', volumeIds: ['doorway'] },
+          ends: [
+            { mapId: 'outside', positionFeet: { x: 2.5, y: 0, z: 12.5 } },
+            { mapId: 'room', positionFeet: { x: 2.5, y: 0, z: 7.5 } },
+          ],
+          pathFeet: [],
+        },
+      ],
+    };
+    const backup = JSON.parse(await workspace.exportBackup(campaign.id));
+    backup.scene = JSON.stringify(scene);
+    campaignId = (await host.request('importBackup', [JSON.stringify(backup)])).result.id;
+  } finally {
+    workspace.close();
+  }
+  const invites = [];
+  for (const [name, characterId] of [
+    ['First', hero],
+    ['Second', secondHero],
+  ]) {
+    const invitation = (await host.request('createInvite', [campaignId, { name }])).result;
+    await host.request('assignCharacter', [campaignId, invitation.id, characterId, true]);
+    invites.push(invitation);
+  }
+  async function join(invitation) {
+    const response = await fetch(host.url + '/api/session/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invite: invitation.invite }),
+    });
+    const profile = await response.json();
+    const cookie = response.headers.get('set-cookie').split(';')[0];
+    return (operation, args) =>
+      host.request(operation, args, {
+        Cookie: cookie,
+        'X-TavernTable-Host': profile.csrf,
+      });
+  }
+  let player = await join(invites[0]);
+  const state = async () => {
+    const response = await player('playerState', [{}]);
+    if (response.status !== 200) throw new Error(response.error);
+    return response.result;
+  };
+  const initial = await state();
+  expect(initial.maps).toEqual([{ id: 'outside', name: 'Courtyard' }]);
+  expect(JSON.stringify(initial)).not.toContain('UNENTERED ROOM');
+  expect(initial.visitedRoomIds).toEqual([]);
+  expect(initial.doors).toEqual([
+    { id: 'castle-door', name: 'Wooden door', open: false, locked: false },
+  ]);
+  expect((await player('playerState', [{ mapId: 'room' }])).status).toBe(403);
+  const change = (revision, extra = {}) => ({
+    doorId: 'castle-door',
+    observerTokenId: 'token-1',
+    sceneRevision: revision,
+    open: true,
+    ...extra,
+  });
+  expect(
+    (await player('doorState', [campaignId, change(initial.sceneRevision, { locked: false })]))
+      .status
+  ).toBe(403);
+  expect(
+    (
+      await player('doorState', [
+        campaignId,
+        change(initial.sceneRevision, { observerTokenId: 'token-2' }),
+      ])
+    ).status
+  ).toBe(403);
+  expect((await player('doorState', [campaignId, change(initial.sceneRevision)])).status).toBe(200);
+  expect((await player('doorState', [campaignId, change(initial.sceneRevision)])).status).toBe(409);
+  const opened = await state();
+  expect(opened.maps.map(({ id }) => id)).toContain('room');
+  expect(opened.view.terrainKey).not.toBe(initial.view.terrainKey);
+  expect(opened.view.terrain.constructionMaterials).toBeDefined();
+  expect((await player('playerState', [{ mapId: 'room' }])).status).toBe(200);
+  expect(
+    (
+      await host.request('doorState', [
+        campaignId,
+        change(opened.sceneRevision, { open: false, locked: true }),
+      ])
+    ).status
+  ).toBe(200);
+  const locked = await state();
+  expect(locked.maps.map(({ id }) => id)).not.toContain('room');
+  expect((await player('doorState', [campaignId, change(locked.sceneRevision)])).status).toBe(403);
+  expect(
+    (await host.request('doorState', [campaignId, change(locked.sceneRevision, { locked: false })]))
+      .status
+  ).toBe(200);
+  const shared = (await host.request('readCharacters', [campaignId])).result;
+  const scene = JSON.parse(shared.scene);
+  const actor = scene.creatures[0];
+  actor.mapId = 'room';
+  actor.gridX = 0;
+  actor.gridY = 1;
+  actor.pose.world = { x: 0.5, y: 0, z: 1.5 };
+  expect(
+    (
+      await host.request('commitScene', [
+        campaignId,
+        {
+          ruleset: '2024',
+          revision: shared.sceneRevision,
+          charactersRevision: shared.revision,
+          scene: JSON.stringify(scene),
+          trackRoomVisits: true,
+        },
+      ])
+    ).status
+  ).toBe(200);
+  const otherPlayer = await join(invites[1]);
+  const returned = (await host.request('readCharacters', [campaignId])).result;
+  const returning = JSON.parse(returned.scene);
+  Object.assign(returning.creatures[0], {
+    mapId: 'outside',
+    gridX: 0,
+    gridY: 2,
+    pose: { kind: 'ground', world: { x: 0.5, y: 0, z: 2.5 } },
+  });
+  returning.connections[0].open = false;
+  await host.request('commitScene', [
+    campaignId,
+    {
+      ruleset: '2024',
+      revision: returned.sceneRevision,
+      charactersRevision: returned.revision,
+      scene: JSON.stringify(returning),
+    },
+  ]);
+  expect((await state()).visitedRoomIds).toEqual(['room']);
+  expect((await otherPlayer('playerState', [{}])).result.visitedRoomIds).toEqual([]);
+  await terminate(host.child);
+  host = await start();
+  player = await join(invites[0]);
+  const reopened = await state();
+  expect(reopened.visitedRoomIds).toEqual(['room']);
+  expect(reopened.maps.map(({ id }) => id)).not.toContain('room');
+  expect(reopened.doors[0].open).toBe(false);
+}, 30000);
+
 test('player access follows assigned characters across isolated locations without per-area publication', async () => {
   let host = await start();
   expect((await fetch(host.url + '/api/host')).status).toBe(401);

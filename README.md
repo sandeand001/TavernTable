@@ -162,6 +162,28 @@ failure explicitly; they do not falsely roll back character costs or pretend a
 failed backup succeeded. A host shutdown attempts to flush pending snapshots,
 but an abrupt power/process loss can leave JSON history up to one interval old.
 
+## Firebase project bootstrap
+
+The public Web app configuration is in
+[FirebaseConfig.json](./src/config/FirebaseConfig.json). The selected project is
+`taverntable-489d5`; its Standard Firestore database and default Storage bucket
+use Oregon (`us-west1`). The database has deletion protection enabled. Storage
+uses uniform bucket access and public-access prevention.
+
+[firebase.json](./firebase.json) selects explicit deny-by-default
+[Firestore](./firebase/firestore.rules) and [Storage](./firebase/storage.rules)
+rules. Browser clients cannot directly read or write cloud campaign data.
+Backend account/campaign authorization must be implemented and verified before
+cloud saves are enabled. Provisioning these resources does not enable Google
+login in the existing application or migrate any local campaigns.
+
+Google sign-in is enabled for the Firebase project. Backend development uses
+locally authorized Application Default Credentials; never put service-account
+private keys, OAuth tokens or the local host access key in Web configuration.
+The Web API key identifies the Firebase project and is not an administrator
+credential. Normal local play continues using its existing storage/login flow
+until the account integration is complete.
+
 ## Initial local multiplayer sessions
 
 1. Sign in as the DM and open a campaign.
@@ -205,8 +227,8 @@ forbidden area first requests the selected character's current location; a
 revoked character selection requests a new authorized default. With no placed,
 assigned observer, sheets remain editable but no location geometry or creature
 sightings are shown.
-Old markers are cleared while changing viewpoints, and outdated in-flight
-responses cannot restore them. Authorized tactical markers draw over visual
+Old markers and terrain are concealed while changing viewpoints or receiving
+world updates; outdated in-flight responses cannot restore them. Authorized tactical markers draw over visual
 roofs/floors so camera occlusion is not mistaken for character line of sight.
 
 This is a deliberately gated first slice:
@@ -219,9 +241,12 @@ This is a deliberately gated first slice:
   gameplay commands.
 - Full models/animations, decorative placeables and spell visuals are not yet
   player-view parity features. The DM retains the existing complete editor.
-- An accessible internal area shares its rendered terrain in full; this is not
-  fog-of-war or a promise to hide secret regions within that area. DM area gates
-  and interactive door/window locks remain planned work.
+- Players see their current room and the portions of other rooms visible through
+  open physical connections. Closed doors hide the entire room again, including
+  its floor, walls and stairs, even after a previous visit. Room visits persist
+  separately for each player, never as combined party vision. The DM remains
+  unrestricted. Access gates, glass/shutters and extended vision effects remain
+  planned work.
 - Live updates use authenticated same-origin event notifications and HTTP
   commands in the existing Node host. This avoids introducing a second state
   owner/framework during the first slice. Conflicting writes are rejected, not
@@ -348,9 +373,10 @@ vision. Solid terrain, walls, floors and roofs block sight; physical openings ca
 permit it. Captured opaque tree/rock bounds also block sight, but leaf canopies
 are not treated as solid boxes. For older maps with these assets, the DM must
 reopen and save each map to capture its sight blockers before publishing.
-This first pass does not add terrain fog of war, darkness, invisibility or
-special senses. The active-character selector is wired into the authenticated
-player viewer; extended vision and exploration effects remain in the backlog.
+Closed opaque doors also block terrain and room visibility. Openings reveal
+only the surfaces visible from the character's real eye position; cameras do not
+reveal hidden rooms. Darkness, invisibility and special senses remain deferred.
+The active-character selector is wired into the authenticated player viewer.
 
 ## Terrain editing and walls
 
@@ -414,18 +440,39 @@ own supporting surface remains visible at narrow window edges. This is render-on
 context, not an extra editable grid or a new movement path, and it disappears when
 the focused character loses sight of the creature.
 
+Interior doorway views also render the actual outside terrain without needing
+an exterior creature. Floors and walls retain their owning map's colors and
+construction patterns. Rendering clips existing surfaces rather than generating
+new solid fragments or vertical cut caps. Finite floors own coincident upward
+surfaces, so grass and floor patterns do not flicker over the same plane.
+
 Interior floor views also show a roofless cutaway of their physical walls,
 including the real window and doorway openings. Shared exterior structures are
 projected into the interior grid, and higher floors/roof layers do not cover the
-current room. The wall layout remains visible while browsing without character
-focus. This is a read-only view, not a second editable copy: exterior roofs and
+current room. The DM's wall layout and surroundings remain visible while browsing
+without character focus. Player views conceal unentered, closed rooms and apply
+physical sight to other rooms reached through open connections. This is a
+read-only terrain view, not a second editable copy: exterior roofs and
 the physical geometry used by sight rules remain intact.
 
 #### Doorways and stairs
 
 Connected scenes can now contain saved physical doorway and stair connections.
+Doors default to **closed and unlocked**. Clicking a door opens its popup; the DM
+can **Open**, **Close**, **Lock** or **Unlock** without selecting a creature.
+Locking an open door explicitly closes it; unlocking does not open it. A creature
+in the doorway prevents closing. Closed doors block sight and ground/flight
+crossings, not just the visible mesh.
+
+Players use **Nearby doors** to open or close an unlocked door within five
+physical feet of their active character, with an unobstructed reach. The host
+rechecks ownership, proximity, lock state and scene revision before committing.
+Only the DM can change locks. States survive saves, backups, building resizing
+and reopening; player room visits survive host restarts. Shared door-only updates
+retain the DM's camera, creature positions and combat ledger.
+
 Select a creature, then **left-click the actual opening or staircase**. From more
-than five feet away, the creature walks toward the entrance using normal pathing,
+than five feet away, an open entrance lets the creature walk toward it using normal pathing,
 up to its remaining movement. If it cannot reach the entrance, it stops at the
 closest reachable point. If it reaches the entrance but cannot afford the
 remaining route, it stops without offering traversal.
@@ -1667,6 +1714,13 @@ Keyboard creature movement and turning are disabled for now. Space-drag map pann
 mouse map rotation and keyboard navigation within sheets still work. Token-placement/drag editing
 remains separate from distance-limited click navigation. Free play retains a
 per-move allowance; manual combat shares one remaining allowance across moves.
+
+Selecting an existing creature never starts sprite placement. In free play,
+different creatures can move and use actions independently, including creatures
+controlled by the same DM. Requests that must wait are queued and checked again
+for current rules, resources and creature identity when they run. Combat remains
+turn-based. Actual map rebuilds and persistent writes are serialized safely;
+target selection is queued separately for each local targeting interface.
 
 ## Falling damage, Prone and standing up
 

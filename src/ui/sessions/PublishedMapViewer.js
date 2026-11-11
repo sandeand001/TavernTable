@@ -1,5 +1,6 @@
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ThreeSceneManager } from '../../scene/ThreeSceneManager.js';
+import { configureConstructionMaterial } from '../../scene/terrain/ConstructionMaterials.js';
 
 function floats(encoded) {
   const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
@@ -81,12 +82,28 @@ export default class PublishedMapViewer {
     if (view.terrain && view.terrainKey !== this.terrainKey) {
       const positions = floats(view.terrain.positions);
       const colors = floats(view.terrain.colors);
-      if (positions.length !== colors.length || positions.length % 9)
+      const normals = view.terrain.normals ? floats(view.terrain.normals) : null;
+      const styles = view.terrain.constructionMaterials
+        ? floats(view.terrain.constructionMaterials)
+        : null;
+      if (
+        positions.length !== colors.length ||
+        positions.length % 9 ||
+        (normals && normals.length !== positions.length) ||
+        (styles && styles.length !== positions.length / 3) ||
+        [positions, colors, normals, styles].some(
+          (values) => values && !values.every(Number.isFinite)
+        ) ||
+        (styles && !styles.every((value) => Number.isInteger(value) && value >= 0 && value <= 9))
+      )
         throw new Error('The published terrain attributes do not match');
       const geometry = new three.BufferGeometry();
       geometry.setAttribute('position', new three.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('color', new three.Float32BufferAttribute(colors, 3));
-      geometry.computeVertexNormals();
+      if (normals) geometry.setAttribute('normal', new three.Float32BufferAttribute(normals, 3));
+      else geometry.computeVertexNormals();
+      if (styles)
+        geometry.setAttribute('constructionMaterial', new three.Float32BufferAttribute(styles, 1));
       geometry.computeBoundingSphere();
       if (this.terrain) {
         this.terrain.geometry.dispose();
@@ -102,8 +119,10 @@ export default class PublishedMapViewer {
         this.terrain.name = 'PublishedTerrain';
         this.manager.scene.add(this.terrain);
       }
+      if (styles) configureConstructionMaterial(this.terrain.material, view.grid.tileWorldSize / 5);
       this.terrainKey = view.terrainKey;
     }
+    if (this.terrain) this.terrain.visible = true;
     this._tokens(view.tokens, view.grid.tileWorldSize);
   }
 
@@ -185,6 +204,10 @@ export default class PublishedMapViewer {
     this.updateVersion++;
     if (this.markers) this.markers.count = 0;
     for (const id of this.labels.keys()) this._removeLabel(id);
+  }
+
+  concealTerrain() {
+    if (this.terrain) this.terrain.visible = false;
   }
 
   destroy() {

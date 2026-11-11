@@ -50,7 +50,9 @@
   Preserve published-map authorization and physical terrain/wall/floor/opening
   occlusion. Saved opaque tree/rock bounds add sight blockers without treating
   leaves as solids; legacy asset maps need a DM capture before publication.
-  Fog of war, darkness, invisibility and other vision effects remain deferred.
+  Closed doors conceal room geometry as well as creatures; open connections
+  reveal only physically visible surfaces. Darkness, invisibility and other
+  extended vision effects remain deferred.
 - **Campaign**: a named, host-persisted workspace with an explicitly chosen,
   immutable 2014 or 2024 ruleset. Startup offers Create/Open rather than silently
   resuming. Saved scenes contain either a legacy board or a connected map
@@ -67,6 +69,8 @@
   Short moves save at completion; long moves also save their last safe position
   and matching movement costs at that deadline, never at every waypoint.
   Safe ground steps and wall/ledge holds remain in memory for interruption/rollback;
+  Off-map creature checkpoints validate support against that creature's own map
+  geometry and physical tile scale, never the displayed board.
   restoring a checkpoint never replays its unfinished route. Atomic
   character/resource/fall transactions still include their safe scene and cost.
   Finite-floor maps retain an explicit geometry snapshot even with no volume
@@ -83,11 +87,56 @@
   Host failure never silently falls back to IndexedDB. Authenticated DM/player
   sessions require same-origin cookie identity and a session-specific CSRF
   credential for writes. The initial player scope is assigned sheets and
-  published read-only views, not authoritative movement/combat. Reload and sign
+  published terrain/token views and validated nearby-door commands, not
+  authoritative movement/combat. Reload and sign
   in again after a host restart. Browser-only storage remains
   explicit for tests and migration, with non-destructive Copy to host and JSON
   backup import/export. Agent-created browser tabs may have in-memory storage;
   flushing such a profile does not make it survive an editor restart.
+- **Hosted account (approved design, not implemented)**: Google and
+  Firebase-managed email/password are supported sign-in choices. Password
+  accounts require verified email for campaign use and password recovery.
+  Proven linking keeps sign-in methods on one Firebase UID without splitting
+  campaign ownership or assignments; matching names/emails do not prove access.
+  Initial application participation is invitation/approval controlled.
+- **Hosted campaign (approved design, not implemented)**: the hosted frontend
+  uses Firebase Hosting and the authoritative backend uses Cloud Run in Oregon
+  (`us-west1`); rendering stays on each participant's device. Ownership and player
+  membership belong to individual campaigns. Only the campaign owner starts,
+  ends or explicitly keeps active its live game session. Migration copies selected
+  local saves non-destructively, with verification and rehearsal before a
+  separately approved cutover. These design decisions do not change the local host.
+- **Hosted updates (approved design, not implemented)**: authenticated HTTP
+  requests submit commands for backend validation and durable commits. SSE
+  pushes participant-filtered updates during live games; clients render and
+  animate locally rather than saving/transmitting animation frames. Paused
+  lobbies do not keep a persistent game stream open.
+- **Live-game inactivity (approved design, not implemented)**: no fixed total
+  duration cap. Pause after 60 minutes without meaningful accepted activity in
+  that campaign; warn at 55 minutes. Authorized participant actions reset the
+  hour, as does an explicit owner-only Keep Session Active control. Heartbeats,
+  reconnects, animations, unchanged autosaves and duplicate retries do not reset
+  it. Preserve deadlines across backend restarts. All-disconnected grace remains
+  15 minutes; the first applicable pause condition wins. Pausing retains campaign
+  and combat state and does not block between-game online sheet editing.
+- **Cloud editing scope (confirmed, not implemented)**: the planned hosted mode
+  requires Internet access. Assigned character editing between games does not
+  require a live game session; short authenticated requests wake the backend
+  briefly to read/validate/save, then allow it to sleep. Local caching reduces
+  repeat downloads, not the need for an authoritative online save. No offline
+  viewing/editor, offline update queue or automatic local/cloud merging is
+  required. Existing local-host behavior is unchanged by this scope decision.
+- **Hosted budget (approved design, not implemented)**: reuse the reported
+  existing $25 monthly billing budget with alerts, not a hard spending cap or
+  automatic billing shutdown. Verify currency, project/product coverage,
+  notification thresholds and recipient before deployment; forecasts must use
+  the verified currency. Design approval does not authorize new infrastructure
+  or production cutover.
+- **Hosted backup history (approved design, not implemented)**: retain 20 rolling
+  complete backups, targeting five-minute intervals when changed; no additional
+  daily restore-point tier. Full campaign backups are owner-only, support manual
+  JSON download and restore as a separate private campaign. Primary save success
+  and backup success/failure remain distinct.
 - **Automatic JSON snapshot**: an independent complete campaign backup after
   committed changes, scheduled every five minutes and bounded to 20 files per
   campaign. Manual backup flushes active changes first; restore creates a
@@ -107,8 +156,11 @@
   Other locations and unassigned private sheets are not transmitted as part of
   that view. Cameras are participant-local; switching assigned characters can
   switch locations, while opening a sheet alone does not change the observer.
-  The first viewer is deliberately passive; area access is not fog-of-war within
-  that map. Internet access requires a configured exact HTTPS origin through a
+  Room layout is available in the current interior; other rooms require sight
+  through an open connection. Closing a door hides the entire room again,
+  including previously visited walls and stairs. Room visits persist by player
+  identity, not party or camera, and do not override a closed door. The DM remains
+  unrestricted. Internet access requires a configured exact HTTPS origin through a
   trusted proxy/tunnel; no listener or firewall exposure is created automatically.
 - **Source pack**: an attributed, edition-compatible content collection pinned to
   an explicit version. Core SRD content is always enabled; optional packs are
@@ -410,13 +462,18 @@ builder and actual multiplayer remain further implementation chunks.
   an isolated floating sprite. Preserve actual elevations, rotations and scales,
   avoid duplicate active-map surfaces, and keep the creature's real support at
   narrow window edges. Character sight gates the context; hidden/invisible
-  creatures and unfocused views do not reveal it. It never adds editable cells,
+  creatures and unfocused exterior views do not reveal this token support.
+  Interior surroundings render independently of exterior creatures; player
+  surfaces use exact eye-to-surface occlusion rather than creature-height samples.
+  Preserve native curved solids and clip existing faces, never repartition the
+  physical source or add vertical cut caps. Reuse floor appearance consistently
+  and avoid coincident grass/floor surfaces. It never adds editable cells,
   navigation supports, gameplay creatures or saved geometry to the viewed map.
 - **Interior wall cutaway**: a floor-map view renders the existing physical
   enclosure and its actual window/door cuts without ceiling coverage. Project
   shared source geometry into the current map and clip it to the room/story;
   interior-owned geometry uses the same roofless mesh query. The local wall
-  layout is shown even without a focused creature, separately from sight-gated
+  layout is shown to the DM even without a focused creature, separately from sight-gated
   exterior sprites and their terrain context. Never delete physical roofs,
   duplicate authoritative walls, add navigation supports or save the cutaway
   meshes. Exterior rendering and character-sight geometry remain unchanged.
@@ -467,6 +524,13 @@ builder and actual multiplayer remain further implementation chunks.
   the owning map and its opening/stair volume IDs, rather than duplicating
   authoritative geometry. Validate references on load/save and derive click bounds
   from those volumes using the maps' physical transforms.
+  Doors carry optional `open` and `locked` booleans, defaulting to closed and
+  unlocked. An open door cannot be locked. The same fitted, hinged opaque leaf
+  supplies rendering, sight and movement obstruction; closing over a creature
+  is rejected. The DM may change locks; players may only open/close an unlocked
+  door within five physical feet and unobstructed reach of their active assigned
+  creature. Persist state with the scene, retain it across assembly reconciliation,
+  and reject stale revisions before changing resources or presentation.
   A climbable `window` references exactly one subtractive aperture and declares
   `outsideMapId`; it can represent a bare wall opening, not only a glazed window.
   A supported walk-through arch uses `opening`. Do not infer traversability from
