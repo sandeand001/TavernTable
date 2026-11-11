@@ -7,6 +7,8 @@ import { testIndexedDB } from '../../helpers/indexedDB.js';
 import { fetchBundledResource } from '../../helpers/bundledResources.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import { encodeScene } from '../../../src/campaigns/CampaignScene.js';
+import CloudAccount from '../../../src/campaigns/CloudAccount.js';
+import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
 
 globalThis.TextDecoder ??= TextDecoder;
 const root = path.resolve(__dirname, '..', '..', '..');
@@ -109,4 +111,96 @@ test('disabling a source preserves owned spell instances and Favorites but block
   expect(reopened.catalog.get(spell.id).sourceVersion).toBe(spell.sourceVersion);
   await expect(reopened.library.add(id, spell.id)).rejects.toThrow('Enable');
   workspace.close();
+}, 30000);
+
+test('explicit cloud workspaces load real pinned resources and private state without host cookies or a browser campaign fallback', async () => {
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(root, 'assets', 'data', 'resources', 'manifest.json'), 'utf8')
+  );
+  const source = manifest.packs.find((entry) => entry.id === 'srd-2014');
+  const campaign = {
+    version: 1,
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Cloud workspace',
+    ruleset: '2014',
+    coreVersion: '5.1',
+    createdAt: '2026-11-11T00:00:00.000Z',
+    sourcePacks: [{ id: source.id, version: source.version, ruleset: '2014', enabled: true }],
+    charactersRevision: 0,
+    sceneRevision: 0,
+    sceneSavedAt: null,
+  };
+  const auth = {
+    currentUser: {
+      uid: 'workspace-owner',
+      emailVerified: true,
+      getIdToken: async () => 'fixture-token',
+    },
+  };
+  const sdk = {
+    signInWithEmailAndPassword: async () => {},
+    signOut: async () => {
+      auth.currentUser = null;
+    },
+  };
+  const account = new CloudAccount({ auth, sdk });
+  const fetch = jest.fn(async (input, options) => {
+    const url = new URL(input, location.href);
+    if (!url.pathname.startsWith('/api/')) return fetchBundledResource(input);
+    expect(url.pathname.startsWith('/api/cloud/campaigns')).toBe(true);
+    expect(options.credentials).toBe('omit');
+    let result = campaign;
+    if (url.pathname === '/api/cloud/campaigns') result = [campaign];
+    if (url.pathname.endsWith('/characters'))
+      result = {
+        campaign,
+        revision: 0,
+        records: [],
+        scene: null,
+        sceneRevision: 0,
+        sceneSavedAt: null,
+      };
+    return { ok: true, status: 200, json: async () => ({ version: 1, result }) };
+  });
+  const runtime = {
+    version: 1,
+    mode: 'cloud',
+    environment: 'emulator',
+    apiOrigin: location.origin,
+    authEmulatorOrigin: 'http://127.0.0.1:19099',
+    firebase: {
+      apiKey: 'demo-api-key',
+      projectId: 'demo-taverntable',
+      authDomain: 'demo-taverntable.firebaseapp.com',
+      appId: 'demo-workspace',
+    },
+  };
+  const connection = new CloudAccountConnection({
+    account,
+    runtime,
+    fetch,
+    baseURL: location.href,
+  });
+  const workspace = await CampaignWorkspace.load({
+    storage: 'cloud',
+    connection,
+    uid: 'workspace-owner',
+    fetch,
+    indexedDB: testIndexedDB(),
+    crypto: webcrypto,
+  });
+  try {
+    expect(workspace.store.storageInfo.kind).toBe('cloud');
+    expect(workspace.browserStore).toBeNull();
+    expect(await workspace.list()).toEqual([campaign]);
+    const services = await workspace.open(campaign.id);
+    expect(services.library.ruleset).toBe('2014');
+    expect(services.library.list()).toEqual([]);
+    expect(services.scene).toBeNull();
+    expect(
+      fetch.mock.calls.some(([url]) => /\/api\/(?:host|session|campaigns)(?:\/|$)/.test(url))
+    ).toBe(false);
+  } finally {
+    workspace.close();
+  }
 }, 30000);

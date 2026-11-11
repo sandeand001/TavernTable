@@ -12,6 +12,7 @@ const { HostResources } = require('./host-resources.js');
 const { PlayerCampaigns } = require('./player-campaigns.js');
 const { PlayerGameplay } = require('./player-gameplay.js');
 const { readLimitedBody } = require('./http-body.js');
+const { resolvePublicFile } = require('./public-files.js');
 
 const operations = new Map([
   ['create', 1],
@@ -38,25 +39,6 @@ const operations = new Map([
   ['playerCommand', 2],
   ['grantPlacement', 4],
 ]);
-const mimeTypes = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.glb': 'model/gltf-binary',
-  '.gltf': 'model/gltf+json',
-  '.wasm': 'application/wasm',
-};
 
 function failure(status, message) {
   return Object.assign(new Error(message), { status });
@@ -479,29 +461,16 @@ async function startLocalHost({
       if (!['GET', 'HEAD'].includes(request.method)) throw failure(405, 'Unsupported file request');
       const pathname = decodeURIComponent(url.pathname);
       const segments = pathname.split('/').filter(Boolean);
-      if (
-        segments.some((part) => part.startsWith('.')) ||
-        ['node_modules', 'tools', 'tests'].includes(segments[0])
-      )
+      if (['node_modules', 'tools', 'tests'].includes(segments[0]))
         throw failure(404, 'File not found');
-      const filename = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
-      const relative = path.relative(root, filename);
-      if (relative.startsWith('..' + path.sep) || path.isAbsolute(relative))
-        throw failure(404, 'File not found');
-      const resolved = await fs.realpath(filename);
-      const realRelative = path.relative(root, resolved);
-      if (realRelative.startsWith('..' + path.sep) || path.isAbsolute(realRelative))
-        throw failure(404, 'File not found');
-      const stat = await fs.stat(resolved);
-      if (!stat.isFile()) throw failure(404, 'File not found');
+      const file = await resolvePublicFile(root, pathname);
       response.writeHead(200, {
-        'Content-Type':
-          mimeTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
-        'Content-Length': stat.size,
+        'Content-Type': file.contentType,
+        'Content-Length': file.size,
         'Cache-Control': 'no-cache',
         'X-Content-Type-Options': 'nosniff',
       });
-      response.end(request.method === 'HEAD' ? undefined : await fs.readFile(resolved));
+      response.end(request.method === 'HEAD' ? undefined : await fs.readFile(file.filename));
     } catch (error) {
       const status =
         error.status ||

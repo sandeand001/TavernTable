@@ -10,8 +10,9 @@ import { ensureSession } from '../sessions/SessionLogin.js';
 import { attachHostSessionUpdates } from '../sessions/HostSessionUpdates.js';
 
 export default class CampaignLauncher {
-  constructor({ workspace = null } = {}) {
+  constructor({ workspace = null, saveFeedback = null } = {}) {
     this.workspace = workspace;
+    this.saveFeedback = saveFeedback;
     this.busy = false;
     this.root = document.createElement('section');
     this.root.className = 'campaign-picker';
@@ -25,6 +26,8 @@ export default class CampaignLauncher {
           <p>Separate adventures, separate characters, and the rules you choose.</p>
         </header>
         <p class="campaign-status" role="status" aria-label="Campaign status">Loading local campaigns...</p>
+        <p data-cloud-account hidden></p>
+        <button type="button" data-cloud-account-signout hidden>Sign out</button>
         <button type="button" data-campaign-retry hidden>Retry loading campaigns</button>
         <div class="campaign-columns">
           <section aria-label="Saved campaigns">
@@ -67,7 +70,7 @@ export default class CampaignLauncher {
           <button type="button" data-backup-close>Close backup</button>
         </section>
         <footer><span data-campaign-storage>Checking campaign storage...</span>
-          Export JSON for an independent backup. Opening a campaign restores its automatically saved board.
+          <span data-campaign-storage-help>Export JSON for an independent backup. Opening a campaign restores its automatically saved board.</span>
           <a href="assets/data/resources/NOTICES.txt" target="_blank" rel="noopener">Sources &amp; licenses</a>
         </footer>
       </div>`;
@@ -82,6 +85,18 @@ export default class CampaignLauncher {
     this.backupText = this.root.querySelector('textarea');
     this.importFile = this.root.querySelector('input[type="file"]');
     this.retry = this.root.querySelector('[data-campaign-retry]');
+    this.root.querySelector('[data-cloud-account-signout]').addEventListener(
+      'click',
+      () =>
+        void this._perform(async () => {
+          if (!this.saveFeedback) throw new Error('Cloud save coordination is not ready');
+          await this.saveFeedback.pauseForExit(async () => {
+            await this.workspace.active?.autosave?.flush();
+            await this.workspace.active?.library.flush();
+            await this.workspace.store.connection.account.signOut();
+          });
+        }, 'Signing out of this account...')
+    );
     this.ruleset.addEventListener('change', () =>
       this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value)
     );
@@ -175,31 +190,51 @@ export default class CampaignLauncher {
   }
 
   async _load() {
-    const loaded = await this._perform(async () => {
-      if (!this.workspace) {
-        const identity = await ensureSession();
-        if (identity.role === 'player') {
-          window.location.replace(new URL('player.html', location.href).href);
-          return;
+    const loaded = await this._perform(
+      async () => {
+        if (!this.workspace) {
+          const identity = await ensureSession();
+          if (identity.role === 'player') {
+            window.location.replace(new URL('player.html', location.href).href);
+            return;
+          }
+          this.workspace = await CampaignWorkspace.load();
         }
-        this.workspace = await CampaignWorkspace.load();
-      }
-      const location = this.workspace.store.storageInfo;
-      this.root.querySelector('[data-campaign-storage]').textContent =
-        location?.kind === 'host'
-          ? `Campaigns are saved on this host computer: ${location.dataDirectory}. Chrome and VS Code use the same host saves.`
-          : 'Browser-only storage: temporary or isolated browser sessions can lose campaigns when the browser closes.';
-      await this._renderSaved();
-      this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
-      this.retry.hidden = true;
-      this.status.textContent = 'Choose a saved campaign or create a new one.';
-    }, 'Loading local campaigns...');
+        const location = this.workspace.store.storageInfo;
+        this.root.querySelector('[data-campaign-storage]').textContent =
+          location?.kind === 'cloud'
+            ? location.label
+            : location?.kind === 'host'
+              ? `Campaigns are saved on this host computer: ${location.dataDirectory}. Chrome and VS Code use the same host saves.`
+              : 'Browser-only storage: temporary or isolated browser sessions can lose campaigns when the browser closes.';
+        const cloud = location?.kind === 'cloud';
+        const account = this.root.querySelector('[data-cloud-account]');
+        account.hidden = !cloud;
+        account.textContent = cloud
+          ? `Signed in as ${this.workspace.store.connection.account.identity()?.email || 'your managed account'}.`
+          : '';
+        this.root.querySelector('[data-cloud-account-signout]').hidden = !cloud;
+        this.root.querySelector('[data-campaign-import]').hidden =
+          this.workspace.store.capabilities?.backups === false;
+        this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
+          ? 'Private cloud preparation only. Online access is required. Backups, source changes, player invitations and live sessions remain gated.'
+          : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
+        await this._renderSaved();
+        this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
+        this.retry.hidden = true;
+        this.status.textContent = 'Choose a saved campaign or create a new one.';
+      },
+      this.workspace?.store.storageInfo?.kind === 'cloud'
+        ? 'Loading private cloud campaigns...'
+        : 'Loading local campaigns...'
+    );
     if (loaded) this.name.focus();
     return loaded;
   }
 
   async _renderSaved() {
     const campaigns = await this.workspace.list();
+    const capabilities = this.workspace.store.capabilities;
     this.list.innerHTML =
       campaigns
         .map((campaign) => {
@@ -209,14 +244,17 @@ export default class CampaignLauncher {
         <p>${profile.name} rules / SRD ${profile.srd} / ${campaign.sourcePacks.filter((source) => source.enabled).length} enabled sources</p>
         <div class="campaign-row-actions">
           <button type="button" data-open-campaign>Open</button>
-          <button type="button" data-edit-campaign>Sources &amp; settings</button>
-          <button type="button" data-export-campaign>Export</button>
-          ${this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
+          ${capabilities?.settings !== false ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
+          ${capabilities?.backups !== false ? '<button type="button" data-export-campaign>Export</button>' : ''}
+          ${capabilities?.backups !== false && this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
         </div></article>`;
         })
         .join('') ||
       '<p class="campaign-empty">No campaigns saved in this storage location yet.</p>';
-    const browserCampaigns = (await this.workspace.browserCampaigns?.()) || [];
+    const browserCampaigns =
+      capabilities?.browserImport === false
+        ? []
+        : (await this.workspace.browserCampaigns?.()) || [];
     this.root.querySelector('.campaign-browser-import').hidden = browserCampaigns.length === 0;
     this.root.querySelector('[data-browser-campaigns]').innerHTML = browserCampaigns
       .map(
@@ -373,7 +411,9 @@ export function mountCampaignControls(gameManager, services) {
   });
   new CampaignTraversalPopup({ gameManager }).attach();
   bar.append(heading, name, rules, back, status, retry);
-  const role = services.workspace.store.identity?.role;
+  const store = services.workspace.store;
+  const role = store.identity?.role;
+  const cloud = store.storageInfo?.kind === 'cloud';
   if (role === undefined || role === 'dm') {
     const maps = new CampaignMapControls({ gameManager });
     const mapTools = document.createElement('section');
@@ -382,7 +422,7 @@ export function mountCampaignControls(gameManager, services) {
     mapTools.append(maps.root);
     document.body.append(mapTools);
   }
-  if (services.workspace.store.identity?.role === 'dm') {
+  if (role === 'dm') {
     const sharing = document.createElement('button');
     sharing.type = 'button';
     sharing.textContent = 'Players & sharing';
@@ -396,21 +436,35 @@ export function mountCampaignControls(gameManager, services) {
     );
     bar.append(sharing);
     attachHostSessionUpdates({ gameManager, services, parent: bar });
+  }
+  if (role === 'dm' || cloud) {
     const signout = document.createElement('button');
     signout.type = 'button';
     signout.textContent = 'Sign out';
     signout.addEventListener('click', async () => {
+      signout.disabled = true;
       try {
-        await services.autosave?.flush();
-        await services.library.flush();
-        await services.workspace.store.connection.logout();
-        window.location.reload();
+        const leave = async () => {
+          await services.autosave?.flush();
+          await services.library.flush();
+          if (cloud) await store.connection.account.signOut();
+          else {
+            await store.connection.logout();
+            window.location.reload();
+          }
+        };
+        if (cloud) {
+          if (!services.saveFeedback) throw new Error('Cloud save coordination is not ready');
+          await services.saveFeedback.pauseForExit(leave);
+        } else await leave();
       } catch (error) {
         status.textContent = `Could not sign out safely: ${error.message}`;
         new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
           component: 'CampaignControls',
           operation: 'signOut',
         });
+      } finally {
+        signout.disabled = false;
       }
     });
     bar.append(signout);
@@ -483,10 +537,16 @@ export function mountCampaignControls(gameManager, services) {
         )
       )
         return;
-      await services.autosave?.flush();
-      await services.library.flush();
-      services.workspace.close();
-      window.location.reload();
+      const leave = async () => {
+        await services.autosave?.flush();
+        await services.library.flush();
+        services.workspace.close();
+        window.location.reload();
+      };
+      if (cloud) {
+        if (!services.saveFeedback) throw new Error('Cloud save coordination is not ready');
+        await services.saveFeedback.pauseForExit(leave);
+      } else await leave();
     } catch (error) {
       status.textContent = error.message;
       new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {

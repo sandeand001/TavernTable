@@ -48,7 +48,13 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/Err
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
 import { rollDice } from '../systems/dice/dice.js';
 import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLauncher.js';
+import CloudSaveFeedback from './campaigns/CloudSaveFeedback.js';
 import { ensureSession } from './sessions/SessionLogin.js';
+import CloudAccountLogin from './sessions/CloudAccountLogin.js';
+import { readApplicationRuntime } from '../campaigns/CloudRuntime.js';
+import { loadCloudAccount } from '../campaigns/CloudAccount.js';
+import CloudAccountConnection from '../campaigns/CloudAccountConnection.js';
+import CampaignWorkspace from '../campaigns/CampaignWorkspace.js';
 import { preparePlayerApplication } from './sessions/PlayerApplication.js';
 import { connectCharacterServices } from './characters/characterServices.js';
 import CampaignAutosave from '../campaigns/CampaignAutosave.js';
@@ -995,6 +1001,7 @@ function initializeApplication() {
 async function startCampaignApplication() {
   let loading = null;
   let player = null;
+  let cloudMode = false;
   const previousInert = new Map();
   const pauseControls = () => {
     for (const element of document.body.children) {
@@ -1026,10 +1033,48 @@ async function startCampaignApplication() {
     }
 
     const manager = window.gameManager;
-    const identity = await ensureSession();
-    if (!['dm', 'player'].includes(identity.role))
-      throw new Error('The host returned an unsupported session role');
-    if (identity.role === 'player') {
+    let runtime;
+    try {
+      runtime = readApplicationRuntime();
+    } catch (error) {
+      showLoading('Cloud account configuration could not be loaded.');
+      throw error;
+    }
+    let identity = null;
+    let workspace = null;
+    cloudMode = runtime.mode === 'cloud';
+    if (cloudMode) {
+      showLoading('Loading managed cloud sign-in...');
+      const session = await loadCloudAccount(runtime);
+      const connection = new CloudAccountConnection({ account: session.account, runtime });
+      loading.remove();
+      loading = null;
+      const profile = await new CloudAccountLogin({
+        account: session.account,
+        connection,
+        runtime,
+      }).choose();
+      manager.cloudAccountSession = { ...session, connection, uid: profile.uid };
+      manager.stopCloudIdentityWatch = session.account.subscribe(
+        (current) => {
+          if (current?.uid !== profile.uid) window.location.reload();
+        },
+        (error) => {
+          pauseControls();
+          new ErrorHandler().handle(error, ERROR_SEVERITY.CRITICAL, ERROR_CATEGORY.INITIALIZATION, {
+            component: 'CloudAccountSession',
+            operation: 'observeIdentity',
+          });
+        }
+      );
+      workspace = await CampaignWorkspace.load({ storage: 'cloud', connection, uid: profile.uid });
+      manager.cloudSaveFeedback = new CloudSaveFeedback({ store: workspace.store });
+    } else {
+      identity = await ensureSession();
+      if (!['dm', 'player'].includes(identity.role))
+        throw new Error('The host returned an unsupported session role');
+    }
+    if (identity?.role === 'player') {
       showLoading('Opening your authorized map. Please wait...');
       player = await preparePlayerApplication({
         gameManager: manager,
@@ -1044,7 +1089,15 @@ async function startCampaignApplication() {
         },
       });
     }
-    const services = player ? null : await new CampaignLauncher().choose();
+    let services = null;
+    if (!player) {
+      const launcher = workspace
+        ? new CampaignLauncher({ workspace, saveFeedback: manager.cloudSaveFeedback })
+        : new CampaignLauncher();
+      const choice = launcher.choose();
+      if (cloudMode) manager.cloudSaveFeedback.attach();
+      services = await choice;
+    }
     if (!loading) showLoading('Restoring your campaign. Please wait...');
     let autosave;
     if (!player) {
@@ -1059,6 +1112,10 @@ async function startCampaignApplication() {
         restoreRollLog: (entries) => window.sidebarController.restoreDiceLog(entries),
       });
       services.autosave = autosave;
+      if (cloudMode) {
+        services.saveFeedback = manager.cloudSaveFeedback;
+        services.saveFeedback.bindAutosave(autosave);
+      }
       mountCampaignControls(manager, services);
     }
     pauseControls();
@@ -1096,6 +1153,7 @@ async function startCampaignApplication() {
     loading.remove();
   } catch (error) {
     if (player) await player.destroy();
+    if (cloudMode && !loading) showLoading('Cloud campaign access could not finish opening.');
     if (loading) {
       loading.textContent = '';
       const message = document.createElement('div');

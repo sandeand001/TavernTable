@@ -1,6 +1,6 @@
 const { createHash } = require('node:crypto');
 const { CloudError } = require('./cloud-error.js');
-const { isCloudUUID } = require('./cloud-ids.js');
+const { isCloudUUID } = require('../../src/campaigns/CloudProtocol.js');
 
 const MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024;
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');

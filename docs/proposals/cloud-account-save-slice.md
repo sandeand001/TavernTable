@@ -1,7 +1,9 @@
 # First cloud slice: account access and durable campaign saves
 
-**Status:** verified development account/owned-campaign and atomic save backend.
-Browser integration and the M1 exit gate are incomplete; nothing is deployed.
+**Status:** verified development account/owned-campaign and atomic save backend,
+plus managed browser login. Returning identity and save feedback are integrated
+under verification; the rendered/replacement M1 exit gate is incomplete.
+Nothing is deployed. See [browser evidence](./cloud-migration-preparation.md#managed-browser-account-access).
 
 **Scope:** the first pair of Modules selected in the
 [approved proposal](./cloud-accounts-and-multiplayer.md#11-five-deepening-opportunities).
@@ -54,6 +56,16 @@ the local Adapter. Cloud mode is selected explicitly by public runtime
 configuration; an invalid cloud configuration or failed request does not select
 local/browser storage. Load cloud-only SDK code only for that selected mode.
 Preserve the native ESM approach; pin browser/test SDK versions together.
+
+The development implementation uses
+[explicit runtime configuration](../../src/campaigns/CloudRuntime.js),
+[managed Auth](../../src/campaigns/CloudAccount.js),
+[account-bound HTTP](../../src/campaigns/CloudAccountConnection.js) and the
+[account dialog](../../src/ui/sessions/CloudAccountLogin.js).
+[Global save feedback](../../src/ui/campaigns/CloudSaveFeedback.js) is attached
+before the first mutation, keeps uncertain writes on their original command and
+caller, and pauses editing while recovery or final exit is pending.
+Browser authority is never selected by a cloud request failure.
 
 ### Backend Interface
 

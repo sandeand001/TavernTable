@@ -63,6 +63,17 @@ export function validateCampaignCharacters(campaign, catalog, records) {
   characterSnapshot(campaign, catalog, records);
 }
 
+function sceneCommandMetadata(store, captured) {
+  return {
+    ...(captured.scene?.version === 3 && store?.capabilities?.roomVisits !== false
+      ? { trackRoomVisits: true }
+      : {}),
+    ...(captured.presentations?.length && store?.capabilities?.nativeMotion !== false
+      ? { presentations: captured.presentations }
+      : {}),
+  };
+}
+
 export default class CampaignCharacters {
   static async open({ store, campaignId, catalog }) {
     const state = await store.readCharacters(campaignId);
@@ -313,7 +324,8 @@ export default class CampaignCharacters {
     this.pendingScenes++;
     const committed = this.queue.then(async () => {
       const captured = await capture(this.engine);
-      if (captured.value === this.savedScene && !captured.presentations?.length) {
+      const metadata = sceneCommandMetadata(this.store, captured);
+      if (captured.value === this.savedScene && !metadata.presentations?.length) {
         const current = await this.store.readScene(this.campaign.id);
         if (
           current.revision !== this.sceneRevision ||
@@ -330,8 +342,7 @@ export default class CampaignCharacters {
         revision: this.sceneRevision,
         charactersRevision: this.revision,
         scene: captured.value,
-        ...(captured.scene?.version === 3 ? { trackRoomVisits: true } : {}),
-        ...(captured.presentations?.length ? { presentations: captured.presentations } : {}),
+        ...metadata,
       });
       this._sceneReceipt(captured, receipt.revision, receipt.savedAt);
       return { captured, receipt };
@@ -391,10 +402,7 @@ export default class CampaignCharacters {
               scene: {
                 revision: this.sceneRevision,
                 value: captured.value,
-                ...(captured.scene?.version === 3 ? { trackRoomVisits: true } : {}),
-                ...(captured.presentations?.length
-                  ? { presentations: captured.presentations }
-                  : {}),
+                ...sceneCommandMetadata(this.store, captured),
               },
             }
           : {}),

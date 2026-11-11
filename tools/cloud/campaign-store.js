@@ -5,7 +5,7 @@ const { createHash } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
-const { isCloudUUID } = require('./cloud-ids.js');
+const { isCloudUUID } = require('../../src/campaigns/CloudProtocol.js');
 
 function principalUid(principal) {
   pilotAccountKey(principal?.uid);

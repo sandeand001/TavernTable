@@ -29,7 +29,8 @@
     "start": "npm run serve",
     "serve:open": "start \"\" http://localhost:3000 && npm run serve",
     "prepare": "husky",
-    "test:cloud": "node tools/cloud/run-emulator-tests.js"
+    "test:cloud": "node tools/cloud/run-emulator-tests.js",
+    "dev:cloud": "node tools/cloud/run-emulator-tests.js --serve"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",

@@ -38,8 +38,11 @@ this checklist.
 
 **Current work:** the isolated SDK loop, account gate, private owned metadata and
 atomic canonical scene/character backend are verified in
-`feat/cloud-accounts-multiplayer`. Browser account/returning-login integration
-(`M1-04` / `M1-05`) and truthful save UX (`M1-08`) are next.
+`feat/cloud-accounts-multiplayer`. Managed browser sign-in, verification and
+recovery (`M1-04`) are verified in the demo environment. Returning login
+(`M1-05`) and truthful save UX (`M1-08`) are in progress, including actual
+browser lost-reply recovery. Clean-browser/backend replacement and the complete
+rendered durability gate remain unchecked.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
 
@@ -196,8 +199,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     no global DM claims or local-key fallback. Production-mode token rejection
     remains a separate hosted gate.
 
-- [ ] **M1-04 - Implement Google and email/password sign-in, verification, and recovery.**
-  - **Status:** in progress.
+- [x] **M1-04 - Implement Google and email/password sign-in, verification, and recovery.**
   - **Depends:** `M1-03`.
   - **Success:** both choices are usable; unverified password accounts cannot use
     campaigns; verification and password recovery return the same account to use.
@@ -205,14 +207,25 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** browser flows cover success, cancellation, wrong credentials,
     unverified email, verification refresh, and recovery. No password values are
     logged or stored by TavernTable.
+  - **Completed:** November 11, 2026 for the emulator development slice.
+    **Evidence:** [managed browser account access](./cloud-migration-preparation.md#managed-browser-account-access):
+    actual Google success/cancellation, managed email registration, password
+    clearing, wrong credentials, real verification/recovery action codes,
+    unchanged recovered UID, distinct pilot denial and approved account access.
+    Real hosted provider validation remains a later environment gate.
 
 - [ ] **M1-05 - Implement returning login and explicit account/error states.**
+  - **Status:** in progress.
   - **Depends:** `M1-04`.
   - **Success:** persistence/token renewal retain the UID across browser reopening
     and backend restart. Signed-out, expired, denied, and network states are
     distinct; failures never create a new campaign or writable local fallback.
   - **Verify:** reload, new tab, sign-out/in, expiry, renewal, and backend restart
     tests preserve identity/access or show the correct recoverable denial.
+  - **Progress:** reload/new-tab restoration and actual SDK renewal preserve the
+    UID and owned campaigns. Sign-out clears both tested tabs; a hidden integrated
+    webview delayed its SDK notification by about 44 seconds. Backend replacement
+    and foreground real-Chrome switching remain to verify.
 
 - [x] **M1-06 - Create and list one privately owned test campaign.**
   - **Depends:** `M1-03`.
@@ -247,6 +260,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     Browser save UX and complete M1 termination/reopen gates remain unchecked.
 
 - [ ] **M1-08 - Wire truthful save acknowledgement and existing checkpoint timing.**
+  - **Status:** in progress.
   - **Depends:** `M1-07`.
   - **Success:** scene/character/resource visibility remains coordinated; show
     Saving / Saved to cloud / Not saved distinctly. Preserve two-second quiet /
@@ -254,6 +268,12 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** only a durable publication reports success. Drag previews,
     camera movement, and animation frames do not become continuous writes;
     unload/shutdown/filesystem state is not required for durability.
+  - **Progress:** global feedback is mounted before campaign creation; unconfirmed
+    writes retain the original caller and command ID, block new input and recover
+    only through explicit same-command retry. Offline/conflict/exit guards and
+    existing checkpoint tests pass. Actual browser reply loss after publication
+    recovered exactly one campaign. Rendered cloud scene/character acceptance and
+    the complete emulator rerun remain pending.
 
 - [ ] **M1-09 - Reopen the committed slice in a clean browser and backend process.**
   - **Depends:** `M1-05`, `M1-08`.

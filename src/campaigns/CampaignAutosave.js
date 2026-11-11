@@ -52,9 +52,11 @@ export default class CampaignAutosave {
     if (!this.ready) return { state: 'loading', text: 'Restoring campaign...' };
     if (this.waiting) return { state: 'saving', text: this.waiting };
     if (this.dirty || this.writing) return { state: 'saving', text: 'Saving...' };
+    const authority = this.library.store?.storageInfo?.kind;
     return {
       state: 'saved',
-      text: this.library.store?.storageInfo?.kind === 'host' ? 'Saved to host' : 'Saved',
+      text:
+        authority === 'host' ? 'Saved to host' : authority === 'cloud' ? 'Saved to cloud' : 'Saved',
       savedAt: this.library.sceneSavedAt,
     };
   }

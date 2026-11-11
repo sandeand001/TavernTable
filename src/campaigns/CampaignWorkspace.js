@@ -1,5 +1,6 @@
 import CampaignStore from './CampaignStore.js';
 import HostCampaignStore from './HostCampaignStore.js';
+import CloudCampaignClientStore from './CloudCampaignClientStore.js';
 import CampaignCharacters, { validateCampaignCharacters } from './CampaignCharacters.js';
 import { loadBundledResources } from '../resources/ResourceSeeds.js';
 import { CompendiumCatalog } from '../entities/characters/CompendiumCatalog.js';
@@ -12,9 +13,18 @@ export default class CampaignWorkspace {
     crypto = globalThis.crypto,
     baseURL = globalThis.location.href,
     storage = 'host',
+    connection: cloudConnection = null,
+    uid = null,
   } = {}) {
-    if (!['host', 'browser'].includes(storage))
-      throw new Error('Choose host or browser campaign storage');
+    if (!['host', 'browser', 'cloud'].includes(storage))
+      throw new Error(
+        'Choose host or browser campaign storage, or explicit verified cloud storage'
+      );
+    if (
+      storage === 'cloud' &&
+      (typeof cloudConnection?.request !== 'function' || typeof uid !== 'string' || !uid)
+    )
+      throw new Error('Cloud campaign storage requires the approved signed-in account connection');
     let host = null;
     if (storage === 'host') {
       const connection = await fetch(new URL('api/host', baseURL).href, { cache: 'no-store' });
@@ -32,9 +42,17 @@ export default class CampaignWorkspace {
       crypto,
       baseURL,
     });
-    const store = host
-      ? new HostCampaignStore({ fetch, baseURL, host, packs: manifest.packs })
-      : new CampaignStore({ indexedDB, packs: manifest.packs });
+    const store =
+      storage === 'cloud'
+        ? new CloudCampaignClientStore({
+            connection: cloudConnection,
+            uid,
+            crypto,
+            packs: manifest.packs,
+          })
+        : host
+          ? new HostCampaignStore({ fetch, baseURL, host, packs: manifest.packs })
+          : new CampaignStore({ indexedDB, packs: manifest.packs });
     const browserStore =
       host && indexedDB ? new CampaignStore({ indexedDB, packs: manifest.packs }) : null;
     return new CampaignWorkspace({ manifest, resources, store, browserStore });

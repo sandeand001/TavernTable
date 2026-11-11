@@ -483,8 +483,102 @@ Failure/interleaving proof uses actual SDK state:
 The combined targeted canonical/local-host/cloud-fault Jest run passes
 **8 suites / 52 tests**. Full existing lint/stylelint passes with zero errors and
 the same 39 pre-existing warnings; the layering check passes.
-The full stable application suite, browser account/save UI, clean-browser/backend
-replacement and actual forced-process-termination exit gates remain `M1-04`,
-`M1-05`, `M1-08`, `M1-09` and `M1-10`; they are not claimed complete here.
+At this backend checkpoint, the full stable application suite, browser account/save
+UI, clean-browser/backend replacement and actual forced-process-termination exit
+gates remained unchecked. Current browser evidence is recorded below; the full M1
+exit gate is still incomplete.
 All application tests stay demo-only. The sole real Storage/IAM primitive check
 was separately approved and cleaned up as recorded above.
+
+## Managed browser account access
+
+`M1-04` completed November 11, 2026 for the local demo environment, not hosted
+release readiness.
+
+- [Explicit runtime configuration](../../src/campaigns/CloudRuntime.js) chooses
+  local or cloud mode before startup. Malformed cloud configuration fails closed;
+  it never selects host-key, cookie or browser-campaign authority.
+- The pinned [managed account facade](../../src/campaigns/CloudAccount.js) loads
+  Firebase Auth lazily, uses SDK-managed IndexedDB identity persistence, and
+  exposes safe identity/error values. TavernTable neither stores passwords nor
+  handles password hashing or recovery credentials.
+- The [account dialog](../../src/ui/sessions/CloudAccountLogin.js) supports Google,
+  email registration/sign-in, verification refresh/resend, recovery and sign-out.
+  Password fields are cleared before awaiting the SDK, without trimming passwords.
+  Verified email and current server-owned private-pilot approval are separate
+  requirements; authentication grants no global DM identity.
+- [Account-bound HTTP](../../src/campaigns/CloudAccountConnection.js) uses bearer
+  credentials only, rejects late responses after identity changes, and allows one
+  same-body identity renewal. Each HTTP attempt is aborted after 60 seconds;
+  timeout is unconfirmed, not a save acknowledgment.
+- `npm run dev:cloud`, using the same Java 21/demo endpoint guards as
+  `npm run test:cloud`, serves the explicit emulator shell at
+  `http://127.0.0.1:19410/`. The loopback development host has no local campaign
+  authority and cannot serve private project files or legacy session APIs.
+
+Actual integrated-browser checks used synthetic `.invalid` accounts and the
+local `demo-taverntable` project only:
+
+1. Google popup cancellation retained the signed-out state. An explicitly
+   approved synthetic Google sign-in reached the distinct private-pilot denial;
+   trusted emulator-only approval and refresh opened the cloud campaign picker.
+2. Email registration cleared the password field and required verification.
+   Resend produced a managed action code; applying that code through the real SDK
+   and refreshing access reached the separate private-pilot denial.
+3. Incorrect credentials produced a safe, explicit denial and cleared the field.
+   Recovery was requested through the actual form. A real SDK password-reset
+   action followed by email sign-in preserved the original verified UID.
+4. Trusted emulator-only approval opened the email account's private picker.
+   Account registration, recovery and login had created zero campaigns.
+
+No production account, SMTP delivery, hosted provider configuration, deployment
+or additional live IAM/storage write is claimed by this development evidence.
+
+## Browser save feedback and returning identity
+
+`M1-05` and `M1-08` remain in progress.
+
+- [Cloud client storage](../../src/campaigns/CloudCampaignClientStore.js) validates
+  high-level reads/receipts without opening browser campaign authority. A pending
+  command keeps its immutable ID/body and original caller promise in memory;
+  another mutation is refused until explicit recovery. This is not a durable
+  offline queue.
+- [Global save feedback](../../src/ui/campaigns/CloudSaveFeedback.js) is attached
+  before the first campaign mutation and then observes the existing scene
+  coordinator. Saving, Saved to cloud, Unconfirmed and Not saved are distinct.
+  A dirty scene cannot keep displaying its previous Saved status during the
+  quiet checkpoint delay.
+- Pending/unconfirmed writes, offline access and definitive conflicts pause new
+  input. Recovery retries the same command; definitive conflicts require
+  reopening with an explicit unsaved-change warning. Safe sign-out/picker exit
+  pause input across the final flush and account operation. Existing two-second
+  quiet/ten-second maximum and stable-movement checkpoint rules are unchanged.
+- The actual browser's HTTP seam deliberately discarded one successful creation
+  reply after real Firestore publication. UI phases were
+  `idle -> saving -> uncertain -> saving -> saved`; the original caller remained
+  pending, the picker was blocked, and explicit retry sent byte-identical JSON.
+  The caller opened the original published ID and exactly one new campaign
+  existed. The fault wrapper and observation hooks were removed afterward.
+- Reload and a new integrated-browser tab restored the same UID and the same two
+  intentionally created test campaigns. A synthetic first HTTP 401 caused real
+  SDK renewal followed by an approved same-UID profile; no campaign was created
+  by restoration or renewal.
+- Sign-out cleared the active tab and the other tab's private view. The hidden
+  integrated webview delayed its Firebase persistence notification by about 44
+  seconds; this is not evidence of immediate cross-tab notification. Foreground
+  switching in actual Chrome remains to verify.
+
+**Current checks:** the combined targeted run passed **11 suites / 66 tests**.
+The six feedback cases include real client/domain/canonical scene coordination,
+actual changed v3 camera state published before SDK sign-out, uncertainty,
+offline access, conflict, shortcut isolation and exit-failure recovery. Existing
+local/player menus and checkpoint regressions pass, as do the separate eight
+existing local-host integration tests for the shared public-file resolver.
+Full lint/stylelint has zero
+errors and the same 39 existing warnings; layering passes.
+
+The integrated Electron browser has no WebGL. It correctly refuses to open the
+3D game after campaign selection, without resetting saved data. No rendered
+cloud-board success is inferred from account/launcher tests. Actual Chrome/GPU,
+clean-browser/backend replacement, the complete native emulator rerun and the
+full stable/forced-termination M1 gate remain pending.

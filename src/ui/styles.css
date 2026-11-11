@@ -75,7 +75,8 @@
 
 .campaign-shell button,
 .campaign-tools button,
-.campaign-session-controls button {
+.campaign-session-controls button,
+.cloud-save-feedback button {
   padding: 8px 12px;
   color: #eee;
   background: #3a404d;
@@ -96,7 +97,8 @@
 
 .campaign-shell :focus-visible,
 .campaign-tools :focus-visible,
-.campaign-session-controls :focus-visible {
+.campaign-session-controls :focus-visible,
+.cloud-save-feedback :focus-visible {
   outline: 2px solid #d7ba7d;
   outline-offset: 3px;
 }
@@ -196,6 +198,45 @@
 
 .campaign-session-controls output:empty {
   display: none;
+}
+
+.cloud-save-feedback {
+  position: fixed;
+  inset: 10px 16px auto auto;
+  z-index: 25000;
+  display: grid;
+  max-width: calc(100vw - 32px);
+  color: #eee;
+  font:
+    13px system-ui,
+    sans-serif;
+}
+
+.cloud-save-card {
+  box-sizing: border-box;
+  max-width: 440px;
+  padding: 14px;
+  background: #24262f;
+  border: 1px solid #596374;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+
+.cloud-save-card output {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cloud-save-card button {
+  margin-top: 12px;
+}
+
+.cloud-save-feedback[data-blocked='true'] {
+  inset: 0;
+  place-items: center;
+  max-width: none;
+  padding: 24px;
+  background: #14151bdd;
 }
 
 .campaign-map-controls {

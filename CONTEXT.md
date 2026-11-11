@@ -92,13 +92,13 @@
   explicit for tests and migration, with non-destructive Copy to host and JSON
   backup import/export. Agent-created browser tabs may have in-memory storage;
   flushing such a profile does not make it survive an editor restart.
-- **Hosted account (approved design, not implemented)**: Google and
+- **Hosted account (development sign-in implemented; hosting/linking pending)**: Google and
   Firebase-managed email/password are supported sign-in choices. Password
   accounts require verified email for campaign use and password recovery.
   Proven linking keeps sign-in methods on one Firebase UID without splitting
   campaign ownership or assignments; matching names/emails do not prove access.
   Initial application participation is invitation/approval controlled.
-- **Verified cloud principal (initial backend implemented; UI integration pending)**: backend-verified
+- **Verified cloud principal (development backend/browser implemented)**: backend-verified
   Firebase UID, verification and application-eligibility outcomes. Campaign
   ownership/member access is resolved separately, never inferred from names,
   email text or a global DM claim.
@@ -106,17 +106,19 @@
   verified tokens alone do not enable campaigns. Local cookie/key credentials
   are not accepted as cloud identity. Initial private owner metadata is separate
   from membership/live-game permissions, not an implied global privilege.
-- **Private cloud campaign (initial backend implemented; UI pending)**: canonical
+- **Private cloud campaign (development backend/browser implemented)**: canonical
   metadata is owned by a verified UID. Protected create/list/open routes deny
   unrelated UIDs. Firestore transactions recheck current pilot eligibility;
   creation publishes its initial head and UID-scoped command receipt atomically.
   Private scene/character saves and coordinated reads are implemented in the
-  development backend; memberships, live games and browser integration remain gated.
+  development backend and explicit cloud workspace; memberships, live games and
+  the full rendered M1 acceptance gate remain gated.
 - **Cloud emulator loop (implemented development tooling only)**: explicit
   `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
   conflicting SDK settings fail closed. Real SDK integration uses native Node
-  tests; ordinary unit/UI checks remain Jest. Scoped Java 21 tooling does not
-  change the system default or enable application account/cloud-save features.
+  tests; ordinary unit/UI checks remain Jest. `npm run dev:cloud` serves the
+  explicit demo shell/API on loopback without local campaign authority. Scoped
+  Java 21 tooling does not change the system default or authorize deployment.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.
@@ -135,6 +137,13 @@
   Journal expiry is not permission to re-execute an old command.
   Recovery precedes preparation and still checks current access; immutable
   candidate upload is not an acknowledged save before the Firestore publication.
+- **Cloud browser save (implemented; rendered/replacement acceptance pending)**:
+  managed Auth identity and explicit cloud runtime select a UID-bound workspace,
+  never a host-key or writable browser-campaign fallback. Global feedback is
+  attached before creation and observes scene checkpoints. A lost reply retains
+  the original caller and command ID/body in memory until explicit same-command
+  recovery. Uncertainty, definitive conflict and offline access pause new input;
+  final exit flushes before SDK sign-out. This is not an offline upload queue.
 - **Hosted campaign (approved design, not implemented)**: the hosted frontend
   uses Firebase Hosting and the authoritative backend uses Cloud Run in Oregon
   (`us-west1`); rendering stays on each participant's device. Ownership and player
@@ -155,7 +164,7 @@
   it. Preserve deadlines across backend restarts. All-disconnected grace remains
   15 minutes; the first applicable pause condition wins. Pausing retains campaign
   and combat state and does not block between-game online sheet editing.
-- **Cloud editing scope (confirmed, not implemented)**: the planned hosted mode
+- **Cloud editing scope (private-owner development implemented; hosted/player work pending)**: the planned hosted mode
   requires Internet access. Assigned character editing between games does not
   require a live game session; short authenticated requests wake the backend
   briefly to read/validate/save, then allow it to sleep. Local caching reduces

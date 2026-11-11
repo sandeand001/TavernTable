@@ -23,6 +23,7 @@ async function signedInIdentity(runtime, { emailVerified = true, claims = null }
     const result = await signInWithEmailAndPassword(auth, email, password);
     return {
       uid,
+      auth,
       token: await result.user.getIdToken(),
       async close() {
         try {

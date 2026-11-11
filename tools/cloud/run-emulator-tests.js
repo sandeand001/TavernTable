@@ -6,19 +6,26 @@ const { readEmulatorEnvironment } = require('./emulator-runtime.js');
 
 function run() {
   const { values } = parseArgs({
-    options: { 'inside-emulators': { type: 'boolean', default: false } },
+    options: {
+      'inside-emulators': { type: 'boolean', default: false },
+      serve: { type: 'boolean', default: false },
+    },
   });
   const root = path.resolve(__dirname, '..', '..');
   const environment = { ...process.env };
   let args;
   if (values['inside-emulators']) {
     readEmulatorEnvironment(environment);
-    const directory = path.join(root, 'tests', 'cloud');
-    const tests = [...fs.globSync('**/*.test.js', { cwd: directory })]
-      .sort()
-      .map((file) => path.join(directory, file));
-    if (!tests.length) throw new Error('No cloud integration tests were found');
-    args = ['--test', '--test-concurrency=1', ...tests];
+    if (values.serve) {
+      args = [path.join(__dirname, 'dev-host.js')];
+    } else {
+      const directory = path.join(root, 'tests', 'cloud');
+      const tests = [...fs.globSync('**/*.test.js', { cwd: directory })]
+        .sort()
+        .map((file) => path.join(directory, file));
+      if (!tests.length) throw new Error('No cloud integration tests were found');
+      args = ['--test', '--test-concurrency=1', ...tests];
+    }
   } else {
     environment.TAVERNTABLE_CLOUD_MODE = 'emulator';
     environment.GCLOUD_PROJECT = 'demo-taverntable';
@@ -41,7 +48,8 @@ function run() {
       '--only',
       'auth,firestore,storage',
       '--non-interactive',
-      'node tools/cloud/run-emulator-tests.js --inside-emulators',
+      'node tools/cloud/run-emulator-tests.js --inside-emulators' +
+        (values.serve ? ' --serve' : ''),
     ];
   }
   const child = spawn(process.execPath, args, {
@@ -59,7 +67,7 @@ function run() {
   });
   child.once('exit', (code, signal) => {
     for (const [name, handler] of handlers) process.removeListener(name, handler);
-    if (signal) console.error('[cloud-emulators]', `Test child ended with ${signal}`);
+    if (signal) console.error('[cloud-emulators]', `Cloud child ended with ${signal}`);
     process.exitCode = code ?? 1;
   });
 }
