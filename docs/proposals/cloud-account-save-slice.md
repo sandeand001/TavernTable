@@ -1,6 +1,7 @@
 # First cloud slice: account access and durable campaign saves
 
-**Status:** M1 Interface design; implementation is not yet complete or deployed.
+**Status:** verified development account/owned-campaign and atomic save backend.
+Browser integration and the M1 exit gate are incomplete; nothing is deployed.
 
 **Scope:** the first pair of Modules selected in the
 [approved proposal](./cloud-accounts-and-multiplayer.md#11-five-deepening-opportunities).
@@ -146,6 +147,10 @@ objects, not Firestore fields. Reuse unchanged referenced objects so a sheet
 change need not upload unchanged terrain. Preserve embedded-image compatibility
 initially; later participant manifests reference authorized asset hashes instead
 of repeatedly transmitting image bodies.
+
+Initial command JSON is capped at 24 MiB encoded UTF-8 bytes and immutable JSON
+objects at 32 MiB, separately from canonical scene/character character limits.
+Later large-asset transfer remains its own capability, not a local fallback.
 
 Objects have server-generated campaign-scoped/content-addressed paths and
 immutable creation preconditions. Existing content at an immutable path is

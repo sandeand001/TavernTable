@@ -78,9 +78,15 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     );
   if (
     store !== null &&
-    ['create', 'list', 'get', 'readCharacters'].some(
-      (method) => typeof store[method] !== 'function'
-    )
+    [
+      'create',
+      'list',
+      'get',
+      'readCharacters',
+      'readScene',
+      'commitScene',
+      'commitCharacters',
+    ].some((method) => typeof store[method] !== 'function')
   )
     throw new Error('Cloud campaign HTTP requires the explicit private campaign store interface');
   const origins = new Set(allowedOrigins);
@@ -96,18 +102,21 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const url = new URL(request.url, 'http://cloud.invalid');
     const account = url.pathname === '/api/cloud/account';
     const collection = url.pathname === '/api/cloud/campaigns';
-    const campaign = /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters))?$/.exec(url.pathname);
+    const campaign = /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene))?$/.exec(
+      url.pathname
+    );
     if (!account && !collection && !campaign) return false;
     const subject = account ? 'account' : 'campaign';
-    const methods = collection ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
+    const snapshot = campaign?.[2];
+    const methods = collection || snapshot ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
     const operation = account
       ? 'account'
       : collection
         ? request.method === 'POST'
           ? 'campaign.create'
           : 'campaign.list'
-        : campaign[2]
-          ? 'campaign.characters'
+        : snapshot
+          ? `${snapshot}.${request.method === 'POST' ? 'commit' : 'read'}`
           : 'campaign.get';
     const origin = request.headers.origin;
     if (origin !== undefined && (typeof origin !== 'string' || !origins.has(origin))) {
@@ -143,7 +152,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       response.end();
       return true;
     }
-    if (request.method !== 'GET' && !(collection && request.method === 'POST')) {
+    if (request.method !== 'GET' && !((collection || snapshot) && request.method === 'POST')) {
       jsonResponse(
         response,
         405,
@@ -175,10 +184,18 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             request.method === 'POST'
               ? await store.create(principal, await requestJSON(request))
               : await store.list(principal);
+        } else if (snapshot === 'scene') {
+          result =
+            request.method === 'POST'
+              ? await store.commitScene(principal, campaign[1], await requestJSON(request))
+              : await store.readScene(principal, campaign[1]);
+        } else if (snapshot === 'characters') {
+          result =
+            request.method === 'POST'
+              ? await store.commitCharacters(principal, campaign[1], await requestJSON(request))
+              : await store.readCharacters(principal, campaign[1]);
         } else {
-          result = campaign[2]
-            ? await store.readCharacters(principal, campaign[1])
-            : await store.get(principal, campaign[1]);
+          result = await store.get(principal, campaign[1]);
         }
       }
       jsonResponse(
@@ -192,7 +209,19 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         jsonResponse(
           response,
           error.status,
-          { version: 1, code: error.code, error: error.message },
+          {
+            version: 1,
+            code: error.code,
+            error: error.message,
+            ...(error.current
+              ? {
+                  current: {
+                    sceneRevision: error.current.sceneRevision,
+                    charactersRevision: error.current.charactersRevision,
+                  },
+                }
+              : {}),
+          },
           headers
         );
       } else {

@@ -429,5 +429,62 @@ That object cap is distinct from the **24 MiB command-wire** limit.
 **3 Jest fault suites / 5 tests** cover identity, eligibility, campaign metadata,
 production 412 and Storage permission failures; changed-code lint passes.
 
-This layer is not yet a campaign-save acknowledgment: canonical preparation and
-atomic head/receipt/change publication remain in progress under `M1-07`.
+This layer alone is not a campaign-save acknowledgment. The subsequently
+completed canonical preparation/publication proof is recorded below.
+
+## Atomic canonical publication
+
+`M1-07` completed November 11, 2026 for the development backend:
+
+- [CloudCampaignStore](../../tools/cloud/campaign-store.js) captures one authorized
+  head and any previous UID-scoped receipt before preparation. Duplicate recovery
+  does not depend on a creation catalog, another upload or re-executing a change.
+  Stored create results are canonically checked before acknowledgment.
+- Pinned [HostResources](../../tools/host-resources.js),
+  [CampaignStore](../../src/campaigns/CampaignStore.js),
+  [CampaignCharacters](../../src/campaigns/CampaignCharacters.js) and
+  [CampaignScene](../../src/campaigns/CampaignScene.js) validate real rules,
+  character/companion records, actor links and geometry in isolated preparation.
+  No new rules serialization or second live terrain owner was introduced.
+- Immutable candidate uploads and verification happen outside retryable
+  Firestore callbacks. Publication rechecks current pilot/owner access, durable
+  receipt, head generation and both coordinated revisions. Head, compact receipt
+  and server-timestamped change marker commit in one actual transaction.
+- Reads use both object references from one captured committed head and recheck
+  access after loading. A between-game character-only edit preserves the existing
+  scene bytes/reference, revision and saved-at value.
+- The [HTTP Adapter](../../tools/cloud/cloud-http.js) exposes bearer-protected
+  GET/POST scene and character routes, preserves versioned receipts, and returns
+  typed 409 conflicts with current coordinated revisions. Cookie/local-key
+  credentials and CORS preflight do not grant campaign authority.
+
+**Verified:** **45 native SDK/emulator/HTTP tests passed**, zero skipped. Coverage
+includes real existing character callers, 2014 and 2024 rules/source pins,
+current v3 connected-map transforms/actor IDs/view state, a greater-than-1-MiB
+scene with a less-than-16-KiB head, and strict input/reference limits.
+The existing scene fixture is shared by Jest and native Node through CommonJS;
+its values and existing caller Interface are unchanged.
+
+Failure/interleaving proof uses actual SDK state:
+
+- Two distinct candidates finish real uploads before publication; one wins and
+  the other receives a revision conflict, with no loser receipt/change.
+- Four simultaneous identical commands return the same durable result and
+  produce one revision/change, not repeated mutations.
+- A simulated lost upload acknowledgment after real Storage persistence leaves
+  no published head/receipt; the same command safely recovers exactly once.
+- A real Firestore create-precondition failure rolls back head, receipt and
+  compact change together; recovery after removing the injected fault is safe.
+- Eligibility revoked during a real upload blocks publication and further reads.
+  An unrelated approved UID cannot read or stage either private write type.
+- Malformed rules, scenes, terrain, linked/companion records and durable create
+  results fail explicitly without another campaign or partial publication.
+
+The combined targeted canonical/local-host/cloud-fault Jest run passes
+**8 suites / 52 tests**. Full existing lint/stylelint passes with zero errors and
+the same 39 pre-existing warnings; the layering check passes.
+The full stable application suite, browser account/save UI, clean-browser/backend
+replacement and actual forced-process-termination exit gates remain `M1-04`,
+`M1-05`, `M1-08`, `M1-09` and `M1-10`; they are not claimed complete here.
+All application tests stay demo-only. The sole real Storage/IAM primitive check
+was separately approved and cleaned up as recorded above.

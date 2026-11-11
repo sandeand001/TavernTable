@@ -36,12 +36,12 @@ and the existing billing budget were reported, not end-to-end verified.
 No new cloud verification or infrastructure changes were performed to create
 this checklist.
 
-**Current work:** the isolated SDK loop, backend account gate and private owned
-campaign metadata API are verified in `feat/cloud-accounts-multiplayer`.
-Immutable object/save publication (`M1-07`) is next, before browser account and
-returning-login integration (`M1-04` / `M1-05`). Nonempty cloud saves are not yet
-implemented. No application deployment or campaign-data write has occurred;
-the narrowly approved synthetic Storage/IAM canary is complete and cleaned up.
+**Current work:** the isolated SDK loop, account gate, private owned metadata and
+atomic canonical scene/character backend are verified in
+`feat/cloud-accounts-multiplayer`. Browser account/returning-login integration
+(`M1-04` / `M1-05`) and truthful save UX (`M1-08`) are next.
+No application deployment or live campaign-data write has occurred; the narrowly
+approved synthetic Storage/IAM canary is complete and cleaned up.
 
 ## Approved requirements: do not reopen by accident
 
@@ -197,6 +197,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     remains a separate hosted gate.
 
 - [ ] **M1-04 - Implement Google and email/password sign-in, verification, and recovery.**
+  - **Status:** in progress.
   - **Depends:** `M1-03`.
   - **Success:** both choices are usable; unverified password accounts cannot use
     campaigns; verification and password recovery return the same account to use.
@@ -227,13 +228,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     conflicts and four-instance contention. Empty initial state is readable;
     nonempty snapshot publication remains `M1-07`, not an implied completed save.
 
-- [ ] **M1-07 - Implement immutable cloud objects and atomic revision-head publication.**
-  - **Status:** in progress. The
-    [explicitly approved real Storage proof](./cloud-migration-preparation.md#immutable-object-primitive-approved-production-proof)
-    verified 412 overwrite rejection and original-byte preservation. The
-    synthetic object and exact-object temporary read grant were removed.
-    The Firebase emulator's missing precondition behavior is characterized, not
-    misreported as an immutable-write guarantee; atomic save publication is next.
+- [x] **M1-07 - Implement immutable cloud objects and atomic revision-head publication.**
   - **Depends:** `M1-01`, `M1-02`, `M1-06`.
   - **Success:** validate canonical state, stage/verify immutable Storage objects,
     then atomically publish head, receipt, and compact change record in Firestore.
@@ -242,6 +237,14 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** upload failures leave no dangling head; transaction retries/conflicts
     cannot overwrite another change. Scenes, artwork, and backups are not placed
     in oversized Firestore documents.
+  - **Completed:** November 11, 2026. **Evidence:**
+    [atomic canonical publication](./cloud-migration-preparation.md#atomic-canonical-publication):
+    45 native SDK/HTTP cases cover real character callers, 2014/2024 and v3
+    connected-map preservation, large scene separation, overlaps, identical
+    retries, mid-upload revocation, actual transaction rollback and safe errors.
+    The separately approved real Storage canary proved 412 enforcement and was
+    fully cleaned up, including its exact-object temporary IAM grant.
+    Browser save UX and complete M1 termination/reopen gates remain unchecked.
 
 - [ ] **M1-08 - Wire truthful save acknowledgement and existing checkpoint timing.**
   - **Depends:** `M1-07`.

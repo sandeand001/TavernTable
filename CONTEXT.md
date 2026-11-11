@@ -110,28 +110,31 @@
   metadata is owned by a verified UID. Protected create/list/open routes deny
   unrelated UIDs. Firestore transactions recheck current pilot eligibility;
   creation publishes its initial head and UID-scoped command receipt atomically.
-  Only empty initial state is readable before immutable save publication exists.
+  Private scene/character saves and coordinated reads are implemented in the
+  development backend; memberships, live games and browser integration remain gated.
 - **Cloud emulator loop (implemented development tooling only)**: explicit
   `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
   conflicting SDK settings fail closed. Real SDK integration uses native Node
   tests; ordinary unit/UI checks remain Jest. Scoped Java 21 tooling does not
   change the system default or enable application account/cloud-save features.
-- **Cloud revision head (initial metadata implemented; object publication pending)**: compact committed metadata
+- **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.
   Serialization/cache/reference data is not another live terrain owner.
-- **Private immutable cloud object (storage Module implemented; commit wiring pending)**:
+- **Private immutable cloud object (development storage/publication implemented)**:
   server-scoped content-addressed JSON, exact UTF-8 bytes/SHA-256 and GCS generation.
   Existing content is verified, never silently overwritten or repaired.
   The pinned Firebase emulator omits GCS create-only enforcement; a separately
   approved, cleaned-up real canary proved 412 rejection. Normal tests remain
   demo-only, and production-only fault branches have explicit external-service
   fixtures. Upload completion alone is not a committed campaign save.
-- **Durable cloud command receipt (create implemented; save publication pending)**: a UID/context-bound
+- **Durable cloud command receipt (create/scene/character backend implemented)**: a UID/context-bound
   command ID and intent fingerprint recover the original committed result after
   uncertain delivery. Prepare domain work and verify object uploads outside
   retryable transactions; publish head/receipt/change marker atomically.
   Journal expiry is not permission to re-execute an old command.
+  Recovery precedes preparation and still checks current access; immutable
+  candidate upload is not an acknowledged save before the Firestore publication.
 - **Hosted campaign (approved design, not implemented)**: the hosted frontend
   uses Firebase Hosting and the authoritative backend uses Cloud Run in Oregon
   (`us-west1`); rendering stays on each participant's device. Ownership and player

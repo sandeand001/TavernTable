@@ -1,6 +1,6 @@
-import { DEFAULT_CHARACTER_ID } from '../../src/config/CharacterCatalog.js';
+const { DEFAULT_CHARACTER_ID } = require('../../src/config/CharacterCatalog.js');
 
-export function sceneState({ ruleset = '2014', characterId = null, name = 'Rook' } = {}) {
+function sceneState({ ruleset = '2014', characterId = null, name = 'Rook' } = {}) {
   return {
     version: 1,
     ruleset,
@@ -52,3 +52,5 @@ export function sceneState({ ruleset = '2014', characterId = null, name = 'Rook'
     rollLog: [],
   };
 }
+
+module.exports = { sceneState };
