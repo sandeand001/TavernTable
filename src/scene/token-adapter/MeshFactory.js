@@ -151,6 +151,15 @@ async function _create3DToken(tokenEntry, scene, config) {
 
     await this._setupAnimationSet(tokenEntry, container, config, templateBundle);
 
+    // Loading can cache skin bounds before animation setup refreshes the bind matrices.
+    container.updateMatrixWorld(true);
+    container.traverse((child) => {
+      if (child.isSkinnedMesh) {
+        child.boundingBox = null;
+        child.boundingSphere = null;
+      }
+    });
+
     return container;
   } catch (error) {
     if (container) scene.remove(container);

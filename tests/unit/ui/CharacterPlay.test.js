@@ -108,6 +108,28 @@ test('Combat movement bar follows the shared allowance, Dash and DM corrections 
   ).toBe(40);
 });
 
+test('movement pace and style explicitly dirty the board only when their saved values change', async () => {
+  const changed = jest.fn();
+  sheets.gameManager.sceneAutosave = { changed };
+  await sheets.open(token);
+  sheets.root.querySelector('[data-sheet-section="combat"]').click();
+  changed.mockClear();
+  const click = (action, attribute, value) =>
+    sheets.root
+      .querySelector(`[data-sheet-action="${action}"][data-${attribute}="${value}"]`)
+      .click();
+  click('movement-mode', 'mode', 'run');
+  expect(changed).toHaveBeenCalledTimes(1);
+  expect(changed).toHaveBeenLastCalledWith('movement pace');
+  click('movement-mode', 'mode', 'run');
+  expect(changed).toHaveBeenCalledTimes(1);
+  click('movement-style', 'style', 'drunk');
+  expect(changed).toHaveBeenCalledTimes(2);
+  expect(changed).toHaveBeenLastCalledWith('movement style');
+  click('movement-style', 'style', 'drunk');
+  expect(changed).toHaveBeenCalledTimes(2);
+});
+
 test('the movement bar distinguishes waiting for a turn, zero speed and a downed character', async () => {
   await sheets.open(token);
   sheets.root.querySelector('[data-sheet-section="combat"]').click();

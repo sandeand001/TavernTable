@@ -1,9 +1,11 @@
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { getModelSupportBounds } from '../../core/ModelPostProcessing.js';
+import { opaqueModelBounds } from './placeableSight.js';
 
 /** Bake the complete cached model pose into geometry owned by one instance group. */
 export function createPlaceableModelGeometry(three, root) {
   const supportBounds = getModelSupportBounds(three, root);
+  const sightBounds = opaqueModelBounds(three, root);
   const parts = [];
   root.traverse((child) => {
     if (!child.isMesh) return;
@@ -28,7 +30,7 @@ export function createPlaceableModelGeometry(three, root) {
     });
   });
   if (!parts.length) throw new Error('Static placeable model contains no meshes');
-  if (parts.length === 1) return { ...parts[0], supportBounds };
+  if (parts.length === 1) return { ...parts[0], supportBounds, sightBounds };
 
   const geometries = [];
   const materials = [];
@@ -62,7 +64,7 @@ export function createPlaceableModelGeometry(three, root) {
     if (!geometry) throw new Error('Static placeable meshes have incompatible vertex attributes');
     geometry.clearGroups();
     for (const group of groups) geometry.addGroup(group.start, group.count, group.materialIndex);
-    return { geometry, material: materials, supportBounds };
+    return { geometry, material: materials, supportBounds, sightBounds };
   } finally {
     const ownedParts = new Set([...parts.map((part) => part.geometry), ...geometries]);
     for (const geometry of ownedParts) geometry.dispose();

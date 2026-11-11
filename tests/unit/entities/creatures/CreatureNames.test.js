@@ -1,5 +1,9 @@
 import { TokenManager } from '../../../../src/managers/TokenManager.js';
-import { renameCreature } from '../../../../src/entities/creatures/CreatureNames.js';
+import {
+  renameCreature,
+  syncLinkedCreatureNames,
+  notifyCreatureNames,
+} from '../../../../src/entities/creatures/CreatureNames.js';
 import { getCreatureTypeLabel } from '../../../../src/entities/creatures/creatureHelpers.js';
 import { getCharacterDefinition } from '../../../../src/config/CharacterCatalog.js';
 import { TOKEN_3D_MODELS } from '../../../../src/config/token-adapter/MannequinConfig.js';
@@ -53,4 +57,34 @@ test('an unlinked custom name is validated, saved and not replaced by later dupl
   await expect(renameCreature(gameManager, first, '   ')).rejects.toThrow('1 to 100');
   await expect(renameCreature(gameManager, first, 'x'.repeat(101))).rejects.toThrow('1 to 100');
   expect(first.name).toBe('Sentinel');
+});
+
+test('ordinary linked-character refreshes do not mark unchanged names dirty', () => {
+  const token = { characterSheetId: 'hero', name: 'Nora', nameMode: 'character' };
+  const gameManager = {
+    placedTokens: [token],
+    characterServices: { library: { get: () => ({ name: 'Nora' }) } },
+    sceneAutosave: { changed: jest.fn() },
+  };
+  syncLinkedCreatureNames(gameManager, 'hero');
+  expect(gameManager.sceneAutosave.changed).not.toHaveBeenCalled();
+  token.name = 'Old name';
+  syncLinkedCreatureNames(gameManager, 'hero');
+  expect(token.name).toBe('Nora');
+  expect(gameManager.sceneAutosave.changed).toHaveBeenCalledTimes(1);
+});
+
+test('already acknowledged names still notify the UI without requesting another scene save', () => {
+  const token = { name: 'Nora' };
+  const gameManager = { sceneAutosave: { changed: jest.fn() } };
+  const notified = jest.fn();
+  window.addEventListener('taverntable:tokenNamesChanged', notified);
+  try {
+    notifyCreatureNames(gameManager, [token], { saved: true });
+    expect(notified).toHaveBeenCalledTimes(1);
+    expect(notified.mock.calls[0][0].detail.tokens).toEqual([token]);
+    expect(gameManager.sceneAutosave.changed).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener('taverntable:tokenNamesChanged', notified);
+  }
 });

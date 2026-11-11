@@ -43,21 +43,31 @@ export default class TargetingOverlay {
     this.signature = signature;
     this.clear();
     for (const effect of effects || []) {
-      if (effect.kind === 'flight') {
-        const indicators = new this.three.Group();
-        indicators.name = 'FlightEffectIndicators';
-        // Transparent portrait tokens do not write depth, so draw beneath them.
-        indicators.renderOrder = -1;
-        indicators.raycast = () => {};
-        this.group.add(indicators);
+      if (effect.kind === 'flight' || effect.kind === 'targets') {
+        const indicators = this.indicatorGroup(
+          effect.kind === 'flight' ? 'FlightEffectIndicators' : 'SpellRecipientIndicators'
+        );
         for (const token of board?.tokens || []) {
           if (effect.targetTokenIds.includes(token.id))
-            this.ring(token.groundWorld || token.world, board.tileSize * 0.52, 0x67e8f9, {
-              depthTest: true,
-              group: indicators,
-              yOffset: token.groundWorld ? board.tileSize * 0.015 : 0.025,
-            });
+            this.ring(
+              effect.kind === 'flight' ? token.groundWorld || token.world : token.world,
+              board.tileSize * 0.52,
+              effect.kind === 'flight' ? 0x67e8f9 : 0xa78bfa,
+              {
+                depthTest: true,
+                group: indicators,
+                yOffset:
+                  effect.kind === 'flight' && token.groundWorld ? board.tileSize * 0.015 : 0.025,
+              }
+            );
         }
+        continue;
+      }
+      if (effect.kind === 'point') {
+        this.ring(effect.origin, board.tileSize * 0.2, spellColor(effect.sourceId), {
+          depthTest: true,
+          group: this.indicatorGroup('SpellLocationIndicators'),
+        });
         continue;
       }
       let area = effect.area;
@@ -90,6 +100,7 @@ export default class TargetingOverlay {
       : null;
     const excluded = new Set(selection?.exclusions || []);
     for (const token of board.tokens) {
+      if (profile.kind === 'self' && token.id !== actor.id) continue;
       const viable =
         profile.kind === 'tokens'
           ? targetStatus(board, actor, token, profile, selection?.mode).allowed
@@ -109,6 +120,18 @@ export default class TargetingOverlay {
       );
     }
     if (previewArea) this.area(previewArea, 0xfbbf24, 0.18);
+    if (profile.kind === 'point' && selection?.origin)
+      this.ring(selection.origin, board.tileSize * 0.2, 0xfbbf24);
+  }
+
+  indicatorGroup(name) {
+    const group = new this.three.Group();
+    group.name = name;
+    // Transparent portrait tokens do not write depth, so draw beneath them.
+    group.renderOrder = -1;
+    group.raycast = () => {};
+    this.group.add(group);
+    return group;
   }
 
   range(origin, distance, color) {
@@ -163,7 +186,22 @@ export default class TargetingOverlay {
     const direction = new three.Vector3(area.direction.x, area.direction.y, area.direction.z);
     if (area.shape === 'sphere' || area.shape === 'emanation')
       geometry = new three.SphereGeometry(area.size, 28, 16);
-    else if (area.shape === 'cylinder') {
+    else if (area.shape === 'hemisphere')
+      geometry = new three.SphereGeometry(area.size, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    else if (area.shape === 'ring') {
+      const shape = new three.Shape();
+      shape.absarc(0, 0, area.size, 0, Math.PI * 2, false);
+      const hole = new three.Path();
+      hole.absarc(0, 0, area.size - area.width, 0, Math.PI * 2, true);
+      shape.holes.push(hole);
+      geometry = new three.ExtrudeGeometry(shape, {
+        depth: area.height,
+        bevelEnabled: false,
+        curveSegments: 32,
+        steps: 1,
+      });
+      rotation = new three.Quaternion().setFromAxisAngle(new three.Vector3(1, 0, 0), -Math.PI / 2);
+    } else if (area.shape === 'cylinder') {
       geometry = new three.CylinderGeometry(area.size, area.size, area.height, 32);
       offset.y = area.height / 2;
     } else if (area.shape === 'square') {
@@ -195,6 +233,17 @@ export default class TargetingOverlay {
       offset = {
         x: (direction.x * area.size) / 2,
         y: (direction.y * area.size) / 2,
+        z: (direction.z * area.size) / 2,
+      };
+    } else if (area.shape === 'wall') {
+      geometry = new three.BoxGeometry(area.width, area.height, area.size);
+      rotation = new three.Quaternion().setFromAxisAngle(
+        new three.Vector3(0, 1, 0),
+        Math.atan2(direction.x, direction.z)
+      );
+      offset = {
+        x: (direction.x * area.size) / 2,
+        y: area.height / 2,
         z: (direction.z * area.size) / 2,
       };
     } else throw new Error('The spell overlay has an unsupported area shape');
@@ -245,6 +294,10 @@ export default class TargetingOverlay {
 }
 
 function spellColor(sourceId) {
+  if (['spell:moonbeam', 'spell:conjure-celestial'].includes(sourceId)) return 0xc4e4ff;
+  if (['spell:wall-of-fire', 'spell:flaming-sphere', 'spell:incendiary-cloud'].includes(sourceId))
+    return 0xfb923c;
+  if (['spell:wall-of-ice', 'spell:sleet-storm'].includes(sourceId)) return 0x7dd3fc;
   if (['spell:fireball', 'spell:burning-hands', 'spell:flame-strike'].includes(sourceId))
     return 0xfb923c;
   if (sourceId === 'spell:fog-cloud') return 0xcbd5e1;

@@ -9,6 +9,7 @@ import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCa
 import data from '../../../assets/data/resources/srd-2024-5.2.1-seed.1.json';
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { GameErrors } from '../../../src/utils/error/ErrorHandler.js';
 
 jest.mock('../../../src/systems/dice/dice.js', () => ({ rollDiceExpression: jest.fn() }));
 
@@ -107,6 +108,75 @@ test('only one overlay is created by concurrent requests, and no idle frame scan
   expect(gm.getTerrainHeight).not.toHaveBeenCalled();
 });
 
+test('two free-play characters finish independent sheet actions while the first roll is still pending', async () => {
+  session.targeting = null;
+  context.services.targeting = null;
+  let finishFirstRoll;
+  rollDiceExpression.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishFirstRoll = resolve;
+      })
+  );
+  const first = performPlayAction(context, 'attack:unarmed');
+  await settle();
+  const ticket = session.pending;
+  const other = {
+    ...context,
+    token: target,
+    characterId: target.characterSheetId,
+    rollStatus: document.createElement('p'),
+    _failure: jest.fn(),
+  };
+  expect(await performPlayAction(other, 'attack:unarmed')).toBeTruthy();
+  expect(session.isActionPending(ticket)).toBe(true);
+  expect(context._failure).not.toHaveBeenCalled();
+  expect(other._failure).not.toHaveBeenCalled();
+  finishFirstRoll({ cancelled: false, text: 'First attack: 15' });
+  expect(await first).toBeTruthy();
+  expect(session.pending).toBeNull();
+});
+
+test('a second action for the same sprite waits and starts only after its pending roll finishes', async () => {
+  session.targeting = null;
+  context.services.targeting = null;
+  let finishFirstRoll;
+  rollDiceExpression.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishFirstRoll = resolve;
+      })
+  );
+  const first = performPlayAction(context, 'attack:unarmed');
+  await settle();
+  const second = performPlayAction(context, 'attack:unarmed');
+  await settle();
+  expect(rollDiceExpression).toHaveBeenCalledTimes(1);
+  expect(context.rollStatus.textContent).toContain('queued');
+  finishFirstRoll({ cancelled: false, text: 'First attack: 15' });
+  expect((await Promise.all([first, second])).every(Boolean)).toBe(true);
+  expect(rollDiceExpression).toHaveBeenCalledTimes(2);
+  expect(context._failure).not.toHaveBeenCalled();
+});
+
+test('independent free-play targeting requests share only the local targeting panel, not action reservations', async () => {
+  const a = session.prepareAction(caster, 'attack:unarmed');
+  const b = session.prepareAction(target, 'attack:unarmed');
+  const first = controller.choose(caster, a);
+  const second = controller.choose(target, b);
+  await settle();
+  expect(controller.active.token).toBe(caster);
+  expect(session.isActionPending(b)).toBe(true);
+  controller.cancel();
+  expect(await first).toEqual({ cancelled: true });
+  await settle();
+  expect(controller.active.token).toBe(target);
+  expect(session.isActionPending(b)).toBe(true);
+  controller.cancel();
+  expect(await second).toEqual({ cancelled: true });
+  expect(session.pending).toBeNull();
+});
+
 test('connected-map spell picking stores physical coordinates while its overlay stays on the viewed grid', async () => {
   const scene = sceneState({
     ruleset: '2024',
@@ -150,6 +220,86 @@ test('disposing during overlay loading cannot attach a renderer after disposal',
   controller.dispose();
   await loading;
   expect(gm.threeSceneManager.scene.children).toEqual([]);
+});
+
+test('Moonbeam placement and its Move button share the real targeting flow without another cast', async () => {
+  const errors = jest.spyOn(GameErrors, 'gameState').mockImplementation(() => {});
+  const id = addSpell('spell:moonbeam');
+  session.startTurn(caster);
+  const casting = performPlayAction(context, id);
+  await settle();
+  expect(controller.root.textContent).toContain('5 ft radius cylinder; 40 ft high');
+  controller.updatePoint({ x: 5.5, y: 0, z: 1.5 }, true);
+  confirm();
+  const cast = await casting;
+  expect(errors).not.toHaveBeenCalled();
+  expect(session.effects[0].area.origin).toEqual({ x: 5.5, y: 0, z: 1.5 });
+  expect(controller.effectRoot.querySelector('[data-move-effect]').disabled).toBe(true);
+  session.endTurn();
+  session.startTurn(caster);
+  const slots = [...library.get(caster.characterSheetId).slotsUsed];
+  controller.effectRoot.querySelector('[data-move-effect]').click();
+  await settle();
+  expect(controller.active.action.kind).toBe('spell-effect');
+  expect(controller.root.querySelector('[data-target-slot-level]')).toBeNull();
+  expect(controller.root.textContent).toContain('Confirm move');
+  controller.updatePoint({ x: 17.5, y: 0, z: 1.5 }, true);
+  expect(controller.root.querySelector('[data-target-action="confirm"]').disabled).toBe(false);
+  confirm();
+  await settle();
+  expect(session.effects[0]).toMatchObject({
+    id: cast.sequence,
+    remainingTurns: 9,
+    area: { origin: { x: 17.5, y: 0, z: 1.5 } },
+  });
+  expect(library.get(caster.characterSheetId).slotsUsed).toEqual(slots);
+  expect(session.status(caster).actions).toBe(0);
+  expect(errors).not.toHaveBeenCalled();
+});
+
+test('wall-template buttons preview a ring without changing the original reservation or spending early', async () => {
+  const id = addSpell('spell:wall-of-fire');
+  session.startTurn(caster);
+  const casting = performPlayAction(context, id);
+  await settle();
+  const ticket = session.pending;
+  expect(ticket.action.targeting.shape).toBe('wall');
+  controller.root.querySelector('[data-target-variant="ring"]').click();
+  expect(controller.active.profile).toMatchObject({
+    shape: 'ring',
+    sizeFeet: 10,
+    heightFeet: 20,
+    widthFeet: 1,
+  });
+  expect(ticket.action.targeting.shape).toBe('wall');
+  expect(session.status(caster).actions).toBe(1);
+  expect(library.get(caster.characterSheetId).slotsUsed.every((used) => used === 0)).toBe(true);
+  controller.updatePoint({ x: 5.5, y: 0, z: 1.5 }, true);
+  confirm();
+  const cast = await casting;
+  expect(cast.targetingVariant).toBe('ring');
+  expect(cast.targetingSelection.variant).toBe('ring');
+  expect(session.effects[0].area).toMatchObject({ shape: 'ring', size: 2, width: 0.2, height: 4 });
+});
+
+test('a location marker cannot be moved beyond the caster range, and cancellation spends nothing', async () => {
+  const id = addSpell('spell:mage-hand');
+  const casting = performPlayAction(context, id);
+  await settle();
+  controller.updatePoint({ x: 2.5, y: 0, z: 1.5 }, true);
+  confirm();
+  await casting;
+  const before = JSON.stringify(session.effects);
+  const moving = controller.moveEffect(session.effects[0].id);
+  await settle();
+  controller.updatePoint({ x: 8.5, y: 0, z: 1.5 }, true);
+  expect(controller.root.querySelector('[data-target-action="confirm"]').disabled).toBe(true);
+  expect(controller.root.textContent).toContain('within 30 feet of the caster');
+  controller.cancel();
+  await moving;
+  expect(JSON.stringify(session.effects)).toBe(before);
+  expect(session.pending).toBeNull();
+  expect(library.get(caster.characterSheetId).slotsUsed.every((used) => used === 0)).toBe(true);
 });
 
 test('casting-level buttons update Magic Missile allocations and spend only the confirmed higher slot', async () => {

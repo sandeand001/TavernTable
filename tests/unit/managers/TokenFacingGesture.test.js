@@ -114,3 +114,39 @@ test('Escape restores the original heading and removes drag listeners', () => {
   f.manager._facingGesture.detach();
   f.view.remove();
 });
+
+test.each(['armed', 'busy'])(
+  '%s blocks direct facing capture and normal rotation resumes when cleared',
+  (reason) => {
+    const f = fixture();
+    const gesture = f.manager._facingGesture;
+    const pick = jest.spyOn(f.gm.pickingService, 'pickGroundSync');
+    if (reason === 'armed') f.gm.tokenManager.selectedSavedCharacterId = 'saved-hero';
+    else f.gm.campaignViewBusy = true;
+    const event = new MouseEvent('mousedown', { button: 0, ...f.screen(0, 0) });
+    const stop = jest.spyOn(event, 'stopImmediatePropagation');
+    try {
+      gesture.onDown(event);
+      expect(gesture.active).toBeNull();
+      expect(pick).not.toHaveBeenCalled();
+      expect(stop).not.toHaveBeenCalled();
+      expect(f.token.facingAngle).toBe(0);
+      expect(f.token.world).toEqual({ x: 0, y: 0, z: 0 });
+      f.gm.tokenManager.selectedSavedCharacterId = null;
+      f.gm.campaignViewBusy = false;
+      gesture.onDown(event);
+      expect(gesture.active?.token).toBe(f.token);
+      expect(stop).toHaveBeenCalledTimes(1);
+      mouse(document, 'mousemove', f.screen(0, 2), { buttons: 1 });
+      mouse(document, 'mouseup', f.screen(0, 2));
+      expect(f.token.facingAngle).toBeCloseTo(-Math.PI / 2);
+      expect(gesture.active).toBeNull();
+      expect(f.manager.handleLeftClick).not.toHaveBeenCalled();
+    } finally {
+      gesture.detach();
+      pick.mockRestore();
+      stop.mockRestore();
+      f.view.remove();
+    }
+  }
+);

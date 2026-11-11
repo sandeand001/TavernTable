@@ -2,6 +2,9 @@ import {
   ConnectionUnavailableError,
   connectionEndpointFeet,
   connectionFeatureBounds,
+  connectionOpeningAxis,
+  connectionApertureBounds,
+  connectionGroundEntry,
 } from './CampaignConnectionGeometry.js';
 import { facingAngleFromDirection } from '../entities/creatures/TokenMovement.js';
 import {
@@ -11,6 +14,7 @@ import {
   mapFeetToCampaign,
 } from './CampaignCoordinates.js';
 import { FEET_PER_GRID_SQUARE } from '../config/TokenMovementConfig.js';
+import { boundsIntersectSolid } from '../terrain/ConvexGeometry.js';
 
 const EPSILON = 1e-6;
 const distance = (a, b) => Math.max(...['x', 'y', 'z'].map((axis) => Math.abs(a[axis] - b[axis])));
@@ -32,8 +36,12 @@ export function isOpeningHoldValid(maps, connections, creature, geometryForMap) 
         connection.feature.volumeIds.includes(volume.id) && volume.operation === 'subtract'
     );
   if (!feature || !outsideMap) return false;
-  const bounds = campaignFeetBounds(owner, feature.bounds);
-  const thin = bounds.max.x - bounds.min.x < bounds.max.z - bounds.min.z ? 'x' : 'z';
+  const bounds = connectionApertureBounds(
+    owner,
+    connection,
+    campaignFeetBounds(owner, feature.bounds)
+  );
+  const thin = connectionOpeningAxis(owner, connection, bounds);
   const wide = thin === 'x' ? 'z' : 'x';
   const outsideEnd = connection.ends.find((end) => end.mapId === creature.mapId);
   const outside = mapFeetToCampaign(outsideMap, outsideEnd.positionFeet);
@@ -86,17 +94,30 @@ export function isOpeningHoldValid(maps, connections, creature, geometryForMap) 
   return true;
 }
 
-export function openingFrame(world, connection, options = {}) {
+export function openingFrame(world, connection, options = {}, start = null) {
   const bounds = connectionFeatureBounds(world, connection, options)[0];
-  const thin = bounds.max.x - bounds.min.x < bounds.max.z - bounds.min.z ? 'x' : 'z';
+  const thin = connectionOpeningAxis(world.getMap(connection.feature.mapId), connection, bounds);
   const wide = thin === 'x' ? 'z' : 'x';
   const outsideEnd = connection.ends.find((end) => end.mapId === connection.outsideMapId);
   if (!outsideEnd) throw new Error('The window has no exterior attachment');
   const insideEnd = connection.ends.find((end) => end !== outsideEnd);
-  const outside = connectionEndpointFeet(world, outsideEnd);
-  const inside = connectionEndpointFeet(world, insideEnd);
+  const positioned = (end) =>
+    start
+      ? world.toCampaignPosition(
+          end.mapId,
+          connectionGroundEntry(
+            world,
+            connection,
+            end.mapId,
+            world.toMapPosition(end.mapId, start),
+            options
+          )
+        )
+      : connectionEndpointFeet(world, end);
+  const outside = positioned(outsideEnd);
+  const inside = positioned(insideEnd);
   const sign = outside[thin] < (bounds.min[thin] + bounds.max[thin]) / 2 ? -1 : 1;
-  const center = (bounds.min[wide] + bounds.max[wide]) / 2;
+  const center = inside[wide];
   const grip = {
     ...outside,
     [thin]: (sign < 0 ? bounds.min[thin] : bounds.max[thin]) + sign * 0.5,
@@ -124,6 +145,7 @@ export function openingFrame(world, connection, options = {}) {
 function assertClear(world, route, options) {
   const obstacles = world.getObstacles(options);
   for (const actor of options.occupants || []) {
+    if (!world.sharesLocation(actor.mapId, options.mapId)) continue;
     const position = world.toCampaignPosition(actor.mapId, actor.world);
     obstacles.push({
       min: { x: position.x - 2, y: position.y + EPSILON, z: position.z - 2 },
@@ -145,15 +167,7 @@ function assertClear(world, route, options) {
         z: Math.max(a.z, b.z) + 0.5,
       },
     };
-    if (
-      obstacles.some((bounds) =>
-        ['x', 'y', 'z'].every(
-          (axis) =>
-            body.min[axis] < bounds.max[axis] - EPSILON &&
-            body.max[axis] > bounds.min[axis] + EPSILON
-        )
-      )
-    )
+    if (obstacles.some((bounds) => boundsIntersectSolid(body, bounds, EPSILON)))
       unavailable('The window climbing route is blocked or lacks body clearance');
   }
 }
@@ -174,7 +188,6 @@ function climbPlan(
     pose.kind === 'ledge' &&
     !world.isOpeningHoldValid(targetMapId, targetWorld, pose.openingId, options)
   ) {
-    if (!options.surfaceGrip) unavailable('The climbing route has no safe physical wall hold');
     pose = {
       kind: 'grip',
       grip: world.openingSurfaceGrip(targetMapId, targetWorld, connection.id, options),
@@ -304,7 +317,7 @@ function directEntryFrame(world, connection, frame, start, options) {
     start.y > frame.grip.y + EPSILON
   )
     return null;
-  const owner = world.getMap(connection.feature.mapId);
+  const owner = world.getMap(options.surfaceGrip?.mapId || connection.feature.mapId);
   const sample = campaignToMapFeet(owner, {
     ...start,
     [frame.thin]: (frame.bounds.min[frame.thin] + frame.bounds.max[frame.thin]) / 2,
@@ -334,8 +347,14 @@ export function planWindowClimb(world, connection, mapId, localWorld, options = 
   const action = options.action || 'cross';
   if (!['cross', 'down', 'drop'].includes(action))
     throw new Error('Unknown window climbing action');
-  const frame = openingFrame(world, connection, options);
   const start = world.toCampaignPosition(mapId, localWorld);
+  const frame = openingFrame(world, connection, options, start);
+  if (
+    action === 'cross' &&
+    (frame.bounds.max[frame.wide] - frame.bounds.min[frame.wide] < 1 - EPSILON ||
+      frame.bounds.max.y - frame.bounds.min.y < 5 - EPSILON)
+  )
+    unavailable('This window is too small for the creature; it needs body clearance');
   if (
     mapId === connection.outsideMapId &&
     (options.openingHold === connection.id || options.surfaceGrip)

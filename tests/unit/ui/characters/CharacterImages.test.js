@@ -150,6 +150,7 @@ test('removing a portrait is independent of artwork and disables changes until t
 
 test('a real campaign sheet saves images, updates linked tokens, displays artwork on Bio, and restores after reopening', async () => {
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch: fetchBundledResource,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,

@@ -5,6 +5,8 @@ import classic from '../../../assets/data/resources/srd-2014-5.1-seed.1.json';
 import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import CombatSession from '../../../src/entities/characters/CombatSession.js';
 import { TerrainGeometry } from '../../../src/terrain/TerrainGeometry.js';
+import { clearSegment } from '../../../src/rules/targeting/geometry.js';
+import { boundsIntersectSolid } from '../../../src/terrain/ConvexGeometry.js';
 
 function context() {
   localStorage.clear();
@@ -42,6 +44,31 @@ test('connected-map checkpoints round-trip through the campaign scene format', (
   expect(decodeScene(encodeScene(saved, validation), validation)).toEqual(saved);
 });
 
+test('actor-only checkpoints retain map geometry and its revision while real terrain edits invalidate them', () => {
+  const world = CampaignWorld.fromScene(sceneState(), context());
+  const geometry = world.getMapGeometry('map-main'),
+    revision = world.mapRevision;
+  const saved = world.save();
+  saved.creatures[0].name = 'Updated creature';
+  world.acceptCheckpoint(saved);
+  expect(world.mapRevision).toBe(revision);
+  expect(world.getMapGeometry('map-main')).toBe(geometry);
+  saved.maps[0].terrain.heights[0][0] = 1;
+  world.acceptCheckpoint(saved);
+  expect(world.mapRevision).toBe(revision + 1);
+  expect(world.getMapGeometry('map-main')).not.toBe(geometry);
+});
+
+test('moving an unchanged map invalidates geometry identities used by transformed collision and projection caches', () => {
+  const world = CampaignWorld.fromScene(sceneState(), context());
+  const geometry = world.getMapGeometry('map-main');
+  const saved = world.save();
+  saved.maps[0].originFeet.y = 10;
+  world.acceptCheckpoint(saved);
+  expect(world.mapRevision).toBe(1);
+  expect(world.getMapGeometry('map-main')).not.toBe(geometry);
+});
+
 function floorMap(id, originFeet, quarterTurns = 0) {
   const scene = sceneState();
   return {
@@ -57,6 +84,96 @@ function floorMap(id, originFeet, quarterTurns = 0) {
     },
   };
 }
+
+test('campaign sight retains its conservative observer-on-wall boundary rule', () => {
+  const world = CampaignWorld.fromScene(sceneState(), context());
+  const map = floorMap('wall', { x: 100, y: 0, z: 100 });
+  const geometry = new TerrainGeometry({
+    widthFeet: 25,
+    depthFeet: 25,
+    getTerrainHeightFeet: () => 0,
+    terrainThicknessFeet: 0.5,
+  });
+  geometry.addSolid({
+    id: 'wall',
+    bounds: { min: { x: 5, y: 0, z: 5 }, max: { x: 6, y: 10, z: 20 } },
+  });
+  map.terrain.geometry = geometry.save();
+  world.addMap(map);
+  expect(world.hasLineOfSight({ x: 105, y: 0, z: 110 }, { x: 103, y: 0, z: 110 })).toBe(false);
+  expect(world.hasLineOfSight({ x: 104.9, y: 0, z: 110 }, { x: 103, y: 0, z: 110 })).toBe(true);
+});
+
+test('curved campaign obstacles keep their actual half-spaces across rotated, differently scaled maps', () => {
+  const validation = context();
+  const world = CampaignWorld.fromScene(sceneState(), validation);
+  const map = floorMap('dome', { x: 100, y: 10, z: 100 }, 1);
+  const geometry = new TerrainGeometry({
+    widthFeet: 25,
+    depthFeet: 25,
+    terrainThicknessFeet: 0.5,
+    getTerrainHeightFeet: () => 0,
+  });
+  geometry.addSolid({
+    id: 'shell',
+    layerId: 'roof',
+    bounds: { min: { x: 2.5, y: 0, z: 2.5 }, max: { x: 22.5, y: 10, z: 22.5 } },
+    shape: {
+      kind: 'ellipsoid',
+      center: { x: 12.5, y: 0, z: 12.5 },
+      radii: { x: 10, y: 10, z: 10 },
+    },
+  });
+  geometry.carve({
+    id: 'room',
+    bounds: { min: { x: 4.5, y: 0, z: 4.5 }, max: { x: 20.5, y: 8, z: 20.5 } },
+    shape: {
+      kind: 'ellipsoid',
+      center: { x: 12.5, y: 0, z: 12.5 },
+      radii: { x: 8, y: 8, z: 8 },
+    },
+  });
+  map.terrain.geometry = geometry.save();
+  world.addMap(map);
+  const obstacles = world.getObstacles();
+  expect(
+    obstacles.some((solid) =>
+      solid.planes?.some(
+        ({ normal }) =>
+          [normal.x, normal.y, normal.z].filter((value) => Math.abs(value) > 0.01).length > 1
+      )
+    )
+  ).toBe(true);
+  const physical = (x, y, z) =>
+    world.toCampaignPosition('dome', {
+      x: x * 0.4,
+      y: y * 0.4,
+      z: z * 0.4,
+    });
+  for (const [x, z] of [
+    [3, 3],
+    [6, 8],
+    [9, 5],
+    [12.5, 12.5],
+    [17, 18],
+    [21, 12.5],
+  ]) {
+    const top = geometry.getSurfacesAt(x, z).at(-1).heightFeet;
+    expect(clearSegment(physical(x, 30, z), physical(x, top + 0.1, z), obstacles)).toBe(true);
+    expect(clearSegment(physical(x, 30, z), physical(x, top - 0.1, z), obstacles)).toBe(false);
+  }
+  const room = world.toCampaignBounds('dome', {
+    min: { x: 4.5, y: 0.01, z: 4.5 },
+    max: { x: 5.5, y: 2, z: 5.5 },
+  });
+  expect(obstacles.some((solid) => boundsIntersectSolid(room, solid))).toBe(false);
+  const roof = world.toCampaignBounds('dome', {
+    min: { x: 4.5, y: 3.3, z: 4.5 },
+    max: { x: 5.5, y: 3.8, z: 5.5 },
+  });
+  expect(obstacles.some((solid) => boundsIntersectSolid(roof, solid))).toBe(true);
+  expect(decodeScene(encodeScene(world.save(), validation), validation)).toEqual(world.save());
+});
 
 test('a rotated floor with a different rendering scale projects one creature into another grid', () => {
   const validation = context();

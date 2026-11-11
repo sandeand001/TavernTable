@@ -55,6 +55,7 @@ export function createOpeningsTravelScene(options) {
       id: 'balcony-door',
       name: 'Balcony doorway',
       kind: 'door',
+      open: true,
       feature: { mapId: 'map-main', volumeIds: ['balcony-door'] },
       ends: [
         { mapId: 'map-main', positionFeet: { x: 52.5, y: 10, z: 52.5 } },

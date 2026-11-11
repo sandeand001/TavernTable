@@ -96,7 +96,9 @@ function haltFallRoute(state) {
       });
       job.continuing = true;
     }
-    this._finishPlannedMovement(state.token);
+    this._finishPlannedMovement(state.token, false, {
+      recordPlacement: !state.activeStep?.campaignLanding && !state.activeStep?.surfaceCatch,
+    });
   }
   this._clearPathState(state);
   this._clearResumeProbe(state);

@@ -5,6 +5,13 @@ import {
 } from './CampaignCoordinates.js';
 import { ConnectionUnavailableError } from './CampaignConnectionGeometry.js';
 import { openingFrame } from './CampaignOpeningClimb.js';
+import {
+  boundsIntersectSolid,
+  sweptBodyCell,
+  cellIntersectsSolid,
+} from '../terrain/ConvexGeometry.js';
+import { volumeCell } from '../terrain/TerrainVolumeShape.js';
+import { isFloorSurface } from '../terrain/SurfaceNavigation.js';
 
 const EPSILON = 1e-5;
 const BODY_FEET = 5;
@@ -18,7 +25,21 @@ const unavailable = (message, code = 'unavailable') => {
 };
 const lerp = (a, b, ratio) =>
   Object.fromEntries(axes.map((axis) => [axis, a[axis] + (b[axis] - a[axis]) * ratio]));
-const mapsOf = (world) => world.listMaps().map(({ id }) => world.getMap(id));
+const mapsOf = (world, mapId) => world.listLocationMaps(mapId).map(({ id }) => world.getMap(id));
+const dot = (a, b) => a.x * b.x + a.z * b.z;
+const horizontalNormal = (value) => {
+  const magnitude = Math.hypot(value.x, value.z);
+  if (!Number.isFinite(magnitude) || magnitude < EPSILON)
+    unavailable('Choose a physical wall with a horizontal normal');
+  const clean = (number) => (Math.abs(number) < EPSILON ? 0 : number);
+  return { x: clean(value.x / magnitude), y: 0, z: clean(value.z / magnitude) };
+};
+const tangentOf = (normal) => ({ x: -normal.z, y: 0, z: normal.x });
+const acrossTo = (start, target, attachment) => {
+  const tangent = tangentOf(attachment.normal);
+  const delta = dot(target, tangent) - dot(start, tangent);
+  return { x: start.x + tangent.x * delta, y: target.y, z: start.z + tangent.z * delta };
+};
 
 export function validGripReference(grip) {
   return (
@@ -31,9 +52,7 @@ export function validGripReference(grip) {
       (axis) => Number.isFinite(grip.pointFeet?.[axis]) && Number.isFinite(grip.normal?.[axis])
     ) &&
     grip.normal.y === 0 &&
-    Math.abs(grip.normal.x) + Math.abs(grip.normal.z) === 1 &&
-    Number.isInteger(grip.normal.x) &&
-    Number.isInteger(grip.normal.z)
+    Math.abs(Math.hypot(grip.normal.x, grip.normal.z) - 1) < EPSILON
   );
 }
 
@@ -46,18 +65,15 @@ function frame(maps, grip) {
     y: grip.pointFeet.y,
     z: grip.pointFeet.z + grip.normal.z,
   });
-  const normal = {
-    x: Math.round(outward.x - contact.x),
+  const normal = horizontalNormal({
+    x: outward.x - contact.x,
     y: 0,
-    z: Math.round(outward.z - contact.z),
-  };
-  const thin = normal.x ? 'x' : 'z';
+    z: outward.z - contact.z,
+  });
   return {
     owner,
     contact,
     normal,
-    thin,
-    wide: thin === 'x' ? 'z' : 'x',
     offsetFeet: grip.offsetFeet,
   };
 }
@@ -128,25 +144,29 @@ export function openingSurfaceGrip(world, mapId, position, openingId, options = 
   if (!connection) throw new Error('The held opening no longer exists');
   const opening = openingFrame(world, connection, options);
   const feet = world.toCampaignPosition(mapId, position);
-  const attachment = {
-    owner: world.getMap(connection.feature.mapId),
-    normal: {
-      x: opening.thin === 'x' ? opening.sign : 0,
-      y: 0,
-      z: opening.thin === 'z' ? opening.sign : 0,
-    },
+  const normal = {
+    x: opening.thin === 'x' ? opening.sign : 0,
+    y: 0,
+    z: opening.thin === 'z' ? opening.sign : 0,
   };
-  for (let offsetFeet = OFFSET_FEET; offsetFeet <= 2; offsetFeet += 0.25) {
-    const grip = gripAt(world, mapId, feet, { ...attachment, offsetFeet });
-    if (
-      isSurfaceGripValid(
-        mapsOf(world),
-        { mapId, pose: { kind: 'grip', world: position, grip } },
-        (id) => geometryFor(world, options, id)
+  const owners = [
+    connection.feature.mapId,
+    ...connection.ends
+      .filter((end) => end.mapId !== connection.outsideMapId)
+      .map((end) => end.mapId),
+  ];
+  for (const ownerId of new Set(owners))
+    for (let offsetFeet = OFFSET_FEET; offsetFeet <= 2; offsetFeet += 0.25) {
+      const grip = gripAt(world, mapId, feet, { owner: world.getMap(ownerId), normal, offsetFeet });
+      if (
+        isSurfaceGripValid(
+          mapsOf(world, mapId),
+          { mapId, pose: { kind: 'grip', world: position, grip } },
+          (id) => geometryFor(world, options, id)
+        )
       )
-    )
-      return grip;
-  }
+        return grip;
+    }
   unavailable('The opening no longer has a reachable physical grip');
 }
 
@@ -168,7 +188,7 @@ export function gripAt(world, mapId, feet, attachment) {
     mapId: owner.id,
     pointFeet: local,
     offsetFeet,
-    normal: { x: Math.round(outward.x - local.x), y: 0, z: Math.round(outward.z - local.z) },
+    normal: horizontalNormal({ x: outward.x - local.x, y: 0, z: outward.z - local.z }),
   };
 }
 
@@ -186,7 +206,7 @@ function poseAt(world, mapId, feet, attachment) {
 
 function validAt(world, mapId, feet, attachment, options) {
   return isSurfaceGripValid(
-    mapsOf(world),
+    mapsOf(world, mapId),
     {
       mapId,
       pose: poseAt(world, mapId, feet, attachment),
@@ -217,19 +237,17 @@ export function wallClimbStarts(world, mapId, startWorld, surface, options = {})
     y: surface.point.y,
     z: surface.point.z + surface.normal.z,
   });
-  const normal = {
-    x: Math.round(Math.sign(normalPoint.x - hit.x)),
+  const normal = horizontalNormal({
+    x: normalPoint.x - hit.x,
     y: 0,
-    z: Math.round(Math.sign(normalPoint.z - hit.z)),
-  };
-  if (Math.abs(normal.x) + Math.abs(normal.z) !== 1)
-    unavailable('Choose an axis-aligned physical wall');
-  const thin = normal.x ? 'x' : 'z',
-    wide = thin === 'x' ? 'z' : 'x';
-  const offsetFeet = surface.gripOffsetFeet ?? OFFSET_FEET;
+    z: normalPoint.z - hit.z,
+  });
+  const tangent = tangentOf(normal);
+  const bodyOffset = OFFSET_FEET * (Math.abs(normal.x) + Math.abs(normal.z));
+  const offsetFeet = surface.gripOffsetFeet ?? bodyOffset;
   if (!Number.isFinite(offsetFeet) || offsetFeet < OFFSET_FEET || offsetFeet > 2)
     throw new Error('The requested wall grip has an invalid reach');
-  const attachment = { owner, normal, thin, wide, offsetFeet };
+  const attachment = { owner, normal, offsetFeet };
   const target = {
     x: hit.x + normal.x * offsetFeet,
     y: hit.y - BODY_FEET,
@@ -244,7 +262,7 @@ export function wallClimbStarts(world, mapId, startWorld, surface, options = {})
   if (!validAt(world, mapId, target, attachment, options))
     unavailable('The clicked wall has no clear climbing hold');
   const start = world.toCampaignPosition(mapId, startWorld);
-  const candidates = [target[wide]];
+  const candidates = [dot(target, tangent)];
   const geometry = geometryFor(world, options, owner.id);
   const partition = geometry.getPartition();
   for (const axis of ['x', 'z'])
@@ -252,11 +270,19 @@ export function wallClimbStarts(world, mapId, startWorld, surface, options = {})
       const local = campaignToMapFeet(owner, target);
       local[axis] = value;
       const campaign = mapFeetToCampaign(owner, local);
-      for (const offset of [-0.5, 0.5]) candidates.push(campaign[wide] + offset);
+      for (const offset of [-0.5, 0.5]) candidates.push(dot(campaign, tangent) + offset);
     }
   const starts = [];
   for (const lateral of new Set(candidates)) {
-    const position = { ...target, [wide]: lateral, y: start.y + EPSILON };
+    const position = acrossTo(
+      target,
+      {
+        x: tangent.x * lateral,
+        y: start.y + EPSILON,
+        z: tangent.z * lateral,
+      },
+      attachment
+    );
     const support = world.findSupportBelow(position, options);
     if (!support || support.mapId !== mapId) continue;
     position.y = support.positionFeet.y;
@@ -278,7 +304,7 @@ export function platformClimbWalls(world, mapId, surface, options = {}) {
   const viewed = options.mapId || mapId;
   const target = world.toCampaignPosition(viewed, surface.point);
   const candidates = [];
-  for (const owner of mapsOf(world)) {
+  for (const owner of mapsOf(world, mapId)) {
     const localTarget = campaignToMapFeet(owner, target);
     for (const volume of geometryFor(world, options, owner.id).save().volumes) {
       if (
@@ -287,6 +313,44 @@ export function platformClimbWalls(world, mapId, surface, options = {}) {
         volume.bounds.max.y < localTarget.y - EPSILON
       )
         continue;
+      if (['prism', 'polyhedron'].includes(volume.shape?.kind)) {
+        const cell = volumeCell(volume);
+        for (const face of cell?.faces || []) {
+          if (Math.abs(face.plane.normal.y) > EPSILON) continue;
+          const normal = face.plane.normal;
+          const tangent = tangentOf(normal);
+          const low = Math.min(...face.vertices.map((p) => dot(p, tangent))) + EPSILON;
+          const high = Math.max(...face.vertices.map((p) => dot(p, tangent))) - EPSILON;
+          const along = Math.max(low, Math.min(high, dot(localTarget, tangent)));
+          for (const lift of [-BODY_FEET, 0, BODY_FEET]) {
+            const contact = {
+              x: normal.x * face.plane.distance + tangent.x * along,
+              y: localTarget.y + lift + BODY_FEET,
+              z: normal.z * face.plane.distance + tangent.z * along,
+            };
+            const physical = mapFeetToCampaign(owner, contact);
+            const outward = mapFeetToCampaign(owner, {
+              ...contact,
+              x: contact.x + normal.x,
+              z: contact.z + normal.z,
+            });
+            const point = world.toMapPosition(viewed, physical);
+            const normalPoint = world.toMapPosition(viewed, outward);
+            candidates.push({
+              mapId: owner.id,
+              kind: 'wall',
+              point,
+              normal: horizontalNormal({
+                x: normalPoint.x - point.x,
+                y: 0,
+                z: normalPoint.z - point.z,
+              }),
+              distance: length(physical, target),
+            });
+          }
+        }
+        continue;
+      }
       for (const thin of ['x', 'z'])
         for (const sign of [-1, 1]) {
           const wide = thin === 'x' ? 'z' : 'x';
@@ -337,16 +401,17 @@ function assertBodyRoute(world, start, end, options, obstacles) {
       z: Math.max(start.z, end.z) + OFFSET_FEET - EPSILON,
     },
   };
+  const diagonal = Math.abs(end.x - start.x) > EPSILON && Math.abs(end.z - start.z) > EPSILON;
+  const swept =
+    diagonal && sweptBodyCell(start, end, OFFSET_FEET - EPSILON, body.min.y, body.max.y);
   if (
     obstacles.some((bounds) =>
-      axes.every(
-        (axis) =>
-          body.min[axis] < bounds.max[axis] - EPSILON && body.max[axis] > bounds.min[axis] + EPSILON
-      )
+      swept ? cellIntersectsSolid(swept, bounds) : boundsIntersectSolid(body, bounds, EPSILON)
     )
   )
     unavailable('A wall, floor or railing blocks the climbing route');
   for (const actor of options.occupants || []) {
+    if (!world.sharesLocation(actor.mapId, options.mapId)) continue;
     const position = world.toCampaignPosition(actor.mapId, actor.world);
     if (
       position.x + 2 > body.min.x &&
@@ -394,13 +459,14 @@ function verticalRoute(world, mapId, start, end, attachment, options) {
 }
 
 function lateralRoute(world, mapId, start, end, attachment, options) {
-  const { wide } = attachment;
-  const lateral = { ...start, [wide]: end[wide] };
+  const lateral = acrossTo(start, { ...end, y: start.y }, attachment);
   const segments = [];
   if (length(start, lateral) > EPSILON) {
     const geometry = geometryFor(world, options, attachment.owner.id);
     const cuts = geometry.getPartition();
     const candidates = [0, 1];
+    const count = Math.ceil(Math.hypot(lateral.x - start.x, lateral.z - start.z) / 0.5);
+    for (let i = 1; i < count; i++) candidates.push(i / count);
     const source = campaignToMapFeet(attachment.owner, start);
     const target = campaignToMapFeet(attachment.owner, lateral);
     for (const axis of ['x', 'z']) {
@@ -440,7 +506,7 @@ function attachedRoute(world, mapId, start, end, attachment, options) {
     ];
   } catch (error) {
     if (!(error instanceof ConnectionUnavailableError)) throw error;
-    const across = { ...start, [attachment.wide]: end[attachment.wide] };
+    const across = acrossTo(start, { ...end, y: start.y }, attachment);
     return [
       ...lateralRoute(world, mapId, start, across, attachment, options),
       ...verticalRoute(world, mapId, across, end, attachment, options),
@@ -476,6 +542,9 @@ function raisedPlatformRoute(world, mapId, start, end, attachment, options, obst
 }
 
 export function planSurfaceClimb(world, mapId, startWorld, grip, destination, options = {}) {
+  options = { mapId, ...options };
+  if (!world.sharesLocation(mapId, options.mapId))
+    throw new Error('Climbing cannot cross independent locations');
   if (
     !destination?.point ||
     !destination.normal ||
@@ -487,23 +556,23 @@ export function planSurfaceClimb(world, mapId, startWorld, grip, destination, op
     throw new Error('Climbing requires a finite floor or wall intersection');
   if (!validGripReference(grip))
     throw new Error('Physical climbing requires a valid wall attachment');
-  const attachment = frame(mapsOf(world), grip);
+  const attachment = frame(mapsOf(world, mapId), grip);
   if (!attachment) throw new Error('The climbing wall no longer exists');
   const start = world.toCampaignPosition(mapId, startWorld);
   if (!validAt(world, mapId, start, attachment, options))
     unavailable('The creature no longer has a physical wall hold');
   const target = world.toCampaignPosition(options.mapId || mapId, destination.point);
-  if (destination.normal.y < 0.9 && Math.abs(destination.normal.y) >= 0.45)
+  const supported = isFloorSurface(destination);
+  if (!supported && Math.abs(destination.normal.y) >= 0.45)
     unavailable('Choose a wall handhold or a supported floor, not a ceiling');
-  if (destination.normal.y < 0.9) target.y -= BODY_FEET;
+  if (!supported) target.y -= BODY_FEET;
   if (
-    destination.normal.y < 0.9 &&
-    Math.abs(target[attachment.thin] - attachment.contact[attachment.thin]) >
+    !supported &&
+    Math.abs(dot(target, attachment.normal) - dot(attachment.contact, attachment.normal)) >
       attachment.offsetFeet + 0.1
   )
     unavailable('Choose a destination on the attached wall');
-  const end = { ...start, y: target.y, [attachment.wide]: target[attachment.wide] };
-  const supported = destination.normal.y > 0.9;
+  const end = acrossTo(start, target, attachment);
   let support = supported ? world.findSupportBelow(target, options) : null;
   if (supported && (!support || Math.abs(support.positionFeet.y - target.y) > EPSILON))
     unavailable('Choose a real supported destination');

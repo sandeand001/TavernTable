@@ -38,6 +38,8 @@ function getTokenViewPosition(token) {
   const gm = this.gameManager;
   if (!gm.campaignWorld || token.mapId === gm.campaignMapId)
     return this._resolveTokenWorldPosition(token);
+  if (!gm.campaignWorld.sharesLocation(token.mapId, gm.campaignMapId))
+    throw new Error('A creature in another location has no position in this view');
   return gm.campaignWorld.toMapPosition(
     gm.campaignMapId,
     gm.campaignWorld.toCampaignPosition(token.mapId, token.world)

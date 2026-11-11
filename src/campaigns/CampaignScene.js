@@ -9,6 +9,16 @@ import { validateConnections } from './CampaignConnections.js';
 import { isOpeningHoldValid } from './CampaignOpeningClimb.js';
 import { isSurfaceGripValid } from './CampaignSurfaceClimb.js';
 import {
+  buildingFloorId,
+  buildingSignature,
+  buildingDimensions,
+  buildingLevels,
+  buildingLevelElevation,
+  buildingLocalToFeet,
+} from '../terrain/BuildingModel.js';
+import { mapFeetToCampaign } from './CampaignCoordinates.js';
+import { normalizeCavernRecipe, CAVERN_SIDES } from '../terrain/generation/CavernInteriors.js';
+import {
   TARGET_ALLEGIANCES,
   TARGET_CREATURE_TYPES,
   TARGET_CREATURE_SIZES,
@@ -83,6 +93,8 @@ function validateBoard(grid, terrain, version, base = 'ground') {
     !finite(terrain.elevationScale, 0, 10000) ||
     !finite(terrain.worldElevationUnit, 0, 1000) ||
     !finite(terrain.treeDensity, 0, 100) ||
+    (terrain.structureGenerationEnabled !== undefined &&
+      typeof terrain.structureGenerationEnabled !== 'boolean') ||
     !record(terrain.richShading) ||
     !jsonSettings(terrain.richShading) ||
     !Array.isArray(terrain.placeables) ||
@@ -90,6 +102,10 @@ function validateBoard(grid, terrain, version, base = 'ground') {
   )
     failure('terrain');
   let geometry = null;
+  if (terrain.cavern !== undefined) {
+    normalizeCavernRecipe(terrain.cavern);
+    if (terrain.cavern.version === 1 && !terrain.geometry) failure('cavern geometry');
+  }
   const feetPerWorld = 5 / grid.tileWorldSize;
   if (terrain.geometry !== undefined || base === 'floor') {
     if (terrain.geometry !== undefined && version !== 2) failure('geometry version');
@@ -124,19 +140,21 @@ function validateBoard(grid, terrain, version, base = 'ground') {
     )
       failure('placeable references');
   }
-  if (
-    terrain.coverBounds !== undefined &&
-    (!Array.isArray(terrain.coverBounds) ||
-      terrain.coverBounds.length > 50000 ||
-      terrain.coverBounds.some(
-        (bounds) =>
-          !record(bounds) ||
-          !vector(bounds.min) ||
-          !vector(bounds.max) ||
-          ['x', 'y', 'z'].some((axis) => bounds.min[axis] > bounds.max[axis])
-      ))
-  )
-    failure('structure cover bounds');
+  for (const key of ['coverBounds', 'sightBounds']) {
+    if (
+      terrain[key] !== undefined &&
+      (!Array.isArray(terrain[key]) ||
+        terrain[key].length > 50000 ||
+        terrain[key].some(
+          (bounds) =>
+            !record(bounds) ||
+            !vector(bounds.min) ||
+            !vector(bounds.max) ||
+            ['x', 'y', 'z'].some((axis) => bounds.min[axis] > bounds.max[axis])
+        ))
+    )
+      failure(key === 'coverBounds' ? 'structure cover bounds' : 'physical sight bounds');
+  }
   return { grid, terrain, inside, geometry, feetPerWorld };
 }
 
@@ -171,9 +189,77 @@ export function validateScene(scene, { ruleset, library }) {
       )
         failure('map structure cover; load and capture the original board before migration');
     }
+    validateCampaignLocations(scene);
+    const byId = new Map(scene.maps.map((map) => [map.id, map]));
+    for (const map of scene.maps) {
+      if (map.cavern === undefined) continue;
+      const ref = map.cavern,
+        owner = byId.get(ref?.ownerMapId),
+        parent = ref?.parentMapId === null ? null : byId.get(ref?.parentMapId);
+      if (
+        !record(ref) ||
+        ref.version !== 1 ||
+        !owner?.terrain.cavern ||
+        !map.terrain.cavern ||
+        map.base !== (map.terrain.cavern?.version >= 2 ? 'ground' : 'floor') ||
+        !integer(ref.seed, 0, 0xffffffff) ||
+        !['generated', 'manual'].includes(ref.source) ||
+        (ref.parentMapId === null
+          ? map.id !== owner.id || ref.side !== null
+          : !parent?.terrain.cavern || parent.id === map.id || !CAVERN_SIDES.includes(ref.side))
+      )
+        failure('connected cavern area');
+    }
+    for (const map of scene.maps) {
+      if (map.building === undefined) continue;
+      const ref = map.building,
+        owner = byId.get(ref?.ownerMapId);
+      const spec = owner?.terrain.geometry?.structures?.find(
+        (entry) => entry.id === ref?.structureId
+      );
+      if (
+        !record(ref) ||
+        !spec?.building ||
+        !buildingLevels(spec).some((level) => level.id === ref.floor) ||
+        map.base !== 'floor' ||
+        map.id !== buildingFloorId(owner.id, spec.id, ref.floor) ||
+        ref.signature !== buildingSignature(spec) ||
+        !finite(ref.offsetX, -1e-6, 5 + 1e-6) ||
+        !finite(ref.offsetZ, -1e-6, 5 + 1e-6)
+      )
+        failure('building floor ownership');
+      const { length, width } = buildingDimensions(spec);
+      const expected = mapFeetToCampaign(
+        owner,
+        buildingLocalToFeet(spec, {
+          x: -length / 2,
+          y: buildingLevelElevation(spec, ref.floor),
+          z: -width / 2,
+        })
+      );
+      const actual = mapFeetToCampaign(map, { x: ref.offsetX, y: 0, z: ref.offsetZ });
+      if (
+        Math.hypot(expected.x - actual.x, expected.y - actual.y, expected.z - actual.z) > 1e-5 ||
+        Math.abs(ref.lengthFeet - length) > 1e-6 ||
+        Math.abs(ref.widthFeet - width) > 1e-6
+      )
+        failure('building floor alignment');
+    }
+    if (scene.buildingAssemblies !== undefined) {
+      if (scene.buildingAssemblies !== 1) failure('building assembly version');
+      for (const owner of scene.maps)
+        for (const spec of owner.terrain.geometry?.structures || []) {
+          if (!spec.building) continue;
+          if (owner.building) failure('nested building assembly');
+          for (const { id: floor } of buildingLevels(spec))
+            if (!byId.has(buildingFloorId(owner.id, spec.id, floor)))
+              failure('missing building storey');
+        }
+    }
     if (!record(scene.view) || !boards.has(scene.view.mapId)) failure('participant map view');
     validateConnections(scene.connections, scene.maps);
   } else {
+    validateCampaignLocations(scene);
     legacyBoard = validateBoard(scene.grid, scene.terrain, scene.version);
   }
   if (!Array.isArray(scene.creatures) || scene.creatures.length > 2000) failure('creature list');
@@ -377,6 +463,15 @@ export function validateScene(scene, { ruleset, library }) {
       copyRollSummary(entry.rollResult);
   }
   restoreCombat(scene.combat, placeholders, library);
+  if (scene.locations) {
+    const locations = new Set(scene.locations.map((location) => location.id));
+    for (const effect of scene.combat.effects || [])
+      if (
+        (!['flight', 'targets'].includes(effect.kind) && effect.locationId === undefined) ||
+        (effect.locationId !== undefined && !locations.has(effect.locationId))
+      )
+        failure('spell effect location');
+  }
   return scene;
 }
 
@@ -391,3 +486,4 @@ export function decodeScene(text, context) {
   if (typeof text !== 'string' || text.length > 16000000) failure('scene data size');
   return validateScene(JSON.parse(text), context);
 }
+import { validateCampaignLocations } from './CampaignLocations.js';

@@ -1,6 +1,7 @@
 import { getTokenCharacterRecord } from '../../entities/creatures/TokenMovement.js';
 import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import TacticalOverview from './TacticalOverview.js';
 
 const ENTER_DOWN = Math.sin((80 * Math.PI) / 180);
 const EXIT_DOWN = Math.sin((78 * Math.PI) / 180);
@@ -9,7 +10,13 @@ const TEXTURE_SIZE = 512;
 // -- Public visuals and lifecycle --
 
 function getTokenVisual(token) {
-  if (this.isTokenProjection(token) && !this.isTokenProjectionVisible(token)) return null;
+  if (this.isTacticalOverview() && !this._tacticalOverview?.contains(token)) return null;
+  if (
+    !this.isTacticalOverview() &&
+    this.isTokenProjection(token) &&
+    !this.isTokenProjectionVisible(token)
+  )
+    return null;
   const tactical = this._tacticalTokens.get(token)?.mesh;
   return tactical?.visible ? tactical : token?.__threeMesh || null;
 }
@@ -19,7 +26,7 @@ function refreshTokenAppearance(token, character) {
   if (!visual) return;
   const record = character ?? getTokenCharacterRecord(token);
   visual.characterId = token.characterSheetId || null;
-  const source = record?.portraitImage || null;
+  const source = record?.portraitImage || token.publicPortraitImage || null;
   if (visual.source === source) return;
   if (visual.loadingImage) {
     visual.loadingImage.onload = null;
@@ -55,9 +62,18 @@ function refreshTokenAppearance(token, character) {
 
 function disposeTacticalTokens() {
   for (const token of this._tacticalTokens.keys()) this._discardTacticalToken(token);
+  this._tacticalOverview?.dispose();
+  this._tacticalOverview = null;
   this._tacticalView = false;
   this._tacticalDirection = null;
   this._tacticalTokenFailures = new WeakSet();
+}
+
+function isTacticalOverview() {
+  const gm = this.gameManager;
+  const role =
+    gm.characterServices?.sessionRole ?? gm.characterServices?.library?.store?.identity?.role;
+  return this._tacticalView && !!gm.campaignWorld && (role === undefined || role === 'dm');
 }
 
 // -- Camera-driven presentation --
@@ -70,9 +86,20 @@ function _syncTacticalTokens() {
   camera.getWorldDirection(this._tacticalDirection);
   const down = -this._tacticalDirection.y;
   this._tacticalView = down + 1e-10 >= (this._tacticalView ? EXIT_DOWN : ENTER_DOWN);
+  const overview = this.isTacticalOverview();
+  const overviewTokens = [];
+  if (!overview && this._tacticalOverview) {
+    this._tacticalOverview.dispose();
+    this._tacticalOverview = null;
+  }
+  if (overview) this._tacticalOverview ||= new TacticalOverview(this.gameManager, three);
   const tile = this.gameManager.spatial?.tileWorldSize || 1;
   for (const token of this.gameManager.placedTokens || []) {
-    if (this.isTokenProjection(token) && !this.isTokenProjectionVisible(token)) {
+    if (
+      overview
+        ? !this._tacticalOverview.contains(token)
+        : this.isTokenProjection(token) && !this.isTokenProjectionVisible(token)
+    ) {
       this._discardTacticalToken(token);
       if (token.__threeMesh) token.__threeMesh.visible = false;
       continue;
@@ -107,6 +134,8 @@ function _syncTacticalTokens() {
     const world = this.getTokenViewPosition(token);
     visual.mesh.position.set(world.x, world.y + tile * 0.12, world.z);
     visual.mesh.scale.setScalar(tile);
+    visual.mesh.material.depthTest = !overview && !this.gameManager.publicPlayerPresentation;
+    visual.mesh.renderOrder = overview ? 1000 : 0;
     camera.getWorldQuaternion(visual.mesh.quaternion);
     visual.mesh.updateMatrixWorld(true);
     if (visual.characterId !== (token.characterSheetId || null)) this.refreshTokenAppearance(token);
@@ -115,6 +144,15 @@ function _syncTacticalTokens() {
     if (visual.name !== getTokenDisplayName(token) || visual.highlight !== highlight) {
       this._drawTacticalToken(token, visual);
     }
+    if (overview) overviewTokens.push({ token, mesh: visual.mesh });
+  }
+  if (overview) {
+    this._tacticalOverview.update(
+      overviewTokens,
+      camera,
+      manager.canvas || manager.renderer.domElement,
+      scene
+    );
   }
 }
 
@@ -242,12 +280,14 @@ function _discardTacticalToken(token) {
   visual.mesh.material.dispose();
   visual.texture.dispose();
   this._tacticalTokens.delete(token);
+  this._tacticalOverview?.remove(token.id);
 }
 
 // -- Mixin installation --
 
 export function installTacticalTokenMethods(prototype) {
   prototype.getTokenVisual = getTokenVisual;
+  prototype.isTacticalOverview = isTacticalOverview;
   prototype.refreshTokenAppearance = refreshTokenAppearance;
   prototype.disposeTacticalTokens = disposeTacticalTokens;
   prototype._syncTacticalTokens = _syncTacticalTokens;

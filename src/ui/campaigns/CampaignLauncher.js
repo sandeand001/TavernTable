@@ -4,6 +4,10 @@ import { escapeHtml as escape } from '../characters/escapeHtml.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
 import CampaignMapControls from './CampaignMapControls.js';
 import CampaignTraversalPopup from './CampaignTraversalPopup.js';
+import CampaignBackupPanel, { downloadCampaignJSON } from './CampaignBackupPanel.js';
+import CampaignSharingPanel from './CampaignSharingPanel.js';
+import { ensureSession } from '../sessions/SessionLogin.js';
+import { attachHostSessionUpdates } from '../sessions/HostSessionUpdates.js';
 
 export default class CampaignLauncher {
   constructor({ workspace = null } = {}) {
@@ -26,6 +30,11 @@ export default class CampaignLauncher {
           <section aria-label="Saved campaigns">
             <h2>Open a campaign</h2>
             <div class="campaign-list"></div>
+            <section class="campaign-browser-import" aria-label="Browser-only campaigns" hidden>
+              <h3>Browser-only campaigns</h3>
+              <p>Copy these to host storage for durable saves. The browser originals are not removed.</p>
+              <div data-browser-campaigns></div>
+            </section>
             <button type="button" data-campaign-import>Import campaign backup</button>
             <input type="file" accept=".json,application/json" aria-label="Import campaign JSON" hidden>
           </section>
@@ -57,8 +66,8 @@ export default class CampaignLauncher {
           <button type="button" data-campaign-download>Download JSON</button>
           <button type="button" data-backup-close>Close backup</button>
         </section>
-        <footer>Campaigns are stored only in this browser profile. Export backups before clearing site data.
-          Opening a campaign restores its automatically saved board.
+        <footer><span data-campaign-storage>Checking campaign storage...</span>
+          Export JSON for an independent backup. Opening a campaign restores its automatically saved board.
           <a href="assets/data/resources/NOTICES.txt" target="_blank" rel="noopener">Sources &amp; licenses</a>
         </footer>
       </div>`;
@@ -110,6 +119,19 @@ export default class CampaignLauncher {
         void this._perform(() => this._edit(id), 'Loading campaign settings...');
       if (button.hasAttribute('data-export-campaign'))
         void this._perform(() => this._export(id), 'Preparing campaign backup...');
+      if (button.hasAttribute('data-campaign-backups'))
+        void new CampaignBackupPanel({
+          workspace: this.workspace,
+          campaignId: id,
+          onRestored: () => this._renderSaved(),
+        }).open();
+      if (button.hasAttribute('data-copy-browser-campaign'))
+        void this._perform(async () => {
+          await this.workspace.copyBrowserCampaign(button.dataset.copyBrowserCampaign);
+          await this._renderSaved();
+          this.status.textContent =
+            'Copied the browser campaign to durable host storage. The original is unchanged.';
+        }, 'Copying the browser campaign to the host...');
       if (button.hasAttribute('data-campaign-import')) this.importFile.click();
       if (button.hasAttribute('data-settings-cancel')) this.settings.hidden = true;
       if (button.hasAttribute('data-backup-close')) this.backup.hidden = true;
@@ -154,7 +176,19 @@ export default class CampaignLauncher {
 
   async _load() {
     const loaded = await this._perform(async () => {
-      if (!this.workspace) this.workspace = await CampaignWorkspace.load();
+      if (!this.workspace) {
+        const identity = await ensureSession();
+        if (identity.role === 'player') {
+          window.location.replace(new URL('player.html', location.href).href);
+          return;
+        }
+        this.workspace = await CampaignWorkspace.load();
+      }
+      const location = this.workspace.store.storageInfo;
+      this.root.querySelector('[data-campaign-storage]').textContent =
+        location?.kind === 'host'
+          ? `Campaigns are saved on this host computer: ${location.dataDirectory}. Chrome and VS Code use the same host saves.`
+          : 'Browser-only storage: temporary or isolated browser sessions can lose campaigns when the browser closes.';
       await this._renderSaved();
       this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
       this.retry.hidden = true;
@@ -177,9 +211,20 @@ export default class CampaignLauncher {
           <button type="button" data-open-campaign>Open</button>
           <button type="button" data-edit-campaign>Sources &amp; settings</button>
           <button type="button" data-export-campaign>Export</button>
+          ${this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
         </div></article>`;
         })
-        .join('') || '<p class="campaign-empty">No campaigns saved in this browser yet.</p>';
+        .join('') ||
+      '<p class="campaign-empty">No campaigns saved in this storage location yet.</p>';
+    const browserCampaigns = (await this.workspace.browserCampaigns?.()) || [];
+    this.root.querySelector('.campaign-browser-import').hidden = browserCampaigns.length === 0;
+    this.root.querySelector('[data-browser-campaigns]').innerHTML = browserCampaigns
+      .map(
+        (campaign) =>
+          `<article><strong>${escape(campaign.name)}</strong> (${escape(campaign.ruleset)})
+      <button type="button" data-copy-browser-campaign="${escape(campaign.id)}">Copy to host</button></article>`
+      )
+      .join('');
   }
 
   _sources(host, ruleset, enabled = []) {
@@ -245,14 +290,7 @@ export default class CampaignLauncher {
   }
 
   _download() {
-    const url = URL.createObjectURL(
-      new Blob([this.backupText.value], { type: 'application/json' })
-    );
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${this.backupName.replace(/[^a-z0-9._-]/gi, '-') || 'campaign'}.json`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    downloadCampaignJSON(this.backupText.value, this.backupName);
   }
 
   async _perform(operation, message) {
@@ -299,9 +337,14 @@ export default class CampaignLauncher {
 }
 
 export function mountCampaignControls(gameManager, services) {
+  const settingsPanel = document.getElementById('settings-panel');
+  if (!settingsPanel) throw new Error('Campaign controls require the sidebar Settings panel');
   const bar = document.createElement('section');
-  bar.className = 'campaign-tools';
+  bar.className = 'section campaign-session-controls';
   bar.setAttribute('aria-label', 'Current campaign');
+  const heading = document.createElement('div');
+  heading.className = 'section-title';
+  heading.textContent = 'Campaign & session';
   const name = document.createElement('strong');
   name.textContent = services.campaign.name;
   const rules = document.createElement('span');
@@ -328,9 +371,99 @@ export function mountCampaignControls(gameManager, services) {
     retry.hidden = state.state !== 'error' || !services.autosave.ready;
     bar.setAttribute('aria-busy', String(state.state === 'loading' || state.state === 'saving'));
   });
-  const maps = new CampaignMapControls({ gameManager });
   new CampaignTraversalPopup({ gameManager }).attach();
-  bar.append(name, rules, maps.root, back, status, retry);
+  bar.append(heading, name, rules, back, status, retry);
+  const role = services.workspace.store.identity?.role;
+  if (role === undefined || role === 'dm') {
+    const maps = new CampaignMapControls({ gameManager });
+    const mapTools = document.createElement('section');
+    mapTools.className = 'campaign-tools';
+    mapTools.setAttribute('aria-label', 'DM map controls');
+    mapTools.append(maps.root);
+    document.body.append(mapTools);
+  }
+  if (services.workspace.store.identity?.role === 'dm') {
+    const sharing = document.createElement('button');
+    sharing.type = 'button';
+    sharing.textContent = 'Players & sharing';
+    sharing.addEventListener(
+      'click',
+      () =>
+        void new CampaignSharingPanel({
+          workspace: services.workspace,
+          campaignId: services.campaign.id,
+        }).open()
+    );
+    bar.append(sharing);
+    attachHostSessionUpdates({ gameManager, services, parent: bar });
+    const signout = document.createElement('button');
+    signout.type = 'button';
+    signout.textContent = 'Sign out';
+    signout.addEventListener('click', async () => {
+      try {
+        await services.autosave?.flush();
+        await services.library.flush();
+        await services.workspace.store.connection.logout();
+        window.location.reload();
+      } catch (error) {
+        status.textContent = `Could not sign out safely: ${error.message}`;
+        new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+          component: 'CampaignControls',
+          operation: 'signOut',
+        });
+      }
+    });
+    bar.append(signout);
+  }
+  if (services.workspace.store.backupStatus) {
+    const backups = document.createElement('button');
+    backups.type = 'button';
+    backups.textContent = 'JSON backups';
+    backups.addEventListener(
+      'click',
+      () =>
+        void new CampaignBackupPanel({
+          workspace: services.workspace,
+          campaignId: services.campaign.id,
+        }).open()
+    );
+    const backupStatus = document.createElement('output');
+    backupStatus.setAttribute('aria-label', 'Automatic JSON backup status');
+    let lastError = null;
+    const refresh = async () => {
+      try {
+        const state = await services.workspace.store.backupStatus(services.campaign.id);
+        backupStatus.textContent = state.error
+          ? `JSON backup failed: ${state.error}`
+          : state.latest
+            ? `JSON backup: ${new Date(state.latest.createdAt).toLocaleTimeString()}`
+            : 'JSON backup pending';
+        if (state.error && state.error !== lastError)
+          new ErrorHandler().handle(
+            new Error(state.error),
+            ERROR_SEVERITY.WARNING,
+            ERROR_CATEGORY.INPUT,
+            {
+              component: 'CampaignControls',
+              operation: 'automaticBackup',
+            }
+          );
+        lastError = state.error;
+      } catch (error) {
+        backupStatus.textContent = `JSON backup unavailable: ${error.message}`;
+        if (error.message !== lastError)
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            component: 'CampaignControls',
+            operation: 'backupStatus',
+          });
+        lastError = error.message;
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 30000);
+    window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
+    bar.append(backups, backupStatus);
+  }
   back.addEventListener('click', async () => {
     try {
       const combat = gameManager.characterServices?.combat;
@@ -362,6 +495,6 @@ export function mountCampaignControls(gameManager, services) {
       });
     }
   });
-  document.body.append(bar);
+  settingsPanel.append(bar);
   return bar;
 }

@@ -21,6 +21,19 @@ export function connectCharacterServices(gameManager, services) {
   ) {
     throw new Error('Character services require a matching campaign ruleset and catalog');
   }
+  if (services.sessionRole === 'player' && gameManager.playerInput) {
+    gameManager.characterServices?.falling?.dispose();
+    gameManager.characterServices?.targeting?.dispose();
+    const connected = {
+      ...services,
+      combat: null,
+      falling: null,
+      targeting: null,
+      playerGameplay: gameManager.playerInput,
+    };
+    gameManager.characterServices = connected;
+    return connected;
+  }
   if (
     gameManager.characterServices?.library === services.library &&
     gameManager.characterServices.combat
@@ -28,12 +41,19 @@ export function connectCharacterServices(gameManager, services) {
     return gameManager.characterServices;
   gameManager.characterServices?.falling?.dispose();
   gameManager.characterServices?.targeting?.dispose();
+  gameManager.characterServices?.combat?.dispose();
+  gameManager.campaignRequests?.dispose();
+  gameManager.campaignRequests = null;
   const combat = new CombatSession({
     library: services.library,
+    getLocationId: (token) => gameManager.campaignWorld?.getLocationId(token.mapId) ?? null,
     hasToken: (token) => gameManager.placedTokens.includes(token),
     isMoving: (token) =>
       gameManager.campaignViewBusy ||
       !!gameManager.campaignMapFailure ||
+      gameManager.sceneAutosave?.ready === false ||
+      !!gameManager.inputCoordinator?.savedCharacterPending ||
+      !!gameManager.terrainEngine?.hasPendingStroke ||
       gameManager.token3DAdapter?.isMovementInProgress?.(token) ||
       false,
     isSceneMoving: () =>
@@ -62,6 +82,7 @@ export function connectCharacterServices(gameManager, services) {
     combat.targeting = connected.targeting;
   }
   combat.subscribe(() => {
+    gameManager.campaignRequests?.flush();
     gameManager.token3DAdapter?.refreshMovementRange?.();
     window.dispatchEvent(new CustomEvent('taverntable:combatChanged', { detail: { gameManager } }));
   });
@@ -80,6 +101,8 @@ export function getTokenCharacter(gameManager, token, services) {
   if (!gameManager.placedTokens.includes(token)) {
     throw new Error('Select a creature in the current scene');
   }
+  if (gameManager.playerInput && (!token.owned || !token.characterSheetId))
+    throw new Error('Only assigned character sheets are available to this player');
   const previousSpeed = getTokenMovementSettings(token).speed;
   const link = (id) => {
     if (!gameManager.placedTokens.includes(token)) {

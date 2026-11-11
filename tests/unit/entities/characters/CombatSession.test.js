@@ -363,7 +363,7 @@ test('Undo cannot refund already-used Dash movement or overwrite a later DM move
 test('combat cannot begin or change turns while a free-play route or forced scene movement is unfinished', () => {
   let moving = true;
   session = new CombatSession({ library, isSceneMoving: () => moving });
-  expect(session.status(token).busy).toBe(true);
+  expect(session.status(token).busy).toBe(false);
   expect(() => session.startTurn(token)).toThrow('movement');
   expect(session.active).toBe(false);
   moving = false;

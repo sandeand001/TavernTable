@@ -15,7 +15,7 @@ import {
   notifyCharacterChanged,
 } from '../characters/characterServices.js';
 import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js';
-import { renameCreature } from '../../entities/creatures/CreatureNames.js';
+import { renameCreature, notifyCreatureNames } from '../../entities/creatures/CreatureNames.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
 import { COMPENDIUM_DRAG_TYPE, readCompendiumDrag } from './CompendiumPanel.js';
 import {
@@ -45,6 +45,7 @@ import {
 } from '../../config/targeting/SpellProfiles.js';
 import { CHARACTER_BACKUP_LIMIT } from '../../config/characters/CharacterImages.js';
 import CharacterImagesEditor from '../characters/CharacterImagesEditor.js';
+import { queueCampaignOperation } from '../../campaigns/SceneWorld.js';
 
 export default class CharacterSheetContent {
   constructor({ gameManager, services = null, onOpenCompendium = null }) {
@@ -116,7 +117,7 @@ export default class CharacterSheetContent {
         }, 'Hit points updated.'),
     });
     this.restControls = new RestControls({
-      canRest: () => !this.services?.combat?.active,
+      canRest: () => this.services?.sheetContext !== 'library' && !this.services?.combat?.active,
       roll: (request) => rollForSheet(this, request),
       onChanged: (id, message) => {
         if (id === this.token?.characterSheetId && !this.disposed) {
@@ -342,10 +343,15 @@ export default class CharacterSheetContent {
   render() {
     const { library } = this.services;
     const id = this.characterId;
+    const previousName = this.token.name;
+    const previousNameMode = this.token.nameMode;
     const character = linkTokenCharacter(this.token, library, id);
+    if (this.token.name !== previousName || this.token.nameMode !== previousNameMode)
+      notifyCreatureNames(this.gameManager, [this.token]);
     this.gameManager.token3DAdapter?.refreshTokenAppearance?.(this.token, character);
     const stats = library.stats(id);
     const movement = getTokenMovementSettings(this.token);
+    const playerBudget = this.services.playerGameplay?.movementBudget(this.token);
     const previous = this.movementView;
     this.movementView = { token: this.token, id, ...movement };
     if (
@@ -417,7 +423,13 @@ export default class CharacterSheetContent {
             .join('')}</div>
         </div>
       </div>
-      <p class="sheet-reference">${this.services.combat.active ? 'Combat: the range uses remaining turn movement.' : 'Free play: speed sets the grid range for each move.'} Walk/Run is not the Dash action.</p>
+      <p class="sheet-reference">${
+        playerBudget
+          ? `Host-authoritative movement: ${playerBudget.remainingFeet} ft remaining; ${playerBudget.spentFeet} ft spent.`
+          : this.services.combat.active
+            ? 'Combat: the range uses remaining turn movement.'
+            : 'Free play: speed sets the grid range for each move.'
+      } Walk/Run is not the Dash action.</p>
       <nav class="sheet-section-nav" aria-label="Character sections">
         ${[
           ['combat', 'Combat'],
@@ -438,6 +450,7 @@ export default class CharacterSheetContent {
           ? renderPlayView({
               library,
               session: this.services.combat,
+              playerGameplay: this.services.playerGameplay,
               token: this.token,
               mode: this.section,
               choices: this.playChoices,
@@ -492,24 +505,31 @@ export default class CharacterSheetContent {
       token: this.token,
       character,
       editing: this.layoutControls.editing,
+      unavailable: this.services.playerGameplay
+        ? 'The host has not enabled shared action history for this player yet.'
+        : null,
     });
     this.root.classList.add('sheet-with-history');
   }
 
   _fallingControls(character) {
     const prone = getTokenConditions(this.token).includes('prone');
-    const standing = this.services.combat.standingAvailability(this.token);
+    const standing = this.services.playerGameplay
+      ? this.services.playerGameplay.commands.availability('stand', this.token.id)
+      : this.services.combat.standingAvailability(this.token);
+    const standingCost = this.services.playerGameplay ? standing.costFeet : standing.cost;
     const recent = character.lastFall;
-    const freeAllowance = this.services.combat.active
-      ? null
-      : this.services.combat.freeMovementAllowance(this.token);
+    const freeAllowance =
+      this.services.playerGameplay || this.services.combat.active
+        ? null
+        : this.services.combat.freeMovementAllowance(this.token);
     return `<section class="sheet-condition-controls" aria-label="Falling and prone">
       <strong aria-label="Prone condition">${prone ? 'Prone' : this.token.flightActive ? 'Airborne' : 'Standing'}</strong>
       ${
         prone
           ? `<button type="button" data-sheet-action="stand-up" aria-label="Stand up"
-          title="${escape(standing.reason || `Spend ${standing.cost} feet; no action, bonus action or reaction`)}"
-          ${standing.allowed ? '' : 'disabled'}>Stand Up (${standing.cost} ft)</button>
+          title="${escape(standing.reason || (Number.isFinite(standingCost) ? `Spend ${standingCost} feet; no action, bonus action or reaction` : standing.code || 'Host standing eligibility is required'))}"
+          ${standing.allowed ? '' : 'disabled'}>Stand Up${Number.isFinite(standingCost) ? ` (${standingCost} ft)` : ''}</button>
           <small>Costs half maximum Speed, not half remaining movement. No action cost.
           Movement while prone is crawling and costs twice the distance. Attacks have disadvantage.</small>
           ${standing.reason ? `<small>${escape(standing.reason)}</small>` : ''}`
@@ -623,6 +643,12 @@ export default class CharacterSheetContent {
     if (this._cancelingIdentityEdit === element) return;
     if (element === this.librarySelect) {
       this._run(() => {
+        if (this.services.sheetContext === 'library')
+          throw new Error('Open another saved character from the campaign roster');
+        if (this.services.playerGameplay)
+          throw new Error(
+            'The DM manages canonical sprite/character links. Open another assigned sheet without rebinding this actor.'
+          );
         this.services.library.get(element.value);
         this.token.characterSheetId = element.value;
       }, 'Loaded saved character.');
@@ -630,6 +656,8 @@ export default class CharacterSheetContent {
       void this._importFile();
     } else if (element.dataset.targetingTag) {
       this._run(async () => {
+        if (this.services.sheetContext === 'library')
+          throw new Error('Place this character on the board to edit its creature targeting tags');
         const token = this.token,
           key = element.dataset.targetingTag;
         const allowed =
@@ -660,6 +688,8 @@ export default class CharacterSheetContent {
       const wasChecked = getTokenConditions(token).includes(condition);
       const result = this._run(() => {
         if (condition === 'prone' && !element.checked) {
+          if (this.services.sheetContext === 'library')
+            throw new Error('Place this character on the board to stand using its movement');
           return this.services.falling.stand(token);
         }
         const adapter = this.gameManager.token3DAdapter;
@@ -736,6 +766,93 @@ export default class CharacterSheetContent {
     const button = event.target.closest('[data-sheet-action]');
     if (!button) return;
     const action = button.dataset.sheetAction;
+    if (
+      action === 'stand-up' &&
+      this.services.playerGameplay &&
+      this.services.sheetContext !== 'library'
+    ) {
+      this._run(
+        () => this.services.playerGameplay.stand(this.token),
+        'Host standing cost applied.',
+        false
+      );
+      return;
+    }
+    if (
+      this.services.playerGameplay &&
+      this.services.sheetContext !== 'library' &&
+      ['movement-mode', 'movement-style'].includes(action)
+    ) {
+      this._run(
+        () =>
+          this.services.playerGameplay.setMovementSettings(
+            this.token,
+            action === 'movement-mode'
+              ? { mode: button.dataset.mode }
+              : { type: button.dataset.style }
+          ),
+        'Host movement settings updated.',
+        false
+      );
+      return;
+    }
+    if (
+      action === 'roll' &&
+      this.services.playerGameplay &&
+      this.services.sheetContext !== 'library'
+    ) {
+      void this._roll(button.dataset);
+      return;
+    }
+    if (
+      action === 'turn-end' &&
+      this.services.playerGameplay &&
+      this.services.sheetContext !== 'library'
+    ) {
+      this._run(
+        () => this.services.playerGameplay.endTurn(this.token),
+        'Your turn ended. The DM advances to the next turn.',
+        false
+      );
+      return;
+    }
+    if (
+      (this.services.sessionRole === 'player' || this.services.sheetContext === 'library') &&
+      !(
+        this.services.playerGameplay &&
+        this.services.sheetContext !== 'library' &&
+        ['use-action', 'cast'].includes(action)
+      ) &&
+      [
+        'new',
+        'delete',
+        'import',
+        'cast',
+        'use-action',
+        'stand-up',
+        'roll',
+        'recent-roll',
+        'turn-start',
+        'turn-end',
+        'combat-end',
+        'use-undo',
+        'attack-finish',
+        'movement-adjust',
+        'economy-adjust',
+        'configure-targeting',
+        ...(this.services.playerGameplay ? ['movement-mode', 'movement-style'] : []),
+      ].includes(action)
+    ) {
+      this._failure(
+        new Error(
+          this.services.sheetContext === 'library'
+            ? 'Place this character on the board to use movement, rolls or gameplay actions.'
+            : 'The host has not enabled this player gameplay command yet.'
+        ),
+        'playerAccess'
+      );
+      return;
+    }
     if (action === 'configure-targeting') {
       const actionId =
         button.dataset.actionId ||
@@ -761,8 +878,9 @@ export default class CharacterSheetContent {
       return;
     }
     if (action === 'stand-up') {
+      const token = this.token;
       this._run(
-        () => this.services.falling.stand(this.token),
+        () => this.services.combat.runWhenReady(token, () => this.services.falling.stand(token)),
         'Standing up: half maximum movement spent; no action used.'
       );
       return;
@@ -796,53 +914,56 @@ export default class CharacterSheetContent {
       ].includes(action)
     ) {
       this._run(
-        () => {
-          if (['turn-start', 'turn-end', 'combat-end'].includes(action)) {
-            this.dmMovementDraft = null;
-            this.dmEconomyDraft = {};
-          }
-          if (action === 'turn-start') return session.startTurn(this.token);
-          if (action === 'turn-end') return session.endTurn();
-          if (action === 'combat-end') session.endCombat();
-          if (action === 'use-undo') return session.undoLastUse(this.token);
-          if (action === 'attack-finish') session.finishAttackAction(this.token);
-          if (action === 'movement-adjust') {
-            session.adjustMovement(
-              this.token,
-              this.main.querySelector('[data-play-dm-movement]').valueAsNumber
-            );
-            this.dmMovementDraft = null;
-          }
-          if (action === 'economy-adjust') {
-            session.adjustEconomy(
-              this.token,
-              Object.fromEntries(
-                Array.from(this.main.querySelectorAll('[data-play-dm-economy]'), (input) => [
-                  input.dataset.playDmEconomy,
-                  input.valueAsNumber,
-                ])
-              )
-            );
-            this.dmEconomyDraft = {};
-          }
-        },
+        () =>
+          queueCampaignOperation(this.gameManager, 'combat', () => {
+            if (['turn-start', 'turn-end', 'combat-end'].includes(action)) {
+              this.dmMovementDraft = null;
+              this.dmEconomyDraft = {};
+            }
+            if (action === 'turn-start') return session.startTurn(this.token);
+            if (action === 'turn-end') return session.endTurn();
+            if (action === 'combat-end') session.endCombat();
+            if (action === 'use-undo') return session.undoLastUse(this.token);
+            if (action === 'attack-finish') session.finishAttackAction(this.token);
+            if (action === 'movement-adjust') {
+              session.adjustMovement(
+                this.token,
+                this.main.querySelector('[data-play-dm-movement]').valueAsNumber
+              );
+              this.dmMovementDraft = null;
+            }
+            if (action === 'economy-adjust') {
+              session.adjustEconomy(
+                this.token,
+                Object.fromEntries(
+                  Array.from(this.main.querySelectorAll('[data-play-dm-economy]'), (input) => [
+                    input.dataset.playDmEconomy,
+                    input.valueAsNumber,
+                  ])
+                )
+              );
+              this.dmEconomyDraft = {};
+            }
+          }),
         'Combat state updated.',
         action === 'use-undo'
       );
       return;
     }
     if (action === 'movement-mode') {
-      this._run(
-        () => setTokenMovementSettings(this.token, { mode: button.dataset.mode }),
-        'Movement pace updated.'
-      );
+      this._run(() => {
+        if (getTokenMovementSettings(this.token).mode === button.dataset.mode) return;
+        setTokenMovementSettings(this.token, { mode: button.dataset.mode });
+        this.gameManager.sceneAutosave?.changed('movement pace');
+      }, 'Movement pace updated.');
       return;
     }
     if (action === 'movement-style') {
-      this._run(
-        () => setTokenMovementSettings(this.token, { type: button.dataset.style }),
-        'Movement style updated.'
-      );
+      this._run(() => {
+        if (getTokenMovementSettings(this.token).type === button.dataset.style) return;
+        setTokenMovementSettings(this.token, { type: button.dataset.style });
+        this.gameManager.sceneAutosave?.changed('movement style');
+      }, 'Movement style updated.');
       return;
     }
     if (action === 'roll-mode') {
@@ -936,7 +1057,15 @@ export default class CharacterSheetContent {
     };
     try {
       if (!this.services) throw new Error('Wait for character data to finish loading');
-      const result = operation();
+      if (notify && this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
+      const execute = () => {
+        if (this.disposed || this.token !== token)
+          throw new Error('The character changed before the queued operation could run');
+        return operation();
+      };
+      const result = notify
+        ? queueCampaignOperation(this.gameManager, 'pointer', execute)
+        : execute();
       const complete = () => {
         if (this.disposed || this.token !== token) return false;
         this.render();
@@ -959,10 +1088,18 @@ export default class CharacterSheetContent {
   }
 
   _syncSavingControls() {
-    const busy = !!this.services?.library.isSaving || !!this.services?.combat.committing;
+    const combat = this.services?.combat;
+    const busy =
+      !!this.services?.library.isSaving ||
+      !!(combat?.committing && (combat.active || combat.committing.token === this.token)) ||
+      !!this.services?.playerGameplay?.commands.pending ||
+      !!this.gameManager.campaignViewBusy ||
+      !!this.gameManager.campaignMapFailure ||
+      !!this.gameManager.inputCoordinator?.savedCharacterPending;
     this.imageEditor.setSaving(busy);
     this.root.setAttribute('aria-busy', String(busy));
-    this.librarySelect.disabled = busy;
+    this.librarySelect.disabled =
+      busy || this.services.sheetContext === 'library' || !!this.services.playerGameplay;
     for (const action of ['new', 'delete', 'import', 'export']) {
       this.root.querySelector(`[data-sheet-action="${action}"]`).disabled = busy;
     }
@@ -976,9 +1113,86 @@ export default class CharacterSheetContent {
       if (
         input.dataset.characterCondition === 'prone' &&
         getTokenConditions(this.token).includes('prone') &&
-        !this.services.combat.standingAvailability(this.token).allowed
+        (this.services.playerGameplay ||
+          this.services.sheetContext === 'library' ||
+          !this.services.combat.standingAvailability(this.token).allowed)
       )
         input.disabled = true;
+    }
+    this._restrictContextControls();
+  }
+
+  _restrictContextControls() {
+    const libraryContext = this.services.sheetContext === 'library';
+    const player = this.services.sessionRole === 'player';
+    const worldPlayer = player && !!this.services.playerGameplay;
+    if (!player && !libraryContext) return;
+    for (const control of this.root.querySelectorAll(
+      '[data-sheet-action="new"],[data-sheet-action="delete"],[data-sheet-action="import"],' +
+        '[data-sheet-action="cast"],[data-sheet-action="use-action"],[data-sheet-action="stand-up"],' +
+        '[data-sheet-action="roll"],[data-sheet-action="recent-roll"],' +
+        (worldPlayer
+          ? '[data-sheet-action="movement-mode"],[data-sheet-action="movement-style"]'
+          : '[data-sheet-section="combat"],[data-sheet-section="noncombat"]') +
+        (libraryContext ? ',[data-targeting-tag]' : '') +
+        (player ? ',[data-character-condition],[data-character-field^="fallTraits."]' : '')
+    )) {
+      control.disabled = true;
+      control.title = libraryContext
+        ? 'Use the campaign roster to place this character before using gameplay actions.'
+        : 'The host has not enabled this player gameplay command yet.';
+    }
+    if (worldPlayer) {
+      const capability = this.services.playerGameplay.commands.availability('roll', this.token.id);
+      const busy = this.root.getAttribute('aria-busy') === 'true';
+      const editingLayout = !!this.main.querySelector('.sheet-layout-editing');
+      for (const control of this.root.querySelectorAll(
+        '[data-sheet-action="roll"]:not([data-roll-kind="attack"])'
+      )) {
+        control.disabled = busy || editingLayout || !capability.allowed;
+        control.title = capability.reason || capability.code.replaceAll('-', ' ');
+      }
+      const actionCapability = this.services.playerGameplay.commands.availability(
+        'action.use',
+        this.token.id
+      );
+      const settingsCapability = this.services.playerGameplay.commands.availability(
+        'movement.settings',
+        this.token.id
+      );
+      const standCapability = this.services.playerGameplay.commands.availability(
+        'stand',
+        this.token.id
+      );
+      for (const control of this.root.querySelectorAll('[data-sheet-action="stand-up"]')) {
+        control.disabled = busy || !standCapability.allowed;
+        control.title = standCapability.reason || standCapability.code.replaceAll('-', ' ');
+      }
+      for (const control of this.root.querySelectorAll(
+        '[data-sheet-action="movement-mode"],[data-sheet-action="movement-style"]'
+      )) {
+        control.disabled = busy || !settingsCapability.allowed;
+        control.title = settingsCapability.reason || settingsCapability.code.replaceAll('-', ' ');
+      }
+      const actions = new Set(
+        this.services.playerGameplay.availableActions(this.token).map(({ id }) => id)
+      );
+      for (const control of this.root.querySelectorAll(
+        '[data-sheet-action="use-action"],[data-sheet-action="cast"],[data-sheet-action="roll"][data-roll-kind="attack"]'
+      )) {
+        const actionId =
+          control.dataset.actionId ||
+          (control.dataset.instanceId
+            ? `spell:${control.dataset.instanceId}`
+            : `attack:${control.dataset.key}`);
+        const allowed = actionCapability.allowed && actions.has(actionId);
+        control.disabled = busy || editingLayout || !allowed;
+        control.title = !actionCapability.allowed
+          ? actionCapability.reason || actionCapability.code.replaceAll('-', ' ')
+          : allowed
+            ? 'The host verifies this action, its targets and resource costs.'
+            : 'The host has not offered this action for the active character.';
+      }
     }
   }
 

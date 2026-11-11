@@ -1,0 +1,44 @@
+body[data-session-role='player'] [hidden] {
+  display: none !important;
+}
+
+.player-session-controls {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.player-session-controls label,
+.player-session-controls select,
+.player-session-controls output {
+  display: block;
+  width: 100%;
+}
+
+.player-session-controls output,
+.player-session-controls p {
+  overflow-wrap: anywhere;
+}
+
+.player-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+body[data-session-role='player'] #saved-character-roster button {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  text-align: left;
+}
+
+.player-compendium {
+  position: fixed;
+  inset: 5rem 1rem 1rem auto;
+  z-index: 1200;
+  width: min(28rem, 90vw);
+  overflow: auto;
+  padding: 1rem;
+  background: #1f2937;
+  border: 1px solid #6b7280;
+}

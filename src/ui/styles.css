@@ -74,7 +74,8 @@
 }
 
 .campaign-shell button,
-.campaign-tools button {
+.campaign-tools button,
+.campaign-session-controls button {
   padding: 8px 12px;
   color: #eee;
   background: #3a404d;
@@ -94,7 +95,8 @@
 }
 
 .campaign-shell :focus-visible,
-.campaign-tools :focus-visible {
+.campaign-tools :focus-visible,
+.campaign-session-controls :focus-visible {
   outline: 2px solid #d7ba7d;
   outline-offset: 3px;
 }
@@ -169,35 +171,30 @@
 .campaign-tools {
   position: fixed;
   top: 10px;
-  left: 440px;
+  left: 50%;
   z-index: 110;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  max-width: calc(100vw - 830px);
-  padding: 7px 10px;
+  max-width: calc(100vw - 20px);
   color: #ddd;
-  background: #191b22eb;
-  border: 1px solid #454c5a;
-  border-radius: 7px;
   font:
     12px system-ui,
     sans-serif;
+  transform: translateX(-50%);
 }
 
-.campaign-tools strong {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.campaign-session-controls strong,
+.campaign-session-controls output {
+  overflow-wrap: anywhere;
 }
 
-.campaign-tools span {
-  white-space: nowrap;
+.campaign-session-controls output {
+  font-size: 12px;
 }
 
-.campaign-tools output:empty {
+.campaign-session-controls output[data-save-state='error'] {
+  color: #ffb4a9;
+}
+
+.campaign-session-controls output:empty {
   display: none;
 }
 
@@ -258,13 +255,17 @@
 .campaign-map-panel {
   position: absolute;
   top: calc(100% + 9px);
-  right: 0;
+  left: 50%;
+  box-sizing: border-box;
   width: min(320px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
   padding: 12px;
+  overflow: auto;
   background: #191b22;
   border: 1px solid #596374;
   border-radius: 7px;
   box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  transform: translateX(-50%);
 }
 
 .campaign-map-panel label {
@@ -310,14 +311,6 @@
   background: transparent;
 }
 
-@media (width <= 1050px) {
-  .campaign-tools {
-    top: 170px;
-    left: 10px;
-    max-width: calc(100vw - 40px);
-  }
-}
-
 @media (width <= 720px) {
   .campaign-columns {
     grid-template-columns: minmax(0, 1fr);
@@ -326,6 +319,16 @@
   .campaign-shell {
     max-height: calc(100vh - 32px);
     padding: 18px;
+  }
+
+  .campaign-tools {
+    top: auto;
+    bottom: 10px;
+  }
+
+  .campaign-map-panel {
+    top: auto;
+    bottom: calc(100% + 9px);
   }
 }
 
@@ -708,6 +711,68 @@ body {
   flex-direction: column;
   z-index: 1000;
   font-family: sans-serif;
+}
+
+.collapsible-panel-content[hidden] {
+  display: none !important;
+}
+
+#dice-panel > .panel-toggle,
+#right-sidebar > .panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  color: #eee;
+  background: #2a2a2a;
+  border: 1px solid #596374;
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+}
+
+#dice-panel > .panel-toggle {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 6px;
+}
+
+#right-sidebar > .panel-toggle {
+  align-self: flex-end;
+  flex-shrink: 0;
+  margin: 6px;
+  font-size: 12px;
+}
+
+.panel-toggle:focus-visible {
+  outline: 2px solid #d7ba7d;
+  outline-offset: 3px;
+}
+
+#dice-panel.is-collapsed {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+}
+
+#dice-panel.is-collapsed > .panel-toggle,
+#right-sidebar.is-collapsed > .panel-toggle {
+  margin: 0;
+}
+
+#right-sidebar.is-collapsed {
+  top: 10px;
+  right: 10px;
+  width: auto;
+  height: auto;
+  background: transparent;
+  border: 0;
+  backdrop-filter: none;
+}
+
+body.right-sidebar-collapsed #game-container {
+  width: 100vw;
 }
 
 /* Tab Navigation */
@@ -1367,28 +1432,196 @@ body {
   box-shadow: none;
 }
 
-.terrain-volume-form {
+.construction-size-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 12px 0;
 }
 
-.terrain-volume-form label {
+.construction-size-form[hidden],
+.construction-size-form [hidden] {
+  display: none;
+}
+
+.construction-size-form label {
   display: grid;
   gap: 4px;
   min-width: 0;
   font-size: 12px;
 }
 
-.terrain-volume-form input,
-.terrain-volume-form select {
+.construction-size-form input,
+.construction-size-form select {
   width: 100%;
   min-width: 0;
 }
 
-.terrain-volume-form button {
+.construction-actions {
   grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.construction-building {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+
+.construction-underground-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #5295a5;
+  border-radius: 6px;
+  color: #b6e6f4;
+  background: #192f3b;
+}
+
+.construction-underground-toggle input {
+  width: auto;
+}
+
+.construction-label-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.construction-map-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  max-width: 180px;
+  padding: 3px 6px;
+  color: #e6edf7;
+  background: #192534e6;
+  border: 1px solid #53667c;
+  border-radius: 4px;
+  font: 12px / 1.2 sans-serif;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.construction-map-label[data-state='selected'] {
+  border-color: #73c7ff;
+  color: #b6e6f4;
+}
+
+.construction-map-label[data-state='connection-target'] {
+  border-color: #fc6;
+  color: #ffe2a8;
+  box-shadow: 0 0 8px #fc66;
+}
+
+.construction-levels {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #53667c;
+  border-radius: 6px;
+}
+
+.construction-levels > label {
+  display: grid;
+  gap: 4px;
+}
+
+.construction-levels input,
+.construction-levels select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.construction-building > label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.construction-building input[type='checkbox'] {
+  width: auto;
+}
+
+.construction-feature-size {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.construction-feature-size > .section-subtitle,
+.construction-feature-size > small,
+.construction-feature-size > button {
+  grid-column: 1 / -1;
+}
+
+.construction-feature-size label {
+  display: grid;
+  gap: 4px;
+}
+
+.construction-feature-size input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.construction-palette[aria-label='Building base'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.construction-palette {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.construction-card {
+  display: grid;
+  gap: 4px;
+  padding: 5px;
+  color: #e6edf7;
+  background: #192534;
+  border: 1px solid #53667c;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.construction-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 5px;
+}
+
+.construction-card[aria-pressed='true'] {
+  border-color: #73c7ff;
+  background: #2b4662;
+}
+
+.construction-card:focus-visible {
+  outline: 2px solid #73c7ff;
+  outline-offset: 2px;
+}
+
+.construction-cutaway {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 12px;
 }
 
 .terrain-tool-btn.active {

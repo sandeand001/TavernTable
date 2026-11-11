@@ -77,9 +77,13 @@ test('a committed vault completes safely after a live switch to Walk', async () 
   setTokenMovementSettings(f.token, { mode: 'walk' });
   f.adapter.applyMovementStyle(f.token);
   expect(f.adapter._movementStates.get(f.token).traversal.kind).toBe('vault');
-  expect(f.adapter.requestMoveToGrid(f.token, 4, 4)).toBeNull();
-  finishHumanoid(f);
-  expect(f.token.world).toEqual({ x: 7.5, y: 0, z: 4.5 });
+  expect(f.adapter.requestMoveToGrid(f.token, 4, 4)).toMatchObject({ queued: true });
+  let furthestX = f.token.world.x;
+  finishHumanoid(f, () => {
+    furthestX = Math.max(furthestX, f.token.world.x);
+  });
+  expect(furthestX).toBeCloseTo(7.5);
+  expect(f.token.world).toEqual({ x: 4.5, y: 0, z: 4.5 });
   expect(f.token.__ttWorldLock).toBeUndefined();
 });
 

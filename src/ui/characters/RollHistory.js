@@ -61,6 +61,14 @@ export default class RollHistory {
   // -- Filtered, independently scrolling history --
   _render() {
     if (!this.context) return;
+    if (this.context.unavailable) {
+      this.list.textContent = this.context.unavailable;
+      for (const button of this.root.querySelectorAll('[data-history-filter]'))
+        button.disabled = true;
+      return;
+    }
+    for (const button of this.root.querySelectorAll('[data-history-filter]'))
+      button.disabled = false;
     const { session, token, editing } = this.context;
     const entries = session.history(token, this.filter);
     for (const button of this.root.querySelectorAll('[data-history-filter]')) {

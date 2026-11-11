@@ -28,7 +28,11 @@ import { removeToken as _removeToken } from './token-manager/internals/removal.j
 import { placeNewToken as _placeNewToken } from './token-manager/internals/placement.js';
 // Orientation helpers
 import { rotateToken as _rotateToken } from './token-manager/internals/orientation.js';
-import { DEFAULT_CHARACTER_ID, normalizeCreatureType } from '../config/CharacterCatalog.js';
+import {
+  DEFAULT_CHARACTER_ID,
+  getCharacterDefinition,
+  normalizeCreatureType,
+} from '../config/CharacterCatalog.js';
 
 // ── Token Type Normalization ────────────────────────────
 const DEFAULT_TOKEN_TYPE = DEFAULT_CHARACTER_ID;
@@ -47,6 +51,8 @@ export class TokenManager {
   constructor(gameManager) {
     this.gameManager = gameManager;
     this.selectedTokenType = DEFAULT_TOKEN_TYPE;
+    this.selectedSavedCharacterId = null;
+    this.selectedSavedCharacterAppearance = null;
     this.tokenFacingRight = true;
     this.placedTokens = [];
     this._tokenTypeCounts = new Map();
@@ -73,11 +79,43 @@ export class TokenManager {
   // Setters for proper state management
   setSelectedTokenType(tokenType) {
     const normalizedType = normalizeTokenType(tokenType);
+    this.selectedSavedCharacterId = null;
+    this.selectedSavedCharacterAppearance = null;
     this.selectedTokenType = normalizedType;
     // Sync with global variable for backward compatibility
     if (typeof window !== 'undefined') {
       window.selectedTokenType = normalizedType;
     }
+    this._notifyPlacementSelection();
+  }
+
+  selectSavedCharacter(characterId, appearance) {
+    const services = this.gameManager.characterServices;
+    if (services?.sessionRole === 'player' || services?.library.store?.identity?.role === 'player')
+      throw new Error('Only the DM can place saved campaign characters');
+    services.library.get(characterId);
+    const definition = getCharacterDefinition(appearance);
+    if (!definition) throw new Error('Choose an available token appearance');
+    _selectToken(this, definition.id);
+    this.selectedSavedCharacterId = characterId;
+    this.selectedSavedCharacterAppearance = definition.id;
+    this._notifyPlacementSelection();
+  }
+
+  cancelSavedCharacterPlacement() {
+    if (!this.selectedSavedCharacterId) return;
+    this.selectedSavedCharacterId = null;
+    this.selectedSavedCharacterAppearance = null;
+    this._notifyPlacementSelection();
+  }
+
+  _notifyPlacementSelection() {
+    if (typeof window !== 'undefined')
+      window.dispatchEvent(
+        new CustomEvent('taverntable:tokenTypeChanged', {
+          detail: { gameManager: this.gameManager },
+        })
+      );
   }
 
   setTokenFacingRight(facing) {

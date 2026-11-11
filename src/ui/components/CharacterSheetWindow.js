@@ -427,6 +427,10 @@ export default class CharacterSheetWindow {
     const gm = this.gameManager;
     const connected = !!gm.campaignWorld;
     try {
+      if (gm.playerInput) {
+        gm.playerInput.focus(token);
+        return true;
+      }
       if (connected) {
         this.root.inert = true;
         this.root.setAttribute('aria-busy', 'true');

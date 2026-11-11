@@ -7,8 +7,38 @@ import { testIndexedDB } from '../../helpers/indexedDB.js';
 
 globalThis.TextDecoder ??= TextDecoder;
 
+test('the picker identifies durable host storage and offers an explicit non-destructive browser copy', async () => {
+  let copied = false;
+  const workspace = {
+    store: { storageInfo: { kind: 'host', dataDirectory: 'C:\\Campaigns' } },
+    list: jest.fn(async () =>
+      copied ? [{ id: 'copied', name: 'Copied world', ruleset: '2024', sourcePacks: [] }] : []
+    ),
+    browserCampaigns: jest.fn(async () => [{ id: 'old', name: 'Browser world', ruleset: '2024' }]),
+    copyBrowserCampaign: jest.fn(async () => {
+      copied = true;
+    }),
+  };
+  const launcher = new CampaignLauncher({ workspace });
+  launcher.choose();
+  await launcher.ready;
+  expect(launcher.root.querySelector('[data-campaign-storage]').textContent).toContain(
+    'C:\\Campaigns'
+  );
+  const button = launcher.root.querySelector('[data-copy-browser-campaign]');
+  button.click();
+  for (let step = 0; step < 10 && launcher.busy; step++) await Promise.resolve();
+  expect(workspace.copyBrowserCampaign).toHaveBeenCalledWith('old');
+  expect(launcher.list.textContent).toContain('Copied world');
+  expect(launcher.root.querySelector('[data-browser-campaigns]').textContent).toContain(
+    'Browser world'
+  );
+  launcher.destroy();
+});
+
 test('startup requires an explicit campaign ruleset before opening a scoped, ready-to-play workspace', async () => {
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch: fetchBundledResource,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,

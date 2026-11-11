@@ -1,5 +1,6 @@
 import { normalizeAngle } from '../../token-manager/internals/orientation.js';
 import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovement.js';
+import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 const HEADING_STEP = Math.PI / 4;
 const DRAG_THRESHOLD_SQUARED = 36;
@@ -33,6 +34,19 @@ export class TokenFacingGesture {
 
   canFace(token) {
     const gm = this.manager.gameManager;
+    if (gm.characterServices?.sheetContext === 'library') return false;
+    if (gm.playerInput)
+      return (
+        gm.placedTokens.includes(token) &&
+        !gm.playerInput.commands.pending &&
+        gm.playerInput.commands.availability('facing', token.id).allowed &&
+        !gm.token3DAdapter.isMovementInProgress(token)
+      );
+    if (
+      gm.characterServices?.sheetContext === 'world' &&
+      gm.characterServices.sessionRole === 'player'
+    )
+      return false;
     const adapter = gm.token3DAdapter;
     return (
       gm.placedTokens.includes(token) &&
@@ -48,6 +62,8 @@ export class TokenFacingGesture {
     if (
       event.button !== 0 ||
       this.manager.isSpacePressed ||
+      gm.tokenManager?.selectedSavedCharacterId ||
+      gm.campaignViewBusy ||
       gm.isTerrainModeActive?.() ||
       gm.selectedTokenType === 'remove' ||
       !gm.is3DModeActive?.() ||
@@ -62,7 +78,9 @@ export class TokenFacingGesture {
       event,
       x: event.clientX,
       y: event.clientY,
-      world: { ...token.world },
+      world: gm.playerInput
+        ? { ...gm.token3DAdapter.getTokenViewPosition(token) }
+        : { ...token.world },
       facing: token.facingAngle || 0,
       dragged: false,
       cursor: this.view.style.cursor,
@@ -87,8 +105,16 @@ export class TokenFacingGesture {
     const distance = (event.clientX - state.x) ** 2 + (event.clientY - state.y) ** 2;
     if (!state.dragged && distance < DRAG_THRESHOLD_SQUARED) return;
     if (!state.dragged) {
-      this.manager.gameManager.token3DAdapter.releaseManualActionForFacing?.(state.token);
-      this.manager._selectTokenEntry(state.token);
+      if (!this.manager.gameManager.playerInput)
+        this.manager.gameManager.token3DAdapter.releaseManualActionForFacing?.(state.token);
+      Promise.resolve(this.manager._selectTokenEntry(state.token)).catch((error) => {
+        this.cancel();
+        GameErrors.input(error, {
+          component: 'TokenFacingGesture',
+          operation: 'select',
+          tokenId: state.token.id,
+        });
+      });
     }
     state.dragged = true;
     this.view.style.cursor = 'crosshair';
@@ -99,10 +125,17 @@ export class TokenFacingGesture {
     const dz = point.z - state.origin.z;
     if (Math.hypot(dx, dz) < 1e-5) return;
     const target = Math.round(facingAngleFromDirection(dx, dz) / HEADING_STEP) * HEADING_STEP;
-    gm.tokenManager.rotateToken(
-      state.token,
-      normalizeAngle(target - (state.token.facingAngle || 0))
-    );
+    if (gm.playerInput) {
+      const ownMap = gm.campaignWorld.getMap(state.token.mapId);
+      const viewMap = gm.campaignWorld.getMap(gm.campaignMapId);
+      state.targetAngle = normalizeAngle(
+        target + ((ownMap.quarterTurns - viewMap.quarterTurns) * Math.PI) / 2
+      );
+    } else
+      gm.tokenManager.rotateToken(
+        state.token,
+        normalizeAngle(target - (state.token.facingAngle || 0))
+      );
     event.preventDefault();
     event.stopImmediatePropagation();
   }
@@ -132,11 +165,28 @@ export class TokenFacingGesture {
     this.finish();
     event.stopImmediatePropagation();
     if (!state.dragged) this.manager.handleLeftClick(state.event);
+    else if (this.manager.gameManager.playerInput && Number.isFinite(state.targetAngle))
+      void Promise.resolve()
+        .then(() =>
+          this.manager.gameManager.playerInput.requestFacing(state.token, state.targetAngle)
+        )
+        .catch((error) =>
+          GameErrors.input(error, {
+            component: 'TokenFacingGesture',
+            operation: 'face',
+            tokenId: state.token.id,
+          })
+        );
   }
 
   cancel(restore = true) {
     const state = this.active;
-    if (restore && state?.dragged && this.canFace(state.token)) {
+    if (
+      restore &&
+      !this.manager.gameManager.playerInput &&
+      state?.dragged &&
+      this.canFace(state.token)
+    ) {
       this.manager.gameManager.tokenManager.rotateToken(
         state.token,
         normalizeAngle(state.facing - state.token.facingAngle)

@@ -10,6 +10,17 @@ import {
 } from './generation/BiomeElevationGenerator.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import { TerrainGeometry } from './TerrainGeometry.js';
+import {
+  createStructure,
+  structureVolumes,
+  replaceStructureGeometry,
+  structureHeightChanges,
+  STRUCTURE_TYPES,
+} from './ConstructionBlueprints.js';
+import { generateBiomeStructures } from './generation/BiomeStructures.js';
+import { buildingForHeight } from './BuildingModel.js';
+import { createBuildingSnapPreview, withBuildingSnapContext } from './BuildingSnaps.js';
+import { normalizeCavernRecipe } from './generation/CavernInteriors.js';
 
 function validateDimensions(cols, rows) {
   if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) {
@@ -80,11 +91,14 @@ export class TerrainEngine {
     this._brush = new TerrainBrushController(this._dataStore);
     this._isActive = false;
     this._stroke = null;
+    this._constructionTool = null;
     this._hover = null;
     this._undo = [];
     this._redo = [];
     this._isGenerating = false;
     this._biomeKey = null;
+    this._cavern = null;
+    this._structureGenerationEnabled = true;
     const settings = typeof window !== 'undefined' ? window.richShadingSettings : null;
     this._biomeSeed = Number.isInteger(settings?.seed)
       ? settings.seed >>> 0
@@ -100,6 +114,10 @@ export class TerrainEngine {
     this._feetPerLevel = 2.5;
     this._geometry = this._createGeometry(cols, rows);
     this._visibleLayers = null;
+    this._geometryValidators = new Set();
+    this._geometryParticipant = null;
+    this._geometryReceipts = new WeakMap();
+    this._structureSnapPreviews = new WeakMap();
     this._listeners = Object.fromEntries(
       [
         'tileChanged',
@@ -127,6 +145,7 @@ export class TerrainEngine {
 
   deactivate() {
     this.cancelBrushStroke();
+    this.setConstructionTool(null);
     if (!this._isActive) return;
     this._isActive = false;
     this._emit('activationChanged', { active: false });
@@ -152,7 +171,18 @@ export class TerrainEngine {
         },
       }))
       .filter(({ bounds }) => bounds.min.x < bounds.max.x && bounds.min.z < bounds.max.z);
-    geometry.load({ version: 1, volumes });
+    const remaining = new Set(
+      volumes
+        .filter((volume) => volume.operation === 'add')
+        .map((volume) => volume.structureId)
+        .filter(Boolean)
+    );
+    const structures = this.geometry.getStructures().filter((spec) => remaining.has(spec.id));
+    geometry.load({
+      version: 3,
+      volumes: volumes.filter((volume) => !volume.structureId || remaining.has(volume.structureId)),
+      structures,
+    });
     this._dataStore.resize(cols, rows);
     this._geometry = geometry;
     this._visibleLayers = null;
@@ -210,8 +240,26 @@ export class TerrainEngine {
     if (!['raise', 'lower', 'wall'].includes(tool)) {
       throw new RangeError(`Unknown terrain tool: ${tool}`);
     }
+    this.setConstructionTool(null);
     if (this.tool === tool) return;
     this._changeBrush(() => this._brush.setTool(tool));
+  }
+
+  get constructionTool() {
+    return this._constructionTool;
+  }
+
+  setConstructionTool(tool) {
+    if (tool !== null && tool !== 'select' && !STRUCTURE_TYPES.some((type) => type.kind === tool))
+      throw new Error('Choose a supported construction tool');
+    if (this._constructionTool === tool) return;
+    this.cancelBrushStroke();
+    this._constructionTool = tool;
+    if (tool) {
+      this._selectedPlaceable = null;
+      this._placeableRemovalMode = false;
+    }
+    this._editorChanged();
   }
 
   setBrushSize(size) {
@@ -348,11 +396,14 @@ export class TerrainEngine {
 
   undo() {
     if (this._stroke) return this.cancelBrushStroke();
-    const edit = this._undo.pop();
+    const edit = this._undo.at(-1);
     if (!edit) return false;
+    const geometry =
+      edit.geometry && this._validatedGeometry(edit.geometry.before, edit.context?.before);
+    if (geometry) this._applyValidatedGeometry(geometry);
+    this._undo.pop();
     this._redo.push(edit);
     if (edit.geometry) {
-      this._geometry.load(edit.geometry.before);
       this._changed('geometry');
       return true;
     }
@@ -367,11 +418,14 @@ export class TerrainEngine {
 
   redo() {
     if (this._stroke) return false;
-    const edit = this._redo.pop();
+    const edit = this._redo.at(-1);
     if (!edit) return false;
+    const geometry =
+      edit.geometry && this._validatedGeometry(edit.geometry.after, edit.context?.after);
+    if (geometry) this._applyValidatedGeometry(geometry);
+    this._redo.pop();
     this._undo.push(edit);
     if (edit.geometry) {
-      this._geometry.load(edit.geometry.after);
       this._changed('geometry');
       return true;
     }
@@ -408,6 +462,8 @@ export class TerrainEngine {
     if (this.isActive || this.isGenerating) return false;
     validateBiome(biomeKey);
     if (biomeKey === null) throw new Error('Choose a biome before generating terrain');
+    if (options.structures !== undefined && typeof options.structures !== 'boolean')
+      throw new TypeError('Structure generation must be enabled or disabled');
     const seed = options.seed ?? this._biomeSeed;
     validateSeed(seed);
     this._isGenerating = true;
@@ -417,13 +473,60 @@ export class TerrainEngine {
         seed,
       });
       validateHeights(heights);
+      const previous = this.save();
+      const replacingGeneratedJoins = previous.geometry?.volumes.some(
+        (volume) => volume.source === 'generated' && volume.id.startsWith('compound-opening-')
+      );
+      const plan = generateBiomeStructures({
+        biomeKey,
+        seed,
+        heights,
+        previousHeights: previous.heights,
+        geometry: this.geometry.save(),
+        feetPerLevel: this._feetPerLevel,
+        cavernExits: options.cavernManualExits || [],
+        enabled:
+          options.structures === undefined ? this._structureGenerationEnabled : options.structures,
+      });
+      const protectAuthoredCellars = [previous.geometry, plan.geometry].some((snapshot) =>
+        snapshot?.structures?.some((spec) => spec.kind === 'cellar' && spec.building?.cellarLayout)
+      );
+      const cavernGeneration = !!(previous.cavern || plan.cavern);
       this.cancelBrushStroke();
-      this._dataStore.restoreHeights(heights);
+      try {
+        this._dataStore.restoreHeights(plan.heights);
+        this._biomeKey = biomeKey;
+        this._biomeSeed = seed;
+        this._cavern = plan.cavern ?? null;
+        const geometry = this._validatedGeometry(
+          plan.geometry,
+          plan.joins?.length ||
+            replacingGeneratedJoins ||
+            protectAuthoredCellars ||
+            cavernGeneration
+            ? {
+                buildingJoins: plan.joins || [],
+                replacingGeneratedJoins: true,
+                protectAuthoredCellars,
+                cavernGeneration,
+                previousCavern: previous.cavern ?? null,
+              }
+            : null
+        );
+        this._applyValidatedGeometry(geometry);
+      } catch (error) {
+        this._dataStore.restoreHeights(previous.heights);
+        this._biomeKey = previous.biomeKey;
+        this._biomeSeed = previous.biomeSeed;
+        this._cavern = previous.cavern ?? null;
+        this._geometry.invalidate();
+        throw error;
+      }
       this._biomeKey = biomeKey;
       this._biomeSeed = seed;
       this._clearHistory();
       const hint = getBiomeElevationScaleHint(biomeKey);
-      if (Number.isFinite(hint) && hint !== this._elevationScale) {
+      if (!this.geometry.hasVolumes && Number.isFinite(hint) && hint !== this._elevationScale) {
         this._elevationScale = hint;
         TerrainHeightUtils.setElevationUnit(hint);
         this._emit('scaleChanged', { elevationScale: hint });
@@ -444,6 +547,17 @@ export class TerrainEngine {
     this._biomeSeed = seed;
     this._emit('biomeChanged', { biomeKey: this.biomeKey, biomeSeed: seed });
     this.refreshAppearance();
+  }
+
+  get structureGenerationEnabled() {
+    return this._structureGenerationEnabled;
+  }
+
+  setStructureGeneration(enabled) {
+    if (typeof enabled !== 'boolean')
+      throw new TypeError('Structure generation must be enabled or disabled');
+    this._structureGenerationEnabled = enabled;
+    this._changed('generationSettings');
   }
 
   setRichShadingEnabled(enabled) {
@@ -484,6 +598,7 @@ export class TerrainEngine {
       throw new TypeError('A selected placeable must be a key or null');
     }
     this.cancelBrushStroke();
+    if (id) this._constructionTool = null;
     this._selectedPlaceable = id || null;
     this._editorChanged();
     return true;
@@ -503,6 +618,7 @@ export class TerrainEngine {
   setPlaceableRemovalMode(enabled) {
     this._placeableRemovalMode = !!enabled;
     if (enabled) this._selectedPlaceable = null;
+    if (enabled) this._constructionTool = null;
     this.cancelBrushStroke();
     this._editorChanged();
   }
@@ -520,7 +636,10 @@ export class TerrainEngine {
     if (!Number.isFinite(feetPerLevel) || feetPerLevel < 0) {
       throw new RangeError('Map geometry requires a finite non-negative terrain scale');
     }
-    this._feetPerLevel = feetPerLevel;
+    if (this._feetPerLevel !== feetPerLevel) {
+      this._feetPerLevel = feetPerLevel;
+      this.geometry.invalidate();
+    }
   }
 
   configureGeometryBase(terrainThicknessFeet) {
@@ -545,20 +664,231 @@ export class TerrainEngine {
     }
     this.cancelBrushStroke();
     const before = this.geometry.save();
-    const after = { version: 1, volumes: [...before.volumes, ...volumes] };
-    this.geometry.load(after);
+    const after = { ...before, version: 3, volumes: [...before.volumes, ...volumes] };
+    return this._commitGeometry(
+      after,
+      volumes.length > 1
+        ? 'Add structure group'
+        : volumes[0].operation === 'add'
+          ? 'Add solid volume'
+          : 'Carve volume'
+    );
+  }
+
+  validateGeometryEdits(validate) {
+    if (typeof validate !== 'function')
+      throw new TypeError('Geometry validation requires a function');
+    this._geometryValidators.add(validate);
+    return () => this._geometryValidators.delete(validate);
+  }
+
+  participateInGeometryEdits(participant) {
+    if (this._geometryParticipant)
+      throw new Error('Geometry edits already have a world participant');
+    if (typeof participant?.prepare !== 'function')
+      throw new Error('Geometry edits require a prepare participant');
+    this._geometryParticipant = participant;
+    return () => {
+      if (this._geometryParticipant === participant) this._geometryParticipant = null;
+    };
+  }
+
+  _validatedGeometry(snapshot, context = null) {
+    const geometry = this._createGeometry(this.cols, this.rows);
+    geometry.load(snapshot);
+    if (geometry.hasCurves) geometry.getSolidCells();
+    for (const validate of this._geometryValidators) validate(geometry, snapshot, context);
+    const receipt = this._geometryParticipant?.prepare(geometry, context);
+    if (receipt) this._geometryReceipts.set(geometry, receipt);
+    return geometry;
+  }
+
+  _applyValidatedGeometry(geometry) {
+    const before = this._geometry,
+      receipt = this._geometryReceipts.get(geometry);
+    this._geometry = geometry;
+    try {
+      receipt?.apply();
+    } catch (error) {
+      this._geometry = before;
+      receipt?.rollback();
+      throw error;
+    }
+    return receipt;
+  }
+
+  _commitGeometry(after, label, context = null) {
+    const before = this.geometry.save();
+    const geometry = this._validatedGeometry(after, context);
+    const receipt = this._geometryReceipts.get(geometry);
+    if (
+      JSON.stringify(before) === JSON.stringify(geometry.save()) &&
+      (!receipt || JSON.stringify(receipt.before) === JSON.stringify(receipt.after))
+    )
+      return false;
+    this.cancelBrushStroke();
+    this._applyValidatedGeometry(geometry);
     this._undo.push({
-      label:
-        volumes.length > 1
-          ? 'Add structure group'
-          : volumes[0].operation === 'add'
-            ? 'Add solid volume'
-            : 'Carve volume',
+      label,
       geometry: { before, after },
+      ...(receipt ? { context: { before: receipt.before, after: receipt.after } } : {}),
     });
     if (this._undo.length > TERRAIN_CONFIG.HISTORY_LIMIT) this._undo.shift();
     this._redo = [];
     this._changed('geometry');
+    return true;
+  }
+
+  previewStructureSnap(id, changes, options = {}) {
+    const candidate = createBuildingSnapPreview(this.geometry.save(), id, changes, {
+      ...options,
+      source: 'manual',
+    });
+    const geometry = this._validatedGeometry(candidate.geometry, {
+        buildingJoins: candidate.joins,
+      }),
+      context = this._geometryReceipts.get(geometry)?.after,
+      preview = context ? withBuildingSnapContext(candidate, context) : candidate;
+    this._structureSnapPreviews.set(preview, {
+      signature: JSON.stringify(this.save()),
+      canceled: false,
+      committed: false,
+    });
+    return preview;
+  }
+
+  cancelStructureSnap(preview) {
+    const pending = this._structureSnapPreviews.get(preview);
+    if (!pending || pending.canceled || pending.committed) return false;
+    pending.canceled = true;
+    return true;
+  }
+
+  commitStructureSnap(preview) {
+    const pending = this._structureSnapPreviews.get(preview);
+    if (!pending) throw new Error('Create a snap preview before applying it');
+    if (pending.canceled) throw new Error('This building snap preview was canceled');
+    if (pending.committed) throw new Error('This building snap preview was already applied');
+    if (pending.signature !== JSON.stringify(this.save()))
+      throw new Error('The map changed; preview the building snap again');
+    const changed = this._commitGeometry(preview.geometry, 'Join buildings', {
+      buildingJoins: preview.joins,
+    });
+    pending.committed = true;
+    return changed;
+  }
+
+  removeBuildingJoins(volumeIds, context) {
+    const before = this.geometry.save(),
+      ids = new Set(volumeIds);
+    if (
+      !Array.isArray(volumeIds) ||
+      !volumeIds.length ||
+      ids.size !== volumeIds.length ||
+      volumeIds.some(
+        (id) =>
+          typeof id !== 'string' ||
+          !id.startsWith('compound-opening-') ||
+          !before.volumes.some((volume) => volume.id === id && volume.operation === 'subtract')
+      )
+    )
+      throw new Error('Choose valid connected-building openings to remove');
+    return this._commitGeometry(
+      { ...before, volumes: before.volumes.filter((volume) => !ids.has(volume.id)) },
+      'Disconnect building interiors',
+      context
+    );
+  }
+
+  placeStructure(input) {
+    const spec = createStructure(input);
+    const before = this.geometry.save();
+    if (this.geometry.getStructures().some((entry) => entry.id === spec.id))
+      throw new Error('This structure ID is already on the map');
+    return this._commitGeometry(
+      {
+        version: 3,
+        structures: [...this.geometry.getStructures(), spec],
+        volumes: [...before.volumes, ...structureVolumes(spec)],
+      },
+      `Build ${spec.kind}`
+    );
+  }
+
+  resizeStructure(id, changes) {
+    const structures = this.geometry.getStructures();
+    const existing = structures.find((spec) => spec.id === id);
+    if (!existing) throw new Error('Choose an editable structure on this map');
+    if (
+      Object.keys(changes).some(
+        (key) =>
+          ![
+            'kind',
+            'wallStairs',
+            'wallStairVersion',
+            'wallStairLayout',
+            'wallStairDirection',
+            'wallStairSide',
+            'wallStairOffsetFeet',
+            'wallStairExit',
+            'heightFeet',
+            'diameterFeet',
+            'lengthFeet',
+            'widthFeet',
+            'style',
+            'angleRadians',
+            'opening',
+            'openingWidthFeet',
+            'openingHeightFeet',
+            'openingShape',
+            'ruined',
+            'building',
+            'xFeet',
+            'zFeet',
+            'name',
+            'appearance',
+          ].includes(key)
+      )
+    )
+      throw new Error('Only structure dimensions, openings and appearance can be changed');
+    if (
+      changes.kind !== undefined &&
+      changes.kind !== existing.kind &&
+      (!['building', 'turret'].includes(existing.kind) ||
+        !['building', 'turret'].includes(changes.kind))
+    )
+      throw new Error('Only a building or turret can change between rectangular and round bases');
+    if (
+      Object.entries(changes).every(([key, value]) =>
+        value && typeof value === 'object'
+          ? JSON.stringify(existing[key]) === JSON.stringify(value)
+          : existing[key] === value
+      )
+    )
+      return false;
+    const adjusted = { ...existing, ...changes, source: 'manual' };
+    if (changes.heightFeet !== undefined)
+      Object.assign(adjusted, structureHeightChanges(existing, changes.heightFeet));
+    if (adjusted.building && changes.heightFeet !== undefined)
+      adjusted.building = buildingForHeight(adjusted.building, changes.heightFeet);
+    const spec = createStructure(adjusted, { legacy: !adjusted.building });
+    const before = this.geometry.save();
+    return this._commitGeometry(replaceStructureGeometry(before, spec), `Resize ${spec.kind}`);
+  }
+
+  removeStructure(id) {
+    const before = this.geometry.save();
+    const structures = this.geometry.getStructures();
+    if (!structures.some((spec) => spec.id === id))
+      throw new Error('Choose an editable structure on this map');
+    return this._commitGeometry(
+      {
+        version: 3,
+        structures: structures.filter((spec) => spec.id !== id),
+        volumes: before.volumes.filter((volume) => volume.structureId !== id),
+      },
+      'Remove structure'
+    );
   }
 
   setVisibleLayers(layers) {
@@ -581,7 +911,11 @@ export class TerrainEngine {
       elevationScale: this._elevationScale,
       treeDensityMultiplier: this._treeDensityMultiplier,
       richShadingEnabled: this._richShadingEnabled,
-      ...(this.geometry.hasVolumes ? { geometry: this.geometry.save() } : {}),
+      ...(this._cavern ? { cavern: normalizeCavernRecipe(this._cavern) } : {}),
+      ...(!this._structureGenerationEnabled ? { structureGenerationEnabled: false } : {}),
+      ...(this.geometry.hasVolumes || Number.isFinite(this.geometry.terrainThicknessFeet)
+        ? { geometry: this.geometry.save() }
+        : {}),
     };
   }
 
@@ -596,6 +930,14 @@ export class TerrainEngine {
     const biomeSeed = state.biomeSeed ?? this._biomeSeed;
     const elevationScale = state.elevationScale ?? TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
     const treeDensity = state.treeDensityMultiplier ?? 1;
+    const cavern = state.cavern === undefined ? null : normalizeCavernRecipe(state.cavern);
+    if (cavern?.version === 1 && !state.geometry)
+      throw new Error('A saved cavern interior requires its physical geometry');
+    if (
+      state.structureGenerationEnabled !== undefined &&
+      typeof state.structureGenerationEnabled !== 'boolean'
+    )
+      throw new TypeError('Saved structure generation must be enabled or disabled');
     validateBiome(biomeKey);
     validateSeed(biomeSeed);
     validateScale(elevationScale);
@@ -604,15 +946,18 @@ export class TerrainEngine {
       throw new TypeError('Saved terrain shading state must be a boolean');
     }
     this.cancelBrushStroke();
+    this.setConstructionTool(null);
     const resized = cols !== this.cols || rows !== this.rows;
     if (resized) this._dataStore.resize(cols, rows);
     this._dataStore.restoreHeights(state.heights);
     this._geometry = geometry;
     this._visibleLayers = null;
     this._biomeKey = biomeKey;
+    this._cavern = cavern;
     this._biomeSeed = biomeSeed;
     this._elevationScale = elevationScale;
     this._treeDensityMultiplier = treeDensity;
+    this._structureGenerationEnabled = state.structureGenerationEnabled ?? true;
     this._richShadingEnabled = state.richShadingEnabled ?? false;
     this._clearHistory();
     if (resized) this._emit('resized', { cols, rows });
@@ -679,6 +1024,9 @@ export class TerrainEngine {
   }
   get geometry() {
     return this._geometry;
+  }
+  get cavern() {
+    return this._cavern ? normalizeCavernRecipe(this._cavern) : null;
   }
   get visibleLayers() {
     return this._visibleLayers === null ? null : [...this._visibleLayers];
@@ -774,6 +1122,7 @@ export class TerrainEngine {
     if (!changes.length) return false;
     for (const { x, y, after } of changes) this._dataStore.set(x, y, after);
     this._dataStore.applyWorkingToBase();
+    this.geometry.invalidate();
     if (history) {
       this._undo.push({ label, changes });
       if (this._undo.length > TERRAIN_CONFIG.HISTORY_LIMIT) this._undo.shift();
@@ -843,6 +1192,10 @@ export class TerrainEngine {
   }
 
   _changed(kind, changes = []) {
+    if (
+      !['geometry', 'appearance', 'visibility', 'treeDensity', 'generationSettings'].includes(kind)
+    )
+      this.geometry.invalidate();
     this._editorChanged();
     this._emit('changed', {
       kind,

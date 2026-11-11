@@ -2,6 +2,8 @@ import { TERRAIN_PLACEABLES } from '../../config/terrain/TerrainPlaceables.js';
 import { BRUSH_COLORS } from '../../terrain/brush/BrushCommon.js';
 import { autoPopulateBiomeFlora } from '../../coordinators/terrain-coordinator/internals/flora.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
+import { validateConstructionEdit } from '../../campaigns/CampaignConstruction.js';
+import { CampaignBuildingEditor } from '../../campaigns/CampaignBuildingEditor.js';
 
 export class TerrainEngineSceneAdapter {
   constructor({ engine, gameManager, threeSceneManager } = {}) {
@@ -18,14 +20,25 @@ export class TerrainEngineSceneAdapter {
     if (this._unsubs.length) return;
     const e = this.engine;
     const gm = this.gameManager;
+    const buildings = new CampaignBuildingEditor(gm);
     this._unsubs.push(
+      e.participateInGeometryEdits(buildings),
+      e.validateGeometryEdits((geometry, _snapshot, context) =>
+        validateConstructionEdit(gm, geometry, context)
+      ),
       e.onChanged(({ kind }) => {
+        buildings.publish();
+        if (kind === 'generationSettings') return;
         if (kind === 'visibility') {
           gm.terrainRebuilder?.request();
           if (gm.token3DAdapter) gm.token3DAdapter._movementRangeDirty = true;
           return;
         }
         if (kind !== 'treeDensity') {
+          if (kind === 'generation' && gm.campaignWorld)
+            e.configureGeometryBase(
+              gm.campaignWorld.getMap(gm.campaignMapId).base === 'floor' ? 0.5 : null
+            );
           e.configureGeometryScale((gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize);
           gm.notifyTerrainHeightsChanged();
         }

@@ -13,6 +13,7 @@ import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { createPlaceableModelGeometry } from './placeableModelGeometry.js';
 import { fitGeneratedTreeScale } from './treeSupport.js';
 import { readPlaceablePlacements } from '../SceneSnapshotReaders.js';
+import { isSightPlaceable } from '../../campaigns/CreatureVisibility.js';
 import {
   disposePlaceableMaterials,
   preparePlaceableMaterials,
@@ -70,6 +71,31 @@ export class PlaceableMeshPool {
         mesh.getMatrixAt(index, matrix);
         matrix.premultiply(mesh.matrixWorld);
         bounds.copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
+        result.push({
+          min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+          max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
+        });
+      }
+    }
+    return result;
+  }
+
+  sightBlockingBounds() {
+    if (!this._groups.size) return [];
+    if (!this._three) throw new Error('Wait for physical sight geometry to finish loading');
+    const matrix = new this._three.Matrix4();
+    const bounds = new this._three.Box3();
+    const result = [];
+    for (const [key, metadata] of this._metadata) {
+      const group = this._groups.get(key);
+      if (!group) throw new Error('A physical sight group is missing');
+      if (!group.sightBounds) continue;
+      group.instancedMesh.updateMatrixWorld(true);
+      for (const [index, entry] of metadata) {
+        if (!isSightPlaceable(entry.source)) continue;
+        group.instancedMesh.getMatrixAt(index, matrix);
+        matrix.premultiply(group.instancedMesh.matrixWorld);
+        bounds.copy(group.sightBounds).applyMatrix4(matrix);
         result.push({
           min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
           max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
@@ -552,6 +578,7 @@ export class PlaceableMeshPool {
               count: 0,
               baseColor: baseColorRef,
               supportBounds: prepared.supportBounds,
+              sightBounds: prepared.sightBounds,
             };
           }
           throw new Error('Prepared static model has no geometry or material');

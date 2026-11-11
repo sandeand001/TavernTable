@@ -27,6 +27,8 @@ import CompendiumSidebar from './characters/CompendiumSidebar.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 import { copyRollSummary } from '../systems/dice/rollSummary.js';
 import { rollSummaryMarkup } from './dice/rollSummary.js';
+import { generateCampaignBiome } from '../campaigns/CampaignBiomeGeneration.js';
+import { attachPanelToggles, setPanelCollapsed } from './controls/PanelVisibilityControls.js';
 
 class SidebarController {
   // ── Constructor ─────────────────────────────────────────────
@@ -41,6 +43,7 @@ class SidebarController {
   }
 
   init() {
+    attachPanelToggles();
     // Wire tab buttons
     try {
       const buttons = getTabButtons();
@@ -55,7 +58,7 @@ class SidebarController {
         }
       });
       // Activate initial tab
-      this.switchTab(this.activeTab);
+      this.switchTab(this.activeTab, { reveal: false });
       // Grid controls
       const { slider: gridOpacitySlider, valueEl: gridOpacityValue } = getGridOpacityControl();
       if (gridOpacitySlider && !gridOpacitySlider.dataset.boundChange) {
@@ -122,7 +125,11 @@ class SidebarController {
 
   // ── Public API ──────────────────────────────────────────────
 
-  switchTab(tabId) {
+  switchTab(tabId, { reveal = true } = {}) {
+    const sidebar = document.getElementById('right-sidebar');
+    if (reveal && sidebar?.hasAttribute('data-collapsible-panel')) {
+      setPanelCollapsed(sidebar, false);
+    }
     this.activeTab = tabId;
     try {
       const buttons = getTabButtons();
@@ -368,9 +375,29 @@ class SidebarController {
     const btn = document.getElementById('generate-map');
     const lock = document.getElementById('biome-seed-lock');
     const reseed = document.getElementById('biome-reseed');
+    const structures = document.getElementById('biome-structures-toggle');
+    if (structures && window.gameManager?.terrainEngine)
+      structures.checked = window.gameManager.terrainEngine.structureGenerationEnabled;
+    if (structures && !structures.dataset.boundStructures) {
+      structures.checked = window.gameManager?.terrainEngine?.structureGenerationEnabled !== false;
+      structures.addEventListener('change', () => {
+        const engine = window.gameManager?.terrainEngine;
+        try {
+          if (!engine) throw new Error('Terrain generation is not ready yet');
+          engine.setStructureGeneration(structures.checked);
+        } catch (error) {
+          if (engine) structures.checked = engine.structureGenerationEnabled;
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            context: 'structureGeneration',
+          });
+        }
+      });
+      structures.dataset.boundStructures = 'true';
+    }
 
     if (btn && !btn.dataset.boundClick) {
       btn.addEventListener('click', async () => {
+        const status = document.getElementById('biome-generation-status');
         try {
           const engine = window.gameManager?.terrainEngine;
           if (!engine) throw new Error('Terrain editing is not ready yet');
@@ -380,14 +407,30 @@ class SidebarController {
           }
           btn.disabled = true;
           btn.classList.add('disabled');
-          if (lock && !lock.checked) {
-            const newSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
-            engine.setBiomeSeed(newSeed);
+          if (status) {
+            status.setAttribute('role', 'status');
+            status.textContent = 'Generating terrain and biome structures...';
           }
-          if (!(await engine.generateBiomeElevation(engine.biomeKey))) {
+          const seed =
+            lock && !lock.checked ? Math.floor(Math.random() * 0xffffffff) >>> 0 : engine.biomeSeed;
+          if (
+            !(await generateCampaignBiome(window.gameManager, {
+              structures: structures ? structures.checked : engine.structureGenerationEnabled,
+              seed,
+            }))
+          ) {
             throw new Error('Terrain generation could not begin');
           }
+          if (status) {
+            const name =
+              getBiomeButtonByKey(engine.biomeKey)?.textContent.trim() || engine.biomeKey;
+            status.textContent = `Generated ${name} on the ${engine.cols} x ${engine.rows} map.`;
+          }
         } catch (error) {
+          if (status) {
+            status.setAttribute('role', 'alert');
+            status.textContent = `Cannot generate: ${error.message}. Creatures are never moved automatically. Move or remove creatures from structures before replacing the map.`;
+          }
           new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
             context: 'generateTerrainMap',
           });
@@ -408,7 +451,9 @@ class SidebarController {
       }
       lock.addEventListener('change', () => {
         if (!window.richShadingSettings) window.richShadingSettings = {};
+        if (window.richShadingSettings.lockSeed === !!lock.checked) return;
         window.richShadingSettings.lockSeed = !!lock.checked;
+        window.gameManager?.sceneAutosave?.changed('terrain shading');
       });
       lock.dataset.boundChange = 'true';
     }
@@ -539,7 +584,10 @@ class SidebarController {
     try {
       const root = getBiomeRootEl();
       if (root) {
-        getBiomeButtons(root).forEach((btn) => btn.classList.remove('selected'));
+        getBiomeButtons(root).forEach((btn) => {
+          btn.classList.remove('selected');
+          btn.setAttribute('aria-pressed', 'false');
+        });
         const newly = getBiomeButtonByKey(biomeKey, root);
         if (newly) {
           newly.classList.add('selected');
@@ -618,6 +666,7 @@ class SidebarController {
       btn.classList.remove('selected');
       btn.setAttribute('aria-pressed', 'false');
     });
+    if (window.gameManager?.tokenManager?.selectedSavedCharacterId) return;
     const selectedButton = getTokenButtonByType(selectedToken);
     if (selectedButton) {
       selectedButton.classList.add('selected');

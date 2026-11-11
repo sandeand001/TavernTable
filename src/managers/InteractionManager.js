@@ -12,6 +12,7 @@ import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import { KEYBOARD_TOKEN_CONTROLS_ENABLED } from '../config/TokenMovementConfig.js';
 import { TokenFacingGesture } from './interaction-manager/internals/facing.js';
+import { queueCampaignOperation } from '../campaigns/SceneWorld.js';
 import {
   isPointInCellDiamond as _isPointInCellDiamond,
   pickTopmostGridCellAt as _pickTopmost,
@@ -21,6 +22,7 @@ import {
   updateGridDragPosition as _updateDrag,
   stopGridDragging as _stopDrag,
   handlePanKeyDown,
+  handlePanPointerDown,
   releasePanKey,
 } from './interaction-manager/internals/pan.js';
 import {
@@ -63,6 +65,7 @@ export class InteractionManager {
     this.gridStartX = 0;
     this.gridStartY = 0;
     this.isSpacePressed = false;
+    this.isSpaceKeyHeld = false;
 
     // 3D rotation (when Three scene active)
     this.isRotating3D = false;
@@ -117,7 +120,29 @@ export class InteractionManager {
    */
   setupMouseInteractions() {
     this._facingGesture?.detach();
-    this._facingGesture = new TokenFacingGesture(this).attach(this.gameManager.getEventCanvas());
+    const view = this.gameManager.getEventCanvas();
+    this._savedPlacementCanvas?.removeEventListener(
+      'mousedown',
+      this._savedPlacementPointerDown,
+      true
+    );
+    this._savedPlacementPointerDown ||= (event) => {
+      const gm = this.gameManager;
+      if (
+        event.button !== 0 ||
+        this.isSpacePressed ||
+        (!gm.tokenManager?.selectedSavedCharacterId &&
+          !gm.campaignViewBusy &&
+          !gm.campaignMapFailure &&
+          !gm.inputCoordinator?.savedCharacterPending)
+      )
+        return;
+      event.stopImmediatePropagation();
+      this.handleLeftClick(event);
+    };
+    this._savedPlacementCanvas = view;
+    view.addEventListener('mousedown', this._savedPlacementPointerDown, true);
+    this._facingGesture = new TokenFacingGesture(this).attach(view);
     this.setupMouseDown();
     this.setupMouseMove();
     this.setupMouseUp();
@@ -129,14 +154,18 @@ export class InteractionManager {
    */
   setupMouseDown() {
     const view = this.gameManager.getEventCanvas();
-    view.addEventListener(
-      'pointerdown',
-      (event) => {
-        // Keep compatibility mouse events for panning, but bypass token pointer gestures.
-        if (event.button === 0 && this.isSpacePressed) event.stopImmediatePropagation();
-      },
-      true
-    );
+    if (!this._panPointerCaptureAttached) {
+      this._panPointerCaptureAttached = true;
+      const capturePan = (event) => {
+        const canvas = this.gameManager.getEventCanvas();
+        if (!canvas || (event.target !== canvas && !canvas.contains?.(event.target))) return;
+        if (handlePanPointerDown(this, event) && event.type === 'pointerdown')
+          event.stopPropagation();
+      };
+      // Claim map drags before terrain/build handlers, retaining compatibility mouse events.
+      document.addEventListener('pointerdown', capturePan, true);
+      document.addEventListener('mousedown', capturePan, true);
+    }
     view.addEventListener(
       'mousedown',
       (event) => {
@@ -261,6 +290,7 @@ export class InteractionManager {
     });
 
     document.addEventListener('keyup', (event) => {
+      if (event.code === 'Space') this.isSpaceKeyHeld = false;
       if (event.code === 'Space' && this.isSpacePressed) {
         releasePanKey(this);
         event.preventDefault();
@@ -280,7 +310,11 @@ export class InteractionManager {
       if (document.visibilityState === 'hidden') releasePanKey(this);
     });
     document.addEventListener('focusin', (event) => {
-      if (this.isSpacePressed && this._shouldIgnoreKeyTarget(event.target)) releasePanKey(this);
+      if (this.isSpacePressed && this._shouldIgnoreKeyTarget(event.target)) {
+        const held = this.isSpaceKeyHeld;
+        releasePanKey(this);
+        this.isSpaceKeyHeld = held;
+      }
     });
   }
 
@@ -299,9 +333,41 @@ export class InteractionManager {
    * Handle left mouse click for token interactions
    * @param {MouseEvent} event - Mouse click event
    */
-  handleLeftClick(event) {
+  handleLeftClick(event, intent = null) {
     try {
       if (event.button !== 0) {
+        return;
+      }
+      const gm = this.gameManager;
+      intent ||= {
+        token: gm.token3DAdapter?.getSelectedToken?.() || null,
+        mapId: gm.campaignMapId,
+        characterId: gm.tokenManager?.selectedSavedCharacterId,
+        appearance: gm.tokenManager?.selectedSavedCharacterAppearance,
+      };
+      if (gm.campaignMapFailure) throw gm.campaignMapFailure;
+      if (gm.campaignViewBusy || gm.inputCoordinator?.savedCharacterPending) {
+        return Promise.resolve(
+          queueCampaignOperation(gm, 'pointer', () => {
+            if (gm.campaignMapId !== intent.mapId)
+              throw new Error('The viewed map changed before this click could be applied');
+            return this.handleLeftClick(event, intent);
+          })
+        ).catch((error) =>
+          new ErrorHandler().handle(error, ERROR_SEVERITY.ERROR, ERROR_CATEGORY.INPUT, {
+            stage: 'queuedPointer',
+          })
+        );
+      }
+      if (intent.characterId) {
+        if (!gm.inputCoordinator?.handleSavedCharacterPlacement)
+          throw new Error('Saved character placement is not ready');
+        void gm.inputCoordinator.handleSavedCharacterPlacement(
+          intent.characterId,
+          intent.appearance,
+          event.clientX,
+          event.clientY
+        );
         return;
       }
 
@@ -344,13 +410,12 @@ export class InteractionManager {
         return;
       }
 
-      const gm = this.gameManager;
       const selectedTokenType =
         typeof gm?.selectedTokenType === 'string' ? gm.selectedTokenType : null;
       const isRemoveMode = selectedTokenType === 'remove';
 
-      Promise.resolve(this._resolvePointerTarget(event))
-        .then((target) => {
+      return Promise.resolve(this._resolvePointerTarget(event))
+        .then(async (target) => {
           const safeTarget = target || {};
           const gridX = Number.isFinite(safeTarget.gridX) ? safeTarget.gridX : null;
           const gridY = Number.isFinite(safeTarget.gridY) ? safeTarget.gridY : null;
@@ -366,14 +431,21 @@ export class InteractionManager {
           }
 
           if (tokenEntry) {
-            this._selectTokenEntry(tokenEntry);
+            await this._selectTokenEntry(tokenEntry);
+            this._dispatchRadialMenuRequest({
+              token: tokenEntry,
+              gridX,
+              gridY,
+              screenPosition: { x: event.clientX, y: event.clientY },
+            });
             return;
           }
 
           const adapter = gm?.token3DAdapter;
-          const selectedToken = adapter?.getSelectedToken?.() || null;
+          const selectedToken = intent.token;
           const is3D = gm?.is3DModeActive?.();
           if (is3D && (gridX == null || gridY == null)) return;
+          if (gm.playerInput && is3D) return gm.playerInput.requestMove(selectedToken, safeTarget);
           const canNavigate =
             selectedToken &&
             typeof adapter?.requestMoveToGrid === 'function' &&
@@ -389,9 +461,21 @@ export class InteractionManager {
               target: { gridX, gridY },
             });
 
-            const result = safeTarget.wallSurface
-              ? adapter.requestMoveToSurface?.(selectedToken, safeTarget.wallSurface)
-              : adapter.requestMoveToGrid(selectedToken, gridX, gridY);
+            const move = () => {
+              if (
+                gm.campaignMapId !== intent.mapId ||
+                (gm.placedTokens && !gm.placedTokens.includes(selectedToken))
+              )
+                throw new Error('The creature or map changed before the queued movement could run');
+              return safeTarget.wallSurface
+                ? adapter.requestMoveToSurface?.(selectedToken, safeTarget.wallSurface)
+                : adapter.requestMoveToGrid(selectedToken, gridX, gridY);
+            };
+            const session = gm.characterServices?.combat;
+            const result =
+              session?.isActorBusy(selectedToken) && !adapter.isMovementInProgress?.(selectedToken)
+                ? await session.runWhenReady(selectedToken, move)
+                : move();
             if (result) {
               logger.log('Token navigation accepted', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
                 source: 'grid-click',
@@ -412,7 +496,7 @@ export class InteractionManager {
             return;
           }
 
-          this._clearTokenSelection();
+          await this._clearTokenSelection();
         })
         .catch((error) => {
           try {
@@ -640,14 +724,14 @@ export class InteractionManager {
     if (!tokenEntry) return;
     const adapter = this.gameManager?.token3DAdapter;
     if (adapter?.setSelectedToken) {
-      adapter.setSelectedToken(tokenEntry);
+      return adapter.setSelectedToken(tokenEntry);
     }
   }
 
   _clearTokenSelection() {
     const adapter = this.gameManager?.token3DAdapter;
     if (adapter?.setSelectedToken) {
-      adapter.setSelectedToken(null);
+      return adapter.setSelectedToken(null);
     }
   }
 

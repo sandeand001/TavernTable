@@ -106,8 +106,9 @@ test('selecting another creature prevents the previous walker from opening a tra
   try {
     clickFeature(canvas);
     const pending = popup.ready;
-    await adapter.setSelectedToken(gm.placedTokens[1]);
+    const selection = adapter.setSelectedToken(gm.placedTokens[1]);
     finishWalking(context);
+    await selection;
     expect(await pending).toBe(false);
     expect(actor.world).toEqual({ x: 10.5, y: 0, z: 10.5 });
     expect(session.status(actor).movement.remaining).toBe(15);

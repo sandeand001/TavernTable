@@ -90,6 +90,126 @@ beforeEach(() => {
 
 afterEach(() => jest.restoreAllMocks());
 
+function addOverviewMaps(gm) {
+  const main = { id: 'main', name: 'Town', grid: { cols: 5, rows: 5, tileWorldSize: 1 } };
+  const upper = {
+    id: 'upper',
+    name: 'Great Hall upper floor',
+    grid: { cols: 5, rows: 5, tileWorldSize: 1 },
+    building: { ownerMapId: 'main', structureId: 'hall', floor: 1 },
+  };
+  const geometry = {
+    getStructures: () => [
+      {
+        id: 'hall',
+        kind: 'building',
+        name: 'Great Hall',
+        xFeet: 100,
+        zFeet: 100,
+        baseFeet: 0,
+        heightFeet: 20,
+        angleRadians: 0,
+        lengthFeet: 20,
+        widthFeet: 20,
+      },
+    ],
+  };
+  gm.terrainEngine = { geometry, onChanged: () => () => {} };
+  gm.campaignMapId = 'main';
+  gm.placedTokens[0].mapId = 'main';
+  gm.campaignWorld = {
+    mapRevision: 0,
+    sharesLocation: () => true,
+    listMaps: () => [main, upper],
+    getMap: (id) => (id === 'main' ? main : upper),
+    getMapGeometry: () => geometry,
+    toCampaignPosition: (id, world) => ({
+      x: world.x * 5,
+      y: world.y * 5 + (id === 'upper' ? 10 : 0),
+      z: world.z * 5,
+    }),
+    toMapPosition: (id, world) => ({ x: world.x / 5, y: world.y / 5, z: world.z / 5 }),
+  };
+}
+
+test('DM overhead overview includes roof-occluded off-map creatures with separated location labels', () => {
+  const { gm, manager, adapter, token, frame } = fixture();
+  addOverviewMaps(gm);
+  const upstairs = {
+    id: 'upstairs',
+    name: 'Hidden guard',
+    mapId: 'upper',
+    type: 'mannequin',
+    world: { ...token.world },
+    gridX: 2,
+    gridY: 2,
+  };
+  gm.placedTokens.push(upstairs);
+  const before = gm.placedTokens.map((entry) => ({ ...entry.world }));
+  manager.setTopDownView(true);
+  frame();
+  const marker = adapter.getTokenVisual(upstairs);
+  expect(marker?.userData.__ttTacticalToken).toBe(true);
+  expect(marker.material.depthTest).toBe(false);
+  expect(document.querySelector('[aria-label="DM creature locations"]').textContent).toContain(
+    'Great Hall \u00b7 Floor 2'
+  );
+  expect(adapter.getTokenVisual(token).position.toArray()).not.toEqual(marker.position.toArray());
+  expect(gm.placedTokens.map((entry) => entry.world)).toEqual(before);
+  manager.setTopDownView(false);
+  frame();
+  expect(adapter.getTokenVisual(upstairs)).toBeNull();
+  expect(document.querySelector('[aria-label="DM creature locations"]')).toBeNull();
+  adapter.disposeTacticalTokens();
+});
+
+test('a player identity never gets the DM all-floor overview', () => {
+  const { gm, manager, adapter, token, frame } = fixture();
+  addOverviewMaps(gm);
+  gm.characterServices = { sessionRole: 'player' };
+  const hidden = { ...token, id: 'hidden', mapId: 'upper', __threeMesh: null };
+  gm.placedTokens.push(hidden);
+  manager.setTopDownView(true);
+  frame();
+  expect(adapter.isTacticalOverview()).toBe(false);
+  expect(adapter.getTokenVisual(hidden)).toBeNull();
+  expect(document.querySelector('[aria-label="DM creature locations"]')).toBeNull();
+  adapter.disposeTacticalTokens();
+});
+
+test('DM markers, labels and picking exclude unrelated off-map creatures outside the viewed footprint', () => {
+  const { gm, manager, adapter, token, frame } = fixture();
+  addOverviewMaps(gm);
+  const upstairs = {
+    id: 'above',
+    name: 'Guard above',
+    mapId: 'upper',
+    world: { ...token.world },
+  };
+  const distant = {
+    id: 'distant',
+    name: 'Distant wall guard',
+    mapId: 'upper',
+    world: { x: 12.5, y: 0, z: 12.5 },
+  };
+  gm.placedTokens.push(upstairs, distant);
+  manager.setTopDownView(true);
+  frame();
+  expect(adapter.getTokenVisual(upstairs)).not.toBeNull();
+  expect(adapter.getTokenVisual(distant)).toBeNull();
+  expect(adapter._tacticalTokens.has(distant)).toBe(false);
+  expect(document.querySelector('[aria-label="DM creature locations"]').textContent).not.toContain(
+    'Distant wall guard'
+  );
+  upstairs.world.x = 12.5;
+  frame();
+  expect(adapter.getTokenVisual(upstairs)).toBeNull();
+  expect(document.querySelector('[aria-label="DM creature locations"]').textContent).not.toContain(
+    'Guard above'
+  );
+  adapter.disposeTacticalTokens();
+});
+
 test('the real top-down camera toggle swaps visuals and restores the same animated model', () => {
   const { manager, adapter, token, model, frame } = fixture();
   const mixer = { update: jest.fn() };

@@ -8,6 +8,61 @@ import {
 } from '../../helpers/connectedTravelBoard.js';
 import { createOpeningsTravelScene } from '../../../src/campaigns/examples/ConnectedOpeningsExample.js';
 
+test('the DM can open, close, lock and unlock a door without selecting or moving a creature', async () => {
+  const gm = await createConnectedTravelBoard();
+  const actor = gm.placedTokens[0];
+  const before = { ...actor.world };
+  gm.campaignWorld.setDoorState('building-door', { open: false });
+  gm.characterServices.library.saveScene = jest.fn(async (capture) => capture());
+  gm.campaignView.focus(null);
+  const selected = jest.spyOn(gm.token3DAdapter, 'getSelectedToken').mockReturnValue(null);
+  const popup = new CampaignTraversalPopup({ gameManager: gm }).attach();
+  try {
+    popup.open('building-door');
+    const open = popup.root.querySelector('[data-door-action="open"]');
+    expect(open).not.toBeNull();
+    expect(open.disabled).toBe(false);
+    open.click();
+    await popup.ready;
+    expect(gm.campaignWorld.getConnections()[0].open).toBe(true);
+    popup.root.querySelector('[data-door-action="lock"]').click();
+    await popup.ready;
+    expect(gm.campaignWorld.getConnections()[0]).toMatchObject({ open: false, locked: true });
+    expect(popup.root.querySelector('[data-door-action="open"]').disabled).toBe(true);
+    popup.root.querySelector('[data-door-action="unlock"]').click();
+    await popup.ready;
+    expect(gm.campaignWorld.getConnections()[0]).toMatchObject({ open: false, locked: false });
+    expect(gm.characterServices.library.saveScene).toHaveBeenCalledTimes(3);
+    expect(actor.world).toEqual(before);
+  } finally {
+    selected.mockRestore();
+    popup.dispose();
+    disposeConnectedTravelBoard(gm);
+  }
+});
+
+test('a failed door save reports the error and leaves the door and movement unchanged', async () => {
+  const gm = await createConnectedTravelBoard();
+  const before = gm.campaignWorld.save();
+  gm.characterServices.library.saveScene = jest.fn(async () => {
+    throw new Error('Door save failed');
+  });
+  const popup = new CampaignTraversalPopup({ gameManager: gm }).attach();
+  try {
+    popup.open('building-door');
+    const close = popup.root.querySelector('[data-door-action="close"]');
+    expect(close).not.toBeNull();
+    close.click();
+    await popup.ready;
+    expect(gm.campaignWorld.save()).toEqual(before);
+    expect(popup.status.textContent).toBe('Door save failed');
+    expect(popup.root.hidden).toBe(false);
+  } finally {
+    popup.dispose();
+    disposeConnectedTravelBoard(gm);
+  }
+});
+
 test('a successful entry prompt asks only for confirmation and shows its cost on the action', async () => {
   const gm = await createConnectedTravelBoard();
   const popup = new CampaignTraversalPopup({ gameManager: gm }).attach();

@@ -1,4 +1,5 @@
 import { sampleTraversalMotion } from './TraversalMotion.js';
+import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovement.js';
 
 const EPSILON = 1e-8;
 const clamp = (value) => Math.max(0, Math.min(1, value));
@@ -75,6 +76,71 @@ function playOpeningCrossing(token, plan, source) {
     duration: 0.18,
     terminal: true,
   });
+  return startConnectionPresentation.call(this, token, plan, start, end, phases, held, sill.y);
+}
+
+function playConnectionRoute(token, plan, source) {
+  const gm = this.gameManager,
+    data = this._tokenAnimationData.get(token);
+  if (
+    !data?.traversal ||
+    !data.actions.walk ||
+    !data.actions.climbWall ||
+    !data.actions.climbWallDown
+  )
+    throw new Error('Wait for walking and ladder-climbing animations to finish loading');
+  if (token.mapId !== gm.campaignMapId)
+    throw new Error('Visible ladder travel requires the destination view');
+  const points = plan.routeFeet.map((point) => gm.campaignWorld.toMapPosition(token.mapId, point));
+  const start = gm.campaignWorld.toMapPosition(
+    token.mapId,
+    gm.campaignWorld.toCampaignPosition(source.mapId, source.pose.world)
+  );
+  const phases = [];
+  for (let i = 1; i < points.length; i++) {
+    const from = points[i - 1],
+      to = points[i],
+      vertical = Math.abs(to.y - from.y) > EPSILON;
+    const key = vertical ? (to.y > from.y ? 'climbWall' : 'climbWallDown') : 'walk';
+    const duration = this._extractClipDuration(data.actions[key]);
+    const root = data.rootMotion[key === 'climbWallDown' ? 'wallDown' : 'wall'];
+    const displacement =
+      root && this._rootDisplacementToWorld(data.rootMotion.rootInfo, root.displacementLocal);
+    const speed = vertical ? Math.abs(displacement?.y) / duration : data.profile.walkSpeed;
+    if (!(speed > 0)) throw new Error('The ladder climbing animation has no valid pace');
+    phases.push({
+      key,
+      points: [from, to],
+      facing: vertical
+        ? plan.targetFacingAngle
+        : facingAngleFromDirection(to.x - from.x, to.z - from.z),
+      begin: 0,
+      end: duration,
+      duration: distance(from, to) / speed,
+      loop: true,
+    });
+  }
+  phases.push({
+    key: 'idle',
+    points: [plan.targetWorld],
+    begin: 0,
+    end: 0,
+    duration: 0.18,
+    terminal: true,
+  });
+  return startConnectionPresentation.call(
+    this,
+    token,
+    plan,
+    start,
+    plan.targetWorld,
+    phases,
+    false,
+    plan.targetWorld.y
+  );
+}
+
+function startConnectionPresentation(token, plan, start, end, phases, held, lipY) {
   const state = this._ensureMovementState(token);
   this._clearPathState(state);
   this._releaseManualAnimationForMovement(token);
@@ -99,7 +165,7 @@ function playOpeningCrossing(token, plan, source) {
       plan,
       end,
       held,
-      lipY: sill.y,
+      lipY,
     };
   });
   this._syncTokenAndMeshWorld(state, start);
@@ -133,6 +199,7 @@ function advanceOpeningCrossing(state, delta) {
     const phase = motion.phases[motion.index];
     if (!motion.started) {
       motion.started = true;
+      if (Number.isFinite(phase.facing)) this._applyOrientationImmediate(token, phase.facing);
       motion.clip = phase.key;
       if (phase.key === 'ledgeHang') {
         token.surfaceHold = this.gameManager.campaignWorld.openingSurfaceGrip(
@@ -215,6 +282,7 @@ function cancelOpeningCrossing(token, error) {
 
 export function installOpeningCrossingMethods(prototype) {
   prototype.playOpeningCrossing = playOpeningCrossing;
+  prototype.playConnectionRoute = playConnectionRoute;
   prototype.cancelOpeningCrossing = cancelOpeningCrossing;
   prototype._advanceOpeningCrossing = advanceOpeningCrossing;
 }

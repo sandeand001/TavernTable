@@ -5,3 +5,4 @@
 *.md text eol=lf
 *.css text eol=lf
 *.html text eol=lf
+*.rules text eol=lf

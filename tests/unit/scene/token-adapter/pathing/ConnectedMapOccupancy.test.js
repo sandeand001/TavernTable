@@ -126,6 +126,37 @@ test('ordinary heightfield movement does not inherit foreign local occupancy', (
   }
 });
 
+test.each(['surface', 'heightfield', 'flight'])(
+  '%s movement ignores overlapping terrain and creatures in an independent location',
+  (mode) => {
+    const { gm, adapter, actor } = fixture();
+    const saved = gm.campaignWorld.save();
+    saved.locations = [
+      { id: 'outside-location', name: 'Outside' },
+      { id: 'other-location', name: 'Elsewhere' },
+    ];
+    for (const map of saved.maps) {
+      map.locationId = map.id === 'map-main' ? 'outside-location' : 'other-location';
+      if (map.id === 'inside') map.originFeet = { x: 0, y: 0, z: 0 };
+    }
+    gm.campaignWorld.acceptCheckpoint(saved);
+    if (mode === 'heightfield')
+      gm.terrainEngine.load({ heights: Array.from({ length: 10 }, () => Array(10).fill(0)) });
+    if (mode === 'flight') {
+      actor.flightActive = true;
+      actor.fallTraits = { flySpeed: 60 };
+      for (const token of gm.placedTokens) token.world.y = 1;
+    }
+    try {
+      const range = adapter.getTokenMovementRange(actor);
+      expect(reachable(range, 1, 2)).toBe(true);
+      expect(reachable(range, 1, 7)).toBe(true);
+    } finally {
+      adapter.disposeMovementRange();
+    }
+  }
+);
+
 test('flight collision uses translated physical positions and heights across grids', () => {
   const { gm, adapter, actor } = fixture();
   actor.flightActive = true;

@@ -7,6 +7,11 @@
 import { createSeededRNG, rngInt, makeWeightedPicker } from '../../../utils/SeededRNG.js';
 import { BIOME_FLORA_PROFILES, DEFAULT_PROFILE } from '../../../config/terrain/FloraProfiles.js';
 import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
+import { structureBounds } from '../../../terrain/ConstructionBlueprints.js';
+import {
+  cavernPassageCells,
+  CAVERN_FLOOR_LEVEL,
+} from '../../../terrain/generation/CavernInteriors.js';
 import {
   candidateFilters,
   isSpectralPlaceable,
@@ -40,6 +45,61 @@ function getBiomeRNG(baseSeed, biomeKey, salt) {
 export function autoPopulateBiomeFlora(c, biomeKey, seed) {
   if (!c?.gameManager?.placeableMeshPool) return;
   const pool = c.gameManager.placeableMeshPool;
+  const cavernEngine =
+    c.gameManager.terrainEngine?.cavern?.version >= 2 ? c.gameManager.terrainEngine : null;
+  const cavernPassages = new Set(
+    cavernEngine?.cavern.exits.flatMap((side) =>
+      cavernPassageCells(side, cavernEngine.cols, cavernEngine.rows).map(({ x, z }) => `${x}:${z}`)
+    ) || []
+  );
+  if (cavernEngine)
+    c = {
+      ...c,
+      getTerrainHeight: (x, z) => cavernEngine.getHeightAt(x, z) - CAVERN_FLOOR_LEVEL + 2,
+    };
+  const structures =
+    c.gameManager.terrainEngine?.geometry.getStructures().map(structureBounds) || [];
+  const reserved =
+    c.gameManager.terrainEngine?.geometry
+      .save()
+      .volumes.filter(
+        (volume) =>
+          volume.source === 'generated' &&
+          [
+            'street',
+            'plaza',
+            'market',
+            'landmark',
+            'garden-fence',
+            'mountain',
+            'excavation',
+            'approach',
+          ].includes(volume.layerId)
+      )
+      .map((volume) => volume.bounds) ?? [];
+  const excluded = [...structures, ...reserved];
+  const placePlant = (placement) => {
+    const x = (placement.gridX + 0.5) * 5,
+      z = (placement.gridY + 0.5) * 5;
+    if (cavernEngine) {
+      if (
+        cavernEngine.getHeightAt(placement.gridX, placement.gridY) > -5 ||
+        cavernPassages.has(`${placement.gridX}:${placement.gridY}`)
+      )
+        return;
+    }
+    if (
+      excluded.some(
+        (bounds) =>
+          x >= bounds.min.x - 2.5 &&
+          x <= bounds.max.x + 2.5 &&
+          z >= bounds.min.z - 2.5 &&
+          z <= bounds.max.z + 2.5
+      )
+    )
+      return;
+    pool.addPlaceable(placement);
+  };
   const profile = resolveProfile(biomeKey);
   const {
     density: profileDensity,
@@ -149,7 +209,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
               if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
             }
             const _def0 = TERRAIN_PLACEABLES[id] || {};
-            pool.addPlaceable({
+            placePlant({
               generatedBiome: true,
               biomeKey,
               biomeSeed: seed ?? c._biomeSeed,
@@ -195,7 +255,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
             if (placeHeight <= 0) continue;
             if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
           }
-          pool.addPlaceable({
+          placePlant({
             generatedBiome: true,
             biomeKey,
             biomeSeed: seed ?? c._biomeSeed,
@@ -291,7 +351,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
     }
     if (spacing > 0 && placed.some((p) => manhattan(p, [placeX, placeY]) < spacing)) continue;
-    pool.addPlaceable({
+    placePlant({
       generatedBiome: true,
       biomeKey,
       biomeSeed: seed ?? c._biomeSeed,

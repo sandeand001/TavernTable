@@ -55,8 +55,8 @@ export function createCampaignBoard(library) {
   gm.token3DAdapter = new Token3DAdapter(gm);
   gm.notifyTerrainHeightsChanged = () => gm.token3DAdapter.resyncHeights();
   gm.characterServices = { library, combat: new CombatSession({ library }) };
-  gm.advanceFrame = () => {
-    for (const callback of frames) callback(0);
+  gm.advanceFrame = (delta = 0) => {
+    for (const callback of frames) callback(delta);
   };
   return gm;
 }

@@ -1,0 +1,318 @@
+{
+  "observerState": {
+    "campaign": { "id": "campaign-example", "ruleset": "2024" },
+    "scene": null,
+    "sceneRevision": 1,
+    "revision": 1,
+    "observerTokenId": "token-1",
+    "records": [],
+    "placementGrants": [],
+    "publicScene": {
+      "version": 1,
+      "assetKey": "example-authorized-location-assets",
+      "assets": {
+        "location": { "id": "location-main", "name": "Example arrival area" },
+        "maps": [
+          {
+            "id": "map-main",
+            "name": "Example map",
+            "locationId": "location-main",
+            "originFeet": { "x": 0, "y": 0, "z": 0 },
+            "quarterTurns": 0,
+            "base": "ground",
+            "grid": { "cols": 5, "rows": 5, "tileWorldSize": 1 },
+            "terrain": {
+              "heights": [
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0]
+              ],
+              "biome": "grassland",
+              "seed": 42,
+              "elevationScale": 8,
+              "worldElevationUnit": 0.3,
+              "treeDensity": 1,
+              "richShading": {},
+              "geometry": { "version": 1, "volumes": [] },
+              "placeables": []
+            }
+          }
+        ],
+        "connections": []
+      },
+      "presentation": { "mapId": "map-main", "focusTokenId": "token-1" },
+      "actors": [
+        {
+          "id": "token-1",
+          "name": "Example character",
+          "type": "knight",
+          "owned": true,
+          "characterId": "11111111-1111-4111-8111-111111111111",
+          "mapId": "map-main",
+          "gridX": 1,
+          "gridY": 1,
+          "facingAngle": 0,
+          "pose": { "kind": "ground", "world": { "x": 1.5, "y": 0, "z": 1.5 } },
+          "portraitImage": null,
+          "movement": { "mode": "walk", "type": "default" },
+          "flags": { "prone": false, "flightActive": false }
+        }
+      ],
+      "updates": []
+    },
+    "gameplay": {
+      "version": 1,
+      "commands": ["move", "turn.end", "stand", "roll", "place", "remove"],
+      "ownedTokens": [
+        {
+          "tokenId": "token-1",
+          "mapId": "map-main",
+          "availability": {
+            "move": { "allowed": true, "code": "allowed", "reason": null },
+            "turn.end": { "allowed": true, "code": "allowed" },
+            "remove": {
+              "allowed": false,
+              "code": "combat-dm-only",
+              "reason": "Only the DM may remove sprites during combat"
+            }
+          },
+          "economy": {
+            "actions": 1,
+            "bonusActions": 1,
+            "reactions": 1,
+            "restrictedActions": 0,
+            "attacksRemaining": 0,
+            "attacksAvailable": 1,
+            "bonusAttacksRemaining": 0
+          },
+          "movement": { "spentFeet": 0, "remainingFeet": 30, "allowanceFeet": 30 },
+          "availableActions": [],
+          "canUndo": false
+        }
+      ],
+      "turn": { "active": true, "number": 1, "tokenId": "token-1" }
+    }
+  },
+  "actorlessGrantState": {
+    "campaign": { "id": "campaign-example", "ruleset": "2024" },
+    "scene": null,
+    "sceneRevision": 1,
+    "revision": 1,
+    "observerTokenId": null,
+    "records": [],
+    "publicScene": {
+      "version": 1,
+      "assetKey": null,
+      "assets": null,
+      "presentation": { "mapId": null, "focusTokenId": null },
+      "actors": [],
+      "updates": []
+    },
+    "gameplay": { "version": 1, "commands": ["place"], "ownedTokens": [], "turn": null },
+    "placementGrants": [
+      {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "playerId": "33333333-3333-4333-8333-333333333333",
+        "characterId": "11111111-1111-4111-8111-111111111111",
+        "mapId": "map-main",
+        "gridX": 1,
+        "gridY": 1,
+        "surfaceId": null
+      }
+    ]
+  },
+  "completedMoveCommand": {
+    "version": 1,
+    "commandId": "44444444-4444-4444-8444-444444444444",
+    "sceneRevision": 1,
+    "charactersRevision": 1,
+    "observerTokenId": "token-1",
+    "tokenId": "token-1",
+    "kind": "move",
+    "payload": { "target": { "mapId": "map-main", "gridX": 2, "gridY": 1 } },
+    "view": { "mapId": "map-main", "assetKey": "example-authorized-location-assets" }
+  },
+  "completedMoveResult": {
+    "version": 1,
+    "commandId": "44444444-4444-4444-8444-444444444444",
+    "outcome": "applied",
+    "applied": { "sceneRevision": 2, "charactersRevision": 1 },
+    "receipt": {
+      "kind": "move",
+      "tokenId": "token-1",
+      "costFeet": 5,
+      "budget": {
+        "movementSpentFeet": 5,
+        "movementRemainingFeet": 25,
+        "movementAllowanceFeet": 30,
+        "actions": 1,
+        "bonusActions": 1,
+        "reactions": 1,
+        "attacksRemaining": 0
+      },
+      "placement": {
+        "mapId": "map-main",
+        "gridX": 2,
+        "gridY": 1,
+        "facingAngle": 0,
+        "pose": { "kind": "ground", "world": { "x": 2.5, "y": 0, "z": 1.5 } }
+      },
+      "route": [
+        {
+          "mapId": "map-main",
+          "gridX": 2,
+          "gridY": 1,
+          "facingAngle": 0,
+          "pose": { "kind": "ground", "world": { "x": 2.5, "y": 0, "z": 1.5 } }
+        }
+      ],
+      "motion": {
+        "kind": "walk",
+        "completed": true,
+        "from": {
+          "mapId": "map-main",
+          "gridX": 1,
+          "gridY": 1,
+          "facingAngle": 0,
+          "pose": { "kind": "ground", "world": { "x": 1.5, "y": 0, "z": 1.5 } }
+        },
+        "route": [
+          {
+            "mapId": "map-main",
+            "gridX": 2,
+            "gridY": 1,
+            "facingAngle": 0,
+            "pose": { "kind": "ground", "world": { "x": 2.5, "y": 0, "z": 1.5 } }
+          }
+        ]
+      }
+    },
+    "state": {
+      "campaign": { "id": "campaign-example", "ruleset": "2024" },
+      "scene": null,
+      "sceneRevision": 2,
+      "revision": 1,
+      "observerTokenId": "token-1",
+      "records": [],
+      "placementGrants": [],
+      "publicScene": {
+        "version": 1,
+        "assetKey": "example-authorized-location-assets",
+        "assets": null,
+        "presentation": { "mapId": "map-main", "focusTokenId": "token-1" },
+        "actors": [
+          {
+            "id": "token-1",
+            "name": "Example character",
+            "type": "knight",
+            "owned": true,
+            "characterId": "11111111-1111-4111-8111-111111111111",
+            "mapId": "map-main",
+            "gridX": 2,
+            "gridY": 1,
+            "facingAngle": 0,
+            "pose": { "kind": "ground", "world": { "x": 2.5, "y": 0, "z": 1.5 } },
+            "portraitImage": null,
+            "movement": { "mode": "walk", "type": "default" },
+            "flags": { "prone": false, "flightActive": false }
+          }
+        ],
+        "updates": [
+          {
+            "commandId": "44444444-4444-4444-8444-444444444444",
+            "tokenId": "token-1",
+            "kind": "move",
+            "sceneRevision": 2,
+            "charactersRevision": 1,
+            "costFeet": 5,
+            "budget": {
+              "movementSpentFeet": 5,
+              "movementRemainingFeet": 25,
+              "movementAllowanceFeet": 30,
+              "actions": 1,
+              "bonusActions": 1,
+              "reactions": 1,
+              "attacksRemaining": 0
+            },
+            "motion": {
+              "kind": "walk",
+              "completed": true,
+              "from": {
+                "mapId": "map-main",
+                "gridX": 1,
+                "gridY": 1,
+                "facingAngle": 0,
+                "pose": { "kind": "ground", "world": { "x": 1.5, "y": 0, "z": 1.5 } }
+              },
+              "route": [
+                {
+                  "mapId": "map-main",
+                  "gridX": 2,
+                  "gridY": 1,
+                  "facingAngle": 0,
+                  "pose": { "kind": "ground", "world": { "x": 2.5, "y": 0, "z": 1.5 } }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "gameplay": {
+        "version": 1,
+        "commands": ["move", "turn.end", "stand", "roll", "place", "remove"],
+        "ownedTokens": [
+          {
+            "tokenId": "token-1",
+            "mapId": "map-main",
+            "availability": {
+              "move": { "allowed": true, "code": "allowed", "reason": null },
+              "turn.end": { "allowed": true, "code": "allowed" },
+              "remove": {
+                "allowed": false,
+                "code": "combat-dm-only",
+                "reason": "Only the DM may remove sprites during combat"
+              }
+            },
+            "economy": {
+              "actions": 1,
+              "bonusActions": 1,
+              "reactions": 1,
+              "restrictedActions": 0,
+              "attacksRemaining": 0,
+              "attacksAvailable": 1,
+              "bonusAttacksRemaining": 0
+            },
+            "movement": { "spentFeet": 5, "remainingFeet": 25, "allowanceFeet": 30 },
+            "availableActions": [],
+            "canUndo": false
+          }
+        ],
+        "turn": { "active": true, "number": 1, "tokenId": "token-1" }
+      }
+    }
+  },
+  "denials": {
+    "stale": {
+      "status": 409,
+      "body": {
+        "error": "Refresh the current game state before retrying",
+        "code": "stale-revision",
+        "current": { "sceneRevision": 2, "charactersRevision": 1 }
+      }
+    },
+    "unassignedActor": {
+      "status": 403,
+      "body": { "error": "This actor is not available to your player", "code": "actor-forbidden" }
+    },
+    "observerLocation": {
+      "status": 403,
+      "body": { "error": "This area is not in the active character location" }
+    },
+    "revokedSession": {
+      "status": 401,
+      "body": { "error": "Sign in as the host or join with a private invitation" }
+    }
+  }
+}

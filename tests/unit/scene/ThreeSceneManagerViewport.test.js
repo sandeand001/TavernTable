@@ -37,6 +37,14 @@ test('initial renderer size uses the mounted map viewport rather than extending 
     manager._testMode = false;
     return true;
   });
+  jest.spyOn(manager, '_getPreferredWebGLContext').mockReturnValue({
+    context: {
+      getExtension: () => null,
+      getParameter: () => 'WebKit WebGL',
+      getContextAttributes: () => ({ powerPreference: 'high-performance' }),
+    },
+    fallbackUsed: false,
+  });
   try {
     await manager.initialize();
     expect(manager.initialized).toBe(true);

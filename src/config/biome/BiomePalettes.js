@@ -187,6 +187,13 @@ function generateFromStops(stops) {
 
 // ── Base Triads (Biome Color Anchors) ────────────────────────
 const BIOME_BASE_TRIADS = {
+  town: [0x454738, 0x899079, 0xcac1a3],
+  city: [0x45484b, 0x93928a, 0xd2c7af],
+  castle: [0x464b45, 0x969b8b, 0xcdd1be],
+  cliffsideCastle: [0x454e58, 0x81916c, 0xa7ac96],
+  mountainCastle: [0x384650, 0x6a7774, 0xb9c0b2],
+  ruinedTown: [0x24271d, 0x686b4e, 0xb9b794],
+  ruinedCastle: [0x282c2a, 0x70796b, 0xc4c6b3],
   grassland: [0x1d3a22, 0x3f8c2f, 0xd6c46b],
   forestTemperate: [0x0e2414, 0x2e7a3b, 0x95d56e],
   forestConifer: [0x0a1a12, 0x1f5a3a, 0x7bb0a0],

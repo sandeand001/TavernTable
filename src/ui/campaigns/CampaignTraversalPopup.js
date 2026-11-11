@@ -5,6 +5,8 @@ import {
 import { travelCampaignConnection } from '../../campaigns/SceneWorld.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
+import { isFloorSurface } from '../../terrain/SurfaceNavigation.js';
+import { changeCampaignDoor } from '../../campaigns/CampaignDoorActions.js';
 
 export default class CampaignTraversalPopup {
   constructor({ gameManager }) {
@@ -81,7 +83,8 @@ export default class CampaignTraversalPopup {
     this.point = { clientX, clientY };
     this.error = null;
     const option = this._refresh();
-    if (option?.approach) {
+    const connection = gm.campaignWorld.getConnections().find((entry) => entry.id === connectionId);
+    if (option?.approach && !(connection.kind === 'door' && connection.open !== true)) {
       const request = this.actor.flightActive
         ? gm.token3DAdapter.requestFlyToPoint(this.actor, option.approach.point, { closest: true })
         : gm.token3DAdapter.requestMoveToSurface(this.actor, option.approach, { closest: true });
@@ -141,6 +144,7 @@ export default class CampaignTraversalPopup {
     const session = gm.characterServices.combat;
     if (
       gm.campaignMapId !== approach.mapId ||
+      gm.campaignRequests?.has('view') ||
       gm.campaignViewBusy ||
       gm.campaignMapFailure ||
       !gm.placedTokens.includes(approach.actor) ||
@@ -221,7 +225,7 @@ export default class CampaignTraversalPopup {
       if (!ground || ground.token) return;
       const surface = ground.surface || { point: ground.world, normal: { x: 0, y: 1, z: 0 } };
       const option = gm.token3DAdapter.getSurfaceClimbOption(actor, surface);
-      if (surface.normal.y < 0.9 && !option.plan?.gapFalls.length) return;
+      if (!isFloorSurface(surface) && !option.plan?.gapFalls.length) return;
       this.suppressCanvasClick = true;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -253,6 +257,7 @@ export default class CampaignTraversalPopup {
         });
         this.extra.append(button);
       }
+      if (!this.surfaceTarget) this._doorControls();
       const label =
         option.kind === 'window' && option.actionLabel === 'Climb in'
           ? 'Enter'
@@ -273,7 +278,9 @@ export default class CampaignTraversalPopup {
             : `${label} window?`
           : option.kind === 'stairs'
             ? 'Use stairs?'
-            : `${label} ${option.name}?`;
+            : option.kind === 'ladder'
+              ? 'Use ladder?'
+              : `${label} ${option.name}?`;
       this.confirm.textContent = `${label}${option.costFeet !== undefined ? ` (${option.costFeet} ft)` : ''}`;
       this.confirm.disabled = this.pending || !option.allowed;
       this.status.textContent =
@@ -309,7 +316,7 @@ export default class CampaignTraversalPopup {
         actionLabel: option.plan?.gapFalls.length ? 'Climb and re-grab' : option.actionLabel,
       },
     ];
-    if (this.surfaceTarget.normal.y > 0.9) {
+    if (isFloorSurface(this.surfaceTarget)) {
       const physical = gm.campaignWorld.toCampaignPosition(this.actor.mapId, this.actor.world);
       const support = gm.campaignWorld.findSupportBelow(physical, {
         mapId: gm.campaignMapId,
@@ -324,6 +331,65 @@ export default class CampaignTraversalPopup {
       });
     }
     return actions;
+  }
+
+  _doorControls() {
+    const gm = this.gameManager;
+    if (gm.characterServices?.workspace?.store.identity?.role === 'player') return;
+    const door = gm.campaignWorld.getConnections().find((entry) => entry.id === this.connectionId);
+    if (door?.kind !== 'door') return;
+    for (const [action, label] of [
+      [door.open ? 'close' : 'open', door.open ? 'Close door' : 'Open door'],
+      [
+        door.locked ? 'unlock' : 'lock',
+        door.locked ? 'Unlock door' : door.open ? 'Close & lock door' : 'Lock door',
+      ],
+    ]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.doorAction = action;
+      button.textContent = label;
+      button.disabled =
+        this.pending ||
+        gm.campaignViewBusy ||
+        gm.sceneAutosave?.ready === false ||
+        !!gm.campaignMapFailure ||
+        (action === 'open' && door.locked === true);
+      button.title = action === 'open' && door.locked ? 'Unlock this door first.' : '';
+      button.addEventListener('click', () => {
+        this.ready = this._changeDoor(action);
+      });
+      this.extra.append(button);
+    }
+  }
+
+  async _changeDoor(action) {
+    if (this.pending) return false;
+    this.pending = true;
+    this.cancel.disabled = true;
+    this.error = null;
+    this._refresh();
+    try {
+      const change =
+        action === 'lock'
+          ? { open: false, locked: true }
+          : action === 'unlock'
+            ? { locked: false }
+            : { open: action === 'open' };
+      await changeCampaignDoor(this.gameManager, this.connectionId, change);
+      return true;
+    } catch (error) {
+      this.error = error;
+      GameErrors.input(error, { component: 'CampaignTraversalPopup', operation: 'door' });
+      return false;
+    } finally {
+      this.pending = false;
+      this.cancel.disabled = false;
+      if (!this.disposed) {
+        this.root.hidden = false;
+        this._refresh();
+      }
+    }
   }
 
   async _confirm(action = 'cross') {

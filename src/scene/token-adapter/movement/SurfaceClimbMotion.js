@@ -4,7 +4,7 @@ import {
   wallClimbStarts,
   platformClimbWalls,
 } from '../../../campaigns/CampaignSurfaceClimb.js';
-import { getSurfaceRoute } from '../../../terrain/SurfaceNavigation.js';
+import { getSurfaceRoute, isFloorSurface } from '../../../terrain/SurfaceNavigation.js';
 import { wallHeightAtClock, wallClockAtHeight } from './WallMovement.js';
 import { ConnectionUnavailableError } from '../../../campaigns/CampaignConnectionGeometry.js';
 import {
@@ -40,8 +40,7 @@ function getSurfaceClimbOption(token, surface, { allowance = null } = {}) {
     if (
       gm.campaignViewBusy ||
       gm.campaignMapFailure ||
-      session.pending ||
-      session.committing ||
+      session.isActionBusy(token) ||
       gm.characterServices.library.isSaving
     )
       throw new ConnectionUnavailableError('Finish the current action or save before climbing');
@@ -75,12 +74,11 @@ function getSurfaceClimbOption(token, surface, { allowance = null } = {}) {
       allowed: true,
       plan,
       costFeet: plan.costFeet,
-      actionLabel:
-        surface.normal.y > 0.9
-          ? surface.point.y > token.world.y
-            ? 'Climb onto surface'
-            : 'Climb down'
-          : 'Climb to point',
+      actionLabel: isFloorSurface(surface)
+        ? surface.point.y > token.world.y
+          ? 'Climb onto surface'
+          : 'Climb down'
+        : 'Climb to point',
     };
   } catch (error) {
     if (!(error instanceof ConnectionUnavailableError)) throw error;
@@ -100,10 +98,9 @@ function approachClimbPlan(token, surface, allowance, query) {
     error.code = 'insufficient-movement';
     throw error;
   }
-  const walls =
-    surface.normal.y > 0.9
-      ? platformClimbWalls(gm.campaignWorld, token.mapId, surface, query)
-      : [surface];
+  const walls = isFloorSurface(surface)
+    ? platformClimbWalls(gm.campaignWorld, token.mapId, surface, query)
+    : [surface];
   const starts = [];
   for (const wall of walls) {
     try {
@@ -111,7 +108,7 @@ function approachClimbPlan(token, surface, allowance, query) {
     } catch (error) {
       if (!(error instanceof ConnectionUnavailableError)) throw error;
     }
-    if (surface.normal.y > 0.9) {
+    if (isFloorSurface(surface)) {
       const scale = 5 / gm.spatial.tileWorldSize;
       for (const entry of starts)
         entry.distance =
@@ -148,7 +145,7 @@ function approachClimbPlan(token, surface, allowance, query) {
         token.mapId,
         entry.world,
         entry.grip,
-        surface.normal.y > 0.9 ? surface : entry.destination,
+        isFloorSurface(surface) ? surface : entry.destination,
         {
           ...query,
           allowanceFeet: allowance - approachCost,
@@ -449,7 +446,7 @@ function completeSurfaceClimbPoint(state) {
   const target = job.destination.surface;
   const continueGround =
     !token.surfaceHold &&
-    target.normal.y > 0.9 &&
+    isFloorSurface(target) &&
     Math.hypot(target.point.x - token.world.x, target.point.z - token.world.z) >
       this.gameManager.spatial.tileWorldSize / 2;
   job.continuing = continueGround;
@@ -571,8 +568,7 @@ export function installSurfaceClimbMethods(prototype) {
       !gm.campaignViewBusy &&
       !gm.campaignMapFailure &&
       (!this.isMovementInProgress(token) || !!moving?.physicalClimb) &&
-      !combat.pending &&
-      !combat.committing &&
+      !combat.isActionBusy(token) &&
       !gm.characterServices.library.isSaving &&
       (!combat.active || combat.activeToken === token);
     return {

@@ -14,6 +14,15 @@ export function addTokenToCollection(
   placedTokens = null,
   checkpoint = null
 ) {
+  const game = c.gameManager;
+  if (
+    game?.playerInput ||
+    game?.characterServices?.sessionRole === 'player' ||
+    game?.characterServices?.sheetContext === 'library'
+  )
+    throw new Error(
+      'Sprite registration requires a host-authorized arrival grant and canonical player state'
+    );
   // Use provided parameters or fall back to instance properties
   const tokenType = selectedTokenType || c.selectedTokenType;
   const tokens = placedTokens || c.placedTokens;
@@ -28,6 +37,7 @@ export function addTokenToCollection(
     instanceNumber: checkpoint ? checkpoint.instanceNumber : instanceNumber,
     name: checkpoint ? checkpoint.name : getAutomaticCreatureName(canonicalType, instanceNumber),
     nameMode: checkpoint ? checkpoint.nameMode : 'automatic',
+    ...(checkpoint?.characterId ? { characterSheetId: checkpoint.characterId } : {}),
     movementSettings: { ...TOKEN_MOVEMENT_DEFAULTS },
     creature: creature,
     gridX: gridX,

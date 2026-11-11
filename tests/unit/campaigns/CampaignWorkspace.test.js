@@ -11,6 +11,18 @@ import { encodeScene } from '../../../src/campaigns/CampaignScene.js';
 globalThis.TextDecoder ??= TextDecoder;
 const root = path.resolve(__dirname, '..', '..', '..');
 
+test('normal startup refuses browser-only fallback when the durable host is unavailable', async () => {
+  const fetch = jest.fn(async () => ({ ok: false, status: 404 }));
+  await expect(
+    CampaignWorkspace.load({
+      fetch,
+      indexedDB: testIndexedDB(),
+    })
+  ).rejects.toThrow('Durable campaign storage is unavailable');
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][0]).toContain('/api/host');
+});
+
 test('campaign workspaces reopen their edition and roundtrip validated boards with complete character state', async () => {
   const fetch = async (input) => {
     const url = new URL(input, window.location.href);
@@ -24,6 +36,7 @@ test('campaign workspaces reopen their edition and roundtrip validated boards wi
     };
   };
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,
@@ -65,6 +78,7 @@ test('campaign workspaces reopen their edition and roundtrip validated boards wi
 
 test('disabling a source preserves owned spell instances and Favorites but blocks new domain additions', async () => {
   const workspace = await CampaignWorkspace.load({
+    storage: 'browser',
     fetch: fetchBundledResource,
     indexedDB: testIndexedDB(),
     crypto: webcrypto,

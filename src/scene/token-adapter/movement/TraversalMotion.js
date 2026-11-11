@@ -131,6 +131,11 @@ function _startShortTraversal(token, cell, kind) {
   if (cell.vault) {
     const occupied = this.gameManager.placedTokens.some((other) => {
       if (other === token) return false;
+      if (
+        this.gameManager.campaignWorld &&
+        !this.gameManager.campaignWorld.sharesLocation(other.mapId, this.gameManager.campaignMapId)
+      )
+        return false;
       if (!this.gameManager.campaignWorld || other.mapId === this.gameManager.campaignMapId)
         return other.gridX === cell.gridX && other.gridY === cell.gridY;
       const position = this.getTokenViewPosition(other);

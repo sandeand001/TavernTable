@@ -1,0 +1,75 @@
+#saved-character-roster .saved-character-roster,
+#saved-character-roster form,
+#saved-character-roster [data-saved-character-list],
+#saved-character-roster .saved-character-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+#saved-character-roster label,
+#saved-character-roster small,
+#saved-character-roster output {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#saved-character-roster input,
+#saved-character-roster select {
+  box-sizing: border-box;
+  display: block;
+  margin-top: 4px;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+#saved-character-roster button,
+#saved-character-roster input,
+#saved-character-roster select {
+  background: #222b3c;
+  border: 1px solid #53617b;
+  border-radius: 6px;
+  color: #edf2ff;
+  font: inherit;
+  padding: 6px 8px;
+}
+
+#saved-character-roster button:focus-visible,
+#saved-character-roster input:focus-visible,
+#saved-character-roster select:focus-visible {
+  outline: 2px solid #74baff;
+  outline-offset: 2px;
+}
+
+#saved-character-roster button[aria-pressed='true'] {
+  background: #254f83;
+  border-color: #74baff;
+}
+
+#saved-character-roster :disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+#saved-character-roster .saved-character-card {
+  background: #171d29;
+  border: 1px solid #3a465e;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+#saved-character-roster .saved-character-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#saved-character-roster .saved-character-actions button {
+  flex: 1;
+}
+
+#saved-character-roster [hidden] {
+  display: none;
+}

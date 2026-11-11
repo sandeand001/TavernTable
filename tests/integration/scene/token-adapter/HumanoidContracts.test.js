@@ -74,6 +74,35 @@ test('one action definition supplies the menu, clip and playback metadata withou
   expect(HUMANOID_ANIMATIONS.actionJump.path).toContain('Jumping.fbx');
 });
 
+test('the actual mannequin body is precisely selectable after model setup', async () => {
+  const f = await fixture({ type: 'mannequin', height: 0 });
+  f.mesh.updateMatrixWorld(true);
+  const skin = f.skins[0];
+  const points = [0, 1, 2].map((vertex) =>
+    skin
+      .getVertexPosition(
+        skin.geometry.index ? skin.geometry.index.getX(vertex) : vertex,
+        new three.Vector3()
+      )
+      .applyMatrix4(skin.matrixWorld)
+  );
+  const target = points[0]
+    .clone()
+    .add(points[1])
+    .add(points[2])
+    .multiplyScalar(1 / 3);
+  const normal = points[1]
+    .clone()
+    .sub(points[0])
+    .cross(points[2].clone().sub(points[0]))
+    .normalize();
+  const ray = new three.Raycaster(
+    target.clone().addScaledVector(normal, 0.02),
+    normal.clone().negate()
+  );
+  expect(f.adapter.pickTokenByRay(ray, { precise: true })?.token.id).toBe(f.token.id);
+});
+
 test('unsupported and independent same-named rigs fail explicitly', () => {
   expect(() => cloneHumanoidRig(new three.Group(), three)).toThrow(/missing required/);
   const root = new three.Group();
@@ -181,7 +210,7 @@ describe.each(CHARACTER_DEFINITIONS.map(({ id }) => [id]))('%s actual-FBX contra
     setTokenMovementSettings(token, { speed: 10 });
     expect(adapter.requestMoveToGrid(token, 2, 4)).toBeNull();
     expect(adapter.requestMoveToGrid(token, 3, 4).cost).toBe(10);
-    expect(adapter.requestMoveToGrid(token, 4, 4)).toBeNull();
+    expect(adapter.requestMoveToGrid(token, 4, 4)).toMatchObject({ queued: true });
     for (let frame = 0; frame < 20; frame++) stepHumanoid(f);
     setTokenMovementSettings(token, { mode: 'run', type: 'drunk' });
     adapter.applyMovementStyle(token);
@@ -191,8 +220,8 @@ describe.each(CHARACTER_DEFINITIONS.map(({ id }) => [id]))('%s actual-FBX contra
       if (key) keys.add(key);
     });
     expect(keys.has('drunkRunForward')).toBe(true);
-    expect(token.world).toEqual({ x: 3.5, y: 0, z: 4.5 });
-    expect([token.gridX, token.gridY]).toEqual([3, 4]);
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 4.5 });
+    expect([token.gridX, token.gridY]).toEqual([4, 4]);
     expect(token.__ttWorldLock).toBeUndefined();
     expect(Math.abs(humanoidBounds(f).min.y)).toBeLessThan(0.025);
   });

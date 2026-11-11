@@ -9,6 +9,8 @@
       content="An interactive isometric grid for tabletop RPG games with creature tokens and dice rolling"
     />
     <link rel="stylesheet" href="src/ui/styles.css" />
+    <link rel="stylesheet" href="src/ui/characters/roster.css" />
+    <link rel="stylesheet" href="src/ui/sessions/player.css" />
     <!-- Pinned native ESM dependencies; no application bundler. -->
     <script type="importmap">
       {
@@ -33,28 +35,45 @@
     <div id="dice-3d-container" aria-label="3D dice rolling area"></div>
 
     <!-- Dice Rolling Panel -->
-    <div id="dice-panel" role="complementary" aria-label="Dice rolling controls">
-      <div>🎲 Roll Dice:</div>
-      <div class="dice-count-container">
-        <label for="dice-count" class="dice-count-label">Count:</label>
-        <input
-          type="number"
-          id="dice-count"
-          min="1"
-          max="10"
-          value="1"
-          aria-describedby="dice-help"
-          data-dice-count
-        />
+    <div
+      id="dice-panel"
+      role="complementary"
+      aria-label="Dice rolling controls"
+      data-collapsible-panel
+    >
+      <button
+        type="button"
+        class="panel-toggle"
+        aria-label="Collapse dice panel"
+        aria-controls="dice-controls"
+        aria-expanded="true"
+        data-panel-toggle
+        data-panel-label="dice panel"
+      >
+        <span>🎲 Roll Dice</span><span data-panel-indicator aria-hidden="true">-</span>
+      </button>
+      <div id="dice-controls" class="collapsible-panel-content">
+        <div class="dice-count-container">
+          <label for="dice-count" class="dice-count-label">Count:</label>
+          <input
+            type="number"
+            id="dice-count"
+            min="1"
+            max="10"
+            value="1"
+            aria-describedby="dice-help"
+            data-dice-count
+          />
+        </div>
+        <button data-dice data-sides="4" aria-label="Roll 4-sided die">d4</button>
+        <button data-dice data-sides="6" aria-label="Roll 6-sided die">d6</button>
+        <button data-dice data-sides="8" aria-label="Roll 8-sided die">d8</button>
+        <button data-dice data-sides="10" aria-label="Roll 10-sided die">d10</button>
+        <button data-dice data-sides="12" aria-label="Roll 12-sided die">d12</button>
+        <button data-dice data-sides="20" aria-label="Roll 20-sided die">d20</button>
+        <div id="dice-result" aria-live="polite" data-dice-result>Result: -</div>
+        <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
       </div>
-      <button data-dice data-sides="4" aria-label="Roll 4-sided die">d4</button>
-      <button data-dice data-sides="6" aria-label="Roll 6-sided die">d6</button>
-      <button data-dice data-sides="8" aria-label="Roll 8-sided die">d8</button>
-      <button data-dice data-sides="10" aria-label="Roll 10-sided die">d10</button>
-      <button data-dice data-sides="12" aria-label="Roll 12-sided die">d12</button>
-      <button data-dice data-sides="20" aria-label="Roll 20-sided die">d20</button>
-      <div id="dice-result" aria-live="polite" data-dice-result>Result: -</div>
-      <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
     </div>
 
     <!-- Token and Game Controls Panel -->
@@ -63,9 +82,30 @@
     </div>
 
     <!-- Right Sidebar Menu System -->
-    <div id="right-sidebar" role="complementary" aria-label="Game management sidebar">
+    <div
+      id="right-sidebar"
+      role="complementary"
+      aria-label="Game management sidebar"
+      data-collapsible-panel
+    >
+      <button
+        type="button"
+        class="panel-toggle"
+        aria-label="Collapse side menu"
+        aria-controls="sidebar-tabs sidebar-content"
+        aria-expanded="true"
+        data-panel-toggle
+        data-panel-label="side menu"
+      >
+        <span>Menu</span><span data-panel-indicator aria-hidden="true">-</span>
+      </button>
       <!-- Tab Navigation -->
-      <div id="sidebar-tabs" role="tablist" aria-label="Game menu tabs">
+      <div
+        id="sidebar-tabs"
+        class="collapsible-panel-content"
+        role="tablist"
+        aria-label="Game menu tabs"
+      >
         <button
           class="tab-button active"
           data-tab="dice-log"
@@ -125,7 +165,7 @@
       </div>
 
       <!-- Tab Content Panels -->
-      <div id="sidebar-content">
+      <div id="sidebar-content" class="collapsible-panel-content">
         <!-- Dice Log Panel -->
         <div
           id="dice-log-panel"
@@ -158,6 +198,12 @@
             <div class="section-title">Creature Token</div>
             <div id="creature-content" role="group" aria-label="Creature token selection"></div>
           </div>
+
+          <section
+            id="saved-character-roster"
+            class="section"
+            aria-label="Saved characters"
+          ></section>
 
           <!-- Token Removal -->
           <div class="section">
@@ -258,7 +304,7 @@
                   <button
                     id="terrain-wall-btn"
                     class="terrain-tool-btn"
-                    aria-label="Draw a terrain wall"
+                    aria-label="Draw a plain wall or battlements"
                     aria-pressed="false"
                   >
                     Wall
@@ -267,39 +313,6 @@
                 <div
                   style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center"
                 ></div>
-              </div>
-
-              <div id="terrain-wall-controls" class="tool-group" hidden>
-                <div class="section-subtitle">Wall Settings</div>
-                <div class="setting-item">
-                  <label for="terrain-wall-height">Top level:</label>
-                  <select
-                    id="terrain-wall-height"
-                    class="grid-input"
-                    aria-label="Wall top elevation level"
-                    aria-describedby="terrain-wall-help"
-                  >
-                    <option value="3" selected>3</option>
-                  </select>
-                </div>
-                <div class="setting-item">
-                  <label for="terrain-wall-fill">Box style:</label>
-                  <select
-                    id="terrain-wall-fill"
-                    class="grid-input"
-                    aria-label="Wall box style"
-                    aria-describedby="terrain-wall-help"
-                  >
-                    <option value="filled" selected>Filled</option>
-                    <option value="outline">Outline</option>
-                  </select>
-                </div>
-                <small id="terrain-wall-help" class="small-text"
-                  >Drag opposite corners and release to build. Filled changes the whole box; Outline
-                  changes only its one-cell-wide edge. A single row or column makes a line. Selected
-                  cells are set to the chosen level, raising or cutting terrain. Escape cancels an
-                  unfinished drag.</small
-                >
               </div>
 
               <div id="terrain-brush-size-controls" class="tool-group">
@@ -346,8 +359,8 @@
                 >
                 <small class="small-text"
                   >Release to apply. Escape cancels a preview. Ctrl+Z undoes; Ctrl+Shift+Z or Ctrl+Y
-                  redoes. History keeps the last 100 height or geometry edits and resets when loading, resizing,
-                  or generating a map.</small
+                  redoes. History keeps the last 100 height or geometry edits and resets when
+                  loading, resizing, or generating a map.</small
                 >
               </div>
 
@@ -486,6 +499,12 @@
                   Generate
                 </button>
                 <label
+                  title="Include a small, seeded set of biome-appropriate structures and landmarks"
+                >
+                  <input type="checkbox" id="biome-structures-toggle" checked />
+                  Structures &amp; landmarks
+                </label>
+                <label
                   class="toggle-switch"
                   for="biome-seed-lock"
                   title="Lock seed so repeated generate uses same pattern"
@@ -503,9 +522,21 @@
                   Reseed
                 </button>
               </div>
+              <small
+                id="biome-generation-status"
+                class="small-text"
+                role="status"
+                aria-live="polite"
+                style="flex-basis: 100%"
+                >Selecting a biome changes its palette only. Generate replaces generated terrain and
+                structures; creatures must remain on safe, unchanged support.</small
+              >
               <small class="small-text" style="flex-basis: 100%"
                 >Generate creates terrain and places biome assets. Exotic appearances apply to
-                generated assets. Unlock seed to randomize each time.</small
+                generated assets. Unlock seed to randomize each time. Empty default boards use
+                larger settlement canvases: village 35 x 35, city 45 x 45, fortress 50 x 50,
+                cliffside and mountain castles 60 x 60. Terrain castles need at least 20 x 20.
+                Existing custom or populated boards keep their size.</small
               >
             </div>
             <div class="section-subtitle" style="margin: 0 0 0.25rem">Biomes</div>

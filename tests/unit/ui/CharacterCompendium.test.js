@@ -180,6 +180,7 @@ test("loading a saved character shares its speed while retaining each token's mo
   saved.value = original;
   saved.dispatchEvent(new Event('change', { bubbles: true }));
   expect(second.characterSheetId).toBe(original);
+  expect(sheets.characterContent.status.textContent).toBe('Loaded saved character.');
   expect(sheets.heading.textContent).toBe('Mira');
   expect(sheets.root.querySelector('[aria-label="Character speed (feet)"]').value).toBe('45');
   expect(getTokenMovementSettings(second)).toEqual({ speed: 45, mode: 'walk', type: 'default' });

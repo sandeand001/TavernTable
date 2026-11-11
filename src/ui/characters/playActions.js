@@ -15,6 +15,20 @@ export async function rollForSheet(
   const mode = advantage === disadvantage ? 'normal' : advantage ? 'advantage' : 'disadvantage';
   const token = context.token;
   const characterId = context.characterId;
+  if (context.services.playerGameplay) {
+    if (context.services.sheetContext === 'library')
+      throw new Error('Place this character before using world dice actions');
+    context.rollStatus.textContent = `Waiting for the host: ${request.label}...`;
+    const result = await context.services.playerGameplay.roll(token, {
+      expression: request.expression,
+      label: request.label,
+      mode,
+    });
+    const roll = result.receipt.roll;
+    if (!context.disposed && context.token === token && context.characterId === characterId)
+      context.rollStatus.textContent = roll.text;
+    return roll;
+  }
   const session = context.services.combat;
   const scope = recordHistory ? session.captureRoll(token) : null;
   context.rollStatus.textContent = `Rolling ${request.label}...`;
@@ -40,6 +54,56 @@ export async function rollForSheet(
 }
 
 export async function performPlayAction(context, actionId, choice = {}) {
+  const token = context.token;
+  const characterId = context.characterId;
+  if (context.services.playerGameplay) {
+    try {
+      if (context.services.sheetContext === 'library')
+        throw new Error('Place this character before using world actions');
+      context.rollStatus.textContent = 'Waiting for the host to resolve this action...';
+      const result = await context.services.playerGameplay.useAction(token, actionId, choice);
+      if (result.cancelled) {
+        context.rollStatus.textContent =
+          result.reason || 'Targeting cancelled. No action or resources were spent.';
+        return null;
+      }
+      if (!context.disposed && context.token === token && context.characterId === characterId) {
+        context.rollStatus.textContent =
+          result.outcome === 'duplicate'
+            ? 'This action was already accepted. Current host data was refreshed.'
+            : result.receipt.roll?.text || 'The host accepted this action and its resource costs.';
+        context._run(() => {}, 'Host action and resources updated.', false);
+      }
+      return result.receipt;
+    } catch (error) {
+      context.rollStatus.textContent = error.message;
+      context._failure(error, 'playerAction');
+      return null;
+    }
+  }
+  const session = context.services.combat;
+  const world = context.gameManager.campaignWorld;
+  if (session.isActorBusy(token) || session.actionRequests.has(token))
+    context.rollStatus.textContent =
+      'Action queued; rules and resources will be checked when ready.';
+  try {
+    return await session.runWhenReady(token, () => {
+      if (
+        context.disposed ||
+        context.token !== token ||
+        context.characterId !== characterId ||
+        context.gameManager.campaignWorld !== world
+      )
+        throw new Error('The creature or campaign changed before the queued action could run');
+      return executePlayAction(context, actionId, { ...choice });
+    });
+  } catch (error) {
+    context._failure(error, 'queuedPlayAction');
+    return null;
+  }
+}
+
+async function executePlayAction(context, actionId, choice) {
   const token = context.token;
   const characterId = context.characterId;
   const session = context.services.combat;
@@ -69,17 +133,21 @@ export async function performPlayAction(context, actionId, choice = {}) {
     if (ticket.action.targeting && context.services.targeting) {
       selection = await context.services.targeting.choose(token, ticket);
       if (selection.cancelled) {
-        if (session.pending === ticket) session.cancelAction(ticket);
+        if (session.isActionPending(ticket)) session.cancelAction(ticket);
         context.rollStatus.textContent = 'Targeting cancelled; no action or resources were spent.';
         return null;
       }
       if (
         ticket.action.kind === 'spell' &&
-        ticket.action.usesSlot &&
-        selection.slotLevel !== undefined &&
-        selection.slotLevel !== ticket.action.slotLevel
+        ((selection.slotLevel !== undefined && selection.slotLevel !== ticket.action.slotLevel) ||
+          (selection.variant !== undefined &&
+            selection.variant !== ticket.action.targeting.variant))
       ) {
-        ticket = session.changeSpellLevel(ticket, selection.slotLevel);
+        ticket = await session.changeSpellChoices(ticket, {
+          ...ticket.choice,
+          ...(selection.slotLevel !== undefined ? { slotLevel: selection.slotLevel } : {}),
+          ...(selection.variant !== undefined ? { variant: selection.variant } : {}),
+        });
       }
     }
     const character = context.services.library.get(characterId);
@@ -94,7 +162,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
             context.token !== token ||
             token.characterSheetId !== characterId ||
             !context.gameManager.placedTokens.includes(token) ||
-            session.pending !== ticket
+            !session.isActionPending(ticket)
           )
             throw new Error('Creature changed while resolving the use; no costs were spent');
           const targetRollScope = session.captureRoll(token);
@@ -130,7 +198,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
         : null;
     }
     if (rolled?.cancelled) {
-      if (session.pending === ticket) session.cancelAction(ticket);
+      if (session.isActionPending(ticket)) session.cancelAction(ticket);
       context.services.targeting?.finish();
       recordUncommitted();
       context.rollStatus.textContent = 'Use cancelled; no action or resources were spent.';
@@ -141,7 +209,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
       context.token !== token ||
       token.characterSheetId !== characterId ||
       !context.gameManager.placedTokens.includes(token) ||
-      session.pending !== ticket
+      !session.isActionPending(ticket)
     ) {
       throw new Error('Creature changed while resolving the use; no costs were spent');
     }
@@ -164,7 +232,8 @@ export async function performPlayAction(context, actionId, choice = {}) {
     context._run(() => {}, 'Use and resource costs saved.');
     return used;
   } catch (error) {
-    if (ticket && session.pending === ticket) session.cancelAction(ticket);
+    if (ticket && session.isActionPending(ticket) && !session.isActionCommitting(ticket))
+      session.cancelAction(ticket);
     let failure = error;
     if (!committed && targetRolls.length && !recordedUncommitted) {
       try {

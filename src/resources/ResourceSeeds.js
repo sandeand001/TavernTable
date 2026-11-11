@@ -3,6 +3,24 @@ import ResourceStore from './ResourceStore.js';
 
 const reference = (source) => `${source.id}@${source.version}`;
 
+export async function loadBundledResources({
+  fetch = globalThis.fetch,
+  indexedDB = globalThis.indexedDB,
+  crypto = globalThis.crypto,
+  baseURL = globalThis.location.href,
+} = {}) {
+  const response = await fetch(new URL('assets/data/resources/manifest.json', baseURL).href, {
+    cache: 'no-cache',
+  });
+  if (!response.ok)
+    throw new Error(`The bundled resource manifest could not load (${response.status})`);
+  const manifest = await response.json();
+  return {
+    manifest,
+    resources: new ResourceSeeds({ manifest, fetch, indexedDB, crypto, baseURL }),
+  };
+}
+
 export default class ResourceSeeds {
   constructor({
     manifest,
@@ -41,7 +59,7 @@ export default class ResourceSeeds {
       })
     );
     this.indexedDB = indexedDB;
-    this.fetch = fetch;
+    this.fetch = (...args) => fetch(...args);
     this.crypto = crypto;
     this.prefix = prefix;
     this.databases = new Map();

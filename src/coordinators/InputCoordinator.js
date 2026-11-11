@@ -10,11 +10,14 @@ import { logger } from '../utils/logger/Logger.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import { GameValidators } from '../utils/Validation.js';
 import { CoordinateUtils } from '../utils/coordinates/CoordinateUtils.js';
+import { placeSavedCharacter } from '../campaigns/SavedCharacterPlacement.js';
+import { changeCampaignView, queueCampaignOperation } from '../campaigns/SceneWorld.js';
 
 // ── InputCoordinator Class ───────────────────────────────
 export class InputCoordinator {
   constructor(gameManager) {
     this.gameManager = gameManager;
+    this.savedCharacterPending = false;
   }
 
   // ── Click & Drop Handlers ───────────────────────────────
@@ -31,11 +34,27 @@ export class InputCoordinator {
   }
 
   async handleTokenDrop(tokenType, clientX, clientY) {
+    const gm = this.gameManager;
+    const mapId = gm.campaignMapId;
+    try {
+      return await queueCampaignOperation(gm, 'placement', () => {
+        if (gm.campaignMapId !== mapId)
+          throw new Error('The map changed before the queued token drop could run');
+        return this._handleTokenDropNow(tokenType, clientX, clientY);
+      });
+    } catch (error) {
+      GameErrors.input(error, { stage: 'queuedTokenDrop', tokenType });
+      return false;
+    }
+  }
+
+  async _handleTokenDropNow(tokenType, clientX, clientY) {
     try {
       const gm = this.gameManager;
       if (!gm) {
         return false;
       }
+      this._assertTokenInputIdle();
 
       const terrainActive =
         typeof gm.isTerrainModeActive === 'function' && gm.isTerrainModeActive();
@@ -94,6 +113,162 @@ export class InputCoordinator {
     }
   }
 
+  async handleSavedCharacterDrop(payload, clientX, clientY) {
+    try {
+      const selection = JSON.parse(payload);
+      if (
+        !selection ||
+        typeof selection.characterId !== 'string' ||
+        typeof selection.appearance !== 'string'
+      )
+        throw new Error('Drag a saved character from this campaign roster');
+      return this.handleSavedCharacterPlacement(
+        selection.characterId,
+        selection.appearance,
+        clientX,
+        clientY
+      );
+    } catch (error) {
+      return this._savedCharacterFailure(error);
+    }
+  }
+
+  async handleSavedCharacterPlacement(characterId, appearance, clientX, clientY) {
+    const gm = this.gameManager;
+    const mapId = gm.campaignMapId;
+    try {
+      if (
+        gm.characterServices?.sessionRole === 'player' ||
+        gm.characterServices?.library.store?.identity?.role === 'player'
+      )
+        throw new Error('Player character placement requires an authorized DM command');
+      gm.characterServices.library.get(characterId);
+      const existing = gm.placedTokens.find((token) => token.characterSheetId === characterId);
+      if (existing) return await this._focusSavedCharacter(existing, characterId);
+      return await queueCampaignOperation(gm, 'placement', () => {
+        if (gm.campaignMapId !== mapId)
+          throw new Error('The map changed before the queued character placement could run');
+        return this._placeSavedCharacterNow(characterId, appearance, clientX, clientY);
+      });
+    } catch (error) {
+      return this._savedCharacterFailure(error, characterId);
+    }
+  }
+
+  async _focusSavedCharacter(token, characterId) {
+    await this.gameManager.token3DAdapter.setSelectedToken(token);
+    if (this.gameManager.tokenManager.selectedSavedCharacterId === characterId)
+      this.gameManager.tokenManager.cancelSavedCharacterPlacement();
+    this._publishSavedCharacterPlacement({
+      characterId,
+      success: true,
+      message: `${token.name} is already placed; focused its existing sprite.`,
+    });
+    return true;
+  }
+
+  async _placeSavedCharacterNow(characterId, appearance, clientX, clientY) {
+    const existing = this.gameManager.placedTokens.find(
+      (token) => token.characterSheetId === characterId
+    );
+    if (existing) return this._focusSavedCharacter(existing, characterId);
+    if (this.savedCharacterPending)
+      return this._savedCharacterFailure(new Error('Wait for the current placement to finish'));
+    try {
+      this._assertTokenInputIdle();
+    } catch (error) {
+      return this._savedCharacterFailure(error);
+    }
+    this.savedCharacterPending = true;
+    const gm = this.gameManager;
+    window.dispatchEvent(
+      new CustomEvent('taverntable:campaignViewStateChanged', {
+        detail: { gameManager: gm },
+      })
+    );
+    try {
+      const terrain = gm.terrainEngine;
+      if (
+        gm.isTerrainModeActive?.() ||
+        (terrain?.getSelectedPlaceable?.() && terrain?.isPlaceablesPanelVisible?.())
+      )
+        throw new Error('Leave terrain and placeable editing before retrieving a character');
+      if (!gm.is3DModeActive?.())
+        throw new Error('Saved character placement requires a walkable floor in the 3D board');
+      const picking = gm.pickingService;
+      if (!picking?.pickGround && !picking?.pickGroundSync)
+        throw new Error('The board is not ready to pick a placement floor');
+      const ground = picking.pickGround
+        ? await picking.pickGround(clientX, clientY)
+        : picking.pickGroundSync(clientX, clientY);
+      if (
+        !Number.isFinite(ground?.grid?.gx) ||
+        !Number.isFinite(ground?.grid?.gy) ||
+        (!ground.surface && !Number.isFinite(ground.world?.y))
+      )
+        throw new Error('Choose a supported floor inside the current area');
+      const result = await placeSavedCharacter(
+        gm,
+        characterId,
+        Math.round(ground.grid.gx),
+        Math.round(ground.grid.gy),
+        {
+          appearance,
+          surface: ground.surface || {
+            kind: 'floor',
+            point: ground.world,
+            mapId: gm.campaignMapId,
+          },
+        }
+      );
+      if (!result.created) {
+        if (gm.campaignWorld) await changeCampaignView(gm, { focusTokenId: result.token.id });
+        else await gm.token3DAdapter.setSelectedToken(result.token);
+      }
+      if (gm.tokenManager.selectedSavedCharacterId === characterId)
+        gm.tokenManager.cancelSavedCharacterPlacement();
+      this._publishSavedCharacterPlacement({
+        characterId,
+        success: true,
+        message: result.created
+          ? `${result.token.name} placed using the existing saved character.`
+          : `${result.token.name} is already placed; focused its existing sprite.`,
+      });
+      return true;
+    } catch (error) {
+      return this._savedCharacterFailure(error, characterId);
+    } finally {
+      this.savedCharacterPending = false;
+      gm.campaignRequests?.flush();
+      gm.characterServices?.combat.syncMovementStatus();
+      window.dispatchEvent(
+        new CustomEvent('taverntable:campaignViewStateChanged', {
+          detail: { gameManager: gm },
+        })
+      );
+    }
+  }
+
+  _publishSavedCharacterPlacement(detail) {
+    window.dispatchEvent(
+      new CustomEvent('taverntable:savedCharacterPlacement', {
+        detail: { ...detail, gameManager: this.gameManager },
+      })
+    );
+  }
+
+  _savedCharacterFailure(error, characterId = null) {
+    GameErrors.input(error, { stage: 'savedCharacterPlacement', characterId });
+    this._publishSavedCharacterPlacement({ characterId, success: false, message: error.message });
+    return false;
+  }
+
+  _assertTokenInputIdle() {
+    if (this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
+    if (this.gameManager.campaignViewBusy || this.savedCharacterPending)
+      throw new Error('Wait for the current map change or character placement to finish');
+  }
+
   // ── Token Interaction ──────────────────────────────────
   /**
    * Handle token placement or removal at grid coordinates
@@ -101,7 +276,30 @@ export class InputCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   handleTokenInteraction(gridX, gridY) {
+    const gm = this.gameManager;
+    const mapId = gm.campaignMapId;
+    const failure = (error) =>
+      GameErrors.input(error, {
+        stage: 'queuedTokenInteraction',
+        coordinates: { gridX, gridY },
+      });
     try {
+      const result = queueCampaignOperation(gm, 'pointer', () => {
+        if (gm.campaignMapId !== mapId)
+          throw new Error('The map changed before the queued token edit could run');
+        return this._handleTokenInteractionNow(gridX, gridY);
+      });
+      return typeof result?.then === 'function' ? result.catch(failure) : result;
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  _handleTokenInteractionNow(gridX, gridY) {
+    try {
+      this._assertTokenInputIdle();
+      if (this.gameManager.tokenManager?.selectedSavedCharacterId)
+        throw new Error('Choose a supported 3D floor for the saved character');
       // If a terrain placeable is currently selected, token placement must be disabled.
       const terrain = this.gameManager.terrainEngine;
       const selectedPlaceable =
@@ -164,6 +362,7 @@ export class InputCoordinator {
    * @param {Object} token - Token to remove
    */
   removeToken(token) {
+    this._assertTokenInputIdle();
     if (this.gameManager.tokenManager) {
       this.gameManager.tokenManager.removeToken(token);
       // Update global array for backward compatibility
@@ -178,6 +377,7 @@ export class InputCoordinator {
    * @param {number} gridY - Grid Y coordinate
    */
   placeNewToken(gridX, gridY) {
+    this._assertTokenInputIdle();
     // Defensive: also check here in case placeNewToken is called programmatically.
     const terrain = this.gameManager.terrainEngine;
     const selectedPlaceable =
@@ -199,6 +399,7 @@ export class InputCoordinator {
   }
 
   _placeDraggedToken(tokenType, gridX, gridY) {
+    this._assertTokenInputIdle();
     const coordValidation = GameValidators.coordinates(gridX, gridY);
     if (!coordValidation.isValid) {
       throw new Error(`Invalid coordinates: ${coordValidation.errors.join(', ')}`);

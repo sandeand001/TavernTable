@@ -196,6 +196,7 @@ export function characterActionOptions(library, token, choices = {}) {
       spellLevel: entry.level,
       usesSlot: entry.level > 0,
       slotLevel,
+      targetingVariant: choices[id]?.variant ?? null,
       slotLevels: slots,
       spellReady,
       note: `${entry.castingTime}; ${entry.range}; ${entry.duration}. ${(entry.automationNotes || []).join(' ')}`,
@@ -242,6 +243,12 @@ export function characterActionOptions(library, token, choices = {}) {
     return {
       ...action,
       targeting,
+      ...(action.kind === 'spell' &&
+      action.roll?.attack &&
+      targeting.kind !== 'manual' &&
+      !targeting.attack
+        ? { roll: null }
+        : {}),
       ...(action.kind === 'spell'
         ? {
             note: `${action.note} ${

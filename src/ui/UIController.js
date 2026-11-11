@@ -18,7 +18,6 @@
  */
 
 import { GRID_CONFIG } from '../config/GameConstants.js';
-import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
 import { TOKEN_COMMANDS, getTokenCommand } from '../config/TokenCommandConfig.js';
 import { CHARACTER_DEFINITIONS } from '../config/CharacterCatalog.js';
 import { MANUAL_ACTIONS } from '../config/HumanoidActionCatalog.js';
@@ -49,9 +48,15 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/Err
 import { Sanitizers, GameValidators } from '../utils/Validation.js';
 import { rollDice } from '../systems/dice/dice.js';
 import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLauncher.js';
+import { ensureSession } from './sessions/SessionLogin.js';
+import { preparePlayerApplication } from './sessions/PlayerApplication.js';
 import { connectCharacterServices } from './characters/characterServices.js';
 import CampaignAutosave from '../campaigns/CampaignAutosave.js';
 import { TerrainConstructionPanel } from './TerrainConstructionPanel.js';
+import SavedCharacterRoster, {
+  SAVED_CHARACTER_DRAG_MIME,
+} from './characters/SavedCharacterRoster.js';
+import { captureCampaignScene, changeCampaignView } from '../campaigns/SceneWorld.js';
 
 // ── Constants ──────────────────────────────────────────────────
 const TOKEN_DRAG_MIME = 'application/taverntable-token';
@@ -62,6 +67,22 @@ let radialMenuInstance = null;
 let characterSheetWindow = null;
 let applicationStartup = null;
 let terrainConstruction = null;
+
+async function openCharacterSheet(gm, token) {
+  if (!characterSheetWindow || characterSheetWindow.gameManager !== gm) {
+    characterSheetWindow?.destroy();
+    characterSheetWindow = new CharacterSheetWindow({
+      gameManager: gm,
+      initialBounds: { left: 32, top: 56, width: 860, height: 760 },
+      onOpenCompendium: (entryId) => {
+        if (!window.sidebarController?.openCompendium)
+          throw new Error('The compendium sidebar is not available');
+        return window.sidebarController.openCompendium(entryId);
+      },
+    }).attach();
+  }
+  return characterSheetWindow.open(token);
+}
 
 function getRadialMenuInstance() {
   if (!radialMenuInstance) {
@@ -83,20 +104,7 @@ async function handleRadialCommand(actionId, token) {
     const gm = window.gameManager;
     if (actionId === 'character-sheet') {
       if (!gm) throw new Error('Character sheets require an active game session');
-      if (!characterSheetWindow || characterSheetWindow.gameManager !== gm) {
-        characterSheetWindow?.destroy();
-        characterSheetWindow = new CharacterSheetWindow({
-          gameManager: gm,
-          initialBounds: { left: 32, top: 56, width: 860, height: 760 },
-          onOpenCompendium: (entryId) => {
-            if (!window.sidebarController?.openCompendium) {
-              throw new Error('The compendium sidebar is not available');
-            }
-            return window.sidebarController.openCompendium(entryId);
-          },
-        }).attach();
-      }
-      characterSheetWindow.open(token);
+      await openCharacterSheet(gm, token);
       return;
     }
     if (!gm || typeof gm.applyTokenCommand !== 'function') {
@@ -118,9 +126,11 @@ async function handleRadialCommand(actionId, token) {
 
 function showRadialMenu(detail = {}) {
   const radial = getRadialMenuInstance();
-  const adapter = window.gameManager?.token3DAdapter;
-  const availability =
-    typeof adapter?.getManualActionAvailability === 'function'
+  const gm = window.gameManager;
+  const adapter = gm?.token3DAdapter;
+  const availability = gm?.playerInput
+    ? gm.playerInput.radialAvailability(detail.token)
+    : typeof adapter?.getManualActionAvailability === 'function'
       ? Object.fromEntries(
           MANUAL_ACTIONS.map(({ id }) => [
             id,
@@ -128,7 +138,7 @@ function showRadialMenu(detail = {}) {
           ])
         )
       : {};
-  if (typeof adapter?.getFlightCommandAvailability === 'function') {
+  if (!gm?.playerInput && typeof adapter?.getFlightCommandAvailability === 'function') {
     for (const action of TOKEN_COMMANDS.filter((entry) => entry.flight)) {
       for (const entry of [action, ...(action.subActions || [])]) {
         availability[entry.id] = adapter.getFlightCommandAvailability(
@@ -153,16 +163,28 @@ function hasTokenDragPayload(event) {
   if (!dt) return false;
   try {
     if (dt.types && typeof dt.types.includes === 'function') {
-      return dt.types.includes(TOKEN_DRAG_MIME) || dt.types.includes('text/plain');
+      return (
+        dt.types.includes(SAVED_CHARACTER_DRAG_MIME) ||
+        dt.types.includes(TOKEN_DRAG_MIME) ||
+        dt.types.includes('text/plain')
+      );
     }
     if (Array.isArray(dt.types)) {
-      return dt.types.includes(TOKEN_DRAG_MIME) || dt.types.includes('text/plain');
+      return (
+        dt.types.includes(SAVED_CHARACTER_DRAG_MIME) ||
+        dt.types.includes(TOKEN_DRAG_MIME) ||
+        dt.types.includes('text/plain')
+      );
     }
   } catch (_) {
     /* ignore */
   }
   try {
-    return !!(dt.getData(TOKEN_DRAG_MIME) || dt.getData('text/plain'));
+    return !!(
+      dt.getData(SAVED_CHARACTER_DRAG_MIME) ||
+      dt.getData(TOKEN_DRAG_MIME) ||
+      dt.getData('text/plain')
+    );
   } catch (_) {
     return false;
   }
@@ -185,6 +207,7 @@ function setupTokenDrag(button, tokenType) {
   button.setAttribute('draggable', 'true');
   button.addEventListener('dragstart', (event) => {
     if (!event?.dataTransfer) return;
+    window.gameManager?.tokenManager?.cancelSavedCharacterPlacement();
     event.dataTransfer.effectAllowed = 'copy';
     try {
       event.dataTransfer.setData(TOKEN_DRAG_MIME, tokenType);
@@ -216,9 +239,27 @@ function ensureTokenDropTargets() {
     target.addEventListener('drop', (event) => {
       if (!hasTokenDragPayload(event)) return;
       event.preventDefault();
+      const coordinator = window.gameManager?.inputCoordinator;
+      const savedCharacter = event.dataTransfer?.getData(SAVED_CHARACTER_DRAG_MIME);
+      if (
+        savedCharacter ||
+        Array.from(event.dataTransfer?.types || []).includes(SAVED_CHARACTER_DRAG_MIME)
+      ) {
+        event.stopPropagation();
+        if (!coordinator?.handleSavedCharacterDrop) {
+          new ErrorHandler().handle(
+            new Error('Saved character placement is not ready'),
+            ERROR_SEVERITY.WARNING,
+            ERROR_CATEGORY.INPUT,
+            { context: 'savedCharacterDrop' }
+          );
+          return;
+        }
+        void coordinator.handleSavedCharacterDrop(savedCharacter, event.clientX, event.clientY);
+        return;
+      }
       const tokenType = getTokenDragType(event);
       if (!tokenType) return;
-      const coordinator = window.gameManager?.inputCoordinator;
       if (!coordinator?.handleTokenDrop) return;
       const result = coordinator.handleTokenDrop(tokenType, event.clientX, event.clientY);
       if (result && typeof result.catch === 'function') {
@@ -465,57 +506,14 @@ function attachDynamicUIHandlers() {
       ['wall', wallBtn],
     ]) {
       if (button && !button.dataset.boundTerrainHandler) {
-        button.addEventListener('click', () => setTerrainTool(tool));
+        button.addEventListener('click', () => {
+          if (tool === 'wall') window.gameManager?.terrainEngine?.setConstructionTool('wall');
+          else setTerrainTool(tool);
+        });
         button.dataset.boundTerrainHandler = 'true';
       }
     }
 
-    const { heightInput: wallHeightSelect, fillSelect: wallFillSelect } = getTerrainWallControls();
-    if (wallHeightSelect && !wallHeightSelect.dataset.boundWallHandler) {
-      const options = document.createDocumentFragment();
-      for (let level = TERRAIN_CONFIG.MIN_HEIGHT; level <= TERRAIN_CONFIG.MAX_HEIGHT; level++) {
-        const option = document.createElement('option');
-        option.value = String(level);
-        option.textContent = String(level);
-        options.append(option);
-      }
-      wallHeightSelect.replaceChildren(options);
-      wallHeightSelect.addEventListener('change', () => {
-        const engine = window.gameManager?.terrainEngine;
-        try {
-          if (!engine) throw new Error('Terrain editing is not ready yet');
-          const level = wallHeightSelect.value === '' ? NaN : Number(wallHeightSelect.value);
-          engine.setWallTopLevel(level);
-          wallHeightSelect.value = String(engine.wallTopLevel);
-        } catch (error) {
-          if (Number.isInteger(engine?.wallTopLevel)) {
-            wallHeightSelect.value = String(engine.wallTopLevel);
-          }
-          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
-            context: 'setWallTopLevel',
-          });
-        }
-      });
-      wallHeightSelect.dataset.boundWallHandler = 'true';
-    }
-    if (wallFillSelect && !wallFillSelect.dataset.boundWallFillHandler) {
-      wallFillSelect.addEventListener('change', () => {
-        const engine = window.gameManager?.terrainEngine;
-        try {
-          if (!engine) throw new Error('Terrain editing is not ready yet');
-          engine.setWallFillMode(wallFillSelect.value);
-          wallFillSelect.value = engine.wallFillMode;
-        } catch (error) {
-          if (typeof engine?.wallFillMode === 'string') {
-            wallFillSelect.value = engine.wallFillMode;
-          }
-          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
-            context: 'setWallFillMode',
-          });
-        }
-      });
-      wallFillSelect.dataset.boundWallFillHandler = 'true';
-    }
     syncTerrainToolControls(window.gameManager?.terrainEngine?.tool || 'raise');
 
     const history = getTerrainHistoryControls();
@@ -728,6 +726,8 @@ if (typeof window !== 'undefined') {
     syncTerrainToolControls(engine.tool);
     syncTerrainHistoryControls();
     updateBrushSizeDisplay();
+    const structures = document.getElementById('biome-structures-toggle');
+    if (structures) structures.checked = engine.structureGenerationEnabled;
     const elevation = getElevationScaleControls();
     if (elevation.slider) elevation.slider.value = String(engine.elevationScale);
     if (elevation.valueEl) elevation.valueEl.textContent = `${engine.elevationScale} px/level`;
@@ -786,6 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Public API (Terrain Controls) ──────────────────────────
 
 function syncTerrainToolControls(tool) {
+  const construction = window.gameManager?.terrainEngine?.constructionTool;
   const { raiseBtn, lowerBtn, wallBtn } = getTerrainToolButtons();
   for (const [value, button] of [
     ['raise', raiseBtn],
@@ -793,17 +794,12 @@ function syncTerrainToolControls(tool) {
     ['wall', wallBtn],
   ]) {
     if (!button) continue;
-    const active = tool === value;
+    const active = construction ? construction === 'wall' && value === 'wall' : tool === value;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   }
-  const { controlsEl, heightInput, fillSelect, brushControlsEl } = getTerrainWallControls();
-  if (controlsEl) controlsEl.hidden = tool !== 'wall';
-  if (brushControlsEl) brushControlsEl.hidden = tool === 'wall';
-  const level = window.gameManager?.terrainEngine?.wallTopLevel;
-  if (heightInput && Number.isInteger(level)) heightInput.value = String(level);
-  const fillMode = window.gameManager?.terrainEngine?.wallFillMode;
-  if (fillSelect && typeof fillMode === 'string') fillSelect.value = fillMode;
+  const { brushControlsEl } = getTerrainWallControls();
+  if (brushControlsEl) brushControlsEl.hidden = !!construction || tool === 'wall';
 }
 
 function syncTerrainHistoryControls() {
@@ -998,6 +994,7 @@ function initializeApplication() {
 
 async function startCampaignApplication() {
   let loading = null;
+  let player = null;
   const previousInert = new Map();
   const pauseControls = () => {
     for (const element of document.body.children) {
@@ -1006,14 +1003,7 @@ async function startCampaignApplication() {
       element.inert = true;
     }
   };
-  try {
-    // Validate gameManager exists
-    if (!window.gameManager) {
-      throw new Error('GameManager not found. Application cannot start.');
-    }
-
-    const manager = window.gameManager;
-    const services = await new CampaignLauncher().choose();
+  const showLoading = (message) => {
     loading = document.createElement('section');
     loading.className = 'campaign-picker';
     loading.setAttribute('role', 'dialog');
@@ -1023,23 +1013,54 @@ async function startCampaignApplication() {
     const loadingMessage = document.createElement('div');
     loadingMessage.className = 'campaign-shell';
     loadingMessage.setAttribute('role', 'status');
-    loadingMessage.textContent = 'Restoring your campaign. Please wait...';
+    loadingMessage.textContent = message;
     loading.append(loadingMessage);
     document.body.append(loading);
     pauseControls();
     loading.focus();
-    manager.campaignContext = services;
-    manager.campaign = services.campaign;
-    connectCharacterServices(manager, services);
-    const autosave = new CampaignAutosave({
-      gameManager: manager,
-      library: services.library,
-      combat: manager.characterServices.combat,
-      getRollLog: () => window.sidebarController.snapshotDiceLog(),
-      restoreRollLog: (entries) => window.sidebarController.restoreDiceLog(entries),
-    });
-    services.autosave = autosave;
-    mountCampaignControls(manager, services);
+  };
+  try {
+    // Validate gameManager exists
+    if (!window.gameManager) {
+      throw new Error('GameManager not found. Application cannot start.');
+    }
+
+    const manager = window.gameManager;
+    const identity = await ensureSession();
+    if (!['dm', 'player'].includes(identity.role))
+      throw new Error('The host returned an unsupported session role');
+    if (identity.role === 'player') {
+      showLoading('Opening your authorized map. Please wait...');
+      player = await preparePlayerApplication({
+        gameManager: manager,
+        identity,
+        openSheet: (id) => {
+          const token = manager.placedTokens.find(
+            (entry) => entry.owned && entry.characterSheetId === id
+          );
+          return token
+            ? openCharacterSheet(manager, token)
+            : manager.playerApplication.sheets.open(id);
+        },
+      });
+    }
+    const services = player ? null : await new CampaignLauncher().choose();
+    if (!loading) showLoading('Restoring your campaign. Please wait...');
+    let autosave;
+    if (!player) {
+      manager.campaignContext = services;
+      manager.campaign = services.campaign;
+      connectCharacterServices(manager, services);
+      autosave = new CampaignAutosave({
+        gameManager: manager,
+        library: services.library,
+        combat: manager.characterServices.combat,
+        getRollLog: () => window.sidebarController.snapshotDiceLog(),
+        restoreRollLog: (entries) => window.sidebarController.restoreDiceLog(entries),
+      });
+      services.autosave = autosave;
+      mountCampaignControls(manager, services);
+    }
     pauseControls();
     await manager.initialize();
     await manager.enableHybridRender();
@@ -1047,10 +1068,34 @@ async function startCampaignApplication() {
       throw new Error('The 3D world could not finish initializing');
     }
     pauseControls();
-    await autosave.start(services.scene);
+    if (player) await player.start();
+    else {
+      await autosave.start(services.scene);
+      const rosterHost = document.getElementById('saved-character-roster');
+      if (!rosterHost) throw new Error('The saved character roster mount is missing');
+      manager.savedCharacterRoster?.destroy();
+      manager.savedCharacterRoster = new SavedCharacterRoster({
+        gameManager: manager,
+        services: manager.characterServices,
+        onOpenPlaced: async (token) => {
+          if (manager.campaignWorld) await changeCampaignView(manager, { focusTokenId: token.id });
+          else {
+            const scene = await captureCampaignScene(manager, services.library);
+            manager.threeSceneManager.restoreView({
+              ...scene.camera,
+              target: { ...token.world },
+            });
+            await manager.token3DAdapter.setSelectedToken(token);
+          }
+          return openCharacterSheet(manager, token);
+        },
+        onSelectionChanged: () => window.sidebarController?.refreshCreatureSelection(),
+      }).attach(rosterHost);
+    }
     for (const [element, inert] of previousInert) element.inert = inert;
     loading.remove();
   } catch (error) {
+    if (player) await player.destroy();
     if (loading) {
       loading.textContent = '';
       const message = document.createElement('div');

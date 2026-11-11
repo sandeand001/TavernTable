@@ -160,7 +160,7 @@ test('a rogue’s real bonus actions remain available and spending one does not 
 test('only an unreviewed spell gets a compact targeting gear; weapon and reviewed-spell cards have no setup buttons', async () => {
   await openCombat();
   const bolt = addSpell('spell:fire-bolt'),
-    misty = addSpell('spell:misty-step');
+    misty = addSpell('spell:dancing-lights');
   const dagger = library.add(token.characterSheetId, 'item:dagger', { equip: true });
   await sheets.open(token);
   const configure = jest.fn(async () => false);
@@ -178,7 +178,7 @@ test('only an unreviewed spell gets a compact targeting gear; weapon and reviewe
   ).toBeNull();
   const gear = card(`spell:${misty}`).querySelector('[data-sheet-action="configure-targeting"]');
   expect(gear.classList.contains('sheet-targeting-config')).toBe(true);
-  expect(gear.getAttribute('aria-label')).toBe('Configure targeting for Misty Step');
+  expect(gear.getAttribute('aria-label')).toBe('Configure targeting for Dancing Lights');
   expect(gear.textContent.trim()).not.toContain('Configure targets');
   gear.click();
   await Promise.resolve();

@@ -92,7 +92,7 @@ test('a rejected wall-catch save keeps a valid source hold and retries damage pl
     const session = gm.characterServices.combat;
     gm.campaignView.showMap('upper-floor');
     await adapter.setSelectedToken(actor);
-    expect(gm.campaignView.focusTokenId).toBeNull();
+    expect(gm.campaignView.focusTokenId).toBe(actor.id);
     const autosave = new CampaignAutosave({ gameManager: gm, library, combat: session });
     await autosave.start();
     session.startTurn(actor);
@@ -314,7 +314,7 @@ test('a sprite-selected flyer follows a window crossing without character-sheet 
   const popup = new CampaignTraversalPopup({ gameManager: gm }).attach();
   try {
     expect(adapter.getSelectedToken()).toBe(actor);
-    expect(gm.campaignView.focusTokenId).toBeNull();
+    expect(gm.campaignView.focusTokenId).toBe(actor.id);
     clickFeature(canvas);
     await finishMotion(gm, actor);
     await popup.ready;

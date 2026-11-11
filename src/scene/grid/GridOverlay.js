@@ -14,7 +14,8 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
   if (!data) return;
 
   const { cols, rows, tileSize } = data;
-  const key = `${cols}x${rows}x${tileSize}`;
+  const cavern = this.gameManager?.terrainEngine?.cavern;
+  const key = `${cols}x${rows}x${tileSize}${cavern ? `:cavern:${cavern.seed}` : ''}`;
   if (!force && this._gridOverlayGroup && this._gridOverlayKey === key) {
     this._gridOverlayGroup.visible = !!this.showBootstrapGrid;
     return;
@@ -54,6 +55,13 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
 
   const { heights: tileHeights, elevationUnit } = this._computeTileHeights(cols, rows);
   const tileCount = cols * rows;
+  const visibleTiles = Array(tileCount).fill(true);
+  if (cavern?.version >= 2 && !this.gameManager.terrainEngine.isActive)
+    for (let gy = 0; gy < rows; gy++)
+      for (let gx = 0; gx < cols; gx++) {
+        const index = gy * cols + gx;
+        visibleTiles[index] = this.gameManager.terrainEngine.getHeightAt(gx, gy) <= -5;
+      }
   const unitAbs = Math.max(Math.abs(elevationUnit), 0.0001);
   const scaleUnit = Math.max(tileSize, unitAbs);
   const fillOffset = -scaleUnit * 0.01;
@@ -103,6 +111,7 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
         for (let gy = 0; gy < rows; gy += 1) {
           for (let gx = 0; gx < cols; gx += 1) {
             const tileIdx = gy * cols + gx;
+            if (!visibleTiles[tileIdx]) continue;
             const baseHeight = tileHeights[tileIdx] || 0;
             dummy.position.set(
               (gx + 0.5) * tileSize,
@@ -116,13 +125,14 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
             idx += 1;
           }
         }
-        fillMesh.count = tileCount;
+        fillMesh.count = idx;
         fillMesh.instanceMatrix.needsUpdate = true;
         this._gridOverlayGroup.add(fillMesh);
       } else {
         for (let gy = 0; gy < rows; gy += 1) {
           for (let gx = 0; gx < cols; gx += 1) {
             const tileIdx = gy * cols + gx;
+            if (!visibleTiles[tileIdx]) continue;
             const baseHeight = tileHeights[tileIdx] || 0;
             const mesh = new three.Mesh(baseGeometry.clone(), fillMaterial.clone());
             mesh.position.set(
@@ -153,6 +163,7 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
       for (let gy = 0; gy < rows; gy += 1) {
         for (let gx = 0; gx < cols; gx += 1) {
           const baseIdx = gy * cols + gx;
+          if (!visibleTiles[baseIdx]) continue;
           const baseHeight = tileHeights[baseIdx] || 0;
           const h = baseHeight + lineOffset;
           const x0 = gx * tileSize;

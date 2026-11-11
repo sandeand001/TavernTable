@@ -122,6 +122,7 @@ export function createTwoFloorTravelScene({ ruleset, characters }) {
         id: 'building-door',
         name: 'Inn doorway',
         kind: 'door',
+        open: true,
         feature: { mapId: 'map-main', volumeIds: ['entry-door'] },
         ends: [
           { mapId: 'map-main', positionFeet: { x: 52.5, y: 0, z: 52.5 } },

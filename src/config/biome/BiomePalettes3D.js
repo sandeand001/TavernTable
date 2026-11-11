@@ -64,6 +64,13 @@ function applyDepth(baseHex, depth01) {
 // High level curated triads (low -> mid -> high). Some biomes gain a 4th accent stop.
 // Chosen for cinematic separation & mood.
 const BIOME_3D_BASE_TRIADS = {
+  town: [0x454738, 0x899079, 0xcac1a3],
+  city: [0x45484b, 0x93928a, 0xd2c7af],
+  castle: [0x464b45, 0x969b8b, 0xcdd1be],
+  cliffsideCastle: [0x454e58, 0x81916c, 0xa7ac96],
+  mountainCastle: [0x384650, 0x6a7774, 0xb9c0b2],
+  ruinedTown: [0x24271d, 0x686b4e, 0xb9b794],
+  ruinedCastle: [0x282c2a, 0x70796b, 0xc4c6b3],
   grassland: [0x1d4022, 0x3fa23a, 0xd4d179], // Fresh & sunlit
   forestTemperate: [0x0d2618, 0x2c7c47, 0x9adf8c], // Lush emerald canopy
   forestConifer: [0x0a1914, 0x1f6144, 0x83c9b5], // Cool alpine teal greens

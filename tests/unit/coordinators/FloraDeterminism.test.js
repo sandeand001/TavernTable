@@ -3,7 +3,7 @@ import { createTerrainWorld } from '../../helpers/terrainWorld.js';
 
 const BARE_IDS = Object.keys(TERRAIN_PLACEABLES).filter((key) => /bare/i.test(key));
 
-function generateFloraSnapshot(biome, seed, cols = 12, rows = 12) {
+function generateFloraSnapshot(biome, seed, cols = 12, rows = 12, structures = true) {
   const plants = [];
   const world = createTerrainWorld(cols, rows, {
     addPlaceable(plant) {
@@ -15,6 +15,7 @@ function generateFloraSnapshot(biome, seed, cols = 12, rows = 12) {
     },
   });
   try {
+    world.engine.setStructureGeneration(structures);
     expect(world.engine.generateBiomeElevation(biome, { seed })).toBe(true);
     return {
       snapshot: plants
@@ -52,8 +53,19 @@ describe('Deterministic flora placement', () => {
     expect(run.snapshot.filter((plant) => !BARE_IDS.includes(plant.id))).toHaveLength(0);
   });
 
-  test('oasis trees hug the water edge of the same committed height map', () => {
-    const run = generateFloraSnapshot('oasis', 9999, 24, 16);
+  test.each(['ruinedTown', 'ruinedUrban', 'ruinedCastle'])(
+    '%s has sparse real overgrowth on its level zero-height ground',
+    (biome) => {
+      const run = generateFloraSnapshot(biome, 42, 25, 25);
+      expect(run.count).toBeGreaterThan(0);
+      expect(run.count).toBeLessThanOrEqual(13);
+      expect(new Set(run.heights.flat())).toEqual(new Set([0]));
+    }
+  );
+
+  test.each([false, true])('oasis trees hug the water edge with structures=%s', (structures) => {
+    const run = generateFloraSnapshot('oasis', 9999, 24, 16, structures);
+    expect(run.count).toBeGreaterThan(0);
     const adjacent = run.snapshot.filter(({ x, y }) =>
       [
         [1, 0],

@@ -20,12 +20,12 @@
     "lint:layers": "node tools/check-layering.js",
     "lint:all": "npm run lint && npm run lint:layers",
     "resources:sync": "node tools/sync-resources.js",
-    "serve": "python -m http.server 3000",
+    "serve": "node tools/local-host.js --port 3000",
     "serve:alt": "npm run serve:alt1",
-    "serve:alt1": "python -m http.server 3001",
-    "serve:alt2": "python -m http.server 3002",
-    "serve:alt3": "python -m http.server 3003",
-    "serve:alt4": "python -m http.server 3004",
+    "serve:alt1": "node tools/local-host.js --port 3001",
+    "serve:alt2": "node tools/local-host.js --port 3002",
+    "serve:alt3": "node tools/local-host.js --port 3003",
+    "serve:alt4": "node tools/local-host.js --port 3004",
     "start": "npm run serve",
     "serve:open": "start \"\" http://localhost:3000 && npm run serve",
     "prepare": "husky"
@@ -47,8 +47,7 @@
     "lint-staged": "^15.5.2",
     "prettier": "^3.6.2",
     "stylelint": "^16.2.1",
-    "stylelint-config-standard": "^36.0.0",
-    "three": "^0.170.0"
+    "stylelint-config-standard": "^36.0.0"
   },
   "lint-staged": {
     "{src,tests,tools}/**/*.js": [
@@ -206,6 +205,7 @@
     "svg-tags": "^1.0.0",
     "table": "^6.9.0",
     "text-table": "^0.2.0",
+    "three": "^0.170.0",
     "to-regex-range": "^5.0.1",
     "type-check": "^0.4.0",
     "type-fest": "^0.20.2",

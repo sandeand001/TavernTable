@@ -3,6 +3,8 @@ import { TOKEN_WORLD_LOCK_PROP } from '../../config/token-adapter/MannequinConfi
 import { validGripReference, isSurfaceGripValid } from '../../campaigns/CampaignSurfaceClimb.js';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const invalidPlacement = (message) =>
+  Object.assign(new Error(message), { code: 'invalid-saved-placement' });
 const VECTOR_KEYS = [
   'low',
   'high',
@@ -32,6 +34,21 @@ const NUMBER_KEYS = [
 
 export class SceneNotReadyError extends Error {}
 
+export function campaignLandingForSupport(world, token, support) {
+  if (!world || !support || support.mapId === token.mapId) return null;
+  const map = world.getMap(support.mapId),
+    source = world.getMap(token.mapId);
+  return {
+    mapId: support.mapId,
+    placement: {
+      gridX: Math.floor(support.world.x / map.grid.tileWorldSize),
+      gridY: Math.floor(support.world.z / map.grid.tileWorldSize),
+      facingAngle: token.facingAngle + ((map.quarterTurns - source.quarterTurns) * Math.PI) / 2,
+      pose: { kind: 'ground', world: support.world, surfaceId: support.surfaceId },
+    },
+  };
+}
+
 export function validateSavedPlacement(placement) {
   const pose = placement?.pose;
   const finiteVector = (vector) =>
@@ -41,15 +58,15 @@ export function validateSavedPlacement(placement) {
     !Number.isFinite(placement.facingAngle) ||
     !['ground', 'wall', 'flight', 'ledge', 'grip'].includes(pose.kind)
   )
-    throw new Error('The saved creature placement is invalid');
+    throw invalidPlacement('The saved creature placement is invalid');
   if (pose.kind === 'grip' && !validGripReference(pose.grip))
-    throw new Error('The saved physical wall grip is invalid');
+    throw invalidPlacement('The saved physical wall grip is invalid');
   if (
     pose.kind === 'ledge' &&
     (typeof pose.openingId !== 'string' ||
       !/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(pose.openingId))
   )
-    throw new Error('The saved opening ledge reference is invalid');
+    throw invalidPlacement('The saved opening ledge reference is invalid');
   if (pose.kind === 'wall') {
     const saved = pose.wall;
     if (
@@ -66,9 +83,66 @@ export function validateSavedPlacement(placement) {
       !['climbWall', 'climbWallDown'].includes(saved.loopClip) ||
       !['climbWall', 'climbWallDown', 'ledgeHang'].includes(saved.clip)
     ) {
-      throw new Error('The saved stable wall/ledge placement is invalid');
+      throw invalidPlacement('The saved stable wall/ledge placement is invalid');
     }
   }
+}
+
+export function samePlacement(left, right) {
+  const a = left?.pose?.world || left?.world;
+  const b = right?.pose?.world || right?.world;
+  return Boolean(
+    a &&
+      b &&
+      left.mapId === right.mapId &&
+      left.gridX === right.gridX &&
+      left.gridY === right.gridY &&
+      (!left.pose || !right.pose || left.pose.kind === right.pose.kind) &&
+      ['x', 'y', 'z'].every((axis) => Math.abs(a[axis] - b[axis]) < 1e-6)
+  );
+}
+
+export function sceneActorPlacement(scene, actor) {
+  return {
+    mapId: scene.version === 3 ? actor.mapId : 'map-main',
+    gridX: actor.gridX,
+    gridY: actor.gridY,
+    facingAngle: actor.facingAngle,
+    pose: actor.pose,
+  };
+}
+
+export function coalesceMovementPresentations(presentations) {
+  const unique = new Map(
+    presentations.map((entry) => [
+      `${entry.sceneRevision}:${entry.tokenId}:${entry.commandId}`,
+      entry,
+    ])
+  );
+  const actors = new Map();
+  for (const entry of [...unique.values()].sort((a, b) => a.sceneRevision - b.sceneRevision)) {
+    const previous = actors.get(entry.tokenId);
+    if (
+      previous &&
+      previous.motion.kind === entry.motion.kind &&
+      previous.motion.route.length + entry.motion.route.length <= 10000 &&
+      samePlacement(previous.motion.route.at(-1), entry.motion.from)
+    ) {
+      const combined = {
+        ...entry,
+        motion: {
+          ...entry.motion,
+          from: previous.motion.from,
+          route: [...previous.motion.route, ...entry.motion.route],
+        },
+      };
+      if (previous.costFeet !== undefined && entry.costFeet !== undefined)
+        combined.costFeet = previous.costFeet + entry.costFeet;
+      else delete combined.costFeet;
+      actors.set(entry.tokenId, combined);
+    } else actors.set(entry.tokenId, entry);
+  }
+  return [...actors.values()];
 }
 
 function currentPlacement(adapter, token) {
@@ -84,6 +158,20 @@ function currentPlacement(adapter, token) {
     facingAngle: token.facingAngle ?? 0,
     pose: { kind: token.flightActive ? 'flight' : 'ground', world: { ...world } },
   };
+  if (
+    !motion?.holding &&
+    (adapter.gameManager.campaignWorld || adapter.gameManager.terrainEngine?.geometry.hasVolumes)
+  ) {
+    const gm = adapter.gameManager;
+    const tileWorldSize =
+      gm.campaignWorld && token.mapId !== gm.campaignMapId
+        ? gm.campaignWorld.getMap(token.mapId).grid.tileWorldSize
+        : gm.spatial.tileWorldSize;
+    if (!Number.isFinite(tileWorldSize) || tileWorldSize <= 0)
+      throw new Error('Creature placement requires a valid physical grid scale');
+    placement.gridX = Math.floor(world.x / tileWorldSize);
+    placement.gridY = Math.floor(world.z / tileWorldSize);
+  }
   if (token.surfaceHold) {
     placement.pose = { kind: 'grip', world: { ...world }, grip: clone(token.surfaceHold) };
     return placement;
@@ -96,17 +184,20 @@ function currentPlacement(adapter, token) {
     };
     return placement;
   }
-  if (
-    !token.flightActive &&
-    !motion?.holding &&
-    adapter.gameManager.terrainEngine?.geometry.hasVolumes
-  ) {
-    const scale = 5 / adapter.gameManager.spatial.tileWorldSize;
-    const support = adapter.gameManager.terrainEngine.geometry.findSupport(
-      world.x * scale,
-      world.z * scale,
-      { belowFeet: world.y * scale + 1e-5, clearanceFeet: 5 }
-    );
+  const gm = adapter.gameManager;
+  const sourceMap =
+    gm.campaignWorld && token.mapId !== gm.campaignMapId
+      ? gm.campaignWorld.getMap(token.mapId)
+      : null;
+  const geometry = sourceMap
+    ? gm.campaignWorld.getMapGeometry(sourceMap.id)
+    : gm.terrainEngine?.geometry;
+  if (!token.flightActive && !motion?.holding && geometry?.hasVolumes) {
+    const scale = 5 / (sourceMap?.grid.tileWorldSize ?? gm.spatial.tileWorldSize);
+    const support = geometry.findSupport(world.x * scale, world.z * scale, {
+      belowFeet: world.y * scale + 1e-5,
+      clearanceFeet: 5,
+    });
     if (!support || Math.abs(support.heightFeet - world.y * scale) > 1e-4) {
       throw new SceneNotReadyError('Waiting for the creature to reach a supported floor');
     }
@@ -162,8 +253,13 @@ function recordStablePlacement(token) {
   const placement = currentPlacement(this, token);
   this._savedPlacements ||= new Map();
   const previous = this._savedPlacements.get(token);
-  const checkpoint = { placement, ...checkpointCost(this, token, placement) };
+  const checkpoint = {
+    mapId: token.mapId ?? this.gameManager.campaignMapId ?? 'map-main',
+    placement,
+    ...checkpointCost(this, token, placement),
+  };
   this._savedPlacements.set(token, checkpoint);
+  recordSharedPlacement(this, token, previous, checkpoint);
   if (
     !previous ||
     JSON.stringify(previous.placement) !== JSON.stringify(placement) ||
@@ -171,6 +267,75 @@ function recordStablePlacement(token) {
   )
     this.gameManager.sceneAutosave?.changed('movement checkpoint');
   return true;
+}
+
+function recordSharedPlacement(adapter, token, previous, checkpoint) {
+  const autosave = adapter.gameManager.sceneAutosave;
+  if (
+    !previous ||
+    !autosave?.ready ||
+    autosave.library?.store?.storageInfo?.kind !== 'host' ||
+    adapter.gameManager.campaignViewBusy ||
+    adapter._approvedMovements?.has(token)
+  )
+    return;
+  const from = {
+    mapId: previous.mapId ?? checkpoint.mapId,
+    ...clone(previous.placement),
+  };
+  const next = { mapId: checkpoint.mapId, ...clone(checkpoint.placement) };
+  if (samePlacement(from, next)) return;
+  adapter._sharedMovementPresentations ??= new Map();
+  let pending = adapter._sharedMovementPresentations.get(token);
+  if (!pending) {
+    pending = {
+      commandId: globalThis.crypto.randomUUID(),
+      tokenId: token.id,
+      kind: 'move',
+      motion: { kind: 'walk', completed: true, from, route: [] },
+    };
+    adapter._sharedMovementPresentations.set(token, pending);
+  }
+  pending.motion.route.push(next);
+  if (from.pose.kind === 'flight' || next.pose.kind === 'flight') pending.motion.kind = 'fly';
+  if (
+    from.mapId !== next.mapId ||
+    [from.pose.kind, next.pose.kind].some((kind) => ['wall', 'ledge', 'grip'].includes(kind))
+  )
+    pending.motion.kind = 'traverse';
+  if (adapter._movementStates.get(token)?.phase === 'fall-resolve') pending.motion.kind = 'fall';
+}
+
+function getSharedPresentations(scene) {
+  const result = [];
+  for (const [token, pending] of this._sharedMovementPresentations || []) {
+    const actor = scene.creatures.find(({ id }) => id === token.id);
+    if (!actor) {
+      this._sharedMovementPresentations.delete(token);
+      continue;
+    }
+    const placement = clone(sceneActorPlacement(scene, actor));
+    const index = pending.motion.route.findLastIndex((point) => samePlacement(point, placement));
+    if (index < 0) continue;
+    const captured = clone(pending);
+    captured.motion.route = captured.motion.route.slice(0, index + 1);
+    captured.motion.route[index] = placement;
+    result.push(captured);
+  }
+  return result;
+}
+
+function acknowledgeSharedPresentations(presentations = []) {
+  for (const [token, pending] of this._sharedMovementPresentations || []) {
+    const captured = presentations.find(({ commandId }) => commandId === pending.commandId);
+    if (!captured) continue;
+    pending.motion.route = pending.motion.route.slice(captured.motion.route.length);
+    if (!pending.motion.route.length) this._sharedMovementPresentations.delete(token);
+    else {
+      pending.commandId = globalThis.crypto.randomUUID();
+      pending.motion.from = clone(captured.motion.route.at(-1));
+    }
+  }
 }
 
 function flightGround(adapter, token, world) {
@@ -303,13 +468,37 @@ export function readStablePlacement(adapter, token) {
   return getStablePlacement.call(adapter, token);
 }
 
+function reframeStablePlacement(token, placement) {
+  validateSavedPlacement(placement);
+  if (placement.mapId === undefined) delete token.mapId;
+  else token.mapId = placement.mapId;
+  token.gridX = placement.gridX;
+  token.gridY = placement.gridY;
+  token.facingAngle = placement.facingAngle;
+  token.world = { ...placement.pose.world };
+  if (placement.pose.kind === 'grip') token.surfaceHold = clone(placement.pose.grip);
+  if (placement.pose.kind === 'ledge') token.openingHold = { openingId: placement.pose.openingId };
+  this._savedPlacements ||= new Map();
+  this._savedPlacements.set(token, {
+    mapId: token.mapId ?? this.gameManager.campaignMapId ?? 'map-main',
+    placement: {
+      gridX: placement.gridX,
+      gridY: placement.gridY,
+      facingAngle: placement.facingAngle,
+      pose: clone(placement.pose),
+    },
+    job: null,
+    spent: 0,
+  });
+}
+
 function assertSurfaceGrip(adapter, token, placement) {
   const gm = adapter.gameManager;
   const world = gm.campaignWorld;
   if (
     !world ||
     !isSurfaceGripValid(
-      world.listMaps().map(({ id }) => world.getMap(id)),
+      world.listLocationMaps(token.mapId).map(({ id }) => world.getMap(id)),
       {
         mapId: token.mapId,
         pose: placement.pose,
@@ -344,6 +533,7 @@ async function restoreStablePlacement(token, placement) {
     }
     this._savedPlacements ||= new Map();
     this._savedPlacements.set(token, {
+      mapId: token.mapId ?? gm.campaignMapId ?? 'map-main',
       placement: {
         gridX: placement.gridX,
         gridY: placement.gridY,
@@ -451,9 +641,15 @@ async function restoreStablePlacement(token, placement) {
 }
 
 export function installSavedPlacementMethods(prototype) {
+  prototype.reframeStablePlacement = reframeStablePlacement;
   prototype.recordStablePlacement = recordStablePlacement;
   prototype.getStablePlacement = getStablePlacement;
   prototype.restoreStablePlacement = restoreStablePlacement;
+  prototype.getSharedPresentations = getSharedPresentations;
+  prototype.acknowledgeSharedPresentations = acknowledgeSharedPresentations;
+  prototype.clearSharedPresentations = function () {
+    this._sharedMovementPresentations?.clear();
+  };
   prototype.recordGroundCheckpoint = function (state) {
     if (state.groundTransition || state.wallMotion || state.traversal) return;
     const saved = this._savedPlacements?.get(state.token)?.placement;

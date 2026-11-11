@@ -6,6 +6,64 @@ import { TerrainEngine } from '../../../../src/terrain/TerrainEngine.js';
 import { TerrainGeometry } from '../../../../src/terrain/TerrainGeometry.js';
 import { PickingService } from '../../../../src/scene/picking/PickingService.js';
 import { sceneState } from '../../../helpers/sceneState.js';
+import { createDomeVolumes } from '../../../../src/terrain/StructureShapes.js';
+import { reconcileBuildingScene } from '../../../../src/campaigns/BuildingAssembly.js';
+import { getBuildingFloorAppearance } from '../../../../src/scene/terrain/TerrainMaterialFactory.js';
+import {
+  CONSTRUCTION_MATERIALS,
+  getConstructionAppearance,
+} from '../../../../src/config/biome/ConstructionPalettes.js';
+import MapProjectionTerrain from '../../../../src/scene/token-adapter/MapProjectionTerrain.js';
+
+test('projected building floors retain the owning building floor color and construction pattern', () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
+  const engine = new TerrainEngine(25, 25);
+  engine.placeStructure({
+    id: 'keep',
+    kind: 'building',
+    xFeet: 60,
+    zFeet: 60,
+    lengthFeet: 30,
+    widthFeet: 25,
+    heightFeet: 10,
+    building: { roof: 'flat' },
+    appearance: getConstructionAppearance('city', 2),
+  });
+  const scene = sceneState();
+  scene.version = 2;
+  scene.grid = { cols: 25, rows: 25, tileWorldSize: 1 };
+  scene.terrain.heights = engine.save().heights;
+  scene.terrain.geometry = engine.geometry.save();
+  scene.creatures = [];
+  const world = CampaignWorld.fromScene(
+    reconcileBuildingScene(scene, { ruleset: '2014', library }),
+    { ruleset: '2014', library }
+  );
+  const floor = world.listMaps().find(({ id }) => id !== 'map-main');
+  const gm = {
+    campaignWorld: world,
+    campaignMapId: 'map-main',
+    terrainEngine: engine,
+    spatial: { tileWorldSize: 1 },
+    threeSceneManager: { three, scene: new three.Scene() },
+  };
+  const projection = new MapProjectionTerrain(gm);
+  try {
+    const appearance = getBuildingFloorAppearance(world, floor.id);
+    const full = projection._source(floor.id).full;
+    expect([...new Set(full.getAttribute('constructionMaterial').array)]).toEqual([
+      CONSTRUCTION_MATERIALS[appearance.floorMaterial],
+    ]);
+    const expected = new three.Color(appearance.floorColor);
+    const colors = full.getAttribute('color');
+    expect(colors.getX(0)).toBeCloseTo(expected.r);
+    expect(colors.getY(0)).toBeCloseTo(expected.g);
+    expect(colors.getZ(0)).toBeCloseTo(expected.b);
+  } finally {
+    projection.dispose();
+  }
+});
 
 function fixture() {
   localStorage.clear();
@@ -112,6 +170,121 @@ function outsideFixture(mapChanges = {}) {
   board.gm.campaignWorld.acceptCheckpoint(saved);
   return board;
 }
+
+test('idle floor projection frames reuse meshes without copying map boards', async () => {
+  const { gm, adapter } = fixture();
+  try {
+    await adapter.syncMapProjections();
+    const terrain = adapter._mapProjectionTerrain;
+    terrain.update(null, []);
+    const meshes = [...terrain.floorMeshes.values()].map((mesh) => mesh.geometry);
+    expect(meshes.length).toBeGreaterThan(0);
+    const list = jest.spyOn(gm.campaignWorld, 'listMaps'),
+      get = jest.spyOn(gm.campaignWorld, 'getMap');
+    for (let frame = 0; frame < 100; frame++) terrain.update(null, []);
+    expect(list).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect([...terrain.floorMeshes.values()].map((mesh) => mesh.geometry)).toEqual(meshes);
+    list.mockRestore();
+    get.mockRestore();
+  } finally {
+    for (const token of gm.placedTokens) adapter.onTokenRemoved(token);
+    adapter.disposeMapProjectionTerrain();
+    adapter.disposeMovementRange();
+  }
+});
+
+test('foreign curved support context keeps valid triangles and the actual curved outline', async () => {
+  const { gm, adapter, window } = outsideFixture();
+  const saved = gm.campaignWorld.save();
+  const map = saved.maps.find((entry) => entry.id === 'inside');
+  const geometry = gm.campaignWorld.getMapGeometry('inside');
+  geometry.addSolid({
+    id: 'round-platform',
+    layerId: 'upper',
+    bounds: { min: { x: 4, y: 0, z: 2.5 }, max: { x: 15, y: 2, z: 12.5 } },
+    shape: { kind: 'cylinder', axis: 'y' },
+  });
+  map.terrain.geometry = geometry.save();
+  saved.creatures.find((entry) => entry.id === window.id).pose.world.y = 0.8;
+  window.world.y = 0.8;
+  gm.campaignWorld.acceptCheckpoint(saved);
+  try {
+    await adapter.syncMapProjections();
+    gm.threeSceneManager.scene.updateMatrixWorld(true);
+    const visual = adapter.getTokenVisual(window);
+    expect(visual).not.toBeNull();
+    const context = gm.threeSceneManager.scene.getObjectByName('MapProjectionTerrain');
+    const ray = new three.Raycaster(
+      new three.Vector3(visual.position.x, 3, visual.position.z),
+      new three.Vector3(0, -1, 0)
+    );
+    expect(ray.intersectObject(context, true)[0]?.point.y).toBeCloseTo(0.4);
+    let oblique = false;
+    context.traverse((object) => {
+      if (!object.geometry) return;
+      const positions = object.geometry.getAttribute('position');
+      expect(Array.from(positions.array).every(Number.isFinite)).toBe(true);
+      expect(positions.count % 3).toBe(0);
+      const normals = object.geometry.getAttribute('normal');
+      for (let i = 0; i < normals.count; i++)
+        if (Math.abs(normals.getX(i)) > 0.1 && Math.abs(normals.getZ(i)) > 0.1) oblique = true;
+    });
+    expect(oblique).toBe(true);
+  } finally {
+    for (const token of [...gm.placedTokens]) adapter.onTokenRemoved(token);
+    adapter.disposeMovementRange();
+  }
+});
+
+test('a connected interior clips curved roofs visually without replacing the physical shell', async () => {
+  const { gm, adapter, observer, window, wall } = fixture();
+  const saved = gm.campaignWorld.save();
+  const outside = saved.maps.find((entry) => entry.id === 'map-main');
+  const inside = saved.maps.find((entry) => entry.id === 'inside');
+  const geometry = new TerrainGeometry({
+    widthFeet: 25,
+    depthFeet: 25,
+    getTerrainHeightFeet: () => 0,
+  });
+  for (const volume of createDomeVolumes({
+    id: 'dome',
+    bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 25, y: 10, z: 25 } },
+  })) {
+    if (volume.operation === 'add') geometry.addSolid(volume);
+    else geometry.carve(volume);
+  }
+  outside.terrain.geometry = geometry.save();
+  inside.originFeet = { x: 0, y: 0, z: 0 };
+  delete inside.terrain.geometry;
+  saved.creatures = saved.creatures.filter((entry) => entry.id !== wall.id);
+  gm.placedTokens = [observer, window];
+  gm.campaignWorld.acceptCheckpoint(saved);
+  gm.campaignMapId = 'inside';
+  gm.campaignView = gm.campaignWorld.createView({ mapId: 'inside', focusTokenId: window.id });
+  gm.spatial.tileWorldSize = 2;
+  gm.terrainEngine.configureGeometryBase(0.5);
+  try {
+    await adapter.syncMapProjections();
+    gm.threeSceneManager.scene.updateMatrixWorld(true);
+    const walls = gm.threeSceneManager.scene.getObjectByName('MapInteriorWalls');
+    expect(walls.visible).toBe(true);
+    const ray = new three.Raycaster(new three.Vector3(5, 20, 5), new three.Vector3(0, -1, 0));
+    expect(ray.intersectObject(walls, true)).toHaveLength(0);
+    ray.set(new three.Vector3(5, 1.2, 5), new three.Vector3(1, 0, 0));
+    expect(ray.intersectObject(walls, true).length).toBeGreaterThan(0);
+    expect(
+      gm.campaignWorld.getMapGeometry('map-main').findSupport(12.5, 12.5, { belowFeet: 20 })
+        ?.heightFeet
+    ).toBe(10);
+    expect(
+      gm.campaignWorld.hasLineOfSight({ x: 12.5, y: 0, z: 12.5 }, { x: 24.5, y: 0, z: 12.5 })
+    ).toBe(false);
+  } finally {
+    for (const token of [...gm.placedTokens]) adapter.onTokenRemoved(token);
+    adapter.disposeMovementRange();
+  }
+});
 
 test('a visible interior creature gets one translated visual and a wall-hidden creature stays hidden', async () => {
   const { gm, adapter, window, wall } = fixture();
