@@ -92,8 +92,7 @@ function getFlightCommandAvailability(token, kind, feet = FLIGHT_TAKEOFF_FEET) {
   if (
     this.isMovementInProgress(token) ||
     this._isManualMotionInProgress(token) ||
-    combat?.pending ||
-    combat?.committing ||
+    combat?.isActionBusy(token) ||
     this.gameManager.characterServices?.library?.isSaving
   ) {
     return unavailable('Finish the current action or movement first.');

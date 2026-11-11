@@ -8,6 +8,44 @@ import { validateScene } from './CampaignScene.js';
 import CampaignWorld from './CampaignWorld.js';
 import { prepareConnectionTravel } from './CampaignTravel.js';
 import { reconcileBuildingScene } from './BuildingAssembly.js';
+import { reconcileCavernScene } from './CavernAssembly.js';
+import ActionRequestQueue from './ActionRequestQueue.js';
+
+export function queueCampaignOperation(gm, key, operation) {
+  if (!gm.campaignRequests) {
+    gm.campaignRequests = new ActionRequestQueue({
+      isReady: (request) => {
+        if (gm.campaignMapFailure || gm.sceneAutosave?.error) return true;
+        if (
+          gm.campaignViewBusy ||
+          gm.campaignMapTransition ||
+          gm.inputCoordinator?.savedCharacterPending ||
+          gm.sceneAutosave?.ready === false
+        )
+          return false;
+        if (request === 'pointer') return true;
+        return (
+          !gm.characterServices?.library.isSaving &&
+          !gm.characterServices?.combat.moves.size &&
+          !gm.terrainEngine?.hasPendingStroke &&
+          !isCampaignActionInProgress(gm)
+        );
+      },
+    });
+    gm.characterServices?.combat.subscribe(() => gm.campaignRequests?.flush());
+  }
+  const world = gm.campaignWorld;
+  const library = gm.characterServices?.library;
+  const execute = () => {
+    if (gm.campaignMapFailure) throw gm.campaignMapFailure;
+    if (gm.sceneAutosave?.error) throw gm.sceneAutosave.error;
+    if (gm.campaignWorld !== world || gm.characterServices?.library !== library)
+      throw new Error('The campaign changed before the queued request could run');
+    return operation();
+  };
+  if (!gm.campaignRequests.has(key) && gm.campaignRequests.isReady(key)) return execute();
+  return gm.campaignRequests.enqueue(key, execute);
+}
 
 export function isCampaignActionInProgress(gameManager, { allowMovementCheckpoint = false } = {}) {
   const combat = gameManager.characterServices?.combat;
@@ -40,6 +78,7 @@ export function captureReadyCampaignScene(
     placements = combat.scenePlacements || null,
     completedActionsOnly = false,
     geometryOverride = undefined,
+    cavernOverride = undefined,
     buildingContext = null,
   } = {}
 ) {
@@ -137,6 +176,10 @@ export function captureReadyCampaignScene(
   if (!savedCombat.states.some((row) => row.tokenId === savedCombat.activeTokenId))
     savedCombat.activeTokenId = null;
   const terrainState = gm.terrainEngine.save();
+  if (cavernOverride !== undefined) {
+    if (cavernOverride) terrainState.cavern = cavernOverride;
+    else delete terrainState.cavern;
+  }
   if (geometryOverride !== undefined) {
     if (geometryOverride.volumes.length) terrainState.geometry = geometryOverride;
     else delete terrainState.geometry;
@@ -152,6 +195,7 @@ export function captureReadyCampaignScene(
     grid: { cols: gm.cols, rows: gm.rows, tileWorldSize: gm.spatial.tileWorldSize },
     terrain: {
       heights: terrainState.heights,
+      ...(terrainState.cavern ? { cavern: terrainState.cavern } : {}),
       ...(terrainState.geometry ? { geometry: terrainState.geometry } : {}),
       ...(terrainState.structureGenerationEnabled === false
         ? { structureGenerationEnabled: false }
@@ -207,19 +251,27 @@ export function captureReadyCampaignScene(
     }
     const context = { ruleset: library.ruleset, library };
     return validateScene(
-      reconcileBuildingScene(saved, context, {
-        ownerMapId: gm.campaignMapId,
-        restoreContext: buildingContext,
-      }),
+      reconcileCavernScene(
+        reconcileBuildingScene(saved, context, {
+          ownerMapId: gm.campaignMapId,
+          restoreContext: buildingContext,
+        }),
+        context,
+        { ownerMapId: gm.campaignMapId, regenerate: buildingContext?.cavernGeneration === true }
+      ),
       context
     );
   }
   const context = { ruleset: library.ruleset, library };
   return validateScene(
-    reconcileBuildingScene(scene, context, {
-      ownerMapId: 'map-main',
-      restoreContext: buildingContext,
-    }),
+    reconcileCavernScene(
+      reconcileBuildingScene(scene, context, {
+        ownerMapId: 'map-main',
+        restoreContext: buildingContext,
+      }),
+      context,
+      { ownerMapId: 'map-main', regenerate: buildingContext?.cavernGeneration === true }
+    ),
     context
   );
 }
@@ -346,6 +398,7 @@ async function applyMapTerrain(gm, map) {
     elevationScale: terrain.elevationScale,
     treeDensityMultiplier: terrain.treeDensity,
     richShadingEnabled: terrain.richShading.enabled === true,
+    ...(terrain.cavern ? { cavern: terrain.cavern } : {}),
     ...(terrain.structureGenerationEnabled === false ? { structureGenerationEnabled: false } : {}),
     ...(terrain.geometry ? { geometry: terrain.geometry } : {}),
   });
@@ -380,6 +433,7 @@ async function restoreMapVisuals(gm, checkpoint, mapId) {
 function notifyCampaignViewState(gm) {
   // Publish readiness here because view changes pause the normal animation ticks.
   gm.characterServices.combat.syncMovementStatus();
+  gm.campaignRequests?.flush();
   if (typeof window !== 'undefined')
     window.dispatchEvent(
       new CustomEvent('taverntable:campaignViewStateChanged', { detail: { gameManager: gm } })
@@ -466,6 +520,12 @@ export async function finishCampaignPhysicalLanding(gm, token, landing) {
 }
 
 export async function travelCampaignConnection(gm, token, connectionId, options = {}) {
+  return queueCampaignOperation(gm, 'travel', () =>
+    applyCampaignConnectionTravel(gm, token, connectionId, options)
+  );
+}
+
+async function applyCampaignConnectionTravel(gm, token, connectionId, options) {
   const plan = prepareConnectionTravel(gm, token, connectionId, options);
   if (plan.fall) {
     gm.token3DAdapter.releaseOpeningHold(token);
@@ -620,6 +680,35 @@ export async function travelCampaignConnection(gm, token, connectionId, options 
 }
 
 export async function changeCampaignView(gm, { mapId = null, focusTokenId = null } = {}) {
+  if (!gm.campaignWorld || !gm.campaignView)
+    throw new Error('This campaign does not have connected maps');
+  const focused =
+    focusTokenId === null ? null : gm.placedTokens.find((token) => token.id === focusTokenId);
+  if (focusTokenId !== null && !focused) throw new Error('The focused creature no longer exists');
+  if (mapId !== null && focused && mapId !== focused.mapId)
+    throw new Error('The focused creature belongs to another map');
+  const targetId = focused?.mapId || mapId || gm.campaignMapId;
+  gm.campaignWorld.getMap(targetId);
+  if (
+    focused &&
+    targetId === gm.campaignMapId &&
+    !gm.campaignViewBusy &&
+    !gm.campaignMapTransition &&
+    !gm.campaignMapFailure &&
+    isCampaignActionInProgress(gm)
+  ) {
+    gm.campaignView.focus(focused.id);
+    await gm.token3DAdapter.setSelectedToken(focused);
+    const camera = gm.threeSceneManager.snapshotView();
+    camera.target = { ...focused.world };
+    gm.campaignView.setCamera(camera);
+    gm.threeSceneManager.restoreView(camera);
+    return;
+  }
+  return queueCampaignOperation(gm, 'view', () => applyCampaignView(gm, { mapId, focusTokenId }));
+}
+
+async function applyCampaignView(gm, { mapId = null, focusTokenId = null } = {}) {
   if (!gm.campaignWorld || !gm.campaignView)
     throw new Error('This campaign does not have connected maps');
   if (gm.campaignMapFailure) throw gm.campaignMapFailure;

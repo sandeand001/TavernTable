@@ -1,6 +1,6 @@
 import { createStructure, structureBounds, structureVolumes } from '../ConstructionBlueprints.js';
 import { createSeededRNG } from '../../utils/SeededRNG.js';
-import { SETTLEMENT_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
+import { SETTLEMENT_BIOME_KEYS, CAVERN_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
 import {
   getBiomeStructureBudget,
   getSettlementProfile,
@@ -10,6 +10,7 @@ import { buildingLevels, createWindowLayout } from '../BuildingModel.js';
 import { createSettlementLayout } from './SettlementLayouts.js';
 import { createCastleSiteLayout } from './CastleSites.js';
 import { createCastleCellarLayout } from './CastleCellars.js';
+import { createCavernInterior } from './CavernInteriors.js';
 import { createBuildingSnapPreview } from '../BuildingSnaps.js';
 
 const LANDMARK_BIOMES = new Set([
@@ -29,16 +30,7 @@ const LANDMARK_BIOMES = new Set([
   'tundra',
   'coast',
 ]);
-const CAVE_BIOMES = new Set([
-  'hills',
-  'mountain',
-  'alpine',
-  'cedarHighlands',
-  'cavern',
-  'fungalGrove',
-  'crystalFields',
-  'volcanic',
-]);
+const CAVE_BIOMES = new Set(['hills', 'mountain', 'alpine', 'cedarHighlands', 'volcanic']);
 const intersects = (a, b) =>
   a.min.x < b.max.x + 2.5 &&
   a.max.x > b.min.x - 2.5 &&
@@ -77,6 +69,7 @@ export function generateBiomeStructures({
   previousHeights,
   geometry,
   feetPerLevel,
+  cavernExits = [],
   enabled = true,
 }) {
   const rows = heights.length,
@@ -94,6 +87,52 @@ export function generateBiomeStructures({
   const protectedBounds = protectedVolumes
     .filter((v) => v.operation === 'add')
     .map((v) => v.bounds);
+  if (CAVERN_BIOME_KEYS.includes(biomeKey)) {
+    const interior = createCavernInterior({
+      biomeKey,
+      seed,
+      cols,
+      rows,
+      feetPerLevel,
+      exits: [...new Set([...(enabled ? ['north', 'east'] : []), ...cavernExits])],
+    });
+    for (const spec of preserved) {
+      const bounds = structureBounds(spec);
+      for (
+        let z = Math.max(0, Math.floor(bounds.min.z / 5));
+        z < Math.min(rows, Math.ceil(bounds.max.z / 5));
+        z++
+      )
+        for (
+          let x = Math.max(0, Math.floor(bounds.min.x / 5));
+          x < Math.min(cols, Math.ceil(bounds.max.x / 5));
+          x++
+        )
+          interior.heights[z][x] = previousHeights[z][x];
+    }
+    const generatedStructures = (interior.geometry.structures || []).filter(
+      (spec) =>
+        !preserved.some((other) => other.id === spec.id) &&
+        !protectedBounds.some((bounds) => intersects(structureBounds(spec), bounds))
+    );
+    const generatedIds = new Set(generatedStructures.map((spec) => spec.id));
+    interior.geometry = {
+      ...interior.geometry,
+      version:
+        preserved.length || generatedStructures.length
+          ? 3
+          : protectedVolumes.some((volume) => volume.shape)
+            ? 2
+            : 1,
+      structures: [...preserved, ...generatedStructures],
+      volumes: [
+        ...interior.geometry.volumes.filter((volume) => generatedIds.has(volume.structureId)),
+        ...protectedVolumes,
+      ],
+    };
+    if (!preserved.length && !generatedStructures.length) delete interior.geometry.structures;
+    return interior;
+  }
   const next = heights.map((row) => [...row]);
   const cellsIn = (bounds) => {
     const result = [];

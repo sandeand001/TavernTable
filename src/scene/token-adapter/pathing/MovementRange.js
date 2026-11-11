@@ -97,7 +97,7 @@ function getTokenMovementRange(token, allowance = null) {
   if (gm.campaignViewBusy || gm.campaignMapFailure) return null;
   if (gm.campaignWorld && token.mapId !== gm.campaignMapId) return null;
   const combat = gm.characterServices?.combat;
-  if (gm.characterServices?.library?.isSaving || combat?.pending || combat?.committing) return null;
+  if (combat?.isActionBusy(token)) return null;
   if (combat?.active && combat.activeToken !== token) return null;
   if (token.flightActive) return this.getTokenFlightRange(token, allowance);
   if (gm.terrainEngine?.geometry.hasVolumes) return this.getTokenSurfaceRange(token, allowance);
@@ -293,8 +293,19 @@ function _requestPlannedMovement(token, destination, options = {}) {
       this._logPathing('movement:range-rejected', { reason: 'already-moving', tokenId: token.id });
       return null;
     }
-    if (services?.library?.isSaving || services?.combat?.pending || services?.combat?.committing)
-      throw new Error('Finish the current character change or action before requesting movement');
+    if (services?.combat?.isActionBusy(token))
+      return Promise.resolve(
+        services.combat.runWhenReady(token, () =>
+          this._requestPlannedMovement(token, destination, options)
+        )
+      ).catch((error) => {
+        GameErrors.gameState(error, {
+          component: 'TokenMovement',
+          operation: 'queuedMovement',
+          tokenId: token.id,
+        });
+        return null;
+      });
     if (destination.dropHold) return this.requestSurfaceDrop(token, destination.surface);
     this.recordStablePlacement?.(token);
     if (

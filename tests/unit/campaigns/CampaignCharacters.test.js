@@ -139,6 +139,7 @@ test('resource costs, action budgets and completed history commit together, incl
     campaignId: campaign.id,
     catalog: { ...catalog, classes: snapshot.classes },
   });
+
   const token = { id: 'hero', characterSheetId: await library.create('Fighter') };
   const combat = new CombatSession({ library });
   library.bindScene({
@@ -163,6 +164,49 @@ test('resource costs, action budgets and completed history commit together, incl
   expect(saved.combat.states[0].budget.bonusActions).toBe(1);
   expect(saved.combat.histories[0].entries[0].undone).toBe(true);
   store.close();
+});
+
+test('concurrent free-play uses persist both characters resources and completed histories without lost updates', async () => {
+  const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
+  try {
+    const campaign = await store.create({ name: 'Independent free play', ruleset: '2014' });
+    const library = await CampaignCharacters.open({
+      store,
+      campaignId: campaign.id,
+      catalog: { ...catalog, classes: snapshot.classes },
+    });
+    const first = { id: 'first', characterSheetId: await library.create('First fighter') };
+    const second = { id: 'second', characterSheetId: await library.create('Second fighter') };
+    const combat = new CombatSession({ library });
+    library.bindScene({
+      capture: (_, context) => ({ value: JSON.stringify((context.combat || combat).snapshot()) }),
+    });
+    const a = combat.prepareAction(first, 'ability:second-wind');
+    const b = combat.prepareAction(second, 'ability:second-wind');
+    const commitA = combat.commitAction(a);
+    const commitB = combat.commitAction(b);
+    expect(combat.isActionPending(a)).toBe(true);
+    expect(combat.isActionPending(b)).toBe(true);
+    await Promise.all([commitA, commitB]);
+    const reopened = await CampaignCharacters.open({
+      store,
+      campaignId: campaign.id,
+      catalog: { ...catalog, classes: snapshot.classes },
+    });
+    for (const token of [first, second])
+      expect(
+        reopened.rest
+          .status(token.characterSheetId)
+          .resources.find((row) => row.id === 'second-wind').remaining
+      ).toBe(0);
+    const saved = JSON.parse((await store.readScene(campaign.id)).scene);
+    expect(saved.histories).toHaveLength(2);
+    expect(saved.histories.every((history) => history.entries.length === 1)).toBe(true);
+    expect(combat.pending).toBeNull();
+    combat.dispose();
+  } finally {
+    store.close();
+  }
 });
 
 test('a prospective action save uses movement committed while awaiting scene assets', async () => {

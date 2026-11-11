@@ -63,6 +63,9 @@ export default class CampaignAutosave {
   }
 
   _publish() {
+    this.combat.actionRequests?.flush();
+    this.combat.persistenceRequests?.flush();
+    this.gameManager.campaignRequests?.flush();
     for (const listener of this.listeners) {
       try {
         listener(this.status);
@@ -282,6 +285,9 @@ export default class CampaignAutosave {
 
   dispose() {
     this.closed = true;
+    this.combat.dispose();
+    this.gameManager.campaignRequests?.dispose();
+    this.gameManager.campaignRequests = null;
     clearTimeout(this.timer);
     for (const dispose of this.disposers) dispose();
     this.listeners.clear();

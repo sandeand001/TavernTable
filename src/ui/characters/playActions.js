@@ -43,6 +43,31 @@ export async function performPlayAction(context, actionId, choice = {}) {
   const token = context.token;
   const characterId = context.characterId;
   const session = context.services.combat;
+  const world = context.gameManager.campaignWorld;
+  if (session.isActorBusy(token) || session.actionRequests.has(token))
+    context.rollStatus.textContent =
+      'Action queued; rules and resources will be checked when ready.';
+  try {
+    return await session.runWhenReady(token, () => {
+      if (
+        context.disposed ||
+        context.token !== token ||
+        context.characterId !== characterId ||
+        context.gameManager.campaignWorld !== world
+      )
+        throw new Error('The creature or campaign changed before the queued action could run');
+      return executePlayAction(context, actionId, { ...choice });
+    });
+  } catch (error) {
+    context._failure(error, 'queuedPlayAction');
+    return null;
+  }
+}
+
+async function executePlayAction(context, actionId, choice) {
+  const token = context.token;
+  const characterId = context.characterId;
+  const session = context.services.combat;
   let ticket;
   let rollScope;
   let rollRequest;
@@ -69,7 +94,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
     if (ticket.action.targeting && context.services.targeting) {
       selection = await context.services.targeting.choose(token, ticket);
       if (selection.cancelled) {
-        if (session.pending === ticket) session.cancelAction(ticket);
+        if (session.isActionPending(ticket)) session.cancelAction(ticket);
         context.rollStatus.textContent = 'Targeting cancelled; no action or resources were spent.';
         return null;
       }
@@ -79,7 +104,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
           (selection.variant !== undefined &&
             selection.variant !== ticket.action.targeting.variant))
       ) {
-        ticket = session.changeSpellChoices(ticket, {
+        ticket = await session.changeSpellChoices(ticket, {
           ...ticket.choice,
           ...(selection.slotLevel !== undefined ? { slotLevel: selection.slotLevel } : {}),
           ...(selection.variant !== undefined ? { variant: selection.variant } : {}),
@@ -98,7 +123,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
             context.token !== token ||
             token.characterSheetId !== characterId ||
             !context.gameManager.placedTokens.includes(token) ||
-            session.pending !== ticket
+            !session.isActionPending(ticket)
           )
             throw new Error('Creature changed while resolving the use; no costs were spent');
           const targetRollScope = session.captureRoll(token);
@@ -134,7 +159,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
         : null;
     }
     if (rolled?.cancelled) {
-      if (session.pending === ticket) session.cancelAction(ticket);
+      if (session.isActionPending(ticket)) session.cancelAction(ticket);
       context.services.targeting?.finish();
       recordUncommitted();
       context.rollStatus.textContent = 'Use cancelled; no action or resources were spent.';
@@ -145,7 +170,7 @@ export async function performPlayAction(context, actionId, choice = {}) {
       context.token !== token ||
       token.characterSheetId !== characterId ||
       !context.gameManager.placedTokens.includes(token) ||
-      session.pending !== ticket
+      !session.isActionPending(ticket)
     ) {
       throw new Error('Creature changed while resolving the use; no costs were spent');
     }
@@ -168,7 +193,8 @@ export async function performPlayAction(context, actionId, choice = {}) {
     context._run(() => {}, 'Use and resource costs saved.');
     return used;
   } catch (error) {
-    if (ticket && session.pending === ticket) session.cancelAction(ticket);
+    if (ticket && session.isActionPending(ticket) && !session.isActionCommitting(ticket))
+      session.cancelAction(ticket);
     let failure = error;
     if (!committed && targetRolls.length && !recordedUncommitted) {
       try {

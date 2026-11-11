@@ -5,6 +5,7 @@ import {
   buildingLevelElevation,
   buildingLevels,
 } from '../../terrain/BuildingModel.js';
+import { isRoundStructure } from '../../terrain/ConstructionBlueprints.js';
 import { buildingFeatureHandlePoints } from '../../terrain/ConstructionHandles.js';
 import { wallStairLayout } from '../../terrain/WallStairs.js';
 
@@ -54,14 +55,16 @@ export class ConstructionGizmos {
   }
 
   show(spec, { levelId = null } = {}) {
-    const round = ['dome', 'cave', 'turret'].includes(spec.kind);
+    const round = isRoundStructure(spec);
     const { length, width } = buildingDimensions(spec);
     const actualLength = round ? spec.diameterFeet : length;
     const actualWidth = round ? spec.diameterFeet : width;
     const floor =
       spec.kind === 'cellar'
         ? buildingLevelElevation(spec, levelId ?? buildingLevels(spec).at(-1).id)
-        : 0;
+        : spec.kind === 'stalactite'
+          ? spec.heightFeet
+          : 0;
     const points = {
       west: { x: -actualLength / 2, y: floor + 0.2, z: 0 },
       east: { x: actualLength / 2, y: floor + 0.2, z: 0 },
@@ -84,7 +87,12 @@ export class ConstructionGizmos {
         : 0;
     points.height = {
       x: 0,
-      y: spec.kind === 'cellar' ? -spec.heightFeet - 2 : spec.heightFeet + roofRise + 2,
+      y:
+        spec.kind === 'cellar'
+          ? -spec.heightFeet - 2
+          : spec.kind === 'stalactite'
+            ? -2
+            : spec.heightFeet + roofRise + 2,
       z: 0,
     };
     points[spec.kind === 'cellar' ? 'cellar-position' : 'structure-position'] = {

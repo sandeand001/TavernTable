@@ -35,6 +35,10 @@ export class TerrainEngineSceneAdapter {
           return;
         }
         if (kind !== 'treeDensity') {
+          if (kind === 'generation' && gm.campaignWorld)
+            e.configureGeometryBase(
+              gm.campaignWorld.getMap(gm.campaignMapId).base === 'floor' ? 0.5 : null
+            );
           e.configureGeometryScale((gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize);
           gm.notifyTerrainHeightsChanged();
         }

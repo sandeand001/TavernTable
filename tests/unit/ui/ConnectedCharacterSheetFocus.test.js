@@ -145,7 +145,7 @@ test.each(['click', 'keyboard', 'pop-out'])(
       expect(gm.characterServices.combat.snapshot()).toEqual(budget);
       expect(gm.placedTokens.map((token) => token.world)).toEqual(positions);
       expect(controls.some((state) => state.busy)).toBe(true);
-      expect(controls.every((state) => state.disabled === state.busy)).toBe(true);
+      expect(controls.every((state) => !state.disabled)).toBe(true);
       const end = sheets.root.querySelector('[data-sheet-action="turn-end"]');
       expect(end.disabled).toBe(false);
       end.click();

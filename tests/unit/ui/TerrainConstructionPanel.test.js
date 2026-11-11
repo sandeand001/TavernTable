@@ -155,6 +155,35 @@ test('short terrace stair height fields remain valid when selecting and applying
   expect(world.engine.geometry.getStructures()[0].heightFeet).toBe(3);
 });
 
+test('procedural formation tools are absent while the original Build tools remain available', () => {
+  const { world, root } = fixture();
+  for (const kind of ['stalagmite', 'stalactite']) {
+    expect(root.querySelector(`[data-build-kind="${kind}"]`)).toBeNull();
+    expect(() => world.engine.setConstructionTool(kind)).toThrow(/supported construction tool/);
+  }
+  for (const kind of ['wall', 'turret', 'dome', 'building', 'cave', 'cellar', 'tunnel'])
+    expect(root.querySelector(`[data-build-kind="${kind}"]`)).not.toBeNull();
+});
+
+test('saved prototype formations remain selectable and removable with Undo', () => {
+  const { world, root, panel, pointer } = fixture();
+  const savedFormation = createStructure({
+    id: 'saved-prototype',
+    kind: 'stalagmite',
+    xFeet: 45,
+    zFeet: 45,
+  });
+  world.engine.placeStructure(savedFormation);
+  const before = world.engine.save();
+  root.querySelector('[data-build-select]').click();
+  pointer('pointerdown', 45, 45);
+  expect(panel.selectedId).toBe(savedFormation.id);
+  root.querySelector('[data-build-remove]').click();
+  expect(world.engine.geometry.getStructures()).toEqual([]);
+  world.engine.undo();
+  expect(world.engine.save()).toEqual(before);
+});
+
 test('select/resize changes diameter only on Apply, Cancel leaves saved geometry untouched', () => {
   const { world, root, pointer } = fixture();
   root.querySelector('[data-build-kind="dome"]').click();

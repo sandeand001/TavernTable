@@ -101,11 +101,13 @@ async function setSelectedToken(tokenEntry) {
     gm.characterServices?.combat &&
     (tokenEntry.mapId !== gm.campaignMapId || gm.campaignView.focusTokenId !== tokenEntry.id)
   ) {
-    if (gm.campaignViewBusy || gm.campaignMapTransition)
-      throw new Error('Wait for the current map change before selecting another creature');
-    await changeCampaignView(gm, { focusTokenId: tokenEntry.id });
-    return;
+    if (gm.campaignViewBusy || gm.campaignMapTransition || tokenEntry.mapId !== gm.campaignMapId) {
+      await changeCampaignView(gm, { focusTokenId: tokenEntry.id });
+      return;
+    }
+    gm.campaignView.focus(tokenEntry.id);
   }
+  if (tokenEntry) gm.tokenManager?.cancelSavedCharacterPlacement?.();
   const previous = this._selectedToken;
   this._selectedToken = tokenEntry || null;
   this.refreshMovementRange?.();

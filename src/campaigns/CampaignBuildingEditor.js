@@ -42,7 +42,16 @@ export class CampaignBuildingEditor {
     if (gm.campaignWorld?.getMap(gm.campaignMapId).building)
       throw new Error('Return to the exterior map to edit the building assembly');
     const options = { completedActionsOnly: true, rollLog: gm.sceneAutosave?.getRollLog() || [] };
-    const beforeScene = captureReadyCampaignScene(gm, library, options);
+    const capturedBefore = captureReadyCampaignScene(gm, library, {
+      ...options,
+      ...(restoreContext?.cavernGeneration
+        ? { cavernOverride: restoreContext.previousCavern }
+        : {}),
+    });
+    const beforeScene =
+      capturedBefore.version === 3
+        ? capturedBefore
+        : CampaignWorld.fromScene(capturedBefore, { ruleset: library.ruleset, library }).save();
     const owner = gm.campaignMapId || 'map-main';
     let buildingContext = joining ? null : restoreContext;
     if (joining && restoreContext.replacingGeneratedJoins === true) {
@@ -53,6 +62,10 @@ export class CampaignBuildingEditor {
         (connection) =>
           !isGeneratedBuildingJoin(connection, owner, originalGeometry, (id) => maps.get(id))
       );
+    }
+    if (restoreContext?.cavernGeneration === true) {
+      buildingContext ??= captureBuildingContext(beforeScene, owner);
+      buildingContext.cavernGeneration = true;
     }
     if (restoreContext?.protectAuthoredCellars === true) {
       if (!buildingContext)
@@ -94,7 +107,9 @@ export class CampaignBuildingEditor {
     const nextWorld = CampaignWorld.fromScene(afterScene, { ruleset: library.ruleset, library });
     for (const connection of nextWorld
       .getConnections()
-      .filter((entry) => entry.building?.kind === 'access' || addedIds.has(entry.id))) {
+      .filter(
+        (entry) => entry.building?.kind === 'access' || entry.cavern || addedIds.has(entry.id)
+      )) {
       const end = connection.ends[0],
         unit = nextWorld.getMap(end.mapId).grid.tileWorldSize / 5;
       try {
@@ -112,6 +127,7 @@ export class CampaignBuildingEditor {
       world: gm.campaignWorld,
       mapId: gm.campaignMapId,
       view: gm.campaignView,
+      camera: copy(beforeScene.view.camera),
       tokens: gm.placedTokens.map((token) => ({
         token,
         mapId: token.mapId,
@@ -123,12 +139,15 @@ export class CampaignBuildingEditor {
       after,
       apply: () => {
         applyBuildingScene(gm, afterScene, nextWorld);
+        if (restoreContext?.cavernGeneration)
+          gm.threeSceneManager.restoreView(afterScene.view.camera);
         this.changed = true;
       },
       rollback: () => {
         gm.campaignWorld = original.world;
         gm.campaignMapId = original.mapId;
         gm.campaignView = original.view;
+        if (restoreContext?.cavernGeneration) gm.threeSceneManager.restoreView(original.camera);
         for (const entry of original.tokens)
           gm.token3DAdapter.reframeStablePlacement(entry.token, {
             ...copy(entry.placement),

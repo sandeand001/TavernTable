@@ -108,6 +108,75 @@ test('only one overlay is created by concurrent requests, and no idle frame scan
   expect(gm.getTerrainHeight).not.toHaveBeenCalled();
 });
 
+test('two free-play characters finish independent sheet actions while the first roll is still pending', async () => {
+  session.targeting = null;
+  context.services.targeting = null;
+  let finishFirstRoll;
+  rollDiceExpression.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishFirstRoll = resolve;
+      })
+  );
+  const first = performPlayAction(context, 'attack:unarmed');
+  await settle();
+  const ticket = session.pending;
+  const other = {
+    ...context,
+    token: target,
+    characterId: target.characterSheetId,
+    rollStatus: document.createElement('p'),
+    _failure: jest.fn(),
+  };
+  expect(await performPlayAction(other, 'attack:unarmed')).toBeTruthy();
+  expect(session.isActionPending(ticket)).toBe(true);
+  expect(context._failure).not.toHaveBeenCalled();
+  expect(other._failure).not.toHaveBeenCalled();
+  finishFirstRoll({ cancelled: false, text: 'First attack: 15' });
+  expect(await first).toBeTruthy();
+  expect(session.pending).toBeNull();
+});
+
+test('a second action for the same sprite waits and starts only after its pending roll finishes', async () => {
+  session.targeting = null;
+  context.services.targeting = null;
+  let finishFirstRoll;
+  rollDiceExpression.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishFirstRoll = resolve;
+      })
+  );
+  const first = performPlayAction(context, 'attack:unarmed');
+  await settle();
+  const second = performPlayAction(context, 'attack:unarmed');
+  await settle();
+  expect(rollDiceExpression).toHaveBeenCalledTimes(1);
+  expect(context.rollStatus.textContent).toContain('queued');
+  finishFirstRoll({ cancelled: false, text: 'First attack: 15' });
+  expect((await Promise.all([first, second])).every(Boolean)).toBe(true);
+  expect(rollDiceExpression).toHaveBeenCalledTimes(2);
+  expect(context._failure).not.toHaveBeenCalled();
+});
+
+test('independent free-play targeting requests share only the local targeting panel, not action reservations', async () => {
+  const a = session.prepareAction(caster, 'attack:unarmed');
+  const b = session.prepareAction(target, 'attack:unarmed');
+  const first = controller.choose(caster, a);
+  const second = controller.choose(target, b);
+  await settle();
+  expect(controller.active.token).toBe(caster);
+  expect(session.isActionPending(b)).toBe(true);
+  controller.cancel();
+  expect(await first).toEqual({ cancelled: true });
+  await settle();
+  expect(controller.active.token).toBe(target);
+  expect(session.isActionPending(b)).toBe(true);
+  controller.cancel();
+  expect(await second).toEqual({ cancelled: true });
+  expect(session.pending).toBeNull();
+});
+
 test('connected-map spell picking stores physical coordinates while its overlay stays on the viewed grid', async () => {
   const scene = sceneState({
     ruleset: '2024',

@@ -1,6 +1,7 @@
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { attacksPerAction, characterActionOptions } from './combat/actions.js';
 import { copyRollSummary } from '../../systems/dice/rollSummary.js';
+import ActionRequestQueue from '../../campaigns/ActionRequestQueue.js';
 import {
   snapshotCombat,
   restoreCombat,
@@ -46,11 +47,88 @@ export default class CombatSession {
     this.histories = new Map();
     this.rollScopes = new WeakSet();
     this.moves = new Map();
+    this.pendingActions = new Map();
+    this.committingActions = new Map();
+    this.actionRequests = new ActionRequestQueue({
+      isReady: (token) => !this.isActorBusy(token),
+    });
+    this.persistenceRequests = new ActionRequestQueue({ isReady: () => !this.library.isSaving });
     this.listeners = new Set();
     this.pending = null;
     this.committing = null;
     this.effects = [];
     this.targeting = null;
+  }
+
+  get pending() {
+    return this._exclusivePending || this.pendingActions?.values().next().value || null;
+  }
+
+  set pending(ticket) {
+    this._exclusivePending = ticket;
+  }
+
+  get committing() {
+    return this._exclusiveCommitting || this.committingActions?.values().next().value || null;
+  }
+
+  set committing(ticket) {
+    this._exclusiveCommitting = ticket;
+  }
+
+  isActionPending(ticket) {
+    return (
+      !!ticket &&
+      (this._exclusivePending === ticket || this.pendingActions.get(ticket.token) === ticket)
+    );
+  }
+
+  isActionCommitting(ticket) {
+    return (
+      !!ticket &&
+      (this._exclusiveCommitting === ticket || this.committingActions.get(ticket.token) === ticket)
+    );
+  }
+
+  isActionBusy(token) {
+    if (this.library.isSaving || this._exclusivePending || this._exclusiveCommitting) return true;
+    return this.active
+      ? !!this.pending || !!this.committing
+      : this.pendingActions.has(token) || this.committingActions.has(token);
+  }
+
+  isActorBusy(token) {
+    if (this.isActionBusy(token)) return true;
+    if (this.active) return this.moves.size > 0 || this.isSceneMoving() || this.isMoving(token);
+    return this.isMoving(token) || [...this.moves.values()].some((move) => move.token === token);
+  }
+
+  runWhenReady(token, operation) {
+    if (
+      !this.actionRequests.disposed &&
+      !this.actionRequests.has(token) &&
+      !this.isActorBusy(token)
+    ) {
+      if (!this.hasToken(token)) throw new Error('The queued creature is no longer on the board');
+      if (token.characterSheetId) this._character(token);
+      return operation();
+    }
+    return this.actionRequests.enqueue(token, () => {
+      if (!this.hasToken(token)) throw new Error('The queued creature is no longer on the board');
+      if (token.characterSheetId) this._character(token);
+      return operation();
+    });
+  }
+
+  dispose() {
+    this.actionRequests.dispose();
+    this.persistenceRequests.dispose();
+    this.listeners.clear();
+  }
+
+  _reserveAction(ticket) {
+    if (this.active) this.pending = ticket;
+    else this.pendingActions.set(ticket.token, ticket);
   }
 
   // -- Manual turns --
@@ -166,7 +244,7 @@ export default class CombatSession {
     const speed = movementSpeed(character, travelMode);
     const total = Math.max(0, speed * (1 + state.dashes) + state.movementBonus);
     const isTurn = this.active && this.activeToken === token;
-    const moving = this.isMoving(token) || this.isSceneMoving();
+    const moving = this.isMoving(token) || (this.active && this.isSceneMoving());
     return {
       active: this.active,
       isTurn,
@@ -198,19 +276,8 @@ export default class CombatSession {
             ? Math.max(0, total - state.movementSpent)
             : 0,
       },
-      busy:
-        this.pending !== null ||
-        this.committing !== null ||
-        this.library.isSaving ||
-        this.moves.size > 0 ||
-        moving,
-      canUndo:
-        state.undo.length > 0 &&
-        !this.pending &&
-        !this.committing &&
-        !this.library.isSaving &&
-        this.moves.size === 0 &&
-        !moving,
+      busy: this.isActorBusy(token) || moving,
+      canUndo: state.undo.length > 0 && !this.isActorBusy(token) && !moving,
     };
   }
 
@@ -240,7 +307,8 @@ export default class CombatSession {
   }
 
   captureRoll(token) {
-    if (this.library.isSaving) throw new Error('Finish saving character changes before rolling');
+    if (this.active && this.library.isSaving)
+      throw new Error('Finish saving character changes before rolling');
     const character = this._character(token);
     const scope = Object.freeze({
       characterId: character.id,
@@ -309,15 +377,17 @@ export default class CombatSession {
     return [...actions, ...movable.map((effect) => effectMoveAction(effect, tileSize))];
   }
 
-  availableActions(token, choices = {}) {
+  availableActions(token, choices = {}, { includeQueued = false } = {}) {
     this._character(token);
     this.targeting?.beginQuery();
-    return this._actionOptions(token, choices).filter((action) => this._available(token, action));
+    return this._actionOptions(token, choices).filter((action) =>
+      this._available(token, action, includeQueued, includeQueued)
+    );
   }
 
   prepareAction(token, actionId, choice = {}) {
     const character = this._character(token);
-    if (this.pending || this.committing || this.library.isSaving)
+    if (this.isActionBusy(token))
       throw new Error('Finish the current action or character save first');
     if (
       !choice ||
@@ -352,7 +422,7 @@ export default class CombatSession {
           : null,
       choice: { ...choice, ...(action.kind === 'spell' ? { slotLevel: action.slotLevel } : {}) },
     });
-    this.pending = ticket;
+    this._reserveAction(ticket);
     this._publish();
     return ticket;
   }
@@ -391,7 +461,11 @@ export default class CombatSession {
   }
 
   changeSpellChoices(ticket, choice) {
-    if (this.pending !== ticket || this.committing || this.library.isSaving)
+    if (this.library.isSaving && this.isActionPending(ticket) && !this.isActionCommitting(ticket))
+      return this.persistenceRequests.enqueue(ticket.token, () =>
+        this.changeSpellChoices(ticket, choice)
+      );
+    if (!this.isActionPending(ticket) || this.isActionCommitting(ticket) || this.library.isSaving)
       throw new Error('This spell reservation is no longer available to change');
     const { action } = this._currentAction(ticket);
     if (
@@ -411,7 +485,9 @@ export default class CombatSession {
     if (!updated || !this._available(ticket.token, updated, true))
       throw new Error('The selected spell slot or action is no longer available');
     const revised = Object.freeze({ ...ticket, action: updated, choice: { ...choice } });
-    this.pending = revised;
+    if (this.pendingActions.get(ticket.token) === ticket)
+      this.pendingActions.set(ticket.token, revised);
+    else this.pending = revised;
     return revised;
   }
 
@@ -422,11 +498,15 @@ export default class CombatSession {
     targetingSelection = null,
     targetRolls = []
   ) {
-    if (this.pending !== ticket) throw new Error('This action reservation is no longer active');
+    if (!this.isActionPending(ticket))
+      throw new Error('This action reservation is no longer active');
+    if (this.isActionCommitting(ticket)) throw new Error('This use is already being saved');
+    if (this.library.isSaving)
+      return this.persistenceRequests.enqueue(ticket.token, () =>
+        this.commitAction(ticket, rollText, rollResult, targetingSelection, targetRolls)
+      );
     let managed = false;
     try {
-      if (this.library.isSaving)
-        throw new Error('Finish saving character changes before committing this use');
       const summary = rollResult === null ? null : copyRollSummary(rollResult);
       const { character, action, attackCount } = this._currentAction(ticket);
       if (action.targeting?.flightGrant && !this.targeting)
@@ -571,9 +651,11 @@ export default class CombatSession {
   }
 
   cancelAction(ticket) {
-    if (this.pending !== ticket) throw new Error('This action reservation is no longer active');
-    if (this.committing === ticket) throw new Error('This use is already being saved');
-    this.pending = null;
+    if (!this.isActionPending(ticket))
+      throw new Error('This action reservation is no longer active');
+    if (this.isActionCommitting(ticket)) throw new Error('This use is already being saved');
+    if (this.pendingActions.get(ticket.token) === ticket) this.pendingActions.delete(ticket.token);
+    else this.pending = null;
     this._publish();
   }
 
@@ -673,7 +755,9 @@ export default class CombatSession {
 
   _afterPersistence(ticket, persisted, apply) {
     if (typeof persisted?.then === 'function') {
-      this.committing = ticket;
+      if (this.pendingActions.get(ticket.token) === ticket)
+        this.committingActions.set(ticket.token, ticket);
+      else this.committing = ticket;
       this._publish();
       return persisted.then(apply).finally(() => this._releasePersistence(ticket));
     }
@@ -685,8 +769,11 @@ export default class CombatSession {
   }
 
   _releasePersistence(ticket) {
-    if (this.pending === ticket) this.pending = null;
-    if (this.committing === ticket) this.committing = null;
+    if (this.pendingActions.get(ticket.token) === ticket) this.pendingActions.delete(ticket.token);
+    if (this.committingActions.get(ticket.token) === ticket)
+      this.committingActions.delete(ticket.token);
+    if (this._exclusivePending === ticket) this.pending = null;
+    if (this._exclusiveCommitting === ticket) this.committing = null;
     this._publish();
   }
 
@@ -746,9 +833,19 @@ export default class CombatSession {
     };
   }
 
-  _available(token, action, ignorePending = false) {
-    if (this.committing || this.library.isSaving) return false;
-    if (this.pending && !ignorePending) return false;
+  _available(token, action, ignorePending = false, includeQueued = false) {
+    if (
+      !includeQueued &&
+      (this.library.isSaving ||
+        this._exclusiveCommitting ||
+        (this.active ? this.committing : this.committingActions.has(token)))
+    )
+      return false;
+    if (
+      !ignorePending &&
+      (this._exclusivePending || (this.active ? this.pending : this.pendingActions.has(token)))
+    )
+      return false;
     if (this.library.rules.cannotTakeActions(this._character(token))) return false;
     if (action.targeting && this.targeting && !this.targeting.availability(token, action).allowed)
       return false;
@@ -878,7 +975,7 @@ export default class CombatSession {
 
   beginConnectionMovement(token, cost, travelMode = getTokenTravelMode(token)) {
     if (this.active) return this.beginMovement(token, cost, travelMode);
-    this._assertSettled();
+    if (this.isActorBusy(token)) throw new Error('Finish this creature current action or movement');
     const character = this._character(token);
     if (this.library.rules.movementImpaired(character))
       throw new Error('This creature cannot move');
@@ -916,10 +1013,14 @@ export default class CombatSession {
   }
 
   forget(token, { preserveTargetEffects = false } = {}) {
+    this.actionRequests.cancel(token);
+    this.persistenceRequests.cancel(token);
     for (const [id, ticket] of this.moves) {
       if (ticket.token === token) this.moves.delete(id);
     }
     if (this.pending?.token === token) this.pending = null;
+    this.pendingActions.delete(token);
+    this.committingActions.delete(token);
     this.states.delete(token);
     this.effects = this.effects.flatMap((effect) => {
       if (
@@ -937,6 +1038,8 @@ export default class CombatSession {
 
   // -- State and notifications --
   syncMovementStatus() {
+    this.actionRequests.flush();
+    this.persistenceRequests.flush();
     const moving = this.isSceneMoving();
     if (moving !== this.lastSceneMoving) {
       this.lastSceneMoving = moving;
@@ -1088,5 +1191,7 @@ export default class CombatSession {
         GameErrors.gameState(error, { component: 'CombatSession', operation: 'notify' });
       }
     }
+    this.actionRequests?.flush();
+    this.persistenceRequests?.flush();
   }
 }

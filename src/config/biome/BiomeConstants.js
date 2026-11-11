@@ -107,5 +107,6 @@ export const BIOME_GROUPS = {
 // ── Derived Lookups ───────────────────────────────────────────
 export const ALL_BIOMES = Object.values(BIOME_GROUPS).flat();
 export const SETTLEMENT_BIOME_KEYS = Object.freeze(BIOME_GROUPS.Settlements.map(({ key }) => key));
+export const CAVERN_BIOME_KEYS = Object.freeze(BIOME_GROUPS.Underground.map(({ key }) => key));
 
 // CLEANUP NOTE (2025-09-19): Removed unused helper findBiome (no in-repo callers).

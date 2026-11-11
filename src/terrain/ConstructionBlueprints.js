@@ -3,6 +3,7 @@ import {
   createTubeVolumes,
   createCastleWallVolumes,
   createRoundTowerVolumes,
+  createRockFormationVolumes,
 } from './StructureShapes.js';
 import { normalizeBuilding, buildingVolumes, createWindowLayout } from './BuildingModel.js';
 import { WALL_STAIR_FIELDS, validateWallStairs, wallStairVolumes } from './WallStairs.js';
@@ -46,6 +47,26 @@ export const STRUCTURE_TYPES = Object.freeze([
   },
 ]);
 
+// Keep saved prototype formations readable and removable without offering new Build tools.
+const LEGACY_ROCK_TYPES = Object.freeze([
+  {
+    kind: 'stalagmite',
+    label: 'Stalagmite',
+    heightFeet: 20,
+    diameterFeet: 5,
+    lengthFeet: 15,
+    widthFeet: 15,
+  },
+  {
+    kind: 'stalactite',
+    label: 'Stalactite',
+    heightFeet: 10,
+    diameterFeet: 3,
+    lengthFeet: 15,
+    widthFeet: 15,
+  },
+]);
+
 const KEYS = [
   'id',
   'kind',
@@ -67,6 +88,7 @@ const KEYS = [
   'building',
   'name',
   'appearance',
+  'rockProfileVersion',
   ...WALL_STAIR_FIELDS,
 ];
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -75,8 +97,31 @@ export function structureMinimumHeight(spec) {
   return spec.kind === 'wall' ? (spec.wallStairs ? 0.5 : 5) : 7;
 }
 
+export function isRockFormation(spec) {
+  return ['stalagmite', 'stalactite'].includes(spec?.kind);
+}
+
+export function structureMinimumDiameter(spec) {
+  return isRockFormation(spec) ? 1 : 15;
+}
+
+export function isRoundStructure(spec) {
+  return ['dome', 'cave', 'turret'].includes(spec?.kind) || isRockFormation(spec);
+}
+
+export function structureHeightChanges(spec, heightFeet) {
+  return {
+    heightFeet,
+    ...(spec.kind === 'stalactite'
+      ? { baseFeet: spec.baseFeet + spec.heightFeet - heightFeet }
+      : {}),
+  };
+}
+
 export function createStructure(input, { legacy = false } = {}) {
-  const type = STRUCTURE_TYPES.find((entry) => entry.kind === input?.kind);
+  const type = [...STRUCTURE_TYPES, ...LEGACY_ROCK_TYPES].find(
+    (entry) => entry.kind === input?.kind
+  );
   if (
     !type ||
     Object.keys(input).some((key) => !KEYS.includes(key)) ||
@@ -124,6 +169,12 @@ export function createStructure(input, { legacy = false } = {}) {
   }
   if (input.appearance !== undefined)
     spec.appearance = normalizeConstructionAppearance(input.appearance);
+  if (input.rockProfileVersion !== undefined || (!legacy && isRockFormation(spec))) {
+    const profileVersion = input.rockProfileVersion === undefined ? 2 : input.rockProfileVersion;
+    if (!isRockFormation(spec) || ![1, 2].includes(profileVersion))
+      throw new Error('Rock profile versions only apply to valid natural rock formations');
+    spec.rockProfileVersion = profileVersion;
+  }
   if (spec.wallStairs && !legacy && input.wallStairLayout === undefined)
     spec.wallStairLayout = 'auto';
   if (spec.wallStairs && !legacy && input.wallStairVersion === undefined) spec.wallStairVersion = 2;
@@ -140,7 +191,7 @@ export function createStructure(input, { legacy = false } = {}) {
     ].some((key) => !Number.isFinite(spec[key])) ||
     spec.heightFeet < structureMinimumHeight(spec) ||
     spec.heightFeet > 100 ||
-    spec.diameterFeet < 15 ||
+    spec.diameterFeet < structureMinimumDiameter(spec) ||
     spec.diameterFeet > 500 ||
     spec.lengthFeet < 5 ||
     spec.lengthFeet > 1000 ||
@@ -158,6 +209,8 @@ export function createStructure(input, { legacy = false } = {}) {
     throw new RangeError('Structure dimensions or style are invalid');
   if (Math.abs(spec.angleRadians) > Math.PI)
     spec.angleRadians = Math.atan2(Math.sin(spec.angleRadians), Math.cos(spec.angleRadians));
+  if (isRockFormation(spec) && (spec.opening || spec.ruined || spec.style !== 'plain'))
+    throw new Error('Rock formations are solid natural rock without doors or battlements');
   if (WALL_STAIR_FIELDS.slice(1).some((key) => spec[key] !== undefined) && spec.kind !== 'wall')
     throw new Error('Wall stair settings only apply to walls');
   validateWallStairs(spec);
@@ -208,7 +261,7 @@ export function createStructure(input, { legacy = false } = {}) {
 
 export function structureVolumes(input) {
   const spec = createStructure(input, { legacy: true });
-  const round = ['dome', 'cave', 'turret'].includes(spec.kind);
+  const round = isRoundStructure(spec);
   const width = round ? spec.diameterFeet : spec.lengthFeet;
   const depth = round ? spec.diameterFeet : spec.widthFeet;
   const bounds = {
@@ -222,7 +275,14 @@ export function structureVolumes(input) {
     bounds: { min: low, max: high },
   });
   let volumes;
-  if (spec.building) {
+  if (isRockFormation(spec)) {
+    volumes = createRockFormationVolumes({
+      id: spec.id,
+      bounds,
+      inverted: spec.kind === 'stalactite',
+      profileVersion: spec.rockProfileVersion ?? 1,
+    });
+  } else if (spec.building) {
     volumes = buildingVolumes(spec);
   } else if (spec.kind === 'wall') {
     volumes =
@@ -252,7 +312,7 @@ export function structureVolumes(input) {
       layerId: spec.kind === 'cave' ? 'cave' : 'dome',
     });
   }
-  if (spec.kind !== 'wall' && !spec.building) {
+  if (spec.kind !== 'wall' && !spec.building && !isRockFormation(spec)) {
     const floor = box(
       'floor',
       { ...bounds.min, y: spec.baseFeet - 0.5 },
@@ -300,7 +360,7 @@ export function structureVolumes(input) {
     }
     volumes.push(opening);
   }
-  if (!['wall', 'tunnel'].includes(spec.kind) && !spec.building) {
+  if (!['wall', 'tunnel'].includes(spec.kind) && !spec.building && !isRockFormation(spec)) {
     const doorWidth = Math.min(7.5, width / 3);
     volumes.push(
       box(
@@ -376,7 +436,7 @@ export function structureVolumes(input) {
     }
     volume.structureId = spec.id;
     volume.materialRole =
-      spec.kind === 'cave' || spec.kind === 'tunnel'
+      spec.kind === 'cave' || spec.kind === 'tunnel' || isRockFormation(spec)
         ? 'rock'
         : volume.layerId === 'roof'
           ? 'roof'
@@ -404,6 +464,10 @@ export function structureVolumes(input) {
               ? 'timber'
               : 'stone'
             : spec.appearance.wallMaterial;
+    }
+    if (isRockFormation(spec)) {
+      volume.materialStyle = spec.rockProfileVersion === 2 ? 'rock' : 'none';
+      volume.materialColor = spec.appearance?.wallColor ?? 0x797369;
     }
     return volume;
   });

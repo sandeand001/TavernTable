@@ -10,6 +10,11 @@ import { TerrainVolumeMeshBuilder } from './TerrainVolumeMeshBuilder.js';
 import { getTerrainLayerColor, getBuildingFloorAppearance } from './TerrainMaterialFactory.js';
 import { createInteriorCutaway } from './InteriorCutaway.js';
 import {
+  cavernRockColor,
+  getCavernSurfaceColor,
+} from '../../terrain/generation/CavernInteriors.js';
+import { CAVERN_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
+import {
   configureConstructionMaterial,
   hasConstructionMaterials,
 } from './ConstructionMaterials.js';
@@ -120,6 +125,10 @@ export class TerrainRebuilder {
       const biomeKey = gm.terrainEngine
         ? gm.terrainEngine.biomeKey
         : typeof window !== 'undefined' && window.selectedBiome;
+      if (gm.terrainEngine?.cavern?.version >= 2 && CAVERN_BIOME_KEYS.includes(biomeKey))
+        return getCavernSurfaceColor(gx * 5, gy * 5, h, {
+          materialColor: cavernRockColor(biomeKey),
+        });
       const userSelectedBiome =
         typeof window !== 'undefined' && window.__TT_USER_SELECTED_BIOME__ === true;
       if (!biomeKey || (!gm.terrainEngine && !userSelectedBiome)) {
@@ -159,6 +168,14 @@ export class TerrainRebuilder {
                 : (span.materialStyle ?? 'none')
             ],
           getColor: (x, z, height, span) => {
+            if (
+              gm.terrainEngine.cavern?.version >= 2 &&
+              span.id === 'terrain' &&
+              CAVERN_BIOME_KEYS.includes(gm.terrainEngine.biomeKey)
+            )
+              return getCavernSurfaceColor(x, z, height, {
+                materialColor: cavernRockColor(gm.terrainEngine.biomeKey),
+              });
             if (span.materialColor !== undefined)
               return getTerrainLayerColor(
                 span.layerId,

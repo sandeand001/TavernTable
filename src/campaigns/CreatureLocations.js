@@ -4,6 +4,7 @@ import {
   buildingLevels,
   structureDisplayName,
 } from '../terrain/BuildingModel.js';
+import { isRoundStructure } from '../terrain/ConstructionBlueprints.js';
 
 const floorLabel = (spec, floor) =>
   floor === 100 ? 'Battlement deck' : `${spec?.kind === 'cellar' ? 'Level' : 'Floor'} ${floor + 1}`;
@@ -58,7 +59,7 @@ export default class CreatureLocations {
       };
       structure = this._structures(map.id, active).find((spec) => {
         const local = buildingFeetToLocal(spec, point);
-        const round = ['turret', 'dome', 'cave'].includes(spec.kind);
+        const round = isRoundStructure(spec);
         const { length, width } = buildingDimensions(spec);
         const inside = round
           ? Math.hypot(local.x, local.z) <= spec.diameterFeet / 2

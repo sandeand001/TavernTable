@@ -39,6 +39,27 @@ test('round structures stretch their diameter around the anchored opposite edge'
   expect(next.zFeet).toBe(60);
 });
 
+test.each(['stalagmite', 'stalactite'])(
+  '%s diameter handles preserve narrow sizes and use half-foot changes',
+  (kind) => {
+    const spec = createStructure({
+      id: 'narrow',
+      kind,
+      xFeet: 60,
+      zFeet: 60,
+      diameterFeet: 3.7,
+    });
+    const grip = spec.xFeet + spec.diameterFeet / 2;
+    expect(stretchStructure(spec, 'east', { x: grip, z: 60 })).toEqual(spec);
+    const expanded = stretchStructure(spec, 'east', { x: grip + 0.6, z: 60 });
+    expect(expanded.diameterFeet).toBeCloseTo(4.2);
+    expect(expanded.xFeet - expanded.diameterFeet / 2).toBeCloseTo(58.15);
+    const minimum = stretchStructure(spec, 'east', { x: 50, z: 60 });
+    expect(minimum.diameterFeet).toBe(1);
+    expect(minimum.xFeet - minimum.diameterFeet / 2).toBeCloseTo(58.15);
+  }
+);
+
 test('short terrace stair height handles preserve an unmoved grip and retain their lower bound', () => {
   const spec = createStructure({
     id: 'short-stair',

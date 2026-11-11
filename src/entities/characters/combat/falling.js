@@ -12,14 +12,7 @@ export function standingAvailability(session, token) {
     reason = 'Reach the ground before standing up';
   else if (speed === 0 || session.library.rules.movementImpaired(character))
     reason = 'A creature at 0 HP, with Speed 0 or restricted movement cannot stand up';
-  else if (
-    session.pending ||
-    session.committing ||
-    session.library.isSaving ||
-    session.moves.size ||
-    session.isMoving(token) ||
-    session.isSceneMoving()
-  )
+  else if (session.isActorBusy(token))
     reason = 'Finish the current movement, fall or save before standing up';
   else if (session.active && session.activeToken !== token)
     reason = "Stand up during this creature's turn";
@@ -36,7 +29,7 @@ export function standUp(session, token) {
   if (!availability.allowed) throw new Error(availability.reason);
   const character = session._character(token);
   const ticket = Object.freeze({ token, characterId: character.id, standing: true });
-  session.pending = ticket;
+  session._reserveAction(ticket);
   let managed = false;
   try {
     const apply = (_, target = session) => {
@@ -66,13 +59,13 @@ export function slowFallAvailability(session, token) {
     allowed:
       protection.slowFallReduction > 0 &&
       (!session.active || session._state(token).reactions > 0) &&
-      !session.pending &&
-      !session.committing &&
-      !session.library.isSaving,
+      !session.isActionBusy(token),
   };
 }
 
 export function useSlowFall(session, token, fallId) {
+  if (session.library.isSaving)
+    return session.persistenceRequests.enqueue(token, () => useSlowFall(session, token, fallId));
   const character = session._character(token);
   const sequence = `${fallId}:slow-fall`;
   const previous = session.histories
@@ -82,7 +75,7 @@ export function useSlowFall(session, token, fallId) {
   const availability = slowFallAvailability(session, token);
   if (!availability.allowed) throw new Error('Slow Fall requires an available Monk reaction');
   const ticket = Object.freeze({ token, characterId: character.id, fallReaction: true });
-  session.pending = ticket;
+  session._reserveAction(ticket);
   let managed = false;
   try {
     const entry = {
@@ -116,14 +109,18 @@ export function useSlowFall(session, token, fallId) {
 
 // -- Irreversible landing effects --
 export function applyFall(session, token, context, { placement = null } = {}) {
+  if (session.library.isSaving)
+    return session.persistenceRequests.enqueue(token, () =>
+      applyFall(session, token, context, { placement })
+    );
   const character = session._character(token);
   if (character.id !== context.characterId)
     throw new Error('The falling creature changed its linked character');
-  if (session.pending || session.committing || session.library.isSaving)
+  if (session.isActionBusy(token))
     throw new Error('Finish the current character save before applying fall damage');
   const result = session.library.rules.resolveFall(context);
   const ticket = Object.freeze({ token, characterId: character.id, landing: true });
-  session.pending = ticket;
+  session._reserveAction(ticket);
   let managed = false;
   try {
     const entry = {

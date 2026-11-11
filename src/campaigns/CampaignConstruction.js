@@ -2,6 +2,59 @@ import { isSurfaceGripValid } from './CampaignSurfaceClimb.js';
 import { campaignToMapFeet, localWorldToCampaign } from './CampaignCoordinates.js';
 import { isBuildingJoinConnection, isGeneratedBuildingJoin } from '../terrain/BuildingSnaps.js';
 import { captureBuildingContext } from './BuildingAssembly.js';
+import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
+
+export function getConstructionCeiling(gm, geometry, xFeet, zFeet, floorFeet, excludeId = null) {
+  const unit = gm.spatial.tileWorldSize / 5;
+  let active = geometry;
+  if (excludeId) {
+    active = new TerrainGeometry({
+      widthFeet: geometry.widthFeet,
+      depthFeet: geometry.depthFeet,
+      terrainThicknessFeet: geometry.terrainThicknessFeet,
+      getTerrainHeightFeet: (x, z) =>
+        (gm.terrainEngine.getHeightAt(Math.floor(x / 5), Math.floor(z / 5)) *
+          gm.spatial.elevationUnit) /
+        unit,
+    });
+    const saved = geometry.save();
+    active.load({
+      ...saved,
+      structures: (saved.structures || []).filter((spec) => spec.id !== excludeId),
+      volumes: saved.volumes.filter((volume) => volume.structureId !== excludeId),
+    });
+  }
+  const world = gm.campaignWorld;
+  if (!world)
+    return Math.min(
+      Infinity,
+      ...active
+        .getSolidSpansAt(xFeet, zFeet)
+        .filter((span) => span.bottom > floorFeet + 1e-4)
+        .map((span) => span.bottom)
+    );
+  const origin = world.getMap(gm.campaignMapId).originFeet.y;
+  const point = world.toCampaignPosition(gm.campaignMapId, {
+    x: xFeet * unit,
+    y: floorFeet * unit,
+    z: zFeet * unit,
+  });
+  let ceiling = Infinity;
+  for (const { id } of world.listLocationMaps(gm.campaignMapId)) {
+    const map = world.getMap(id),
+      local = world.toMapPosition(id, point);
+    const scale = 5 / map.grid.tileWorldSize;
+    const x = local.x * scale,
+      z = local.z * scale;
+    const source = id === gm.campaignMapId ? active : world.getMapGeometry(id);
+    if (x < 0 || z < 0 || x >= source.widthFeet || z >= source.depthFeet) continue;
+    for (const span of source.getSolidSpansAt(x, z)) {
+      const height = map.originFeet.y + span.bottom;
+      if (height > point.y + 1e-4) ceiling = Math.min(ceiling, height - origin);
+    }
+  }
+  return ceiling;
+}
 
 export function unlinkBuildingInteriors(gm, structureId) {
   const world = gm.campaignWorld,
@@ -43,6 +96,26 @@ export function validateConstructionEdit(gm, geometry, context = null) {
     gm.placedTokens?.some((token) => gm.token3DAdapter?.isMovementInProgress(token))
   )
     throw new Error('Finish the current action before changing a structure');
+  for (const spec of geometry.getStructures().filter((entry) => entry.kind === 'stalactite')) {
+    const top = spec.baseFeet + spec.heightFeet;
+    for (const [dx, dz] of [
+      [0, 0],
+      [0.45, 0],
+      [-0.45, 0],
+      [0, 0.45],
+      [0, -0.45],
+    ]) {
+      const x = spec.xFeet + dx * spec.diameterFeet,
+        z = spec.zFeet + dz * spec.diameterFeet;
+      if (x < 0 || z < 0 || x >= geometry.widthFeet || z >= geometry.depthFeet)
+        throw new Error('The stalactite must fit beneath its ceiling inside the map');
+      const ceiling = getConstructionCeiling(gm, geometry, x, z, spec.baseFeet - 1e-4, spec.id);
+      if (!Number.isFinite(ceiling) || Math.abs(ceiling - top) > 0.01)
+        throw new Error(
+          'Stalactites require a matching real overhead surface across their diameter'
+        );
+    }
+  }
   const world = gm.campaignWorld;
   if (world) {
     const volumes = new Map(geometry.save().volumes.map((volume) => [volume.id, volume]));
@@ -50,16 +123,17 @@ export function validateConstructionEdit(gm, geometry, context = null) {
     const original = new Map(previous.volumes.map((volume) => [volume.id, volume]));
     for (const connection of world.getConnections())
       if (connection.feature.mapId === gm.campaignMapId && !connection.building)
-        for (const id of connection.feature.volumeIds)
+        for (const id of connection.feature.volumeIds || [])
           if (
             JSON.stringify(volumes.get(id)) !== JSON.stringify(original.get(id)) &&
             !(
-              isBuildingJoinConnection(connection, gm.campaignMapId) &&
-              ((context?.ownerMapId === gm.campaignMapId && Array.isArray(context.connections)) ||
-                (context?.replacingGeneratedJoins === true &&
-                  isGeneratedBuildingJoin(connection, gm.campaignMapId, previous, (id) =>
-                    world.getMap(id)
-                  )))
+              (context?.cavernGeneration === true && connection.cavern?.source === 'generated') ||
+              (isBuildingJoinConnection(connection, gm.campaignMapId) &&
+                ((context?.ownerMapId === gm.campaignMapId && Array.isArray(context.connections)) ||
+                  (context?.replacingGeneratedJoins === true &&
+                    isGeneratedBuildingJoin(connection, gm.campaignMapId, previous, (id) =>
+                      world.getMap(id)
+                    ))))
             )
           )
             throw new Error(

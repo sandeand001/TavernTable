@@ -45,6 +45,7 @@ import {
 } from '../../config/targeting/SpellProfiles.js';
 import { CHARACTER_BACKUP_LIMIT } from '../../config/characters/CharacterImages.js';
 import CharacterImagesEditor from '../characters/CharacterImagesEditor.js';
+import { queueCampaignOperation } from '../../campaigns/SceneWorld.js';
 
 export default class CharacterSheetContent {
   constructor({ gameManager, services = null, onOpenCompendium = null }) {
@@ -798,8 +799,9 @@ export default class CharacterSheetContent {
       return;
     }
     if (action === 'stand-up') {
+      const token = this.token;
       this._run(
-        () => this.services.falling.stand(this.token),
+        () => this.services.combat.runWhenReady(token, () => this.services.falling.stand(token)),
         'Standing up: half maximum movement spent; no action used.'
       );
       return;
@@ -833,36 +835,37 @@ export default class CharacterSheetContent {
       ].includes(action)
     ) {
       this._run(
-        () => {
-          if (['turn-start', 'turn-end', 'combat-end'].includes(action)) {
-            this.dmMovementDraft = null;
-            this.dmEconomyDraft = {};
-          }
-          if (action === 'turn-start') return session.startTurn(this.token);
-          if (action === 'turn-end') return session.endTurn();
-          if (action === 'combat-end') session.endCombat();
-          if (action === 'use-undo') return session.undoLastUse(this.token);
-          if (action === 'attack-finish') session.finishAttackAction(this.token);
-          if (action === 'movement-adjust') {
-            session.adjustMovement(
-              this.token,
-              this.main.querySelector('[data-play-dm-movement]').valueAsNumber
-            );
-            this.dmMovementDraft = null;
-          }
-          if (action === 'economy-adjust') {
-            session.adjustEconomy(
-              this.token,
-              Object.fromEntries(
-                Array.from(this.main.querySelectorAll('[data-play-dm-economy]'), (input) => [
-                  input.dataset.playDmEconomy,
-                  input.valueAsNumber,
-                ])
-              )
-            );
-            this.dmEconomyDraft = {};
-          }
-        },
+        () =>
+          queueCampaignOperation(this.gameManager, 'combat', () => {
+            if (['turn-start', 'turn-end', 'combat-end'].includes(action)) {
+              this.dmMovementDraft = null;
+              this.dmEconomyDraft = {};
+            }
+            if (action === 'turn-start') return session.startTurn(this.token);
+            if (action === 'turn-end') return session.endTurn();
+            if (action === 'combat-end') session.endCombat();
+            if (action === 'use-undo') return session.undoLastUse(this.token);
+            if (action === 'attack-finish') session.finishAttackAction(this.token);
+            if (action === 'movement-adjust') {
+              session.adjustMovement(
+                this.token,
+                this.main.querySelector('[data-play-dm-movement]').valueAsNumber
+              );
+              this.dmMovementDraft = null;
+            }
+            if (action === 'economy-adjust') {
+              session.adjustEconomy(
+                this.token,
+                Object.fromEntries(
+                  Array.from(this.main.querySelectorAll('[data-play-dm-economy]'), (input) => [
+                    input.dataset.playDmEconomy,
+                    input.valueAsNumber,
+                  ])
+                )
+              );
+              this.dmEconomyDraft = {};
+            }
+          }),
         'Combat state updated.',
         action === 'use-undo'
       );
@@ -976,13 +979,14 @@ export default class CharacterSheetContent {
     try {
       if (!this.services) throw new Error('Wait for character data to finish loading');
       if (notify && this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
-      if (
-        notify &&
-        (this.gameManager.campaignViewBusy ||
-          this.gameManager.inputCoordinator?.savedCharacterPending)
-      )
-        throw new Error('Wait for the current map change or character placement to finish');
-      const result = operation();
+      const execute = () => {
+        if (this.disposed || this.token !== token)
+          throw new Error('The character changed before the queued operation could run');
+        return operation();
+      };
+      const result = notify
+        ? queueCampaignOperation(this.gameManager, 'pointer', execute)
+        : execute();
       const complete = () => {
         if (this.disposed || this.token !== token) return false;
         this.render();
@@ -1007,7 +1011,9 @@ export default class CharacterSheetContent {
   _syncSavingControls() {
     const busy =
       !!this.services?.library.isSaving ||
-      !!this.services?.combat.committing ||
+      !!(this.services?.combat.active
+        ? this.services.combat.committing
+        : this.services?.combat.committing?.token === this.token) ||
       !!this.gameManager.campaignViewBusy ||
       !!this.gameManager.campaignMapFailure ||
       !!this.gameManager.inputCoordinator?.savedCharacterPending;

@@ -2,8 +2,15 @@ import {
   STRUCTURE_TYPES,
   createStructure,
   structureMinimumHeight,
+  structureMinimumDiameter,
+  isRockFormation,
+  isRoundStructure,
+  structureHeightChanges,
 } from '../terrain/ConstructionBlueprints.js';
-import { unlinkBuildingInteriors } from '../campaigns/CampaignConstruction.js';
+import {
+  unlinkBuildingInteriors,
+  getConstructionCeiling,
+} from '../campaigns/CampaignConstruction.js';
 import { isBuildingJoinConnection } from '../terrain/BuildingSnaps.js';
 import { ConstructionPreview } from '../scene/terrain/ConstructionPreview.js';
 import { ConstructionGizmos } from '../scene/terrain/ConstructionGizmos.js';
@@ -1026,7 +1033,14 @@ export class TerrainConstructionPanel {
       changes.widthFeet = changes.style === 'battlement' ? 10 : 2;
       this.form.elements.namedItem('widthFeet').value = String(changes.widthFeet);
     }
-    this.draft = createStructure({ ...this.draft, ...changes }, { legacy: !this.draft.building });
+    this.draft = createStructure(
+      {
+        ...this.draft,
+        ...changes,
+        ...structureHeightChanges(this.draft, changes.heightFeet),
+      },
+      { legacy: !this.draft.building }
+    );
     this._render();
     if (this.selectedId) this._queuePreview();
   }
@@ -1062,13 +1076,33 @@ export class TerrainConstructionPanel {
           baseFeet: height,
         };
     }
-    if (p)
-      return {
+    if (p) {
+      const point = {
         xFeet: Math.round((p.x / unit) * 2) / 2,
         zFeet: Math.round((p.z / unit) * 2) / 2,
         baseFeet: Math.round((p.y / unit) * 1e6) / 1e6,
       };
+      if (this.draft?.kind === 'stalactite' && !this.selectedId) {
+        const ceiling = getConstructionCeiling(
+          this.gameManager,
+          this.engine.geometry,
+          point.xFeet,
+          point.zFeet,
+          point.baseFeet
+        );
+        if (!Number.isFinite(ceiling))
+          throw new Error(
+            'Stalactites need a real ceiling or overhang. Elevation-only caverns do not have one yet.'
+          );
+        if (ceiling - point.baseFeet < this.draft.heightFeet)
+          throw new Error('Reduce the stalactite height to fit below this ceiling');
+        point.baseFeet = ceiling - this.draft.heightFeet;
+      }
+      return point;
+    }
     const { gx, gy } = pick.grid || {};
+    if (this.draft?.kind === 'stalactite' && !this.selectedId)
+      throw new Error('Choose a visible floor below a real ceiling to anchor this stalactite');
     return Number.isFinite(gx) && Number.isFinite(gy)
       ? {
           xFeet: (gx + 0.5) * 5,
@@ -1157,13 +1191,16 @@ export class TerrainConstructionPanel {
           vertical: handle === 'height',
           center: {
             x: original.xFeet,
-            y: original.baseFeet + original.heightFeet,
+            y:
+              original.kind === 'stalactite'
+                ? original.baseFeet
+                : original.baseFeet + original.heightFeet,
             z: original.zFeet,
           },
         });
         if (!point) throw new Error('The resize handle is not reachable from this camera angle');
         const dimensions = buildingDimensions(original),
-          round = ['turret', 'dome', 'cave'].includes(original.kind);
+          round = isRoundStructure(original);
         const length = round ? original.diameterFeet : dimensions.length,
           width = round ? original.diameterFeet : dimensions.width;
         const handlePoint = buildingLocalToFeet(original, {
@@ -1413,7 +1450,14 @@ export class TerrainConstructionPanel {
     const point = this.gizmos.point(event, this.canvas, {
       heightFeet: this._resizePlaneHeight(original),
       vertical: drag.handle === 'height',
-      center: { x: original.xFeet, y: original.baseFeet + original.heightFeet, z: original.zFeet },
+      center: {
+        x: original.xFeet,
+        y:
+          original.kind === 'stalactite'
+            ? original.baseFeet
+            : original.baseFeet + original.heightFeet,
+        z: original.zFeet,
+      },
     });
     if (!point) return;
     this.draft =
@@ -1436,7 +1480,11 @@ export class TerrainConstructionPanel {
   _resizePlaneHeight(spec) {
     return (
       spec.baseFeet +
-      (spec.kind === 'cellar' ? buildingLevelElevation(spec, this._editFloorId()) : 0)
+      (spec.kind === 'cellar'
+        ? buildingLevelElevation(spec, this._editFloorId())
+        : spec.kind === 'stalactite'
+          ? spec.heightFeet
+          : 0)
     );
   }
 
@@ -2048,6 +2096,9 @@ export class TerrainConstructionPanel {
     }
     if (this.draft) {
       const height = this.form.elements.namedItem('heightFeet');
+      const diameter = this.form.elements.namedItem('diameterFeet');
+      diameter.min = String(structureMinimumDiameter(this.draft));
+      diameter.step = isRockFormation(this.draft) ? '0.5' : '5';
       const custom = building?.version === 3;
       height.min = building ? (custom ? '10' : '1') : String(structureMinimumHeight(this.draft));
       height.max = building ? '10' : '100';
@@ -2060,7 +2111,7 @@ export class TerrainConstructionPanel {
             : 'Building height (ft)'
           : 'Storeys (10 ft each)'
         : 'Height (ft)';
-      const round = ['dome', 'cave', 'turret'].includes(this.draft.kind);
+      const round = isRoundStructure(this.draft);
       for (const [key, visible] of Object.entries({
         diameterFeet: round,
         lengthFeet: !round,

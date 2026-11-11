@@ -5,6 +5,8 @@ import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibr
 import { createCampaignBoard } from '../../helpers/campaignBoard.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import { GameErrors } from '../../../src/utils/error/ErrorHandler.js';
+import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
+import { reconcileCavernScene } from '../../../src/campaigns/CavernAssembly.js';
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 let gm, controls;
@@ -70,7 +72,7 @@ test('the map selector browses the actual interior without moving or copying any
   );
 });
 
-test('focusing a creature opens its map while later target selection does not change viewing focus', async () => {
+test('focusing and selecting creatures consistently open their canonical maps', async () => {
   const selector = controls.root.querySelector('[aria-label="Focused creature"]');
   selector.value = 'token-2';
   selector.dispatchEvent(new Event('change', { bubbles: true }));
@@ -79,9 +81,9 @@ test('focusing a creature opens its map while later target selection does not ch
   expect(gm.campaignView.focusTokenId).toBe('token-2');
   expect(gm.token3DAdapter.getSelectedToken()).toBe(gm.placedTokens[1]);
   await gm.token3DAdapter.setSelectedToken(gm.placedTokens[0]);
-  expect(gm.campaignMapId).toBe('inside');
-  expect(gm.campaignView.focusTokenId).toBe('token-2');
-  expect(selector.value).toBe('token-2');
+  expect(gm.campaignMapId).toBe('map-main');
+  expect(gm.campaignView.focusTokenId).toBe('token-1');
+  expect(selector.value).toBe('token-1');
 });
 
 test('a failed map change reports its error and restores the map selector', async () => {
@@ -112,6 +114,36 @@ test('legacy single-board campaigns do not expose nonfunctional connected-map co
   gm.campaignWorld = null;
   controls.render();
   expect(controls.root.hidden).toBe(true);
+});
+
+test('cavern area controls appear only in an interior and disable already connected sides', async () => {
+  expect(controls.newCavern.hidden).toBe(true);
+  const engine = new TerrainEngine(25, 25);
+  engine.generateBiomeElevation('cavern', { seed: 42 });
+  const scene = sceneState();
+  scene.version = 2;
+  scene.creatures = [];
+  scene.grid = { cols: 25, rows: 25, tileWorldSize: 1 };
+  Object.assign(scene.terrain, {
+    heights: engine.save().heights,
+    geometry: engine.geometry.save(),
+    cavern: engine.cavern,
+    biome: 'cavern',
+  });
+  const library = gm.characterServices.library;
+  await restoreCampaignScene(
+    gm,
+    reconcileCavernScene(scene, { ruleset: library.ruleset, library }, { regenerate: true }),
+    library,
+    gm.characterServices.combat
+  );
+  controls.render();
+  expect(controls.newCavern.hidden).toBe(false);
+  const sides = controls.newCavern.querySelector('[aria-label="Cavern passage side"]');
+  expect(
+    [...sides.options].filter((option) => option.disabled).map((option) => option.value)
+  ).toEqual(['north', 'east']);
+  expect(sides.value).toBe('south');
 });
 
 test('creating and browsing an independent location does not move, recreate or reset existing actors', async () => {

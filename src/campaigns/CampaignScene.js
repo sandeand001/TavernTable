@@ -17,6 +17,7 @@ import {
   buildingLocalToFeet,
 } from '../terrain/BuildingModel.js';
 import { mapFeetToCampaign } from './CampaignCoordinates.js';
+import { normalizeCavernRecipe, CAVERN_SIDES } from '../terrain/generation/CavernInteriors.js';
 import {
   TARGET_ALLEGIANCES,
   TARGET_CREATURE_TYPES,
@@ -101,6 +102,10 @@ function validateBoard(grid, terrain, version, base = 'ground') {
   )
     failure('terrain');
   let geometry = null;
+  if (terrain.cavern !== undefined) {
+    normalizeCavernRecipe(terrain.cavern);
+    if (terrain.cavern.version === 1 && !terrain.geometry) failure('cavern geometry');
+  }
   const feetPerWorld = 5 / grid.tileWorldSize;
   if (terrain.geometry !== undefined || base === 'floor') {
     if (terrain.geometry !== undefined && version !== 2) failure('geometry version');
@@ -186,6 +191,25 @@ export function validateScene(scene, { ruleset, library }) {
     }
     validateCampaignLocations(scene);
     const byId = new Map(scene.maps.map((map) => [map.id, map]));
+    for (const map of scene.maps) {
+      if (map.cavern === undefined) continue;
+      const ref = map.cavern,
+        owner = byId.get(ref?.ownerMapId),
+        parent = ref?.parentMapId === null ? null : byId.get(ref?.parentMapId);
+      if (
+        !record(ref) ||
+        ref.version !== 1 ||
+        !owner?.terrain.cavern ||
+        !map.terrain.cavern ||
+        map.base !== (map.terrain.cavern?.version >= 2 ? 'ground' : 'floor') ||
+        !integer(ref.seed, 0, 0xffffffff) ||
+        !['generated', 'manual'].includes(ref.source) ||
+        (ref.parentMapId === null
+          ? map.id !== owner.id || ref.side !== null
+          : !parent?.terrain.cavern || parent.id === map.id || !CAVERN_SIDES.includes(ref.side))
+      )
+        failure('connected cavern area');
+    }
     for (const map of scene.maps) {
       if (map.building === undefined) continue;
       const ref = map.building,

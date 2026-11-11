@@ -353,9 +353,21 @@ transfers.
       views reveal readable natural chambers. Test continuous support, headroom,
       turns and actual creature movement through joins. Avoid expensive world-CSG
       rebuilding during previews or idle frames.
+      Full-map Underground interiors now use the existing elevation tools
+      for Cavern, Fungal Grove, Crystal Fields/Spires and Eldritch Rift
+      to sculpt tall rock ridges and low uneven floors. Procedural stalagmite/
+      stalactite generation and Build tools have been removed in favour of
+      the existing biome assets. Saved prototypes remain readable and removable.
+      No new cave-wall volume or
+      floor-mask geometry is used. Automatic side chambers
+      and an Add tunnel/chamber control connect separate visual
+      areas retain paid movement, saved identities and authored-map protections.
+      The remaining S3 work is the appearance of outdoor cave entrances and
+      ceiling/hanging-formation presentation and artistic acceptance, not placing
+      dome shells or short cutaway walls in Underground maps.
       Prerequisite progress: S4b uses real excavated approaches/halls within a
       painted mountain heightfield. The general Cavern and other natural-cave biome recipes
-      still need this separate redesign; they are not marked complete.
+      no longer use the earlier surface-shell arrangement.
 
 ### Site-specific castles
 

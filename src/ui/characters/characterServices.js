@@ -28,6 +28,9 @@ export function connectCharacterServices(gameManager, services) {
     return gameManager.characterServices;
   gameManager.characterServices?.falling?.dispose();
   gameManager.characterServices?.targeting?.dispose();
+  gameManager.characterServices?.combat?.dispose();
+  gameManager.campaignRequests?.dispose();
+  gameManager.campaignRequests = null;
   const combat = new CombatSession({
     library: services.library,
     getLocationId: (token) => gameManager.campaignWorld?.getLocationId(token.mapId) ?? null,
@@ -35,6 +38,9 @@ export function connectCharacterServices(gameManager, services) {
     isMoving: (token) =>
       gameManager.campaignViewBusy ||
       !!gameManager.campaignMapFailure ||
+      gameManager.sceneAutosave?.ready === false ||
+      !!gameManager.inputCoordinator?.savedCharacterPending ||
+      !!gameManager.terrainEngine?.hasPendingStroke ||
       gameManager.token3DAdapter?.isMovementInProgress?.(token) ||
       false,
     isSceneMoving: () =>
@@ -63,6 +69,7 @@ export function connectCharacterServices(gameManager, services) {
     combat.targeting = connected.targeting;
   }
   combat.subscribe(() => {
+    gameManager.campaignRequests?.flush();
     gameManager.token3DAdapter?.refreshMovementRange?.();
     window.dispatchEvent(new CustomEvent('taverntable:combatChanged', { detail: { gameManager } }));
   });

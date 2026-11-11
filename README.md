@@ -859,10 +859,46 @@ their heights and rooflines differ. Compact 25- and 40-square layouts retain
 connected halls without cramped wing stairs. Existing grid sizing is unchanged,
 and reopening never remodels a saved castle. Visual acceptance remains open.
 
-Suitable hills, mountains and underground biomes can contain three joined
+Suitable outdoor hills and mountains can contain three joined
 chambers, connecting passages and a surface entrance. The chambers share one
 floor, and their rooms and tunnel bores are carved after the joined rock shells
 so intersections stay open. Editing one chamber preserves that carving order.
+
+**Cavern, Fungal Grove, Crystal Fields, Crystal Spires and Eldritch Rift** instead
+generate the **whole map as an underground interior using the existing elevation
+tools**. Deep, uneven floors sit inside raised rock ridges, using the existing
+biome rock and scenery assets. The current 1.5-feet-per-level
+setting gives roughly **20 to 30 feet of wall relief**, rather than short
+eight-foot cutaway walls. Other elevation scales retain their own proportions.
+The walls and floors remain ordinary elevation terrain, with no dome shells or
+floor-mask system. Raise, Lower and the existing terrain tools still edit the cave.
+Procedural stalagmite/stalactite formations and their Build tools have been removed;
+new caverns use the existing biome assets instead. Explicitly **Generate** from the
+main cavern to clear previously generated formations and replace eligible automatic
+side chambers. Existing prototype saves still load without silently altering
+authored content; individual saved formations can be removed with **Select / resize
+-> Remove**.
+
+With **Structures & landmarks** enabled, **Generate** also creates two connected
+side chambers. Disabling that option still creates the cavern interior, but omits
+automatic side areas. Each chamber is its own visual area in the same campaign
+location. Normal passage travel changes the displayed area and spends movement;
+**Maps & focus** can browse an area without moving creatures.
+
+Inside a cavern, **Maps & focus -> Add tunnel / chamber** adds a named chamber or
+winding tunnel on a free side. Areas may branch from other chambers/tunnels too.
+Existing connections and overlapping maps reject invalid choices explicitly.
+The new terrain and connection are saved together without moving or recreating
+actors. Cave areas show only their own interior, rather than drawing all nearby
+chambers at once.
+
+Existing saved caves and manual **Build -> Cave / Dome / Tunnel** shapes remain
+unchanged on load. Explicitly **Generate** from the main cavern to adopt the new
+layout or replace its automatic branches. Seed-locked generation preserves saved
+areas; edited or occupied side chambers and manual branches cannot be silently
+erased by regeneration. The terrain editor and normal Build controls remain
+available inside each area. Outside Terrain Mode, the grid stays on the low
+cave floors instead of being drawn over the tall rock masses.
 Eligible natural landscapes, including forests, deserts and grassland, can
 occasionally contain intact homes, broken buildings or castle remnants on dry,
 gentle sites without changing the underlying biome. Oasis and coastal sites also
@@ -1715,6 +1751,13 @@ Keyboard creature movement and turning are disabled for now. Space-drag map pann
 mouse map rotation and keyboard navigation within sheets still work. Token-placement/drag editing
 remains separate from distance-limited click navigation. Free play retains a
 per-move allowance; manual combat shares one remaining allowance across moves.
+
+Selecting an existing creature never starts sprite placement. In free play,
+different creatures can move and use actions independently, including creatures
+controlled by the same DM. Requests that must wait are queued and checked again
+for current rules, resources and creature identity when they run. Combat remains
+turn-based. Actual map rebuilds and persistent writes are serialized safely;
+target selection is queued separately for each local targeting interface.
 
 ## Falling damage, Prone and standing up
 

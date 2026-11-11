@@ -14,10 +14,13 @@ import {
   createStructure,
   structureVolumes,
   replaceStructureGeometry,
+  structureHeightChanges,
+  STRUCTURE_TYPES,
 } from './ConstructionBlueprints.js';
 import { generateBiomeStructures } from './generation/BiomeStructures.js';
 import { buildingForHeight } from './BuildingModel.js';
 import { createBuildingSnapPreview, withBuildingSnapContext } from './BuildingSnaps.js';
+import { normalizeCavernRecipe } from './generation/CavernInteriors.js';
 
 function validateDimensions(cols, rows) {
   if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) {
@@ -94,6 +97,7 @@ export class TerrainEngine {
     this._redo = [];
     this._isGenerating = false;
     this._biomeKey = null;
+    this._cavern = null;
     this._structureGenerationEnabled = true;
     const settings = typeof window !== 'undefined' ? window.richShadingSettings : null;
     this._biomeSeed = Number.isInteger(settings?.seed)
@@ -246,11 +250,7 @@ export class TerrainEngine {
   }
 
   setConstructionTool(tool) {
-    if (
-      tool !== null &&
-      tool !== 'select' &&
-      !['wall', 'turret', 'dome', 'building', 'cave', 'cellar', 'tunnel'].includes(tool)
-    )
+    if (tool !== null && tool !== 'select' && !STRUCTURE_TYPES.some((type) => type.kind === tool))
       throw new Error('Choose a supported construction tool');
     if (this._constructionTool === tool) return;
     this.cancelBrushStroke();
@@ -484,24 +484,32 @@ export class TerrainEngine {
         previousHeights: previous.heights,
         geometry: this.geometry.save(),
         feetPerLevel: this._feetPerLevel,
+        cavernExits: options.cavernManualExits || [],
         enabled:
           options.structures === undefined ? this._structureGenerationEnabled : options.structures,
       });
       const protectAuthoredCellars = [previous.geometry, plan.geometry].some((snapshot) =>
         snapshot?.structures?.some((spec) => spec.kind === 'cellar' && spec.building?.cellarLayout)
       );
+      const cavernGeneration = !!(previous.cavern || plan.cavern);
       this.cancelBrushStroke();
       try {
         this._dataStore.restoreHeights(plan.heights);
         this._biomeKey = biomeKey;
         this._biomeSeed = seed;
+        this._cavern = plan.cavern ?? null;
         const geometry = this._validatedGeometry(
           plan.geometry,
-          plan.joins?.length || replacingGeneratedJoins || protectAuthoredCellars
+          plan.joins?.length ||
+            replacingGeneratedJoins ||
+            protectAuthoredCellars ||
+            cavernGeneration
             ? {
                 buildingJoins: plan.joins || [],
                 replacingGeneratedJoins: true,
                 protectAuthoredCellars,
+                cavernGeneration,
+                previousCavern: previous.cavern ?? null,
               }
             : null
         );
@@ -510,6 +518,7 @@ export class TerrainEngine {
         this._dataStore.restoreHeights(previous.heights);
         this._biomeKey = previous.biomeKey;
         this._biomeSeed = previous.biomeSeed;
+        this._cavern = previous.cavern ?? null;
         this._geometry.invalidate();
         throw error;
       }
@@ -858,6 +867,8 @@ export class TerrainEngine {
     )
       return false;
     const adjusted = { ...existing, ...changes, source: 'manual' };
+    if (changes.heightFeet !== undefined)
+      Object.assign(adjusted, structureHeightChanges(existing, changes.heightFeet));
     if (adjusted.building && changes.heightFeet !== undefined)
       adjusted.building = buildingForHeight(adjusted.building, changes.heightFeet);
     const spec = createStructure(adjusted, { legacy: !adjusted.building });
@@ -900,6 +911,7 @@ export class TerrainEngine {
       elevationScale: this._elevationScale,
       treeDensityMultiplier: this._treeDensityMultiplier,
       richShadingEnabled: this._richShadingEnabled,
+      ...(this._cavern ? { cavern: normalizeCavernRecipe(this._cavern) } : {}),
       ...(!this._structureGenerationEnabled ? { structureGenerationEnabled: false } : {}),
       ...(this.geometry.hasVolumes || Number.isFinite(this.geometry.terrainThicknessFeet)
         ? { geometry: this.geometry.save() }
@@ -918,6 +930,9 @@ export class TerrainEngine {
     const biomeSeed = state.biomeSeed ?? this._biomeSeed;
     const elevationScale = state.elevationScale ?? TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
     const treeDensity = state.treeDensityMultiplier ?? 1;
+    const cavern = state.cavern === undefined ? null : normalizeCavernRecipe(state.cavern);
+    if (cavern?.version === 1 && !state.geometry)
+      throw new Error('A saved cavern interior requires its physical geometry');
     if (
       state.structureGenerationEnabled !== undefined &&
       typeof state.structureGenerationEnabled !== 'boolean'
@@ -938,6 +953,7 @@ export class TerrainEngine {
     this._geometry = geometry;
     this._visibleLayers = null;
     this._biomeKey = biomeKey;
+    this._cavern = cavern;
     this._biomeSeed = biomeSeed;
     this._elevationScale = elevationScale;
     this._treeDensityMultiplier = treeDensity;
@@ -1008,6 +1024,9 @@ export class TerrainEngine {
   }
   get geometry() {
     return this._geometry;
+  }
+  get cavern() {
+    return this._cavern ? normalizeCavernRecipe(this._cavern) : null;
   }
   get visibleLayers() {
     return this._visibleLayers === null ? null : [...this._visibleLayers];

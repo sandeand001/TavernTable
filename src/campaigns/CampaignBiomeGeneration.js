@@ -34,6 +34,18 @@ export async function generateCampaignBiome(gm, options = {}) {
   const include = options.structures ?? engine.structureGenerationEnabled;
   const pool = gm.placeableMeshPool;
   const world = gm.campaignWorld;
+  if (world?.getMap(gm.campaignMapId).cavern?.parentMapId)
+    throw new Error('Return to the main cavern map before regenerating its connected areas');
+  options = {
+    ...options,
+    cavernManualExits: (world?.getConnections(gm.campaignMapId) || [])
+      .filter(
+        (connection) =>
+          connection.cavern?.source === 'manual' &&
+          connection.cavern.parentMapId === gm.campaignMapId
+      )
+      .map((connection) => connection.cavern.side),
+  };
   const hasLocalActors = (gm.placedTokens || []).some(
     (token) => !world || world.sharesLocation(token.mapId, gm.campaignMapId)
   );

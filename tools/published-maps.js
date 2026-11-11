@@ -94,11 +94,20 @@ class PublishedMaps {
             path.join(this.root, 'src', 'scene', 'terrain', 'TerrainVolumeMeshBuilder.js')
           ).href
         );
+        const { cavernRockColor, getCavernSurfaceColor } = await import(
+          pathToFileURL(path.join(this.root, 'src', 'terrain', 'generation', 'CavernInteriors.js'))
+            .href
+        );
         const geometry = new TerrainVolumeMeshBuilder().build({
           geometry: world.getMapGeometry(selected.id),
           three,
           worldUnitsPerFoot: selected.grid.tileWorldSize / 5,
-          getColor: () => 0x7d8a70,
+          getColor: (_x, _z, _y, span) =>
+            selected.terrain.cavern?.version >= 2
+              ? getCavernSurfaceColor(_x, _z, _y, {
+                  materialColor: span.materialColor ?? cavernRockColor(selected.terrain.biome),
+                })
+              : 0x7d8a70,
         });
         const encode = (attribute) =>
           Buffer.from(

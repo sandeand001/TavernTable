@@ -15,6 +15,8 @@ export function structureDisplayName(spec) {
     dome: 'Dome',
     cave: 'Cave',
     tunnel: 'Tunnel',
+    stalagmite: 'Stalagmite',
+    stalactite: 'Stalactite',
   }[spec.kind];
   if (!label || typeof spec.id !== 'string')
     throw new Error('A structure identifier requires a valid definition');

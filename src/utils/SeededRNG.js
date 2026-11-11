@@ -21,6 +21,16 @@ export function rngInt(rng, max) {
   return Math.floor(rng() * max);
 }
 
+export function hash32(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+    h = (h << 13) | (h >>> 19);
+  }
+  return h >>> 0;
+}
+
 export function makeWeightedPicker(weights, rng) {
   const entries = Object.entries(weights || {});
   const total = entries.reduce((a, [, w]) => a + w, 0) || 1;

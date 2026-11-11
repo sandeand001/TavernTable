@@ -924,6 +924,41 @@ Linked floor slabs render in a merged batch, with the per-map source meshes kept
 as the picking authority. Visibility masks retain construction material attributes.
 Eligible natural terrain can contain connected cave/tunnel networks or sparse
 intact/broken building landmarks on dry, gentle sites without changing the biome.
+All five Underground biomes instead generate full-map interiors. Optional
+`terrain.cavern` version-5 recipes save the seed, area kind and entrance sides.
+They sculpt existing heightfield terrain: low floors and high irregular rock
+ridges, using existing biome assets rather than procedural formations.
+There are no new cave-wall volumes or floor-mask schema. Version-1 previews and
+version-2 elevation-pillar recipes remain identifiable for explicit regeneration.
+Version-2 authoring baselines are reconstructed before deciding whether an old
+generated room has manual edits. The terrain geometry core remains unchanged.
+
+Procedural stalagmite/stalactite generation and Build tools have been removed.
+Prototype recipe versions 3/4 and their saved construction definitions remain
+readable for save compatibility and explicit removal; they are not offered as
+new construction tools. Regenerating adopts version 5 and removes generated
+formations from the root and eligible automatic chambers, retaining the usual
+authored-content and actor protections.
+Native ground maps and `map.cavern` references identify the root and connected
+side chambers. Cave passage connections retain real supported, paid movement
+and separate visual areas, without copying actors or restoring old resources.
+Terrain passage features reference bounded `terrainCells` instead of inventing
+opening volumes. Existing volume-backed doors/windows/stairs retain their path.
+The ordinary terrain renderer shows full wall relief rather than an eight-foot
+cap; this pass does not create an overhead ceiling. Cave flora stays on low
+floors and outside entrance corridors. Candidate filters treat those depressed
+floors as dry cave terrain, not surface water. The grid follows cave floors in
+normal viewing and shows all terrain tiles while editing.
+
+Generate explicitly reconciles automatic side areas through the existing
+transactional edit participant and scene capture. Same-seed areas keep
+their saved content; edited/occupied areas and manual branches block destructive
+regeneration. Ordinary capture/load never synthesizes missing cave areas.
+Maps & focus can add a native chamber or winding tunnel on a free side, validating
+map bounds, overlap, existing entrances and current occupancy before an
+acknowledged scene save. The active cavern renders only its own visual area;
+outdoor/manual cave shapes and building projections retain their previous paths.
+
 Joined caves share a floor and apply all room/bore cuts after their additive
 shells. Editing interleaved structure volumes preserves their CSG slots, so a
 chamber edit cannot silently seal its neighbours. Masonry, roofs and rock follow biome palettes.

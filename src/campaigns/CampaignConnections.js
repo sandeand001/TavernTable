@@ -74,13 +74,31 @@ export function validateConnections(connections, maps) {
     const feature = connection.feature;
     const owner = byId.get(feature?.mapId);
     const volumes = new Set(owner?.terrain.geometry?.volumes.map((volume) => volume.id));
+    const terrainFeature = feature?.terrainCells !== undefined;
     if (
       !owner ||
-      !Array.isArray(feature.volumeIds) ||
-      !feature.volumeIds.length ||
-      feature.volumeIds.length > 256 ||
-      new Set(feature.volumeIds).size !== feature.volumeIds.length ||
-      feature.volumeIds.some((id) => !volumes.has(id))
+      (terrainFeature
+        ? connection.kind !== 'opening' ||
+          feature.volumeIds !== undefined ||
+          !Array.isArray(feature.terrainCells) ||
+          !feature.terrainCells.length ||
+          feature.terrainCells.length > 25 ||
+          new Set(feature.terrainCells.map((cell) => `${cell?.x}:${cell?.z}`)).size !==
+            feature.terrainCells.length ||
+          feature.terrainCells.some(
+            (cell) =>
+              !Number.isInteger(cell?.x) ||
+              !Number.isInteger(cell?.z) ||
+              cell.x < 0 ||
+              cell.z < 0 ||
+              cell.x >= owner.grid.cols ||
+              cell.z >= owner.grid.rows
+          )
+        : !Array.isArray(feature.volumeIds) ||
+          !feature.volumeIds.length ||
+          feature.volumeIds.length > 256 ||
+          new Set(feature.volumeIds).size !== feature.volumeIds.length ||
+          feature.volumeIds.some((id) => !volumes.has(id)))
     )
       invalid();
     if (connection.building !== undefined) {
@@ -95,6 +113,29 @@ export function validateConnections(connections, maps) {
         !buildingLevels(spec).some((level) => level.id === ref.floor) ||
         !['entry', 'window', 'stairs', 'balcony', 'access'].includes(ref.kind) ||
         typeof ref.featureId !== 'string'
+      )
+        invalid();
+    }
+    if (connection.cavern !== undefined) {
+      const ref = connection.cavern,
+        parent = byId.get(ref?.parentMapId),
+        target = byId.get(connection.ends.find((end) => end.mapId !== ref?.parentMapId)?.mapId);
+      if (
+        !parent?.terrain.cavern ||
+        !target?.terrain.cavern ||
+        !byId.get(ref.ownerMapId)?.terrain.cavern ||
+        feature.mapId !== parent.id ||
+        target.cavern?.parentMapId !== parent.id ||
+        target.cavern?.side !== ref.side ||
+        !['north', 'east', 'south', 'west'].includes(ref.side) ||
+        !['generated', 'manual'].includes(ref.source) ||
+        connection.kind !== 'opening' ||
+        (!terrainFeature &&
+          feature.volumeIds.some(
+            (id) =>
+              parent.terrain.geometry.volumes.find((volume) => volume.id === id).operation !==
+              'subtract'
+          ))
       )
         invalid();
     }

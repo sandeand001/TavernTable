@@ -318,18 +318,48 @@ test('refocusing on the current map preserves unsaved terrain and its undo histo
   }
 });
 
-test('a map change is refused while movement is reserved without changing the map or its budget', async () => {
+test('a map change waits for reserved movement without changing the map or its budget early', async () => {
   const { gm } = await focusFixture();
   const combat = gm.characterServices.combat;
   const actor = gm.placedTokens[0];
   const ticket = combat.beginMovement(actor, 5);
   const budget = combat.snapshot();
   try {
-    await expect(changeCampaignView(gm, { mapId: 'inside' })).rejects.toThrow(/finish.*movement/i);
+    const change = changeCampaignView(gm, { mapId: 'inside' });
+    await Promise.resolve();
     expect(gm.campaignMapId).toBe('map-main');
     expect(combat.snapshot()).toEqual(budget);
+    combat.finishMovement(ticket, 0);
+    await change;
+    expect(gm.campaignMapId).toBe('inside');
+  } finally {
+    if (combat.moves.get(ticket.id) === ticket) combat.finishMovement(ticket, 0);
+    for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
+    gm.token3DAdapter.disposeMovementRange();
+  }
+});
+
+test('same-map sprite selection does not reload the map or interrupt another free-play actor', async () => {
+  const { gm } = await focusFixture();
+  const [actor, other] = gm.placedTokens;
+  other.mapId = actor.mapId;
+  gm.campaignView.focus(actor.id);
+  const combat = gm.characterServices.combat;
+  combat.endCombat();
+  const ticket = combat.beginConnectionMovement(actor, 5);
+  const restore = jest.spyOn(gm.threeSceneManager, 'restoreView');
+  const positions = gm.placedTokens.map((token) => ({ ...token.world }));
+  try {
+    await gm.token3DAdapter.setSelectedToken(other);
+    expect(gm.token3DAdapter.getSelectedToken()).toBe(other);
+    expect(gm.campaignView.focusTokenId).toBe(other.id);
+    expect(gm.campaignViewBusy).not.toBe(true);
+    expect(restore).not.toHaveBeenCalled();
+    expect(combat.moves.get(ticket.id)).toBe(ticket);
+    expect(gm.placedTokens.map((token) => token.world)).toEqual(positions);
   } finally {
     combat.finishMovement(ticket, 0);
+    restore.mockRestore();
     for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
     gm.token3DAdapter.disposeMovementRange();
   }

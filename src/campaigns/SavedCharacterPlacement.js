@@ -99,6 +99,9 @@ export async function placeSavedCharacter(
   const library = services?.library;
   if (services?.sessionRole === 'player' || library?.store?.identity?.role === 'player')
     throw new Error('Player character placement requires an authorized DM command');
+  library.get(characterId);
+  const existing = gm.placedTokens.find((token) => token.characterSheetId === characterId);
+  if (existing) return { token: existing, created: false };
   if (
     !library?.saveScene ||
     gm.sceneAutosave?.ready === false ||
@@ -110,9 +113,6 @@ export async function placeSavedCharacter(
     throw new Error(
       'Finish the current action, movement or terrain preview before retrieving a character'
     );
-  library.get(characterId);
-  const existing = gm.placedTokens.find((token) => token.characterSheetId === characterId);
-  if (existing) return { token: existing, created: false };
   gm.campaignViewBusy = true;
   let committed = false;
   try {
