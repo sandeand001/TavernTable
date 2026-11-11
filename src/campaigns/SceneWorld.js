@@ -8,6 +8,7 @@ import { validateScene } from './CampaignScene.js';
 import CampaignWorld from './CampaignWorld.js';
 import { prepareConnectionTravel } from './CampaignTravel.js';
 import { reconcileBuildingScene } from './BuildingAssembly.js';
+import { reconcileCavernScene } from './CavernAssembly.js';
 import ActionRequestQueue from './ActionRequestQueue.js';
 
 export function queueCampaignOperation(gm, key, operation) {
@@ -77,6 +78,7 @@ export function captureReadyCampaignScene(
     placements = combat.scenePlacements || null,
     completedActionsOnly = false,
     geometryOverride = undefined,
+    cavernOverride = undefined,
     buildingContext = null,
   } = {}
 ) {
@@ -174,6 +176,10 @@ export function captureReadyCampaignScene(
   if (!savedCombat.states.some((row) => row.tokenId === savedCombat.activeTokenId))
     savedCombat.activeTokenId = null;
   const terrainState = gm.terrainEngine.save();
+  if (cavernOverride !== undefined) {
+    if (cavernOverride) terrainState.cavern = cavernOverride;
+    else delete terrainState.cavern;
+  }
   if (geometryOverride !== undefined) {
     if (geometryOverride.volumes.length) terrainState.geometry = geometryOverride;
     else delete terrainState.geometry;
@@ -189,6 +195,7 @@ export function captureReadyCampaignScene(
     grid: { cols: gm.cols, rows: gm.rows, tileWorldSize: gm.spatial.tileWorldSize },
     terrain: {
       heights: terrainState.heights,
+      ...(terrainState.cavern ? { cavern: terrainState.cavern } : {}),
       ...(terrainState.geometry ? { geometry: terrainState.geometry } : {}),
       ...(terrainState.structureGenerationEnabled === false
         ? { structureGenerationEnabled: false }
@@ -244,19 +251,27 @@ export function captureReadyCampaignScene(
     }
     const context = { ruleset: library.ruleset, library };
     return validateScene(
-      reconcileBuildingScene(saved, context, {
-        ownerMapId: gm.campaignMapId,
-        restoreContext: buildingContext,
-      }),
+      reconcileCavernScene(
+        reconcileBuildingScene(saved, context, {
+          ownerMapId: gm.campaignMapId,
+          restoreContext: buildingContext,
+        }),
+        context,
+        { ownerMapId: gm.campaignMapId, regenerate: buildingContext?.cavernGeneration === true }
+      ),
       context
     );
   }
   const context = { ruleset: library.ruleset, library };
   return validateScene(
-    reconcileBuildingScene(scene, context, {
-      ownerMapId: 'map-main',
-      restoreContext: buildingContext,
-    }),
+    reconcileCavernScene(
+      reconcileBuildingScene(scene, context, {
+        ownerMapId: 'map-main',
+        restoreContext: buildingContext,
+      }),
+      context,
+      { ownerMapId: 'map-main', regenerate: buildingContext?.cavernGeneration === true }
+    ),
     context
   );
 }
@@ -383,6 +398,7 @@ async function applyMapTerrain(gm, map) {
     elevationScale: terrain.elevationScale,
     treeDensityMultiplier: terrain.treeDensity,
     richShadingEnabled: terrain.richShading.enabled === true,
+    ...(terrain.cavern ? { cavern: terrain.cavern } : {}),
     ...(terrain.structureGenerationEnabled === false ? { structureGenerationEnabled: false } : {}),
     ...(terrain.geometry ? { geometry: terrain.geometry } : {}),
   });

@@ -196,7 +196,14 @@
       edits. Make new switchbacks solid masonry with the highest flight nearest
       the wall; spread higher flights outward instead of floating above or burying
       lower runs. Preserve earlier saved recipes until explicit editing.
-- [ ] **Snap buildings into compound structures** - Snap compatible building
+- [x] **Generated castle cellars and dungeon wings** - Use the native Cellar
+      feature for intact, cliffside, mountain and ruined castles. Add connected
+      storage and deeper multi-room dungeon levels extending beyond the keep,
+      with real editable walls, doorways and supported stairs. Keep compact sites
+      usable, preserve map/landform bounds and existing underground structures,
+      save the layout recipe and refuse generation that would erase authored
+      underground rooms.
+- [x] **Snap buildings into compound structures** - Snap compatible building
       faces/edges together to create connected wings, L/U-shaped buildings,
       courtyards and other interesting footprints instead of isolated boxes.
       Preview alignment and allow cancellation before committing. Define
@@ -205,6 +212,12 @@
       Reuse existing construction parts; preserve editing, Undo/Redo, interiors
       and campaign persistence. Do not silently move occupied structures or
       replace existing manual work.
+      Rectangular same-elevation joins now have real shared-wall cuts, immutable
+      floor/topology previews, actor-safe atomic history and stable saved floor
+      identities. Public controls support Cancel, Apply and disconnect/edit;
+      real paid walking and five-foot member-floor crossings are verified.
+      Public cutaways consume exact authorized floorContext references and
+      preserve each joined room's ceiling without private building records.
 - [x] **Biome geometry features** - Seed bounded caves/tunnels, dedicated town,
       city, fortress and ruined-city layouts, and occasional forest/desert castle
       ruins. Theme masonry/roofs/rock, preserve manual work and avoid flora overlap.
@@ -313,6 +326,23 @@ transfers.
       connected interiors across seeds and supported grid sizes; retain usable
       entrances/stairs, deterministic generation and save/reopen, and obtain
       user visual acceptance. This is separate from S4's cliff/mountain landforms.
+      Implementation progress: ordinary grand castles now share seven connected
+      keep/wing/hall/court/gatehouse/watch parts, varied heights and roofs, an
+      open-sky courtyard and supported arched access. Compact 25/40-square cases
+      retain connected halls; no default-grid increase or saved-scene remodeling
+      was needed. Public snap previews/Cancel, atomic commit/Undo/Redo, stable
+      existing-format joins/reopen, real character walking and member-floor
+      crossing, protected construction and disconnect-then-edit are covered.
+      Native 25/40/50/60-square exteriors and structural sections were rendered;
+      compact wing rooflines were refined and measured below the principal keep.
+      Compact front bastions now retain supported 25-foot diameters and remain
+      lower than 30/40-foot principal keeps; seed 7 was reviewed again natively.
+      The local-dependency fixture rerun covered 25/40/50/60 x seeds 1/7/42,
+      both views, with no shader failures, external/host requests or app storage.
+      Previews also compile immutable floor/opening topology. Current-actor
+      commit checks and occupied Undo after real paid movement are covered.
+      User visual signoff and combined authenticated host-command crossing
+      remain open; passing geometry tests are not artistic acceptance.
 - [ ] **S3 - Natural caves, not surface moon bases** - Generate irregular,
       excavated chambers and passages within rock/terrain instead of assembling
       exposed dome-and-tube shells. Vary chamber proportions, tunnel direction
@@ -323,9 +353,21 @@ transfers.
       views reveal readable natural chambers. Test continuous support, headroom,
       turns and actual creature movement through joins. Avoid expensive world-CSG
       rebuilding during previews or idle frames.
+      Full-map Underground interiors now use the existing elevation tools
+      for Cavern, Fungal Grove, Crystal Fields/Spires and Eldritch Rift
+      to sculpt tall rock ridges and low uneven floors. Procedural stalagmite/
+      stalactite generation and Build tools have been removed in favour of
+      the existing biome assets. Saved prototypes remain readable and removable.
+      No new cave-wall volume or
+      floor-mask geometry is used. Automatic side chambers
+      and an Add tunnel/chamber control connect separate visual
+      areas retain paid movement, saved identities and authored-map protections.
+      The remaining S3 work is the appearance of outdoor cave entrances and
+      ceiling/hanging-formation presentation and artistic acceptance, not placing
+      dome shells or short cutaway walls in Underground maps.
       Prerequisite progress: S4b uses real excavated approaches/halls within a
       painted mountain heightfield. The general Cavern and other natural-cave biome recipes
-      still need this separate redesign; they are not marked complete.
+      no longer use the earlier surface-shell arrangement.
 
 ### Site-specific castles
 

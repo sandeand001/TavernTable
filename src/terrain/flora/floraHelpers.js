@@ -4,6 +4,7 @@
 // and belong in a domain module rather than config.
 
 import { TERRAIN_PLACEABLES } from '../../config/terrain/TerrainPlaceables.js';
+export { hash32 } from '../../utils/SeededRNG.js';
 
 // ── Spectral Detection ───────────────────────────────────────
 export function isSpectralPlaceable(id) {
@@ -135,17 +136,6 @@ export function relocateTropicalCandidate(c, x, y, baseHeight) {
     return { x: nx, y: ny, height: nh };
   }
   return null;
-}
-
-// ── Hash Utility ─────────────────────────────────────────────
-export function hash32(str) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-    h = (h << 13) | (h >>> 19);
-  }
-  return h >>> 0;
 }
 
 // ── Water Detection Helpers ──────────────────────────────────

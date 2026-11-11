@@ -1,8 +1,43 @@
 import { clipCellToBounds } from '../../terrain/ConvexGeometry.js';
 import { buildingLevels, buildingLevelHeight } from '../../terrain/BuildingModel.js';
+import { isBuildingJoinConnection } from '../../terrain/BuildingSnaps.js';
 import TerrainSightMask from './TerrainSightMask.js';
 
 const EPSILON = 1e-6;
+
+export function getBuildingFloorReference(world, map) {
+  if (typeof world.getBuildingFloorRenderContext === 'function') {
+    if (Object.hasOwn(map, 'building'))
+      throw new Error('Public floor maps must use floorContext, not private building records');
+    return map.floorContext ?? null;
+  }
+  return map.building ?? null;
+}
+
+export function getBuildingFloorRenderContext(world, mapId) {
+  const map = world.getMap(mapId);
+  if (typeof world.getBuildingFloorRenderContext === 'function')
+    return publicFloorContext(world, map);
+  if (!map.building) return null;
+  const owner = world.getMap(map.building.ownerMapId),
+    spec = owner.terrain.geometry?.structures?.find(
+      (entry) => entry.id === map.building.structureId
+    ),
+    level = spec && buildingLevels(spec).find((entry) => entry.id === map.building.floor);
+  if (!level) throw new Error('The building floor render definition is unavailable');
+  return {
+    ceilingFeet: level.roofDeck
+      ? null
+      : map.originFeet.y + buildingLevelHeight(spec, level.id) - 0.5,
+    terrainThicknessFeet: world.getMapGeometry(map.id).terrainThicknessFeet,
+    floorAppearance: spec.appearance
+      ? {
+          floorColor: spec.appearance.floorColor,
+          floorMaterial: spec.appearance.floorMaterial,
+        }
+      : null,
+  };
+}
 
 function footprint(world, map, cols = map.grid.cols, rows = map.grid.rows) {
   const a = world.toCampaignPosition(map.id, { x: 0, y: 0, z: 0 });
@@ -71,13 +106,29 @@ export function clipFloorSurfaceOverlap(geometry, { world, map, three, visibleMa
   });
 }
 
-export function createInteriorCutaway(gm) {
-  if (!gm.campaignWorld || !Number.isFinite(gm.terrainEngine?.geometry.terrainThicknessFeet))
+function publicFloorContext(world, map) {
+  if (
+    typeof world.getBuildingFloorRenderContext !== 'function' ||
+    !getBuildingFloorReference(world, map)
+  )
     return null;
-  const world = gm.campaignWorld;
-  const maps = world.listLocationMaps(gm.campaignMapId).map(({ id }) => world.getMap(id));
-  const map = maps.find((entry) => entry.id === gm.campaignMapId);
-  const region = footprint(world, map, gm.cols, gm.rows);
+  const context = world.getBuildingFloorRenderContext(map.id);
+  if (
+    !context ||
+    (context.ceilingFeet !== null && !Number.isFinite(context.ceilingFeet)) ||
+    !Number.isFinite(context.terrainThicknessFeet) ||
+    context.terrainThicknessFeet <= 0
+  )
+    throw new Error('The public building floor render context is missing or invalid');
+  return context;
+}
+
+function createMapCutaway(gm, world, maps, map) {
+  const active = map.id === gm.campaignMapId,
+    cols = active ? gm.cols : map.grid.cols,
+    rows = active ? gm.rows : map.grid.rows,
+    unit = map.grid.tileWorldSize,
+    region = footprint(world, map, cols, rows);
   const above = maps.filter((entry) => {
     if (
       entry.id === map.id ||
@@ -91,20 +142,18 @@ export function createInteriorCutaway(gm) {
       Math.min(region.maxZ, bounds.maxZ) - Math.max(region.minZ, bounds.minZ) > EPSILON
     );
   });
-  const owner = map.building && maps.find((entry) => entry.id === map.building.ownerMapId);
-  const spec = owner?.terrain.geometry?.structures?.find(
-    (entry) => entry.id === map.building.structureId
-  );
-  const level = spec && buildingLevels(spec).find((entry) => entry.id === map.building.floor);
-  const managedCeiling =
-    level && !level.roofDeck
-      ? map.originFeet.y + buildingLevelHeight(spec, level.id) - 0.5
-      : Infinity;
+  const context =
+    publicFloorContext(world, map) ||
+    (map.building ? getBuildingFloorRenderContext(world, map.id) : null);
+  const managedCeiling = context?.ceilingFeet ?? Infinity;
   const ceilingFeet = Math.min(
     managedCeiling,
     Infinity,
     ...above.map(
-      (entry) => entry.originFeet.y - world.getMapGeometry(entry.id).terrainThicknessFeet
+      (entry) =>
+        entry.originFeet.y -
+        (publicFloorContext(world, entry)?.terrainThicknessFeet ??
+          world.getMapGeometry(entry.id).terrainThicknessFeet)
     )
   );
   return {
@@ -124,13 +173,13 @@ export function createInteriorCutaway(gm) {
         world.toMapPosition(
           source.id,
           world.toCampaignPosition(map.id, {
-            x: x * gm.spatial.tileWorldSize,
+            x: x * unit,
             y: 0,
-            z: z * gm.spatial.tileWorldSize,
+            z: z * unit,
           })
         );
       const a = toSource(0, 0);
-      const b = toSource(gm.cols, gm.rows);
+      const b = toSource(cols, rows);
       const bounds = {
         minX: Math.min(a.x, b.x) * sourceScale,
         maxX: Math.max(a.x, b.x) * sourceScale,
@@ -145,20 +194,14 @@ export function createInteriorCutaway(gm) {
           map.id,
           world.toCampaignPosition(source.id, sourcePoint(x, z))
         );
-        const gx = Math.max(
-          0,
-          Math.min(gm.cols - 1, Math.floor(local.x / gm.spatial.tileWorldSize))
-        );
-        const gz = Math.max(
-          0,
-          Math.min(gm.rows - 1, Math.floor(local.z / gm.spatial.tileWorldSize))
-        );
+        const gx = Math.max(0, Math.min(cols - 1, Math.floor(local.x / unit)));
+        const gz = Math.max(0, Math.min(rows - 1, Math.floor(local.z / unit)));
         const floor =
           map.originFeet.y -
           source.originFeet.y +
-          gm.terrainEngine.getHeightAt(gx, gz) *
-            gm.spatial.elevationUnit *
-            (5 / gm.spatial.tileWorldSize);
+          (active ? gm.terrainEngine.getHeightAt(gx, gz) : map.terrain.heights[gz][gx]) *
+            (active ? gm.spatial.elevationUnit : map.terrain.worldElevationUnit) *
+            (5 / unit);
         let ceiling = ceilingFeet - source.originFeet.y;
         for (const { bounds: roof } of roofs)
           if (
@@ -209,6 +252,55 @@ export function createInteriorCutaway(gm) {
             }))
             .filter((span) => span.top - span.bottom > EPSILON);
         },
+      };
+    },
+  };
+}
+
+export function createInteriorCutaway(gm) {
+  if (!gm.campaignWorld || !Number.isFinite(gm.terrainEngine?.geometry.terrainThicknessFeet))
+    return null;
+  const world = gm.campaignWorld,
+    maps = world.listLocationMaps(gm.campaignMapId).map(({ id }) => world.getMap(id)),
+    map = maps.find((entry) => entry.id === gm.campaignMapId),
+    members = [map],
+    visited = new Set([map.id]);
+  const reference = getBuildingFloorReference(world, map);
+  if (reference)
+    for (let i = 0; i < members.length; i++)
+      for (const connection of world.getConnections()) {
+        if (
+          connection.enabled === false ||
+          !isBuildingJoinConnection(connection, reference.ownerMapId) ||
+          !connection.ends.some((end) => end.mapId === members[i].id)
+        )
+          continue;
+        for (const end of connection.ends) {
+          const candidate = maps.find((entry) => entry.id === end.mapId);
+          if (
+            !candidate ||
+            visited.has(candidate.id) ||
+            getBuildingFloorReference(world, candidate)?.ownerMapId !== reference.ownerMapId ||
+            Math.abs(candidate.originFeet.y - map.originFeet.y) > EPSILON
+          )
+            continue;
+          visited.add(candidate.id);
+          members.push(candidate);
+        }
+      }
+  const views = members.map((member) => createMapCutaway(gm, world, maps, member));
+  if (views.length === 1) return views[0];
+  return {
+    map,
+    maps,
+    intersects: (source) => views.some((view) => view.intersects(source)),
+    query(geometry, source, partition, options) {
+      const queries = views.map((view) => view.query(geometry, source, partition, options));
+      return {
+        hasCurves: true,
+        getPartition: () => partition,
+        getSolidCells: () => queries.flatMap((query) => query.getSolidCells()),
+        getSolidSpansAt: (x, z) => queries.flatMap((query) => query.getSolidSpansAt(x, z)),
       };
     },
   };

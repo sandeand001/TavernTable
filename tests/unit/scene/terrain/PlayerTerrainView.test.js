@@ -9,7 +9,35 @@ import {
 } from '../../../../src/campaigns/CreatureVisibility.js';
 import MapProjectionTerrain from '../../../../src/scene/token-adapter/MapProjectionTerrain.js';
 import { GRID_CONFIG } from '../../../../src/config/GameConstants.js';
+import { CAVERN_BIOME_KEYS } from '../../../../src/config/biome/BiomeConstants.js';
+import { getMapTerrainAppearance } from '../../../../src/scene/terrain/TerrainMaterialFactory.js';
+import {
+  cavernRockColor,
+  getCavernSurfaceColor,
+} from '../../../../src/terrain/generation/CavernInteriors.js';
 import { sceneState } from '../../../helpers/sceneState.js';
+
+test.each(CAVERN_BIOME_KEYS)(
+  'shared terrain appearance preserves %s cavern coloring and authored materials',
+  (biome) => {
+    const map = {
+      id: 'cavern',
+      grid: { tileWorldSize: 1 },
+      terrain: { biome, cavern: { version: 2 }, worldElevationUnit: 0.3 },
+    };
+    const appearance = getMapTerrainAppearance({ getMap: () => map }, map);
+    expect(appearance.getColor(7, 11, 3, { id: 'terrain' })).toBe(
+      getCavernSurfaceColor(7, 11, 3, { materialColor: cavernRockColor(biome) })
+    );
+    expect(
+      appearance.getColor(7, 11, 3, {
+        id: 'authored-wall',
+        layerId: 'ground',
+        materialColor: 0x123456,
+      })
+    ).toBe(0x123456);
+  }
+);
 
 function fixture() {
   localStorage.clear();

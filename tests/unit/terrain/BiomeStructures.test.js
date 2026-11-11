@@ -21,7 +21,11 @@ test.each([
     expect(first.save()).toEqual(second.save());
     const structures = first.geometry.getStructures();
     const budget = getBiomeStructureBudget(biomeKey);
-    expect(structures.length).toBeGreaterThan(0);
+    if (biomeKey === 'cavern') {
+      expect(first.cavern).toMatchObject({ version: 5, kind: 'main' });
+      expect(structures).toEqual([]);
+      expect(first.geometry.save().volumes).toEqual([]);
+    } else expect(structures.length).toBeGreaterThan(0);
     expect(structures.length).toBeLessThanOrEqual(budget.structures);
     expect(structures.every((spec) => spec.source === 'generated')).toBe(true);
     expect(first.geometry.save().volumes.length).toBeLessThanOrEqual(budget.volumes);

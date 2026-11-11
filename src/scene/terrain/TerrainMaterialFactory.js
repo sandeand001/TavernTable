@@ -4,10 +4,23 @@ import {
 } from '../../config/biome/ConstructionPalettes.js';
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
+import { CAVERN_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
+import {
+  cavernRockColor,
+  getCavernSurfaceColor,
+} from '../../terrain/generation/CavernInteriors.js';
+import { getBuildingFloorReference } from './InteriorCutaway.js';
 
 export function getBuildingFloorAppearance(world, mapId) {
   if (!world || !mapId) return null;
   const map = world.getMap(mapId);
+  if (typeof world.getBuildingFloorRenderContext === 'function') {
+    if (!getBuildingFloorReference(world, map)) return null;
+    const context = world.getBuildingFloorRenderContext(mapId);
+    if (!context || !Object.hasOwn(context, 'floorAppearance'))
+      throw new Error('The public building floor appearance is missing');
+    return context.floorAppearance;
+  }
   if (!map.building) return null;
   return (
     world
@@ -52,8 +65,16 @@ export function getMapTerrainAppearance(world, map) {
           ? floor.floorMaterial
           : (span.materialStyle ?? 'none')
       ],
-    getColor: (_x, _z, height, span) =>
-      span.materialColor !== undefined
+    getColor: (x, z, height, span) => {
+      if (
+        map.terrain.cavern?.version >= 2 &&
+        span.id === 'terrain' &&
+        CAVERN_BIOME_KEYS.includes(map.terrain.biome)
+      )
+        return getCavernSurfaceColor(x, z, height, {
+          materialColor: cavernRockColor(map.terrain.biome),
+        });
+      return span.materialColor !== undefined
         ? getTerrainLayerColor(
             span.layerId,
             map.terrain.biome,
@@ -66,7 +87,8 @@ export function getMapTerrainAppearance(world, map) {
             ? map.terrain.biome
               ? getBiomeColorWithHydrology(map.terrain.biome, height / feetPerLevel)
               : GRID_CONFIG.TILE_COLOR
-            : getTerrainLayerColor(span.layerId, map.terrain.biome, span.materialRole),
+            : getTerrainLayerColor(span.layerId, map.terrain.biome, span.materialRole);
+    },
   };
 }
 

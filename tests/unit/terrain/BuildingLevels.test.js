@@ -70,6 +70,28 @@ test('the ground floor remains the building base, rather than becoming an unsupp
   expect(() => removeBuildingLevel(house(), 0)).toThrow(/ground|base|lowest/i);
 });
 
+test('generated castle cellars separate dungeon stairs from keep access without changing ordinary cellars', () => {
+  const cellar = createStructure({
+    id: 'cellar',
+    kind: 'cellar',
+    xFeet: 60,
+    zFeet: 60,
+    heightFeet: 20,
+    lengthFeet: 60,
+    widthFeet: 40,
+  });
+  const generated = createStructure({
+    ...cellar,
+    building: {
+      ...cellar.building,
+      cellarLayout: { version: 1, style: 'castle-dungeon', seed: 42 },
+    },
+  });
+  expect(Math.min(...buildingStairs(cellar).steps.map((step) => step.bounds.min.z))).toBe(5);
+  expect(Math.min(...buildingStairs(generated).steps.map((step) => step.bounds.min.z))).toBe(25);
+  expect(Math.max(...buildingStairs(generated).steps.map((step) => step.bounds.max.z))).toBe(35);
+});
+
 test.each([15, 20, 25, 30])(
   '%i-foot stairs have real supported treads no higher than the existing step limit',
   (rise) => {

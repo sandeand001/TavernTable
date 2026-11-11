@@ -1,6 +1,6 @@
 import { createStructure, structureBounds, structureVolumes } from '../ConstructionBlueprints.js';
 import { createSeededRNG } from '../../utils/SeededRNG.js';
-import { SETTLEMENT_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
+import { SETTLEMENT_BIOME_KEYS, CAVERN_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
 import {
   getBiomeStructureBudget,
   getSettlementProfile,
@@ -9,6 +9,9 @@ import { getConstructionAppearance } from '../../config/biome/ConstructionPalett
 import { buildingLevels, createWindowLayout } from '../BuildingModel.js';
 import { createSettlementLayout } from './SettlementLayouts.js';
 import { createCastleSiteLayout } from './CastleSites.js';
+import { createCastleCellarLayout } from './CastleCellars.js';
+import { createCavernInterior } from './CavernInteriors.js';
+import { createBuildingSnapPreview } from '../BuildingSnaps.js';
 
 const LANDMARK_BIOMES = new Set([
   'grassland',
@@ -27,16 +30,7 @@ const LANDMARK_BIOMES = new Set([
   'tundra',
   'coast',
 ]);
-const CAVE_BIOMES = new Set([
-  'hills',
-  'mountain',
-  'alpine',
-  'cedarHighlands',
-  'cavern',
-  'fungalGrove',
-  'crystalFields',
-  'volcanic',
-]);
+const CAVE_BIOMES = new Set(['hills', 'mountain', 'alpine', 'cedarHighlands', 'volcanic']);
 const intersects = (a, b) =>
   a.min.x < b.max.x + 2.5 &&
   a.max.x > b.min.x - 2.5 &&
@@ -75,6 +69,7 @@ export function generateBiomeStructures({
   previousHeights,
   geometry,
   feetPerLevel,
+  cavernExits = [],
   enabled = true,
 }) {
   const rows = heights.length,
@@ -92,6 +87,52 @@ export function generateBiomeStructures({
   const protectedBounds = protectedVolumes
     .filter((v) => v.operation === 'add')
     .map((v) => v.bounds);
+  if (CAVERN_BIOME_KEYS.includes(biomeKey)) {
+    const interior = createCavernInterior({
+      biomeKey,
+      seed,
+      cols,
+      rows,
+      feetPerLevel,
+      exits: [...new Set([...(enabled ? ['north', 'east'] : []), ...cavernExits])],
+    });
+    for (const spec of preserved) {
+      const bounds = structureBounds(spec);
+      for (
+        let z = Math.max(0, Math.floor(bounds.min.z / 5));
+        z < Math.min(rows, Math.ceil(bounds.max.z / 5));
+        z++
+      )
+        for (
+          let x = Math.max(0, Math.floor(bounds.min.x / 5));
+          x < Math.min(cols, Math.ceil(bounds.max.x / 5));
+          x++
+        )
+          interior.heights[z][x] = previousHeights[z][x];
+    }
+    const generatedStructures = (interior.geometry.structures || []).filter(
+      (spec) =>
+        !preserved.some((other) => other.id === spec.id) &&
+        !protectedBounds.some((bounds) => intersects(structureBounds(spec), bounds))
+    );
+    const generatedIds = new Set(generatedStructures.map((spec) => spec.id));
+    interior.geometry = {
+      ...interior.geometry,
+      version:
+        preserved.length || generatedStructures.length
+          ? 3
+          : protectedVolumes.some((volume) => volume.shape)
+            ? 2
+            : 1,
+      structures: [...preserved, ...generatedStructures],
+      volumes: [
+        ...interior.geometry.volumes.filter((volume) => generatedIds.has(volume.structureId)),
+        ...protectedVolumes,
+      ],
+    };
+    if (!preserved.length && !generatedStructures.length) delete interior.geometry.structures;
+    return interior;
+  }
   const next = heights.map((row) => [...row]);
   const cellsIn = (bounds) => {
     const result = [];
@@ -112,6 +153,7 @@ export function generateBiomeStructures({
     for (const [x, z] of cellsIn(bounds)) next[z][x] = previousHeights[z][x];
   const structures = [];
   const siteVolumes = [];
+  const joinPairs = [];
   let floorMaps = 0;
   const occupied = [];
   const random = createSeededRNG((Math.imul(seed, 0x85ebca6b) ^ 0xc2b2ae35) >>> 0, 157);
@@ -202,13 +244,47 @@ export function generateBiomeStructures({
       depth,
       feetPerLevel,
     });
-    for (const input of layout.structures) {
+    const proposed = [];
+    for (const [index, input] of layout.structures.entries()) {
       const { kind, xFeet, zFeet, ...extra } = input;
       const proposal = propose(kind, xFeet, zFeet, extra);
-      append([proposal], {
-        overlap: settlement.kind !== 'town',
-        ground: settlement.site || proposal.spec.baseFeet > 0 ? 'keep' : 'flat',
+      if (
+        append([proposal], {
+          overlap: settlement.kind !== 'town',
+          ground: settlement.site || proposal.spec.baseFeet > 0 ? 'keep' : 'flat',
+        })
+      )
+        proposed[index] = proposal.spec;
+    }
+    for (const join of layout.joins || []) {
+      const source = proposed[join.sourceIndex],
+        target = proposed[join.targetIndex];
+      if (!source || !target)
+        throw new Error(
+          'The complete connected castle main building cannot fit around existing construction'
+        );
+      joinPairs.push({ sourceId: source.id, targetId: target.id });
+    }
+    if (settlement.kind === 'castle') {
+      const keepIndex = layout.structures.findIndex((spec) => spec.name?.endsWith('High Keep'));
+      const keep = keepIndex >= 0 ? proposed[keepIndex] : proposed.find((spec) => spec?.building);
+      if (!keep)
+        throw new Error(
+          'The castle keep is blocked by existing construction; its cellar cannot be generated'
+        );
+      const { kind, xFeet, zFeet, ...extra } = createCastleCellarLayout(keep, {
+        biomeKey,
+        seed,
+        width,
+        depth,
+        heights: next,
+        feetPerLevel,
+        structures: [...preserved, ...structures],
       });
+      if (!append([propose(kind, xFeet, zFeet, extra)], { overlap: true, ground: 'keep' }))
+        throw new Error(
+          'The castle cellar exceeds the site budget or conflicts with protected construction'
+        );
     }
     for (const volume of layout.volumes)
       if (!protectedBounds.some((other) => intersects(volume.bounds, other)))
@@ -359,12 +435,28 @@ export function generateBiomeStructures({
     );
   if (generated.length > budget.volumes)
     throw new Error('Generated structures exceed the map geometry budget');
+  let geometrySnapshot = {
+    version: 3,
+    structures: [...preserved, ...structures],
+    volumes: [...protectedVolumes, ...generated],
+  };
+  const joins = [];
+  for (const pair of joinPairs) {
+    const source = geometrySnapshot.structures.find((spec) => spec.id === pair.sourceId);
+    const preview = createBuildingSnapPreview(
+      geometrySnapshot,
+      pair.sourceId,
+      { xFeet: source.xFeet, zFeet: source.zFeet, angleRadians: source.angleRadians },
+      { targetId: pair.targetId, source: 'generated' }
+    );
+    geometrySnapshot = preview.geometry;
+    joins.push(...preview.joins);
+  }
+  if (generated.length + joins.length > budget.volumes)
+    throw new Error('Generated castle joins exceed the map geometry budget');
   return {
     heights: next,
-    geometry: {
-      version: 3,
-      structures: [...preserved, ...structures],
-      volumes: [...protectedVolumes, ...generated],
-    },
+    geometry: geometrySnapshot,
+    ...(joins.length ? { joins } : {}),
   };
 }

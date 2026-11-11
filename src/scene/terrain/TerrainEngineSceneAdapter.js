@@ -23,7 +23,9 @@ export class TerrainEngineSceneAdapter {
     const buildings = new CampaignBuildingEditor(gm);
     this._unsubs.push(
       e.participateInGeometryEdits(buildings),
-      e.validateGeometryEdits((geometry) => validateConstructionEdit(gm, geometry)),
+      e.validateGeometryEdits((geometry, _snapshot, context) =>
+        validateConstructionEdit(gm, geometry, context)
+      ),
       e.onChanged(({ kind }) => {
         buildings.publish();
         if (kind === 'generationSettings') return;
@@ -33,6 +35,10 @@ export class TerrainEngineSceneAdapter {
           return;
         }
         if (kind !== 'treeDensity') {
+          if (kind === 'generation' && gm.campaignWorld)
+            e.configureGeometryBase(
+              gm.campaignWorld.getMap(gm.campaignMapId).base === 'floor' ? 0.5 : null
+            );
           e.configureGeometryScale((gm.spatial.elevationUnit * 5) / gm.spatial.tileWorldSize);
           gm.notifyTerrainHeightsChanged();
         }

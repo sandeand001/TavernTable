@@ -118,13 +118,32 @@ export function connectionEndpointFeet(world, end) {
 }
 
 export function connectionFeatureBounds(world, connection, options = {}) {
-  const { mapId, volumeIds } = connection.feature;
+  const { mapId, volumeIds, terrainCells } = connection.feature;
   const map = world.getMap(mapId);
   const geometry =
     mapId === options.mapId && options.geometry ? options.geometry : world.getMapGeometry(mapId);
   const volumes = new Map(geometry.save().volumes.map((volume) => [volume.id, volume]));
   const unit = map.grid.tileWorldSize / 5;
   const local = (point) => ({ x: point.x * unit, y: point.y * unit, z: point.z * unit });
+  if (terrainCells) {
+    const scale = (map.terrain.worldElevationUnit * 5) / map.grid.tileWorldSize;
+    const top = Math.max(...map.terrain.heights.flat()) * scale + 5;
+    return terrainCells.map(({ x, z }) => {
+      const height = map.terrain.heights[z][x] * scale;
+      const support = geometry.findSupport(x * 5 + 2.5, z * 5 + 2.5, {
+        belowFeet: height + 1e-5,
+        clearanceFeet: 5,
+      });
+      if (!support || Math.abs(support.heightFeet - height) > 1e-4)
+        throw new ConnectionUnavailableError(
+          'The terrain entrance no longer has a clear supported floor'
+        );
+      return world.toCampaignBounds(mapId, {
+        min: local({ x: x * 5, y: height, z: z * 5 }),
+        max: local({ x: (x + 1) * 5, y: Math.max(height + 5, top), z: (z + 1) * 5 }),
+      });
+    });
+  }
   return volumeIds.map((id) => {
     const volume = volumes.get(id);
     if (!volume)

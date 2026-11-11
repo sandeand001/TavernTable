@@ -5,6 +5,8 @@ import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibr
 import { createCampaignBoard } from '../../helpers/campaignBoard.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import { GameErrors } from '../../../src/utils/error/ErrorHandler.js';
+import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
+import { reconcileCavernScene } from '../../../src/campaigns/CavernAssembly.js';
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 let gm, controls;
@@ -112,6 +114,36 @@ test('legacy single-board campaigns do not expose nonfunctional connected-map co
   gm.campaignWorld = null;
   controls.render();
   expect(controls.root.hidden).toBe(true);
+});
+
+test('cavern area controls appear only in an interior and disable already connected sides', async () => {
+  expect(controls.newCavern.hidden).toBe(true);
+  const engine = new TerrainEngine(25, 25);
+  engine.generateBiomeElevation('cavern', { seed: 42 });
+  const scene = sceneState();
+  scene.version = 2;
+  scene.creatures = [];
+  scene.grid = { cols: 25, rows: 25, tileWorldSize: 1 };
+  Object.assign(scene.terrain, {
+    heights: engine.save().heights,
+    geometry: engine.geometry.save(),
+    cavern: engine.cavern,
+    biome: 'cavern',
+  });
+  const library = gm.characterServices.library;
+  await restoreCampaignScene(
+    gm,
+    reconcileCavernScene(scene, { ruleset: library.ruleset, library }, { regenerate: true }),
+    library,
+    gm.characterServices.combat
+  );
+  controls.render();
+  expect(controls.newCavern.hidden).toBe(false);
+  const sides = controls.newCavern.querySelector('[aria-label="Cavern passage side"]');
+  expect(
+    [...sides.options].filter((option) => option.disabled).map((option) => option.value)
+  ).toEqual(['north', 'east']);
+  expect(sides.value).toBe('south');
 });
 
 test('creating and browsing an independent location does not move, recreate or reset existing actors', async () => {

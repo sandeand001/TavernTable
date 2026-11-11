@@ -15,6 +15,8 @@ export function structureDisplayName(spec) {
     dome: 'Dome',
     cave: 'Cave',
     tunnel: 'Tunnel',
+    stalagmite: 'Stalagmite',
+    stalactite: 'Stalactite',
   }[spec.kind];
   if (!label || typeof spec.id !== 'string')
     throw new Error('A structure identifier requires a valid definition');
@@ -191,7 +193,12 @@ export function buildingStairs(spec, riseFeet = 10) {
     throw new Error('Physical stairs require a positive five-foot rise');
   const { length, width } = buildingDimensions(spec);
   const dx = spec.kind === 'turret' ? length / 2 - 11.25 : 0;
-  const dz = spec.kind === 'turret' ? width / 2 - 10 : 0;
+  const dz =
+    spec.kind === 'turret'
+      ? width / 2 - 10
+      : spec.kind === 'cellar' && spec.building?.cellarLayout
+        ? width - 20
+        : 0;
   const steps = [],
     path = [];
   const add = (id, x0, z0, x1, z1, top) =>
@@ -301,6 +308,7 @@ export function normalizeBuilding(input, spec) {
           'access',
           'nextLevelId',
           'windowLayout',
+          'cellarLayout',
         ].includes(key)
     )
   )
@@ -340,6 +348,22 @@ export function normalizeBuilding(input, spec) {
       layout.sides,
       layout.version === 2 ? layout.seed : undefined
     );
+  }
+  if (input.cellarLayout !== undefined) {
+    const layout = input.cellarLayout;
+    if (
+      spec.kind !== 'cellar' ||
+      !layout ||
+      typeof layout !== 'object' ||
+      Array.isArray(layout) ||
+      Object.keys(layout).some((key) => !['version', 'style', 'seed'].includes(key)) ||
+      layout.version !== 1 ||
+      layout.style !== 'castle-dungeon' ||
+      !Number.isInteger(layout.seed) ||
+      !finite(layout.seed, 0, 0xffffffff)
+    )
+      throw new Error('The saved cellar layout is invalid');
+    building.cellarLayout = copy(layout);
   }
   if (spec.kind === 'cellar' && !building.levels) {
     building.version = 3;

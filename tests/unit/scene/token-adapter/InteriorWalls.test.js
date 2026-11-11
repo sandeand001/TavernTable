@@ -65,6 +65,8 @@ async function fixture({ interiorOwnsShell = false, stories = 1, quarterTurns = 
     terrain: {
       ...sceneState().terrain,
       heights: Array.from({ length: 5 }, () => Array(5).fill(0)),
+      geometry: { version: 1, volumes: [] },
+      sightBounds: [],
     },
   });
   if (stories > 1)

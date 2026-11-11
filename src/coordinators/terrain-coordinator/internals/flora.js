@@ -9,6 +9,10 @@ import { BIOME_FLORA_PROFILES, DEFAULT_PROFILE } from '../../../config/terrain/F
 import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
 import { structureBounds } from '../../../terrain/ConstructionBlueprints.js';
 import {
+  cavernPassageCells,
+  CAVERN_FLOOR_LEVEL,
+} from '../../../terrain/generation/CavernInteriors.js';
+import {
   candidateFilters,
   isSpectralPlaceable,
   isTropicalCluster,
@@ -41,6 +45,18 @@ function getBiomeRNG(baseSeed, biomeKey, salt) {
 export function autoPopulateBiomeFlora(c, biomeKey, seed) {
   if (!c?.gameManager?.placeableMeshPool) return;
   const pool = c.gameManager.placeableMeshPool;
+  const cavernEngine =
+    c.gameManager.terrainEngine?.cavern?.version >= 2 ? c.gameManager.terrainEngine : null;
+  const cavernPassages = new Set(
+    cavernEngine?.cavern.exits.flatMap((side) =>
+      cavernPassageCells(side, cavernEngine.cols, cavernEngine.rows).map(({ x, z }) => `${x}:${z}`)
+    ) || []
+  );
+  if (cavernEngine)
+    c = {
+      ...c,
+      getTerrainHeight: (x, z) => cavernEngine.getHeightAt(x, z) - CAVERN_FLOOR_LEVEL + 2,
+    };
   const structures =
     c.gameManager.terrainEngine?.geometry.getStructures().map(structureBounds) || [];
   const reserved =
@@ -65,6 +81,13 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
   const placePlant = (placement) => {
     const x = (placement.gridX + 0.5) * 5,
       z = (placement.gridY + 0.5) * 5;
+    if (cavernEngine) {
+      if (
+        cavernEngine.getHeightAt(placement.gridX, placement.gridY) > -5 ||
+        cavernPassages.has(`${placement.gridX}:${placement.gridY}`)
+      )
+        return;
+    }
     if (
       excluded.some(
         (bounds) =>

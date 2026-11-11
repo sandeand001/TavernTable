@@ -10,9 +10,17 @@ import {
 } from './generation/BiomeElevationGenerator.js';
 import { TerrainHeightUtils } from '../utils/terrain/TerrainHeightUtils.js';
 import { TerrainGeometry } from './TerrainGeometry.js';
-import { createStructure, structureVolumes } from './ConstructionBlueprints.js';
+import {
+  createStructure,
+  structureVolumes,
+  replaceStructureGeometry,
+  structureHeightChanges,
+  STRUCTURE_TYPES,
+} from './ConstructionBlueprints.js';
 import { generateBiomeStructures } from './generation/BiomeStructures.js';
 import { buildingForHeight } from './BuildingModel.js';
+import { createBuildingSnapPreview, withBuildingSnapContext } from './BuildingSnaps.js';
+import { normalizeCavernRecipe } from './generation/CavernInteriors.js';
 
 function validateDimensions(cols, rows) {
   if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) {
@@ -89,6 +97,7 @@ export class TerrainEngine {
     this._redo = [];
     this._isGenerating = false;
     this._biomeKey = null;
+    this._cavern = null;
     this._structureGenerationEnabled = true;
     const settings = typeof window !== 'undefined' ? window.richShadingSettings : null;
     this._biomeSeed = Number.isInteger(settings?.seed)
@@ -108,6 +117,7 @@ export class TerrainEngine {
     this._geometryValidators = new Set();
     this._geometryParticipant = null;
     this._geometryReceipts = new WeakMap();
+    this._structureSnapPreviews = new WeakMap();
     this._listeners = Object.fromEntries(
       [
         'tileChanged',
@@ -240,11 +250,7 @@ export class TerrainEngine {
   }
 
   setConstructionTool(tool) {
-    if (
-      tool !== null &&
-      tool !== 'select' &&
-      !['wall', 'turret', 'dome', 'building', 'cave', 'cellar', 'tunnel'].includes(tool)
-    )
+    if (tool !== null && tool !== 'select' && !STRUCTURE_TYPES.some((type) => type.kind === tool))
       throw new Error('Choose a supported construction tool');
     if (this._constructionTool === tool) return;
     this.cancelBrushStroke();
@@ -468,6 +474,9 @@ export class TerrainEngine {
       });
       validateHeights(heights);
       const previous = this.save();
+      const replacingGeneratedJoins = previous.geometry?.volumes.some(
+        (volume) => volume.source === 'generated' && volume.id.startsWith('compound-opening-')
+      );
       const plan = generateBiomeStructures({
         biomeKey,
         seed,
@@ -475,20 +484,41 @@ export class TerrainEngine {
         previousHeights: previous.heights,
         geometry: this.geometry.save(),
         feetPerLevel: this._feetPerLevel,
+        cavernExits: options.cavernManualExits || [],
         enabled:
           options.structures === undefined ? this._structureGenerationEnabled : options.structures,
       });
+      const protectAuthoredCellars = [previous.geometry, plan.geometry].some((snapshot) =>
+        snapshot?.structures?.some((spec) => spec.kind === 'cellar' && spec.building?.cellarLayout)
+      );
+      const cavernGeneration = !!(previous.cavern || plan.cavern);
       this.cancelBrushStroke();
       try {
         this._dataStore.restoreHeights(plan.heights);
         this._biomeKey = biomeKey;
         this._biomeSeed = seed;
-        const geometry = this._validatedGeometry(plan.geometry);
+        this._cavern = plan.cavern ?? null;
+        const geometry = this._validatedGeometry(
+          plan.geometry,
+          plan.joins?.length ||
+            replacingGeneratedJoins ||
+            protectAuthoredCellars ||
+            cavernGeneration
+            ? {
+                buildingJoins: plan.joins || [],
+                replacingGeneratedJoins: true,
+                protectAuthoredCellars,
+                cavernGeneration,
+                previousCavern: previous.cavern ?? null,
+              }
+            : null
+        );
         this._applyValidatedGeometry(geometry);
       } catch (error) {
         this._dataStore.restoreHeights(previous.heights);
         this._biomeKey = previous.biomeKey;
         this._biomeSeed = previous.biomeSeed;
+        this._cavern = previous.cavern ?? null;
         this._geometry.invalidate();
         throw error;
       }
@@ -667,7 +697,7 @@ export class TerrainEngine {
     const geometry = this._createGeometry(this.cols, this.rows);
     geometry.load(snapshot);
     if (geometry.hasCurves) geometry.getSolidCells();
-    for (const validate of this._geometryValidators) validate(geometry, snapshot);
+    for (const validate of this._geometryValidators) validate(geometry, snapshot, context);
     const receipt = this._geometryParticipant?.prepare(geometry, context);
     if (receipt) this._geometryReceipts.set(geometry, receipt);
     return geometry;
@@ -687,11 +717,17 @@ export class TerrainEngine {
     return receipt;
   }
 
-  _commitGeometry(after, label) {
+  _commitGeometry(after, label, context = null) {
     const before = this.geometry.save();
-    const geometry = this._validatedGeometry(after);
+    const geometry = this._validatedGeometry(after, context);
+    const receipt = this._geometryReceipts.get(geometry);
+    if (
+      JSON.stringify(before) === JSON.stringify(geometry.save()) &&
+      (!receipt || JSON.stringify(receipt.before) === JSON.stringify(receipt.after))
+    )
+      return false;
     this.cancelBrushStroke();
-    const receipt = this._applyValidatedGeometry(geometry);
+    this._applyValidatedGeometry(geometry);
     this._undo.push({
       label,
       geometry: { before, after },
@@ -701,6 +737,67 @@ export class TerrainEngine {
     this._redo = [];
     this._changed('geometry');
     return true;
+  }
+
+  previewStructureSnap(id, changes, options = {}) {
+    const candidate = createBuildingSnapPreview(this.geometry.save(), id, changes, {
+      ...options,
+      source: 'manual',
+    });
+    const geometry = this._validatedGeometry(candidate.geometry, {
+        buildingJoins: candidate.joins,
+      }),
+      context = this._geometryReceipts.get(geometry)?.after,
+      preview = context ? withBuildingSnapContext(candidate, context) : candidate;
+    this._structureSnapPreviews.set(preview, {
+      signature: JSON.stringify(this.save()),
+      canceled: false,
+      committed: false,
+    });
+    return preview;
+  }
+
+  cancelStructureSnap(preview) {
+    const pending = this._structureSnapPreviews.get(preview);
+    if (!pending || pending.canceled || pending.committed) return false;
+    pending.canceled = true;
+    return true;
+  }
+
+  commitStructureSnap(preview) {
+    const pending = this._structureSnapPreviews.get(preview);
+    if (!pending) throw new Error('Create a snap preview before applying it');
+    if (pending.canceled) throw new Error('This building snap preview was canceled');
+    if (pending.committed) throw new Error('This building snap preview was already applied');
+    if (pending.signature !== JSON.stringify(this.save()))
+      throw new Error('The map changed; preview the building snap again');
+    const changed = this._commitGeometry(preview.geometry, 'Join buildings', {
+      buildingJoins: preview.joins,
+    });
+    pending.committed = true;
+    return changed;
+  }
+
+  removeBuildingJoins(volumeIds, context) {
+    const before = this.geometry.save(),
+      ids = new Set(volumeIds);
+    if (
+      !Array.isArray(volumeIds) ||
+      !volumeIds.length ||
+      ids.size !== volumeIds.length ||
+      volumeIds.some(
+        (id) =>
+          typeof id !== 'string' ||
+          !id.startsWith('compound-opening-') ||
+          !before.volumes.some((volume) => volume.id === id && volume.operation === 'subtract')
+      )
+    )
+      throw new Error('Choose valid connected-building openings to remove');
+    return this._commitGeometry(
+      { ...before, volumes: before.volumes.filter((volume) => !ids.has(volume.id)) },
+      'Disconnect building interiors',
+      context
+    );
   }
 
   placeStructure(input) {
@@ -770,39 +867,13 @@ export class TerrainEngine {
     )
       return false;
     const adjusted = { ...existing, ...changes, source: 'manual' };
+    if (changes.heightFeet !== undefined)
+      Object.assign(adjusted, structureHeightChanges(existing, changes.heightFeet));
     if (adjusted.building && changes.heightFeet !== undefined)
       adjusted.building = buildingForHeight(adjusted.building, changes.heightFeet);
     const spec = createStructure(adjusted, { legacy: !adjusted.building });
     const before = this.geometry.save();
-    const replacement = structureVolumes(spec);
-    const first = before.volumes.findIndex((volume) => volume.structureId === id);
-    const owned = new Set(
-      before.volumes.filter((volume) => volume.structureId === id).map((volume) => volume.id)
-    );
-    // Keep interleaved CSG cuts in place so edits cannot seal neighbouring passages.
-    const scattered = before.volumes
-      .slice(first, first + owned.size)
-      .some((volume) => volume.structureId !== id);
-    const byId = new Map(replacement.map((volume) => [volume.id, volume]));
-    const last = before.volumes.findLastIndex((volume) => volume.structureId === id);
-    const volumes = [];
-    for (let i = 0; i < before.volumes.length; i++) {
-      const volume = before.volumes[i];
-      if (!scattered && i === first) volumes.push(...replacement);
-      if (volume.structureId !== id) volumes.push(volume);
-      else if (scattered) {
-        if (byId.has(volume.id)) volumes.push(byId.get(volume.id));
-        if (i === last) volumes.push(...replacement.filter((entry) => !owned.has(entry.id)));
-      }
-    }
-    return this._commitGeometry(
-      {
-        version: 3,
-        structures: structures.map((entry) => (entry.id === id ? spec : entry)),
-        volumes,
-      },
-      `Resize ${spec.kind}`
-    );
+    return this._commitGeometry(replaceStructureGeometry(before, spec), `Resize ${spec.kind}`);
   }
 
   removeStructure(id) {
@@ -840,6 +911,7 @@ export class TerrainEngine {
       elevationScale: this._elevationScale,
       treeDensityMultiplier: this._treeDensityMultiplier,
       richShadingEnabled: this._richShadingEnabled,
+      ...(this._cavern ? { cavern: normalizeCavernRecipe(this._cavern) } : {}),
       ...(!this._structureGenerationEnabled ? { structureGenerationEnabled: false } : {}),
       ...(this.geometry.hasVolumes || Number.isFinite(this.geometry.terrainThicknessFeet)
         ? { geometry: this.geometry.save() }
@@ -858,6 +930,9 @@ export class TerrainEngine {
     const biomeSeed = state.biomeSeed ?? this._biomeSeed;
     const elevationScale = state.elevationScale ?? TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
     const treeDensity = state.treeDensityMultiplier ?? 1;
+    const cavern = state.cavern === undefined ? null : normalizeCavernRecipe(state.cavern);
+    if (cavern?.version === 1 && !state.geometry)
+      throw new Error('A saved cavern interior requires its physical geometry');
     if (
       state.structureGenerationEnabled !== undefined &&
       typeof state.structureGenerationEnabled !== 'boolean'
@@ -878,6 +953,7 @@ export class TerrainEngine {
     this._geometry = geometry;
     this._visibleLayers = null;
     this._biomeKey = biomeKey;
+    this._cavern = cavern;
     this._biomeSeed = biomeSeed;
     this._elevationScale = elevationScale;
     this._treeDensityMultiplier = treeDensity;
@@ -948,6 +1024,9 @@ export class TerrainEngine {
   }
   get geometry() {
     return this._geometry;
+  }
+  get cavern() {
+    return this._cavern ? normalizeCavernRecipe(this._cavern) : null;
   }
   get visibleLayers() {
     return this._visibleLayers === null ? null : [...this._visibleLayers];

@@ -1,6 +1,11 @@
 import CampaignWorld from './CampaignWorld.js';
 import { validateScene } from './CampaignScene.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
+import { structureVolumes } from '../terrain/ConstructionBlueprints.js';
+import {
+  castleCellarFloorLabel,
+  createCastleCellarRooms,
+} from '../terrain/generation/CastleCellars.js';
 import { GRID_CONFIG } from '../config/GameConstants.js';
 import {
   buildingDimensions,
@@ -18,6 +23,7 @@ import {
   structureDisplayName,
 } from '../terrain/BuildingModel.js';
 import { cellarConnectionFits } from '../terrain/CellarConnections.js';
+import { isBuildingJoinConnection } from '../terrain/BuildingSnaps.js';
 import {
   mapFeetToCampaign,
   campaignToMapFeet,
@@ -39,6 +45,27 @@ function isStructureTranslation(previous, spec) {
       zFeet: spec.zFeet,
       source: spec.source,
     }) === buildingSignature(spec)
+  );
+}
+
+function hasAuthoredCastleCellar(map) {
+  const spec = JSON.parse(map.building.signature);
+  if (spec.source !== 'generated' || !spec.building?.cellarLayout) return false;
+  const geometry = map.terrain.geometry,
+    automatic = `${map.id}:auto:`,
+    access = `${map.id}:cellar-access:`;
+  return (
+    map.name !==
+      `${structureDisplayName(spec)} · ${castleCellarFloorLabel(spec, map.building.floor)}` ||
+    map.terrain.heights.some((row) => row.some((height) => height !== 0)) ||
+    map.terrain.placeables.length > 0 ||
+    geometry?.structures?.some((structure) => structure.source === 'manual') ||
+    geometry?.volumes.some(
+      (volume) =>
+        volume.source !== 'generated' &&
+        !volume.id.startsWith(automatic) &&
+        !volume.id.startsWith(access)
+    )
   );
 }
 
@@ -144,7 +171,7 @@ function floorMap(owner, spec, floor, previous) {
     ...(owner.locationId !== undefined ? { locationId: owner.locationId } : {}),
     name:
       previous?.name ||
-      `${structureDisplayName(spec)} · ${floor === 100 ? 'Battlement deck' : spec.kind === 'cellar' ? `Level ${floor + 1}` : `Floor ${floor + 1}`}`,
+      `${structureDisplayName(spec)} · ${spec.building.cellarLayout ? castleCellarFloorLabel(spec, floor) : floor === 100 ? 'Battlement deck' : spec.kind === 'cellar' ? `Level ${floor + 1}` : `Floor ${floor + 1}`}`,
     originFeet,
     quarterTurns,
     base: 'floor',
@@ -264,6 +291,15 @@ function floorMap(owner, spec, floor, previous) {
         bounds: { min: move(step.bounds.min), max: move(step.bounds.max) },
       });
   const saved = geometry.save();
+  if (!previous && spec.building.cellarLayout) {
+    const rooms = createCastleCellarRooms(spec, floor, offset.x, offset.z);
+    if (rooms.length) {
+      saved.version = 3;
+      saved.structures = rooms;
+      saved.volumes.push(...rooms.flatMap(structureVolumes));
+      geometry.load(saved);
+    }
+  }
   if (previous?.terrain.geometry) {
     const manual = previous.terrain.geometry.volumes.filter(
       (volume) => !volume.id.startsWith(prefix)
@@ -367,6 +403,24 @@ function featureConnection(owner, spec, maps, kind, id, side, u, floor, featureI
     ],
     pathFeet: [],
   };
+}
+
+function entryUsesBuildingJoin(owner, spec) {
+  const volumes = owner.terrain.geometry.volumes,
+    entry = volumes.find((volume) => volume.id === `${spec.id}-entry-door`);
+  return (
+    entry &&
+    volumes.some(
+      (volume) =>
+        volume.operation === 'subtract' &&
+        volume.id.startsWith('compound-opening-') &&
+        ['x', 'y', 'z'].every(
+          (axis) =>
+            volume.bounds.min[axis] <= entry.bounds.min[axis] + EPS &&
+            volume.bounds.max[axis] >= entry.bounds.max[axis] - EPS
+        )
+    )
+  );
 }
 
 function installCellarAccess(owner, spec, maps, connections) {
@@ -495,12 +549,56 @@ function installCellarAccess(owner, spec, maps, connections) {
   });
 }
 
+export function buildingJoinConnections(scene, ownerMapId, joins) {
+  if (!Array.isArray(joins)) throw new Error('Building joins require a list of physical openings');
+  const maps = new Map(scene.maps.map((map) => [map.id, map]));
+  const owner = maps.get(ownerMapId);
+  if (!owner || owner.building) throw new Error('Building joins require their exterior map');
+  return joins.map((join) => {
+    const source = maps.get(buildingFloorId(owner.id, join.sourceId, join.sourceFloor));
+    const target = maps.get(buildingFloorId(owner.id, join.targetId, join.targetFloor));
+    if (
+      !source ||
+      !target ||
+      source.building?.ownerMapId !== owner.id ||
+      target.building?.ownerMapId !== owner.id ||
+      source.locationId !== owner.locationId ||
+      target.locationId !== owner.locationId
+    )
+      throw new Error('The joined building floors must belong to the same exterior location');
+    return {
+      id: `${owner.id}:${join.id}`,
+      name: 'Joined interior passage',
+      kind: 'opening',
+      enabled: true,
+      feature: { mapId: owner.id, volumeIds: [...join.volumeIds] },
+      ends: [
+        {
+          mapId: source.id,
+          positionFeet: campaignToMapFeet(source, mapFeetToCampaign(owner, join.sourcePoint)),
+        },
+        {
+          mapId: target.id,
+          positionFeet: campaignToMapFeet(target, mapFeetToCampaign(owner, join.targetPoint)),
+        },
+      ],
+      pathFeet: [],
+    };
+  });
+}
+
 export function captureBuildingContext(scene, ownerMapId) {
   const maps = (scene.maps || []).filter((map) => map.building?.ownerMapId === ownerMapId),
     ids = new Set(maps.map((map) => map.id));
   return {
+    ownerMapId,
     maps: copy(maps),
     cameras: copy((scene.view?.cameras || []).filter((entry) => ids.has(entry.mapId))),
+    connections: copy(
+      (scene.connections || []).filter((connection) =>
+        isBuildingJoinConnection(connection, ownerMapId)
+      )
+    ),
   };
 }
 
@@ -518,6 +616,8 @@ export function reconcileBuildingScene(
   const oldMaps = new Map(next.maps.map((map) => [map.id, map]));
   const restoredCameras = new Set();
   if (restoreContext) {
+    if (restoreContext.ownerMapId !== undefined && restoreContext.ownerMapId !== ownerMapId)
+      throw new Error('The building Undo context belongs to another exterior map');
     const oldIds = new Set(
       next.maps.filter((map) => map.building?.ownerMapId === ownerMapId).map((map) => map.id)
     );
@@ -528,6 +628,16 @@ export function reconcileBuildingScene(
       ...copy(restoreContext.cameras || []),
     ];
     for (const entry of restoreContext.cameras || []) restoredCameras.add(entry.mapId);
+    if (restoreContext.connections !== undefined) {
+      if (!Array.isArray(restoreContext.connections))
+        throw new Error('The building Undo context has invalid connections');
+      next.connections = [
+        ...(next.connections || []).filter(
+          (connection) => !isBuildingJoinConnection(connection, ownerMapId)
+        ),
+        ...copy(restoreContext.connections),
+      ];
+    }
   }
   const previous = new Map(next.maps.map((map) => [map.id, map]));
   const previousDoors = new Map(
@@ -562,7 +672,7 @@ export function reconcileBuildingScene(
         floors.push(map);
         maps.push(map);
       }
-      if (spec.kind !== 'cellar')
+      if (spec.kind !== 'cellar' && !entryUsesBuildingJoin(owner, spec))
         connections.push(
           featureConnection(
             owner,
@@ -629,8 +739,9 @@ export function reconcileBuildingScene(
           );
           connections.push({
             id: `${buildingIdentity(owner.id, spec.id)}-stairs-${lowId}`,
-            name:
-              highId === 100
+            name: spec.building.cellarLayout
+              ? 'Dungeon stairs'
+              : highId === 100
                 ? 'Stairs to battlement deck'
                 : `Stairs to ${spec.kind === 'cellar' ? 'Cellar' : 'Floor'} ${highId + 1}`,
             kind: 'stairs',
@@ -679,7 +790,22 @@ export function reconcileBuildingScene(
       if (spec.kind === 'cellar' && spec.building.access.kind !== 'none')
         installCellarAccess(owner, spec, maps, connections);
   const byId = new Map(maps.map((map) => [map.id, map]));
-  for (const connection of connections.filter((entry) => !entry.building))
+  if (restoreContext?.protectAuthoredCellars === true)
+    for (const old of oldMaps.values())
+      if (old.building && !byId.has(old.id) && hasAuthoredCastleCellar(old))
+        throw new Error(
+          'An edited castle cellar contains manual dungeon rooms; preserve it before regenerating'
+        );
+  const restoredConnections = new Set(
+    (restoreContext?.connections || []).map((connection) => connection.id)
+  );
+  for (const connection of connections.filter((entry) => !entry.building)) {
+    if (
+      restoreContext?.ownerMapId === ownerMapId &&
+      restoredConnections.has(connection.id) &&
+      isBuildingJoinConnection(connection, ownerMapId)
+    )
+      continue;
     for (const end of connection.ends) {
       const old = oldMaps.get(end.mapId),
         map = byId.get(end.mapId);
@@ -692,6 +818,7 @@ export function reconcileBuildingScene(
       if (old?.building && map.building)
         end.positionFeet = campaignToMapFeet(map, mapFeetToCampaign(old, end.positionFeet));
     }
+  }
   for (const creature of next.creatures) {
     const old = oldMaps.get(creature.mapId),
       map = byId.get(creature.mapId);

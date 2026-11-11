@@ -1,4 +1,11 @@
-import { createStructure } from './ConstructionBlueprints.js';
+import {
+  createStructure,
+  structureMinimumHeight,
+  structureMinimumDiameter,
+  isRockFormation,
+  isRoundStructure,
+  structureHeightChanges,
+} from './ConstructionBlueprints.js';
 import {
   buildingForHeight,
   buildingDimensions,
@@ -17,10 +24,14 @@ export function stretchStructure(original, handle, point, { fine = false } = {})
   const dx = point.x - original.xFeet,
     dz = point.z - original.zFeet;
   const local = { x: dx * c + dz * s, z: -dx * s + dz * c };
-  const round = ['dome', 'cave', 'turret'].includes(original.kind);
-  const step = fine ? 0.5 : 5;
+  const round = isRoundStructure(original);
+  const rock = isRockFormation(original);
+  const step = fine || rock ? 0.5 : 5;
+  const sizeChange = (value, size) => (rock ? size + snap(value - size, step) : snap(value, step));
   const minRound =
-    original.building && original.heightFeet > 10 && original.building.stairs ? 25 : 15;
+    original.building && original.heightFeet > 10 && original.building.stairs
+      ? 25
+      : structureMinimumDiameter(original);
   let length = round ? original.diameterFeet : original.lengthFeet;
   let width = round ? original.diameterFeet : original.widthFeet;
   let x0 = -length / 2,
@@ -38,13 +49,13 @@ export function stretchStructure(original, handle, point, { fine = false } = {})
   const minWidth =
     original.building && original.heightFeet > 10 && original.building.stairs ? 15 : 10;
   if (handle.includes('west'))
-    x0 = x1 - Math.max(round ? minRound : minLength, snap(x1 - local.x, step));
+    x0 = x1 - Math.max(round ? minRound : minLength, sizeChange(x1 - local.x, length));
   if (handle.includes('east'))
-    x1 = x0 + Math.max(round ? minRound : minLength, snap(local.x - x0, step));
+    x1 = x0 + Math.max(round ? minRound : minLength, sizeChange(local.x - x0, length));
   if (handle.includes('north'))
-    z0 = z1 - Math.max(round ? minRound : minWidth, snap(z1 - local.z, step));
+    z0 = z1 - Math.max(round ? minRound : minWidth, sizeChange(z1 - local.z, width));
   if (handle.includes('south'))
-    z1 = z0 + Math.max(round ? minRound : minWidth, snap(local.z - z0, step));
+    z1 = z0 + Math.max(round ? minRound : minWidth, sizeChange(local.z - z0, width));
   let shiftX = (x0 + x1) / 2,
     shiftZ = (z0 + z1) / 2;
   if (round) {
@@ -86,7 +97,7 @@ export function slideWallStairs(original, deltaFeet, { fine = false } = {}) {
 
 export function stretchStructureHeight(original, deltaFeet) {
   const step = original.building && original.building.version < 3 ? 10 : 5;
-  if (original.kind === 'cellar') deltaFeet = -deltaFeet;
+  if (['cellar', 'stalactite'].includes(original.kind)) deltaFeet = -deltaFeet;
   const heightFeet = Math.min(
     100,
     Math.max(
@@ -98,16 +109,18 @@ export function stretchStructureHeight(original, deltaFeet) {
                 (level) => level.elevationFeet
               )
             ) + 10
-        : original.kind === 'wall'
-          ? 5
+        : original.kind === 'wall' || isRockFormation(original)
+          ? structureMinimumHeight(original)
           : 10,
-      snap(original.heightFeet + deltaFeet, step)
+      original.wallStairs || isRockFormation(original)
+        ? original.heightFeet + snap(deltaFeet, step)
+        : snap(original.heightFeet + deltaFeet, step)
     )
   );
   return createStructure(
     {
       ...original,
-      heightFeet,
+      ...structureHeightChanges(original, heightFeet),
       ...(original.building ? { building: buildingForHeight(original.building, heightFeet) } : {}),
     },
     { legacy: true }
