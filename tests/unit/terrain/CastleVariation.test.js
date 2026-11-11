@@ -12,6 +12,7 @@ import { reconcileBuildingScene } from '../../../src/campaigns/BuildingAssembly.
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 
 const layout = (seed) =>
   createSettlementLayout({ biomeKey: 'castle', seed, width: 250, depth: 250 });
@@ -208,7 +209,7 @@ test.each([3, 4, 13])(
     scene.terrain.geometry = engine.geometry.save();
     scene.creatures = [];
     const assembled = reconcileBuildingScene(scene, context),
-      world = CampaignWorld.fromScene(assembled, context);
+      world = openTraversalDoors(CampaignWorld.fromScene(assembled, context));
     expect(assembled.maps.length).toBeLessThanOrEqual(65);
     for (const connection of world
       .getConnections()

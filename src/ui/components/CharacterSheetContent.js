@@ -15,7 +15,7 @@ import {
   notifyCharacterChanged,
 } from '../characters/characterServices.js';
 import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js';
-import { renameCreature } from '../../entities/creatures/CreatureNames.js';
+import { renameCreature, notifyCreatureNames } from '../../entities/creatures/CreatureNames.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
 import { COMPENDIUM_DRAG_TYPE, readCompendiumDrag } from './CompendiumPanel.js';
 import {
@@ -343,7 +343,11 @@ export default class CharacterSheetContent {
   render() {
     const { library } = this.services;
     const id = this.characterId;
+    const previousName = this.token.name;
+    const previousNameMode = this.token.nameMode;
     const character = linkTokenCharacter(this.token, library, id);
+    if (this.token.name !== previousName || this.token.nameMode !== previousNameMode)
+      notifyCreatureNames(this.gameManager, [this.token]);
     this.gameManager.token3DAdapter?.refreshTokenAppearance?.(this.token, character);
     const stats = library.stats(id);
     const movement = getTokenMovementSettings(this.token);

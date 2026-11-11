@@ -111,6 +111,8 @@ export default class PublicPlayerRuntime {
         this.focusTokenId = token?.id || null;
       },
     };
+    gm.playerVisibleMapIds = new Set(this.location.listMaps().map(({ id }) => id));
+    gm.playerSightObstacles = this.location.getObstacles({ mapId });
     if (changingMap) {
       gm.token3DAdapter.disposeMapProjectionTerrain();
       gm.token3DAdapter.disposeTacticalTokens();
@@ -252,6 +254,8 @@ export default class PublicPlayerRuntime {
     gm.campaignMapId = map.id;
     gm.campaignView = { mapId: map.id, focusTokenId: null };
     gm.publicPlayerPresentation = this;
+    gm.playerVisibleMapIds = new Set(this.location.listMaps().map(({ id }) => id));
+    gm.playerSightObstacles = this.location.getObstacles({ mapId: map.id });
     if (changingMap) {
       gm.token3DAdapter.disposeMapProjectionTerrain();
       gm.token3DAdapter.disposeTacticalTokens();
@@ -274,6 +278,8 @@ export default class PublicPlayerRuntime {
     if (invalidate) this.generation++;
     const gm = this.gameManager;
     gm.threeSceneManager.scene.visible = false;
+    gm.playerVisibleMapIds = new Set();
+    gm.playerSightObstacles = [];
     this.visibleIds = new Set();
     for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
     await gm.token3DAdapter.setSelectedToken(null);
@@ -286,5 +292,7 @@ export default class PublicPlayerRuntime {
     gm.token3DAdapter.disposeTacticalTokens();
     gm.token3DAdapter.disposeMapProjectionTerrain();
     if (gm.publicPlayerPresentation === this) delete gm.publicPlayerPresentation;
+    delete gm.playerVisibleMapIds;
+    delete gm.playerSightObstacles;
   }
 }

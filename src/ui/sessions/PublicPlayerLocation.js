@@ -6,18 +6,21 @@ import {
 import { TerrainGeometry } from '../../terrain/TerrainGeometry.js';
 import {
   mapGeometryObstacles,
+  mapSolidToCampaign,
   localMapSupport,
   supportBelowMaps,
   physicalCreatureSight,
 } from '../../campaigns/PhysicalMapQueries.js';
 import { isOpeningHoldValid } from '../../campaigns/CampaignOpeningClimb.js';
 import { isSurfaceGripValid } from '../../campaigns/CampaignSurfaceClimb.js';
+import { createBoxCell, clipCell, createConvexCell } from '../../terrain/ConvexGeometry.js';
 
 export default class PublicPlayerLocation {
   constructor(assets) {
     this.location = assets.location;
     this.maps = new Map(assets.maps.map((map) => [map.id, map]));
     this.connections = assets.connections;
+    this.doorPanels = assets.doorPanels || [];
     this.geometries = new Map();
     this.obstacles = new Map();
     this.mapRevision = 0;
@@ -83,7 +86,8 @@ export default class PublicPlayerLocation {
       geometry = new TerrainGeometry({
         widthFeet: map.grid.cols * 5,
         depthFeet: map.grid.rows * 5,
-        terrainThicknessFeet: map.base === 'floor' ? 0.5 : null,
+        terrainThicknessFeet:
+          map.floorContext?.terrainThicknessFeet ?? (map.base === 'floor' ? 0.5 : null),
         getTerrainHeightFeet: (x, z) =>
           map.terrain.heights[Math.floor(z / 5)][Math.floor(x / 5)] *
           map.terrain.worldElevationUnit *
@@ -95,6 +99,10 @@ export default class PublicPlayerLocation {
     return geometry;
   }
 
+  getBuildingFloorRenderContext(id) {
+    return this.getMap(id).floorContext ?? null;
+  }
+
   getConnections(mapId = null) {
     if (mapId !== null) this.getMap(mapId);
     return this.connections.filter(
@@ -102,11 +110,42 @@ export default class PublicPlayerLocation {
     );
   }
 
+  getDoorRenderGroups(mapId) {
+    const map = this.getMap(mapId);
+    const scale = 5 / map.grid.tileWorldSize;
+    return this.doorPanels.map((door) => ({
+      id: door.id,
+      map,
+      local: door.mapIds.includes(mapId),
+      cells: door.cells.map((solid) => {
+        let cell = createBoxCell(solid);
+        for (const plane of solid.planes || []) cell = clipCell(cell, plane);
+        if (!cell) throw new Error('The public door panel has empty physical geometry');
+        const polygons = cell.faces.map((face) =>
+          face.vertices.map((point) => {
+            const local = this.toMapPosition(mapId, point);
+            return { x: local.x * scale, y: local.y * scale, z: local.z * scale };
+          })
+        );
+        const result = createConvexCell(polygons, {
+          materialColor: 0x795438,
+          materialStyle: 'timber',
+        });
+        if (!result) throw new Error('The public door panel cannot be rendered');
+        return result;
+      }),
+    }));
+  }
+
   toCampaignBounds(id, bounds) {
     const map = this.getMap(id);
     const scale = 5 / map.grid.tileWorldSize;
     const scaled = (point) => ({ x: point.x * scale, y: point.y * scale, z: point.z * scale });
     return campaignFeetBounds(map, { min: scaled(bounds.min), max: scaled(bounds.max) });
+  }
+
+  toCampaignSolid(id, cell) {
+    return mapSolidToCampaign(this.getMap(id), cell);
   }
 
   getObstacles({ mapId = null, geometry = null, coverBounds = null, excludeMapId = null } = {}) {
@@ -126,7 +165,7 @@ export default class PublicPlayerLocation {
         id === mapId && coverBounds !== null ? coverBounds : map.terrain.coverBounds || [];
       for (const bounds of cover) result.push(this.toCampaignBounds(id, bounds));
     }
-    return result;
+    return [...result, ...this.doorPanels.flatMap((door) => door.cells)];
   }
 
   findLocalSupport(id, point, options = {}) {

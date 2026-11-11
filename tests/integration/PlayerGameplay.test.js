@@ -1505,6 +1505,7 @@ test('an owned doorway traversal keeps canonical IDs and charges existing physic
         id: 'doorway',
         name: 'Doorway',
         kind: 'door',
+        open: true,
         ends: [
           { mapId: 'map-main', positionFeet: { x: 22.5, y: 0, z: 12.5 } },
           { mapId: 'inside', positionFeet: { x: 2.5, y: 0, z: 12.5 } },
@@ -2404,8 +2405,89 @@ test('an authorized cosmetic emote exposes only a visible animation command and 
   ).toBeNull();
 }, 30000);
 
+test('a same-ID retry after the DM relocates an actor follows its authorized map without disclosing or replaying the old room', async () => {
+  const { campaignId, player } = await table('2024', {
+    sceneTransform: (scene, library) => {
+      const world = CampaignWorld.fromScene(scene, { ruleset: '2024', library });
+      world.addMap({
+        id: 'destination',
+        name: 'Destination room',
+        base: 'floor',
+        originFeet: { x: 0, y: 10, z: 0 },
+        quarterTurns: 0,
+        grid: scene.grid,
+        terrain: scene.terrain,
+      });
+      const saved = world.save();
+      saved.maps.find(({ id }) => id === 'map-main').base = 'floor';
+      return saved;
+    },
+  });
+  const before = (
+    await player.request('playerState', [
+      {
+        observerTokenId: 'token-1',
+        presentationVersion: 1,
+      },
+    ])
+  ).body.result;
+  expect(before.publicScene.assets.maps.map(({ id }) => id)).toEqual(['map-main']);
+  const command = {
+    version: 1,
+    commandId: randomUUID(),
+    sceneRevision: before.sceneRevision,
+    charactersRevision: before.revision,
+    observerTokenId: 'token-1',
+    tokenId: 'token-1',
+    kind: 'move',
+    payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+    view: { mapId: 'map-main', assetKey: before.publicScene.assetKey },
+  };
+  expect((await player.request('playerCommand', [campaignId, command])).status).toBe(200);
+  const current = (await host.request('readCharacters', [campaignId])).body.result;
+  const relocated = JSON.parse(current.scene);
+  Object.assign(
+    relocated.creatures.find(({ id }) => id === 'token-1'),
+    {
+      mapId: 'destination',
+      gridX: 1,
+      gridY: 1,
+      pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+    }
+  );
+  relocated.view.mapId = 'destination';
+  relocated.view.focusTokenId = 'token-1';
+  expect(
+    (
+      await host.request('commitScene', [
+        campaignId,
+        {
+          ruleset: '2024',
+          revision: current.sceneRevision,
+          charactersRevision: current.revision,
+          scene: JSON.stringify(relocated),
+        },
+      ])
+    ).status
+  ).toBe(200);
+  const retry = await player.request('playerCommand', [campaignId, command]);
+  expect(retry.status).toBe(200);
+  expect(retry.body.result.outcome).toBe('duplicate');
+  expect(retry.body.result.state.publicScene.assets.maps.map(({ id }) => id)).toEqual([
+    'destination',
+  ]);
+  expect(retry.body.result.receipt.motion).toBeUndefined();
+  expect(retry.body.result.receipt.route).toBeUndefined();
+  expect(retry.body.result.receipt.placement).toBeUndefined();
+  expect(() =>
+    validatePlayerCommandResult(retry.body.result, {
+      cachedAssets: before.publicScene.assets,
+    })
+  ).not.toThrow();
+}, 30000);
+
 test('owned Undo reuses the canonical last-use receipt and retries cannot refund an action twice', async () => {
-  const { campaignId, player } = await table();
+  const { campaignId, player, invite } = await table();
   const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
   const dash = await player.request('playerCommand', [
     campaignId,
@@ -2421,11 +2503,59 @@ test('owned Undo reuses the canonical last-use receipt and retries cannot refund
     },
   ]);
   expect(dash.status).toBe(200);
+  expect(dash.body.result.state.gameplay.ownedTokens[0].canUndo).toBe(true);
+  const refreshed = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  expect(refreshed.body.result.gameplay.ownedTokens[0].canUndo).toBe(true);
+  const joined = await request(
+    host.url + '/api/session/join',
+    { invite },
+    {
+      'Content-Type': 'application/json',
+    }
+  );
+  expect(joined.status).toBe(200);
+  const otherSession = participant(
+    host.url,
+    joined.headers['set-cookie'][0].split(';')[0],
+    joined.body.csrf
+  );
+  const otherState = await otherSession.request('playerState', [{ observerTokenId: 'token-1' }]);
+  expect(otherState.body.result.gameplay.ownedTokens[0].canUndo).toBe(false);
+  const foreignUndo = await otherSession.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: dash.body.result.applied.sceneRevision,
+      charactersRevision: dash.body.result.applied.charactersRevision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'action.undo',
+      payload: {},
+    },
+  ]);
+  expect(foreignUndo.status).toBe(422);
+  expect(foreignUndo.body.code).toBe('undo-unavailable');
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: dash.body.result.applied.sceneRevision,
+      charactersRevision: dash.body.result.applied.charactersRevision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+    },
+  ]);
+  expect(moved.status).toBe(200);
+  expect(moved.body.result.state.gameplay.ownedTokens[0].canUndo).toBe(true);
   const command = {
     version: 1,
     commandId: randomUUID(),
-    sceneRevision: dash.body.result.applied.sceneRevision,
-    charactersRevision: dash.body.result.applied.charactersRevision,
+    sceneRevision: moved.body.result.applied.sceneRevision,
+    charactersRevision: moved.body.result.applied.charactersRevision,
     observerTokenId: 'token-1',
     tokenId: 'token-1',
     kind: 'action.undo',
@@ -2440,8 +2570,10 @@ test('owned Undo reuses the canonical last-use receipt and retries cannot refund
   const replay = await player.request('playerCommand', [campaignId, command]);
   expect(replay.body.result.outcome).toBe('duplicate');
   const after = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  expect(after.body.result.gameplay.ownedTokens[0].canUndo).toBe(false);
   expect(after.body.result.gameplay.ownedTokens[0].economy.actions).toBe(1);
   expect(after.body.result.gameplay.ownedTokens[0].movement.allowanceFeet).toBe(30);
+  expect(after.body.result.gameplay.ownedTokens[0].movement.spentFeet).toBe(5);
   const canonical = JSON.parse((await host.request('readScene', [campaignId])).body.result.scene);
   expect(canonical.combat.histories[0].entries[0].undone).toBe(true);
 }, 30000);

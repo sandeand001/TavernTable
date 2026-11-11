@@ -99,6 +99,7 @@ export default class PlayerGameApplication {
       onArrival: (id) => this.chooseArrivalGrant(id),
       onPlace: (id, appearance, grantId) => this.commands.place(id, { appearance, grantId }),
       onRetrieve: (id) => this.commands.send('remove', id, {}),
+      onDoor: (id, open) => this.changeDoor(id, open),
     });
   }
 
@@ -196,6 +197,7 @@ export default class PlayerGameApplication {
     this.state = state;
     this.observerId = state.observerTokenId;
     this.mapId = this.runtime.mapId;
+    this.commands.setStateError(null);
     this.controls.update(state, { placementGrantId: this.placementGrantId });
     if (result.sharedMovements?.length) {
       this.presentationRevision = state.sceneRevision;
@@ -223,6 +225,7 @@ export default class PlayerGameApplication {
     const canAnimate =
       animate &&
       receipt.receipt.motion &&
+      this.runtime.assetKey === receipt.state.publicScene.assetKey &&
       this.state.sceneRevision === command.sceneRevision &&
       receipt.state.sceneRevision === receipt.applied.sceneRevision;
     const movement = canAnimate
@@ -376,6 +379,58 @@ export default class PlayerGameApplication {
     return this.sheets.open(characterId);
   }
 
+  async changeDoor(doorId, open) {
+    return this.commands.mutateScene(async () => {
+      await this.sheets.library.flush();
+      if (this.destroyed || this.accessEnded)
+        throw new Error('Player access ended. Reconnect before using a door.');
+      const state = this.state;
+      const door = state.doors?.find(({ id }) => id === doorId);
+      if (!state.observerTokenId || !door || typeof open !== 'boolean')
+        throw new Error('Choose a nearby visible door for your active assigned character');
+      if (door.locked) throw new Error('This door is locked. Ask the DM to unlock it.');
+      const version = ++this.selectionVersion;
+      this.input.targeting.cancel();
+      this.dice.cancel();
+      await this.runtime.clear();
+      try {
+        const receipt = await this.connection.call('doorState', [
+          state.campaign.id,
+          {
+            doorId,
+            observerTokenId: state.observerTokenId,
+            sceneRevision: state.sceneRevision,
+            open,
+          },
+        ]);
+        if (
+          receipt?.revision !== state.sceneRevision + 1 ||
+          receipt.door?.id !== doorId ||
+          receipt.door.open !== open ||
+          typeof receipt.door.locked !== 'boolean'
+        )
+          throw new Error('The host returned an invalid door change receipt');
+        return await this._readState(
+          { observerTokenId: state.observerTokenId, mapId: this.mapId },
+          version
+        );
+      } catch (error) {
+        if ([403, 409].includes(error.status) && version === this.selectionVersion) {
+          try {
+            await this._readState({ observerTokenId: state.observerTokenId }, version);
+          } catch (refreshError) {
+            await this.fail(refreshError);
+            throw refreshError;
+          }
+          GameErrors.input(error, { component: 'PlayerGameApplication', operation: 'doorState' });
+        } else {
+          await this.fail(error);
+        }
+        throw error;
+      }
+    });
+  }
+
   async chooseObserver(id) {
     if (!this.state.observers.some((observer) => observer.id === id))
       throw new Error('This character is not an available player observer');
@@ -435,6 +490,7 @@ export default class PlayerGameApplication {
   }
 
   async fail(error) {
+    this.commands.setStateError(error);
     this.controls.status.textContent = error.message;
     if (error.status === 401) {
       this.accessEnded = true;

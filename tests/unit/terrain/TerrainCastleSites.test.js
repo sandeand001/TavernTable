@@ -8,6 +8,7 @@ import { reconcileBuildingScene } from '../../../src/campaigns/BuildingAssembly.
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 import { createInteriorCutaway } from '../../../src/scene/terrain/InteriorCutaway.js';
 import { TerrainVolumeMeshBuilder } from '../../../src/scene/terrain/TerrainVolumeMeshBuilder.js';
 import { generateCampaignBiome } from '../../../src/campaigns/CampaignBiomeGeneration.js';
@@ -449,7 +450,7 @@ test.each([
       }).toEqual({ name: spec.name, supported: true });
     }
     const { scene, context } = worldFor(engine),
-      world = CampaignWorld.fromScene(scene, context);
+      world = openTraversalDoors(CampaignWorld.fromScene(scene, context));
     for (const entry of world
       .getConnections()
       .filter((c) => ['entry', 'stairs'].includes(c.building?.kind))) {

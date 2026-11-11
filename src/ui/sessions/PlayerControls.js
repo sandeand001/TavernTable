@@ -34,6 +34,7 @@ export default class PlayerControls {
     onArrival = null,
     onPlace = null,
     onRetrieve = null,
+    onDoor = null,
   }) {
     if (identity.role !== 'player')
       throw new Error('Player controls require an authenticated player');
@@ -66,6 +67,7 @@ export default class PlayerControls {
       <output aria-label="Current location"></output>
       <label>Area<select aria-label="Location area"></select></label>
       <p data-player-observer-notice></p>
+      <div aria-label="Nearby doors" data-player-doors></div>
       <div class="player-session-actions">
         <button type="button" data-player-reconnect>Reconnect</button>
         <button type="button" data-player-signout>Sign out</button>
@@ -76,6 +78,22 @@ export default class PlayerControls {
     this.area = this.root.querySelector('[aria-label="Location area"]');
     this.status = this.root.querySelector('[aria-label="Player session status"]');
     this.retry = this.root.querySelector('[data-player-retry]');
+    this.doors = this.root.querySelector('[data-player-doors]');
+    this.onDoor = onDoor;
+    this.doorClick = async (event) => {
+      const button = event.target.closest('[data-player-door]');
+      if (!button || button.disabled) return;
+      try {
+        const door = this.state.doors?.find(({ id }) => id === button.dataset.playerDoor);
+        if (!door || !this.onDoor) throw new Error('The nearby door controls are unavailable');
+        await this.onDoor(door.id, !door.open);
+      } catch (error) {
+        if (this.destroyed || this.accessEnded) return;
+        this.status.textContent = error.message;
+        GameErrors.input(error, { component: 'PlayerControls', operation: 'doorState' });
+      }
+    };
+    this.doors.addEventListener('click', this.doorClick);
     this.root.querySelector('[data-player-reconnect]').addEventListener('click', onReconnect);
     this.root.querySelector('[data-player-signout]').addEventListener('click', onSignOut);
     this.retry.addEventListener('click', onRetry);
@@ -185,6 +203,10 @@ export default class PlayerControls {
         : state.publicScene?.presentation.mapId
     );
     if (state.view?.mode === 'placement-preview') this.area.disabled = true;
+    if (this.commandPending || this.commandUncertain) {
+      this.observer.disabled = true;
+      this.area.disabled = true;
+    }
     this.root.querySelector('[data-player-observer-notice]').textContent = state.observerTokenId
       ? 'Sight follows this character. Opening another sheet does not switch your viewpoint.'
       : state.view?.mode === 'placement-preview'
@@ -193,6 +215,28 @@ export default class PlayerControls {
     this.updateRoster();
     this.status.textContent = `${state.profile.name} - Connected`;
     this.updateDiceControls();
+    this.updateDoorControls();
+  }
+
+  updateDoorControls() {
+    if (!this.state) return;
+    const busy = this.commandPending || this.commandUncertain || this.library.isSaving;
+    const disabled = busy || this.accessEnded || !this.state.observerTokenId || !this.onDoor;
+    const markup = (this.state.doors || [])
+      .map(
+        (door) =>
+          `<button type="button" data-player-door="${escape(door.id)}"
+        ${disabled || door.locked ? 'disabled' : ''}
+        title="${escape(door.locked ? 'Locked by the DM. Ask the DM to unlock it.' : this.commandUncertain ? 'Resolve the uncertain host command before using a door.' : busy ? 'Wait for the current host change to finish.' : 'Use this nearby visible door.')}">
+        ${door.open ? 'Close' : 'Open'} ${escape(door.name)}${door.locked ? ' (locked)' : ''}
+      </button>`
+      )
+      .join('');
+    reconcileContent(
+      this.doors,
+      markup,
+      this.doors.contains(document.activeElement) ? document.activeElement : null
+    );
   }
 
   updateRoster() {
@@ -260,22 +304,36 @@ export default class PlayerControls {
       'Character viewpoints are unavailable until you reconnect.';
     this.updateDiceControls();
     this.updateRoster();
+    this.doors.replaceChildren();
   }
 
   updateCommandState(commands) {
     this.commandPending = commands.pending;
-    this.commandUncertain = commands.canRetry;
+    this.commandUncertain = commands.canRetry || !!commands.stateError;
     this.retry.hidden = !commands.canRetry;
     this.retry.disabled = commands.pending;
     this.root.querySelector('[data-player-reconnect]').disabled =
       commands.pending || this.library.isSaving;
     this.root.querySelector('[data-player-signout]').disabled =
       commands.pending || this.library.isSaving;
+    this.observer.disabled =
+      commands.pending ||
+      this.commandUncertain ||
+      !this.state?.observers.length ||
+      this.accessEnded;
+    this.area.disabled =
+      commands.pending ||
+      this.commandUncertain ||
+      !this.state?.maps.length ||
+      this.state.view?.mode === 'placement-preview' ||
+      this.accessEnded;
     if (commands.pending)
       this.status.textContent = 'Waiting for the host command and its visual checkpoint...';
     else if (commands.failure) this.status.textContent = commands.failure.message;
+    else if (commands.stateError) this.status.textContent = commands.stateError.message;
     this.updateDiceControls();
     this.updateRoster();
+    this.updateDoorControls();
   }
 
   updateDiceControls() {
@@ -311,6 +369,7 @@ export default class PlayerControls {
     this.destroyed = true;
     this.roster.removeEventListener('click', this.rosterClick);
     this.roster.removeEventListener('change', this.rosterChange);
+    this.doors.removeEventListener('click', this.doorClick);
     for (const { button, disabled, title } of this.diceButtons) {
       button.removeEventListener('click', this.diceClick, true);
       button.disabled = disabled;

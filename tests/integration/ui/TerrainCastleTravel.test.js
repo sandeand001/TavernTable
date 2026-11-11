@@ -11,6 +11,7 @@ import { captureCampaignScene } from '../../../src/campaigns/SceneWorld.js';
 import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { TerrainEngineSceneAdapter } from '../../../src/scene/terrain/TerrainEngineSceneAdapter.js';
 import { getTokenConditions } from '../../../src/entities/creatures/TokenMovement.js';
+import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 import * as dice from '../../../src/systems/dice/dice.js';
 
 let restoreFiles;
@@ -113,6 +114,7 @@ async function fixture(key, seed = 42, cliffStart = false, size = 60) {
     await gm.characterServices.library.edit(token.characterSheetId, {
       hp: { max: 40, current: 40 },
     });
+    openTraversalDoors(gm.campaignWorld);
     return { gm, token, adapter, start: actor };
   } catch (error) {
     disposeConnectedTravelBoard(gm);

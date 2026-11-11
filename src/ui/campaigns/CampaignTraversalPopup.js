@@ -144,6 +144,7 @@ export default class CampaignTraversalPopup {
     const session = gm.characterServices.combat;
     if (
       gm.campaignMapId !== approach.mapId ||
+      gm.campaignRequests?.has('view') ||
       gm.campaignViewBusy ||
       gm.campaignMapFailure ||
       !gm.placedTokens.includes(approach.actor) ||

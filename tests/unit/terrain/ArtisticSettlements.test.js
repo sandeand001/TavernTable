@@ -9,6 +9,7 @@ import { reconcileBuildingScene } from '../../../src/campaigns/BuildingAssembly.
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 
 function generate(
   key,
@@ -69,7 +70,7 @@ test('a default-size fortress is a grand layered estate with a tall keep, bastio
   expect(keep.lengthFeet).toBeGreaterThanOrEqual(40);
   expect(keep.widthFeet).toBeGreaterThanOrEqual(30);
   expect(specs.filter((s) => s.kind === 'turret').length).toBeGreaterThanOrEqual(4);
-  const walls = specs.filter((s) => s.kind === 'wall');
+  const walls = specs.filter((s) => s.kind === 'wall' && s.style === 'battlement');
   expect(walls).toHaveLength(4);
   expect(walls.every((s) => s.heightFeet >= 15 && s.lengthFeet >= 120)).toBe(true);
   expect(walls.filter((s) => s.wallStairs).length).toBeGreaterThanOrEqual(1);
@@ -79,8 +80,9 @@ test('a default-size fortress is a grand layered estate with a tall keep, bastio
   const gate = specs.find((s) => s.name === 'Royal Gate');
   expect(gate.openingWidthFeet).toBeGreaterThanOrEqual(10);
   expect(gate.openingHeightFeet).toBeGreaterThanOrEqual(10);
-  const gatehouse = specs.find((s) => s.name === 'Royal Gatehouse');
-  expect(gatehouse.baseFeet).toBe(gate.heightFeet);
+  const gatehouse = specs.find((s) => s.name.endsWith('Keep Gatehouse'));
+  const gatehouseArch = specs.find((s) => s.name.endsWith('Gatehouse Arch'));
+  expect(gatehouse.baseFeet).toBe(gatehouseArch.heightFeet);
   expect(engine.getHeightAt(Math.floor(gatehouse.xFeet / 5), Math.floor(gatehouse.zFeet / 5))).toBe(
     0
   );
@@ -180,7 +182,7 @@ test.each(['city', 'castle'])(
     scene.terrain.geometry = engine.geometry.save();
     scene.creatures = [];
     const assembled = reconcileBuildingScene(scene, context),
-      world = CampaignWorld.fromScene(assembled, context);
+      world = openTraversalDoors(CampaignWorld.fromScene(assembled, context));
     expect(assembled.maps.length).toBeLessThanOrEqual(128);
     for (const entry of world.getConnections().filter((c) => c.building?.kind === 'entry')) {
       const end = entry.ends[0],

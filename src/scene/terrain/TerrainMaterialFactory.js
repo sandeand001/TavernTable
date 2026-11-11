@@ -67,7 +67,7 @@ export function getMapTerrainAppearance(world, map) {
       ],
     getColor: (x, z, height, span) => {
       if (
-        map.terrain.cavern?.version >= 2 &&
+        (map.terrain.cavern?.version >= 2 || map.terrain.renderStyle === 'cavern') &&
         span.id === 'terrain' &&
         CAVERN_BIOME_KEYS.includes(map.terrain.biome)
       )

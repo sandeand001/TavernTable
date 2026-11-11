@@ -98,6 +98,35 @@ test('a move submits only the active owned token intent and acknowledged revisio
   expect(state.gameplay.ownedTokens[0].movement.remainingFeet).toBe(25);
 });
 
+test('scene mutations share the pending checkpoint lock and cannot bypass an uncertain gameplay command', async () => {
+  const { adapter, sent } = fixture();
+  let finish;
+  const operation = jest.fn(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  const pending = adapter.mutateScene(operation);
+  expect(adapter.pending).toBe(true);
+  await expect(
+    adapter.move('real-scout', {
+      mapId: 'ground',
+      gridX: 2,
+      gridY: 3,
+    })
+  ).rejects.toThrow('current host command');
+  finish('committed');
+  expect(await pending).toBe('committed');
+  await adapter.idle;
+  expect(adapter.pending).toBe(false);
+  adapter.lastRequest = { command: {} };
+  adapter.failure = new TypeError('Lost acknowledgement');
+  await expect(adapter.mutateScene(operation)).rejects.toThrow(/uncertain/i);
+  expect(operation).toHaveBeenCalledTimes(1);
+  expect(sent).toEqual([]);
+});
+
 test.each(['unowned', 'other-observer', 'unsupported', 'unavailable'])(
   '%s controls cannot submit gameplay or silently change the observer',
   async (reason) => {

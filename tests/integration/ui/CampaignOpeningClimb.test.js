@@ -278,7 +278,8 @@ test('empty interiors retain physical floors in exterior views without needing a
     await gm.token3DAdapter.syncMapProjections();
     const floors = gm.threeSceneManager.scene.getObjectByName('MapPhysicalFloors');
     expect(floors.visible).toBe(true);
-    expect(floors.children).toHaveLength(3);
+    expect(floors.children).toHaveLength(1);
+    expect(floors.children[0].name).toBe('MapPhysicalFloors:batch');
     gm.threeSceneManager.scene.updateMatrixWorld(true);
     const ray = new three.Raycaster(new three.Vector3(12.5, 5, 6.5), new three.Vector3(0, -1, 0));
     expect(ray.intersectObject(floors, true).some((hit) => Math.abs(hit.point.y - 4) < 1e-5)).toBe(

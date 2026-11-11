@@ -29,7 +29,7 @@ export function gameplayError(message, code, status = 422) {
   return Object.assign(new Error(message), { code, status });
 }
 
-export function gameplayRuntime(scene, library) {
+export function gameplayRuntime(scene, library, undo = new Map()) {
   const world = CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library });
   const actors = scene.creatures.map((saved) => {
     const actor = {
@@ -56,6 +56,18 @@ export function gameplayRuntime(scene, library) {
     getLocationId: (actor) => world.getLocationId(actor.mapId),
   });
   combat.restore(scene.combat, actors);
+  for (const actor of actors) {
+    const entries = undo.get(actor.id);
+    if (!entries?.length) continue;
+    const history = combat.histories.get(actor.characterSheetId) || [];
+    if (entries.some((entry) => entry.characterId !== actor.characterSheetId))
+      throw new Error('The server Undo receipts no longer match the assigned character');
+    const retained = entries.filter((entry) =>
+      history.some((row) => row.sequence === entry.sequence && !row.undone)
+    );
+    combat.status(actor);
+    combat.states.get(actor).undo = copy(retained);
+  }
   return { world, actors, combat };
 }
 
@@ -70,7 +82,7 @@ function playerMovementBudget(combat, actor, travelMode) {
       };
 }
 
-export function playerGameplayState(scene, library, ownedIds) {
+export function playerGameplayState(scene, library, ownedIds, undo = new Map()) {
   if (!scene)
     return {
       version: 1,
@@ -78,7 +90,7 @@ export function playerGameplayState(scene, library, ownedIds) {
       ownedTokens: [],
       turn: null,
     };
-  const runtime = gameplayRuntime(scene, library);
+  const runtime = gameplayRuntime(scene, library, undo);
   const owned = new Set(ownedIds);
   return {
     version: 1,
@@ -551,7 +563,7 @@ export async function executePlayerCommand(
   scene,
   library,
   command,
-  { dice, ownedIds = [], placementGrant } = {}
+  { dice, ownedIds = [], placementGrant, undo = new Map() } = {}
 ) {
   if (command.kind === 'place')
     return placePlayerCharacter(scene, library, command.payload, placementGrant);
@@ -561,7 +573,7 @@ export async function executePlayerCommand(
       id: command.commandId,
       useSlowFall: command.payload.useSlowFall,
     });
-  const runtime = gameplayRuntime(scene, library);
+  const runtime = gameplayRuntime(scene, library, undo);
   const actor = runtime.actors.find((entry) => entry.id === command.tokenId);
   if (command.kind === 'action.undo') {
     const status = runtime.combat.status(actor);
@@ -572,7 +584,11 @@ export async function executePlayerCommand(
     const next = copy(scene);
     next.combat = runtime.combat.snapshot();
     encodeScene(next, { ruleset: library.ruleset, library });
-    return { scene: next, receipt: { type: 'action.undo', tokenId: actor.id } };
+    return {
+      scene: next,
+      receipt: { type: 'action.undo', tokenId: actor.id },
+      undoReceipts: copy(runtime.combat.states.get(actor).undo),
+    };
   }
   if (command.kind === 'emote') {
     const action = getTokenCommand(command.payload.actionId);
@@ -931,6 +947,7 @@ export async function executePlayerCommand(
         sequence: result.sequence,
         ...(roll ? { roll, rolls } : {}),
       },
+      undoReceipts: copy(runtime.combat.states.get(actor).undo),
     };
   }
   if (command.kind === 'roll') {

@@ -16,6 +16,56 @@ class PlayerCampaigns {
     this.resources = resources;
     this.published = new PublishedMaps(root);
     this.presentations = new Map();
+    this.undoSessions = new Map();
+  }
+
+  undoFor(profile, state) {
+    const saved = this.undoSessions.get(profile.id);
+    if (
+      !saved ||
+      saved.campaignId !== profile.campaignId ||
+      state.campaign.id !== profile.campaignId ||
+      saved.sceneRevision !== state.sceneRevision ||
+      saved.revision !== state.revision
+    )
+      return new Map();
+    return new Map(
+      [...saved.tokens].filter(([, entries]) =>
+        entries.every((entry) => profile.characterIds.includes(entry.characterId))
+      )
+    );
+  }
+
+  rememberUndo(profile, { previous, current, tokens, tokenId, reset }) {
+    for (const [id, saved] of this.undoSessions) {
+      if (saved.campaignId !== profile.campaignId || saved.sceneRevision > current.sceneRevision)
+        continue;
+      if (
+        reset ||
+        saved.sceneRevision !== previous.sceneRevision ||
+        saved.revision !== previous.revision
+      ) {
+        this.undoSessions.delete(id);
+        continue;
+      }
+      const retained = new Map(saved.tokens);
+      retained.delete(tokenId);
+      this.undoSessions.set(id, { ...saved, ...current, tokens: retained });
+    }
+    if (this.undoSessions.get(profile.id)?.sceneRevision > current.sceneRevision) return;
+    const retained = reset
+      ? new Map()
+      : new Map([...tokens].map(([id, entries]) => [id, copy(entries.slice(-10))]));
+    while (retained.size > 64) retained.delete(retained.keys().next().value);
+    this.undoSessions.delete(profile.id);
+    if (retained.size)
+      this.undoSessions.set(profile.id, {
+        campaignId: profile.campaignId,
+        ...current,
+        tokens: retained,
+      });
+    while (this.undoSessions.size > 256)
+      this.undoSessions.delete(this.undoSessions.keys().next().value);
   }
 
   async _modules() {
@@ -36,7 +86,7 @@ class PlayerCampaigns {
     return { profile, state, catalog, library };
   }
 
-  async state(session, options = {}, store = this.store) {
+  async state(session, options = {}, store = this.store, undo = null) {
     const { profile, state, library } = await this._state(session, store);
     if (
       options.sinceSceneRevision !== undefined &&
@@ -116,7 +166,12 @@ class PlayerCampaigns {
       !isDeepStrictEqual(currentProfile.characterIds, profile.characterIds)
     )
       throw reject('Your character assignments changed; refresh and choose an authorized observer');
-    const gameplay = playerGameplayState(scene, library, profile.characterIds);
+    const gameplay = playerGameplayState(
+      scene,
+      library,
+      profile.characterIds,
+      undo || this.undoFor(profile, state)
+    );
     const visible = new Set(
       view.publicScene.actors.filter((actor) => actor.owned).map((actor) => actor.id)
     );

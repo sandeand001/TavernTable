@@ -2,6 +2,16 @@ import { edition } from '../rules/editions.js';
 import { CHARACTER_BACKUP_LIMIT } from '../config/characters/CharacterImages.js';
 import IndexedDBCampaignStorage from './IndexedDBCampaignStorage.js';
 
+const revisionConflict = (campaign, message) =>
+  Object.assign(new Error(message), {
+    status: 409,
+    code: 'stale-revision',
+    current: {
+      sceneRevision: campaign.sceneRevision ?? 0,
+      charactersRevision: campaign.charactersRevision,
+    },
+  });
+
 export default class CampaignStore {
   constructor({
     indexedDB = globalThis.indexedDB,
@@ -128,7 +138,8 @@ export default class CampaignStore {
       if (campaign.ruleset !== ruleset)
         throw new Error('Scene data belongs to a different campaign ruleset');
       if (campaign.charactersRevision !== charactersRevision) {
-        throw new Error(
+        throw revisionConflict(
+          campaign,
           'Campaign character data changed in another window. Reopen the campaign before saving its board.'
         );
       }
@@ -155,7 +166,8 @@ export default class CampaignStore {
       if (campaign.ruleset !== ruleset)
         throw new Error('Character data belongs to a different campaign ruleset');
       if (campaign.charactersRevision !== revision) {
-        throw new Error(
+        throw revisionConflict(
+          campaign,
           'Campaign data changed in another window. Reopen the campaign before saving.'
         );
       }
@@ -325,7 +337,10 @@ export default class CampaignStore {
 
   _writeScene(campaign, revision, scene) {
     if ((campaign.sceneRevision ?? 0) !== revision) {
-      throw new Error('The campaign board changed in another window. Reopen it before saving.');
+      throw revisionConflict(
+        campaign,
+        'The campaign board changed in another window. Reopen it before saving.'
+      );
     }
     campaign.scene = scene;
     campaign.sceneRevision = revision + 1;

@@ -219,14 +219,44 @@ test.each([20, 25])(
   30000
 );
 
-test.each(['cavern', 'mountain', 'fungalGrove'])(
+test.each(['cavern', 'fungalGrove'])(
+  '%s uses connected elevation caverns with physically supported, full-clearance floors',
+  (key) => {
+    const engine = generate(key, 20, 20);
+    engine.configureGeometryScale(1.5);
+    expect(engine.cavern).toMatchObject({ version: 5, kind: 'main' });
+    expect(engine.geometry.getStructures()).toEqual([]);
+    expect(engine.geometry.save().volumes).toEqual([]);
+    const heights = engine.save().heights;
+    expect(heights.flat().filter((height) => height <= -5).length).toBeGreaterThan(100);
+    const range = buildSurfaceRange({
+      geometry: engine.geometry,
+      start: {
+        gridX: 10,
+        gridY: 10,
+        xFeet: 52.5,
+        zFeet: 52.5,
+        heightFeet: heights[10][10] * 1.5,
+      },
+      speedFeet: 10000,
+    });
+    for (let z = 0; z < 20; z++)
+      for (let x = 0; x < 20; x++)
+        if (heights[z][x] <= -5) {
+          expectWalkable(engine.geometry, x * 5 + 2.5, z * 5 + 2.5, heights[z][x] * 1.5);
+          expect(getSurfaceRoute(range, x, z, { heightFeet: heights[z][x] * 1.5 })).not.toBeNull();
+        }
+  }
+);
+
+test.each(['mountain'])(
   '%s generates joined chambers and tunnels with one floor and full creature clearance at their seams',
   (key) => expectConnectedCaves(generate(key, 20, 20)),
   30000
 );
 
 test('editing a generated chamber preserves the ordered passage cuts through neighbouring shells, including undo and reopening', () => {
-  const engine = generate('cavern', 20, 20);
+  const engine = generate('mountain', 20, 20);
   const chamber = engine.geometry.getStructures().filter((spec) => spec.kind === 'cave')[1];
   expect(chamber).toBeDefined();
   const before = engine.save();

@@ -8,37 +8,38 @@ import { pointInsideSolid, segmentIntersectsSolid } from '../terrain/ConvexGeome
 const finitePoint = (point) =>
   point && ['x', 'y', 'z'].every((axis) => Number.isFinite(point[axis]));
 
+export function mapSolidToCampaign(map, cell) {
+  const bounds = campaignFeetBounds(map, cell.bounds);
+  if (
+    cell.planes.every(({ normal }) =>
+      ['x', 'y', 'z'].some((axis) => Math.abs(normal[axis]) > 1 - 1e-10)
+    )
+  )
+    return bounds;
+  const origin = mapFeetToCampaign(map, { x: 0, y: 0, z: 0 });
+  return {
+    ...bounds,
+    planes: cell.planes.map(({ normal, distance }) => {
+      const endpoint = mapFeetToCampaign(map, normal);
+      const rotated = {
+        x: endpoint.x - origin.x,
+        y: endpoint.y - origin.y,
+        z: endpoint.z - origin.z,
+      };
+      return {
+        normal: rotated,
+        distance: distance + rotated.x * origin.x + rotated.y * origin.y + rotated.z * origin.z,
+      };
+    }),
+  };
+}
+
 export function mapGeometryObstacles(map, geometry, cache) {
   if (geometry.hasCurves) {
     const cells = geometry.getSolidCells();
     let cached = cache.get(map.id);
     if (cached?.geometry !== geometry || cached.cells !== cells) {
-      const origin = mapFeetToCampaign(map, { x: 0, y: 0, z: 0 });
-      const obstacles = cells.map((cell) => {
-        const bounds = campaignFeetBounds(map, cell.bounds);
-        if (
-          cell.planes.every(({ normal }) =>
-            ['x', 'y', 'z'].some((axis) => Math.abs(normal[axis]) > 1 - 1e-10)
-          )
-        )
-          return bounds;
-        return {
-          ...bounds,
-          planes: cell.planes.map(({ normal, distance }) => {
-            const endpoint = mapFeetToCampaign(map, normal);
-            const rotated = {
-              x: endpoint.x - origin.x,
-              y: endpoint.y - origin.y,
-              z: endpoint.z - origin.z,
-            };
-            return {
-              normal: rotated,
-              distance:
-                distance + rotated.x * origin.x + rotated.y * origin.y + rotated.z * origin.z,
-            };
-          }),
-        };
-      });
+      const obstacles = cells.map((cell) => mapSolidToCampaign(map, cell));
       cached = { geometry, cells, obstacles };
       cache.set(map.id, cached);
     }

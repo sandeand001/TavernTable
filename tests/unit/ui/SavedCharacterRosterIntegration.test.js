@@ -7,6 +7,10 @@ import { SAVED_CHARACTER_DRAG_MIME } from '../../../src/ui/characters/SavedChara
 
 let mockFinishRestore;
 
+jest.mock('../../../src/ui/sessions/SessionLogin.js', () => ({
+  ensureSession: jest.fn(async () => ({ role: 'dm' })),
+}));
+
 jest.mock('../../../src/core/GameManager.js', () => ({
   __esModule: true,
   default: jest.fn(() => ({

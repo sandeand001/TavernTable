@@ -2,6 +2,7 @@ import { validateMapBoard } from './CampaignScene.js';
 import { validateConnections } from './CampaignConnections.js';
 import { validateSavedPlacement, samePlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
+import { CONSTRUCTION_MATERIALS } from '../config/biome/ConstructionPalettes.js';
 
 export const PLAYER_PUBLIC_VERSION = 1;
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -21,14 +22,16 @@ const invalid = (message = 'The host returned an invalid public player snapshot'
 
 export function validatePlayerAssets(assets) {
   if (
-    !only(assets, ['location', 'maps', 'connections']) ||
+    !only(assets, ['location', 'maps', 'connections', 'doorPanels']) ||
     !only(assets.location, ['id', 'name']) ||
     !id(assets.location.id) ||
     typeof assets.location.name !== 'string' ||
     !Array.isArray(assets.maps) ||
     !assets.maps.length ||
     assets.maps.length > 256 ||
-    !Array.isArray(assets.connections)
+    !Array.isArray(assets.connections) ||
+    (assets.doorPanels !== undefined &&
+      (!Array.isArray(assets.doorPanels) || assets.doorPanels.length > 2000))
   )
     invalid();
   const maps = new Map();
@@ -43,7 +46,7 @@ export function validatePlayerAssets(assets) {
         'base',
         'grid',
         'terrain',
-        'building',
+        'floorContext',
       ]) ||
       !id(map.id) ||
       maps.has(map.id) ||
@@ -65,48 +68,98 @@ export function validatePlayerAssets(assets) {
         'structureGenerationEnabled',
         'geometry',
         'placeables',
+        'renderStyle',
       ])
     )
       invalid();
     const geometry = map.terrain.geometry;
-    if (
-      geometry &&
-      (!only(geometry, ['version', 'structures', 'volumes']) ||
-        ![1, 2, 3].includes(geometry.version))
-    )
+    if (geometry && (!only(geometry, ['version', 'volumes']) || ![1, 2].includes(geometry.version)))
       invalid('The public geometry version or join data is not supported');
+    if (map.terrain.renderStyle !== undefined && map.terrain.renderStyle !== 'cavern') invalid();
     validateMapBoard(map.grid, map.terrain, geometry ? 2 : 1, map.base);
     maps.set(map.id, map);
   }
   for (const map of maps.values())
-    if (map.building) {
-      const floor = map.building;
+    if (map.floorContext) {
+      const floor = map.floorContext;
       if (
-        !only(floor, [
-          'ownerMapId',
-          'structureId',
-          'floor',
-          'offsetX',
-          'offsetZ',
-          'lengthFeet',
-          'widthFeet',
-          'roomHeightFeet',
-        ]) ||
-        !maps.has(floor.ownerMapId) ||
-        !id(floor.structureId) ||
-        !Number.isInteger(floor.floor) ||
-        !['offsetX', 'offsetZ', 'lengthFeet', 'widthFeet'].every((field) =>
-          Number.isFinite(floor[field])
-        ) ||
-        (floor.roomHeightFeet !== null && !feet(floor.roomHeightFeet))
+        !only(floor, ['ownerMapId', 'ceilingFeet', 'terrainThicknessFeet', 'floorAppearance']) ||
+        map.base !== 'floor' ||
+        !id(floor.ownerMapId) ||
+        !(floor.ceilingFeet === null || Number.isFinite(floor.ceilingFeet)) ||
+        !Number.isFinite(floor.terrainThicknessFeet) ||
+        floor.terrainThicknessFeet <= 0 ||
+        !(
+          floor.floorAppearance === null ||
+          (only(floor.floorAppearance, ['floorColor', 'floorMaterial']) &&
+            Number.isInteger(floor.floorAppearance.floorColor) &&
+            floor.floorAppearance.floorColor >= 0 &&
+            floor.floorAppearance.floorColor <= 0xffffff &&
+            Object.hasOwn(CONSTRUCTION_MATERIALS, floor.floorAppearance.floorMaterial))
+        )
       )
         invalid();
-      const owner = maps.get(floor.ownerMapId);
-      if (
-        !owner.terrain.geometry?.structures?.some((structure) => structure.id === floor.structureId)
-      )
-        invalid('The public floor owner is missing');
     }
+  const doorIds = new Set();
+  for (const door of assets.doorPanels || []) {
+    if (
+      !only(door, ['id', 'mapIds', 'cells']) ||
+      !id(door.id) ||
+      doorIds.has(door.id) ||
+      !Array.isArray(door.mapIds) ||
+      door.mapIds.length < 1 ||
+      door.mapIds.length > 2 ||
+      new Set(door.mapIds).size !== door.mapIds.length ||
+      door.mapIds.some((mapId) => !maps.has(mapId)) ||
+      !Array.isArray(door.cells) ||
+      !door.cells.length ||
+      door.cells.length > 256
+    )
+      invalid('The public door panel is invalid');
+    doorIds.add(door.id);
+  }
+  const obstacles = (assets.doorPanels || []).flatMap((door) => door.cells);
+  if (obstacles.length > 10000) invalid('There are too many public door panels');
+  for (const obstacle of obstacles) {
+    if (
+      !only(obstacle, ['min', 'max', 'planes']) ||
+      !point(obstacle.min) ||
+      !point(obstacle.max) ||
+      !['x', 'y', 'z'].every((axis) => obstacle.min[axis] < obstacle.max[axis]) ||
+      (obstacle.planes !== undefined &&
+        (!Array.isArray(obstacle.planes) ||
+          obstacle.planes.length < 4 ||
+          obstacle.planes.length > 256))
+    )
+      invalid('The public sight obstacle is invalid');
+    for (const plane of obstacle.planes || [])
+      if (
+        !only(plane, ['normal', 'distance']) ||
+        !point(plane.normal) ||
+        Math.hypot(plane.normal.x, plane.normal.y, plane.normal.z) < 1e-10 ||
+        !Number.isFinite(plane.distance)
+      )
+        invalid('The public sight plane is invalid');
+  }
+  for (const connection of assets.connections)
+    if (
+      !only(connection, [
+        'id',
+        'name',
+        'kind',
+        'enabled',
+        'open',
+        'locked',
+        'ends',
+        'pathFeet',
+        'feature',
+        'outsideMapId',
+      ]) ||
+      !only(connection.feature, ['mapId', 'volumeIds', 'terrainCells']) ||
+      !Array.isArray(connection.ends) ||
+      connection.ends.some((end) => !only(end, ['mapId', 'positionFeet']))
+    )
+      invalid('The public connection contains unsupported authoring data');
   validateConnections(assets.connections, assets.maps);
   return assets;
 }
@@ -238,6 +291,23 @@ export function validatePlayerState(state, { cachedAssets = null } = {}) {
     !(state.observerTokenId === null || id(state.observerTokenId))
   )
     invalid();
+  if (
+    state.doors !== undefined &&
+    (!Array.isArray(state.doors) ||
+      state.doors.length > 2000 ||
+      (state.observerTokenId === null && state.doors.length > 0) ||
+      new Set(state.doors.map((door) => door?.id)).size !== state.doors.length ||
+      state.doors.some(
+        (door) =>
+          !only(door, ['id', 'name', 'open', 'locked']) ||
+          !id(door.id) ||
+          typeof door.name !== 'string' ||
+          typeof door.open !== 'boolean' ||
+          typeof door.locked !== 'boolean' ||
+          (door.open && door.locked)
+      ))
+  )
+    invalid('The host returned invalid nearby door controls');
   const snapshot = state.publicScene;
   if (
     !only(snapshot, ['version', 'assetKey', 'assets', 'presentation', 'actors', 'updates']) ||

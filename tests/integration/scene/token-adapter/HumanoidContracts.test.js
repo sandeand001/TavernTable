@@ -210,7 +210,7 @@ describe.each(CHARACTER_DEFINITIONS.map(({ id }) => [id]))('%s actual-FBX contra
     setTokenMovementSettings(token, { speed: 10 });
     expect(adapter.requestMoveToGrid(token, 2, 4)).toBeNull();
     expect(adapter.requestMoveToGrid(token, 3, 4).cost).toBe(10);
-    expect(adapter.requestMoveToGrid(token, 4, 4)).toBeNull();
+    expect(adapter.requestMoveToGrid(token, 4, 4)).toMatchObject({ queued: true });
     for (let frame = 0; frame < 20; frame++) stepHumanoid(f);
     setTokenMovementSettings(token, { mode: 'run', type: 'drunk' });
     adapter.applyMovementStyle(token);
@@ -220,8 +220,8 @@ describe.each(CHARACTER_DEFINITIONS.map(({ id }) => [id]))('%s actual-FBX contra
       if (key) keys.add(key);
     });
     expect(keys.has('drunkRunForward')).toBe(true);
-    expect(token.world).toEqual({ x: 3.5, y: 0, z: 4.5 });
-    expect([token.gridX, token.gridY]).toEqual([3, 4]);
+    expect(token.world).toEqual({ x: 4.5, y: 0, z: 4.5 });
+    expect([token.gridX, token.gridY]).toEqual([4, 4]);
     expect(token.__ttWorldLock).toBeUndefined();
     expect(Math.abs(humanoidBounds(f).min.y)).toBeLessThan(0.025);
   });

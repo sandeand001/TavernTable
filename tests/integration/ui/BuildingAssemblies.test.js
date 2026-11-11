@@ -25,6 +25,7 @@ import { GameErrors } from '../../../src/utils/error/ErrorHandler.js';
 import { wallStairLayout } from '../../../src/terrain/WallStairs.js';
 import { buildingLocalToFeet } from '../../../src/terrain/BuildingModel.js';
 import { buildSurfaceRange } from '../../../src/terrain/SurfaceNavigation.js';
+import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 
 let restoreFiles;
 beforeAll(() => {
@@ -130,6 +131,7 @@ async function fixture(
     await adapter.setSelectedToken(actor);
     const { library, combat: session } = gm.characterServices;
     await library.edit(actor.characterSheetId, { hp: { max: 40, current: 40 } });
+    openTraversalDoors(gm.campaignWorld);
     return { gm, actor, adapter, editor, library, session };
   } catch (error) {
     editor?.detach();

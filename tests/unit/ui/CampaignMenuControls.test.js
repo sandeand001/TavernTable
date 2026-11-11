@@ -27,6 +27,10 @@ const button = (root, text) =>
 beforeEach(() => {
   jest.clearAllMocks();
   document.body.innerHTML = '<div id="settings-panel"></div>';
+  const saveListeners = new Set();
+  saveState = (state) => {
+    for (const listener of saveListeners) listener(state);
+  };
   services = {
     campaign: { id: 'adventure', name: 'Evening adventure', ruleset: '2024', coreVersion: '5.2' },
     workspace: {
@@ -41,9 +45,9 @@ beforeEach(() => {
     autosave: {
       ready: true,
       subscribe: jest.fn((listener) => {
-        saveState = listener;
+        saveListeners.add(listener);
         listener({ state: 'saved', text: 'Saved to host' });
-        return jest.fn();
+        return () => saveListeners.delete(listener);
       }),
       retry: jest.fn(async () => {}),
       flush: jest.fn(async () => {}),
@@ -69,9 +73,11 @@ test('Settings contains campaign/session options while the floating region conta
     'Campaigns',
     'Retry save',
     'Players & sharing',
+    'Discard local changes and refresh',
     'Sign out',
     'JSON backups',
   ]);
+  expect(button(controls, 'Discard local changes and refresh').hidden).toBe(true);
   expect(controls.querySelector('[aria-label="Campaign save status"]').textContent).toBe(
     'Saved to host'
   );

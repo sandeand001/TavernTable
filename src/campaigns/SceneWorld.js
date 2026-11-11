@@ -26,13 +26,13 @@ export function queueCampaignOperation(gm, key, operation) {
         if (request === 'pointer') return true;
         return (
           !gm.characterServices?.library.isSaving &&
-          !gm.characterServices?.combat.moves.size &&
+          !gm.characterServices?.combat?.moves.size &&
           !gm.terrainEngine?.hasPendingStroke &&
           !isCampaignActionInProgress(gm)
         );
       },
     });
-    gm.characterServices?.combat.subscribe(() => gm.campaignRequests?.flush());
+    gm.characterServices?.combat?.subscribe(() => gm.campaignRequests?.flush());
   }
   const world = gm.campaignWorld;
   const library = gm.characterServices?.library;

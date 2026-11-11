@@ -103,6 +103,10 @@ export class TerrainRebuilder {
     const t0 = (typeof performance !== 'undefined' && performance.now()) || Date.now();
     const neutralColor = GRID_CONFIG?.TILE_COLOR ?? 0x444444;
     const floorAppearance = getBuildingFloorAppearance(gm.campaignWorld, gm.campaignMapId);
+    const cavernStyle =
+      gm.terrainEngine?.cavern?.version >= 2 ||
+      (gm.campaignMapId &&
+        gm.campaignWorld?.getMap(gm.campaignMapId).terrain.renderStyle === 'cavern');
     const gmBiomeGetter = (gx, gy, elev) => {
       const h = Number.isFinite(elev) ? elev : 0;
       const terrainModeActive = gm.terrainEngine
@@ -125,7 +129,7 @@ export class TerrainRebuilder {
       const biomeKey = gm.terrainEngine
         ? gm.terrainEngine.biomeKey
         : typeof window !== 'undefined' && window.selectedBiome;
-      if (gm.terrainEngine?.cavern?.version >= 2 && CAVERN_BIOME_KEYS.includes(biomeKey))
+      if (cavernStyle && CAVERN_BIOME_KEYS.includes(biomeKey))
         return getCavernSurfaceColor(gx * 5, gy * 5, h, {
           materialColor: cavernRockColor(biomeKey),
         });
@@ -169,7 +173,7 @@ export class TerrainRebuilder {
             ],
           getColor: (x, z, height, span) => {
             if (
-              gm.terrainEngine.cavern?.version >= 2 &&
+              cavernStyle &&
               span.id === 'terrain' &&
               CAVERN_BIOME_KEYS.includes(gm.terrainEngine.biomeKey)
             )

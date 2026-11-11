@@ -159,7 +159,11 @@
   through an open connection. Closing a door hides the entire room again,
   including previously visited walls and stairs. Room visits persist by player
   identity, not party or camera, and do not override a closed door. The DM remains
-  unrestricted. Internet access requires a configured exact HTTPS origin through a
+  unrestricted. Public assets include only authorized maps, baked physical volumes,
+  safe door panels and derived floor context, never private authoring definitions.
+  Nearby door controls serialize with gameplay and reveal only a freshly authorized
+  snapshot; failed transitions block world commands until refresh/reconnect.
+  Internet access requires a configured exact HTTPS origin through a
   trusted proxy/tunnel; no listener or firewall exposure is created automatically.
 - **Source pack**: an attributed, edition-compatible content collection pinned to
   an explicit version. Core SRD content is always enabled; optional packs are
@@ -212,6 +216,12 @@
   **Attacks left** is derived from unspent actions and any ongoing Attack-action
   sequence, honoring class/level and manual attack-count overrides. The internal
   ongoing sequence starts at zero; it must not grant free attacks at turn start.
+- **Player action Undo**: bounded server-owned transient receipts, scoped to the
+  authenticated session and actor, pinned to committed scene/character revisions.
+  Accepted player commands carry matching receipts forward; turn changes, external
+  canonical edits, reassignment, history expiry or a new sign-in can invalidate
+  them. Publish receipt-cache changes only after storage commits. Never accept
+  client Undo receipts or include them in public snapshots/checkpoints.
 - **Shared movement presentation**: receiving DM/player models replay committed
   safe routes with native locomotion variants, without spending costs again.
   Free play permits assigned movement and refreshes its per-journey allowance;
@@ -219,7 +229,9 @@
   continuous. DM movement metadata travels outside the saved scene; reloading
   never resumes its animation. Preserve local cameras, shared-draft conflict
   protection and physical sight; hidden waypoints and unassigned budgets stay
-  private. This is checkpoint-driven replay, not frame-locked live networking.
+  private. Asset-scope changes apply the authoritative destination rather than
+  replaying against replacement or unauthorized terrain. This is checkpoint-driven
+  replay, not frame-locked live networking.
 - **Flight**: a per-token airborne travel state using the character's effective
   flying speed. Take flight rises 5 feet. Raise/Lower offer 5, 10, 15 and 20 feet,
   spending one foot of flying movement per vertical foot. Horizontal routes retain

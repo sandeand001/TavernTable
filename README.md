@@ -312,6 +312,13 @@ Gameplay remains capability-gated:
   hidden route origins and unassigned actors' private budgets are filtered.
   Compatible queued moves retain continuous animation. This is checkpoint-driven
   replay, not frame-locked networking, and requires the matching native client.
+  A changed terrain/room asset scope uses the authoritative destination snapshot
+  rather than replaying a route against replacement or no-longer-authorized maps.
+- Player action **Undo** uses bounded, server-owned receipts from the same
+  authenticated session. Accepted gameplay commands preserve matching receipts;
+  turn changes, external canonical edits, expired history and a new sign-in can
+  end their availability. Retrying an acknowledged Undo never refunds it twice.
+  Private Undo receipts are not included in public snapshots or campaign backups.
 - World conditions, flight protection and concentration still require DM
   adjudication. Manual assigned-sheet editing is not a replacement for validated
   gameplay commands.
@@ -325,6 +332,13 @@ Gameplay remains capability-gated:
   separately for each player, never as combined party vision. The DM remains
   unrestricted. Access gates, glass/shutters and extended vision effects remain
   planned work.
+- **Nearby doors** in the player's session controls offer **Open**/**Close** only
+  for the active assigned character's host-authorized nearby doors. Locked doors
+  require the DM. Door changes share the gameplay command lock and refresh the
+  authorized view before revealing it; failed/uncertain transitions stay blocked
+  until a fresh snapshot or reconnect.
+  Public assets contain authorized maps, baked physical geometry, door panels
+  and derived floor render context, not private construction blueprints.
 - Live updates use authenticated same-origin event notifications and HTTP
   commands in the existing Node host. This avoids introducing a second state
   owner/framework during the first slice. Conflicting writes are rejected, not

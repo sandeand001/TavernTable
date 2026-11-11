@@ -11,6 +11,7 @@ import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 
 const castleBiomes = ['castle', 'ruinedCastle', 'cliffsideCastle', 'mountainCastle'];
 const copy = (value) => JSON.parse(JSON.stringify(value));
@@ -40,6 +41,7 @@ function assemble(engine) {
 }
 
 function connectionRoute(world, connection, end) {
+  openTraversalDoors(world);
   const scale = world.getMap(end.mapId).grid.tileWorldSize / 5;
   return world.planConnection(connection.id, end.mapId, {
     x: end.positionFeet.x * scale,

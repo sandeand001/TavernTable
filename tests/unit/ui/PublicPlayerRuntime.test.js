@@ -11,6 +11,10 @@ import PlayerInputController from '../../../src/ui/sessions/PlayerInputControlle
 import PlayerCommandAdapter from '../../../src/ui/sessions/PlayerCommandAdapter.js';
 import { InteractionManager } from '../../../src/managers/InteractionManager.js';
 import { PickingService } from '../../../src/scene/picking/PickingService.js';
+import {
+  cavernRockColor,
+  getCavernSurfaceColor,
+} from '../../../src/terrain/generation/CavernInteriors.js';
 
 test('a player runtime rejects the old marker-only snapshot instead of pretending it is a playable scene', async () => {
   const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
@@ -125,6 +129,44 @@ test('public hydration uses the real terrain engine and canonical visible models
   expect(gameManager.token3DAdapter.getSelectedToken()?.id).toBe('canonical-scout');
   expect(gameManager.sceneAutosave).toBeUndefined();
   await runtime.destroy();
+});
+
+test('native player projections retain the authorized map and sight fences and clear them with the viewpoint', async () => {
+  const { gameManager, runtime, state } = fixture();
+  const door = { min: { x: 10, y: 0, z: 10 }, max: { x: 11, y: 7, z: 15 } };
+  state.publicScene.assets.doorPanels = [{ id: 'door', mapIds: ['main'], cells: [door] }];
+  await runtime.update(state);
+  expect(gameManager.playerVisibleMapIds).toEqual(new Set(['main']));
+  expect(gameManager.playerSightObstacles).toContainEqual(door);
+  expect(gameManager.threeSceneManager.scene.getObjectByName('MapDoors:door')).toBeTruthy();
+  await runtime.clear();
+  expect(gameManager.playerVisibleMapIds.size).toBe(0);
+  expect(gameManager.playerSightObstacles).toEqual([]);
+  await runtime.destroy();
+  expect(gameManager).not.toHaveProperty('playerVisibleMapIds');
+  expect(gameManager).not.toHaveProperty('playerSightObstacles');
+});
+
+test('native cavern terrain uses the shared rock palette without receiving the private generation recipe', async () => {
+  const { gameManager, runtime, state } = fixture();
+  const terrain = state.publicScene.assets.maps[0].terrain;
+  terrain.biome = 'cavern';
+  terrain.renderStyle = 'cavern';
+  const rebuilder = new TerrainRebuilder({
+    gameManager,
+    builder: new TerrainMeshBuilder({ tileWorldSize: 1, elevationUnit: 0.3 }),
+  });
+  gameManager.notifyTerrainHeightsChanged = () => rebuilder.rebuild({ three });
+  await runtime.update(state);
+  const mesh = gameManager.threeSceneManager.scene.getObjectByName('TerrainMesh');
+  const expected = getCavernSurfaceColor(0, 0, 0, { materialColor: cavernRockColor('cavern') });
+  expect(new three.Color().fromBufferAttribute(mesh.geometry.attributes.color, 0).getHex()).toBe(
+    new three.Color(expected).getHex()
+  );
+  expect(terrain.cavern).toBeUndefined();
+  await runtime.destroy();
+  mesh.geometry.dispose();
+  mesh.material.dispose();
 });
 
 test('routine public updates retain loaded actors, the player camera and selected target while removing revoked sightings', async () => {

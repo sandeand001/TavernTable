@@ -43,6 +43,112 @@ afterEach(() => {
   delete document.body.dataset.sessionRole;
 });
 
+test('native nearby-door controls serialize the host mutation and reveal only its refreshed authorized snapshot', async () => {
+  const { app, state, gameManager, requests } = fixture();
+  state.doors = [
+    { id: 'entry', name: 'Courtyard door', open: false, locked: false },
+    { id: 'locked', name: 'Locked gate', open: false, locked: true },
+  ];
+  await app.start();
+  const button = app.controls.root.querySelector('[data-player-door="entry"]');
+  expect(button).not.toBeNull();
+  expect(button.textContent).toContain('Open');
+  expect(app.controls.root.querySelector('[data-player-door="locked"]').disabled).toBe(true);
+  const fresh = JSON.parse(JSON.stringify(state));
+  fresh.sceneRevision++;
+  fresh.doors[0].open = true;
+  fresh.publicScene.assetKey = 'opened-door-assets';
+  let release;
+  app.connection.call = async (operation, args) => {
+    requests.push([operation, args]);
+    if (operation === 'doorState')
+      return new Promise((resolve) => {
+        release = () =>
+          resolve({
+            revision: fresh.sceneRevision,
+            door: { id: 'entry', open: true, locked: false },
+          });
+      });
+    if (operation === 'playerState') return fresh;
+    throw new Error(`Unexpected operation: ${operation}`);
+  };
+  button.click();
+  const idle = app.commands.idle;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(requests).toEqual([
+    [
+      'doorState',
+      [
+        state.campaign.id,
+        {
+          doorId: 'entry',
+          observerTokenId: state.observerTokenId,
+          sceneRevision: state.sceneRevision,
+          open: true,
+        },
+      ],
+    ],
+  ]);
+  expect(app.commands.pending).toBe(true);
+  expect(gameManager.threeSceneManager.scene.visible).toBe(false);
+  expect(app.controls.root.querySelector('[data-player-door="entry"]').disabled).toBe(true);
+  await expect(
+    app.commands.move(state.observerTokenId, {
+      mapId: app.mapId,
+      gridX: 2,
+      gridY: 1,
+    })
+  ).rejects.toThrow('current host command');
+  release();
+  await idle;
+  expect(requests[1][0]).toBe('playerState');
+  expect(app.state.sceneRevision).toBe(fresh.sceneRevision);
+  expect(app.controls.root.querySelector('[data-player-door="entry"]').textContent).toContain(
+    'Close'
+  );
+  expect(gameManager.threeSceneManager.scene.visible).toBe(true);
+  await app.destroy();
+});
+
+test('native doors reject locked, unknown and uncertain requests without changing the observer or making a host call', async () => {
+  const { app, state, requests, gameManager } = fixture();
+  state.doors = [{ id: 'locked', name: 'Gate', open: false, locked: true }];
+  await app.start();
+  await expect(app.changeDoor('locked', true)).rejects.toThrow(/locked/i);
+  await expect(app.changeDoor('unlisted', true)).rejects.toThrow(/nearby/i);
+  state.doors[0].locked = false;
+  app.commands.lastRequest = { command: { observerTokenId: state.observerTokenId } };
+  app.commands.failure = new TypeError('Lost gameplay acknowledgement');
+  app.controls.updateCommandState(app.commands);
+  await expect(app.changeDoor('locked', true)).rejects.toThrow(/uncertain/i);
+  expect(requests).toEqual([]);
+  expect(app.observerId).toBe(state.observerTokenId);
+  expect(gameManager.threeSceneManager.scene.visible).toBe(true);
+  await app.destroy();
+});
+
+test('a failed door mutation stays fail-closed until a fresh authorized snapshot restores gameplay', async () => {
+  const { app, state, gameManager } = fixture();
+  state.doors = [{ id: 'entry', name: 'Door', open: false, locked: false }];
+  await app.start();
+  app.connection.call = async (operation) => {
+    if (operation === 'doorState') throw new TypeError('Door acknowledgement was lost');
+    return state;
+  };
+  await expect(app.changeDoor('entry', true)).rejects.toThrow('acknowledgement was lost');
+  expect(gameManager.threeSceneManager.scene.visible).toBe(false);
+  expect(app.commands.availability('move', state.observerTokenId)).toMatchObject({
+    allowed: false,
+    code: 'player-state-unavailable',
+  });
+  expect(app.controls.root.querySelector('[data-player-door="entry"]').disabled).toBe(true);
+  await app.refresh();
+  expect(gameManager.threeSceneManager.scene.visible).toBe(true);
+  expect(app.commands.availability('move', state.observerTokenId).allowed).toBe(true);
+  expect(app.controls.root.querySelector('[data-player-door="entry"]').disabled).toBe(false);
+  await app.destroy();
+});
+
 test('bursts of authorized revision notices coalesce into one read and one fresh follow-up without concurrent hydration', async () => {
   const { app, state, gameManager } = fixture();
   let notify;
@@ -79,6 +185,58 @@ test('bursts of authorized revision notices coalesce into one read and one fresh
   expect(reads).toHaveLength(2);
   expect(gameManager.placedTokens[0].world.x).toBe(2.5);
   expect(app.state.sceneRevision).toBe(fresh.sceneRevision);
+  await app.destroy();
+});
+
+test('a changed authorized map scope applies the host destination without replaying motion in the replacement terrain', async () => {
+  const { app, state, gameManager } = fixture();
+  await app.start();
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision++;
+  next.publicScene.assetKey = 'changed-room-assets';
+  const motion = {
+    kind: 'walk',
+    completed: true,
+    from: {
+      mapId: state.publicScene.presentation.mapId,
+      gridX: 1,
+      gridY: 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+    },
+    route: [
+      {
+        mapId: state.publicScene.presentation.mapId,
+        gridX: 2,
+        gridY: 1,
+        facingAngle: 0,
+        pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+      },
+    ],
+  };
+  Object.assign(next.publicScene.actors[0], motion.route[0]);
+  const play = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedMovement')
+    .mockResolvedValue({ completed: true });
+  await app.receiveReceipt(
+    {
+      state: next,
+      applied: { sceneRevision: next.sceneRevision, charactersRevision: next.revision },
+      receipt: { kind: 'move', tokenId: state.observerTokenId, motion },
+    },
+    {
+      animate: true,
+      command: {
+        kind: 'move',
+        tokenId: state.observerTokenId,
+        observerTokenId: state.observerTokenId,
+        sceneRevision: state.sceneRevision,
+      },
+    }
+  );
+  expect(play).not.toHaveBeenCalled();
+  expect(gameManager.placedTokens[0].world).toEqual({ x: 2.5, y: 0, z: 1.5 });
+  expect(gameManager.threeSceneManager.scene.visible).toBe(true);
   await app.destroy();
 });
 

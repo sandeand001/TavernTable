@@ -185,6 +185,9 @@ test('free-play standing debt survives a zero-distance map switch and clears onl
     const actor = gm.placedTokens[0];
     const session = gm.characterServices.combat;
     const scene = gm.campaignWorld.save();
+    scene.connections[0].kind = 'opening';
+    delete scene.connections[0].open;
+    delete scene.connections[0].locked;
     scene.connections[0].ends[0].positionFeet.x = 57.5;
     gm.campaignWorld.acceptCheckpoint(scene);
     const autosave = new CampaignAutosave({ gameManager: gm, library, combat: session });

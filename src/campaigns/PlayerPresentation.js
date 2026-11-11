@@ -1,4 +1,5 @@
-import { buildingLevelHeight } from '../terrain/BuildingModel.js';
+import { getBuildingFloorRenderContext } from '../scene/terrain/InteriorCutaway.js';
+import { doorLeafCells } from './CampaignDoors.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const fields = (value, names) =>
@@ -6,64 +7,71 @@ const fields = (value, names) =>
     names.filter((name) => value[name] !== undefined).map((name) => [name, copy(value[name])])
   );
 
-export function playerRenderAssets(world, observerMapId) {
+export function playerRenderAssets(
+  world,
+  observerMapId,
+  { visibleMapIds = new Set([observerMapId]) } = {}
+) {
   const locationId = world.getLocationId(observerMapId);
-  const maps = world.listLocationMaps(observerMapId).map(({ id }) => {
-    const map = world.getMap(id);
-    const terrain = fields(map.terrain, [
-      'heights',
-      'biome',
-      'seed',
-      'elevationScale',
-      'worldElevationUnit',
-      'treeDensity',
-      'richShading',
-      'sightBounds',
-      'coverBounds',
-      'structureGenerationEnabled',
-    ]);
-    terrain.geometry = world.getMapGeometry(id).save();
-    terrain.placeables = map.terrain.placeables.map((entry) =>
-      fields(entry, [
-        'type',
-        'gridX',
-        'gridY',
-        'heightOffset',
-        'persistedScale',
-        'modelKey',
-        'variantKey',
-        'placeableId',
-        'rotation',
-        'angleRadians',
-      ])
-    );
-    const result = {
-      ...fields(map, ['id', 'name', 'originFeet', 'quarterTurns', 'base', 'grid']),
-      locationId,
-      terrain,
-    };
-    if (map.building) {
-      const owner = world.getMap(map.building.ownerMapId);
-      const spec = owner.terrain.geometry?.structures?.find(
-        (entry) => entry.id === map.building.structureId
+  const maps = world
+    .listLocationMaps(observerMapId)
+    .filter(({ id }) => visibleMapIds.has(id))
+    .map(({ id }) => {
+      const map = world.getMap(id);
+      const terrain = fields(map.terrain, [
+        'heights',
+        'biome',
+        'seed',
+        'elevationScale',
+        'worldElevationUnit',
+        'treeDensity',
+        'richShading',
+        'sightBounds',
+        'coverBounds',
+        'structureGenerationEnabled',
+      ]);
+      const physical = world.getMapGeometry(id).save();
+      const volumes = physical.volumes.map((volume) =>
+        fields(volume, [
+          'id',
+          'operation',
+          'layerId',
+          'bounds',
+          'shape',
+          'materialRole',
+          'materialColor',
+          'materialStyle',
+        ])
       );
-      if (!spec) throw new Error('The public floor is missing its authoritative structure');
-      result.building = {
-        ...fields(map.building, [
-          'ownerMapId',
-          'structureId',
-          'offsetX',
-          'offsetZ',
-          'lengthFeet',
-          'widthFeet',
-        ]),
-        floor: map.building.floor,
-        roomHeightFeet:
-          map.building.floor === 100 ? null : buildingLevelHeight(spec, map.building.floor),
+      terrain.geometry = { version: volumes.some((volume) => volume.shape) ? 2 : 1, volumes };
+      if (map.terrain.cavern?.version >= 2) terrain.renderStyle = 'cavern';
+      terrain.placeables = map.terrain.placeables.map((entry) =>
+        fields(entry, [
+          'type',
+          'gridX',
+          'gridY',
+          'heightOffset',
+          'persistedScale',
+          'modelKey',
+          'variantKey',
+          'placeableId',
+          'rotation',
+          'angleRadians',
+        ])
+      );
+      const result = {
+        ...fields(map, ['id', 'name', 'originFeet', 'quarterTurns', 'base', 'grid']),
+        locationId,
+        terrain,
       };
-    }
-    return result;
-  });
+      if (map.building) {
+        result.floorContext = {
+          ownerMapId: map.building.ownerMapId,
+          ...getBuildingFloorRenderContext(world, id),
+        };
+      }
+      return result;
+    });
   const ids = new Set(maps.map((map) => map.id));
   const connections = world
     .getConnections()
@@ -76,16 +84,28 @@ export function playerRenderAssets(world, observerMapId) {
         'name',
         'kind',
         'enabled',
+        'open',
+        'locked',
         'ends',
         'pathFeet',
         'feature',
         'outsideMapId',
-        'building',
       ])
     );
+  const doorPanels = world
+    .getConnections()
+    .filter((entry) => entry.kind === 'door' && entry.ends.some((end) => ids.has(end.mapId)))
+    .map((entry) => ({
+      id: entry.id,
+      mapIds: entry.ends.filter((end) => ids.has(end.mapId)).map((end) => end.mapId),
+      cells: doorLeafCells(world, entry).map((cell) =>
+        fields(world.toCampaignSolid(entry.feature.mapId, cell), ['min', 'max', 'planes'])
+      ),
+    }));
   return {
     location: world.listLocations().find((entry) => entry.id === locationId),
     maps,
     connections,
+    doorPanels,
   };
 }

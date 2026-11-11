@@ -24,6 +24,7 @@ export default class PlayerCommandAdapter {
     this.pending = false;
     this.idle = Promise.resolve();
     this.failure = null;
+    this.stateError = null;
     this.lastRequest = null;
     this.seen = new Set();
   }
@@ -44,6 +45,12 @@ export default class PlayerCommandAdapter {
     }
   }
 
+  setStateError(error) {
+    if (this.stateError === error) return;
+    this.stateError = error;
+    this._publish();
+  }
+
   move(tokenId, target) {
     return this.send('move', tokenId, { target });
   }
@@ -62,6 +69,12 @@ export default class PlayerCommandAdapter {
         code: 'uncertain-command',
         reason:
           'Resolve the uncertain host command with same-ID retry or reconnect before playing.',
+      };
+    if (this.stateError)
+      return {
+        allowed: false,
+        code: 'player-state-unavailable',
+        reason: 'Refresh the authorized game state or reconnect before playing.',
       };
     if (!state.gameplay.commands.includes(kind))
       return { allowed: false, code: 'unsupported-command' };
@@ -177,6 +190,28 @@ export default class PlayerCommandAdapter {
     if (this.getState().observerTokenId !== this.lastRequest.command.observerTokenId)
       throw new Error('The active character changed. Reconnect before retrying the old command.');
     return this._submit(this.lastRequest);
+  }
+
+  async mutateScene(operation) {
+    if (this.pending) throw new Error('Wait for the current host command to finish');
+    if (this.canRetry)
+      throw new Error('Resolve the uncertain host command before changing the board');
+    if (this.stateError)
+      throw new Error('Refresh the authorized game state or reconnect before changing the board');
+    this.pending = true;
+    this.failure = null;
+    let finishIdle;
+    this.idle = new Promise((resolve) => {
+      finishIdle = resolve;
+    });
+    this._publish();
+    try {
+      return await operation();
+    } finally {
+      this.pending = false;
+      finishIdle();
+      this._publish();
+    }
   }
 
   async _submit({ campaignId, command, origin }) {

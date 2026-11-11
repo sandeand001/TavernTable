@@ -22,6 +22,7 @@ import {
   getBuildingFloorRenderContext,
 } from '../../../src/scene/terrain/InteriorCutaway.js';
 import { getBuildingFloorAppearance } from '../../../src/scene/terrain/TerrainMaterialFactory.js';
+import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 
 let restoreFiles;
 beforeAll(() => {
@@ -142,6 +143,7 @@ test.each([
     const { gm, editor } = await fixture({ x: 0.5, y: 0, z: 0.5 }, { gridSize, rooms: false });
     try {
       gm.terrainEngine.generateBiomeElevation('castle', { seed });
+      openTraversalDoors(gm.campaignWorld);
       const library = gm.characterServices.library,
         ownerId = gm.campaignMapId,
         keep = gm.terrainEngine.geometry
@@ -520,6 +522,7 @@ test.each([
     const { gm, editor } = await fixture(undefined, { gridSize: size, rooms: false });
     try {
       gm.terrainEngine.generateBiomeElevation('castle', { seed });
+      openTraversalDoors(gm.campaignWorld);
       const world = gm.campaignWorld;
       for (const connection of world
         .getConnections()

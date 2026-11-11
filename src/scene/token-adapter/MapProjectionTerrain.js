@@ -235,23 +235,31 @@ export default class MapProjectionTerrain {
             }),
         })
       : null;
-    for (const connection of this.world.getConnections()) {
-      if (
-        connection.kind !== 'door' ||
-        !this.world.sharesLocation(connection.feature.mapId, this.gm.campaignMapId)
-      )
-        continue;
-      const map = this.world.getMap(connection.feature.mapId);
-      const cells = doorLeafCells(this.world, connection, {
-        mapId: this.gm.campaignMapId,
-        geometry: this.gm.terrainEngine.geometry,
-      });
+    const groups =
+      typeof this.world.getDoorRenderGroups === 'function'
+        ? this.world.getDoorRenderGroups(this.gm.campaignMapId)
+        : this.world
+            .getConnections()
+            .filter(
+              (connection) =>
+                connection.kind === 'door' &&
+                this.world.sharesLocation(connection.feature.mapId, this.gm.campaignMapId)
+            )
+            .map((connection) => ({
+              id: connection.id,
+              map: this.world.getMap(connection.feature.mapId),
+              local: connection.ends.some((end) => end.mapId === this.gm.campaignMapId),
+              cells: doorLeafCells(this.world, connection, {
+                mapId: this.gm.campaignMapId,
+                geometry: this.gm.terrainEngine.geometry,
+              }),
+            }));
+    for (const { id, map, cells, local } of groups) {
       const full = new TerrainVolumeMeshBuilder().build({
         geometry: { hasCurves: true, getSolidCells: () => cells },
         three: this.three,
         worldUnitsPerFoot: 1,
       });
-      const local = connection.ends.some((end) => end.mapId === this.gm.campaignMapId);
       const transform = this._transform(map, this.gm.campaignMapId);
       const geometry =
         sight && !local
@@ -259,12 +267,12 @@ export default class MapProjectionTerrain {
           : full.clone().applyMatrix4(transform);
       full.dispose();
       const mesh = new this.three.Mesh(geometry, this.material);
-      mesh.name = `MapDoors:${connection.id}`;
-      mesh.userData.connectionId = connection.id;
+      mesh.name = `MapDoors:${id}`;
+      mesh.userData.connectionId = id;
       mesh.userData.campaignMapId = map.id;
       mesh.visible = geometry.getAttribute('position').count > 0;
       this.doors.add(mesh);
-      this.doorMeshes.set(connection.id, mesh);
+      this.doorMeshes.set(id, mesh);
     }
     configureConstructionMaterial(this.material, this.gm.spatial.tileWorldSize / 5);
     this.doors.visible = [...this.doorMeshes.values()].some((mesh) => mesh.visible);

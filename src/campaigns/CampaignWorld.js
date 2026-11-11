@@ -10,7 +10,6 @@ import {
   localWorldToCampaign,
   campaignToLocalWorld,
   campaignFeetBounds,
-  mapFeetToCampaign,
 } from './CampaignCoordinates.js';
 import { isOpeningHoldValid } from './CampaignOpeningClimb.js';
 import { isSurfaceGripValid, openingSurfaceGrip } from './CampaignSurfaceClimb.js';
@@ -18,6 +17,7 @@ import { DEFAULT_LOCATION_ID, mapLocationId } from './CampaignLocations.js';
 import { doorLeafCells } from './CampaignDoors.js';
 import {
   mapGeometryObstacles,
+  mapSolidToCampaign,
   localMapSupport,
   supportBelowMaps,
   physicalCreatureSight,
@@ -336,29 +336,7 @@ export default class CampaignWorld {
   }
 
   _campaignSolid(map, cell) {
-    const bounds = this._campaignBounds(map, cell.bounds);
-    if (
-      cell.planes.every(({ normal }) =>
-        ['x', 'y', 'z'].some((axis) => Math.abs(normal[axis]) > 1 - 1e-10)
-      )
-    )
-      return bounds;
-    const origin = mapFeetToCampaign(map, { x: 0, y: 0, z: 0 });
-    return {
-      ...bounds,
-      planes: cell.planes.map(({ normal, distance }) => {
-        const endpoint = mapFeetToCampaign(map, normal);
-        const rotated = {
-          x: endpoint.x - origin.x,
-          y: endpoint.y - origin.y,
-          z: endpoint.z - origin.z,
-        };
-        return {
-          normal: rotated,
-          distance: distance + rotated.x * origin.x + rotated.y * origin.y + rotated.z * origin.z,
-        };
-      }),
-    };
+    return mapSolidToCampaign(map, cell);
   }
 
   getObstacles({

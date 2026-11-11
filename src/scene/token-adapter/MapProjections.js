@@ -29,6 +29,7 @@ function syncMapProjectionTerrain() {
     this.disposeMapProjectionTerrain();
   if (
     (targets.length ||
+      gm.playerVisibleMapIds ||
       Number.isFinite(gm.terrainEngine.geometry.terrainThicknessFeet) ||
       gm.campaignWorld.hasFloorMaps) &&
     !this._mapProjectionTerrain

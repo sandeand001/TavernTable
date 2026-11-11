@@ -26,11 +26,11 @@ class PublishedMaps {
         ];
   }
 
-  async presentation(world, mapId, assetKey) {
+  async presentation(world, mapId, assetKey, visibleMapIds = new Set([mapId])) {
     const { playerRenderAssets } = await import(
       pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPresentation.js')).href
     );
-    const assets = playerRenderAssets(world, mapId);
+    const assets = playerRenderAssets(world, mapId, { visibleMapIds });
     const publicKey = createHash('sha256').update(JSON.stringify(assets)).digest('hex');
     return { version: 1, assetKey: publicKey, assets: publicKey === assetKey ? null : assets };
   }
@@ -158,7 +158,12 @@ class PublishedMaps {
       throw Object.assign(new Error('This area is not in the active character location'), {
         status: 403,
       });
-    const presentation = await this.presentation(world, visibility.observer.mapId, assetKey);
+    const presentation = await this.presentation(
+      world,
+      visibility.observer.mapId,
+      assetKey,
+      visibility.visibleMapIds
+    );
     const key = createHash('sha256')
       .update(
         JSON.stringify([
