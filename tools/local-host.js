@@ -11,6 +11,7 @@ const { SessionAuthority } = require('./session-authority.js');
 const { HostResources } = require('./host-resources.js');
 const { PlayerCampaigns } = require('./player-campaigns.js');
 const { PlayerGameplay } = require('./player-gameplay.js');
+const { readLimitedBody } = require('./http-body.js');
 
 const operations = new Map([
   ['create', 1],
@@ -81,29 +82,13 @@ function jsonResponse(response, status, value, headers = {}) {
   response.end(body);
 }
 
-function requestBody(request, maximum = 64 * 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    let exceeded = false;
-    request.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > maximum) {
-        if (!exceeded) reject(failure(413, 'The request exceeds its size limit'));
-        exceeded = true;
-        chunks.length = 0;
-      } else if (!exceeded) chunks.push(chunk);
-    });
-    request.on('error', reject);
-    request.on('end', () => {
-      if (exceeded) return;
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch (error) {
-        reject(failure(400, `The campaign request is not valid JSON: ${error.message}`));
-      }
-    });
-  });
+async function requestBody(request, maximum = 64 * 1024 * 1024) {
+  const body = await readLimitedBody(request, maximum);
+  try {
+    return JSON.parse(body.toString('utf8'));
+  } catch (error) {
+    throw failure(400, `The campaign request is not valid JSON: ${error.message}`);
+  }
 }
 
 async function loadHostKey(directory) {

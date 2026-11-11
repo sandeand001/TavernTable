@@ -36,10 +36,11 @@ and the existing billing budget were reported, not end-to-end verified.
 No new cloud verification or infrastructure changes were performed to create
 this checklist.
 
-**Current work:** the isolated SDK loop and backend account gate are verified in
-`feat/cloud-accounts-multiplayer`. Browser sign-in/verification/recovery and
-returning identity are next (`M1-04` / `M1-05`); cloud campaign saves are not yet
-implemented.
+**Current work:** the isolated SDK loop, backend account gate and private owned
+campaign metadata API are verified in `feat/cloud-accounts-multiplayer`.
+Immutable object/save publication (`M1-07`) is next, before browser account and
+returning-login integration (`M1-04` / `M1-05`). Nonempty cloud saves are not yet
+implemented; no application deployment or live-project write has occurred.
 
 ## Approved requirements: do not reopen by accident
 
@@ -195,7 +196,6 @@ Revalidation in the intended environment remains part of M1 and M4.
     remains a separate hosted gate.
 
 - [ ] **M1-04 - Implement Google and email/password sign-in, verification, and recovery.**
-  - **Status:** in progress.
   - **Depends:** `M1-03`.
   - **Success:** both choices are usable; unverified password accounts cannot use
     campaigns; verification and password recovery return the same account to use.
@@ -212,13 +212,19 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** reload, new tab, sign-out/in, expiry, renewal, and backend restart
     tests preserve identity/access or show the correct recoverable denial.
 
-- [ ] **M1-06 - Create and list one privately owned test campaign.**
+- [x] **M1-06 - Create and list one privately owned test campaign.**
   - **Depends:** `M1-03`.
   - **Success:** a verified eligible UID can explicitly create and reopen its test
     campaign. UID, not name/email, is the ownership key; authentication does not
     grant global DM authority.
   - **Verify:** another UID cannot list/open/read/write that private campaign,
     including direct requests bypassing the launcher.
+  - **Completed:** November 11, 2026. **Evidence:**
+    [private owned metadata](./cloud-migration-preparation.md#private-owned-campaign-metadata):
+    real UID-authenticated create/list/open HTTP, unrelated-UID denial,
+    current-eligibility checks, UID-scoped atomic create receipts, changed-intent
+    conflicts and four-instance contention. Empty initial state is readable;
+    nonempty snapshot publication remains `M1-07`, not an implied completed save.
 
 - [ ] **M1-07 - Implement immutable cloud objects and atomic revision-head publication.**
   - **Depends:** `M1-01`, `M1-02`, `M1-06`.

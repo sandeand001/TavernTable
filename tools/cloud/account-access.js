@@ -1,15 +1,7 @@
 const { createHash } = require('node:crypto');
 
-class CloudAccessError extends Error {
-  constructor(status, code, message) {
-    super(message);
-    this.name = 'CloudAccessError';
-    this.status = status;
-    this.code = code;
-  }
-}
-
-const accessError = (status, code, message) => new CloudAccessError(status, code, message);
+const { CloudError, metadataUnavailable } = require('./cloud-error.js');
+const accessError = (status, code, message) => new CloudError(status, code, message);
 const invalidIdentityCodes = new Set([
   'auth/argument-error',
   'auth/invalid-argument',
@@ -26,7 +18,6 @@ const unavailableIdentityCodes = new Set([
   'auth/network-request-failed',
   'auth/too-many-requests',
 ]);
-const unavailableMetadataCodes = new Set([2, 4, 5, 7, 8, 10, 13, 14, 16]);
 
 function pilotAccountKey(uid) {
   if (typeof uid !== 'string' || !uid || uid.length > 128)
@@ -60,18 +51,27 @@ class CloudAccountAccess {
         );
       throw error;
     }
-    const key = pilotAccountKey(identity.uid);
+    pilotAccountKey(identity.uid);
     if (identity.email_verified !== true)
       throw accessError(
         403,
         'email-verification-required',
         'Verify your email before using campaigns'
       );
+    await this.assertEligibility(identity.uid);
+    return Object.freeze({ uid: identity.uid, emailVerified: true });
+  }
+
+  async assertEligibility(uid, transaction = null) {
+    const key = pilotAccountKey(uid);
+    if (transaction !== null && typeof transaction.get !== 'function')
+      throw new Error('Eligibility checks require a Firestore transaction or a direct read');
     let snapshot;
     try {
-      snapshot = await this.firestore.collection('pilotAccounts').doc(key).get();
+      const reference = this.firestore.collection('pilotAccounts').doc(key);
+      snapshot = transaction ? await transaction.get(reference) : await reference.get();
     } catch (error) {
-      if (unavailableMetadataCodes.has(error.code))
+      if (!transaction && metadataUnavailable(error))
         throw accessError(
           503,
           'eligibility-unavailable',
@@ -86,7 +86,7 @@ class CloudAccountAccess {
         'This account has not been approved for the private pilot'
       );
     const record = snapshot.data();
-    if (record?.version !== 1 || record.uid !== identity.uid || typeof record.enabled !== 'boolean')
+    if (record?.version !== 1 || record.uid !== uid || typeof record.enabled !== 'boolean')
       throw accessError(
         503,
         'invalid-account-eligibility',
@@ -98,8 +98,7 @@ class CloudAccountAccess {
         'pilot-access-required',
         'This account is not enabled for the private pilot'
       );
-    return Object.freeze({ uid: identity.uid, emailVerified: true });
   }
 }
 
-module.exports = { CloudAccountAccess, CloudAccessError, pilotAccountKey };
+module.exports = { CloudAccountAccess, pilotAccountKey };

@@ -104,18 +104,23 @@
   email text or a global DM claim.
   The development account route checks current server-owned pilot eligibility;
   verified tokens alone do not enable campaigns. Local cookie/key credentials
-  are not accepted as cloud identity. Campaign-local ownership/membership remains
-  separate work, not an implied global privilege.
+  are not accepted as cloud identity. Initial private owner metadata is separate
+  from membership/live-game permissions, not an implied global privilege.
+- **Private cloud campaign (initial backend implemented; UI pending)**: canonical
+  metadata is owned by a verified UID. Protected create/list/open routes deny
+  unrelated UIDs. Firestore transactions recheck current pilot eligibility;
+  creation publishes its initial head and UID-scoped command receipt atomically.
+  Only empty initial state is readable before immutable save publication exists.
 - **Cloud emulator loop (implemented development tooling only)**: explicit
   `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
   conflicting SDK settings fail closed. Real SDK integration uses native Node
   tests; ordinary unit/UI checks remain Jest. Scoped Java 21 tooling does not
   change the system default or enable application account/cloud-save features.
-- **Cloud revision head (designed, not implemented)**: compact committed metadata
+- **Cloud revision head (initial metadata implemented; object publication pending)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.
   Serialization/cache/reference data is not another live terrain owner.
-- **Durable cloud command receipt (designed, not implemented)**: a UID/context-bound
+- **Durable cloud command receipt (create implemented; save publication pending)**: a UID/context-bound
   command ID and intent fingerprint recover the original committed result after
   uncertain delivery. Prepare domain work and verify object uploads outside
   retryable transactions; publish head/receipt/change marker atomically.

@@ -1,84 +1,13 @@
-const { randomUUID } = require('node:crypto');
-const http = require('node:http');
-const { once } = require('node:events');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { initializeApp, deleteApp } = require('firebase/app');
-const {
-  getAuth,
-  connectAuthEmulator,
-  signInWithEmailAndPassword,
-  signOut,
-} = require('firebase/auth');
-const {
-  createEmulatorRuntime,
-  readEmulatorEnvironment,
-} = require('../../tools/cloud/emulator-runtime.js');
+const { createEmulatorRuntime } = require('../../tools/cloud/emulator-runtime.js');
 const { CloudAccountAccess, pilotAccountKey } = require('../../tools/cloud/account-access.js');
-
-async function signedInIdentity(runtime, { emailVerified = true, claims = null } = {}) {
-  const config = readEmulatorEnvironment();
-  const id = randomUUID();
-  const uid = `access-${id}`;
-  const email = `access-${id}@example.invalid`;
-  const password = `Fixture-${randomUUID()}-1!`;
-  await runtime.auth.createUser({ uid, email, password, emailVerified });
-  if (claims) await runtime.auth.setCustomUserClaims(uid, claims);
-  const app = initializeApp({ apiKey: 'demo-api-key', projectId: config.projectId }, uid);
-  const auth = getAuth(app);
-  connectAuthEmulator(auth, `http://${config.authHost}`);
-  try {
-    const result = await signInWithEmailAndPassword(auth, email, password);
-    return {
-      uid,
-      token: await result.user.getIdToken(),
-      async close() {
-        try {
-          await signOut(auth);
-        } finally {
-          await deleteApp(app);
-        }
-      },
-    };
-  } catch (error) {
-    await deleteApp(app);
-    throw error;
-  }
-}
+const { signedInIdentity } = require('./helpers/accounts.js');
+const { cloudApi } = require('./helpers/http.js');
 
 async function accountApi(access) {
-  const { createAccountHttpHandler } = require('../../tools/cloud/account-http.js');
-  const origin = 'http://127.0.0.1:4300';
-  const handler = createAccountHttpHandler({ access, allowedOrigins: [origin] });
-  const server = http.createServer((request, response) => {
-    void handler(request, response).then(
-      (handled) => {
-        if (!handled) {
-          response.writeHead(404);
-          response.end();
-        }
-      },
-      () => {
-        response.writeHead(500);
-        response.end();
-      }
-    );
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('The account API did not bind TCP');
-  return {
-    origin,
-    url: `http://127.0.0.1:${address.port}/api/cloud/account`,
-    async close() {
-      const closing = new Promise((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve()))
-      );
-      server.closeAllConnections();
-      await closing;
-    },
-  };
+  const api = await cloudApi({ access });
+  return { ...api, url: `${api.url}/api/cloud/account` };
 }
 
 test(

@@ -280,7 +280,7 @@ marked complete by these SDK checks.
   There is no browser enrollment/approval endpoint or first-login owner shortcut.
 - The verified principal is `{uid, emailVerified: true}`, not a global DM role.
   Custom `role: dm` claims do not grant application eligibility or campaign access.
-- [The HTTP Adapter](../../tools/cloud/account-http.js) exposes authenticated
+- [The HTTP Adapter](../../tools/cloud/cloud-http.js) exposes authenticated
   `GET /api/cloud/account`, exact secure/loopback frontend origins and deliberate
   preflight. It rejects URL credentials/identity claims and unsupported methods.
   Local cookies/CSRF keys cannot authenticate this route.
@@ -299,5 +299,52 @@ changed-code lint passes.
 
 Emulator token tests establish development routing/claim/policy behavior, not a
 production signature/security sign-off. Production rejecting emulator identity,
-real Google/password browser flows, memberships and campaign-local authorization
-remain their explicit later tasks. This does not enable cloud gameplay or saves.
+real Google/password browser flows, memberships and production validation remain
+their explicit later tasks. Initial private owner metadata is recorded below;
+this does not enable cloud gameplay or acknowledge nonempty cloud saves.
+
+## Private owned campaign metadata
+
+`M1-06` completed November 11, 2026 for the emulator development backend:
+
+- [CloudCampaignStore](../../tools/cloud/campaign-store.js) reuses the canonical
+  campaign domain for ruleset, source-pin and metadata validation. Ownership is
+  derived from the verified UID, never from request options, names or email.
+- Initial heads live at `campaigns/{campaignId}` and contain compact metadata,
+  owner UID, head generation and null initial object references. Initial empty
+  state is explicit; nonempty snapshot reads cannot quietly return an empty save.
+- UID-scoped receipts at
+  `accountCommands/{SHA-256(uid)}/receipts/{commandId}` bind create intent to its
+  original result. Head and receipt publish atomically. Another instance can
+  recover a lost reply; reusing the ID for another intent is a typed conflict.
+  Current eligibility and ownership still apply when replaying a receipt.
+- Eligibility and captured metadata are checked in Firestore transactions.
+  Retryable metadata failures retain SDK retry behavior; final outages are typed
+  unavailable results, not false missing-campaign or approval denials.
+- The [cloud HTTP Adapter](../../tools/cloud/cloud-http.js) adds protected
+  create/list/get/initial-character-state routes under `/api/cloud/campaigns`.
+  Account tests and campaign tests share the same real loopback server fixture.
+  There is no running cloud preview or deployed endpoint yet.
+- Cloud commands accept uncompressed UTF-8 JSON with a **24 MiB encoded-byte**
+  ceiling, leaving room below Cloud Run's 32 MiB request limit. This is separate
+  from canonical character/scene limits and later direct asset transfer.
+  Malformed UTF-8/JSON is rejected without echoing private input.
+  The shared bounded byte reader preserves the local host's existing 64 MiB
+  limit and JSON behavior; it does not instantiate a local store for cloud mode.
+
+**Verified:** **24 native emulator/HTTP tests passed**, zero skipped. Nine
+campaign cases cover canonical creation/open, two UIDs, forged ownership options,
+lost replies, intent changes, independent UID command namespaces, four concurrent
+instances, current revocation, strict inputs and actual HTTP behavior.
+An exact **24 MiB** JSON request succeeds and **one additional byte** returns 413;
+an invalid UTF-8 sequence that would otherwise form a valid create is denied.
+Jest coverage includes the local-host HTTP regressions and three redacted
+identity/eligibility/campaign-metadata outage cases.
+The targeted Jest run passes **3 suites / 11 tests**. Full existing lint/stylelint
+passes with zero errors and the same 39 pre-existing warnings; layering passes.
+The full stable application suite remains the M1 exit gate, not a result of these
+focused runs.
+
+This is private initial metadata, not an immutable object/save completion gate.
+Browser sign-in, complete saves, multiplayer, hosted resources and cutover remain
+their respective unchecked tasks. All proof uses synthetic demo identities/data.
