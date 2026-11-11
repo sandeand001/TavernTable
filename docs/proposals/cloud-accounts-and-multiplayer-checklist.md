@@ -38,11 +38,11 @@ this checklist.
 
 **Current work:** the isolated SDK loop, account gate, private owned metadata and
 atomic canonical scene/character backend are verified in
-`feat/cloud-accounts-multiplayer`. Managed browser sign-in, verification and
-recovery (`M1-04`) are verified in the demo environment. Returning login
-(`M1-05`) and truthful save UX (`M1-08`) are in progress, including actual
-browser lost-reply recovery. Clean-browser/backend replacement and the complete
-rendered durability gate remain unchecked.
+`feat/cloud-accounts-multiplayer`. Managed browser sign-in/recovery, returning
+identity, truthful save feedback and rendered cloud reopening (`M1-04`, `M1-05`,
+`M1-08`, `M1-09`) are verified in the demo environment. Actual process-kill tests
+pass before and after publication. The corrected full stable regression gate
+(`M1-10`) is running; hosted deployment and migration remain unapproved.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
 
@@ -214,18 +214,20 @@ Revalidation in the intended environment remains part of M1 and M4.
     unchanged recovered UID, distinct pilot denial and approved account access.
     Real hosted provider validation remains a later environment gate.
 
-- [ ] **M1-05 - Implement returning login and explicit account/error states.**
-  - **Status:** in progress.
+- [x] **M1-05 - Implement returning login and explicit account/error states.**
   - **Depends:** `M1-04`.
   - **Success:** persistence/token renewal retain the UID across browser reopening
     and backend restart. Signed-out, expired, denied, and network states are
     distinct; failures never create a new campaign or writable local fallback.
   - **Verify:** reload, new tab, sign-out/in, expiry, renewal, and backend restart
     tests preserve identity/access or show the correct recoverable denial.
-  - **Progress:** reload/new-tab restoration and actual SDK renewal preserve the
-    UID and owned campaigns. Sign-out clears both tested tabs; a hidden integrated
-    webview delayed its SDK notification by about 44 seconds. Backend replacement
-    and foreground real-Chrome switching remain to verify.
+  - **Completed:** November 11, 2026 for the emulator development slice.
+    **Evidence:** [M1 browser/restart acceptance](./cloud-migration-preparation.md#m1-browser-and-restart-acceptance):
+    reload/new-tab restoration, Google return in real Chrome, actual SDK renewal,
+    managed same-UID recovery and actual backend replacement. Failures never
+    create a campaign or select local authority. Hidden integrated-webview
+    sign-out notification took about 44 seconds; immediate cross-tab notification
+    is not claimed.
 
 - [x] **M1-06 - Create and list one privately owned test campaign.**
   - **Depends:** `M1-03`.
@@ -259,8 +261,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     fully cleaned up, including its exact-object temporary IAM grant.
     Browser save UX and complete M1 termination/reopen gates remain unchecked.
 
-- [ ] **M1-08 - Wire truthful save acknowledgement and existing checkpoint timing.**
-  - **Status:** in progress.
+- [x] **M1-08 - Wire truthful save acknowledgement and existing checkpoint timing.**
   - **Depends:** `M1-07`.
   - **Success:** scene/character/resource visibility remains coordinated; show
     Saving / Saved to cloud / Not saved distinctly. Preserve two-second quiet /
@@ -268,27 +269,42 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** only a durable publication reports success. Drag previews,
     camera movement, and animation frames do not become continuous writes;
     unload/shutdown/filesystem state is not required for durability.
-  - **Progress:** global feedback is mounted before campaign creation; unconfirmed
-    writes retain the original caller and command ID, block new input and recover
-    only through explicit same-command retry. Offline/conflict/exit guards and
-    existing checkpoint tests pass. Actual browser reply loss after publication
-    recovered exactly one campaign. Rendered cloud scene/character acceptance and
-    the complete emulator rerun remain pending.
+  - **Completed:** November 11, 2026 for the emulator development slice.
+    **Evidence:** [M1 browser/restart acceptance](./cloud-migration-preparation.md#m1-browser-and-restart-acceptance):
+    actual browser lost-reply recovery, rendered scene/character persistence,
+    truthful dirty/checkpoint feedback, offline/conflict/exit guards and unchanged
+    checkpoint regressions. All 52 native SDK/HTTP cases pass. The disruptive
+    routine-save presentation is separately deferred as `UX-01`, not silently
+    treated as post-migration polish already completed.
 
-- [ ] **M1-09 - Reopen the committed slice in a clean browser and backend process.**
+- [x] **M1-09 - Reopen the committed slice in a clean browser and backend process.**
   - **Depends:** `M1-05`, `M1-08`.
   - **Success:** the same UID reopens the exact committed scene and characters
     from cloud authority without relying on the first browser's cache or local disk.
   - **Verify:** compare canonical IDs, rules/source pins, state, and revisions
     after backend replacement and a clean-browser load; repeat second-UID denial.
+  - **Completed:** November 11, 2026 for the emulator development slice.
+    **Evidence:** [M1 browser/restart acceptance](./cloud-migration-preparation.md#m1-browser-and-restart-acceptance):
+    actual Chrome document reload restores the saved v3 castle and linked
+    character; canonical scene fields, source pins, actor identity/position and
+    exact character bytes survive. Separate real HTTP tests kill/replace backend
+    processes with empty working directories, reopen the exact committed data
+    through fresh clients and repeat unrelated-UID denial.
 
 - [ ] **M1-10 - Pass the vertical-slice durability and isolation gate.**
+  - **Status:** in progress.
   - **Depends:** `M1-09`.
   - **Success:** the complete slice passes existing regressions plus emulator and
     fault tests before widening implementation.
   - **Verify:** terminate before/after publication; lose the response; retry the
     same command; overlap two backend instances. Exactly one acknowledged result
     survives, with no duplicate move, resource cost, or reroll.
+  - **Progress:** all 52 native cases and actual before/after-publication process
+    kills pass. The first full run passed all 294 application suites / 3,790 tests
+    but discovered seven native Node suites because its existing exclusion was
+    not portable to Windows. Discovery now correctly separates the runners; the
+    complete corrected stable run, including the new restore regression, is
+    pending.
 
 ### M2 - Ownership and complete persistence
 
@@ -721,6 +737,21 @@ Revalidation in the intended environment remains part of M1 and M4.
     outstanding incidents and actual usage against the accepted forecast.
     Failures trigger the tested recovery/revised approval path, not silent local
     fallback or premature completion.
+
+## Post-migration follow-ups
+
+These are explicitly deferred user requests, not additional migration exit tasks.
+
+- [ ] **UX-01 - Remove disruptive routine-save feedback.**
+  - **Status:** deferred until the migration is complete, as requested.
+  - **Depends:** `M5-11`.
+  - **Report:** saving flashes the screen and presents a centered "Saved to cloud"
+    box, interrupting play.
+  - **Success:** routine saves do not flash, steal focus or display a centered
+    notice. Durable, unsaved and error states remain truthful and accessible.
+  - **Verify:** exercise repeated scene/character autosaves and confirm gameplay
+    stays visually stable; failed or uncertain saves remain explicit.
+  - Do not implement this follow-up during the migration.
 
 ## Acceptance coverage map
 

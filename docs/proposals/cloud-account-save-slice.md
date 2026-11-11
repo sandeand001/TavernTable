@@ -1,9 +1,9 @@
 # First cloud slice: account access and durable campaign saves
 
 **Status:** verified development account/owned-campaign and atomic save backend,
-plus managed browser login. Returning identity and save feedback are integrated
-under verification; the rendered/replacement M1 exit gate is incomplete.
-Nothing is deployed. See [browser evidence](./cloud-migration-preparation.md#managed-browser-account-access).
+managed browser login, save feedback and rendered/replacement acceptance.
+The corrected final full-regression M1 gate is running; nothing is deployed.
+See [browser/restart evidence](./cloud-migration-preparation.md#m1-browser-and-restart-acceptance).
 
 **Scope:** the first pair of Modules selected in the
 [approved proposal](./cloud-accounts-and-multiplayer.md#11-five-deepening-opportunities).

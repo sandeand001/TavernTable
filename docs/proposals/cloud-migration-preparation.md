@@ -536,7 +536,8 @@ or additional live IAM/storage write is claimed by this development evidence.
 
 ## Browser save feedback and returning identity
 
-`M1-05` and `M1-08` remain in progress.
+The initial browser integration evidence below was followed by the completed
+`M1-05`, `M1-08` and `M1-09` development checks in the next section.
 
 - [Cloud client storage](../../src/campaigns/CloudCampaignClientStore.js) validates
   high-level reads/receipts without opening browser campaign authority. A pending
@@ -579,6 +580,86 @@ errors and the same 39 existing warnings; layering passes.
 
 The integrated Electron browser has no WebGL. It correctly refuses to open the
 3D game after campaign selection, without resetting saved data. No rendered
-cloud-board success is inferred from account/launcher tests. Actual Chrome/GPU,
-clean-browser/backend replacement, the complete native emulator rerun and the
-full stable/forced-termination M1 gate remain pending.
+cloud-board success is inferred from account/launcher tests; actual Chrome
+acceptance is recorded below.
+
+## M1 browser and restart acceptance
+
+`M1-05`, `M1-08` and `M1-09` completed November 11, 2026 for the emulator
+development slice. `M1-10` still awaits the corrected full stable run.
+
+### Actual Chrome and canonical restoration
+
+- With separate explicit approvals, the installed Chrome signed into the
+  existing synthetic Google fixture, created one named demo campaign and created
+  `Migration scout`. The account retained its previous UID and saw none of the
+  unrelated email fixture's campaigns.
+- Chrome rendered through hardware graphics and durably saved a generated
+  100-by-100 v3 castle, its terrain placements and a linked mannequin actor.
+  Reloading the document restored the managed account without another sign-in,
+  listed its existing campaign and reopened the saved board.
+- A strict comparison found a real restore defect: loading the saved perception
+  scale also invoked legacy smoothed 3D parity scaling, changing physical world
+  elevation. A deterministic test using the real GameManager, TerrainEngine and
+  scene adapter reproduced `0.73 -> 0.476`, not just a mocked notification.
+- Terrain snapshot load notifications now identify `source: 'load'`. The scene
+  adapter preserves the caller's canonical physical scale while still restoring
+  perception settings; subsequent intentional elevation edits still work.
+  The new regression plus existing terrain/scene/elevation checks pass
+  **6 suites / 48 tests**.
+- A controlled, input-paused Chrome reopen then preserved every canonical scene
+  field, linked actor ID/character ID/map/cell/world position, camera and source
+  pin. The exact character-object SHA-256 was unchanged. Saved world elevation
+  remained `0.2313984`, rather than being recalculated.
+- Renderer placement, sight-bound and cover-bound collections were compared as
+  unordered records, matching their grouped-instancing representation. Only their
+  iteration order changed; no object, bounds or other scene field changed. One
+  representation-only startup publication advanced scene revision 62 to 63.
+  This is not a claim that the complete encoded scene bytes stayed identical,
+  nor permission for order-only restore publication to count as meaningful
+  live-session activity.
+- The user's disruptive flashing/centered save notice is explicitly queued as
+  `UX-01` after `M5-11`. No change to that presentation was made while fixing
+  the separate canonical-restore defect.
+
+### Actual process termination
+
+[Backend lifecycle tests](../../tests/cloud/BackendLifecycle.test.js) run real
+API processes from separate empty temporary working directories against the
+guarded demo Auth/Firestore/Storage services:
+
+1. A real character/scene publication succeeds, its HTTP reply is deliberately
+   lost, and Windows `Stop-Process -Id <owned PID> -Force` terminates the backend.
+   A fresh process binds the same API address. Explicit retry sends the identical
+   command body, resolves the original caller and reopens exactly the committed
+   records through a fresh client. Another approved UID remains denied.
+2. The external Firestore transaction boundary is paused after real immutable
+   uploads but before transaction allocation/publication. Committed head and
+   receipt remain unchanged while actual candidate objects exist. Terminating
+   that process and retrying through its replacement publishes one generation
+   and one original character, not duplicate preparation identities.
+
+No graceful shutdown, first-process heap, private backend working-directory
+files or client campaign database supplies the recovered state. All **52 native
+SDK/HTTP cases pass**, zero skipped, including both actual termination cases,
+after the terrain restoration fix. They used the runner's guarded
+`--inside-emulators` mode against the already-running demo services, avoiding a
+reset of the active Chrome fixture.
+
+Large synthetic scene downloads emitted SDK `PassThrough` listener-count
+warnings. These were not silenced or treated as corruption; generation/hash
+checks passed. Hosted memory/performance profiling remains a later gate.
+
+### Runner separation and remaining exit gate
+
+The first full stable run passed **294 application suites / 3,790 tests**, but
+its overall result failed because seven native Node suites were also discovered
+by Jest. The existing `<rootDir>/tests/cloud/` regular expression did not match
+Windows path separators. The corrected separator-aware expression retains every
+application suite and excludes only that native directory; real Jest discovery
+and explicit Windows/POSIX path checks verify the boundary. All native cases
+remain in `npm run test:cloud`; none were disabled.
+
+The final complete stable run now includes the restore regression and is
+running separately from the native gate. No production deployment, additional
+live cloud write or new IAM grant was performed.

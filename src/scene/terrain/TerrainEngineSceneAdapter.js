@@ -55,7 +55,10 @@ export class TerrainEngineSceneAdapter {
         }
         gm.__biomeVersion = (gm.__biomeVersion || 0) + 1;
       }),
-      e.onScaleChanged(() => gm.sync3DElevationScaling({ rebuild: false })),
+      e.onScaleChanged(({ source }) => {
+        // Snapshot loading already supplies the canonical physical scale.
+        if (source !== 'load') gm.sync3DElevationScaling({ rebuild: false });
+      }),
       e.onBiomeGenerated((biome) => this._populateFlora(biome)),
       e.onPlaceableChanged((placement) => this._changePlaceable(placement))
     );

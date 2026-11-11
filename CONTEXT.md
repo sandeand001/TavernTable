@@ -137,13 +137,19 @@
   Journal expiry is not permission to re-execute an old command.
   Recovery precedes preparation and still checks current access; immutable
   candidate upload is not an acknowledged save before the Firestore publication.
-- **Cloud browser save (implemented; rendered/replacement acceptance pending)**:
+- **Cloud browser save (rendered/replacement development checks verified; final M1 gate pending)**:
   managed Auth identity and explicit cloud runtime select a UID-bound workspace,
   never a host-key or writable browser-campaign fallback. Global feedback is
   attached before creation and observes scene checkpoints. A lost reply retains
   the original caller and command ID/body in memory until explicit same-command
   recovery. Uncertainty, definitive conflict and offline access pause new input;
   final exit flushes before SDK sign-out. This is not an offline upload queue.
+  Terrain snapshot `scaleChanged` events identify `source: 'load'`, so scene
+  wiring restores perception settings without recalculating the saved physical
+  elevation. Explicit user elevation edits retain the existing scale behavior.
+  Actual process-kill and fresh-client tests recover the same canonical state.
+  The routine save-flash/centered-notice UX is explicitly deferred until after
+  migration completion; it is not part of this restore fix.
 - **Hosted campaign (approved design, not implemented)**: the hosted frontend
   uses Firebase Hosting and the authoritative backend uses Cloud Run in Oregon
   (`us-west1`); rendering stays on each participant's device. Ownership and player

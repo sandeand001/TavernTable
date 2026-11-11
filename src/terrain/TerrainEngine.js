@@ -963,7 +963,7 @@ export class TerrainEngine {
     if (resized) this._emit('resized', { cols, rows });
     this._emit('biomeChanged', { biomeKey, biomeSeed });
     TerrainHeightUtils.setElevationUnit(elevationScale);
-    this._emit('scaleChanged', { elevationScale });
+    this._emit('scaleChanged', { elevationScale, source: 'load' });
     this._emitAllTiles();
     this._changed('load');
   }

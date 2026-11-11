@@ -2,7 +2,7 @@ const http = require('node:http');
 const { once } = require('node:events');
 const { createCloudHttpHandler } = require('../../../tools/cloud/cloud-http.js');
 
-async function cloudApi({ access, store = null }) {
+async function cloudApi({ access, store = null, port = 0 }) {
   const origin = 'http://127.0.0.1:4300';
   const handler = createCloudHttpHandler({ access, store, allowedOrigins: [origin] });
   const server = http.createServer((request, response) => {
@@ -19,7 +19,7 @@ async function cloudApi({ access, store = null }) {
       }
     );
   });
-  server.listen(0, '127.0.0.1');
+  server.listen(port, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('The cloud API did not bind TCP');
