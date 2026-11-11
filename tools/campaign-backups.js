@@ -176,4 +176,7 @@ class CampaignBackups {
   }
 }
 
-module.exports = { CampaignBackups };
+module.exports = {
+  CampaignBackups,
+  isCampaignBackupName: (name) => typeof name === 'string' && backupName.test(name),
+};

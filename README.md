@@ -234,6 +234,29 @@ The Web API key identifies the Firebase project and is not an administrator
 credential. Normal local play continues using its existing storage/login flow
 until the account integration is complete.
 
+### Isolated cloud development checks
+
+Cloud migration development uses a synthetic `demo-taverntable` project and
+loopback-only Auth/Firestore/Storage emulators, not the real default project.
+The [execution checklist](./docs/proposals/cloud-accounts-and-multiplayer-checklist.md)
+records progress and the separate deployment/cutover gates.
+
+Use Java 21+ for the pinned Firebase CLI. A portable JDK can be selected for the
+current shell without changing system Java:
+
+```powershell
+$env:JAVA_HOME = 'C:\Path\To\Your\jdk-21'
+npm run test:cloud
+```
+
+The runner applies that Java location only to its child process, starts the
+dedicated emulators, runs real SDK integration checks and shuts the helpers down.
+Ordinary Jest tests do not need emulators; `tests/cloud` runs separately with
+Node's native test runner so native SDK upload/stream behavior is preserved.
+Both the stable Jest gate and `npm run test:cloud` are required for cloud
+milestone verification. SDK integrity checks are not disabled for testing.
+See [setup and compatibility evidence](./docs/proposals/cloud-migration-preparation.md#isolated-sdk-and-emulator-feedback-loop).
+
 ## Initial local multiplayer sessions
 
 1. Sign in as the DM and open a campaign.
@@ -2039,6 +2062,9 @@ Hard-refresh and regenerate to apply these changes to a new map.
 
 ## Development commands
 
+`npm run test:cloud` is the separate real-SDK emulator integration gate described
+above. It requires Java 21+; it does not deploy or test against production.
+
 | Command                                | Purpose                                                                         |
 | -------------------------------------- | ------------------------------------------------------------------------------- |
 | `npm test`                             | Run the full Jest suite, including real-asset integration tests                 |
@@ -2062,6 +2088,8 @@ package manifest for this app; lint configuration remains under
   including humanoid retargeting/motion, rendered facing, generated tree support,
   tropical model calibration, and the physical d20.
 - [tests/helpers](./tests/helpers/): shared fixtures used by either group.
+- [tests/cloud](./tests/cloud/): explicit demo-only native SDK integration checks,
+  run with `npm run test:cloud`, not the ordinary Jest command.
 
 Use `npm run test:unit` for quick local feedback. Run `npm test` before merging;
 the real-asset regressions remain required coverage, not optional replacements.

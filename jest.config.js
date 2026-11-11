@@ -5,6 +5,7 @@ module.exports = {
     '<rootDir>/coverage/',
     '<rootDir>/.attic/',
     '<rootDir>/tools/',
+    '<rootDir>/tests/cloud/',
     '<rootDir>/devworkflow/',
   ],
   testMatch: ['**/__tests__/**/*.test.js', '**/?(*.)+(spec|test).js'],

@@ -28,7 +28,8 @@
     "serve:alt4": "node tools/local-host.js --port 3004",
     "start": "npm run serve",
     "serve:open": "start \"\" http://localhost:3000 && npm run serve",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:cloud": "node tools/cloud/run-emulator-tests.js"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",
@@ -40,6 +41,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.2.1",
     "fake-indexeddb": "^6.2.7",
+    "firebase-tools": "15.11.0",
     "husky": "^9.1.7",
     "jest": "^30.0.5",
     "jest-environment-jsdom": "^30.0.5",
@@ -113,6 +115,8 @@
     "file-entry-cache": "^6.0.1",
     "fill-range": "^7.1.1",
     "find-up": "^5.0.0",
+    "firebase": "12.19.0",
+    "firebase-admin": "14.5.0",
     "flat-cache": "^3.2.0",
     "flatted": "^3.3.3",
     "fs.realpath": "^1.0.0",
@@ -225,5 +229,9 @@
   "bugs": {
     "url": "https://github.com/sandeand001/TavernTable/issues"
   },
-  "homepage": "https://github.com/sandeand001/TavernTable#readme"
+  "homepage": "https://github.com/sandeand001/TavernTable#readme",
+  "overrides": {
+    "@firebase/app": "0.16.2",
+    "@firebase/app-compat": "0.5.18"
+  }
 }

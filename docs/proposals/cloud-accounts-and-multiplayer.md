@@ -9,6 +9,16 @@ five or six sessions per month, four or five hours per session.
 editing between games uses brief backend wake-ups, not offline drafts or queued
 uploads. Local caching remains a performance optimization.
 
+**Execution tracking:** use the
+[task checklist](./cloud-accounts-and-multiplayer-checklist.md) for task status,
+dependencies, success criteria, verification evidence, and approval gates. This
+proposal remains the approved design/rationale record.
+
+**Development start, November 10:** execution of the checklist and isolated
+development/emulator work has been authorized. New billable infrastructure,
+hosted-test live writes, production deployment and campaign cutover retain their
+explicit approval gates.
+
 ## 1. Executive recommendation
 
 Move the hosted edition of TavernTable to:
@@ -81,11 +91,14 @@ those distinctions rather than promising that every local preview is already
 saved. See [CampaignStore.js](../../src/campaigns/CampaignStore.js) and
 [CampaignAutosave.js](../../src/campaigns/CampaignAutosave.js).
 
-The interactive multiplayer QA checkout contains the Free Play and remote
-movement-animation fixes. The main development checkout has additional
-door/room, terrain, and character work and unrelated uncommitted changes. The
-first milestone must reconcile these deliberately; copying an older QA tree
-over the main checkout would lose work.
+The selected feature work and unique multiplayer QA fixes were consolidated into
+`main` through [PR #28](https://github.com/sandeand001/TavernTable/pull/28) on
+November 10, 2026. The merged tree matches the verified integration tree:
+283 suites / 3,749 tests passed with zero skipped tests; lint/layering passed with
+zero errors and 39 pre-existing warnings. Original branches and running test
+checkouts were preserved. M0's migration-workspace and payload/asset inventory
+tasks remain separate work in the execution checklist; do not replace the
+verified baseline with an older QA tree.
 
 The terrain ownership decision in
 [ADR-0001](../adr/ADR-0001-terrain-engine-event-seam.md) remains in force. A network

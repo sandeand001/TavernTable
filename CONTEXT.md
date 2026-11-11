@@ -98,6 +98,24 @@
   Proven linking keeps sign-in methods on one Firebase UID without splitting
   campaign ownership or assignments; matching names/emails do not prove access.
   Initial application participation is invitation/approval controlled.
+- **Verified cloud principal (designed, not implemented)**: backend-verified
+  Firebase UID, verification and application-eligibility outcomes. Campaign
+  ownership/member access is resolved separately, never inferred from names,
+  email text or a global DM claim.
+- **Cloud emulator loop (implemented development tooling only)**: explicit
+  `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
+  conflicting SDK settings fail closed. Real SDK integration uses native Node
+  tests; ordinary unit/UI checks remain Jest. Scoped Java 21 tooling does not
+  change the system default or enable application account/cloud-save features.
+- **Cloud revision head (designed, not implemented)**: compact committed metadata
+  references immutable private scene/character objects by path, UTF-8 bytes and
+  SHA-256, with coordinated revisions and a monotonic head generation.
+  Serialization/cache/reference data is not another live terrain owner.
+- **Durable cloud command receipt (designed, not implemented)**: a UID/context-bound
+  command ID and intent fingerprint recover the original committed result after
+  uncertain delivery. Prepare domain work and verify object uploads outside
+  retryable transactions; publish head/receipt/change marker atomically.
+  Journal expiry is not permission to re-execute an old command.
 - **Hosted campaign (approved design, not implemented)**: the hosted frontend
   uses Firebase Hosting and the authoritative backend uses Cloud Run in Oregon
   (`us-west1`); rendering stays on each participant's device. Ownership and player
