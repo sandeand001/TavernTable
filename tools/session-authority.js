@@ -32,6 +32,16 @@ class SessionAuthority {
         campaign_id TEXT NOT NULL, map_id TEXT NOT NULL,
         PRIMARY KEY(campaign_id, map_id)
       );
+      CREATE TABLE IF NOT EXISTS placement_grants (
+        id TEXT PRIMARY KEY,
+        player_id TEXT NOT NULL REFERENCES players(id),
+        character_id TEXT NOT NULL,
+        map_id TEXT NOT NULL,
+        grid_x INTEGER NOT NULL,
+        grid_y INTEGER NOT NULL,
+        surface_id TEXT,
+        UNIQUE(player_id, character_id)
+      );
     `);
   }
 
@@ -112,11 +122,19 @@ class SessionAuthority {
       .get(id);
   }
 
-  profile(session) {
-    if (!session)
+  _assertSession(session) {
+    if (
+      !session ||
+      session.expiresAt <= this.now() ||
+      ![...this.sessions.values()].includes(session)
+    )
       throw Object.assign(new Error('Sign in as the host or join with a private invitation'), {
         status: 401,
       });
+  }
+
+  profile(session) {
+    this._assertSession(session);
     if (session.role === 'dm') return { id: session.id, role: 'dm', csrf: session.csrf };
     const player = this._player(session.playerId);
     if (!player || player.generation !== session.generation)
@@ -133,7 +151,7 @@ class SessionAuthority {
   }
 
   requireDM(session) {
-    if (session?.role !== 'dm') throw denied();
+    if (this.profile(session).role !== 'dm') throw denied();
   }
 
   createInvite(session, campaignId, name, playerId = null) {
@@ -196,14 +214,33 @@ class SessionAuthority {
       this.database
         .prepare('INSERT OR IGNORE INTO assignments(player_id, character_id) VALUES (?, ?)')
         .run(playerId, characterId);
-    else
-      this.database
-        .prepare('DELETE FROM assignments WHERE player_id = ? AND character_id = ?')
-        .run(playerId, characterId);
+    else {
+      this.database.exec('BEGIN IMMEDIATE');
+      try {
+        this.database
+          .prepare('DELETE FROM assignments WHERE player_id = ? AND character_id = ?')
+          .run(playerId, characterId);
+        this.database
+          .prepare('DELETE FROM placement_grants WHERE player_id = ? AND character_id = ?')
+          .run(playerId, characterId);
+        this.database.exec('COMMIT');
+      } catch (error) {
+        try {
+          this.database.exec('ROLLBACK');
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            'Character unassignment could not roll back'
+          );
+        }
+        throw error;
+      }
+    }
     return { assigned };
   }
 
   ownedCharacterIds(session) {
+    this._assertSession(session);
     if (session?.role !== 'player' || !this._player(session.playerId))
       throw denied('The player session is unavailable');
     return this.database
@@ -212,6 +249,61 @@ class SessionAuthority {
       )
       .all(session.playerId)
       .map((row) => row.id);
+  }
+
+  grantPlacement(session, campaignId, playerId, characterId, destination) {
+    this.requireDM(session);
+    const assignment = this.database
+      .prepare('SELECT 1 FROM assignments WHERE player_id = ? AND character_id = ?')
+      .get(playerId, characterId);
+    if (
+      this._player(playerId)?.campaignId !== campaignId ||
+      !assignment ||
+      typeof destination?.mapId !== 'string' ||
+      !Number.isInteger(destination.gridX) ||
+      !Number.isInteger(destination.gridY)
+    )
+      throw new Error('Choose an assigned character and explicit placement destination');
+    const id = randomUUID();
+    this.database
+      .prepare(
+        'INSERT INTO placement_grants(id, player_id, character_id, map_id, grid_x, grid_y, surface_id) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(player_id, character_id) DO UPDATE SET id = excluded.id, map_id = excluded.map_id, grid_x = excluded.grid_x, grid_y = excluded.grid_y, surface_id = excluded.surface_id'
+      )
+      .run(
+        id,
+        playerId,
+        characterId,
+        destination.mapId,
+        destination.gridX,
+        destination.gridY,
+        destination.surfaceId ?? null
+      );
+    return { id, characterId, ...destination };
+  }
+
+  placementGrant(session, id) {
+    const profile = this.profile(session);
+    const row = this.database
+      .prepare(
+        'SELECT id, player_id AS playerId, character_id AS characterId, map_id AS mapId, grid_x AS gridX, grid_y AS gridY, surface_id AS surfaceId FROM placement_grants WHERE id = ?'
+      )
+      .get(id);
+    if (
+      profile.role !== 'player' ||
+      row?.playerId !== profile.playerId ||
+      !profile.characterIds.includes(row.characterId)
+    )
+      throw denied('This placement destination is not authorized');
+    return row;
+  }
+
+  placementGrants(session) {
+    const profile = this.profile(session);
+    if (profile.role !== 'player') throw denied();
+    return this.database
+      .prepare('SELECT id FROM placement_grants WHERE player_id = ?')
+      .all(profile.playerId)
+      .map(({ id }) => this.placementGrant(session, id));
   }
 
   publishMap(session, campaignId, mapId, published) {

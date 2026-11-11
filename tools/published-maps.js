@@ -26,6 +26,15 @@ class PublishedMaps {
         ];
   }
 
+  async presentation(world, mapId, assetKey) {
+    const { playerRenderAssets } = await import(
+      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPresentation.js')).href
+    );
+    const assets = playerRenderAssets(world, mapId);
+    const publicKey = createHash('sha256').update(JSON.stringify(assets)).digest('hex');
+    return { version: 1, assetKey: publicKey, assets: publicKey === assetKey ? null : assets };
+  }
+
   async view({
     scene,
     library,
@@ -33,18 +42,75 @@ class PublishedMaps {
     mapId = null,
     terrainKey = null,
     observerTokenId = null,
+    presentationVersion = null,
+    assetKey = null,
+    placementGrant = null,
+    noObserver = false,
   }) {
+    const { emptyPlayerScene } = await import(
+      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href
+    );
+    if (presentationVersion !== null && presentationVersion !== 1)
+      throw Object.assign(new Error('Unsupported player presentation version'), {
+        status: 400,
+        code: 'unsupported-presentation',
+      });
     const maps = this.maps(scene);
     if (!maps.length) {
       if (mapId)
         throw Object.assign(new Error('This map is not published to players'), { status: 403 });
-      return { maps: [], view: null, observers: [], observerTokenId: null };
+      return {
+        maps: [],
+        view: null,
+        observers: [],
+        observerTokenId: null,
+        publicScene: emptyPlayerScene(),
+      };
     }
     const [{ default: CampaignWorld }, { playerCreatureVisibility }] = await Promise.all([
       import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
       import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CreatureVisibility.js')).href),
     ]);
     const world = CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
+    if (placementGrant) {
+      if (presentationVersion !== 1 || observerTokenId !== null)
+        throw Object.assign(
+          new Error('Placement preview requires render version 1 and no observer'),
+          {
+            status: 400,
+            code: 'invalid-placement-preview',
+          }
+        );
+      if (scene.creatures.some((entry) => entry.characterId === placementGrant.characterId))
+        throw Object.assign(new Error('Choose the placed character as your real observer'), {
+          status: 409,
+          code: 'character-already-placed',
+        });
+      const selected = maps.find((entry) => entry.id === placementGrant.mapId);
+      if (!selected || (mapId !== null && mapId !== selected.id))
+        throw Object.assign(new Error('The placement destination is not available'), {
+          status: 403,
+          code: 'placement-unavailable',
+        });
+      return {
+        maps: world.listLocationMaps(selected.id),
+        observers: [],
+        observerTokenId: null,
+        publicScene: emptyPlayerScene(),
+        location: world
+          .listLocations()
+          .find((entry) => entry.id === world.getLocationId(selected.id)),
+        view: {
+          id: selected.id,
+          name: selected.name,
+          mode: 'placement-preview',
+          grid: selected.grid,
+          terrain: null,
+          tokens: [],
+          presentation: await this.presentation(world, selected.id, assetKey),
+        },
+      };
+    }
     const creatures = scene.creatures.map((token) => ({
       ...token,
       mapId: scene.version === 3 ? token.mapId : 'map-main',
@@ -67,12 +133,18 @@ class PublishedMaps {
         .listLocations()
         .find((location) => location.id === world.getLocationId(token.mapId)).name,
     }));
-    if (!visibility.observer) {
+    if (noObserver || !visibility.observer) {
       if (mapId)
         throw Object.assign(new Error('Choose an assigned creature before viewing a location'), {
           status: 403,
         });
-      return { maps: [], view: null, observers, observerTokenId: null };
+      return {
+        maps: [],
+        view: null,
+        observers,
+        observerTokenId: null,
+        publicScene: emptyPlayerScene(),
+      };
     }
     const allowed = maps.filter((map) => world.sharesLocation(map.id, visibility.observer.mapId));
     const selected = mapId
@@ -82,11 +154,12 @@ class PublishedMaps {
       throw Object.assign(new Error('This area is not in the active character location'), {
         status: 403,
       });
+    const presentation = await this.presentation(world, visibility.observer.mapId, assetKey);
     const key = createHash('sha256')
       .update(JSON.stringify([selected.base, selected.grid, selected.terrain]))
       .digest('hex');
     let terrain = null;
-    if (key !== terrainKey) {
+    if (presentationVersion !== 1 && key !== terrainKey) {
       terrain = this.cache.get(key);
       if (!terrain) {
         const { TerrainVolumeMeshBuilder } = await import(
@@ -118,6 +191,7 @@ class PublishedMaps {
     }
     const tokens = visibility.visible.map((token) => {
       const projection = world.projectCreature(token.id, selected.id);
+      const character = token.characterId ? library.get(token.characterId) : null;
       return {
         id: token.id,
         name: token.name,
@@ -127,6 +201,22 @@ class PublishedMaps {
         facingAngle: projection.facingAngle,
         allegiance: token.allegiance || 'neutral',
         pose: token.pose.kind,
+        mapId: token.mapId,
+        gridX: token.gridX,
+        gridY: token.gridY,
+        placement: {
+          mapId: token.mapId,
+          gridX: token.gridX,
+          gridY: token.gridY,
+          facingAngle: token.facingAngle,
+          pose: JSON.parse(JSON.stringify(token.pose)),
+        },
+        portraitImage: character?.portraitImage || null,
+        movement: { mode: token.movement.mode, type: token.movement.type },
+        flags: {
+          prone: (character?.conditions || token.conditions || []).includes('prone'),
+          flightActive: token.pose.kind === 'flight',
+        },
       };
     });
     return {
@@ -136,6 +226,26 @@ class PublishedMaps {
       location: world
         .listLocations()
         .find((location) => location.id === world.getLocationId(visibility.observer.mapId)),
+      publicScene: {
+        ...presentation,
+        presentation: { mapId: selected.id, focusTokenId: visibility.observer.id },
+        actors: tokens.map((token) => ({
+          id: token.id,
+          name: token.name,
+          type: token.type,
+          owned: token.characterId !== null,
+          characterId: token.characterId,
+          mapId: token.mapId,
+          gridX: token.gridX,
+          gridY: token.gridY,
+          pose: token.placement.pose,
+          facingAngle: token.placement.facingAngle,
+          portraitImage: token.portraitImage,
+          movement: token.movement,
+          flags: token.flags,
+        })),
+        updates: [],
+      },
       view: {
         id: selected.id,
         name: selected.name,
@@ -143,6 +253,7 @@ class PublishedMaps {
         terrainKey: key,
         terrain,
         tokens,
+        ...(presentationVersion === 1 ? { presentation } : {}),
       },
     };
   }

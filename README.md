@@ -211,9 +211,15 @@ roofs/floors so camera occlusion is not mistaken for character line of sight.
 
 This is a deliberately gated first slice:
 
-- Player movement, attacks, casting and combat turns remain disabled until
-  authoritative commands preserve ownership, ranges, cover, movement/action costs
-  and edition-specific rules. The player cannot submit arbitrary scene saves.
+- The matching interactive player client supports host-validated assigned
+  movement in **Free Play**, with a fresh per-journey allowance, or on the
+  assigned actor's active combat turn. Other actions remain capability-gated;
+  players cannot submit arbitrary scene saves.
+- Receiving clients replay committed safe routes without charging their
+  movement budgets again. DM motion metadata stays outside saved scenes;
+  hidden route origins and unassigned actors' private budgets are filtered.
+  Compatible queued moves retain continuous animation. This is checkpoint-driven
+  replay, not frame-locked networking, and requires the matching native client.
 - World conditions, flight protection and concentration still require DM
   adjudication. Manual assigned-sheet editing is not a replacement for validated
   gameplay commands.

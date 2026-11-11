@@ -82,9 +82,9 @@
   renderer objects, catalog caches and unfinished animations are not saved.
   Host failure never silently falls back to IndexedDB. Authenticated DM/player
   sessions require same-origin cookie identity and a session-specific CSRF
-  credential for writes. The initial player scope is assigned sheets and
-  published read-only views, not authoritative movement/combat. Reload and sign
-  in again after a host restart. Browser-only storage remains
+  credential for writes. Players receive assigned sheets, authorized location
+  views and host-validated gameplay commands, never arbitrary scene writes.
+  Reload and sign in again after a host restart. Browser-only storage remains
   explicit for tests and migration, with non-destructive Copy to host and JSON
   backup import/export. Agent-created browser tabs may have in-memory storage;
   flushing such a profile does not make it survive an editor restart.
@@ -161,6 +161,14 @@
   **Attacks left** is derived from unspent actions and any ongoing Attack-action
   sequence, honoring class/level and manual attack-count overrides. The internal
   ongoing sequence starts at zero; it must not grant free attacks at turn start.
+- **Shared movement presentation**: receiving DM/player models replay committed
+  safe routes with native locomotion variants, without spending costs again.
+  Free play permits assigned movement and refreshes its per-journey allowance;
+  combat keeps active-turn restrictions. Compatible queued routes remain
+  continuous. DM movement metadata travels outside the saved scene; reloading
+  never resumes its animation. Preserve local cameras, shared-draft conflict
+  protection and physical sight; hidden waypoints and unassigned budgets stay
+  private. This is checkpoint-driven replay, not frame-locked live networking.
 - **Flight**: a per-token airborne travel state using the character's effective
   flying speed. Take flight rises 5 feet. Raise/Lower offer 5, 10, 15 and 20 feet,
   spending one foot of flying movement per vertical foot. Horizontal routes retain
@@ -403,7 +411,8 @@ builder and actual multiplayer remain further implementation chunks.
   invisible targets, walls and floors can hide it. Rendering and ray picking refer
   to the original creature, never an added gameplay token. Ordinary camera
   occlusion still applies. Hiding a roof or moving the DM camera does not grant sight.
-  Networked animation synchronization and broader vision rules remain future work.
+  Committed network movement reuses these models; frame-locked synchronization
+  and broader vision rules remain future work.
 - **Projection terrain context**: render-only supporting ground/floors from the
   visible creature's source-map checkpoint. A bounded sight corridor can join the
   viewed grid to the projection where actual terrain exists, instead of leaving

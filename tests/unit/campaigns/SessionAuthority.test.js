@@ -87,3 +87,39 @@ test('reissuing a player invitation preserves identity and assignments while inv
   expect(authority.cookie('value', true)).toContain('HttpOnly; SameSite=Strict');
   expect(authority.cookie('value', true)).toContain('Secure');
 });
+
+test('signed-out cached session objects cannot authorize an in-flight player command or DM grant', () => {
+  const dm = authority.signInHost(hostKey);
+  const invite = authority.createInvite(dm.session, 'campaign', 'Player');
+  authority.assignCharacter(dm.session, 'campaign', invite.id, 'character', true);
+  const player = authority.join(invite.invite);
+  const grant = authority.grantPlacement(dm.session, 'campaign', invite.id, 'character', {
+    mapId: 'map-main',
+    gridX: 1,
+    gridY: 1,
+  });
+  authority.logout(cookie(player));
+  expect(() => authority.profile(player.session)).toThrow();
+  expect(() => authority.placementGrant(player.session, grant.id)).toThrow();
+  authority.logout(cookie(dm));
+  expect(() => authority.requireDM(dm.session)).toThrow();
+});
+
+test('unassigning a character revokes its explicit placement grant and reassignment cannot resurrect that grant', () => {
+  const dm = authority.signInHost(hostKey).session;
+  const invite = authority.createInvite(dm, 'campaign', 'Player');
+  authority.assignCharacter(dm, 'campaign', invite.id, 'character', true);
+  const player = authority.join(invite.invite).session;
+  const grant = authority.grantPlacement(dm, 'campaign', invite.id, 'character', {
+    mapId: 'map-main',
+    gridX: 1,
+    gridY: 1,
+  });
+  expect(authority.placementGrants(player)).toHaveLength(1);
+  authority.assignCharacter(dm, 'campaign', invite.id, 'character', false);
+  expect(authority.profile(player).characterIds).toEqual([]);
+  expect(authority.placementGrants(player)).toEqual([]);
+  authority.assignCharacter(dm, 'campaign', invite.id, 'character', true);
+  expect(authority.placementGrants(player)).toEqual([]);
+  expect(() => authority.placementGrant(player, grant.id)).toThrow('not authorized');
+});
