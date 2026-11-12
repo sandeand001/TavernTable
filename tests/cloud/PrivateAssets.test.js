@@ -15,6 +15,27 @@ const { HostResources } = require('../../tools/host-resources.js');
 const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCharacters.js');
 
 test(
+  'image decoding has bounded concurrent memory work and releases capacity before an explicit retry',
+  { timeout: 30000 },
+  async (t) => {
+    const runtime = await createEmulatorRuntime();
+    t.after(() => runtime.close());
+    const assets = new PrivateCampaignAssets({ bucket: runtime.bucket });
+    const bytes = createCanvas(4000, 4000).toBuffer('image/png');
+    const campaigns = [randomUUID(), randomUUID(), randomUUID()];
+    const results = await Promise.allSettled(
+      campaigns.map((campaignId) => assets.stage(campaignId, 'image/png', bytes))
+    );
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 2);
+    const busy = results.findIndex((result) => result.status === 'rejected');
+    assert.equal(results[busy].reason.status, 503);
+    assert.equal(results[busy].reason.code, 'asset-processing-busy');
+    const reference = await assets.stage(campaigns[busy], 'image/png', bytes);
+    assert.deepEqual(await assets.read(campaigns[busy], reference), bytes);
+  }
+);
+
+test(
   'a validated private image is immutable, scoped to its campaign and retrieved with exact bytes',
   { timeout: 30000 },
   async (t) => {

@@ -756,6 +756,36 @@ clients leave streams open.
 - Measure active instance time, transfer bytes, operations per save, reconnects,
   and retained storage. Suppress token/body/secret logging.
 
+### Approved private-pilot application limits
+
+The owner selected no enabled-account count limit and no daily custom-image
+upload-volume limit, accepted ten owned campaigns and 20 GiB per account, and
+accepted 300 authenticated app requests per minute. The owner delegated the
+live-connection choice; four connections per UID allow multiple tabs/devices
+without treating each connection as another account or imposing a game-duration cap.
+
+| Area | Policy |
+| ---- | ------ |
+| Accounts | No numeric account cap; verified, invitation/approval-controlled eligibility remains mandatory. |
+| Campaigns | At most ten owned campaigns per UID; joined campaigns do not consume ownership slots. |
+| Private storage | 20 GiB of object-body bytes per owner across campaigns, including retained backups, noncurrent/soft-deleted generations, and staged/reserved uploads. |
+| Custom uploads | No daily-volume cap. Existing file, encoded-image, MIME and decoded-pixel bounds still apply, as does aggregate storage admission. |
+| App requests | 300 per UID in any rolling 60 seconds, shared across authenticated cloud routes/instances. Static files, origin preflights and Firebase-managed authentication are separate. |
+| Live connections | Four renewable leases per UID, with 90-second crash expiry. Campaign authorization, stream closure on lease loss, idle expiry and hosted connection headroom are separate M3/M4 gates. |
+
+Quota rejection is explicit before Storage uploads or canonical publication.
+Already committed command receipts remain recoverable, including at a full
+campaign/storage allowance; request throttling provides a bounded retry delay,
+not permission to replace a retained command ID. Never reset damaged usage,
+silently drop writes, or delete acknowledged data to force compliance.
+
+These are application limits, not an exact billing cap. Firestore/Auth/logging,
+compute, transfer, storage metadata and billing delay are not measured by the
+20 GiB object-body counter. The reported $25 budget remains an alert mechanism.
+Cleanup must retain charges until the corresponding generation is no longer
+billable; deleting a head or dropping an old backup reference does not free
+storage allowance. No live infrastructure or cutover approval is implied.
+
 Do not add a paid always-on database, network connector, or load balancer solely
 for convenience; their baseline costs could exceed the entire expected budget.
 

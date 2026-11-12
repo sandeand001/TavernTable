@@ -151,15 +151,22 @@ async function fixture(t) {
           holdPublication = true;
           process.send({ type: 'armed' });
         });
-        const transaction = runtime.firestore.runTransaction.bind(runtime.firestore);
-        runtime.firestore.runTransaction = (operation, options) => {
-          if (holdPublication && options?.readOnly !== true) {
-            holdPublication = false;
-            process.send({ type: 'publication-held' });
-            return new Promise(() => {});
-          }
-          return transaction(operation, options);
+        const bucketFile = runtime.bucket.file.bind(runtime.bucket);
+        runtime.bucket.file = (...args) => {
+          const file = bucketFile(...args);
+          const save = file.save.bind(file);
+          file.save = async (...options) => {
+            const result = await save(...options);
+            if (holdPublication) {
+              holdPublication = false;
+              process.send({ type: 'publication-held' });
+              return new Promise(() => {});
+            }
+            return result;
+          };
+          return file;
         };
+        const objects = new ImmutableCloudObjects({ bucket: runtime.bucket });
         const manifest = JSON.parse(await fs.readFile(path.join(root, 'assets', 'data', 'resources', 'manifest.json'), 'utf8'));
         const access = new CloudAccountAccess({ auth: runtime.auth, firestore: runtime.firestore });
         const store = new CloudCampaignStore({
@@ -167,7 +174,7 @@ async function fixture(t) {
           access,
           packs: manifest.packs,
           resources: new HostResources({ root, manifest }),
-          objects: new ImmutableCloudObjects({ bucket: runtime.bucket }),
+          objects,
         });
         const api = await cloudApi({ access, store, port: ${port} });
         process.send({ type: 'ready', url: api.url, instance: randomUUID() });

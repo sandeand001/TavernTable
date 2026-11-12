@@ -1,5 +1,6 @@
 const { URL } = require('node:url');
 const { CloudError } = require('./cloud-error.js');
+const { CloudUsageLimits } = require('./usage-limits.js');
 const { readLimitedBody, RequestBodyLimitError } = require('../http-body.js');
 const {
   isCloudUUID,
@@ -9,6 +10,8 @@ const {
 } = require('../../src/campaigns/CloudProtocol.js');
 
 const MAX_CLOUD_REQUEST_BYTES = 24 * 1024 * 1024;
+const MAX_CLOUD_WORK_REQUESTS = 4;
+let activeCloudWork = 0;
 
 function requestAccessScope(request) {
   const seat = request.headers[CLOUD_ACCESS_SEAT_HEADER.toLowerCase()];
@@ -125,6 +128,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
   )
     throw new Error('Cloud campaign HTTP requires the explicit private campaign store interface');
   const origins = new Set(allowedOrigins);
+  const usage = store?.usage || new CloudUsageLimits({ firestore: access.firestore, access });
   return async (request, response) => {
     if (!URL.canParse(request.url, 'http://cloud.invalid')) {
       jsonResponse(response, 400, {
@@ -218,10 +222,29 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       );
       return true;
     }
+    let ownsWorkSlot = false;
     try {
       const principal = redeem
         ? await access.verifyIdentity(request.headers.authorization)
         : await access.verifyAuthorization(request.headers.authorization);
+      await usage.consumeRequest(principal, { invitation: redeem });
+      if (
+        request.method === 'POST' ||
+        ['scene', 'characters'].includes(snapshot) ||
+        snapshot?.startsWith('assets/')
+      ) {
+        if (activeCloudWork >= MAX_CLOUD_WORK_REQUESTS)
+          throw Object.assign(
+            new CloudError(
+              503,
+              'cloud-requests-busy',
+              'Cloud data processing is busy; retain the pending command and retry shortly'
+            ),
+            { retryAfter: 1 }
+          );
+        activeCloudWork++;
+        ownsWorkSlot = true;
+      }
       const expectedAccess = requestAccessScope(request);
       if (
         expectedAccess !== null &&
@@ -348,7 +371,13 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
                 }
               : {}),
           },
-          headers
+          {
+            ...headers,
+            ...(request.method === 'POST' && !ownsWorkSlot ? { Connection: 'close' } : {}),
+            ...(Number.isSafeInteger(error.retryAfter) && error.retryAfter > 0
+              ? { 'Retry-After': String(error.retryAfter) }
+              : {}),
+          }
         );
       } else {
         console.error(`[cloud-${subject}]`, {
@@ -369,6 +398,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           headers
         );
       }
+    } finally {
+      if (ownsWorkSlot) activeCloudWork--;
     }
     return true;
   };

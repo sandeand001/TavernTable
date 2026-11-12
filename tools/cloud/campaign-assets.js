@@ -16,6 +16,8 @@ const {
 
 const MAX_IMAGE_PIXELS = CLOUD_IMAGE_PIXEL_LIMIT;
 const MAX_IMAGE_DIMENSION = CLOUD_IMAGE_DIMENSION_LIMIT;
+const MAX_IMAGE_DECODERS = 2;
+let activeImageDecoders = 0;
 const imageMimeTypes = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const integrityError = () =>
@@ -59,6 +61,16 @@ async function validateImage(bytes, mimeType) {
       'Images must not exceed 16,000,000 pixels or 8192 pixels on either side'
     );
   let decoded;
+  if (activeImageDecoders >= MAX_IMAGE_DECODERS)
+    throw Object.assign(
+      new CloudError(
+        503,
+        'asset-processing-busy',
+        'Private image processing is busy; retain the pending command and retry shortly'
+      ),
+      { retryAfter: 1 }
+    );
+  activeImageDecoders++;
   try {
     decoded = await sharp(bytes, { limitInputPixels: MAX_IMAGE_PIXELS, failOn: 'warning' })
       .raw()
@@ -66,6 +78,8 @@ async function validateImage(bytes, mimeType) {
   } catch (error) {
     if (error instanceof Error) throw invalidImage();
     throw error;
+  } finally {
+    activeImageDecoders--;
   }
   if (!dimensionsValid(decoded.info))
     throw new CloudError(
@@ -83,7 +97,7 @@ class PrivateCampaignAssets {
     this.bucket = bucket;
   }
 
-  async stage(campaignId, mimeType, input) {
+  async stage(campaignId, mimeType, input, reserve = null) {
     if (
       !isCloudUUID(campaignId) ||
       !CHARACTER_IMAGE_TYPES.includes(mimeType) ||
@@ -101,6 +115,7 @@ class PrivateCampaignAssets {
     const size = await validateImage(bytes, mimeType);
     const sha256 = hash(bytes);
     const path = `campaigns/${campaignId}/assets/${sha256}.bin`;
+    if (reserve !== null) await reserve({ path, bytes: bytes.length });
     try {
       const file = this.bucket.file(path);
       let metadata = null;

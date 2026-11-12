@@ -1131,3 +1131,92 @@ the same 39 existing warnings.
 No live Auth, Storage/IAM, deployment or real-data cutover occurred. Provider
 linking remains under the approved deferral, and routine-save presentation stays
 deferred to `UX-01`.
+
+## Private-pilot usage limits and abuse-controls gate
+
+The owner approved no enabled-account count cap and no daily custom-image
+upload-volume cap; ten owned campaigns and 20 GiB of private object bytes per
+owner; and 300 authenticated app requests per minute. The owner delegated the
+live-connection choice: four per UID, with renewable 90-second crash-expiring
+leases, not a total session-duration cap.
+
+The development authority now enforces the selected policy:
+
+- A mandatory shared usage ledger precedes new campaign publication. Its
+  campaign-slot increment commits atomically with the new head and durable
+  receipt. Joined campaigns do not consume ownership slots, and replay checks
+  precede quota admission.
+- Storage reservations bind exact encoded/binary bytes to campaign-scoped
+  content-addressed paths. A coordinated checkpoint reserves all new objects
+  together before any Storage upload. Concurrent campaigns/instances cannot
+  oversubscribe the owner, and reused paths are charged once. Reservations
+  survive uncertain staging/publication failures instead of guessing that
+  bytes were never stored.
+- Existing storage has a durable, leased and paginated initialization path.
+  Current, noncurrent and soft-deleted generations count separately; duplicate
+  listing results do not double-charge. Interrupted scans preserve partial
+  accounting and resume after lease expiry. Missing ledgers with surviving
+  reservation records, malformed counters and bucket mismatches fail explicitly
+  rather than silently resetting the allowance. Existing reads remain available.
+- All authenticated cloud routes share a per-UID rolling 60-second request
+  ledger across instances, including invitation redemption without bypassing
+  its account policy. Denials return HTTP429 and a bounded `Retry-After`.
+  Static assets, preflights and managed Auth are not app-data admissions.
+- Four per-UID stream slots use durable renewable leases and crash expiry.
+  More than six hours of simulated-time renewal remains valid. The lease is
+  not campaign authority or meaningful session activity; actual SSE admission,
+  revocation, lease-loss closure and hosted concurrency headroom remain
+  `M3-03`/M4 acceptance requirements.
+- A process-wide four-request work bound covers command bodies and heavy
+  snapshot/image reads; two full-raster decoders bound simultaneous image
+  allocation. Saturation is an explicit retryable failure, not dropped data.
+  Account reads remain responsive while heavy work is occupied.
+- Fresh campaign/storage-capacity denials reject the original caller truthfully.
+  Throttling, busy work and any capacity denial after an earlier lost reply
+  retain the exact pending command until explicit recovery.
+
+The first broad native gate passed 104/107 cases. Two fixtures assumed that
+the first writable metadata transaction was canonical publication or did not
+provide metadata access for the newly required HTTP limiter. They now use the
+real account interface and pause after actual Storage upload, retaining the
+original process-kill/preservation assertions. The third failure was a raw
+Firestore `3 INVALID_ARGUMENT: Transaction is invalid or closed` during cold
+concurrent creation. Three cold probes reproduced it in one run, while all
+three pre-seeded probes succeeded. First-use ownership queries were removed
+from competing publication transactions: all new writers require the shared
+seeded ledger, then claim its slot atomically with publication. Three cold
+four-instance races and three real-upload/process-kill recoveries passed after
+the repair. No unexpected code was accepted as a domain denial, SDK patched,
+or blanket production retry added.
+
+The complete final native gate passed **108/108 cases**, zero skipped, in
+**191,585.016 ms**. The affected application/local/image/account/UI gate passed
+**17 explicit suites / 117 tests**, zero skipped, in **8.118 s**. Full
+lint/stylelint/layering passed with zero errors and the same 39 existing
+warnings. A too-broad application path selector was stopped; the reported
+application result is the completed explicit-file gate, not that interrupted
+run.
+
+The actual browser retained its managed owner after backend replacement and
+reload. With only the synthetic account's rolling-window usage seeded, a
+normal source-settings save received real HTTP429. Independent SDK reads
+proved the canonical head stayed at generation 5, character revision 4, with
+its original hash and two earlier settings receipts. After the real minute
+elapsed, **Retry same save** completed at generation 6 with exactly one new
+settings receipt and unchanged character bytes/private PNG. Legacy accounting
+initialized to exactly **3,004 bytes across five actual private objects and two
+owned campaigns**. A second ordinary save restored the fixture's original name
+without reopening the editor; reload retained the account and campaign at
+generation 7/character revision 6. The earlier member-lifecycle head and M1
+scene were independently verified unchanged. This is account/API/recovery
+evidence, not a new complete 3D/live-game acceptance claim.
+
+The 20 GiB boundary used seeded historical usage plus actual encoded/uploaded
+bytes; no 20 GiB test upload was made. Noncurrent/soft-deleted metadata branches
+use SDK-shaped external-service fixtures because the demo emulator ignores the
+listing flags; real hosted behavior still requires its separately approved M4
+gate. No live Auth, Storage/IAM, deployment, push/merge or actual cutover occurred.
+Quota handling never deletes saved data, and cleanup must not release charges
+before a generation is no longer billable. Provider linking remains deferred;
+the routine save-flash/centered-notice presentation remains untouched for
+`UX-01` after migration completion.

@@ -802,6 +802,88 @@ test('a scene command reports saving until a validated durable receipt arrives, 
   stop();
 });
 
+test.each(['campaign-limit-reached', 'storage-limit-reached'])(
+  'a fresh %s is a truthful denial rather than a permanently pending save',
+  async (code) => {
+    const setup = fixture();
+    setup.fetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ version: 1, code, error: 'PRIVATE BACKEND DETAIL' }),
+    });
+    const pending =
+      code === 'campaign-limit-reached'
+        ? setup.store.create({ name: 'Capacity fixture', ruleset: '2014' })
+        : setup.store.commitScene(campaignId, {
+            ruleset: '2014',
+            revision: 0,
+            charactersRevision: 0,
+            scene: '{"fixture":"capacity"}',
+          });
+    let failure;
+    const settled = pending.catch((error) => {
+      failure = error;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(setup.store.saveState.phase).toBe('failed');
+    await settled;
+    expect(failure).toMatchObject({ status: 409, code });
+    expect(failure.message).not.toContain('PRIVATE BACKEND DETAIL');
+    expect(() => setup.store.close()).not.toThrow();
+  }
+);
+
+test.each([
+  ['campaign-limit-reached', 409],
+  ['storage-limit-reached', 409],
+  ['request-limit-reached', 429],
+  ['cloud-requests-busy', 503],
+  ['asset-processing-busy', 503],
+  ['usage-initializing', 503],
+])(
+  '%s after a lost reply preserves the original caller and command until its receipt is recovered',
+  async (code, status) => {
+    const setup = fixture();
+    let attempts = 0;
+    const receipt = { revision: 1, savedAt: '2026-11-11T00:00:00.000Z' };
+    setup.fetch.mockImplementation(async () => {
+      attempts++;
+      if (attempts === 1) throw new Error('Synthetic lost reply');
+      if (attempts === 2)
+        return {
+          ok: false,
+          status,
+          json: async () => ({ version: 1, code, error: 'PRIVATE BACKEND DETAIL' }),
+        };
+      return { ok: true, status: 200, json: async () => ({ version: 1, result: receipt }) };
+    });
+    const pending = setup.store.commitScene(campaignId, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: 0,
+      scene: '{"fixture":"capacity retry"}',
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(setup.store.retryPending()).rejects.toMatchObject({ status, code });
+    expect(setup.store.saveState.phase).toBe('uncertain');
+    expect(setup.store.saveState.error.message).not.toContain('PRIVATE BACKEND DETAIL');
+    expect(settled).toBe(false);
+    await expect(setup.store.retryPending()).resolves.toEqual(receipt);
+    await expect(pending).resolves.toEqual(receipt);
+    expect(setup.store.saveState.phase).toBe('saved');
+    expect(new Set(setup.fetch.mock.calls.map((call) => call[1].body)).size).toBe(1);
+  }
+);
+
 test('an uncertain command retains one ID and the original caller until explicit online retry resolves its receipt', async () => {
   const setup = fixture();
   let attempts = 0;

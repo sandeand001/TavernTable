@@ -131,6 +131,20 @@
   never embedded data, hidden names, bearer credentials or signed URLs. Delivery
   rechecks current UID/seat/generation after Storage work. Map/NPC asset grants
   and browser cache reconciliation remain later participant-view tasks.
+- **Private-pilot usage (M2 development slice verified)**:
+  no enabled-account count or daily custom-image-volume cap. Each UID can own
+  ten campaigns and allocate 20 GiB of private object bytes across them; joined
+  campaigns count against their owner, not each member. Current, retained,
+  soft-deleted and staged objects remain charged, including conservative upload
+  reservations after uncertain failures. A shared ledger precedes campaign
+  creation; counter/head/receipt claims and whole-checkpoint admission are atomic.
+  Malformed or damaged accounting fails explicitly instead of resetting usage.
+  Authenticated app requests share 300 admissions in a rolling 60 seconds across
+  routes and backend instances. Four renewable live-stream leases per UID have
+  crash expiry, not a total session-duration cap; they do not grant campaign
+  access, replace session lifecycle, or enable the still-gated live transport.
+  Bounded heavy-request and image-decoder work protects backend memory. Quotas
+  never delete saved data or constitute a Firebase spending cap.
 - **Campaign-local access (initial M2 development slice implemented)**:
   server-owned UID membership indexes must agree with the campaign's current
   player seat. Owned/Joined metadata uses an explicit minimal projection; joined

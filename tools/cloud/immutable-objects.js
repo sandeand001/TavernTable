@@ -54,6 +54,25 @@ function objectPath(campaignId, kind, sha256) {
   return `campaigns/${campaignId}/objects/${kind}/${sha256}.json`;
 }
 
+function prepareSnapshot(campaignId, kind, value) {
+  if (!validValue(kind, value))
+    throw new CloudError(
+      400,
+      'invalid-snapshot-value',
+      'Choose canonical scene or character snapshot data'
+    );
+  const bytes = Buffer.from(JSON.stringify({ version: 1, kind, value }), 'utf8');
+  if (bytes.length > MAX_SNAPSHOT_BYTES)
+    throw new CloudError(413, 'snapshot-too-large', 'Cloud JSON snapshots must not exceed 32 MiB');
+  const sha256 = digest(bytes);
+  return { bytes, sha256, path: objectPath(campaignId, kind, sha256) };
+}
+
+function snapshotCandidate(campaignId, kind, value) {
+  const { path, bytes } = prepareSnapshot(campaignId, kind, value);
+  return { path, bytes: bytes.length };
+}
+
 class ImmutableCloudObjects {
   constructor({ bucket }) {
     if (typeof bucket?.file !== 'function' || typeof bucket.name !== 'string')
@@ -61,23 +80,10 @@ class ImmutableCloudObjects {
     this.bucket = bucket;
   }
 
-  async stage(campaignId, kind, value) {
+  async stage(campaignId, kind, value, reserve = null) {
     try {
-      if (!validValue(kind, value))
-        throw new CloudError(
-          400,
-          'invalid-snapshot-value',
-          'Choose canonical scene or character snapshot data'
-        );
-      const bytes = Buffer.from(JSON.stringify({ version: 1, kind, value }), 'utf8');
-      if (bytes.length > MAX_SNAPSHOT_BYTES)
-        throw new CloudError(
-          413,
-          'snapshot-too-large',
-          'Cloud JSON snapshots must not exceed 32 MiB'
-        );
-      const sha256 = digest(bytes);
-      const path = objectPath(campaignId, kind, sha256);
+      const { bytes, sha256, path } = prepareSnapshot(campaignId, kind, value);
+      if (reserve !== null) await reserve({ path, bytes: bytes.length });
       const file = this.bucket.file(path);
       let metadata = null;
       try {
@@ -158,4 +164,9 @@ class ImmutableCloudObjects {
   }
 }
 
-module.exports = { ImmutableCloudObjects, MAX_SNAPSHOT_BYTES, storageUnavailable };
+module.exports = {
+  ImmutableCloudObjects,
+  MAX_SNAPSHOT_BYTES,
+  storageUnavailable,
+  snapshotCandidate,
+};

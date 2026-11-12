@@ -403,15 +403,17 @@ test(
   'unexpected account transport failures never disclose provider details or structured credential data in replies/logs',
   { timeout: 30000 },
   async (context) => {
+    const runtime = await createEmulatorRuntime();
+    context.after(() => runtime.close());
     const logged = [];
     context.mock.method(console, 'error', (...args) => logged.push(args));
-    const api = await accountApi({
-      verifyAuthorization: async () => {
-        throw Object.assign(new Error('PRIVATE PROVIDER DETAILS'), {
-          code: { token: 'PRIVATE CREDENTIAL VALUE' },
-        });
-      },
+    const access = new CloudAccountAccess({ auth: runtime.auth, firestore: runtime.firestore });
+    context.mock.method(access, 'verifyAuthorization', async () => {
+      throw Object.assign(new Error('PRIVATE PROVIDER DETAILS'), {
+        code: { token: 'PRIVATE CREDENTIAL VALUE' },
+      });
     });
+    const api = await accountApi(access);
     try {
       const response = await fetch(api.url, {
         headers: { Origin: api.origin, Authorization: 'Bearer private-fixture-token' },

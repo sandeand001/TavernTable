@@ -46,9 +46,10 @@ pass before and after publication. The corrected full stable regression gate
 unapproved.
 Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
 canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
-gates, along with private image upload/delivery (`M2-06`). Provider linking
+gates, along with private image upload/delivery (`M2-06`) and private-pilot usage
+controls (`M2-08`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
-Large-file portability and private-pilot limits are next; cloud player gameplay
+Large-file portability is next; cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
@@ -438,13 +439,26 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** representative largest files round-trip; oversized, invalid,
     wrong-edition, or corrupt input produces an explicit error, not partial state.
 
-- [ ] **M2-08 - Enforce private-pilot usage limits and abuse controls.**
+- [x] **M2-08 - Enforce private-pilot usage limits and abuse controls.**
   - **Depends:** `M2-01`, `M2-06`.
   - **Success:** record and enforce campaign, upload, storage, request, and stream
     limits for eligible accounts. Authentication alone cannot create unlimited
     billable work or confer access to existing campaigns.
   - **Verify:** boundary/over-limit, concurrent, and unauthorized requests cannot
     bypass limits through another endpoint or instance.
+  - **Completed:** November 12, 2026.
+  - **Policy:** no enabled-account or daily custom-image-volume cap; ten owned
+    campaigns, 20 GiB private object bytes, 300 requests per rolling minute and
+    four renewable stream leases per UID. Existing image bounds and application
+    eligibility remain enforced. No quota deletes acknowledged data or imposes
+    a total game-duration cap.
+  - **Evidence:** [usage-controls gate](./cloud-migration-preparation.md#private-pilot-usage-limits-and-abuse-controls-gate).
+    **108/108** native SDK/HTTP/process-restart cases and **17 suites / 117
+    application tests** passed, zero skipped; full lint/layering had zero errors
+    and the same 39 existing warnings. Exact-byte atomic admission, competing
+    instances, corrupt-ledger failure, legacy inventory and actual browser
+    HTTP429/retained-command recovery are verified. The upcoming SSE wire must
+    apply the tested lease interface and current access checks in `M3-03`.
 
 - [ ] **M2-09 - Implement complete rolling backups and independent backup status.**
   - **Depends:** `M2-05`, `M2-07`.
@@ -515,6 +529,8 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Success:** verified identity travels in authorization headers; streams use
     the Cloud Run address, exact allowed origins, deliberate preflight, and
     live-session access checks. Keep local cookie/CSRF transport intact.
+    Apply `M2-08` lease admission, recheck current campaign access on renewal,
+    and close the connection when its lease cannot be renewed.
   - **Verify:** no Firebase bearer token in URLs; no reliance on native EventSource
     custom headers or Hosting's long-lived rewrite. Expired/revoked/anonymous/
     cross-campaign streams fail.

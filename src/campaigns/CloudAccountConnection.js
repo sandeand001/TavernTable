@@ -18,6 +18,14 @@ const invalidResponse = () =>
     'The cloud backend returned an invalid response. No local storage fallback was selected.'
   );
 const denialCodes = new Set([
+  'campaign-limit-reached',
+  'storage-limit-reached',
+  'request-limit-reached',
+  'invalid-account-usage',
+  'usage-initializing',
+  'usage-unavailable',
+  'cloud-requests-busy',
+  'storage-reservation-too-large',
   'authentication-required',
   'invalid-identity',
   'email-verification-required',
@@ -37,6 +45,7 @@ const denialCodes = new Set([
   'asset-not-found',
   'asset-unavailable',
   'asset-storage-unavailable',
+  'asset-processing-busy',
   'invalid-asset-record',
   'stale-revision',
   'command-id-conflict',
@@ -74,6 +83,32 @@ const denialCodes = new Set([
   'account-request-failed',
 ]);
 const denialMessages = new Map([
+  ['campaign-limit-reached', 'Each account can own at most 10 private-pilot campaigns.'],
+  [
+    'storage-limit-reached',
+    'The 20 GiB private-storage allowance is full. Existing saved data is unchanged; no new save was acknowledged.',
+  ],
+  [
+    'request-limit-reached',
+    'This account has reached 300 requests per minute. Wait a minute, then retry the same pending command.',
+  ],
+  ['invalid-account-usage', 'Account usage could not be verified. No new save was acknowledged.'],
+  [
+    'usage-initializing',
+    'Existing private storage is being accounted for. Retain the pending command and retry shortly.',
+  ],
+  [
+    'usage-unavailable',
+    'Account usage is temporarily unavailable. Retain the pending command before retrying online.',
+  ],
+  [
+    'cloud-requests-busy',
+    'Cloud data processing is busy. Retain the pending command and retry shortly.',
+  ],
+  [
+    'storage-reservation-too-large',
+    'This change needs the bounded large-import path. No new save was acknowledged.',
+  ],
   ['invalid-asset-request', 'Choose an explicit private campaign image upload.'],
   ['invalid-asset-image', 'Choose a complete JPEG, PNG or WebP image.'],
   ['asset-too-large', 'Image files must not exceed 10,000,000 bytes.'],
@@ -92,6 +127,10 @@ const denialMessages = new Map([
     'Private image storage is temporarily unavailable. Retain the pending change before retrying.',
   ],
   ['invalid-asset-record', 'Private image metadata could not be verified.'],
+  [
+    'asset-processing-busy',
+    'Private image processing is busy. Retain the pending command and retry shortly.',
+  ],
   ['authentication-required', 'Sign in before using cloud campaigns.'],
   ['invalid-identity', 'Sign in again before using cloud campaigns.'],
   ['email-verification-required', 'Verify your email, then refresh account access.'],

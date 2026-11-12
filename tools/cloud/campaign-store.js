@@ -9,6 +9,8 @@ const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
+const { CloudUsageLimits } = require('./usage-limits.js');
+const { snapshotCandidate } = require('./immutable-objects.js');
 const { isPrivateAssetReference } = require('./campaign-assets.js');
 const {
   CHARACTER_IMAGE_TYPES,
@@ -137,6 +139,7 @@ class CloudCampaignStore {
       throw new Error('Cloud campaigns require coordinated metadata and account access clients');
     this.firestore = firestore;
     this.access = access;
+    this.usage = new CloudUsageLimits({ firestore, access, now });
     this.packs = packs;
     if (
       objects !== null &&
@@ -150,6 +153,10 @@ class CloudCampaignStore {
     if (assets !== null && ['stage', 'read'].some((method) => typeof assets[method] !== 'function'))
       throw new Error('Cloud assets require the explicit immutable private asset interface');
     this.assets = assets;
+    if (objects?.bucket && assets?.bucket && objects.bucket.name !== assets.bucket.name)
+      throw new Error(
+        'Canonical snapshots and private assets must share the accounted private bucket'
+      );
     this.now = now;
   }
 
@@ -330,10 +337,12 @@ class CloudCampaignStore {
       if (error?.constructor !== Error) throw error;
       throw new CloudError(400, 'invalid-campaign-request', error.message);
     }
+    await this.usage.ensureAccount(principal);
     return this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
       if (replay !== null) return replay;
+      await this.usage.claimCampaign(uid, transaction);
       transaction.create(this.firestore.collection('campaigns').doc(record.id), {
         version: 1,
         ownerUid: uid,
@@ -1331,7 +1340,9 @@ class CloudCampaignStore {
         'asset-storage-unavailable',
         'Private campaign asset storage is not configured'
       );
-    const reference = await this.assets.stage(id, mimeType, bytes);
+    const reference = await this.assets.stage(id, mimeType, bytes, (candidate) =>
+      this.usage.reserveStorage(principal, id, candidate, this.assets.bucket)
+    );
     if (
       !isPrivateAssetReference(reference, id) ||
       reference.mimeType !== mimeType ||
@@ -1803,7 +1814,9 @@ class CloudCampaignStore {
           );
         throw error;
       }
-      charactersRef = await this.objects.stage(id, 'characters', state.records);
+      charactersRef = await this.objects.stage(id, 'characters', state.records, (candidate) =>
+        this.usage.reserveStorage(principal, id, candidate, this.objects.bucket)
+      );
     }
     const { FieldValue } = require('firebase-admin/firestore');
     return this._transaction(async (transaction) => {
@@ -2007,6 +2020,19 @@ class CloudCampaignStore {
       );
     const state = await this._loadSnapshot(captured.head);
     const { next, receipt } = await this._prepareChange(state, kind, change);
+    const changesScene = kind === 'scene.commit' || change.scene !== undefined;
+    const candidates = [];
+    if (changesScene) candidates.push(snapshotCandidate(id, 'scene', next.scene));
+    if (kind === 'characters.commit') {
+      candidates.push(snapshotCandidate(id, 'characters', next.records));
+      if (this.assets !== null)
+        for (const image of this._imageEntries(next.records))
+          candidates.push({
+            path: `campaigns/${id}/assets/${image.sha256}.bin`,
+            bytes: Buffer.byteLength(image.data, 'base64'),
+          });
+    }
+    await this.usage.reserveStorage(principal, id, candidates, this.objects.bucket);
     if (kind === 'characters.commit')
       await this._finalizeCharacterAssets(principal, id, next.records);
     const removedCharacters = new Set();
@@ -2020,11 +2046,16 @@ class CloudCampaignStore {
           removedCharacters.add(characterId);
       }
     }
-    const changesScene = kind === 'scene.commit' || change.scene !== undefined;
     const [sceneRef, charactersRef] = await Promise.all([
-      changesScene ? this.objects.stage(id, 'scene', next.scene) : captured.head.sceneRef,
+      changesScene
+        ? this.objects.stage(id, 'scene', next.scene, (candidate) =>
+            this.usage.reserveStorage(principal, id, candidate, this.objects.bucket)
+          )
+        : captured.head.sceneRef,
       kind === 'characters.commit'
-        ? this.objects.stage(id, 'characters', next.records)
+        ? this.objects.stage(id, 'characters', next.records, (candidate) =>
+            this.usage.reserveStorage(principal, id, candidate, this.objects.bucket)
+          )
         : captured.head.charactersRef,
     ]);
     const { FieldValue } = require('firebase-admin/firestore');

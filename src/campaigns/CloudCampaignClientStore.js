@@ -491,6 +491,13 @@ export default class CloudCampaignClientStore {
         this._saveStatus('saved');
         item.resolve(receipt);
       } catch (error) {
+        const freshCapacityDenial =
+          item.error === null &&
+          [
+            'campaign-limit-reached',
+            'storage-limit-reached',
+            'storage-reservation-too-large',
+          ].includes(error.code);
         const freshAccessDenial =
           (item.operation === 'join' || metadataOperations.has(item.operation)) &&
           item.error === null &&
@@ -502,6 +509,7 @@ export default class CloudCampaignClientStore {
           ].includes(error.code);
         item.error = error;
         if (
+          freshCapacityDenial ||
           freshAccessDenial ||
           definitiveDenials.has(error.code) ||
           (metadataOperations.has(item.operation) && definitiveMetadataDenials.has(error.code))
