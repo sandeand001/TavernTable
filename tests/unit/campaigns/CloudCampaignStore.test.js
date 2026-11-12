@@ -1,3 +1,4 @@
+/** @jest-environment node */
 import { CloudAccountAccess } from '../../../tools/cloud/account-access.js';
 import { CloudCampaignStore } from '../../../tools/cloud/campaign-store.js';
 

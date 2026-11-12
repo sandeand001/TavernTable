@@ -26,6 +26,7 @@ const unavailableStorageCodes = new Set([
   'ENOTFOUND',
   'EAI_AGAIN',
 ]);
+const storageUnavailable = (error) => unavailableStorageCodes.has(error?.code);
 
 function storageFailure(error) {
   if (error?.code === 404)
@@ -34,7 +35,7 @@ function storageFailure(error) {
       'snapshot-unavailable',
       'The referenced private cloud snapshot is unavailable'
     );
-  if (unavailableStorageCodes.has(error?.code))
+  if (storageUnavailable(error))
     return new CloudError(
       503,
       'snapshot-storage-unavailable',
@@ -157,4 +158,4 @@ class ImmutableCloudObjects {
   }
 }
 
-module.exports = { ImmutableCloudObjects, MAX_SNAPSHOT_BYTES };
+module.exports = { ImmutableCloudObjects, MAX_SNAPSHOT_BYTES, storageUnavailable };

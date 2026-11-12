@@ -1037,3 +1037,41 @@ unverified prototype is not included in these completed-gate counts. No live
 Auth, Storage/IAM, production deployment or real-data migration occurred.
 `UX-01` routine save-flashing/centered feedback remains explicitly deferred and
 its presentation component was not changed.
+
+## Private asset kernel progress
+
+`M2-06` remains in progress. The owner selected accepting up to **16,000,000
+decoded pixels**, with neither side exceeding **8192 pixels**, without silently
+resizing stored bytes. Existing JPEG/PNG/WebP support, source-file/canonical-data
+limits and client 512/1024 output targets remain unchanged.
+
+- The new immutable asset primitive checks image headers before decoding, then
+  verifies complete raster contents. The header parser and decoder are pinned
+  runtime dependencies (`image-size` 2.1.0 and `sharp` 0.35.5). The existing
+  `canvas` development dependency remains unchanged; it cannot decode the
+  browser-generated WebP fixture, so it was not used as the production decoder.
+- Caller bytes are copied before asynchronous work, content-addressed by their
+  exact SHA-256 and scoped to the campaign. Storage metadata binds original
+  content type, byte count, dimensions and immutable generation. Restaging never
+  repairs or overwrites a corrupt existing content-addressed object.
+- The owner upload domain Interface checks current eligibility/ownership before
+  decoding/staging and again before atomic publication of asset metadata and its
+  UID-scoped receipt. Replay does not create another upload or change canonical
+  scene/character generations. No raw proof, URL credential or signed link is
+  stored in the result.
+- Seven real native asset cases pass, including PNG/JPEG/WebP byte preservation,
+  a real 4000-by-4000 image at the exact pixel limit, corruption/oversized/MIME
+  rejection before writes, reference tampering and owner-only upload/replay.
+- The complete current native suite passed **96/96 cases**, zero skipped, in
+  **83,167.0307 ms**. The affected image/cloud application checks passed
+  **9 suites / 74 tests**, zero skipped, in **5.257 s**. The backend outage test
+  now explicitly uses Node rather than the DOM-only environment for its Node
+  dependencies. Full lint/stylelint/layering passed with the same 39 warnings.
+- Targeted package audit reported no advisory entry for the changed image
+  packages. The total audit still reports 48 findings in the wider dependency
+  graph; no unrelated audit fix or forced dependency upgrade was applied.
+
+Upload transport, current-member asset authorization, participant-safe manifests,
+revocation races and complete lifecycle acceptance are still pending. This is
+verified kernel progress, **not completion of private asset delivery or the
+migration**. No live Storage/IAM changes or public deployment are authorized.

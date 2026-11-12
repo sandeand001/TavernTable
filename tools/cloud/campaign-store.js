@@ -9,6 +9,11 @@ const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
+const { isPrivateAssetReference } = require('./campaign-assets.js');
+const {
+  CHARACTER_IMAGE_TYPES,
+  CHARACTER_IMAGE_FILE_LIMIT,
+} = require('../../src/config/characters/CharacterImages.js');
 const {
   isCloudUUID,
   isCloudDigest,
@@ -84,6 +89,7 @@ function validCommandResult(previous) {
   if (kind === 'campaign.character.assign') return isCloudCharacterAssignment(result);
   if (kind === 'campaign.settings')
     return isCloudCampaignSettings(result) && result.campaign.id === previous.campaignId;
+  if (kind === 'campaign.asset.upload') return isPrivateAssetReference(result, previous.campaignId);
   if (kind === 'campaign.create')
     return (
       result?.id === previous.campaignId &&
@@ -111,7 +117,15 @@ function validCommandResult(previous) {
 }
 
 class CloudCampaignStore {
-  constructor({ firestore, access, packs, objects = null, resources = null, now = Date.now }) {
+  constructor({
+    firestore,
+    access,
+    packs,
+    objects = null,
+    resources = null,
+    assets = null,
+    now = Date.now,
+  }) {
     if (
       typeof firestore?.runTransaction !== 'function' ||
       access?.firestore !== firestore ||
@@ -131,6 +145,9 @@ class CloudCampaignStore {
       throw new Error('Cloud saves require the pinned resource catalog interface');
     this.objects = objects;
     this.resources = resources;
+    if (assets !== null && ['stage', 'read'].some((method) => typeof assets[method] !== 'function'))
+      throw new Error('Cloud assets require the explicit immutable private asset interface');
+    this.assets = assets;
     this.now = now;
   }
 
@@ -198,6 +215,7 @@ class CloudCampaignStore {
         'campaign.member.remove',
         'campaign.character.assign',
         'campaign.settings',
+        'campaign.asset.upload',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
@@ -1233,6 +1251,135 @@ class CloudCampaignStore {
       },
       { readOnly: true }
     );
+  }
+
+  async uploadAsset(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some((key) => !['commandId', 'mimeType', 'data'].includes(key)) ||
+      !isCloudUUID(command.commandId) ||
+      !CHARACTER_IMAGE_TYPES.includes(command.mimeType) ||
+      typeof command.data !== 'string' ||
+      !command.data.length
+    )
+      throw new CloudError(
+        400,
+        'invalid-asset-request',
+        'Choose a campaign image and an explicit upload command'
+      );
+    if (command.data.length > Math.ceil(CHARACTER_IMAGE_FILE_LIMIT / 3) * 4)
+      throw new CloudError(413, 'asset-too-large', 'Image files must not exceed 10,000,000 bytes');
+    if (command.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(command.data))
+      throw new CloudError(
+        400,
+        'invalid-asset-request',
+        'Use complete canonical base64 image data'
+      );
+    const bytes = Buffer.from(command.data, 'base64');
+    if (bytes.toString('base64') !== command.data)
+      throw new CloudError(
+        400,
+        'invalid-asset-request',
+        'Use complete canonical base64 image data'
+      );
+    const mimeType = command.mimeType;
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.asset.upload',
+          campaignId: id,
+          mimeType,
+          sha256,
+          bytes: bytes.length,
+        })
+      )
+      .digest('hex');
+    const receiptReference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const intent = {
+      uid,
+      reference: receiptReference,
+      fingerprint,
+      kind: 'campaign.asset.upload',
+      campaignId: id,
+    };
+    const headReference = this.firestore.collection('campaigns').doc(id);
+    const previous = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return replay;
+        await this._metadata(await transaction.get(headReference), uid);
+        return null;
+      },
+      { readOnly: true }
+    );
+    if (previous !== null) return previous;
+    if (this.assets === null)
+      throw new CloudError(
+        503,
+        'asset-storage-unavailable',
+        'Private campaign asset storage is not configured'
+      );
+    const reference = await this.assets.stage(id, mimeType, bytes);
+    if (
+      !isPrivateAssetReference(reference, id) ||
+      reference.mimeType !== mimeType ||
+      reference.bytes !== bytes.length ||
+      reference.sha256 !== sha256
+    )
+      throw new CloudError(
+        503,
+        'asset-integrity-failed',
+        'The private asset failed its integrity check'
+      );
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, intent);
+      if (replay !== null) return replay;
+      await this._metadata(await transaction.get(headReference), uid);
+      const assetReference = headReference.collection('assets').doc(reference.sha256);
+      const current = await transaction.get(assetReference);
+      if (current.exists) {
+        const record = current.data();
+        if (
+          record?.version !== 1 ||
+          record.campaignId !== id ||
+          !isPrivateAssetReference(record.reference, id) ||
+          Object.keys(reference).some((key) => record.reference[key] !== reference[key])
+        )
+          throw new CloudError(
+            503,
+            'invalid-asset-record',
+            'The private asset metadata could not be verified'
+          );
+      } else {
+        const { FieldValue } = require('firebase-admin/firestore');
+        transaction.create(assetReference, {
+          version: 1,
+          campaignId: id,
+          reference,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+      transaction.create(receiptReference, {
+        version: 1,
+        uid,
+        kind: 'campaign.asset.upload',
+        fingerprint,
+        campaignId: id,
+        result: reference,
+      });
+      return reference;
+    });
   }
 
   async getSettings(principal, id) {
