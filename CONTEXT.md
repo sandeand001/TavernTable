@@ -111,8 +111,15 @@
   unrelated UIDs. Firestore transactions recheck current pilot eligibility;
   creation publishes its initial head and UID-scoped command receipt atomically.
   Private scene/character saves and coordinated reads are implemented in the
-  development backend and explicit cloud workspace; memberships, live games and
-  the full rendered M1 acceptance gate remain gated.
+  development backend and explicit cloud workspace. The rendered M1 development
+  gate is verified; joined gameplay, live games and hosted rollout remain gated.
+- **Campaign-local access (initial M2 development slice implemented)**:
+  server-owned UID membership indexes must agree with the campaign's current
+  player seat. Owned/Joined metadata uses an explicit minimal projection; joined
+  membership never authorizes raw canonical owner snapshots or a global DM role.
+  Player gameplay is visibly gated until its authorized participant path exists.
+  The selected seven-day single-use invitation will also approve a new verified
+  app account, but must never override an explicitly disabled account.
 - **Cloud emulator loop (implemented development tooling only)**: explicit
   `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
   conflicting SDK settings fail closed. Real SDK integration uses native Node

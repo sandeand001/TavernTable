@@ -1,5 +1,5 @@
 import CampaignStore from './CampaignStore.js';
-import { isCloudUUID } from './CloudProtocol.js';
+import { isCloudUUID, isCloudCampaignAccess } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
 const failure = (status, code, message) => Object.assign(new Error(message), { status, code });
@@ -306,6 +306,29 @@ export default class CloudCampaignClientStore {
     if (!Array.isArray(result) || new Set(result.map((entry) => entry?.id)).size !== result.length)
       throw invalidResponse();
     return Promise.all(result.map((entry) => this._metadata(entry)));
+  }
+
+  async listAccess() {
+    const result = await this._call('account/campaigns');
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      Array.isArray(result) ||
+      Object.keys(result).length !== 2 ||
+      !['owned', 'joined'].every((key) => Array.isArray(result[key])) ||
+      result.owned.some((entry) => !isCloudCampaignAccess(entry) || entry.role !== 'owner') ||
+      result.joined.some((entry) => !isCloudCampaignAccess(entry) || entry.role !== 'member')
+    )
+      throw invalidResponse();
+    const ids = [...result.owned, ...result.joined].map((entry) => entry.campaign.id);
+    if (new Set(ids).size !== ids.length) throw invalidResponse();
+    return copy(result);
+  }
+
+  async getAccess(id) {
+    const result = await this._call(this._resource(id, '/access'));
+    if (!isCloudCampaignAccess(result) || result.campaign.id !== id) throw invalidResponse();
+    return copy(result);
   }
 
   async get(id) {

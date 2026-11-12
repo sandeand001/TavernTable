@@ -66,7 +66,7 @@ test('startup requires an explicit campaign ruleset before opening a scoped, rea
   workspace.close();
 }, 30000);
 
-test('the real cloud picker identifies authority and account while gating unfinished backup/source capabilities', async () => {
+test('the real cloud picker separates Owned and Joined access without opening a player seat as the campaign owner', async () => {
   const manifest = await (
     await fetchBundledResource(new URL('assets/data/resources/manifest.json', location.href).href)
   ).json();
@@ -98,10 +98,35 @@ test('the real cloud picker identifies authority and account while gating unfini
     },
   };
   const account = new CloudAccount({ auth, sdk });
+  const joinedId = '22222222-2222-4222-8222-222222222222';
+  const owned = {
+    version: 1,
+    campaign: {
+      id: campaign.id,
+      name: campaign.name,
+      ruleset: campaign.ruleset,
+      coreVersion: campaign.coreVersion,
+    },
+    role: 'owner',
+    seatId: null,
+  };
+  const joined = {
+    version: 1,
+    campaign: { ...owned.campaign, id: joinedId, name: 'Joined campaign fixture' },
+    role: 'member',
+    seatId: '33333333-3333-4333-8333-333333333333',
+  };
+  const apiRequests = [];
   const fetch = async (input) => {
-    if (!new URL(input, location.href).pathname.startsWith('/api/'))
-      return fetchBundledResource(input);
-    return { ok: true, status: 200, json: async () => ({ version: 1, result: [campaign] }) };
+    const path = new URL(input, location.href).pathname;
+    if (!path.startsWith('/api/')) return fetchBundledResource(input);
+    apiRequests.push(path);
+    const result = path.endsWith('/account/campaigns')
+      ? { owned: [owned], joined: [joined] }
+      : path.endsWith('/access')
+        ? joined
+        : [campaign];
+    return { ok: true, status: 200, json: async () => ({ version: 1, result }) };
   };
   const runtime = {
     version: 1,
@@ -144,6 +169,19 @@ test('the real cloud picker identifies authority and account while gating unfini
     'picker@example.invalid'
   );
   expect(launcher.root.querySelector('[data-cloud-account-signout]').hidden).toBe(false);
+  const ownedGroup = launcher.list.querySelector('[data-campaign-group="owned"]');
+  const joinedGroup = launcher.list.querySelector('[data-campaign-group="joined"]');
+  expect(ownedGroup?.textContent).toContain('Owned campaigns');
+  expect(ownedGroup?.querySelector('[data-open-campaign]')).not.toBeNull();
+  expect(joinedGroup?.textContent).toContain('Joined campaign fixture');
+  expect(joinedGroup?.querySelector('[data-open-campaign]')).toBeNull();
+  const access = joinedGroup.querySelector('[data-view-campaign-access]');
+  access.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(launcher.status.textContent).toContain('Cloud player gameplay is not enabled yet');
+  expect(apiRequests).toContain(`/api/cloud/campaigns/${joinedId}/access`);
+  expect(apiRequests.some((path) => /\/(scene|characters)$/.test(path))).toBe(false);
+  expect(workspace.active).toBeNull();
   launcher.destroy();
   workspace.close();
 }, 30000);

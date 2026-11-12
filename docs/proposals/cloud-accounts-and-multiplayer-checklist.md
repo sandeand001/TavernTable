@@ -310,21 +310,31 @@ Revalidation in the intended environment remains part of M1 and M4.
 
 ### M2 - Ownership and complete persistence
 
-- [ ] **M2-01 - Implement Owned / Joined campaigns and campaign-local roles.**
+- [x] **M2-01 - Implement Owned / Joined campaigns and campaign-local roles.**
   - **Depends:** `M1-10`.
   - **Success:** one UID can own one campaign and play in another. Launcher,
     metadata, and operation permissions agree; display/contact fields cannot
     confer ownership.
   - **Verify:** owner/member/unrelated-UID cases and account switching show only
     permitted campaigns and controls, with backend enforcement.
+  - **Completed:** November 11, 2026 for the development access slice.
+    **Evidence:** [campaign-local projections](./cloud-migration-preparation.md#initial-campaign-local-access-projections):
+    actual UID/Firestore/bearer HTTP ownership/member isolation, malformed
+    metadata/current-seat checks, strict client projections and account-switch
+    guards, plus the role-aware picker. Joined gameplay remains explicitly
+    unavailable until its participant path is implemented; membership does not
+    grant canonical owner reads or edits.
 
 - [ ] **M2-02 - Implement account-bound invitation and redemption semantics.**
   - **Depends:** `M2-01`.
   - **Success:** owner-issued invitations are hashed, expiring, single-use, and
     attach a verified UID to the intended seat without recreating characters.
-    Record the selected expiry, starting from the proposed seven days.
+    Unused invitations expire after the selected seven days.
   - **Verify:** redemption races have one winner; expired/reused/revoked links
     fail; assignments survive. Matching display names/emails do not claim a seat.
+  - **Selected November 11, 2026:** a valid invitation also enables a new verified
+    account for the app. Existing explicit account blocks override invitations.
+    Expiration does not remove a membership that has already been accepted.
 
 - [ ] **M2-03 - Implement revocation, removal, assignments, and access generations.**
   - **Depends:** `M2-02`.

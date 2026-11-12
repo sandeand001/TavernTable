@@ -670,3 +670,32 @@ complete persistence, multiplayer, hosted or migration gates.
 
 No production deployment, additional live cloud write or new IAM grant was
 performed.
+
+## Initial campaign-local access projections
+
+`M2-01` completed November 11, 2026 for the development access slice; joined
+gameplay remains gated until the participant command/projection path exists.
+
+- New authenticated `account/campaigns` and `campaigns/{id}/access` reads expose
+  explicit Owned/Joined summaries. Projection fields are only campaign
+  ID/name/rules/core version, campaign-local owner/member role and own seat ID.
+  They contain no canonical scene, character records, private head references,
+  owner UID or global DM claim.
+- Server-owned UID-scoped membership records must agree with the current
+  campaign seat. Malformed metadata fails explicitly, account disablement blocks
+  reads, and stale/mismatched seats cannot preserve access.
+- The cloud picker separates Owned and Joined campaigns. Joined entries cannot
+  open the private owner workspace; they recheck access and explain that cloud
+  player gameplay is not enabled yet. Existing canonical scene/character reads
+  and writes remain owner-only.
+- All **55 native SDK/HTTP cases** pass, zero skipped. The three new cases cover
+  one UID owning and joining different campaigns, unrelated identities, direct
+  private-operation denial, malformed membership data, current seat checks and
+  actual bearer HTTP. The targeted client/picker/workspace/menu run passes
+  **6 suites / 30 tests**. Lint/stylelint and layering pass with the same 39
+  existing warnings.
+
+The user selected invite-enabled verified-account participation and a seven-day
+unused-invitation lifetime. An explicit account block must override invitation
+redemption; accepted membership does not expire with its original link.
+Invitation implementation is the next slice, not implied by membership fixtures.

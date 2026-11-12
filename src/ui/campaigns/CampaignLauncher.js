@@ -130,6 +130,15 @@ export default class CampaignLauncher {
       const id = button.closest('[data-campaign-id]')?.dataset.campaignId;
       if (button.hasAttribute('data-open-campaign'))
         void this._perform(() => this._open(id), 'Opening the selected campaign...');
+      if (button.hasAttribute('data-view-campaign-access'))
+        void this._perform(async () => {
+          const access = await this.workspace.store.getAccess(id);
+          if (access.role !== 'member')
+            throw new Error('Campaign access changed. Refresh the campaign picker.');
+          this.status.textContent =
+            `Joined ${access.campaign.name} as a player. ` +
+            'Cloud player gameplay is not enabled yet; no private owner data was opened.';
+        }, 'Checking current player access...');
       if (button.hasAttribute('data-edit-campaign'))
         void this._perform(() => this._edit(id), 'Loading campaign settings...');
       if (button.hasAttribute('data-export-campaign'))
@@ -233,24 +242,41 @@ export default class CampaignLauncher {
   }
 
   async _renderSaved() {
-    const campaigns = await this.workspace.list();
+    const cloud = this.workspace.store.storageInfo?.kind === 'cloud';
     const capabilities = this.workspace.store.capabilities;
-    this.list.innerHTML =
-      campaigns
-        .map((campaign) => {
-          const profile = edition(campaign.ruleset);
-          return `<article data-campaign-id="${escape(campaign.id)}">
+    const row = (campaign, role = null) => {
+      const profile = edition(campaign.ruleset);
+      const sources = cloud
+        ? ` / ${role === 'owner' ? 'Owner' : 'Player'}`
+        : ` / ${campaign.sourcePacks.filter((source) => source.enabled).length} enabled sources`;
+      return `<article data-campaign-id="${escape(campaign.id)}">
         <h3>${escape(campaign.name)}</h3>
-        <p>${profile.name} rules / SRD ${profile.srd} / ${campaign.sourcePacks.filter((source) => source.enabled).length} enabled sources</p>
+        <p>${profile.name} rules / SRD ${profile.srd}${sources}</p>
         <div class="campaign-row-actions">
-          <button type="button" data-open-campaign>Open</button>
+          ${role === 'member' ? '<button type="button" data-view-campaign-access>View player access</button>' : '<button type="button" data-open-campaign>Open</button>'}
           ${capabilities?.settings !== false ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
           ${capabilities?.backups !== false ? '<button type="button" data-export-campaign>Export</button>' : ''}
           ${capabilities?.backups !== false && this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
         </div></article>`;
-        })
-        .join('') ||
-      '<p class="campaign-empty">No campaigns saved in this storage location yet.</p>';
+    };
+    if (cloud) {
+      const directory = await this.workspace.store.listAccess();
+      this.list.innerHTML = ['owned', 'joined']
+        .map(
+          (group) => `<section data-campaign-group="${group}">
+            <h3>${group === 'owned' ? 'Owned campaigns' : 'Joined campaigns'}</h3>
+            ${
+              directory[group].map((access) => row(access.campaign, access.role)).join('') ||
+              `<p class="campaign-empty">${group === 'owned' ? 'No owned campaigns yet.' : 'No joined campaigns yet.'}</p>`
+            }
+          </section>`
+        )
+        .join('');
+    } else {
+      this.list.innerHTML =
+        (await this.workspace.list()).map((campaign) => row(campaign)).join('') ||
+        '<p class="campaign-empty">No campaigns saved in this storage location yet.</p>';
+    }
     const browserCampaigns =
       capabilities?.browserImport === false
         ? []

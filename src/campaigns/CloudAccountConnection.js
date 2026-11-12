@@ -27,6 +27,7 @@ const denialCodes = new Set([
   'command-id-conflict',
   'invalid-command-receipt',
   'invalid-campaign-head',
+  'invalid-campaign-membership',
   'snapshot-integrity-failed',
   'snapshot-unavailable',
   'snapshot-storage-unavailable',

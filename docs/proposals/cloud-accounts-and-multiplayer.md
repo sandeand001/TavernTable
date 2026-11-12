@@ -273,9 +273,13 @@ browser-only save after an authentication or cloud failure.
 
 ### Invitations
 
-Recommend expiring, single-use invitation links that attach an authenticated UID
-to an existing campaign/player seat. Store invitation hashes, not raw links.
-Initial proposed expiry: seven days.
+Use expiring, single-use invitation links that attach a verified authenticated
+UID to the intended campaign/player seat. Store invitation hashes, not raw links.
+**Selected November 11, 2026:** unused invitations expire after seven days.
+Accepting a valid invitation also approves a previously unapproved verified
+account for application participation; no separate operator approval is needed.
+An explicitly disabled account remains blocked and cannot be re-enabled by an
+invitation. Expiration applies to unused links, not accepted membership.
 
 Preserve the seat's saved-character assignments when the player joins. Do not
 recreate characters or guess identity from matching names.

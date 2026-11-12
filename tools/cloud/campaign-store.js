@@ -7,6 +7,23 @@ const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
 const { isCloudUUID } = require('../../src/campaigns/CloudProtocol.js');
 
+const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
+const accessSummary = (head, role, seatId = null) => ({
+  version: 1,
+  campaign: {
+    id: head.campaign.id,
+    name: head.campaign.name,
+    ruleset: head.campaign.ruleset,
+    coreVersion: head.campaign.coreVersion,
+  },
+  role,
+  seatId,
+});
+const unavailableCampaign = () =>
+  new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
+const invalidMembership = () =>
+  new CloudError(503, 'invalid-campaign-membership', 'Campaign access could not be verified');
+
 function principalUid(principal) {
   pilotAccountKey(principal?.uid);
   if (principal.emailVerified !== true)
@@ -262,6 +279,105 @@ class CloudCampaignStore {
         for (const snapshot of snapshots.docs)
           campaigns.push((await this._metadata(snapshot, uid)).campaign);
         return campaigns.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+      },
+      { readOnly: true }
+    );
+  }
+
+  _memberships(uid) {
+    return this.firestore
+      .collection('campaignMemberships')
+      .doc(pilotAccountKey(uid))
+      .collection('campaigns');
+  }
+
+  async _accessSummary(transaction, uid, id) {
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
+    if (!snapshot.exists) throw unavailableCampaign();
+    const ownerUid = snapshot.data()?.ownerUid;
+    if (ownerUid === uid) return accessSummary(await this._metadata(snapshot, uid), 'owner');
+    const membership = await transaction.get(this._memberships(uid).doc(id));
+    if (!membership.exists) throw unavailableCampaign();
+    const record = membership.data();
+    if (
+      record?.version !== 1 ||
+      record.uid !== uid ||
+      record.campaignId !== id ||
+      !isCloudUUID(record.seatId) ||
+      !validTime(record.joinedAt) ||
+      Object.keys(record).some(
+        (key) => !['version', 'uid', 'campaignId', 'seatId', 'joinedAt'].includes(key)
+      )
+    )
+      throw invalidMembership();
+    const seat = await transaction.get(snapshot.ref.collection('seats').doc(record.seatId));
+    if (!seat.exists || seat.data()?.memberUid !== uid) throw unavailableCampaign();
+    const player = seat.data();
+    if (
+      player.version !== 1 ||
+      player.id !== record.seatId ||
+      player.campaignId !== id ||
+      typeof player.name !== 'string' ||
+      !player.name.trim() ||
+      player.name.length > 80 ||
+      !validTime(player.createdAt) ||
+      !Array.isArray(player.characterIds) ||
+      player.characterIds.some((characterId) => typeof characterId !== 'string' || !characterId) ||
+      new Set(player.characterIds).size !== player.characterIds.length ||
+      Object.keys(player).some(
+        (key) =>
+          ![
+            'version',
+            'id',
+            'campaignId',
+            'name',
+            'memberUid',
+            'characterIds',
+            'createdAt',
+          ].includes(key)
+      ) ||
+      typeof ownerUid !== 'string' ||
+      !ownerUid ||
+      ownerUid.length > 128
+    )
+      throw invalidMembership();
+    return accessSummary(await this._metadata(snapshot, ownerUid), 'member', record.seatId);
+  }
+
+  async getAccess(principal, id) {
+    const uid = principalUid(principal);
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        return this._accessSummary(transaction, uid, id);
+      },
+      { readOnly: true }
+    );
+  }
+
+  async listAccess(principal) {
+    const uid = principalUid(principal);
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const [campaigns, memberships] = await Promise.all([
+          transaction.get(this.firestore.collection('campaigns').where('ownerUid', '==', uid)),
+          transaction.get(this._memberships(uid)),
+        ]);
+        const owned = [];
+        for (const snapshot of campaigns.docs)
+          owned.push(accessSummary(await this._metadata(snapshot, uid), 'owner'));
+        const joined = [];
+        for (const membership of memberships.docs) {
+          const entry = await this._accessSummary(transaction, uid, membership.id);
+          if (entry.role !== 'member') throw invalidMembership();
+          joined.push(entry);
+        }
+        const byName = (a, b) =>
+          a.campaign.name.localeCompare(b.campaign.name) ||
+          a.campaign.id.localeCompare(b.campaign.id);
+        return { owned: owned.sort(byName), joined: joined.sort(byName) };
       },
       { readOnly: true }
     );

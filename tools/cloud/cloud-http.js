@@ -81,6 +81,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     [
       'create',
       'list',
+      'listAccess',
+      'getAccess',
       'get',
       'readCharacters',
       'readScene',
@@ -101,23 +103,27 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     }
     const url = new URL(request.url, 'http://cloud.invalid');
     const account = url.pathname === '/api/cloud/account';
+    const directory = url.pathname === '/api/cloud/account/campaigns';
     const collection = url.pathname === '/api/cloud/campaigns';
-    const campaign = /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene))?$/.exec(
+    const campaign = /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|access))?$/.exec(
       url.pathname
     );
-    if (!account && !collection && !campaign) return false;
+    if (!account && !directory && !collection && !campaign) return false;
     const subject = account ? 'account' : 'campaign';
     const snapshot = campaign?.[2];
-    const methods = collection || snapshot ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
+    const writable = collection || ['scene', 'characters'].includes(snapshot);
+    const methods = writable ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
     const operation = account
       ? 'account'
-      : collection
-        ? request.method === 'POST'
-          ? 'campaign.create'
-          : 'campaign.list'
-        : snapshot
-          ? `${snapshot}.${request.method === 'POST' ? 'commit' : 'read'}`
-          : 'campaign.get';
+      : directory
+        ? 'campaign.listAccess'
+        : collection
+          ? request.method === 'POST'
+            ? 'campaign.create'
+            : 'campaign.list'
+          : snapshot
+            ? `${snapshot}.${request.method === 'POST' ? 'commit' : 'read'}`
+            : 'campaign.get';
     const origin = request.headers.origin;
     if (origin !== undefined && (typeof origin !== 'string' || !origins.has(origin))) {
       jsonResponse(response, 403, {
@@ -152,7 +158,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       response.end();
       return true;
     }
-    if (request.method !== 'GET' && !((collection || snapshot) && request.method === 'POST')) {
+    if (request.method !== 'GET' && !(writable && request.method === 'POST')) {
       jsonResponse(
         response,
         405,
@@ -179,11 +185,15 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             'cloud-campaigns-unavailable',
             'Cloud campaign persistence is not configured'
           );
-        if (collection) {
+        if (directory) {
+          result = await store.listAccess(principal);
+        } else if (collection) {
           result =
             request.method === 'POST'
               ? await store.create(principal, await requestJSON(request))
               : await store.list(principal);
+        } else if (snapshot === 'access') {
+          result = await store.getAccess(principal, campaign[1]);
         } else if (snapshot === 'scene') {
           result =
             request.method === 'POST'

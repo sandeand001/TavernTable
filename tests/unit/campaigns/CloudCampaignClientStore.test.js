@@ -32,6 +32,18 @@ const runtime = {
   },
 };
 
+const accessSummary = (role, id = campaignId) => ({
+  version: 1,
+  campaign: {
+    id,
+    name: campaign.name,
+    ruleset: campaign.ruleset,
+    coreVersion: campaign.coreVersion,
+  },
+  role,
+  seatId: role === 'owner' ? null : '44444444-4444-4444-8444-444444444444',
+});
+
 function fixture() {
   const auth = {
     currentUser: { uid: 'uid-a', emailVerified: true, getIdToken: async () => 'fixture-token' },
@@ -87,6 +99,7 @@ test('the browser high-level cloud store uses UID-bound HTTP creation and consis
       throw new Error('No browser campaign database may open');
     },
   });
+
   try {
     const setup = fixture();
     expect(
@@ -125,6 +138,52 @@ test('the browser high-level cloud store uses UID-bound HTTP creation and consis
     if (previous) Object.defineProperty(globalThis, 'indexedDB', previous);
     else delete globalThis.indexedDB;
   }
+});
+
+test('Owned and Joined access accepts only explicit role projections without canonical records or duplicated authority', async () => {
+  const setup = fixture();
+  const owned = accessSummary('owner');
+  const joined = accessSummary('member', '55555555-5555-4555-8555-555555555555');
+  let result = { owned: [owned], joined: [joined] };
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  await expect(setup.store.listAccess()).resolves.toEqual(result);
+  expect(setup.fetch.mock.calls[0][0]).toBe(`${runtime.apiOrigin}/api/cloud/account/campaigns`);
+  result = joined;
+  await expect(setup.store.getAccess(joined.campaign.id)).resolves.toEqual(joined);
+  expect(setup.fetch.mock.calls[1][0]).toBe(
+    `${runtime.apiOrigin}/api/cloud/campaigns/${joined.campaign.id}/access`
+  );
+  for (const invalid of [
+    { owned: [owned], joined: [accessSummary('member')] },
+    { owned: [joined], joined: [] },
+    { owned: [owned], joined: [joined], scene: '{}' },
+    { owned: [owned], joined: [{ ...joined, role: 'dm' }] },
+    { owned: [owned], joined: [{ ...joined, ownerUid: 'private-owner' }] },
+    {
+      owned: [owned],
+      joined: [{ ...joined, campaign: { ...joined.campaign, scene: 'private-scene' } }],
+    },
+  ]) {
+    result = invalid;
+    await expect(setup.store.listAccess()).rejects.toMatchObject({
+      code: 'invalid-cloud-response',
+    });
+  }
+  result = owned;
+  await expect(setup.store.getAccess(joined.campaign.id)).rejects.toMatchObject({
+    code: 'invalid-cloud-response',
+  });
+  const calls = setup.fetch.mock.calls.length;
+  setup.auth.currentUser = { ...setup.auth.currentUser, uid: 'uid-b' };
+  await expect(setup.store.listAccess()).rejects.toMatchObject({ code: 'account-changed' });
+  await expect(setup.store.getAccess(joined.campaign.id)).rejects.toMatchObject({
+    code: 'account-changed',
+  });
+  expect(setup.fetch).toHaveBeenCalledTimes(calls);
 });
 
 test('a scene command reports saving until a validated durable receipt arrives, then returns the existing caller shape', async () => {
