@@ -698,4 +698,118 @@ gameplay remains gated until the participant command/projection path exists.
 The user selected invite-enabled verified-account participation and a seven-day
 unused-invitation lifetime. An explicit account block must override invitation
 redemption; accepted membership does not expire with its original link.
-Invitation implementation is the next slice, not implied by membership fixtures.
+Invitation implementation is recorded separately below; membership fixtures
+alone are not onboarding proof.
+
+## Account-bound invitation implementation
+
+`M2-02` is complete in the isolated demo environment. Production deployment,
+actual campaign migration and player gameplay remain separate gates.
+
+- Owners can issue seven-day, single-use invitations for new or existing
+  unclaimed seats, inspect current invitation status and revoke unused links.
+  Reissuing preserves the seat and character assignments while invalidating the
+  old link. A joined seat cannot be reassigned by issuing another invitation.
+- The browser creates a 32-byte cryptographic secret and sends only its SHA-256
+  for issuance. Firestore invitations and durable command receipts store no raw
+  secret/link. The owner sees the secret only after a validated durable issuance
+  result; the original in-memory command and secret survive uncertain delivery.
+  Closing the panel clears its displayed link; reissue is required if it is lost.
+- Invitation links use a frontend URL fragment. Startup removes it from browser
+  history before loading managed Auth or opening a provider popup. Malformed
+  links fail without echoing their contents, and accepting is an explicit action
+  after verified sign-in, not an automatic consequence of opening the URL.
+- Only `account/invitations/redeem` accepts a verified but not-yet-enabled account.
+  Normal campaign/profile routes retain their existing account gate. A valid
+  redemption atomically enables a previously unapproved account, binds the
+  intended seat, creates its UID-scoped membership and durable receipt, and
+  consumes the invitation. Explicit account blocks are never overwritten.
+- Acceptance receipts bind the result to the original invitation ID and a
+  minimal member-access projection. Current membership/eligibility is rechecked
+  on replay. The API never accepts a caller-selected UID or global DM role.
+  Unused-link expiry does not remove accepted membership.
+- A first explicit account/verification denial releases the sign-in form so the
+  denied account can sign out. A denial after an earlier uncertain response does
+  not falsely claim the invitation was never accepted; its original command is
+  retained for explicit recovery. A definitive failure is cleared when switching
+  accounts; an uncertain acceptance remains bound to its original UID and can
+  only be retried after that identity returns.
+- Same-document invitation navigation is handled as well as a fresh page load.
+  An already-open sign-in screen immediately removes the fragment and requires
+  explicit acceptance, invalidating any earlier in-flight profile result.
+  From the launcher/current campaign, the existing save coordinator flushes
+  canonical work and waits for pending receipts before a full invitation reload.
+  Failed flushes do not navigate away or put the proof back in history.
+- The cloud owner panel is accessible from Owned campaigns and the current
+  campaign's Settings. Joined entries cannot open it or read canonical owner
+  records. Player gameplay, removal and assignment controls remain separately
+  gated; revoking a link is not a hidden player-removal operation.
+- Invitation metadata does not change canonical scene/character revisions.
+  Existing dirty checkpoints wait for in-flight invitation metadata rather than
+  poisoning autosave with a concurrent-command error. Normal scene checkpoints,
+  uncertainty guards and the explicitly deferred routine-save visuals remain
+  unchanged.
+
+The fifteen real account/Firestore/HTTP access tests currently pass, including:
+exact seven-day minus-one-millisecond/expiry checks; losing-UID denial without
+partial enrollment; identical issuance/redemption across four store instances;
+explicit blocks; reissue/revoke; and an actual transaction precondition failure
+that rolls approval, seat binding and consumption back together.
+
+A real-client case creates actual campaign characters, retains their assignment
+IDs and exact saved records, deliberately loses a successful acceptance reply,
+replaces the HTTP API, and recovers the original receipt. Closing a pooled native
+HTTP connection can reset the first retry (`ECONNRESET`); that attempt stays
+unconfirmed and a further explicit retry retains the byte-identical command.
+No automatic command replay or new identity is substituted.
+
+The isolated preview was refreshed using an official local demo-emulator
+export/import. The synthetic Google UID, owned campaign and exact character
+bytes were verified unchanged. These local fixture exports are not migration
+exports or production backups, and no export contents were displayed or
+committed.
+
+### Invitation acceptance gate
+
+- The complete guarded native SDK/HTTP suite passed **68/68 cases**, zero
+  skipped, in **52,716.1985 ms**. The final affected account, invitation, launcher,
+  workspace, autosave, save-feedback and terrain-restore regression selection
+  passed **14 suites / 84 tests**, zero skipped, in **7.919 s**.
+- Full ESLint/stylelint and layering passed with zero errors and the same
+  **39 existing warnings**. Tagged invitation diagnostics were absent. This is
+  the invitation-slice gate, not a rerun or completion of the later full M2
+  persistence/release gate.
+- Actual browser testing registered a new synthetic recipient through the
+  pinned managed email SDK. Acceptance stayed disabled while unverified, the
+  password was cleared, and no application approval or seat binding existed.
+  The real SDK applied its demo verification code; a verified ordinary profile
+  request still returned `403 pilot-access-required` before explicit acceptance.
+- Explicit acceptance then enabled that same UID and produced one Joined
+  campaign, no Owned campaigns or owner-opening/invitation controls, one
+  membership and one acceptance receipt. Reissuing the original unused link
+  preserved its seat; acceptance retained that exact seat identity.
+- Browser testing exposed a real same-document navigation defect: changing only
+  `#invite=...` did not rerun startup. A fresh-document control succeeded. After
+  the regression-backed fix, the already-open sign-in screen consumed a new
+  fragment without a document reload. A signed-in launcher safely reopened a
+  later invitation in a new document and still required explicit acceptance.
+  Both cases removed the address-bar fragment without placing the proof in
+  request URLs or local/session storage.
+- The owner revoked the second unused link through the real panel. Attempted
+  acceptance returned `410`, left the original accepted membership intact, and
+  allowed continuing without acceptance. Reload, managed sign-out and email
+  sign-in restored the same UID and original Joined entry, not another seat.
+- After all browser actions, independent SDK reads found exactly one membership,
+  the original bound seat, one acceptance receipt, one additional unclaimed
+  revoked seat, and an unchanged canonical head at generation 1. Its before/after
+  SHA-256 was
+  `1592511af9e166e449cae6e2c5fc246bf6292b5c4efe3c87a467a23488112b69`.
+  The real-client native case separately covers preserved actual characters and
+  their assignments, rather than relying on this empty browser fixture.
+
+These are account/launcher/invitation browser proofs, **not 3D rendering proof**:
+the integrated Electron browser lacks WebGL. The earlier real-Chrome M1
+render/reopen evidence remains separate. Only synthetic `.invalid` accounts and
+the dedicated loopback demo services were used; no live account approval, IAM
+change, real campaign write, deployment or cutover occurred. Routine save
+flashing/centered feedback remains explicitly deferred to `UX-01`.

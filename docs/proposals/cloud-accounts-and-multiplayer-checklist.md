@@ -44,6 +44,10 @@ identity, truthful save feedback and rendered cloud reopening (`M1-04`, `M1-05`,
 pass before and after publication. The corrected full stable regression gate
 (`M1-10`) passed 295 suites / 3,791 tests; hosted deployment and migration remain
 unapproved.
+Campaign-local Owned/Joined access and verified seven-day invitation onboarding
+(`M2-01`, `M2-02`) now pass their demo acceptance gates. Member removal,
+assignments and access generations (`M2-03`) are next; cloud player gameplay
+remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
 
@@ -62,8 +66,8 @@ approved synthetic Storage/IAM canary is complete and cleaned up.
 | Migration    | Explicitly selected, non-destructive copies; verified data, restore drill, rehearsal, and separate production/cutover approvals.                                                                                                |
 | Architecture | Start with Account and Campaign Access plus a minimal Durable Campaign Commit slice. Preserve the local Adapter and [ADR-0001](../adr/ADR-0001-terrain-engine-event-seam.md); no second terrain owner or speculative framework. |
 
-Proposed starting parameters still need an implementation record and measured
-validation: seven-day invitation expiry; a reconnect journal bounded to 1,000
+Remaining starting parameters still need an implementation record and measured
+validation: a reconnect journal bounded to 1,000
 changes and 24 hours; Cloud Run resource/concurrency settings; upload, request,
 cache, log, and retention limits. These are not new approvals or guaranteed
 performance results.
@@ -325,7 +329,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     unavailable until its participant path is implemented; membership does not
     grant canonical owner reads or edits.
 
-- [ ] **M2-02 - Implement account-bound invitation and redemption semantics.**
+- [x] **M2-02 - Implement account-bound invitation and redemption semantics.**
   - **Depends:** `M2-01`.
   - **Success:** owner-issued invitations are hashed, expiring, single-use, and
     attach a verified UID to the intended seat without recreating characters.
@@ -335,6 +339,16 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Selected November 11, 2026:** a valid invitation also enables a new verified
     account for the app. Existing explicit account blocks override invitations.
     Expiration does not remove a membership that has already been accepted.
+  - **Completed November 11, 2026; Evidence:** [invitation implementation](./cloud-migration-preparation.md#account-bound-invitation-implementation):
+    real hashed issuance/reissue/revocation, exact expiry, invite-enabled
+    verified-account onboarding, one-winner and identical-command contention,
+    actual rollback and replacement-API recovery pass. All 68 native cases and
+    14 affected Jest suites / 84 tests pass, with zero skipped. Actual browser
+    registration, verified-but-unapproved denial, explicit account-enabled
+    acceptance, same-document navigation, revocation and same-UID returning
+    login pass without recreating a seat or changing the canonical head.
+    Full lint/stylelint/layering pass with the same 39 existing warnings.
+    Joined gameplay, removal and assignment controls remain gated.
 
 - [ ] **M2-03 - Implement revocation, removal, assignments, and access generations.**
   - **Depends:** `M2-02`.

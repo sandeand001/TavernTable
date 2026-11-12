@@ -34,6 +34,12 @@ class CloudAccountAccess {
   }
 
   async verifyAuthorization(authorization) {
+    const principal = await this.verifyIdentity(authorization);
+    await this.assertEligibility(principal.uid);
+    return principal;
+  }
+
+  async verifyIdentity(authorization) {
     const bearer = typeof authorization === 'string' && /^Bearer ([^\s]+)$/i.exec(authorization);
     if (!bearer)
       throw accessError(401, 'authentication-required', 'Sign in before using cloud campaigns');
@@ -58,11 +64,31 @@ class CloudAccountAccess {
         'email-verification-required',
         'Verify your email before using campaigns'
       );
-    await this.assertEligibility(identity.uid);
     return Object.freeze({ uid: identity.uid, emailVerified: true });
   }
 
   async assertEligibility(uid, transaction = null) {
+    const record = await this._eligibility(uid, transaction);
+    if (!record?.enabled)
+      throw accessError(
+        403,
+        'pilot-access-required',
+        'This account has not been approved or enabled for the private pilot'
+      );
+  }
+
+  async assertInvitationEligibility(uid, transaction) {
+    const record = await this._eligibility(uid, transaction);
+    if (record !== null && !record.enabled)
+      throw accessError(
+        403,
+        'pilot-access-required',
+        'This account is not enabled for the private pilot'
+      );
+    return record !== null;
+  }
+
+  async _eligibility(uid, transaction = null) {
     const key = pilotAccountKey(uid);
     if (transaction !== null && typeof transaction.get !== 'function')
       throw new Error('Eligibility checks require a Firestore transaction or a direct read');
@@ -79,12 +105,7 @@ class CloudAccountAccess {
         );
       throw error;
     }
-    if (!snapshot.exists)
-      throw accessError(
-        403,
-        'pilot-access-required',
-        'This account has not been approved for the private pilot'
-      );
+    if (!snapshot.exists) return null;
     const record = snapshot.data();
     if (record?.version !== 1 || record.uid !== uid || typeof record.enabled !== 'boolean')
       throw accessError(
@@ -92,12 +113,7 @@ class CloudAccountAccess {
         'invalid-account-eligibility',
         'Account eligibility could not be verified'
       );
-    if (!record.enabled)
-      throw accessError(
-        403,
-        'pilot-access-required',
-        'This account is not enabled for the private pilot'
-      );
+    return record;
   }
 }
 

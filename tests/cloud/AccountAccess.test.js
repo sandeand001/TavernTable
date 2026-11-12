@@ -11,6 +11,38 @@ async function accountApi(access) {
 }
 
 test(
+  'verified identity can be proven for invitation acceptance without granting unapproved campaign access',
+  { timeout: 30000 },
+  async (t) => {
+    const runtime = await createEmulatorRuntime();
+    t.after(() => runtime.close());
+    const identity = await signedInIdentity(runtime);
+    t.after(() => identity.close());
+    const access = new CloudAccountAccess({ auth: runtime.auth, firestore: runtime.firestore });
+    const authorization = `Bearer ${identity.token}`;
+    assert.deepEqual(await access.verifyIdentity(authorization), {
+      uid: identity.uid,
+      emailVerified: true,
+    });
+    await assert.rejects(access.verifyAuthorization(authorization), {
+      status: 403,
+      code: 'pilot-access-required',
+    });
+    assert.equal(
+      (await runtime.firestore.collection('pilotAccounts').doc(pilotAccountKey(identity.uid)).get())
+        .exists,
+      false
+    );
+    const unverified = await signedInIdentity(runtime, { emailVerified: false });
+    t.after(() => unverified.close());
+    await assert.rejects(access.verifyIdentity(`Bearer ${unverified.token}`), {
+      status: 403,
+      code: 'email-verification-required',
+    });
+  }
+);
+
+test(
   'a verified, server-approved demo account resolves to UID authority without a global DM role',
   { timeout: 30000 },
   async () => {

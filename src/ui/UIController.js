@@ -50,7 +50,11 @@ import { rollDice } from '../systems/dice/dice.js';
 import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLauncher.js';
 import CloudSaveFeedback from './campaigns/CloudSaveFeedback.js';
 import { ensureSession } from './sessions/SessionLogin.js';
-import CloudAccountLogin from './sessions/CloudAccountLogin.js';
+import CloudAccountLogin, {
+  consumeCloudInvitation,
+  reopenCloudInvitation,
+  watchCloudInvitationNavigation,
+} from './sessions/CloudAccountLogin.js';
 import { readApplicationRuntime } from '../campaigns/CloudRuntime.js';
 import { loadCloudAccount } from '../campaigns/CloudAccount.js';
 import CloudAccountConnection from '../campaigns/CloudAccountConnection.js';
@@ -1002,6 +1006,7 @@ async function startCampaignApplication() {
   let loading = null;
   let player = null;
   let cloudMode = false;
+  let cloudInvitations = null;
   const previousInert = new Map();
   const pauseControls = () => {
     for (const element of document.body.children) {
@@ -1044,16 +1049,75 @@ async function startCampaignApplication() {
     let workspace = null;
     cloudMode = runtime.mode === 'cloud';
     if (cloudMode) {
+      let invitation = consumeCloudInvitation();
+      let accountDialog = null;
+      let invitationLauncher = null;
+      let openingInvitation = false;
+      const invitationFailure = (error) =>
+        new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+          component: 'CloudInvitationNavigation',
+          operation: 'openInvitation',
+        });
+      const receiveInvitation = async (incoming) => {
+        if (accountDialog) {
+          accountDialog.receiveInvitation(incoming);
+          return;
+        }
+        if (!invitationLauncher) {
+          invitation = incoming;
+          return;
+        }
+        await invitationLauncher.ready;
+        if (workspace.active && !workspace.active.autosave?.ready) await applicationStartup;
+        if (
+          openingInvitation ||
+          invitationLauncher.busy ||
+          document.querySelector('[role="dialog"][aria-busy="true"]')
+        )
+          throw new Error(
+            'Finish the current operation, then reopen the original invitation link.'
+          );
+        openingInvitation = true;
+        try {
+          await reopenCloudInvitation({
+            invitation: incoming,
+            workspace,
+            saveFeedback: manager.cloudSaveFeedback,
+          });
+        } finally {
+          openingInvitation = false;
+        }
+      };
+      cloudInvitations = {
+        attach(launcher) {
+          invitationLauncher = launcher;
+          const pending = invitation;
+          invitation = null;
+          if (pending) void receiveInvitation(pending).catch(invitationFailure);
+        },
+      };
+      manager.stopCloudInvitationWatch = watchCloudInvitationNavigation({
+        onInvitation: receiveInvitation,
+        onFailure: invitationFailure,
+      });
       showLoading('Loading managed cloud sign-in...');
       const session = await loadCloudAccount(runtime);
       const connection = new CloudAccountConnection({ account: session.account, runtime });
       loading.remove();
       loading = null;
-      const profile = await new CloudAccountLogin({
+      accountDialog = new CloudAccountLogin({
         account: session.account,
         connection,
         runtime,
-      }).choose();
+        invitation,
+      });
+      invitation = null;
+      let profile;
+      try {
+        profile = await accountDialog.choose();
+      } finally {
+        accountDialog = null;
+      }
       manager.cloudAccountSession = { ...session, connection, uid: profile.uid };
       manager.stopCloudIdentityWatch = session.account.subscribe(
         (current) => {
@@ -1095,7 +1159,10 @@ async function startCampaignApplication() {
         ? new CampaignLauncher({ workspace, saveFeedback: manager.cloudSaveFeedback })
         : new CampaignLauncher();
       const choice = launcher.choose();
-      if (cloudMode) manager.cloudSaveFeedback.attach();
+      if (cloudMode) {
+        manager.cloudSaveFeedback.attach();
+        cloudInvitations.attach(launcher);
+      }
       services = await choice;
     }
     if (!loading) showLoading('Restoring your campaign. Please wait...');

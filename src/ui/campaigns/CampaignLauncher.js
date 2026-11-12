@@ -6,6 +6,7 @@ import CampaignMapControls from './CampaignMapControls.js';
 import CampaignTraversalPopup from './CampaignTraversalPopup.js';
 import CampaignBackupPanel, { downloadCampaignJSON } from './CampaignBackupPanel.js';
 import CampaignSharingPanel from './CampaignSharingPanel.js';
+import CloudCampaignInvitations from './CloudCampaignInvitations.js';
 import { ensureSession } from '../sessions/SessionLogin.js';
 import { attachHostSessionUpdates } from '../sessions/HostSessionUpdates.js';
 
@@ -130,6 +131,11 @@ export default class CampaignLauncher {
       const id = button.closest('[data-campaign-id]')?.dataset.campaignId;
       if (button.hasAttribute('data-open-campaign'))
         void this._perform(() => this._open(id), 'Opening the selected campaign...');
+      if (button.hasAttribute('data-cloud-invitations'))
+        void new CloudCampaignInvitations({
+          workspace: this.workspace,
+          campaignId: id,
+        }).open();
       if (button.hasAttribute('data-view-campaign-access'))
         void this._perform(async () => {
           const access = await this.workspace.store.getAccess(id);
@@ -226,7 +232,7 @@ export default class CampaignLauncher {
         this.root.querySelector('[data-campaign-import]').hidden =
           this.workspace.store.capabilities?.backups === false;
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation only. Online access is required. Backups, source changes, player invitations and live sessions remain gated.'
+          ? 'Private cloud preparation only. Player invitations are available; player gameplay, backups, source changes and live sessions remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
@@ -254,6 +260,7 @@ export default class CampaignLauncher {
         <p>${profile.name} rules / SRD ${profile.srd}${sources}</p>
         <div class="campaign-row-actions">
           ${role === 'member' ? '<button type="button" data-view-campaign-access>View player access</button>' : '<button type="button" data-open-campaign>Open</button>'}
+          ${cloud && role === 'owner' && capabilities?.invitations === true ? '<button type="button" data-cloud-invitations>Player invitations</button>' : ''}
           ${capabilities?.settings !== false ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
           ${capabilities?.backups !== false ? '<button type="button" data-export-campaign>Export</button>' : ''}
           ${capabilities?.backups !== false && this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
@@ -462,6 +469,20 @@ export function mountCampaignControls(gameManager, services) {
     );
     bar.append(sharing);
     attachHostSessionUpdates({ gameManager, services, parent: bar });
+  }
+  if (cloud && store.capabilities?.invitations === true) {
+    const invitations = document.createElement('button');
+    invitations.type = 'button';
+    invitations.textContent = 'Player invitations';
+    invitations.addEventListener(
+      'click',
+      () =>
+        void new CloudCampaignInvitations({
+          workspace: services.workspace,
+          campaignId: services.campaign.id,
+        }).open()
+    );
+    bar.append(invitations);
   }
   if (role === 'dm' || cloud) {
     const signout = document.createElement('button');

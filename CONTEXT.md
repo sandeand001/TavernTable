@@ -118,8 +118,14 @@
   player seat. Owned/Joined metadata uses an explicit minimal projection; joined
   membership never authorizes raw canonical owner snapshots or a global DM role.
   Player gameplay is visibly gated until its authorized participant path exists.
-  The selected seven-day single-use invitation will also approve a new verified
-  app account, but must never override an explicitly disabled account.
+  Seven-day single-use invitations also approve a new verified app account,
+  but never override an explicitly disabled account. Issuance stores only a
+  client-generated secret hash; redemption atomically consumes it and binds the
+  original seat/assignments to the verified UID. Link fragments are consumed
+  before Auth loads. Same-document links are consumed by the existing sign-in
+  screen or reopened after save coordination; uncertain acceptance stays bound
+  to its original UID. Invitation onboarding and returning login are verified;
+  removal/assignment controls and player gameplay remain separate tasks.
 - **Cloud emulator loop (implemented development tooling only)**: explicit
   `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
   conflicting SDK settings fail closed. Real SDK integration uses native Node

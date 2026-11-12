@@ -173,8 +173,10 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   const joinedGroup = launcher.list.querySelector('[data-campaign-group="joined"]');
   expect(ownedGroup?.textContent).toContain('Owned campaigns');
   expect(ownedGroup?.querySelector('[data-open-campaign]')).not.toBeNull();
+  expect(ownedGroup?.querySelector('[data-cloud-invitations]')).not.toBeNull();
   expect(joinedGroup?.textContent).toContain('Joined campaign fixture');
   expect(joinedGroup?.querySelector('[data-open-campaign]')).toBeNull();
+  expect(joinedGroup?.querySelector('[data-cloud-invitations]')).toBeNull();
   const access = joinedGroup.querySelector('[data-view-campaign-access]');
   access.click();
   await new Promise((resolve) => setTimeout(resolve, 0));

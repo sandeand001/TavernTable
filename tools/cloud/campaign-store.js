@@ -1,11 +1,18 @@
 const { default: CampaignStore } = require('../../src/campaigns/CampaignStore.js');
 const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCharacters.js');
 const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
-const { isCloudUUID } = require('../../src/campaigns/CloudProtocol.js');
+const {
+  isCloudUUID,
+  isCloudDigest,
+  isCloudInvitation,
+  isCloudInvitationRevocation,
+  isCloudInvitationAcceptance,
+  CLOUD_INVITATION_TTL_MS,
+} = require('../../src/campaigns/CloudProtocol.js');
 
 const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
 const accessSummary = (head, role, seatId = null) => ({
@@ -23,6 +30,13 @@ const unavailableCampaign = () =>
   new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
 const invalidMembership = () =>
   new CloudError(503, 'invalid-campaign-membership', 'Campaign access could not be verified');
+const unavailableInvitation = () =>
+  new CloudError(
+    410,
+    'invitation-unavailable',
+    'This invitation is invalid, expired or no longer available'
+  );
+const validUid = (value) => typeof value === 'string' && value.length > 0 && value.length <= 128;
 
 function principalUid(principal) {
   pilotAccountKey(principal?.uid);
@@ -38,6 +52,11 @@ function principalUid(principal) {
 function validCommandResult(previous) {
   const kind = previous?.kind;
   const result = previous?.result;
+  if (kind === 'campaign.invite')
+    return isCloudInvitation(result) && result.campaignId === previous.campaignId;
+  if (kind === 'campaign.invite.revoke') return isCloudInvitationRevocation(result);
+  if (kind === 'campaign.join')
+    return isCloudInvitationAcceptance(result) && result.access.campaign.id === previous.campaignId;
   if (kind === 'campaign.create')
     return (
       result?.id === previous.campaignId &&
@@ -65,11 +84,12 @@ function validCommandResult(previous) {
 }
 
 class CloudCampaignStore {
-  constructor({ firestore, access, packs, objects = null, resources = null }) {
+  constructor({ firestore, access, packs, objects = null, resources = null, now = Date.now }) {
     if (
       typeof firestore?.runTransaction !== 'function' ||
       access?.firestore !== firestore ||
-      typeof access.assertEligibility !== 'function'
+      typeof access.assertEligibility !== 'function' ||
+      typeof now !== 'function'
     )
       throw new Error('Cloud campaigns require coordinated metadata and account access clients');
     this.firestore = firestore;
@@ -84,6 +104,7 @@ class CloudCampaignStore {
       throw new Error('Cloud saves require the pinned resource catalog interface');
     this.objects = objects;
     this.resources = resources;
+    this.now = now;
   }
 
   async _transaction(operation, options) {
@@ -140,7 +161,14 @@ class CloudCampaignStore {
     if (
       previous?.version !== 1 ||
       previous.uid !== uid ||
-      !['campaign.create', 'scene.commit', 'characters.commit'].includes(previous.kind) ||
+      ![
+        'campaign.create',
+        'scene.commit',
+        'characters.commit',
+        'campaign.invite',
+        'campaign.invite.revoke',
+        'campaign.join',
+      ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
       typeof previous.fingerprint !== 'string' ||
@@ -174,10 +202,17 @@ class CloudCampaignStore {
         throw error;
       }
     }
-    await this._metadata(
-      await transaction.get(this.firestore.collection('campaigns').doc(previous.campaignId)),
-      uid
-    );
+    if (previous.kind === 'campaign.join') {
+      await this.access.assertEligibility(uid, transaction);
+      const current = await this._accessSummary(transaction, uid, previous.campaignId);
+      if (current.role !== 'member' || current.seatId !== previous.result.access.seatId)
+        throw unavailableCampaign();
+    } else {
+      await this._metadata(
+        await transaction.get(this.firestore.collection('campaigns').doc(previous.campaignId)),
+        uid
+      );
+    }
     return previous.result;
   }
 
@@ -284,6 +319,429 @@ class CloudCampaignStore {
     );
   }
 
+  async createInvitation(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const options = command?.options;
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some((key) => !['commandId', 'options'].includes(key)) ||
+      !isCloudUUID(command.commandId) ||
+      !options ||
+      typeof options !== 'object' ||
+      Array.isArray(options) ||
+      Object.keys(options).some((key) => !['name', 'seatId', 'tokenHash'].includes(key)) ||
+      typeof options.name !== 'string' ||
+      !options.name.trim() ||
+      options.name.trim().length > 80 ||
+      (options.seatId !== null && !isCloudUUID(options.seatId)) ||
+      !isCloudDigest(options.tokenHash)
+    )
+      throw new CloudError(
+        400,
+        'invalid-invitation-request',
+        'Choose an explicit player seat and a secure invitation hash'
+      );
+    const fingerprint = createHash('sha256')
+      .update(stableStringify({ kind: 'campaign.invite', campaignId: id, options }))
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const createdAt = new Date(this.now()).toISOString();
+    const invitation = {
+      version: 1,
+      id: randomUUID(),
+      campaignId: id,
+      seatId: options.seatId ?? randomUUID(),
+      createdAt,
+      expiresAt: new Date(Date.parse(createdAt) + CLOUD_INVITATION_TTL_MS).toISOString(),
+    };
+    const headReference = this.firestore.collection('campaigns').doc(id);
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, {
+        uid,
+        reference,
+        fingerprint,
+        kind: 'campaign.invite',
+        campaignId: id,
+      });
+      if (replay !== null) return replay;
+      await this._metadata(await transaction.get(headReference), uid);
+      const seatReference = headReference.collection('seats').doc(invitation.seatId);
+      let revoke = null;
+      if (options.seatId !== null) {
+        const seat = this._seat(await transaction.get(seatReference), id);
+        if (seat.memberUid !== null)
+          throw new CloudError(
+            409,
+            'seat-already-joined',
+            'This seat already belongs to an account; an invitation cannot replace its membership'
+          );
+        if (seat.activeInvitationId) {
+          const previousReference = this.firestore
+            .collection('campaignInvitations')
+            .doc(seat.activeInvitationId);
+          const previous = this._invitation(await transaction.get(previousReference));
+          if (
+            previous.campaignId !== id ||
+            previous.seatId !== invitation.seatId ||
+            previous.redeemedByUid !== null
+          )
+            throw invalidMembership();
+          if (previous.revokedAt === null) revoke = previousReference;
+        }
+      }
+      if (revoke) transaction.update(revoke, { revokedAt: createdAt });
+      if (options.seatId === null)
+        transaction.create(seatReference, {
+          version: 1,
+          id: invitation.seatId,
+          campaignId: id,
+          name: options.name.trim(),
+          memberUid: null,
+          characterIds: [],
+          createdAt,
+          activeInvitationId: invitation.id,
+        });
+      else
+        transaction.update(seatReference, {
+          name: options.name.trim(),
+          activeInvitationId: invitation.id,
+        });
+      transaction.create(this.firestore.collection('campaignInvitations').doc(invitation.id), {
+        ...invitation,
+        createdByUid: uid,
+        tokenHash: options.tokenHash,
+        redeemedByUid: null,
+        redeemedAt: null,
+        revokedAt: null,
+      });
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: 'campaign.invite',
+        fingerprint,
+        campaignId: id,
+        result: invitation,
+      });
+      return invitation;
+    });
+  }
+
+  async listSeats(principal, id) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const headReference = this.firestore.collection('campaigns').doc(id);
+        await this._metadata(await transaction.get(headReference), uid);
+        const snapshots = await transaction.get(headReference.collection('seats'));
+        const result = [];
+        for (const snapshot of snapshots.docs) {
+          const seat = this._seat(snapshot, id);
+          let invitation = null;
+          if (seat.activeInvitationId) {
+            const active = this._invitation(
+              await transaction.get(
+                this.firestore.collection('campaignInvitations').doc(seat.activeInvitationId)
+              )
+            );
+            if (
+              seat.memberUid !== null ||
+              active.campaignId !== id ||
+              active.seatId !== seat.id ||
+              active.redeemedByUid !== null
+            )
+              throw invalidMembership();
+            invitation = {
+              version: 1,
+              id: active.id,
+              campaignId: id,
+              seatId: seat.id,
+              createdAt: active.createdAt,
+              expiresAt: active.expiresAt,
+              status:
+                active.revokedAt !== null
+                  ? 'revoked'
+                  : Date.parse(active.expiresAt) <= this.now()
+                    ? 'expired'
+                    : 'pending',
+            };
+          }
+          result.push({
+            version: 1,
+            id: seat.id,
+            name: seat.name,
+            characterIds: [...seat.characterIds],
+            joined: seat.memberUid !== null,
+            invitation,
+          });
+        }
+        return result.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+      },
+      { readOnly: true }
+    );
+  }
+
+  async revokeInvitation(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some((key) => !['commandId', 'invitationId'].includes(key)) ||
+      !isCloudUUID(command.commandId) ||
+      !isCloudUUID(command.invitationId)
+    )
+      throw new CloudError(
+        400,
+        'invalid-invitation-request',
+        'Choose an explicit unused invitation to revoke'
+      );
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.invite.revoke',
+          campaignId: id,
+          invitationId: command.invitationId,
+        })
+      )
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, {
+        uid,
+        reference,
+        fingerprint,
+        kind: 'campaign.invite.revoke',
+        campaignId: id,
+      });
+      if (replay !== null) return replay;
+      const headReference = this.firestore.collection('campaigns').doc(id);
+      await this._metadata(await transaction.get(headReference), uid);
+      const invitationReference = this.firestore
+        .collection('campaignInvitations')
+        .doc(command.invitationId);
+      const invitation = this._invitation(await transaction.get(invitationReference));
+      if (invitation.campaignId !== id) throw unavailableInvitation();
+      if (invitation.redeemedByUid !== null)
+        throw new CloudError(
+          409,
+          'invitation-already-accepted',
+          'This invitation has been accepted; revoking a link does not remove a player'
+        );
+      const seatReference = headReference.collection('seats').doc(invitation.seatId);
+      const seat = this._seat(await transaction.get(seatReference), id);
+      const revokedAt = invitation.revokedAt ?? new Date(this.now()).toISOString();
+      const result = { version: 1, invitationId: invitation.id, revokedAt };
+      transaction.update(invitationReference, { revokedAt });
+      if (seat.activeInvitationId === invitation.id)
+        transaction.update(seatReference, { activeInvitationId: null });
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: 'campaign.invite.revoke',
+        fingerprint,
+        campaignId: id,
+        result,
+      });
+      return result;
+    });
+  }
+
+  _invitation(snapshot) {
+    if (!snapshot.exists) throw unavailableInvitation();
+    const value = snapshot.data();
+    const projection = {
+      version: value?.version,
+      id: value?.id,
+      campaignId: value?.campaignId,
+      seatId: value?.seatId,
+      createdAt: value?.createdAt,
+      expiresAt: value?.expiresAt,
+    };
+    if (
+      !isCloudInvitation(projection) ||
+      value.id !== snapshot.id ||
+      !validUid(value.createdByUid) ||
+      !isCloudDigest(value.tokenHash) ||
+      (value.redeemedByUid === null
+        ? value.redeemedAt !== null
+        : !validUid(value.redeemedByUid) || !validTime(value.redeemedAt)) ||
+      (value.revokedAt !== null && !validTime(value.revokedAt)) ||
+      Object.keys(value).some(
+        (key) =>
+          ![
+            ...Object.keys(projection),
+            'createdByUid',
+            'tokenHash',
+            'redeemedByUid',
+            'redeemedAt',
+            'revokedAt',
+          ].includes(key)
+      )
+    )
+      throw new CloudError(
+        503,
+        'invalid-invitation-record',
+        'Invitation data could not be verified'
+      );
+    return value;
+  }
+
+  _seat(snapshot, campaignId) {
+    if (!snapshot.exists) throw unavailableCampaign();
+    const player = snapshot.data();
+    if (
+      player?.version !== 1 ||
+      player.id !== snapshot.id ||
+      player.campaignId !== campaignId ||
+      typeof player.name !== 'string' ||
+      !player.name.trim() ||
+      player.name.length > 80 ||
+      !validTime(player.createdAt) ||
+      (player.memberUid !== null && !validUid(player.memberUid)) ||
+      !Array.isArray(player.characterIds) ||
+      player.characterIds.some((characterId) => typeof characterId !== 'string' || !characterId) ||
+      new Set(player.characterIds).size !== player.characterIds.length ||
+      (Object.hasOwn(player, 'activeInvitationId') &&
+        player.activeInvitationId !== null &&
+        !isCloudUUID(player.activeInvitationId)) ||
+      Object.keys(player).some(
+        (key) =>
+          ![
+            'version',
+            'id',
+            'campaignId',
+            'name',
+            'memberUid',
+            'characterIds',
+            'createdAt',
+            'activeInvitationId',
+          ].includes(key)
+      )
+    )
+      throw invalidMembership();
+    return player;
+  }
+
+  async redeemInvitation(principal, command) {
+    const uid = principalUid(principal);
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some((key) => !['commandId', 'invitationId', 'secret'].includes(key)) ||
+      !isCloudUUID(command.commandId) ||
+      !isCloudUUID(command.invitationId) ||
+      !isCloudDigest(command.secret)
+    )
+      throw new CloudError(
+        400,
+        'invalid-invitation-request',
+        'Choose an explicit private invitation and command ID'
+      );
+    const tokenHash = createHash('sha256').update(command.secret).digest('hex');
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.join',
+          invitationId: command.invitationId,
+          tokenHash,
+        })
+      )
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const invitationReference = this.firestore
+      .collection('campaignInvitations')
+      .doc(command.invitationId);
+    return this._transaction(async (transaction) => {
+      const enabled = await this.access.assertInvitationEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, {
+        uid,
+        reference,
+        fingerprint,
+        kind: 'campaign.join',
+      });
+      if (replay !== null) return replay;
+      const invitation = this._invitation(await transaction.get(invitationReference));
+      const now = this.now();
+      if (
+        !timingSafeEqual(Buffer.from(invitation.tokenHash, 'hex'), Buffer.from(tokenHash, 'hex')) ||
+        invitation.revokedAt !== null ||
+        invitation.redeemedByUid !== null ||
+        Date.parse(invitation.expiresAt) <= now ||
+        Date.parse(invitation.createdAt) > now ||
+        invitation.createdByUid === uid
+      )
+        throw unavailableInvitation();
+      const headReference = this.firestore.collection('campaigns').doc(invitation.campaignId);
+      const head = await this._metadata(
+        await transaction.get(headReference),
+        invitation.createdByUid
+      );
+      await this.access.assertEligibility(head.ownerUid, transaction);
+      const seatReference = headReference.collection('seats').doc(invitation.seatId);
+      const seat = this._seat(await transaction.get(seatReference), invitation.campaignId);
+      if (seat.memberUid !== null || seat.activeInvitationId !== invitation.id)
+        throw unavailableInvitation();
+      const membershipReference = this._memberships(uid).doc(invitation.campaignId);
+      if ((await transaction.get(membershipReference)).exists)
+        throw new CloudError(
+          409,
+          'campaign-already-joined',
+          'This account has already joined the campaign through another seat'
+        );
+      const joinedAt = new Date(now).toISOString();
+      const result = {
+        version: 1,
+        invitationId: invitation.id,
+        access: accessSummary(head, 'member', invitation.seatId),
+      };
+      if (!enabled)
+        transaction.create(this.firestore.collection('pilotAccounts').doc(pilotAccountKey(uid)), {
+          version: 1,
+          uid,
+          enabled: true,
+        });
+      transaction.update(seatReference, { memberUid: uid, activeInvitationId: null });
+      transaction.update(invitationReference, { redeemedByUid: uid, redeemedAt: joinedAt });
+      transaction.create(membershipReference, {
+        version: 1,
+        uid,
+        campaignId: invitation.campaignId,
+        seatId: invitation.seatId,
+        joinedAt,
+      });
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: 'campaign.join',
+        fingerprint,
+        campaignId: invitation.campaignId,
+        result,
+      });
+      return result;
+    });
+  }
+
   _memberships(uid) {
     return this.firestore
       .collection('campaignMemberships')
@@ -311,37 +769,12 @@ class CloudCampaignStore {
       )
     )
       throw invalidMembership();
-    const seat = await transaction.get(snapshot.ref.collection('seats').doc(record.seatId));
-    if (!seat.exists || seat.data()?.memberUid !== uid) throw unavailableCampaign();
-    const player = seat.data();
-    if (
-      player.version !== 1 ||
-      player.id !== record.seatId ||
-      player.campaignId !== id ||
-      typeof player.name !== 'string' ||
-      !player.name.trim() ||
-      player.name.length > 80 ||
-      !validTime(player.createdAt) ||
-      !Array.isArray(player.characterIds) ||
-      player.characterIds.some((characterId) => typeof characterId !== 'string' || !characterId) ||
-      new Set(player.characterIds).size !== player.characterIds.length ||
-      Object.keys(player).some(
-        (key) =>
-          ![
-            'version',
-            'id',
-            'campaignId',
-            'name',
-            'memberUid',
-            'characterIds',
-            'createdAt',
-          ].includes(key)
-      ) ||
-      typeof ownerUid !== 'string' ||
-      !ownerUid ||
-      ownerUid.length > 128
-    )
-      throw invalidMembership();
+    const player = this._seat(
+      await transaction.get(snapshot.ref.collection('seats').doc(record.seatId)),
+      id
+    );
+    if (player.memberUid !== uid) throw unavailableCampaign();
+    if (!validUid(ownerUid)) throw invalidMembership();
     return accessSummary(await this._metadata(snapshot, ownerUid), 'member', record.seatId);
   }
 

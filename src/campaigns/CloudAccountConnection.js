@@ -28,6 +28,12 @@ const denialCodes = new Set([
   'invalid-command-receipt',
   'invalid-campaign-head',
   'invalid-campaign-membership',
+  'invalid-invitation-request',
+  'invalid-invitation-record',
+  'invitation-unavailable',
+  'invitation-already-accepted',
+  'seat-already-joined',
+  'campaign-already-joined',
   'snapshot-integrity-failed',
   'snapshot-unavailable',
   'snapshot-storage-unavailable',
@@ -62,6 +68,22 @@ const denialMessages = new Map([
     'The cloud command exceeds the 24 MiB request limit. No save was acknowledged.',
   ],
   ['snapshot-too-large', 'The cloud snapshot exceeds its size limit. No save was acknowledged.'],
+  [
+    'invitation-unavailable',
+    'This invitation is invalid, expired or no longer available. Ask the campaign owner for a new link.',
+  ],
+  [
+    'invitation-already-accepted',
+    'This invitation has been accepted. Revoking a link does not remove a player.',
+  ],
+  [
+    'seat-already-joined',
+    'This player seat already belongs to an account. An invitation cannot replace its membership.',
+  ],
+  [
+    'campaign-already-joined',
+    'This account has already joined that campaign through another seat.',
+  ],
 ]);
 
 function safeDenial(error) {

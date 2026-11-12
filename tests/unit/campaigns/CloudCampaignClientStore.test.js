@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { webcrypto, createHash } from 'node:crypto';
 import CloudCampaignClientStore from '../../../src/campaigns/CloudCampaignClientStore.js';
 import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
@@ -44,7 +45,7 @@ const accessSummary = (role, id = campaignId) => ({
   seatId: role === 'owner' ? null : '44444444-4444-4444-8444-444444444444',
 });
 
-function fixture() {
+function fixture({ crypto } = {}) {
   const auth = {
     currentUser: { uid: 'uid-a', emailVerified: true, getIdToken: async () => 'fixture-token' },
   };
@@ -83,7 +84,7 @@ function fixture() {
     connection,
     packs,
     uid: 'uid-a',
-    crypto: {
+    crypto: crypto ?? {
       randomUUID: () =>
         ++commandSequence === 1 ? commandId : '33333333-3333-4333-8333-333333333333',
     },
@@ -184,6 +185,230 @@ test('Owned and Joined access accepts only explicit role projections without can
     code: 'account-changed',
   });
   expect(setup.fetch).toHaveBeenCalledTimes(calls);
+});
+
+test('invitation creation keeps its random secret only in memory and recovers the original link after an uncertain reply', async () => {
+  const setup = fixture({ crypto: webcrypto });
+  const issued = {
+    version: 1,
+    id: '66666666-6666-4666-8666-666666666666',
+    campaignId,
+    seatId: '77777777-7777-4777-8777-777777777777',
+    createdAt: '2026-11-11T00:00:00.000Z',
+    expiresAt: '2026-11-18T00:00:00.000Z',
+  };
+  setup.fetch.mockImplementation(async () => {
+    if (setup.fetch.mock.calls.length === 1) throw new TypeError('Synthetic lost invitation reply');
+    return { ok: true, status: 201, json: async () => ({ version: 1, result: issued }) };
+  });
+  let stop = () => {};
+  const uncertain = new Promise((resolve) => {
+    stop = setup.store.subscribeSave((state) => {
+      if (state.phase === 'uncertain') resolve();
+    });
+  });
+  const pending = setup.store.createInvitation(campaignId, { name: 'Invited player' });
+  await uncertain;
+  expect(setup.store.saveState.phase).toBe('uncertain');
+  const request = setup.fetch.mock.calls[0];
+  expect(request[0]).toBe(`${runtime.apiOrigin}/api/cloud/campaigns/${campaignId}/invitations`);
+  const body = JSON.parse(request[1].body);
+  expect(Object.keys(body.options).sort()).toEqual(['name', 'seatId', 'tokenHash']);
+  expect(body.options.seatId).toBeNull();
+  await setup.store.retryPending();
+  const invitation = await pending;
+  expect(invitation).toEqual({ ...issued, secret: expect.stringMatching(/^[a-f0-9]{64}$/) });
+  expect(body.options.tokenHash).toBe(createHash('sha256').update(invitation.secret).digest('hex'));
+  expect(request[1].body).not.toContain(invitation.secret);
+  expect(setup.fetch.mock.calls[1][1].body).toBe(request[1].body);
+  stop();
+});
+
+test('invitation acceptance binds its receipt to the intended link and retains one command until explicit recovery', async () => {
+  const setup = fixture();
+  const id = '66666666-6666-4666-8666-666666666666';
+  const secret = 'a'.repeat(64);
+  const receipt = { version: 1, invitationId: id, access: accessSummary('member') };
+  let valid = false;
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      version: 1,
+      result: {
+        ...receipt,
+        invitationId: valid ? id : '77777777-7777-4777-8777-777777777777',
+      },
+    }),
+  }));
+  const pending = setup.store.redeemInvitation({ id, secret });
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(setup.store.saveState.phase).toBe('uncertain');
+  expect(setup.store.saveState.error.code).toBe('invalid-cloud-response');
+  expect(JSON.stringify(setup.store.saveState)).not.toContain(secret);
+  expect(setup.fetch.mock.calls[0][0]).toBe(
+    `${runtime.apiOrigin}/api/cloud/account/invitations/redeem`
+  );
+  expect(setup.fetch.mock.calls[0][0]).not.toContain(secret);
+  valid = true;
+  await setup.store.retryPending();
+  await expect(pending).resolves.toEqual(receipt);
+  expect(setup.fetch.mock.calls[0][1].body).toBe(setup.fetch.mock.calls[1][1].body);
+});
+
+test('a fresh blocked invitation is denied definitively rather than trapping the account in a pending acceptance', async () => {
+  const setup = fixture();
+  setup.fetch.mockImplementation(async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({
+      version: 1,
+      code: 'pilot-access-required',
+      error: 'PRIVATE POLICY DETAIL',
+    }),
+  }));
+  const pending = setup.store.redeemInvitation({
+    id: '66666666-6666-4666-8666-666666666666',
+    secret: 'a'.repeat(64),
+  });
+  const outcome = pending.then(
+    (value) => ({ value }),
+    (error) => ({ code: error.code })
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(setup.store.saveState.phase).toBe('failed');
+  await expect(outcome).resolves.toEqual({ code: 'pilot-access-required' });
+  expect(setup.store.pending).toBeNull();
+  expect(setup.store.saveState.error.message).not.toContain('PRIVATE POLICY DETAIL');
+});
+
+test('a later account block cannot turn an already-uncertain acceptance into a false definitive rejection', async () => {
+  const setup = fixture();
+  const id = '66666666-6666-4666-8666-666666666666';
+  const receipt = { version: 1, invitationId: id, access: accessSummary('member') };
+  let blocked = true;
+  setup.fetch.mockImplementation(async () => {
+    if (setup.fetch.mock.calls.length === 1) throw new TypeError('Synthetic lost reply');
+    return blocked
+      ? {
+          ok: false,
+          status: 403,
+          json: async () => ({ version: 1, code: 'pilot-access-required', error: 'Blocked' }),
+        }
+      : { ok: true, status: 200, json: async () => ({ version: 1, result: receipt }) };
+  });
+  const pending = setup.store.redeemInvitation({ id, secret: 'a'.repeat(64) });
+  await new Promise((resolve) => setImmediate(resolve));
+  await expect(setup.store.retryPending()).rejects.toMatchObject({ code: 'pilot-access-required' });
+  expect(setup.store.saveState.phase).toBe('uncertain');
+  expect(setup.store.saveState.commandId).toBe(commandId);
+  blocked = false;
+  await setup.store.retryPending();
+  await expect(pending).resolves.toEqual(receipt);
+  expect(
+    setup.fetch.mock.calls.every(
+      ([, options]) => options.body === setup.fetch.mock.calls[0][1].body
+    )
+  ).toBe(true);
+});
+
+test('owner invitation management validates the current seat projection and binds a revocation to its intended link', async () => {
+  const setup = fixture();
+  const invitation = {
+    version: 1,
+    id: '66666666-6666-4666-8666-666666666666',
+    campaignId,
+    seatId: '77777777-7777-4777-8777-777777777777',
+    createdAt: '2026-11-11T00:00:00.000Z',
+    expiresAt: '2026-11-18T00:00:00.000Z',
+    status: 'pending',
+  };
+  const seat = {
+    version: 1,
+    id: invitation.seatId,
+    name: 'Reserved seat',
+    characterIds: [],
+    joined: false,
+    invitation,
+  };
+  let result = [seat];
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  await expect(setup.store.listSeats(campaignId)).resolves.toEqual([seat]);
+  expect(setup.fetch.mock.calls[0][0]).toBe(
+    `${runtime.apiOrigin}/api/cloud/campaigns/${campaignId}/seats`
+  );
+  for (const invalid of [
+    [seat, seat],
+    [{ ...seat, memberUid: 'private-member' }],
+    [{ ...seat, joined: true }],
+    [{ ...seat, invitation: { ...invitation, campaignId: commandId } }],
+    [{ ...seat, invitation: { ...invitation, tokenHash: 'a'.repeat(64) } }],
+  ]) {
+    result = invalid;
+    await expect(setup.store.listSeats(campaignId)).rejects.toMatchObject({
+      code: 'invalid-cloud-response',
+    });
+  }
+  result = {
+    version: 1,
+    invitationId: invitation.id,
+    revokedAt: '2026-11-11T01:00:00.000Z',
+  };
+  await expect(setup.store.revokeInvitation(campaignId, invitation.id)).resolves.toEqual(result);
+  const [url, options] = setup.fetch.mock.calls.at(-1);
+  expect(url).toBe(`${runtime.apiOrigin}/api/cloud/campaigns/${campaignId}/invitations/revoke`);
+  expect(JSON.parse(options.body)).toEqual({ commandId, invitationId: invitation.id });
+});
+
+test('an already-dirty scene checkpoint waits for invitation metadata instead of failing its canonical save', async () => {
+  const setup = fixture({ crypto: webcrypto });
+  let release;
+  let begin;
+  const started = new Promise((resolve) => {
+    begin = resolve;
+  });
+  const issued = {
+    version: 1,
+    id: '66666666-6666-4666-8666-666666666666',
+    campaignId,
+    seatId: '77777777-7777-4777-8777-777777777777',
+    createdAt: '2026-11-11T00:00:00.000Z',
+    expiresAt: '2026-11-18T00:00:00.000Z',
+  };
+  const receipt = { revision: 1, savedAt: '2026-11-11T01:00:00.000Z' };
+  setup.fetch.mockImplementation(async (url) => {
+    if (url.endsWith('/invitations')) {
+      begin();
+      return new Promise((resolve) => {
+        release = () =>
+          resolve({ ok: true, status: 201, json: async () => ({ version: 1, result: issued }) });
+      });
+    }
+    return { ok: true, status: 200, json: async () => ({ version: 1, result: receipt }) };
+  });
+  const invitation = setup.store.createInvitation(campaignId, { name: 'Pending metadata' });
+  await started;
+  const scene = setup.store.commitScene(campaignId, {
+    ruleset: '2014',
+    revision: 0,
+    charactersRevision: 0,
+    scene: '{"fixture":"already-dirty"}',
+  });
+  const outcome = scene.then(
+    (value) => ({ value }),
+    (error) => ({ error })
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(setup.fetch).toHaveBeenCalledTimes(1);
+  release();
+  await invitation;
+  await expect(outcome).resolves.toEqual({ value: receipt });
+  expect(setup.fetch).toHaveBeenCalledTimes(2);
+  expect(setup.store.saveState.phase).toBe('saved');
 });
 
 test('a scene command reports saving until a validated durable receipt arrives, then returns the existing caller shape', async () => {

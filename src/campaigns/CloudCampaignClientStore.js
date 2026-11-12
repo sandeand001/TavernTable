@@ -1,5 +1,13 @@
 import CampaignStore from './CampaignStore.js';
-import { isCloudUUID, isCloudCampaignAccess } from './CloudProtocol.js';
+import {
+  isCloudUUID,
+  isCloudDigest,
+  isCloudCampaignAccess,
+  isCloudInvitation,
+  isCloudInvitationAcceptance,
+  isCloudInvitationRevocation,
+  isCloudPlayerSeat,
+} from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
 const failure = (status, code, message) => Object.assign(new Error(message), { status, code });
@@ -26,6 +34,11 @@ const definitiveDenials = new Set([
   'request-too-large',
   'snapshot-too-large',
   'unsupported-request-format',
+  'invalid-invitation-request',
+  'invitation-unavailable',
+  'invitation-already-accepted',
+  'seat-already-joined',
+  'campaign-already-joined',
 ]);
 
 export default class CloudCampaignClientStore {
@@ -57,7 +70,7 @@ export default class CloudCampaignClientStore {
     this.capabilities = Object.freeze({
       settings: false,
       backups: false,
-      invitations: false,
+      invitations: true,
       browserImport: false,
       sharedSessions: false,
       roomVisits: false,
@@ -129,6 +142,52 @@ export default class CloudCampaignClientStore {
     return this._write('create', null, options);
   }
 
+  async createInvitation(id, { name, seatId = null } = {}) {
+    this._identity();
+    this._resource(id);
+    if (
+      typeof name !== 'string' ||
+      !name.trim() ||
+      name.trim().length > 80 ||
+      (seatId !== null && !isCloudUUID(seatId))
+    )
+      throw failure(400, 'invalid-invitation-request', 'Choose an explicit player name and seat.');
+    if (
+      typeof this.crypto.getRandomValues !== 'function' ||
+      typeof this.crypto.subtle?.digest !== 'function' ||
+      typeof TextEncoder !== 'function'
+    )
+      throw failure(
+        503,
+        'cloud-unavailable',
+        'This browser cannot create a secure invitation. No invitation was issued.'
+      );
+    const hex = (bytes) => [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+    const secret = hex(this.crypto.getRandomValues(new Uint8Array(32)));
+    const digest = await this.crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
+    const result = await this._write('invitation', id, {
+      name,
+      seatId,
+      tokenHash: hex(new Uint8Array(digest)),
+    });
+    return { ...result, secret };
+  }
+
+  redeemInvitation(invitation) {
+    if (!isCloudUUID(invitation?.id) || !isCloudDigest(invitation.secret))
+      throw failure(400, 'invalid-invitation-request', 'Choose an explicit private invitation.');
+    return this._write('join', null, {
+      invitationId: invitation.id,
+      secret: invitation.secret,
+    });
+  }
+
+  revokeInvitation(id, invitationId) {
+    if (!isCloudUUID(invitationId))
+      throw failure(400, 'invalid-invitation-request', 'Choose an explicit unused invitation.');
+    return this._write('revoke', id, { invitationId });
+  }
+
   subscribeSave(listener) {
     if (typeof listener !== 'function')
       throw new Error('Cloud save observation requires a listener');
@@ -164,7 +223,26 @@ export default class CloudCampaignClientStore {
     }
   }
 
-  async _receipt(operation, result, input) {
+  async _receipt(operation, result, input, id) {
+    if (operation === 'revoke') {
+      if (!isCloudInvitationRevocation(result) || result.invitationId !== input.invitationId)
+        throw invalidResponse();
+      return copy(result);
+    }
+    if (operation === 'join') {
+      if (!isCloudInvitationAcceptance(result) || result.invitationId !== input.invitationId)
+        throw invalidResponse();
+      return copy(result);
+    }
+    if (operation === 'invitation') {
+      if (
+        !isCloudInvitation(result) ||
+        result.campaignId !== id ||
+        (input.seatId !== null && result.seatId !== input.seatId)
+      )
+        throw invalidResponse();
+      return copy(result);
+    }
     if (operation === 'create') {
       const metadata = await this._metadata(result);
       if (
@@ -207,6 +285,14 @@ export default class CloudCampaignClientStore {
 
   async _write(operation, id, value) {
     this._identity();
+    if (
+      ['scene', 'characters'].includes(operation) &&
+      ['invitation', 'revoke'].includes(this.pending?.operation)
+    ) {
+      // Access metadata leaves canonical revisions unchanged; finish it before a queued checkpoint.
+      await this.pending.promise;
+      this._identity();
+    }
     if (this.pending)
       throw failure(
         409,
@@ -223,9 +309,18 @@ export default class CloudCampaignClientStore {
     const commandId = this.crypto.randomUUID();
     if (!isCloudUUID(commandId))
       throw failure(503, 'invalid-command-id', 'A secure cloud command ID could not be created.');
-    const resource = operation === 'create' ? 'campaigns' : this._resource(id, `/${operation}`);
+    let resource;
+    if (operation === 'create') resource = 'campaigns';
+    else if (operation === 'join') resource = 'account/invitations/redeem';
+    else if (operation === 'revoke') resource = this._resource(id, '/invitations/revoke');
+    else
+      resource = this._resource(id, operation === 'invitation' ? '/invitations' : `/${operation}`);
     const body =
-      operation === 'create' ? { commandId, options: input } : { commandId, change: input };
+      operation === 'join' || operation === 'revoke'
+        ? { commandId, ...input }
+        : operation === 'create' || operation === 'invitation'
+          ? { commandId, options: input }
+          : { commandId, change: input };
     let resolve;
     let reject;
     const promise = new Promise((accepted, denied) => {
@@ -256,13 +351,22 @@ export default class CloudCampaignClientStore {
     item.running = (async () => {
       try {
         const result = await this._call(item.resource, { method: 'POST', body: item.body });
-        const receipt = await this._receipt(item.operation, result, item.input);
+        const receipt = await this._receipt(item.operation, result, item.input, item.id);
         this.pending = null;
         this._saveStatus('saved');
         item.resolve(receipt);
       } catch (error) {
+        const freshJoinDenial =
+          item.operation === 'join' &&
+          item.error === null &&
+          [
+            'pilot-access-required',
+            'email-verification-required',
+            'invalid-identity',
+            'authentication-required',
+          ].includes(error.code);
         item.error = error;
-        if (definitiveDenials.has(error.code)) {
+        if (freshJoinDenial || definitiveDenials.has(error.code)) {
           this.pending = null;
           this._saveStatus('failed', error);
           item.reject(error);
@@ -306,6 +410,17 @@ export default class CloudCampaignClientStore {
     if (!Array.isArray(result) || new Set(result.map((entry) => entry?.id)).size !== result.length)
       throw invalidResponse();
     return Promise.all(result.map((entry) => this._metadata(entry)));
+  }
+
+  async listSeats(id) {
+    const result = await this._call(this._resource(id, '/seats'));
+    if (
+      !Array.isArray(result) ||
+      result.some((entry) => !isCloudPlayerSeat(entry, id)) ||
+      new Set(result.map((entry) => entry.id)).size !== result.length
+    )
+      throw invalidResponse();
+    return copy(result);
   }
 
   async listAccess() {
