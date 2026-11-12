@@ -18,6 +18,7 @@ const {
   isCloudAccessGeneration,
   isCloudMemberRemoval,
   isCloudCharacterAssignment,
+  isCloudCampaignSettings,
   CLOUD_INVITATION_TTL_MS,
 } = require('../../src/campaigns/CloudProtocol.js');
 
@@ -81,6 +82,8 @@ function validCommandResult(previous) {
     return isCloudInvitationAcceptance(result) && result.access.campaign.id === previous.campaignId;
   if (kind === 'campaign.member.remove') return isCloudMemberRemoval(result);
   if (kind === 'campaign.character.assign') return isCloudCharacterAssignment(result);
+  if (kind === 'campaign.settings')
+    return isCloudCampaignSettings(result) && result.campaign.id === previous.campaignId;
   if (kind === 'campaign.create')
     return (
       result?.id === previous.campaignId &&
@@ -194,6 +197,7 @@ class CloudCampaignStore {
         'campaign.join',
         'campaign.member.remove',
         'campaign.character.assign',
+        'campaign.settings',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
@@ -215,9 +219,11 @@ class CloudCampaignStore {
         'command-id-conflict',
         'This command ID was already used for another intent'
       );
-    if (previous.kind === 'campaign.create') {
+    if (['campaign.create', 'campaign.settings'].includes(previous.kind)) {
       try {
-        await this._domain({ getCampaign: () => previous.result }).get(previous.campaignId);
+        const campaign =
+          previous.kind === 'campaign.settings' ? previous.result.campaign : previous.result;
+        await this._domain({ getCampaign: () => campaign }).get(previous.campaignId);
       } catch (error) {
         if (error?.constructor === Error || error instanceof SyntaxError)
           throw new CloudError(
@@ -1227,6 +1233,188 @@ class CloudCampaignStore {
       },
       { readOnly: true }
     );
+  }
+
+  async getSettings(principal, id) {
+    const head = await this._readHead(principal, id);
+    return { version: 1, generation: head.generation, campaign: head.campaign };
+  }
+
+  async updateSettings(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some((key) => !['commandId', 'generation', 'changes'].includes(key)) ||
+      !isCloudUUID(command.commandId) ||
+      !Number.isSafeInteger(command.generation) ||
+      command.generation < 1 ||
+      !command.changes ||
+      typeof command.changes !== 'object' ||
+      Array.isArray(command.changes) ||
+      Object.keys(command.changes).some((key) => !['name', 'packIds'].includes(key))
+    )
+      throw new CloudError(
+        400,
+        'invalid-campaign-settings',
+        'Choose a campaign name or compatible sources and its captured generation'
+      );
+    const changes = structuredClone(command.changes);
+    const expectedGeneration = command.generation;
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.settings',
+          campaignId: id,
+          generation: expectedGeneration,
+          changes,
+        })
+      )
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const intent = { uid, reference, fingerprint, kind: 'campaign.settings', campaignId: id };
+    const headReference = this.firestore.collection('campaigns').doc(id);
+    const replayResult = (result) => {
+      if (result.generation !== expectedGeneration + 1)
+        throw new CloudError(
+          503,
+          'invalid-command-receipt',
+          'The durable command receipt is invalid'
+        );
+      return result;
+    };
+    const requireGeneration = (head) => {
+      if (head.generation !== expectedGeneration)
+        throw Object.assign(
+          new CloudError(
+            409,
+            'stale-revision',
+            'Campaign settings changed. Refresh before saving them.'
+          ),
+          {
+            current: {
+              sceneRevision: head.campaign.sceneRevision,
+              charactersRevision: head.campaign.charactersRevision,
+            },
+          }
+        );
+      if (head.generation >= Number.MAX_SAFE_INTEGER)
+        throw new CloudError(
+          503,
+          'invalid-campaign-head',
+          'The cloud campaign generation cannot advance'
+        );
+    };
+    const captured = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return { replay, head: null };
+        const head = await this._metadata(await transaction.get(headReference), uid);
+        requireGeneration(head);
+        return { replay: null, head };
+      },
+      { readOnly: true }
+    );
+    if (captured.replay !== null) return replayResult(captured.replay);
+    let record = structuredClone(captured.head.campaign);
+    const domain = this._domain({
+      getCampaign: () => structuredClone(record),
+      writeCampaign: (value) => {
+        record = structuredClone(value);
+      },
+    });
+    let campaign;
+    try {
+      campaign = await domain.update(id, changes);
+    } catch (error) {
+      if (error?.constructor === Error || error instanceof SyntaxError)
+        throw new CloudError(
+          400,
+          'invalid-campaign-settings',
+          'Choose a valid campaign name and compatible pinned sources'
+        );
+      throw error;
+    }
+    let charactersRef = captured.head.charactersRef;
+    if (campaign.charactersRevision !== captured.head.campaign.charactersRevision) {
+      if (this.objects === null || this.resources === null)
+        throw new CloudError(
+          503,
+          'cloud-save-unavailable',
+          'Canonical private cloud saving is not configured'
+        );
+      const state = await this._loadSnapshot(captured.head);
+      let catalog;
+      try {
+        catalog = await this.resources.catalog(campaign);
+      } catch (error) {
+        if (
+          error?.constructor === Error ||
+          error instanceof SyntaxError ||
+          ['ENOENT', 'EACCES', 'EPERM'].includes(error?.code)
+        )
+          throw new CloudError(
+            503,
+            'resource-catalog-unavailable',
+            'The pinned campaign resource catalog is unavailable'
+          );
+        throw error;
+      }
+      try {
+        const library = new CampaignCharacters({
+          ...state,
+          campaign,
+          revision: campaign.charactersRevision,
+          catalog,
+          store: domain,
+        });
+        if (state.scene !== null) decodeScene(state.scene, { library, ruleset: campaign.ruleset });
+      } catch (error) {
+        if (error?.constructor === Error || error instanceof SyntaxError)
+          throw new CloudError(
+            400,
+            'invalid-campaign-settings',
+            'The selected sources are incompatible with the saved campaign'
+          );
+        throw error;
+      }
+      charactersRef = await this.objects.stage(id, 'characters', state.records);
+    }
+    const { FieldValue } = require('firebase-admin/firestore');
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, intent);
+      if (replay !== null) return replayResult(replay);
+      const current = await this._metadata(await transaction.get(headReference), uid);
+      requireGeneration(current);
+      const generation = current.generation + 1;
+      const result = { version: 1, generation, campaign };
+      transaction.set(headReference, { ...current, campaign, charactersRef, generation });
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: 'campaign.settings',
+        fingerprint,
+        campaignId: id,
+        result,
+      });
+      transaction.create(headReference.collection('changes').doc(String(generation)), {
+        version: 1,
+        generation,
+        kind: 'campaign.settings',
+        sceneRevision: campaign.sceneRevision,
+        charactersRevision: campaign.charactersRevision,
+        committedAt: FieldValue.serverTimestamp(),
+      });
+      return result;
+    });
   }
 
   async get(principal, id) {

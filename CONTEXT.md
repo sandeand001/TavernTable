@@ -113,6 +113,15 @@
   Private scene/character saves and coordinated reads are implemented in the
   development backend and explicit cloud workspace. The rendered M1 development
   gate is verified; joined gameplay, live games and hosted rollout remain gated.
+- **Cloud campaign settings (M2 development slice verified)**: owner-only
+  settings reads return a captured head generation with canonical metadata.
+  Updates reuse the existing name/source domain rules, preserve edition and
+  version pins, and publish head, receipt and compact change together. Source
+  choices retain the local character-revision semantics and exact character/
+  scene bytes; an initially empty character snapshot gets a real immutable
+  reference when its revision advances. The client requires the captured
+  settings snapshot and verifies the predicted metadata before acknowledging.
+  Source controls appear only in Owned campaigns, not Joined entries.
 - **Campaign-local access (initial M2 development slice implemented)**:
   server-owned UID membership indexes must agree with the campaign's current
   player seat. Owned/Joined metadata uses an explicit minimal projection; joined

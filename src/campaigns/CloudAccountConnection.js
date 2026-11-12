@@ -28,6 +28,7 @@ const denialCodes = new Set([
   'campaign-not-found',
   'invalid-campaign-request',
   'invalid-campaign-change',
+  'invalid-campaign-settings',
   'stale-revision',
   'command-id-conflict',
   'invalid-command-receipt',
@@ -73,6 +74,10 @@ const denialMessages = new Map([
   ],
   ['campaign-not-found', 'This private campaign is not available to the signed-in account.'],
   ['stale-revision', 'Campaign data changed elsewhere. Reopen it before making another change.'],
+  [
+    'invalid-campaign-settings',
+    'Choose a valid campaign name and compatible pinned sources. The ruleset cannot be changed.',
+  ],
   [
     'command-id-conflict',
     'This command ID belongs to another change. Keep the pending save and reopen the campaign.',

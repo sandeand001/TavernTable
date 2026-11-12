@@ -13,6 +13,19 @@ const keys = (value, names) =>
   Object.keys(value).length === names.length &&
   Object.keys(value).every((key) => names.includes(key));
 
+export function isCloudCampaignSettings(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'generation', 'campaign']) &&
+    value.version === 1 &&
+    Number.isSafeInteger(value.generation) &&
+    value.generation > 0 &&
+    record(value.campaign) &&
+    value.campaign.version === 1 &&
+    isCloudUUID(value.campaign.id)
+  );
+}
+
 export function isCloudInvitationLink(value) {
   return (
     record(value) &&

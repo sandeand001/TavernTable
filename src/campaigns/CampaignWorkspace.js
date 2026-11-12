@@ -72,8 +72,8 @@ export default class CampaignWorkspace {
   create(options) {
     return this.store.create(options);
   }
-  update(id, changes) {
-    return this.store.update(id, changes);
+  update(id, changes, snapshot) {
+    return this.store.update(id, changes, snapshot);
   }
 
   async open(id) {

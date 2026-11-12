@@ -967,3 +967,73 @@ real-SDK test were non-destructively parked in the local Git stash
 its two related test files. The active tree retains the verified prior account
 behavior; no linking UI or unsupported fallback is enabled. The preserved
 acceptance failure remains a blocker, not a passing or skipped milestone test.
+
+## Complete canonical persistence gate
+
+`M2-05` is complete for the canonical cloud Adapter and currently enabled owner
+surfaces. Player commands/live sessions, binary participant delivery and hosted
+rollout remain separate M2/M3/M4 gates; no account-linking success is implied.
+
+### Captured settings and atomic publication
+
+- `GET campaigns/{id}/settings` returns only owner-authorized
+  `{version: 1, generation, campaign}`. It does not change the existing minimal
+  Owned/Joined projection.
+- `POST campaigns/{id}/settings` takes a command ID, captured generation and
+  explicit name/source changes. It verifies current account/ownership, prepares
+  the existing domain update outside transaction retries, verifies any immutable
+  objects, and rechecks the same captured generation at publication.
+- Head, receipt and compact change publish atomically. Source changes preserve
+  the existing local character-revision increment, so a previously empty campaign
+  stages a real empty character object rather than publishing an invalid
+  positive revision with a null reference. Existing scene and character objects
+  retain their exact bytes/references.
+- Input is captured before asynchronous work; changing the caller's request
+  object cannot relax its compare-and-set condition or replace prepared intent.
+  Replaying a completed command works even with an independent metadata-only
+  backend that no longer has the preparation catalog or object client.
+- The client requires its captured settings snapshot and predicts the result
+  with the existing domain helper. A reply with another generation, name,
+  revision or source pin remains unconfirmed. Unknown delivery retries the
+  identical command/body, not freshly reread state or a newly generated ID.
+- Owned campaigns expose the source editor; Joined campaigns cannot expose it
+  or gain private metadata access. Each durable save advances the editor's
+  captured snapshot, allowing another edit without silently weakening CAS.
+  Explicit local storage and its update interface remain supported.
+
+### Canonical-path acceptance
+
+| Path | Real-interface evidence |
+| --- | --- |
+| Name/source metadata | Empty-state consistency, unique winner, four-instance identical replay, stale/foreign/invalid source denial and exact captured-generation checks. |
+| Sheets, owned resources and layouts | A real cloud character owns a supplemental spell and Favorite; disabling its pack retains the same owned ID, layout and source version, but blocks new additions. A stale sheet write cannot spend or replace records after the source revision advances. |
+| Embedded image/notes records | A valid generated PNG and notes survive in byte-identical character rows; canonical image data is not silently replaced with an external URL. Participant binary delivery is still `M2-06`. |
+| Scene, doors, terrain, camera and positions | Real 2014/2024 connected-world snapshots include walls, doors/stairs, changed physical position/facing/run mode and committed movement/turn state. Settings publication and independent reopening preserve exact scene bytes and values. |
+| Atomic spending and retry | Existing joint character/scene cases and new settings faults preserve the revision/receipt contract. A real publication precondition failure rolls back; a deliberately lost successful HTTP reply recovers the same command exactly once. |
+| Local compatibility | Existing local campaign, character, SQLite storage, host Adapter, scene/world and autosave tests continue to pass. |
+
+The actual browser signed in the preserved synthetic owner, created a separate
+test campaign, edited its name and enabled a compatible pack through the visible
+owner editor, then disabled that pack with a second save **without reloading**.
+Reload retained the same UID, campaign and disabled version pin. Generations
+advanced **1 -> 2 -> 3** and character revisions **0 -> 1 -> 2**, without creating
+characters or scene data. Independent SDK reads verified its immutable empty
+character object and head SHA-256
+`899f0094cf7c1d6fb97e41b78932c4d2077e2abaa933c70dea7cf80aea76d21c`.
+The earlier member-lifecycle campaign head and original Chrome character hash
+were independently checked unchanged. This is an owner-settings/browser
+acceptance proof, not a new full-board rendering or live-multiplayer gate.
+
+### Measured verification
+
+- Complete guarded native SDK/HTTP suite: **89/89 cases**, zero skipped,
+  **84,838.9973 ms**.
+- Affected application/domain suite: **20 suites / 137 tests**, zero skipped,
+  **10.411 s**, including the existing SQLite and explicit local Adapter paths.
+- Full ESLint/stylelint/layering: zero errors, the same **39 existing warnings**.
+
+Provider linking remains parked under the approved `M2-04` deferral; that
+unverified prototype is not included in these completed-gate counts. No live
+Auth, Storage/IAM, production deployment or real-data migration occurred.
+`UX-01` routine save-flashing/centered feedback remains explicitly deferred and
+its presentation component was not changed.

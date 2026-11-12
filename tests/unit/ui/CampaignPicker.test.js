@@ -118,10 +118,33 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   };
   const apiRequests = [];
   let removed = false;
-  const fetch = async (input) => {
+  let settingsGeneration = 1;
+  const settingsWrites = [];
+  const fetch = async (input, options = {}) => {
     const path = new URL(input, location.href).pathname;
     if (!path.startsWith('/api/')) return fetchBundledResource(input);
     apiRequests.push(path);
+    if (path.endsWith('/settings')) {
+      if (options.method === 'POST') {
+        const command = JSON.parse(options.body);
+        settingsWrites.push(command);
+        expect(command.generation).toBe(settingsGeneration);
+        Object.assign(campaign, {
+          name: command.changes.name.trim(),
+          charactersRevision: campaign.charactersRevision + 1,
+        });
+        owned.campaign.name = campaign.name;
+        settingsGeneration++;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          version: 1,
+          result: { version: 1, generation: settingsGeneration, campaign },
+        }),
+      };
+    }
     if (path.endsWith('/participant-access') && removed)
       return {
         ok: false,
@@ -188,7 +211,6 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   );
   expect(launcher.root.textContent).not.toContain('Browser-only storage:');
   expect(launcher.root.querySelector('[data-campaign-import]').hidden).toBe(true);
-  expect(launcher.root.querySelector('[data-edit-campaign]')).toBeNull();
   expect(launcher.root.querySelector('[data-export-campaign]')).toBeNull();
   expect(launcher.root.querySelector('[data-cloud-account]').textContent).toContain(
     'picker@example.invalid'
@@ -199,10 +221,34 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   expect(ownedGroup?.textContent).toContain('Owned campaigns');
   expect(ownedGroup?.querySelector('[data-open-campaign]')).not.toBeNull();
   expect(ownedGroup?.querySelector('[data-cloud-invitations]')).not.toBeNull();
+  expect(ownedGroup?.querySelector('[data-edit-campaign]')).not.toBeNull();
   expect(joinedGroup?.textContent).toContain('Joined campaign fixture');
   expect(joinedGroup?.querySelector('[data-open-campaign]')).toBeNull();
   expect(joinedGroup?.querySelector('[data-cloud-invitations]')).toBeNull();
-  const access = joinedGroup.querySelector('[data-view-campaign-access]');
+  expect(joinedGroup?.querySelector('[data-edit-campaign]')).toBeNull();
+  const settle = async () => {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      if (!launcher.busy) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error('The campaign settings operation did not finish');
+  };
+  ownedGroup.querySelector('[data-edit-campaign]').click();
+  await settle();
+  expect(launcher.settings.hidden).toBe(false);
+  for (const name of ['First saved name', 'Second saved name']) {
+    launcher.settingsName.value = name;
+    launcher.settings.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    expect(launcher.status.textContent).toContain('Campaign settings saved');
+  }
+  expect(settingsWrites.map((command) => command.generation)).toEqual([1, 2]);
+  expect(settingsWrites[0].changes.packIds).toEqual(['srd-2014']);
+  expect(launcher.list.querySelector('[data-campaign-group="owned"]').textContent).toContain(
+    'Second saved name'
+  );
+  launcher.settings.hidden = true;
+  const access = launcher.list.querySelector('[data-view-campaign-access]');
   access.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(launcher.status.textContent).toContain('Cloud player gameplay is not enabled yet');

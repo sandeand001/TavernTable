@@ -82,6 +82,7 @@ export default class CampaignLauncher {
     this.ruleset = this.root.querySelector('[aria-label="Campaign ruleset"]');
     this.settings = this.root.querySelector('.campaign-settings');
     this.settingsName = this.root.querySelector('[aria-label="Rename campaign"]');
+    this.settingsBase = null;
     this.backup = this.root.querySelector('.campaign-backup');
     this.backupText = this.root.querySelector('textarea');
     this.importFile = this.root.querySelector('input[type="file"]');
@@ -116,13 +117,20 @@ export default class CampaignLauncher {
     this.settings.addEventListener('submit', (event) => {
       event.preventDefault();
       void this._perform(async () => {
-        await this.workspace.update(this.settingsId, {
-          name: this.settingsName.value,
-          packIds: this._selectedPacks(this.settings),
-        });
+        const base = this.settingsBase;
+        const campaign = await this.workspace.update(
+          this.settingsId,
+          {
+            name: this.settingsName.value,
+            packIds: this._selectedPacks(this.settings),
+          },
+          base
+        );
+        if (base) this.settingsBase = { ...base, generation: base.generation + 1, campaign };
+        this.settingsName.value = campaign.name;
         await this._renderSaved();
         this.status.textContent =
-          'Campaign settings saved. Owned content and source pins are unchanged.';
+          'Campaign settings saved. Existing characters and source version pins were preserved.';
       }, 'Saving campaign settings...');
     });
     this.root.addEventListener('click', (event) => {
@@ -234,7 +242,7 @@ export default class CampaignLauncher {
         this.root.querySelector('[data-campaign-import]').hidden =
           this.workspace.store.capabilities?.backups === false;
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation only. Player invitations, assignments and membership removal are available; player gameplay, backups, source changes and live sessions remain gated.'
+          ? 'Private cloud preparation only. Player invitations, assignments, membership removal and campaign settings are available; player gameplay, backups and live sessions remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
@@ -263,7 +271,7 @@ export default class CampaignLauncher {
         <div class="campaign-row-actions">
           ${role === 'member' ? '<button type="button" data-view-campaign-access>View player access</button>' : '<button type="button" data-open-campaign>Open</button>'}
           ${cloud && role === 'owner' && capabilities?.invitations === true ? '<button type="button" data-cloud-invitations>Player invitations</button>' : ''}
-          ${capabilities?.settings !== false ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
+          ${capabilities?.settings !== false && (!cloud || role === 'owner') ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
           ${capabilities?.backups !== false ? '<button type="button" data-export-campaign>Export</button>' : ''}
           ${capabilities?.backups !== false && this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
         </div></article>`;
@@ -338,7 +346,9 @@ export default class CampaignLauncher {
   }
 
   async _edit(id) {
-    const campaign = await this.workspace.store.get(id);
+    const cloud = this.workspace.store.storageInfo?.kind === 'cloud';
+    this.settingsBase = cloud ? await this.workspace.store.getSettings(id) : null;
+    const campaign = cloud ? this.settingsBase.campaign : await this.workspace.store.get(id);
     this.settingsId = id;
     this.settingsName.value = campaign.name;
     this.settings.querySelector('[data-settings-ruleset]').textContent =

@@ -141,6 +141,93 @@ test('the browser high-level cloud store uses UID-bound HTTP creation and consis
   }
 });
 
+test('settings retries retain the captured generation, source choice and expected canonical metadata', async () => {
+  const setup = fixture();
+  const current = { version: 1, generation: 1, campaign };
+  const updated = {
+    version: 1,
+    generation: 2,
+    campaign: { ...campaign, name: 'Renamed fixture', charactersRevision: 1 },
+  };
+  let posts = 0;
+  setup.fetch.mockImplementation(async (_url, options) => {
+    if (options.method === 'POST' && ++posts === 1)
+      throw new TypeError('Synthetic lost settings reply');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ version: 1, result: options.method === 'GET' ? current : updated }),
+    };
+  });
+  const snapshot = await setup.store.getSettings(campaignId);
+  const changes = { name: ' Renamed fixture ', packIds: [] };
+  const pending = setup.store.update(campaignId, changes, snapshot);
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(setup.store.saveState.phase).toBe('uncertain');
+  snapshot.generation = 99;
+  snapshot.campaign.ruleset = '2024';
+  changes.name = 'Different intent';
+  changes.packIds.push('srd-2024');
+  await setup.store.retryPending();
+  await expect(pending).resolves.toEqual(updated.campaign);
+  const requests = setup.fetch.mock.calls.filter(([, options]) => options.method === 'POST');
+  expect(requests).toHaveLength(2);
+  expect(requests[0][1].body).toBe(requests[1][1].body);
+  expect(requests[0][0]).toBe(
+    runtime.apiOrigin + '/api/cloud/campaigns/' + campaignId + '/settings'
+  );
+  expect(JSON.parse(requests[0][1].body)).toEqual({
+    commandId,
+    generation: 1,
+    changes: { name: ' Renamed fixture ', packIds: [] },
+  });
+  expect(setup.store.saveState.phase).toBe('saved');
+});
+
+test('a mismatched settings receipt cannot acknowledge another name, revision, generation or source version', async () => {
+  const current = { version: 1, generation: 1, campaign };
+  const correct = {
+    version: 1,
+    generation: 2,
+    campaign: { ...campaign, name: 'Expected name', charactersRevision: 1 },
+  };
+  for (const wrong of [
+    { ...correct, generation: 3 },
+    { ...correct, campaign: { ...correct.campaign, name: 'Another intent' } },
+    { ...correct, campaign: { ...correct.campaign, charactersRevision: 2 } },
+    {
+      ...correct,
+      campaign: {
+        ...correct.campaign,
+        sourcePacks: [
+          {
+            ...correct.campaign.sourcePacks[0],
+            version: 'unconfirmed-version',
+          },
+        ],
+      },
+    },
+  ]) {
+    const setup = fixture();
+    let result = wrong;
+    setup.fetch.mockImplementation(async (_url, options) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        version: 1,
+        result: options.method === 'GET' ? current : result,
+      }),
+    }));
+    const pending = setup.store.update(campaignId, { name: 'Expected name', packIds: [] }, current);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(setup.store.saveState.phase).toBe('uncertain');
+    expect(setup.store.saveState.error.code).toBe('invalid-cloud-response');
+    result = correct;
+    await setup.store.retryPending();
+    await expect(pending).resolves.toEqual(correct.campaign);
+  }
+});
+
 test('participant access validates the UID, campaign and captured generation without accepting private owner data', async () => {
   const setup = fixture();
   const manifest = {

@@ -105,6 +105,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'listAccess',
       'getAccess',
       'getParticipantAccess',
+      'getSettings',
+      'updateSettings',
       'listSeats',
       'createInvitation',
       'revokeInvitation',
@@ -135,7 +137,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const directory = url.pathname === '/api/cloud/account/campaigns';
     const collection = url.pathname === '/api/cloud/campaigns';
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (!account && !redeem && !directory && !collection && !campaign) return false;
@@ -144,7 +146,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const postOnly =
       redeem ||
       ['invitations', 'invitations/revoke', 'members/remove', 'assignments'].includes(snapshot);
-    const writable = postOnly || collection || ['scene', 'characters'].includes(snapshot);
+    const writable =
+      postOnly || collection || ['scene', 'characters', 'settings'].includes(snapshot);
     const methods = postOnly ? 'POST, OPTIONS' : writable ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
     let operation = 'campaign.get';
     if (account) operation = 'account';
@@ -156,6 +159,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'invitations/revoke') operation = 'campaign.invite.revoke';
     else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
+    else if (snapshot === 'settings') operation = 'campaign.settings';
     else if (snapshot) operation = `${snapshot}.${request.method === 'POST' ? 'commit' : 'read'}`;
     const origin = request.headers.origin;
     if (origin !== undefined && (typeof origin !== 'string' || !origins.has(origin))) {
@@ -250,6 +254,11 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.getAccess(principal, campaign[1]);
         } else if (snapshot === 'participant-access') {
           result = await store.getParticipantAccess(principal, campaign[1], expectedAccess);
+        } else if (snapshot === 'settings') {
+          result =
+            request.method === 'POST'
+              ? await store.updateSettings(principal, campaign[1], await requestJSON(request))
+              : await store.getSettings(principal, campaign[1]);
         } else if (snapshot === 'scene') {
           result =
             request.method === 'POST'

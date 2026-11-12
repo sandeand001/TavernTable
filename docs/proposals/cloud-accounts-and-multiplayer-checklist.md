@@ -44,10 +44,11 @@ identity, truthful save feedback and rendered cloud reopening (`M1-04`, `M1-05`,
 pass before and after publication. The corrected full stable regression gate
 (`M1-10`) passed 295 suites / 3,791 tests; hosted deployment and migration remain
 unapproved.
-Campaign-local Owned/Joined access, verified seven-day invitation onboarding,
-member removal, assignments and scoped access generations (`M2-01` through `M2-03`) now
-pass their demo acceptance gates. Proven same-UID sign-in-method linking
-(`M2-04`) is next; cloud player gameplay remains gated.
+Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
+canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
+gates. Provider linking (`M2-04`) is explicitly deferred because of the verified
+Auth emulator blocker. Private asset handling (`M2-06`) is next; cloud player
+gameplay remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
 
@@ -389,9 +390,7 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Selected November 12, 2026:** keep linking gated and continue independently
     ready migration tasks. No live Auth linking test is approved.
 
-- [ ] **M2-05 - Cover all canonical campaign and gameplay persistence paths.**
-  - **Status:** in progress; completing owner settings/source persistence and
-    the remaining canonical-path acceptance matrix.
+- [x] **M2-05 - Cover all canonical campaign and gameplay persistence paths.**
   - **Depends:** `M1-07`, `M2-01`.
   - **Success:** scene, sheets, resources, turns, movement, doors, terrain, images,
     and settings use the cloud Adapter's revision/receipt contract. Preserve
@@ -399,6 +398,15 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** mutation/CAS/idempotency tests run through real Adapter Interfaces;
     overlapping instances and lost responses do not partially spend or duplicate
     results. Re-run local SQLite behavior.
+  - **Completed November 12, 2026; Evidence:** [canonical persistence gate](./cloud-migration-preparation.md#complete-canonical-persistence-gate):
+    89 native SDK/HTTP cases and 20 affected Jest suites / 137 tests pass,
+    zero skipped. Source changes preserve owned spells, Favorites, real PNG
+    bytes and exact scene data. Both editions preserve doors, terrain, physical
+    positions and committed turns; stale writes, publication failure, lost
+    replies and competing settings updates cannot partially publish or duplicate
+    work. Actual owner settings/returning browser flow passes. Local SQLite
+    coverage and full lint/stylelint/layering pass with the same 39 warnings.
+    Participant wire assets and live commands remain separate later gates.
 
 - [ ] **M2-06 - Implement private asset upload, finalization, and authorized delivery.**
   - **Depends:** `M2-05`.

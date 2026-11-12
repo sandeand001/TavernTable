@@ -12,6 +12,7 @@ import {
   isCloudAccessGeneration,
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
+  isCloudCampaignSettings,
 } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
@@ -44,6 +45,7 @@ const definitiveDenials = new Set([
   'invitation-already-accepted',
   'seat-already-joined',
   'campaign-already-joined',
+  'invalid-campaign-settings',
 ]);
 const metadataOperations = new Set(['invitation', 'revoke', 'assign', 'remove']);
 const definitiveMetadataDenials = new Set([
@@ -83,7 +85,7 @@ export default class CloudCampaignClientStore {
       label: 'Cloud-authoritative storage. Online access is required.',
     });
     this.capabilities = Object.freeze({
-      settings: false,
+      settings: true,
       backups: false,
       invitations: true,
       participantAccess: true,
@@ -119,6 +121,14 @@ export default class CloudCampaignClientStore {
     return `campaigns/${id}${suffix}`;
   }
 
+  _domain(transaction) {
+    return new CampaignStore({
+      indexedDB: null,
+      packs: this.packs,
+      storage: { transaction: async (_mode, operation) => operation(transaction) },
+    });
+  }
+
   async _metadata(value, id = value?.id) {
     if (
       !value ||
@@ -134,13 +144,7 @@ export default class CloudCampaignClientStore {
     )
       throw invalidResponse();
     const record = copy(value);
-    const domain = new CampaignStore({
-      indexedDB: null,
-      packs: this.packs,
-      storage: {
-        transaction: async (_mode, operation) => operation({ getCampaign: () => record }),
-      },
-    });
+    const domain = this._domain({ getCampaign: () => record });
     try {
       return await domain.get(id);
     } catch (error) {
@@ -299,6 +303,34 @@ export default class CloudCampaignClientStore {
   }
 
   async _receipt(operation, result, input, id) {
+    if (operation === 'settings') {
+      if (!isCloudCampaignSettings(result) || result.generation !== input.generation + 1)
+        throw invalidResponse();
+      const campaign = await this._metadata(result.campaign, id);
+      const expected = input.expectedCampaign;
+      if (
+        ![
+          'version',
+          'id',
+          'name',
+          'ruleset',
+          'coreVersion',
+          'createdAt',
+          'charactersRevision',
+          'sceneRevision',
+          'sceneSavedAt',
+        ].every((key) => campaign[key] === expected[key]) ||
+        campaign.sourcePacks.length !== expected.sourcePacks.length ||
+        campaign.sourcePacks.some(
+          (source, index) =>
+            !['id', 'ruleset', 'version', 'enabled'].every(
+              (key) => source[key] === expected.sourcePacks[index][key]
+            )
+        )
+      )
+        throw invalidResponse();
+      return { version: 1, generation: result.generation, campaign };
+    }
     if (operation === 'remove') {
       if (
         !isCloudMemberRemoval(result) ||
@@ -411,11 +443,14 @@ export default class CloudCampaignClientStore {
     else if (operation === 'remove') resource = this._resource(id, '/members/remove');
     else
       resource = this._resource(id, operation === 'invitation' ? '/invitations' : `/${operation}`);
-    const body = ['join', 'revoke', 'assign', 'remove'].includes(operation)
-      ? { commandId, ...input }
-      : operation === 'create' || operation === 'invitation'
-        ? { commandId, options: input }
-        : { commandId, change: input };
+    const body =
+      operation === 'settings'
+        ? { commandId, generation: input.generation, changes: input.changes }
+        : ['join', 'revoke', 'assign', 'remove'].includes(operation)
+          ? { commandId, ...input }
+          : operation === 'create' || operation === 'invitation'
+            ? { commandId, options: input }
+            : { commandId, change: input };
     let resolve;
     let reject;
     const promise = new Promise((accepted, denied) => {
@@ -600,8 +635,58 @@ export default class CloudCampaignClientStore {
     };
   }
 
-  update() {
-    throw unsupported();
+  async getSettings(id) {
+    const result = await this._call(this._resource(id, '/settings'));
+    if (!isCloudCampaignSettings(result)) throw invalidResponse();
+    return {
+      version: 1,
+      generation: result.generation,
+      campaign: await this._metadata(result.campaign, id),
+    };
+  }
+
+  async update(id, updates, snapshot) {
+    this._identity();
+    this._resource(id);
+    if (
+      !updates ||
+      typeof updates !== 'object' ||
+      Array.isArray(updates) ||
+      !isCloudCampaignSettings(snapshot) ||
+      snapshot.campaign.id !== id
+    )
+      throw failure(
+        400,
+        'invalid-campaign-settings',
+        'Refresh the campaign settings before saving them.'
+      );
+    const base = copy(snapshot);
+    const changes = copy(updates);
+    let record = await this._metadata(base.campaign, id);
+    const domain = this._domain({
+      getCampaign: () => copy(record),
+      writeCampaign: (value) => {
+        record = copy(value);
+      },
+    });
+    let expectedCampaign;
+    try {
+      expectedCampaign = await domain.update(id, changes);
+    } catch (error) {
+      if (error?.constructor === Error || error instanceof SyntaxError)
+        throw failure(
+          400,
+          'invalid-campaign-settings',
+          'Choose a valid campaign name and compatible pinned sources.'
+        );
+      throw error;
+    }
+    const result = await this._write('settings', id, {
+      generation: base.generation,
+      changes,
+      expectedCampaign,
+    });
+    return result.campaign;
   }
   exportBackup() {
     throw unsupported();
