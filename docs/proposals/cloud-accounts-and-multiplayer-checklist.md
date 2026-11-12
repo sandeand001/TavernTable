@@ -46,9 +46,10 @@ pass before and after publication. The corrected full stable regression gate
 unapproved.
 Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
 canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
-gates. Provider linking (`M2-04`) is explicitly deferred because of the verified
-Auth emulator blocker. Private asset handling (`M2-06`) is next; cloud player
-gameplay remains gated.
+gates, along with private image upload/delivery (`M2-06`). Provider linking
+(`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
+Large-file portability and private-pilot limits are next; cloud player gameplay
+remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
 
@@ -408,8 +409,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     coverage and full lint/stylelint/layering pass with the same 39 warnings.
     Participant wire assets and live commands remain separate later gates.
 
-- [ ] **M2-06 - Implement private asset upload, finalization, and authorized delivery.**
-  - **Status:** in progress.
+- [x] **M2-06 - Implement private asset upload, finalization, and authorized delivery.**
   - **Depends:** `M2-05`.
   - **Success:** large assets can upload directly/resumably where needed; validate
     size, type, integrity, ownership, and final contents before publication.
@@ -421,10 +421,14 @@ Revalidation in the intended environment remains part of M1 and M4.
     file/data limits remain unchanged. Imported image validation allows at most
     16,000,000 decoded pixels and 8192 pixels on either side. Reject larger or
     corrupt images explicitly; do not silently resize saved bytes.
-  - **Progress:** [private asset kernel](./cloud-migration-preparation.md#private-asset-kernel-progress):
-    final-content validation, immutable staging and owner-only durable upload
-    publication pass. Participant manifests/delivery and upload transport remain
-    pending; `M2-06` is not complete.
+  - **Completed November 12, 2026; Evidence:** [private asset delivery gate](./cloud-migration-preparation.md#private-asset-delivery-gate):
+    full current native suite passes 98/98 cases, zero skipped; affected
+    application checks pass 15 suites / 109 tests. Owner-only HTTP uploads,
+    exact binary delivery, canonical image finalization, current-member scope,
+    hidden NPC isolation, reassignment and in-flight removal are verified.
+    Actual browser save/hash/download/reload and independent SDK byte verification
+    pass. Current image files fit the bounded direct HTTP path; larger canonical
+    transfer belongs to `M2-07`, and map/NPC view grants remain gated with `M3`.
 
 - [ ] **M2-07 - Implement bounded import/export and large-payload handling.**
   - **Depends:** `M2-06`, `M0-03`.

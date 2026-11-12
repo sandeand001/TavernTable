@@ -13,6 +13,7 @@ import {
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
   isCloudCampaignSettings,
+  isCloudAssetManifest,
 } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
@@ -46,6 +47,10 @@ const definitiveDenials = new Set([
   'seat-already-joined',
   'campaign-already-joined',
   'invalid-campaign-settings',
+  'invalid-asset-request',
+  'invalid-asset-image',
+  'asset-too-large',
+  'asset-image-too-large',
 ]);
 const metadataOperations = new Set(['invitation', 'revoke', 'assign', 'remove']);
 const definitiveMetadataDenials = new Set([
@@ -633,6 +638,17 @@ export default class CloudCampaignClientStore {
       scene: result.scene,
       savedAt: result.savedAt,
     };
+  }
+
+  async getAssetManifest(id) {
+    const result = await this._call(this._resource(id, '/assets/manifest'));
+    if (
+      !isCloudAssetManifest(result) ||
+      result.access.uid !== this.uid ||
+      result.access.campaignId !== id
+    )
+      throw invalidResponse();
+    return copy(result);
   }
 
   async getSettings(id) {

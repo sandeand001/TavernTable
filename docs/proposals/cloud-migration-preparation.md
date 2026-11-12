@@ -1075,3 +1075,59 @@ Upload transport, current-member asset authorization, participant-safe manifests
 revocation races and complete lifecycle acceptance are still pending. This is
 verified kernel progress, **not completion of private asset delivery or the
 migration**. No live Storage/IAM changes or public deployment are authorized.
+
+## Private asset delivery gate
+
+`M2-06` is complete for currently supported custom character image assets in the
+private demo slice. Canonical JSON stays portable and byte-compatible; broader
+map/NPC viewpoint grants, cache reconciliation and large canonical transfers
+remain later tasks. No new custom model/media format or public allowlist is
+implied.
+
+- Owner uploads use bounded authenticated HTTP, recheck current eligibility and
+  campaign ownership before/after immutable staging, and atomically publish asset
+  metadata plus a UID-scoped receipt. Current 10,000,000-byte image files fit the
+  24 MiB JSON request bound; direct/resumable large canonical transfer is separate
+  `M2-07` work. No expiring upload URL is issued or persisted.
+- Canonical character saves finalize new image bytes before publishing their
+  character/scene head. A corrupt image save cannot partially change records.
+  Reused objects retain original bytes/generations; owner manifest reads can
+  finalize compatible legacy embedded images without rewriting their rule data.
+- Image manifests carry explicit current access scope, character revision and
+  safe character/field/reference tuples. They exclude embedded image bodies and
+  hidden NPC names/IDs/hashes. The client validates UID, campaign, reference shape
+  and uniqueness; an unrelated or malformed manifest cannot become another
+  account's cached view.
+- Binary delivery verifies immutable size/type/hash/generation and requires the
+  current owner's authority, or the current member's matching scoped assignment
+  and canonical image hash. Auth/eligibility/access and character revision are
+  rechecked after Storage I/O. Old scopes remain denied after unassignment,
+  reassignment or membership removal.
+- Actual native tests include a real Storage download delay followed by member
+  removal, hidden NPC rejection, unchanged original PNG/JPEG/WebP bytes, complete
+  decoding, exact 10,000,000-byte/16,000,000-pixel/8192-side bounds and explicit
+  corruption/overflow denial. No special case accepts an unexpected SDK failure
+  as a domain denial.
+
+The browser saved a generated PNG through the existing cloud character caller,
+received a body-free hash manifest, downloaded the private binary with managed
+bearer authority, checked its SHA-256/size/content type and retained the same image
+and owner after reload. Its 95-byte image SHA-256 was
+`cba2053ea0db5c9d957edaeaf5cca13df55806345cbc05cbb9742e7c311d434c`.
+Independent SDK reads verified the same private object and the unchanged earlier
+member-lifecycle campaign head. This is API/image-persistence evidence, not a
+claim that live player gameplay or asset caching is complete.
+
+The first full transport gate reported an unexpected raw Firestore `3` in the
+existing assignment-contention test (97/98 passed). That failure did not recur
+in three bounded isolated probes; the assertion now preserves the SDK failure
+message for future diagnosis rather than relaxing its expected domain error.
+No production retry or error suppression was added. The subsequent full
+unchanged-logic gate passed **98/98 cases**, zero skipped, in **94,070.1236 ms**.
+The affected application/image/local checks passed **15 suites / 109 tests**,
+zero skipped, in **7.387 s**, with full lint/stylelint/layering at zero errors and
+the same 39 existing warnings.
+
+No live Auth, Storage/IAM, deployment or real-data cutover occurred. Provider
+linking remains under the approved deferral, and routine-save presentation stays
+deferred to `UX-01`.

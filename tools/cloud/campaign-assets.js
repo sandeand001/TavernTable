@@ -3,14 +3,19 @@ const { imageSize } = require('image-size');
 const sharp = require('sharp');
 const { CloudError } = require('./cloud-error.js');
 const { storageUnavailable } = require('./immutable-objects.js');
-const { isCloudUUID, isCloudDigest } = require('../../src/campaigns/CloudProtocol.js');
+const {
+  isCloudUUID,
+  isCloudAssetReference,
+  CLOUD_IMAGE_PIXEL_LIMIT,
+  CLOUD_IMAGE_DIMENSION_LIMIT,
+} = require('../../src/campaigns/CloudProtocol.js');
 const {
   CHARACTER_IMAGE_FILE_LIMIT,
   CHARACTER_IMAGE_TYPES,
 } = require('../../src/config/characters/CharacterImages.js');
 
-const MAX_IMAGE_PIXELS = 16000000;
-const MAX_IMAGE_DIMENSION = 8192;
+const MAX_IMAGE_PIXELS = CLOUD_IMAGE_PIXEL_LIMIT;
+const MAX_IMAGE_DIMENSION = CLOUD_IMAGE_DIMENSION_LIMIT;
 const imageMimeTypes = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const integrityError = () =>
@@ -69,38 +74,6 @@ async function validateImage(bytes, mimeType) {
       'Images must not exceed 16,000,000 pixels or 8192 pixels on either side'
     );
   return { width: decoded.info.width, height: decoded.info.height };
-}
-
-function validReference(reference, campaignId) {
-  return (
-    reference &&
-    typeof reference === 'object' &&
-    !Array.isArray(reference) &&
-    Object.keys(reference).length === 8 &&
-    Object.keys(reference).every((key) =>
-      [
-        'version',
-        'campaignId',
-        'mimeType',
-        'bytes',
-        'sha256',
-        'generation',
-        'width',
-        'height',
-      ].includes(key)
-    ) &&
-    reference.version === 1 &&
-    reference.campaignId === campaignId &&
-    isCloudUUID(campaignId) &&
-    CHARACTER_IMAGE_TYPES.includes(reference.mimeType) &&
-    Number.isSafeInteger(reference.bytes) &&
-    reference.bytes > 0 &&
-    reference.bytes <= CHARACTER_IMAGE_FILE_LIMIT &&
-    isCloudDigest(reference.sha256) &&
-    typeof reference.generation === 'string' &&
-    /^[1-9][0-9]*$/.test(reference.generation) &&
-    dimensionsValid(reference)
-  );
 }
 
 class PrivateCampaignAssets {
@@ -173,7 +146,7 @@ class PrivateCampaignAssets {
   }
 
   async read(campaignId, reference) {
-    if (!validReference(reference, campaignId)) throw integrityError();
+    if (!isCloudAssetReference(reference, campaignId)) throw integrityError();
     const path = `campaigns/${campaignId}/assets/${reference.sha256}.bin`;
     try {
       const file = this.bucket.file(path, { generation: reference.generation });
@@ -203,5 +176,5 @@ module.exports = {
   PrivateCampaignAssets,
   MAX_IMAGE_PIXELS,
   MAX_IMAGE_DIMENSION,
-  isPrivateAssetReference: validReference,
+  isPrivateAssetReference: isCloudAssetReference,
 };

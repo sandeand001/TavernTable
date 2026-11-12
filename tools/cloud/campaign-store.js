@@ -13,6 +13,7 @@ const { isPrivateAssetReference } = require('./campaign-assets.js');
 const {
   CHARACTER_IMAGE_TYPES,
   CHARACTER_IMAGE_FILE_LIMIT,
+  CHARACTER_IMAGE_FIELDS,
 } = require('../../src/config/characters/CharacterImages.js');
 const {
   isCloudUUID,
@@ -24,6 +25,7 @@ const {
   isCloudMemberRemoval,
   isCloudCharacterAssignment,
   isCloudCampaignSettings,
+  isCloudAccessScope,
   CLOUD_INVITATION_TTL_MS,
 } = require('../../src/campaigns/CloudProtocol.js');
 
@@ -1382,6 +1384,275 @@ class CloudCampaignStore {
     });
   }
 
+  async _captureAssetAccess(uid, id, sha256, expected) {
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const grant = await this._accessGrant(transaction, uid, id);
+        if (grant.access.role === 'member' && expected === null)
+          throw new CloudError(
+            400,
+            'invalid-access-scope',
+            'Use the current participant scope for private image delivery'
+          );
+        if (
+          expected !== null &&
+          Object.keys(grant.access).some((key) => grant.access[key] !== expected[key])
+        )
+          throw new CloudError(
+            409,
+            'campaign-access-changed',
+            'Campaign access changed. Refresh before continuing.'
+          );
+        const campaign = this.firestore.collection('campaigns').doc(id);
+        const snapshotHead = await transaction.get(campaign);
+        const head = await this._metadata(snapshotHead, snapshotHead.data().ownerUid);
+        const snapshot = await transaction.get(campaign.collection('assets').doc(sha256));
+        if (!snapshot.exists)
+          throw new CloudError(404, 'asset-not-found', 'This private asset is not available');
+        const record = snapshot.data();
+        if (
+          record?.version !== 1 ||
+          record.campaignId !== id ||
+          !isPrivateAssetReference(record.reference, id) ||
+          record.reference.sha256 !== sha256
+        )
+          throw new CloudError(
+            503,
+            'invalid-asset-record',
+            'The private asset metadata could not be verified'
+          );
+        return { reference: record.reference, head, grant };
+      },
+      { readOnly: true }
+    );
+  }
+
+  _imageEntries(records, characterIds = null) {
+    const assigned = characterIds === null ? null : new Set(characterIds);
+    const images = [];
+    for (const record of records) {
+      const characterId = campaignRecordCharacterId(record?.key);
+      if (
+        (assigned !== null && !assigned.has(characterId)) ||
+        record.key !== `taverntable.character.v1.${characterId}`
+      )
+        continue;
+      let character;
+      try {
+        character = JSON.parse(record.value);
+      } catch (error) {
+        if (error instanceof SyntaxError)
+          throw new CloudError(
+            503,
+            'invalid-character-snapshot',
+            'Campaign character records could not be verified'
+          );
+        throw error;
+      }
+      if (
+        !character ||
+        typeof character !== 'object' ||
+        Array.isArray(character) ||
+        character.id !== characterId
+      )
+        throw new CloudError(
+          503,
+          'invalid-character-snapshot',
+          'Campaign character records could not be verified'
+        );
+      for (const field of CHARACTER_IMAGE_FIELDS) {
+        const image = character[field];
+        if (image === undefined || image === null) continue;
+        if (
+          typeof image !== 'string' ||
+          !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(image)
+        )
+          throw new CloudError(
+            503,
+            'invalid-character-snapshot',
+            'Campaign character records could not be verified'
+          );
+        const bytes = Buffer.from(image.slice(image.indexOf(';base64,') + 8), 'base64');
+        images.push({
+          characterId,
+          field,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          mimeType: image.slice(5, image.indexOf(';base64,')),
+          data: bytes.toString('base64'),
+        });
+      }
+    }
+    return images;
+  }
+
+  async _finalizeCharacterAssets(principal, id, records) {
+    if (this.assets === null) return;
+    const unique = new Map(this._imageEntries(records).map((image) => [image.sha256, image]));
+    for (const image of unique.values()) {
+      const snapshot = await this.firestore
+        .collection('campaigns')
+        .doc(id)
+        .collection('assets')
+        .doc(image.sha256)
+        .get();
+      if (snapshot.exists) {
+        const record = snapshot.data();
+        if (
+          record?.version !== 1 ||
+          record.campaignId !== id ||
+          !isPrivateAssetReference(record.reference, id) ||
+          record.reference.sha256 !== image.sha256 ||
+          record.reference.mimeType !== image.mimeType
+        )
+          throw new CloudError(
+            503,
+            'invalid-asset-record',
+            'The private asset metadata could not be verified'
+          );
+        await this.assets.read(id, record.reference);
+      } else {
+        await this.uploadAsset(principal, id, {
+          commandId: randomUUID(),
+          mimeType: image.mimeType,
+          data: image.data,
+        });
+      }
+    }
+  }
+
+  async getAssetManifest(principal, id) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const captured = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const grant = await this._accessGrant(transaction, uid, id);
+        const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
+        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
+        return { head, grant };
+      },
+      { readOnly: true }
+    );
+    const state = await this._loadSnapshot(captured.head);
+    if (captured.grant.access.role === 'owner')
+      await this._finalizeCharacterAssets(principal, id, state.records);
+    const entries = this._imageEntries(
+      state.records,
+      captured.grant.access.role === 'owner' ? null : captured.grant.characterIds
+    );
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const current = await this._accessGrant(transaction, uid, id);
+        if (
+          Object.keys(current.access).some(
+            (key) => current.access[key] !== captured.grant.access[key]
+          )
+        )
+          throw new CloudError(
+            409,
+            'campaign-access-changed',
+            'Campaign access changed. Refresh before continuing.'
+          );
+        const campaign = this.firestore.collection('campaigns').doc(id);
+        const headSnapshot = await transaction.get(campaign);
+        const head = await this._metadata(headSnapshot, headSnapshot.data().ownerUid);
+        if (head.campaign.charactersRevision !== captured.head.campaign.charactersRevision)
+          throw new CloudError(
+            409,
+            'campaign-access-changed',
+            'Campaign image access changed. Refresh before continuing.'
+          );
+        const images = [];
+        for (const entry of entries) {
+          const snapshot = await transaction.get(campaign.collection('assets').doc(entry.sha256));
+          if (!snapshot.exists)
+            throw new CloudError(
+              503,
+              'asset-unavailable',
+              'A referenced campaign image has not been finalized'
+            );
+          const record = snapshot.data();
+          if (
+            record?.version !== 1 ||
+            record.campaignId !== id ||
+            !isPrivateAssetReference(record.reference, id) ||
+            record.reference.sha256 !== entry.sha256
+          )
+            throw new CloudError(
+              503,
+              'invalid-asset-record',
+              'The private asset metadata could not be verified'
+            );
+          images.push({
+            characterId: entry.characterId,
+            field: entry.field,
+            reference: record.reference,
+          });
+        }
+        return {
+          version: 1,
+          access: current.access,
+          charactersRevision: head.campaign.charactersRevision,
+          images,
+        };
+      },
+      { readOnly: true }
+    );
+  }
+
+  async readAsset(principal, id, sha256, expected = null) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (!isCloudDigest(sha256))
+      throw new CloudError(400, 'invalid-asset-request', 'Choose an explicit private asset hash');
+    if (
+      expected !== null &&
+      (!isCloudAccessScope(expected) || expected.uid !== uid || expected.campaignId !== id)
+    )
+      throw new CloudError(
+        400,
+        'invalid-access-scope',
+        'Choose the explicit current campaign access scope'
+      );
+    const captured = await this._captureAssetAccess(uid, id, sha256, expected);
+    if (captured.grant.access.role === 'member') {
+      const state = await this._loadSnapshot(captured.head);
+      if (
+        !this._imageEntries(state.records, captured.grant.characterIds).some(
+          (image) => image.sha256 === sha256
+        )
+      )
+        throw new CloudError(404, 'asset-not-found', 'This private asset is not available');
+    }
+    if (this.assets === null)
+      throw new CloudError(
+        503,
+        'asset-storage-unavailable',
+        'Private campaign asset storage is not configured'
+      );
+    const bytes = await this.assets.read(id, captured.reference);
+    const current = await this._captureAssetAccess(uid, id, sha256, captured.grant.access);
+    if (current.head.campaign.charactersRevision !== captured.head.campaign.charactersRevision)
+      throw new CloudError(
+        409,
+        'campaign-access-changed',
+        'Campaign image access changed. Refresh before continuing.'
+      );
+    if (
+      Object.keys(captured.reference).some(
+        (key) => current.reference[key] !== captured.reference[key]
+      )
+    )
+      throw new CloudError(
+        503,
+        'asset-integrity-failed',
+        'The private asset failed its integrity check'
+      );
+    return { reference: captured.reference, bytes };
+  }
+
   async getSettings(principal, id) {
     const head = await this._readHead(principal, id);
     return { version: 1, generation: head.generation, campaign: head.campaign };
@@ -1736,6 +2007,8 @@ class CloudCampaignStore {
       );
     const state = await this._loadSnapshot(captured.head);
     const { next, receipt } = await this._prepareChange(state, kind, change);
+    if (kind === 'characters.commit')
+      await this._finalizeCharacterAssets(principal, id, next.records);
     const removedCharacters = new Set();
     if (kind === 'characters.commit') {
       const currentIds = new Set(

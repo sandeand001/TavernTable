@@ -122,6 +122,15 @@
   reference when its revision advances. The client requires the captured
   settings snapshot and verifies the predicted metadata before acknowledging.
   Source controls appear only in Owned campaigns, not Joined entries.
+- **Private cloud images (M2 development slice verified)**: preserve canonical
+  embedded image rows while finalizing immutable, hash-addressed private bytes.
+  Current JPEG/PNG/WebP files use bounded HTTP uploads and exact-byte delivery.
+  Image headers and full raster contents obey the selected 16,000,000-pixel/
+  8192-side limit; stored bytes are not silently resized. Participant manifests
+  expose only current assigned-character IDs/fields and verified references,
+  never embedded data, hidden names, bearer credentials or signed URLs. Delivery
+  rechecks current UID/seat/generation after Storage work. Map/NPC asset grants
+  and browser cache reconciliation remain later participant-view tasks.
 - **Campaign-local access (initial M2 development slice implemented)**:
   server-owned UID membership indexes must agree with the campaign's current
   player seat. Owned/Joined metadata uses an explicit minimal projection; joined

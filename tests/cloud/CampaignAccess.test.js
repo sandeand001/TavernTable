@@ -687,7 +687,7 @@ test(
     const losers = competing.filter((result) => result.status === 'rejected');
     assert.equal(winners.length, 1);
     assert.equal(losers.length, 1);
-    assert.equal(losers[0].reason.code, 'campaign-access-changed');
+    assert.equal(losers[0].reason.code, 'campaign-access-changed', losers[0].reason.message);
     const characterId = winners[0].value.characterIds[0];
     const sameState = await f.store.assignCharacter(owner.principal, campaign.id, {
       commandId: randomUUID(),

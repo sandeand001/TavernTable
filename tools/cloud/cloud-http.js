@@ -107,6 +107,9 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'getParticipantAccess',
       'getSettings',
       'updateSettings',
+      'uploadAsset',
+      'readAsset',
+      'getAssetManifest',
       'listSeats',
       'createInvitation',
       'revokeInvitation',
@@ -137,7 +140,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const directory = url.pathname === '/api/cloud/account/campaigns';
     const collection = url.pathname === '/api/cloud/campaigns';
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (!account && !redeem && !directory && !collection && !campaign) return false;
@@ -145,7 +148,9 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const snapshot = campaign?.[2];
     const postOnly =
       redeem ||
-      ['invitations', 'invitations/revoke', 'members/remove', 'assignments'].includes(snapshot);
+      ['invitations', 'invitations/revoke', 'members/remove', 'assignments', 'assets'].includes(
+        snapshot
+      );
     const writable =
       postOnly || collection || ['scene', 'characters', 'settings'].includes(snapshot);
     const methods = postOnly ? 'POST, OPTIONS' : writable ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
@@ -160,6 +165,9 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot === 'settings') operation = 'campaign.settings';
+    else if (snapshot === 'assets') operation = 'campaign.asset.upload';
+    else if (snapshot === 'assets/manifest') operation = 'campaign.asset.manifest';
+    else if (snapshot?.startsWith('assets/')) operation = 'campaign.asset.read';
     else if (snapshot) operation = `${snapshot}.${request.method === 'POST' ? 'commit' : 'read'}`;
     const origin = request.headers.origin;
     if (origin !== undefined && (typeof origin !== 'string' || !origins.has(origin))) {
@@ -215,7 +223,11 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         ? await access.verifyIdentity(request.headers.authorization)
         : await access.verifyAuthorization(request.headers.authorization);
       const expectedAccess = requestAccessScope(request);
-      if (expectedAccess !== null && snapshot !== 'participant-access')
+      if (
+        expectedAccess !== null &&
+        snapshot !== 'participant-access' &&
+        !snapshot?.startsWith('assets/')
+      )
         throw new CloudError(
           400,
           'invalid-access-scope',
@@ -259,6 +271,43 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             request.method === 'POST'
               ? await store.updateSettings(principal, campaign[1], await requestJSON(request))
               : await store.getSettings(principal, campaign[1]);
+        } else if (snapshot === 'assets') {
+          result = await store.uploadAsset(principal, campaign[1], await requestJSON(request));
+        } else if (snapshot === 'assets/manifest') {
+          if (expectedAccess !== null)
+            throw new CloudError(
+              400,
+              'invalid-access-scope',
+              'Refresh the current image manifest without a stale scope'
+            );
+          result = await store.getAssetManifest(principal, campaign[1]);
+        } else if (snapshot?.startsWith('assets/')) {
+          const assetScope =
+            expectedAccess === null
+              ? null
+              : {
+                  version: 1,
+                  uid: principal.uid,
+                  campaignId: campaign[1],
+                  role: expectedAccess.seatId === null ? 'owner' : 'member',
+                  ...expectedAccess,
+                };
+          const asset = await store.readAsset(
+            principal,
+            campaign[1],
+            snapshot.slice('assets/'.length),
+            assetScope
+          );
+          response.writeHead(200, {
+            'Content-Type': asset.reference.mimeType,
+            'Content-Length': asset.bytes.length,
+            'Cache-Control': 'private, no-store',
+            'X-Content-Type-Options': 'nosniff',
+            Vary: 'Origin',
+            ...headers,
+          });
+          response.end(asset.bytes);
+          return true;
         } else if (snapshot === 'scene') {
           result =
             request.method === 'POST'
@@ -275,7 +324,9 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       }
       jsonResponse(
         response,
-        (collection || snapshot === 'invitations') && request.method === 'POST' ? 201 : 200,
+        (collection || ['invitations', 'assets'].includes(snapshot)) && request.method === 'POST'
+          ? 201
+          : 200,
         { version: 1, result },
         headers
       );

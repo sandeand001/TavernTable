@@ -7,6 +7,7 @@ const { createEmulatorRuntime, readEmulatorEnvironment } = require('./emulator-r
 const { CloudAccountAccess } = require('./account-access.js');
 const { CloudCampaignStore } = require('./campaign-store.js');
 const { ImmutableCloudObjects } = require('./immutable-objects.js');
+const { PrivateCampaignAssets } = require('./campaign-assets.js');
 const { createCloudHttpHandler } = require('./cloud-http.js');
 const { HostResources } = require('../host-resources.js');
 const { resolvePublicFile } = require('../public-files.js');
@@ -60,6 +61,7 @@ async function createCloudDevHost({
       packs: manifest.packs,
       resources: new HostResources({ root, manifest }),
       objects: new ImmutableCloudObjects({ bucket: runtime.bucket }),
+      assets: new PrivateCampaignAssets({ bucket: runtime.bucket }),
     });
     let api = null;
     let origin = null;

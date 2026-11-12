@@ -228,6 +228,67 @@ test('a mismatched settings receipt cannot acknowledge another name, revision, g
   }
 });
 
+test('private image manifests validate the current UID and campaign without accepting embedded owner data', async () => {
+  const setup = fixture();
+  const manifest = {
+    version: 1,
+    access: {
+      version: 1,
+      uid: 'uid-a',
+      campaignId,
+      role: 'member',
+      seatId: accessSummary('member').seatId,
+      accessGeneration: 2,
+    },
+    charactersRevision: 4,
+    images: [
+      {
+        characterId: 'assigned-character',
+        field: 'portraitImage',
+        reference: {
+          version: 1,
+          campaignId,
+          mimeType: 'image/png',
+          bytes: 68,
+          sha256: 'a'.repeat(64),
+          generation: '1',
+          width: 2,
+          height: 2,
+        },
+      },
+    ],
+  };
+  let result = manifest;
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  await expect(setup.store.getAssetManifest(campaignId)).resolves.toEqual(manifest);
+  for (const invalid of [
+    { ...manifest, rawImages: 'PRIVATE EMBEDDED IMAGE' },
+    { ...manifest, access: { ...manifest.access, uid: 'another-user' } },
+    { ...manifest, images: [...manifest.images, manifest.images[0]] },
+    {
+      ...manifest,
+      images: [
+        {
+          ...manifest.images[0],
+          reference: {
+            ...manifest.images[0].reference,
+            campaignId: '66666666-6666-4666-8666-666666666666',
+          },
+        },
+      ],
+    },
+  ]) {
+    result = invalid;
+    await expect(setup.store.getAssetManifest(campaignId)).rejects.toMatchObject({
+      code: 'invalid-cloud-response',
+    });
+  }
+});
+
 test('participant access validates the UID, campaign and captured generation without accepting private owner data', async () => {
   const setup = fixture();
   const manifest = {

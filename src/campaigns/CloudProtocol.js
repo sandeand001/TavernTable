@@ -1,4 +1,12 @@
 import { supportedEditions } from '../rules/editions.js';
+import {
+  CHARACTER_IMAGE_TYPES,
+  CHARACTER_IMAGE_FIELDS,
+  CHARACTER_IMAGE_FILE_LIMIT,
+} from '../config/characters/CharacterImages.js';
+
+export const CLOUD_IMAGE_PIXEL_LIMIT = 16000000;
+export const CLOUD_IMAGE_DIMENSION_LIMIT = 8192;
 
 export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
@@ -12,6 +20,62 @@ const record = (value) => value !== null && typeof value === 'object' && !Array.
 const keys = (value, names) =>
   Object.keys(value).length === names.length &&
   Object.keys(value).every((key) => names.includes(key));
+
+export function isCloudAssetReference(value, campaignId) {
+  return (
+    record(value) &&
+    keys(value, [
+      'version',
+      'campaignId',
+      'mimeType',
+      'bytes',
+      'sha256',
+      'generation',
+      'width',
+      'height',
+    ]) &&
+    value.version === 1 &&
+    isCloudUUID(campaignId) &&
+    value.campaignId === campaignId &&
+    CHARACTER_IMAGE_TYPES.includes(value.mimeType) &&
+    Number.isSafeInteger(value.bytes) &&
+    value.bytes > 0 &&
+    value.bytes <= CHARACTER_IMAGE_FILE_LIMIT &&
+    isCloudDigest(value.sha256) &&
+    typeof value.generation === 'string' &&
+    /^[1-9][0-9]*$/.test(value.generation) &&
+    Number.isSafeInteger(value.width) &&
+    Number.isSafeInteger(value.height) &&
+    value.width > 0 &&
+    value.height > 0 &&
+    value.width <= CLOUD_IMAGE_DIMENSION_LIMIT &&
+    value.height <= CLOUD_IMAGE_DIMENSION_LIMIT &&
+    value.width * value.height <= CLOUD_IMAGE_PIXEL_LIMIT
+  );
+}
+
+export function isCloudAssetManifest(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'access', 'charactersRevision', 'images']) &&
+    value.version === 1 &&
+    isCloudAccessScope(value.access) &&
+    Number.isSafeInteger(value.charactersRevision) &&
+    value.charactersRevision >= 0 &&
+    Array.isArray(value.images) &&
+    value.images.every(
+      (image) =>
+        record(image) &&
+        keys(image, ['characterId', 'field', 'reference']) &&
+        typeof image.characterId === 'string' &&
+        image.characterId.length > 0 &&
+        CHARACTER_IMAGE_FIELDS.includes(image.field) &&
+        isCloudAssetReference(image.reference, value.access.campaignId)
+    ) &&
+    new Set(value.images.map((image) => image.characterId + ':' + image.field)).size ===
+      value.images.length
+  );
+}
 
 export function isCloudCampaignSettings(value) {
   return (
