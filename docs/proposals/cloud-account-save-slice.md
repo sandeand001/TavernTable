@@ -2,7 +2,8 @@
 
 **Status:** verified development account/owned-campaign and atomic save backend,
 managed browser login, save feedback and rendered/replacement acceptance.
-The corrected final full-regression M1 gate is running; nothing is deployed.
+The corrected final M1 gate passed 295 Jest suites / 3,791 tests plus 52 native
+SDK/HTTP cases; nothing is deployed.
 See [browser/restart evidence](./cloud-migration-preparation.md#m1-browser-and-restart-acceptance).
 
 **Scope:** the first pair of Modules selected in the

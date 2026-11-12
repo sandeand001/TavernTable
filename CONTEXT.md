@@ -137,7 +137,7 @@
   Journal expiry is not permission to re-execute an old command.
   Recovery precedes preparation and still checks current access; immutable
   candidate upload is not an acknowledged save before the Firestore publication.
-- **Cloud browser save (rendered/replacement development checks verified; final M1 gate pending)**:
+- **Cloud browser save (M1 development gate verified; hosted deployment pending)**:
   managed Auth identity and explicit cloud runtime select a UID-bound workspace,
   never a host-key or writable browser-campaign fallback. Global feedback is
   attached before creation and observes scene checkpoints. A lost reply retains

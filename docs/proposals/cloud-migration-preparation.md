@@ -585,8 +585,9 @@ acceptance is recorded below.
 
 ## M1 browser and restart acceptance
 
-`M1-05`, `M1-08` and `M1-09` completed November 11, 2026 for the emulator
-development slice. `M1-10` still awaits the corrected full stable run.
+`M1-05`, `M1-08`, `M1-09` and `M1-10` completed November 11, 2026 for the emulator
+development slice. Production deployment and selected-data cutover remain
+separately gated.
 
 ### Actual Chrome and canonical restoration
 
@@ -650,7 +651,7 @@ Large synthetic scene downloads emitted SDK `PassThrough` listener-count
 warnings. These were not silenced or treated as corruption; generation/hash
 checks passed. Hosted memory/performance profiling remains a later gate.
 
-### Runner separation and remaining exit gate
+### Runner separation and completed development exit gate
 
 The first full stable run passed **294 application suites / 3,790 tests**, but
 its overall result failed because seven native Node suites were also discovered
@@ -660,6 +661,12 @@ application suite and excludes only that native directory; real Jest discovery
 and explicit Windows/POSIX path checks verify the boundary. All native cases
 remain in `npm run test:cloud`; none were disabled.
 
-The final complete stable run now includes the restore regression and is
-running separately from the native gate. No production deployment, additional
-live cloud write or new IAM grant was performed.
+The corrected final complete stable run, including the restore regression,
+passed **295 suites / 3,791 tests**, zero skipped, in 1,671.282 seconds.
+It ran separately from the **52 passing native SDK/HTTP cases**. Full
+lint/stylelint and layering passed with zero errors and the same 39 existing
+warnings. This completes the development M1 gate, not the later membership,
+complete persistence, multiplayer, hosted or migration gates.
+
+No production deployment, additional live cloud write or new IAM grant was
+performed.

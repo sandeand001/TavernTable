@@ -42,7 +42,8 @@ atomic canonical scene/character backend are verified in
 identity, truthful save feedback and rendered cloud reopening (`M1-04`, `M1-05`,
 `M1-08`, `M1-09`) are verified in the demo environment. Actual process-kill tests
 pass before and after publication. The corrected full stable regression gate
-(`M1-10`) is running; hosted deployment and migration remain unapproved.
+(`M1-10`) passed 295 suites / 3,791 tests; hosted deployment and migration remain
+unapproved.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
 
@@ -291,20 +292,21 @@ Revalidation in the intended environment remains part of M1 and M4.
     processes with empty working directories, reopen the exact committed data
     through fresh clients and repeat unrelated-UID denial.
 
-- [ ] **M1-10 - Pass the vertical-slice durability and isolation gate.**
-  - **Status:** in progress.
+- [x] **M1-10 - Pass the vertical-slice durability and isolation gate.**
   - **Depends:** `M1-09`.
   - **Success:** the complete slice passes existing regressions plus emulator and
     fault tests before widening implementation.
   - **Verify:** terminate before/after publication; lose the response; retry the
     same command; overlap two backend instances. Exactly one acknowledged result
     survives, with no duplicate move, resource cost, or reroll.
-  - **Progress:** all 52 native cases and actual before/after-publication process
-    kills pass. The first full run passed all 294 application suites / 3,790 tests
-    but discovered seven native Node suites because its existing exclusion was
-    not portable to Windows. Discovery now correctly separates the runners; the
-    complete corrected stable run, including the new restore regression, is
-    pending.
+  - **Completed:** November 11, 2026 for the emulator development slice.
+    **Evidence:** [M1 browser/restart acceptance](./cloud-migration-preparation.md#m1-browser-and-restart-acceptance):
+    52 native SDK/HTTP cases, zero skipped, including actual process termination
+    before/after publication and identical-command recovery. The corrected full
+    stable run passed 295 suites / 3,791 tests, zero skipped, including the new
+    canonical-restore regression. Lint/stylelint and layering pass with the same
+    39 pre-existing warnings. The runner-boundary failure and correction remain
+    recorded; this is not a production-deployment or cutover approval.
 
 ### M2 - Ownership and complete persistence
 
