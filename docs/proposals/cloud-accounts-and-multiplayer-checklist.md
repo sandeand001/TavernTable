@@ -372,14 +372,26 @@ Revalidation in the intended environment remains part of M1 and M4.
     revocation remain explicitly gated for `M3-01`, `M3-09` and `M4-10`.
 
 - [ ] **M2-04 - Implement proven sign-in-method linking without splitting ownership.**
+  - **Status:** blocked and explicitly deferred by the owner. The prototype and
+    its failing real-SDK acceptance case are preserved outside the active tree;
+    no provider-linking UI is enabled or completion claimed.
   - **Depends:** `M1-05`, `M2-01`.
   - **Success:** Google/password credentials link only after proving control of
     both credentials; the existing UID, Owned/Joined campaigns, and assignments
     remain unchanged.
   - **Verify:** provider-conflict, cancellation, wrong-credential, and matching
     unverified-name/email cases never silently merge or create access.
+  - **Blocker:** [provider-linking emulator diagnosis](./cloud-migration-preparation.md#provider-linking-emulator-blocker):
+    the emulator rejects the signed-in user's own existing email before checking
+    the supplied token during password linking. The latest released CLI retains
+    this behavior. Do not bypass it by changing emails, disabling protections,
+    patching SDKs or substituting a password-reset operation.
+  - **Selected November 12, 2026:** keep linking gated and continue independently
+    ready migration tasks. No live Auth linking test is approved.
 
 - [ ] **M2-05 - Cover all canonical campaign and gameplay persistence paths.**
+  - **Status:** in progress; completing owner settings/source persistence and
+    the remaining canonical-path acceptance matrix.
   - **Depends:** `M1-07`, `M2-01`.
   - **Success:** scene, sheets, resources, turns, movement, doors, terrain, images,
     and settings use the cloud Adapter's revision/receipt contract. Preserve

@@ -921,3 +921,49 @@ generation checks when implemented. No production rollout, IAM change, real
 campaign cutover or new live cloud write was performed. The routine scene-save
 flashing/centered-notice work is still deferred to `UX-01`; its presentation
 component was not changed.
+
+## Provider-linking emulator blocker
+
+`M2-04` is blocked and deferred, not complete. The prototype two-step interface
+first proves the current credential, then consumes a five-minute, single-use
+in-memory proof to link another managed provider to the same Firebase UID.
+Eleven focused account tests pass for both directions, wrong credentials,
+unverified accounts, cancellation, exact expiry, account switching, conflicts
+and explicit reconciliation after a lost reply. The browser UI is not yet
+integrated or accepted.
+
+The first real Google-to-password Auth/campaign integration case fails with
+`auth/email-already-in-use`. A bounded direct public-SDK probe reproduced it
+without TavernTable account logic:
+
+- The current UID stayed unchanged through Google reauthentication.
+- Admin token verification and the email-owner lookup both resolved that same
+  UID, with only `google.com` linked.
+- The unmodified pinned SDK sends `accounts:signUp` with the current `idToken`
+  when adding password credentials.
+- The Auth emulator rejects any existing email as `EMAIL_EXISTS` before parsing
+  that token. This is visible in the installed Firebase CLI 15.11.0 and in the
+  [released 15.36.0 source](https://github.com/firebase/firebase-tools/blob/v15.36.0/src/emulator/auth/operations.ts).
+  Merely upgrading the CLI will not fix this case; no dependency pin changed.
+
+The related production-side regression is documented as fixed in
+[Firebase SDK issue #8057](https://github.com/firebase/firebase-js-sdk/issues/8057),
+but that is not proof that this application's current live configuration works.
+No live Auth canary is authorized by the earlier Storage/IAM approval.
+
+The real acceptance test is still failing and has not been counted as a passing
+gate. No email substitution, password-reset fallback, disabled enumeration
+protection, SDK/emulator patch or fabricated success response was added.
+Completing this slice needs a separately approved live Auth linking test with
+an owner-controlled Google test account, or a corrected official emulator.
+Alternatively, keep provider linking gated and continue independently ready
+canonical-persistence tasks. No production account, campaign or IAM changes
+have occurred.
+
+**Selected November 12, 2026:** the owner chose to defer live provider-linking
+testing and continue independent migration work. The prototype and its failing
+real-SDK test were non-destructively parked in the local Git stash
+`b31ff0e1067f98c8ab05de2323797ddc416ee6d4`, covering only the account module and
+its two related test files. The active tree retains the verified prior account
+behavior; no linking UI or unsupported fallback is enabled. The preserved
+acceptance failure remains a blocker, not a passing or skipped milestone test.
