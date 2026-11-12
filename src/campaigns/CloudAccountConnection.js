@@ -1,6 +1,11 @@
 import { validateApplicationRuntime } from './CloudRuntime.js';
 import { CloudAccountError } from './CloudAccount.js';
 import { sessionJSON } from './SessionConnection.js';
+import {
+  isCloudAccessScope,
+  CLOUD_ACCESS_SEAT_HEADER,
+  CLOUD_ACCESS_GENERATION_HEADER,
+} from './CloudProtocol.js';
 
 const REQUEST_TIMEOUT = 60000;
 const requestError = (status, code, message) => Object.assign(new Error(message), { status, code });
@@ -34,6 +39,15 @@ const denialCodes = new Set([
   'invitation-already-accepted',
   'seat-already-joined',
   'campaign-already-joined',
+  'invalid-access-scope',
+  'campaign-access-changed',
+  'invalid-member-request',
+  'invalid-assignment-request',
+  'unknown-assignment-character',
+  'seat-not-joined',
+  'access-generation-exhausted',
+  'revision-conflict',
+  'invalid-character-snapshot',
   'snapshot-integrity-failed',
   'snapshot-unavailable',
   'snapshot-storage-unavailable',
@@ -84,6 +98,27 @@ const denialMessages = new Map([
     'campaign-already-joined',
     'This account has already joined that campaign through another seat.',
   ],
+  ['invalid-access-scope', 'Choose the explicit current campaign access scope.'],
+  [
+    'campaign-access-changed',
+    'Campaign access changed. Refresh its authorized view before continuing.',
+  ],
+  ['invalid-member-request', 'Choose a joined player seat and refresh its current access.'],
+  [
+    'invalid-assignment-request',
+    'Choose a saved campaign character, player seat and current access.',
+  ],
+  ['unknown-assignment-character', 'Choose a saved character from this campaign.'],
+  ['seat-not-joined', 'This seat does not have a joined player to remove. Refresh player access.'],
+  [
+    'access-generation-exhausted',
+    'Campaign access cannot advance. No new access change was acknowledged.',
+  ],
+  ['revision-conflict', 'Campaign characters changed. Refresh before assigning them.'],
+  [
+    'invalid-character-snapshot',
+    'Saved character records could not be verified. No assignment was acknowledged.',
+  ],
 ]);
 
 function safeDenial(error) {
@@ -121,7 +156,7 @@ export default class CloudAccountConnection {
     this.fetch = (...args) => fetch(...args);
   }
 
-  async request(resource, { method = 'GET', body } = {}) {
+  async request(resource, { method = 'GET', body, accessScope = null } = {}) {
     if (
       typeof resource !== 'string' ||
       !/^(?:account|campaigns)(?:\/[A-Za-z0-9-]+)*$/.test(resource) ||
@@ -135,9 +170,29 @@ export default class CloudAccountConnection {
       );
     const url = new URL(`/api/cloud/${resource}`, this.apiOrigin).href;
     const encoded = body === undefined ? undefined : JSON.stringify(body);
+    if (
+      accessScope !== null &&
+      (!isCloudAccessScope(accessScope) ||
+        method !== 'GET' ||
+        resource !== `campaigns/${accessScope.campaignId}/participant-access`)
+    )
+      throw requestError(
+        400,
+        'invalid-access-scope',
+        'Choose the explicit current campaign access scope.'
+      );
+    const scopeUid = accessScope === null ? null : accessScope.uid;
+    const scopeHeaders =
+      accessScope === null
+        ? {}
+        : {
+            [CLOUD_ACCESS_SEAT_HEADER]: accessScope.seatId === null ? 'owner' : accessScope.seatId,
+            [CLOUD_ACCESS_GENERATION_HEADER]: String(accessScope.accessGeneration),
+          };
     let credential = await this.account.tokenContext();
     for (let attempt = 0; attempt < 2; attempt++) {
-      if (!credential.isCurrent()) throw changedAccount();
+      if (!credential.isCurrent() || (scopeUid !== null && credential.uid !== scopeUid))
+        throw changedAccount();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
       let data;
@@ -151,6 +206,7 @@ export default class CloudAccountConnection {
           headers: {
             Authorization: `Bearer ${credential.token}`,
             ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+            ...scopeHeaders,
           },
           ...(encoded === undefined ? {} : { body: encoded }),
         });

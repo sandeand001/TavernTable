@@ -141,6 +141,212 @@ test('the browser high-level cloud store uses UID-bound HTTP creation and consis
   }
 });
 
+test('participant access validates the UID, campaign and captured generation without accepting private owner data', async () => {
+  const setup = fixture();
+  const manifest = {
+    version: 1,
+    campaign: accessSummary('member').campaign,
+    access: {
+      version: 1,
+      uid: 'uid-a',
+      campaignId,
+      role: 'member',
+      seatId: accessSummary('member').seatId,
+      accessGeneration: 7,
+    },
+    characterIds: ['saved-character'],
+  };
+  let result = manifest;
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  await expect(setup.store.getParticipantAccess(campaignId)).resolves.toEqual(manifest);
+  expect(setup.fetch.mock.calls[0][1].headers['X-TavernTable-Seat']).toBeUndefined();
+  await expect(setup.store.getParticipantAccess(campaignId, manifest.access)).resolves.toEqual(
+    manifest
+  );
+  expect(setup.fetch.mock.calls[1][1].headers['X-TavernTable-Seat']).toBe(manifest.access.seatId);
+  expect(setup.fetch.mock.calls[1][1].headers['X-TavernTable-Access-Generation']).toBe('7');
+  for (const invalid of [
+    { ...manifest, scene: 'PRIVATE OWNER SCENE' },
+    { ...manifest, access: { ...manifest.access, uid: 'uid-b' } },
+    { ...manifest, access: { ...manifest.access, accessGeneration: 8 } },
+  ]) {
+    result = invalid;
+    await expect(
+      setup.store.getParticipantAccess(campaignId, manifest.access)
+    ).rejects.toMatchObject({ code: 'invalid-cloud-response' });
+  }
+  const previous = setup.fetch.mock.calls.length;
+  await expect(
+    setup.store.getParticipantAccess(campaignId, {
+      ...manifest.access,
+      uid: 'uid-b',
+    })
+  ).rejects.toMatchObject({ code: 'invalid-access-scope' });
+  expect(setup.fetch.mock.calls).toHaveLength(previous);
+});
+
+test('uncertain assignment retries retain the original command, character and captured access generation', async () => {
+  const setup = fixture();
+  const input = {
+    seatId: accessSummary('member').seatId,
+    characterId: 'saved-character',
+    assigned: true,
+    accessGeneration: 0,
+  };
+  const receipt = {
+    version: 1,
+    seatId: input.seatId,
+    characterIds: [input.characterId],
+    accessGeneration: 1,
+    changed: true,
+  };
+  setup.fetch.mockImplementation(async () => {
+    if (setup.fetch.mock.calls.length === 1) throw new TypeError('Synthetic lost assignment reply');
+    return { ok: true, status: 200, json: async () => ({ version: 1, result: receipt }) };
+  });
+  const pending = setup.store.assignCharacter(campaignId, input);
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(setup.store.saveState.phase).toBe('uncertain');
+  input.accessGeneration = 99;
+  input.characterId = 'different-character';
+  input.assigned = false;
+  await setup.store.retryPending();
+  await expect(pending).resolves.toEqual(receipt);
+  const calls = setup.fetch.mock.calls;
+  expect(calls[0][0]).toBe(
+    runtime.apiOrigin + '/api/cloud/campaigns/' + campaignId + '/assignments'
+  );
+  expect(calls[0][1].body).toBe(calls[1][1].body);
+  expect(JSON.parse(calls[1][1].body)).toEqual({
+    commandId,
+    seatId: receipt.seatId,
+    characterId: 'saved-character',
+    assigned: true,
+    accessGeneration: 0,
+  });
+  expect(setup.store.saveState.phase).toBe('saved');
+});
+
+test('member removal validates its intended seat and generation before acknowledging the retained command', async () => {
+  const setup = fixture();
+  const input = { seatId: accessSummary('member').seatId, accessGeneration: 3 };
+  const receipt = {
+    version: 1,
+    seatId: input.seatId,
+    accessGeneration: 4,
+    removedAt: '2026-11-11T00:00:00.000Z',
+  };
+  let correct = false;
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      version: 1,
+      result: correct ? receipt : { ...receipt, seatId: '66666666-6666-4666-8666-666666666666' },
+    }),
+  }));
+  const pending = setup.store.removeMember(campaignId, input);
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(setup.store.saveState.phase).toBe('uncertain');
+  expect(setup.store.saveState.error.code).toBe('invalid-cloud-response');
+  input.accessGeneration = 99;
+  correct = true;
+  await setup.store.retryPending();
+  await expect(pending).resolves.toEqual(receipt);
+  const calls = setup.fetch.mock.calls;
+  expect(calls[0][0]).toBe(
+    runtime.apiOrigin + '/api/cloud/campaigns/' + campaignId + '/members/remove'
+  );
+  expect(calls[0][1].body).toBe(calls[1][1].body);
+  expect(JSON.parse(calls[1][1].body)).toEqual({
+    commandId,
+    seatId: receipt.seatId,
+    accessGeneration: 3,
+  });
+});
+
+test('a definitive stale metadata scope releases its original caller without pretending the change was saved', async () => {
+  const setup = fixture();
+  setup.fetch.mockImplementation(async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({
+      version: 1,
+      code: 'campaign-access-changed',
+      error: 'PRIVATE POLICY DETAIL',
+    }),
+  }));
+  const outcome = setup.store
+    .assignCharacter(campaignId, {
+      seatId: accessSummary('member').seatId,
+      characterId: 'saved-character',
+      assigned: true,
+      accessGeneration: 0,
+    })
+    .then(
+      (value) => ({ value }),
+      (error) => ({ code: error.code })
+    );
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(setup.store.saveState.phase).toBe('failed');
+  await expect(outcome).resolves.toEqual({ code: 'campaign-access-changed' });
+  expect(setup.store.pending).toBeNull();
+  expect(setup.store.saveState.error.message).not.toContain('PRIVATE POLICY DETAIL');
+});
+
+test('a fresh owner access denial is definitive but cannot erase an earlier uncertain removal', async () => {
+  const denied = async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({
+      version: 1,
+      code: 'pilot-access-required',
+      error: 'PRIVATE POLICY DETAIL',
+    }),
+  });
+  const input = { seatId: accessSummary('member').seatId, accessGeneration: 0 };
+  const fresh = fixture();
+  fresh.fetch.mockImplementation(denied);
+  const freshOutcome = fresh.store.removeMember(campaignId, input).then(
+    (value) => ({ value }),
+    (error) => ({ code: error.code })
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(fresh.store.saveState.phase).toBe('failed');
+  await expect(freshOutcome).resolves.toEqual({ code: 'pilot-access-required' });
+  expect(fresh.store.pending).toBeNull();
+
+  const previous = fixture();
+  previous.fetch.mockImplementation(async () => {
+    throw new TypeError('Synthetic lost removal reply');
+  });
+  const pending = previous.store.removeMember(campaignId, input);
+  await new Promise((resolve) => setImmediate(resolve));
+  previous.fetch.mockImplementation(denied);
+  await expect(previous.store.retryPending()).rejects.toMatchObject({
+    code: 'pilot-access-required',
+  });
+  expect(previous.store.saveState.phase).toBe('uncertain');
+  expect(previous.store.saveState.commandId).toBe(commandId);
+  const receipt = {
+    version: 1,
+    seatId: input.seatId,
+    accessGeneration: 1,
+    removedAt: '2026-11-11T00:00:00.000Z',
+  };
+  previous.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result: receipt }),
+  }));
+  await previous.store.retryPending();
+  await expect(pending).resolves.toEqual(receipt);
+});
+
 test('Owned and Joined access accepts only explicit role projections without canonical records or duplicated authority', async () => {
   const setup = fixture();
   const owned = accessSummary('owner');

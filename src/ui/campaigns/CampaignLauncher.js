@@ -138,11 +138,13 @@ export default class CampaignLauncher {
         }).open();
       if (button.hasAttribute('data-view-campaign-access'))
         void this._perform(async () => {
-          const access = await this.workspace.store.getAccess(id);
-          if (access.role !== 'member')
+          await this._renderSaved();
+          const access = await this.workspace.store.getParticipantAccess(id);
+          if (access.access.role !== 'member')
             throw new Error('Campaign access changed. Refresh the campaign picker.');
           this.status.textContent =
             `Joined ${access.campaign.name} as a player. ` +
+            `${access.characterIds.length} assigned saved character${access.characterIds.length === 1 ? '' : 's'}. ` +
             'Cloud player gameplay is not enabled yet; no private owner data was opened.';
         }, 'Checking current player access...');
       if (button.hasAttribute('data-edit-campaign'))
@@ -232,7 +234,7 @@ export default class CampaignLauncher {
         this.root.querySelector('[data-campaign-import]').hidden =
           this.workspace.store.capabilities?.backups === false;
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation only. Player invitations are available; player gameplay, backups, source changes and live sessions remain gated.'
+          ? 'Private cloud preparation only. Player invitations, assignments and membership removal are available; player gameplay, backups, source changes and live sessions remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);

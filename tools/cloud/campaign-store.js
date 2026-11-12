@@ -1,5 +1,9 @@
 const { default: CampaignStore } = require('../../src/campaigns/CampaignStore.js');
-const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCharacters.js');
+const {
+  default: CampaignCharacters,
+  campaignCharacterRoster,
+  campaignRecordCharacterId,
+} = require('../../src/campaigns/CampaignCharacters.js');
 const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
@@ -11,6 +15,9 @@ const {
   isCloudInvitation,
   isCloudInvitationRevocation,
   isCloudInvitationAcceptance,
+  isCloudAccessGeneration,
+  isCloudMemberRemoval,
+  isCloudCharacterAssignment,
   CLOUD_INVITATION_TTL_MS,
 } = require('../../src/campaigns/CloudProtocol.js');
 
@@ -25,6 +32,21 @@ const accessSummary = (head, role, seatId = null) => ({
   },
   role,
   seatId,
+});
+// Only the validated version-1 seat format has the initial, unversioned generation.
+const seatAccessGeneration = (seat) => (seat.version === 1 ? 0 : seat.accessGeneration);
+const participantSummary = (uid, summary, seat = null) => ({
+  version: 1,
+  access: {
+    version: 1,
+    uid,
+    campaignId: summary.campaign.id,
+    role: summary.role,
+    seatId: summary.seatId,
+    accessGeneration: seat === null ? 0 : seatAccessGeneration(seat),
+  },
+  campaign: summary.campaign,
+  characterIds: seat === null ? [] : [...seat.characterIds],
 });
 const unavailableCampaign = () =>
   new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
@@ -57,6 +79,8 @@ function validCommandResult(previous) {
   if (kind === 'campaign.invite.revoke') return isCloudInvitationRevocation(result);
   if (kind === 'campaign.join')
     return isCloudInvitationAcceptance(result) && result.access.campaign.id === previous.campaignId;
+  if (kind === 'campaign.member.remove') return isCloudMemberRemoval(result);
+  if (kind === 'campaign.character.assign') return isCloudCharacterAssignment(result);
   if (kind === 'campaign.create')
     return (
       result?.id === previous.campaignId &&
@@ -168,6 +192,8 @@ class CloudCampaignStore {
         'campaign.invite',
         'campaign.invite.revoke',
         'campaign.join',
+        'campaign.member.remove',
+        'campaign.character.assign',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
@@ -476,8 +502,9 @@ class CloudCampaignStore {
             };
           }
           result.push({
-            version: 1,
+            version: 2,
             id: seat.id,
+            accessGeneration: seatAccessGeneration(seat),
             name: seat.name,
             characterIds: [...seat.characterIds],
             joined: seat.memberUid !== null,
@@ -602,11 +629,303 @@ class CloudCampaignStore {
     return value;
   }
 
+  async assignCharacter(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some(
+        (key) =>
+          !['commandId', 'seatId', 'characterId', 'assigned', 'accessGeneration'].includes(key)
+      ) ||
+      !isCloudUUID(command.commandId) ||
+      !isCloudUUID(command.seatId) ||
+      typeof command.characterId !== 'string' ||
+      !command.characterId ||
+      typeof command.assigned !== 'boolean' ||
+      !isCloudAccessGeneration(command.accessGeneration)
+    )
+      throw new CloudError(
+        400,
+        'invalid-assignment-request',
+        'Choose an explicit saved character, seat and current access generation'
+      );
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.character.assign',
+          campaignId: id,
+          seatId: command.seatId,
+          characterId: command.characterId,
+          assigned: command.assigned,
+          accessGeneration: command.accessGeneration,
+        })
+      )
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const replayResult = (result) => {
+      if (
+        result.seatId !== command.seatId ||
+        result.accessGeneration !== command.accessGeneration + Number(result.changed) ||
+        result.characterIds.includes(command.characterId) !== command.assigned
+      )
+        throw new CloudError(
+          503,
+          'invalid-command-receipt',
+          'The durable command receipt is invalid'
+        );
+      return result;
+    };
+    const headReference = this.firestore.collection('campaigns').doc(id);
+    const captured = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, {
+          uid,
+          reference,
+          fingerprint,
+          kind: 'campaign.character.assign',
+          campaignId: id,
+        });
+        return replay === null
+          ? { replay: null, head: await this._metadata(await transaction.get(headReference), uid) }
+          : { replay, head: null };
+      },
+      { readOnly: true }
+    );
+    if (captured.replay !== null) return replayResult(captured.replay);
+    if (command.assigned) {
+      const state = await this._loadSnapshot(captured.head);
+      if (typeof this.resources?.catalog !== 'function')
+        throw new CloudError(
+          503,
+          'resource-catalog-unavailable',
+          'The pinned campaign resource catalog is unavailable'
+        );
+      let catalog;
+      try {
+        catalog = await this.resources.catalog(state.campaign);
+      } catch (error) {
+        if (
+          error?.constructor === Error ||
+          error instanceof SyntaxError ||
+          ['ENOENT', 'EACCES', 'EPERM'].includes(error?.code)
+        )
+          throw new CloudError(
+            503,
+            'resource-catalog-unavailable',
+            'The pinned campaign resource catalog is unavailable'
+          );
+        throw error;
+      }
+      let roster;
+      try {
+        roster = campaignCharacterRoster(state.campaign, catalog, state.records);
+      } catch (error) {
+        if (error?.constructor === Error || error instanceof SyntaxError)
+          throw new CloudError(
+            503,
+            'invalid-character-snapshot',
+            'Campaign character records could not be verified'
+          );
+        throw error;
+      }
+      if (!roster.some((character) => character.id === command.characterId))
+        throw new CloudError(
+          400,
+          'unknown-assignment-character',
+          'Choose a saved character from this campaign'
+        );
+    }
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, {
+        uid,
+        reference,
+        fingerprint,
+        kind: 'campaign.character.assign',
+        campaignId: id,
+      });
+      if (replay !== null) return replayResult(replay);
+      const current = await this._metadata(await transaction.get(headReference), uid);
+      if (command.assigned && current.generation !== captured.head.generation)
+        throw new CloudError(
+          409,
+          'revision-conflict',
+          'Campaign characters changed. Refresh before assigning.'
+        );
+      const seatReference = headReference.collection('seats').doc(command.seatId);
+      const seat = this._seat(await transaction.get(seatReference), id);
+      const generation = seatAccessGeneration(seat);
+      if (generation !== command.accessGeneration)
+        throw new CloudError(
+          409,
+          'campaign-access-changed',
+          'Campaign access changed. Refresh before continuing.'
+        );
+      if (seat.memberUid !== null) {
+        const grant = await this._accessSummary(transaction, seat.memberUid, id);
+        if (grant.role !== 'member' || grant.seatId !== seat.id) throw invalidMembership();
+      }
+      const changed = seat.characterIds.includes(command.characterId) !== command.assigned;
+      const accessGeneration = generation + Number(changed);
+      if (!isCloudAccessGeneration(accessGeneration))
+        throw new CloudError(
+          409,
+          'access-generation-exhausted',
+          'Campaign access generation cannot advance'
+        );
+      const characterIds = command.assigned
+        ? changed
+          ? [...seat.characterIds, command.characterId]
+          : [...seat.characterIds]
+        : seat.characterIds.filter((characterId) => characterId !== command.characterId);
+      const result = { version: 1, seatId: seat.id, characterIds, accessGeneration, changed };
+      if (changed) {
+        transaction.set(seatReference, {
+          ...seat,
+          version: 2,
+          activeInvitationId: seat.activeInvitationId ?? null,
+          characterIds,
+          accessGeneration,
+        });
+        if (seat.memberUid !== null)
+          transaction.update(this._memberships(seat.memberUid).doc(id), {
+            version: 2,
+            accessGeneration,
+          });
+      }
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: 'campaign.character.assign',
+        fingerprint,
+        campaignId: id,
+        result,
+      });
+      return result;
+    });
+  }
+
+  async removeMember(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some(
+        (key) => !['commandId', 'seatId', 'accessGeneration'].includes(key)
+      ) ||
+      !isCloudUUID(command.commandId) ||
+      !isCloudUUID(command.seatId) ||
+      !isCloudAccessGeneration(command.accessGeneration)
+    )
+      throw new CloudError(
+        400,
+        'invalid-member-request',
+        'Choose an explicit joined seat and its current access generation'
+      );
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.member.remove',
+          campaignId: id,
+          seatId: command.seatId,
+          accessGeneration: command.accessGeneration,
+        })
+      )
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const removedAt = new Date(this.now()).toISOString();
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, {
+        uid,
+        reference,
+        fingerprint,
+        kind: 'campaign.member.remove',
+        campaignId: id,
+      });
+      if (replay !== null) {
+        if (
+          replay.seatId !== command.seatId ||
+          replay.accessGeneration !== command.accessGeneration + 1
+        )
+          throw new CloudError(
+            503,
+            'invalid-command-receipt',
+            'The durable command receipt is invalid'
+          );
+        return replay;
+      }
+      const headReference = this.firestore.collection('campaigns').doc(id);
+      await this._metadata(await transaction.get(headReference), uid);
+      const seatReference = headReference.collection('seats').doc(command.seatId);
+      const seat = this._seat(await transaction.get(seatReference), id);
+      const generation = seatAccessGeneration(seat);
+      if (generation !== command.accessGeneration)
+        throw new CloudError(
+          409,
+          'campaign-access-changed',
+          'Campaign access changed. Refresh before continuing.'
+        );
+      if (seat.memberUid === null)
+        throw new CloudError(
+          409,
+          'seat-not-joined',
+          'This seat does not have a joined player to remove'
+        );
+      if (generation >= Number.MAX_SAFE_INTEGER)
+        throw new CloudError(
+          409,
+          'access-generation-exhausted',
+          'Campaign access generation cannot advance'
+        );
+      const current = await this._accessSummary(transaction, seat.memberUid, id);
+      if (current.role !== 'member' || current.seatId !== seat.id) throw invalidMembership();
+      const accessGeneration = generation + 1;
+      const result = { version: 1, seatId: seat.id, accessGeneration, removedAt };
+      transaction.set(seatReference, {
+        ...seat,
+        version: 2,
+        memberUid: null,
+        activeInvitationId: null,
+        accessGeneration,
+      });
+      transaction.delete(this._memberships(seat.memberUid).doc(id));
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: 'campaign.member.remove',
+        fingerprint,
+        campaignId: id,
+        result,
+      });
+      return result;
+    });
+  }
+
   _seat(snapshot, campaignId) {
     if (!snapshot.exists) throw unavailableCampaign();
     const player = snapshot.data();
     if (
-      player?.version !== 1 ||
+      ![1, 2].includes(player?.version) ||
+      (player.version === 1
+        ? Object.hasOwn(player, 'accessGeneration')
+        : !isCloudAccessGeneration(player.accessGeneration) ||
+          player.accessGeneration === 0 ||
+          !Object.hasOwn(player, 'activeInvitationId')) ||
       player.id !== snapshot.id ||
       player.campaignId !== campaignId ||
       typeof player.name !== 'string' ||
@@ -620,6 +939,9 @@ class CloudCampaignStore {
       (Object.hasOwn(player, 'activeInvitationId') &&
         player.activeInvitationId !== null &&
         !isCloudUUID(player.activeInvitationId)) ||
+      (player.memberUid !== null &&
+        player.activeInvitationId !== undefined &&
+        player.activeInvitationId !== null) ||
       Object.keys(player).some(
         (key) =>
           ![
@@ -631,6 +953,7 @@ class CloudCampaignStore {
             'characterIds',
             'createdAt',
             'activeInvitationId',
+            'accessGeneration',
           ].includes(key)
       )
     )
@@ -710,6 +1033,13 @@ class CloudCampaignStore {
           'This account has already joined the campaign through another seat'
         );
       const joinedAt = new Date(now).toISOString();
+      const accessGeneration = seatAccessGeneration(seat) + 1;
+      if (!isCloudAccessGeneration(accessGeneration))
+        throw new CloudError(
+          409,
+          'access-generation-exhausted',
+          'Campaign access generation cannot advance'
+        );
       const result = {
         version: 1,
         invitationId: invitation.id,
@@ -721,14 +1051,20 @@ class CloudCampaignStore {
           uid,
           enabled: true,
         });
-      transaction.update(seatReference, { memberUid: uid, activeInvitationId: null });
+      transaction.update(seatReference, {
+        version: 2,
+        memberUid: uid,
+        activeInvitationId: null,
+        accessGeneration,
+      });
       transaction.update(invitationReference, { redeemedByUid: uid, redeemedAt: joinedAt });
       transaction.create(membershipReference, {
-        version: 1,
+        version: 2,
         uid,
         campaignId: invitation.campaignId,
         seatId: invitation.seatId,
         joinedAt,
+        accessGeneration,
       });
       transaction.create(reference, {
         version: 1,
@@ -749,23 +1085,28 @@ class CloudCampaignStore {
       .collection('campaigns');
   }
 
-  async _accessSummary(transaction, uid, id) {
+  async _accessGrant(transaction, uid, id) {
     if (!isCloudUUID(id)) throw unavailableCampaign();
     const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
     if (!snapshot.exists) throw unavailableCampaign();
     const ownerUid = snapshot.data()?.ownerUid;
-    if (ownerUid === uid) return accessSummary(await this._metadata(snapshot, uid), 'owner');
+    if (ownerUid === uid)
+      return participantSummary(uid, accessSummary(await this._metadata(snapshot, uid), 'owner'));
     const membership = await transaction.get(this._memberships(uid).doc(id));
     if (!membership.exists) throw unavailableCampaign();
     const record = membership.data();
     if (
-      record?.version !== 1 ||
+      ![1, 2].includes(record?.version) ||
+      (record.version === 1
+        ? Object.hasOwn(record, 'accessGeneration')
+        : !isCloudAccessGeneration(record.accessGeneration) || record.accessGeneration === 0) ||
       record.uid !== uid ||
       record.campaignId !== id ||
       !isCloudUUID(record.seatId) ||
       !validTime(record.joinedAt) ||
       Object.keys(record).some(
-        (key) => !['version', 'uid', 'campaignId', 'seatId', 'joinedAt'].includes(key)
+        (key) =>
+          !['version', 'uid', 'campaignId', 'seatId', 'joinedAt', 'accessGeneration'].includes(key)
       )
     )
       throw invalidMembership();
@@ -774,8 +1115,27 @@ class CloudCampaignStore {
       id
     );
     if (player.memberUid !== uid) throw unavailableCampaign();
+    if (
+      player.version !== record.version ||
+      (player.version === 2 && player.accessGeneration !== record.accessGeneration)
+    )
+      throw invalidMembership();
     if (!validUid(ownerUid)) throw invalidMembership();
-    return accessSummary(await this._metadata(snapshot, ownerUid), 'member', record.seatId);
+    return participantSummary(
+      uid,
+      accessSummary(await this._metadata(snapshot, ownerUid), 'member', record.seatId),
+      player
+    );
+  }
+
+  async _accessSummary(transaction, uid, id) {
+    const grant = await this._accessGrant(transaction, uid, id);
+    return {
+      version: 1,
+      campaign: grant.campaign,
+      role: grant.access.role,
+      seatId: grant.access.seatId,
+    };
   }
 
   async getAccess(principal, id) {
@@ -784,6 +1144,43 @@ class CloudCampaignStore {
       async (transaction) => {
         await this.access.assertEligibility(uid, transaction);
         return this._accessSummary(transaction, uid, id);
+      },
+      { readOnly: true }
+    );
+  }
+
+  async getParticipantAccess(principal, id, expected = null) {
+    const uid = principalUid(principal);
+    if (
+      expected !== null &&
+      (!expected ||
+        typeof expected !== 'object' ||
+        Array.isArray(expected) ||
+        Object.keys(expected).length !== 2 ||
+        Object.keys(expected).some((key) => !['seatId', 'accessGeneration'].includes(key)) ||
+        (expected.seatId !== null && !isCloudUUID(expected.seatId)) ||
+        !isCloudAccessGeneration(expected.accessGeneration))
+    )
+      throw new CloudError(
+        400,
+        'invalid-access-scope',
+        'Choose the explicit campaign access scope'
+      );
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const grant = await this._accessGrant(transaction, uid, id);
+        if (
+          expected !== null &&
+          (expected.seatId !== grant.access.seatId ||
+            expected.accessGeneration !== grant.access.accessGeneration)
+        )
+          throw new CloudError(
+            409,
+            'campaign-access-changed',
+            'Campaign access changed. Refresh before continuing.'
+          );
+        return grant;
       },
       { readOnly: true }
     );
@@ -1004,6 +1401,17 @@ class CloudCampaignStore {
       );
     const state = await this._loadSnapshot(captured.head);
     const { next, receipt } = await this._prepareChange(state, kind, change);
+    const removedCharacters = new Set();
+    if (kind === 'characters.commit') {
+      const currentIds = new Set(
+        next.records.map((record) => campaignRecordCharacterId(record.key))
+      );
+      for (const record of state.records) {
+        const characterId = campaignRecordCharacterId(record.key);
+        if (characterId !== null && !currentIds.has(characterId))
+          removedCharacters.add(characterId);
+      }
+    }
     const changesScene = kind === 'scene.commit' || change.scene !== undefined;
     const [sceneRef, charactersRef] = await Promise.all([
       changesScene ? this.objects.stage(id, 'scene', next.scene) : captured.head.sceneRef,
@@ -1035,6 +1443,48 @@ class CloudCampaignStore {
             },
           }
         );
+      const revokedAssignments = [];
+      if (removedCharacters.size) {
+        const seats = await transaction.get(headReference.collection('seats'));
+        for (const snapshot of seats.docs) {
+          const seat = this._seat(snapshot, id);
+          const characterIds = seat.characterIds.filter(
+            (characterId) => !removedCharacters.has(characterId)
+          );
+          if (characterIds.length === seat.characterIds.length) continue;
+          const accessGeneration = seatAccessGeneration(seat) + 1;
+          if (!isCloudAccessGeneration(accessGeneration))
+            throw new CloudError(
+              409,
+              'access-generation-exhausted',
+              'Campaign access generation cannot advance'
+            );
+          if (seat.memberUid !== null) {
+            const grant = await this._accessSummary(transaction, seat.memberUid, id);
+            if (grant.role !== 'member' || grant.seatId !== seat.id) throw invalidMembership();
+          }
+          revokedAssignments.push({
+            reference: snapshot.ref,
+            seat,
+            characterIds,
+            accessGeneration,
+          });
+        }
+      }
+      for (const revoked of revokedAssignments) {
+        transaction.set(revoked.reference, {
+          ...revoked.seat,
+          version: 2,
+          activeInvitationId: revoked.seat.activeInvitationId ?? null,
+          characterIds: revoked.characterIds,
+          accessGeneration: revoked.accessGeneration,
+        });
+        if (revoked.seat.memberUid !== null)
+          transaction.update(this._memberships(revoked.seat.memberUid).doc(id), {
+            version: 2,
+            accessGeneration: revoked.accessGeneration,
+          });
+      }
       const generation = current.generation + 1;
       transaction.set(headReference, {
         ...current,

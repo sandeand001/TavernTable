@@ -4,6 +4,9 @@ export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
 export const CLOUD_INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const isCloudDigest = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+export const isCloudAccessGeneration = (value) => Number.isSafeInteger(value) && value >= 0;
+export const CLOUD_ACCESS_SEAT_HEADER = 'X-TavernTable-Seat';
+export const CLOUD_ACCESS_GENERATION_HEADER = 'X-TavernTable-Access-Generation';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, names) =>
@@ -44,6 +47,44 @@ export function isCloudCampaignAccess(value) {
   );
 }
 
+export function isCloudAccessScope(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'uid', 'campaignId', 'role', 'seatId', 'accessGeneration']) &&
+    value.version === 1 &&
+    typeof value.uid === 'string' &&
+    value.uid.length > 0 &&
+    value.uid.length <= 128 &&
+    isCloudUUID(value.campaignId) &&
+    isCloudAccessGeneration(value.accessGeneration) &&
+    (value.role === 'owner'
+      ? value.seatId === null && value.accessGeneration === 0
+      : value.role === 'member' && isCloudUUID(value.seatId))
+  );
+}
+
+export function isCloudParticipantAccess(value) {
+  if (
+    !record(value) ||
+    !keys(value, ['version', 'access', 'campaign', 'characterIds']) ||
+    value.version !== 1 ||
+    !isCloudAccessScope(value.access) ||
+    !Array.isArray(value.characterIds) ||
+    value.characterIds.some((id) => typeof id !== 'string' || !id) ||
+    new Set(value.characterIds).size !== value.characterIds.length ||
+    (value.access.role === 'owner' && value.characterIds.length !== 0)
+  )
+    return false;
+  return (
+    isCloudCampaignAccess({
+      version: 1,
+      campaign: value.campaign,
+      role: value.access.role,
+      seatId: value.access.seatId,
+    }) && value.campaign.id === value.access.campaignId
+  );
+}
+
 export function isCloudInvitation(value) {
   return (
     record(value) &&
@@ -81,11 +122,48 @@ export function isCloudInvitationAcceptance(value) {
   );
 }
 
+export function isCloudMemberRemoval(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'seatId', 'accessGeneration', 'removedAt']) &&
+    value.version === 1 &&
+    isCloudUUID(value.seatId) &&
+    isCloudAccessGeneration(value.accessGeneration) &&
+    value.accessGeneration > 0 &&
+    typeof value.removedAt === 'string' &&
+    Number.isFinite(Date.parse(value.removedAt))
+  );
+}
+
+export function isCloudCharacterAssignment(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'seatId', 'characterIds', 'accessGeneration', 'changed']) &&
+    value.version === 1 &&
+    isCloudUUID(value.seatId) &&
+    isCloudAccessGeneration(value.accessGeneration) &&
+    typeof value.changed === 'boolean' &&
+    (!value.changed || value.accessGeneration > 0) &&
+    Array.isArray(value.characterIds) &&
+    value.characterIds.every((id) => typeof id === 'string' && id.length > 0) &&
+    new Set(value.characterIds).size === value.characterIds.length
+  );
+}
+
 export function isCloudPlayerSeat(value, campaignId) {
   if (
     !record(value) ||
-    !keys(value, ['version', 'id', 'name', 'characterIds', 'joined', 'invitation']) ||
-    value.version !== 1 ||
+    !keys(value, [
+      'version',
+      'id',
+      'name',
+      'characterIds',
+      'joined',
+      'invitation',
+      ...(value.version === 2 ? ['accessGeneration'] : []),
+    ]) ||
+    ![1, 2].includes(value.version) ||
+    (value.version === 2 && !isCloudAccessGeneration(value.accessGeneration)) ||
     !isCloudUUID(value.id) ||
     typeof value.name !== 'string' ||
     !value.name.trim() ||

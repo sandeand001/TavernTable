@@ -83,6 +83,44 @@ test('one identity renewal retries the exact same command with bearer-only heade
   }
 });
 
+test('participant scope headers remain bound to the original generation across managed identity renewal', async () => {
+  const fixture = accountFixture();
+  const calls = [];
+  const scope = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId: '00000000-0000-4000-8000-000000000002',
+    role: 'member',
+    seatId: '00000000-0000-4000-8000-000000000003',
+    accessGeneration: 4,
+  };
+  const fetch = async (url, options) => {
+    calls.push({ url, options });
+    if (calls.length === 1) {
+      scope.accessGeneration = 99;
+      return response({ version: 1, code: 'invalid-identity', error: 'Renew identity' }, 401);
+    }
+    return response({ version: 1, result: { checked: true } });
+  };
+  const connection = new CloudAccountConnection({
+    account: fixture.account,
+    runtime,
+    fetch,
+    baseURL: 'http://127.0.0.1:19410/',
+  });
+  await expect(
+    connection.request('campaigns/' + scope.campaignId + '/participant-access', {
+      accessScope: scope,
+    })
+  ).resolves.toEqual({ checked: true });
+  expect(calls).toHaveLength(2);
+  for (const { options } of calls) {
+    expect(options.headers['X-TavernTable-Seat']).toBe(scope.seatId);
+    expect(options.headers['X-TavernTable-Access-Generation']).toBe('4');
+    expect(options.credentials).toBe('omit');
+  }
+});
+
 test('a late profile for another account is discarded when the managed identity changes during HTTP', async () => {
   const fixture = accountFixture();
   let release;

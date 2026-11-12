@@ -82,7 +82,40 @@ async function fixture(t, { now } = {}) {
     await batch.commit();
     return id;
   };
-  return { runtime, access, store, createStore, resources, manifest, account, create, join };
+  const client = (identity, api, fetch = globalThis.fetch) => {
+    const environment = readEmulatorEnvironment();
+    const connection = new CloudAccountConnection({
+      account: new CloudAccount({ auth: identity.auth, sdk }),
+      fetch,
+      baseURL: api.origin + '/',
+      runtime: {
+        version: 1,
+        mode: 'cloud',
+        environment: 'emulator',
+        apiOrigin: api.url,
+        authEmulatorOrigin: `http://${environment.authHost}`,
+        firebase: {
+          apiKey: 'demo-api-key',
+          projectId: environment.projectId,
+          authDomain: `${environment.projectId}.firebaseapp.com`,
+          appId: 'demo-member-access-client',
+        },
+      },
+    });
+    return new CloudCampaignClientStore({ connection, uid: identity.uid, packs: manifest.packs });
+  };
+  return {
+    runtime,
+    access,
+    store,
+    createStore,
+    resources,
+    manifest,
+    account,
+    create,
+    join,
+    client,
+  };
 }
 
 const summary = (campaign, role, seatId = null) => ({
@@ -111,6 +144,829 @@ function invitation(name = 'Invited player', seatId = null) {
     },
   };
 }
+
+test(
+  'removing a member revokes its account access while preserving the original seat and canonical campaign',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Member removal fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const before = (await head.get()).data();
+    assert.equal((await f.store.getAccess(member.principal, campaign.id)).seatId, seatId);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const response = await fetch(
+      api.url + '/api/cloud/campaigns/' + campaign.id + '/members/remove',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + owner.token,
+          Origin: api.origin,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ commandId: randomUUID(), seatId, accessGeneration: 0 }),
+      }
+    );
+    assert.equal(response.status, 200);
+    const { result } = await response.json();
+    assert.deepEqual(Object.keys(result).sort(), [
+      'accessGeneration',
+      'removedAt',
+      'seatId',
+      'version',
+    ]);
+    assert.equal(result.version, 1);
+    assert.equal(result.seatId, seatId);
+    assert.equal(result.accessGeneration, 1);
+    assert.ok(Number.isFinite(Date.parse(result.removedAt)));
+    await assert.rejects(f.store.getAccess(member.principal, campaign.id), {
+      code: 'campaign-not-found',
+    });
+    assert.deepEqual(await f.store.listAccess(member.principal), { owned: [], joined: [] });
+    const seats = await f.store.listSeats(owner.principal, campaign.id);
+    assert.equal(seats.length, 1);
+    assert.equal(seats[0].id, seatId);
+    assert.equal(seats[0].joined, false);
+    assert.deepEqual((await head.get()).data(), before);
+  }
+);
+
+test(
+  'a removed and reinvited UID cannot reuse its earlier participant-access scope',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Scoped rejoin fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const read = (accessGeneration = null) =>
+      fetch(api.url + '/api/cloud/campaigns/' + campaign.id + '/participant-access', {
+        headers: {
+          Authorization: 'Bearer ' + member.token,
+          Origin: api.origin,
+          ...(accessGeneration === null
+            ? {}
+            : {
+                'X-TavernTable-Seat': seatId,
+                'X-TavernTable-Access-Generation': String(accessGeneration),
+              }),
+        },
+      });
+    const initial = await read();
+    assert.equal(initial.status, 200);
+    const before = (await initial.json()).result;
+    assert.deepEqual(Object.keys(before).sort(), ['access', 'campaign', 'characterIds', 'version']);
+    assert.deepEqual(before.access, {
+      version: 1,
+      uid: member.uid,
+      campaignId: campaign.id,
+      role: 'member',
+      seatId,
+      accessGeneration: 0,
+    });
+    assert.deepEqual(before.characterIds, []);
+    await f.store.removeMember(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      seatId,
+      accessGeneration: 0,
+    });
+    assert.equal((await read(0)).status, 404);
+    const replacement = invitation('Returning member', seatId);
+    const issued = await f.store.createInvitation(
+      owner.principal,
+      campaign.id,
+      replacement.command
+    );
+    await f.store.redeemInvitation(member.principal, {
+      commandId: randomUUID(),
+      invitationId: issued.id,
+      secret: replacement.secret,
+    });
+    const stale = await read(0);
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).code, 'campaign-access-changed');
+    const current = await read();
+    assert.equal(current.status, 200);
+    const after = (await current.json()).result;
+    assert.equal(after.access.uid, member.uid);
+    assert.equal(after.access.seatId, seatId);
+    assert.equal(after.access.accessGeneration, 2);
+    assert.equal((await read(2)).status, 200);
+    assert.deepEqual(
+      await f.store.getAccess(member.principal, campaign.id),
+      summary(campaign, 'member', seatId)
+    );
+  }
+);
+
+test(
+  'assigning an actual saved character advances only the member access scope, not canonical campaign data',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Character assignment fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      store: ownerClient,
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+    });
+    const characterId = await library.create('Persisted assignment scout');
+    const before = await ownerClient.readCharacters(campaign.id);
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const headBefore = (await head.get()).data();
+    const response = await fetch(api.url + '/api/cloud/campaigns/' + campaign.id + '/assignments', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + owner.token,
+        Origin: api.origin,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        commandId: randomUUID(),
+        seatId,
+        characterId,
+        assigned: true,
+        accessGeneration: 0,
+      }),
+    });
+    assert.equal(response.status, 200);
+    const { result } = await response.json();
+    assert.deepEqual(result, {
+      version: 1,
+      seatId,
+      characterIds: [characterId],
+      accessGeneration: 1,
+      changed: true,
+    });
+    const manifest = await fetch(
+      api.url + '/api/cloud/campaigns/' + campaign.id + '/participant-access',
+      {
+        headers: { Authorization: 'Bearer ' + member.token, Origin: api.origin },
+      }
+    );
+    assert.equal(manifest.status, 200);
+    const current = (await manifest.json()).result;
+    assert.deepEqual(current.characterIds, [characterId]);
+    assert.equal(current.access.accessGeneration, 1);
+    assert.deepEqual(await ownerClient.readCharacters(campaign.id), before);
+    assert.deepEqual((await head.get()).data(), headBefore);
+  }
+);
+
+test(
+  'removing one explicitly shared player grant preserves its assignments, the saved character and the other player access',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const first = await f.account();
+    const second = await f.account();
+    const campaign = await f.create(owner.principal, 'Shared character removal fixture');
+    const firstSeat = await f.join(campaign.id, first.uid);
+    const secondSeat = await f.join(campaign.id, second.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      store: ownerClient,
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+    });
+    const characterId = await library.create('Deliberately shared scout');
+    const before = await ownerClient.readCharacters(campaign.id);
+    for (const seatId of [firstSeat, secondSeat])
+      await f.store.assignCharacter(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        seatId,
+        characterId,
+        assigned: true,
+        accessGeneration: 0,
+      });
+    assert.deepEqual(
+      (await f.store.getParticipantAccess(first.principal, campaign.id)).characterIds,
+      [characterId]
+    );
+    assert.deepEqual(
+      (await f.store.getParticipantAccess(second.principal, campaign.id)).characterIds,
+      [characterId]
+    );
+    await f.store.removeMember(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      seatId: firstSeat,
+      accessGeneration: 1,
+    });
+    await assert.rejects(
+      f.store.getParticipantAccess(first.principal, campaign.id, {
+        seatId: firstSeat,
+        accessGeneration: 1,
+      }),
+      { code: 'campaign-not-found' }
+    );
+    const unaffected = await f.store.getParticipantAccess(second.principal, campaign.id, {
+      seatId: secondSeat,
+      accessGeneration: 1,
+    });
+    assert.deepEqual(unaffected.characterIds, [characterId]);
+    const retained = (await f.store.listSeats(owner.principal, campaign.id)).find(
+      (seat) => seat.id === firstSeat
+    );
+    assert.equal(retained.joined, false);
+    assert.deepEqual(retained.characterIds, [characterId]);
+    assert.deepEqual(await ownerClient.readCharacters(campaign.id), before);
+  }
+);
+
+test(
+  'deleting a saved character invalidates its old access scope while preserving remaining assignments and records',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Deleted character access fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      store: ownerClient,
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+    });
+    const removedId = await library.create('Character to delete');
+    const remainingId = await library.create('Character to retain');
+    for (const [generation, characterId] of [removedId, remainingId].entries())
+      await f.store.assignCharacter(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        seatId,
+        characterId,
+        assigned: true,
+        accessGeneration: generation,
+      });
+    const before = await ownerClient.readCharacters(campaign.id);
+    const original = await f.store.getParticipantAccess(member.principal, campaign.id);
+    assert.equal(original.access.accessGeneration, 2);
+    await library.delete(removedId);
+    await assert.rejects(
+      f.store.getParticipantAccess(member.principal, campaign.id, {
+        seatId,
+        accessGeneration: original.access.accessGeneration,
+      }),
+      { code: 'campaign-access-changed' }
+    );
+    const current = await f.store.getParticipantAccess(member.principal, campaign.id);
+    assert.equal(current.access.accessGeneration, 3);
+    assert.deepEqual(current.characterIds, [remainingId]);
+    const after = await ownerClient.readCharacters(campaign.id);
+    assert.deepEqual(
+      after.records.filter((record) => record.key.endsWith('.' + remainingId)),
+      before.records.filter((record) => record.key.endsWith('.' + remainingId))
+    );
+    assert.equal(
+      after.records.some((record) => record.key.endsWith('.' + removedId)),
+      false
+    );
+  }
+);
+
+test(
+  'a failed canonical deletion rolls back access revocation and retries the same command exactly once',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Atomic deletion revocation fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      store: ownerClient,
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+    });
+    const characterId = await library.create('Atomic deletion scout');
+    await f.store.assignCharacter(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      seatId,
+      characterId,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const before = (await head.get()).data();
+    const beforeRecords = await ownerClient.readCharacters(campaign.id);
+    const marker = head.collection('changes').doc(String(before.generation + 1));
+    await marker.create({ fixturePublicationConflict: true });
+    let stop = () => {};
+    const uncertain = new Promise((resolve) => {
+      stop = ownerClient.subscribeSave((state) => {
+        if (state.phase === 'uncertain') resolve(state);
+      });
+    });
+    const pending = library.delete(characterId);
+    try {
+      const state = await uncertain;
+      const originalCommandId = state.commandId;
+      assert.deepEqual((await head.get()).data(), before);
+      assert.deepEqual(await ownerClient.readCharacters(campaign.id), beforeRecords);
+      const retained = await f.store.getParticipantAccess(member.principal, campaign.id, {
+        seatId,
+        accessGeneration: 1,
+      });
+      assert.deepEqual(retained.characterIds, [characterId]);
+      await marker.delete();
+      assert.equal(ownerClient.saveState.commandId, originalCommandId);
+      await ownerClient.retryPending();
+      await pending;
+      assert.equal((await head.get()).data().generation, before.generation + 1);
+      await assert.rejects(
+        f.store.getParticipantAccess(member.principal, campaign.id, {
+          seatId,
+          accessGeneration: 1,
+        }),
+        { code: 'campaign-access-changed' }
+      );
+      const current = await f.store.getParticipantAccess(member.principal, campaign.id);
+      assert.equal(current.access.accessGeneration, 2);
+      assert.deepEqual(current.characterIds, []);
+    } finally {
+      stop();
+      await marker.delete();
+    }
+  }
+);
+
+test(
+  'owner seat projections expose the current access generation without member identifiers or canonical data',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Seat generation projection fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const initial = await f.store.listSeats(owner.principal, campaign.id);
+    assert.equal(initial[0].version, 2);
+    assert.equal(initial[0].accessGeneration, 0);
+    assert.deepEqual(Object.keys(initial[0]).sort(), [
+      'accessGeneration',
+      'characterIds',
+      'id',
+      'invitation',
+      'joined',
+      'name',
+      'version',
+    ]);
+    assert.equal(JSON.stringify(initial).includes(member.uid), false);
+    await f.store.removeMember(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      seatId,
+      accessGeneration: 0,
+    });
+    const removed = await f.store.listSeats(owner.principal, campaign.id);
+    assert.equal(removed[0].accessGeneration, 1);
+    assert.equal(removed[0].joined, false);
+    await assert.rejects(f.store.listSeats(member.principal, campaign.id), {
+      code: 'campaign-not-found',
+    });
+  }
+);
+
+test(
+  'member administration and scoped manifests fail closed for other UIDs, forged roles and malformed headers',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const unrelated = await f.account();
+    const unapproved = await f.account({ eligible: false });
+    const campaign = await f.create(owner.principal, 'Scoped access denial fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const request = (identity, suffix, { method = 'GET', body, headers = {} } = {}) =>
+      fetch(api.url + '/api/cloud/campaigns/' + campaign.id + suffix, {
+        method,
+        headers: {
+          Origin: api.origin,
+          Authorization: 'Bearer ' + identity.token,
+          ...headers,
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    for (const identity of [member, unrelated]) {
+      assert.equal(
+        (
+          await request(identity, '/members/remove', {
+            method: 'POST',
+            body: { commandId: randomUUID(), seatId, accessGeneration: 0 },
+          })
+        ).status,
+        404
+      );
+      assert.equal(
+        (
+          await request(identity, '/assignments', {
+            method: 'POST',
+            body: {
+              commandId: randomUUID(),
+              seatId,
+              accessGeneration: 0,
+              characterId: 'unavailable-character',
+              assigned: true,
+            },
+          })
+        ).status,
+        404
+      );
+    }
+    assert.equal((await request(unrelated, '/participant-access')).status, 404);
+    assert.equal((await request(unapproved, '/participant-access')).status, 403);
+    const valid = await request(member, '/participant-access');
+    assert.equal(valid.status, 200);
+    const manifest = (await valid.json()).result;
+    assert.equal(manifest.access.uid, member.uid);
+    assert.equal(JSON.stringify(manifest).includes(owner.uid), false);
+    for (const headers of [
+      { 'X-TavernTable-Seat': 'owner', 'X-TavernTable-Access-Generation': '0' },
+      { 'X-TavernTable-Seat': randomUUID(), 'X-TavernTable-Access-Generation': '0' },
+      { 'X-TavernTable-Seat': seatId, 'X-TavernTable-Access-Generation': '1' },
+    ]) {
+      const response = await request(member, '/participant-access', { headers });
+      assert.equal(response.status, 409);
+      assert.equal((await response.json()).code, 'campaign-access-changed');
+    }
+    for (const generation of ['', '-1', '01', '1.5', '1e3', '9007199254740992']) {
+      assert.equal(
+        (
+          await request(member, '/participant-access', {
+            headers: {
+              'X-TavernTable-Seat': seatId,
+              'X-TavernTable-Access-Generation': generation,
+            },
+          })
+        ).status,
+        400
+      );
+    }
+    assert.equal(
+      (await request(member, '/participant-access', { headers: { 'X-TavernTable-Seat': seatId } }))
+        .status,
+      400
+    );
+    assert.equal(
+      (
+        await request(owner, '/characters', {
+          headers: {
+            'X-TavernTable-Seat': 'owner',
+            'X-TavernTable-Access-Generation': '0',
+          },
+        })
+      ).status,
+      400
+    );
+    const preflight = await request(member, '/participant-access', { method: 'OPTIONS' });
+    assert.equal(preflight.status, 204);
+    assert.ok(preflight.headers.get('access-control-allow-headers').includes('X-TavernTable-Seat'));
+    assert.ok(
+      preflight.headers
+        .get('access-control-allow-headers')
+        .includes('X-TavernTable-Access-Generation')
+    );
+  }
+);
+
+test(
+  'assignment contention has one winner, identical commands replay once, and later reassignment cannot revive an old scope',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Assignment contention fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      store: ownerClient,
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+    });
+    const ids = [await library.create('First contender'), await library.create('Second contender')];
+    const before = await ownerClient.readCharacters(campaign.id);
+    const competing = await Promise.allSettled(
+      ids.map((characterId) =>
+        f.createStore().assignCharacter(owner.principal, campaign.id, {
+          commandId: randomUUID(),
+          seatId,
+          characterId,
+          assigned: true,
+          accessGeneration: 0,
+        })
+      )
+    );
+    const winners = competing.filter((result) => result.status === 'fulfilled');
+    const losers = competing.filter((result) => result.status === 'rejected');
+    assert.equal(winners.length, 1);
+    assert.equal(losers.length, 1);
+    assert.equal(losers[0].reason.code, 'campaign-access-changed');
+    const characterId = winners[0].value.characterIds[0];
+    const sameState = await f.store.assignCharacter(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      seatId,
+      characterId,
+      assigned: true,
+      accessGeneration: 1,
+    });
+    assert.equal(sameState.changed, false);
+    assert.equal(sameState.accessGeneration, 1);
+    const command = {
+      commandId: randomUUID(),
+      seatId,
+      characterId,
+      assigned: false,
+      accessGeneration: 1,
+    };
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        f.createStore().assignCharacter(owner.principal, campaign.id, command)
+      )
+    );
+    for (const result of results) assert.deepEqual(result, results[0]);
+    assert.equal(results[0].accessGeneration, 2);
+    assert.deepEqual(results[0].characterIds, []);
+    await f.store.assignCharacter(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      seatId,
+      characterId,
+      assigned: true,
+      accessGeneration: 2,
+    });
+    await assert.rejects(
+      f.store.getParticipantAccess(member.principal, campaign.id, {
+        seatId,
+        accessGeneration: 1,
+      }),
+      { code: 'campaign-access-changed' }
+    );
+    const current = await f.store.getParticipantAccess(member.principal, campaign.id);
+    assert.equal(current.access.accessGeneration, 3);
+    assert.deepEqual(current.characterIds, [characterId]);
+    assert.deepEqual(await ownerClient.readCharacters(campaign.id), before);
+  }
+);
+
+for (const scenario of ['canonical snapshot', 'membership'])
+  test(
+    `an in-flight assignment rechecks the ${scenario} before publication`,
+    { timeout: 30000 },
+    async (t) => {
+      const f = await fixture(t);
+      const owner = await f.account();
+      const member = await f.account();
+      const campaign = await f.create(owner.principal, 'In-flight assignment fixture');
+      const seatId = await f.join(campaign.id, member.uid);
+      const api = await cloudApi({ access: f.access, store: f.store });
+      t.after(() => api.close());
+      const ownerClient = f.client(owner, api);
+      const library = await CampaignCharacters.open({
+        store: ownerClient,
+        campaignId: campaign.id,
+        catalog: await f.resources.catalog(campaign),
+      });
+      const characterId = await library.create('Prepared assignment scout');
+      const head = await f.runtime.firestore.collection('campaigns').doc(campaign.id).get();
+      const sourcePath = head.data().charactersRef.path;
+      const originalFile = f.runtime.bucket.file;
+      let release;
+      let entered;
+      let hold = true;
+      const gate = new Promise((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise((resolve) => {
+        entered = resolve;
+      });
+      f.runtime.bucket.file = function (...args) {
+        const file = originalFile.apply(this, args);
+        if (args[0] === sourcePath) {
+          const download = file.download.bind(file);
+          file.download = async (...values) => {
+            if (hold) {
+              hold = false;
+              entered();
+              await gate;
+            }
+            return download(...values);
+          };
+        }
+        return file;
+      };
+      const outcome = f.store
+        .assignCharacter(owner.principal, campaign.id, {
+          commandId: randomUUID(),
+          seatId,
+          characterId,
+          assigned: true,
+          accessGeneration: 0,
+        })
+        .then(
+          (value) => ({ value }),
+          (error) => ({ error })
+        );
+      try {
+        await started;
+        if (scenario === 'canonical snapshot') await library.create('Newer canonical character');
+        else
+          await f.store.removeMember(owner.principal, campaign.id, {
+            commandId: randomUUID(),
+            seatId,
+            accessGeneration: 0,
+          });
+        release();
+        const result = await outcome;
+        assert.equal(
+          result.error?.code,
+          scenario === 'canonical snapshot' ? 'revision-conflict' : 'campaign-access-changed'
+        );
+        if (scenario === 'canonical snapshot') {
+          const current = await f.store.getParticipantAccess(member.principal, campaign.id);
+          assert.equal(current.access.accessGeneration, 0);
+          assert.deepEqual(current.characterIds, []);
+        } else {
+          await assert.rejects(f.store.getParticipantAccess(member.principal, campaign.id), {
+            code: 'campaign-not-found',
+          });
+          const seat = (await f.store.listSeats(owner.principal, campaign.id)).find(
+            (entry) => entry.id === seatId
+          );
+          assert.deepEqual(seat.characterIds, []);
+        }
+      } finally {
+        release();
+        f.runtime.bucket.file = originalFile;
+        await outcome;
+      }
+    }
+  );
+
+test(
+  'malformed versioned seat and membership records cannot fall back to legacy generation zero',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Invalid access generation fixture');
+    const prepared = invitation('Versioned member');
+    const issued = await f.store.createInvitation(owner.principal, campaign.id, prepared.command);
+    await f.store.redeemInvitation(member.principal, {
+      commandId: randomUUID(),
+      invitationId: issued.id,
+      secret: prepared.secret,
+    });
+    const seatReference = f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('seats')
+      .doc(issued.seatId);
+    const membershipReference = f.runtime.firestore
+      .collection('campaignMemberships')
+      .doc(pilotAccountKey(member.uid))
+      .collection('campaigns')
+      .doc(campaign.id);
+    const seat = (await seatReference.get()).data();
+    const membership = (await membershipReference.get()).data();
+    const seatWithoutGeneration = { ...seat };
+    delete seatWithoutGeneration.accessGeneration;
+    const membershipWithoutGeneration = { ...membership };
+    delete membershipWithoutGeneration.accessGeneration;
+    try {
+      for (const [reference, malformed] of [
+        [seatReference, seatWithoutGeneration],
+        [membershipReference, membershipWithoutGeneration],
+        [seatReference, { ...seat, accessGeneration: 0 }],
+        [membershipReference, { ...membership, accessGeneration: 2 }],
+        [seatReference, { ...seatWithoutGeneration, version: 1 }],
+      ]) {
+        await reference.set(malformed);
+        await assert.rejects(f.store.getParticipantAccess(member.principal, campaign.id), {
+          code: 'invalid-campaign-membership',
+        });
+        await seatReference.set(seat);
+        await membershipReference.set(membership);
+      }
+      const restored = await f.store.getParticipantAccess(member.principal, campaign.id);
+      assert.equal(restored.access.accessGeneration, 1);
+    } finally {
+      await seatReference.set(seat);
+      await membershipReference.set(membership);
+    }
+  }
+);
+
+test(
+  'real owner clients recover lost assignment and removal replies from durable receipts without applying them twice',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Owner access receipt recovery fixture');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const normal = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      store: normal,
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+    });
+    const characterId = await library.create('Recovered assignment scout');
+    const before = await normal.readCharacters(campaign.id);
+    const losses = new Set(['/assignments', '/members/remove']);
+    const requests = [];
+    const client = f.client(owner, api, async (url, options) => {
+      const suffix = [...losses].find((value) => url.endsWith(value));
+      if (options.method === 'POST') requests.push({ url, body: options.body });
+      const response = await fetch(url, options);
+      if (suffix && response.status === 200) {
+        losses.delete(suffix);
+        await response.clone().json();
+        throw new TypeError('Synthetic lost committed owner access reply');
+      }
+      return response;
+    });
+    for (const operation of ['assign', 'remove']) {
+      let stop = () => {};
+      const uncertain = new Promise((resolve) => {
+        stop = client.subscribeSave((state) => {
+          if (state.phase === 'uncertain') resolve(state);
+        });
+      });
+      const pending =
+        operation === 'assign'
+          ? client.assignCharacter(campaign.id, {
+              seatId,
+              characterId,
+              assigned: true,
+              accessGeneration: 0,
+            })
+          : client.removeMember(campaign.id, { seatId, accessGeneration: 1 });
+      try {
+        const state = await uncertain;
+        const firstRequest = requests.at(-1);
+        const command = JSON.parse(firstRequest.body);
+        assert.equal(command.commandId, state.commandId);
+        if (operation === 'assign') {
+          const current = await f.store.getParticipantAccess(member.principal, campaign.id);
+          assert.deepEqual(current.characterIds, [characterId]);
+          assert.equal(current.access.accessGeneration, 1);
+        } else {
+          await assert.rejects(f.store.getParticipantAccess(member.principal, campaign.id), {
+            code: 'campaign-not-found',
+          });
+        }
+        const replay =
+          operation === 'assign'
+            ? await f.createStore().assignCharacter(owner.principal, campaign.id, command)
+            : await f.createStore().removeMember(owner.principal, campaign.id, command);
+        await client.retryPending();
+        assert.deepEqual(await pending, replay);
+        const attempts = requests.filter((request) => request.url === firstRequest.url);
+        assert.equal(attempts.length, 2);
+        assert.ok(attempts.every((request) => request.body === firstRequest.body));
+      } finally {
+        stop();
+      }
+    }
+    const seat = (await f.store.listSeats(owner.principal, campaign.id)).find(
+      (value) => value.id === seatId
+    );
+    assert.equal(seat.accessGeneration, 2);
+    assert.equal(seat.joined, false);
+    assert.deepEqual(seat.characterIds, [characterId]);
+    assert.deepEqual(await normal.readCharacters(campaign.id), before);
+  }
+);
 
 test(
   'one verified UID owns one campaign and joins another without gaining canonical authority over the joined campaign',
@@ -685,8 +1541,9 @@ test(
     const seats = await f.store.listSeats(owner.principal, campaign.id);
     assert.deepEqual(seats, [
       {
-        version: 1,
+        version: 2,
         id: issued.seatId,
+        accessGeneration: 0,
         name: 'Reserved seat',
         characterIds: [],
         joined: false,
@@ -702,7 +1559,15 @@ test(
       secret: prepared.secret,
     });
     const accepted = await f.store.listSeats(owner.principal, campaign.id);
-    assert.deepEqual(accepted, [{ ...seats[0], joined: true, invitation: null }]);
+    assert.deepEqual(accepted, [
+      {
+        ...seats[0],
+        accessGeneration: 1,
+        joined: true,
+        invitation: null,
+      },
+    ]);
+    assert.equal(JSON.stringify(accepted).includes(player.uid), false);
     await assert.rejects(f.store.listSeats(player.principal, campaign.id), {
       code: 'campaign-not-found',
     });

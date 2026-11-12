@@ -290,6 +290,12 @@ Distinguish these owner actions in the UI:
 - Remove player access: revokes membership and live access, without deleting
   campaign-owned characters.
 
+**Selected November 11, 2026:** removing a member keeps the character assignments
+on the now-empty seat. The owner can reinvite that player or explicitly give the
+same seat and its assigned characters to a replacement. Shared character control
+remains allowed only when the owner deliberately assigns that character to
+multiple seats; assigning it elsewhere does not silently transfer existing access.
+
 This makes invitation/account semantics explicit instead of carrying the old
 reusable bearer-login behavior forward invisibly.
 

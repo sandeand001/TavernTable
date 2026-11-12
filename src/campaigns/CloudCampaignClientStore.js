@@ -7,6 +7,11 @@ import {
   isCloudInvitationAcceptance,
   isCloudInvitationRevocation,
   isCloudPlayerSeat,
+  isCloudAccessScope,
+  isCloudParticipantAccess,
+  isCloudAccessGeneration,
+  isCloudCharacterAssignment,
+  isCloudMemberRemoval,
 } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
@@ -40,6 +45,16 @@ const definitiveDenials = new Set([
   'seat-already-joined',
   'campaign-already-joined',
 ]);
+const metadataOperations = new Set(['invitation', 'revoke', 'assign', 'remove']);
+const definitiveMetadataDenials = new Set([
+  'campaign-access-changed',
+  'invalid-member-request',
+  'invalid-assignment-request',
+  'unknown-assignment-character',
+  'seat-not-joined',
+  'access-generation-exhausted',
+  'revision-conflict',
+]);
 
 export default class CloudCampaignClientStore {
   constructor({ connection, packs, uid, crypto = globalThis.crypto }) {
@@ -71,6 +86,9 @@ export default class CloudCampaignClientStore {
       settings: false,
       backups: false,
       invitations: true,
+      participantAccess: true,
+      assignments: true,
+      memberships: true,
       browserImport: false,
       sharedSessions: false,
       roomVisits: false,
@@ -188,6 +206,63 @@ export default class CloudCampaignClientStore {
     return this._write('revoke', id, { invitationId });
   }
 
+  removeMember(id, { seatId, accessGeneration } = {}) {
+    this._identity();
+    this._resource(id);
+    if (!isCloudUUID(seatId) || !isCloudAccessGeneration(accessGeneration))
+      throw failure(
+        400,
+        'invalid-member-request',
+        'Choose an explicit joined seat and its current access generation.'
+      );
+    return this._write('remove', id, { seatId, accessGeneration });
+  }
+
+  assignCharacter(id, { seatId, characterId, assigned, accessGeneration } = {}) {
+    this._identity();
+    this._resource(id);
+    if (
+      !isCloudUUID(seatId) ||
+      typeof characterId !== 'string' ||
+      !characterId ||
+      typeof assigned !== 'boolean' ||
+      !isCloudAccessGeneration(accessGeneration)
+    )
+      throw failure(
+        400,
+        'invalid-assignment-request',
+        'Choose an explicit saved character, seat and current access generation.'
+      );
+    return this._write('assign', id, { seatId, characterId, assigned, accessGeneration });
+  }
+
+  async getParticipantAccess(id, expected = null) {
+    this._identity();
+    const resource = this._resource(id, '/participant-access');
+    if (
+      expected !== null &&
+      (!isCloudAccessScope(expected) || expected.uid !== this.uid || expected.campaignId !== id)
+    )
+      throw failure(
+        400,
+        'invalid-access-scope',
+        'Choose the explicit current campaign access scope.'
+      );
+    const scope = expected === null ? null : copy(expected);
+    const result = await this._call(resource, { accessScope: scope });
+    if (
+      !isCloudParticipantAccess(result) ||
+      result.access.uid !== this.uid ||
+      result.access.campaignId !== id ||
+      (scope !== null &&
+        (result.access.role !== scope.role ||
+          result.access.seatId !== scope.seatId ||
+          result.access.accessGeneration !== scope.accessGeneration))
+    )
+      throw invalidResponse();
+    return copy(result);
+  }
+
   subscribeSave(listener) {
     if (typeof listener !== 'function')
       throw new Error('Cloud save observation requires a listener');
@@ -224,6 +299,25 @@ export default class CloudCampaignClientStore {
   }
 
   async _receipt(operation, result, input, id) {
+    if (operation === 'remove') {
+      if (
+        !isCloudMemberRemoval(result) ||
+        result.seatId !== input.seatId ||
+        result.accessGeneration !== input.accessGeneration + 1
+      )
+        throw invalidResponse();
+      return copy(result);
+    }
+    if (operation === 'assign') {
+      if (
+        !isCloudCharacterAssignment(result) ||
+        result.seatId !== input.seatId ||
+        result.accessGeneration !== input.accessGeneration + Number(result.changed) ||
+        result.characterIds.includes(input.characterId) !== input.assigned
+      )
+        throw invalidResponse();
+      return copy(result);
+    }
     if (operation === 'revoke') {
       if (!isCloudInvitationRevocation(result) || result.invitationId !== input.invitationId)
         throw invalidResponse();
@@ -287,7 +381,7 @@ export default class CloudCampaignClientStore {
     this._identity();
     if (
       ['scene', 'characters'].includes(operation) &&
-      ['invitation', 'revoke'].includes(this.pending?.operation)
+      metadataOperations.has(this.pending?.operation)
     ) {
       // Access metadata leaves canonical revisions unchanged; finish it before a queued checkpoint.
       await this.pending.promise;
@@ -313,14 +407,15 @@ export default class CloudCampaignClientStore {
     if (operation === 'create') resource = 'campaigns';
     else if (operation === 'join') resource = 'account/invitations/redeem';
     else if (operation === 'revoke') resource = this._resource(id, '/invitations/revoke');
+    else if (operation === 'assign') resource = this._resource(id, '/assignments');
+    else if (operation === 'remove') resource = this._resource(id, '/members/remove');
     else
       resource = this._resource(id, operation === 'invitation' ? '/invitations' : `/${operation}`);
-    const body =
-      operation === 'join' || operation === 'revoke'
-        ? { commandId, ...input }
-        : operation === 'create' || operation === 'invitation'
-          ? { commandId, options: input }
-          : { commandId, change: input };
+    const body = ['join', 'revoke', 'assign', 'remove'].includes(operation)
+      ? { commandId, ...input }
+      : operation === 'create' || operation === 'invitation'
+        ? { commandId, options: input }
+        : { commandId, change: input };
     let resolve;
     let reject;
     const promise = new Promise((accepted, denied) => {
@@ -356,8 +451,8 @@ export default class CloudCampaignClientStore {
         this._saveStatus('saved');
         item.resolve(receipt);
       } catch (error) {
-        const freshJoinDenial =
-          item.operation === 'join' &&
+        const freshAccessDenial =
+          (item.operation === 'join' || metadataOperations.has(item.operation)) &&
           item.error === null &&
           [
             'pilot-access-required',
@@ -366,7 +461,11 @@ export default class CloudCampaignClientStore {
             'authentication-required',
           ].includes(error.code);
         item.error = error;
-        if (freshJoinDenial || definitiveDenials.has(error.code)) {
+        if (
+          freshAccessDenial ||
+          definitiveDenials.has(error.code) ||
+          (metadataOperations.has(item.operation) && definitiveMetadataDenials.has(error.code))
+        ) {
           this.pending = null;
           this._saveStatus('failed', error);
           item.reject(error);

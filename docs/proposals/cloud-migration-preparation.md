@@ -813,3 +813,111 @@ render/reopen evidence remains separate. Only synthetic `.invalid` accounts and
 the dedicated loopback demo services were used; no live account approval, IAM
 change, real campaign write, deployment or cutover occurred. Routine save
 flashing/centered feedback remains explicitly deferred to `UX-01`.
+
+## Member lifecycle and access generations
+
+`M2-03` is complete for the currently enabled private demo permission surfaces.
+The user selected retaining assignments on a removed member's empty seat and
+explicit owner-approved shared character control. The original local authority
+already supports that model; no implicit exclusive transfer was introduced.
+
+### Authority and protocol
+
+- Owner-only `POST campaigns/{id}/members/remove` clears the current UID binding
+  and its membership index atomically, advances that seat's access generation,
+  and retains its saved-character assignments and all canonical records.
+- Owner-only `POST campaigns/{id}/assignments` assigns/unassigns an existing
+  campaign-owned character with an expected seat generation. Adding access
+  validates a real pinned-catalog character snapshot outside transaction retries,
+  then rechecks ownership, eligibility, canonical generation and seat generation
+  at publication. Revoking a character grant does not depend on object-storage
+  availability. A desired-state no-op records its receipt without advancing the
+  access generation.
+- The same character can be deliberately assigned to several seats. Each seat's
+  generation changes independently; altering/removing one player's grant does
+  not revoke another player's explicitly shared grant.
+- Stored version-2 seats and membership indexes require matching, positive,
+  safe-integer access generations. Exact known version-1 seat/index pairs
+  explicitly start at zero and upgrade on a permission transition. Malformed or
+  mismatched version-2 records fail, not fall back to zero.
+- `GET campaigns/{id}/participant-access` returns only a strict access manifest:
+  the current UID/campaign/role/seat/generation, minimal campaign summary and
+  assigned character IDs. It is not a scene, sheet, asset manifest or owner
+  snapshot. The existing minimal Owned/Joined and invitation receipt DTOs remain
+  unchanged; admission alone is not a reusable live authorization grant.
+- Supplying both `X-TavernTable-Seat` and
+  `X-TavernTable-Access-Generation` makes that manifest read scope-bound.
+  Missing, malformed, forged-owner or stale headers fail explicitly; scoped
+  headers are rejected on unrelated owner endpoints. The client also binds the
+  scope to its UID/campaign and captures immutable headers across token renewal.
+- Owner seat projections are version 2 and expose only the current access
+  generation in addition to the prior safe seat fields, never another account's
+  UID or a reusable invitation secret. The client explicitly recognizes the
+  prior version-1 projection for development compatibility.
+- Existing canonical character-deletion/replacement commits also reconcile
+  deleted character IDs against affected seat grants. Seat/index updates,
+  canonical head, durable receipt and compact change publish in one transaction.
+  A failing publication cannot revoke access while leaving the character saved,
+  or delete it while leaving an old grant reusable.
+
+### Browser behavior and recovery
+
+- The owner panel exposes real saved-character checkboxes and a distinct
+  **Remove player access** action. It states the retention/shared-control rules
+  and refreshes controls after a definitive stale-generation failure.
+- Access commands have a separate in-memory UID-bound client channel using the
+  same bearer transport/receipt contract. An invitation or permission failure
+  must not masquerade as a failed canonical scene save. Unknown delivery keeps
+  its original command/body/proof, shows a same-change retry and prevents closing
+  an unresolved operation. A first definite denial releases the form; a later
+  denial cannot erase an earlier uncertain write.
+- Joined access checks use the fresh participant-access manifest and refresh the
+  Owned/Joined directory, so removed membership is not opened as owner data.
+  Full player gameplay remains visibly unavailable.
+- The preview API was restarted separately from its existing demo emulators;
+  Auth identities and campaign objects were not reset or recreated.
+
+Actual browser verification used the existing synthetic owner and member:
+the owner assigned a real persisted scout, deliberately shared its assignment
+with another empty seat, removed the first member, issued a new invitation to
+that original seat and required explicit acceptance. The member remained the
+same UID and followed the generation sequence **0 -> 1 -> removed 2 -> rejoined
+3**. Both old and fresh reads were denied while removed; the earlier scope was
+still denied after rejoining. Owner access operations produced only the existing
+`saved` phase on the canonical save channel, not a new save/failed-save cycle.
+
+Independent SDK checks verified exactly one rejoined membership, the same seat,
+one identical saved character and both explicit assignments. Throughout the
+permission operations, canonical generation stayed at **2**, head SHA-256 stayed
+`09b68d9796fbc5256d6a78a5b54f0af717e3f3a9814226054821ea80cbd6282a`,
+and the character-object SHA-256 stayed
+`4d949034d563505032764b25f5c9eb526e6b505ff50fb2984386b17cd3a74c1e`.
+Character preparation used the real public cloud-save API; these account/panel
+proofs do not claim WebGL rendering in the integrated browser.
+
+### Verification gate
+
+- Complete guarded native SDK/HTTP runner: **81/81 cases**, zero skipped, in
+  **70,765.0678 ms**. Coverage includes actual saved records, isolated shared
+  grants, same-UID rejoining, strict header/UID/role boundaries, corrupted access
+  generations, real competing/identical transactions, and cross-instance
+  recovery of deliberately lost successful assignment/removal replies.
+- Existing canonical deletion was first shown to retain a stale grant. The
+  regression now passes. A real existing-document create precondition failure
+  proves canonical deletion and access revocation roll back together; the same
+  retained command then publishes exactly once after removing the fixture fault.
+  Real Storage I/O delays also prove that later canonical or membership changes
+  prevent an in-flight assignment from publishing.
+- Final affected Jest selection: **15 suites / 100 tests**, zero skipped, in
+  **9.171 s**. It includes account, transport, metadata receipt, owner/Joined UI,
+  character/domain, autosave, save-feedback and terrain-restore behavior.
+- Full ESLint/stylelint and layering pass with zero errors and the same
+  **39 existing warnings**. No full-M2 persistence/release gate is implied by
+  this slice's targeted application regression gate.
+
+Live cloud gameplay/SSE, complete participant views, asset delivery/cache purges
+and their revocation races remain gated for M3/M4 and must reuse the current
+generation checks when implemented. No production rollout, IAM change, real
+campaign cutover or new live cloud write was performed. The routine scene-save
+flashing/centered-notice work is still deferred to `UX-01`; its presentation
+component was not changed.

@@ -117,15 +117,40 @@ test('the real cloud picker separates Owned and Joined access without opening a 
     seatId: '33333333-3333-4333-8333-333333333333',
   };
   const apiRequests = [];
+  let removed = false;
   const fetch = async (input) => {
     const path = new URL(input, location.href).pathname;
     if (!path.startsWith('/api/')) return fetchBundledResource(input);
     apiRequests.push(path);
+    if (path.endsWith('/participant-access') && removed)
+      return {
+        ok: false,
+        status: 404,
+        json: async () => ({
+          version: 1,
+          code: 'campaign-not-found',
+          error: 'PRIVATE POLICY DETAIL',
+        }),
+      };
     const result = path.endsWith('/account/campaigns')
-      ? { owned: [owned], joined: [joined] }
-      : path.endsWith('/access')
-        ? joined
-        : [campaign];
+      ? { owned: [owned], joined: removed ? [] : [joined] }
+      : path.endsWith('/participant-access')
+        ? {
+            version: 1,
+            campaign: joined.campaign,
+            characterIds: [],
+            access: {
+              version: 1,
+              uid: 'picker-owner',
+              campaignId: joinedId,
+              role: 'member',
+              seatId: joined.seatId,
+              accessGeneration: 0,
+            },
+          }
+        : path.endsWith('/access')
+          ? joined
+          : [campaign];
     return { ok: true, status: 200, json: async () => ({ version: 1, result }) };
   };
   const runtime = {
@@ -181,8 +206,16 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   access.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(launcher.status.textContent).toContain('Cloud player gameplay is not enabled yet');
-  expect(apiRequests).toContain(`/api/cloud/campaigns/${joinedId}/access`);
+  expect(launcher.status.textContent).toContain('0 assigned saved characters');
+  expect(apiRequests).toContain(`/api/cloud/campaigns/${joinedId}/participant-access`);
   expect(apiRequests.some((path) => /\/(scene|characters)$/.test(path))).toBe(false);
+  expect(workspace.active).toBeNull();
+  removed = true;
+  launcher.list.querySelector('[data-view-campaign-access]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(launcher.list.querySelector('[data-campaign-group="joined"] article')).toBeNull();
+  expect(launcher.status.textContent).toContain('not available');
+  expect(launcher.status.textContent).not.toContain('PRIVATE POLICY DETAIL');
   expect(workspace.active).toBeNull();
   launcher.destroy();
   workspace.close();

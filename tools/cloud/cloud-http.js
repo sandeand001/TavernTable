@@ -1,8 +1,29 @@
 const { URL } = require('node:url');
 const { CloudError } = require('./cloud-error.js');
 const { readLimitedBody, RequestBodyLimitError } = require('../http-body.js');
+const {
+  isCloudUUID,
+  isCloudAccessGeneration,
+  CLOUD_ACCESS_SEAT_HEADER,
+  CLOUD_ACCESS_GENERATION_HEADER,
+} = require('../../src/campaigns/CloudProtocol.js');
 
 const MAX_CLOUD_REQUEST_BYTES = 24 * 1024 * 1024;
+
+function requestAccessScope(request) {
+  const seat = request.headers[CLOUD_ACCESS_SEAT_HEADER.toLowerCase()];
+  const generation = request.headers[CLOUD_ACCESS_GENERATION_HEADER.toLowerCase()];
+  if (seat === undefined && generation === undefined) return null;
+  if (
+    typeof seat !== 'string' ||
+    (seat !== 'owner' && !isCloudUUID(seat)) ||
+    typeof generation !== 'string' ||
+    !/^(?:0|[1-9][0-9]*)$/.test(generation) ||
+    !isCloudAccessGeneration(Number(generation))
+  )
+    throw new CloudError(400, 'invalid-access-scope', 'Choose the explicit campaign access scope');
+  return { seatId: seat === 'owner' ? null : seat, accessGeneration: Number(generation) };
+}
 
 async function requestJSON(request) {
   const contentType = request.headers['content-type'];
@@ -83,10 +104,13 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'list',
       'listAccess',
       'getAccess',
+      'getParticipantAccess',
       'listSeats',
       'createInvitation',
       'revokeInvitation',
       'redeemInvitation',
+      'removeMember',
+      'assignCharacter',
       'get',
       'readCharacters',
       'readScene',
@@ -111,13 +135,15 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const directory = url.pathname === '/api/cloud/account/campaigns';
     const collection = url.pathname === '/api/cloud/campaigns';
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|access|seats|invitations(?:\/revoke)?))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (!account && !redeem && !directory && !collection && !campaign) return false;
     const subject = account ? 'account' : 'campaign';
     const snapshot = campaign?.[2];
-    const postOnly = redeem || ['invitations', 'invitations/revoke'].includes(snapshot);
+    const postOnly =
+      redeem ||
+      ['invitations', 'invitations/revoke', 'members/remove', 'assignments'].includes(snapshot);
     const writable = postOnly || collection || ['scene', 'characters'].includes(snapshot);
     const methods = postOnly ? 'POST, OPTIONS' : writable ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
     let operation = 'campaign.get';
@@ -128,6 +154,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       operation = request.method === 'POST' ? 'campaign.create' : 'campaign.list';
     else if (snapshot === 'invitations') operation = 'campaign.invite';
     else if (snapshot === 'invitations/revoke') operation = 'campaign.invite.revoke';
+    else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
+    else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot) operation = `${snapshot}.${request.method === 'POST' ? 'commit' : 'read'}`;
     const origin = request.headers.origin;
     if (origin !== undefined && (typeof origin !== 'string' || !origins.has(origin))) {
@@ -157,7 +185,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         ...headers,
         Vary: 'Origin',
         'Access-Control-Allow-Methods': methods,
-        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Allow-Headers': `Authorization, Content-Type, ${CLOUD_ACCESS_SEAT_HEADER}, ${CLOUD_ACCESS_GENERATION_HEADER}`,
         'Cache-Control': 'no-store',
       });
       response.end();
@@ -182,6 +210,13 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       const principal = redeem
         ? await access.verifyIdentity(request.headers.authorization)
         : await access.verifyAuthorization(request.headers.authorization);
+      const expectedAccess = requestAccessScope(request);
+      if (expectedAccess !== null && snapshot !== 'participant-access')
+        throw new CloudError(
+          400,
+          'invalid-access-scope',
+          'Access scope headers require the participant access interface'
+        );
       let result;
       if (account) {
         result = { uid: principal.uid, emailVerified: principal.emailVerified, eligible: true };
@@ -207,8 +242,14 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.createInvitation(principal, campaign[1], await requestJSON(request));
         } else if (snapshot === 'invitations/revoke') {
           result = await store.revokeInvitation(principal, campaign[1], await requestJSON(request));
+        } else if (snapshot === 'members/remove') {
+          result = await store.removeMember(principal, campaign[1], await requestJSON(request));
+        } else if (snapshot === 'assignments') {
+          result = await store.assignCharacter(principal, campaign[1], await requestJSON(request));
         } else if (snapshot === 'access') {
           result = await store.getAccess(principal, campaign[1]);
+        } else if (snapshot === 'participant-access') {
+          result = await store.getParticipantAccess(principal, campaign[1], expectedAccess);
         } else if (snapshot === 'scene') {
           result =
             request.method === 'POST'

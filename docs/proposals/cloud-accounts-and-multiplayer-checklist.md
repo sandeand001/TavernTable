@@ -44,10 +44,10 @@ identity, truthful save feedback and rendered cloud reopening (`M1-04`, `M1-05`,
 pass before and after publication. The corrected full stable regression gate
 (`M1-10`) passed 295 suites / 3,791 tests; hosted deployment and migration remain
 unapproved.
-Campaign-local Owned/Joined access and verified seven-day invitation onboarding
-(`M2-01`, `M2-02`) now pass their demo acceptance gates. Member removal,
-assignments and access generations (`M2-03`) are next; cloud player gameplay
-remains gated.
+Campaign-local Owned/Joined access, verified seven-day invitation onboarding,
+member removal, assignments and scoped access generations (`M2-01` through `M2-03`) now
+pass their demo acceptance gates. Proven same-UID sign-in-method linking
+(`M2-04`) is next; cloud player gameplay remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
 
@@ -350,13 +350,26 @@ Revalidation in the intended environment remains part of M1 and M4.
     Full lint/stylelint/layering pass with the same 39 existing warnings.
     Joined gameplay, removal and assignment controls remain gated.
 
-- [ ] **M2-03 - Implement revocation, removal, assignments, and access generations.**
+- [x] **M2-03 - Implement revocation, removal, assignments, and access generations.**
   - **Depends:** `M2-02`.
   - **Success:** revoking an unused invitation differs from removing membership.
     Removal/reassignment revokes future reads/writes/live access without deleting
     campaign-owned characters.
   - **Verify:** stale sessions, in-flight operations, manifests, and subsequent
     reconnects cannot regain revoked access; owner-only assignment controls work.
+  - **Selected November 11, 2026:** keep assignments on a removed member's empty
+    seat, and preserve explicit owner-approved shared character control.
+    No character records are deleted and no implicit exclusive transfer occurs.
+  - **Completed November 11, 2026; Evidence:** [member lifecycle/access gate](./cloud-migration-preparation.md#member-lifecycle-and-access-generations):
+    81 native SDK/HTTP cases and 15 affected Jest suites / 100 tests pass, zero
+    skipped. Actual owner assignment, shared assignment, removal and same-seat
+    reacceptance pass in the browser; older scopes stay denied and exact
+    canonical head/character bytes remain unchanged. Actual deletion-publication
+    rollback, in-flight canonical/membership changes, one-winner contention and
+    lost-reply recovery pass. Full lint/stylelint/layering pass with the same
+    39 existing warnings. This completes the currently enabled permission
+    surfaces and scoped-access contract; live-stream/gameplay and asset/cache
+    revocation remain explicitly gated for `M3-01`, `M3-09` and `M4-10`.
 
 - [ ] **M2-04 - Implement proven sign-in-method linking without splitting ownership.**
   - **Depends:** `M1-05`, `M2-01`.

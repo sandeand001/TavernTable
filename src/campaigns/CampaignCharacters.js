@@ -63,6 +63,12 @@ export function validateCampaignCharacters(campaign, catalog, records) {
   characterSnapshot(campaign, catalog, records);
 }
 
+export function campaignCharacterRoster(campaign, catalog, records) {
+  return characterSnapshot(campaign, catalog, records)
+    .list()
+    .map(({ id, name }) => ({ id, name }));
+}
+
 function sceneCommandMetadata(store, captured) {
   return {
     ...(captured.scene?.version === 3 && store?.capabilities?.roomVisits !== false

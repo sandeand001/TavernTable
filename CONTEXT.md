@@ -124,8 +124,15 @@
   original seat/assignments to the verified UID. Link fragments are consumed
   before Auth loads. Same-document links are consumed by the existing sign-in
   screen or reopened after save coordination; uncertain acceptance stays bound
-  to its original UID. Invitation onboarding and returning login are verified;
-  removal/assignment controls and player gameplay remain separate tasks.
+  to its original UID. Invitation onboarding, returning login and owner
+  removal/assignment controls are verified. Removing membership leaves saved
+  characters and assignments on the empty seat; explicitly shared character
+  control is allowed. Per-seat access generations never decrease, and scoped
+  reads check the current UID/seat/generation instead of reusing an old grant.
+  Version-1 seat/index pairs explicitly retain their legacy generation zero;
+  version-2 records require matching valid generations. Canonical character
+  deletion revokes affected assignments in the same publication transaction.
+  Player gameplay and live-stream/asset revocation remain gated for later work.
 - **Cloud emulator loop (implemented development tooling only)**: explicit
   `demo-taverntable` Auth/Firestore/Storage endpoints are loopback-only and
   conflicting SDK settings fail closed. Real SDK integration uses native Node
@@ -206,10 +213,15 @@
   campaign. Manual backup flushes active changes first; restore creates a
   separate private campaign. Backup failure is reported separately from the
   acknowledged primary save. Credentials and access assignments are not included.
-- **Player invitation**: a reusable, revocable private credential for one
+- **Legacy local player invitation**: a reusable, revocable private credential for one
   campaign/player identity. Reissue/revocation invalidates previous access
   without deleting the player's saved characters. Invitations/assignments persist;
   browser session cookies expire or require renewal after host restart.
+- **Cloud campaign invitation/access scope**: a hashed, seven-day single-use
+  invitation binds a verified UID to a campaign seat. Admission receipts are
+  minimal access summaries, not live grants. Participant-access manifests bind
+  the current UID, campaign, role, seat and monotonic access generation; removing
+  or changing assignments invalidates old scoped reads even after reinvitation.
 - **Character assignment**: permission to edit an existing campaign-owned saved
   character ID, independent of temporary scene tokens. Player writes merge only
   assigned records, preserve unrelated records, validate against pinned rules and
