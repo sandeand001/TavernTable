@@ -1991,5 +1991,119 @@ not representative peak/load evidence.
 
 No hosted project, IAM/Auth/Storage test, image push, deployment or cutover was
 performed. Actual SSE, visible lifecycle controls/warnings and pause/drain/final
-backup remain later integrated gates. Provider linking remains explicitly
-deferred. Routine-save presentation is untouched.
+backup remain later integrated gates. Provider linking remained deferred at
+that milestone; M2-04 subsequently passed same-UID live acceptance on the
+owner-approved current account. Routine-save presentation is untouched.
+
+### Approved bounded live API testing
+
+The owner now approves ongoing live testing in the existing personal-project
+Firebase project, `taverntable-489d5`; a separate project is not required.
+The existing verified Google/password account must remain unchanged.
+
+Read-only inspection found the Cloud Run and Artifact Registry APIs disabled.
+The owner explicitly approved `approve_bounded_live_test` before provisioning:
+
+- Enable Cloud Run, Artifact Registry and required IAM APIs.
+- Create one private image repository and one `us-west1` test API, using
+  request-based billing, minimum zero / maximum one instance, 1 CPU / 1 GiB.
+- Give a dedicated runtime identity Firebase Auth read access, Firestore
+  read/write access and object access to this project's campaign bucket.
+  Do not grant Owner/Editor or download service-account keys.
+- Permit HTTPS invocation at the platform while retaining Firebase identity,
+  application eligibility and campaign-local authorization on protected routes.
+- Use at most three disposable managed test accounts and two synthetic campaigns,
+  then clean up those exact fixtures. Do not alter the current real account or
+  existing campaigns.
+
+The owner acknowledged possible cloud charges and that the existing $25 budget
+alerts are not a spending cap. This approval does not authorize public frontend
+cutover or migration of real campaign data. It enables incremental API checks;
+it does not itself complete the later packaged-frontend, hosted performance,
+cost, or migration-readiness gates.
+
+### M2-12: online assigned sheets and real API acceptance
+
+Joined **Assigned characters** uses the existing player-safe saved-sheet editor
+with a fixed-campaign cloud Adapter. A fresh participant grant precedes the
+assigned snapshot; responses contain only assigned character rows and explicitly
+allowlisted metadata, never a scene, private NPC rows or owner object references.
+Current eligibility, UID/seat/generation, assigned IDs and head generation are
+rechecked after actual Storage IO.
+
+Scoped writes share the legacy assigned-record policy rather than implementing a
+second rules/source/trait/world merge. Unassigned rows remain exact; saved token
+names can follow a sheet rename, but movement, combat and action resources do not
+change. Canonical staging/head CAS/receipt publication remains atomic. The actor
+is the member while storage/image/backup accounting uses the actual head owner;
+no synthetic owner principal is constructed. Admission and publication recheck
+current member authority, and member-owned other campaigns cannot lend quota.
+An original eligible UID can recover its own minimal accepted receipt after
+removal; it contains no sheets or new grant and cannot authorize a fresh read.
+
+The UI performs short requests only, clears inaccessible tabs on account change/
+denial, closes editing on offline transitions, and requires explicit online
+refresh. Uncertain saves retain the original command/caller/body/scope and block
+exit until recovery. Shared seats use ordinary canonical conflicts, not automatic
+merging. Paused sheet work and DM preparation do not start or renew a live game.
+
+Verification:
+
+- **162/162 affected native cases**, zero skips/failures/cancellations,
+  **704,588.6424 ms**: account-local authority, persistence, quota, private assets,
+  backups/portability, actual backend replacement and production configuration.
+  The new member paths include both editions, exact private-row/world preservation,
+  owner 20 GiB admission, lost accepted reply/removal, revocation after actual
+  snapshot download/new bytes upload, decoded private PNG and a due complete
+  backup triggered by a short assigned read.
+- **18 suites / 116 application tests**, **8.234 s**; full JavaScript/stylelint/
+  layering: zero errors and the same 39 baseline warnings. Regression-first
+  checks caught and fixed stale tabs after account switching and acceptance of
+  unexpected private campaign metadata in assigned DTOs.
+- Actual live API verification used the approved three temporary managed Auth
+  identities and two synthetic campaigns. Production-mode browser-store
+  transport/native SDK sign-in, Firebase token checks, Firestore publication,
+  GCS images, owner billing, private/unrelated/world-command denial and lost-reply
+  recovery after removal all passed. Invitation redemption correctly advances
+  access generation; the initial harness's stale-zero assignment was denied,
+  then corrected to fetch the current grant without changing production policy.
+- Final live pass: **2026-11-13 21:04:51 UTC**. Verified cleanup completed
+  **21:04:56 UTC**: all three Auth fixtures, both campaign trees, their own
+  invitation/account branches and **eight live object generations** were removed
+  by exact scoped paths/generation conditions. No listed object versions remain.
+  Existing bucket soft-delete retention was not changed; tiny retained fixture
+  bytes may remain billable under that policy. The current real account and
+  existing campaigns were untouched.
+
+The bounded service is
+`https://taverntable-api-test-zp7b3oizna-uw.a.run.app`, revision
+`taverntable-api-test-00002-wmc`, using private immutable image
+`sha256:5eb8f8c628d2769618023a86d330756a3bd9d69b17c5896bb431d5be75c89f59`
+(runnable Linux/amd64 manifest
+`sha256:eae5702b6ffe5242dbcab275c9ef72d8ab574ac6e996c02aff0ab57280b7bef1`).
+Runtime IAM readback confirmed only `roles/datastore.user` and
+`roles/firebaseauth.viewer` at project scope, and conditional
+`roles/storage.objectUser` for `campaigns/` objects plus bucket inventory.
+Unrelated IAM bindings were preserved with ETags; no downloaded keys,
+Owner/Editor grants or public repository binding was introduced.
+
+Live testing exposed Cloud Run interception of public `/healthz`, not an
+application/authorization failure: internal startup probes succeeded, `/` and
+protected API requests reached the app, while `/healthz` returned Google's HTML
+404 without a request trace. The
+[official reserved-path guidance](https://docs.cloud.google.com/run/docs/known-issues)
+recommends avoiding `z`-ending paths. Public/template/container readiness now uses
+`/health`; the internal/local legacy alias remains. The failing public-path
+regression is fixed; **3/3 production-host cases**, zero skips,
+**1,678.749 ms**, cover GET/HEAD/405 and unchanged private/configuration guards.
+Real HTTPS now verifies readiness 200, anonymous account 401, private file 404,
+allowed preflight 204 and unapproved origin 403 without weakening any guards.
+
+The final actual image passed the CPU-only/non-root/read-only/no-network/no-key
+container check, exact eight runtime source hashes, both catalogs, 16 MP decoding
+and clean SIGTERM exit. Helper RSS **209,653,760 bytes** is not peak/load proof.
+The scoped validation container and ephemeral registry credential files were
+removed. Request-based CPU, min 0/max 1, 1 CPU/1 GiB and concurrency 40 remain the
+approved starting configuration, not measured sleep/performance/cost acceptance
+or a spending cap. Full Hosting packaging, M4 release gates, real-data migration
+and routine-save UX remain pending.

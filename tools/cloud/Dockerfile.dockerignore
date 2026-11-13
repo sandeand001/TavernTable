@@ -8,6 +8,7 @@ src/config/FirebaseConfig.json
 tools/*
 !tools/host-resources.js
 !tools/http-body.js
+!tools/assigned-character-change.js
 !tools/cloud/
 tools/cloud/*
 !tools/cloud/admin-runtime.js

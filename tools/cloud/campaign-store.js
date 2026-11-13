@@ -18,6 +18,7 @@ const {
 } = require('./immutable-objects.js');
 const { CompleteCloudBackupObjects, isCompleteBackupReference } = require('./backup-objects.js');
 const { acquireLargeFileWork } = require('./large-file-work.js');
+const { prepareAssignedCharacterChange } = require('../assigned-character-change.js');
 const { isPrivateAssetReference } = require('./campaign-assets.js');
 const {
   CHARACTER_IMAGE_TYPES,
@@ -42,6 +43,7 @@ const {
   isCloudImportTicket,
   isCloudBackupRecord,
   isCloudLiveSession,
+  isCloudAssignedCharacterReceipt,
   cloudLiveStatus,
   CLOUD_LIVE_INACTIVITY_MS,
   CLOUD_LIVE_DISCONNECT_GRACE_MS,
@@ -200,6 +202,12 @@ function validCommandResult(previous) {
   if (kind === 'campaign.backup') return isCloudBackupRecord(result);
   if (kind === 'campaign.live')
     return isCloudLiveSession(result) && result.campaignId === previous.campaignId;
+  if (kind === 'characters.assigned.commit')
+    return (
+      isCloudAssignedCharacterReceipt(result) &&
+      result.campaignId === previous.campaignId &&
+      result.access.uid === previous.uid
+    );
   if (kind === 'campaign.import')
     return (
       isCloudImportReceipt(result) &&
@@ -394,6 +402,7 @@ class CloudCampaignStore {
         'campaign.import',
         'campaign.backup',
         'campaign.live',
+        'characters.assigned.commit',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
@@ -432,7 +441,9 @@ class CloudCampaignStore {
         throw error;
       }
     }
-    if (previous.kind === 'campaign.join') {
+    if (previous.kind === 'characters.assigned.commit') {
+      await this.access.assertEligibility(uid, transaction);
+    } else if (previous.kind === 'campaign.join') {
       await this.access.assertEligibility(uid, transaction);
       const current = await this._accessSummary(transaction, uid, previous.campaignId);
       if (current.role !== 'member' || current.seatId !== previous.result.access.seatId)
@@ -1158,7 +1169,10 @@ class CloudCampaignStore {
   }
 
   async runBackupWork(principal, id, options = {}) {
-    const uid = principalUid(principal);
+    return this._runOwnerBackupWork(principalUid(principal), id, options);
+  }
+
+  async _runOwnerBackupWork(uid, id, options = {}) {
     if (
       !isCloudUUID(id) ||
       !options ||
@@ -1199,7 +1213,7 @@ class CloudCampaignStore {
       if (!jobs.empty) return jobs.docs[0].id;
       return pending !== null && Date.parse(pending.dueAt) <= this.now() ? pending.name : null;
     });
-    return commandId === null ? null : this.backupNow(principal, id, { commandId });
+    return commandId === null ? null : this._backupNow(uid, id, { commandId });
   }
 
   async _recordBackupFailure(id, intent, error) {
@@ -1236,7 +1250,10 @@ class CloudCampaignStore {
   }
 
   async backupNow(principal, id, command) {
-    const uid = principalUid(principal);
+    return this._backupNow(principalUid(principal), id, command);
+  }
+
+  async _backupNow(uid, id, command) {
     if (
       !isCloudUUID(id) ||
       !command ||
@@ -1271,9 +1288,9 @@ class CloudCampaignStore {
       { readOnly: true }
     );
     if (previous !== null) return previous;
-    await this.usage.ensureAccount(principal);
+    await this.usage.ensureOwnerAccount(uid);
     if (this.backupObjects?.bucket)
-      await this.usage.prepareStorage(principal, this.backupObjects.bucket);
+      await this.usage.prepareOwnerStorage(uid, this.backupObjects.bucket);
     const prepared = await this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
@@ -1348,7 +1365,7 @@ class CloudCampaignStore {
       release = acquireLargeFileWork();
       const text = await this._exportState(await this._loadSnapshot(prepared.job.snapshot));
       const archived = await this.backupObjects.stage(id, commandId, text, (candidate) =>
-        this.usage.reserveStorage(principal, id, candidate, this.backupObjects.bucket)
+        this.usage.reserveOwnerStorage(uid, id, candidate, this.backupObjects.bucket)
       );
       const stateReference = this._backupStateReference(id);
       return await this._transaction(async (transaction) => {
@@ -3734,8 +3751,7 @@ class CloudCampaignStore {
     );
   }
 
-  async getParticipantAccess(principal, id, expected = null) {
-    const uid = principalUid(principal);
+  _accessExpectation(expected) {
     if (
       expected !== null &&
       (!expected ||
@@ -3751,24 +3767,125 @@ class CloudCampaignStore {
         'invalid-access-scope',
         'Choose the explicit campaign access scope'
       );
-    return this._transaction(
+    return expected === null ? null : structuredClone(expected);
+  }
+
+  async _participantGrant(transaction, uid, id, expected) {
+    await this.access.assertEligibility(uid, transaction);
+    const grant = await this._accessGrant(transaction, uid, id);
+    if (
+      expected !== null &&
+      (expected.seatId !== grant.access.seatId ||
+        expected.accessGeneration !== grant.access.accessGeneration)
+    )
+      throw new CloudError(
+        409,
+        'campaign-access-changed',
+        'Campaign access changed. Refresh before continuing.'
+      );
+    return grant;
+  }
+
+  async getParticipantAccess(principal, id, expected = null) {
+    const uid = principalUid(principal);
+    const scope = this._accessExpectation(expected);
+    return this._transaction((transaction) => this._participantGrant(transaction, uid, id, scope), {
+      readOnly: true,
+    });
+  }
+
+  async readAssignedCharacters(principal, id, expected) {
+    const uid = principalUid(principal);
+    const scope = this._accessExpectation(expected);
+    if (scope === null || scope.seatId === null)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose explicit current player access.');
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const reference = this.firestore.collection('campaigns').doc(id);
+    const captured = await this._transaction(
       async (transaction) => {
-        await this.access.assertEligibility(uid, transaction);
-        const grant = await this._accessGrant(transaction, uid, id);
+        const grant = await this._participantGrant(transaction, uid, id, scope);
+        if (grant.access.role !== 'member') throw unavailableCampaign();
+        const snapshot = await transaction.get(reference);
+        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
+        return { head, grant };
+      },
+      { readOnly: true }
+    );
+    const campaign = captured.head.campaign;
+    let records;
+    try {
+      if (!this.resources || (captured.head.charactersRef !== null && !this.objects))
+        throw new Error('Assigned character storage is unavailable');
+      records =
+        captured.head.charactersRef === null
+          ? []
+          : await this.objects.read(id, 'characters', captured.head.charactersRef);
+      const catalog = await this.resources.catalog(campaign);
+      const known = new Set(
+        campaignCharacterRoster(campaign, catalog, records).map((row) => row.id)
+      );
+      if (captured.grant.characterIds.some((characterId) => !known.has(characterId)))
+        throw invalidMembership();
+    } catch (error) {
+      if (
+        error?.constructor === Error ||
+        error instanceof SyntaxError ||
+        ['ENOENT', 'EACCES', 'EPERM'].includes(error?.code)
+      )
+        throw new CloudError(
+          503,
+          'invalid-assigned-state',
+          'Assigned character data could not be verified'
+        );
+      throw error;
+    }
+    await this._transaction(
+      async (transaction) => {
+        const current = await this._participantGrant(transaction, uid, id, scope);
         if (
-          expected !== null &&
-          (expected.seatId !== grant.access.seatId ||
-            expected.accessGeneration !== grant.access.accessGeneration)
+          current.access.role !== 'member' ||
+          stableStringify(current.characterIds) !== stableStringify(captured.grant.characterIds)
         )
           throw new CloudError(
             409,
             'campaign-access-changed',
-            'Campaign access changed. Refresh before continuing.'
+            'Assigned characters changed while reading.'
           );
-        return grant;
+        const head = await transaction.get(reference);
+        if (head.data()?.generation !== captured.head.generation)
+          throw new CloudError(
+            409,
+            'assigned-state-changed',
+            'Campaign data changed while reading assigned sheets.'
+          );
       },
       { readOnly: true }
     );
+    const selected = new Set(captured.grant.characterIds);
+    return {
+      version: 1,
+      access: captured.grant.access,
+      characterIds: [...selected],
+      campaign: {
+        version: campaign.version,
+        id: campaign.id,
+        name: campaign.name,
+        ruleset: campaign.ruleset,
+        coreVersion: campaign.coreVersion,
+        sourcePacks: structuredClone(campaign.sourcePacks),
+        createdAt: campaign.createdAt,
+        charactersRevision: campaign.charactersRevision,
+        sceneRevision: campaign.sceneRevision,
+        sceneSavedAt: campaign.sceneSavedAt,
+      },
+      revision: campaign.charactersRevision,
+      records: records
+        .filter((row) => selected.has(campaignRecordCharacterId(row.key)))
+        .map(({ key, value }) => ({ key, value })),
+      scene: null,
+      sceneRevision: campaign.sceneRevision,
+      sceneSavedAt: campaign.sceneSavedAt,
+    };
   }
 
   async listAccess(principal) {
@@ -3846,7 +3963,10 @@ class CloudCampaignStore {
   }
 
   async uploadAsset(principal, id, command) {
-    const uid = principalUid(principal);
+    return this._uploadAsset(principalUid(principal), id, command);
+  }
+
+  async _uploadAsset(uid, id, command, authorize = null) {
     const startedAt = this.now();
     if (!isCloudUUID(id)) throw unavailableCampaign();
     if (
@@ -3907,6 +4027,7 @@ class CloudCampaignStore {
     const headReference = this.firestore.collection('campaigns').doc(id);
     const previous = await this._transaction(
       async (transaction) => {
+        if (authorize !== null) await authorize(transaction);
         await this.access.assertEligibility(uid, transaction);
         const replay = await this._previousCommand(transaction, intent);
         if (replay !== null) return replay;
@@ -3923,7 +4044,7 @@ class CloudCampaignStore {
         'Private campaign asset storage is not configured'
       );
     const reference = await this.assets.stage(id, mimeType, bytes, (candidate) =>
-      this.usage.reserveStorage(principal, id, candidate, this.assets.bucket)
+      this.usage.reserveOwnerStorage(uid, id, candidate, this.assets.bucket, { authorize })
     );
     if (
       !isPrivateAssetReference(reference, id) ||
@@ -3937,6 +4058,7 @@ class CloudCampaignStore {
         'The private asset failed its integrity check'
       );
     return this._transaction(async (transaction) => {
+      if (authorize !== null) await authorize(transaction);
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
       if (replay !== null) return replay;
@@ -4068,7 +4190,7 @@ class CloudCampaignStore {
     return images;
   }
 
-  async _finalizeCharacterAssets(principal, id, records) {
+  async _finalizeCharacterAssets(ownerUid, id, records, authorize = null) {
     if (this.assets === null) return;
     const unique = new Map(this._imageEntries(records).map((image) => [image.sha256, image]));
     for (const image of unique.values()) {
@@ -4094,11 +4216,16 @@ class CloudCampaignStore {
           );
         await this.assets.read(id, record.reference);
       } else {
-        await this.uploadAsset(principal, id, {
-          commandId: randomUUID(),
-          mimeType: image.mimeType,
-          data: image.data,
-        });
+        await this._uploadAsset(
+          ownerUid,
+          id,
+          {
+            commandId: randomUUID(),
+            mimeType: image.mimeType,
+            data: image.data,
+          },
+          authorize
+        );
       }
     }
   }
@@ -4118,7 +4245,7 @@ class CloudCampaignStore {
     );
     const state = await this._loadSnapshot(captured.head);
     if (captured.grant.access.role === 'owner')
-      await this._finalizeCharacterAssets(principal, id, state.records);
+      await this._finalizeCharacterAssets(principalUid(principal), id, state.records);
     const entries = this._imageEntries(
       state.records,
       captured.grant.access.role === 'owner' ? null : captured.grant.characterIds
@@ -4498,7 +4625,7 @@ class CloudCampaignStore {
     };
   }
 
-  async _prepareChange(state, kind, change) {
+  async _prepareChange(state, kind, change, assignedIds = null) {
     let catalog;
     try {
       catalog = await this.resources.catalog(state.campaign);
@@ -4529,6 +4656,13 @@ class CloudCampaignStore {
       },
     });
     try {
+      if (assignedIds !== null)
+        change = prepareAssignedCharacterChange({
+          state,
+          library: new CampaignCharacters({ ...state, catalog }),
+          characterIds: assignedIds,
+          change,
+        });
       const receipt =
         kind === 'scene.commit'
           ? await domain.commitScene(record.id, change)
@@ -4536,12 +4670,14 @@ class CloudCampaignStore {
       const next = await domain.readCharacters(record.id);
       const library = new CampaignCharacters({ ...next, catalog, store: domain });
       if (next.scene !== null) decodeScene(next.scene, { library, ruleset: next.campaign.ruleset });
-      return { next, receipt };
+      return { next, receipt, changesScene: kind === 'scene.commit' || change.scene !== undefined };
     } catch (error) {
-      if (error?.status === 409 && error.code === 'stale-revision')
+      if (error?.status === 409 && (error.code === 'stale-revision' || assignedIds !== null))
         throw Object.assign(new CloudError(409, 'stale-revision', error.message), {
-          current: error.current,
+          current: error.current ?? { charactersRevision: state.revision },
         });
+      if (assignedIds !== null && error?.status === 403)
+        throw new CloudError(403, 'invalid-assigned-change', error.message);
       if (error?.constructor === Error || error instanceof SyntaxError)
         throw new CloudError(
           400,
@@ -4560,8 +4696,51 @@ class CloudCampaignStore {
     return this._commit(principal, id, command, 'characters.commit');
   }
 
-  async _commit(principal, id, command, kind) {
+  async commitAssignedCharacters(principal, id, command, expected) {
+    const scope = this._accessExpectation(expected);
+    if (scope === null || scope.seatId === null)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose explicit current player access.');
+    return this._commit(principal, id, command, 'characters.assigned.commit', scope);
+  }
+
+  async _assignedPublicationAuthority(transaction, uid, id, scope, captured) {
+    const grant = await this._participantGrant(transaction, uid, id, scope);
+    if (
+      grant.access.role !== 'member' ||
+      stableStringify(grant.characterIds) !== stableStringify(captured.grant.characterIds)
+    )
+      throw new CloudError(
+        409,
+        'campaign-access-changed',
+        'Assigned character access changed before publication.'
+      );
+    const head = await transaction.get(this.firestore.collection('campaigns').doc(id));
+    if (head.data()?.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
+  }
+
+  async runAssignedBackupWork(principal, id, expected) {
     const uid = principalUid(principal);
+    const scope = this._accessExpectation(expected);
+    if (scope === null || scope.seatId === null)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose explicit current player access.');
+    const ownerUid = await this._transaction(
+      async (transaction) => {
+        const grant = await this._participantGrant(transaction, uid, id, scope);
+        if (grant.access.role !== 'member') throw unavailableCampaign();
+        const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
+        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
+        return head.ownerUid;
+      },
+      { readOnly: true }
+    );
+    await this._runOwnerBackupWork(ownerUid, id);
+  }
+
+  async _commit(principal, id, command, kind, expected = null) {
+    const uid = principalUid(principal);
+    const assigned = kind === 'characters.assigned.commit';
+    const canonicalKind = assigned ? 'characters.commit' : kind;
+    const writesCharacters = canonicalKind === 'characters.commit';
     const startedAt = this.now();
     if (!isCloudUUID(id))
       throw new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
@@ -4588,9 +4767,25 @@ class CloudCampaignStore {
         'invalid-campaign-request',
         'Choose an explicit canonical campaign change and command ID'
       );
+    if (assigned && Object.hasOwn(command.change, 'scene'))
+      throw new CloudError(
+        403,
+        'invalid-assigned-change',
+        'Sheet edits cannot publish world or combat commands.'
+      );
     const change = structuredClone(command.change);
+    const access = assigned
+      ? {
+          version: 1,
+          uid,
+          campaignId: id,
+          role: 'member',
+          seatId: expected.seatId,
+          accessGeneration: expected.accessGeneration,
+        }
+      : null;
     const fingerprint = createHash('sha256')
-      .update(stableStringify({ kind, campaignId: id, change }))
+      .update(stableStringify({ kind, campaignId: id, change, ...(assigned ? { access } : {}) }))
       .digest('hex');
     const reference = this.firestore
       .collection('accountCommands')
@@ -4604,9 +4799,15 @@ class CloudCampaignStore {
         await this.access.assertEligibility(uid, transaction);
         const replay = await this._previousCommand(transaction, intent);
         if (replay !== null) return { replay, head: null };
+        const grant = assigned
+          ? await this._participantGrant(transaction, uid, id, expected)
+          : null;
+        if (assigned && grant.access.role !== 'member') throw unavailableCampaign();
+        const snapshot = await transaction.get(headReference);
         return {
           replay: null,
-          head: await this._metadata(await transaction.get(headReference), uid),
+          head: await this._metadata(snapshot, assigned ? snapshot.data().ownerUid : uid),
+          grant,
         };
       },
       { readOnly: true }
@@ -4625,15 +4826,24 @@ class CloudCampaignStore {
         'The cloud campaign generation cannot advance'
       );
     const state = await this._loadSnapshot(captured.head);
-    const { next, receipt } = await this._prepareChange(state, kind, change);
-    const changesScene = kind === 'scene.commit' || change.scene !== undefined;
+    const { next, receipt, changesScene } = await this._prepareChange(
+      state,
+      canonicalKind,
+      change,
+      assigned ? captured.grant.characterIds : null
+    );
+    const result = assigned ? { version: 1, campaignId: id, access, ...receipt } : receipt;
+    const ownerUid = captured.head.ownerUid;
+    const authorize = assigned
+      ? (transaction) =>
+          this._assignedPublicationAuthority(transaction, uid, id, expected, captured)
+      : null;
     const meaningful =
-      (kind === 'characters.commit' &&
-        stableStringify(state.records) !== stableStringify(next.records)) ||
+      (writesCharacters && stableStringify(state.records) !== stableStringify(next.records)) ||
       (changesScene && sceneActivityState(state.scene) !== sceneActivityState(next.scene));
     const candidates = [];
     if (changesScene) candidates.push(snapshotCandidate(id, 'scene', next.scene));
-    if (kind === 'characters.commit') {
+    if (writesCharacters) {
       candidates.push(snapshotCandidate(id, 'characters', next.records));
       if (this.assets !== null)
         for (const image of this._imageEntries(next.records))
@@ -4642,11 +4852,13 @@ class CloudCampaignStore {
             bytes: Buffer.byteLength(image.data, 'base64'),
           });
     }
-    await this.usage.reserveStorage(principal, id, candidates, this.objects.bucket);
-    if (kind === 'characters.commit')
-      await this._finalizeCharacterAssets(principal, id, next.records);
+    await this.usage.reserveOwnerStorage(ownerUid, id, candidates, this.objects.bucket, {
+      authorize,
+    });
+    if (writesCharacters)
+      await this._finalizeCharacterAssets(ownerUid, id, next.records, authorize);
     const removedCharacters = new Set();
-    if (kind === 'characters.commit') {
+    if (writesCharacters) {
       const currentIds = new Set(
         next.records.map((record) => campaignRecordCharacterId(record.key))
       );
@@ -4659,12 +4871,16 @@ class CloudCampaignStore {
     const [sceneRef, charactersRef] = await Promise.all([
       changesScene
         ? this.objects.stage(id, 'scene', next.scene, (candidate) =>
-            this.usage.reserveStorage(principal, id, candidate, this.objects.bucket)
+            this.usage.reserveOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
+              authorize,
+            })
           )
         : captured.head.sceneRef,
-      kind === 'characters.commit'
+      writesCharacters
         ? this.objects.stage(id, 'characters', next.records, (candidate) =>
-            this.usage.reserveStorage(principal, id, candidate, this.objects.bucket)
+            this.usage.reserveOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
+              authorize,
+            })
           )
         : captured.head.charactersRef,
     ]);
@@ -4673,7 +4889,8 @@ class CloudCampaignStore {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
       if (replay !== null) return replay;
-      const current = await this._metadata(await transaction.get(headReference), uid);
+      if (authorize !== null) await authorize(transaction);
+      const current = await this._metadata(await transaction.get(headReference), ownerUid);
       if (
         current.generation !== captured.head.generation ||
         current.campaign.sceneRevision !== captured.head.campaign.sceneRevision ||
@@ -4722,7 +4939,7 @@ class CloudCampaignStore {
       }
       const live = await this._liveSession(transaction, id);
       const presence = await this._livePresence(transaction, live);
-      await this.usage.assertPublication(transaction, uid, id, candidates, startedAt);
+      await this.usage.assertPublication(transaction, ownerUid, id, candidates, startedAt);
       const now = Math.max(
         this.now(),
         Date.parse(live.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
@@ -4765,17 +4982,17 @@ class CloudCampaignStore {
         kind,
         fingerprint,
         campaignId: id,
-        result: receipt,
+        result,
       });
       transaction.create(headReference.collection('changes').doc(String(generation)), {
         version: 1,
         generation,
-        kind,
+        kind: canonicalKind,
         sceneRevision: next.sceneRevision,
         charactersRevision: next.revision,
         committedAt: FieldValue.serverTimestamp(),
       });
-      return receipt;
+      return result;
     });
   }
 }

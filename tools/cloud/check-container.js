@@ -43,7 +43,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   let lastError;
   for (let attempt = 0; attempt < 30 && !ready; attempt++) {
     try {
-      const response = await fetch('http://127.0.0.1:' + port + '/healthz', { signal: AbortSignal.timeout(1000) });
+      const response = await fetch('http://127.0.0.1:' + port + '/health', { signal: AbortSignal.timeout(1000) });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { version: 1, status: 'ready' });
       ready = true;
@@ -60,6 +60,10 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/live/status');
   assert.equal(liveStatus.status, 401);
   assert.equal((await liveStatus.json()).code, 'authentication-required');
+  const assignedSheets = await fetch('http://127.0.0.1:' + port +
+    '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/assigned-characters');
+  assert.equal(assignedSheets.status, 401);
+  assert.equal((await assignedSheets.json()).code, 'authentication-required');
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   const forged = encode({ alg: 'none', typ: 'JWT' }) + '.' + encode({
     aud: process.env.GCLOUD_PROJECT,
@@ -108,6 +112,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   for (const file of [
     'tools/cloud/admin-runtime.js', 'tools/cloud/production-runtime.js', 'tools/cloud/production-host.js',
     'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'tools/cloud/usage-limits.js',
+    'tools/assigned-character-change.js',
     'src/campaigns/CloudProtocol.js',
   ]) {
     runtimeHashes[file] = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -115,6 +120,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   console.log(JSON.stringify({
     node: process.version, platform: process.platform, architecture: process.arch, uid: process.getuid(),
     port, bindsAllInterfaces: true, readiness: 200, anonymousAccount: 401, anonymousLiveStatus: 401,
+    anonymousAssignedSheets: 401,
     forgedIdentity: 401, privateFiles: 404,
     resourcePacks: manifest.packs.length, resourceBytes, validatedImagePixels: 16000000,
     rssBytes: process.memoryUsage().rss, runtimeHashes,

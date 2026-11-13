@@ -464,6 +464,78 @@ export function isCloudParticipantAccess(value) {
   );
 }
 
+export function isCloudAssignedCharacterState(value) {
+  return (
+    record(value) &&
+    keys(value, [
+      'version',
+      'access',
+      'characterIds',
+      'campaign',
+      'revision',
+      'records',
+      'scene',
+      'sceneRevision',
+      'sceneSavedAt',
+    ]) &&
+    value.version === 1 &&
+    isCloudAccessScope(value.access) &&
+    value.access.role === 'member' &&
+    record(value.campaign) &&
+    keys(value.campaign, [
+      'version',
+      'id',
+      'name',
+      'ruleset',
+      'coreVersion',
+      'sourcePacks',
+      'createdAt',
+      'charactersRevision',
+      'sceneRevision',
+      'sceneSavedAt',
+    ]) &&
+    Array.isArray(value.characterIds) &&
+    value.characterIds.every((id) => typeof id === 'string' && id.length > 0) &&
+    new Set(value.characterIds).size === value.characterIds.length &&
+    value.campaign?.id === value.access.campaignId &&
+    isCloudAccessGeneration(value.revision) &&
+    isCloudAccessGeneration(value.sceneRevision) &&
+    (value.sceneRevision === 0
+      ? value.sceneSavedAt === null
+      : typeof value.sceneSavedAt === 'string' &&
+        Number.isFinite(Date.parse(value.sceneSavedAt))) &&
+    value.scene === null &&
+    Array.isArray(value.records) &&
+    value.records.length <= 10000 &&
+    value.records.every(
+      (row) =>
+        record(row) &&
+        keys(row, ['key', 'value']) &&
+        typeof row.key === 'string' &&
+        row.key.length > 0 &&
+        typeof row.value === 'string'
+    ) &&
+    new Set(value.records.map((row) => row.key)).size === value.records.length
+  );
+}
+
+export function isCloudAssignedCharacterReceipt(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'campaignId', 'access', 'revision', 'sceneRevision', 'sceneSavedAt']) &&
+    value.version === 1 &&
+    isCloudAccessScope(value.access) &&
+    value.access.role === 'member' &&
+    value.campaignId === value.access.campaignId &&
+    isCloudAccessGeneration(value.revision) &&
+    value.revision > 0 &&
+    isCloudAccessGeneration(value.sceneRevision) &&
+    (value.sceneRevision === 0
+      ? value.sceneSavedAt === null
+      : typeof value.sceneSavedAt === 'string' && Number.isFinite(Date.parse(value.sceneSavedAt)))
+  );
+}
+
 export function isCloudInvitation(value) {
   return (
     record(value) &&

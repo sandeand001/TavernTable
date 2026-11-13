@@ -42,21 +42,24 @@ atomic canonical scene/character backend are verified in
 identity, truthful save feedback and rendered cloud reopening (`M1-04`, `M1-05`,
 `M1-08`, `M1-09`) are verified in the demo environment. Actual process-kill tests
 pass before and after publication. The corrected full stable regression gate
-(`M1-10`) passed 295 suites / 3,791 tests; hosted deployment and migration remain
-unapproved.
+(`M1-10`) passed 295 suites / 3,791 tests; full frontend rollout and real campaign
+migration retain their separate approval gates.
 Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
 canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
 gates, along with private image upload/delivery (`M2-06`) and private-pilot usage
 controls (`M2-08`), complete campaign portability (`M2-07`), independent
-rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`). Provider linking
-(`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
-Fenced cleanup (`M2-11`) and the local API-runtime package (`M4-06`) are verified;
-no cloud deployment is authorized. Durable live authority, inactivity and presence
-(`M4-01`/`M4-02`/`M4-03`) are verified; between-game sheet work and player synchronization
-are next. Cloud player gameplay
-remains gated.
-No application deployment or live campaign-data write has occurred; the narrowly
-approved synthetic Storage/IAM canary is complete and cleaned up.
+rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`).
+Same-UID Google/password linking (`M2-04`) passed owner-approved live acceptance
+on the existing account; the separate emulator defect remains documented.
+Fenced cleanup (`M2-11`), the API-runtime package (`M4-06`), and durable live
+authority/inactivity/presence (`M4-01`/`M4-02`/`M4-03`) are verified.
+Online assigned sheets while paused (`M2-12`) now pass local and real API gates.
+The owner approved one bounded API test deployment in the existing personal
+project; its three disposable account/two synthetic campaign fixtures and live
+object generations were verified cleaned up. The real account and campaigns
+were untouched. This is not a full frontend rollout or source-of-truth cutover.
+Complete M2 operation coverage is next; cloud player world gameplay/streams
+remain gated.
 
 ## Approved requirements: do not reopen by accident
 
@@ -604,7 +607,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     warnings. No production deployment, retention change or routine-save
     presentation change; no live approval remains.
 
-- [ ] **M2-12 - Support online between-game sheet work without a live game.**
+- [x] **M2-12 - Support online between-game sheet work without a live game.**
   - **Depends:** `M2-03`, `M2-05`, `M4-01`.
   - **Success:** authorized sheet reads/edits and DM preparation use short requests
     with normal conflict checks. They do not start a live session; world gameplay
@@ -612,6 +615,28 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** read/save while paused succeeds only for permitted records; world
     commands fail; no permanent game stream or offline upload queue is created.
     Verify actual cold wake/sleep later in `M4-12`.
+  - **Completed:** November 13, 2026. Joined **Assigned characters** opens the
+    existing player-safe sheet editor through current UID/seat/generation
+    requests, without loading the owner world/NPC table or starting a game.
+    Shared local/cloud policy preserves unassigned rows, enabled sources,
+    protected traits and world budgets; owner-billed staging/publication
+    rechecks member authority. Scope revocation after actual reads/uploads,
+    exact owner byte admission, private images, due complete backups and
+    lost-reply recovery after removal pass. Account switching clears stale tabs;
+    malformed/foreign/private DTOs cannot acknowledge or populate the editor.
+    Affected native gate: **162/162**, zero skips, **704,588.6424 ms**.
+    Affected application gate: **18 suites / 116 tests**, **8.234 s**; full
+    lint/stylelint/layering: zero errors and the same 39 baseline warnings.
+    Owner-approved real HTTPS/Firebase Auth/Firestore/Storage acceptance passed
+    with three fixture identities/two synthetic campaigns; exact image bytes,
+    owner billing, paused world preservation and historical own receipt without
+    access revival were verified. All fixtures/live object versions were removed.
+    The deployed immutable image has eight matching source hashes and a passing
+    CPU-only/read-only/no-credential container check. Cloud Run's reserved
+    public `/healthz` path was discovered and replaced by `/health`; focused
+    production runtime recheck: **3/3**, zero skips, **1,678.749 ms**.
+    No real campaign cutover, frontend rollout, hosted sleep/load/cost acceptance
+    or routine-save presentation change is claimed.
 
 - [ ] **M2-13 - Pass complete persistence and implemented-operation access coverage.**
   - **Depends:** `M2-03`, `M2-04`, `M2-05`, `M2-08`, `M2-10`, `M2-11`, `M2-12`.
@@ -853,6 +878,11 @@ Revalidation in the intended environment remains part of M1 and M4.
     handling and each participant still renders locally.
 
 - [ ] **M4-08 - Obtain isolated hosted-test and identity/IAM configuration approval.**
+  - **Status:** incremental API-only approval and least-required runtime IAM are
+    recorded in the preparation evidence. The owner selected the existing
+    personal project, not a separate project. The bounded API smoke passed and
+    its synthetic fixtures were removed. This does not authorize full frontend
+    rollout or satisfy the still-pending packaged-frontend dependency below.
   - **Depends:** `M4-06`, `M4-07`.
   - **Success:** record the approved test project, billable resources, runtime/
     deployment identities and least-required datastore/object/signing permissions.
@@ -861,6 +891,8 @@ Revalidation in the intended environment remains part of M1 and M4.
     live writes. No downloaded service-account key or developer ADC enters an image.
 
 - [ ] **M4-09 - Deploy and smoke-test only the approved isolated environment.**
+  - **Status:** the separately approved API-only test service is deployed and
+    verified; full packaged Hosting deployment and its integrated gates remain.
   - **Depends:** `M4-08`.
   - **Success:** the default Hosting URL opens independently; browsers use the
     configured Cloud Run HTTPS address with exact origins/auth domains. Platform

@@ -14,6 +14,7 @@ export class SavedCharacterSheets {
     state,
     catalog,
     library = null,
+    store = null,
     gameManager = null,
     onChanged = () => {},
   }) {
@@ -31,7 +32,7 @@ export class SavedCharacterSheets {
       new CampaignCharacters({
         ...state,
         catalog,
-        store: new AssignedCharacterStore(connection, state.campaign.id),
+        store: store ?? new AssignedCharacterStore(connection, state.campaign.id),
       });
     this.manager = {
       placedTokens: [],

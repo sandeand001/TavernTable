@@ -46,7 +46,7 @@ async function createProductionHost() {
     });
     server = http.createServer(async (request, response) => {
       try {
-        if (request.url === '/healthz') {
+        if (['/health', '/healthz'].includes(request.url)) {
           if (!['GET', 'HEAD'].includes(request.method)) {
             jsonResponse(
               response,

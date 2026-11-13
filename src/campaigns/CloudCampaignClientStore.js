@@ -1,4 +1,5 @@
 import CampaignStore from './CampaignStore.js';
+import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import {
   isCloudUUID,
   isCloudDigest,
@@ -9,6 +10,8 @@ import {
   isCloudPlayerSeat,
   isCloudAccessScope,
   isCloudParticipantAccess,
+  isCloudAssignedCharacterState,
+  isCloudAssignedCharacterReceipt,
   isCloudAccessGeneration,
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
@@ -46,6 +49,7 @@ const base64 = (bytes) => {
 const definitiveDenials = new Set([
   'invalid-campaign-request',
   'invalid-campaign-change',
+  'invalid-assigned-change',
   'stale-revision',
   'command-id-conflict',
   'request-too-large',
@@ -108,6 +112,7 @@ export default class CloudCampaignClientStore {
       portability: true,
       invitations: true,
       participantAccess: true,
+      assignedSheets: true,
       assignments: true,
       memberships: true,
       browserImport: false,
@@ -323,6 +328,22 @@ export default class CloudCampaignClientStore {
   }
 
   async _receipt(operation, result, input, id) {
+    if (operation === 'assigned-characters') {
+      if (
+        !isCloudAssignedCharacterReceipt(result) ||
+        result.campaignId !== id ||
+        result.access.uid !== this.uid ||
+        result.access.seatId !== input.scope.seatId ||
+        result.access.accessGeneration !== input.scope.accessGeneration ||
+        result.revision !== input.change.revision + 1
+      )
+        throw invalidResponse();
+      return {
+        revision: result.revision,
+        sceneRevision: result.sceneRevision,
+        sceneSavedAt: result.sceneSavedAt,
+      };
+    }
     if (operation === 'import') {
       if (
         !isCloudImportReceipt(result) ||
@@ -499,7 +520,9 @@ export default class CloudCampaignClientStore {
             ? { commandId, ...input }
             : operation === 'create' || operation === 'invitation'
               ? { commandId, options: input }
-              : { commandId, change: input };
+              : operation === 'assigned-characters'
+                ? { commandId, change: input.change }
+                : { commandId, change: input };
     let resolve;
     let reject;
     const promise = new Promise((accepted, denied) => {
@@ -534,7 +557,11 @@ export default class CloudCampaignClientStore {
         const result =
           item.operation === 'import'
             ? await this._importAttempt(item)
-            : await this._call(item.resource, { method: 'POST', body: item.body });
+            : await this._call(item.resource, {
+                method: 'POST',
+                body: item.body,
+                accessScope: item.operation === 'assigned-characters' ? item.input.scope : null,
+              });
         const receipt = await this._receipt(item.operation, result, item.input, item.id);
         this._identity();
         this.pending = null;
@@ -560,6 +587,18 @@ export default class CloudCampaignClientStore {
             'invalid-identity',
             'authentication-required',
           ].includes(error.code);
+        const freshAssignedDenial =
+          item.operation === 'assigned-characters' &&
+          item.error === null &&
+          [
+            'campaign-access-changed',
+            'campaign-not-found',
+            'pilot-access-required',
+            'email-verification-required',
+            'invalid-identity',
+            'authentication-required',
+            'account-changed',
+          ].includes(error.code);
         item.error = error;
         const terminal =
           item.operation === 'import'
@@ -576,6 +615,7 @@ export default class CloudCampaignClientStore {
               freshCapacityDenial
             : freshCapacityDenial ||
               freshAccessDenial ||
+              freshAssignedDenial ||
               definitiveDenials.has(error.code) ||
               (metadataOperations.has(item.operation) && definitiveMetadataDenials.has(error.code));
         if (terminal) {
@@ -746,6 +786,58 @@ export default class CloudCampaignClientStore {
       sceneRevision: result.sceneRevision,
       sceneSavedAt: result.sceneSavedAt,
     };
+  }
+
+  async readAssignedCharacters(id, expected) {
+    if (
+      !isCloudAccessScope(expected) ||
+      expected.uid !== this.uid ||
+      expected.campaignId !== id ||
+      expected.role !== 'member'
+    )
+      throw failure(
+        400,
+        'invalid-access-scope',
+        'Choose the current assigned-character access scope.'
+      );
+    const scope = copy(expected);
+    const result = await this._call(this._resource(id, '/assigned-characters'), {
+      accessScope: scope,
+    });
+    if (
+      !isCloudAssignedCharacterState(result) ||
+      result.access.uid !== this.uid ||
+      result.access.campaignId !== id ||
+      result.access.seatId !== scope.seatId ||
+      result.access.accessGeneration !== scope.accessGeneration ||
+      result.records.some(
+        (row) => !result.characterIds.includes(campaignRecordCharacterId(row.key))
+      )
+    )
+      throw invalidResponse();
+    const campaign = await this._metadata(result.campaign, id);
+    if (
+      result.revision !== campaign.charactersRevision ||
+      result.sceneRevision !== campaign.sceneRevision ||
+      result.sceneSavedAt !== campaign.sceneSavedAt
+    )
+      throw invalidResponse();
+    return { ...copy(result), campaign };
+  }
+
+  commitAssignedCharacters(id, change, expected) {
+    if (
+      !isCloudAccessScope(expected) ||
+      expected.uid !== this.uid ||
+      expected.campaignId !== id ||
+      expected.role !== 'member'
+    )
+      throw failure(
+        400,
+        'invalid-access-scope',
+        'Choose the current assigned-character access scope.'
+      );
+    return this._write('assigned-characters', id, { change, scope: copy(expected) });
   }
 
   async readScene(id) {

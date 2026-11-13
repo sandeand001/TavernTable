@@ -7,6 +7,8 @@ const { createEmulatorRuntime } = require('../../tools/cloud/emulator-runtime.js
 const { CloudAccountAccess, pilotAccountKey } = require('../../tools/cloud/account-access.js');
 const { CloudCampaignStore } = require('../../tools/cloud/campaign-store.js');
 const { ImmutableCloudObjects } = require('../../tools/cloud/immutable-objects.js');
+const { PrivateCampaignAssets } = require('../../tools/cloud/campaign-assets.js');
+const { createCanvas } = require('canvas');
 const { HostResources } = require('../../tools/host-resources.js');
 const { readEmulatorEnvironment } = require('../../tools/cloud/emulator-runtime.js');
 const sdk = require('firebase/auth');
@@ -28,7 +30,7 @@ const { signedInIdentity } = require('./helpers/accounts.js');
 const { cloudApi } = require('./helpers/http.js');
 const { sceneState } = require('../helpers/sceneState.js');
 
-async function fixture(t, { now } = {}) {
+async function fixture(t, { now, withAssets = false } = {}) {
   const runtime = await createEmulatorRuntime();
   t.after(() => runtime.close());
   const manifest = JSON.parse(
@@ -46,6 +48,7 @@ async function fixture(t, { now } = {}) {
       packs: manifest.packs,
       resources,
       objects: new ImmutableCloudObjects({ bucket: runtime.bucket }),
+      ...(withAssets ? { assets: new PrivateCampaignAssets({ bucket: runtime.bucket }) } : {}),
       ...(now ? { now } : {}),
     });
   const store = createStore();
@@ -161,6 +164,505 @@ function invitation(name = 'Invited player', seatId = null) {
     },
   };
 }
+
+test(
+  'paused members read only their assigned sheets through current account scope without receiving world state',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const unrelated = await f.account();
+    const campaign = await f.create(owner.principal, 'Between-game assigned sheets');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: ownerClient,
+    });
+    const hero = await library.create('Between-game hero');
+    const npc = await library.create('Private NPC');
+    await library.edit(npc, { notes: 'PRIVATE NPC SHEET CONTENT' });
+    const validation = { ruleset: '2014', library };
+    const scene = CampaignWorld.fromScene(
+      sceneState({ characterId: hero, name: 'Between-game hero' }),
+      validation
+    ).save();
+    scene.maps[0].name = 'PRIVATE MAP CONTENT';
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: library.revision,
+      scene: encodeScene(scene, validation),
+    });
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const original = (await head.get()).data();
+    const paused = await ownerClient.getLiveSession(campaign.id);
+    const state = await memberClient.readAssignedCharacters(campaign.id, grant.access);
+    assert.deepEqual(state.access, grant.access);
+    assert.deepEqual(state.characterIds, [hero]);
+    assert.equal(state.scene, null);
+    assert.ok(state.records.length > 0);
+    assert.ok(state.records.every((row) => row.key.endsWith(hero)));
+    assert.ok(!JSON.stringify(state).includes('PRIVATE NPC'));
+    assert.ok(!JSON.stringify(state).includes('PRIVATE MAP'));
+    await assert.rejects(
+      f.store.readAssignedCharacters(unrelated.principal, campaign.id, {
+        seatId,
+        accessGeneration: grant.access.accessGeneration,
+      }),
+      { code: 'campaign-not-found' }
+    );
+    assert.deepEqual(await ownerClient.getLiveSession(campaign.id), paused);
+    assert.deepEqual((await head.get()).data(), original);
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: false,
+      accessGeneration: grant.access.accessGeneration,
+    });
+    await assert.rejects(memberClient.readAssignedCharacters(campaign.id, grant.access), {
+      code: 'campaign-access-changed',
+    });
+    const empty = await memberClient.getParticipantAccess(campaign.id);
+    assert.deepEqual(
+      (await memberClient.readAssignedCharacters(campaign.id, empty.access)).records,
+      []
+    );
+  }
+);
+
+test(
+  'paused assigned-sheet saves charge the campaign owner and preserve private sheets, world positions and turn resources',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    await f.create(member.principal, 'Member owns a different campaign');
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    for (const ruleset of ['2014', '2024']) {
+      const campaign = await ownerClient.create({ name: `Paused sheet ${ruleset}`, ruleset });
+      const seatId = await f.join(campaign.id, member.uid);
+      const catalog = await f.resources.catalog(campaign);
+      const library = await CampaignCharacters.open({
+        campaignId: campaign.id,
+        catalog,
+        store: ownerClient,
+      });
+      const hero = await library.create('Assigned traveller');
+      const npc = await library.create('Private keeper');
+      await library.edit(npc, { notes: 'PRIVATE KEEPER NOTES' });
+      const validation = { ruleset, library };
+      const scene = CampaignWorld.fromScene(
+        sceneState({ ruleset, characterId: hero, name: 'Assigned traveller' }),
+        validation
+      ).save();
+      const combat = new CombatSession({ library: library.engine });
+      const actor = { ...scene.creatures[0], characterSheetId: hero };
+      combat.startTurn(actor);
+      combat.adjustMovement(actor, 20);
+      scene.combat = combat.snapshot();
+      await ownerClient.commitScene(campaign.id, {
+        ruleset,
+        revision: 0,
+        charactersRevision: library.revision,
+        scene: encodeScene(scene, validation),
+      });
+      await ownerClient.assignCharacter(campaign.id, {
+        seatId,
+        characterId: hero,
+        assigned: true,
+        accessGeneration: 0,
+      });
+      const grant = await memberClient.getParticipantAccess(campaign.id);
+      const before = await ownerClient.readCharacters(campaign.id);
+      const ownerUsage = f.runtime.firestore
+        .collection('accountUsage')
+        .doc(pilotAccountKey(owner.uid));
+      const memberUsage = f.runtime.firestore
+        .collection('accountUsage')
+        .doc(pilotAccountKey(member.uid));
+      const ownerBytes = (await ownerUsage.get()).data().storageBytes;
+      const memberBytes = (await memberUsage.get()).data().storageBytes;
+      const state = await memberClient.readAssignedCharacters(campaign.id, grant.access);
+      const sheet = new CampaignCharacters({
+        ...state,
+        catalog,
+        store: {
+          readCharacters: (id) => memberClient.readAssignedCharacters(id, grant.access),
+          commitCharacters: (id, change) =>
+            memberClient.commitAssignedCharacters(id, change, grant.access),
+        },
+      });
+      await sheet.edit(hero, { name: 'Renamed between games', notes: 'Persistent assigned notes' });
+      const after = await ownerClient.readCharacters(campaign.id);
+      const oldWorld = JSON.parse(before.scene);
+      const newWorld = JSON.parse(after.scene);
+      const expected = structuredClone(oldWorld);
+      expected.creatures[0].name = 'Renamed between games';
+      assert.deepEqual(newWorld, expected);
+      assert.deepEqual(
+        after.records.filter((row) => row.key.endsWith(npc)),
+        before.records.filter((row) => row.key.endsWith(npc))
+      );
+      assert.equal(after.revision, before.revision + 1);
+      assert.equal(after.sceneRevision, before.sceneRevision + 1);
+      const restored = await memberClient.readAssignedCharacters(campaign.id, grant.access);
+      const reopened = new CampaignCharacters({ ...restored, catalog, store: sheet.store });
+      assert.equal(reopened.get(hero).notes, 'Persistent assigned notes');
+      assert.equal(reopened.get(hero).name, 'Renamed between games');
+      assert.equal((await ownerClient.getLiveSession(campaign.id)).generation, 0);
+      assert.ok((await ownerUsage.get()).data().storageBytes > ownerBytes);
+      assert.equal((await memberUsage.get()).data().storageBytes, memberBytes);
+    }
+  }
+);
+
+test(
+  'assigned-sheet requests cannot delete characters, alter unassigned records, publish scenes or bypass the owner byte limit',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    await f.create(member.principal, 'Member byte ledger');
+    const campaign = await f.create(owner.principal, 'Assigned policy and owner allowance');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const client = f.client(member, api);
+    const catalog = await f.resources.catalog(campaign);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog,
+      store: ownerClient,
+    });
+    const hero = await library.create('Permitted sheet');
+    const npc = await library.create('Unassigned sheet');
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await client.getParticipantAccess(campaign.id);
+    const state = await client.readAssignedCharacters(campaign.id, grant.access);
+    const before = await ownerClient.readCharacters(campaign.id);
+    const change = { ruleset: '2014', revision: state.revision, records: state.records };
+    for (const invalid of [
+      {
+        ...change,
+        records: [...state.records, ...before.records.filter((row) => row.key.endsWith(npc))],
+      },
+      {
+        ...change,
+        records: state.records.filter((row) => !row.key.startsWith('taverntable.character.v1.')),
+      },
+      { ...change, scene: { revision: 0, value: '{}' } },
+    ]) {
+      await assert.rejects(client.commitAssignedCharacters(campaign.id, invalid, grant.access), {
+        code: 'invalid-assigned-change',
+      });
+      assert.equal(client.pending, null);
+    }
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const original = (await head.get()).data();
+    const [filesBefore] = await f.runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/` });
+    await f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(owner.uid))
+      .update({ storageBytes: 20 * 1024 ** 3 - 1 });
+    const sheet = new CampaignCharacters({
+      ...state,
+      catalog,
+      store: {
+        commitCharacters: (id, input) => client.commitAssignedCharacters(id, input, grant.access),
+      },
+    });
+    await assert.rejects(sheet.edit(hero, { notes: 'Cannot borrow the player allowance' }), {
+      code: 'storage-limit-reached',
+    });
+    assert.equal(client.pending, null);
+    assert.deepEqual((await head.get()).data(), original);
+    const [filesAfter] = await f.runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/` });
+    assert.equal(filesAfter.length, filesBefore.length);
+    assert.equal(
+      (
+        await f.runtime.firestore.collection('accountUsage').doc(pilotAccountKey(member.uid)).get()
+      ).data().storageBytes,
+      0
+    );
+    assert.deepEqual(await ownerClient.readCharacters(campaign.id), before);
+  }
+);
+
+test(
+  'a lost assigned-sheet reply recovers the original own receipt after removal without reviving access',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Assigned original caller recovery');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const catalog = await f.resources.catalog(campaign);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog,
+      store: ownerClient,
+    });
+    const hero = await library.create('Receipt keeper');
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    let discard = false;
+    const bodies = [];
+    const client = f.client(member, api, async (url, options) => {
+      const assigned = url.endsWith('/assigned-characters') && options.method === 'POST';
+      if (assigned) bodies.push(options.body);
+      const response = await fetch(url, options);
+      if (assigned && discard) {
+        discard = false;
+        assert.equal(response.status, 200);
+        await response.clone().json();
+        throw new TypeError('Synthetic lost reply after actual assigned publication');
+      }
+      return response;
+    });
+    const grant = await client.getParticipantAccess(campaign.id);
+    const state = await client.readAssignedCharacters(campaign.id, grant.access);
+    const sheet = new CampaignCharacters({
+      ...state,
+      catalog,
+      store: {
+        commitCharacters: (id, input) => client.commitAssignedCharacters(id, input, grant.access),
+      },
+    });
+    let observed;
+    const uncertain = new Promise((resolve) => {
+      observed = resolve;
+    });
+    const stop = client.subscribeSave((value) => {
+      if (value.phase === 'uncertain') observed();
+    });
+    t.after(stop);
+    discard = true;
+    const pending = sheet.edit(hero, { notes: 'Saved once before access removal' });
+    await uncertain;
+    await ownerClient.removeMember(campaign.id, {
+      seatId,
+      accessGeneration: grant.access.accessGeneration,
+    });
+    await client.retryPending();
+    await pending;
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[0], bodies[1]);
+    assert.equal(client.pending, null);
+    await assert.rejects(client.readAssignedCharacters(campaign.id, grant.access), {
+      code: 'campaign-not-found',
+    });
+    const current = await ownerClient.readCharacters(campaign.id);
+    const restored = new CampaignCharacters({ ...current, catalog, store: ownerClient });
+    assert.equal(restored.get(hero).notes, 'Saved once before access removal');
+    assert.equal(current.revision, state.revision + 1);
+    assert.equal((await ownerClient.getLiveSession(campaign.id)).generation, 0);
+  }
+);
+
+for (const operation of ['read', 'save'])
+  test(
+    `assigned ${operation} rechecks membership after actual Storage I/O`,
+    { timeout: 30000 },
+    async (t) => {
+      const f = await fixture(t);
+      const owner = await f.account();
+      const member = await f.account();
+      const campaign = await f.create(owner.principal, 'In-flight assigned access');
+      const seatId = await f.join(campaign.id, member.uid);
+      const api = await cloudApi({ access: f.access, store: f.store });
+      t.after(() => api.close());
+      const ownerClient = f.client(owner, api);
+      const memberClient = f.client(member, api);
+      const catalog = await f.resources.catalog(campaign);
+      const library = await CampaignCharacters.open({
+        campaignId: campaign.id,
+        catalog,
+        store: ownerClient,
+      });
+      const hero = await library.create('Fenced assigned sheet');
+      await ownerClient.assignCharacter(campaign.id, {
+        seatId,
+        characterId: hero,
+        assigned: true,
+        accessGeneration: 0,
+      });
+      const grant = await memberClient.getParticipantAccess(campaign.id);
+      const state = await memberClient.readAssignedCharacters(campaign.id, grant.access);
+      const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+      const original = (await head.get()).data();
+      const originalFile = f.runtime.bucket.file;
+      let entered;
+      let release;
+      let hold = true;
+      const started = new Promise((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise((resolve) => {
+        release = resolve;
+      });
+      f.runtime.bucket.file = function (...args) {
+        const file = originalFile.apply(this, args);
+        const selected =
+          operation === 'read'
+            ? args[0] === original.charactersRef.path
+            : args[0].includes('/objects/characters/') && args[0] !== original.charactersRef.path;
+        if (selected) {
+          const method = operation === 'read' ? 'download' : 'save';
+          const execute = file[method].bind(file);
+          file[method] = async (...values) => {
+            const result = await execute(...values);
+            if (hold) {
+              hold = false;
+              entered();
+              await gate;
+            }
+            return result;
+          };
+        }
+        return file;
+      };
+      t.after(() => {
+        release();
+        f.runtime.bucket.file = originalFile;
+      });
+      const sheets = new CampaignCharacters({
+        ...state,
+        catalog,
+        store: {
+          commitCharacters: (id, change) =>
+            memberClient.commitAssignedCharacters(id, change, grant.access),
+        },
+      });
+      const pending =
+        operation === 'read'
+          ? memberClient.readAssignedCharacters(campaign.id, grant.access)
+          : sheets.edit(hero, { notes: 'Revoked before delivery or publication' });
+      const outcome = pending.then(
+        (value) => ({ value }),
+        (error) => ({ error })
+      );
+      await started;
+      await ownerClient.removeMember(campaign.id, {
+        seatId,
+        accessGeneration: grant.access.accessGeneration,
+      });
+      release();
+      assert.equal((await outcome).error?.code, 'campaign-not-found');
+      assert.deepEqual((await head.get()).data(), original);
+      assert.equal((await ownerClient.readCharacters(campaign.id)).revision, state.revision);
+      assert.equal((await ownerClient.getLiveSession(campaign.id)).generation, 0);
+    }
+  );
+
+test(
+  'paused member image edits remain private and owner-billed and short sheet reads finish due complete backups',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.parse('2026-11-16T00:00:00.000Z');
+    const f = await fixture(t, { now: () => now, withAssets: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Assigned image and rolling backup');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const catalog = await f.resources.catalog(campaign);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog,
+      store: ownerClient,
+    });
+    const hero = await library.create('Assigned image owner');
+    const npc = await library.create('Private backup NPC');
+    await library.edit(npc, { notes: 'PRIVATE COMPLETE BACKUP NOTE' });
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    const state = await memberClient.readAssignedCharacters(campaign.id, grant.access);
+    const before = await f.store.backupStatus(owner.principal, campaign.id);
+    const usage = f.runtime.firestore.collection('accountUsage').doc(pilotAccountKey(owner.uid));
+    const originalBytes = (await usage.get()).data().storageBytes;
+    const sheets = new CampaignCharacters({
+      ...state,
+      catalog,
+      store: {
+        commitCharacters: (id, change) =>
+          memberClient.commitAssignedCharacters(id, change, grant.access),
+      },
+    });
+    const bytes = createCanvas(2, 2).toBuffer('image/png');
+    const portraitImage = 'data:image/png;base64,' + bytes.toString('base64');
+    await sheets.edit(hero, { portraitImage, notes: 'New member backup note' });
+    const manifest = await f.store.getAssetManifest(member.principal, campaign.id);
+    assert.equal(manifest.images.length, 1);
+    const reference = manifest.images[0].reference;
+    assert.deepEqual(
+      (await f.store.readAsset(member.principal, campaign.id, reference.sha256, grant.access))
+        .bytes,
+      bytes
+    );
+    assert.ok((await usage.get()).data().storageBytes > originalBytes + bytes.length);
+    assert.equal(
+      (await f.store.backupStatus(owner.principal, campaign.id)).latest.name,
+      before.latest.name
+    );
+    now += 5 * 60 * 1000;
+    const restored = await memberClient.readAssignedCharacters(campaign.id, grant.access);
+    assert.equal(
+      new CampaignCharacters({ ...restored, catalog, store: memberClient }).get(hero).portraitImage,
+      portraitImage
+    );
+    const complete = await f.store.backupStatus(owner.principal, campaign.id);
+    assert.notEqual(complete.latest.name, before.latest.name);
+    const backup = await f.store.readBackup(owner.principal, campaign.id, complete.latest.name);
+    assert.ok(backup.includes('PRIVATE COMPLETE BACKUP NOTE'));
+    assert.ok(backup.includes('New member backup note'));
+    assert.ok(backup.includes(portraitImage));
+    await assert.rejects(f.store.readBackup(member.principal, campaign.id, complete.latest.name), {
+      code: 'campaign-not-found',
+    });
+    assert.ok(!JSON.stringify(restored).includes('PRIVATE COMPLETE BACKUP NOTE'));
+    assert.equal((await ownerClient.getLiveSession(campaign.id)).generation, 0);
+  }
+);
 
 test(
   'only the campaign owner controls durable live state and login or membership cannot start or extend it',

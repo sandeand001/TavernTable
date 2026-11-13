@@ -40,6 +40,17 @@ async function opportunisticBackupWork(store, principal, id) {
   }
 }
 
+async function opportunisticAssignedBackupWork(store, principal, id, scope) {
+  try {
+    await store.runAssignedBackupWork(principal, id, scope);
+  } catch (error) {
+    console.error('[cloud-assigned-backup-work]', {
+      campaignId: id,
+      code: error instanceof CloudError ? error.code : 'backup-work-failed',
+    });
+  }
+}
+
 async function streamBackup(response, id, text, headers) {
   const bytes = Buffer.byteLength(text, 'utf8');
   const sha256 = createHash('sha256').update(text, 'utf8').digest('hex');
@@ -162,6 +173,9 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'listAccess',
       'getAccess',
       'getParticipantAccess',
+      'readAssignedCharacters',
+      'commitAssignedCharacters',
+      'runAssignedBackupWork',
       'getLiveSession',
       'getLiveStatus',
       'getLiveAccess',
@@ -216,7 +230,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (
@@ -263,7 +277,9 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const writable =
       postOnly ||
       collection ||
-      ['scene', 'characters', 'settings', 'backups', 'live'].includes(snapshot);
+      ['scene', 'characters', 'assigned-characters', 'settings', 'backups', 'live'].includes(
+        snapshot
+      );
     const methods = postOnly ? 'POST, OPTIONS' : writable ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
     let operation = 'campaign.get';
     if (account) operation = 'account';
@@ -346,7 +362,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         request.method === 'POST' ||
         maintainsObjects ||
         (request.method === 'GET' && evaluatesBackups) ||
-        ['scene', 'characters', 'backup'].includes(snapshot) ||
+        ['scene', 'characters', 'assigned-characters', 'backup'].includes(snapshot) ||
         retainedFile ||
         snapshot?.startsWith('assets/')
       ) {
@@ -366,6 +382,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       if (
         expectedAccess !== null &&
         snapshot !== 'participant-access' &&
+        snapshot !== 'assigned-characters' &&
         !snapshot?.startsWith('assets/')
       )
         throw new CloudError(
@@ -419,6 +436,17 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.getAccess(principal, campaign[1]);
         } else if (snapshot === 'participant-access') {
           result = await store.getParticipantAccess(principal, campaign[1], expectedAccess);
+        } else if (snapshot === 'assigned-characters') {
+          result =
+            request.method === 'POST'
+              ? await store.commitAssignedCharacters(
+                  principal,
+                  campaign[1],
+                  await requestJSON(request),
+                  expectedAccess
+                )
+              : await store.readAssignedCharacters(principal, campaign[1], expectedAccess);
+          await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
         } else if (snapshot === 'live') {
           result =
             request.method === 'POST'

@@ -119,11 +119,21 @@ class CloudUsageLimits {
   }
 
   ensureAccount(principal) {
-    return this._ensureAccount(principalUid(principal));
+    return this.ensureOwnerAccount(principalUid(principal));
+  }
+
+  ensureOwnerAccount(uid) {
+    pilotAccountKey(uid);
+    return this._ensureAccount(uid);
   }
 
   prepareStorage(principal, bucket) {
-    return this._initializeStorage(principalUid(principal), bucket);
+    return this.prepareOwnerStorage(principalUid(principal), bucket);
+  }
+
+  prepareOwnerStorage(uid, bucket) {
+    pilotAccountKey(uid);
+    return this._initializeStorage(uid, bucket);
   }
 
   _objectRecord(snapshot, uid, campaignId, candidate) {
@@ -703,13 +713,15 @@ class CloudUsageLimits {
     candidates,
     bucketName,
     inventoryToken = null,
-    importId = null
+    importId = null,
+    authorize = null
   ) {
     const reference = this._reference(uid);
     const reservations = candidates.map((candidate) =>
       reference.collection('objects').doc(objectKey(candidate.path, candidate.generation))
     );
     await this._transaction(async (transaction) => {
+      if (authorize !== null) await authorize(transaction);
       await this.access.assertEligibility(uid, transaction);
       const campaign = await transaction.get(
         this.firestore.collection('campaigns').doc(campaignId)
@@ -831,6 +843,23 @@ class CloudUsageLimits {
 
   async reserveStorage(principal, campaignId, input, bucket, { importId = null } = {}) {
     const uid = principalUid(principal);
+    return this.reserveOwnerStorage(uid, campaignId, input, bucket, { importId });
+  }
+
+  async reserveOwnerStorage(
+    uid,
+    campaignId,
+    input,
+    bucket,
+    { importId = null, authorize = null } = {}
+  ) {
+    pilotAccountKey(uid);
+    if (authorize !== null && typeof authorize !== 'function')
+      throw new CloudError(
+        400,
+        'invalid-storage-reservation',
+        'Choose verified campaign publication authority'
+      );
     if (!isCloudUUID(campaignId) || (importId !== null && !isCloudUUID(importId)))
       throw new CloudError(
         400,
@@ -858,6 +887,7 @@ class CloudUsageLimits {
         'invalid-storage-reservation',
         'Choose a bounded private campaign object'
       );
+    if (authorize !== null) await this._transaction(authorize, { readOnly: true });
     await this._initializeStorage(uid, bucket);
     const unique = new Map();
     for (const candidate of candidates) {
@@ -870,9 +900,10 @@ class CloudUsageLimits {
       });
     }
     const selected = [...unique.values()];
-    await this._reserveObjects(uid, campaignId, selected, bucket.name, null, importId);
+    await this._reserveObjects(uid, campaignId, selected, bucket.name, null, importId, authorize);
     for (let offset = 0; offset < selected.length; offset += 200) {
       await this._transaction(async (transaction) => {
+        if (authorize !== null) await authorize(transaction);
         await this.access.assertEligibility(uid, transaction);
         await this.touchReferences(
           transaction,

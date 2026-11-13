@@ -12,6 +12,7 @@ import { attachHostSessionUpdates } from '../sessions/HostSessionUpdates.js';
 import { CLOUD_BACKUP_BYTE_LIMIT } from '../../campaigns/CloudProtocol.js';
 import { campaignBackupByteLength } from '../../campaigns/CampaignBackupBytes.js';
 import CloudAccountMethods from '../sessions/CloudAccountMethods.js';
+import CloudAssignedCharacterSheets from '../sessions/CloudAssignedCharacterSheets.js';
 
 export default class CampaignLauncher {
   constructor({ workspace = null, saveFeedback = null } = {}) {
@@ -152,6 +153,12 @@ export default class CampaignLauncher {
       const id = button.closest('[data-campaign-id]')?.dataset.campaignId;
       if (button.hasAttribute('data-open-campaign'))
         void this._perform(() => this._open(id), 'Opening the selected campaign...');
+      if (button.hasAttribute('data-open-assigned-sheets'))
+        void this._perform(
+          () =>
+            new CloudAssignedCharacterSheets({ workspace: this.workspace, campaignId: id }).open(),
+          'Loading current assigned saved characters...'
+        );
       if (button.hasAttribute('data-cloud-invitations'))
         void new CloudCampaignInvitations({
           workspace: this.workspace,
@@ -291,7 +298,7 @@ export default class CampaignLauncher {
           this.workspace.store.capabilities?.backups !== false
         );
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation only. Complete rolling backups and restore-as-copy, full campaign import/export, invitations, assignments, membership removal and settings are available; player gameplay and live sessions remain gated.'
+          ? 'Private cloud preparation and assigned online sheets are available between games. Complete rolling backups, restore-as-copy, import/export, invitations, assignments and settings are available; world gameplay and live-session transport remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
@@ -320,6 +327,7 @@ export default class CampaignLauncher {
         <p>${profile.name} rules / SRD ${profile.srd}${sources}</p>
         <div class="campaign-row-actions">
           ${role === 'member' ? '<button type="button" data-view-campaign-access>View player access</button>' : '<button type="button" data-open-campaign>Open</button>'}
+          ${role === 'member' && capabilities?.assignedSheets === true ? '<button type="button" data-open-assigned-sheets>Assigned characters</button>' : ''}
           ${cloud && role === 'owner' && capabilities?.invitations === true ? '<button type="button" data-cloud-invitations>Player invitations</button>' : ''}
           ${capabilities?.settings !== false && (!cloud || role === 'owner') ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
           ${portable && (!cloud || role === 'owner') ? '<button type="button" data-export-campaign>Export</button>' : ''}

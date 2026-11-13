@@ -147,8 +147,11 @@
   First-use accounting precedes any new intent claim; existing legacy bytes are
   inventoried before allocating a complete file. A UID-bound claim, captured
   source job and durable receipt keep manual retries on their original point.
-  Due/error/pending work survives process loss and runs in bounded owner requests
-  after natural wake, never a permanent backend timer. Unchanged content skips
+  Due/error/pending work survives process loss and runs in bounded owner or
+  currently authorized assigned-sheet requests after natural wake, never a
+  permanent backend timer. Member-triggered work uses the canonical owner's
+  private resource context and never delivers backup files/status to the member.
+  Unchanged content skips
   automatic copies; explicit backup can force a point. Late older completion
   cannot move the automatic baseline backwards or hide newer pending state.
   Primary-save acknowledgements and canonical retry state stay independent of
@@ -234,7 +237,20 @@
   tests; ordinary unit/UI checks remain Jest. `npm run dev:cloud` serves the
   explicit demo shell/API on loopback without local campaign authority. Scoped
   Java 21 tooling does not change the system default or authorize deployment.
-- **Cloud API runtime (M4 local package verified; not deployed)**: the production
+- **Online assigned cloud sheets (M2 local and bounded live API verified)**:
+  Joined campaigns expose only current assigned saved-character rows through
+  short UID/seat/generation-bound requests, with no scene/NPC/private owner data.
+  Reads recheck the grant and canonical head after Storage IO. Saves share the
+  local assigned-record/source/world-protection policy and immutable head/CAS/
+  receipt pipeline; a rename can update the saved token name, never position,
+  combat or movement/action resources. Storage, images and backups charge the
+  campaign owner, not the member's separately owned campaign allowance. Paused
+  edits do not start a game, stream or offline upload queue. The sheet UI closes
+  inaccessible tabs on account changes/denial and requires online refresh after
+  reconnecting. Uncertain saves retain their original caller/body/scope; an
+  eligible original UID can recover its minimal accepted receipt after removal,
+  but that historical scope never grants current data access.
+- **Cloud API runtime (local package and bounded live API verified)**: the production
   entry serves only authenticated cloud routes and a minimal health endpoint,
   not the website or private/tooling files. Explicit project/bucket/HTTPS origins
   and production mode reject emulator overrides and credential-file configuration.
@@ -242,7 +258,14 @@
   The pinned Node 24 image runs as a non-root CPU-only process without copied
   credentials, local campaign databases or development tools. Local validation
   uses a read-only filesystem, isolated network and no mounts; hosted IAM,
-  scaling, load, cost and deployment remain separate approval/acceptance gates.
+  scaling, load and cost remain separate acceptance gates. The owner approved
+  one private repository and one keyless `us-west1` API test service in the
+  existing Firebase project, min 0/max 1 and request-based CPU. Actual managed
+  Auth/Firestore/private object access and three-UID isolation passed using only
+  disposable fixtures, then verified cleanup. The public readiness path is
+  `/health`; legacy `/healthz` remains an internal/local alias because Cloud Run
+  reserves some `z`-ending public paths. No full website rollout, real account/
+  campaign migration, measured sleep/load/cost claim or spending cap is implied.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its

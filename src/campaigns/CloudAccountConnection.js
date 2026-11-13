@@ -24,6 +24,9 @@ const invalidResponse = () =>
 const denialCodes = new Set([
   'invalid-live-session',
   'invalid-live-presence',
+  'invalid-assigned-state',
+  'assigned-state-changed',
+  'invalid-assigned-change',
   'live-presence-changed',
   'live-presence-expired',
   'invalid-live-command',
@@ -131,6 +134,18 @@ const denialMessages = new Map([
   [
     'invalid-live-presence',
     'Live connections could not be verified. No ongoing-game or local fallback was selected.',
+  ],
+  [
+    'invalid-assigned-state',
+    'Assigned character data could not be verified. No owner-data fallback was selected.',
+  ],
+  [
+    'assigned-state-changed',
+    'Campaign data changed while reading assigned sheets. Refresh before editing.',
+  ],
+  [
+    'invalid-assigned-change',
+    'Only permitted assigned-sheet changes can be saved. No world or unassigned character data was changed.',
   ],
   ['live-presence-changed', 'This live connection changed. Reconnect to its current state.'],
   ['live-presence-expired', 'This live connection expired. Reconnect to its current state.'],
@@ -471,8 +486,13 @@ export default class CloudAccountConnection {
     if (
       accessScope !== null &&
       (!isCloudAccessScope(accessScope) ||
-        method !== 'GET' ||
-        resource !== `campaigns/${accessScope.campaignId}/participant-access`)
+        !(
+          (method === 'GET' &&
+            resource === `campaigns/${accessScope.campaignId}/participant-access`) ||
+          (['GET', 'POST'].includes(method) &&
+            accessScope.role === 'member' &&
+            resource === `campaigns/${accessScope.campaignId}/assigned-characters`)
+        ))
     )
       throw requestError(
         400,

@@ -92,6 +92,107 @@ function fixture({ crypto } = {}) {
   return { auth, connection, store, fetch };
 }
 
+test('assigned reads reject private world fields, foreign scopes and unassigned character rows', async () => {
+  const setup = fixture();
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'member',
+    seatId: '44444444-4444-4444-8444-444444444444',
+    accessGeneration: 3,
+  };
+  const state = {
+    version: 1,
+    access,
+    campaign,
+    characterIds: [],
+    revision: 0,
+    records: [],
+    scene: null,
+    sceneRevision: 0,
+    sceneSavedAt: null,
+  };
+  let result = state;
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  await expect(setup.store.readAssignedCharacters(campaignId, access)).resolves.toMatchObject(
+    state
+  );
+  for (const invalid of [
+    { ...state, scene: 'PRIVATE WORLD' },
+    { ...state, ownerUid: 'private-owner' },
+    { ...state, campaign: { ...campaign, ownerUid: 'private-owner' } },
+    { ...state, access: { ...access, uid: 'another-user' } },
+    { ...state, access: { ...access, campaignId: commandId } },
+    { ...state, access: { ...access, accessGeneration: 4 } },
+    { ...state, records: [{ key: 'taverntable.character.v1.hidden-npc', value: '{}' }] },
+    { ...state, revision: 1 },
+  ]) {
+    result = invalid;
+    await expect(setup.store.readAssignedCharacters(campaignId, access)).rejects.toMatchObject({
+      code: 'invalid-cloud-response',
+    });
+  }
+  const options = setup.fetch.mock.calls[0][1];
+  expect(options.headers['X-TavernTable-Seat']).toBe(access.seatId);
+  expect(options.headers['X-TavernTable-Access-Generation']).toBe('3');
+  expect(setup.store.pending).toBeNull();
+  setup.store.close();
+});
+
+test('an uncertain assigned receipt preserves the original body and access headers until the original caller is confirmed', async () => {
+  const setup = fixture();
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'member',
+    seatId: '44444444-4444-4444-8444-444444444444',
+    accessGeneration: 3,
+  };
+  const valid = {
+    version: 1,
+    campaignId,
+    access: { ...access },
+    revision: 1,
+    sceneRevision: 0,
+    sceneSavedAt: null,
+  };
+  let result = { ...valid, access: { ...access, accessGeneration: 4 } };
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  let observed;
+  const uncertain = new Promise((resolve) => {
+    observed = resolve;
+  });
+  const stop = setup.store.subscribeSave((state) => {
+    if (state.phase === 'uncertain') observed();
+  });
+  const change = { ruleset: '2014', revision: 0, records: [] };
+  const original = setup.store.commitAssignedCharacters(campaignId, change, access);
+  await uncertain;
+  expect(setup.store.pending).not.toBeNull();
+  expect(setup.store.saveState.error.code).toBe('invalid-cloud-response');
+  change.revision = 100;
+  access.accessGeneration = 99;
+  result = valid;
+  await setup.store.retryPending();
+  await expect(original).resolves.toMatchObject({ revision: 1 });
+  expect(setup.fetch.mock.calls).toHaveLength(2);
+  expect(setup.fetch.mock.calls[1][1].body).toBe(setup.fetch.mock.calls[0][1].body);
+  expect(setup.fetch.mock.calls[1][1].headers['X-TavernTable-Access-Generation']).toBe('3');
+  expect(setup.store.pending).toBeNull();
+  stop();
+  setup.store.close();
+});
+
 test('live status validates authoritative warning deadlines without changing primary save or live-control state', async () => {
   const setup = fixture();
   const status = {

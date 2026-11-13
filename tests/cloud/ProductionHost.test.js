@@ -111,9 +111,15 @@ test(
     host.server.listen(0, '127.0.0.1');
     await once(host.server, 'listening');
     const origin = `http://127.0.0.1:${host.server.address().port}`;
-    const ready = await fetch(origin + '/healthz');
-    assert.equal(ready.status, 200);
-    assert.deepEqual(await ready.json(), { version: 1, status: 'ready' });
+    for (const resource of ['/health', '/healthz']) {
+      const ready = await fetch(origin + resource);
+      assert.equal(ready.status, 200);
+      assert.deepEqual(await ready.json(), { version: 1, status: 'ready' });
+      assert.equal((await fetch(origin + resource, { method: 'HEAD' })).status, 200);
+      const rejected = await fetch(origin + resource, { method: 'POST' });
+      assert.equal(rejected.status, 405);
+      assert.equal(rejected.headers.get('allow'), 'GET, HEAD');
+    }
     for (const resource of [
       '/',
       '/index.html',

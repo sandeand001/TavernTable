@@ -39,5 +39,5 @@ spec:
               value: '["https://APPROVED_FRONTEND_ORIGIN"]'
           startupProbe:
             httpGet:
-              path: /healthz
+              path: /health
               port: 8080
