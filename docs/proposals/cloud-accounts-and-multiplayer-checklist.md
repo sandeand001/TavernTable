@@ -452,6 +452,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     Backend kill/replacement, lost replies at every transfer stage, final
     transaction rollback, quota/UID/claim fences, both editions and browser file
     input/reload pass without changing source data or imported authority.
+    Actual OS-saved JSON files from the VS Code popout and a separately approved
+    Chrome test window were independently verified against original scene/
+    character/image hashes.
 
 - [x] **M2-08 - Enforce private-pilot usage limits and abuse controls.**
   - **Depends:** `M2-01`, `M2-06`.

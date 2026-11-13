@@ -1303,12 +1303,23 @@ member-lifecycle head stayed unchanged. Large previews are explicitly omitted
 from the textarea, while a real DOM/Blob download test verifies the complete
 original file is still supplied to the download helper.
 
-The browser-tool surface did not produce an OS-download event for its button
-click, so no successful OS-file save is claimed from that attempt. Complete
-HTTP export bytes, digest verification, the actual Blob contents and file-input
-import are verified; intended-browser/hosted download checks remain part of the
-later pilot and restore drill. Browser telemetry alone is not a new complete
-3D/live-game acceptance claim.
+The browser-tool surface initially opened a separate VS Code blob window
+instead of reporting an OS-download event. The owner saved that window, and
+the actual `M2-05-saved-browser-settings.json` file was independently verified:
+**1,725 bytes**, with the exact canonical character record and original PNG.
+Its SHA-256 was
+`895a3366d76d4f58b0700a8ed161583d1b5d6ccf8a2aca6899b225df4625601b`.
+
+The owner then approved a dedicated Chrome test window and one existing Google
+demo-account sign-in at the loopback preview. Only that new test window was
+used; the stale emulator session was renewed without changing an account,
+provider or production permission. Chrome's actual **Download JSON** action
+created `Chrome-cloud-M1-verification.json`: **709,228 bytes**, SHA-256
+`568d265a377bdea16fd22af0c2f286d1c71aefb15987a0dcb9b5f52bf41cfdee`.
+Independent file reads verified the exact original M1 scene and character
+hashes. The intended-browser OS-save check is now complete. Hosted gateway
+behavior and the later restore drill remain their own gates; browser telemetry
+alone is not a new complete 3D/live-game acceptance claim.
 
 No live Auth, Storage/IAM, deployment, push/merge or actual cutover occurred.
 No new package or production upload capability was required. Automatic backup
