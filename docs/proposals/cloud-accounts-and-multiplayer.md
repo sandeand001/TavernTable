@@ -562,6 +562,13 @@ container. Evaluate due backups during active work and execute them as tracked
 request/live-session work. Persist pending/failure status for retry after wake;
 never claim an uncompleted backup succeeded.
 
+The development history stores standalone private JSON files within the same
+128,000,000-byte complete-file bound. Points are ordered by captured campaign
+generation/time, so a delayed older upload cannot displace a newer restore
+point or reset its changed-state baseline. Explicit backups share the existing
+rolling retention policy. Retiring a history entry does not refund its bytes
+before the separately fenced cleanup and soft-delete accounting checks.
+
 Retain objects referenced by current heads and retained backups. Clean abandoned
 uploads and superseded objects with bounded maintenance work, not an always-on
 worker. The cleanup design must prevent deleting an object that a concurrent

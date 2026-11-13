@@ -134,8 +134,26 @@
   charged staging for later cleanup. Exports stream complete bytes without
   allocating new Storage objects; the client verifies declared size/SHA-256.
   Large previews are explicitly omitted, not truncated downloads. Pending file
-  bytes remain memory-only, not an offline upload queue. Automatic backup history
-  and restore-as-copy from it remain separate M2 tasks.
+  bytes remain memory-only, not an offline upload queue. Rolling history is a
+  separate implementation; restore-as-copy from it remains a verification gate.
+- **Independent cloud backup (M2 development slice verified)**:
+  a private, immutable, standalone complete JSON file, not just canonical
+  snapshot references or an import envelope. Owner-only history retains twenty
+  points ordered by captured canonical generation/time, not upload completion.
+  First-use accounting precedes any new intent claim; existing legacy bytes are
+  inventoried before allocating a complete file. A UID-bound claim, captured
+  source job and durable receipt keep manual retries on their original point.
+  Due/error/pending work survives process loss and runs in bounded owner requests
+  after natural wake, never a permanent backend timer. Unchanged content skips
+  automatic copies; explicit backup can force a point. Late older completion
+  cannot move the automatic baseline backwards or hide newer pending state.
+  Primary-save acknowledgements and canonical retry state stay independent of
+  backup failures. Explicit workspace exit flushes primary data before requesting
+  a final changed-state point; a backup-only error is reported without blocking
+  sign-out. Live-session lifecycle must reuse this seam in its later gate.
+  Large file IO shares one process-wide slot with export/import finalization.
+  Retired/staged bytes stay conservatively charged until M2-11 safe cleanup;
+  history retirement is not an optimistic storage refund.
 - **Private cloud images (M2 development slice verified)**: preserve canonical
   embedded image rows while finalizing immutable, hash-addressed private bytes.
   Current JPEG/PNG/WebP files use bounded HTTP uploads and exact-byte delivery.

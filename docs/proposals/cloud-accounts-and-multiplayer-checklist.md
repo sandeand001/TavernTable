@@ -47,9 +47,10 @@ unapproved.
 Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
 canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
 gates, along with private image upload/delivery (`M2-06`) and private-pilot usage
-controls (`M2-08`), along with complete campaign portability (`M2-07`). Provider linking
+controls (`M2-08`), complete campaign portability (`M2-07`), and independent
+rolling complete backups (`M2-09`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
-Rolling backup history, verified restore-as-copy and cleanup are next; cloud player gameplay
+Verified restore-as-copy and cleanup are next; cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
@@ -477,7 +478,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     HTTP429/retained-command recovery are verified. The upcoming SSE wire must
     apply the tested lease interface and current access checks in `M3-03`.
 
-- [ ] **M2-09 - Implement complete rolling backups and independent backup status.**
+- [x] **M2-09 - Implement complete rolling backups and independent backup status.**
   - **Depends:** `M2-05`, `M2-07`.
   - **Success:** retain 20 complete automatic backups; when changed, target
     five-minute intervals during active work. Provide manual backup/download.
@@ -485,6 +486,26 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** unchanged state creates no needless backup; the 21st replaces only
     the eligible oldest backup. Failed backups never change primary-save success
     or claim completion, and retry after wake works.
+  - **Completed:** November 12, 2026. **Evidence:** standalone immutable private
+    JSON files, a bounded twenty-point index, captured-generation ordering,
+    UID-bound intent/receipt recovery, durable due/pending/error work and
+    request-bound natural-wake retries pass the development gate. Exact
+    five-minute and 20/21 boundaries, unchanged suppression, independent primary
+    HTTP success during backup failure, real process kill/replacement, missing
+    claims, two-process out-of-order completion, corruption/no repair and
+    pre-quota first-use inventory are verified. Explicit workspace exit flushes
+    primary data before requesting the final changed point; live-session
+    integration remains an M4 gate.
+    Final native gate: **140/140 cases**, no skips, **375,911.4867 ms**.
+    Application/local/account/UI gate: **15 explicit suites / 98 tests**,
+    **9.126 s**. Full lint/stylelint/layering: zero errors and the same 39
+    existing warnings. A real **36,522,415-byte** image-bearing complete point
+    streamed/read back exactly. Actual Chrome recovered the original pre-quota
+    demo intent, created a separate manual point and downloaded **709,228 bytes**;
+    independent file/SDK verification preserved exact metadata, characters,
+    scene and canonical generation 64. Retired bytes remain charged for M2-11
+    cleanup. Restore controls stay gated for M2-10. No production change or
+    routine-save presentation change is claimed.
 
 - [ ] **M2-10 - Implement verified restore-as-copy.**
   - **Depends:** `M2-09`, `M2-06`.

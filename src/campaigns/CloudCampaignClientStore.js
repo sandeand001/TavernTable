@@ -18,6 +18,9 @@ import {
   CLOUD_IMPORT_CHUNK_BYTES,
   isCloudImportReceipt,
   isCloudImportTicket,
+  isCloudBackupRecord,
+  isCloudBackupStatus,
+  CLOUD_BACKUP_RETAIN,
 } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
@@ -87,6 +90,7 @@ export default class CloudCampaignClientStore {
     this.crypto = crypto;
     this.closed = false;
     this.pending = null;
+    this.pendingBackup = null;
     this.saveListeners = new Set();
     this.saveState = Object.freeze({ phase: 'idle', error: null });
     this.storageInfo = Object.freeze({
@@ -95,7 +99,8 @@ export default class CloudCampaignClientStore {
     });
     this.capabilities = Object.freeze({
       settings: true,
-      backups: false,
+      backups: true,
+      backupRestore: false,
       portability: true,
       invitations: true,
       participantAccess: true,
@@ -825,6 +830,95 @@ export default class CloudCampaignClientStore {
     });
     return result.campaign;
   }
+  async listBackups(id) {
+    const result = await this._call(this._resource(id, '/backups'));
+    if (
+      !Array.isArray(result) ||
+      result.length > CLOUD_BACKUP_RETAIN ||
+      result.some((record) => !isCloudBackupRecord(record)) ||
+      new Set(result.map((record) => record.name)).size !== result.length
+    )
+      throw invalidResponse();
+    return copy(result);
+  }
+
+  async backupStatus(id) {
+    const result = await this._call(this._resource(id, '/backups/status'));
+    if (!isCloudBackupStatus(result)) throw invalidResponse();
+    return copy(result);
+  }
+
+  async backupNow(id) {
+    this._identity();
+    const resource = this._resource(id, '/backups');
+    if (this.pendingBackup !== null && this.pendingBackup.id !== id)
+      throw failure(
+        409,
+        'backup-pending',
+        'Retry the original campaign backup before starting another.'
+      );
+    const item = this.pendingBackup ?? {
+      id,
+      commandId: this.crypto.randomUUID(),
+      uncertain: false,
+      promise: null,
+    };
+    this.pendingBackup = item;
+    if (item.promise !== null) return item.promise;
+    item.promise = this._call(resource, { method: 'POST', body: { commandId: item.commandId } })
+      .then((result) => {
+        if (!isCloudBackupRecord(result) || result.name !== item.commandId) throw invalidResponse();
+        this.pendingBackup = null;
+        return copy(result);
+      })
+      .catch((error) => {
+        if (
+          !item.uncertain &&
+          [
+            'invalid-backup-request',
+            'campaign-not-found',
+            'authentication-required',
+            'invalid-identity',
+            'email-verification-required',
+            'pilot-access-required',
+          ].includes(error.code)
+        )
+          this.pendingBackup = null;
+        else item.uncertain = true;
+        throw error;
+      })
+      .finally(() => {
+        item.promise = null;
+      });
+    return item.promise;
+  }
+
+  async readBackup(id, name) {
+    if (!isCloudUUID(name))
+      throw failure(400, 'invalid-backup-request', 'Choose an explicit retained private backup.');
+    const text = await this._call(this._resource(id, `/backups/${name}`), {
+      responseType: 'backup',
+    });
+    let data;
+    try {
+      data = this.parseBackup(text);
+    } catch (error) {
+      if (error?.constructor === Error || error instanceof SyntaxError) throw invalidResponse();
+      throw error;
+    }
+    if (data.version !== 2 || data.campaign.id !== id) throw invalidResponse();
+    return text;
+  }
+
+  async finishBackupSession(id) {
+    const result = await this._call(this._resource(id, '/backups/work'), {
+      method: 'POST',
+      body: { final: true },
+    });
+    if (result !== null && !isCloudBackupRecord(result)) throw invalidResponse();
+    return result === null ? null : copy(result);
+  }
+
   async exportBackup(id) {
     const text = await this._call(this._resource(id, '/backup'), { responseType: 'backup' });
     let data;

@@ -539,7 +539,7 @@ class CloudUsageLimits {
       );
     const candidates = Array.isArray(input) ? input : [input];
     const scope = new RegExp(
-      `^campaigns/${campaignId}/(?:objects/(?:scene|characters|import)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin)$`
+      `^campaigns/${campaignId}/(?:objects/(?:scene|characters|import)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin|backups/[a-f0-9-]{36}/[a-f0-9]{64}\\.json)$`
     );
     if (
       !candidates.length ||
@@ -549,7 +549,8 @@ class CloudUsageLimits {
           !validBytes(candidate.bytes) ||
           candidate.bytes < 1 ||
           typeof candidate.path !== 'string' ||
-          !scope.test(candidate.path)
+          !scope.test(candidate.path) ||
+          (candidate.path.split('/')[2] === 'backups' && !isCloudUUID(candidate.path.split('/')[3]))
       )
     )
       throw new CloudError(

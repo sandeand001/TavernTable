@@ -33,6 +33,11 @@ const denialCodes = new Set([
   'backup-too-large',
   'backup-integrity-failed',
   'backup-download-unavailable',
+  'invalid-backup-request',
+  'invalid-backup-state',
+  'backup-not-found',
+  'backup-unavailable',
+  'backup-storage-unavailable',
   'invalid-campaign-backup',
   'invalid-command-claim',
   'invalid-import-request',
@@ -164,6 +169,23 @@ const denialMessages = new Map([
     'The complete backup could not be verified. No partial file was accepted.',
   ],
   ['backup-download-unavailable', 'This browser cannot verify a complete backup download.'],
+  ['invalid-backup-request', 'Choose an explicit owned campaign and retained JSON backup.'],
+  [
+    'invalid-backup-state',
+    'Private backup history could not be verified. Primary saves are separate.',
+  ],
+  [
+    'backup-not-found',
+    'This retained private backup is no longer available to the signed-in account.',
+  ],
+  [
+    'backup-unavailable',
+    'The complete private backup file is unavailable. No partial file was accepted.',
+  ],
+  [
+    'backup-storage-unavailable',
+    'Private backup storage is temporarily unavailable. Primary saves are separate; retry the original backup.',
+  ],
   ['campaign-limit-reached', 'Each account can own at most 10 private-pilot campaigns.'],
   [
     'storage-limit-reached',
@@ -379,7 +401,8 @@ export default class CloudAccountConnection {
       !['json', 'backup'].includes(responseType) ||
       (responseType === 'backup' &&
         (method !== 'GET' ||
-          !/^campaigns\/[^/]+\/backup$/.test(resource) ||
+          !/^campaigns\/[^/]+\/(?:backup|backups\/[^/]+)$/.test(resource) ||
+          (resource.split('/')[2] === 'backups' && !isCloudUUID(resource.split('/')[3])) ||
           !isCloudUUID(resource.split('/')[1])))
     )
       throw requestError(

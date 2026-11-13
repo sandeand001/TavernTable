@@ -4,6 +4,7 @@ const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { CloudError } = require('./cloud-error.js');
 const { CloudUsageLimits } = require('./usage-limits.js');
+const { acquireLargeFileWork } = require('./large-file-work.js');
 const { readLimitedBody, RequestBodyLimitError } = require('../http-body.js');
 const {
   isCloudUUID,
@@ -17,7 +18,17 @@ const {
 const MAX_CLOUD_REQUEST_BYTES = 24 * 1024 * 1024;
 const MAX_CLOUD_WORK_REQUESTS = 4;
 let activeCloudWork = 0;
-let activeBackupWork = 0;
+
+async function opportunisticBackupWork(store, principal, id) {
+  try {
+    await store.runBackupWork(principal, id);
+  } catch (error) {
+    console.error('[cloud-backup-work]', {
+      campaignId: id,
+      code: error instanceof CloudError ? error.code : 'backup-work-failed',
+    });
+  }
+}
 
 async function streamBackup(response, id, text, headers) {
   const bytes = Buffer.byteLength(text, 'utf8');
@@ -155,6 +166,11 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'get',
       'readCharacters',
       'exportBackup',
+      'backupNow',
+      'listBackups',
+      'backupStatus',
+      'readBackup',
+      'runBackupWork',
       'startImport',
       'uploadImportChunk',
       'finishImport',
@@ -185,7 +201,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|backup|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (
@@ -200,16 +216,28 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       return false;
     const subject = account ? 'account' : 'campaign';
     const snapshot = campaign?.[2];
-    const largeFile = snapshot === 'backup' || importAction?.[2] === 'finish';
+    const retainedFile =
+      snapshot?.startsWith('backups/') && isCloudUUID(snapshot.slice('backups/'.length));
+    const largeFile = snapshot === 'backup' || retainedFile || importAction?.[2] === 'finish';
+    const evaluatesBackups =
+      Boolean(campaign) &&
+      [undefined, 'scene', 'characters', 'settings', 'backups', 'backups/status'].includes(
+        snapshot
+      );
     const postOnly =
       redeem ||
       importStart ||
       Boolean(importAction) ||
-      ['invitations', 'invitations/revoke', 'members/remove', 'assignments', 'assets'].includes(
-        snapshot
-      );
+      [
+        'invitations',
+        'invitations/revoke',
+        'members/remove',
+        'assignments',
+        'assets',
+        'backups/work',
+      ].includes(snapshot);
     const writable =
-      postOnly || collection || ['scene', 'characters', 'settings'].includes(snapshot);
+      postOnly || collection || ['scene', 'characters', 'settings', 'backups'].includes(snapshot);
     const methods = postOnly ? 'POST, OPTIONS' : writable ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
     let operation = 'campaign.get';
     if (account) operation = 'account';
@@ -225,6 +253,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot === 'settings') operation = 'campaign.settings';
     else if (snapshot === 'backup') operation = 'campaign.backup.export';
+    else if (snapshot?.startsWith('backups')) operation = 'campaign.' + snapshot.replace('/', '.');
     else if (snapshot === 'assets') operation = 'campaign.asset.upload';
     else if (snapshot === 'assets/manifest') operation = 'campaign.asset.manifest';
     else if (snapshot?.startsWith('assets/')) operation = 'campaign.asset.read';
@@ -279,24 +308,18 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       return true;
     }
     let ownsWorkSlot = false;
-    let ownsBackupSlot = false;
+    let releaseLargeFile = null;
     try {
       const principal = redeem
         ? await access.verifyIdentity(request.headers.authorization)
         : await access.verifyAuthorization(request.headers.authorization);
       await usage.consumeRequest(principal, { invitation: redeem });
-      if (largeFile && activeBackupWork >= 1)
-        throw Object.assign(
-          new CloudError(
-            503,
-            'cloud-requests-busy',
-            'A large file transfer is already in progress; retry shortly'
-          ),
-          { retryAfter: 1 }
-        );
+      if (largeFile) releaseLargeFile = acquireLargeFileWork();
       if (
         request.method === 'POST' ||
+        (request.method === 'GET' && evaluatesBackups) ||
         ['scene', 'characters', 'backup'].includes(snapshot) ||
+        retainedFile ||
         snapshot?.startsWith('assets/')
       ) {
         if (activeCloudWork >= MAX_CLOUD_WORK_REQUESTS)
@@ -310,10 +333,6 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           );
         activeCloudWork++;
         ownsWorkSlot = true;
-      }
-      if (largeFile) {
-        activeBackupWork++;
-        ownsBackupSlot = true;
       }
       const expectedAccess = requestAccessScope(request);
       if (
@@ -336,6 +355,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             'cloud-campaigns-unavailable',
             'Cloud campaign persistence is not configured'
           );
+        if (evaluatesBackups && request.method === 'GET')
+          await opportunisticBackupWork(store, principal, campaign[1]);
         if (importStart) {
           result = await store.startImport(principal, await requestJSON(request));
         } else if (importAction?.[2] === 'parts') {
@@ -371,6 +392,23 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.getParticipantAccess(principal, campaign[1], expectedAccess);
         } else if (snapshot === 'backup') {
           const text = await store.exportBackup(principal, campaign[1]);
+          await streamBackup(response, campaign[1], text, headers);
+          return true;
+        } else if (snapshot === 'backups') {
+          result =
+            request.method === 'POST'
+              ? await store.backupNow(principal, campaign[1], await requestJSON(request))
+              : await store.listBackups(principal, campaign[1]);
+        } else if (snapshot === 'backups/status') {
+          result = await store.backupStatus(principal, campaign[1]);
+        } else if (snapshot === 'backups/work') {
+          result = await store.runBackupWork(principal, campaign[1], await requestJSON(request));
+        } else if (retainedFile) {
+          const text = await store.readBackup(
+            principal,
+            campaign[1],
+            snapshot.slice('backups/'.length)
+          );
           await streamBackup(response, campaign[1], text, headers);
           return true;
         } else if (snapshot === 'settings') {
@@ -428,13 +466,19 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         } else {
           result = await store.get(principal, campaign[1]);
         }
+        if (
+          campaign &&
+          request.method === 'POST' &&
+          ['scene', 'characters', 'settings'].includes(snapshot)
+        )
+          await opportunisticBackupWork(store, principal, campaign[1]);
       }
       jsonResponse(
         response,
         (collection ||
           importStart ||
           importAction ||
-          ['invitations', 'assets'].includes(snapshot)) &&
+          ['invitations', 'assets', 'backups'].includes(snapshot)) &&
           request.method === 'POST'
           ? 201
           : 200,
@@ -497,7 +541,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       }
     } finally {
       if (ownsWorkSlot) activeCloudWork--;
-      if (ownsBackupSlot) activeBackupWork--;
+      releaseLargeFile?.();
     }
     return true;
   };

@@ -27,10 +27,11 @@ const { createCanvas } = require('canvas');
 const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCharacters.js');
 const { default: CampaignStore } = require('../../src/campaigns/CampaignStore.js');
 const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
+const { default: CampaignWorkspace } = require('../../src/campaigns/CampaignWorkspace.js');
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const sharp = require('sharp');
 
-async function fixture(t) {
+async function fixture(t, { now = Date.now } = {}) {
   const runtime = await createEmulatorRuntime();
   t.after(() => runtime.close());
   const identity = await signedInIdentity(runtime);
@@ -48,7 +49,7 @@ async function fixture(t) {
     )
   );
   const resources = new HostResources({ root: path.join(__dirname, '..', '..'), manifest });
-  const createStore = (now = Date.now) =>
+  const createStore = (clock = now) =>
     new CloudCampaignStore({
       firestore: runtime.firestore,
       access,
@@ -56,7 +57,7 @@ async function fixture(t) {
       resources,
       objects: new ImmutableCloudObjects({ bucket: runtime.bucket }),
       assets: new PrivateCampaignAssets({ bucket: runtime.bucket }),
-      now,
+      now: clock,
     });
   const store = createStore();
   const api = await cloudApi({ access, store });
@@ -105,6 +106,440 @@ async function fixture(t) {
     client,
   };
 }
+
+test(
+  'a manual rolling backup is a complete private file independent of later primary saves and command retries',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const campaign = await f.store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Before rolling snapshot', ruleset: '2014' },
+    });
+    const scene = JSON.stringify(sceneState({ ruleset: '2014' }));
+    await f.store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene },
+    });
+    const command = { commandId: randomUUID() };
+    const record = await f.store.backupNow(f.principal, campaign.id, command);
+    assert.ok(record.name);
+    const before = await f.store.readCharacters(f.principal, campaign.id);
+    await f.store.updateSettings(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      generation: 2,
+      changes: { name: 'After rolling snapshot' },
+    });
+    const text = await f.store.readBackup(f.principal, campaign.id, record.name);
+    const snapshot = JSON.parse(text);
+    assert.equal(snapshot.campaign.name, 'Before rolling snapshot');
+    assert.deepEqual(snapshot.records, before.records);
+    assert.equal(snapshot.scene, before.scene);
+    assert.equal(record.bytes, Buffer.byteLength(text, 'utf8'));
+    assert.deepEqual(await f.createStore().backupNow(f.principal, campaign.id, command), record);
+    assert.equal((await f.store.listBackups(f.principal, campaign.id)).length, 1);
+    const status = await f.store.backupStatus(f.principal, campaign.id);
+    assert.equal(status.intervalMs, 300000);
+    assert.equal(status.retain, 20);
+    assert.deepEqual(status.latest, record);
+    assert.equal((await f.store.get(f.principal, campaign.id)).name, 'After rolling snapshot');
+  }
+);
+
+test(
+  'backup capacity failures remain separate from primary saves and retry the original captured state',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const campaign = await f.store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Before backup capacity failure', ruleset: '2014' },
+    });
+    const original = await f.store.backupNow(f.principal, campaign.id, { commandId: randomUUID() });
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const allocated = (await usage.get()).data().storageBytes;
+    await usage.update({ storageBytes: 20 * 1024 * 1024 * 1024 });
+    const command = { commandId: randomUUID() };
+    await assert.rejects(
+      f.store.backupNow(f.principal, campaign.id, command),
+      (error) => error.code === 'storage-limit-reached'
+    );
+    const failed = await f.store.backupStatus(f.principal, campaign.id);
+    assert.equal(failed.state, 'error');
+    assert.ok(failed.error);
+    assert.deepEqual(failed.latest, original);
+    await f.store.updateSettings(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      generation: 1,
+      changes: { name: 'Primary save acknowledged despite backup failure' },
+    });
+    assert.equal(
+      (await f.store.get(f.principal, campaign.id)).name,
+      'Primary save acknowledged despite backup failure'
+    );
+    await usage.update({ storageBytes: allocated });
+    const recovered = await f.createStore().backupNow(f.principal, campaign.id, command);
+    const text = await f.store.readBackup(f.principal, campaign.id, recovered.name);
+    assert.equal(JSON.parse(text).campaign.name, 'Before backup capacity failure');
+    assert.equal((await f.store.listBackups(f.principal, campaign.id)).length, 2);
+    assert.equal((await f.store.backupStatus(f.principal, campaign.id)).error, null);
+    assert.equal((await f.store.backupStatus(f.principal, campaign.id)).state, 'pending');
+  }
+);
+
+test(
+  'changed-state backup deadlines survive a backend replacement, skip unchanged state and flush the final change',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Scheduled complete snapshot', ruleset: '2014' },
+    });
+    now = Date.parse(campaign.createdAt);
+    assert.equal(await store.runBackupWork(f.principal, campaign.id), null);
+    assert.equal((await store.backupStatus(f.principal, campaign.id)).state, 'pending');
+    now += 299999;
+    assert.equal(await f.createStore(() => now).runBackupWork(f.principal, campaign.id), null);
+    assert.equal((await store.listBackups(f.principal, campaign.id)).length, 0);
+    now++;
+    const first = await f.createStore(() => now).runBackupWork(f.principal, campaign.id);
+    assert.ok(first);
+    now += 1000;
+    await store.updateSettings(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      generation: 1,
+      changes: { name: 'Latest scheduled state' },
+    });
+    assert.equal(await store.runBackupWork(f.principal, campaign.id), null);
+    now += 299000;
+    const second = await f.createStore(() => now).runBackupWork(f.principal, campaign.id);
+    assert.ok(second);
+    assert.equal(
+      JSON.parse(await store.readBackup(f.principal, campaign.id, second.name)).campaign.name,
+      'Latest scheduled state'
+    );
+    now += 300000;
+    assert.equal(await store.runBackupWork(f.principal, campaign.id), null);
+    assert.equal((await store.listBackups(f.principal, campaign.id)).length, 2);
+    await store.updateSettings(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      generation: 2,
+      changes: { name: 'Final accepted state' },
+    });
+    const final = await store.runBackupWork(f.principal, campaign.id, { final: true });
+    assert.ok(final);
+    assert.equal(
+      JSON.parse(await store.readBackup(f.principal, campaign.id, final.name)).campaign.name,
+      'Final accepted state'
+    );
+    assert.equal(
+      await f.createStore(() => now).runBackupWork(f.principal, campaign.id, { final: true }),
+      null
+    );
+    assert.equal((await store.listBackups(f.principal, campaign.id)).length, 3);
+  }
+);
+
+test(
+  'lost manual-backup replies keep their own caller while unrelated canonical saves and verified downloads continue',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const source = await f.store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Manual backup reply loss', ruleset: '2014' },
+    });
+    const commands = [];
+    let lose = true;
+    const client = f.client(async (url, options) => {
+      const response = await fetch(url, options);
+      if (url.endsWith('/backups') && options.method === 'POST') {
+        commands.push(JSON.parse(options.body).commandId);
+        if (lose) {
+          lose = false;
+          throw new TypeError('Fixture lost the committed backup reply');
+        }
+      }
+      return response;
+    });
+    await assert.rejects(client.backupNow(source.id));
+    assert.equal(client.saveState.phase, 'idle');
+    const unrelated = await client.create({
+      name: 'Canonical save remains usable',
+      ruleset: '2014',
+    });
+    assert.notEqual(unrelated.id, source.id);
+    const recovered = await client.backupNow(source.id);
+    assert.equal(commands.length, 2);
+    assert.equal(commands[0], commands[1]);
+    assert.equal(recovered.name, commands[0]);
+    assert.deepEqual(await client.listBackups(source.id), [recovered]);
+    assert.equal((await client.backupStatus(source.id)).state, 'saved');
+    const text = await client.readBackup(source.id, recovered.name);
+    assert.equal(Buffer.byteLength(text, 'utf8'), recovered.bytes);
+    assert.equal(JSON.parse(text).campaign.name, source.name);
+  }
+);
+
+test(
+  'an actual due-backup failure cannot change a successful HTTP save, and the next backend wakes its original job',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const client = f.client();
+    const campaign = await client.create({ name: 'Before due-backup outage', ruleset: '2014' });
+    now = Date.parse(campaign.createdAt);
+    const baseline = await client.backupNow(campaign.id);
+    const settings = await client.getSettings(campaign.id);
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const allocated = (await usage.get()).data().storageBytes;
+    await usage.update({ storageBytes: 20 * 1024 * 1024 * 1024 });
+    now += 300000;
+    const changed = await client.update(
+      campaign.id,
+      { name: 'Primary HTTP save is acknowledged' },
+      settings
+    );
+    assert.equal(changed.name, 'Primary HTTP save is acknowledged');
+    assert.equal(client.saveState.phase, 'saved');
+    const failed = await client.backupStatus(campaign.id);
+    assert.equal(failed.state, 'error');
+    assert.deepEqual(failed.latest, baseline);
+    await usage.update({ storageBytes: allocated });
+    const replacement = await cloudApi({ access: f.access, store: f.createStore() });
+    t.after(() => replacement.close());
+    const response = await fetch(
+      `${replacement.url}/api/cloud/campaigns/${campaign.id}/backups/status`,
+      {
+        headers: { Authorization: 'Bearer ' + f.identity.token },
+      }
+    );
+    assert.equal(response.status, 200);
+    const recovered = (await response.json()).result;
+    assert.equal(recovered.state, 'saved');
+    assert.notEqual(recovered.latest.name, baseline.name);
+    assert.equal(
+      JSON.parse(await f.store.readBackup(f.principal, campaign.id, recovered.latest.name)).campaign
+        .name,
+      changed.name
+    );
+    assert.equal((await f.store.listBackups(f.principal, campaign.id)).length, 2);
+  }
+);
+
+test(
+  'the twenty-first complete point retires only the oldest history entry and replay cannot resurrect it',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Twenty independent complete points', ruleset: '2014' },
+    });
+    now = Date.parse(campaign.createdAt);
+    const points = [];
+    for (let index = 0; index < 21; index++) {
+      now++;
+      points.push(await store.backupNow(f.principal, campaign.id, { commandId: randomUUID() }));
+    }
+    const expected = points.slice(1).reverse();
+    assert.deepEqual(await store.listBackups(f.principal, campaign.id), expected);
+    await assert.rejects(
+      store.readBackup(f.principal, campaign.id, points[0].name),
+      (error) => error.code === 'backup-not-found'
+    );
+    assert.deepEqual(
+      await f.createStore().backupNow(f.principal, campaign.id, { commandId: points[0].name }),
+      points[0]
+    );
+    assert.deepEqual(await store.listBackups(f.principal, campaign.id), expected);
+    for (const point of [expected[0], expected.at(-1)])
+      assert.equal(
+        JSON.parse(await store.readBackup(f.principal, campaign.id, point.name)).campaign.name,
+        campaign.name
+      );
+    const usage = await f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid))
+      .get();
+    assert.equal(
+      usage.data().storageBytes,
+      points.reduce((bytes, point) => bytes + point.bytes, 0)
+    );
+    assert.equal((await store.get(f.principal, campaign.id)).charactersRevision, 0);
+  }
+);
+
+test(
+  'ending a real workspace flushes a final complete point and exposes backup-only failure without losing its primary changes',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const client = f.client();
+    const campaign = await client.create({ name: 'Final workspace checkpoint', ruleset: '2014' });
+    const workspace = new CampaignWorkspace({
+      manifest: f.manifest,
+      resources: f.resources,
+      store: client,
+    });
+    const services = await workspace.open(campaign.id);
+    const first = services.library.create('Included by final flush');
+    const ended = await workspace.finishSession();
+    await first;
+    assert.equal(ended.backupError, null);
+    const initial = await client.listBackups(campaign.id);
+    assert.equal(initial.length, 1);
+    const text = await client.readBackup(campaign.id, initial[0].name);
+    assert.equal(JSON.parse(text).records.length, 1);
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const allocated = (await usage.get()).data().storageBytes;
+    const second = services.library.create('Primary change before backup outage');
+    await second;
+    await usage.update({ storageBytes: 20 * 1024 * 1024 * 1024 });
+    const failed = await workspace.finishSession();
+    assert.equal(failed.backupError.code, 'storage-limit-reached');
+    assert.equal(client.saveState.phase, 'saved');
+    assert.equal((await f.store.readCharacters(f.principal, campaign.id)).records.length, 2);
+    await usage.update({ storageBytes: allocated });
+    const recovered = await f.createStore().runBackupWork(f.principal, campaign.id);
+    assert.ok(recovered);
+    assert.equal(
+      JSON.parse(await client.readBackup(campaign.id, recovered.name)).records.length,
+      2
+    );
+  }
+);
+
+test(
+  'retained backup metadata is bound to the exact complete file and corrupted bytes are never repaired on replay',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const campaign = await f.store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Strict complete-file integrity', ruleset: '2014' },
+    });
+    const command = { commandId: randomUUID() };
+    const point = await f.store.backupNow(f.principal, campaign.id, command);
+    const manifest = f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('backups')
+      .doc(point.name);
+    const archived = (await manifest.get()).data().reference;
+    await manifest.update({ 'record.bytes': point.bytes + 1 });
+    await assert.rejects(
+      f.store.readBackup(f.principal, campaign.id, point.name),
+      (error) => error.code === 'invalid-backup-state'
+    );
+    await manifest.update({ 'record.bytes': point.bytes });
+    const file = f.runtime.bucket.file(
+      `campaigns/${campaign.id}/backups/${point.name}/${archived.sha256}.json`
+    );
+    const corrupt = Buffer.from('Incomplete complete-backup fixture');
+    await file.save(corrupt, { resumable: false });
+    await assert.rejects(f.store.readBackup(f.principal, campaign.id, point.name), (error) =>
+      ['backup-integrity-failed', 'backup-unavailable'].includes(error.code)
+    );
+    assert.deepEqual(await f.store.backupNow(f.principal, campaign.id, command), point);
+    assert.deepEqual((await file.download())[0], corrupt);
+    const fresh = await f.store.backupNow(f.principal, campaign.id, { commandId: randomUUID() });
+    assert.equal(
+      JSON.parse(await f.store.readBackup(f.principal, campaign.id, fresh.name)).campaign.name,
+      campaign.name
+    );
+    assert.equal((await f.store.get(f.principal, campaign.id)).sceneRevision, 0);
+  }
+);
+
+test(
+  'cold competing due-work evaluators converge on one captured complete point without duplicate history',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const campaign = await f.store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Concurrent natural wake', ruleset: '2014' },
+    });
+    now = Date.parse(campaign.createdAt) + 300000;
+    const workers = Array.from({ length: 4 }, () => f.createStore());
+    const results = await Promise.allSettled(
+      workers.map((store) => store.runBackupWork(f.principal, campaign.id))
+    );
+    const succeeded = results.filter((result) => result.status === 'fulfilled');
+    const created = succeeded.find((result) => result.value !== null)?.value;
+    assert.ok(created);
+    for (const result of results) {
+      if (result.status === 'rejected') assert.equal(result.reason.code, 'cloud-requests-busy');
+      else assert.ok(result.value === null || result.value.name === created.name);
+    }
+    const history = await f.store.listBackups(f.principal, campaign.id);
+    assert.equal(history.length, 1);
+    assert.equal(await f.createStore().runBackupWork(f.principal, campaign.id), null);
+    assert.equal((await f.store.backupStatus(f.principal, campaign.id)).state, 'saved');
+    const jobs = await f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('backupJobs')
+      .get();
+    assert.equal(jobs.size, 1);
+    assert.equal(jobs.docs[0].data().state, 'complete');
+  }
+);
+
+test(
+  'a pre-quota campaign initializes its full legacy usage before creating its first backup intent',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const domain = new CampaignStore({
+      packs: f.manifest.packs,
+      storage: { transaction: async (_mode, operation) => operation({ writeCampaign() {} }) },
+    });
+    const created = await domain.create({ name: 'Existing pre-quota campaign', ruleset: '2014' });
+    const scene = JSON.stringify(sceneState({ ruleset: '2014' }));
+    const objects = new ImmutableCloudObjects({ bucket: f.runtime.bucket });
+    const sceneRef = await objects.stage(created.id, 'scene', scene);
+    const campaign = { ...created, sceneRevision: 1, sceneSavedAt: new Date().toISOString() };
+    const head = {
+      version: 1,
+      ownerUid: f.identity.uid,
+      generation: 2,
+      campaign,
+      sceneRef,
+      charactersRef: null,
+    };
+    const source = f.runtime.firestore.collection('campaigns').doc(created.id);
+    await source.create(head);
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    assert.equal((await usage.get()).exists, false);
+    const point = await f.store.backupNow(f.principal, created.id, { commandId: randomUUID() });
+    const state = (await usage.get()).data();
+    assert.equal(state.ownedCampaigns, 1);
+    assert.equal(state.storageInitialized, true);
+    assert.equal(state.storageBytes, sceneRef.bytes + point.bytes);
+    assert.equal(
+      JSON.parse(await f.store.readBackup(f.principal, created.id, point.name)).scene,
+      scene
+    );
+    assert.deepEqual((await source.get()).data(), head);
+  }
+);
 
 test(
   'failed final publication rolls back campaign ownership, head and receipt while the original import remains recoverable',
@@ -355,6 +790,7 @@ test(
     );
     let largestRequest = 0;
     let responseStreamed = false;
+    let retainedStreamed = false;
     const client = f.client(async (url, options) => {
       if (options.body !== undefined)
         largestRequest = Math.max(largestRequest, Buffer.byteLength(options.body));
@@ -362,6 +798,10 @@ test(
       if (url.endsWith('/backup')) {
         assert.equal(response.headers.get('content-length'), null);
         responseStreamed = response.headers.get('transfer-encoding') === 'chunked';
+      }
+      if (/\/backups\/[a-f0-9-]{36}$/.test(url)) {
+        assert.equal(response.headers.get('content-length'), null);
+        retainedStreamed = response.headers.get('transfer-encoding') === 'chunked';
       }
       return response;
     });
@@ -375,6 +815,13 @@ test(
     assert.equal(exported.scene, scene);
     assert.ok(largestRequest <= 24 * 1024 * 1024);
     assert.equal(responseStreamed, true);
+    const point = await client.backupNow(imported.id);
+    assert.ok(point.bytes > 32 * 1024 * 1024);
+    const restoredPoint = JSON.parse(await client.readBackup(imported.id, point.name));
+    assert.deepEqual(restoredPoint.records, source.records);
+    assert.equal(restoredPoint.scene, scene);
+    assert.deepEqual(restoredPoint.campaign.sourcePacks, imported.sourcePacks);
+    assert.equal(retainedStreamed, true);
     const images = await f.store.getAssetManifest(f.principal, imported.id);
     assert.equal(images.images.length, 32);
     assert.equal(new Set(images.images.map((entry) => entry.reference.sha256)).size, 1);
@@ -385,6 +832,8 @@ test(
         maps: 25,
         characters: ids.length,
         responseStreamed,
+        completeBackupBytes: point.bytes,
+        retainedStreamed,
       })
     );
   }
@@ -907,12 +1356,41 @@ test(
     assert.deepEqual(backup.records, []);
     assert.equal(backup.scene, scene);
     assert.equal(JSON.stringify(backup).includes(f.identity.uid), false);
+    const archived = await f.store.backupNow(f.principal, campaign.id, { commandId: randomUUID() });
     const other = await signedInIdentity(f.runtime);
     t.after(() => other.close());
     await f.runtime.firestore
       .collection('pilotAccounts')
       .doc(pilotAccountKey(other.uid))
       .create({ version: 1, uid: other.uid, enabled: true });
+    const assertHistoryDenied = async () => {
+      for (const [suffix, method, body] of [
+        ['backups', 'GET'],
+        ['backups/status', 'GET'],
+        [`backups/${archived.name}`, 'GET'],
+        ['backups', 'POST', { commandId: randomUUID() }],
+        ['backups/work', 'POST', { final: true }],
+      ]) {
+        const deniedHistory = await fetch(
+          `${f.api.url}/api/cloud/campaigns/${campaign.id}/${suffix}`,
+          {
+            method,
+            headers: {
+              Authorization: 'Bearer ' + other.token,
+              Origin: f.api.origin,
+              ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+            },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+          }
+        );
+        assert.equal(deniedHistory.status, 404);
+        const deniedBody = await deniedHistory.json();
+        assert.equal(deniedBody.code, 'campaign-not-found');
+        assert.equal(JSON.stringify(deniedBody).includes(campaign.name), false);
+        assert.equal(JSON.stringify(deniedBody).includes(f.identity.uid), false);
+      }
+    };
+    await assertHistoryDenied();
     const denied = await fetch(url, {
       headers: { Authorization: 'Bearer ' + other.token, Origin: f.api.origin },
     });
@@ -938,5 +1416,7 @@ test(
     });
     assert.equal(joined.status, 404);
     assert.equal((await joined.json()).code, 'campaign-not-found');
+    await assertHistoryDenied();
+    assert.equal((await f.store.listBackups(f.principal, campaign.id)).length, 1);
   }
 );

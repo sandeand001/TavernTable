@@ -279,7 +279,7 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   );
   expect(launcher.root.textContent).not.toContain('Browser-only storage:');
   expect(launcher.root.querySelector('[data-campaign-import]').hidden).toBe(false);
-  expect(launcher.root.querySelector('[data-campaign-backups]')).toBeNull();
+  expect(launcher.root.querySelectorAll('[data-campaign-backups]')).toHaveLength(1);
   expect(launcher.root.querySelector('[data-cloud-account]').textContent).toContain(
     'picker@example.invalid'
   );
@@ -291,11 +291,13 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   expect(ownedGroup?.querySelector('[data-cloud-invitations]')).not.toBeNull();
   expect(ownedGroup?.querySelector('[data-edit-campaign]')).not.toBeNull();
   expect(ownedGroup?.querySelector('[data-export-campaign]')).not.toBeNull();
+  expect(ownedGroup?.querySelector('[data-campaign-backups]')).not.toBeNull();
   expect(joinedGroup?.textContent).toContain('Joined campaign fixture');
   expect(joinedGroup?.querySelector('[data-open-campaign]')).toBeNull();
   expect(joinedGroup?.querySelector('[data-cloud-invitations]')).toBeNull();
   expect(joinedGroup?.querySelector('[data-edit-campaign]')).toBeNull();
   expect(joinedGroup?.querySelector('[data-export-campaign]')).toBeNull();
+  expect(joinedGroup?.querySelector('[data-campaign-backups]')).toBeNull();
   const settle = async () => {
     for (let attempt = 0; attempt < 30; attempt++) {
       if (!launcher.busy) return;

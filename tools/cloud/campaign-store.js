@@ -11,6 +11,8 @@ const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
 const { CloudUsageLimits } = require('./usage-limits.js');
 const { snapshotCandidate, isImmutableCloudReference } = require('./immutable-objects.js');
+const { CompleteCloudBackupObjects, isCompleteBackupReference } = require('./backup-objects.js');
+const { acquireLargeFileWork } = require('./large-file-work.js');
 const { isPrivateAssetReference } = require('./campaign-assets.js');
 const {
   CHARACTER_IMAGE_TYPES,
@@ -33,6 +35,9 @@ const {
   CLOUD_IMPORT_CHUNK_BYTES,
   isCloudImportReceipt,
   isCloudImportTicket,
+  isCloudBackupRecord,
+  CLOUD_BACKUP_INTERVAL_MS,
+  CLOUD_BACKUP_RETAIN,
 } = require('../../src/campaigns/CloudProtocol.js');
 
 const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -74,6 +79,12 @@ const unavailableInvitation = () =>
   );
 const validUid = (value) => typeof value === 'string' && value.length > 0 && value.length <= 128;
 const IMPORT_TTL_MS = 24 * 60 * 60 * 1000;
+const BACKUP_FAILURE_MESSAGE =
+  'The complete backup was not finished. Acknowledged primary saves are unchanged; retry the backup online.';
+const newestBackupFirst = (a, b) =>
+  b.generation - a.generation ||
+  Date.parse(b.createdAt) - Date.parse(a.createdAt) ||
+  b.name.localeCompare(a.name);
 const importFingerprint = (bytes, sha256) =>
   createHash('sha256')
     .update(stableStringify({ kind: 'campaign.import', bytes, sha256 }))
@@ -160,6 +171,7 @@ function validCommandResult(previous) {
   if (kind === 'campaign.settings')
     return isCloudCampaignSettings(result) && result.campaign.id === previous.campaignId;
   if (kind === 'campaign.asset.upload') return isPrivateAssetReference(result, previous.campaignId);
+  if (kind === 'campaign.backup') return isCloudBackupRecord(result);
   if (kind === 'campaign.import')
     return (
       isCloudImportReceipt(result) &&
@@ -200,6 +212,7 @@ class CloudCampaignStore {
     objects = null,
     resources = null,
     assets = null,
+    backupObjects = null,
     now = Date.now,
   }) {
     if (
@@ -225,9 +238,23 @@ class CloudCampaignStore {
     if (assets !== null && ['stage', 'read'].some((method) => typeof assets[method] !== 'function'))
       throw new Error('Cloud assets require the explicit immutable private asset interface');
     this.assets = assets;
-    if (objects?.bucket && assets?.bucket && objects.bucket.name !== assets.bucket.name)
+    this.backupObjects =
+      backupObjects ??
+      (objects?.bucket ? new CompleteCloudBackupObjects({ bucket: objects.bucket }) : null);
+    if (
+      this.backupObjects !== null &&
+      ['stage', 'read'].some((method) => typeof this.backupObjects[method] !== 'function')
+    )
+      throw new Error('Complete backups require the private immutable file interface');
+    if (
+      new Set(
+        [objects?.bucket?.name, assets?.bucket?.name, this.backupObjects?.bucket?.name].filter(
+          (name) => name !== undefined
+        )
+      ).size > 1
+    )
       throw new Error(
-        'Canonical snapshots and private assets must share the accounted private bucket'
+        'Canonical snapshots, assets and complete backups must share the accounted private bucket'
       );
     this.now = now;
   }
@@ -255,14 +282,17 @@ class CloudCampaignStore {
   }
 
   async _metadata(snapshot, uid) {
-    const head = snapshot.data();
-    if (!snapshot.exists || head?.ownerUid !== uid)
-      throw new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
+    if (!snapshot.exists) throw unavailableCampaign();
+    return this._headMetadata(snapshot.data(), snapshot.id, uid);
+  }
+
+  async _headMetadata(head, id, uid) {
+    if (head?.ownerUid !== uid) throw unavailableCampaign();
     if (
       head.version !== 1 ||
       !Number.isSafeInteger(head.generation) ||
       head.generation < 1 ||
-      head.campaign?.id !== snapshot.id ||
+      head.campaign?.id !== id ||
       !Number.isSafeInteger(head.campaign.sceneRevision) ||
       head.campaign.sceneRevision < 0 ||
       !Number.isSafeInteger(head.campaign.charactersRevision) ||
@@ -276,7 +306,7 @@ class CloudCampaignStore {
     )
       throw new CloudError(503, 'invalid-campaign-head', 'The cloud campaign head is invalid');
     const domain = this._domain({ getCampaign: () => head.campaign });
-    await domain.get(snapshot.id);
+    await domain.get(id);
     return head;
   }
 
@@ -295,7 +325,7 @@ class CloudCampaignStore {
         if (
           claim?.version !== 1 ||
           claim.uid !== uid ||
-          claim.kind !== 'campaign.import' ||
+          !['campaign.import', 'campaign.backup'].includes(claim.kind) ||
           !isCloudDigest(claim.fingerprint) ||
           !isCloudUUID(claim.campaignId)
         )
@@ -333,10 +363,12 @@ class CloudCampaignStore {
         'campaign.settings',
         'campaign.asset.upload',
         'campaign.import',
+        'campaign.backup',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
       (previous.kind === 'campaign.import' && previous.result.importId !== reference.id) ||
+      (previous.kind === 'campaign.backup' && previous.result.name !== reference.id) ||
       typeof previous.fingerprint !== 'string' ||
       !/^[a-f0-9]{64}$/.test(previous.fingerprint)
     )
@@ -382,6 +414,512 @@ class CloudCampaignStore {
       );
     }
     return previous.result;
+  }
+
+  _backupStateReference(id) {
+    return this.firestore.collection('campaigns').doc(id).collection('backupState').doc('current');
+  }
+
+  _backupState(snapshot, uid, id) {
+    if (!snapshot.exists)
+      return {
+        version: 1,
+        uid,
+        campaignId: id,
+        records: [],
+        lastFingerprint: null,
+        lastSavedAt: null,
+        lastGeneration: 0,
+        pending: null,
+        error: null,
+      };
+    const state = snapshot.data();
+    if (
+      state?.version !== 1 ||
+      state.uid !== uid ||
+      state.campaignId !== id ||
+      !Array.isArray(state.records) ||
+      state.records.length > CLOUD_BACKUP_RETAIN ||
+      state.records.some((record) => !isCloudBackupRecord(record)) ||
+      new Set(state.records.map((record) => record.name)).size !== state.records.length ||
+      !(state.lastFingerprint === null || isCloudDigest(state.lastFingerprint)) ||
+      !(state.lastSavedAt === null || validTime(state.lastSavedAt)) ||
+      !Number.isSafeInteger(state.lastGeneration) ||
+      state.lastGeneration < 0 ||
+      (state.lastGeneration === 0) !== (state.records.length === 0) ||
+      (state.lastGeneration === 0) !== (state.lastFingerprint === null) ||
+      (state.lastGeneration === 0) !== (state.lastSavedAt === null) ||
+      state.records.some(
+        (record, index) =>
+          record.generation > state.lastGeneration ||
+          (index > 0 && newestBackupFirst(state.records[index - 1], record) > 0)
+      ) ||
+      !(
+        state.pending === null ||
+        (isCloudUUID(state.pending?.name) &&
+          validTime(state.pending.requestedAt) &&
+          validTime(state.pending.dueAt) &&
+          Object.keys(state.pending).every((key) => ['name', 'requestedAt', 'dueAt'].includes(key)))
+      ) ||
+      !(
+        state.error === null ||
+        (isCloudUUID(state.error?.name) &&
+          typeof state.error.code === 'string' &&
+          /^[a-z][a-z-]+$/.test(state.error.code) &&
+          state.error.message === BACKUP_FAILURE_MESSAGE &&
+          validTime(state.error.at))
+      )
+    )
+      throw new CloudError(
+        503,
+        'invalid-backup-state',
+        'Private backup status could not be verified'
+      );
+    return state;
+  }
+
+  _backupSnapshot(head) {
+    return {
+      version: 1,
+      ownerUid: head.ownerUid,
+      generation: head.generation,
+      campaign: structuredClone(head.campaign),
+      sceneRef: head.sceneRef,
+      charactersRef: head.charactersRef,
+    };
+  }
+
+  _backupFingerprint(head) {
+    const campaign = structuredClone(head.campaign);
+    delete campaign.charactersRevision;
+    delete campaign.sceneRevision;
+    delete campaign.sceneSavedAt;
+    return createHash('sha256')
+      .update(
+        stableStringify({
+          campaign,
+          scene: head.sceneRef?.sha256 ?? null,
+          characters: head.charactersRef?.sha256 ?? null,
+        })
+      )
+      .digest('hex');
+  }
+
+  _nextBackupPending(state, head) {
+    if (this._backupFingerprint(head) === state.lastFingerprint) return null;
+    return (
+      state.pending ?? {
+        name: randomUUID(),
+        requestedAt: new Date(this.now()).toISOString(),
+        dueAt: new Date(
+          Date.parse(state.lastSavedAt ?? head.campaign.createdAt) + CLOUD_BACKUP_INTERVAL_MS
+        ).toISOString(),
+      }
+    );
+  }
+
+  async listBackups(principal, id) {
+    const uid = principalUid(principal);
+    await this._readHead(principal, id);
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        await this._metadata(
+          await transaction.get(this.firestore.collection('campaigns').doc(id)),
+          uid
+        );
+        return this._backupState(await transaction.get(this._backupStateReference(id)), uid, id)
+          .records;
+      },
+      { readOnly: true }
+    );
+  }
+
+  async backupStatus(principal, id) {
+    const uid = principalUid(principal);
+    await this._readHead(principal, id);
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const head = await this._metadata(
+          await transaction.get(this.firestore.collection('campaigns').doc(id)),
+          uid
+        );
+        const state = this._backupState(
+          await transaction.get(this._backupStateReference(id)),
+          uid,
+          id
+        );
+        const jobs = await transaction.get(
+          this.firestore
+            .collection('campaigns')
+            .doc(id)
+            .collection('backupJobs')
+            .where('state', '==', 'pending')
+            .limit(1)
+        );
+        return {
+          state: state.error
+            ? 'error'
+            : state.pending ||
+                !jobs.empty ||
+                this._backupFingerprint(head) !== state.lastFingerprint
+              ? 'pending'
+              : state.records.length
+                ? 'saved'
+                : 'none',
+          error: state.error?.message ?? null,
+          latest: state.records[0] ?? null,
+          intervalMs: CLOUD_BACKUP_INTERVAL_MS,
+          retain: CLOUD_BACKUP_RETAIN,
+        };
+      },
+      { readOnly: true }
+    );
+  }
+
+  async runBackupWork(principal, id, options = {}) {
+    const uid = principalUid(principal);
+    if (
+      !isCloudUUID(id) ||
+      !options ||
+      typeof options !== 'object' ||
+      Array.isArray(options) ||
+      Object.keys(options).some((key) => key !== 'final') ||
+      (Object.hasOwn(options, 'final') && typeof options.final !== 'boolean')
+    )
+      throw new CloudError(400, 'invalid-backup-request', 'Choose explicit private backup work');
+    const final = options.final === true;
+    const commandId = await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const campaign = this.firestore.collection('campaigns').doc(id);
+      const head = await this._metadata(await transaction.get(campaign), uid);
+      const reference = this._backupStateReference(id);
+      const state = this._backupState(await transaction.get(reference), uid, id);
+      if (state.lastGeneration > head.generation)
+        throw new CloudError(
+          503,
+          'invalid-backup-state',
+          'The backup source is ahead of the campaign'
+        );
+      const jobs = await transaction.get(
+        campaign.collection('backupJobs').where('state', '==', 'pending').limit(1)
+      );
+      const fingerprint = this._backupFingerprint(head);
+      const changed = fingerprint !== state.lastFingerprint;
+      let pending = this._nextBackupPending(state, head);
+      if (final && changed) {
+        const started = await transaction.get(campaign.collection('backupJobs').doc(pending.name));
+        if (started.exists && started.data().fingerprint !== fingerprint)
+          pending = { ...pending, name: randomUUID() };
+        pending = { ...pending, dueAt: new Date(this.now()).toISOString() };
+      }
+      if (stableStringify(pending) !== stableStringify(state.pending))
+        transaction.set(reference, { ...state, pending });
+      if (final && changed) return pending.name;
+      if (!jobs.empty) return jobs.docs[0].id;
+      return pending !== null && Date.parse(pending.dueAt) <= this.now() ? pending.name : null;
+    });
+    return commandId === null ? null : this.backupNow(principal, id, { commandId });
+  }
+
+  async _recordBackupFailure(id, intent, error) {
+    try {
+      return await this._transaction(async (transaction) => {
+        await this.access.assertEligibility(intent.uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return replay;
+        if (error instanceof CloudError && error.code === 'cloud-requests-busy') return null;
+        await this._metadata(
+          await transaction.get(this.firestore.collection('campaigns').doc(id)),
+          intent.uid
+        );
+        const reference = this._backupStateReference(id);
+        const state = this._backupState(await transaction.get(reference), intent.uid, id);
+        transaction.set(reference, {
+          ...state,
+          error: {
+            name: intent.reference.id,
+            code: error instanceof CloudError ? error.code : 'backup-request-failed',
+            message: BACKUP_FAILURE_MESSAGE,
+            at: new Date(this.now()).toISOString(),
+          },
+        });
+        return null;
+      });
+    } catch (statusError) {
+      console.error('[cloud-backup-status-failed]', {
+        campaignId: id,
+        code: statusError instanceof CloudError ? statusError.code : 'backup-status-write-failed',
+      });
+      return null;
+    }
+  }
+
+  async backupNow(principal, id, command) {
+    const uid = principalUid(principal);
+    if (
+      !isCloudUUID(id) ||
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).length !== 1 ||
+      !isCloudUUID(command.commandId)
+    )
+      throw new CloudError(
+        400,
+        'invalid-backup-request',
+        'Choose an owned campaign and explicit backup command'
+      );
+    const commandId = command.commandId;
+    const fingerprint = createHash('sha256')
+      .update(stableStringify({ kind: 'campaign.backup', campaignId: id }))
+      .digest('hex');
+    const account = this.firestore.collection('accountCommands').doc(pilotAccountKey(uid));
+    const reference = account.collection('receipts').doc(commandId);
+    const claimReference = account.collection('claims').doc(commandId);
+    const intent = { uid, reference, fingerprint, kind: 'campaign.backup', campaignId: id };
+    const campaign = this.firestore.collection('campaigns').doc(id);
+    const jobReference = campaign.collection('backupJobs').doc(commandId);
+    const previous = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return replay;
+        await this._metadata(await transaction.get(campaign), uid);
+        return null;
+      },
+      { readOnly: true }
+    );
+    if (previous !== null) return previous;
+    await this.usage.ensureAccount(principal);
+    const prepared = await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, intent);
+      if (replay !== null) return { replay, job: null };
+      const head = await this._metadata(await transaction.get(campaign), uid);
+      const jobSnapshot = await transaction.get(jobReference);
+      const claim = await transaction.get(claimReference);
+      if (jobSnapshot.exists) {
+        const job = jobSnapshot.data();
+        if (
+          job?.version !== 1 ||
+          job.uid !== uid ||
+          job.campaignId !== id ||
+          job.name !== commandId ||
+          job.state !== 'pending' ||
+          !validTime(job.createdAt) ||
+          !isCloudDigest(job.fingerprint) ||
+          !claim.exists ||
+          claim.data().fingerprint !== fingerprint
+        )
+          throw new CloudError(
+            503,
+            'invalid-backup-state',
+            'The pending backup could not be verified'
+          );
+        await this._headMetadata(job.snapshot, id, uid);
+        if (this._backupFingerprint(job.snapshot) !== job.fingerprint)
+          throw new CloudError(
+            503,
+            'invalid-backup-state',
+            'The pending backup source could not be verified'
+          );
+        return { replay: null, job };
+      }
+      if (
+        claim.exists ||
+        (await transaction.get(campaign.collection('backups').doc(commandId))).exists
+      )
+        throw new CloudError(409, 'command-id-conflict', 'This backup identity was already used');
+      const job = {
+        version: 1,
+        uid,
+        campaignId: id,
+        name: commandId,
+        createdAt: new Date(this.now()).toISOString(),
+        fingerprint: this._backupFingerprint(head),
+        snapshot: this._backupSnapshot(head),
+        state: 'pending',
+      };
+      transaction.create(claimReference, {
+        version: 1,
+        uid,
+        kind: 'campaign.backup',
+        fingerprint,
+        campaignId: id,
+      });
+      transaction.create(jobReference, job);
+      return { replay: null, job };
+    });
+    if (prepared.replay !== null) return prepared.replay;
+    let release = null;
+    try {
+      if (this.backupObjects === null)
+        throw new CloudError(
+          503,
+          'backup-storage-unavailable',
+          'Complete private backup storage is not configured'
+        );
+      release = acquireLargeFileWork();
+      const text = await this._exportState(await this._loadSnapshot(prepared.job.snapshot));
+      const archived = await this.backupObjects.stage(id, commandId, text, (candidate) =>
+        this.usage.reserveStorage(principal, id, candidate, this.backupObjects.bucket)
+      );
+      const stateReference = this._backupStateReference(id);
+      return await this._transaction(async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return replay;
+        if (!(await transaction.get(claimReference)).exists)
+          throw new CloudError(
+            503,
+            'invalid-backup-state',
+            'The original backup intent is missing'
+          );
+        const currentHead = await this._metadata(await transaction.get(campaign), uid);
+        const job = (await transaction.get(jobReference)).data();
+        if (job?.state !== 'pending' || job.fingerprint !== prepared.job.fingerprint)
+          throw new CloudError(
+            503,
+            'invalid-backup-state',
+            'The original backup source could not be reconciled'
+          );
+        const state = this._backupState(await transaction.get(stateReference), uid, id);
+        if (state.lastGeneration > currentHead.generation)
+          throw new CloudError(
+            503,
+            'invalid-backup-state',
+            'The backup source is ahead of the campaign'
+          );
+        const record = {
+          name: commandId,
+          createdAt: prepared.job.createdAt,
+          bytes: archived.bytes,
+          generation: prepared.job.snapshot.generation,
+        };
+        const records = [record, ...state.records].sort(newestBackupFirst);
+        const retained = records.slice(0, CLOUD_BACKUP_RETAIN);
+        if (retained.some((point) => point.name === commandId))
+          transaction.create(campaign.collection('backups').doc(commandId), {
+            version: 1,
+            uid,
+            campaignId: id,
+            record,
+            reference: archived,
+            fingerprint: prepared.job.fingerprint,
+          });
+        for (const old of state.records.filter(
+          (point) => !retained.some((kept) => kept.name === point.name)
+        ))
+          transaction.delete(campaign.collection('backups').doc(old.name));
+        const nextState = {
+          ...state,
+          records: retained,
+          ...(record.generation > state.lastGeneration ||
+          (record.generation === state.lastGeneration &&
+            Date.parse(record.createdAt) >= Date.parse(state.lastSavedAt))
+            ? {
+                lastFingerprint: prepared.job.fingerprint,
+                lastSavedAt: record.createdAt,
+                lastGeneration: record.generation,
+              }
+            : {}),
+          pending: state.pending?.name === commandId ? null : state.pending,
+          error: state.error?.name === commandId ? null : state.error,
+        };
+        nextState.pending = this._nextBackupPending(nextState, currentHead);
+        transaction.set(stateReference, nextState);
+        transaction.set(jobReference, { ...job, state: 'complete' });
+        transaction.create(reference, {
+          version: 1,
+          uid,
+          kind: 'campaign.backup',
+          fingerprint,
+          campaignId: id,
+          result: record,
+        });
+        return record;
+      });
+    } catch (error) {
+      const replay = await this._recordBackupFailure(id, intent, error);
+      if (replay !== null) return replay;
+      throw error;
+    } finally {
+      release?.();
+    }
+  }
+
+  async readBackup(principal, id, name) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(name))
+      throw new CloudError(400, 'invalid-backup-request', 'Choose an explicit retained backup');
+    await this._readHead(principal, id);
+    const archived = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const current = await this._metadata(
+          await transaction.get(this.firestore.collection('campaigns').doc(id)),
+          uid
+        );
+        const state = this._backupState(
+          await transaction.get(this._backupStateReference(id)),
+          uid,
+          id
+        );
+        const retained = state.records.find((point) => point.name === name);
+        if (!retained)
+          throw new CloudError(
+            404,
+            'backup-not-found',
+            'This retained private backup is not available'
+          );
+        const snapshot = await transaction.get(
+          this.firestore.collection('campaigns').doc(id).collection('backups').doc(name)
+        );
+        if (!snapshot.exists)
+          throw new CloudError(
+            503,
+            'invalid-backup-state',
+            'A retained backup manifest is missing'
+          );
+        const record = snapshot.data();
+        if (
+          record?.version !== 1 ||
+          record.uid !== uid ||
+          record.campaignId !== id ||
+          !isCloudBackupRecord(record.record) ||
+          record.record.name !== name ||
+          record.record.generation > current.generation ||
+          stableStringify(record.record) !== stableStringify(retained) ||
+          !isCompleteBackupReference(record.reference, id, name) ||
+          record.record.bytes !== record.reference.bytes
+        )
+          throw new CloudError(
+            503,
+            'invalid-backup-state',
+            'The retained backup could not be verified'
+          );
+        return record.reference;
+      },
+      { readOnly: true }
+    );
+    if (this.backupObjects === null)
+      throw new CloudError(
+        503,
+        'backup-storage-unavailable',
+        'Private backup storage is not configured'
+      );
+    const text = await this.backupObjects.read(id, name, archived);
+    const parsed = this._domain({}).parseBackup(text);
+    if (parsed.campaign.id !== id)
+      throw new CloudError(
+        503,
+        'backup-integrity-failed',
+        'The backup belongs to a different campaign'
+      );
+    await this._readHead(principal, id);
+    return text;
   }
 
   _importReference(uid, importId) {
@@ -2548,13 +3086,16 @@ class CloudCampaignStore {
   }
 
   async exportBackup(principal, id) {
-    const state = await this.readCharacters(principal, id);
+    return this._exportState(await this.readCharacters(principal, id));
+  }
+
+  async _exportState(state) {
     const record = structuredClone(state.campaign);
     if (state.scene !== null) record.scene = state.scene;
     const text = await this._domain({
       getCampaign: () => record,
       readCharacters: () => state.records,
-    }).exportBackup(id);
+    }).exportBackup(state.campaign.id);
     if (Buffer.byteLength(text, 'utf8') > CLOUD_BACKUP_BYTE_LIMIT)
       throw new CloudError(
         413,

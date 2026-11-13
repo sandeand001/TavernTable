@@ -8,6 +8,7 @@ import CampaignStore from '../../../src/campaigns/CampaignStore.js';
 import CampaignCharacters from '../../../src/campaigns/CampaignCharacters.js';
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import CampaignAutosave from '../../../src/campaigns/CampaignAutosave.js';
+import CampaignWorkspace from '../../../src/campaigns/CampaignWorkspace.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import {
@@ -136,7 +137,18 @@ test('scene checkpoint feedback remains truthful through continued editing and t
     const [, , , id, operation] = new URL(url).pathname.split('/').filter(Boolean);
     const body = options.body && JSON.parse(options.body);
     let result;
-    if (options.method === 'POST') {
+    if (operation === 'backups') {
+      result =
+        options.method === 'POST'
+          ? null
+          : {
+              state: 'pending',
+              error: null,
+              latest: null,
+              intervalMs: 300000,
+              retain: 20,
+            };
+    } else if (options.method === 'POST') {
       result = !id
         ? await backend.create(body.options)
         : operation === 'scene'
@@ -183,13 +195,15 @@ test('scene checkpoint feedback remains truthful through continued editing and t
     await autosave.flush();
     expect(status.textContent).toBe('Saved to cloud');
     expect(autosave.status.text).toBe('Saved to cloud');
+    const workspace = new CampaignWorkspace({ manifest: { packs }, resources: {}, store });
     const services = {
       campaign: library.campaign,
-      workspace: { store },
+      workspace,
       library,
       autosave,
       saveFeedback: feedback,
     };
+    workspace.active = services;
     gm.campaignContext = services;
     const controls = mountCampaignControls(gm, services);
     const signout = [...controls.querySelectorAll('button')].find(
@@ -197,7 +211,7 @@ test('scene checkpoint feedback remains truthful through continued editing and t
     );
     expect(signout).toBeDefined();
     expect(controls.textContent).not.toContain('Players & sharing');
-    expect(controls.textContent).not.toContain('JSON backups');
+    expect(controls.textContent).toContain('JSON backups');
     let signedOut;
     const signingOut = new Promise((resolve) => {
       signedOut = resolve;

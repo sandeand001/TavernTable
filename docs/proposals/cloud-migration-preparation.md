@@ -1326,3 +1326,124 @@ No new package or production upload capability was required. Automatic backup
 history, restore from it and cleanup remain separate tasks; provider linking
 remains deferred. The routine save-flash/centered-notice presentation is
 untouched for `UX-01` after migration completion.
+
+## Independent rolling complete-backup implementation
+
+The M2 development implementation stores a standalone version-2 campaign JSON
+file for every complete history point. Files live under
+`campaigns/{id}/backups/{backupId}/{sha256}.json`, with create-only generation
+preconditions, private/no-store metadata, exact UTF-8 length, full hash/read
+verification and the approved 128,000,000-byte ceiling. An unchanged explicit
+backup still creates an independent physical file. It is not a canonical
+reference-only manifest, an import chunk envelope, or a public download URL.
+New files reserve their actual object bytes before upload in the same private
+bucket used by snapshots/assets.
+
+The campaign's bounded `backupState/current` index contains at most twenty
+public records: name, capture time, bytes and captured head generation. Private
+`backups/{name}` manifests bind those records to exact immutable file references.
+`backupJobs/{name}` retain the captured source while work is pending. UID-bound
+`campaign.backup` claims/receipts prevent another endpoint from reusing an
+unfinished intent and keep a retried manual caller on its original snapshot.
+Index, manifest, job completion, receipt and eligible history retirement publish
+in one transaction. Replaying a retired point never recreates it.
+
+Changed content targets five-minute intervals. Ordinary owner campaign requests
+and explicit history/status requests evaluate due work; pending/failed jobs
+retry on natural wake. There is no backend `setInterval`, scheduler or added
+infrastructure. One request processes at most one pending/due point, using a
+process-wide large-file slot shared with streamed export/import finalization.
+The first deadline is derived from the durable campaign creation time, so a
+process loss before evaluation cannot erase an older campaign's due state.
+The later live-session implementation must reuse this tracked-work interface
+and stop unnecessary browser polling when a session pauses.
+
+History sorts by captured canonical generation/time, not upload completion.
+A delayed older job cannot become the newest restore point or move the automatic
+baseline backwards. Recovering an older point while primary data has changed
+leaves the newer state explicitly pending. Busy work is pending, not a falsely
+failed or completed backup. Source revision-only bookkeeping is excluded from
+the changed-state fingerprint; actual metadata and immutable payload hashes
+remain included.
+
+The managed client retains a separate manual-backup caller and command ID.
+Backup uncertainty cannot occupy the canonical pending-save channel. Existing
+primary HTTP receipts stay successful when due backup work fails. Workspace
+switch/return/sign-out first flush primary changes, then request a final
+changed-state point; primary flush failures still block unsafe exit, while an
+explicitly reported backup-only failure does not block sign-out. Owner history
+offers verified complete-file downloads. Joined/unrelated accounts cannot list,
+run, create or download owner backups. Restore controls stay gated for M2-10.
+
+Logical retirement does not immediately delete or credit old raw objects.
+Retained files and pending source references remain protected for M2-11, which
+will apply bounded race/grace fences and seven-day soft-delete billing.
+Unpublished, failed and retired bytes remain conservatively charged meanwhile.
+
+### Legacy-account issue found by the actual Chrome gate
+
+Fresh-account tests passed, but the existing pre-quota Chrome fixture exposed
+an admission-order bug: the first backup intent was created before the missing
+initial usage ledger. The existing damaged-ledger fence correctly rejected a
+missing ledger with a surviving claim; this was not bad campaign content or
+a Storage permission failure. A new isolated pre-quota campaign/scene fixture
+reproduced the exact error.
+
+The fix checks the current owner/original receipt, initializes the account
+before any fresh backup claim, and then captures the job. Receipt recovery and
+the damaged-ledger fence are not weakened. For the one synthetic demo intent
+created by this bug, the preview was stopped and guarded SDK reads proved one
+current owned campaign, no usage ledger/reservations/imports, only that new
+backup claim, no uploaded backup bytes, matching pending/source snapshots and
+unchanged canonical hashes. A create-only initial ledger was seeded with
+storage explicitly uninitialized; the original claim/job and all source data
+were preserved. Full paginated inventory remains mandatory before file bytes
+can be allocated. No existing ledger was reset or quota refunded.
+
+The original pending demo job then completed after full byte inventory.
+Chrome also exposed a presentation race: parallel status/history reads could
+leave an old failure visible after the history request had completed that job.
+A focused public-panel regression reproduced it. History now reads its status
+after the potentially work-completing history request, rather than preserving
+that stale error. The actual Chrome panel then showed a healthy five-minute/
+twenty-point policy, retained the recovered point, and created an additional
+manual point without altering the campaign.
+
+Chrome's retained-point **Download JSON** produced
+`campaign-a4e6f28a-f77e-4911-ad03-34d5874ddd25-f46157ed-91b2-4241-bc71-1f520f71d260.json`:
+**709,228 bytes**, SHA-256
+`568d265a377bdea16fd22af0c2f286d1c71aefb15987a0dcb9b5f52bf41cfdee`.
+Independent actual-file and SDK reads verified exact campaign metadata,
+characters and scene, both retained points, the original completed job,
+head generation **64** and the original canonical character/scene hashes.
+No new sign-in, provider change, credential submission or unrelated browser
+window action was required.
+
+### Completed development backup gate
+
+- The final native SDK/HTTP/emulator run passed **140/140 cases**, zero skipped,
+  in **375,911.4867 ms**, including thirteen new backup cases. The earlier
+  139-case run preceded the Chrome-discovered legacy regression and is not the
+  final compatibility claim.
+- The affected application/local/account/picker/menu/history/save-feedback gate
+  passed **15 explicit suites / 98 tests**, zero skipped, in **9.126 s**.
+  Full ESLint/stylelint/layering passed with zero errors and the same 39 existing
+  warnings. Existing SDK listener warnings remain visible.
+- The representative 25-map, sixteen-character, 32-image-field world produced
+  an independent **36,522,415-byte** retained complete file. Exact records, scene
+  and source pins survived streamed delivery without Content-Length. The largest
+  POST remained **1,398,126 bytes**. The unchanged complete-import boundary test
+  still imported exactly **128,000,000 bytes** and rejected **128,000,001**.
+- Measured regressions cover exact five-minute due boundaries, unchanged
+  suppression, force/manual points, final primary flush, original-command reply
+  recovery, exact 20/21 history, non-resurrecting retired receipts, cold competing
+  work, two real backend processes finishing out of order, actual process
+  termination after upload/before publication, missing intent after upload,
+  corrupt metadata/file bytes without repair, pre-quota inventory, and unrelated/
+  joined account denials across every history/work/download route.
+
+M2-09 is complete in development. M2-10 restore-as-copy, M2-11 fenced cleanup,
+M4 live-session scheduling/gateway/resource verification and hosted rollout
+remain separate gates. No new dependency, production infrastructure, live
+Auth/Storage/IAM test, deployment, push/merge or actual cutover occurred.
+`UX-01` remains deferred until migration completion.

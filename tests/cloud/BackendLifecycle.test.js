@@ -146,7 +146,12 @@ async function fixture(t) {
       (async () => {
         const runtime = await createEmulatorRuntime();
         let holdPublication = false;
+        let releasePublication = null;
         process.on('message', value => {
+          if (value?.type === 'release-publication') {
+            releasePublication?.();
+            return;
+          }
           if (value?.type !== 'arm-publication') return;
           holdPublication = true;
           process.send({ type: 'armed' });
@@ -160,7 +165,7 @@ async function fixture(t) {
             if (holdPublication) {
               holdPublication = false;
               process.send({ type: 'publication-held' });
-              return new Promise(() => {});
+              return new Promise(resolve => { releasePublication = resolve; });
             }
             return result;
           };
@@ -272,6 +277,129 @@ async function fixture(t) {
     },
   };
 }
+
+test(
+  'an uploaded complete backup survives a backend kill before publication and wakes as one original private point',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const source = await f.store.readCharacters(f.campaign.id);
+    const headReference = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
+    const originalHead = (await headReference.get()).data();
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-publication' });
+    await armed;
+    const held = messageFrom(f.backend.child, 'publication-held');
+    const pending = f.store.backupNow(f.campaign.id).then(
+      (record) => ({ record }),
+      (error) => ({ error })
+    );
+    await held;
+    const originalBody = f.commands.at(-1);
+    const commandId = JSON.parse(originalBody).commandId;
+    const history = headReference.collection('backups').doc(commandId);
+    const receipt = f.runtime.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(f.identity.uid))
+      .collection('receipts')
+      .doc(commandId);
+    assert.equal((await history.get()).exists, false);
+    assert.equal((await receipt.get()).exists, false);
+    const [files] = await f.runtime.bucket.getFiles({
+      prefix: `campaigns/${f.campaign.id}/backups/${commandId}/`,
+    });
+    assert.equal(files.length, 1);
+    const [bytes] = await files[0].download();
+    const complete = JSON.parse(bytes.toString('utf8'));
+    assert.deepEqual(complete.records, source.records);
+    assert.equal(complete.scene, source.scene);
+    assert.equal((await f.store.backupStatus(f.campaign.id)).state, 'pending');
+    await terminate(f.backend.child);
+    assert.ok((await pending).error);
+    const replacement = await f.start(f.backend.port);
+    assert.notEqual(replacement.instance, f.backend.instance);
+    const clean = f.client(replacement.url);
+    const awakened = await clean.backupStatus(f.campaign.id);
+    assert.equal(awakened.state, 'saved');
+    assert.equal(awakened.latest.name, commandId);
+    const recovered = await f.store.backupNow(f.campaign.id);
+    assert.equal(recovered.name, commandId);
+    assert.equal(f.commands.at(-1), originalBody);
+    assert.equal((await clean.listBackups(f.campaign.id)).length, 1);
+    assert.deepEqual((await headReference.get()).data(), originalHead);
+    assert.deepEqual(await clean.readCharacters(f.campaign.id), source);
+    const saved = JSON.parse(await clean.readBackup(f.campaign.id, commandId));
+    assert.deepEqual(saved.records, source.records);
+    assert.equal(saved.scene, source.scene);
+  }
+);
+
+test(
+  'a delayed older backup cannot become the newest restore point or move the automatic baseline backwards',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const original = (
+      await f.runtime.firestore.collection('campaigns').doc(f.campaign.id).get()
+    ).data();
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-publication' });
+    await armed;
+    const held = messageFrom(f.backend.child, 'publication-held');
+    const older = f.store.backupNow(f.campaign.id);
+    await held;
+    await f.library.create('Accepted while the older backup is in progress');
+    const concurrent = await f.start();
+    const client = f.client(concurrent.url);
+    const newer = await client.backupNow(f.campaign.id);
+    f.backend.child.send({ type: 'release-publication' });
+    const delayed = await older;
+    const history = await client.listBackups(f.campaign.id);
+    assert.deepEqual(
+      history.map((record) => record.name),
+      [newer.name, delayed.name]
+    );
+    assert.equal(newer.generation, original.generation + 1);
+    assert.equal(delayed.generation, original.generation);
+    assert.equal((await client.backupStatus(f.campaign.id)).latest.name, newer.name);
+    assert.equal(JSON.parse(await client.readBackup(f.campaign.id, newer.name)).records.length, 2);
+    assert.equal(
+      JSON.parse(await client.readBackup(f.campaign.id, delayed.name)).records.length,
+      1
+    );
+    assert.equal((await client.listBackups(f.campaign.id)).length, 2);
+  }
+);
+
+test(
+  'losing a backup intent after actual upload cannot publish a success-shaped history or receipt',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const headReference = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
+    const originalHead = (await headReference.get()).data();
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-publication' });
+    await armed;
+    const held = messageFrom(f.backend.child, 'publication-held');
+    const pending = f.store.backupNow(f.campaign.id);
+    await held;
+    const commandId = JSON.parse(f.commands.at(-1)).commandId;
+    const account = f.runtime.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(f.identity.uid));
+    await account.collection('claims').doc(commandId).delete();
+    const rejected = assert.rejects(pending, (error) => error.code === 'invalid-backup-state');
+    f.backend.child.send({ type: 'release-publication' });
+    await rejected;
+    assert.equal((await account.collection('receipts').doc(commandId).get()).exists, false);
+    assert.equal((await headReference.collection('backups').doc(commandId).get()).exists, false);
+    assert.deepEqual((await headReference.get()).data(), originalHead);
+    const status = await f.store.backupStatus(f.campaign.id);
+    assert.equal(status.state, 'error');
+    assert.equal(status.latest, null);
+  }
+);
 
 test(
   'an interrupted multipart import resumes through a fresh backend process without exposing or duplicating a campaign',

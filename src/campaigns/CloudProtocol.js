@@ -11,6 +11,8 @@ export const CLOUD_BACKUP_BYTE_LIMIT = 128000000;
 export const CLOUD_BACKUP_BYTES_HEADER = 'X-TavernTable-Backup-Bytes';
 export const CLOUD_BACKUP_DIGEST_HEADER = 'X-TavernTable-Backup-SHA256';
 export const CLOUD_IMPORT_CHUNK_BYTES = 1024 * 1024;
+export const CLOUD_BACKUP_INTERVAL_MS = 300000;
+export const CLOUD_BACKUP_RETAIN = 20;
 
 export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
@@ -24,6 +26,36 @@ const record = (value) => value !== null && typeof value === 'object' && !Array.
 const keys = (value, names) =>
   Object.keys(value).length === names.length &&
   Object.keys(value).every((key) => names.includes(key));
+
+export function isCloudBackupRecord(value) {
+  return (
+    record(value) &&
+    keys(value, ['name', 'createdAt', 'bytes', 'generation']) &&
+    isCloudUUID(value.name) &&
+    typeof value.createdAt === 'string' &&
+    Number.isFinite(Date.parse(value.createdAt)) &&
+    Number.isSafeInteger(value.bytes) &&
+    value.bytes > 0 &&
+    value.bytes <= CLOUD_BACKUP_BYTE_LIMIT &&
+    Number.isSafeInteger(value.generation) &&
+    value.generation > 0
+  );
+}
+
+export function isCloudBackupStatus(value) {
+  return (
+    record(value) &&
+    keys(value, ['state', 'error', 'latest', 'intervalMs', 'retain']) &&
+    ['none', 'pending', 'saved', 'error'].includes(value.state) &&
+    (value.error === null ||
+      (typeof value.error === 'string' && value.error.length > 0 && value.error.length <= 512)) &&
+    (value.state === 'error') === (value.error !== null) &&
+    (value.latest === null || isCloudBackupRecord(value.latest)) &&
+    (value.state !== 'saved' || value.latest !== null) &&
+    value.intervalMs === CLOUD_BACKUP_INTERVAL_MS &&
+    value.retain === CLOUD_BACKUP_RETAIN
+  );
+}
 
 export function isCloudImportReceipt(value) {
   if (

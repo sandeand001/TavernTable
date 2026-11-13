@@ -24,7 +24,11 @@ export default class CampaignBackupPanel {
     this.root.innerHTML = `<div class="campaign-shell">
       <h2>Campaign JSON backups</h2>
       <p>Automatic snapshots preserve committed campaign, character and board data.
-      Restore creates a separate campaign; it never replaces the current one.</p>
+      ${
+        workspace.store.capabilities?.backupRestore === false
+          ? 'Cloud restore-as-copy is still being verified.'
+          : 'Restore creates a separate campaign; it never replaces the current one.'
+      }</p>
       <output role="status" aria-label="JSON backup status"></output>
       <div><button type="button" data-backup-now>Back up now</button>
       <button type="button" data-close-backups>Close</button></div>
@@ -77,13 +81,16 @@ export default class CampaignBackupPanel {
   }
 
   async render() {
-    const [state, records] = await Promise.all([
-      this.workspace.store.backupStatus(this.campaignId),
-      this.workspace.store.listBackups(this.campaignId),
-    ]);
+    const records = await this.workspace.store.listBackups(this.campaignId);
+    // History requests may finish pending work before its status can be read.
+    const state = await this.workspace.store.backupStatus(this.campaignId);
+    const cadence =
+      this.workspace.store.storageInfo?.kind === 'cloud'
+        ? `Changed-state backups target ${state.intervalMs / 60000}-minute intervals during active online work; pending work retries after wake; ${state.retain} snapshots retained.`
+        : `Automatic backup every ${state.intervalMs / 60000} minutes when changed; ${state.retain} snapshots retained.`;
     this.status.textContent = state.error
       ? `Primary saves are separate. JSON backup failed: ${state.error}`
-      : `Automatic backup every ${state.intervalMs / 60000} minutes when changed; ${state.retain} snapshots retained. ${state.latest ? `Latest: ${new Date(state.latest.createdAt).toLocaleString()}.` : 'No JSON snapshot yet.'}`;
+      : `${cadence} ${state.state === 'pending' ? 'A complete backup is pending. ' : ''}${state.latest ? `Latest: ${new Date(state.latest.createdAt).toLocaleString()}.` : 'No JSON snapshot yet.'}`;
     this.root.querySelector('[data-backup-list]').innerHTML =
       records
         .map(
@@ -91,7 +98,7 @@ export default class CampaignBackupPanel {
             `<article><strong>${escape(new Date(record.createdAt).toLocaleString())}</strong>
       <span>${Math.ceil(record.bytes / 1024)} KiB</span>
       <button type="button" data-download-backup="${escape(record.name)}">Download JSON</button>
-      <button type="button" data-restore-backup="${escape(record.name)}">Restore as copy</button></article>`
+      ${this.workspace.store.capabilities?.backupRestore === false ? '' : `<button type="button" data-restore-backup="${escape(record.name)}">Restore as copy</button>`}</article>`
         )
         .join('') || '<p>No JSON backups yet. Use Back up now to create the first one.</p>';
   }

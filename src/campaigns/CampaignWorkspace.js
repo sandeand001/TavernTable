@@ -5,6 +5,7 @@ import CampaignCharacters, { validateCampaignCharacters } from './CampaignCharac
 import { loadBundledResources } from '../resources/ResourceSeeds.js';
 import { CompendiumCatalog } from '../entities/characters/CompendiumCatalog.js';
 import { decodeScene } from './CampaignScene.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
 export default class CampaignWorkspace {
   static async load({
@@ -77,10 +78,7 @@ export default class CampaignWorkspace {
   }
 
   async open(id) {
-    if (this.active) {
-      await this.active.autosave?.flush();
-      await this.active.library.flush();
-    }
+    if (this.active) await this.finishSession();
     const state = await this.store.readCharacters(id);
     const data = await this.resources.catalog(state.campaign);
     const latest = await this.store.get(id);
@@ -142,6 +140,30 @@ export default class CampaignWorkspace {
   async copyBrowserCampaign(id) {
     if (!this.browserStore) throw new Error('No browser campaign storage is connected');
     return this.importBackup(await this.browserStore.exportBackup(id));
+  }
+
+  async finishSession() {
+    if (!this.active) return { backupError: null };
+    const active = this.active;
+    await active.autosave?.flush();
+    await active.library.flush();
+    if (typeof this.store.finishBackupSession !== 'function') return { backupError: null };
+    try {
+      await this.store.finishBackupSession(active.campaign.id);
+      return { backupError: null };
+    } catch (backupError) {
+      logger.log(
+        LOG_LEVEL.WARN,
+        'Final JSON backup was not confirmed; primary saves are separate',
+        LOG_CATEGORY.SYSTEM,
+        {
+          component: 'CampaignWorkspace',
+          operation: 'finishBackupSession',
+          kind: backupError instanceof Error ? 'error' : 'non-error',
+        }
+      );
+      return { backupError };
+    }
   }
 
   close() {

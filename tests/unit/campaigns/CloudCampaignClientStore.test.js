@@ -92,6 +92,38 @@ function fixture({ crypto } = {}) {
   return { auth, connection, store, fetch };
 }
 
+test('a mismatched backup receipt stays on its separate original caller without acknowledging a primary save', async () => {
+  const setup = fixture();
+  const bodies = [];
+  setup.fetch.mockImplementation(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    bodies.push(body);
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({
+        version: 1,
+        result: {
+          name: bodies.length === 1 ? '44444444-4444-4444-8444-444444444444' : body.commandId,
+          createdAt: '2026-11-11T00:00:00.000Z',
+          bytes: 100,
+          generation: 3,
+        },
+      }),
+    };
+  });
+  await expect(setup.store.backupNow(campaignId)).rejects.toMatchObject({
+    code: 'invalid-cloud-response',
+  });
+  expect(setup.store.saveState.phase).toBe('idle');
+  expect(setup.store.pending).toBeNull();
+  const recovered = await setup.store.backupNow(campaignId);
+  expect(recovered.name).toBe(commandId);
+  expect(bodies).toEqual([{ commandId }, { commandId }]);
+  expect(setup.store.saveState.phase).toBe('idle');
+  setup.store.close();
+});
+
 test('the browser high-level cloud store uses UID-bound HTTP creation and consistent reads without opening browser campaign authority', async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
   Object.defineProperty(globalThis, 'indexedDB', {

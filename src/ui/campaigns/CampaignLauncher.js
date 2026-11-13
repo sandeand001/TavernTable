@@ -96,8 +96,10 @@ export default class CampaignLauncher {
         void this._perform(async () => {
           if (!this.saveFeedback) throw new Error('Cloud save coordination is not ready');
           await this.saveFeedback.pauseForExit(async () => {
-            await this.workspace.active?.autosave?.flush();
-            await this.workspace.active?.library.flush();
+            const ended = await this.workspace.finishSession();
+            if (ended.backupError)
+              this.status.textContent =
+                'Primary saves completed; the final JSON backup was not confirmed.';
             await this.workspace.store.connection.account.signOut();
           });
         }, 'Signing out of this account...')
@@ -279,7 +281,7 @@ export default class CampaignLauncher {
           this.workspace.store.capabilities?.backups !== false
         );
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation only. Full campaign import/export, invitations, assignments, membership removal and settings are available; player gameplay, automatic backups and live sessions remain gated.'
+          ? 'Private cloud preparation only. Complete rolling backups, full campaign import/export, invitations, assignments, membership removal and settings are available; backup restore, player gameplay and live sessions remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
@@ -311,7 +313,7 @@ export default class CampaignLauncher {
           ${cloud && role === 'owner' && capabilities?.invitations === true ? '<button type="button" data-cloud-invitations>Player invitations</button>' : ''}
           ${capabilities?.settings !== false && (!cloud || role === 'owner') ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
           ${portable && (!cloud || role === 'owner') ? '<button type="button" data-export-campaign>Export</button>' : ''}
-          ${capabilities?.backups !== false && this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
+          ${capabilities?.backups !== false && this.workspace.store.listBackups && (!cloud || role === 'owner') ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
         </div></article>`;
     };
     if (cloud) {
@@ -559,8 +561,10 @@ export function mountCampaignControls(gameManager, services) {
       signout.disabled = true;
       try {
         const leave = async () => {
-          await services.autosave?.flush();
-          await services.library.flush();
+          const ended = await services.workspace.finishSession();
+          if (ended.backupError)
+            status.textContent =
+              'Primary saves completed; the final JSON backup was not confirmed.';
           if (cloud) await store.connection.account.signOut();
           else {
             await store.connection.logout();
@@ -652,8 +656,9 @@ export function mountCampaignControls(gameManager, services) {
       )
         return;
       const leave = async () => {
-        await services.autosave?.flush();
-        await services.library.flush();
+        const ended = await services.workspace.finishSession();
+        if (ended.backupError)
+          status.textContent = 'Primary saves completed; the final JSON backup was not confirmed.';
         services.workspace.close();
         window.location.reload();
       };
