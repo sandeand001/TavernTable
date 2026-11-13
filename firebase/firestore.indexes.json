@@ -1,4 +1,30 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "objects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "campaignId", "order": "ASCENDING" },
+        { "fieldPath": "cleanup.state", "order": "ASCENDING" },
+        { "fieldPath": "cleanup.retainUntil", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backupJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "snapshot.sceneRef.path", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backupJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "snapshot.charactersRef.path", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

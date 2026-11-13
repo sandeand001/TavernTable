@@ -1501,3 +1501,111 @@ M2-10 is complete in development; M2-11 safe cleanup is next. Provider linking,
 between-game permissions, live transport/session lifecycle, hosted rollout and
 the post-migration save presentation remain their own gates. No production
 Auth/Storage/IAM write, deployment, push/merge or actual cutover occurred.
+
+## Fenced private object maintenance
+
+The M2 cleanup implementation runs only during normal authenticated account/
+campaign requests. A durable per-UID five-minute lease coordinates cold workers.
+It rotates through bounded owned-campaign and UID-bound import-journal queries,
+including failed/expired unpublished targets that are absent from the campaign
+directory. A persisted object-page cursor scans at most **20 current objects**
+and retires at most **four generations** per invocation. Backlog continuation
+becomes eligible after five seconds, but only another real request runs it.
+There is no backend interval, permanent worker or new frontend polling loop.
+Large current-character reads share the existing process-wide large-file slot.
+
+Current canonical scene/character references, their private image bytes, all
+twenty retained standalone complete files, pending complete-file jobs and their
+captured source references are protected. Image roots are loaded outside retryable
+metadata transactions and their captured head generation is rechecked inside
+the deletion claim. Pending-source lookup is candidate-specific: one blocked
+backup does not protect unrelated obsolete snapshots indefinitely.
+
+An unreferenced generation must remain quarantined for at least **24 hours**.
+Storage reservations carry publication activity and a fifteen-minute per-attempt
+publication window. Touching a candidate can postpone quarantine; a deletion
+claim atomically fences later publication. A worker stalled past its window
+cannot publish an old already-read reference. The same original command can
+retry online with fresh verified objects; a durable receipt still recovers
+before new work is attempted. These work windows are not game/session limits.
+
+A separate delayed-404 drill exposed a quota gap: a missing-object lookup begun
+before another worker created and retired that path could otherwise create a
+fresh generation using only the retired generation's charge. Snapshot, private
+image and complete-file primitives now refresh their existing reservation
+immediately before a physical create after that lookup. The real SDK regression
+proved both generations charged, the expired original publication refused,
+and one subsequent same-command online publication without double-charging.
+
+Physical deletion uses the exact string-valued GCS generation precondition.
+A missing object is recoverable; generation changes or service errors retain
+the charge and surface an explicit maintenance error. Deleting plans survive
+process loss and resume even when their files no longer appear in live listing.
+The generation-specific hold and completed cleanup marker publish in the same
+Firestore transaction. This closes the tested lost-retirement-reply gap where
+an older plan could otherwise outlive its accounting evidence.
+
+Retirement does **not** subtract storage bytes. The exact retired generation
+stays charged for at least seven days. Bounded current/noncurrent and soft-deleted
+listing must prove that generation absent before an atomic, idempotent refund.
+Still-present generations, incomplete pagination and failed inventory keep
+their charges. A fresh same-path generation has a separate active reservation;
+it cannot receive, duplicate or be deleted by the older generation's cleanup.
+Never-materialized reservations and legacy retained-generation rows without
+verified retirement evidence remain conservatively charged, rather than being
+refunded from a missing live-file observation.
+
+Active import journals protect their whole unpublished target prefix. Failed/
+expired parts and completed-import source parts use the same grace and deletion
+fences. Completed normalized data is protected by its new head; restore writes
+a fresh private prefix rather than reviving a source deletion candidate.
+Import intent claims, journals and receipts remain as tombstones, so source-part
+cleanup cannot extend an expired intent or execute an old import again.
+Maintenance failure records a safe durable error and logs it separately; it
+cannot change a successful canonical command receipt or acknowledge a failed
+primary save.
+
+### Separately approved real Storage precondition proof
+
+The official Storage emulator deletes even when given a wrong generation.
+Normal tests therefore cannot establish that production guarantee. On
+November 13, 2026 the user separately approved one fresh disposable canary,
+then an exact-object read-only grant expiring within one hour because existing
+managed credentials lacked object-get permission. No credentials were printed
+or added to the repository.
+
+The canary's two **66-byte** generations proved an actual **412** for stale
+conditional deletion; the newer generation and exact bytes survived. Correct
+deletion left no live object. Both soft-delete/hard-delete timestamps were
+exactly seven days apart, leaving **132 soft-deleted bytes** until November 20.
+The temporary conditional viewer binding was removed; independent verification
+confirmed the live object absent, the original unrelated IAM bindings unchanged
+and object-get permission removed. Both approvals are exhausted. No further
+live writes, IAM changes, retention changes or deployment are authorized.
+
+Normal acceptance remains demo-only. The overlapping-deleter fixture supplies
+only the emulator's missing generation-precondition behavior, backed by that
+real canary; actual object data and metadata transactions remain SDK-backed.
+Other drills cover interrupted physical deletion, uncertain retirement replies,
+fresh same-path publication, pending backup roots, twenty-first-point cleanup,
+private-image restore, active/closed import staging, corrupt metadata, unrelated
+UID denial, cold-worker lease replacement and a real **205-object** inventory
+advanced across bounded pages.
+
+### Completed development cleanup gate
+
+The final complete native SDK/HTTP/process catalog passed **161/161 cases**,
+zero skipped, in **576,428.2997 ms** after the physical-write reservation fix.
+All **twenty** retained raw files were individually read and verified after
+the oldest complete point's physical retirement. The affected application/
+local/account/UI gate passed **15 explicit suites / 98 tests**, zero skipped,
+in **8.183 s**. Full JavaScript/CSS/layering checks passed with zero errors and
+the same 39 existing warnings. No dependency was added.
+
+M2-11 is complete in development. Provider linking remains explicitly deferred;
+between-game permissions, live transport/session lifecycle, hosted rollout and
+the post-migration save presentation retain their separate gates. The 65-task
+migration checklist now has **28 completed tasks**, excluding deferred UX-01.
+The next runtime-packaging readiness probe found the Docker CLI installed but
+its Linux engine unavailable; no Docker daemon was started and no cloud build
+or deployment was attempted.

@@ -113,6 +113,67 @@ async function fixture(t, { now = Date.now } = {}) {
 }
 
 test(
+  'normal account requests discover failed unpublished imports and retire their parts without reopening old intent',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const text = '{"not":"a complete campaign"}';
+    const commandId = randomUUID();
+    const sha256 = createHash('sha256').update(text).digest('hex');
+    const started = await f.store.startImport(f.principal, {
+      commandId,
+      bytes: Buffer.byteLength(text),
+      sha256,
+    });
+    await f.store.uploadImportChunk(f.principal, commandId, {
+      index: 0,
+      data: Buffer.from(text).toString('base64'),
+    });
+    await assert.rejects(f.store.finishImport(f.principal, commandId, { commandId }), {
+      code: 'import-rejected',
+    });
+    const usageReference = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const charged = (await usageReference.get()).data().storageBytes;
+    const directory = async () => {
+      const response = await fetch(f.api.url + '/api/cloud/account/campaigns', {
+        headers: { Authorization: 'Bearer ' + f.identity.token },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual((await response.json()).result, { owned: [], joined: [] });
+    };
+    await directory();
+    const cleanup = f.runtime.firestore
+      .collection('campaigns')
+      .doc(started.campaignId)
+      .collection('objectCleanup');
+    assert.equal((await cleanup.where('state', '==', 'quarantined').get()).size, 1);
+    now += 24 * 60 * 60 * 1000;
+    await directory();
+    assert.equal(
+      (await f.runtime.bucket.getFiles({ prefix: `campaigns/${started.campaignId}/` }))[0].length,
+      0
+    );
+    assert.equal((await usageReference.get()).data().storageBytes, charged);
+    await assert.rejects(f.store.finishImport(f.principal, commandId, { commandId }), {
+      code: 'import-rejected',
+    });
+    await assert.rejects(
+      f.store.startImport(f.principal, {
+        commandId,
+        bytes: Buffer.byteLength(text),
+        sha256,
+      }),
+      { code: 'import-rejected' }
+    );
+    assert.equal((await cleanup.where('state', '==', 'retired').get()).size, 1);
+    assert.equal((await f.store.list(f.principal)).length, 0);
+  }
+);
+
+test(
   'a manual rolling backup is a complete private file independent of later primary saves and command retries',
   { timeout: 30000 },
   async (t) => {
@@ -382,6 +443,41 @@ test(
       points.reduce((bytes, point) => bytes + point.bytes, 0)
     );
     assert.equal((await store.get(f.principal, campaign.id)).charactersRevision, 0);
+    const quarantine = [
+      await store.maintainObjects(f.principal, campaign.id),
+      await store.maintainObjects(f.principal, campaign.id),
+    ];
+    assert.equal(
+      quarantine.reduce((count, result) => count + result.quarantined, 0),
+      1
+    );
+    now += 24 * 60 * 60 * 1000;
+    const retirement = [
+      await store.maintainObjects(f.principal, campaign.id),
+      await store.maintainObjects(f.principal, campaign.id),
+    ];
+    assert.equal(
+      retirement.reduce((count, result) => count + result.deleted, 0),
+      1
+    );
+    assert.equal(
+      (await f.runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/backups/` }))[0].length,
+      20
+    );
+    assert.deepEqual(
+      await store.backupNow(f.principal, campaign.id, { commandId: points[0].name }),
+      points[0]
+    );
+    assert.deepEqual(await store.listBackups(f.principal, campaign.id), expected);
+    assert.equal(
+      (await usage.ref.get()).data().storageBytes,
+      points.reduce((bytes, point) => bytes + point.bytes, 0)
+    );
+    for (const point of expected)
+      assert.equal(
+        JSON.parse(await store.readBackup(f.principal, campaign.id, point.name)).campaign.id,
+        campaign.id
+      );
   }
 );
 
@@ -818,6 +914,215 @@ test(
     assert.equal(await f.store.readBackup(f.principal, source.id, point.name), original);
   }
 );
+
+test(
+  'unused private image cleanup preserves current sheets and a complete backup restores without resurrecting the old asset',
+  { timeout: 60000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const client = f.client();
+    const campaign = await client.create({
+      name: 'Independent image restore roots',
+      ruleset: '2014',
+    });
+    const library = await CampaignCharacters.open({
+      store: client,
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+    });
+    const characterId = await library.create('Image retention scout');
+    const canvas = createCanvas(2, 2);
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ff0000';
+    context.fillRect(0, 0, 2, 2);
+    const firstImage = canvas.toBuffer('image/png');
+    const firstURI = 'data:image/png;base64,' + firstImage.toString('base64');
+    await library.edit(characterId, { portraitImage: firstURI });
+    const firstSHA = createHash('sha256').update(firstImage).digest('hex');
+    const point = await client.backupNow(campaign.id);
+    context.fillStyle = '#0000ff';
+    context.fillRect(0, 0, 2, 2);
+    const secondImage = canvas.toBuffer('image/png');
+    const secondURI = 'data:image/png;base64,' + secondImage.toString('base64');
+    await library.edit(characterId, { portraitImage: secondURI });
+    const secondSHA = createHash('sha256').update(secondImage).digest('hex');
+    now = Math.max(now, Date.now());
+    const initial = await f.store.maintainObjects(f.principal, campaign.id);
+    assert.equal(initial.deleted, 0);
+    now += 24 * 60 * 60 * 1000;
+    const cleaned = await f.store.maintainObjects(f.principal, campaign.id);
+    assert.equal(cleaned.deleted, 3);
+    await assert.rejects(f.store.readAsset(f.principal, campaign.id, firstSHA), {
+      code: 'asset-not-found',
+    });
+    assert.deepEqual(
+      (await f.store.readAsset(f.principal, campaign.id, secondSHA)).bytes,
+      secondImage
+    );
+    const workspace = new CampaignWorkspace({
+      manifest: f.manifest,
+      resources: f.resources,
+      store: client,
+    });
+    const restored = await workspace.restoreBackup(campaign.id, point.name);
+    const copy = await workspace.open(restored.id);
+    assert.equal(copy.library.get(characterId).portraitImage, firstURI);
+    assert.deepEqual(
+      (await f.store.readAsset(f.principal, restored.id, firstSHA)).bytes,
+      firstImage
+    );
+    assert.equal(
+      (
+        await f.runtime.bucket.getFiles({
+          prefix: `campaigns/${campaign.id}/assets/${firstSHA}.bin`,
+        })
+      )[0].length,
+      0
+    );
+    assert.equal(library.get(characterId).portraitImage, secondURI);
+  }
+);
+
+test(
+  'an active import protects its whole unpublished prefix and expired parts retire without restoring its old intent',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const source = await f.store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Preserved before expired staging cleanup', ruleset: '2014' },
+    });
+    const original = await f.store.readCharacters(f.principal, source.id);
+    const text = await f.store.exportBackup(f.principal, source.id);
+    const bytes = Buffer.from(text, 'utf8');
+    const command = {
+      commandId: randomUUID(),
+      bytes: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    };
+    const ticket = await f.store.startImport(f.principal, command);
+    await f.store.uploadImportChunk(f.principal, ticket.importId, {
+      index: 0,
+      data: bytes.toString('base64'),
+    });
+    await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      ticket.campaignId,
+      'characters',
+      [],
+      (candidate) =>
+        f.store.usage.reserveStorage(f.principal, ticket.campaignId, candidate, f.runtime.bucket, {
+          importId: ticket.importId,
+        })
+    );
+    const protectedResult = await f.store.maintainObjects(f.principal, ticket.campaignId);
+    assert.equal(protectedResult.quarantined, 0);
+    assert.equal(protectedResult.deleted, 0);
+    now += 24 * 60 * 60 * 1000 - 1;
+    assert.equal((await f.store.maintainObjects(f.principal, ticket.campaignId)).quarantined, 0);
+    now++;
+    assert.equal((await f.store.maintainObjects(f.principal, ticket.campaignId)).quarantined, 2);
+    now += 24 * 60 * 60 * 1000;
+    assert.equal((await f.store.maintainObjects(f.principal, ticket.campaignId)).deleted, 2);
+    assert.equal(
+      (await f.runtime.bucket.getFiles({ prefix: `campaigns/${ticket.campaignId}/` }))[0].length,
+      0
+    );
+    await assert.rejects(f.store.startImport(f.principal, command), { code: 'import-expired' });
+    await assert.rejects(
+      f.store.finishImport(f.principal, ticket.importId, { commandId: ticket.importId }),
+      { code: 'import-expired' }
+    );
+    await assert.rejects(
+      f.store.create(f.principal, {
+        commandId: ticket.importId,
+        options: { name: 'Cannot reuse expired import identity', ruleset: '2014' },
+      }),
+      { code: 'command-id-conflict' }
+    );
+    const claim = await f.runtime.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(f.identity.uid))
+      .collection('claims')
+      .doc(ticket.importId)
+      .get();
+    assert.equal(claim.exists, true);
+    assert.equal(
+      (await f.runtime.firestore.collection('campaigns').doc(ticket.campaignId).get()).exists,
+      false
+    );
+    assert.deepEqual(await f.store.readCharacters(f.principal, source.id), original);
+    assert.equal((await f.store.list(f.principal)).length, 1);
+  }
+);
+
+for (const state of ['complete', 'failed'])
+  test(
+    `${state} import source parts retire without removing committed data or re-executing the original intent`,
+    { timeout: 30000 },
+    async (t) => {
+      let now = Date.now();
+      const f = await fixture(t, { now: () => now });
+      const source = await f.store.create(f.principal, {
+        commandId: randomUUID(),
+        options: { name: 'Source-part lifecycle ' + state, ruleset: '2014' },
+      });
+      const original = await f.store.readCharacters(f.principal, source.id);
+      const text = state === 'complete' ? await f.store.exportBackup(f.principal, source.id) : '{';
+      const bytes = Buffer.from(text, 'utf8');
+      const command = {
+        commandId: randomUUID(),
+        bytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      };
+      const ticket = await f.store.startImport(f.principal, command);
+      await f.store.uploadImportChunk(f.principal, ticket.importId, {
+        index: 0,
+        data: bytes.toString('base64'),
+      });
+      let result = null;
+      if (state === 'complete')
+        result = await f.store.finishImport(f.principal, ticket.importId, {
+          commandId: ticket.importId,
+        });
+      else
+        await assert.rejects(
+          f.store.finishImport(f.principal, ticket.importId, { commandId: ticket.importId }),
+          { code: 'import-rejected' }
+        );
+      assert.equal((await f.store.maintainObjects(f.principal, ticket.campaignId)).quarantined, 1);
+      now += 24 * 60 * 60 * 1000;
+      assert.equal((await f.store.maintainObjects(f.principal, ticket.campaignId)).deleted, 1);
+      assert.equal(
+        (
+          await f.runtime.bucket.getFiles({
+            prefix: `campaigns/${ticket.campaignId}/objects/import/`,
+          })
+        )[0].length,
+        0
+      );
+      if (state === 'complete') {
+        assert.deepEqual((await f.store.startImport(f.principal, command)).completed, result);
+        assert.deepEqual(
+          await f.store.finishImport(f.principal, ticket.importId, { commandId: ticket.importId }),
+          result
+        );
+        const exported = JSON.parse(await f.store.exportBackup(f.principal, ticket.campaignId));
+        assert.deepEqual(exported.records, original.records);
+        assert.equal(exported.scene, original.scene);
+      } else {
+        await assert.rejects(f.store.startImport(f.principal, command), {
+          code: 'import-rejected',
+        });
+        assert.equal(
+          (await f.runtime.firestore.collection('campaigns').doc(ticket.campaignId).get()).exists,
+          false
+        );
+      }
+      assert.deepEqual(await f.store.readCharacters(f.principal, source.id), original);
+    }
+  );
 
 test(
   'failed final publication rolls back campaign ownership, head and receipt while the original import remains recoverable',

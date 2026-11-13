@@ -28,6 +28,11 @@ const denialCodes = new Set([
   'invalid-account-usage',
   'usage-initializing',
   'usage-unavailable',
+  'object-maintenance-busy',
+  'object-publication-expired',
+  'maintenance-unavailable',
+  'maintenance-state-changed',
+  'invalid-maintenance-state',
   'cloud-requests-busy',
   'storage-reservation-too-large',
   'backup-too-large',
@@ -111,6 +116,26 @@ const denialCodes = new Set([
   'account-request-failed',
 ]);
 const denialMessages = new Map([
+  [
+    'object-maintenance-busy',
+    'A private object is being maintained. Retain the original command and retry shortly.',
+  ],
+  [
+    'object-publication-expired',
+    'This object operation timed out without publication. Retry the same original command online.',
+  ],
+  [
+    'maintenance-unavailable',
+    'Private object maintenance is temporarily unavailable; primary saves are separate.',
+  ],
+  [
+    'maintenance-state-changed',
+    'Object maintenance observed changed state. No new deletion was acknowledged.',
+  ],
+  [
+    'invalid-maintenance-state',
+    'Private object maintenance could not be verified. Saved data must not be deleted.',
+  ],
   [
     'invalid-campaign-backup',
     'Choose a complete supported campaign JSON backup with its original edition, sources and state.',

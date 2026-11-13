@@ -534,7 +534,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     drills, not inferred from rendering alone. No new backend authority path,
     production change, dependency or routine-save presentation change.
 
-- [ ] **M2-11 - Implement race-safe orphan/superseded-object cleanup.**
+- [x] **M2-11 - Implement race-safe orphan/superseded-object cleanup.**
   - **Depends:** `M2-07`, `M2-09`, `M2-10`.
   - **Success:** bounded maintenance preserves objects referenced by current heads
     and all retained backups, including concurrent publication/restore. Restore
@@ -547,6 +547,25 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** commit/backup/restore/cleanup races cannot delete needed data.
     Respect seven-day soft-delete billing; do not enable retention locks or
     disable recovery protection without a separate approved decision.
+  - **Completed:** November 13, 2026; owner/intent-authorized maintenance runs
+    on natural account requests with a durable UID lease, target cursors and
+    **20-object / four-deletion** bounds. Current checkpoints/images, retained
+    complete files, pending backup sources and active unpublished imports remain
+    protected. Twenty-four-hour quarantine and publication/deletion fences
+    survive cold-worker overlap; retirement and its exact-generation byte hold
+    commit together. Delayed missing-object lookups renew quota before physical
+    creation. Storage stays charged for at least seven days and until complete
+    bounded generation inventory proves absence; ambiguous/legacy reservations
+    are not optimistically refunded. Closed import parts retire without removing
+    intent/receipt tombstones. Every current retained point remains physically
+    readable after oldest-point deletion. A separately approved and cleaned-up
+    live canary proved actual **412** enforcement and seven-day soft deletion;
+    its temporary exact-object viewer grant was removed. Normal acceptance stays
+    demo-only. Final full native catalog: **161/161**, zero skipped, in
+    **576,428.2997 ms**; affected application gate: **15 suites / 98 tests**,
+    **8.183 s**. Full lint/stylelint/layering: zero errors and the same 39 existing
+    warnings. No production deployment, retention change or routine-save
+    presentation change; no live approval remains.
 
 - [ ] **M2-12 - Support online between-game sheet work without a live game.**
   - **Depends:** `M2-03`, `M2-05`, `M4-01`.
@@ -716,6 +735,11 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** container/readiness/configuration checks pass without a server GPU,
     developer ADC files, service-account keys, or reliance on a writable
     filesystem. Maximum-one-instance is not used as a correctness guarantee.
+  - **Blocked:** local Docker is installed, but its Linux engine is not running.
+    No daemon was started or cloud build/deployment attempted. Real image
+    validation needs the owner to start/approve Docker Desktop or select a
+    separately approved validation environment; a source-only check is not an
+    image-build success.
 
 - [ ] **M4-07 - Produce a versioned, allowlisted public frontend package.**
   - **Depends:** `M0-03`, `M1-04`, `M3-07`.

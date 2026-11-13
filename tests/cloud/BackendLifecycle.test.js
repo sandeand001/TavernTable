@@ -11,7 +11,9 @@ const {
   createEmulatorRuntime,
   readEmulatorEnvironment,
 } = require('../../tools/cloud/emulator-runtime.js');
-const { pilotAccountKey } = require('../../tools/cloud/account-access.js');
+const { CloudAccountAccess, pilotAccountKey } = require('../../tools/cloud/account-access.js');
+const { CloudCampaignStore } = require('../../tools/cloud/campaign-store.js');
+const { ImmutableCloudObjects } = require('../../tools/cloud/immutable-objects.js');
 const { HostResources } = require('../../tools/host-resources.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
 const { default: CloudAccount } = require('../../src/campaigns/CloudAccount.js');
@@ -147,7 +149,21 @@ async function fixture(t) {
         const runtime = await createEmulatorRuntime();
         let holdPublication = false;
         let releasePublication = null;
+        let holdStagedRead = false;
+        let excludedReadPath = null;
+        let clockOffset = 0;
         process.on('message', value => {
+          if (value?.type === 'advance-clock') {
+            clockOffset = value.milliseconds;
+            process.send({ type: 'clock-advanced' });
+            return;
+          }
+          if (value?.type === 'arm-staged-read') {
+            holdStagedRead = true;
+            excludedReadPath = value.exclude;
+            process.send({ type: 'armed' });
+            return;
+          }
           if (value?.type === 'release-publication') {
             releasePublication?.();
             return;
@@ -159,6 +175,16 @@ async function fixture(t) {
         const bucketFile = runtime.bucket.file.bind(runtime.bucket);
         runtime.bucket.file = (...args) => {
           const file = bucketFile(...args);
+          const download = file.download.bind(file);
+          file.download = async (...options) => {
+            const bytes = await download(...options);
+            if (holdStagedRead && args[0] !== excludedReadPath && args[0].includes('/objects/characters/')) {
+              holdStagedRead = false;
+              process.send({ type: 'staged-read-held' });
+              await new Promise(resolve => { releasePublication = resolve; });
+            }
+            return bytes;
+          };
           const save = file.save.bind(file);
           file.save = async (...options) => {
             const result = await save(...options);
@@ -180,6 +206,7 @@ async function fixture(t) {
           packs: manifest.packs,
           resources: new HostResources({ root, manifest }),
           objects,
+          now: () => Date.now() + clockOffset,
         });
         const api = await cloudApi({ access, store, port: ${port} });
         process.send({ type: 'ready', url: api.url, instance: randomUUID() });
@@ -259,6 +286,7 @@ async function fixture(t) {
     runtime,
     identity,
     resources,
+    manifest,
     backend,
     store,
     library,
@@ -277,6 +305,65 @@ async function fixture(t) {
     },
   };
 }
+
+test(
+  'a stalled verified object cannot publish after cleanup and the same caller retries with a new generation',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const headReference = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
+    const before = (await headReference.get()).data();
+    const access = new CloudAccountAccess({ auth: f.runtime.auth, firestore: f.runtime.firestore });
+    const principal = await access.verifyAuthorization('Bearer ' + f.identity.token);
+    let now = Date.now();
+    const cleaner = new CloudCampaignStore({
+      firestore: f.runtime.firestore,
+      access,
+      packs: f.manifest.packs,
+      resources: f.resources,
+      objects: new ImmutableCloudObjects({ bucket: f.runtime.bucket }),
+      now: () => now,
+    });
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-staged-read', exclude: before.charactersRef.path });
+    await armed;
+    const held = messageFrom(f.backend.child, 'staged-read-held');
+    const pending = f.library.create('Stalled until object cleanup');
+    await held;
+    const originalBody = f.commands.at(-1);
+    const [staged] = await f.runtime.bucket.getFiles({
+      prefix: `campaigns/${f.campaign.id}/objects/characters/`,
+    });
+    const candidate = staged.find((file) => file.name !== before.charactersRef.path);
+    assert.ok(candidate);
+    const originalGeneration = candidate.metadata.generation;
+    now = Date.now();
+    assert.equal((await cleaner.maintainObjects(principal, f.campaign.id)).quarantined, 1);
+    now += 24 * 60 * 60 * 1000;
+    assert.equal((await cleaner.maintainObjects(principal, f.campaign.id)).deleted, 1);
+    const advanced = messageFrom(f.backend.child, 'clock-advanced');
+    f.backend.child.send({ type: 'advance-clock', milliseconds: 24 * 60 * 60 * 1000 });
+    await advanced;
+    const uncertain = savePhase(f.store, 'uncertain');
+    f.backend.child.send({ type: 'release-publication' });
+    const state = await uncertain;
+    assert.equal(state.error.code, 'object-publication-expired');
+    assert.deepEqual((await headReference.get()).data(), before);
+    await f.store.retryPending();
+    const id = await pending;
+    assert.equal(f.commands.filter((body) => body === originalBody).length, 2);
+    const after = (await headReference.get()).data();
+    assert.equal(after.generation, before.generation + 1);
+    assert.notEqual(after.charactersRef.generation, originalGeneration);
+    const reopened = new CampaignCharacters({
+      ...(await f.store.readCharacters(f.campaign.id)),
+      store: f.store,
+      catalog: await f.resources.catalog(after.campaign),
+    });
+    assert.equal(reopened.get(id).name, 'Stalled until object cleanup');
+    assert.equal(reopened.list().filter((character) => character.id === id).length, 1);
+  }
+);
 
 test(
   'an uploaded complete backup survives a backend kill before publication and wakes as one original private point',

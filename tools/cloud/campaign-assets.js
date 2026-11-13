@@ -125,6 +125,7 @@ class PrivateCampaignAssets {
         if (error?.code !== 404) throw error;
       }
       if (metadata === null) {
+        if (reserve !== null) await reserve({ path, bytes: bytes.length });
         try {
           await file.save(bytes, {
             resumable: false,

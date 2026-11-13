@@ -152,7 +152,7 @@
   a final changed-state point; a backup-only error is reported without blocking
   sign-out. Live-session lifecycle must reuse this seam in its later gate.
   Large file IO shares one process-wide slot with export/import finalization.
-  Retired/staged bytes stay conservatively charged until M2-11 safe cleanup;
+  Retired/staged bytes stay conservatively charged through fenced cleanup;
   history retirement is not an optimistic storage refund.
 - **Cloud restore copy (M2 development slice verified)**: an owner reads a
   retained, integrity-checked complete file and reuses the bounded import-as-copy
@@ -172,6 +172,24 @@
   never embedded data, hidden names, bearer credentials or signed URLs. Delivery
   rechecks current UID/seat/generation after Storage work. Map/NPC asset grants
   and browser cache reconciliation remain later participant-view tasks.
+- **Fenced cloud object cleanup (M2 development slice verified)**: normal account
+  requests evaluate bounded work for the caller's owned campaigns and import
+  intents, without a permanent backend timer. A durable UID lease, target
+  cursors and object-page cursor survive replacement. Current heads/images,
+  retained complete files, pending backup sources and active unpublished import
+  prefixes remain protected. Unreferenced generations spend at least 24 hours
+  in quarantine; publication activity can postpone them. Atomic deletion claims
+  fence new publication, and physical deletes require the exact GCS generation.
+  Retirement and its generation-specific byte hold commit together. Replacement
+  bytes at the same path receive a fresh reservation, not the old generation's
+  credit. Physical creation refreshes quota after a missing-object lookup, so
+  a delayed reply cannot reuse an already retired generation's reservation.
+  Charges remain for at least seven days and until bounded current/
+  noncurrent/soft-deleted inventory proves that exact generation absent.
+  Incomplete inventory, ambiguous reservations and legacy retained accounting
+  without retirement evidence never receive speculative refunds. Intent and
+  receipt tombstones survive source-part cleanup. Maintenance errors are logged
+  and retained separately from successful canonical receipts.
 - **Private-pilot usage (M2 development slice verified)**:
   no enabled-account count or daily custom-image-volume cap. Each UID can own
   ten campaigns and allocate 20 GiB of private object bytes across them; joined

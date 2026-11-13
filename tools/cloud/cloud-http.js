@@ -19,6 +19,16 @@ const MAX_CLOUD_REQUEST_BYTES = 24 * 1024 * 1024;
 const MAX_CLOUD_WORK_REQUESTS = 4;
 let activeCloudWork = 0;
 
+async function opportunisticObjectMaintenance(store, principal) {
+  try {
+    await store.runObjectMaintenance(principal);
+  } catch (error) {
+    console.error('[cloud-object-maintenance-work]', {
+      code: error instanceof CloudError ? error.code : 'maintenance-failed',
+    });
+  }
+}
+
 async function opportunisticBackupWork(store, principal, id) {
   try {
     await store.runBackupWork(principal, id);
@@ -171,6 +181,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'backupStatus',
       'readBackup',
       'runBackupWork',
+      'runObjectMaintenance',
       'startImport',
       'uploadImportChunk',
       'finishImport',
@@ -224,6 +235,14 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       [undefined, 'scene', 'characters', 'settings', 'backups', 'backups/status'].includes(
         snapshot
       );
+    const maintainsObjects =
+      !largeFile &&
+      (directory ||
+        collection ||
+        evaluatesBackups ||
+        snapshot === 'assets' ||
+        importStart ||
+        importAction?.[2] === 'parts');
     const postOnly =
       redeem ||
       importStart ||
@@ -317,6 +336,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       if (largeFile) releaseLargeFile = acquireLargeFileWork();
       if (
         request.method === 'POST' ||
+        maintainsObjects ||
         (request.method === 'GET' && evaluatesBackups) ||
         ['scene', 'characters', 'backup'].includes(snapshot) ||
         retainedFile ||
@@ -355,6 +375,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             'cloud-campaigns-unavailable',
             'Cloud campaign persistence is not configured'
           );
+        if (maintainsObjects) await opportunisticObjectMaintenance(store, principal);
         if (evaluatesBackups && request.method === 'GET')
           await opportunisticBackupWork(store, principal, campaign[1]);
         if (importStart) {

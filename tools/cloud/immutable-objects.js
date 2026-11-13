@@ -111,6 +111,8 @@ class ImmutableCloudObjects {
         if (error?.code !== 404) throw error;
       }
       if (metadata === null) {
+        // A delayed lookup can outlive the generation's original reservation.
+        if (reserve !== null) await reserve({ path, bytes: bytes.length });
         try {
           await file.save(bytes, {
             resumable: false,

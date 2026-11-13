@@ -11,6 +11,17 @@ const REQUEST_WINDOW_MS = 60 * 1000;
 const STREAM_LIMIT = 4;
 const STREAM_LEASE_MS = 90 * 1000;
 const INVENTORY_LEASE_MS = 5 * 60 * 1000;
+const OBJECT_PUBLICATION_WINDOW_MS = 15 * 60 * 1000;
+const SOFT_DELETE_BYTE_HOLD_MS = 7 * 24 * 60 * 60 * 1000;
+const objectBusy = () =>
+  Object.assign(
+    new CloudError(
+      503,
+      'object-maintenance-busy',
+      'A private object is being maintained; retain the original command and retry'
+    ),
+    { retryAfter: 5 }
+  );
 const invalidUsage = () =>
   new CloudError(503, 'invalid-account-usage', 'Account usage could not be verified');
 const inventoryBusy = () =>
@@ -106,6 +117,292 @@ class CloudUsageLimits {
 
   ensureAccount(principal) {
     return this._ensureAccount(principalUid(principal));
+  }
+
+  prepareStorage(principal, bucket) {
+    return this._initializeStorage(principalUid(principal), bucket);
+  }
+
+  _objectRecord(snapshot, uid, campaignId, candidate) {
+    const saved = snapshot.data();
+    if (
+      !snapshot.exists ||
+      saved?.version !== 1 ||
+      saved.uid !== uid ||
+      saved.campaignId !== campaignId ||
+      saved.path !== candidate.path ||
+      !validBytes(saved.bytes) ||
+      saved.bytes !== candidate.bytes ||
+      saved.generation !== candidate.generation ||
+      !(
+        saved.generation === null ||
+        (typeof saved.generation === 'string' && /^[1-9][0-9]*$/.test(saved.generation))
+      )
+    )
+      throw invalidUsage();
+    if (
+      saved.activity !== undefined &&
+      (saved.activity?.version !== 1 ||
+        !Number.isSafeInteger(saved.activity.epoch) ||
+        saved.activity.epoch < 1 ||
+        !validBytes(saved.activity.touchedAt) ||
+        !validBytes(saved.activity.writableUntil) ||
+        saved.activity.writableUntil < saved.activity.touchedAt)
+    )
+      throw invalidUsage();
+    if (
+      saved.cleanup !== undefined &&
+      (saved.cleanup?.version !== 1 ||
+        !['deleting', 'retired'].includes(saved.cleanup.state) ||
+        !isCloudUUID(saved.cleanup.token) ||
+        typeof saved.cleanup.generation !== 'string' ||
+        !/^[1-9][0-9]*$/.test(saved.cleanup.generation) ||
+        (saved.cleanup.state === 'retired' && !validBytes(saved.cleanup.retainUntil)))
+    )
+      throw invalidUsage();
+    return saved;
+  }
+
+  async touchReferences(transaction, uid, campaignId, candidates) {
+    const references = candidates.map((candidate) =>
+      this._reference(uid).collection('objects').doc(objectKey(candidate.path))
+    );
+    const snapshots = references.length ? await transaction.getAll(...references) : [];
+    const prepared = snapshots.map((snapshot, index) => {
+      const record = this._objectRecord(snapshot, uid, campaignId, {
+        ...candidates[index],
+        generation: null,
+      });
+      if (record.cleanup !== undefined) throw objectBusy();
+      const epoch = (record.activity?.epoch ?? 0) + 1;
+      if (!Number.isSafeInteger(epoch)) throw invalidUsage();
+      return {
+        ...record,
+        activity: {
+          version: 1,
+          epoch,
+          touchedAt: this.now(),
+          writableUntil: this.now() + OBJECT_PUBLICATION_WINDOW_MS,
+        },
+      };
+    });
+    prepared.forEach((record, index) => transaction.set(references[index], record));
+  }
+
+  async assertPublication(transaction, uid, campaignId, candidates, startedAt) {
+    if (!validBytes(startedAt) || this.now() > startedAt + OBJECT_PUBLICATION_WINDOW_MS)
+      throw new CloudError(
+        503,
+        'object-publication-expired',
+        'Object publication timed out; retain the original command and retry'
+      );
+    const unique = [
+      ...new Map(candidates.map((candidate) => [candidate.path, candidate])).values(),
+    ];
+    const references = unique.map((candidate) =>
+      this._reference(uid).collection('objects').doc(objectKey(candidate.path))
+    );
+    const snapshots = [];
+    for (let offset = 0; offset < references.length; offset += 200)
+      snapshots.push(...(await transaction.getAll(...references.slice(offset, offset + 200))));
+    snapshots.forEach((snapshot, index) => {
+      const record = this._objectRecord(snapshot, uid, campaignId, {
+        ...unique[index],
+        generation: null,
+      });
+      if (
+        record.cleanup !== undefined ||
+        record.activity === undefined ||
+        record.activity.writableUntil < this.now()
+      )
+        throw objectBusy();
+    });
+  }
+
+  async claimObjectDeletion(transaction, uid, campaignId, candidate, firstUnreferencedAt) {
+    const reference = this._reference(uid).collection('objects').doc(objectKey(candidate.path));
+    const saved = this._objectRecord(await transaction.get(reference), uid, campaignId, {
+      path: candidate.path,
+      bytes: candidate.bytes,
+      generation: null,
+    });
+    if (saved.cleanup !== undefined) {
+      if (saved.cleanup.state !== 'deleting' || saved.cleanup.generation !== candidate.generation)
+        throw invalidUsage();
+      return { token: saved.cleanup.token, postponed: false };
+    }
+    if (
+      saved.activity &&
+      (saved.activity.writableUntil >= this.now() || saved.activity.touchedAt > firstUnreferencedAt)
+    )
+      return { token: null, postponed: true };
+    const token = randomUUID();
+    transaction.set(reference, {
+      ...saved,
+      cleanup: {
+        version: 1,
+        state: 'deleting',
+        token,
+        generation: candidate.generation,
+      },
+    });
+    return { token, postponed: false };
+  }
+
+  async objectDeletionPermit(transaction, uid, campaignId, candidate, token) {
+    const account = this._reference(uid).collection('objects');
+    const [activeSnapshot, retiredSnapshot] = await transaction.getAll(
+      account.doc(objectKey(candidate.path)),
+      account.doc(objectKey(candidate.path, candidate.generation))
+    );
+    if (retiredSnapshot.exists) {
+      const retired = this._objectRecord(retiredSnapshot, uid, campaignId, candidate);
+      if (retired.cleanup?.state !== 'retired' || retired.cleanup.token !== token)
+        throw invalidUsage();
+      return false;
+    }
+    const active = this._objectRecord(activeSnapshot, uid, campaignId, {
+      path: candidate.path,
+      bytes: candidate.bytes,
+      generation: null,
+    });
+    if (
+      active.cleanup?.state !== 'deleting' ||
+      active.cleanup.token !== token ||
+      active.cleanup.generation !== candidate.generation
+    )
+      throw invalidUsage();
+    return true;
+  }
+
+  async retireObjectGeneration(transaction, uid, campaignId, candidate, token) {
+    const account = this._reference(uid);
+    const current = account.collection('objects').doc(objectKey(candidate.path));
+    const retained = account
+      .collection('objects')
+      .doc(objectKey(candidate.path, candidate.generation));
+    const [currentSnapshot, retainedSnapshot] = await transaction.getAll(current, retained);
+    if (retainedSnapshot.exists) {
+      const saved = this._objectRecord(retainedSnapshot, uid, campaignId, candidate);
+      if (saved.cleanup?.state !== 'retired' || saved.cleanup.token !== token) throw invalidUsage();
+      return;
+    }
+    if (!currentSnapshot.exists) throw invalidUsage();
+    const saved = this._objectRecord(currentSnapshot, uid, campaignId, {
+      path: candidate.path,
+      bytes: candidate.bytes,
+      generation: null,
+    });
+    if (
+      saved.cleanup?.state !== 'deleting' ||
+      saved.cleanup.token !== token ||
+      saved.cleanup.generation !== candidate.generation
+    )
+      throw invalidUsage();
+    const deletedAt = this.now();
+    transaction.create(retained, {
+      ...saved,
+      generation: candidate.generation,
+      cleanup: {
+        version: 1,
+        state: 'retired',
+        token,
+        generation: candidate.generation,
+        deletedAt,
+        retainUntil: deletedAt + SOFT_DELETE_BYTE_HOLD_MS,
+      },
+    });
+    transaction.delete(current);
+  }
+
+  async reconcileRetired(principal, campaignId, bucket) {
+    const uid = principalUid(principal);
+    const account = this._reference(uid);
+    const rows = await account
+      .collection('objects')
+      .where('campaignId', '==', campaignId)
+      .where('cleanup.state', '==', 'retired')
+      .where('cleanup.retainUntil', '<=', this.now())
+      .orderBy('cleanup.retainUntil')
+      .limit(4)
+      .get();
+    let releasedBytes = 0;
+    for (const snapshot of rows.docs) {
+      const data = snapshot.data();
+      if (
+        typeof data.path !== 'string' ||
+        !data.path.startsWith(`campaigns/${campaignId}/`) ||
+        typeof data.generation !== 'string' ||
+        !/^[1-9][0-9]*$/.test(data.generation) ||
+        snapshot.id !== objectKey(data.path, data.generation)
+      )
+        throw invalidUsage();
+      const candidate = { path: data.path, bytes: data.bytes, generation: data.generation };
+      const saved = this._objectRecord(snapshot, uid, campaignId, candidate);
+      if (
+        saved.cleanup?.state !== 'retired' ||
+        !validBytes(saved.cleanup.deletedAt) ||
+        saved.cleanup.retainUntil < saved.cleanup.deletedAt + SOFT_DELETE_BYTE_HOLD_MS
+      )
+        throw invalidUsage();
+      let present = false;
+      let complete = true;
+      for (const selection of [{ versions: true }, { softDeleted: true }]) {
+        let query = { prefix: data.path, autoPaginate: false, maxResults: 200, ...selection };
+        let pages = 0;
+        while (query && pages++ < 2) {
+          let files;
+          let next;
+          try {
+            [files, next] = await bucket.getFiles(query);
+          } catch (error) {
+            if (storageUnavailable(error))
+              throw new CloudError(
+                503,
+                'usage-unavailable',
+                'Retained private storage could not be reconciled'
+              );
+            throw error;
+          }
+          for (const file of files) {
+            const metadata = file.metadata;
+            if (
+              typeof metadata?.name !== 'string' ||
+              metadata.bucket !== bucket.name ||
+              typeof metadata.generation !== 'string' ||
+              !/^[1-9][0-9]*$/.test(metadata.generation)
+            )
+              throw invalidUsage();
+            if (metadata.name === data.path && metadata.generation === data.generation) {
+              if (Number(metadata.size) !== saved.bytes) throw invalidUsage();
+              present = true;
+            }
+          }
+          query = next ? { ...query, ...next, prefix: data.path } : null;
+        }
+        if (query) complete = false;
+      }
+      if (present || !complete) continue;
+      releasedBytes += await this._transaction(async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const [usageSnapshot, retainedSnapshot] = await transaction.getAll(account, snapshot.ref);
+        const usage = this._record(usageSnapshot, uid);
+        if (!retainedSnapshot.exists) return 0;
+        const retained = this._objectRecord(retainedSnapshot, uid, campaignId, candidate);
+        if (
+          retained.cleanup?.state !== 'retired' ||
+          retained.cleanup.token !== saved.cleanup.token ||
+          retained.cleanup.retainUntil > this.now() ||
+          usage.storageBucket !== bucket.name ||
+          usage.storageBytes < retained.bytes
+        )
+          throw invalidUsage();
+        transaction.set(account, { ...usage, storageBytes: usage.storageBytes - retained.bytes });
+        transaction.delete(snapshot.ref);
+        return retained.bytes;
+      });
+    }
+    return releasedBytes;
   }
 
   async _ensureAccount(uid) {
@@ -569,8 +866,20 @@ class CloudUsageLimits {
         generation: null,
       });
     }
-    await this._reserveObjects(uid, campaignId, [...unique.values()], bucket.name, null, importId);
+    const selected = [...unique.values()];
+    await this._reserveObjects(uid, campaignId, selected, bucket.name, null, importId);
+    for (let offset = 0; offset < selected.length; offset += 200) {
+      await this._transaction(async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        await this.touchReferences(
+          transaction,
+          uid,
+          campaignId,
+          selected.slice(offset, offset + 200)
+        );
+      });
+    }
   }
 }
 
-module.exports = { CloudUsageLimits };
+module.exports = { CloudUsageLimits, OBJECT_PUBLICATION_WINDOW_MS };

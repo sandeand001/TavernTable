@@ -7,7 +7,10 @@ const assert = require('node:assert/strict');
 const { createEmulatorRuntime } = require('../../tools/cloud/emulator-runtime.js');
 const { CloudAccountAccess, pilotAccountKey } = require('../../tools/cloud/account-access.js');
 const { CloudCampaignStore } = require('../../tools/cloud/campaign-store.js');
-const { ImmutableCloudObjects } = require('../../tools/cloud/immutable-objects.js');
+const {
+  ImmutableCloudObjects,
+  snapshotCandidate,
+} = require('../../tools/cloud/immutable-objects.js');
 const { PrivateCampaignAssets } = require('../../tools/cloud/campaign-assets.js');
 const { HostResources } = require('../../tools/host-resources.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
@@ -45,6 +48,831 @@ async function usageContext(t) {
     });
   return { runtime, identity, access, principal, manifest, createStore, store: createStore() };
 }
+
+test(
+  'bounded cleanup quarantines only unreferenced objects and preserves complete backups and current checkpoints',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Fenced cleanup source', ruleset: '2014' },
+    });
+    const first = JSON.stringify(sceneState({ ruleset: '2014' }));
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene: first },
+    });
+    const backup = await store.backupNow(f.principal, campaign.id, { commandId: randomUUID() });
+    const nextScene = JSON.parse(first);
+    nextScene.camera.zoom = 1.25;
+    const second = JSON.stringify(nextScene);
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 1, charactersRevision: 0, scene: second },
+    });
+    const unused = JSON.parse(first);
+    unused.camera.zoom = 1.5;
+    await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      JSON.stringify(unused),
+      (candidate) =>
+        store.usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const before = (await usage.get()).data().storageBytes;
+    const result = await store.maintainObjects(f.principal, campaign.id);
+    assert.equal(result.scanned, 4);
+    assert.equal(result.quarantined, 2);
+    assert.equal(result.deleted, 0);
+    assert.equal(
+      (await f.runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/` }))[0].length,
+      4
+    );
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, second);
+    assert.equal(
+      JSON.parse(await store.readBackup(f.principal, campaign.id, backup.name)).scene,
+      first
+    );
+    assert.equal((await usage.get()).data().storageBytes, before);
+    now += 24 * 60 * 60 * 1000 - 1;
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).deleted, 0);
+    now++;
+    const retired = await store.maintainObjects(f.principal, campaign.id);
+    assert.equal(retired.deleted, 2);
+    assert.equal(
+      (await f.runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/` }))[0].length,
+      2
+    );
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, second);
+    assert.equal(
+      JSON.parse(await store.readBackup(f.principal, campaign.id, backup.name)).scene,
+      first
+    );
+    assert.equal((await usage.get()).data().storageBytes, before);
+    const heldRows = await usage
+      .collection('objects')
+      .where('cleanup.state', '==', 'retired')
+      .get();
+    const heldBytes = heldRows.docs.reduce((bytes, snapshot) => bytes + snapshot.data().bytes, 0);
+    assert.equal(heldRows.size, 2);
+    now += 7 * 24 * 60 * 60 * 1000 - 1;
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).releasedBytes, 0);
+    assert.equal((await usage.get()).data().storageBytes, before);
+    now++;
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).releasedBytes, heldBytes);
+    assert.equal((await usage.get()).data().storageBytes, before - heldBytes);
+  }
+);
+
+test(
+  'a deleting object cannot be reused by a new checkpoint and retry publishes a newly charged generation',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Delete/reuse fence', ruleset: '2014' },
+    });
+    const scene = JSON.stringify(sceneState({ ruleset: '2014' }));
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene },
+    });
+    const first = (await f.runtime.firestore.collection('campaigns').doc(campaign.id).get()).data()
+      .sceneRef;
+    const changed = JSON.parse(scene);
+    changed.camera.zoom = 1.5;
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: {
+        ruleset: '2014',
+        revision: 1,
+        charactersRevision: 0,
+        scene: JSON.stringify(changed),
+      },
+    });
+    await store.maintainObjects(f.principal, campaign.id);
+    now += 24 * 60 * 60 * 1000;
+    const fileFor = f.runtime.bucket.file.bind(f.runtime.bucket);
+    let unblock = () => {};
+    const gate = new Promise((resolve) => {
+      unblock = resolve;
+    });
+    let noticed = () => {};
+    const held = new Promise((resolve) => {
+      noticed = resolve;
+    });
+    f.runtime.bucket.file = (...args) => {
+      const file = fileFor(...args);
+      if (args[0] !== first.path) return file;
+      const remove = file.delete.bind(file);
+      file.delete = async (...options) => {
+        noticed();
+        await gate;
+        return remove(...options);
+      };
+      return file;
+    };
+    t.after(() => {
+      unblock();
+      f.runtime.bucket.file = fileFor;
+    });
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const before = (await usage.get()).data().storageBytes;
+    const cleaning = store.maintainObjects(f.principal, campaign.id);
+    await held;
+    const command = {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 2, charactersRevision: 0, scene },
+    };
+    await assert.rejects(store.commitScene(f.principal, campaign.id, command), {
+      code: 'object-maintenance-busy',
+    });
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, JSON.stringify(changed));
+    unblock();
+    assert.equal((await cleaning).deleted, 1);
+    assert.equal((await usage.get()).data().storageBytes, before);
+    await store.commitScene(f.principal, campaign.id, command);
+    const restored = (
+      await f.runtime.firestore.collection('campaigns').doc(campaign.id).get()
+    ).data().sceneRef;
+    assert.notEqual(restored.generation, first.generation);
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, scene);
+    assert.equal((await usage.get()).data().storageBytes, before + restored.bytes);
+  }
+);
+
+test(
+  'retired bytes stay charged while their exact soft-deleted generation remains billable after the minimum hold',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Retained generation billing', ruleset: '2014' },
+    });
+    const object = await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      JSON.stringify(sceneState()),
+      (candidate) =>
+        store.usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    await store.maintainObjects(f.principal, campaign.id);
+    now += 24 * 60 * 60 * 1000;
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).deleted, 1);
+    now += 7 * 24 * 60 * 60 * 1000;
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const list = f.runtime.bucket.getFiles.bind(f.runtime.bucket);
+    f.runtime.bucket.getFiles = async (options) => {
+      if (options.softDeleted && options.prefix === object.path)
+        return [
+          [
+            {
+              metadata: {
+                name: object.path,
+                bucket: f.runtime.bucket.name,
+                generation: object.generation,
+                size: String(object.bytes),
+                softDeleteTime: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
+                hardDeleteTime: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+              },
+            },
+          ],
+          null,
+        ];
+      return list(options);
+    };
+    t.after(() => {
+      f.runtime.bucket.getFiles = list;
+    });
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).releasedBytes, 0);
+    assert.equal((await usage.get()).data().storageBytes, object.bytes);
+    f.runtime.bucket.getFiles = async (options) => {
+      if (options.prefix === object.path && (options.versions || options.softDeleted))
+        return [[], { ...options, pageToken: String(Number(options.pageToken ?? 0) + 1) }];
+      return list(options);
+    };
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).releasedBytes, 0);
+    assert.equal((await usage.get()).data().storageBytes, object.bytes);
+    f.runtime.bucket.getFiles = list;
+    assert.equal(
+      (await store.maintainObjects(f.principal, campaign.id)).releasedBytes,
+      object.bytes
+    );
+    assert.equal((await usage.get()).data().storageBytes, 0);
+  }
+);
+
+test(
+  'pending complete-backup source references stay protected without blocking unrelated orphan cleanup',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Pending backup cleanup roots', ruleset: '2014' },
+    });
+    const first = JSON.stringify(sceneState());
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene: first },
+    });
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const before = (await usage.get()).data().storageBytes;
+    await usage.update({ storageBytes: 20 * 1024 * 1024 * 1024 });
+    const backupCommand = { commandId: randomUUID() };
+    await assert.rejects(store.backupNow(f.principal, campaign.id, backupCommand), {
+      code: 'storage-limit-reached',
+    });
+    await usage.update({ storageBytes: before });
+    const second = JSON.parse(first);
+    second.camera.zoom = 1.5;
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: {
+        ruleset: '2014',
+        revision: 1,
+        charactersRevision: 0,
+        scene: JSON.stringify(second),
+      },
+    });
+    const orphan = JSON.parse(first);
+    orphan.camera.zoom = 2;
+    const unused = await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      JSON.stringify(orphan),
+      (candidate) =>
+        store.usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).quarantined, 1);
+    now += 24 * 60 * 60 * 1000;
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).deleted, 1);
+    assert.equal((await f.runtime.bucket.file(unused.path).exists())[0], false);
+    const recovered = await store.backupNow(f.principal, campaign.id, backupCommand);
+    assert.equal(
+      JSON.parse(await store.readBackup(f.principal, campaign.id, recovered.name)).scene,
+      first
+    );
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, JSON.stringify(second));
+  }
+);
+
+test(
+  'lost physical-deletion replies resume from durable fences without freeing retained bytes or needing a live object listing',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Interrupted object retirement', ruleset: '2014' },
+    });
+    const object = await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      JSON.stringify(sceneState()),
+      (candidate) =>
+        store.usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    await store.maintainObjects(f.principal, campaign.id);
+    now += 24 * 60 * 60 * 1000;
+    const fileFor = f.runtime.bucket.file.bind(f.runtime.bucket);
+    let lose = true;
+    f.runtime.bucket.file = (...args) => {
+      const file = fileFor(...args);
+      if (args[0] !== object.path) return file;
+      const remove = file.delete.bind(file);
+      file.delete = async (...options) => {
+        await remove(...options);
+        if (lose) {
+          lose = false;
+          throw Object.assign(new Error('Fixture lost the committed deletion reply'), {
+            code: 503,
+          });
+        }
+      };
+      return file;
+    };
+    t.after(() => {
+      f.runtime.bucket.file = fileFor;
+    });
+    await assert.rejects(store.maintainObjects(f.principal, campaign.id), {
+      code: 'maintenance-unavailable',
+    });
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    assert.equal((await usage.get()).data().storageBytes, object.bytes);
+    assert.equal(
+      (await f.runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/` }))[0].length,
+      0
+    );
+    const resumed = await f.createStore(() => now).maintainObjects(f.principal, campaign.id);
+    assert.equal(resumed.deleted, 1);
+    assert.equal((await usage.get()).data().storageBytes, object.bytes);
+    assert.equal(
+      (await usage.collection('objects').where('cleanup.state', '==', 'retired').get()).size,
+      1
+    );
+  }
+);
+
+test(
+  'an uncertain retirement acknowledgement cannot later delete or charge the replacement generation twice',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Retirement acknowledgement race', ruleset: '2014' },
+    });
+    const scene = JSON.stringify(sceneState());
+    const original = await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      scene,
+      (candidate) =>
+        store.usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    await store.maintainObjects(f.principal, campaign.id);
+    now += 24 * 60 * 60 * 1000;
+    const transact = f.runtime.firestore.runTransaction.bind(f.runtime.firestore);
+    let lose = true;
+    f.runtime.firestore.runTransaction = async (operation, options) => {
+      let retiring = false;
+      const result = await transact(async (transaction) => {
+        const create = transaction.create.bind(transaction);
+        transaction.create = (reference, data) => {
+          if (reference.parent.id === 'objects' && data.cleanup?.state === 'retired')
+            retiring = true;
+          return create(reference, data);
+        };
+        return operation(transaction);
+      }, options);
+      if (retiring && lose) {
+        lose = false;
+        throw Object.assign(new Error('Fixture lost the committed retirement reply'), { code: 14 });
+      }
+      return result;
+    };
+    t.after(() => {
+      f.runtime.firestore.runTransaction = transact;
+    });
+    await assert.rejects(store.maintainObjects(f.principal, campaign.id), { status: 503 });
+    f.runtime.firestore.runTransaction = transact;
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene },
+    });
+    const current = (
+      await f.runtime.firestore.collection('campaigns').doc(campaign.id).get()
+    ).data().sceneRef;
+    assert.notEqual(current.generation, original.generation);
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    assert.equal((await usage.get()).data().storageBytes, original.bytes + current.bytes);
+    now += 7 * 24 * 60 * 60 * 1000;
+    const resumed = await f.createStore(() => now).maintainObjects(f.principal, campaign.id);
+    assert.equal(resumed.releasedBytes, original.bytes);
+    assert.equal(resumed.deleted, 0);
+    assert.equal((await usage.get()).data().storageBytes, current.bytes);
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, scene);
+    assert.equal(
+      (await f.runtime.bucket.file(current.path).getMetadata())[0].generation,
+      current.generation
+    );
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).releasedBytes, 0);
+  }
+);
+
+test(
+  'a stale missing-object reply renews quota before writing a replacement and still cannot publish its expired command',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Stalled missing-object lookup', ruleset: '2014' },
+    });
+    const scene = JSON.stringify(sceneState());
+    const path = snapshotCandidate(campaign.id, 'scene', scene).path;
+    const fileFor = f.runtime.bucket.file.bind(f.runtime.bucket);
+    let unblock = () => {};
+    const gate = new Promise((resolve) => {
+      unblock = resolve;
+    });
+    let notice = () => {};
+    const held = new Promise((resolve) => {
+      notice = resolve;
+    });
+    let hold = true;
+    f.runtime.bucket.file = (...args) => {
+      const file = fileFor(...args);
+      if (args[0] !== path) return file;
+      const metadata = file.getMetadata.bind(file);
+      file.getMetadata = async (...options) => {
+        try {
+          return await metadata(...options);
+        } catch (error) {
+          if (error.code === 404 && hold) {
+            hold = false;
+            notice();
+            await gate;
+          }
+          throw error;
+        }
+      };
+      return file;
+    };
+    t.after(() => {
+      unblock();
+      f.runtime.bucket.file = fileFor;
+    });
+    const command = {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene },
+    };
+    const delayed = store.commitScene(f.principal, campaign.id, command);
+    await held;
+    const original = await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      scene,
+      (candidate) =>
+        store.usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).quarantined, 1);
+    now += 24 * 60 * 60 * 1000;
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).deleted, 1);
+    unblock();
+    await assert.rejects(delayed, { code: 'object-publication-expired' });
+    const [replacement] = await fileFor(path).getMetadata();
+    assert.notEqual(replacement.generation, original.generation);
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    assert.equal(
+      (await usage.get()).data().storageBytes,
+      original.bytes + Number(replacement.size)
+    );
+    assert.equal((await store.get(f.principal, campaign.id)).sceneRevision, 0);
+    await store.commitScene(f.principal, campaign.id, command);
+    assert.equal((await store.get(f.principal, campaign.id)).sceneRevision, 1);
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, scene);
+    assert.equal(
+      (await usage.get()).data().storageBytes,
+      original.bytes + Number(replacement.size)
+    );
+  }
+);
+
+test(
+  'a delayed cleanup worker cannot delete a new referenced generation after another worker completes the old retirement',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const stores = [f.createStore(() => now), f.createStore(() => now)];
+    const campaign = await stores[0].create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Concurrent generation retirement', ruleset: '2014' },
+    });
+    const scene = JSON.stringify(sceneState());
+    const object = await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      scene,
+      (candidate) =>
+        stores[0].usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    await stores[0].maintainObjects(f.principal, campaign.id);
+    now += 24 * 60 * 60 * 1000;
+    const fileFor = f.runtime.bucket.file.bind(f.runtime.bucket);
+    let unblock = () => {};
+    const gate = new Promise((resolve) => {
+      unblock = resolve;
+    });
+    let notice = () => {};
+    const held = new Promise((resolve) => {
+      notice = resolve;
+    });
+    let hold = true;
+    f.runtime.bucket.file = (...args) => {
+      const file = fileFor(...args);
+      if (args[0] !== object.path) return file;
+      const remove = file.delete.bind(file);
+      file.delete = async (...options) => {
+        const generation = args[1]?.preconditionOpts?.ifGenerationMatch;
+        assert.equal(generation, object.generation);
+        if (hold) {
+          hold = false;
+          notice();
+          await gate;
+        }
+        // The official emulator omits the live-canary-verified GCS generation precondition.
+        const [current] = await fileFor(object.path).getMetadata();
+        if (current.generation !== generation)
+          throw Object.assign(
+            new Error('Fixture enforces the real Storage generation precondition'),
+            { code: 412 }
+          );
+        return remove(...options);
+      };
+      return file;
+    };
+    t.after(() => {
+      unblock();
+      f.runtime.bucket.file = fileFor;
+    });
+    const delayed = stores[0].maintainObjects(f.principal, campaign.id);
+    await held;
+    assert.equal((await stores[1].maintainObjects(f.principal, campaign.id)).deleted, 1);
+    await stores[1].commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene },
+    });
+    const replacement = (
+      await f.runtime.firestore.collection('campaigns').doc(campaign.id).get()
+    ).data().sceneRef;
+    assert.notEqual(replacement.generation, object.generation);
+    unblock();
+    await assert.rejects(delayed, { code: 'maintenance-state-changed' });
+    assert.equal((await stores[1].readScene(f.principal, campaign.id)).scene, scene);
+    assert.equal((await fileFor(object.path).getMetadata())[0].generation, replacement.generation);
+    const usage = await f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid))
+      .get();
+    assert.equal(usage.data().storageBytes, object.bytes + replacement.bytes);
+    assert.equal(
+      (await usage.ref.collection('objects').where('cleanup.state', '==', 'retired').get()).size,
+      1
+    );
+  }
+);
+
+test(
+  'maintenance leases survive cold-worker replacement, expire after crashes and rotate bounded owned targets',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const stores = [f.createStore(() => now), f.createStore(() => now)];
+    const campaigns = [];
+    for (let index = 0; index < 2; index++) {
+      const campaign = await stores[0].create(f.principal, {
+        commandId: randomUUID(),
+        options: { name: `Bounded owner target ${index}`, ruleset: '2014' },
+      });
+      campaigns.push(campaign);
+      await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+        campaign.id,
+        'scene',
+        JSON.stringify(sceneState()),
+        (candidate) =>
+          stores[0].usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+      );
+    }
+    campaigns.sort((a, b) => a.id.localeCompare(b.id));
+    const list = f.runtime.bucket.getFiles.bind(f.runtime.bucket);
+    let unblock = () => {};
+    const gate = new Promise((resolve) => {
+      unblock = resolve;
+    });
+    let notice = () => {};
+    const held = new Promise((resolve) => {
+      notice = resolve;
+    });
+    let hold = true;
+    let scans = 0;
+    f.runtime.bucket.getFiles = async (options) => {
+      if (campaigns.some((campaign) => options.prefix === `campaigns/${campaign.id}/`)) {
+        scans++;
+        if (hold) {
+          hold = false;
+          notice();
+          await gate;
+        }
+      }
+      return list(options);
+    };
+    t.after(() => {
+      unblock();
+      f.runtime.bucket.getFiles = list;
+    });
+    const original = stores[0].runObjectMaintenance(f.principal);
+    await held;
+    assert.equal((await stores[1].runObjectMaintenance(f.principal)).state, 'deferred');
+    assert.equal(scans, 1);
+    now += 5 * 60 * 1000;
+    assert.equal((await stores[1].runObjectMaintenance(f.principal)).result.quarantined, 1);
+    unblock();
+    await assert.rejects(original, { code: 'maintenance-state-changed' });
+    const lease = f.runtime.firestore
+      .collection('accountObjectMaintenance')
+      .doc(pilotAccountKey(f.identity.uid));
+    const completed = (await lease.get()).data();
+    assert.equal(completed.campaignCursor, campaigns[0].id);
+    assert.equal(completed.lastError, null);
+    now += 5 * 60 * 1000 - 1;
+    assert.equal((await stores[0].runObjectMaintenance(f.principal)).state, 'deferred');
+    now++;
+    assert.equal((await stores[0].runObjectMaintenance(f.principal)).result.quarantined, 1);
+    assert.equal((await lease.get()).data().campaignCursor, campaigns[1].id);
+    assert.equal(scans, 3);
+  }
+);
+
+test(
+  'cleanup errors are durable and visible without changing the receipt of a successfully saved HTTP command',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Independent maintenance failure', ruleset: '2014' },
+    });
+    const first = sceneState();
+    await store.commitScene(f.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 0, charactersRevision: 0, scene: JSON.stringify(first) },
+    });
+    const api = await cloudApi({ access: f.access, store });
+    t.after(() => api.close());
+    const list = f.runtime.bucket.getFiles.bind(f.runtime.bucket);
+    let scans = 0;
+    f.runtime.bucket.getFiles = async (options) => {
+      if (options.prefix === `campaigns/${campaign.id}/`) {
+        scans++;
+        throw Object.assign(new Error('Fixture storage listing unavailable'), { code: 503 });
+      }
+      return list(options);
+    };
+    t.after(() => {
+      f.runtime.bucket.getFiles = list;
+    });
+    const scene = JSON.stringify({ ...first, camera: { ...first.camera, zoom: 1.5 } });
+    const command = {
+      commandId: randomUUID(),
+      change: { ruleset: '2014', revision: 1, charactersRevision: 0, scene },
+    };
+    const response = await fetch(api.url + `/api/cloud/campaigns/${campaign.id}/scene`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + f.identity.token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(command),
+    });
+    assert.equal(response.status, 200);
+    const receipt = (await response.json()).result;
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, scene);
+    assert.deepEqual(await store.commitScene(f.principal, campaign.id, command), receipt);
+    const lease = f.runtime.firestore
+      .collection('accountObjectMaintenance')
+      .doc(pilotAccountKey(f.identity.uid));
+    assert.equal((await lease.get()).data().lastError.code, 'maintenance-unavailable');
+    assert.equal(scans, 1);
+    assert.equal((await store.runObjectMaintenance(f.principal)).state, 'deferred');
+    f.runtime.bucket.getFiles = list;
+    now += 5000;
+    assert.equal((await store.runObjectMaintenance(f.principal)).state, 'complete');
+    assert.equal((await lease.get()).data().lastError, null);
+    assert.equal((await store.readScene(f.principal, campaign.id)).scene, scene);
+  }
+);
+
+test(
+  'malformed quarantine, ledger and backup roots fail closed and unrelated accounts cannot maintain another prefix',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    const other = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Fail-closed cleanup evidence', ruleset: '2014' },
+    });
+    const object = await new ImmutableCloudObjects({ bucket: f.runtime.bucket }).stage(
+      campaign.id,
+      'scene',
+      JSON.stringify(sceneState()),
+      (candidate) =>
+        store.usage.reserveStorage(f.principal, campaign.id, candidate, f.runtime.bucket)
+    );
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).quarantined, 1);
+    await assert.rejects(store.maintainObjects(other.principal, campaign.id), {
+      code: 'campaign-not-found',
+    });
+    now += 24 * 60 * 60 * 1000;
+    const campaignReference = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const marker = (await campaignReference.collection('objectCleanup').get()).docs[0];
+    await marker.ref.update({ bytes: object.bytes + 1 });
+    await assert.rejects(store.maintainObjects(f.principal, campaign.id), {
+      code: 'invalid-maintenance-state',
+    });
+    await marker.ref.update({ bytes: object.bytes });
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const reservation = (await usage.collection('objects').get()).docs[0];
+    await reservation.ref.update({ bytes: object.bytes + 1 });
+    await assert.rejects(store.maintainObjects(f.principal, campaign.id), {
+      code: 'invalid-account-usage',
+    });
+    await reservation.ref.update({ bytes: object.bytes });
+    const backup = await store.backupNow(f.principal, campaign.id, { commandId: randomUUID() });
+    const manifest = campaignReference.collection('backups').doc(backup.name);
+    await manifest.update({ 'reference.bytes': backup.bytes - 1 });
+    await assert.rejects(store.maintainObjects(f.principal, campaign.id), {
+      code: 'invalid-maintenance-state',
+    });
+    await manifest.update({ 'reference.bytes': backup.bytes });
+    await marker.ref.update({ state: 'deleting', token: 'invalid-token' });
+    await assert.rejects(store.maintainObjects(f.principal, campaign.id), {
+      code: 'invalid-maintenance-state',
+    });
+    assert.equal((await f.runtime.bucket.file(object.path).exists())[0], true);
+    assert.equal((await usage.get()).data().storageBytes, object.bytes + backup.bytes);
+    assert.equal(
+      (await usage.collection('objects').where('cleanup.state', '==', 'retired').get()).size,
+      0
+    );
+  }
+);
+
+test(
+  'cleanup advances through more than 200 real objects in 20-object pages and retires at most four generations per invocation',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Bounded inventory pages', ruleset: '2014' },
+    });
+    const values = Array.from({ length: 205 }, (_, index) => JSON.stringify({ staged: index }));
+    await store.usage.reserveStorage(
+      f.principal,
+      campaign.id,
+      values.map((value) => snapshotCandidate(campaign.id, 'scene', value)),
+      f.runtime.bucket
+    );
+    const objects = new ImmutableCloudObjects({ bucket: f.runtime.bucket });
+    for (let offset = 0; offset < values.length; offset += 8)
+      await Promise.all(
+        values.slice(offset, offset + 8).map((value) => objects.stage(campaign.id, 'scene', value))
+      );
+    for (let page = 0; page < 10; page++) {
+      const current = (await f.createStore(() => now).runObjectMaintenance(f.principal)).result;
+      assert.equal(current.scanned, 20);
+      assert.equal(current.quarantined, 20);
+      assert.equal(current.more, true);
+      now += 4999;
+      assert.equal((await store.runObjectMaintenance(f.principal)).state, 'deferred');
+      now++;
+    }
+    const second = (await f.createStore(() => now).runObjectMaintenance(f.principal)).result;
+    assert.equal(second.scanned, 5);
+    assert.equal(second.quarantined, 5);
+    now += 24 * 60 * 60 * 1000;
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).deleted, 4);
+    const next = await store.maintainObjects(f.principal, campaign.id);
+    assert.equal(next.scanned, 20);
+    assert.equal(next.deleted, 4);
+    assert.equal(
+      (await f.runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/` }))[0].length,
+      197
+    );
+  }
+);
 
 test(
   'four stream leases are shared across instances, expire after crashes and renew without a session-duration cap',

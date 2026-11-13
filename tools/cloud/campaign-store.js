@@ -6,11 +6,16 @@ const {
 } = require('../../src/campaigns/CampaignCharacters.js');
 const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
+const { FieldPath } = require('firebase-admin/firestore');
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
 const { CloudUsageLimits } = require('./usage-limits.js');
-const { snapshotCandidate, isImmutableCloudReference } = require('./immutable-objects.js');
+const {
+  snapshotCandidate,
+  isImmutableCloudReference,
+  storageUnavailable,
+} = require('./immutable-objects.js');
 const { CompleteCloudBackupObjects, isCompleteBackupReference } = require('./backup-objects.js');
 const { acquireLargeFileWork } = require('./large-file-work.js');
 const { isPrivateAssetReference } = require('./campaign-assets.js');
@@ -79,6 +84,9 @@ const unavailableInvitation = () =>
   );
 const validUid = (value) => typeof value === 'string' && value.length > 0 && value.length <= 128;
 const IMPORT_TTL_MS = 24 * 60 * 60 * 1000;
+const OBJECT_QUARANTINE_MS = 24 * 60 * 60 * 1000;
+const OBJECT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
+const OBJECT_MAINTENANCE_PAGE_SIZE = 20;
 const BACKUP_FAILURE_MESSAGE =
   'The complete backup was not finished. Acknowledged primary saves are unchanged; retry the backup online.';
 const newestBackupFirst = (a, b) =>
@@ -693,6 +701,8 @@ class CloudCampaignStore {
     );
     if (previous !== null) return previous;
     await this.usage.ensureAccount(principal);
+    if (this.backupObjects?.bucket)
+      await this.usage.prepareStorage(principal, this.backupObjects.bucket);
     const prepared = await this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
@@ -725,6 +735,7 @@ class CloudCampaignStore {
             'invalid-backup-state',
             'The pending backup source could not be verified'
           );
+        await this._touchBackupSources(transaction, uid, id, job.snapshot);
         return { replay: null, job };
       }
       if (
@@ -742,6 +753,7 @@ class CloudCampaignStore {
         snapshot: this._backupSnapshot(head),
         state: 'pending',
       };
+      await this._touchBackupSources(transaction, uid, id, head);
       transaction.create(claimReference, {
         version: 1,
         uid,
@@ -753,6 +765,7 @@ class CloudCampaignStore {
       return { replay: null, job };
     });
     if (prepared.replay !== null) return prepared.replay;
+    const startedAt = this.now();
     let release = null;
     try {
       if (this.backupObjects === null)
@@ -792,6 +805,18 @@ class CloudCampaignStore {
             'invalid-backup-state',
             'The backup source is ahead of the campaign'
           );
+        await this.usage.assertPublication(
+          transaction,
+          uid,
+          id,
+          [
+            {
+              path: `campaigns/${id}/backups/${commandId}/${archived.sha256}.json`,
+              bytes: archived.bytes,
+            },
+          ],
+          startedAt
+        );
         const record = {
           name: commandId,
           createdAt: prepared.job.createdAt,
@@ -922,12 +947,719 @@ class CloudCampaignStore {
     return text;
   }
 
+  async _touchBackupSources(transaction, uid, id, head) {
+    const candidates = [];
+    for (const [kind, reference] of [
+      ['scene', head.sceneRef],
+      ['characters', head.charactersRef],
+    ]) {
+      if (reference === null) continue;
+      if (!isImmutableCloudReference(id, kind, reference))
+        throw new CloudError(
+          503,
+          'invalid-backup-state',
+          'The pending backup source references are invalid'
+        );
+      candidates.push({ path: reference.path, bytes: reference.bytes });
+    }
+    await this.usage.touchReferences(transaction, uid, id, candidates);
+  }
+
   _importReference(uid, importId) {
     return this.firestore
       .collection('accountImports')
       .doc(pilotAccountKey(uid))
       .collection('transfers')
       .doc(importId);
+  }
+
+  _maintenanceWorkRecord(snapshot, uid) {
+    if (!snapshot.exists)
+      return {
+        version: 1,
+        uid,
+        phase: 'campaign',
+        campaignCursor: null,
+        importCursor: null,
+        token: null,
+        leaseUntil: 0,
+        nextRunAt: 0,
+        lastRunAt: null,
+        lastError: null,
+      };
+    const saved = snapshot.data();
+    if (
+      saved?.version !== 1 ||
+      saved.uid !== uid ||
+      !['campaign', 'import'].includes(saved.phase) ||
+      ![saved.campaignCursor, saved.importCursor].every(
+        (cursor) => cursor === null || isCloudUUID(cursor)
+      ) ||
+      !(saved.token === null || isCloudUUID(saved.token)) ||
+      !Number.isSafeInteger(saved.leaseUntil) ||
+      saved.leaseUntil < 0 ||
+      (saved.token === null) !== (saved.leaseUntil === 0) ||
+      !Number.isSafeInteger(saved.nextRunAt) ||
+      saved.nextRunAt < 0 ||
+      !(saved.lastRunAt === null || validTime(saved.lastRunAt)) ||
+      !(
+        saved.lastError === null ||
+        (typeof saved.lastError?.code === 'string' &&
+          /^[a-z0-9-]{1,96}$/.test(saved.lastError.code) &&
+          validTime(saved.lastError.at))
+      )
+    )
+      throw new CloudError(
+        503,
+        'invalid-maintenance-state',
+        'The account maintenance lease is invalid'
+      );
+    return saved;
+  }
+
+  async _nextMaintenanceTarget(uid, phase, cursor) {
+    const collection =
+      phase === 'campaign'
+        ? this.firestore.collection('campaigns').where('ownerUid', '==', uid)
+        : this.firestore
+            .collection('accountImports')
+            .doc(pilotAccountKey(uid))
+            .collection('transfers');
+    const query = collection.orderBy(FieldPath.documentId()).limit(1);
+    let rows = await (cursor === null ? query : query.startAfter(cursor)).get();
+    if (rows.empty && cursor !== null) rows = await query.get();
+    if (rows.empty) return null;
+    const snapshot = rows.docs[0];
+    const id =
+      phase === 'campaign'
+        ? (await this._metadata(snapshot, uid)).campaign.id
+        : this._importRecord(snapshot, uid, snapshot.id).campaignId;
+    return { phase, cursor: snapshot.id, id };
+  }
+
+  async runObjectMaintenance(principal) {
+    const uid = principalUid(principal);
+    const reference = this.firestore
+      .collection('accountObjectMaintenance')
+      .doc(pilotAccountKey(uid));
+    const claim = await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const saved = this._maintenanceWorkRecord(await transaction.get(reference), uid);
+      const now = this.now();
+      if (saved.nextRunAt > now || saved.leaseUntil > now) return null;
+      const claimed = {
+        ...saved,
+        token: randomUUID(),
+        leaseUntil: now + OBJECT_MAINTENANCE_INTERVAL_MS,
+        nextRunAt: now + OBJECT_MAINTENANCE_INTERVAL_MS,
+      };
+      transaction.set(reference, claimed);
+      return claimed;
+    });
+    if (claim === null) return { version: 1, state: 'deferred' };
+    let target = null;
+    let result = null;
+    let failure = null;
+    try {
+      target = await this._nextMaintenanceTarget(
+        uid,
+        claim.phase,
+        claim.phase === 'campaign' ? claim.campaignCursor : claim.importCursor
+      );
+      if (target === null) {
+        const other = claim.phase === 'campaign' ? 'import' : 'campaign';
+        target = await this._nextMaintenanceTarget(
+          uid,
+          other,
+          other === 'campaign' ? claim.campaignCursor : claim.importCursor
+        );
+      }
+      if (target !== null) result = await this.maintainObjects(principal, target.id);
+    } catch (error) {
+      failure =
+        error instanceof Error
+          ? error
+          : new CloudError(
+              503,
+              'maintenance-failed',
+              'Private object maintenance could not be completed'
+            );
+      console.error('[cloud-object-maintenance]', {
+        code: error instanceof CloudError ? error.code : 'maintenance-failed',
+      });
+    }
+    await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const saved = this._maintenanceWorkRecord(await transaction.get(reference), uid);
+      if (saved.token !== claim.token)
+        throw new CloudError(
+          503,
+          'maintenance-state-changed',
+          'Another worker owns the maintenance lease'
+        );
+      const now = this.now();
+      transaction.set(reference, {
+        ...saved,
+        token: null,
+        leaseUntil: 0,
+        nextRunAt: now + (failure !== null || result?.more ? 5000 : OBJECT_MAINTENANCE_INTERVAL_MS),
+        lastRunAt: failure === null ? new Date(now).toISOString() : saved.lastRunAt,
+        lastError:
+          failure === null
+            ? null
+            : {
+                code: failure instanceof CloudError ? failure.code : 'maintenance-failed',
+                at: new Date(now).toISOString(),
+              },
+        ...(failure === null && target !== null && !result.more
+          ? {
+              phase: target.phase === 'campaign' ? 'import' : 'campaign',
+              [target.phase === 'campaign' ? 'campaignCursor' : 'importCursor']: target.cursor,
+            }
+          : {}),
+      });
+    });
+    if (failure !== null) throw failure;
+    return { version: 1, state: target === null ? 'idle' : 'complete', result };
+  }
+
+  async _maintenanceImport(transaction, uid, id) {
+    const jobs = await transaction.get(
+      this.firestore
+        .collection('accountImports')
+        .doc(pilotAccountKey(uid))
+        .collection('transfers')
+        .where('campaignId', '==', id)
+        .limit(2)
+    );
+    if (jobs.empty) return null;
+    if (jobs.size !== 1)
+      throw new CloudError(
+        503,
+        'invalid-maintenance-state',
+        'The import target authority is ambiguous'
+      );
+    const snapshot = jobs.docs[0];
+    const job = this._importRecord(snapshot, uid, snapshot.id);
+    const claim = (
+      await transaction.get(
+        this.firestore
+          .collection('accountCommands')
+          .doc(pilotAccountKey(uid))
+          .collection('claims')
+          .doc(job.importId)
+      )
+    ).data();
+    if (
+      claim?.version !== 1 ||
+      claim.uid !== uid ||
+      claim.kind !== 'campaign.import' ||
+      claim.campaignId !== id ||
+      claim.fingerprint !== job.fingerprint
+    )
+      throw new CloudError(
+        503,
+        'invalid-maintenance-state',
+        'The import target claim could not be verified'
+      );
+    return { job, active: job.state === 'uploading' && Date.parse(job.expiresAt) > this.now() };
+  }
+
+  async _maintenanceAuthority(transaction, uid, id) {
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
+    if (snapshot.exists) return { head: await this._metadata(snapshot, uid), importing: null };
+    const importing = await this._maintenanceImport(transaction, uid, id);
+    if (importing === null) throw unavailableCampaign();
+    if (importing.job.state === 'complete')
+      throw new CloudError(
+        503,
+        'invalid-maintenance-state',
+        'A completed import target has no saved head'
+      );
+    return { head: null, importing };
+  }
+
+  async _maintenanceImageRoots(principal, id) {
+    const authority = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(principalUid(principal), transaction);
+        return this._maintenanceAuthority(transaction, principal.uid, id);
+      },
+      { readOnly: true }
+    );
+    const head = authority.head;
+    if (head === null) return { generation: null, paths: new Set() };
+    if (head.charactersRef === null) return { generation: head.generation, paths: new Set() };
+    const release = acquireLargeFileWork();
+    try {
+      const records = await this.objects.read(id, 'characters', head.charactersRef);
+      return {
+        generation: head.generation,
+        paths: new Set(
+          this._imageEntries(records).map((image) => `campaigns/${id}/assets/${image.sha256}.bin`)
+        ),
+      };
+    } finally {
+      release();
+    }
+  }
+
+  async _maintenanceRoots(transaction, uid, id, images = null, candidatePath = null) {
+    const campaign = this.firestore.collection('campaigns').doc(id);
+    const { head, importing } = await this._maintenanceAuthority(transaction, uid, id);
+    if (head === null) return { head, paths: new Set(), pending: importing.active };
+    const state = this._backupState(await transaction.get(this._backupStateReference(id)), uid, id);
+    if (state.lastGeneration > head.generation)
+      throw new CloudError(
+        503,
+        'invalid-maintenance-state',
+        'Backup roots are ahead of the campaign'
+      );
+    const paths = new Set();
+    if (images !== null) {
+      if (images.generation !== head.generation)
+        throw new CloudError(
+          503,
+          'maintenance-state-changed',
+          'Campaign image references changed during maintenance'
+        );
+      for (const path of images.paths) paths.add(path);
+    }
+    for (const [kind, reference] of [
+      ['scene', head.sceneRef],
+      ['characters', head.charactersRef],
+    ]) {
+      if (reference === null) continue;
+      if (!isImmutableCloudReference(id, kind, reference))
+        throw new CloudError(
+          503,
+          'invalid-maintenance-state',
+          'Current object references could not be verified'
+        );
+      paths.add(reference.path);
+    }
+    const references = state.records.map((record) =>
+      campaign.collection('backups').doc(record.name)
+    );
+    const snapshots = references.length ? await transaction.getAll(...references) : [];
+    for (let index = 0; index < snapshots.length; index++) {
+      const manifest = snapshots[index].data();
+      const record = state.records[index];
+      if (
+        !snapshots[index].exists ||
+        manifest?.version !== 1 ||
+        manifest.uid !== uid ||
+        manifest.campaignId !== id ||
+        stableStringify(manifest.record) !== stableStringify(record) ||
+        !isCompleteBackupReference(manifest.reference, id, record.name) ||
+        manifest.reference.bytes !== record.bytes
+      )
+        throw new CloudError(
+          503,
+          'invalid-maintenance-state',
+          'Retained backup references could not be verified'
+        );
+      paths.add(`campaigns/${id}/backups/${record.name}/${manifest.reference.sha256}.json`);
+    }
+    let pending = false;
+    if (candidatePath?.includes('/objects/import/')) {
+      const source = await this._maintenanceImport(transaction, uid, id);
+      if (source === null || source.job.state !== 'complete')
+        throw new CloudError(
+          503,
+          'invalid-maintenance-state',
+          'The committed import source could not be verified'
+        );
+    }
+    const snapshotKind =
+      candidatePath === null
+        ? null
+        : new RegExp(`^campaigns/${id}/objects/(scene|characters)/`).exec(candidatePath)?.[1];
+    if (snapshotKind) {
+      const jobs = await transaction.get(
+        campaign
+          .collection('backupJobs')
+          .where('state', '==', 'pending')
+          .where(
+            `snapshot.${snapshotKind === 'scene' ? 'sceneRef' : 'charactersRef'}.path`,
+            '==',
+            candidatePath
+          )
+          .limit(1)
+      );
+      for (const snapshot of jobs.docs) {
+        const job = snapshot.data();
+        if (
+          job?.version !== 1 ||
+          job.uid !== uid ||
+          job.campaignId !== id ||
+          job.snapshot?.ownerUid !== uid
+        )
+          throw new CloudError(
+            503,
+            'invalid-maintenance-state',
+            'A pending source root could not be verified'
+          );
+      }
+      pending = !jobs.empty;
+    }
+    const raw =
+      candidatePath === null
+        ? null
+        : new RegExp(`^campaigns/${id}/backups/([a-f0-9-]{36})/`).exec(candidatePath);
+    if (raw) {
+      const snapshot = await transaction.get(campaign.collection('backupJobs').doc(raw[1]));
+      if (snapshot.exists) {
+        const job = snapshot.data();
+        if (
+          job?.version !== 1 ||
+          job.uid !== uid ||
+          job.campaignId !== id ||
+          !['pending', 'complete'].includes(job.state)
+        )
+          throw new CloudError(
+            503,
+            'invalid-maintenance-state',
+            'The complete-file root could not be verified'
+          );
+        pending = job.state === 'pending';
+      }
+    }
+    return { head, paths, pending };
+  }
+
+  async _finishObjectDeletion(principal, id, reference, candidate, capturedImages = null) {
+    if (
+      candidate?.version !== 1 ||
+      candidate.uid !== principalUid(principal) ||
+      candidate.campaignId !== id ||
+      candidate.state !== 'deleting' ||
+      typeof candidate.path !== 'string' ||
+      !candidate.path.startsWith(`campaigns/${id}/`) ||
+      typeof candidate.generation !== 'string' ||
+      !/^[1-9][0-9]*$/.test(candidate.generation) ||
+      !isCloudUUID(candidate.token) ||
+      !Number.isSafeInteger(candidate.bytes) ||
+      candidate.bytes < 0 ||
+      !validTime(candidate.firstUnreferencedAt) ||
+      !validTime(candidate.eligibleAt) ||
+      Date.parse(candidate.eligibleAt) <
+        Date.parse(candidate.firstUnreferencedAt) + OBJECT_QUARANTINE_MS ||
+      Date.parse(candidate.eligibleAt) > this.now() ||
+      reference.id !==
+        createHash('sha256').update(`${candidate.path}\n${candidate.generation}`).digest('hex')
+    )
+      throw new CloudError(503, 'invalid-maintenance-state', 'The pending deletion is invalid');
+    const images = candidate.path.includes('/assets/')
+      ? (capturedImages ?? (await this._maintenanceImageRoots(principal, id)))
+      : null;
+    const permit = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(principal.uid, transaction);
+        const roots = await this._maintenanceRoots(
+          transaction,
+          principal.uid,
+          id,
+          images,
+          candidate.path
+        );
+        const current = await this.usage.objectDeletionPermit(
+          transaction,
+          principal.uid,
+          id,
+          candidate,
+          candidate.token
+        );
+        if (!current) return false;
+        if (roots.paths.has(candidate.path) || roots.pending)
+          throw new CloudError(
+            503,
+            'invalid-maintenance-state',
+            'A pending deletion is referenced by saved data'
+          );
+        return true;
+      },
+      { readOnly: true }
+    );
+    const bucket = this.objects.bucket;
+    if (permit) {
+      try {
+        await bucket
+          .file(candidate.path, {
+            preconditionOpts: { ifGenerationMatch: candidate.generation },
+          })
+          .delete();
+      } catch (error) {
+        if (error.code === 412)
+          throw new CloudError(
+            503,
+            'maintenance-state-changed',
+            'The object generation changed; no new deletion was acknowledged'
+          );
+        if (storageUnavailable(error))
+          throw new CloudError(
+            503,
+            'maintenance-unavailable',
+            'Private object deletion could not be confirmed; its byte charge is retained'
+          );
+        if (error.code !== 404) throw error;
+      }
+    }
+    await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(principal.uid, transaction);
+      const snapshot = await transaction.get(reference);
+      const saved = snapshot.data();
+      if (
+        !snapshot.exists ||
+        saved?.token !== candidate.token ||
+        !['deleting', 'retired'].includes(saved.state)
+      )
+        throw new CloudError(
+          503,
+          'invalid-maintenance-state',
+          'The completed deletion could not be reconciled'
+        );
+      await this.usage.retireObjectGeneration(
+        transaction,
+        principal.uid,
+        id,
+        candidate,
+        candidate.token
+      );
+      transaction.set(reference, {
+        ...saved,
+        state: 'retired',
+        deletedAt: new Date(this.now()).toISOString(),
+      });
+    });
+  }
+
+  async maintainObjects(principal, id) {
+    const uid = principalUid(principal);
+    await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        return this._maintenanceAuthority(transaction, uid, id);
+      },
+      { readOnly: true }
+    );
+    const bucket = this.objects?.bucket;
+    if (typeof bucket?.getFiles !== 'function')
+      throw new CloudError(
+        503,
+        'maintenance-unavailable',
+        'Private object maintenance is not configured'
+      );
+    await this.usage.prepareStorage(principal, bucket);
+    const releasedBytes = await this.usage.reconcileRetired(principal, id, bucket);
+    const campaign = this.firestore.collection('campaigns').doc(id);
+    const cursorReference = campaign.collection('objectMaintenance').doc('current');
+    const cursor = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        await this._maintenanceAuthority(transaction, uid, id);
+        const snapshot = await transaction.get(cursorReference);
+        if (!snapshot.exists) return null;
+        const saved = snapshot.data();
+        if (
+          saved?.version !== 1 ||
+          saved.uid !== uid ||
+          saved.campaignId !== id ||
+          !(
+            saved.pageToken === null ||
+            (typeof saved.pageToken === 'string' && saved.pageToken.length > 0)
+          )
+        )
+          throw new CloudError(
+            503,
+            'invalid-maintenance-state',
+            'The bounded maintenance cursor is invalid'
+          );
+        return saved.pageToken;
+      },
+      { readOnly: true }
+    );
+    const pending = await campaign
+      .collection('objectCleanup')
+      .where('state', '==', 'deleting')
+      .limit(4)
+      .get();
+    let files;
+    let next;
+    try {
+      [files, next] = await bucket.getFiles({
+        prefix: `campaigns/${id}/`,
+        autoPaginate: false,
+        maxResults: OBJECT_MAINTENANCE_PAGE_SIZE,
+        ...(cursor === null ? {} : { pageToken: cursor }),
+      });
+    } catch (error) {
+      if (storageUnavailable(error))
+        throw new CloudError(
+          503,
+          'maintenance-unavailable',
+          'Private object inventory could not be confirmed'
+        );
+      throw error;
+    }
+    const images =
+      files.some((file) => file.metadata?.name?.includes('/assets/')) ||
+      pending.docs.some((snapshot) => snapshot.data().path?.includes('/assets/'))
+        ? await this._maintenanceImageRoots(principal, id)
+        : null;
+    let deleted = 0;
+    for (const snapshot of pending.docs) {
+      await this._finishObjectDeletion(principal, id, snapshot.ref, snapshot.data(), images);
+      deleted++;
+    }
+    const result = {
+      version: 1,
+      scanned: files.length,
+      quarantined: 0,
+      deleted,
+      deferred: 0,
+      releasedBytes,
+      more: pending.size === 4 || releasedBytes > 0,
+    };
+    for (const file of files) {
+      const metadata = file.metadata;
+      const path = metadata?.name;
+      const bytes = Number(metadata?.size);
+      if (
+        typeof path !== 'string' ||
+        !path.startsWith(`campaigns/${id}/`) ||
+        metadata.bucket !== bucket.name ||
+        typeof metadata.generation !== 'string' ||
+        !/^[1-9][0-9]*$/.test(metadata.generation) ||
+        !Number.isSafeInteger(bytes) ||
+        bytes < 0
+      )
+        throw new CloudError(
+          503,
+          'invalid-maintenance-state',
+          'Private object inventory could not be verified'
+        );
+      const canonical = new RegExp(
+        `^campaigns/${id}/objects/(scene|characters|import)/[a-f0-9]{64}\\.json$`
+      ).test(path);
+      const complete = new RegExp(
+        `^campaigns/${id}/backups/([a-f0-9-]{36})/[a-f0-9]{64}\\.json$`
+      ).exec(path);
+      const asset = new RegExp(`^campaigns/${id}/assets/([a-f0-9]{64})\\.bin$`).exec(path);
+      if (!canonical && !(complete && isCloudUUID(complete[1])) && !asset) {
+        result.deferred++;
+        continue;
+      }
+      const reference = campaign
+        .collection('objectCleanup')
+        .doc(createHash('sha256').update(`${path}\n${metadata.generation}`).digest('hex'));
+      const action = await this._transaction(async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const roots = await this._maintenanceRoots(transaction, uid, id, images, path);
+        const snapshot = await transaction.get(reference);
+        if (roots.pending || roots.paths.has(path)) return { kind: 'protected' };
+        if (snapshot.exists) {
+          const saved = snapshot.data();
+          if (
+            saved?.version !== 1 ||
+            saved.uid !== uid ||
+            saved.campaignId !== id ||
+            saved.path !== path ||
+            saved.generation !== metadata.generation ||
+            saved.bytes !== bytes ||
+            !['quarantined', 'deleting', 'retired'].includes(saved.state) ||
+            !validTime(saved.firstUnreferencedAt) ||
+            !validTime(saved.eligibleAt) ||
+            Date.parse(saved.eligibleAt) <
+              Date.parse(saved.firstUnreferencedAt) + OBJECT_QUARANTINE_MS
+          )
+            throw new CloudError(
+              503,
+              'invalid-maintenance-state',
+              'The object quarantine could not be verified'
+            );
+          if (saved.state === 'retired' || Date.parse(saved.eligibleAt) > this.now())
+            return { kind: 'waiting' };
+          if (result.deleted >= 4) return { kind: 'budget' };
+          const assetReference = asset ? campaign.collection('assets').doc(asset[1]) : null;
+          const assetSnapshot = assetReference ? await transaction.get(assetReference) : null;
+          if (assetSnapshot?.exists) {
+            const record = assetSnapshot.data();
+            if (
+              record?.version !== 1 ||
+              record.campaignId !== id ||
+              !isPrivateAssetReference(record.reference, id) ||
+              record.reference.sha256 !== asset[1] ||
+              record.reference.generation !== metadata.generation
+            )
+              throw new CloudError(
+                503,
+                'invalid-maintenance-state',
+                'The unused asset generation could not be verified'
+              );
+          }
+          const claim = await this.usage.claimObjectDeletion(
+            transaction,
+            uid,
+            id,
+            {
+              path,
+              bytes,
+              generation: metadata.generation,
+            },
+            Date.parse(saved.firstUnreferencedAt)
+          );
+          if (claim.postponed) {
+            const now = this.now();
+            transaction.set(reference, {
+              ...saved,
+              state: 'quarantined',
+              firstUnreferencedAt: new Date(now).toISOString(),
+              eligibleAt: new Date(now + OBJECT_QUARANTINE_MS).toISOString(),
+            });
+            return { kind: 'waiting' };
+          }
+          const candidate = { ...saved, state: 'deleting', token: claim.token };
+          if (assetSnapshot?.exists) transaction.delete(assetReference);
+          transaction.set(reference, candidate);
+          return { kind: 'delete', candidate };
+        }
+        const now = this.now();
+        transaction.create(reference, {
+          version: 1,
+          uid,
+          campaignId: id,
+          path,
+          generation: metadata.generation,
+          bytes,
+          state: 'quarantined',
+          firstUnreferencedAt: new Date(now).toISOString(),
+          eligibleAt: new Date(now + OBJECT_QUARANTINE_MS).toISOString(),
+        });
+        return { kind: 'quarantined' };
+      });
+      if (action.kind === 'quarantined') result.quarantined++;
+      if (action.kind === 'budget') result.more = true;
+      if (action.kind === 'delete') {
+        await this._finishObjectDeletion(principal, id, reference, action.candidate, images);
+        result.deleted++;
+      }
+    }
+    const pageToken = next?.pageToken ?? null;
+    if (!(pageToken === null || (typeof pageToken === 'string' && pageToken.length > 0)))
+      throw new CloudError(
+        503,
+        'invalid-maintenance-state',
+        'The next maintenance page is invalid'
+      );
+    if (pageToken !== null) result.more = true;
+    await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      await this._maintenanceAuthority(transaction, uid, id);
+      transaction.set(cursorReference, { version: 1, uid, campaignId: id, pageToken });
+    });
+    return result;
   }
 
   _importRecord(snapshot, uid, importId) {
@@ -1346,6 +2078,7 @@ class CloudCampaignStore {
       );
     const recovered = await this._recoverImport(principal, importId);
     if (recovered !== null) return recovered;
+    const startedAt = this.now();
     const jobReference = this._importReference(uid, importId);
     try {
       const job = await this._transaction(
@@ -1384,6 +2117,7 @@ class CloudCampaignStore {
           this.objects.bucket,
           { importId }
         );
+      const imageReferences = [];
       for (const image of images) {
         const bytes = Buffer.from(image.data, 'base64');
         const reference = await this.assets.stage(
@@ -1409,8 +2143,21 @@ class CloudCampaignStore {
         await this._transaction(async (transaction) => {
           await this.access.assertEligibility(uid, transaction);
           this._openImport(this._importRecord(await transaction.get(jobReference), uid, importId));
+          await this.usage.assertPublication(
+            transaction,
+            uid,
+            job.campaignId,
+            [
+              {
+                path: `campaigns/${job.campaignId}/assets/${reference.sha256}.bin`,
+                bytes: reference.bytes,
+              },
+            ],
+            startedAt
+          );
           await this._publishAsset(transaction, job.campaignId, reference);
         });
+        imageReferences.push(reference);
       }
       const reserve = (candidate) =>
         this.usage.reserveStorage(principal, job.campaignId, candidate, this.objects.bucket, {
@@ -1451,6 +2198,20 @@ class CloudCampaignStore {
         const current = this._importRecord(await transaction.get(jobReference), uid, importId);
         this._openImport(current);
         if ((await transaction.get(headReference)).exists) throw invalidImport();
+        await this.usage.assertPublication(
+          transaction,
+          uid,
+          job.campaignId,
+          [
+            { path: charactersRef.path, bytes: charactersRef.bytes },
+            ...(sceneRef === null ? [] : [{ path: sceneRef.path, bytes: sceneRef.bytes }]),
+            ...imageReferences.map((asset) => ({
+              path: `campaigns/${job.campaignId}/assets/${asset.sha256}.bin`,
+              bytes: asset.bytes,
+            })),
+          ],
+          startedAt
+        );
         await this.usage.claimCampaign(uid, transaction);
         transaction.create(headReference, {
           version: 1,
@@ -2515,6 +3276,7 @@ class CloudCampaignStore {
 
   async uploadAsset(principal, id, command) {
     const uid = principalUid(principal);
+    const startedAt = this.now();
     if (!isCloudUUID(id)) throw unavailableCampaign();
     if (
       !command ||
@@ -2608,6 +3370,18 @@ class CloudCampaignStore {
       const replay = await this._previousCommand(transaction, intent);
       if (replay !== null) return replay;
       await this._metadata(await transaction.get(headReference), uid);
+      await this.usage.assertPublication(
+        transaction,
+        uid,
+        id,
+        [
+          {
+            path: `campaigns/${id}/assets/${reference.sha256}.bin`,
+            bytes: reference.bytes,
+          },
+        ],
+        startedAt
+      );
       await this._publishAsset(transaction, id, reference);
       transaction.create(receiptReference, {
         version: 1,
@@ -2897,6 +3671,7 @@ class CloudCampaignStore {
 
   async updateSettings(principal, id, command) {
     const uid = principalUid(principal);
+    const startedAt = this.now();
     if (!isCloudUUID(id)) throw unavailableCampaign();
     if (
       !command ||
@@ -3053,6 +3828,19 @@ class CloudCampaignStore {
       requireGeneration(current);
       const generation = current.generation + 1;
       const result = { version: 1, generation, campaign };
+      if (charactersRef !== captured.head.charactersRef)
+        await this.usage.assertPublication(
+          transaction,
+          uid,
+          id,
+          [
+            {
+              path: charactersRef.path,
+              bytes: charactersRef.bytes,
+            },
+          ],
+          startedAt
+        );
       transaction.set(headReference, { ...current, campaign, charactersRef, generation });
       transaction.create(reference, {
         version: 1,
@@ -3203,6 +3991,7 @@ class CloudCampaignStore {
 
   async _commit(principal, id, command, kind) {
     const uid = principalUid(principal);
+    const startedAt = this.now();
     if (!isCloudUUID(id))
       throw new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
     if (
@@ -3356,6 +4145,7 @@ class CloudCampaignStore {
           });
         }
       }
+      await this.usage.assertPublication(transaction, uid, id, candidates, startedAt);
       for (const revoked of revokedAssignments) {
         transaction.set(revoked.reference, {
           ...revoked.seat,
