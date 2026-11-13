@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "livePresence",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sessionId", "order": "ASCENDING" },
+        { "fieldPath": "expiresAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "objects",
       "queryScope": "COLLECTION",
       "fields": [

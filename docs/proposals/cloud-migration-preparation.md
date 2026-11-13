@@ -1834,3 +1834,88 @@ synchronized gameplay. Coalesced presence/15-minute disconnected grace is next.
 No live cloud provisioning, IAM/Auth/Storage test, image push, deployment or
 cutover occurred. Provider linking remains explicitly deferred and routine-save
 presentation is unchanged.
+
+## Coalesced presence and earliest durable pause
+
+`M4-03` is complete for the development authority/managed-client slice. Presence
+bookkeeping is a private server transport interface, not a new browser heartbeat
+endpoint, a world-access grant or an alternative to the existing global
+four-stream quota. M3 must bind these callbacks to actual authenticated SSE
+connections and their terminal outcomes.
+
+Each campaign/runtime-instance pair stores one bounded summary: current live
+epoch, connection count/generation and a **90-second observation lease**, shared
+with the stream-lease timing convention. Private per-connection rows bind the
+captured UID, campaign/epoch and current access generation. They avoid an
+ever-growing participant array or a new participant-count limit. Once-per-minute
+summary renewal coalesces all local participant pings; multiple workers keep
+separate summaries, so one worker closing cannot declare another disconnected.
+The bounded top-two expiry query is sufficient when replacing/removing one
+worker's summary; its index is declared, not deployed.
+
+The last explicit connection close starts **15 minutes** of reconnect grace at
+its effective close time. After an unknown abrupt disappearance/process kill,
+the last durable observation lease expires first, then the 15-minute grace
+applies. This is the detection fallback for an unreported disconnect, not a
+promise to know its physical instant without a running worker. Late cleanup
+cannot restart that clock. Empty newly started games use their start time until
+a real connection arrives.
+
+Status/admission/owner controls and canonical publication evaluate the earliest
+inactivity/grace deadline from shared metadata. Exact deadline races cannot
+revive an old epoch. Owner keep-active renews meaningful inactivity only; it
+cannot extend disconnected grace. A permitted reconnect before expiry clears
+absence but does not renew meaningful activity. After expiry the owner must
+explicitly start a fresh epoch. Current seat/eligibility checks still deny
+revoked renewals even when no coalesced write is due; captured own-connection
+cleanup remains possible after removal/disablement. Summary generations fence
+late callbacks from closing or renewing a replacement. Invalid metadata fails
+explicitly without silently repairing it.
+
+Real emulator/HTTP/process evidence includes:
+
+- Multiple connections on one worker plus another active worker: only the last
+  close starts grace, and admission at grace-minus-one millisecond is valid
+  while admission at the deadline persists the original disconnected pause.
+- **Ten actual participant identities / 60 pings / two minutes:** exactly
+  **two** summary writes, measured by actual Firestore update times, with the
+  same original meaningful timestamp and control generation.
+- Expired lease/generation, foreign UID, late cleanup, exact reconnect/keep race,
+  fresh-epoch restart and started-but-unattached grace cases.
+- Removed/disabled participants cannot renew, can close only their own captured
+  connections, and corrupt presence is rejected over actual bearer HTTP.
+- Actual backend termination and cold replacement at minute 17 pause at the
+  original observation-expiry-plus-15-minute deadline, not at wake; saved
+  canonical data remains unchanged.
+- Presence-aware 55/60-minute, six-hour-plus renewal and real held-publication
+  regressions continue to preserve activity/turn/resource behavior.
+
+The first expanded native gate passed **107/108 cases** with one occurrence of
+the already-recorded legacy assignment-contention
+`3 INVALID_ARGUMENT: Transaction is invalid or closed`. The exact unchanged
+contract then passed three bounded isolated probes; no production retry,
+suppression or expected-error relaxation was introduced. The identical
+authority/canonical/backend-process/global-quota/production-runtime recheck
+passed **108/108 cases**, zero skipped, in **434,724.1744 ms**. All new presence
+cases had also passed the first gate. The application/account/history/
+save-feedback gate passed **15 suites / 101 tests**, zero skipped, in
+**8.462 s**. Full lint/stylelint/layering passed with zero errors and the same
+39 existing warnings. These are affected-path gates, not a full expanded native
+catalog or complete player-gameplay/SSE claim.
+
+The changed runtime was rebuilt locally as `taverntable-cloud:m403-8fcb9250`,
+index `sha256:7fe0d53680d0ddf9d9d57264dfcb56ffe014fe843cecc5c71a276703764303ba`
+and runnable manifest
+`sha256:024792b381e12d7a42d1ed98d1d5a1a10044cb06545f622160573ff4e3e85986`.
+The isolated non-root Linux/amd64 Node 24.22.3 check passed read-only root,
+one CPU/one GiB, no network/mounts/credentials/GPU, custom-port health 200,
+anonymous account/live-status and forged-identity 401s, private-path 404,
+both catalogs/16 resource packs, full 16 MP decode and **seven** runtime source
+hashes including the changed shared quota timing. SIGTERM exited 0 without OOM;
+the owned validation container was removed. Helper RSS **205,852,672 bytes** is
+not representative peak/load evidence.
+
+No hosted project, IAM/Auth/Storage test, image push, deployment or cutover was
+performed. Actual SSE, visible lifecycle controls/warnings and pause/drain/final
+backup remain later integrated gates. Provider linking remains explicitly
+deferred. Routine-save presentation is untouched.

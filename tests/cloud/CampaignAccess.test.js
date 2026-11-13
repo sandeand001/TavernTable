@@ -122,6 +122,16 @@ async function fixture(t, { now } = {}) {
     create,
     join,
     client,
+    async advancePresence(principal, id, sessionId, advance, target) {
+      let at = Date.parse((await store.getLiveStatus(principal, id)).activity.observedAt);
+      assert.ok(target >= at);
+      for (;;) {
+        advance(at);
+        await store.connectLivePresence(principal, id, { sessionId });
+        if (at === target) return;
+        at = Math.min(target, at + 10 * 60 * 1000);
+      }
+    },
   };
 }
 
@@ -190,7 +200,15 @@ test(
       await f.createStore().controlLiveSession(owner.principal, campaign.id, start),
       active
     );
-    now += 20 * 60 * 1000;
+    await f.advancePresence(
+      owner.principal,
+      campaign.id,
+      active.sessionId,
+      (value) => {
+        now = value;
+      },
+      now + 20 * 60 * 1000
+    );
     assert.deepEqual(await f.createStore().getLiveSession(member.principal, campaign.id), active);
     assert.equal(
       (await f.store.getLiveSession(member.principal, otherCampaign.id)).state,
@@ -210,7 +228,15 @@ test(
     assert.equal(kept.generation, 2);
     assert.equal(kept.lastMeaningfulAt, new Date(now).toISOString());
     for (let renewal = 0; renewal < 19; renewal++) {
-      now += 20 * 60 * 1000;
+      await f.advancePresence(
+        owner.principal,
+        campaign.id,
+        active.sessionId,
+        (value) => {
+          now = value;
+        },
+        now + 20 * 60 * 1000
+      );
       kept = await f.createStore().controlLiveSession(owner.principal, campaign.id, {
         commandId: randomUUID(),
         action: 'keep-active',
@@ -243,6 +269,323 @@ test(
 );
 
 test(
+  'only the last presence disconnect starts a durable fifteen-minute grace across overlapping workers',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Coalesced presence grace');
+    await f.join(campaign.id, member.uid);
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const original = (await head.get()).data();
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    const command = { sessionId: active.sessionId };
+    const first = await f.store.connectLivePresence(owner.principal, campaign.id, command);
+    const second = await f.store.connectLivePresence(member.principal, campaign.id, command);
+    const otherWorker = f.createStore();
+    const third = await otherWorker.connectLivePresence(member.principal, campaign.id, command);
+    now += 30 * 1000;
+    await f.store.disconnectLivePresence(owner.principal, campaign.id, {
+      ...command,
+      connectionId: first.id,
+    });
+    assert.equal(
+      (await f.store.getLiveStatus(member.principal, campaign.id)).activity.disconnectedAt,
+      null
+    );
+    now += 15 * 1000;
+    await f.store.disconnectLivePresence(member.principal, campaign.id, {
+      ...command,
+      connectionId: second.id,
+    });
+    assert.equal(
+      (await f.store.getLiveStatus(owner.principal, campaign.id)).activity.disconnectedAt,
+      null
+    );
+    now += 15 * 1000;
+    await otherWorker.disconnectLivePresence(member.principal, campaign.id, {
+      ...command,
+      connectionId: third.id,
+    });
+    const disconnectedAt = now;
+    const status = await f.createStore().getLiveStatus(owner.principal, campaign.id);
+    assert.deepEqual(status.session, active);
+    assert.equal(status.activity.disconnectedAt, new Date(disconnectedAt).toISOString());
+    assert.equal(
+      status.activity.graceUntil,
+      new Date(disconnectedAt + 15 * 60 * 1000).toISOString()
+    );
+    assert.equal(status.activity.pauseAt, status.activity.graceUntil);
+    now = disconnectedAt + 15 * 60 * 1000 - 1;
+    assert.equal(
+      (await f.createStore().getLiveAccess(member.principal, campaign.id, command)).session.state,
+      'live'
+    );
+    now++;
+    await assert.rejects(f.createStore().getLiveAccess(member.principal, campaign.id, command), {
+      code: 'live-session-paused',
+    });
+    const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+    assert.equal(paused.pauseReason, 'disconnected');
+    assert.equal(paused.pausedAt, new Date(now).toISOString());
+    assert.equal(paused.lastMeaningfulAt, active.lastMeaningfulAt);
+    assert.deepEqual((await head.get()).data(), original);
+  }
+);
+
+test(
+  'ten participant heartbeats coalesce into campaign-level presence writes without extending meaningful activity',
+  { timeout: 60000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Coalesced heartbeat writes');
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    const participants = [];
+    for (let index = 0; index < 10; index++) {
+      const identity = index === 0 ? owner : await f.account();
+      if (index > 0) await f.join(campaign.id, identity.uid);
+      participants.push({
+        principal: identity.principal,
+        connection: await f.store.connectLivePresence(identity.principal, campaign.id, {
+          sessionId: active.sessionId,
+        }),
+      });
+    }
+    const summaries = await f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('livePresence')
+      .get();
+    assert.equal(summaries.size, 1);
+    const reference = summaries.docs[0].ref;
+    const startedAt = now;
+    let writes = 0;
+    for (const seconds of [20, 40, 60, 80, 100, 120]) {
+      now = startedAt + seconds * 1000;
+      for (const participant of participants) {
+        const before = (await reference.get()).updateTime;
+        const renewed = await f.store.renewLivePresence(participant.principal, campaign.id, {
+          sessionId: active.sessionId,
+          connectionId: participant.connection.id,
+        });
+        const after = (await reference.get()).updateTime;
+        const changed = !before.isEqual(after);
+        assert.equal(changed, seconds % 60 === 0 && participant === participants[0]);
+        if (changed) writes++;
+        assert.ok(renewed.expiresAt > now);
+      }
+    }
+    assert.equal(writes, 2);
+    const status = await f.createStore().getLiveStatus(owner.principal, campaign.id);
+    assert.deepEqual(status.session, active);
+    assert.equal(status.activity.disconnectedAt, null);
+    assert.equal(
+      status.activity.pauseAt,
+      new Date(Date.parse(active.lastMeaningfulAt) + 60 * 60 * 1000).toISOString()
+    );
+  }
+);
+
+test(
+  'expired presence generations cannot revive or close a replacement and late cleanup cannot restart grace',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Presence epoch fencing');
+    await f.join(campaign.id, member.uid);
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    const sessionId = active.sessionId;
+    const first = await f.store.connectLivePresence(member.principal, campaign.id, { sessionId });
+    now = first.expiresAt;
+    await assert.rejects(
+      f.store.renewLivePresence(member.principal, campaign.id, {
+        sessionId,
+        connectionId: first.id,
+      }),
+      { code: 'live-presence-expired' }
+    );
+    assert.equal(
+      (await f.store.getLiveStatus(owner.principal, campaign.id)).activity.disconnectedAt,
+      new Date(now).toISOString()
+    );
+    now += 60 * 1000;
+    const replacement = await f.store.connectLivePresence(member.principal, campaign.id, {
+      sessionId,
+    });
+    await assert.rejects(
+      f.store.renewLivePresence(member.principal, campaign.id, {
+        sessionId,
+        connectionId: first.id,
+      }),
+      { code: 'live-presence-changed' }
+    );
+    await f.store.disconnectLivePresence(member.principal, campaign.id, {
+      sessionId,
+      connectionId: first.id,
+    });
+    assert.equal(
+      (await f.store.getLiveStatus(owner.principal, campaign.id)).activity.disconnectedAt,
+      null
+    );
+    await assert.rejects(
+      f.store.disconnectLivePresence(owner.principal, campaign.id, {
+        sessionId,
+        connectionId: replacement.id,
+      }),
+      { code: 'campaign-not-found' }
+    );
+    now = replacement.expiresAt;
+    const absent = await f.createStore().getLiveStatus(owner.principal, campaign.id);
+    const disconnectedAt = now;
+    assert.equal(absent.activity.disconnectedAt, new Date(now).toISOString());
+    now += 60 * 1000;
+    await f.store.disconnectLivePresence(member.principal, campaign.id, {
+      sessionId,
+      connectionId: replacement.id,
+    });
+    const lateCleanup = await f.createStore().getLiveStatus(owner.principal, campaign.id);
+    assert.equal(lateCleanup.activity.disconnectedAt, absent.activity.disconnectedAt);
+    assert.equal(lateCleanup.activity.graceUntil, absent.activity.graceUntil);
+    now = disconnectedAt + 15 * 60 * 1000;
+    const attempts = await Promise.allSettled([
+      f.createStore().connectLivePresence(member.principal, campaign.id, { sessionId }),
+      f.store.controlLiveSession(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        action: 'keep-active',
+        generation: active.generation,
+        sessionId,
+      }),
+    ]);
+    assert.ok(attempts.every((result) => result.status === 'rejected'));
+    for (const result of attempts)
+      assert.ok(['live-session-paused', 'live-session-changed'].includes(result.reason.code));
+    const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+    assert.equal(paused.state, 'paused');
+    assert.equal(paused.pauseReason, 'disconnected');
+    assert.equal(paused.pausedAt, new Date(now).toISOString());
+    assert.equal(paused.lastMeaningfulAt, active.lastMeaningfulAt);
+    const restarted = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId,
+    });
+    assert.notEqual(restarted.sessionId, sessionId);
+    assert.deepEqual(
+      await f.store.disconnectLivePresence(member.principal, campaign.id, {
+        sessionId,
+        connectionId: replacement.id,
+      }),
+      { closed: false }
+    );
+    assert.deepEqual(await f.store.getLiveSession(owner.principal, campaign.id), restarted);
+    now += 15 * 60 * 1000;
+    await assert.rejects(
+      f.store.controlLiveSession(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        action: 'keep-active',
+        generation: restarted.generation,
+        sessionId: restarted.sessionId,
+      }),
+      { code: 'live-session-paused' }
+    );
+    const unattached = await f.store.getLiveSession(owner.principal, campaign.id);
+    assert.equal(unattached.pauseReason, 'disconnected');
+    assert.equal(unattached.pausedAt, new Date(now).toISOString());
+  }
+);
+
+test(
+  'presence renewals recheck current membership and eligibility while revoked connections can still close',
+  { timeout: 30000 },
+  async (t) => {
+    const now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const removed = await f.account();
+    const disabled = await f.account();
+    const campaign = await f.create(owner.principal, 'Current presence authority');
+    await f.join(campaign.id, removed.uid);
+    await f.join(campaign.id, disabled.uid);
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    const connections = [];
+    for (const identity of [removed, disabled])
+      connections.push(
+        await f.store.connectLivePresence(identity.principal, campaign.id, {
+          sessionId: active.sessionId,
+        })
+      );
+    const summaries = await f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('livePresence')
+      .get();
+    const reference = summaries.docs[0].ref;
+    const stamp = (await reference.get()).updateTime;
+    await f.runtime.firestore
+      .collection('campaignMemberships')
+      .doc(pilotAccountKey(removed.uid))
+      .collection('campaigns')
+      .doc(campaign.id)
+      .delete();
+    await f.runtime.firestore
+      .collection('pilotAccounts')
+      .doc(pilotAccountKey(disabled.uid))
+      .update({ enabled: false });
+    for (const [index, identity] of [removed, disabled].entries()) {
+      const command = { sessionId: active.sessionId, connectionId: connections[index].id };
+      await assert.rejects(f.store.renewLivePresence(identity.principal, campaign.id, command), {
+        code: index === 0 ? 'campaign-not-found' : 'pilot-access-required',
+      });
+    }
+    assert.ok(stamp.isEqual((await reference.get()).updateTime));
+    for (const [index, identity] of [removed, disabled].entries())
+      assert.deepEqual(
+        await f.store.disconnectLivePresence(identity.principal, campaign.id, {
+          sessionId: active.sessionId,
+          connectionId: connections[index].id,
+        }),
+        { closed: true }
+      );
+    assert.deepEqual(await f.store.getLiveSession(owner.principal, campaign.id), active);
+    await reference.update({ count: -1 });
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    await assert.rejects(f.client(owner, api).getLiveStatus(campaign.id), {
+      code: 'invalid-live-presence',
+    });
+    assert.equal((await reference.get()).data().count, -1);
+  }
+);
+
+test(
   'natural authenticated requests persist the sixty-minute inactivity pause before admission or late keep-active',
   { timeout: 30000 },
   async (t) => {
@@ -264,7 +607,15 @@ test(
       };
       const active = await f.store.controlLiveSession(owner.principal, campaign.id, start);
       const startedAt = now;
-      now = startedAt + 55 * 60 * 1000;
+      await f.advancePresence(
+        owner.principal,
+        campaign.id,
+        active.sessionId,
+        (value) => {
+          now = value;
+        },
+        startedAt + 55 * 60 * 1000
+      );
       assert.deepEqual(await f.createStore().getLiveSession(member.principal, campaign.id), active);
       now = startedAt + 60 * 60 * 1000 - 1;
       assert.equal(
@@ -340,7 +691,18 @@ test(
       const initial = sceneState({ characterId: actorId, name: 'Activity scout' });
       const scene = connected ? CampaignWorld.fromScene(initial, validation).save() : initial;
       let revision = 0;
+      let active = null;
       const save = async (value) => {
+        if (active !== null)
+          await f.advancePresence(
+            owner.principal,
+            campaign.id,
+            active.sessionId,
+            (at) => {
+              now = at;
+            },
+            now
+          );
         const command = {
           commandId: randomUUID(),
           change: {
@@ -355,7 +717,7 @@ test(
       };
       await save(scene);
       const paused = await client.getLiveSession(campaign.id);
-      const active = await client.controlLiveSession(campaign.id, 'start', paused);
+      active = await client.controlLiveSession(campaign.id, 'start', paused);
       now += 10 * 60 * 1000;
       scene.creatures[0].gridX = 3;
       scene.creatures[0].pose.world.x = 3.5;
@@ -471,7 +833,15 @@ test(
       assert.deepEqual(await memberClient.getLiveStatus(campaign.id), value);
       return value;
     };
-    now = startedAt + 55 * 60 * 1000 - 1;
+    await f.advancePresence(
+      owner.principal,
+      campaign.id,
+      active.sessionId,
+      (value) => {
+        now = value;
+      },
+      startedAt + 55 * 60 * 1000 - 1
+    );
     let current = await status();
     assert.equal(current.activity.phase, 'active');
     assert.equal(current.activity.observedAt, new Date(now).toISOString());
@@ -495,8 +865,30 @@ test(
     current = await status();
     assert.equal(current.activity.phase, 'active');
     assert.deepEqual(current.session, kept);
+    assert.equal(current.activity.pauseAt, current.activity.graceUntil);
+    assert.ok(Date.parse(current.activity.pauseAt) < renewedAt + 60 * 60 * 1000);
+    await f.advancePresence(
+      owner.principal,
+      campaign.id,
+      active.sessionId,
+      (value) => {
+        now = value;
+      },
+      now
+    );
+    current = await status();
+    assert.equal(current.activity.disconnectedAt, null);
+    assert.deepEqual(current.session, kept);
     assert.equal(current.activity.pauseAt, new Date(renewedAt + 60 * 60 * 1000).toISOString());
-    now = renewedAt + 55 * 60 * 1000;
+    await f.advancePresence(
+      owner.principal,
+      campaign.id,
+      active.sessionId,
+      (value) => {
+        now = value;
+      },
+      renewedAt + 55 * 60 * 1000
+    );
     assert.equal((await status()).activity.phase, 'warning');
     now = renewedAt + 60 * 60 * 1000;
     current = await status();
@@ -508,6 +900,8 @@ test(
       warningAt: null,
       pauseAt: null,
       phase: 'paused',
+      disconnectedAt: null,
+      graceUntil: null,
     });
     assert.deepEqual((await head.get()).data(), original);
   }

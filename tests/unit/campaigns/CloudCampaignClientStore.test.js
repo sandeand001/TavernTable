@@ -112,6 +112,8 @@ test('live status validates authoritative warning deadlines without changing pri
       warningAt: '2026-11-13T00:55:00.000Z',
       pauseAt: '2026-11-13T01:00:00.000Z',
       phase: 'warning',
+      disconnectedAt: null,
+      graceUntil: null,
     },
   };
   let result = status;
@@ -121,12 +123,30 @@ test('live status validates authoritative warning deadlines without changing pri
     json: async () => ({ version: 1, result }),
   }));
   await expect(setup.store.getLiveStatus(campaignId)).resolves.toEqual(status);
+  const reconnecting = {
+    ...status,
+    activity: {
+      ...status.activity,
+      disconnectedAt: '2026-11-13T00:50:00.000Z',
+      graceUntil: '2026-11-13T01:05:00.000Z',
+    },
+  };
+  result = reconnecting;
+  await expect(setup.store.getLiveStatus(campaignId)).resolves.toEqual(reconnecting);
   for (const invalid of [
     { ...status, activity: { ...status.activity, phase: 'active' } },
     { ...status, activity: { ...status.activity, pauseAt: '2026-11-13T01:01:00.000Z' } },
     { ...status, activity: { ...status.activity, observedAt: '2026-11-13T01:00:00.000Z' } },
     { ...status, session: { ...status.session, campaignId: commandId } },
     { ...status, ownerUid: 'unexpected-private-field' },
+    {
+      ...reconnecting,
+      activity: { ...reconnecting.activity, graceUntil: '2026-11-13T01:06:00.000Z' },
+    },
+    {
+      ...reconnecting,
+      activity: { ...reconnecting.activity, pauseAt: reconnecting.activity.graceUntil },
+    },
   ]) {
     result = invalid;
     await expect(setup.store.getLiveStatus(campaignId)).rejects.toMatchObject({

@@ -107,7 +107,8 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   const runtimeHashes = {};
   for (const file of [
     'tools/cloud/admin-runtime.js', 'tools/cloud/production-runtime.js', 'tools/cloud/production-host.js',
-    'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'src/campaigns/CloudProtocol.js',
+    'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'tools/cloud/usage-limits.js',
+    'src/campaigns/CloudProtocol.js',
   ]) {
     runtimeHashes[file] = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   }

@@ -2,14 +2,17 @@ const { createHash, randomUUID } = require('node:crypto');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
 const { storageUnavailable } = require('./immutable-objects.js');
-const { isCloudUUID, isCloudDigest } = require('../../src/campaigns/CloudProtocol.js');
+const {
+  isCloudUUID,
+  isCloudDigest,
+  CLOUD_STREAM_LEASE_MS,
+} = require('../../src/campaigns/CloudProtocol.js');
 
 const OWNED_CAMPAIGN_LIMIT = 10;
 const STORAGE_BYTE_LIMIT = 20 * 1024 ** 3;
 const REQUEST_LIMIT = 300;
 const REQUEST_WINDOW_MS = 60 * 1000;
 const STREAM_LIMIT = 4;
-const STREAM_LEASE_MS = 90 * 1000;
 const INVENTORY_LEASE_MS = 5 * 60 * 1000;
 const OBJECT_PUBLICATION_WINDOW_MS = 15 * 60 * 1000;
 const SOFT_DELETE_BYTE_HOLD_MS = 7 * 24 * 60 * 60 * 1000;
@@ -582,7 +585,7 @@ class CloudUsageLimits {
             ),
           }
         );
-      const result = { version: 1, uid, id, expiresAt: now + STREAM_LEASE_MS };
+      const result = { version: 1, uid, id, expiresAt: now + CLOUD_STREAM_LEASE_MS };
       if (operation === 'renew') leases[current] = result;
       else leases.push(result);
       transaction.set(reference, { version: 1, uid, updatedAt: now, leases });

@@ -131,6 +131,18 @@ async function fixture(t) {
       .doc(pilotAccountKey(uid))
       .set({ version: 1, uid, enabled: true });
   await approve(identity.uid);
+  const presenceAccess = new CloudAccountAccess({
+    auth: runtime.auth,
+    firestore: runtime.firestore,
+  });
+  const presencePrincipal = await presenceAccess.verifyIdentity('Bearer ' + identity.token);
+  let presenceOffset = 0;
+  const presenceStore = new CloudCampaignStore({
+    firestore: runtime.firestore,
+    access: presenceAccess,
+    packs: manifest.packs,
+    now: () => Date.now() + presenceOffset,
+  });
 
   const start = async (port = 0) => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'taverntable-cloud-backend-'));
@@ -294,6 +306,10 @@ async function fixture(t) {
     commands,
     start,
     client,
+    connectPresence(sessionId, milliseconds) {
+      presenceOffset = milliseconds;
+      return presenceStore.connectLivePresence(presencePrincipal, campaign.id, { sessionId });
+    },
     discardReply: () => {
       discardNextReply = true;
     },
@@ -335,6 +351,36 @@ test(
 );
 
 test(
+  'a terminated backend cannot keep abandoned presence alive and a cold wake preserves the original grace deadline',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const before = await f.store.readCharacters(f.campaign.id);
+    const active = await f.store.controlLiveSession(
+      f.campaign.id,
+      'start',
+      await f.store.getLiveSession(f.campaign.id)
+    );
+    const connection = await f.connectPresence(active.sessionId, 0);
+    await terminate(f.backend.child);
+    const replacement = await f.start(f.backend.port);
+    const advanced = messageFrom(replacement.child, 'clock-advanced');
+    replacement.child.send({ type: 'advance-clock', milliseconds: 17 * 60 * 1000 });
+    await advanced;
+    const clean = f.client(replacement.url);
+    const status = await clean.getLiveStatus(f.campaign.id);
+    assert.equal(status.session.state, 'paused');
+    assert.equal(status.session.pauseReason, 'disconnected');
+    assert.equal(
+      status.session.pausedAt,
+      new Date(connection.expiresAt + 15 * 60 * 1000).toISOString()
+    );
+    assert.equal(status.session.lastMeaningfulAt, active.lastMeaningfulAt);
+    assert.deepEqual(await clean.readCharacters(f.campaign.id), before);
+  }
+);
+
+test(
   'a cold replacement evaluates the original inactivity deadline without renewing on reconnect or receipt replay',
   { timeout: 60000 },
   async (t) => {
@@ -346,6 +392,8 @@ test(
       await f.store.getLiveSession(f.campaign.id)
     );
     const startBody = f.commands.at(-1);
+    for (let minutes = 10; minutes <= 50; minutes += 10)
+      await f.connectPresence(active.sessionId, minutes * 60 * 1000);
     const warned = messageFrom(f.backend.child, 'clock-advanced');
     f.backend.child.send({ type: 'advance-clock', milliseconds: 55 * 60 * 1000 });
     await warned;
@@ -396,6 +444,8 @@ test(
       'start',
       await f.store.getLiveSession(f.campaign.id)
     );
+    for (let minutes = 10; minutes <= 50; minutes += 10)
+      await f.connectPresence(active.sessionId, minutes * 60 * 1000);
     let advanced = messageFrom(f.backend.child, 'clock-advanced');
     f.backend.child.send({ type: 'advance-clock', milliseconds: 59 * 60 * 1000 });
     await advanced;

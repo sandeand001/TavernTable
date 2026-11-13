@@ -23,6 +23,9 @@ const invalidResponse = () =>
   );
 const denialCodes = new Set([
   'invalid-live-session',
+  'invalid-live-presence',
+  'live-presence-changed',
+  'live-presence-expired',
   'invalid-live-command',
   'live-session-changed',
   'live-session-paused',
@@ -125,6 +128,12 @@ const denialMessages = new Map([
     'invalid-live-session',
     'The live-game state could not be verified. No local or combat-turn fallback was selected.',
   ],
+  [
+    'invalid-live-presence',
+    'Live connections could not be verified. No ongoing-game or local fallback was selected.',
+  ],
+  ['live-presence-changed', 'This live connection changed. Reconnect to its current state.'],
+  ['live-presence-expired', 'This live connection expired. Reconnect to its current state.'],
   [
     'invalid-live-command',
     'Refresh the current live game before choosing an explicit owner action.',

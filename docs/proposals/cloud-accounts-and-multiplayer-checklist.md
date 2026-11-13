@@ -51,8 +51,8 @@ controls (`M2-08`), complete campaign portability (`M2-07`), independent
 rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
 Fenced cleanup (`M2-11`) and the local API-runtime package (`M4-06`) are verified;
-no cloud deployment is authorized. Durable live authority and inactivity
-(`M4-01`/`M4-02`) are verified; between-game sheet work, presence and player synchronization
+no cloud deployment is authorized. Durable live authority, inactivity and presence
+(`M4-01`/`M4-02`/`M4-03`) are verified; between-game sheet work and player synchronization
 are next. Cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
@@ -614,6 +614,8 @@ Revalidation in the intended environment remains part of M1 and M4.
     live-session access checks. Keep local cookie/CSRF transport intact.
     Apply `M2-08` lease admission, recheck current campaign access on renewal,
     and close the connection when its lease cannot be renewed.
+    Wire `M4-03` connect/renew/disconnect presence callbacks to actual transport
+    outcomes; presence bookkeeping alone grants neither a stream nor world access.
   - **Verify:** no Firebase bearer token in URLs; no reliance on native EventSource
     custom headers or Hosting's long-lived rewrite. Expired/revoked/anonymous/
     cross-campaign streams fail.
@@ -737,7 +739,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     SSE and visible lifecycle integration remain later M3/M4-04/M5 acceptance,
     not an enabled cloud-gameplay claim. Routine-save presentation is untouched.
 
-- [ ] **M4-03 - Implement durable presence grace and earliest-pause evaluation.**
+- [x] **M4-03 - Implement durable presence grace and earliest-pause evaluation.**
   - **Depends:** `M4-02`.
   - **Success:** everyone disconnected starts a **15-minute** reconnect grace;
     owner end, grace expiry, or inactivity expiry pauses at whichever applies first.
@@ -745,6 +747,26 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** evaluate stored deadlines on requests/reconnects after zero runtime;
     expiry remains correct without a continuously running timer. Test boundary
     races and reconnects without resetting meaningful activity.
+  - **Completed:** November 13, 2026 for the development authority/managed-client
+    slice. Private per-campaign/per-worker summaries coalesce all local participant
+    pings, with current UID/seat/generation checks and no participant-array cap.
+    Ten real identities sent 60 pings and caused exactly **two** summary writes,
+    measured through Firestore update times. Overlapping workers cannot falsely
+    declare each other gone; old connection generations cannot renew/close a
+    replacement. Last explicit close starts the 15-minute grace; unknown abrupt
+    disappearance uses the last 90-second observation-lease expiry. Cold wake
+    preserves the original deadline, not the wake time. Keep-active cannot extend
+    disconnected grace; permitted reconnect clears absence, never meaningful time.
+    Exact grace-boundary connect/keep races cannot revive an expired epoch.
+    **108/108 affected native cases**, zero skips, **434,724.1744 ms**;
+    **15 app suites / 101 tests**, **8.462 s**; full lint/stylelint/layering:
+    zero errors and the same 39 existing warnings. Rebuilt isolated Linux runtime
+    passes seven source-hash checks. The first run's known legacy emulator
+    assignment-contention error, three successful isolated probes and unchanged
+    complete recheck are retained as evidence, without relaxing expected errors.
+    Presence callbacks are not a public heartbeat endpoint or enabled SSE:
+    `M3-03` still must combine actual transport outcomes, current live authority
+    and the global four-stream quota; `M4-04` still owns draining/final backup.
 
 - [ ] **M4-04 - Drain/pause/end safely and stop unwanted live traffic.**
   - **Depends:** `M4-03`, `M3-03`, `M2-09`.

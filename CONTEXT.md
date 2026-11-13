@@ -253,7 +253,14 @@
   requests persist a pause at the original 60-minute deadline. Changed canonical
   world/sheet publication and explicit owner keep-active renew atomically; view,
   unchanged, rejected and replayed saves do not. Cold replacement cannot renew
-  it. Player gameplay, lifecycle presentation, coalesced presence and drain
+  it. Private transport callbacks coalesce presence at campaign/runtime-instance
+  level: a 90-second durable observation lease is refreshed at most once per
+  minute across participant pings. Last explicit disconnect starts a 15-minute
+  grace; unknown disappearance falls back to the stored lease expiry. Natural
+  wake evaluates the earlier grace/inactivity deadline. Current UID/access and
+  connection generations fence renewal/cleanup; reconnect never renews meaningful
+  activity. Presence is not stream permission or a replacement for the global
+  four-stream quota. Player SSE, visible lifecycle presentation and safe drain
   integration remain separately gated work.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and

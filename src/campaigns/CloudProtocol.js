@@ -15,6 +15,9 @@ export const CLOUD_BACKUP_INTERVAL_MS = 300000;
 export const CLOUD_BACKUP_RETAIN = 20;
 export const CLOUD_LIVE_WARNING_MS = 55 * 60 * 1000;
 export const CLOUD_LIVE_INACTIVITY_MS = 60 * 60 * 1000;
+export const CLOUD_LIVE_DISCONNECT_GRACE_MS = 15 * 60 * 1000;
+export const CLOUD_STREAM_LEASE_MS = 90 * 1000;
+export const CLOUD_LIVE_PRESENCE_COALESCE_MS = 60 * 1000;
 
 export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
@@ -75,7 +78,7 @@ export function isCloudLiveSession(value) {
   return value.state === 'live'
     ? value.pausedAt === null && value.pauseReason === null
     : value.generation > 1 &&
-        ['owner-end', 'inactivity'].includes(value.pauseReason) &&
+        ['owner-end', 'inactivity', 'disconnected'].includes(value.pauseReason) &&
         typeof value.pausedAt === 'string' &&
         Number.isFinite(Date.parse(value.pausedAt)) &&
         Date.parse(value.pausedAt) >= Date.parse(value.lastMeaningfulAt) &&
@@ -96,7 +99,7 @@ export function isCloudLiveAccess(value) {
   );
 }
 
-export function cloudLiveStatus(session, now) {
+export function cloudLiveStatus(session, now, disconnectedAt = null) {
   if (
     !isCloudLiveSession(session) ||
     !Number.isFinite(now) ||
@@ -109,7 +112,30 @@ export function cloudLiveStatus(session, now) {
   );
   const live = session.state === 'live';
   const last = Date.parse(session.lastMeaningfulAt);
-  if (live && observed >= last + CLOUD_LIVE_INACTIVITY_MS)
+  if (
+    disconnectedAt !== null &&
+    (typeof disconnectedAt !== 'string' ||
+      !Number.isFinite(Date.parse(disconnectedAt)) ||
+      !Number.isFinite(
+        new Date(Date.parse(disconnectedAt) + CLOUD_LIVE_DISCONNECT_GRACE_MS).getTime()
+      ) ||
+      Date.parse(disconnectedAt) < Date.parse(session.startedAt) ||
+      Date.parse(disconnectedAt) > observed)
+  )
+    throw new Error('Live status requires verified disconnected-presence timing');
+  const graceUntil =
+    live && disconnectedAt !== null
+      ? new Date(Date.parse(disconnectedAt) + CLOUD_LIVE_DISCONNECT_GRACE_MS).toISOString()
+      : null;
+  const pauseAt = live
+    ? new Date(
+        Math.min(
+          last + CLOUD_LIVE_INACTIVITY_MS,
+          graceUntil === null ? Infinity : Date.parse(graceUntil)
+        )
+      ).toISOString()
+    : null;
+  if (live && observed >= Date.parse(pauseAt))
     throw new Error('Evaluate the expired live game before publishing its status');
   return {
     version: 1,
@@ -117,7 +143,9 @@ export function cloudLiveStatus(session, now) {
     activity: {
       observedAt: new Date(observed).toISOString(),
       warningAt: live ? new Date(last + CLOUD_LIVE_WARNING_MS).toISOString() : null,
-      pauseAt: live ? new Date(last + CLOUD_LIVE_INACTIVITY_MS).toISOString() : null,
+      pauseAt,
+      disconnectedAt: live ? disconnectedAt : null,
+      graceUntil,
       phase: live ? (observed >= last + CLOUD_LIVE_WARNING_MS ? 'warning' : 'active') : 'paused',
     },
   };
@@ -130,18 +158,44 @@ export function isCloudLiveStatus(value) {
     value.version !== 1 ||
     !isCloudLiveSession(value.session) ||
     !record(value.activity) ||
-    !keys(value.activity, ['observedAt', 'warningAt', 'pauseAt', 'phase']) ||
+    !keys(value.activity, [
+      'observedAt',
+      'warningAt',
+      'pauseAt',
+      'phase',
+      'disconnectedAt',
+      'graceUntil',
+    ]) ||
     typeof value.activity.observedAt !== 'string' ||
     !Number.isFinite(Date.parse(value.activity.observedAt))
   )
     return false;
   const now = Date.parse(value.activity.observedAt);
+  const disconnectedAt = value.activity.disconnectedAt;
   if (
-    value.session.state === 'live' &&
-    now >= Date.parse(value.session.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS
+    disconnectedAt !== null &&
+    (value.session.state !== 'live' ||
+      typeof disconnectedAt !== 'string' ||
+      !Number.isFinite(Date.parse(disconnectedAt)) ||
+      !Number.isFinite(
+        new Date(Date.parse(disconnectedAt) + CLOUD_LIVE_DISCONNECT_GRACE_MS).getTime()
+      ) ||
+      Date.parse(disconnectedAt) < Date.parse(value.session.startedAt) ||
+      Date.parse(disconnectedAt) > now)
   )
     return false;
-  const expected = cloudLiveStatus(value.session, now);
+  if (
+    value.session.state === 'live' &&
+    now >=
+      Math.min(
+        Date.parse(value.session.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS,
+        disconnectedAt === null
+          ? Infinity
+          : Date.parse(disconnectedAt) + CLOUD_LIVE_DISCONNECT_GRACE_MS
+      )
+  )
+    return false;
+  const expected = cloudLiveStatus(value.session, now, disconnectedAt);
   return Object.entries(expected.activity).every(([key, item]) => value.activity[key] === item);
 }
 

@@ -44,11 +44,18 @@ const {
   isCloudLiveSession,
   cloudLiveStatus,
   CLOUD_LIVE_INACTIVITY_MS,
+  CLOUD_LIVE_DISCONNECT_GRACE_MS,
+  CLOUD_STREAM_LEASE_MS,
+  CLOUD_LIVE_PRESENCE_COALESCE_MS,
   CLOUD_BACKUP_INTERVAL_MS,
   CLOUD_BACKUP_RETAIN,
 } = require('../../src/campaigns/CloudProtocol.js');
 
 const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
+const validMilliseconds = (value) =>
+  Number.isSafeInteger(value) && value >= 0 && Number.isFinite(new Date(value).getTime());
+const invalidPresence = () =>
+  new CloudError(503, 'invalid-live-presence', 'Live-connection presence could not be verified');
 const accessSummary = (head, role, seatId = null) => ({
   version: 1,
   campaign: {
@@ -278,6 +285,7 @@ class CloudCampaignStore {
         'Canonical snapshots, assets and complete backups must share the accounted private bucket'
       );
     this.now = now;
+    this.livePresenceInstanceId = randomUUID();
   }
 
   async _transaction(operation, options) {
@@ -466,25 +474,140 @@ class CloudCampaignStore {
     return (await this.getLiveStatus(principal, id)).session;
   }
 
+  _presenceSummaries(id) {
+    return this.firestore.collection('campaigns').doc(id).collection('livePresence');
+  }
+
+  _presenceConnections(id) {
+    return this.firestore.collection('campaigns').doc(id).collection('livePresenceConnections');
+  }
+
+  _presenceSummary(snapshot, id) {
+    if (!snapshot.exists) return null;
+    const value = snapshot.data();
+    if (
+      value?.version !== 1 ||
+      value.campaignId !== id ||
+      value.instanceId !== snapshot.id ||
+      !isCloudUUID(value.instanceId) ||
+      !isCloudUUID(value.sessionId) ||
+      !Number.isSafeInteger(value.generation) ||
+      value.generation < 1 ||
+      !Number.isSafeInteger(value.count) ||
+      value.count < 0 ||
+      !validMilliseconds(value.renewedAt) ||
+      !validMilliseconds(value.expiresAt) ||
+      value.expiresAt !== value.renewedAt + (value.count > 0 ? CLOUD_STREAM_LEASE_MS : 0)
+    )
+      throw invalidPresence();
+    return value;
+  }
+
+  _presenceConnection(snapshot, id) {
+    if (!snapshot.exists) return null;
+    const value = snapshot.data();
+    if (
+      value?.version !== 1 ||
+      value.id !== snapshot.id ||
+      !isCloudUUID(value.id) ||
+      value.campaignId !== id ||
+      !isCloudUUID(value.sessionId) ||
+      !isCloudUUID(value.instanceId) ||
+      !Number.isSafeInteger(value.generation) ||
+      value.generation < 1 ||
+      !isCloudAccessScope(value.access) ||
+      value.access.uid !== value.uid ||
+      value.access.campaignId !== id
+    )
+      throw invalidPresence();
+    return value;
+  }
+
+  _presenceCommand(command, connection) {
+    const names = connection ? ['sessionId', 'connectionId'] : ['sessionId'];
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).length !== names.length ||
+      Object.keys(command).some((key) => !names.includes(key)) ||
+      names.some((key) => !isCloudUUID(command[key]))
+    )
+      throw new CloudError(
+        400,
+        'invalid-live-command',
+        'Choose the current live presence connection'
+      );
+    return { ...command };
+  }
+
+  _presenceResult(connection, summary) {
+    return {
+      version: 1,
+      id: connection.id,
+      campaignId: connection.campaignId,
+      sessionId: connection.sessionId,
+      expiresAt: summary.expiresAt,
+    };
+  }
+
+  _presenceDisconnectedAt(session, summaries, now) {
+    if (session.state !== 'live') return null;
+    const until = Math.max(
+      Date.parse(session.startedAt),
+      ...summaries.map((value) => value.expiresAt)
+    );
+    return now >= until ? new Date(until).toISOString() : null;
+  }
+
+  async _livePresence(transaction, session) {
+    if (session.state !== 'live') return [];
+    const rows = await transaction.get(
+      this._presenceSummaries(session.campaignId)
+        .where('sessionId', '==', session.sessionId)
+        .orderBy('expiresAt', 'desc')
+        .limit(2)
+    );
+    const summaries = rows.docs.map((snapshot) =>
+      this._presenceSummary(snapshot, session.campaignId)
+    );
+    if (
+      summaries.some(
+        (value) =>
+          value.sessionId !== session.sessionId || value.renewedAt < Date.parse(session.startedAt)
+      )
+    )
+      throw invalidPresence();
+    return summaries;
+  }
+
   async getLiveStatus(principal, id) {
     const uid = principalUid(principal);
     return this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
       await this._accessGrant(transaction, uid, id);
       const current = await this._liveSession(transaction, id);
+      const presence = await this._livePresence(transaction, current);
       const now = Math.max(
         this.now(),
         Date.parse(current.pausedAt ?? current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
       );
-      const next = this._expireLiveSession(current, now);
+      const disconnectedAt = this._presenceDisconnectedAt(current, presence, now);
+      const next = this._expireLiveSession(current, now, disconnectedAt);
       if (next !== current) transaction.set(this._liveSessionReference(id), next);
-      return cloudLiveStatus(next, now);
+      return cloudLiveStatus(next, now, next.state === 'live' ? disconnectedAt : null);
     });
   }
 
-  _expireLiveSession(current, now) {
+  _expireLiveSession(current, now, disconnectedAt) {
     if (current.state !== 'live') return current;
-    const deadline = Date.parse(current.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS;
+    if (!(disconnectedAt === null || validTime(disconnectedAt))) throw invalidPresence();
+    const inactivity = Date.parse(current.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS;
+    const grace =
+      disconnectedAt === null
+        ? Infinity
+        : Date.parse(disconnectedAt) + CLOUD_LIVE_DISCONNECT_GRACE_MS;
+    const deadline = Math.min(inactivity, grace);
     if (now < deadline) return current;
     if (current.generation >= Number.MAX_SAFE_INTEGER)
       throw new CloudError(503, 'invalid-live-session', 'The live-game generation cannot advance');
@@ -493,7 +616,7 @@ class CloudCampaignStore {
       generation: current.generation + 1,
       state: 'paused',
       pausedAt: new Date(deadline).toISOString(),
-      pauseReason: 'inactivity',
+      pauseReason: grace < inactivity ? 'disconnected' : 'inactivity',
     };
   }
 
@@ -503,7 +626,22 @@ class CloudCampaignStore {
       throw new CloudError(400, 'invalid-live-command', 'Choose the current live-game session');
     await this.access.assertEligibility(uid, transaction);
     const participant = await this._accessGrant(transaction, uid, id);
-    const session = this._expireLiveSession(await this._liveSession(transaction, id), this.now());
+    const current = await this._liveSession(transaction, id);
+    const presence = await this._livePresence(transaction, current);
+    const now = Math.max(
+      this.now(),
+      Date.parse(current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
+    );
+    const session = this._expireLiveSession(
+      current,
+      now,
+      this._presenceDisconnectedAt(current, presence, now)
+    );
+    this._assertLiveSession(session, sessionId);
+    return { version: 1, session, participant };
+  }
+
+  _assertLiveSession(session, sessionId) {
     if (session.state !== 'live')
       throw new CloudError(
         409,
@@ -516,7 +654,189 @@ class CloudCampaignStore {
         'live-session-changed',
         'This live-game session changed; reconnect to its current state'
       );
-    return { version: 1, session, participant };
+  }
+
+  async connectLivePresence(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const { sessionId } = this._presenceCommand(command, false);
+    const connectionId = randomUUID();
+    const reference = this._presenceSummaries(id).doc(this.livePresenceInstanceId);
+    const outcome = await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const participant = await this._accessGrant(transaction, uid, id);
+      const current = await this._liveSession(transaction, id);
+      const presence = await this._livePresence(transaction, current);
+      const previous = this._presenceSummary(await transaction.get(reference), id);
+      const now = Math.max(
+        this.now(),
+        Date.parse(current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z'),
+        previous?.sessionId === current.sessionId ? previous.renewedAt : 0
+      );
+      const evaluated = this._expireLiveSession(
+        current,
+        now,
+        this._presenceDisconnectedAt(current, presence, now)
+      );
+      if (evaluated !== current) {
+        transaction.set(this._liveSessionReference(id), evaluated);
+        return { expired: true };
+      }
+      this._assertLiveSession(current, sessionId);
+      const same = previous?.sessionId === sessionId;
+      const continuing = same && previous.count > 0 && previous.expiresAt > now;
+      const generation = continuing ? previous.generation : same ? previous.generation + 1 : 1;
+      const count = (continuing ? previous.count : 0) + 1;
+      if (!Number.isSafeInteger(generation) || !Number.isSafeInteger(count))
+        throw invalidPresence();
+      const summary = {
+        version: 1,
+        campaignId: id,
+        sessionId,
+        instanceId: this.livePresenceInstanceId,
+        generation,
+        count,
+        renewedAt: now,
+        expiresAt: now + CLOUD_STREAM_LEASE_MS,
+      };
+      transaction.set(reference, summary);
+      const connection = {
+        version: 1,
+        id: connectionId,
+        campaignId: id,
+        sessionId,
+        instanceId: this.livePresenceInstanceId,
+        generation,
+        uid,
+        access: participant.access,
+      };
+      transaction.create(this._presenceConnections(id).doc(connectionId), connection);
+      return { result: this._presenceResult(connection, summary) };
+    });
+    if (outcome.expired)
+      throw new CloudError(
+        409,
+        'live-session-paused',
+        'The live game paused before this connection'
+      );
+    return outcome.result;
+  }
+
+  async renewLivePresence(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const { sessionId, connectionId } = this._presenceCommand(command, true);
+    const outcome = await this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const participant = await this._accessGrant(transaction, uid, id);
+      const connection = this._presenceConnection(
+        await transaction.get(this._presenceConnections(id).doc(connectionId)),
+        id
+      );
+      if (connection === null || connection.uid !== uid) throw unavailableCampaign();
+      if (stableStringify(connection.access) !== stableStringify(participant.access))
+        throw new CloudError(
+          409,
+          'campaign-access-changed',
+          'This live connection no longer has its original access'
+        );
+      if (
+        connection.sessionId !== sessionId ||
+        connection.instanceId !== this.livePresenceInstanceId
+      )
+        throw new CloudError(
+          409,
+          'live-presence-changed',
+          'Reconnect using this worker and the current live game'
+        );
+      const reference = this._presenceSummaries(id).doc(connection.instanceId);
+      const summary = this._presenceSummary(await transaction.get(reference), id);
+      if (summary === null) throw invalidPresence();
+      if (summary.sessionId !== sessionId || summary.generation !== connection.generation)
+        throw new CloudError(
+          409,
+          'live-presence-changed',
+          'This live connection was replaced; reconnect'
+        );
+      if (summary.count < 1) throw invalidPresence();
+      const current = await this._liveSession(transaction, id);
+      const presence = await this._livePresence(transaction, current);
+      const now = Math.max(
+        this.now(),
+        summary.renewedAt,
+        Date.parse(current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
+      );
+      const evaluated = this._expireLiveSession(
+        current,
+        now,
+        this._presenceDisconnectedAt(current, presence, now)
+      );
+      if (evaluated !== current) {
+        transaction.set(this._liveSessionReference(id), evaluated);
+        return { expired: true };
+      }
+      this._assertLiveSession(current, sessionId);
+      if (summary.expiresAt <= now)
+        throw new CloudError(
+          409,
+          'live-presence-expired',
+          'This live presence lease expired; reconnect'
+        );
+      if (now - summary.renewedAt < CLOUD_LIVE_PRESENCE_COALESCE_MS)
+        return { result: this._presenceResult(connection, summary) };
+      const next = { ...summary, renewedAt: now, expiresAt: now + CLOUD_STREAM_LEASE_MS };
+      transaction.set(reference, next);
+      return { result: this._presenceResult(connection, next) };
+    });
+    if (outcome.expired)
+      throw new CloudError(
+        409,
+        'live-session-paused',
+        'The live game paused before this heartbeat'
+      );
+    return outcome.result;
+  }
+
+  async disconnectLivePresence(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const { sessionId, connectionId } = this._presenceCommand(command, true);
+    const connectionReference = this._presenceConnections(id).doc(connectionId);
+    return this._transaction(async (transaction) => {
+      const connection = this._presenceConnection(await transaction.get(connectionReference), id);
+      if (connection === null) return { closed: false };
+      if (connection.uid !== uid) throw unavailableCampaign();
+      if (connection.sessionId !== sessionId)
+        throw new CloudError(
+          409,
+          'live-session-changed',
+          'This presence belongs to another live game'
+        );
+      const summaryReference = this._presenceSummaries(id).doc(connection.instanceId);
+      const summary = this._presenceSummary(await transaction.get(summaryReference), id);
+      if (summary === null) throw invalidPresence();
+      const current = await this._liveSession(transaction, id);
+      const presence = await this._livePresence(transaction, current);
+      const now = this.now();
+      let nextSummary = summary;
+      if (summary?.sessionId === sessionId && summary.generation === connection.generation) {
+        if (summary.count < 1) throw invalidPresence();
+        const count = summary.count - 1;
+        const closedAt = Math.max(summary.renewedAt, Math.min(now, summary.expiresAt));
+        nextSummary =
+          count > 0
+            ? { ...summary, count }
+            : { ...summary, count: 0, renewedAt: closedAt, expiresAt: closedAt };
+      }
+      const summaries = presence.filter((value) => value.instanceId !== connection.instanceId);
+      if (nextSummary?.sessionId === current.sessionId) summaries.push(nextSummary);
+      const disconnectedAt = this._presenceDisconnectedAt(current, summaries, now);
+      const evaluated = this._expireLiveSession(current, now, disconnectedAt);
+      transaction.delete(connectionReference);
+      if (nextSummary !== summary) transaction.set(summaryReference, nextSummary);
+      if (evaluated !== current) transaction.set(this._liveSessionReference(id), evaluated);
+      return { closed: true };
+    });
   }
 
   async getLiveAccess(principal, id, command) {
@@ -590,11 +910,16 @@ class CloudCampaignStore {
         uid
       );
       const current = await this._liveSession(transaction, id);
+      const presence = await this._livePresence(transaction, current);
       const now = Math.max(
         this.now(),
         Date.parse(current.pausedAt ?? current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
       );
-      const expired = this._expireLiveSession(current, now);
+      const expired = this._expireLiveSession(
+        current,
+        now,
+        this._presenceDisconnectedAt(current, presence, now)
+      );
       if (expired !== current) {
         transaction.set(this._liveSessionReference(id), expired);
         return { expired: true };
@@ -4396,12 +4721,17 @@ class CloudCampaignStore {
         }
       }
       const live = await this._liveSession(transaction, id);
+      const presence = await this._livePresence(transaction, live);
       await this.usage.assertPublication(transaction, uid, id, candidates, startedAt);
       const now = Math.max(
         this.now(),
         Date.parse(live.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
       );
-      const evaluated = this._expireLiveSession(live, now);
+      const evaluated = this._expireLiveSession(
+        live,
+        now,
+        this._presenceDisconnectedAt(live, presence, now)
+      );
       const nextLive =
         meaningful && evaluated.state === 'live' && now > Date.parse(evaluated.lastMeaningfulAt)
           ? { ...evaluated, lastMeaningfulAt: new Date(now).toISOString() }
