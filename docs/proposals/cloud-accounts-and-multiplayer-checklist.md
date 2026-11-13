@@ -47,10 +47,10 @@ unapproved.
 Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
 canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
 gates, along with private image upload/delivery (`M2-06`) and private-pilot usage
-controls (`M2-08`), complete campaign portability (`M2-07`), and independent
-rolling complete backups (`M2-09`). Provider linking
+controls (`M2-08`), complete campaign portability (`M2-07`), independent
+rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
-Verified restore-as-copy and cleanup are next; cloud player gameplay
+Race-safe cleanup is next; cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
@@ -507,7 +507,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     cleanup. Restore controls stay gated for M2-10. No production change or
     routine-save presentation change is claimed.
 
-- [ ] **M2-10 - Implement verified restore-as-copy.**
+- [x] **M2-10 - Implement verified restore-as-copy.**
   - **Depends:** `M2-09`, `M2-06`.
   - **Success:** an owner restores a complete backup into a new private campaign,
     with validated data and fresh authority. The source is not overwritten;
@@ -515,6 +515,24 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** restore and export again; compare characters, IDs, images,
     rules/source pins, topology, combat state, and resources. Other UIDs cannot
     restore/export the owner's private backup.
+  - **Completed:** November 12, 2026. **Evidence:** reused the verified owner
+    complete-file read and bounded import path, then enabled the existing owner
+    restore control. Real managed-workspace/HTTP/SDK drills for both editions
+    preserve exact character IDs/rows, two private PNG fields, source-owned
+    spells/Favorites/HP/notes, disabled-source/version pins, connected topology,
+    locked door, physical pose and committed turn/movement resources.
+    New targets have fresh ownership and private prefixes, no seats or campaign
+    invitations. The source head, records, retained file, invitation and
+    assignment stay unchanged. Unrelated/joined UIDs cannot begin restore;
+    they create no transfer or false acknowledgement. A lost final reply keeps
+    one original caller/ID and recovers one copy. Native portability/backup/
+    import/restore/real-process gate: **37/37 cases**, no skips,
+    **196,166.7065 ms**. Affected app gate: **15 explicit suites / 99 tests**,
+    **9.527 s**. Full lint/stylelint/layering: zero errors and the same 39
+    warnings. Real-client-capability UI click proof and Chrome's enabled owner
+    controls are verified; complete execution is proved by the real HTTP/SDK
+    drills, not inferred from rendering alone. No new backend authority path,
+    production change, dependency or routine-save presentation change.
 
 - [ ] **M2-11 - Implement race-safe orphan/superseded-object cleanup.**
   - **Depends:** `M2-07`, `M2-09`, `M2-10`.

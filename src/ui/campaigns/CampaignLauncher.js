@@ -281,7 +281,7 @@ export default class CampaignLauncher {
           this.workspace.store.capabilities?.backups !== false
         );
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation only. Complete rolling backups, full campaign import/export, invitations, assignments, membership removal and settings are available; backup restore, player gameplay and live sessions remain gated.'
+          ? 'Private cloud preparation only. Complete rolling backups and restore-as-copy, full campaign import/export, invitations, assignments, membership removal and settings are available; player gameplay and live sessions remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);

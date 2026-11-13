@@ -134,8 +134,8 @@
   charged staging for later cleanup. Exports stream complete bytes without
   allocating new Storage objects; the client verifies declared size/SHA-256.
   Large previews are explicitly omitted, not truncated downloads. Pending file
-  bytes remain memory-only, not an offline upload queue. Rolling history is a
-  separate implementation; restore-as-copy from it remains a verification gate.
+  bytes remain memory-only, not an offline upload queue. Rolling history and
+  restore-as-copy use that same validated complete-file format.
 - **Independent cloud backup (M2 development slice verified)**:
   a private, immutable, standalone complete JSON file, not just canonical
   snapshot references or an import envelope. Owner-only history retains twenty
@@ -154,6 +154,15 @@
   Large file IO shares one process-wide slot with export/import finalization.
   Retired/staged bytes stay conservatively charged until M2-11 safe cleanup;
   history retirement is not an optimistic storage refund.
+- **Cloud restore copy (M2 development slice verified)**: an owner reads a
+  retained, integrity-checked complete file and reuses the bounded import-as-copy
+  path. A fresh server target/owner and new private object prefix are published;
+  original character IDs/rows, images, edition/source pins, topology and committed
+  resources survive. Seats, assignments, invitation proofs and imported authority
+  are not copied. The source head, records, images, history and access remain
+  unchanged. An uncertain restore keeps its original import caller/ID until
+  receipt recovery, never a second privileged importer or in-place overwrite.
+  Joined/unrelated accounts cannot read the owner file to begin a restore.
 - **Private cloud images (M2 development slice verified)**: preserve canonical
   embedded image rows while finalizing immutable, hash-addressed private bytes.
   Current JPEG/PNG/WebP files use bounded HTTP uploads and exact-byte delivery.

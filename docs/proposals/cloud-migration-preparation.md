@@ -1447,3 +1447,57 @@ M4 live-session scheduling/gateway/resource verification and hosted rollout
 remain separate gates. No new dependency, production infrastructure, live
 Auth/Storage/IAM test, deployment, push/merge or actual cutover occurred.
 `UX-01` remains deferred until migration completion.
+
+## Verified private restore-as-copy
+
+The M2 restore path reuses `CampaignWorkspace.restoreBackup`: read the owner's
+retained complete private file, validate its edition/catalog/character/scene
+data, then use the existing bounded multipart import. No alternate privileged
+importer, in-place overwrite, old object resurrection or new production route
+is introduced. The new server-generated campaign has fresh ownership/authority,
+new immutable object paths and normalized initial revisions. Original character
+IDs, raw records and exact scene data remain intact.
+
+Managed-workspace/native HTTP/SDK restore/export drills for both 2014 and 2024
+cover three characters, two private PNG fields, source-owned spells/Favorites,
+notes/HP, connected floors/maps, a locked door, physical run position, committed
+turn and spent movement resources. The 2014 drill disables the additional
+source after owning its spell and retains the exact source/version pins and
+owned content. Re-exported rows/scene/pins match the retained source.
+Restored private image delivery returns the original binary bytes under the
+new campaign prefix.
+
+Each source has an invitation and explicit assigned character. Restore creates
+no seats or top-level campaign invitations and does not change the original
+head, records, retained file, invitation or assignment. Unrelated and then
+joined-account restore attempts fail before creating an import journal; the
+other UID also cannot export the new owner's copy. Exported metadata carries
+no owner/role/host-key/seat authority or invitation proof.
+
+A lost final restore reply retains the same workspace caller/import ID.
+Retry recovers one already-committed target rather than finishing or allocating
+again. The source point remains readable and unchanged. After these real
+backend acceptance checks, the existing owner **Restore as copy** control is
+enabled. Its real-client-capability UI test passed red/green, retaining the
+gated-off and local-adapter behavior. The dedicated Chrome owner window renders
+the enabled controls and non-destructive explanation without a new sign-in.
+Actual full restore execution is verified through the managed workspace/HTTP/
+SDK drills, not claimed solely from that rendered button.
+
+The complete affected native portability/backup/import/restore/process-lifecycle
+gate passed **37/37 cases**, zero skipped, in **196,166.7065 ms**. It includes
+the exact 128,000,000/128,000,001-byte import boundaries, the real 36.5 MB
+image-bearing retained file, canonical/backend process termination, complete
+history races and all three new restore cases. The preceding M2-09 full native
+baseline passed 140 cases; this is a targeted affected-file gate, not a claim
+that a new full 143-case catalog was run.
+
+The affected application/local/account/UI gate passed **15 explicit suites /
+99 tests**, zero skipped, in **9.527 s**. Full lint/stylelint/layering passed
+with zero errors and the same 39 existing warnings. No new dependency or
+backend authority/restore route was needed.
+
+M2-10 is complete in development; M2-11 safe cleanup is next. Provider linking,
+between-game permissions, live transport/session lifecycle, hosted rollout and
+the post-migration save presentation remain their own gates. No production
+Auth/Storage/IAM write, deployment, push/merge or actual cutover occurred.

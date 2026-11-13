@@ -568,6 +568,9 @@ generation/time, so a delayed older upload cannot displace a newer restore
 point or reset its changed-state baseline. Explicit backups share the existing
 rolling retention policy. Retiring a history entry does not refund its bytes
 before the separately fenced cleanup and soft-delete accounting checks.
+Owner restoration reuses the validated private complete-file read and bounded
+import-as-copy path, with a fresh server target and private object prefix.
+It does not add an in-place restore or reuse old seats/invitations/authority.
 
 Retain objects referenced by current heads and retained backups. Clean abandoned
 uploads and superseded objects with bounded maintenance work, not an always-on

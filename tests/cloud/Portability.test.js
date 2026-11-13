@@ -28,6 +28,11 @@ const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCha
 const { default: CampaignStore } = require('../../src/campaigns/CampaignStore.js');
 const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const { default: CampaignWorkspace } = require('../../src/campaigns/CampaignWorkspace.js');
+const { CompendiumCatalog } = require('../../src/entities/characters/CompendiumCatalog.js');
+const { default: CombatSession } = require('../../src/entities/characters/CombatSession.js');
+const {
+  createTwoFloorTravelScene,
+} = require('../../src/campaigns/examples/ConnectedTravelExample.js');
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const sharp = require('sharp');
 
@@ -66,13 +71,13 @@ async function fixture(t, { now = Date.now } = {}) {
   t.after(() => {
     for (const client of clients) client.close();
   });
-  const client = (fetch = globalThis.fetch) => {
+  const client = (fetch = globalThis.fetch, accountIdentity = identity) => {
     const config = readEmulatorEnvironment();
     const result = new CloudCampaignClientStore({
-      uid: identity.uid,
+      uid: accountIdentity.uid,
       packs: manifest.packs,
       connection: new CloudAccountConnection({
-        account: new CloudAccount({ auth: identity.auth, sdk }),
+        account: new CloudAccount({ auth: accountIdentity.auth, sdk }),
         fetch,
         baseURL: api.url + '/',
         runtime: {
@@ -538,6 +543,279 @@ test(
       scene
     );
     assert.deepEqual((await source.get()).data(), head);
+  }
+);
+
+for (const ruleset of ['2014', '2024'])
+  test(
+    `${ruleset} retained history restores exact sheets, private images, topology and committed resources into fresh authority`,
+    { timeout: 60000 },
+    async (t) => {
+      const f = await fixture(t);
+      const client = f.client();
+      const source = await client.create({
+        name: 'Restorable connected world ' + ruleset,
+        ruleset,
+        packIds: ruleset === '2014' ? ['deepm'] : [],
+      });
+      const catalog = await f.resources.catalog(source);
+      const library = await CampaignCharacters.open({
+        store: client,
+        campaignId: source.id,
+        catalog,
+      });
+      for (const name of ['Pathfinder', 'Lower lookout', 'Upper lookout'])
+        await library.create(name);
+      const characterId = library.list()[0].id;
+      const image = createCanvas(2, 2).toBuffer('image/png');
+      const uri = 'data:image/png;base64,' + image.toString('base64');
+      await library.edit(characterId, {
+        portraitImage: uri,
+        artworkImage: uri,
+        notes: 'Retained restore notes',
+      });
+      await library.adjustHitPoints(characterId, 'damage', 3);
+      const spell = new CompendiumCatalog(catalog)
+        .search('', { kind: 'spell' })
+        .find((entry) => ruleset === '2024' || entry.sourcePack === 'deepm');
+      assert.ok(spell);
+      const ownedId = await library.add(characterId, spell.id);
+      await library.layouts.savePage(characterId, 'combat', {
+        sectionOrder: ['favorites'],
+        cardOrder: {},
+        favorites: [`spell:${ownedId}`],
+      });
+      const validation = { library, ruleset };
+      const world = CampaignWorld.fromScene(
+        createTwoFloorTravelScene({
+          ruleset,
+          characters: library.list(),
+        }),
+        validation
+      );
+      const checkpoint = world.save();
+      checkpoint.creatures[0].gridX = 9;
+      checkpoint.creatures[0].pose.world.x = 9.5;
+      checkpoint.creatures[0].movement.mode = 'run';
+      const combat = new CombatSession({ library: library.engine });
+      const actor = {
+        ...checkpoint.creatures[0],
+        characterSheetId: checkpoint.creatures[0].characterId,
+      };
+      combat.startTurn(actor);
+      combat.adjustMovement(actor, 20);
+      checkpoint.combat = combat.snapshot();
+      world.acceptCheckpoint(checkpoint);
+      world.setDoorState('building-door', { open: false, locked: true });
+      const scene = encodeScene(world.save(), validation);
+      await f.store.commitScene(f.principal, source.id, {
+        commandId: randomUUID(),
+        change: { ruleset, revision: 0, charactersRevision: library.revision, scene },
+      });
+      if (ruleset === '2014')
+        await client.update(source.id, { packIds: [] }, await client.getSettings(source.id));
+      const invitation = await client.createInvitation(source.id, {
+        name: 'Source-only invitation',
+      });
+      const sourceSeat = (await client.listSeats(source.id)).find(
+        (seat) => seat.id === invitation.seatId
+      );
+      await client.assignCharacter(source.id, {
+        seatId: sourceSeat.id,
+        characterId,
+        assigned: true,
+        accessGeneration: sourceSeat.accessGeneration,
+      });
+      const original = await f.store.readCharacters(f.principal, source.id);
+      const originalHead = (
+        await f.runtime.firestore.collection('campaigns').doc(source.id).get()
+      ).data();
+      const sourceInvitation = f.runtime.firestore
+        .collection('campaignInvitations')
+        .doc(invitation.id);
+      const originalInvitation = (await sourceInvitation.get()).data();
+      const seatReference = f.runtime.firestore
+        .collection('campaigns')
+        .doc(source.id)
+        .collection('seats')
+        .doc(sourceSeat.id);
+      const originalSeat = (await seatReference.get()).data();
+      const point = await client.backupNow(source.id);
+      const originalFile = await client.readBackup(source.id, point.name);
+      assert.equal(originalFile.includes(invitation.secret), false);
+      assert.equal(originalFile.includes(invitation.id), false);
+      const workspace = new CampaignWorkspace({
+        manifest: f.manifest,
+        resources: f.resources,
+        store: client,
+      });
+      const restored = await workspace.restoreBackup(source.id, point.name);
+      assert.notEqual(restored.id, source.id);
+      const head = (
+        await f.runtime.firestore.collection('campaigns').doc(restored.id).get()
+      ).data();
+      assert.equal(head.ownerUid, f.identity.uid);
+      assert.equal(head.generation, 1);
+      assert.equal(
+        (
+          await f.runtime.firestore
+            .collection('campaigns')
+            .doc(restored.id)
+            .collection('seats')
+            .get()
+        ).empty,
+        true
+      );
+      assert.equal(
+        (
+          await f.runtime.firestore
+            .collection('campaignInvitations')
+            .where('campaignId', '==', restored.id)
+            .get()
+        ).empty,
+        true
+      );
+      const result = await workspace.open(restored.id);
+      assert.deepEqual(
+        result.library.list().map((character) => character.id),
+        library.list().map((character) => character.id)
+      );
+      assert.equal(result.library.get(characterId).portraitImage, uri);
+      assert.equal(result.library.get(characterId).artworkImage, uri);
+      assert.equal(result.library.get(characterId).notes, 'Retained restore notes');
+      assert.deepEqual(result.library.get(characterId).hp, library.get(characterId).hp);
+      assert.deepEqual(result.library.layouts.page(characterId, 'combat').favorites, [
+        `spell:${ownedId}`,
+      ]);
+      assert.deepEqual(result.scene, world.save());
+      const reexported = JSON.parse(await workspace.exportBackup(restored.id));
+      assert.deepEqual(reexported.records, original.records);
+      assert.equal(reexported.scene, original.scene);
+      assert.equal(reexported.campaign.ruleset, ruleset);
+      assert.equal(reexported.campaign.coreVersion, original.campaign.coreVersion);
+      assert.deepEqual(reexported.campaign.sourcePacks, original.campaign.sourcePacks);
+      for (const field of ['ownerUid', 'role', 'hostAccessKey', 'seatId'])
+        assert.equal(Object.hasOwn(reexported.campaign, field), false);
+      const assets = await f.store.getAssetManifest(f.principal, restored.id);
+      assert.equal(assets.images.length, 2);
+      for (const asset of assets.images) {
+        assert.equal(asset.reference.campaignId, restored.id);
+        assert.deepEqual(
+          (await f.store.readAsset(f.principal, restored.id, asset.reference.sha256)).bytes,
+          image
+        );
+      }
+      assert.deepEqual(
+        (await f.runtime.firestore.collection('campaigns').doc(source.id).get()).data(),
+        originalHead
+      );
+      assert.deepEqual(await f.store.readCharacters(f.principal, source.id), original);
+      assert.equal(await client.readBackup(source.id, point.name), originalFile);
+      assert.equal((await client.list()).length, 2);
+      assert.deepEqual((await sourceInvitation.get()).data(), originalInvitation);
+      assert.deepEqual((await seatReference.get()).data(), originalSeat);
+      const other = await signedInIdentity(f.runtime);
+      t.after(() => other.close());
+      await f.runtime.firestore
+        .collection('pilotAccounts')
+        .doc(pilotAccountKey(other.uid))
+        .create({ version: 1, uid: other.uid, enabled: true });
+      const otherClient = f.client(globalThis.fetch, other);
+      const otherWorkspace = new CampaignWorkspace({
+        manifest: f.manifest,
+        resources: f.resources,
+        store: otherClient,
+      });
+      const beforeUnrelatedRestore = otherClient.saveState;
+      await assert.rejects(otherWorkspace.restoreBackup(source.id, point.name), {
+        code: 'campaign-not-found',
+      });
+      assert.deepEqual(otherClient.saveState, beforeUnrelatedRestore);
+      await otherClient.redeemInvitation({ id: invitation.id, secret: invitation.secret });
+      const beforeMemberRestore = otherClient.saveState;
+      await assert.rejects(otherWorkspace.restoreBackup(source.id, point.name), {
+        code: 'campaign-not-found',
+      });
+      await assert.rejects(otherClient.exportBackup(restored.id), { code: 'campaign-not-found' });
+      assert.deepEqual(otherClient.saveState, beforeMemberRestore);
+      assert.equal(
+        (
+          await f.runtime.firestore
+            .collection('accountImports')
+            .doc(pilotAccountKey(other.uid))
+            .collection('transfers')
+            .get()
+        ).empty,
+        true
+      );
+    }
+  );
+
+test(
+  'an uncertain restore retains its original workspace caller and recovers one copy without altering the retained source',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const source = await f.store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Recoverable retained restore', ruleset: '2014' },
+    });
+    const point = await f.store.backupNow(f.principal, source.id, { commandId: randomUUID() });
+    const original = await f.store.readBackup(f.principal, source.id, point.name);
+    const requests = [];
+    let discarded = false;
+    const client = f.client(async (url, options) => {
+      if (options.method === 'POST') requests.push({ url, body: options.body });
+      const response = await fetch(url, options);
+      if (!discarded && url.endsWith('/finish')) {
+        discarded = true;
+        assert.equal(response.status, 201);
+        await response.clone().json();
+        throw new TypeError('Fixture lost the committed restore reply');
+      }
+      return response;
+    });
+    const workspace = new CampaignWorkspace({
+      manifest: f.manifest,
+      resources: f.resources,
+      store: client,
+    });
+    let stop = () => {};
+    const uncertain = new Promise((resolve) => {
+      stop = client.subscribeSave((state) => {
+        if (state.phase === 'uncertain') resolve();
+      });
+    });
+    const pending = workspace.restoreBackup(source.id, point.name);
+    await uncertain;
+    stop();
+    const commandId = client.saveState.commandId;
+    const journal = (
+      await f.runtime.firestore
+        .collection('accountImports')
+        .doc(pilotAccountKey(f.identity.uid))
+        .collection('transfers')
+        .doc(commandId)
+        .get()
+    ).data();
+    assert.equal(journal.state, 'complete');
+    assert.equal((await f.store.list(f.principal)).length, 2);
+    const recovered = await client.retryPending();
+    assert.deepEqual(await pending, recovered);
+    assert.equal(recovered.id, journal.campaignId);
+    assert.notEqual(recovered.id, source.id);
+    const starts = requests.filter((request) => request.url.endsWith('/imports'));
+    assert.equal(starts.length, 2);
+    assert.equal(starts[0].body, starts[1].body);
+    assert.equal(JSON.parse(starts[0].body).commandId, commandId);
+    assert.equal(requests.filter((request) => request.url.endsWith('/finish')).length, 1);
+    const copy = JSON.parse(await client.exportBackup(recovered.id));
+    const sourceData = JSON.parse(original);
+    assert.deepEqual(copy.records, sourceData.records);
+    assert.equal(copy.scene, sourceData.scene);
+    assert.deepEqual(copy.campaign.sourcePacks, sourceData.campaign.sourcePacks);
+    assert.equal((await f.store.list(f.principal)).length, 2);
+    assert.equal(await f.store.readBackup(f.principal, source.id, point.name), original);
   }
 );
 

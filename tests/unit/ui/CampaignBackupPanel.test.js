@@ -1,6 +1,8 @@
 import CampaignBackupPanel from '../../../src/ui/campaigns/CampaignBackupPanel.js';
+import CloudCampaignClientStore from '../../../src/campaigns/CloudCampaignClientStore.js';
+import { webcrypto } from 'node:crypto';
 
-test('cloud history offers complete downloads without exposing the not-yet-verified restore action', async () => {
+test('cloud history with restore gated out retains its complete-file download action', async () => {
   const workspace = {
     store: {
       storageInfo: { kind: 'cloud' },
@@ -69,6 +71,47 @@ test('opening history does not keep a stale failure after that same request comp
     expect(panel.root.querySelector('[data-download-backup]')).not.toBeNull();
   } finally {
     panel.destroy();
+  }
+});
+
+test('verified cloud history exposes restore-as-copy through the real client capability without replacing its source', async () => {
+  const campaignId = '11111111-1111-4111-8111-111111111111';
+  const point = {
+    name: '22222222-2222-4222-8222-222222222222',
+    createdAt: '2026-11-06T01:00:00Z',
+    bytes: 1024,
+    generation: 1,
+  };
+  const store = new CloudCampaignClientStore({
+    uid: 'panel-owner',
+    packs: [],
+    crypto: webcrypto,
+    connection: {
+      account: { identity: () => ({ uid: 'panel-owner' }) },
+      request: async (resource) =>
+        resource.endsWith('/status')
+          ? { state: 'saved', error: null, latest: point, intervalMs: 300000, retain: 20 }
+          : [point],
+    },
+  });
+  const active = { campaign: { id: campaignId, name: 'Source campaign' } };
+  const copy = { id: '33333333-3333-4333-8333-333333333333', name: 'Restored campaign' };
+  const workspace = { store, active, restoreBackup: jest.fn(async () => copy) };
+  const onRestored = jest.fn();
+  const panel = new CampaignBackupPanel({ workspace, campaignId, onRestored });
+  try {
+    await panel.open();
+    const restore = panel.root.querySelector('[data-restore-backup]');
+    expect(restore).not.toBeNull();
+    restore.click();
+    for (let step = 0; step < 12 && panel.busy; step++) await Promise.resolve();
+    expect(workspace.restoreBackup).toHaveBeenCalledWith(campaignId, point.name);
+    expect(onRestored).toHaveBeenCalledWith(copy);
+    expect(workspace.active).toBe(active);
+    expect(panel.status.textContent).toContain('current campaign is unchanged');
+  } finally {
+    panel.destroy();
+    store.close();
   }
 });
 

@@ -100,7 +100,7 @@ export default class CloudCampaignClientStore {
     this.capabilities = Object.freeze({
       settings: true,
       backups: true,
-      backupRestore: false,
+      backupRestore: true,
       portability: true,
       invitations: true,
       participantAccess: true,
