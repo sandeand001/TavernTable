@@ -91,6 +91,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   }
   const resources = new HostResources({ root: process.cwd(), manifest });
   const { participantState } = require('./tools/cloud/participant-state.js');
+  assert.equal(typeof require('./tools/cloud/participant-changes.js').ParticipantChanges, 'function');
   for (const ruleset of ['2014', '2024']) {
     const catalog = await resources.catalog({
       ruleset,
@@ -125,6 +126,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'tools/cloud/usage-limits.js',
     'tools/assigned-character-change.js',
     'tools/published-maps.js', 'tools/cloud/participant-state.js',
+    'tools/cloud/participant-changes.js',
     'src/campaigns/CloudParticipantProtocol.js',
     'src/campaigns/CloudProtocol.js',
   ]) {

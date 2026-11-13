@@ -37,6 +37,8 @@ function messageFrom(child, type) {
     const message = (value) => {
       if (value?.type === type) finish(null, value);
       else if (value?.type === 'failed') finish(new Error('The demo backend could not start'));
+      else if (value?.type === 'journal-failed')
+        finish(new Error('The replacement journal request failed: ' + value.code));
     };
     const exited = () => finish(new Error('The demo backend exited before its expected event'));
     const failed = (error) => finish(error);
@@ -162,9 +164,25 @@ async function fixture(t) {
         let holdPublication = false;
         let releasePublication = null;
         let holdStagedRead = false;
+        let holdAnnouncement = false;
         let excludedReadPath = null;
         let clockOffset = 0;
         process.on('message', value => {
+          if (value?.type === 'arm-announcement') {
+            holdAnnouncement = true;
+            process.send({ type: 'armed' });
+            return;
+          }
+          if (value?.type === 'read-journal') {
+            void (async () => {
+              const principal = await access.verifyAuthorization('Bearer ' + value.token);
+              const result = await store.readCommittedChanges(principal, value.campaignId, {
+                afterGeneration: value.afterGeneration,
+              });
+              process.send({ type: 'journal-read', result });
+            })().catch(error => process.send({ type: 'journal-failed', code: error.code || 'journal-failed' }));
+            return;
+          }
           if (value?.type === 'advance-clock') {
             clockOffset = value.milliseconds;
             process.send({ type: 'clock-advanced' });
@@ -220,6 +238,16 @@ async function fixture(t) {
           objects,
           now: () => Date.now() + clockOffset,
         });
+        const commitCharacters = store.commitCharacters.bind(store);
+        store.commitCharacters = async (...args) => {
+          const result = await commitCharacters(...args);
+          if (holdAnnouncement) {
+            holdAnnouncement = false;
+            process.send({ type: 'announcement-held' });
+            await new Promise(resolve => { releasePublication = resolve; });
+          }
+          return result;
+        };
         const api = await cloudApi({ access, store, port: ${port} });
         process.send({ type: 'ready', url: api.url, instance: randomUUID() });
       })().catch(() => {
@@ -321,6 +349,70 @@ async function fixture(t) {
     },
   };
 }
+
+test(
+  'an actual backend kill after commit but before announcement preserves one ordered journal event and original receipt',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const reference = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
+    const before = (await reference.get()).data();
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-announcement' });
+    await armed;
+    const held = messageFrom(f.backend.child, 'announcement-held');
+    const pending = f.library.create('Committed before lost announcement');
+    await held;
+    const originalBody = f.commands.at(-1);
+    const commandId = JSON.parse(originalBody).commandId;
+    const committed = (await reference.get()).data();
+    assert.equal(committed.generation, before.generation + 1);
+    assert.equal(
+      (await reference.collection('changes').doc(String(committed.generation)).get()).exists,
+      true
+    );
+    const receipt = f.runtime.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(f.identity.uid))
+      .collection('receipts')
+      .doc(commandId);
+    assert.equal((await receipt.get()).exists, true);
+    const uncertain = savePhase(f.store, 'uncertain');
+    await terminate(f.backend.child);
+    await uncertain;
+    const replacement = await f.start(f.backend.port);
+    assert.notEqual(replacement.instance, f.backend.instance);
+    const read = messageFrom(replacement.child, 'journal-read');
+    replacement.child.send({
+      type: 'read-journal',
+      token: f.identity.token,
+      campaignId: f.campaign.id,
+      afterGeneration: before.generation,
+    });
+    const recovered = (await read).result;
+    assert.equal(recovered.resync, null);
+    assert.equal(recovered.changes.length, 1);
+    assert.equal(recovered.changes[0].generation, committed.generation);
+    await f.store.retryPending();
+    const createdId = await pending;
+    assert.equal(f.commands.at(-1), originalBody);
+    assert.deepEqual((await reference.get()).data(), committed);
+    const repeated = messageFrom(replacement.child, 'journal-read');
+    replacement.child.send({
+      type: 'read-journal',
+      token: f.identity.token,
+      campaignId: f.campaign.id,
+      afterGeneration: before.generation,
+    });
+    assert.deepEqual((await repeated).result, recovered);
+    const current = new CampaignCharacters({
+      ...(await f.client(replacement.url).readCharacters(f.campaign.id)),
+      catalog: await f.resources.catalog(f.campaign),
+      store: f.store,
+    });
+    assert.equal(current.get(createdId).name, 'Committed before lost announcement');
+  }
+);
 
 test(
   'live-game state and owner receipts survive actual backend replacement without resetting canonical data',

@@ -60,7 +60,8 @@ object generations were verified cleaned up. The real account and campaigns
 were untouched. This is not a full frontend rollout or source-of-truth cutover.
 Complete M2 implemented-operation coverage (`M2-13`) passes the full native
 catalog and stable regression suite. Initial participant snapshot/manifest/delta privacy (`M3-01`) now passes local
-and bounded real API acceptance. Ordered durable changes and SSE are next;
+and bounded real API acceptance. Ordered durable changes/shared backend
+observation (`M3-02`) are verified; direct authenticated Fetch SSE is next;
 cloud player world gameplay/streams remain gated.
 
 ## Approved requirements: do not reopen by accident
@@ -698,7 +699,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     This verifies the projection/delta contract, not durable stream delivery,
     gameplay/animation, player UI or browser-cache activation.
 
-- [ ] **M3-02 - Implement ordered durable changes and bounded reconnect history.**
+- [x] **M3-02 - Implement ordered durable changes and bounded reconnect history.**
   - **Depends:** `M1-07`, `M3-01`.
   - **Success:** committed heads/receipts and compact changes recover across a
     commit-to-announcement crash. Each active instance observes shared changes
@@ -706,6 +707,30 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** duplicates, missing/out-of-order/stale/incompatible changes are
     detected. Record/test the selected bound, initially proposed as 1,000 changes
     and no more than 24 hours; older gaps require a fresh authorized snapshot.
+  - **Completed:** November 13, 2026. Creation now atomically records event one;
+    import/settings/canonical events share the strict private sequence reader.
+    Selected bounds are **1,000 changes / 24 hours** with exact boundary tests.
+    Bounded natural wake-ups retire at most **100 entries** with the retained
+    floor in the same transaction, leaving primary head/receipts/bytes unchanged.
+    One active campaign observation group shares head/live/access watches and
+    canonical Storage body reads across viewers; per-view authorization/projection
+    remains mandatory. Ten real presence pings add zero canonical downloads;
+    overlapping updates resync the latest pose without replaying old motion.
+    Warm graphics omission, listener rejection isolation, backwards-head denial,
+    scope/pause teardown and actual commit-before-announcement process death pass.
+    The initial 165-case native gate exposed seven old total-count assumptions
+    about the newly added creation event; exact captured-baseline assertions
+    preserve their rollback/concurrency requirements. Final recheck:
+    **92/92** access/canonical cases, zero skips, **333,519.6709 ms**, plus
+    **73 unchanged passing cases** from the broader gate.
+    Application gate: **6 suites / 56 tests**, **8.138 s**; full JS/stylelint/
+    layering: zero errors and the same 39 baseline warnings. The actual
+    read-only/non-root/no-key runtime matches twelve source hashes.
+    Bounded real API acceptance verifies ordered compact creation history and
+    natural expiry retirement/atomic floor without primary mutation; all three
+    test identities/two campaigns/ten live object generations were removed.
+    No public private-journal endpoint, always-on watch, extra IAM/index/service,
+    SSE transport or player gameplay activation is introduced.
 
 - [ ] **M3-03 - Implement direct authenticated Fetch-based SSE.**
   - **Depends:** `M1-03`, `M3-02`, `M4-01`.

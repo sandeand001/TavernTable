@@ -51,6 +51,17 @@ async function opportunisticAssignedBackupWork(store, principal, id, scope) {
   }
 }
 
+async function opportunisticChangeWork(store, principal, id, scope = null) {
+  try {
+    await store.runChangeMaintenance(principal, id, scope);
+  } catch (error) {
+    console.error('[cloud-change-history-work]', {
+      campaignId: id,
+      code: error instanceof CloudError ? error.code : 'change-history-work-failed',
+    });
+  }
+}
+
 function sendAsset(response, asset, headers) {
   response.writeHead(200, {
     'Content-Type': asset.reference.mimeType,
@@ -420,8 +431,10 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             'Cloud campaign persistence is not configured'
           );
         if (maintainsObjects) await opportunisticObjectMaintenance(store, principal);
-        if (evaluatesBackups && request.method === 'GET')
+        if (evaluatesBackups && request.method === 'GET') {
           await opportunisticBackupWork(store, principal, campaign[1]);
+          await opportunisticChangeWork(store, principal, campaign[1]);
+        }
         if (importStart) {
           result = await store.startImport(principal, await requestJSON(request));
         } else if (importAction?.[2] === 'parts') {
@@ -466,6 +479,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
                 )
               : await store.readAssignedCharacters(principal, campaign[1], expectedAccess);
           await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
+          await opportunisticChangeWork(store, principal, campaign[1], expectedAccess);
         } else if (snapshot === 'participant-state') {
           result = await store.readParticipantSnapshot(
             principal,
@@ -564,8 +578,10 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           campaign &&
           request.method === 'POST' &&
           ['scene', 'characters', 'settings'].includes(snapshot)
-        )
+        ) {
           await opportunisticBackupWork(store, principal, campaign[1]);
+          await opportunisticChangeWork(store, principal, campaign[1]);
+        }
       }
       jsonResponse(
         response,

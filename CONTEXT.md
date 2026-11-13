@@ -285,6 +285,24 @@
   state atomically rather than retaining revoked actors or replaying historical
   movement. Local/native and bounded real API acceptance passed; durable event
   observation, SSE, gameplay/motion, browser cache and full player UI remain gated.
+- **Durable cloud change observation (M3 backend verified; SSE pending)**:
+  creation/import/canonical/settings publication writes a compact ordered event
+  with the head/receipt transaction. Private history retains at most 1,000
+  reconnect changes and no more than 24 hours; expired/pruned/legacy cursors
+  require a fresh authorized checkpoint. Bounded natural-request work retires
+  up to 100 metadata entries and advances its durable floor atomically, never
+  modifying primary data/receipts or using an always-on timer. Corrupt sequences,
+  backwards heads and invalid clocks fail explicitly.
+  Active participants share one per-campaign head/live/access observation group
+  and one private canonical body load per generation, while each viewer still
+  receives current-scope authorization and an explicit private-data-free
+  projection. Presence pings do not reload scene/character bodies. Bursts
+  supersede stale work with a latest checkpoint, not historical movement.
+  Warm checkpoints omit unchanged graphics; scope revocation, owner pause and
+  final subscriber close stop observation. Event listeners enqueue synchronously;
+  one rejected/failed listener is isolated and logged without private details.
+  This backend callback seam does not yet grant an HTTP stream or bypass the
+  separate renewable per-UID stream quota.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its

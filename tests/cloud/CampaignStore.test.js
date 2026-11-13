@@ -310,6 +310,11 @@ test(
       commandId: randomUUID(),
       options: { name: 'Concurrent settings fixture', ruleset: '2014' },
     });
+    const changeLog = runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('changes');
+    const initialChangeCount = (await changeLog.get()).size;
     const settings = await context.store.getSettings(context.principal, campaign.id);
     const competing = await Promise.allSettled(
       ['First name', 'Second name'].map((name) =>
@@ -342,11 +347,7 @@ test(
     for (const result of results) assert.deepEqual(result, results[0]);
     assert.equal(results[0].generation, 3);
     assert.equal(results[0].campaign.charactersRevision, 0);
-    assert.equal(
-      (await runtime.firestore.collection('campaigns').doc(campaign.id).collection('changes').get())
-        .size,
-      2
-    );
+    assert.equal((await changeLog.get()).size, initialChangeCount + 2);
   }
 );
 
@@ -416,6 +417,7 @@ test(
       });
       const headReference = runtime.firestore.collection('campaigns').doc(campaign.id);
       const before = (await headReference.get()).data();
+      const initialChangeCount = (await headReference.collection('changes').get()).size;
       const marker = headReference.collection('changes').doc('2');
       await marker.create({ syntheticPublicationConflict: true });
       let markerOwned = true;
@@ -474,7 +476,10 @@ test(
           assert.equal(requests.length, 3);
           assert.ok(requests.every((body) => body === requests[0]));
           assert.equal((await headReference.get()).data().generation, 2);
-          assert.equal((await headReference.collection('changes').get()).size, 1);
+          assert.equal(
+            (await headReference.collection('changes').get()).size,
+            initialChangeCount + 1
+          );
           assert.equal((await marker.get()).data().kind, 'campaign.settings');
         } finally {
           stop();
@@ -1182,6 +1187,8 @@ test(
       commandId: randomUUID(),
       options: { name: 'Revoked during upload', ruleset: '2014' },
     });
+    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
+    const initialChangeCount = (await document.collection('changes').get()).size;
     const eligibility = runtime.firestore
       .collection('pilotAccounts')
       .doc(pilotAccountKey(context.principal.uid));
@@ -1206,11 +1213,10 @@ test(
       status: 403,
       code: 'pilot-access-required',
     });
-    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
     const head = (await document.get()).data();
     assert.equal(head.generation, 1);
     assert.equal(head.sceneRef, null);
-    assert.equal((await document.collection('changes').get()).size, 0);
+    assert.equal((await document.collection('changes').get()).size, initialChangeCount);
     const receipt = await runtime.firestore
       .collection('accountCommands')
       .doc(pilotAccountKey(context.principal.uid))
@@ -1241,6 +1247,8 @@ test(
       commandId: randomUUID(),
       options: { name: 'Upload acknowledgement lost', ruleset: '2014' },
     });
+    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
+    const initialChangeCount = (await document.collection('changes').get()).size;
     const command = {
       commandId: randomUUID(),
       change: {
@@ -1260,7 +1268,6 @@ test(
         error.code === 'snapshot-storage-unavailable' &&
         !error.message.includes('PRIVATE UPLOAD FAILURE DETAILS')
     );
-    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
     assert.equal((await document.get()).data().generation, 1);
     assert.equal((await document.get()).data().sceneRef, null);
     const receiptRef = runtime.firestore
@@ -1269,7 +1276,7 @@ test(
       .collection('receipts')
       .doc(command.commandId);
     assert.equal((await receiptRef.get()).exists, false);
-    assert.equal((await document.collection('changes').get()).size, 0);
+    assert.equal((await document.collection('changes').get()).size, initialChangeCount);
     const recovered = await context.store.commitScene(
       context.principal,
       campaign.id,
@@ -1284,7 +1291,7 @@ test(
       recovered
     );
     assert.equal((await document.get()).data().generation, 2);
-    assert.equal((await document.collection('changes').get()).size, 1);
+    assert.equal((await document.collection('changes').get()).size, initialChangeCount + 1);
     assert.equal(
       (await runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/objects/` }))[0].length,
       1
@@ -1305,6 +1312,7 @@ test(
       options: { name: 'Atomic server rejection', ruleset: '2014' },
     });
     const document = runtime.firestore.collection('campaigns').doc(campaign.id);
+    const initialChangeCount = (await document.collection('changes').get()).size;
     const marker = document.collection('changes').doc('2');
     await marker.create({ fixture: 'force a real create precondition failure' });
     const command = {
@@ -1339,7 +1347,7 @@ test(
     assert.equal(committed.revision, 1);
     assert.deepEqual((await receipt.get()).data().result, committed);
     assert.equal((await document.get()).data().generation, 2);
-    assert.equal((await document.collection('changes').get()).size, 1);
+    assert.equal((await document.collection('changes').get()).size, initialChangeCount + 1);
   }
 );
 
@@ -1355,6 +1363,8 @@ test(
       commandId: randomUUID(),
       options: { name: 'Concurrent same command', ruleset: '2014' },
     });
+    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
+    const initialChangeCount = (await document.collection('changes').get()).size;
     const command = {
       commandId: randomUUID(),
       change: {
@@ -1371,9 +1381,8 @@ test(
     );
     for (const result of results) assert.deepEqual(result, results[0]);
     assert.equal(results[0].revision, 1);
-    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
     assert.equal((await document.get()).data().generation, 2);
-    assert.equal((await document.collection('changes').get()).size, 1);
+    assert.equal((await document.collection('changes').get()).size, initialChangeCount + 1);
     assert.equal(
       (await runtime.bucket.getFiles({ prefix: `campaigns/${campaign.id}/objects/` }))[0].length,
       1
@@ -1441,6 +1450,8 @@ test(
       commandId: randomUUID(),
       options: { name: 'Reject invalid canonical data', ruleset: '2014' },
     });
+    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
+    const initialChangeCount = (await document.collection('changes').get()).size;
     const invalidTerrain = sceneState();
     invalidTerrain.terrain.heights[0].pop();
     const scenes = [
@@ -1481,9 +1492,8 @@ test(
           error.code === 'invalid-campaign-change' &&
           !error.message.includes('REDACTION-CANARY')
       );
-    const document = runtime.firestore.collection('campaigns').doc(campaign.id);
     assert.equal((await document.get()).data().generation, 1);
-    assert.equal((await document.collection('changes').get()).size, 0);
+    assert.equal((await document.collection('changes').get()).size, initialChangeCount);
     assert.equal(
       (
         await runtime.firestore

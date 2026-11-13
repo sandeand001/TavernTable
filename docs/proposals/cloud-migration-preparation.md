@@ -2236,3 +2236,89 @@ force; tiny retained fixture bytes may remain billable. Current real accounts/
 campaigns, original hosts/data and routine-save presentation were untouched.
 No full frontend/cutover or ten-client SSE/gameplay/cache/sleep/performance/cost
 acceptance is claimed by this API contract gate.
+
+### M3-02: ordered private journal and shared authorized observation
+
+Campaign creation now commits compact event one with its head and UID receipt;
+import/settings/canonical saves already publish their matching event atomically.
+The private owner-only history reader validates exact fields, generation/document
+identity, supported kinds, timestamps, revision order and agreement with the
+captured head. It is not a member/private-data HTTP endpoint. Backend participant
+observation uses a separately admitted current member scope and live epoch before
+constructing any public update.
+
+The selected reconnect window is **1,000 changes and no more than 24 hours**.
+Exact 1,000/1,001 and 24-hour-minus-one-millisecond/expiry tests pass. Stale,
+pruned and legacy-baseline cursors explicitly require a fresh checkpoint;
+missing/incompatible metadata and a cursor ahead of the head fail explicitly.
+Normal authorized requests retire at most **100 expired entries** per operation.
+Deletion and a monotonic `prunedThrough` boundary commit together, with no
+primary head/receipt/object change. This keeps work bounded after long sleep,
+not dependent on a running timer. An invalid retention clock cannot delete recent
+events or return a success-shaped history response.
+
+Active participants share one per-campaign observation group for canonical head,
+live control and access changes. An immutable private frame promise shares the
+scene/character Storage bodies for each generation; eligibility, ownership,
+scope, epoch, current head and public projection still execute for each viewer.
+Two actual participant observers make **two total canonical body downloads**
+per generation, not two per viewer. Ten real presence renewals add **zero**
+canonical downloads. A controlled in-flight burst discards superseded frames
+and sends the latest authorized checkpoint with no historical motion updates.
+Warm subscribers receive no unchanged graphic body. Revocation/owner pause
+close affected viewers, and the final subscriber releases watches/frame data.
+
+Duplicate/gap deltas cannot rewind state. A regressing stored head closes
+observation instead of becoming an older replacement checkpoint. Listeners
+enqueue synchronously; unsupported asynchronous rejection and callback failures
+are isolated, redacted and surfaced without killing other participants. The
+backend observation seam grants neither an HTTP SSE connection nor a global
+stream-quota lease; actual transport/presence binding is M3-03.
+
+Verification:
+
+- The initial seven-file native gate ran **165 cases**: 158 passed and seven
+  directly related legacy assertions expected journal totals without creation
+  event one. Those tests now capture the exact pre-operation count and assert
+  the required zero/one/two-success increments; winner, receipt, precondition and
+  rollback checks were not relaxed. Final full access/canonical recheck:
+  **92/92**, zero skips/failures, **333,519.6709 ms**. The other **73 cases**
+  passed unchanged in the broader gate.
+- Five focused real SDK cases passed **28,870.972 ms** before the final
+  conditional-graphics recheck. They include actual backend termination after
+  commit and before delivery: a fresh child process reads one durable journal
+  event, the original caller recovers the identical command receipt, and retry
+  creates no duplicate event. Further focused tests found/fixed unsafe NaN-clock
+  retirement, an escaping asynchronous listener rejection and backwards-head
+  replacement. No blanket retry or raw SDK error relaxation was added.
+- **6 application suites / 56 tests**, **8.138 s**; final full JS/stylelint/
+  layering: zero errors and the same 39 baseline warnings.
+- Actual Node 24.22.3 Linux/amd64, UID 1000, 1 CPU/1 GiB, read-only/no-network/
+  no-mount/no-key runtime checks passed twelve exact source hashes, both edition
+  projectors, sixteen resource packs, full 16 MP decoding and clean SIGTERM exit.
+  The owned validation container was removed. Helper RSS **209,776,640 bytes**
+  is not representative peak/load proof; no dependency change was needed.
+
+The approved single API test service uses revision
+`taverntable-api-test-00004-bqp`, private immutable image
+`sha256:f2052f96753a7e9c785b64af7e2453c4a506bffba6b55445ea6e251195380740`
+(runnable manifest
+`sha256:2cb3f89d78f5e6a446775fc8bb1e779421a718ee344403f44325befe2a135272`).
+Real acceptance passed **2026-11-13 23:56:31 UTC**. The actual six-field private
+journal is ordered from atomic creation through the committed head. Aging one
+owned fixture entry and issuing a normal owner GET deletes only that expired
+entry and commits the retained floor, with exact primary head fields unchanged.
+The first fixture used the local VM clock, which was about eight seconds ahead
+of the service and correctly left the entry unexpired; the fixture was corrected
+to use its actual server commit timestamp, not by weakening production policy.
+The paused sheet, private image, participant, delta and original-receipt gates
+also pass unchanged.
+
+The same three approved disposable identities/two campaigns were used. Cleanup
+verified all fixtures and **ten live object generations** absent at
+**23:56:36 UTC**; the earlier fixture attempt was also cleaned (nine generations).
+Existing soft-delete retention remains in force and tiny retained fixture bytes
+may remain billable. No real account/campaign, IAM grant, index, service,
+frontend/cutover or routine-save UX change was introduced. Shared observation
+is real SDK/component evidence; actual hosted SSE delivery, gameplay/animation,
+cache, lifecycle/load and cost gates remain pending.

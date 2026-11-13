@@ -5,6 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createEmulatorRuntime } = require('../../tools/cloud/emulator-runtime.js');
 const { CloudAccountAccess, pilotAccountKey } = require('../../tools/cloud/account-access.js');
+const { Timestamp } = require('firebase-admin/firestore');
 const { CloudCampaignStore } = require('../../tools/cloud/campaign-store.js');
 const { ImmutableCloudObjects } = require('../../tools/cloud/immutable-objects.js');
 const { PrivateCampaignAssets } = require('../../tools/cloud/campaign-assets.js');
@@ -170,6 +171,501 @@ function invitation(name = 'Invited player', seatId = null) {
     },
   };
 }
+
+test(
+  'private committed change history is ordered across backend instances and cannot become a member data endpoint',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Ordered committed changes');
+    await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const client = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: client,
+    });
+    const hero = await library.create('Journal actor');
+    await library.edit(hero, { notes: 'PRIVATE CANONICAL JOURNAL CONTENT' });
+    const changes = await f.store.readCommittedChanges(owner.principal, campaign.id, {
+      afterGeneration: 0,
+    });
+    assert.equal(changes.resync, null);
+    assert.deepEqual(
+      changes.changes.map((entry) => entry.generation),
+      [1, 2, 3]
+    );
+    assert.deepEqual(
+      changes.changes.map((entry) => entry.kind),
+      ['campaign.create', 'characters.commit', 'characters.commit']
+    );
+    assert.equal(changes.headGeneration, 3);
+    assert.ok(changes.changes.every((entry) => Number.isFinite(Date.parse(entry.committedAt))));
+    assert.ok(!JSON.stringify(changes).includes('PRIVATE CANONICAL JOURNAL CONTENT'));
+    assert.ok(!JSON.stringify(changes).includes('charactersRef'));
+    const replacement = f.createStore();
+    const recovered = await replacement.readCommittedChanges(owner.principal, campaign.id, {
+      afterGeneration: 1,
+    });
+    assert.deepEqual(recovered.changes, changes.changes.slice(1));
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    await head.collection('changes').doc('2').delete();
+    await assert.rejects(
+      replacement.readCommittedChanges(owner.principal, campaign.id, {
+        afterGeneration: 1,
+      }),
+      { code: 'invalid-change-history' }
+    );
+    const canonical = await f.store.readCharacters(owner.principal, campaign.id);
+    assert.ok(JSON.stringify(canonical.records).includes('PRIVATE CANONICAL JOURNAL CONTENT'));
+    await head.collection('changeHistory').doc('current').set({
+      version: 1,
+      campaignId: campaign.id,
+      prunedThrough: 99,
+      lastPrunedAt: Timestamp.now(),
+    });
+    await assert.rejects(
+      replacement.readCommittedChanges(owner.principal, campaign.id, {
+        afterGeneration: 3,
+      }),
+      { code: 'invalid-change-history' }
+    );
+    await assert.rejects(
+      replacement.readCommittedChanges(member.principal, campaign.id, {
+        afterGeneration: 0,
+      }),
+      { code: 'campaign-not-found' }
+    );
+  }
+);
+
+test(
+  'committed change history enforces the exact 1000-change and 24-hour boundaries and retires only expired metadata',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Bounded change history');
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const journal = head.collection('changes');
+    const initial = (await journal.doc('1').get()).data().committedAt.toMillis();
+    now = initial + 2000;
+    for (let first = 2; first <= 1001; first += 500) {
+      const batch = f.runtime.firestore.batch();
+      for (let generation = first; generation < Math.min(first + 500, 1002); generation++)
+        batch.create(journal.doc(String(generation)), {
+          version: 1,
+          generation,
+          kind: 'campaign.settings',
+          sceneRevision: 0,
+          charactersRevision: 0,
+          committedAt: Timestamp.fromMillis(initial + generation),
+        });
+      await batch.commit();
+    }
+    await head.update({ generation: 1001 });
+    const primary = (await head.get()).data();
+    const retained = await f.store.readCommittedChanges(owner.principal, campaign.id, {
+      afterGeneration: 1,
+    });
+    assert.equal(retained.resync, null);
+    assert.equal(retained.changes.length, 1000);
+    assert.equal(retained.changes[0].generation, 2);
+    assert.equal(retained.changes.at(-1).generation, 1001);
+    assert.equal(
+      (
+        await f.store.readCommittedChanges(owner.principal, campaign.id, {
+          afterGeneration: 0,
+        })
+      ).resync,
+      'history-pruned'
+    );
+    const cutoff = now - 24 * 60 * 60 * 1000;
+    await journal.doc('1').update({ committedAt: Timestamp.fromMillis(cutoff - 1) });
+    await journal.doc('2').update({ committedAt: Timestamp.fromMillis(cutoff + 1) });
+    assert.equal(
+      (
+        await f.store.readCommittedChanges(owner.principal, campaign.id, {
+          afterGeneration: 1,
+        })
+      ).changes.length,
+      1000
+    );
+    await journal.doc('2').update({ committedAt: Timestamp.fromMillis(cutoff) });
+    assert.equal(
+      (
+        await f.store.readCommittedChanges(owner.principal, campaign.id, {
+          afterGeneration: 1,
+        })
+      ).resync,
+      'history-expired'
+    );
+    const retired = await f.store.runChangeMaintenance(owner.principal, campaign.id);
+    assert.equal(retired.removed, 2);
+    assert.equal((await journal.doc('1').get()).exists, false);
+    assert.equal((await journal.doc('2').get()).exists, false);
+    assert.equal((await journal.doc('3').get()).exists, true);
+    assert.deepEqual((await head.get()).data(), primary);
+    assert.equal((await journal.get()).size, 999);
+    const oldCursor = await f.store.readCommittedChanges(owner.principal, campaign.id, {
+      afterGeneration: 1,
+    });
+    assert.notEqual(oldCursor.resync, null);
+    assert.deepEqual(oldCursor.changes, []);
+    assert.equal(
+      (
+        await f.store.readCommittedChanges(owner.principal, campaign.id, {
+          afterGeneration: 2,
+        })
+      ).changes.length,
+      999
+    );
+    const aged = f.runtime.firestore.batch();
+    for (let generation = 3; generation <= 202; generation++)
+      aged.update(journal.doc(String(generation)), {
+        committedAt: Timestamp.fromMillis(cutoff - 202 + generation),
+      });
+    await aged.commit();
+    assert.equal((await f.store.runChangeMaintenance(owner.principal, campaign.id)).removed, 100);
+    assert.equal((await journal.doc('102').get()).exists, false);
+    assert.equal((await journal.doc('103').get()).exists, true);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    await f.client(owner, api).get(campaign.id);
+    assert.equal((await journal.doc('202').get()).exists, false);
+    assert.equal((await journal.doc('203').get()).exists, true);
+    assert.equal((await journal.get()).size, 799);
+    assert.deepEqual((await head.get()).data(), primary);
+  }
+);
+
+test(
+  'an invalid retention clock cannot retire recent committed history or produce a success-shaped history response',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Invalid journal clock');
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const before = (await head.get()).data();
+    now = NaN;
+    await assert.rejects(f.store.runChangeMaintenance(owner.principal, campaign.id), {
+      code: 'change-history-unavailable',
+    });
+    assert.equal((await head.collection('changes').doc('1').get()).exists, true);
+    assert.deepEqual((await head.get()).data(), before);
+    await assert.rejects(
+      f.store.readCommittedChanges(owner.principal, campaign.id, {
+        afterGeneration: 0,
+      }),
+      { code: 'change-history-unavailable' }
+    );
+  }
+);
+
+test(
+  'one active campaign observer shares canonical downloads across participants and stops on scope revocation or owner pause',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const first = await f.account();
+    const second = await f.account();
+    const campaign = await f.create(owner.principal, 'Shared committed observation');
+    const firstSeat = await f.join(campaign.id, first.uid);
+    const secondSeat = await f.join(campaign.id, second.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: ownerClient,
+    });
+    const hero = await library.create('First observed hero');
+    const ally = await library.create('Second observed hero');
+    const npc = await library.create('PRIVATE SHARED OBSERVER NPC');
+    await library.edit(npc, { notes: 'PRIVATE SHARED FRAME NOTE' });
+    const raw = sceneState({ characterId: hero, name: 'First observed hero' });
+    raw.terrain.heights = raw.terrain.heights.map((row) => row.map(() => 0));
+    const other = structuredClone(raw.creatures[0]);
+    Object.assign(other, {
+      id: 'token-2',
+      instanceNumber: 2,
+      characterId: ally,
+      name: 'Second observed hero',
+      gridX: 3,
+      pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+    });
+    raw.creatures.push(other);
+    raw.tokenCounters = { nextId: 2, types: [[other.type, 2]] };
+    const validation = { ruleset: '2014', library };
+    const scene = CampaignWorld.fromScene(raw, validation).save();
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: library.revision,
+      scene: encodeScene(scene, validation),
+    });
+    for (const [seatId, characterId] of [
+      [firstSeat, hero],
+      [secondSeat, ally],
+    ])
+      await ownerClient.assignCharacter(campaign.id, {
+        seatId,
+        characterId,
+        assigned: true,
+        accessGeneration: 0,
+      });
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    let downloads = 0;
+    let holdFrame = false;
+    let entered;
+    let release;
+    const started = new Promise((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    t.after(() => release());
+    const bucket = {
+      name: f.runtime.bucket.name,
+      file(...args) {
+        const file = f.runtime.bucket.file(...args);
+        const read = file.download.bind(file);
+        file.download = async (...values) => {
+          downloads++;
+          const bytes = await read(...values);
+          if (holdFrame && args[0].includes('/objects/scene/')) {
+            holdFrame = false;
+            entered();
+            await gate;
+          }
+          return bytes;
+        };
+        return file;
+      },
+    };
+    const shared = new CloudCampaignStore({
+      firestore: f.runtime.firestore,
+      access: f.access,
+      packs: f.manifest.packs,
+      resources: f.resources,
+      objects: new ImmutableCloudObjects({ bucket }),
+    });
+    const events = [[], []];
+    const updates = [];
+    const failures = [];
+    const resets = [];
+    const resetPromises = [0, 1].map(
+      (index) =>
+        new Promise((resolve) => {
+          resets[index] = resolve;
+        })
+    );
+    const updatePromises = [0, 1].map(
+      (index) =>
+        new Promise((resolve) => {
+          updates[index] = resolve;
+        })
+    );
+    const failurePromises = [0, 1].map(
+      (index) =>
+        new Promise((resolve) => {
+          failures[index] = resolve;
+        })
+    );
+    const handles = [];
+    for (const [index, identity] of [first, second].entries()) {
+      const grant = await f.store.getParticipantAccess(identity.principal, campaign.id);
+      const handle = shared.observeParticipant(
+        identity.principal,
+        campaign.id,
+        {
+          sessionId: live.sessionId,
+          observerTokenId: `token-${index + 1}`,
+          mapId: 'map-main',
+          assetKey: null,
+        },
+        { seatId: grant.access.seatId, accessGeneration: grant.access.accessGeneration },
+        {
+          onEvent(event) {
+            events[index].push(event);
+            if (events[index].length === 2) updates[index](event);
+            if (events[index].length === 3) resets[index](event);
+          },
+          onError(error) {
+            failures[index](error);
+          },
+        }
+      );
+      handles.push(handle);
+      t.after(() => handle.close());
+    }
+    await Promise.all(handles.map((handle) => handle.ready));
+    assert.equal(downloads, 2);
+    assert.ok(events[0][0].checkpoint.state.records.every((row) => row.key.endsWith(hero)));
+    assert.ok(events[1][0].checkpoint.state.records.every((row) => row.key.endsWith(ally)));
+    assert.ok(!JSON.stringify(events).includes('PRIVATE SHARED FRAME NOTE'));
+    let warmEvent;
+    let warmFailure;
+    const warm = shared.observeParticipant(
+      first.principal,
+      campaign.id,
+      {
+        sessionId: live.sessionId,
+        observerTokenId: 'token-1',
+        mapId: 'map-main',
+        assetKey: events[0][0].checkpoint.state.publicScene.assetKey,
+      },
+      { seatId: firstSeat, accessGeneration: 1 },
+      {
+        onEvent(event) {
+          warmEvent = event;
+        },
+        onError(error) {
+          warmFailure = error;
+        },
+      }
+    );
+    t.after(() => warm.close());
+    await warm.ready;
+    assert.equal(warmFailure, undefined);
+    assert.equal(warmEvent.checkpoint.state.publicScene.assets, null);
+    warm.close();
+    assert.equal(downloads, 2);
+    let callbackFailure;
+    const broken = shared.observeParticipant(
+      first.principal,
+      campaign.id,
+      { sessionId: live.sessionId, observerTokenId: 'token-1', mapId: 'map-main', assetKey: null },
+      { seatId: firstSeat, accessGeneration: 1 },
+      {
+        onEvent() {
+          return Promise.reject(new Error('PRIVATE ASYNC LISTENER DETAIL'));
+        },
+        onError(error) {
+          callbackFailure = error;
+        },
+      }
+    );
+    t.after(() => broken.close());
+    await assert.rejects(broken.ready, { code: 'participant-listener-failed' });
+    assert.equal(callbackFailure.code, 'participant-listener-failed');
+    assert.equal(downloads, 2);
+    const moved = structuredClone(scene);
+    moved.creatures[0].gridY = 2;
+    moved.creatures[0].pose.world.z = 2.5;
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 1,
+      charactersRevision: library.revision,
+      scene: encodeScene(moved, validation),
+    });
+    const delivered = await Promise.all(updatePromises);
+    assert.ok(delivered.every((event) => event.kind === 'delta'));
+    assert.equal(downloads, 4);
+    const presence = await f.store.connectLivePresence(first.principal, campaign.id, {
+      sessionId: live.sessionId,
+    });
+    const ping = { sessionId: live.sessionId, connectionId: presence.id };
+    for (let count = 0; count < 10; count++)
+      await f.store.renewLivePresence(first.principal, campaign.id, ping);
+    await f.store.disconnectLivePresence(first.principal, campaign.id, ping);
+    assert.equal(downloads, 4);
+    holdFrame = true;
+    const midway = structuredClone(moved);
+    midway.creatures[0].gridY = 3;
+    midway.creatures[0].pose.world.z = 3.5;
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 2,
+      charactersRevision: library.revision,
+      scene: encodeScene(midway, validation),
+    });
+    await started;
+    const latest = structuredClone(midway);
+    latest.creatures[0].gridY = 4;
+    latest.creatures[0].pose.world.z = 4.5;
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 3,
+      charactersRevision: library.revision,
+      scene: encodeScene(latest, validation),
+    });
+    release();
+    const recovered = await Promise.all(resetPromises);
+    assert.ok(recovered.every((event) => event.kind === 'resync'));
+    assert.ok(
+      recovered.every(
+        (event) =>
+          event.checkpoint.state.publicScene.actors.find((actor) => actor.id === 'token-1')
+            .gridY === 4
+      )
+    );
+    assert.ok(recovered.every((event) => event.checkpoint.state.publicScene.updates.length === 0));
+    assert.equal(downloads, 8);
+    await ownerClient.removeMember(campaign.id, { seatId: firstSeat, accessGeneration: 1 });
+    assert.equal((await failurePromises[0]).code, 'campaign-not-found');
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'end',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    assert.equal((await failurePromises[1]).code, 'live-session-paused');
+    const stopped = downloads;
+    await library.edit(npc, { notes: 'PRIVATE AFTER OBSERVERS CLOSED' });
+    assert.equal(downloads, stopped);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const restarted = await ownerClient.getLiveSession(campaign.id);
+    let finish;
+    let count = 0;
+    const outcome = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const regression = shared.observeParticipant(
+      second.principal,
+      campaign.id,
+      {
+        sessionId: restarted.sessionId,
+        observerTokenId: 'token-2',
+        mapId: 'map-main',
+        assetKey: null,
+      },
+      { seatId: secondSeat, accessGeneration: 1 },
+      {
+        onEvent(event) {
+          if (++count === 2) finish({ event });
+        },
+        onError(error) {
+          finish({ error });
+        },
+      }
+    );
+    t.after(() => regression.close());
+    await regression.ready;
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const currentGeneration = (await head.get()).data().generation;
+    await head.update({ generation: currentGeneration - 1 });
+    assert.equal((await outcome).error?.code, 'invalid-change-history');
+  }
+);
 
 test(
   'a live participant checkpoint contains only authorized rendering and assigned sheets with private image references',

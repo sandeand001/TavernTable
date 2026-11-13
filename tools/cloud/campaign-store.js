@@ -6,7 +6,7 @@ const {
 } = require('../../src/campaigns/CampaignCharacters.js');
 const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
-const { FieldPath } = require('firebase-admin/firestore');
+const { FieldPath, Timestamp } = require('firebase-admin/firestore');
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
@@ -121,6 +121,9 @@ const IMPORT_TTL_MS = 24 * 60 * 60 * 1000;
 const OBJECT_QUARANTINE_MS = 24 * 60 * 60 * 1000;
 const OBJECT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const OBJECT_MAINTENANCE_PAGE_SIZE = 20;
+const CHANGE_HISTORY_RETAIN = 1000;
+const CHANGE_HISTORY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const CHANGE_HISTORY_PRUNE_BATCH = 100;
 const BACKUP_FAILURE_MESSAGE =
   'The complete backup was not finished. Acknowledged primary saves are unchanged; retry the backup online.';
 const newestBackupFirst = (a, b) =>
@@ -2918,6 +2921,7 @@ class CloudCampaignStore {
       throw new CloudError(400, 'invalid-campaign-request', error.message);
     }
     await this.usage.ensureAccount(principal);
+    const { FieldValue } = require('firebase-admin/firestore');
     return this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
@@ -2939,7 +2943,246 @@ class CloudCampaignStore {
         campaignId: campaign.id,
         result: campaign,
       });
+      transaction.create(
+        this.firestore.collection('campaigns').doc(record.id).collection('changes').doc('1'),
+        {
+          version: 1,
+          generation: 1,
+          kind: 'campaign.create',
+          sceneRevision: 0,
+          charactersRevision: 0,
+          committedAt: FieldValue.serverTimestamp(),
+        }
+      );
       return campaign;
+    });
+  }
+
+  _committedChange(snapshot, head) {
+    const value = snapshot.data();
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Object.keys(value).length !== 6 ||
+      Object.keys(value).some(
+        (field) =>
+          ![
+            'version',
+            'generation',
+            'kind',
+            'sceneRevision',
+            'charactersRevision',
+            'committedAt',
+          ].includes(field)
+      ) ||
+      value.version !== 1 ||
+      !Number.isSafeInteger(value.generation) ||
+      value.generation < 1 ||
+      value.generation > head.generation ||
+      snapshot.id !== String(value.generation) ||
+      ![
+        'campaign.create',
+        'campaign.import',
+        'campaign.settings',
+        'scene.commit',
+        'characters.commit',
+      ].includes(value.kind) ||
+      !isCloudAccessGeneration(value.sceneRevision) ||
+      !isCloudAccessGeneration(value.charactersRevision) ||
+      !(value.committedAt instanceof Timestamp) ||
+      !validMilliseconds(value.committedAt.toMillis())
+    )
+      throw new CloudError(
+        503,
+        'invalid-change-history',
+        'Committed campaign history could not be verified'
+      );
+    return {
+      version: 1,
+      generation: value.generation,
+      kind: value.kind,
+      sceneRevision: value.sceneRevision,
+      charactersRevision: value.charactersRevision,
+      committedAt: value.committedAt.toDate().toISOString(),
+    };
+  }
+
+  _changeHistoryReference(id) {
+    return this.firestore
+      .collection('campaigns')
+      .doc(id)
+      .collection('changeHistory')
+      .doc('current');
+  }
+
+  _changeHistoryTime() {
+    const now = this.now();
+    if (!validMilliseconds(now))
+      throw new CloudError(
+        503,
+        'change-history-unavailable',
+        'The committed history clock could not be verified'
+      );
+    return now;
+  }
+
+  _changeHistoryFloor(snapshot, id, head) {
+    if (!snapshot.exists) return 1;
+    const value = snapshot.data();
+    if (
+      !value ||
+      Object.keys(value).length !== 4 ||
+      Object.keys(value).some(
+        (field) => !['version', 'campaignId', 'prunedThrough', 'lastPrunedAt'].includes(field)
+      ) ||
+      value.version !== 1 ||
+      value.campaignId !== id ||
+      !Number.isSafeInteger(value.prunedThrough) ||
+      value.prunedThrough < 0 ||
+      value.prunedThrough > head.generation ||
+      !(value.lastPrunedAt instanceof Timestamp)
+    )
+      throw new CloudError(
+        503,
+        'invalid-change-history',
+        'The retained change-history boundary could not be verified'
+      );
+    return value.prunedThrough + 1;
+  }
+
+  async _committedChanges(transaction, id, head, afterGeneration) {
+    const now = this._changeHistoryTime();
+    const result = {
+      version: 1,
+      campaignId: id,
+      afterGeneration,
+      headGeneration: head.generation,
+      changes: [],
+      resync: null,
+    };
+    if (afterGeneration > head.generation)
+      throw new CloudError(409, 'change-cursor-ahead', 'Refresh the current campaign checkpoint');
+    const floor = this._changeHistoryFloor(
+      await transaction.get(this._changeHistoryReference(id)),
+      id,
+      head
+    );
+    if (afterGeneration === head.generation) return result;
+    if (head.generation - afterGeneration > CHANGE_HISTORY_RETAIN || afterGeneration + 1 < floor)
+      return { ...result, resync: 'history-pruned' };
+    const rows = await transaction.get(
+      this.firestore
+        .collection('campaigns')
+        .doc(id)
+        .collection('changes')
+        .where('generation', '>', afterGeneration)
+        .where('generation', '<=', head.generation)
+        .orderBy('generation', 'asc')
+        .limit(CHANGE_HISTORY_RETAIN)
+    );
+    const changes = rows.docs.map((snapshot) => this._committedChange(snapshot, head));
+    if (afterGeneration === 0 && (!changes.length || changes[0].generation === 2))
+      return { ...result, resync: 'legacy-baseline' };
+    if (
+      changes.length !== head.generation - afterGeneration ||
+      changes.some((change, index) => change.generation !== afterGeneration + index + 1) ||
+      changes.some(
+        (change, index) =>
+          index > 0 &&
+          (change.sceneRevision < changes[index - 1].sceneRevision ||
+            change.charactersRevision < changes[index - 1].charactersRevision ||
+            Date.parse(change.committedAt) < Date.parse(changes[index - 1].committedAt))
+      ) ||
+      changes.at(-1).sceneRevision !== head.campaign.sceneRevision ||
+      changes.at(-1).charactersRevision !== head.campaign.charactersRevision
+    )
+      throw new CloudError(
+        503,
+        'invalid-change-history',
+        'The committed revision sequence could not be verified'
+      );
+    if (Date.parse(changes[0].committedAt) <= now - CHANGE_HISTORY_MAX_AGE_MS)
+      return { ...result, resync: 'history-expired' };
+    return { ...result, changes };
+  }
+
+  async readCommittedChanges(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).length !== 1 ||
+      !Object.hasOwn(command, 'afterGeneration') ||
+      !isCloudAccessGeneration(command.afterGeneration)
+    )
+      throw new CloudError(400, 'invalid-change-request', 'Choose an explicit committed revision');
+    const afterGeneration = command.afterGeneration;
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const head = await this._metadata(
+          await transaction.get(this.firestore.collection('campaigns').doc(id)),
+          uid
+        );
+        return this._committedChanges(transaction, id, head, afterGeneration);
+      },
+      { readOnly: true }
+    );
+  }
+
+  async runChangeMaintenance(principal, id, expected = null) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const scope = this._accessExpectation(expected);
+    const reference = this.firestore.collection('campaigns').doc(id);
+    const { FieldValue } = require('firebase-admin/firestore');
+    return this._transaction(async (transaction) => {
+      if (scope === null) await this.access.assertEligibility(uid, transaction);
+      else {
+        const grant = await this._participantGrant(transaction, uid, id, scope);
+        if (grant.access.role !== 'member') throw unavailableCampaign();
+      }
+      const saved = await transaction.get(reference);
+      const head = await this._metadata(saved, scope === null ? uid : saved.data().ownerUid);
+      const floorReference = this._changeHistoryReference(id);
+      const floorSnapshot = await transaction.get(floorReference);
+      const floor = this._changeHistoryFloor(floorSnapshot, id, head);
+      const rows = await transaction.get(
+        reference
+          .collection('changes')
+          .orderBy('generation', 'asc')
+          .limit(CHANGE_HISTORY_PRUNE_BATCH)
+      );
+      const countFloor = Math.max(1, head.generation - CHANGE_HISTORY_RETAIN + 1);
+      const cutoff = this._changeHistoryTime() - CHANGE_HISTORY_MAX_AGE_MS;
+      const retired = [];
+      let next = floor;
+      let time = -Infinity;
+      for (const snapshot of rows.docs) {
+        const change = this._committedChange(snapshot, head);
+        if (next === 1 && change.generation === 2 && !floorSnapshot.exists) next = 2;
+        if (change.generation !== next || Date.parse(change.committedAt) < time)
+          throw new CloudError(
+            503,
+            'invalid-change-history',
+            'The retiring change sequence could not be verified'
+          );
+        if (change.generation >= countFloor && Date.parse(change.committedAt) > cutoff) break;
+        retired.push(snapshot.ref);
+        next++;
+        time = Date.parse(change.committedAt);
+      }
+      if (!retired.length) return { removed: 0, retainedFrom: floor };
+      for (const row of retired) transaction.delete(row);
+      transaction.set(floorReference, {
+        version: 1,
+        campaignId: id,
+        prunedThrough: next - 1,
+        lastPrunedAt: FieldValue.serverTimestamp(),
+      });
+      return { removed: retired.length, retainedFrom: next };
     });
   }
 
@@ -3890,7 +4133,13 @@ class CloudCampaignStore {
     };
   }
 
-  async readParticipantSnapshot(principal, id, command, expected) {
+  readParticipantSnapshot(principal, id, command, expected) {
+    return this._participantSnapshot(principal, id, command, expected, (head) =>
+      this._loadSnapshot(head)
+    );
+  }
+
+  async _participantSnapshot(principal, id, command, expected, loadSnapshot) {
     const scope = this._accessExpectation(expected);
     if (scope === null || scope.seatId === null || !isCloudParticipantRequest(command))
       throw new CloudError(
@@ -3920,7 +4169,7 @@ class CloudCampaignStore {
     );
     if (!this.resources)
       throw new CloudError(503, 'cloud-save-unavailable', 'Participant resources are unavailable');
-    const saved = await this._loadSnapshot(captured.head);
+    const saved = await loadSnapshot(captured.head);
     const { participantState } = require('./participant-state.js');
     const projected = await participantState({
       state: saved,
@@ -4013,6 +4262,31 @@ class CloudCampaignStore {
             'participant-state-changed',
             'The authorized world changed while preparing participant data'
           );
+      },
+      { readOnly: true }
+    );
+  }
+
+  observeParticipant(principal, id, command, expected, callbacks) {
+    const { ParticipantChanges } = require('./participant-changes.js');
+    this.participantChanges ??= new ParticipantChanges(this);
+    return this.participantChanges.subscribe(principal, id, command, expected, callbacks);
+  }
+
+  async _participantCommittedChanges(principal, id, command, scope, afterGeneration) {
+    return this._transaction(
+      async (transaction) => {
+        const admission = await this.requireLiveSession(
+          transaction,
+          principal,
+          id,
+          command.sessionId,
+          scope
+        );
+        if (admission.participant.access.role !== 'member') throw unavailableCampaign();
+        const saved = await transaction.get(this.firestore.collection('campaigns').doc(id));
+        const head = await this._metadata(saved, saved.data().ownerUid);
+        return this._committedChanges(transaction, id, head, afterGeneration);
       },
       { readOnly: true }
     );
