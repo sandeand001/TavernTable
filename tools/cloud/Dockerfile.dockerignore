@@ -9,6 +9,7 @@ tools/*
 !tools/host-resources.js
 !tools/http-body.js
 !tools/assigned-character-change.js
+!tools/published-maps.js
 !tools/cloud/
 tools/cloud/*
 !tools/cloud/admin-runtime.js
@@ -18,6 +19,7 @@ tools/cloud/*
 !tools/cloud/cloud-error.js
 !tools/cloud/cloud-http.js
 !tools/cloud/campaign-store.js
+!tools/cloud/participant-state.js
 !tools/cloud/usage-limits.js
 !tools/cloud/immutable-objects.js
 !tools/cloud/campaign-assets.js

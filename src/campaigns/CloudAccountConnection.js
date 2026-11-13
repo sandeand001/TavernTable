@@ -22,6 +22,11 @@ const invalidResponse = () =>
     'The cloud backend returned an invalid response. No local storage fallback was selected.'
   );
 const denialCodes = new Set([
+  'invalid-participant-request',
+  'invalid-participant-state',
+  'participant-view-forbidden',
+  'participant-view-changed',
+  'participant-state-changed',
   'invalid-live-session',
   'invalid-live-presence',
   'invalid-assigned-state',
@@ -127,6 +132,11 @@ const denialCodes = new Set([
   'account-request-failed',
 ]);
 const denialMessages = new Map([
+  ['invalid-participant-request', 'Choose the current live session and assigned observer.'],
+  ['invalid-participant-state', 'The authorized participant checkpoint could not be verified.'],
+  ['participant-view-forbidden', 'This area or observer is not currently authorized.'],
+  ['participant-view-changed', 'The authorized view changed. Refresh its current manifest.'],
+  ['participant-state-changed', 'The world changed while loading. Refresh its authorized state.'],
   [
     'invalid-live-session',
     'The live-game state could not be verified. No local or combat-turn fallback was selected.',
@@ -491,7 +501,10 @@ export default class CloudAccountConnection {
             resource === `campaigns/${accessScope.campaignId}/participant-access`) ||
           (['GET', 'POST'].includes(method) &&
             accessScope.role === 'member' &&
-            resource === `campaigns/${accessScope.campaignId}/assigned-characters`)
+            resource === `campaigns/${accessScope.campaignId}/assigned-characters`) ||
+          (method === 'POST' &&
+            accessScope.role === 'member' &&
+            resource === `campaigns/${accessScope.campaignId}/participant-state`)
         ))
     )
       throw requestError(

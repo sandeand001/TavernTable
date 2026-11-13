@@ -90,12 +90,23 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     resourceBytes += bytes.length;
   }
   const resources = new HostResources({ root: process.cwd(), manifest });
+  const { participantState } = require('./tools/cloud/participant-state.js');
   for (const ruleset of ['2014', '2024']) {
-    await resources.catalog({
+    const catalog = await resources.catalog({
       ruleset,
       sourcePacks: manifest.packs.filter(pack => pack.ruleset === ruleset && pack.core)
         .map(pack => ({ id: pack.id, version: pack.version, ruleset, enabled: true })),
     });
+    const campaign = { id: '11111111-1111-4111-8111-111111111111', ruleset };
+    const projection = await participantState({
+      state: {
+        campaign, revision: 0, records: [], scene: null, sceneRevision: 0, sceneSavedAt: null,
+      },
+      campaign, catalog, characterIds: [], images: [],
+      options: { observerTokenId: null, mapId: null, assetKey: null },
+    });
+    assert.deepEqual(projection.state.publicScene.actors, []);
+    assert.deepEqual(projection.state.records, []);
   }
   const image = await sharp({ create: {
     width: 4000, height: 4000, channels: 4, background: '#112233',
@@ -113,6 +124,8 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/cloud/admin-runtime.js', 'tools/cloud/production-runtime.js', 'tools/cloud/production-host.js',
     'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'tools/cloud/usage-limits.js',
     'tools/assigned-character-change.js',
+    'tools/published-maps.js', 'tools/cloud/participant-state.js',
+    'src/campaigns/CloudParticipantProtocol.js',
     'src/campaigns/CloudProtocol.js',
   ]) {
     runtimeHashes[file] = createHash('sha256').update(fs.readFileSync(file)).digest('hex');

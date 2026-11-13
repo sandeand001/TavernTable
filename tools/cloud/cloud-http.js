@@ -51,6 +51,18 @@ async function opportunisticAssignedBackupWork(store, principal, id, scope) {
   }
 }
 
+function sendAsset(response, asset, headers) {
+  response.writeHead(200, {
+    'Content-Type': asset.reference.mimeType,
+    'Content-Length': asset.bytes.length,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+    Vary: 'Origin',
+    ...headers,
+  });
+  response.end(asset.bytes);
+}
+
 async function streamBackup(response, id, text, headers) {
   const bytes = Buffer.byteLength(text, 'utf8');
   const sha256 = createHash('sha256').update(text, 'utf8').digest('hex');
@@ -230,7 +242,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (
@@ -245,6 +257,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       return false;
     const subject = account ? 'account' : 'campaign';
     const snapshot = campaign?.[2];
+    const participantAsset = snapshot?.startsWith('participant-assets/');
     const retainedFile =
       snapshot?.startsWith('backups/') && isCloudUUID(snapshot.slice('backups/'.length));
     const largeFile = snapshot === 'backup' || retainedFile || importAction?.[2] === 'finish';
@@ -265,6 +278,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       redeem ||
       importStart ||
       Boolean(importAction) ||
+      participantAsset ||
       [
         'invitations',
         'invitations/revoke',
@@ -272,6 +286,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         'assignments',
         'assets',
         'backups/work',
+        'participant-state',
         'live/access',
       ].includes(snapshot);
     const writable =
@@ -294,6 +309,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot === 'settings') operation = 'campaign.settings';
+    else if (snapshot === 'participant-state') operation = 'campaign.participant.read';
+    else if (participantAsset) operation = 'campaign.participant.asset';
     else if (['live', 'live/access', 'live/status'].includes(snapshot)) operation = 'campaign.live';
     else if (snapshot === 'backup') operation = 'campaign.backup.export';
     else if (snapshot?.startsWith('backups')) operation = 'campaign.' + snapshot.replace('/', '.');
@@ -383,6 +400,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         expectedAccess !== null &&
         snapshot !== 'participant-access' &&
         snapshot !== 'assigned-characters' &&
+        snapshot !== 'participant-state' &&
+        !participantAsset &&
         !snapshot?.startsWith('assets/')
       )
         throw new CloudError(
@@ -447,6 +466,23 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
                 )
               : await store.readAssignedCharacters(principal, campaign[1], expectedAccess);
           await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
+        } else if (snapshot === 'participant-state') {
+          result = await store.readParticipantSnapshot(
+            principal,
+            campaign[1],
+            await requestJSON(request),
+            expectedAccess
+          );
+        } else if (participantAsset) {
+          const asset = await store.readParticipantAsset(
+            principal,
+            campaign[1],
+            snapshot.slice('participant-assets/'.length),
+            await requestJSON(request),
+            expectedAccess
+          );
+          sendAsset(response, asset, headers);
+          return true;
         } else if (snapshot === 'live') {
           result =
             request.method === 'POST'
@@ -509,15 +545,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             snapshot.slice('assets/'.length),
             assetScope
           );
-          response.writeHead(200, {
-            'Content-Type': asset.reference.mimeType,
-            'Content-Length': asset.bytes.length,
-            'Cache-Control': 'private, no-store',
-            'X-Content-Type-Options': 'nosniff',
-            Vary: 'Origin',
-            ...headers,
-          });
-          response.end(asset.bytes);
+          sendAsset(response, asset, headers);
           return true;
         } else if (snapshot === 'scene') {
           result =

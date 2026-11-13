@@ -29,6 +29,12 @@ const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
 const { cloudApi } = require('./helpers/http.js');
 const { sceneState } = require('../helpers/sceneState.js');
+const { participantDelta } = require('../../tools/cloud/participant-state.js');
+const { applyCloudParticipantDelta } = require('../../src/campaigns/CloudParticipantProtocol.js');
+const {
+  createStructure,
+  structureVolumes,
+} = require('../../src/terrain/ConstructionBlueprints.js');
 
 async function fixture(t, { now, withAssets = false } = {}) {
   const runtime = await createEmulatorRuntime();
@@ -164,6 +170,800 @@ function invitation(name = 'Invited player', seatId = null) {
     },
   };
 }
+
+test(
+  'a live participant checkpoint contains only authorized rendering and assigned sheets with private image references',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t, { withAssets: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Participant projection tracer');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const catalog = await f.resources.catalog(campaign);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog,
+      store: ownerClient,
+    });
+    const hero = await library.create('Authorized observer');
+    const npc = await library.create('PRIVATE UNPLACED NPC');
+    await library.edit(npc, { notes: 'PRIVATE UNASSIGNED SHEET NOTE' });
+    const bytes = createCanvas(2, 2).toBuffer('image/png');
+    await library.edit(hero, {
+      portraitImage: 'data:image/png;base64,' + bytes.toString('base64'),
+    });
+    const validation = { ruleset: '2014', library };
+    const scene = CampaignWorld.fromScene(
+      sceneState({ characterId: hero, name: 'Authorized observer' }),
+      validation
+    ).save();
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: library.revision,
+      scene: encodeScene(scene, validation),
+    });
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const before = (await head.get()).data();
+    const snapshot = await memberClient.readParticipantSnapshot(
+      campaign.id,
+      { sessionId: live.sessionId, observerTokenId: 'token-1', mapId: 'map-main', assetKey: null },
+      grant.access
+    );
+    assert.deepEqual(snapshot.access, grant.access);
+    assert.equal(snapshot.sessionId, live.sessionId);
+    assert.equal(snapshot.generation, before.generation);
+    assert.equal(snapshot.state.scene, null);
+    assert.equal(snapshot.state.observerTokenId, 'token-1');
+    assert.ok(snapshot.state.records.every((row) => row.key.endsWith(hero)));
+    assert.deepEqual(
+      snapshot.state.publicScene.actors.map((actor) => actor.id),
+      ['token-1']
+    );
+    assert.ok(snapshot.state.publicScene.assets.maps.length > 0);
+    assert.ok(
+      snapshot.manifest.images.some(
+        (image) => image.reference.sha256 === createHash('sha256').update(bytes).digest('hex')
+      )
+    );
+    const encoded = JSON.stringify(snapshot);
+    for (const secret of [
+      'PRIVATE UNPLACED NPC',
+      'PRIVATE UNASSIGNED SHEET NOTE',
+      'base64,',
+      'ownerUid',
+      'charactersRef',
+      'sceneRef',
+      'terrainKey',
+    ])
+      assert.ok(!encoded.includes(secret), secret + ' must not be in the participant checkpoint');
+    const request = {
+      sessionId: live.sessionId,
+      observerTokenId: 'token-1',
+      mapId: 'map-main',
+      assetKey: null,
+    };
+    const cachedAssets = snapshot.state.publicScene.assets;
+    const warm = await memberClient.readParticipantSnapshot(
+      campaign.id,
+      { ...request, assetKey: snapshot.state.publicScene.assetKey },
+      grant.access,
+      { cachedAssets }
+    );
+    assert.equal(warm.state.publicScene.assets, null);
+    assert.equal(warm.viewKey, snapshot.viewKey);
+    const cleared = await memberClient.readParticipantSnapshot(
+      campaign.id,
+      {
+        ...request,
+        observerTokenId: null,
+        mapId: null,
+        assetKey: snapshot.state.publicScene.assetKey,
+      },
+      grant.access,
+      { cachedAssets }
+    );
+    assert.equal(cleared.state.publicScene.assetKey, null);
+    assert.deepEqual(cleared.state.publicScene.actors, []);
+    assert.deepEqual(cleared.state.maps, []);
+    assert.notEqual(cleared.viewKey, snapshot.viewKey);
+    let response;
+    const corrupted = f.client(member, api, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ version: 1, result: response }),
+    }));
+    const malformed = [
+      (value) => {
+        value.sceneRef = 'PRIVATE CANONICAL REFERENCE';
+      },
+      (value) => {
+        value.state.profile = { session: 'PRIVATE SESSION' };
+      },
+      (value) => {
+        value.state.campaign.ownerUid = owner.uid;
+      },
+      (value) => {
+        value.access.uid = 'another-uid';
+      },
+      (value) => {
+        value.state.records.push({
+          key: `taverntable.character.v1.${npc}`,
+          value: JSON.stringify(library.get(npc)),
+        });
+      },
+      (value) => {
+        value.manifest.images[0].id = npc;
+      },
+      (value) => {
+        value.state.publicScene.assets.maps[0].terrain.heights[0][0] = 1;
+      },
+    ];
+    for (const mutate of malformed) {
+      response = structuredClone(snapshot);
+      mutate(response);
+      await assert.rejects(corrupted.readParticipantSnapshot(campaign.id, request, grant.access), {
+        code: 'invalid-cloud-response',
+      });
+    }
+    assert.equal(corrupted.pending, null);
+    corrupted.close();
+    assert.deepEqual((await head.get()).data(), before);
+    assert.deepEqual(await ownerClient.getLiveSession(campaign.id), live);
+  }
+);
+
+test(
+  'participant checkpoints require current membership, scope and live epoch rather than another campaign ownership or a forged view',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const unrelated = await f.account();
+    await f.create(unrelated.principal, 'Unrelated owner is not a global DM');
+    const campaign = await f.create(owner.principal, 'Current participant admission');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: ownerClient,
+    });
+    const hero = await library.create('Admission observer');
+    const validation = { ruleset: '2014', library };
+    const scene = CampaignWorld.fromScene(
+      sceneState({ characterId: hero, name: 'Admission observer' }),
+      validation
+    ).save();
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: library.revision,
+      scene: encodeScene(scene, validation),
+    });
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    const request = {
+      sessionId: randomUUID(),
+      observerTokenId: 'token-1',
+      mapId: 'map-main',
+      assetKey: null,
+    };
+    await assert.rejects(memberClient.readParticipantSnapshot(campaign.id, request, grant.access), {
+      code: 'live-session-paused',
+    });
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    request.sessionId = live.sessionId;
+    await assert.rejects(
+      f
+        .client(unrelated, api)
+        .readParticipantSnapshot(campaign.id, request, { ...grant.access, uid: unrelated.uid }),
+      { code: 'campaign-not-found' }
+    );
+    await assert.rejects(
+      memberClient.readParticipantSnapshot(campaign.id, request, {
+        ...grant.access,
+        accessGeneration: 0,
+      }),
+      { code: 'campaign-access-changed' }
+    );
+    await assert.rejects(
+      memberClient.readParticipantSnapshot(
+        campaign.id,
+        { ...request, observerTokenId: 'unassigned-token' },
+        grant.access
+      ),
+      { code: 'participant-view-forbidden' }
+    );
+    await assert.rejects(
+      memberClient.readParticipantSnapshot(
+        campaign.id,
+        { ...request, ownerUid: owner.uid },
+        grant.access
+      ),
+      { code: 'invalid-participant-request' }
+    );
+    await ownerClient.controlLiveSession(campaign.id, 'end', live);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    await assert.rejects(memberClient.readParticipantSnapshot(campaign.id, request, grant.access), {
+      code: 'live-session-changed',
+    });
+    assert.equal(memberClient.pending, null);
+  }
+);
+
+test(
+  'participant rendering uses one assigned observer without exposing closed rooms, inactive observer locations or construction notes',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Closed participant rooms');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const catalog = await f.resources.catalog(campaign);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog,
+      store: ownerClient,
+    });
+    const ids = [];
+    for (const name of ['Outside hero', 'Inside hero', 'PRIVATE ROOM NPC'])
+      ids.push(await library.create(name));
+    await library.edit(ids[2], { notes: 'PRIVATE ROOM SHEET' });
+    const scene = createTwoFloorTravelScene({
+      ruleset: '2014',
+      characters: ids.map((id) => library.get(id)),
+    });
+    scene.maps[1].name = 'PRIVATE CLOSED GROUND ROOM';
+    scene.maps[2].name = 'PRIVATE CLOSED UPPER ROOM';
+    scene.connections[0].open = false;
+    const wall = createStructure({
+      id: 'public-wall',
+      kind: 'wall',
+      name: 'PRIVATE AUTHORING NOTES',
+      xFeet: 5,
+      zFeet: 5,
+      heightFeet: 5,
+      lengthFeet: 5,
+      widthFeet: 1,
+    });
+    const geometry = scene.maps[0].terrain.geometry;
+    geometry.version = 3;
+    geometry.structures = [wall];
+    geometry.volumes.push(...structureVolumes(wall));
+    const distant = structuredClone(scene.maps[1]);
+    distant.id = 'unrelated-secret-map';
+    distant.name = 'PRIVATE UNRELATED MAP';
+    distant.originFeet = { x: 98765.125, y: 0, z: 87654.375 };
+    scene.maps.push(distant);
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: library.revision,
+      scene: encodeScene(scene, { ruleset: '2014', library }),
+    });
+    let generation = 0;
+    for (const characterId of ids.slice(0, 2)) {
+      const assigned = await ownerClient.assignCharacter(campaign.id, {
+        seatId,
+        characterId,
+        assigned: true,
+        accessGeneration: generation,
+      });
+      generation = assigned.accessGeneration;
+    }
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    const snapshot = await f.store.readParticipantSnapshot(
+      member.principal,
+      campaign.id,
+      { sessionId: live.sessionId, observerTokenId: 'token-1', mapId: 'map-main', assetKey: null },
+      { seatId, accessGeneration: grant.access.accessGeneration }
+    );
+    const encoded = JSON.stringify(snapshot);
+    for (const hidden of [
+      'PRIVATE CLOSED GROUND ROOM',
+      'PRIVATE CLOSED UPPER ROOM',
+      'PRIVATE ROOM NPC',
+      'PRIVATE ROOM SHEET',
+      'PRIVATE AUTHORING NOTES',
+      'PRIVATE UNRELATED MAP',
+      '98765.125',
+      '87654.375',
+    ])
+      assert.ok(
+        !encoded.includes(hidden),
+        hidden + ' must not be in the active observer checkpoint'
+      );
+    assert.deepEqual(
+      snapshot.state.publicScene.actors.map((actor) => actor.id),
+      ['token-1']
+    );
+    assert.deepEqual(
+      snapshot.state.gameplay.ownedTokens.map((actor) => actor.tokenId),
+      ['token-1']
+    );
+    assert.ok(
+      snapshot.state.publicScene.assets.maps.every((map) => !map.terrain.geometry.structures)
+    );
+    assert.ok(snapshot.state.publicScene.assets.maps[0].terrain.geometry.volumes.length > 0);
+    assert.equal(snapshot.state.observers.length, 2);
+  }
+);
+
+test(
+  'visible NPC images use the current observer grant without exposing NPC sheets and revocation during download denies delivery',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t, { withAssets: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Visible participant images');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const catalog = await f.resources.catalog(campaign);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog,
+      store: ownerClient,
+    });
+    const hero = await library.create('Image observer');
+    const npc = await library.create('Visible guide');
+    const canvas = createCanvas(2, 2);
+    const context = canvas.getContext('2d');
+    context.fillStyle = 'red';
+    context.fillRect(0, 0, 2, 2);
+    const bytes = canvas.toBuffer('image/png');
+    await library.edit(npc, {
+      portraitImage: 'data:image/png;base64,' + bytes.toString('base64'),
+      notes: 'PRIVATE VISIBLE NPC SHEET',
+    });
+    const raw = sceneState({ characterId: hero, name: 'Image observer' });
+    raw.terrain.heights = raw.terrain.heights.map((row) => row.map(() => 0));
+    const other = structuredClone(raw.creatures[0]);
+    Object.assign(other, {
+      id: 'token-2',
+      instanceNumber: 2,
+      characterId: npc,
+      name: 'Visible guide',
+      gridX: 3,
+      pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+    });
+    raw.creatures.push(other);
+    raw.tokenCounters = { nextId: 2, types: [[other.type, 2]] };
+    const validation = { ruleset: '2014', library };
+    const scene = CampaignWorld.fromScene(raw, validation).save();
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: library.revision,
+      scene: encodeScene(scene, validation),
+    });
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    const scope = { seatId, accessGeneration: grant.access.accessGeneration };
+    const view = {
+      sessionId: live.sessionId,
+      observerTokenId: 'token-1',
+      mapId: 'map-main',
+      assetKey: null,
+    };
+    const snapshot = await f.store.readParticipantSnapshot(
+      member.principal,
+      campaign.id,
+      view,
+      scope
+    );
+    const visible = snapshot.state.publicScene.actors.find((actor) => actor.id === 'token-2');
+    assert.equal(visible.owned, false);
+    assert.equal(visible.characterId, null);
+    assert.equal(visible.portraitImage, null);
+    assert.equal(visible.budget, undefined);
+    assert.ok(!JSON.stringify(snapshot).includes('PRIVATE VISIBLE NPC SHEET'));
+    assert.ok(!snapshot.state.records.some((row) => row.key.endsWith(npc)));
+    assert.deepEqual(
+      snapshot.state.gameplay.ownedTokens.map((actor) => actor.tokenId),
+      ['token-1']
+    );
+    const slot = snapshot.manifest.images.find(
+      (image) => image.source === 'actor' && image.id === 'token-2'
+    );
+    assert.ok(slot);
+    const imageRequest = { ...view, viewKey: snapshot.viewKey };
+    const imageResponse = await fetch(
+      `${api.url}/api/cloud/campaigns/${campaign.id}/participant-assets/${slot.reference.sha256}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + member.token,
+          Origin: api.origin,
+          'Content-Type': 'application/json',
+          'X-TavernTable-Seat': scope.seatId,
+          'X-TavernTable-Access-Generation': String(scope.accessGeneration),
+        },
+        body: JSON.stringify(imageRequest),
+      }
+    );
+    assert.equal(imageResponse.status, 200);
+    assert.equal(imageResponse.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await imageResponse.arrayBuffer()), bytes);
+    await assert.rejects(
+      f.store.readParticipantAsset(
+        member.principal,
+        campaign.id,
+        slot.reference.sha256,
+        { ...imageRequest, viewKey: '0'.repeat(64) },
+        scope
+      ),
+      { code: 'participant-view-changed' }
+    );
+    await assert.rejects(
+      f.store.readParticipantAsset(
+        member.principal,
+        campaign.id,
+        slot.reference.sha256,
+        { ...imageRequest, observerTokenId: 'token-2' },
+        scope
+      ),
+      { code: 'participant-view-forbidden' }
+    );
+    const originalFile = f.runtime.bucket.file;
+    let entered;
+    let release;
+    let hold = true;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise((resolve) => {
+      entered = resolve;
+    });
+    f.runtime.bucket.file = function (...args) {
+      const file = originalFile.apply(this, args);
+      if (args[0] === `campaigns/${campaign.id}/assets/${slot.reference.sha256}.bin`) {
+        const download = file.download.bind(file);
+        file.download = async (...values) => {
+          const result = await download(...values);
+          if (hold) {
+            hold = false;
+            entered();
+            await gate;
+          }
+          return result;
+        };
+      }
+      return file;
+    };
+    t.after(() => {
+      release();
+      f.runtime.bucket.file = originalFile;
+    });
+    const pending = f.store
+      .readParticipantAsset(
+        member.principal,
+        campaign.id,
+        slot.reference.sha256,
+        imageRequest,
+        scope
+      )
+      .then(
+        (value) => ({ value }),
+        (error) => ({ error })
+      );
+    await started;
+    await ownerClient.removeMember(campaign.id, {
+      seatId,
+      accessGeneration: scope.accessGeneration,
+    });
+    release();
+    assert.equal((await pending).error?.code, 'campaign-not-found');
+  }
+);
+
+test(
+  'participant deltas apply only to their captured revision and replace revoked views without replaying or retaining hidden actors',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Participant delta contract');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const catalog = await f.resources.catalog(campaign);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog,
+      store: ownerClient,
+    });
+    const hero = await library.create('Delta observer');
+    const npc = await library.create('Revealed guide');
+    await library.edit(npc, { notes: 'PRIVATE DELTA NPC NOTE' });
+    const raw = sceneState({ characterId: hero, name: 'Delta observer' });
+    raw.terrain.heights = raw.terrain.heights.map((row) => row.map(() => 0));
+    const other = structuredClone(raw.creatures[0]);
+    Object.assign(other, {
+      id: 'token-2',
+      instanceNumber: 2,
+      characterId: npc,
+      name: 'Revealed guide',
+      gridX: 3,
+      pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+    });
+    raw.creatures.push(other);
+    raw.tokenCounters = { nextId: 2, types: [[other.type, 2]] };
+    const validation = { ruleset: '2014', library };
+    const initial = CampaignWorld.fromScene(raw, validation).save();
+    let revision = 0;
+    const save = async (scene) => {
+      const receipt = await ownerClient.commitScene(campaign.id, {
+        ruleset: '2014',
+        revision,
+        charactersRevision: library.revision,
+        scene: encodeScene(scene, validation),
+      });
+      revision = receipt.revision;
+    };
+    await save(initial);
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    const request = {
+      sessionId: live.sessionId,
+      observerTokenId: 'token-1',
+      mapId: 'map-main',
+      assetKey: null,
+    };
+    const before = await memberClient.readParticipantSnapshot(campaign.id, request, grant.access);
+    const moved = structuredClone(initial);
+    moved.creatures[0].gridY = 2;
+    moved.creatures[0].pose.world.z = 2.5;
+    await save(moved);
+    const cachedAssets = before.state.publicScene.assets;
+    const current = await memberClient.readParticipantSnapshot(
+      campaign.id,
+      { ...request, assetKey: before.state.publicScene.assetKey },
+      grant.access,
+      { cachedAssets }
+    );
+    const delta = participantDelta(before, current);
+    assert.equal(delta.kind, 'update');
+    assert.equal(delta.changes.actors.upserts.length, 1);
+    assert.equal(delta.changes.records.upserts.length, 0);
+    const applied = applyCloudParticipantDelta(before, delta);
+    assert.deepEqual(applied.state.publicScene.actors, current.state.publicScene.actors);
+    assert.equal(applied.generation, current.generation);
+    assert.equal(before.state.publicScene.actors[0].gridY, 1);
+    assert.throws(() => applyCloudParticipantDelta(applied, delta), {
+      code: 'participant-delta-gap',
+    });
+    const skipped = { ...delta, generation: delta.generation + 1 };
+    assert.throws(() => applyCloudParticipantDelta(before, skipped), {
+      code: 'participant-delta-gap',
+    });
+    const privateMetadata = structuredClone(delta);
+    privateMetadata.changes.campaign.ownerUid = owner.uid;
+    assert.throws(() => applyCloudParticipantDelta(before, privateMetadata), {
+      code: 'invalid-cloud-participant',
+    });
+    const privateBudget = structuredClone(delta);
+    privateBudget.changes.actors.upserts[0].budget = { action: 'PRIVATE NPC BUDGET' };
+    assert.throws(() => applyCloudParticipantDelta(before, privateBudget), {
+      code: 'invalid-player-state',
+    });
+    const hiddenSheet = structuredClone(delta);
+    hiddenSheet.changes.records.upserts.push({
+      key: `taverntable.character.v1.${npc}`,
+      value: JSON.stringify(library.get(npc)),
+    });
+    assert.throws(() => applyCloudParticipantDelta(before, hiddenSheet), {
+      code: 'invalid-cloud-participant',
+    });
+    assert.throws(
+      () =>
+        participantDelta(before, { ...current, access: { ...current.access, uid: 'foreign-uid' } }),
+      { code: 'campaign-access-changed' }
+    );
+    const concealed = structuredClone(moved);
+    concealed.creatures = concealed.creatures.filter((actor) => actor.id !== 'token-2');
+    await save(concealed);
+    const final = await memberClient.readParticipantSnapshot(campaign.id, request, grant.access);
+    const replacement = participantDelta(current, final, { cachedAssets });
+    assert.equal(replacement.kind, 'replace');
+    assert.ok(!JSON.stringify(replacement).includes('Revealed guide'));
+    assert.ok(!JSON.stringify(replacement).includes('PRIVATE DELTA NPC NOTE'));
+    const reconciled = applyCloudParticipantDelta(applied, replacement);
+    assert.deepEqual(
+      reconciled.state.publicScene.actors.map((actor) => actor.id),
+      ['token-1']
+    );
+    assert.deepEqual(reconciled.state.publicScene.updates, []);
+  }
+);
+
+for (const change of ['membership', 'live pause', 'canonical head'])
+  test(
+    `participant checkpoint delivery rejects a ${change} change after actual Storage reads`,
+    { timeout: 30000 },
+    async (t) => {
+      const f = await fixture(t);
+      const owner = await f.account();
+      const member = await f.account();
+      const campaign = await f.create(owner.principal, 'Participant read admission fence');
+      const seatId = await f.join(campaign.id, member.uid);
+      const api = await cloudApi({ access: f.access, store: f.store });
+      t.after(() => api.close());
+      const ownerClient = f.client(owner, api);
+      const memberClient = f.client(member, api);
+      const library = await CampaignCharacters.open({
+        campaignId: campaign.id,
+        catalog: await f.resources.catalog(campaign),
+        store: ownerClient,
+      });
+      const hero = await library.create('In-flight observer');
+      const validation = { ruleset: '2014', library };
+      const scene = CampaignWorld.fromScene(
+        sceneState({ characterId: hero, name: 'In-flight observer' }),
+        validation
+      ).save();
+      await ownerClient.commitScene(campaign.id, {
+        ruleset: '2014',
+        revision: 0,
+        charactersRevision: library.revision,
+        scene: encodeScene(scene, validation),
+      });
+      await ownerClient.assignCharacter(campaign.id, {
+        seatId,
+        characterId: hero,
+        assigned: true,
+        accessGeneration: 0,
+      });
+      const grant = await memberClient.getParticipantAccess(campaign.id);
+      await ownerClient.controlLiveSession(
+        campaign.id,
+        'start',
+        await ownerClient.getLiveSession(campaign.id)
+      );
+      const live = await ownerClient.getLiveSession(campaign.id);
+      const head = await f.runtime.firestore.collection('campaigns').doc(campaign.id).get();
+      const originalFile = f.runtime.bucket.file;
+      let entered;
+      let release;
+      let hold = true;
+      const started = new Promise((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise((resolve) => {
+        release = resolve;
+      });
+      f.runtime.bucket.file = function (...args) {
+        const file = originalFile.apply(this, args);
+        if (args[0] === head.data().charactersRef.path) {
+          const download = file.download.bind(file);
+          file.download = async (...values) => {
+            const result = await download(...values);
+            if (hold) {
+              hold = false;
+              entered();
+              await gate;
+            }
+            return result;
+          };
+        }
+        return file;
+      };
+      t.after(() => {
+        release();
+        f.runtime.bucket.file = originalFile;
+      });
+      const pending = memberClient
+        .readParticipantSnapshot(
+          campaign.id,
+          {
+            sessionId: live.sessionId,
+            observerTokenId: 'token-1',
+            mapId: 'map-main',
+            assetKey: null,
+          },
+          grant.access
+        )
+        .then(
+          (value) => ({ value }),
+          (error) => ({ error })
+        );
+      await started;
+      if (change === 'membership')
+        await ownerClient.removeMember(campaign.id, {
+          seatId,
+          accessGeneration: grant.access.accessGeneration,
+        });
+      else if (change === 'live pause')
+        await ownerClient.controlLiveSession(campaign.id, 'end', live);
+      else await library.edit(hero, { notes: 'Newer accepted canonical content' });
+      release();
+      assert.equal(
+        (await pending).error?.code,
+        change === 'membership'
+          ? 'campaign-not-found'
+          : change === 'live pause'
+            ? 'live-session-paused'
+            : 'participant-state-changed'
+      );
+      assert.equal(memberClient.pending, null);
+    }
+  );
 
 test(
   'paused members read only their assigned sheets through current account scope without receiving world state',

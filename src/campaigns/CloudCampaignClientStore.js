@@ -12,6 +12,7 @@ import {
   isCloudParticipantAccess,
   isCloudAssignedCharacterState,
   isCloudAssignedCharacterReceipt,
+  isCloudParticipantRequest,
   isCloudAccessGeneration,
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
@@ -823,6 +824,63 @@ export default class CloudCampaignClientStore {
     )
       throw invalidResponse();
     return { ...copy(result), campaign };
+  }
+
+  async readParticipantSnapshot(id, view, expected, { cachedAssets = null } = {}) {
+    if (
+      !isCloudAccessScope(expected) ||
+      expected.uid !== this.uid ||
+      expected.campaignId !== id ||
+      expected.role !== 'member'
+    )
+      throw failure(400, 'invalid-access-scope', 'Choose current player access before joining.');
+    if (!isCloudParticipantRequest(view) || (view.assetKey !== null && cachedAssets === null))
+      throw failure(
+        400,
+        'invalid-participant-request',
+        'Choose a current live view and its verified cache.'
+      );
+    const scope = copy(expected);
+    const input = copy(view);
+    const result = await this._call(this._resource(id, '/participant-state'), {
+      method: 'POST',
+      body: input,
+      accessScope: scope,
+    });
+    const { validateCloudParticipantSnapshot } = await import('./CloudParticipantProtocol.js');
+    try {
+      validateCloudParticipantSnapshot(result, { cachedAssets });
+    } catch (error) {
+      if (
+        error.code === 'invalid-cloud-participant' ||
+        error.code === 'invalid-player-state' ||
+        error?.constructor === Error ||
+        error instanceof SyntaxError
+      )
+        throw invalidResponse();
+      throw error;
+    }
+    if (
+      result.access.uid !== this.uid ||
+      result.access.campaignId !== id ||
+      result.access.seatId !== scope.seatId ||
+      result.access.accessGeneration !== scope.accessGeneration ||
+      result.sessionId !== input.sessionId
+    )
+      throw invalidResponse();
+    const assets =
+      result.state.publicScene.assetKey === null
+        ? null
+        : result.state.publicScene.assets || cachedAssets;
+    if (
+      assets &&
+      (await this._fileDigest(new TextEncoder().encode(JSON.stringify(assets)))) !==
+        result.state.publicScene.assetKey
+    )
+      throw invalidResponse();
+    const campaign = await this._metadata(result.state.campaign, id);
+    this._identity();
+    return { ...copy(result), state: { ...copy(result.state), campaign } };
   }
 
   commitAssignedCharacters(id, change, expected) {

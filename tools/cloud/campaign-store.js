@@ -44,6 +44,8 @@ const {
   isCloudBackupRecord,
   isCloudLiveSession,
   isCloudAssignedCharacterReceipt,
+  isCloudParticipantRequest,
+  isCloudParticipantAssetRequest,
   cloudLiveStatus,
   CLOUD_LIVE_INACTIVITY_MS,
   CLOUD_LIVE_DISCONNECT_GRACE_MS,
@@ -83,6 +85,18 @@ const participantSummary = (uid, summary, seat = null) => ({
   },
   campaign: summary.campaign,
   characterIds: seat === null ? [] : [...seat.characterIds],
+});
+const participantCampaign = (campaign) => ({
+  version: campaign.version,
+  id: campaign.id,
+  name: campaign.name,
+  ruleset: campaign.ruleset,
+  coreVersion: campaign.coreVersion,
+  sourcePacks: structuredClone(campaign.sourcePacks),
+  createdAt: campaign.createdAt,
+  charactersRevision: campaign.charactersRevision,
+  sceneRevision: campaign.sceneRevision,
+  sceneSavedAt: campaign.sceneSavedAt,
 });
 function sceneActivityState(text) {
   if (text === null) return null;
@@ -631,12 +645,11 @@ class CloudCampaignStore {
     };
   }
 
-  async requireLiveSession(transaction, principal, id, sessionId) {
+  async requireLiveSession(transaction, principal, id, sessionId, expectedAccess = null) {
     const uid = principalUid(principal);
     if (!(sessionId === null || isCloudUUID(sessionId)))
       throw new CloudError(400, 'invalid-live-command', 'Choose the current live-game session');
-    await this.access.assertEligibility(uid, transaction);
-    const participant = await this._accessGrant(transaction, uid, id);
+    const participant = await this._participantGrant(transaction, uid, id, expectedAccess);
     const current = await this._liveSession(transaction, id);
     const presence = await this._livePresence(transaction, current);
     const now = Math.max(
@@ -3866,18 +3879,7 @@ class CloudCampaignStore {
       version: 1,
       access: captured.grant.access,
       characterIds: [...selected],
-      campaign: {
-        version: campaign.version,
-        id: campaign.id,
-        name: campaign.name,
-        ruleset: campaign.ruleset,
-        coreVersion: campaign.coreVersion,
-        sourcePacks: structuredClone(campaign.sourcePacks),
-        createdAt: campaign.createdAt,
-        charactersRevision: campaign.charactersRevision,
-        sceneRevision: campaign.sceneRevision,
-        sceneSavedAt: campaign.sceneSavedAt,
-      },
+      campaign: participantCampaign(campaign),
       revision: campaign.charactersRevision,
       records: records
         .filter((row) => selected.has(campaignRecordCharacterId(row.key)))
@@ -3886,6 +3888,167 @@ class CloudCampaignStore {
       sceneRevision: campaign.sceneRevision,
       sceneSavedAt: campaign.sceneSavedAt,
     };
+  }
+
+  async readParticipantSnapshot(principal, id, command, expected) {
+    const scope = this._accessExpectation(expected);
+    if (scope === null || scope.seatId === null || !isCloudParticipantRequest(command))
+      throw new CloudError(
+        400,
+        'invalid-participant-request',
+        'Choose an explicit current live session, assigned observer and authorized view'
+      );
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const input = structuredClone(command);
+    await this.getLiveSession(principal, id);
+    const reference = this.firestore.collection('campaigns').doc(id);
+    const captured = await this._transaction(
+      async (transaction) => {
+        const admission = await this.requireLiveSession(
+          transaction,
+          principal,
+          id,
+          input.sessionId,
+          scope
+        );
+        if (admission.participant.access.role !== 'member') throw unavailableCampaign();
+        const snapshot = await transaction.get(reference);
+        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
+        return { head, participant: admission.participant };
+      },
+      { readOnly: true }
+    );
+    if (!this.resources)
+      throw new CloudError(503, 'cloud-save-unavailable', 'Participant resources are unavailable');
+    const saved = await this._loadSnapshot(captured.head);
+    const { participantState } = require('./participant-state.js');
+    const projected = await participantState({
+      state: saved,
+      catalog: await this.resources.catalog(saved.campaign),
+      campaign: participantCampaign(saved.campaign),
+      characterIds: captured.participant.characterIds,
+      options: input,
+      images: this._imageEntries(saved.records),
+    });
+    const images = [];
+    for (const slot of projected.imageSlots) {
+      const snapshot = await reference.collection('assets').doc(slot.sha256).get();
+      const asset = snapshot.data();
+      if (
+        asset?.version !== 1 ||
+        asset.campaignId !== id ||
+        !isPrivateAssetReference(asset.reference, id) ||
+        asset.reference.sha256 !== slot.sha256 ||
+        asset.reference.mimeType !== slot.mimeType
+      )
+        throw new CloudError(
+          503,
+          'invalid-asset-record',
+          'The authorized image metadata could not be verified'
+        );
+      const { source, id: slotId, field } = slot;
+      images.push({ source, id: slotId, field, reference: structuredClone(asset.reference) });
+    }
+    await this._verifyParticipantRead(principal, id, input.sessionId, scope, {
+      generation: captured.head.generation,
+      characterIds: captured.participant.characterIds,
+    });
+    const checkpoint = {
+      version: 1,
+      access: captured.participant.access,
+      sessionId: input.sessionId,
+      generation: captured.head.generation,
+      viewKey: createHash('sha256')
+        .update(
+          stableStringify({
+            access: captured.participant.access,
+            sessionId: input.sessionId,
+            characterIds: captured.participant.characterIds,
+            observerTokenId: projected.state.observerTokenId,
+            presentation: projected.state.publicScene.presentation,
+            assetKey: projected.state.publicScene.assetKey,
+            actors: projected.state.publicScene.actors.map((actor) => actor.id).sort(),
+            images,
+          })
+        )
+        .digest('hex'),
+      state: projected.state,
+      manifest: { version: 1, images },
+    };
+    const {
+      validateCloudParticipantSnapshot,
+    } = require('../../src/campaigns/CloudParticipantProtocol.js');
+    try {
+      validateCloudParticipantSnapshot(checkpoint, { cachedAssets: projected.assets });
+    } catch (error) {
+      if (
+        ['invalid-cloud-participant', 'invalid-player-state'].includes(error?.code) ||
+        error?.constructor === Error ||
+        error instanceof SyntaxError
+      )
+        throw new CloudError(
+          503,
+          'invalid-participant-state',
+          'The authorized participant checkpoint could not be verified'
+        );
+      throw error;
+    }
+    return checkpoint;
+  }
+
+  async _verifyParticipantRead(principal, id, sessionId, scope, expected) {
+    await this._transaction(
+      async (transaction) => {
+        const current = await this.requireLiveSession(transaction, principal, id, sessionId, scope);
+        if (
+          current.participant.access.role !== 'member' ||
+          stableStringify(current.participant.characterIds) !==
+            stableStringify(expected.characterIds)
+        )
+          throw new CloudError(409, 'campaign-access-changed', 'Refresh current assigned access');
+        const head = await transaction.get(this.firestore.collection('campaigns').doc(id));
+        if (head.data()?.generation !== expected.generation)
+          throw new CloudError(
+            409,
+            'participant-state-changed',
+            'The authorized world changed while preparing participant data'
+          );
+      },
+      { readOnly: true }
+    );
+  }
+
+  async readParticipantAsset(principal, id, sha256, command, expected) {
+    const scope = this._accessExpectation(expected);
+    if (!isCloudDigest(sha256) || !isCloudParticipantAssetRequest(command))
+      throw new CloudError(
+        400,
+        'invalid-participant-request',
+        'Choose an explicit image and its current authorized view'
+      );
+    const { viewKey, ...view } = structuredClone(command);
+    const snapshot = await this.readParticipantSnapshot(principal, id, view, scope);
+    if (snapshot.viewKey !== viewKey)
+      throw new CloudError(
+        409,
+        'participant-view-changed',
+        'The authorized view changed; refresh its manifest before loading images'
+      );
+    const image = snapshot.manifest.images.find((slot) => slot.reference.sha256 === sha256);
+    if (!image)
+      throw new CloudError(404, 'asset-not-found', 'This authorized image is unavailable');
+    if (!this.assets)
+      throw new CloudError(
+        503,
+        'asset-storage-unavailable',
+        'Private image storage is unavailable'
+      );
+    const bytes = await this.assets.read(id, image.reference);
+    await this._verifyParticipantRead(principal, id, snapshot.sessionId, scope, {
+      generation: snapshot.generation,
+      characterIds: snapshot.state.characterIds,
+    });
+    return { reference: image.reference, bytes };
   }
 
   async listAccess(principal) {

@@ -2151,3 +2151,88 @@ world commands/motion, authorized cache reconciliation and drain/final-backup
 wires must pass their own M3/M4 gates before activation. Hosted scale-to-zero,
 representative load, cost and full website acceptance remain separate as well.
 The existing local Adapter and preserved original hosts/data remain unchanged.
+
+### M3-01: authorized participant checkpoint, manifest and delta contract
+
+The new managed participant HTTP interface admits only a verified current member
+with explicit seat/access generation and an active owner-started live epoch.
+It captures canonical state privately, rechecks eligibility/assignment/epoch/
+head after Storage work, and constructs an explicit public projection rather
+than deleting a few fields from a DM save. Both snapshot and image delivery deny
+revocation, owner pause or newer canonical state during actual IO.
+
+The existing public physical rendering policy remains authoritative: one assigned
+real observer, closed-room concealment, no combined sight from another owned
+creature/camera, and only permitted surfaces. Serialized checks cover closed-room
+and unrelated-map names/origins, construction authoring notes, private NPC rows/
+budgets, legacy terrain keys and canonical owner/object references.
+Assigned records and visible actors contain no embedded portrait/artwork bytes;
+typed image slots use verified immutable references. A visible NPC portrait can
+be downloaded through the current observer's manifest without obtaining its
+private character ID/sheet or broadening the existing assigned-image endpoint.
+An explicit no-observer checkpoint clears prior vision.
+
+Strict client/shared schemas bind UID/campaign/seat/generation, epoch, revisions,
+actor ownership and image slots. Unknown private fields, foreign records/scopes,
+bad metadata and corrupted graphic bytes fail explicitly. The graphic content
+hash supports conditional omission of unchanged bodies. A view key binds the
+current observer/render frame and authorized actor/asset set, not private
+canonical contents.
+
+The delta contract accepts only the captured base generation and its next
+committed generation within the same access/epoch. Same-view deltas contain
+changed actor/assigned rows plus necessary public metadata, not unchanged tables
+or asset bodies. View changes replace the authorized checkpoint atomically, so
+removed sightings/portraits are not retained or replayed. Duplicate/gap, foreign
+UID, raw owner metadata, private NPC budgets and unassigned-row patches reject
+without mutating the prior checkpoint. Durable journal fan-out and actual SSE
+delivery remain the next tasks.
+
+Verification:
+
+- **81/81 affected native cases**, zero failures/skips/cancellations,
+  **328,420.5164 ms**: participant/public image HTTP plus existing campaign access,
+  private assets, actual backend replacement, dev host and production runtime.
+  Eight new participant cases cover serialized room/blueprint/sheet/budget
+  exclusion, conditional/hash/no-observer behavior, unrelated owner/forged scope/
+  paused/stale epoch denials, scoped visible-NPC image bytes, after-IO admission
+  fences and sparse delta/revoked-view application.
+- **10 suites / 76 application tests**, **6.843 s**; full JS/stylelint/layering:
+  zero errors and the same 39 baseline warnings. The local public player wire,
+  assigned editor and local authority race behavior remain intact.
+- Actual Node 24.22.3 Linux/amd64, UID 1000, 1 CPU/1 GiB, read-only/no-network/
+  no-mount/no-key container checks passed both editions' participant projectors,
+  sixteen resource packs, full 16 MP decoding, readiness/auth/private-route checks,
+  eleven exact source hashes and clean SIGTERM exit. No dependency change was
+  needed. Helper RSS **210,477,056 bytes** is not representative peak/load proof.
+
+The real presence query initially failed `FAILED_PRECONDITION` because its
+declared composite index had not been deployed. Read-only inspection confirmed
+no such index; no test account or campaign was started to discover this failure.
+The owner explicitly approved **only**
+`livePresence`, collection scope, `sessionId ASC` / `expiresAt DESC`, acknowledging
+normal index storage/write charges. It is READY as `CICAgOjXh4EK`; Firestore adds
+`__name__ DESC`. Its exact formerly failing query now returns HTTP 200. No other
+declared index, IAM grant, downloaded key or new service was introduced.
+
+The approved single API test service now uses revision
+`taverntable-api-test-00003-8th` and private immutable image
+`sha256:01dbebc4ae3da239346c01b6fc81ec51770529e8c01cd380e1afc39ca7484be2`
+(runnable manifest
+`sha256:4f8d75bee1e2ca399e1405a0711e7fc5913fde03b1340c6bf69467ec60b7d3c5`).
+Real acceptance passed **2026-11-13 22:44:12 UTC**: explicit owner live start,
+current member/epoch projection, no private NPC sheet/embedded images,
+observer-scoped exact NPC PNG bytes while the assigned-only endpoint still
+denied them, no activity renewal from reads, conditional graphics omission,
+a one-actor/zero-unchanged-row delta, duplicate-gap denial and post-pause
+world-read denial. The paused assigned-sheet and historical receipt gates also
+passed unchanged.
+
+The same three approved disposable identities and two synthetic campaigns were
+used. Cleanup verified their Auth users/campaign trees/invitation/account branches
+absent and **ten live object generations** conditionally deleted with no listed
+versions remaining at **22:44:17 UTC**. Existing soft-delete retention remains in
+force; tiny retained fixture bytes may remain billable. Current real accounts/
+campaigns, original hosts/data and routine-save presentation were untouched.
+No full frontend/cutover or ten-client SSE/gameplay/cache/sleep/performance/cost
+acceptance is claimed by this API contract gate.

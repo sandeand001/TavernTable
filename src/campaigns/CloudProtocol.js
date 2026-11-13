@@ -464,6 +464,32 @@ export function isCloudParticipantAccess(value) {
   );
 }
 
+const participantViewFields = (value) =>
+  isCloudUUID(value.sessionId) &&
+  [value.observerTokenId, value.mapId].every(
+    (entry) =>
+      entry === null ||
+      (typeof entry === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(entry))
+  ) &&
+  (value.assetKey === null || isCloudDigest(value.assetKey));
+
+export function isCloudParticipantRequest(value) {
+  return (
+    record(value) &&
+    keys(value, ['sessionId', 'observerTokenId', 'mapId', 'assetKey']) &&
+    participantViewFields(value)
+  );
+}
+
+export function isCloudParticipantAssetRequest(value) {
+  return (
+    record(value) &&
+    keys(value, ['sessionId', 'observerTokenId', 'mapId', 'assetKey', 'viewKey']) &&
+    participantViewFields(value) &&
+    isCloudDigest(value.viewKey)
+  );
+}
+
 export function isCloudAssignedCharacterState(value) {
   return (
     record(value) &&

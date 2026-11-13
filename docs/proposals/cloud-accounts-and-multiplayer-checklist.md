@@ -59,7 +59,8 @@ project; its three disposable account/two synthetic campaign fixtures and live
 object generations were verified cleaned up. The real account and campaigns
 were untouched. This is not a full frontend rollout or source-of-truth cutover.
 Complete M2 implemented-operation coverage (`M2-13`) passes the full native
-catalog and stable regression suite. Participant privacy/synchronization is next;
+catalog and stable regression suite. Initial participant snapshot/manifest/delta privacy (`M3-01`) now passes local
+and bounded real API acceptance. Ordered durable changes and SSE are next;
 cloud player world gameplay/streams remain gated.
 
 ## Approved requirements: do not reopen by accident
@@ -666,7 +667,7 @@ Revalidation in the intended environment remains part of M1 and M4.
 
 ### M3 - Synchronization and participant cache
 
-- [ ] **M3-01 - Define and enforce participant snapshots, manifests, and deltas.**
+- [x] **M3-01 - Define and enforce participant snapshots, manifests, and deltas.**
   - **Depends:** `M2-13`.
   - **Success:** authorize underlying data before constructing explicit projections.
     Preserve one assigned observer, closed-room concealment, authorized asset
@@ -674,6 +675,28 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** inspect serialized public outputs for hidden rooms, origins,
     blueprints, sheets, budgets, and secret-bearing full-map images. UI fog is
     not the privacy test.
+  - **Completed:** November 13, 2026. Managed HTTP checkpoints require the current
+    member scope and active live epoch, then recheck authority/head after actual
+    Storage reads. Shared physical/public rendering uses one assigned observer;
+    explicit root/actor/record/manifest guards exclude canonical/legacy data,
+    closed/unrelated rooms and origins, authoring notes and private NPC sheets/
+    budgets. Image references replace embedded bytes; separate observer-scoped
+    delivery preserves the existing assigned-only image interface. Conditional
+    graphics validate hashes; no-observer state clears old vision.
+    Sparse deltas bind the exact base/next generation and unchanged access/epoch;
+    view replacement drops revoked data without historical motion replay.
+    Affected native gate: **81/81**, zero skips/failures,
+    **328,420.5164 ms**. Application gate: **10 suites / 76 tests**, **6.843 s**.
+    Full lint/stylelint/layering: zero errors and the same 39 baseline warnings.
+    Actual non-root CPU-only/read-only/no-key image checks match eleven source
+    hashes and exercise both editions. The separately approved required
+    `livePresence` composite index is READY and its exact query succeeds.
+    Owner-approved real HTTPS/Auth/Firestore/Storage acceptance passed using the
+    same three disposable identities/two campaigns; ten live object generations
+    and all fixtures were verified removed afterward. No real account/data,
+    extra IAM/key/service or frontend/cutover change occurred.
+    This verifies the projection/delta contract, not durable stream delivery,
+    gameplay/animation, player UI or browser-cache activation.
 
 - [ ] **M3-02 - Implement ordered durable changes and bounded reconnect history.**
   - **Depends:** `M1-07`, `M3-01`.

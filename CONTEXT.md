@@ -266,6 +266,25 @@
   `/health`; legacy `/healthz` remains an internal/local alias because Cloud Run
   reserves some `z`-ending public paths. No full website rollout, real account/
   campaign migration, measured sleep/load/cost claim or spending cap is implied.
+- **Authorized cloud participant checkpoint (M3 initial wire verified)**:
+  active live-epoch and current UID/seat/generation admission precedes projection;
+  membership, assigned IDs, epoch and head are checked again after Storage IO.
+  The shared public rendering policy uses one assigned observer, not combined
+  party/camera vision. Explicit DTOs exclude raw canonical/legacy view data,
+  unrelated rooms/origins, construction authoring records and private NPC sheets/
+  budgets while retaining authorized physical surfaces. Assigned records and
+  visible actors carry image references rather than embedded image bytes.
+  Observer-scoped image delivery can reveal a visible NPC portrait without
+  granting its private sheet; existing assigned-only image permissions remain
+  unchanged. A view key binds access, epoch, observer/render frame and authorized
+  assets/actors. Client guards reject foreign/private/malformed projections and
+  verify reused graphic bytes against their hash.
+  Deltas require the exact base generation and next committed generation within
+  the same account/access/epoch; gaps or scope changes require reconciliation.
+  Unchanged records/assets are not resent. A changed authorized view replaces
+  state atomically rather than retaining revoked actors or replaying historical
+  movement. Local/native and bounded real API acceptance passed; durable event
+  observation, SSE, gameplay/motion, browser cache and full player UI remain gated.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its
