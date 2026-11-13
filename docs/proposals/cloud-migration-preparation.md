@@ -924,7 +924,8 @@ component was not changed.
 
 ## Provider-linking emulator blocker
 
-`M2-04` is blocked and deferred, not complete. The prototype two-step interface
+`M2-04` completed November 13, 2026 with owner-approved live acceptance. The
+November 12 emulator gate and deferral are preserved below. The prototype two-step interface
 first proves the current credential, then consumes a five-minute, single-use
 in-memory proof to link another managed provider to the same Firebase UID.
 Eleven focused account tests pass for both directions, wrong credentials,
@@ -967,6 +968,79 @@ real-SDK test were non-destructively parked in the local Git stash
 its two related test files. The active tree retains the verified prior account
 behavior; no linking UI or unsupported fallback is enabled. The preserved
 acceptance failure remains a blocker, not a passing or skipped milestone test.
+
+**Reopened November 13, 2026:** the owner approved using the existing Firebase
+project/current account for ongoing live testing in this personal project.
+The prior live-Auth deferral is superseded; provider linking should be proved
+live rather than removed from the multiplayer development dependency. Existing
+campaign data is preserved, and new billing/IAM changes are raised before action.
+
+The exact three-file stash was reapplied without dropping it. The restored
+account/login compatibility gate passes **2 suites / 24 tests**, **2.072 s**.
+Read-only live configuration checks confirm the approved project is reachable,
+Google and email/password are enabled, and localhost/127.0.0.1 are already
+authorized. No provider, IAM or billing configuration change was needed.
+
+A separate loopback Auth-only Chrome check now loads the actual restored account
+module and unmodified pinned browser SDK against the existing live project.
+It uses session-only browser persistence, no campaign API/data access, rejects
+private source paths and accepts no passwords/tokens at the local HTTP server.
+The owner performs sign-in and new-credential submission in Chrome, not chat.
+Actual linking success, integrated application UI and final same-UID acceptance
+are still pending; neither the emulator failure nor an unobserved manual step
+is counted as a passing gate.
+
+**Live finding and confirmation correction:** the owner manually completed real
+Google sign-in/reauthentication, password submission and password sign-in in the
+Auth-only page. The observed account changed from Google-only to Google/password
+with the same UID, and actual password sign-in succeeded. Firebase then reports
+`emailVerified: false`. The provider link persisted, but the prototype's
+post-link guard wrongly reused the verified-email prerequisite and reported an
+unconfirmed mutation instead of a confirmed method with pending verification.
+
+A focused regression first reproduced that false failure. Post-link
+provider/UID confirmation now permits the observed pending-verification state;
+verification before a fresh linking proof remains mandatory, and the UID is
+checked again after refreshing. No backend eligibility rule was weakened.
+The targeted account/transport/login gate passes **3 suites / 37 tests** in
+**1.868 s**; actual managed-Auth/HTTP regression passes **17/17 cases**, zero
+skipped, in **5,275.3276 ms**. The diagnostic UI explicitly distinguishes current
+provider presence, new-link operation flags and pending email verification.
+It exposes the existing normal verification-email flow for the owner to
+complete, rather than changing the verification bit administratively.
+Integrated application UI and final verified-account acceptance remain pending.
+
+**Completed November 13, 2026:** the owner followed the normal live verification
+email and the refreshed SDK now confirms Google/password on the same verified
+account. The owner also confirmed the live screen's linked/verified state.
+The in-app sign-in-method panel is wired into signed-in account access and the
+cloud campaign picker. It requires fresh current-provider proof, clears all
+password fields after use, prevents an account switch from submitting a captured
+link, and separates confirmed linkage from required email verification.
+An uncertain link cannot be reissued or cancelled into a false no-change
+message; explicit same-account refresh reconciles provider state instead.
+Opening already-restored provider metadata does not add a mandatory network
+request, while explicit refresh and mutation proof still use managed Auth.
+
+The final targeted real-SDK Auth/HTTP/linking gate passed **19/19 cases**, zero
+skipped, in **13,827.8168 ms**. Native password-to-Google linking plus subsequent
+password/Google logins preserve UID, Owned/Joined campaigns, assignments, exact
+saved character rows and canonical head. The known emulator Google-to-password
+failure is now an explicit safe-rejection/data-preservation test, not a skipped
+test or claimed successful link. The separate positive Google-to-password
+acceptance was observed against the actual live provider with the owner's
+current account, including same-UID password login and normal email recovery.
+
+The account/campaign/history/save-feedback gate passed **16 suites / 113 tests**
+in **6.798 s**. UI cases exercise proof, uncertain refresh, UID changes, password
+clearing and the pending-verification distinction; signed-in provider management
+does not require or fetch campaign data. Full lint/stylelint/layering passed
+with zero errors and the same 39 existing warnings. No dependency pin, SDK/
+emulator implementation, account email, password-reset semantics or backend
+eligibility rule was changed to obtain acceptance. No account merge, provider
+unlink, administrative verification override or live campaign mutation occurred.
+New billing/IAM changes and application deployment/cutover remain separate
+approvals. Routine-save presentation remains untouched.
 
 ## Complete canonical persistence gate
 

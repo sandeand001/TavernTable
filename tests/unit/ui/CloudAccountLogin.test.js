@@ -5,6 +5,8 @@ import CloudAccountLogin, {
 } from '../../../src/ui/sessions/CloudAccountLogin.js';
 import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
+import CloudAccountMethods from '../../../src/ui/sessions/CloudAccountMethods.js';
+import { ErrorHandler } from '../../../src/utils/error/ErrorHandler.js';
 
 const runtime = {
   version: 1,
@@ -67,6 +69,40 @@ function fixture({ emailVerified = true, uidForEmail = () => 'email-fixture' } =
 
 afterEach(() => {
   document.body.innerHTML = '';
+  jest.restoreAllMocks();
+});
+
+test('a signed-in account can manage its own providers before campaign eligibility without opening campaign data', async () => {
+  jest.spyOn(ErrorHandler.prototype, 'handle').mockImplementation(() => {});
+  const setup = fixture();
+  await setup.account.signInEmail('methods@example.invalid', 'Private fixture password');
+  setup.fetch.mockImplementation(async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({
+      version: 1,
+      code: 'pilot-access-required',
+      error: 'Campaign participation is not yet enabled.',
+    }),
+  }));
+  const open = jest.spyOn(CloudAccountMethods.prototype, 'open').mockResolvedValue(true);
+  const dialog = new CloudAccountLogin({
+    account: setup.account,
+    connection: setup.connection,
+    runtime,
+  });
+  const selected = dialog.choose().catch((error) => error);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const button = dialog.root.querySelector('[data-account-methods]');
+  expect(button.hidden).toBe(false);
+  expect(button.disabled).toBe(false);
+  button.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(open.mock.instances[0].account).toBe(setup.account);
+  expect(setup.fetch.mock.calls.every(([url]) => url.endsWith('/account'))).toBe(true);
+  dialog.destroy();
+  expect((await selected).code).toBe('account-dialog-closed');
 });
 
 test('invitation credentials leave browser history before managed sign-in and malformed links never echo their secret', () => {

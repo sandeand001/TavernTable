@@ -92,11 +92,15 @@
   explicit for tests and migration, with non-destructive Copy to host and JSON
   backup import/export. Agent-created browser tabs may have in-memory storage;
   flushing such a profile does not make it survive an editor restart.
-- **Hosted account (development sign-in implemented; hosting/linking pending)**: Google and
+- **Hosted account (development sign-in/linking verified; hosting pending)**: Google and
   Firebase-managed email/password are supported sign-in choices. Password
   accounts require verified email for campaign use and password recovery.
   Proven linking keeps sign-in methods on one Firebase UID without splitting
   campaign ownership or assignments; matching names/emails do not prove access.
+  Linking requires fresh, single-use current-provider proof and supports explicit
+  same-account refresh after uncertainty. A confirmed linked provider is distinct
+  from pending email re-verification; Firebase may clear that flag when adding
+  password sign-in, and campaign eligibility still requires verified email.
   Initial application participation is invitation/approval controlled.
 - **Verified cloud principal (development backend/browser implemented)**: backend-verified
   Firebase UID, verification and application-eligibility outcomes. Campaign

@@ -1,6 +1,7 @@
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import CloudCampaignClientStore from '../../campaigns/CloudCampaignClientStore.js';
 import { isCloudInvitationLink } from '../../campaigns/CloudProtocol.js';
+import CloudAccountMethods from './CloudAccountMethods.js';
 
 export function consumeCloudInvitation({
   location = globalThis.location,
@@ -140,6 +141,7 @@ export default class CloudAccountLogin {
         <p>Verified email and private-pilot approval are required before opening campaigns.</p>
         <button type="button" data-refresh-account>Refresh account access</button>
         <button type="button" data-send-verification>Resend verification email</button>
+        <button type="button" data-account-methods hidden>Sign-in methods</button>
         <button type="button" data-account-signout>Sign out</button>
       </section>
       <footer>Stay online to use cloud campaigns. Sign-in failures never create a new campaign or select local storage.</footer>
@@ -254,6 +256,13 @@ export default class CloudAccountLogin {
           success: 'Verification email requested. Check your inbox, then refresh account access.',
         })
     );
+    this.root.querySelector('[data-account-methods]').addEventListener('click', () => {
+      void this._run(
+        () => new CloudAccountMethods({ account: this.account }).open(),
+        'Opening current sign-in methods...',
+        { check: false }
+      );
+    });
     this.root
       .querySelector('[data-account-signout]')
       .addEventListener(
@@ -338,6 +347,8 @@ export default class CloudAccountLogin {
       : '';
     this.root.querySelector('[data-send-verification]').hidden =
       !identity || identity.emailVerified;
+    this.root.querySelector('[data-account-methods]').hidden =
+      !identity || typeof this.account.linkSignInMethod !== 'function';
     for (const control of this.root.querySelectorAll('input,button')) control.disabled = this.busy;
     this.root.querySelector('[data-accept-invitation]').disabled =
       this.busy ||

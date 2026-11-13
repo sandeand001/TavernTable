@@ -11,6 +11,7 @@ import { ensureSession } from '../sessions/SessionLogin.js';
 import { attachHostSessionUpdates } from '../sessions/HostSessionUpdates.js';
 import { CLOUD_BACKUP_BYTE_LIMIT } from '../../campaigns/CloudProtocol.js';
 import { campaignBackupByteLength } from '../../campaigns/CampaignBackupBytes.js';
+import CloudAccountMethods from '../sessions/CloudAccountMethods.js';
 
 export default class CampaignLauncher {
   constructor({ workspace = null, saveFeedback = null } = {}) {
@@ -31,6 +32,7 @@ export default class CampaignLauncher {
         <p class="campaign-status" role="status" aria-label="Campaign status">Loading local campaigns...</p>
         <p data-cloud-account hidden></p>
         <button type="button" data-cloud-account-signout hidden>Sign out</button>
+        <button type="button" data-cloud-account-methods hidden>Sign-in methods</button>
         <button type="button" data-campaign-retry hidden>Retry loading campaigns</button>
         <div class="campaign-columns">
           <section aria-label="Saved campaigns">
@@ -104,6 +106,12 @@ export default class CampaignLauncher {
           });
         }, 'Signing out of this account...')
     );
+    this.root.querySelector('[data-cloud-account-methods]').addEventListener('click', () => {
+      void this._perform(
+        () => new CloudAccountMethods({ account: this.workspace.store.connection.account }).open(),
+        'Opening current sign-in methods...'
+      );
+    });
     this.ruleset.addEventListener('change', () =>
       this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value)
     );
@@ -276,6 +284,8 @@ export default class CampaignLauncher {
           ? `Signed in as ${this.workspace.store.connection.account.identity()?.email || 'your managed account'}.`
           : '';
         this.root.querySelector('[data-cloud-account-signout]').hidden = !cloud;
+        this.root.querySelector('[data-cloud-account-methods]').hidden =
+          !cloud || typeof this.workspace.store.connection.account.linkSignInMethod !== 'function';
         this.root.querySelector('[data-campaign-import]').hidden = !(
           this.workspace.store.capabilities?.portability ??
           this.workspace.store.capabilities?.backups !== false

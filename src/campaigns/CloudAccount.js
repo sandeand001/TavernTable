@@ -2,6 +2,14 @@ import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { validateApplicationRuntime } from './CloudRuntime.js';
 
 export const FIREBASE_BROWSER_VERSION = '12.19.0';
+const LINK_VERIFICATION_TTL_MS = 5 * 60 * 1000;
+const linkingProviders = new Set(['password', 'google.com']);
+const verificationRequired = () =>
+  new CloudAccountError(
+    401,
+    'sign-in-verification-required',
+    'Verify your existing sign-in method again before linking another method.'
+  );
 
 export class CloudAccountError extends Error {
   constructor(status, code, message) {
@@ -28,6 +36,42 @@ const failures = new Map([
       409,
       'sign-in-method-conflict',
       'Use the existing sign-in method for this account. Linking requires proving both credentials.',
+    ],
+  ],
+  [
+    'auth/credential-already-in-use',
+    [
+      409,
+      'sign-in-method-conflict',
+      'This sign-in method belongs to another account. Accounts and campaign access were not merged.',
+    ],
+  ],
+  [
+    'auth/provider-already-linked',
+    [
+      409,
+      'sign-in-method-already-linked',
+      'This sign-in method is already linked. Refresh its current status.',
+    ],
+  ],
+  [
+    'auth/user-mismatch',
+    [401, 'invalid-credentials', 'Verify the currently signed-in account, not another account.'],
+  ],
+  [
+    'auth/requires-recent-login',
+    [
+      401,
+      'sign-in-verification-required',
+      'Verify your existing sign-in method again before linking another method.',
+    ],
+  ],
+  [
+    'auth/operation-not-allowed',
+    [
+      403,
+      'sign-in-method-unavailable',
+      'This sign-in method is not enabled for the application. No account merge was performed.',
     ],
   ],
   [
@@ -107,6 +151,8 @@ export default class CloudAccount {
       throw new Error('Cloud accounts require the managed Firebase Auth interface');
     this.auth = auth;
     this.sdk = sdk;
+    this.linkVerification = null;
+    this.linkBusy = false;
   }
 
   async _request(operation, request) {
@@ -160,7 +206,179 @@ export default class CloudAccount {
     });
   }
 
+  signInMethods() {
+    const identity = this.identity();
+    if (identity === null)
+      throw new CloudAccountError(
+        401,
+        'authentication-required',
+        'Sign in before managing sign-in methods.'
+      );
+    const providers = this.auth.currentUser.providerData;
+    if (
+      !Array.isArray(providers) ||
+      providers.length === 0 ||
+      providers.some((provider) => !linkingProviders.has(provider?.providerId)) ||
+      new Set(providers.map((provider) => provider.providerId)).size !== providers.length
+    )
+      throw new CloudAccountError(
+        503,
+        'unsupported-sign-in-method',
+        'The account sign-in methods could not be verified.'
+      );
+    return Object.freeze({
+      uid: identity.uid,
+      email: identity.email,
+      emailVerified: identity.emailVerified,
+      providers: Object.freeze(providers.map((provider) => provider.providerId).sort()),
+    });
+  }
+
+  _linkUser() {
+    const methods = this.signInMethods();
+    if (!methods.emailVerified || typeof methods.email !== 'string' || !methods.email)
+      throw new CloudAccountError(
+        403,
+        'email-verification-required',
+        'Verify your current email before linking sign-in methods.'
+      );
+    return this.auth.currentUser;
+  }
+
+  _sameLinkUser(user, uid, result) {
+    if (this.auth.currentUser !== user || user.uid !== uid || result?.user?.uid !== uid)
+      throw accountChanged();
+    this.signInMethods();
+  }
+
+  async verifySignInMethod({ provider, password } = {}) {
+    if (this.linkBusy)
+      throw new CloudAccountError(
+        409,
+        'account-operation-pending',
+        'Finish the current sign-in change first.'
+      );
+    this.linkVerification = null;
+    const user = this._linkUser();
+    const uid = user.uid;
+    if (!linkingProviders.has(provider) || !this.signInMethods().providers.includes(provider))
+      throw verificationRequired();
+    this.linkBusy = true;
+    try {
+      const result = await this._request('verifySignInMethod', () => {
+        if (provider === 'password') {
+          if (typeof password !== 'string' || !password)
+            throw new CloudAccountError(
+              400,
+              'invalid-credentials',
+              'Enter your existing account password.'
+            );
+          return this.sdk.reauthenticateWithCredential(
+            user,
+            this.sdk.EmailAuthProvider.credential(user.email, password)
+          );
+        }
+        const google = new this.sdk.GoogleAuthProvider();
+        google.setCustomParameters({ prompt: 'select_account' });
+        return this.sdk.reauthenticateWithPopup(user, google);
+      });
+      this._sameLinkUser(user, uid, result);
+      this._linkUser();
+      this.linkVerification = { user, uid, provider, verifiedAt: Date.now() };
+      return this.signInMethods();
+    } finally {
+      this.linkBusy = false;
+    }
+  }
+
+  cancelSignInLink() {
+    if (this.linkBusy)
+      throw new CloudAccountError(
+        409,
+        'account-operation-pending',
+        'Finish the current sign-in change first.'
+      );
+    this.linkVerification = null;
+  }
+
+  async linkSignInMethod({ provider, password } = {}) {
+    if (this.linkBusy)
+      throw new CloudAccountError(
+        409,
+        'account-operation-pending',
+        'Finish the current sign-in change first.'
+      );
+    const proof = this.linkVerification;
+    this.linkVerification = null;
+    const user = this._linkUser();
+    if (!linkingProviders.has(provider))
+      throw new CloudAccountError(
+        400,
+        'unsupported-sign-in-method',
+        'Choose Google or email/password linking.'
+      );
+    if (this.signInMethods().providers.includes(provider))
+      throw new CloudAccountError(
+        409,
+        'sign-in-method-already-linked',
+        'This sign-in method is already linked.'
+      );
+    if (
+      !proof ||
+      proof.user !== user ||
+      proof.uid !== user.uid ||
+      proof.provider === provider ||
+      Date.now() < proof.verifiedAt ||
+      Date.now() - proof.verifiedAt >= LINK_VERIFICATION_TTL_MS
+    )
+      throw verificationRequired();
+    this.linkBusy = true;
+    let accepted = false;
+    try {
+      const result = await this._request('linkSignInMethod', () => {
+        if (provider === 'password') {
+          if (typeof password !== 'string' || password.length < 6)
+            throw new CloudAccountError(
+              400,
+              'weak-password',
+              'Choose a password with at least six characters.'
+            );
+          return this.sdk.linkWithCredential(
+            user,
+            this.sdk.EmailAuthProvider.credential(user.email, password)
+          );
+        }
+        const google = new this.sdk.GoogleAuthProvider();
+        google.setCustomParameters({ prompt: 'select_account' });
+        return this.sdk.linkWithPopup(user, google);
+      });
+      accepted = true;
+      this._sameLinkUser(user, proof.uid, result);
+      await this.refreshIdentity();
+      const methods = this.signInMethods();
+      if (methods.uid !== proof.uid) throw accountChanged();
+      if (!methods.providers.includes(provider))
+        throw new CloudAccountError(
+          503,
+          'invalid-auth-state',
+          'The linked sign-in method was not confirmed.'
+        );
+      return methods;
+    } catch (error) {
+      if (error.code !== 'account-changed' && (accepted || error.code === 'auth-unavailable'))
+        throw new CloudAccountError(
+          503,
+          'sign-in-link-unconfirmed',
+          'This sign-in change is unconfirmed. Refresh sign-in methods with the same account before trying again.'
+        );
+      throw error;
+    } finally {
+      this.linkBusy = false;
+    }
+  }
+
   async signInEmail(email, password) {
+    this.linkVerification = null;
     await this._request('signInEmail', () =>
       this.sdk.signInWithEmailAndPassword(this.auth, email, password)
     );
@@ -175,6 +393,7 @@ export default class CloudAccount {
   }
 
   async signInGoogle() {
+    this.linkVerification = null;
     const provider = new this.sdk.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     await this._request('signInGoogle', () => this.sdk.signInWithPopup(this.auth, provider));
@@ -189,6 +408,7 @@ export default class CloudAccount {
   }
 
   async registerEmail(email, password) {
+    this.linkVerification = null;
     await this._request('registerEmail', () =>
       this.sdk.createUserWithEmailAndPassword(this.auth, email, password)
     );
@@ -241,6 +461,7 @@ export default class CloudAccount {
   }
 
   async signOut() {
+    this.linkVerification = null;
     await this._request('signOut', () => this.sdk.signOut(this.auth));
     if (this.auth.currentUser !== null)
       throw new CloudAccountError(

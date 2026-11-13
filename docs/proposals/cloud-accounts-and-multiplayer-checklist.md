@@ -378,23 +378,57 @@ Revalidation in the intended environment remains part of M1 and M4.
     surfaces and scoped-access contract; live-stream/gameplay and asset/cache
     revocation remain explicitly gated for `M3-01`, `M3-09` and `M4-10`.
 
-- [ ] **M2-04 - Implement proven sign-in-method linking without splitting ownership.**
-  - **Status:** blocked and explicitly deferred by the owner. The prototype and
-    its failing real-SDK acceptance case are preserved outside the active tree;
-    no provider-linking UI is enabled or completion claimed.
+- [x] **M2-04 - Implement proven sign-in-method linking without splitting ownership.**
+  - **Status:** completed November 13, 2026 with owner-approved live acceptance
+    on the existing Firebase project/current account, integrated account controls,
+    and preserved emulator-limitation coverage.
   - **Depends:** `M1-05`, `M2-01`.
   - **Success:** Google/password credentials link only after proving control of
     both credentials; the existing UID, Owned/Joined campaigns, and assignments
     remain unchanged.
   - **Verify:** provider-conflict, cancellation, wrong-credential, and matching
     unverified-name/email cases never silently merge or create access.
-  - **Blocker:** [provider-linking emulator diagnosis](./cloud-migration-preparation.md#provider-linking-emulator-blocker):
+  - **Retained emulator limitation:** [provider-linking emulator diagnosis](./cloud-migration-preparation.md#provider-linking-emulator-blocker):
     the emulator rejects the signed-in user's own existing email before checking
     the supplied token during password linking. The latest released CLI retains
     this behavior. Do not bypass it by changing emails, disabling protections,
     patching SDKs or substituting a password-reset operation.
   - **Selected November 12, 2026:** keep linking gated and continue independently
     ready migration tasks. No live Auth linking test is approved.
+  - **Revised November 13, 2026:** that live-test deferral is superseded. Use the
+    existing project/current account for ongoing live verification, without
+    weakening the linking gate or creating another environment by assumption.
+    New billing/IAM changes still require confirmation. Real Google/password
+    providers and loopback Auth domains are already enabled. The restored
+    account/login gate passes **2 suites / 24 tests**, **2.072 s**. An Auth-only
+    Chrome check is ready; the owner enters/submits credentials locally.
+    Successful live linking and campaign/access acceptance remain unclaimed.
+  - **Live finding:** the owner completed Google reauthentication and password
+    submission against the real project. Google/password are now both present
+    on the same UID and password login succeeds. Firebase reports that email
+    verification is required again; the post-link confirmation incorrectly
+    treated this as an unconfirmed mutation. A focused regression reproduced
+    that defect, and the fix preserves strict pre-link proof/current-UID checks
+    while reporting the confirmed provider plus pending email verification.
+    **3 account/transport/login suites / 37 tests** pass (**1.868 s**);
+    **17 actual Auth/HTTP cases** pass (**5,275.3276 ms**), zero skips.
+    Normal email verification and integrated linking UI acceptance remain
+    pending; no administrative verification override or access relaxation.
+  - **Completed gate:** the owner completed the normal live verification-email
+    flow; a fresh SDK refresh confirms both providers, the same account and
+    verified email. Account controls are available from signed-in account access
+    and the cloud campaign picker, require fresh proof, clear password fields,
+    reject account switching and require refresh rather than resubmitting an
+    uncertain link. Viewing restored provider state adds no mandatory Auth RPC.
+    **19/19 native Auth/HTTP/provider/campaign-authority cases**, zero skips,
+    **13,827.8168 ms**; **16 app suites / 113 tests**, **6.798 s**;
+    full lint/stylelint/layering: zero errors and the same 39 existing warnings.
+    Native password-to-Google success preserves Owned/Joined/assignments/head/
+    character data. The emulator's Google-to-password case verifies safe
+    rejection, not successful linking; positive acceptance is the separate real
+    live Google-to-password/password-login/verification proof.
+    No SDK patch, email substitution, password-reset fallback, administrative
+    verification override, account merge or development-gate waiver was used.
 
 - [x] **M2-05 - Cover all canonical campaign and gameplay persistence paths.**
   - **Depends:** `M1-07`, `M2-01`.
