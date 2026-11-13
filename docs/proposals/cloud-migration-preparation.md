@@ -2107,3 +2107,47 @@ removed. Request-based CPU, min 0/max 1, 1 CPU/1 GiB and concurrency 40 remain t
 approved starting configuration, not measured sleep/performance/cost acceptance
 or a spending cap. Full Hosting packaging, M4 release gates, real-data migration
 and routine-save UX remain pending.
+
+### M2-13: implemented-operation permission and persistence gate
+
+The complete M2 implementation at `e6ebc53194328e2935f9c0b5e20c3409f48030a6`
+remained unchanged throughout both milestone gates:
+
+- The official `node tools/cloud/run-emulator-tests.js --inside-emulators`
+  catalog passed **190/190 native SDK cases**, zero failures/skips/cancellations,
+  **725,271.6615 ms**, using only the pinned official demo endpoints.
+- `npm run test:stable` passed **298 suites / 3,861 tests**, zero failures/skips,
+  **1,461.583 s**, with open-handle detection. This includes the existing local
+  host/SQLite/session, player authorization, gameplay/undo, rendering, geometry,
+  saved-turn and travel regressions; no source behavior changed during the gate.
+- Full lint/stylelint/layering remains zero errors and the same 39 existing
+  warnings. No assertion relaxation, blanket retry, writable cloud fallback,
+  dependency update or unrelated baseline fix was introduced.
+
+The actual HTTP classification and dispatch were reconciled with this matrix.
+Each protected route derives its principal from verified bearer identity and
+consumes the shared account request quota. Invitation redemption alone performs
+verified-identity admission before its atomic eligibility/enrollment decision.
+Scope headers are restricted to the explicit participant/assigned/image
+interfaces. No public route accepts the internal resource-owner UID helpers as
+an alternative to caller authentication or campaign authorization.
+
+| Implemented surface | Owner of this campaign | Current member | Unrelated UID | Existing evidence |
+| --- | --- | --- | --- | --- |
+| Account and Owned/Joined directory | Own verified, eligible UID and campaign-local role | Same account checks; minimal current seat/index projection | Own account/campaigns only; no foreign campaign data | [Account access](../../tests/cloud/AccountAccess.test.js), [browser account](../../tests/cloud/BrowserAccount.test.js), [campaign access](../../tests/cloud/CampaignAccess.test.js) |
+| Sign-in-method linking | Same proven UID retains ownership | Same UID retains joined assignments/access | No email/name matching or account merging | [Linking acceptance/rejection safety](../../tests/cloud/AccountLinking.test.js), M2-04 real-account proof |
+| Canonical snapshots, scene/sheet saves and settings | Explicit owned read/write, captured revisions/generation | No raw owner scene/NPC table or owner canonical/settings write | Denied before staging or delivery | [Canonical store](../../tests/cloud/CampaignStore.test.js), [access](../../tests/cloud/CampaignAccess.test.js), [process replacement](../../tests/cloud/BackendLifecycle.test.js) |
+| Invitations, assignments, sharing and removal | Current-generation owner administration | Verified single-use binding; no administration | No foreign management; one invitation race winner and no loser approval | [Lifecycle/races/faults/replay](../../tests/cloud/CampaignAccess.test.js), real invitation acceptance/removal |
+| Online assigned sheets | Existing paused preparation semantics | Current assigned rows only; scoped CAS save; minimal original receipt is not a renewed grant | No assigned data/write; foreign/private/malformed projections rejected | [Real scoped reads/writes/IO races](../../tests/cloud/CampaignAccess.test.js), [managed client](../../tests/unit/campaigns/CloudCampaignClientStore.test.js), [sheet UI](../../tests/unit/ui/CloudAssignedCharacterSheets.test.js), real API gate |
+| Private images | Validated immutable JPEG/PNG/WebP under owner ledger | Only current assigned manifest/bytes; post-IO recheck; scoped sheet image edits | No foreign manifest, image or upload authority | [Private images](../../tests/cloud/PrivateAssets.test.js), [limits](../../tests/cloud/UsageLimits.test.js), real exact-byte PNG delivery |
+| Complete export/import/retained restore | Full owned file; bounded own multipart intent; restore as fresh authority | Cannot obtain the owner's file/history; independent owned copies do not grant global DM authority | Cannot inspect/resume foreign transfers or backups | [Portability](../../tests/cloud/Portability.test.js), [process recovery](../../tests/cloud/BackendLifecycle.test.js) |
+| Independent rolling backups | Twenty complete points; captured source and separate failure/receipt state | Authorized short sheet requests can trigger private owner work, never receive owner history/files/status | No foreign backup work/file authority | [Complete history/restore/failures](../../tests/cloud/Portability.test.js), [cold recovery](../../tests/cloud/BackendLifecycle.test.js), M2-12 due member-request backup |
+| Quotas and fenced cleanup | Atomic slots/whole-checkpoint bytes; generation-specific deletion and conservative retained charge | Changes charge the campaign owner, not the member's separate allowance | No foreign accounting rewrite or prefix maintenance | [Usage/cleanup boundaries](../../tests/cloud/UsageLimits.test.js), [immutable bytes](../../tests/cloud/ImmutableObjects.test.js), [portability](../../tests/cloud/Portability.test.js) |
+| Durable live foundation | Owner-only start/end/keep-active; paused free preparation | Current status/live admission only; sign-in/presence never starts or renews meaningful activity | No foreign status/admission/control | [55/60/15-minute and lease cases](../../tests/cloud/CampaignAccess.test.js), [actual replacement](../../tests/cloud/BackendLifecycle.test.js) |
+
+This closes implemented M2 persistence coverage, not future protocol coverage.
+Actual participant world/room snapshots and deltas, SSE transport and leases,
+world commands/motion, authorized cache reconciliation and drain/final-backup
+wires must pass their own M3/M4 gates before activation. Hosted scale-to-zero,
+representative load, cost and full website acceptance remain separate as well.
+The existing local Adapter and preserved original hosts/data remain unchanged.

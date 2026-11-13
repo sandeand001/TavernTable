@@ -58,8 +58,9 @@ The owner approved one bounded API test deployment in the existing personal
 project; its three disposable account/two synthetic campaign fixtures and live
 object generations were verified cleaned up. The real account and campaigns
 were untouched. This is not a full frontend rollout or source-of-truth cutover.
-Complete M2 operation coverage is next; cloud player world gameplay/streams
-remain gated.
+Complete M2 implemented-operation coverage (`M2-13`) passes the full native
+catalog and stable regression suite. Participant privacy/synchronization is next;
+cloud player world gameplay/streams remain gated.
 
 ## Approved requirements: do not reopen by accident
 
@@ -638,13 +639,30 @@ Revalidation in the intended environment remains part of M1 and M4.
     No real campaign cutover, frontend rollout, hosted sleep/load/cost acceptance
     or routine-save presentation change is claimed.
 
-- [ ] **M2-13 - Pass complete persistence and implemented-operation access coverage.**
+- [x] **M2-13 - Pass complete persistence and implemented-operation access coverage.**
   - **Depends:** `M2-03`, `M2-04`, `M2-05`, `M2-08`, `M2-10`, `M2-11`, `M2-12`.
   - **Success:** all implemented list/read/write/asset/import/export/backup operations
     pass owner/member/unrelated-UID, concurrency, and fault cases. Record policy
     coverage for upcoming stream/lifecycle operations, then retest their real wires.
   - **Verify:** permission/atomicity matrix, emulator evidence, and full stable
     suite are green; no cloud failure falls back to writable browser storage.
+  - **Completed:** November 13, 2026. Reconciled all implemented HTTP operations
+    with the owner/current-member/unrelated-UID and persistence/failure matrix
+    in the preparation evidence. Protected routes bind verified principal and
+    request quota; only explicit participant/assigned/image interfaces accept
+    scoped headers. Internal trusted-owner resource helpers are not public
+    authority routes. Atomicity, conflict, revocation, capacity, integrity,
+    original-caller retries, actual backend replacement, local-host compatibility
+    and no-writable-fallback coverage pass. Complete official native SDK catalog:
+    **190/190**, zero skips/failures/cancellations, **725,271.6615 ms**.
+    Full stable regression with open-handle detection: **298 suites / 3,861 tests**,
+    zero skips/failures, **1,461.583 s**. The tested implementation remained
+    unchanged throughout both gates. M2-12's real HTTPS/Auth/Firestore/Storage
+    permission/image/recovery proof and verified fixture cleanup remain valid.
+    Full lint/stylelint/layering retains zero errors and 39 baseline warnings.
+    Upcoming participant room/world projections, deltas, SSE, gameplay, cache
+    revocation and drain/final-backup wires remain explicitly gated; their
+    future M3/M4 acceptance is not claimed by this implemented-operation gate.
 
 ### M3 - Synchronization and participant cache
 
