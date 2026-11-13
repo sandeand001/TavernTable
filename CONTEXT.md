@@ -239,6 +239,17 @@
   credentials, local campaign databases or development tools. Local validation
   uses a read-only filesystem, isolated network and no mounts; hosted IAM,
   scaling, load, cost and deployment remain separate approval/acceptance gates.
+- **Cloud live-game authority (M4 development foundation verified)**: a live game
+  is distinct from managed sign-in and the saved combat turn. A private per-campaign
+  state record carries a live epoch and monotonic control generation. Only its
+  current owner can start/end/keep-active through UID-bound durable command
+  receipts; status reads and membership/login never start or extend it.
+  Transaction-time admission rechecks current access and the active epoch; M3
+  world commands/streams must reuse that seam at publication/renewal. Owner
+  preparation may reposition tokens while paused without spending movement or
+  actions or changing saved sheets/turn budgets. Live state is not copied by
+  campaign export/import/restore. Player gameplay, lifecycle UI, inactivity and
+  coalesced-presence integration remain separately gated work.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.

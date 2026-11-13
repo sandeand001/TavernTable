@@ -22,6 +22,11 @@ const invalidResponse = () =>
     'The cloud backend returned an invalid response. No local storage fallback was selected.'
   );
 const denialCodes = new Set([
+  'invalid-live-session',
+  'invalid-live-command',
+  'live-session-changed',
+  'live-session-paused',
+  'live-session-already-started',
   'campaign-limit-reached',
   'storage-limit-reached',
   'request-limit-reached',
@@ -116,6 +121,23 @@ const denialCodes = new Set([
   'account-request-failed',
 ]);
 const denialMessages = new Map([
+  [
+    'invalid-live-session',
+    'The live-game state could not be verified. No local or combat-turn fallback was selected.',
+  ],
+  [
+    'invalid-live-command',
+    'Refresh the current live game before choosing an explicit owner action.',
+  ],
+  ['live-session-changed', 'The live game changed. Refresh its current state before continuing.'],
+  [
+    'live-session-paused',
+    'The campaign owner must start a live game before world actions. Between-game preparation is separate.',
+  ],
+  [
+    'live-session-already-started',
+    'This campaign already has a live game. Refresh its current state.',
+  ],
   [
     'object-maintenance-busy',
     'A private object is being maintained. Retain the original command and retry shortly.',

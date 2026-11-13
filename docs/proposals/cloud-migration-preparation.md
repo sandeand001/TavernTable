@@ -1700,3 +1700,67 @@ representative load and measured cost remain their own gates. No cloud build,
 deployment, IAM change, live campaign write, push/merge or actual cutover was
 performed. Provider linking remains deferred and routine-save presentation
 remains untouched.
+
+## Durable campaign-scoped live-game authority
+
+`M4-01` is complete as the early development authority prerequisite for M2/M3.
+It does not enable synchronized player gameplay or advertise the later lifecycle
+UI as finished. Managed account sign-in, a live game and a saved combat turn
+remain separate.
+
+`liveSession/current` stores a versioned per-campaign state, monotonic control
+generation and fresh live epoch. Initial reads return paused/not-started without
+starting anything. Only the current campaign owner can start, end or keep-active;
+a UID that owns another campaign gains no global DM privilege. Control state and
+its UID/context-bound command receipt publish atomically. Duplicate delivery
+recovers the original accepted transition rather than starting/resetting again.
+Start after pause creates a new epoch; keep-active retains it.
+
+Authenticated status reads and explicit admission use the same current membership
+checks as other campaign operations. Paused games, old epochs and removed members
+cannot obtain live admission. The transaction-time `requireLiveSession` seam
+must be reused by M3 world-command publication and stream admission/renewal;
+read-time admission alone is not a lasting grant. It returns explicit authorized
+participant metadata, not arbitrary owner snapshots. Owner preparation remains
+the separately authorized canonical editing path.
+
+The owner selected **allow paused DM token repositioning without movement/action
+costs**. A real connected-world checkpoint drill starts/ends a live game, changes
+the token's physical/grid position while paused, and preserves exact character
+rows, saved combat and movement/action state. The preparation does not restart
+or keep-active the ended game. Player world actions still require live admission;
+assigned between-game sheet behavior remains `M2-12`.
+
+The managed client has a separate uncertain live-control channel, not the
+canonical save or backup caller. It captures the original command/snapshot,
+validates the exact transition/UID/campaign/epoch, and retries the same body.
+An accepted old start receipt remains historical: refreshing current state after
+another worker ended the game returns paused, not a falsely revived live game.
+Malformed replies cannot acknowledge a primary save or become cached authority.
+
+Real emulator/HTTP/process tests verify:
+
+- Campaign-scoped owner/member/unrelated role isolation, including one UID owning
+  another campaign; login/status reads do not start or extend a live game.
+- More than six hours of owner renewals without a total-duration cap, and one
+  stable epoch until explicit pause/restart.
+- Cold competing start/replay and end/keep-active control races with one accepted
+  generation, cross-endpoint command conflicts and fail-closed malformed state.
+- Actual backend process termination/replacement with the same durable state and
+  original owner receipt; canonical character/scene data remains unchanged.
+- Paused/stale/revoked admission denial, zero-cost owner preparation and a fresh
+  paused copy that does not inherit the source's live authority.
+
+The complete affected authority/canonical/backend-process/production-runtime
+gate passed **77/77 native cases**, zero skipped, in **206,039.7877 ms**.
+The existing application/local/account/history/save-feedback gate plus the new
+strict live-response checks passed **15 explicit suites / 100 tests**, zero
+skipped, in **7.774 s**. Full lint/stylelint/layering passed with zero errors and
+the same 39 existing warnings. This is an affected-file gate, not a claim that
+the entire expanded native catalog or real player-gameplay wire was rerun.
+
+The 55/60-minute inactivity evaluator, coalesced disconnected grace, safe
+drain/final-backup and owner lifecycle UI remain their next explicit gates.
+Current player gameplay remains visibly gated. No hosted deployment, live
+Auth/IAM/Storage change or real-data cutover occurred; routine-save presentation
+is untouched.

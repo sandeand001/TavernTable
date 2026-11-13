@@ -307,6 +307,34 @@ async function fixture(t) {
 }
 
 test(
+  'live-game state and owner receipts survive actual backend replacement without resetting canonical data',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const before = await f.store.readCharacters(f.campaign.id);
+    const initial = await f.store.getLiveSession(f.campaign.id);
+    const active = await f.store.controlLiveSession(f.campaign.id, 'start', initial);
+    const startBody = f.commands.at(-1);
+    await terminate(f.backend.child);
+    const replacement = await f.start(f.backend.port);
+    assert.notEqual(replacement.instance, f.backend.instance);
+    const clean = f.client(replacement.url);
+    assert.deepEqual(await clean.getLiveSession(f.campaign.id), active);
+    const request = await fetch(`${replacement.url}/api/cloud/campaigns/${f.campaign.id}/live`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + f.identity.token, 'Content-Type': 'application/json' },
+      body: startBody,
+    });
+    assert.equal(request.status, 200);
+    assert.deepEqual((await request.json()).result, active);
+    const ended = await clean.controlLiveSession(f.campaign.id, 'end', active);
+    assert.equal(ended.state, 'paused');
+    assert.deepEqual(await f.store.getLiveSession(f.campaign.id), ended);
+    assert.deepEqual(await clean.readCharacters(f.campaign.id), before);
+  }
+);
+
+test(
   'a stalled verified object cannot publish after cleanup and the same caller retries with a new generation',
   { timeout: 60000 },
   async (t) => {

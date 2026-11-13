@@ -18,6 +18,12 @@ const {
   default: CloudCampaignClientStore,
 } = require('../../src/campaigns/CloudCampaignClientStore.js');
 const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCharacters.js');
+const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
+const { default: CombatSession } = require('../../src/entities/characters/CombatSession.js');
+const {
+  createTwoFloorTravelScene,
+} = require('../../src/campaigns/examples/ConnectedTravelExample.js');
+const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
 const { cloudApi } = require('./helpers/http.js');
 
@@ -144,6 +150,407 @@ function invitation(name = 'Invited player', seatId = null) {
     },
   };
 }
+
+test(
+  'only the campaign owner controls durable live state and login or membership cannot start or extend it',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const member = await f.account();
+    const unrelated = await f.account();
+    const campaign = await f.create(owner.principal, 'Owner-controlled live game');
+    await f.join(campaign.id, member.uid);
+    const otherCampaign = await f.create(member.principal, 'Member owns another campaign');
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const original = (await head.get()).data();
+    const paused = await f.store.getLiveSession(member.principal, campaign.id);
+    assert.equal(paused.state, 'paused');
+    assert.equal(paused.generation, 0);
+    assert.equal(paused.sessionId, null);
+    await assert.rejects(f.store.getLiveSession(unrelated.principal, campaign.id), {
+      code: 'campaign-not-found',
+    });
+    const start = {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId: paused.sessionId,
+    };
+    await assert.rejects(f.store.controlLiveSession(member.principal, campaign.id, start), {
+      code: 'campaign-not-found',
+    });
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, start);
+    assert.equal(active.state, 'live');
+    assert.equal(active.generation, 1);
+    assert.ok(active.sessionId);
+    assert.deepEqual(
+      await f.createStore().controlLiveSession(owner.principal, campaign.id, start),
+      active
+    );
+    now += 20 * 60 * 1000;
+    assert.deepEqual(await f.createStore().getLiveSession(member.principal, campaign.id), active);
+    assert.equal(
+      (await f.store.getLiveSession(member.principal, otherCampaign.id)).state,
+      'paused'
+    );
+    const keep = {
+      commandId: randomUUID(),
+      action: 'keep-active',
+      generation: active.generation,
+      sessionId: active.sessionId,
+    };
+    await assert.rejects(f.store.controlLiveSession(member.principal, campaign.id, keep), {
+      code: 'campaign-not-found',
+    });
+    let kept = await f.createStore().controlLiveSession(owner.principal, campaign.id, keep);
+    assert.equal(kept.sessionId, active.sessionId);
+    assert.equal(kept.generation, 2);
+    assert.equal(kept.lastMeaningfulAt, new Date(now).toISOString());
+    for (let renewal = 0; renewal < 19; renewal++) {
+      now += 20 * 60 * 1000;
+      kept = await f.createStore().controlLiveSession(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        action: 'keep-active',
+        generation: kept.generation,
+        sessionId: kept.sessionId,
+      });
+    }
+    assert.ok(Date.parse(kept.lastMeaningfulAt) - Date.parse(kept.startedAt) > 6 * 60 * 60 * 1000);
+    assert.equal(kept.sessionId, active.sessionId);
+    const end = {
+      commandId: randomUUID(),
+      action: 'end',
+      generation: kept.generation,
+      sessionId: kept.sessionId,
+    };
+    const ended = await f.createStore().controlLiveSession(owner.principal, campaign.id, end);
+    assert.equal(ended.state, 'paused');
+    assert.equal(ended.pauseReason, 'owner-end');
+    assert.deepEqual(await f.store.getLiveSession(member.principal, campaign.id), ended);
+    assert.deepEqual((await head.get()).data(), original);
+    const restarted = await f.createStore().controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: ended.generation,
+      sessionId: ended.sessionId,
+    });
+    assert.notEqual(restarted.sessionId, active.sessionId);
+    assert.deepEqual(await f.store.getLiveSession(member.principal, campaign.id), restarted);
+  }
+);
+
+test(
+  'authenticated live admission rejects paused, stale-session and removed-member access across backend instances',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Live admission scope');
+    await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const request = async (identity, suffix, body) => {
+      const response = await fetch(`${api.url}/api/cloud/campaigns/${campaign.id}/${suffix}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: {
+          Authorization: 'Bearer ' + identity.token,
+          Origin: api.origin,
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      return { status: response.status, data: await response.json() };
+    };
+    const paused = await request(member, 'live');
+    assert.equal(paused.status, 200);
+    assert.equal(
+      (await request(member, 'live/access', { sessionId: null })).data.code,
+      'live-session-paused'
+    );
+    const started = await request(owner, 'live', {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    assert.equal(started.status, 200);
+    const active = started.data.result;
+    const admitted = await request(member, 'live/access', { sessionId: active.sessionId });
+    assert.equal(admitted.status, 200);
+    assert.equal(admitted.data.result.session.sessionId, active.sessionId);
+    assert.equal(admitted.data.result.participant.access.uid, member.uid);
+    assert.equal(admitted.data.result.participant.access.role, 'member');
+    const ended = await request(owner, 'live', {
+      commandId: randomUUID(),
+      action: 'end',
+      generation: active.generation,
+      sessionId: active.sessionId,
+    });
+    assert.equal(ended.status, 200);
+    assert.equal(
+      (await request(member, 'live/access', { sessionId: active.sessionId })).data.code,
+      'live-session-paused'
+    );
+    const restarted = await f.createStore().controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: ended.data.result.generation,
+      sessionId: active.sessionId,
+    });
+    assert.equal(
+      (await request(member, 'live/access', { sessionId: active.sessionId })).data.code,
+      'live-session-changed'
+    );
+    assert.equal(
+      (await request(member, 'live/access', { sessionId: restarted.sessionId })).status,
+      200
+    );
+    await f.store.removeMember(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      seatId: admitted.data.result.participant.access.seatId,
+      accessGeneration: 0,
+    });
+    assert.equal(
+      (await request(member, 'live/access', { sessionId: restarted.sessionId })).status,
+      404
+    );
+    assert.equal(
+      (await f.store.getLiveSession(owner.principal, campaign.id)).sessionId,
+      restarted.sessionId
+    );
+  }
+);
+
+test(
+  'an uncertain owner control retries its original command without reviving an obsolete live-state receipt',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Uncertain live control');
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const bodies = [];
+    let lose = true;
+    const client = f.client(owner, api, async (url, options) => {
+      const response = await fetch(url, options);
+      if (url.endsWith('/live') && options.method === 'POST') {
+        bodies.push(options.body);
+        if (lose) {
+          lose = false;
+          assert.equal(response.status, 200);
+          await response.clone().json();
+          throw new TypeError('Fixture lost the committed owner start reply');
+        }
+      }
+      return response;
+    });
+    t.after(() => client.close());
+    const initial = await client.getLiveSession(campaign.id);
+    await assert.rejects(client.controlLiveSession(campaign.id, 'start', initial), {
+      code: 'cloud-unavailable',
+    });
+    assert.equal(client.saveState.phase, 'idle');
+    const active = await f.createStore().getLiveSession(owner.principal, campaign.id);
+    assert.equal(active.state, 'live');
+    const ended = await f.createStore().controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'end',
+      generation: active.generation,
+      sessionId: active.sessionId,
+    });
+    const historical = await client.retryLiveSession();
+    assert.deepEqual(historical, active);
+    assert.deepEqual(await client.getLiveSession(campaign.id), ended);
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[0], bodies[1]);
+    assert.equal(client.saveState.phase, 'idle');
+    const restarted = await client.controlLiveSession(campaign.id, 'start', ended);
+    assert.notEqual(restarted.sessionId, active.sessionId);
+    const access = await client.getLiveAccess(campaign.id, restarted.sessionId);
+    assert.equal(access.participant.access.uid, owner.uid);
+    assert.equal(access.session.sessionId, restarted.sessionId);
+  }
+);
+
+test(
+  'competing live controls serialize and damaged live metadata cannot silently reset a campaign',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Concurrent live-state authority');
+    const start = { commandId: randomUUID(), action: 'start', generation: 0, sessionId: null };
+    const starts = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        f.createStore().controlLiveSession(owner.principal, campaign.id, start)
+      )
+    );
+    for (const result of starts) assert.deepEqual(result, starts[0]);
+    const active = starts[0];
+    const race = await Promise.allSettled(
+      ['end', 'keep-active'].map((action) =>
+        f.createStore().controlLiveSession(owner.principal, campaign.id, {
+          commandId: randomUUID(),
+          action,
+          generation: active.generation,
+          sessionId: active.sessionId,
+        })
+      )
+    );
+    assert.equal(race.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(
+      race.find((result) => result.status === 'rejected').reason.code,
+      'live-session-changed'
+    );
+    const winner = race.find((result) => result.status === 'fulfilled').value;
+    assert.equal(winner.generation, 2);
+    await assert.rejects(
+      f.store.create(owner.principal, {
+        commandId: start.commandId,
+        options: { name: 'Conflicting command endpoint', ruleset: '2014' },
+      }),
+      { code: 'command-id-conflict' }
+    );
+    const reference = f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('liveSession')
+      .doc('current');
+    await reference.update({ generation: -1 });
+    await assert.rejects(f.store.getLiveSession(owner.principal, campaign.id), {
+      code: 'invalid-live-session',
+    });
+    await assert.rejects(
+      f.store.controlLiveSession(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        action: 'start',
+        generation: 0,
+        sessionId: null,
+      }),
+      { code: 'invalid-live-session' }
+    );
+    assert.equal((await reference.get()).data().generation, -1);
+  }
+);
+
+test(
+  'paused owner token preparation preserves committed movement, actions, sheets and the ended live session',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Paused token preparation');
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: {
+        readCharacters: (id) => f.store.readCharacters(owner.principal, id),
+        commitCharacters: (id, change) =>
+          f.store.commitCharacters(owner.principal, id, {
+            commandId: randomUUID(),
+            change,
+          }),
+      },
+    });
+    for (const name of ['Pathfinder', 'Lower lookout', 'Upper lookout']) await library.create(name);
+    const validation = { library, ruleset: '2014' };
+    const world = CampaignWorld.fromScene(
+      createTwoFloorTravelScene({
+        ruleset: '2014',
+        characters: library.list(),
+      }),
+      validation
+    );
+    const initial = world.save();
+    const combat = new CombatSession({ library: library.engine });
+    const actor = { ...initial.creatures[0], characterSheetId: initial.creatures[0].characterId };
+    combat.startTurn(actor);
+    combat.adjustMovement(actor, 20);
+    initial.combat = combat.snapshot();
+    world.acceptCheckpoint(initial);
+    await f.store.commitScene(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: {
+        ruleset: '2014',
+        revision: 0,
+        charactersRevision: library.revision,
+        scene: encodeScene(world.save(), validation),
+      },
+    });
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    const ended = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'end',
+      generation: active.generation,
+      sessionId: active.sessionId,
+    });
+    const before = await f.store.readCharacters(owner.principal, campaign.id);
+    const prepared = world.save();
+    prepared.creatures[0].gridX = 9;
+    prepared.creatures[0].pose.world.x = 9.5;
+    world.acceptCheckpoint(prepared);
+    const scene = encodeScene(world.save(), validation);
+    await f.store.commitScene(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: {
+        ruleset: '2014',
+        revision: before.sceneRevision,
+        charactersRevision: before.revision,
+        scene,
+      },
+    });
+    const after = await f.createStore().readCharacters(owner.principal, campaign.id);
+    assert.equal(after.scene, scene);
+    assert.deepEqual(after.records, before.records);
+    assert.deepEqual(JSON.parse(after.scene).combat, JSON.parse(before.scene).combat);
+    assert.equal(JSON.parse(after.scene).creatures[0].gridX, 9);
+    assert.deepEqual(await f.store.getLiveSession(owner.principal, campaign.id), ended);
+  }
+);
+
+test(
+  'campaign copy import preserves saved data but never copies the source live-game authority',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const source = await f.create(owner.principal, 'Live source is not copied');
+    const active = await f.store.controlLiveSession(owner.principal, source.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    const text = await f.store.exportBackup(owner.principal, source.id);
+    assert.equal(text.includes(active.sessionId), false);
+    const bytes = Buffer.from(text);
+    const commandId = randomUUID();
+    const ticket = await f.store.startImport(owner.principal, {
+      commandId,
+      bytes: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    });
+    await f.store.uploadImportChunk(owner.principal, ticket.importId, {
+      index: 0,
+      data: bytes.toString('base64'),
+    });
+    const copied = await f.store.finishImport(owner.principal, ticket.importId, { commandId });
+    const state = await f.createStore().getLiveSession(owner.principal, copied.campaign.id);
+    assert.equal(state.state, 'paused');
+    assert.equal(state.generation, 0);
+    assert.equal(state.sessionId, null);
+    assert.deepEqual(await f.store.getLiveSession(owner.principal, source.id), active);
+  }
+);
 
 test(
   'removing a member revokes its account access while preserving the original seat and canonical campaign',

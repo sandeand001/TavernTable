@@ -27,6 +27,67 @@ const keys = (value, names) =>
   Object.keys(value).length === names.length &&
   Object.keys(value).every((key) => names.includes(key));
 
+export function isCloudLiveSession(value) {
+  if (
+    !record(value) ||
+    !keys(value, [
+      'version',
+      'campaignId',
+      'generation',
+      'sessionId',
+      'state',
+      'startedAt',
+      'lastMeaningfulAt',
+      'pausedAt',
+      'pauseReason',
+    ]) ||
+    value.version !== 1 ||
+    !isCloudUUID(value.campaignId) ||
+    !Number.isSafeInteger(value.generation) ||
+    value.generation < 0 ||
+    !['paused', 'live'].includes(value.state)
+  )
+    return false;
+  if (value.sessionId === null)
+    return (
+      value.generation === 0 &&
+      value.state === 'paused' &&
+      value.startedAt === null &&
+      value.lastMeaningfulAt === null &&
+      value.pausedAt === null &&
+      value.pauseReason === 'not-started'
+    );
+  if (
+    !isCloudUUID(value.sessionId) ||
+    value.generation < 1 ||
+    typeof value.startedAt !== 'string' ||
+    !Number.isFinite(Date.parse(value.startedAt)) ||
+    typeof value.lastMeaningfulAt !== 'string' ||
+    !Number.isFinite(Date.parse(value.lastMeaningfulAt)) ||
+    Date.parse(value.lastMeaningfulAt) < Date.parse(value.startedAt)
+  )
+    return false;
+  return value.state === 'live'
+    ? value.pausedAt === null && value.pauseReason === null
+    : value.generation > 1 &&
+        value.pauseReason === 'owner-end' &&
+        typeof value.pausedAt === 'string' &&
+        Number.isFinite(Date.parse(value.pausedAt)) &&
+        Date.parse(value.pausedAt) >= Date.parse(value.lastMeaningfulAt);
+}
+
+export function isCloudLiveAccess(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'session', 'participant']) &&
+    value.version === 1 &&
+    isCloudLiveSession(value.session) &&
+    value.session.state === 'live' &&
+    isCloudParticipantAccess(value.participant) &&
+    value.participant.access.campaignId === value.session.campaignId
+  );
+}
+
 export function isCloudBackupRecord(value) {
   return (
     record(value) &&

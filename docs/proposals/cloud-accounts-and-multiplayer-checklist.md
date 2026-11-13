@@ -51,8 +51,9 @@ controls (`M2-08`), complete campaign portability (`M2-07`), independent
 rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
 Fenced cleanup (`M2-11`) and the local API-runtime package (`M4-06`) are verified;
-no cloud deployment is authorized. Durable live-session state and between-game
-sheet work are next; cloud player gameplay
+no cloud deployment is authorized. Durable live-session authority (`M4-01`) is
+verified; between-game sheet work, inactivity/presence and player synchronization
+are next. Cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
@@ -685,13 +686,30 @@ Revalidation in the intended environment remains part of M1 and M4.
 
 `M4-01` is an early prerequisite for M2/M3, not permission to deploy M4 early.
 
-- [ ] **M4-01 - Implement durable owner-controlled live-session state.**
+- [x] **M4-01 - Implement durable owner-controlled live-session state.**
   - **Depends:** `M2-01`, `M1-07`.
   - **Success:** distinguish account sessions, live games and combat turns.
     Owner-only start/end/keep-active is campaign-scoped; world commands require
     live status, while permitted between-game work does not.
   - **Verify:** role/state-transition tests persist across backend replacement.
     A membership or successful login cannot start/extend somebody else's game.
+  - **Selected November 13, 2026:** paused DM preparation may reposition tokens
+    without spending movement/actions; player world actions remain live-only.
+    Permitted sheet edits and map preparation do not start a live game.
+  - **Completed:** November 13, 2026; separate campaign live-state/control
+    generation and epoch, owner-only authenticated start/end/keep-active,
+    UID-bound same-command recovery and current-role/epoch admission are verified.
+    Real backend replacement preserves state and receipts. More than six hours
+    of explicit renewal is valid; login/reads do not renew it. Paused owner
+    repositioning preserves raw sheets, combat and movement/action state;
+    campaign copies start paused with no copied live authority. Competing
+    controls have one winner and malformed state fails explicitly.
+    Affected native authority/canonical/lifecycle/runtime gate: **77/77 cases**,
+    no skips, **206,039.7877 ms**. App compatibility: **15 suites / 100 tests**,
+    **7.774 s**; lint/stylelint/layering: zero errors and the same 39 existing
+    warnings. This early prerequisite verifies actual control/admission APIs,
+    not complete cloud gameplay/UI: M3 world/stream publication must reuse the
+    transaction-time gate; M4-02/03/04 still own inactivity/presence/drain behavior.
 
 - [ ] **M4-02 - Implement meaningful-activity deadlines and owner keep-active.**
   - **Depends:** `M4-01`, `M2-05`.

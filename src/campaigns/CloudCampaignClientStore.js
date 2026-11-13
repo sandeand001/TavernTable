@@ -20,6 +20,8 @@ import {
   isCloudImportTicket,
   isCloudBackupRecord,
   isCloudBackupStatus,
+  isCloudLiveSession,
+  isCloudLiveAccess,
   CLOUD_BACKUP_RETAIN,
 } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
@@ -91,6 +93,7 @@ export default class CloudCampaignClientStore {
     this.closed = false;
     this.pending = null;
     this.pendingBackup = null;
+    this.pendingLive = null;
     this.saveListeners = new Set();
     this.saveState = Object.freeze({ phase: 'idle', error: null });
     this.storageInfo = Object.freeze({
@@ -830,6 +833,139 @@ export default class CloudCampaignClientStore {
     });
     return result.campaign;
   }
+  async getLiveSession(id) {
+    const result = await this._call(this._resource(id, '/live'));
+    if (!isCloudLiveSession(result) || result.campaignId !== id) throw invalidResponse();
+    return copy(result);
+  }
+
+  async getLiveAccess(id, sessionId) {
+    if (!(sessionId === null || isCloudUUID(sessionId)))
+      throw failure(
+        400,
+        'invalid-live-command',
+        'Choose the current live game before entering its world.'
+      );
+    const result = await this._call(this._resource(id, '/live/access'), {
+      method: 'POST',
+      body: { sessionId },
+    });
+    if (
+      !isCloudLiveAccess(result) ||
+      result.session.campaignId !== id ||
+      result.session.sessionId !== sessionId ||
+      result.participant.access.uid !== this.uid
+    )
+      throw invalidResponse();
+    return copy(result);
+  }
+
+  controlLiveSession(id, action, snapshot) {
+    this._identity();
+    this._resource(id);
+    if (
+      !['start', 'end', 'keep-active'].includes(action) ||
+      !isCloudLiveSession(snapshot) ||
+      snapshot.campaignId !== id
+    )
+      throw failure(
+        400,
+        'invalid-live-command',
+        'Refresh the campaign live-game state before an owner action.'
+      );
+    if (this.pendingLive !== null)
+      throw failure(
+        409,
+        'live-control-pending',
+        'Recover the original live-game action before starting another.'
+      );
+    const item = {
+      id,
+      snapshot: copy(snapshot),
+      uncertain: false,
+      promise: null,
+      body: {
+        commandId: this.crypto.randomUUID(),
+        action,
+        generation: snapshot.generation,
+        sessionId: snapshot.sessionId,
+      },
+    };
+    this.pendingLive = item;
+    return this._liveAttempt(item);
+  }
+
+  retryLiveSession() {
+    this._identity();
+    if (this.pendingLive === null)
+      throw failure(
+        409,
+        'no-pending-live-control',
+        'There is no original live-game action to recover.'
+      );
+    return this._liveAttempt(this.pendingLive);
+  }
+
+  _liveAttempt(item) {
+    if (item.promise !== null) return item.promise;
+    item.promise = this._call(this._resource(item.id, '/live'), {
+      method: 'POST',
+      body: copy(item.body),
+    })
+      .then((result) => {
+        if (
+          !isCloudLiveSession(result) ||
+          result.campaignId !== item.id ||
+          result.generation !== item.body.generation + 1
+        )
+          throw invalidResponse();
+        const start = item.body.action === 'start';
+        if (
+          (start &&
+            (result.state !== 'live' ||
+              result.sessionId === item.body.sessionId ||
+              result.startedAt !== result.lastMeaningfulAt)) ||
+          (!start &&
+            (result.sessionId !== item.body.sessionId ||
+              result.startedAt !== item.snapshot.startedAt)) ||
+          (item.body.action === 'end' &&
+            (result.state !== 'paused' ||
+              result.lastMeaningfulAt !== item.snapshot.lastMeaningfulAt)) ||
+          (item.body.action === 'keep-active' &&
+            (result.state !== 'live' ||
+              Date.parse(result.lastMeaningfulAt) < Date.parse(item.snapshot.lastMeaningfulAt)))
+        )
+          throw invalidResponse();
+        this.pendingLive = null;
+        return copy(result);
+      })
+      .catch((error) => {
+        if (
+          !item.uncertain &&
+          [
+            'invalid-live-command',
+            'live-session-changed',
+            'live-session-paused',
+            'live-session-already-started',
+            'command-id-conflict',
+            'campaign-not-found',
+            'authentication-required',
+            'invalid-identity',
+            'email-verification-required',
+            'pilot-access-required',
+            'account-changed',
+          ].includes(error.code)
+        )
+          this.pendingLive = null;
+        else item.uncertain = true;
+        throw error;
+      })
+      .finally(() => {
+        item.promise = null;
+      });
+    return item.promise;
+  }
+
   async listBackups(id) {
     const result = await this._call(this._resource(id, '/backups'));
     if (

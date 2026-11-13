@@ -41,6 +41,7 @@ const {
   isCloudImportReceipt,
   isCloudImportTicket,
   isCloudBackupRecord,
+  isCloudLiveSession,
   CLOUD_BACKUP_INTERVAL_MS,
   CLOUD_BACKUP_RETAIN,
 } = require('../../src/campaigns/CloudProtocol.js');
@@ -180,6 +181,8 @@ function validCommandResult(previous) {
     return isCloudCampaignSettings(result) && result.campaign.id === previous.campaignId;
   if (kind === 'campaign.asset.upload') return isPrivateAssetReference(result, previous.campaignId);
   if (kind === 'campaign.backup') return isCloudBackupRecord(result);
+  if (kind === 'campaign.live')
+    return isCloudLiveSession(result) && result.campaignId === previous.campaignId;
   if (kind === 'campaign.import')
     return (
       isCloudImportReceipt(result) &&
@@ -372,6 +375,7 @@ class CloudCampaignStore {
         'campaign.asset.upload',
         'campaign.import',
         'campaign.backup',
+        'campaign.live',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
@@ -422,6 +426,202 @@ class CloudCampaignStore {
       );
     }
     return previous.result;
+  }
+
+  _liveSessionReference(id) {
+    return this.firestore.collection('campaigns').doc(id).collection('liveSession').doc('current');
+  }
+
+  async _liveSession(transaction, id) {
+    const snapshot = await transaction.get(this._liveSessionReference(id));
+    if (!snapshot.exists)
+      return {
+        version: 1,
+        campaignId: id,
+        generation: 0,
+        sessionId: null,
+        state: 'paused',
+        startedAt: null,
+        lastMeaningfulAt: null,
+        pausedAt: null,
+        pauseReason: 'not-started',
+      };
+    const value = snapshot.data();
+    if (!isCloudLiveSession(value) || value.campaignId !== id)
+      throw new CloudError(503, 'invalid-live-session', 'Live-game state could not be verified');
+    return value;
+  }
+
+  async getLiveSession(principal, id) {
+    const uid = principalUid(principal);
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        await this._accessGrant(transaction, uid, id);
+        return this._liveSession(transaction, id);
+      },
+      { readOnly: true }
+    );
+  }
+
+  async requireLiveSession(transaction, principal, id, sessionId) {
+    const uid = principalUid(principal);
+    if (!(sessionId === null || isCloudUUID(sessionId)))
+      throw new CloudError(400, 'invalid-live-command', 'Choose the current live-game session');
+    await this.access.assertEligibility(uid, transaction);
+    const participant = await this._accessGrant(transaction, uid, id);
+    const session = await this._liveSession(transaction, id);
+    if (session.state !== 'live')
+      throw new CloudError(
+        409,
+        'live-session-paused',
+        'The campaign owner must start a live game before world actions'
+      );
+    if (session.sessionId !== sessionId)
+      throw new CloudError(
+        409,
+        'live-session-changed',
+        'This live-game session changed; reconnect to its current state'
+      );
+    return { version: 1, session, participant };
+  }
+
+  async getLiveAccess(principal, id, command) {
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).length !== 1 ||
+      !Object.hasOwn(command, 'sessionId')
+    )
+      throw new CloudError(
+        400,
+        'invalid-live-command',
+        'Choose an explicit live-game session for admission'
+      );
+    const { sessionId } = command;
+    return this._transaction(
+      (transaction) => this.requireLiveSession(transaction, principal, id, sessionId),
+      { readOnly: true }
+    );
+  }
+
+  async controlLiveSession(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).length !== 4 ||
+      Object.keys(command).some(
+        (key) => !['commandId', 'action', 'generation', 'sessionId'].includes(key)
+      ) ||
+      !isCloudUUID(command.commandId) ||
+      !['start', 'end', 'keep-active'].includes(command.action) ||
+      !Number.isSafeInteger(command.generation) ||
+      command.generation < 0 ||
+      !(command.sessionId === null || isCloudUUID(command.sessionId))
+    )
+      throw new CloudError(
+        400,
+        'invalid-live-command',
+        'Choose the current live game and an explicit owner action'
+      );
+    const input = structuredClone(command);
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.live',
+          campaignId: id,
+          action: input.action,
+          generation: input.generation,
+          sessionId: input.sessionId,
+        })
+      )
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(input.commandId);
+    const intent = { uid, reference, fingerprint, kind: 'campaign.live', campaignId: id };
+    const sessionId = randomUUID();
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, intent);
+      if (replay !== null) return replay;
+      await this._metadata(
+        await transaction.get(this.firestore.collection('campaigns').doc(id)),
+        uid
+      );
+      const current = await this._liveSession(transaction, id);
+      if (current.generation !== input.generation || current.sessionId !== input.sessionId)
+        throw new CloudError(
+          409,
+          'live-session-changed',
+          'The live game changed; refresh its state before another action'
+        );
+      if (current.generation >= Number.MAX_SAFE_INTEGER)
+        throw new CloudError(
+          503,
+          'invalid-live-session',
+          'The live-game generation cannot advance'
+        );
+      if (input.action === 'start' && current.state === 'live')
+        throw new CloudError(
+          409,
+          'live-session-already-started',
+          'This campaign already has a live game'
+        );
+      if (input.action !== 'start' && current.state !== 'live')
+        throw new CloudError(
+          409,
+          'live-session-paused',
+          'Start the campaign live game before this action'
+        );
+      const now = Math.max(
+        this.now(),
+        Date.parse(current.pausedAt ?? current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
+      );
+      const timestamp = new Date(now).toISOString();
+      const next = {
+        ...current,
+        generation: current.generation + 1,
+        ...(input.action === 'start'
+          ? {
+              sessionId,
+              state: 'live',
+              startedAt: timestamp,
+              lastMeaningfulAt: timestamp,
+              pausedAt: null,
+              pauseReason: null,
+            }
+          : input.action === 'end'
+            ? {
+                state: 'paused',
+                pausedAt: timestamp,
+                pauseReason: 'owner-end',
+              }
+            : { lastMeaningfulAt: timestamp }),
+      };
+      if (!isCloudLiveSession(next))
+        throw new CloudError(
+          503,
+          'invalid-live-session',
+          'The live-game transition could not be verified'
+        );
+      transaction.set(this._liveSessionReference(id), next);
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: 'campaign.live',
+        campaignId: id,
+        fingerprint,
+        result: next,
+      });
+      return next;
+    });
   }
 
   _backupStateReference(id) {

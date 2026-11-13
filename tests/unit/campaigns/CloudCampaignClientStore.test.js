@@ -92,6 +92,109 @@ function fixture({ crypto } = {}) {
   return { auth, connection, store, fetch };
 }
 
+test('live control confirms only its captured transition and keeps malformed replies separate from primary save state', async () => {
+  const setup = fixture();
+  const paused = {
+    version: 1,
+    campaignId,
+    generation: 0,
+    sessionId: null,
+    state: 'paused',
+    startedAt: null,
+    lastMeaningfulAt: null,
+    pausedAt: null,
+    pauseReason: 'not-started',
+  };
+  const active = {
+    ...paused,
+    generation: 1,
+    sessionId: '33333333-3333-4333-8333-333333333333',
+    state: 'live',
+    startedAt: '2026-11-13T00:00:00.000Z',
+    lastMeaningfulAt: '2026-11-13T00:00:00.000Z',
+    pauseReason: null,
+  };
+  let valid = false;
+  setup.fetch.mockImplementation(async (_url, options) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      version: 1,
+      result: options.method === 'GET' ? paused : valid ? active : { ...active, generation: 2 },
+    }),
+  }));
+  const snapshot = await setup.store.getLiveSession(campaignId);
+  const pending = setup.store.controlLiveSession(campaignId, 'start', snapshot);
+  snapshot.generation = 99;
+  snapshot.campaignId = commandId;
+  await expect(pending).rejects.toMatchObject({ code: 'invalid-cloud-response' });
+  expect(setup.store.saveState.phase).toBe('idle');
+  expect(setup.store.pending).toBeNull();
+  valid = true;
+  await expect(setup.store.retryLiveSession()).resolves.toEqual(active);
+  const requests = setup.fetch.mock.calls.filter(([, options]) => options.method === 'POST');
+  expect(requests[0][1].body).toBe(requests[1][1].body);
+  expect(JSON.parse(requests[0][1].body)).toEqual({
+    commandId,
+    action: 'start',
+    generation: 0,
+    sessionId: null,
+  });
+  expect(setup.store.saveState.phase).toBe('idle');
+  setup.store.close();
+});
+
+test('live admission rejects foreign UID, campaign and live-epoch projections without caching them', async () => {
+  const setup = fixture();
+  const sessionId = '33333333-3333-4333-8333-333333333333';
+  const live = {
+    version: 1,
+    campaignId,
+    generation: 1,
+    sessionId,
+    state: 'live',
+    startedAt: '2026-11-13T00:00:00.000Z',
+    lastMeaningfulAt: '2026-11-13T00:00:00.000Z',
+    pausedAt: null,
+    pauseReason: null,
+  };
+  const participant = {
+    version: 1,
+    campaign: accessSummary('member').campaign,
+    characterIds: [],
+    access: {
+      version: 1,
+      uid: 'uid-a',
+      campaignId,
+      role: 'member',
+      seatId: accessSummary('member').seatId,
+      accessGeneration: 1,
+    },
+  };
+  let result = { version: 1, session: live, participant };
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  await expect(setup.store.getLiveAccess(campaignId, sessionId)).resolves.toEqual(result);
+  for (const invalid of [
+    { ...result, ownerUid: 'PRIVATE OWNER' },
+    {
+      ...result,
+      participant: { ...participant, access: { ...participant.access, uid: 'another-user' } },
+    },
+    { ...result, session: { ...live, campaignId: commandId } },
+    { ...result, session: { ...live, sessionId: commandId } },
+  ]) {
+    result = invalid;
+    await expect(setup.store.getLiveAccess(campaignId, sessionId)).rejects.toMatchObject({
+      code: 'invalid-cloud-response',
+    });
+  }
+  setup.store.close();
+});
+
 test('a mismatched backup receipt stays on its separate original caller without acknowledging a primary save', async () => {
   const setup = fixture();
   const bodies = [];

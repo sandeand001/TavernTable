@@ -162,6 +162,9 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'listAccess',
       'getAccess',
       'getParticipantAccess',
+      'getLiveSession',
+      'getLiveAccess',
+      'controlLiveSession',
       'getSettings',
       'updateSettings',
       'uploadAsset',
@@ -212,7 +215,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|live(?:\/access)?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (
@@ -254,9 +257,12 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         'assignments',
         'assets',
         'backups/work',
+        'live/access',
       ].includes(snapshot);
     const writable =
-      postOnly || collection || ['scene', 'characters', 'settings', 'backups'].includes(snapshot);
+      postOnly ||
+      collection ||
+      ['scene', 'characters', 'settings', 'backups', 'live'].includes(snapshot);
     const methods = postOnly ? 'POST, OPTIONS' : writable ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
     let operation = 'campaign.get';
     if (account) operation = 'account';
@@ -271,6 +277,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot === 'settings') operation = 'campaign.settings';
+    else if (snapshot === 'live' || snapshot === 'live/access') operation = 'campaign.live';
     else if (snapshot === 'backup') operation = 'campaign.backup.export';
     else if (snapshot?.startsWith('backups')) operation = 'campaign.' + snapshot.replace('/', '.');
     else if (snapshot === 'assets') operation = 'campaign.asset.upload';
@@ -411,6 +418,13 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.getAccess(principal, campaign[1]);
         } else if (snapshot === 'participant-access') {
           result = await store.getParticipantAccess(principal, campaign[1], expectedAccess);
+        } else if (snapshot === 'live') {
+          result =
+            request.method === 'POST'
+              ? await store.controlLiveSession(principal, campaign[1], await requestJSON(request))
+              : await store.getLiveSession(principal, campaign[1]);
+        } else if (snapshot === 'live/access') {
+          result = await store.getLiveAccess(principal, campaign[1], await requestJSON(request));
         } else if (snapshot === 'backup') {
           const text = await store.exportBackup(principal, campaign[1]);
           await streamBackup(response, campaign[1], text, headers);
