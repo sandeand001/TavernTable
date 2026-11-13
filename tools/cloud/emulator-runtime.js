@@ -1,3 +1,5 @@
+const { createAdminRuntime } = require('./admin-runtime.js');
+
 function loopbackEndpoint(environment, name) {
   const value = environment[name];
   const match =
@@ -55,43 +57,8 @@ function readEmulatorEnvironment(environment = process.env) {
   return config;
 }
 
-async function createEmulatorRuntime() {
-  const config = readEmulatorEnvironment();
-  const { initializeApp, deleteApp } = require('firebase-admin/app');
-  const { getAuth } = require('firebase-admin/auth');
-  const { getFirestore } = require('firebase-admin/firestore');
-  const { getStorage } = require('firebase-admin/storage');
-  const app = initializeApp(
-    {
-      projectId: config.projectId,
-      storageBucket: config.bucketName,
-    },
-    `taverntable-emulator-${randomUUID()}`
-  );
-  try {
-    let closing;
-    return {
-      projectId: config.projectId,
-      auth: getAuth(app),
-      firestore: getFirestore(app),
-      bucket: getStorage(app).bucket(),
-      close() {
-        if (!closing) closing = deleteApp(app);
-        return closing;
-      },
-    };
-  } catch (error) {
-    try {
-      await deleteApp(app);
-    } catch (cleanupError) {
-      throw new AggregateError(
-        [error, cleanupError],
-        'Emulator SDK initialization and cleanup failed'
-      );
-    }
-    throw error;
-  }
+function createEmulatorRuntime() {
+  return createAdminRuntime(readEmulatorEnvironment());
 }
 
 module.exports = { readEmulatorEnvironment, createEmulatorRuntime };
-const { randomUUID } = require('node:crypto');

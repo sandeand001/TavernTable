@@ -1609,3 +1609,94 @@ migration checklist now has **28 completed tasks**, excluding deferred UX-01.
 The next runtime-packaging readiness probe found the Docker CLI installed but
 its Linux engine unavailable; no Docker daemon was started and no cloud build
 or deployment was attempted.
+
+## Locally verified production API runtime package
+
+`M4-06` is complete locally, not deployed. The owner updated/restarted Docker
+Desktop, and the Linux/amd64 engine was verified at version 29.9.3. All builds
+used its local Windows named pipe, not a remote Docker context. No existing
+unrelated container was inspected, started, stopped or deleted.
+
+The production entry uses the existing cloud authority and serves only cloud
+API routes plus `/healthz`. It does not publish the website, repository files,
+tooling or private data. Production requires explicit project/bucket/mode and
+exact HTTPS frontend origins; emulator endpoint overrides, alternate project
+settings, ambient Firebase configuration and credential-file configuration fail
+explicitly without echoing their contents. The existing Admin SDK default
+credential chain uses the managed service identity when hosted; no developer
+ADC file or service-account key is copied/mounted. Demo and production adapters
+share only SDK initialization and retain their separate configuration guards.
+
+The Dockerfile pins the official Node 24 Bookworm-slim image index to
+`sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54`.
+The built Linux runtime reports **Node 24.22.3**, above the Node 24.4+ floor.
+Its Dockerfile-specific deny-by-default build context was **19.80 MB**:
+application source, the required backend modules, dependency manifests and
+versioned resource packs/notices. It excludes repository/history, tests, docs,
+host databases, Auth exports, client Firebase settings and development/emulator
+tools. Production dependencies use the existing lockfile with install lifecycle
+scripts disabled to avoid development Git hooks; the actual Linux native decoder
+is exercised below rather than assumed available.
+
+Reproduce from the migration worktree with local Docker Desktop running:
+
+```powershell
+docker build --platform linux/amd64 --file tools\cloud\Dockerfile --tag taverntable-cloud:local-check .
+node tools\cloud\check-container.js taverntable-cloud:local-check
+```
+
+The container check creates/removes only its own identified test container.
+It publishes no ports and runs with **no network or mounts**, a **read-only
+root**, **1 CPU / 1 GiB**, dropped capabilities and no privilege escalation.
+Actual image execution proved:
+
+- Non-root UID **1000** binds `0.0.0.0` at **18089**, demonstrating `$PORT` is
+  honored instead of hard-coding the image's default 8080.
+- Readiness is **200**; anonymous and unsigned/forged identities receive **401**;
+  source/tooling requests receive **404**. Configuration failures exit nonzero
+  with redacted startup errors. This is process/API readiness, not proof of
+  external datastore/IAM connectivity.
+- All **16 bundled resource packs / 15,131,548 bytes** match their pinned hashes,
+  both 2014/2024 catalogs load, and a real **16,000,000-pixel** PNG decodes before
+  an intentionally stopped admission callback, without making a Storage request.
+- No developer credential, GPU, canvas development package or emulator/CLI
+  tooling is present. The image's three runtime-module hashes match the final
+  source files. SIGTERM exits **0**, without an OOM, and the test container is
+  removed. The smoke helper's final RSS sample was **209,059,840 bytes**; it is
+  not a production peak-memory/load or monthly-cost measurement.
+
+The local image is `taverntable-cloud:m406-8fcb9250`, image index
+`sha256:4eb77fb09cca679b00d02eda25a76c8120d55d1bd10d4e7b7e20b0eda9d4d51c`.
+It was not pushed. The undeployed Cloud Run template records **us-west1**,
+request-based CPU allocation, disabled startup CPU boost, service/revision
+minimum **0** and maximum **1**, concurrency **40**, **1 CPU / 1 GiB** and
+**3600-second** requests. Image, runtime identity, project, bucket and frontend
+origin placeholders remain unfilled pending `M4-08`. Fields were checked against
+the [official Cloud Run v1 YAML reference](https://docs.cloud.google.com/run/docs/reference/yaml/v1).
+Maximum-one-instance is not used as a correctness guarantee, nor is request
+timeout a total live-game duration cap.
+
+The Git text policy now includes the new Dockerfile/YAML types. The final
+LF-normalized recipe was rebuilt and the actual container gate rerun; its
+runnable image manifest remained
+`sha256:4ebb5fbf31640574c1091c7bd79b950bd514a4583243a08c4dab35bbeb14ddf7`.
+
+Focused production/configuration and real demo SDK compatibility passed
+**7/7 native cases**, zero skipped, in **6,915.1351 ms**. Existing runtime,
+identity-outage and metadata-outage checks passed **4 explicit suites / 10
+tests**, zero skipped, in **3.447 s**. Full JavaScript/CSS/layering checks passed
+with zero errors and the same 39 existing warnings.
+
+The first compatibility run found three `ECONNREFUSED` failures because the old
+attached emulator process was no longer present, not because of a weakened
+runtime guard. All four dedicated emulator ports were verified free before
+restoring only the latest official `M2-11` preservation export into the same
+guarded demo project. The rerun above passed. Independent SDK reads verified
+the original M1 generation **64**, exact scene/character hashes and both
+**709,228-byte** retained files. No Auth export contents were displayed.
+
+Hosted service identity/IAM, public frontend packaging, Cloud Run wake/scale,
+representative load and measured cost remain their own gates. No cloud build,
+deployment, IAM change, live campaign write, push/merge or actual cutover was
+performed. Provider linking remains deferred and routine-save presentation
+remains untouched.

@@ -6,3 +6,5 @@
 *.css text eol=lf
 *.html text eol=lf
 *.rules text eol=lf
+*.yaml text eol=lf
+Dockerfile* text eol=lf

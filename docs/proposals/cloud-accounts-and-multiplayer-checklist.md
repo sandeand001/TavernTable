@@ -50,7 +50,9 @@ gates, along with private image upload/delivery (`M2-06`) and private-pilot usag
 controls (`M2-08`), complete campaign portability (`M2-07`), independent
 rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
-Race-safe cleanup is next; cloud player gameplay
+Fenced cleanup (`M2-11`) and the local API-runtime package (`M4-06`) are verified;
+no cloud deployment is authorized. Durable live-session state and between-game
+sheet work are next; cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
@@ -726,7 +728,7 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** kill/replace the container at commit, notification, backup and
     reconnect boundaries; recover committed state and correct live status.
 
-- [ ] **M4-06 - Package the cloud entry and bounded starting runtime configuration.**
+- [x] **M4-06 - Package the cloud entry and bounded starting runtime configuration.**
   - **Depends:** `M1-10`, `M0-03`.
   - **Success:** a supported Node 24 image meets the project's Node 24.4+ floor,
     listens on `0.0.0.0:$PORT`, and uses managed credentials. Record initial
@@ -735,11 +737,20 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** container/readiness/configuration checks pass without a server GPU,
     developer ADC files, service-account keys, or reliance on a writable
     filesystem. Maximum-one-instance is not used as a correctness guarantee.
-  - **Blocked:** local Docker is installed, but its Linux engine is not running.
-    No daemon was started or cloud build/deployment attempted. Real image
-    validation needs the owner to start/approve Docker Desktop or select a
-    separately approved validation environment; a source-only check is not an
-    image-build success.
+  - **Completed:** November 13, 2026; the owner updated/restarted Docker Desktop.
+    The pinned official Node 24 image built locally and ran actual API readiness,
+    anonymous/forged-identity denial, private-file exclusion, both edition catalogs
+    and full 16,000,000-pixel decoding with **1 CPU / 1 GiB**, no network, no
+    mounts, no credentials/GPU and a read-only root. UID 1000 listened on
+    `0.0.0.0` at a nondefault `$PORT`, then exited cleanly on SIGTERM.
+    The scoped validation container was removed; the local image remains.
+    Shared SDK initialization preserves demo isolation. Focused native gate:
+    **7/7 cases**, no skips, **6,915.1351 ms**; existing runtime/identity/metadata
+    checks: **4 suites / 10 tests**, **3.447 s**. Full lint/stylelint/layering:
+    zero errors and the same 39 existing warnings. The undeployed template records
+    request-based CPU, min 0/max 1, concurrency 40 and 3600-second requests, with
+    unfilled image/identity/project/origin approval placeholders. Hosted IAM,
+    gateway/scaling, representative load and cost remain unverified M4 gates.
 
 - [ ] **M4-07 - Produce a versioned, allowlisted public frontend package.**
   - **Depends:** `M0-03`, `M1-04`, `M3-07`.

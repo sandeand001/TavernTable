@@ -1,0 +1,43 @@
+# Review and replace all APPROVED placeholders only after the M4-08 hosted-test approval.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: taverntable-cloud-pilot
+  labels:
+    cloud.googleapis.com/location: us-west1
+  annotations:
+    run.googleapis.com/minScale: '0'
+    run.googleapis.com/maxScale: '1'
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '1'
+        run.googleapis.com/cpu-throttling: 'true'
+        run.googleapis.com/startup-cpu-boost: 'false'
+    spec:
+      serviceAccountName: APPROVED_RUNTIME_SERVICE_ACCOUNT
+      containerConcurrency: 40
+      timeoutSeconds: 3600
+      containers:
+        - image: APPROVED_PRIVATE_IMAGE_WITH_SHA256_DIGEST
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          env:
+            - name: TAVERNTABLE_CLOUD_MODE
+              value: production
+            - name: GCLOUD_PROJECT
+              value: APPROVED_PROJECT_ID
+            - name: TAVERNTABLE_CLOUD_BUCKET
+              value: APPROVED_PRIVATE_BUCKET
+            - name: TAVERNTABLE_CLOUD_ORIGINS
+              value: '["https://APPROVED_FRONTEND_ORIGIN"]'
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080

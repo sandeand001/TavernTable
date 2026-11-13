@@ -230,6 +230,15 @@
   tests; ordinary unit/UI checks remain Jest. `npm run dev:cloud` serves the
   explicit demo shell/API on loopback without local campaign authority. Scoped
   Java 21 tooling does not change the system default or authorize deployment.
+- **Cloud API runtime (M4 local package verified; not deployed)**: the production
+  entry serves only authenticated cloud routes and a minimal health endpoint,
+  not the website or private/tooling files. Explicit project/bucket/HTTPS origins
+  and production mode reject emulator overrides and credential-file configuration.
+  Production and demo adapters share SDK initialization, not authority or data.
+  The pinned Node 24 image runs as a non-root CPU-only process without copied
+  credentials, local campaign databases or development tools. Local validation
+  uses a read-only filesystem, isolated network and no mounts; hosted IAM,
+  scaling, load, cost and deployment remain separate approval/acceptance gates.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.
