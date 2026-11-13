@@ -1764,3 +1764,73 @@ drain/final-backup and owner lifecycle UI remain their next explicit gates.
 Current player gameplay remains visibly gated. No hosted deployment, live
 Auth/IAM/Storage change or real-data cutover occurred; routine-save presentation
 is untouched.
+
+## Meaningful-activity deadlines and server-observed warnings
+
+`M4-02` is complete for the development authority and managed-client slice.
+`GET .../live/status` returns strict campaign-scoped session metadata plus
+server-observed activity status: observation time, warning/pause deadlines and
+active/warning/paused phase. Warning begins at **55 minutes**, not one timer
+tick later; at **60 minutes** the stored state becomes paused with the original
+deadline as its effective pause time, even when the next real request arrives
+later. No permanent worker or shutdown callback is responsible for correctness.
+The new status interface remains under ordinary current-account/membership,
+origin, request and private-output checks.
+
+Only newly accepted meaningful work renews a live game. Canonical world/sheet
+publication compares validated saved content rather than trusting a client
+activity flag. Changed movement, shared rolls, terrain, saved turns and sheets
+renew the activity timestamp **in the same transaction** as the accepted head
+and receipt. Camera, selection and connected-map view persistence are excluded.
+Unchanged scene/sheet saves, rejected changes, old-command recovery and status/
+admission/reconnect reads cannot renew. Existing explicit owner keep-active is
+receipt-backed; retrying the original body returns the original renewal time.
+The control generation is unchanged by ordinary accepted content activity, and
+owner-end acknowledges the newer accepted timestamp rather than falsely
+rejecting an otherwise valid end receipt.
+
+Expiry is checked again inside transaction-time live admission. A late keep
+cannot revive the old epoch: its natural request persists the due pause before
+returning the explicit paused denial. Owner canonical preparation can still
+finish after expiry, without starting a game or changing its last meaningful
+timestamp. This preserves the approved paused-preparation policy and saved
+combat/resources. Ordinary active renewal remains valid beyond six hours;
+neither request timeout nor process age becomes a game-duration cap.
+
+Focused red/green drills first reproduced the absent expiry denial, unchanged
+activity timestamp and missing warning endpoint, then passed against actual
+Auth/Firestore/Storage HTTP operations. Legacy-board and connected-world
+checkpoints exercise meaningful and view-only differences. A separate real
+child-process drill kills the warned backend and wakes its replacement after
+the original deadline: reconnect and historical receipt recovery cannot renew
+it. Another holds an actual owner object publication from minute 59 to minute
+61; accepted preparation remains durable while the game stays paused at minute
+60, including after another backend replacement.
+
+The final affected authority/canonical/backend-process/production-runtime gate
+passed **82/82 native cases**, zero skipped, in **252,378.732 ms**. The explicit
+account/application/history/save-feedback gate passed **15 suites / 101 tests**,
+zero skipped, in **8.422 s**. Full lint/stylelint/layering passed with zero
+errors and the same 39 existing warnings. This is not a full expanded native
+catalog or complete player-gameplay/SSE acceptance claim.
+
+The actual changed backend was rebuilt as local image
+`taverntable-cloud:m402-8fcb9250`, index
+`sha256:958bad036300797bb1724887e3ad5ce7350449bfafab8123860ed6d02f2311d3`
+and runnable manifest
+`sha256:f93a09a2df186e6e455deac75c581367b72cc71c13c8c2de8a5d1da7fe4b94f7`.
+The existing isolated check passed on Linux/amd64, Node 24.22.3, UID 1000,
+read-only root, no network/mounts/credentials/GPU, one CPU and one GiB. It
+verified custom port/all-interface health, anonymous account and live-status
+401s, forged-identity 401, private-path 404, both catalogs, exact 16-pack resource
+hashes and full 16 MP decoding. Source parity now covers six runtime files,
+including the changed authority, router and shared protocol. SIGTERM exited 0
+without OOM and the owned validation container was removed. Helper RSS
+**208,039,936 bytes** is not representative production peak/load evidence.
+
+Player command/SSE and visible lifecycle warning/control integration remain
+their later gated M3/M4-04/M5 acceptance; status metadata alone does not advertise
+synchronized gameplay. Coalesced presence/15-minute disconnected grace is next.
+No live cloud provisioning, IAM/Auth/Storage test, image push, deployment or
+cutover occurred. Provider linking remains explicitly deferred and routine-save
+presentation is unchanged.

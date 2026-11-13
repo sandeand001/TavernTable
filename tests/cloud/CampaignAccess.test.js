@@ -26,6 +26,7 @@ const {
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
 const { cloudApi } = require('./helpers/http.js');
+const { sceneState } = require('../helpers/sceneState.js');
 
 async function fixture(t, { now } = {}) {
   const runtime = await createEmulatorRuntime();
@@ -238,6 +239,277 @@ test(
     });
     assert.notEqual(restarted.sessionId, active.sessionId);
     assert.deepEqual(await f.store.getLiveSession(member.principal, campaign.id), restarted);
+  }
+);
+
+test(
+  'natural authenticated requests persist the sixty-minute inactivity pause before admission or late keep-active',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const member = await f.account();
+    for (const action of ['admission', 'keep-active']) {
+      const campaign = await f.create(owner.principal, `Inactivity ${action}`);
+      await f.join(campaign.id, member.uid);
+      const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+      const original = (await head.get()).data();
+      const initial = await f.store.getLiveSession(owner.principal, campaign.id);
+      const start = {
+        commandId: randomUUID(),
+        action: 'start',
+        generation: initial.generation,
+        sessionId: initial.sessionId,
+      };
+      const active = await f.store.controlLiveSession(owner.principal, campaign.id, start);
+      const startedAt = now;
+      now = startedAt + 55 * 60 * 1000;
+      assert.deepEqual(await f.createStore().getLiveSession(member.principal, campaign.id), active);
+      now = startedAt + 60 * 60 * 1000 - 1;
+      assert.equal(
+        (
+          await f.createStore().getLiveAccess(member.principal, campaign.id, {
+            sessionId: active.sessionId,
+          })
+        ).session.lastMeaningfulAt,
+        active.lastMeaningfulAt
+      );
+      now++;
+      await assert.rejects(
+        action === 'admission'
+          ? f.createStore().getLiveAccess(member.principal, campaign.id, {
+              sessionId: active.sessionId,
+            })
+          : f.createStore().controlLiveSession(owner.principal, campaign.id, {
+              commandId: randomUUID(),
+              action,
+              generation: active.generation,
+              sessionId: active.sessionId,
+            }),
+        { code: 'live-session-paused' }
+      );
+      const expected = {
+        ...active,
+        generation: active.generation + 1,
+        state: 'paused',
+        pausedAt: new Date(now).toISOString(),
+        pauseReason: 'inactivity',
+      };
+      assert.deepEqual(
+        (await head.collection('liveSession').doc('current').get()).data(),
+        expected
+      );
+      now += 10 * 60 * 1000;
+      assert.deepEqual(
+        await f.createStore().controlLiveSession(owner.principal, campaign.id, start),
+        active
+      );
+      assert.deepEqual(
+        await f.createStore().getLiveSession(owner.principal, campaign.id),
+        expected
+      );
+      assert.deepEqual((await head.get()).data(), original);
+    }
+  }
+);
+
+test(
+  'accepted world and sheet changes renew inactivity atomically but camera, unchanged, invalid and replayed saves do not',
+  { timeout: 60000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const client = f.client(owner, api);
+    for (const connected of [false, true]) {
+      const campaign = await f.create(
+        owner.principal,
+        `Meaningful ${connected ? 'world' : 'board'}`
+      );
+      const catalog = await f.resources.catalog(campaign);
+      const library = await CampaignCharacters.open({
+        campaignId: campaign.id,
+        catalog,
+        store: client,
+      });
+      const actorId = await library.create('Activity scout');
+      const validation = { library, ruleset: '2014' };
+      const initial = sceneState({ characterId: actorId, name: 'Activity scout' });
+      const scene = connected ? CampaignWorld.fromScene(initial, validation).save() : initial;
+      let revision = 0;
+      const save = async (value) => {
+        const command = {
+          commandId: randomUUID(),
+          change: {
+            ruleset: '2014',
+            revision,
+            charactersRevision: library.revision,
+            scene: encodeScene(value, validation),
+          },
+        };
+        revision = (await f.store.commitScene(owner.principal, campaign.id, command)).revision;
+        return command;
+      };
+      await save(scene);
+      const paused = await client.getLiveSession(campaign.id);
+      const active = await client.controlLiveSession(campaign.id, 'start', paused);
+      now += 10 * 60 * 1000;
+      scene.creatures[0].gridX = 3;
+      scene.creatures[0].pose.world.x = 3.5;
+      const move = await save(scene);
+      let acceptedAt = new Date(now).toISOString();
+      assert.equal((await client.getLiveSession(campaign.id)).lastMeaningfulAt, acceptedAt);
+      now += 5 * 60 * 1000;
+      await save(scene);
+      now += 5 * 60 * 1000;
+      const camera = connected ? scene.view.camera : scene.camera;
+      camera.zoom = 2;
+      if (connected) scene.view.focusTokenId = scene.creatures[0].id;
+      else scene.selection = scene.creatures[0].id;
+      await save(scene);
+      now += 60 * 1000;
+      const invalid = structuredClone(scene);
+      invalid.creatures[0].gridX = 999;
+      await assert.rejects(
+        f.store.commitScene(owner.principal, campaign.id, {
+          commandId: randomUUID(),
+          change: {
+            ruleset: '2014',
+            revision,
+            charactersRevision: library.revision,
+            scene: JSON.stringify(invalid),
+          },
+        }),
+        { code: 'invalid-campaign-change' }
+      );
+      await f.createStore().commitScene(owner.principal, campaign.id, move);
+      assert.equal((await client.getLiveSession(campaign.id)).lastMeaningfulAt, acceptedAt);
+      now += 5 * 60 * 1000;
+      scene.rollLog.push({
+        id: 1,
+        message: 'Activity scout rolls perception: 17',
+        type: 'dice',
+        timestamp: new Date(now).toISOString(),
+      });
+      await save(scene);
+      acceptedAt = new Date(now).toISOString();
+      assert.equal((await client.getLiveSession(campaign.id)).lastMeaningfulAt, acceptedAt);
+      now += 5 * 60 * 1000;
+      const terrain = connected ? scene.maps[0].terrain : scene.terrain;
+      terrain.heights[0][0]++;
+      await save(scene);
+      acceptedAt = new Date(now).toISOString();
+      assert.equal((await client.getLiveSession(campaign.id)).lastMeaningfulAt, acceptedAt);
+      now += 5 * 60 * 1000;
+      const combat = new CombatSession({ library: library.engine });
+      combat.startTurn({ ...scene.creatures[0], characterSheetId: actorId });
+      scene.combat = combat.snapshot();
+      await save(scene);
+      acceptedAt = new Date(now).toISOString();
+      assert.equal((await client.getLiveSession(campaign.id)).lastMeaningfulAt, acceptedAt);
+      now += 5 * 60 * 1000;
+      const current = await CampaignCharacters.open({
+        campaignId: campaign.id,
+        catalog,
+        store: client,
+      });
+      await current.create('Accepted sheet addition');
+      acceptedAt = new Date(now).toISOString();
+      const changed = await client.getLiveSession(campaign.id);
+      assert.equal(changed.lastMeaningfulAt, acceptedAt);
+      assert.equal(changed.generation, active.generation);
+      now += 60 * 1000;
+      const unchanged = await f.store.readCharacters(owner.principal, campaign.id);
+      await f.store.commitCharacters(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        change: { ruleset: '2014', revision: unchanged.revision, records: unchanged.records },
+      });
+      assert.equal((await client.getLiveSession(campaign.id)).lastMeaningfulAt, acceptedAt);
+      const ended = await client.controlLiveSession(campaign.id, 'end', active);
+      assert.equal(ended.lastMeaningfulAt, acceptedAt);
+      assert.equal(ended.pauseReason, 'owner-end');
+      assert.equal((await client.getLiveSession(campaign.id)).state, 'paused');
+    }
+  }
+);
+
+test(
+  'authenticated live status warns at fifty-five minutes and replayed owner keep-active never renews twice',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Inactivity warning boundaries');
+    await f.join(campaign.id, member.uid);
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const original = (await head.get()).data();
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    let controlBody;
+    const memberClient = f.client(member, api);
+    const client = f.client(owner, api, async (url, options) => {
+      if (url.endsWith('/live') && options.method === 'POST') controlBody = options.body;
+      return fetch(url, options);
+    });
+    const active = await client.controlLiveSession(
+      campaign.id,
+      'start',
+      await client.getLiveSession(campaign.id)
+    );
+    const startedAt = now;
+    const status = async () => {
+      const response = await fetch(`${api.url}/api/cloud/campaigns/${campaign.id}/live/status`, {
+        headers: { Authorization: 'Bearer ' + member.token },
+      });
+      assert.equal(response.status, 200);
+      const value = (await response.json()).result;
+      assert.deepEqual(await memberClient.getLiveStatus(campaign.id), value);
+      return value;
+    };
+    now = startedAt + 55 * 60 * 1000 - 1;
+    let current = await status();
+    assert.equal(current.activity.phase, 'active');
+    assert.equal(current.activity.observedAt, new Date(now).toISOString());
+    assert.equal(current.activity.warningAt, new Date(startedAt + 55 * 60 * 1000).toISOString());
+    assert.equal(current.activity.pauseAt, new Date(startedAt + 60 * 60 * 1000).toISOString());
+    now++;
+    current = await status();
+    assert.equal(current.activity.phase, 'warning');
+    assert.deepEqual(current.session, active);
+    const kept = await client.controlLiveSession(campaign.id, 'keep-active', active);
+    const keepBody = controlBody;
+    const renewedAt = now;
+    now += 5 * 60 * 1000;
+    const replay = await fetch(`${api.url}/api/cloud/campaigns/${campaign.id}/live`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + owner.token, 'Content-Type': 'application/json' },
+      body: keepBody,
+    });
+    assert.equal(replay.status, 200);
+    assert.deepEqual((await replay.json()).result, kept);
+    current = await status();
+    assert.equal(current.activity.phase, 'active');
+    assert.deepEqual(current.session, kept);
+    assert.equal(current.activity.pauseAt, new Date(renewedAt + 60 * 60 * 1000).toISOString());
+    now = renewedAt + 55 * 60 * 1000;
+    assert.equal((await status()).activity.phase, 'warning');
+    now = renewedAt + 60 * 60 * 1000;
+    current = await status();
+    assert.equal(current.session.state, 'paused');
+    assert.equal(current.session.pauseReason, 'inactivity');
+    assert.equal(current.session.pausedAt, new Date(now).toISOString());
+    assert.deepEqual(current.activity, {
+      observedAt: new Date(now).toISOString(),
+      warningAt: null,
+      pauseAt: null,
+      phase: 'paused',
+    });
+    assert.deepEqual((await head.get()).data(), original);
   }
 );
 

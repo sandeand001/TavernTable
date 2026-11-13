@@ -42,6 +42,8 @@ const {
   isCloudImportTicket,
   isCloudBackupRecord,
   isCloudLiveSession,
+  cloudLiveStatus,
+  CLOUD_LIVE_INACTIVITY_MS,
   CLOUD_BACKUP_INTERVAL_MS,
   CLOUD_BACKUP_RETAIN,
 } = require('../../src/campaigns/CloudProtocol.js');
@@ -73,6 +75,14 @@ const participantSummary = (uid, summary, seat = null) => ({
   campaign: summary.campaign,
   characterIds: seat === null ? [] : [...seat.characterIds],
 });
+function sceneActivityState(text) {
+  if (text === null) return null;
+  const scene = JSON.parse(text);
+  delete scene.camera;
+  delete scene.selection;
+  delete scene.view;
+  return stableStringify(scene);
+}
 const unavailableCampaign = () =>
   new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
 const invalidMembership = () =>
@@ -453,15 +463,38 @@ class CloudCampaignStore {
   }
 
   async getLiveSession(principal, id) {
+    return (await this.getLiveStatus(principal, id)).session;
+  }
+
+  async getLiveStatus(principal, id) {
     const uid = principalUid(principal);
-    return this._transaction(
-      async (transaction) => {
-        await this.access.assertEligibility(uid, transaction);
-        await this._accessGrant(transaction, uid, id);
-        return this._liveSession(transaction, id);
-      },
-      { readOnly: true }
-    );
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      await this._accessGrant(transaction, uid, id);
+      const current = await this._liveSession(transaction, id);
+      const now = Math.max(
+        this.now(),
+        Date.parse(current.pausedAt ?? current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
+      );
+      const next = this._expireLiveSession(current, now);
+      if (next !== current) transaction.set(this._liveSessionReference(id), next);
+      return cloudLiveStatus(next, now);
+    });
+  }
+
+  _expireLiveSession(current, now) {
+    if (current.state !== 'live') return current;
+    const deadline = Date.parse(current.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS;
+    if (now < deadline) return current;
+    if (current.generation >= Number.MAX_SAFE_INTEGER)
+      throw new CloudError(503, 'invalid-live-session', 'The live-game generation cannot advance');
+    return {
+      ...current,
+      generation: current.generation + 1,
+      state: 'paused',
+      pausedAt: new Date(deadline).toISOString(),
+      pauseReason: 'inactivity',
+    };
   }
 
   async requireLiveSession(transaction, principal, id, sessionId) {
@@ -470,7 +503,7 @@ class CloudCampaignStore {
       throw new CloudError(400, 'invalid-live-command', 'Choose the current live-game session');
     await this.access.assertEligibility(uid, transaction);
     const participant = await this._accessGrant(transaction, uid, id);
-    const session = await this._liveSession(transaction, id);
+    const session = this._expireLiveSession(await this._liveSession(transaction, id), this.now());
     if (session.state !== 'live')
       throw new CloudError(
         409,
@@ -500,6 +533,7 @@ class CloudCampaignStore {
         'Choose an explicit live-game session for admission'
       );
     const { sessionId } = command;
+    await this.getLiveSession(principal, id);
     return this._transaction(
       (transaction) => this.requireLiveSession(transaction, principal, id, sessionId),
       { readOnly: true }
@@ -547,15 +581,24 @@ class CloudCampaignStore {
       .doc(input.commandId);
     const intent = { uid, reference, fingerprint, kind: 'campaign.live', campaignId: id };
     const sessionId = randomUUID();
-    return this._transaction(async (transaction) => {
+    const outcome = await this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
-      if (replay !== null) return replay;
+      if (replay !== null) return { result: replay };
       await this._metadata(
         await transaction.get(this.firestore.collection('campaigns').doc(id)),
         uid
       );
       const current = await this._liveSession(transaction, id);
+      const now = Math.max(
+        this.now(),
+        Date.parse(current.pausedAt ?? current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
+      );
+      const expired = this._expireLiveSession(current, now);
+      if (expired !== current) {
+        transaction.set(this._liveSessionReference(id), expired);
+        return { expired: true };
+      }
       if (current.generation !== input.generation || current.sessionId !== input.sessionId)
         throw new CloudError(
           409,
@@ -580,10 +623,6 @@ class CloudCampaignStore {
           'live-session-paused',
           'Start the campaign live game before this action'
         );
-      const now = Math.max(
-        this.now(),
-        Date.parse(current.pausedAt ?? current.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
-      );
       const timestamp = new Date(now).toISOString();
       const next = {
         ...current,
@@ -620,8 +659,15 @@ class CloudCampaignStore {
         fingerprint,
         result: next,
       });
-      return next;
+      return { result: next };
     });
+    if (outcome.expired)
+      throw new CloudError(
+        409,
+        'live-session-paused',
+        'The inactive live game paused; refresh before starting another game'
+      );
+    return outcome.result;
   }
 
   _backupStateReference(id) {
@@ -4256,6 +4302,10 @@ class CloudCampaignStore {
     const state = await this._loadSnapshot(captured.head);
     const { next, receipt } = await this._prepareChange(state, kind, change);
     const changesScene = kind === 'scene.commit' || change.scene !== undefined;
+    const meaningful =
+      (kind === 'characters.commit' &&
+        stableStringify(state.records) !== stableStringify(next.records)) ||
+      (changesScene && sceneActivityState(state.scene) !== sceneActivityState(next.scene));
     const candidates = [];
     if (changesScene) candidates.push(snapshotCandidate(id, 'scene', next.scene));
     if (kind === 'characters.commit') {
@@ -4345,7 +4395,18 @@ class CloudCampaignStore {
           });
         }
       }
+      const live = await this._liveSession(transaction, id);
       await this.usage.assertPublication(transaction, uid, id, candidates, startedAt);
+      const now = Math.max(
+        this.now(),
+        Date.parse(live.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
+      );
+      const evaluated = this._expireLiveSession(live, now);
+      const nextLive =
+        meaningful && evaluated.state === 'live' && now > Date.parse(evaluated.lastMeaningfulAt)
+          ? { ...evaluated, lastMeaningfulAt: new Date(now).toISOString() }
+          : evaluated;
+      if (nextLive !== live) transaction.set(this._liveSessionReference(id), nextLive);
       for (const revoked of revokedAssignments) {
         transaction.set(revoked.reference, {
           ...revoked.seat,

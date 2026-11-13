@@ -51,8 +51,8 @@ controls (`M2-08`), complete campaign portability (`M2-07`), independent
 rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
 Fenced cleanup (`M2-11`) and the local API-runtime package (`M4-06`) are verified;
-no cloud deployment is authorized. Durable live-session authority (`M4-01`) is
-verified; between-game sheet work, inactivity/presence and player synchronization
+no cloud deployment is authorized. Durable live authority and inactivity
+(`M4-01`/`M4-02`) are verified; between-game sheet work, presence and player synchronization
 are next. Cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
@@ -711,7 +711,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     not complete cloud gameplay/UI: M3 world/stream publication must reuse the
     transaction-time gate; M4-02/03/04 still own inactivity/presence/drain behavior.
 
-- [ ] **M4-02 - Implement meaningful-activity deadlines and owner keep-active.**
+- [x] **M4-02 - Implement meaningful-activity deadlines and owner keep-active.**
   - **Depends:** `M4-01`, `M2-05`.
   - **Success:** warn at **55 minutes**, pause at **60 minutes** without meaningful
     accepted activity. Authorized moves, rolls, sheet/terrain/door/turn actions
@@ -719,6 +719,23 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** controlled-clock tests prove heartbeats, reconnects, animations,
     camera movement, unchanged autosaves, invalid requests, duplicate retries and
     backend replacement do **not** reset it. Active games can continue beyond six hours.
+  - **Completed:** November 13, 2026 for the development authority/managed-client
+    slice. Authenticated status projects a server-observed warning at exactly
+    55 minutes; natural requests persist the original 60-minute pause before
+    admission or a late keep-active. Accepted canonical movement/roll/terrain/
+    turn/sheet changes renew in the same publication transaction. Legacy and
+    connected-map camera/view/selection-only changes, unchanged scene/sheet
+    saves, invalid changes and original-command retries do not renew.
+    Historical receipts and actual cold replacement cannot revive/reset it;
+    a real owner publication held across 59-to-61 minutes remains durable
+    preparation without reviving the game. Existing six-hour-plus renewal
+    proof still passes. **82/82 affected native cases**, zero skips,
+    **252,378.732 ms**; **15 app suites / 101 tests**, **8.422 s**; full
+    lint/stylelint/layering: zero errors and the same 39 existing warnings.
+    A fresh isolated Linux runtime image passes including six source-hash
+    checks for the actual changed authority/protocol/router. Player command/
+    SSE and visible lifecycle integration remain later M3/M4-04/M5 acceptance,
+    not an enabled cloud-gameplay claim. Routine-save presentation is untouched.
 
 - [ ] **M4-03 - Implement durable presence grace and earliest-pause evaluation.**
   - **Depends:** `M4-02`.

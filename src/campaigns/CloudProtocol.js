@@ -13,6 +13,8 @@ export const CLOUD_BACKUP_DIGEST_HEADER = 'X-TavernTable-Backup-SHA256';
 export const CLOUD_IMPORT_CHUNK_BYTES = 1024 * 1024;
 export const CLOUD_BACKUP_INTERVAL_MS = 300000;
 export const CLOUD_BACKUP_RETAIN = 20;
+export const CLOUD_LIVE_WARNING_MS = 55 * 60 * 1000;
+export const CLOUD_LIVE_INACTIVITY_MS = 60 * 60 * 1000;
 
 export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
@@ -64,16 +66,22 @@ export function isCloudLiveSession(value) {
     !Number.isFinite(Date.parse(value.startedAt)) ||
     typeof value.lastMeaningfulAt !== 'string' ||
     !Number.isFinite(Date.parse(value.lastMeaningfulAt)) ||
-    Date.parse(value.lastMeaningfulAt) < Date.parse(value.startedAt)
+    Date.parse(value.lastMeaningfulAt) < Date.parse(value.startedAt) ||
+    !Number.isFinite(
+      new Date(Date.parse(value.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS).getTime()
+    )
   )
     return false;
   return value.state === 'live'
     ? value.pausedAt === null && value.pauseReason === null
     : value.generation > 1 &&
-        value.pauseReason === 'owner-end' &&
+        ['owner-end', 'inactivity'].includes(value.pauseReason) &&
         typeof value.pausedAt === 'string' &&
         Number.isFinite(Date.parse(value.pausedAt)) &&
-        Date.parse(value.pausedAt) >= Date.parse(value.lastMeaningfulAt);
+        Date.parse(value.pausedAt) >= Date.parse(value.lastMeaningfulAt) &&
+        (value.pauseReason !== 'inactivity' ||
+          Date.parse(value.pausedAt) ===
+            Date.parse(value.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS);
 }
 
 export function isCloudLiveAccess(value) {
@@ -86,6 +94,55 @@ export function isCloudLiveAccess(value) {
     isCloudParticipantAccess(value.participant) &&
     value.participant.access.campaignId === value.session.campaignId
   );
+}
+
+export function cloudLiveStatus(session, now) {
+  if (
+    !isCloudLiveSession(session) ||
+    !Number.isFinite(now) ||
+    !Number.isFinite(new Date(now).getTime())
+  )
+    throw new Error('Live status requires verified session state and a valid server clock');
+  const observed = Math.max(
+    now,
+    Date.parse(session.pausedAt ?? session.lastMeaningfulAt ?? '1970-01-01T00:00:00.000Z')
+  );
+  const live = session.state === 'live';
+  const last = Date.parse(session.lastMeaningfulAt);
+  if (live && observed >= last + CLOUD_LIVE_INACTIVITY_MS)
+    throw new Error('Evaluate the expired live game before publishing its status');
+  return {
+    version: 1,
+    session,
+    activity: {
+      observedAt: new Date(observed).toISOString(),
+      warningAt: live ? new Date(last + CLOUD_LIVE_WARNING_MS).toISOString() : null,
+      pauseAt: live ? new Date(last + CLOUD_LIVE_INACTIVITY_MS).toISOString() : null,
+      phase: live ? (observed >= last + CLOUD_LIVE_WARNING_MS ? 'warning' : 'active') : 'paused',
+    },
+  };
+}
+
+export function isCloudLiveStatus(value) {
+  if (
+    !record(value) ||
+    !keys(value, ['version', 'session', 'activity']) ||
+    value.version !== 1 ||
+    !isCloudLiveSession(value.session) ||
+    !record(value.activity) ||
+    !keys(value.activity, ['observedAt', 'warningAt', 'pauseAt', 'phase']) ||
+    typeof value.activity.observedAt !== 'string' ||
+    !Number.isFinite(Date.parse(value.activity.observedAt))
+  )
+    return false;
+  const now = Date.parse(value.activity.observedAt);
+  if (
+    value.session.state === 'live' &&
+    now >= Date.parse(value.session.lastMeaningfulAt) + CLOUD_LIVE_INACTIVITY_MS
+  )
+    return false;
+  const expected = cloudLiveStatus(value.session, now);
+  return Object.entries(expected.activity).every(([key, item]) => value.activity[key] === item);
 }
 
 export function isCloudBackupRecord(value) {

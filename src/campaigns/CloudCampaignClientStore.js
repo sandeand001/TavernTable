@@ -21,6 +21,7 @@ import {
   isCloudBackupRecord,
   isCloudBackupStatus,
   isCloudLiveSession,
+  isCloudLiveStatus,
   isCloudLiveAccess,
   CLOUD_BACKUP_RETAIN,
 } from './CloudProtocol.js';
@@ -839,6 +840,12 @@ export default class CloudCampaignClientStore {
     return copy(result);
   }
 
+  async getLiveStatus(id) {
+    const result = await this._call(this._resource(id, '/live/status'));
+    if (!isCloudLiveStatus(result) || result.session.campaignId !== id) throw invalidResponse();
+    return copy(result);
+  }
+
   async getLiveAccess(id, sessionId) {
     if (!(sessionId === null || isCloudUUID(sessionId)))
       throw failure(
@@ -930,7 +937,8 @@ export default class CloudCampaignClientStore {
               result.startedAt !== item.snapshot.startedAt)) ||
           (item.body.action === 'end' &&
             (result.state !== 'paused' ||
-              result.lastMeaningfulAt !== item.snapshot.lastMeaningfulAt)) ||
+              result.pauseReason !== 'owner-end' ||
+              Date.parse(result.lastMeaningfulAt) < Date.parse(item.snapshot.lastMeaningfulAt))) ||
           (item.body.action === 'keep-active' &&
             (result.state !== 'live' ||
               Date.parse(result.lastMeaningfulAt) < Date.parse(item.snapshot.lastMeaningfulAt)))

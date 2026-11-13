@@ -248,8 +248,13 @@
   world commands/streams must reuse that seam at publication/renewal. Owner
   preparation may reposition tokens while paused without spending movement or
   actions or changing saved sheets/turn budgets. Live state is not copied by
-  campaign export/import/restore. Player gameplay, lifecycle UI, inactivity and
-  coalesced-presence integration remain separately gated work.
+  campaign export/import/restore. Inactivity is derived from the last accepted
+  meaningful activity: authoritative status warns at 55 minutes, and natural
+  requests persist a pause at the original 60-minute deadline. Changed canonical
+  world/sheet publication and explicit owner keep-active renew atomically; view,
+  unchanged, rejected and replayed saves do not. Cold replacement cannot renew
+  it. Player gameplay, lifecycle presentation, coalesced presence and drain
+  integration remain separately gated work.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.

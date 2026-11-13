@@ -92,6 +92,52 @@ function fixture({ crypto } = {}) {
   return { auth, connection, store, fetch };
 }
 
+test('live status validates authoritative warning deadlines without changing primary save or live-control state', async () => {
+  const setup = fixture();
+  const status = {
+    version: 1,
+    session: {
+      version: 1,
+      campaignId,
+      generation: 1,
+      sessionId: '33333333-3333-4333-8333-333333333333',
+      state: 'live',
+      startedAt: '2026-11-13T00:00:00.000Z',
+      lastMeaningfulAt: '2026-11-13T00:00:00.000Z',
+      pausedAt: null,
+      pauseReason: null,
+    },
+    activity: {
+      observedAt: '2026-11-13T00:55:00.000Z',
+      warningAt: '2026-11-13T00:55:00.000Z',
+      pauseAt: '2026-11-13T01:00:00.000Z',
+      phase: 'warning',
+    },
+  };
+  let result = status;
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result }),
+  }));
+  await expect(setup.store.getLiveStatus(campaignId)).resolves.toEqual(status);
+  for (const invalid of [
+    { ...status, activity: { ...status.activity, phase: 'active' } },
+    { ...status, activity: { ...status.activity, pauseAt: '2026-11-13T01:01:00.000Z' } },
+    { ...status, activity: { ...status.activity, observedAt: '2026-11-13T01:00:00.000Z' } },
+    { ...status, session: { ...status.session, campaignId: commandId } },
+    { ...status, ownerUid: 'unexpected-private-field' },
+  ]) {
+    result = invalid;
+    await expect(setup.store.getLiveStatus(campaignId)).rejects.toMatchObject({
+      code: 'invalid-cloud-response',
+    });
+  }
+  expect(setup.store.saveState.phase).toBe('idle');
+  expect(setup.store.pendingLive).toBeNull();
+  setup.store.close();
+});
+
 test('live control confirms only its captured transition and keeps malformed replies separate from primary save state', async () => {
   const setup = fixture();
   const paused = {

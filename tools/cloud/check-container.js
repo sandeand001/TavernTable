@@ -56,6 +56,10 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   const account = await fetch('http://127.0.0.1:' + port + '/api/cloud/account');
   assert.equal(account.status, 401);
   assert.equal((await account.json()).code, 'authentication-required');
+  const liveStatus = await fetch('http://127.0.0.1:' + port +
+    '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/live/status');
+  assert.equal(liveStatus.status, 401);
+  assert.equal((await liveStatus.json()).code, 'authentication-required');
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   const forged = encode({ alg: 'none', typ: 'JWT' }) + '.' + encode({
     aud: process.env.GCLOUD_PROJECT,
@@ -101,12 +105,16 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     error => error === stop
   );
   const runtimeHashes = {};
-  for (const file of ['admin-runtime.js', 'production-runtime.js', 'production-host.js']) {
-    runtimeHashes[file] = createHash('sha256').update(fs.readFileSync('tools/cloud/' + file)).digest('hex');
+  for (const file of [
+    'tools/cloud/admin-runtime.js', 'tools/cloud/production-runtime.js', 'tools/cloud/production-host.js',
+    'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'src/campaigns/CloudProtocol.js',
+  ]) {
+    runtimeHashes[file] = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   }
   console.log(JSON.stringify({
     node: process.version, platform: process.platform, architecture: process.arch, uid: process.getuid(),
-    port, bindsAllInterfaces: true, readiness: 200, anonymousAccount: 401, forgedIdentity: 401, privateFiles: 404,
+    port, bindsAllInterfaces: true, readiness: 200, anonymousAccount: 401, anonymousLiveStatus: 401,
+    forgedIdentity: 401, privateFiles: 404,
     resourcePacks: manifest.packs.length, resourceBytes, validatedImagePixels: 16000000,
     rssBytes: process.memoryUsage().rss, runtimeHashes,
   }));
@@ -160,7 +168,7 @@ function run() {
     for (const [file, hash] of Object.entries(result.runtimeHashes))
       assert.equal(
         createHash('sha256')
-          .update(fs.readFileSync(path.join(__dirname, file)))
+          .update(fs.readFileSync(path.join(__dirname, '..', '..', file)))
           .digest('hex'),
         hash
       );

@@ -335,6 +335,105 @@ test(
 );
 
 test(
+  'a cold replacement evaluates the original inactivity deadline without renewing on reconnect or receipt replay',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const before = await f.store.readCharacters(f.campaign.id);
+    const active = await f.store.controlLiveSession(
+      f.campaign.id,
+      'start',
+      await f.store.getLiveSession(f.campaign.id)
+    );
+    const startBody = f.commands.at(-1);
+    const warned = messageFrom(f.backend.child, 'clock-advanced');
+    f.backend.child.send({ type: 'advance-clock', milliseconds: 55 * 60 * 1000 });
+    await warned;
+    const warning = await f.store.getLiveStatus(f.campaign.id);
+    assert.equal(warning.activity.phase, 'warning');
+    assert.deepEqual(warning.session, active);
+    await terminate(f.backend.child);
+    const reference = f.runtime.firestore
+      .collection('campaigns')
+      .doc(f.campaign.id)
+      .collection('liveSession')
+      .doc('current');
+    assert.deepEqual((await reference.get()).data(), active);
+    const replacement = await f.start(f.backend.port);
+    const advanced = messageFrom(replacement.child, 'clock-advanced');
+    replacement.child.send({ type: 'advance-clock', milliseconds: 61 * 60 * 1000 });
+    await advanced;
+    const replay = await fetch(`${replacement.url}/api/cloud/campaigns/${f.campaign.id}/live`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + f.identity.token, 'Content-Type': 'application/json' },
+      body: startBody,
+    });
+    assert.equal(replay.status, 200);
+    assert.deepEqual((await replay.json()).result, active);
+    const clean = f.client(replacement.url);
+    const status = await clean.getLiveStatus(f.campaign.id);
+    assert.equal(status.activity.phase, 'paused');
+    assert.deepEqual(status.session, {
+      ...active,
+      generation: active.generation + 1,
+      state: 'paused',
+      pausedAt: new Date(Date.parse(active.lastMeaningfulAt) + 60 * 60 * 1000).toISOString(),
+      pauseReason: 'inactivity',
+    });
+    assert.deepEqual((await reference.get()).data(), status.session);
+    assert.deepEqual(await clean.readCharacters(f.campaign.id), before);
+  }
+);
+
+test(
+  'owner preparation published after inactivity expiry remains durable without reviving or resetting the game',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const before = await f.store.readCharacters(f.campaign.id);
+    const active = await f.store.controlLiveSession(
+      f.campaign.id,
+      'start',
+      await f.store.getLiveSession(f.campaign.id)
+    );
+    let advanced = messageFrom(f.backend.child, 'clock-advanced');
+    f.backend.child.send({ type: 'advance-clock', milliseconds: 59 * 60 * 1000 });
+    await advanced;
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-publication' });
+    await armed;
+    const held = messageFrom(f.backend.child, 'publication-held');
+    const pending = f.library.create('Prepared across inactivity boundary');
+    await held;
+    advanced = messageFrom(f.backend.child, 'clock-advanced');
+    f.backend.child.send({ type: 'advance-clock', milliseconds: 61 * 60 * 1000 });
+    await advanced;
+    f.backend.child.send({ type: 'release-publication' });
+    const createdId = await pending;
+    const status = await f.store.getLiveStatus(f.campaign.id);
+    assert.equal(status.session.state, 'paused');
+    assert.equal(status.session.pauseReason, 'inactivity');
+    assert.equal(status.session.lastMeaningfulAt, active.lastMeaningfulAt);
+    assert.equal(
+      status.session.pausedAt,
+      new Date(Date.parse(active.lastMeaningfulAt) + 60 * 60 * 1000).toISOString()
+    );
+    const after = await f.store.readCharacters(f.campaign.id);
+    assert.equal(after.revision, before.revision + 1);
+    assert.deepEqual(JSON.parse(after.scene).combat, JSON.parse(before.scene).combat);
+    const saved = new CampaignCharacters({
+      ...after,
+      store: f.store,
+      catalog: await f.resources.catalog(after.campaign),
+    });
+    assert.equal(saved.get(createdId).name, 'Prepared across inactivity boundary');
+    await terminate(f.backend.child);
+    const replacement = await f.start(f.backend.port);
+    assert.deepEqual(await f.client(replacement.url).getLiveSession(f.campaign.id), status.session);
+  }
+);
+
+test(
   'a stalled verified object cannot publish after cleanup and the same caller retries with a new generation',
   { timeout: 60000 },
   async (t) => {

@@ -163,6 +163,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'getAccess',
       'getParticipantAccess',
       'getLiveSession',
+      'getLiveStatus',
       'getLiveAccess',
       'controlLiveSession',
       'getSettings',
@@ -215,7 +216,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|live(?:\/access)?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (
@@ -277,7 +278,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot === 'settings') operation = 'campaign.settings';
-    else if (snapshot === 'live' || snapshot === 'live/access') operation = 'campaign.live';
+    else if (['live', 'live/access', 'live/status'].includes(snapshot)) operation = 'campaign.live';
     else if (snapshot === 'backup') operation = 'campaign.backup.export';
     else if (snapshot?.startsWith('backups')) operation = 'campaign.' + snapshot.replace('/', '.');
     else if (snapshot === 'assets') operation = 'campaign.asset.upload';
@@ -423,6 +424,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             request.method === 'POST'
               ? await store.controlLiveSession(principal, campaign[1], await requestJSON(request))
               : await store.getLiveSession(principal, campaign[1]);
+        } else if (snapshot === 'live/status') {
+          result = await store.getLiveStatus(principal, campaign[1]);
         } else if (snapshot === 'live/access') {
           result = await store.getLiveAccess(principal, campaign[1], await requestJSON(request));
         } else if (snapshot === 'backup') {
