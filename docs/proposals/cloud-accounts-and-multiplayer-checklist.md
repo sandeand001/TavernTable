@@ -47,9 +47,9 @@ unapproved.
 Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
 canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
 gates, along with private image upload/delivery (`M2-06`) and private-pilot usage
-controls (`M2-08`). Provider linking
+controls (`M2-08`), along with complete campaign portability (`M2-07`). Provider linking
 (`M2-04`) is explicitly deferred because of the verified Auth emulator blocker.
-Large-file portability is next; cloud player gameplay
+Rolling backup history, verified restore-as-copy and cleanup are next; cloud player gameplay
 remains gated.
 No application deployment or live campaign-data write has occurred; the narrowly
 approved synthetic Storage/IAM canary is complete and cleaned up.
@@ -431,13 +431,27 @@ Revalidation in the intended environment remains part of M1 and M4.
     pass. Current image files fit the bounded direct HTTP path; larger canonical
     transfer belongs to `M2-07`, and map/NPC view grants remain gated with `M3`.
 
-- [ ] **M2-07 - Implement bounded import/export and large-payload handling.**
+- [x] **M2-07 - Implement bounded import/export and large-payload handling.**
   - **Depends:** `M2-06`, `M0-03`.
   - **Success:** complete canonical files remain portable without trusting imported
     ownership claims. Large request/object paths obey actual platform limits
     measured in UTF-8/binary bytes.
   - **Verify:** representative largest files round-trip; oversized, invalid,
     wrong-edition, or corrupt input produces an explicit error, not partial state.
+  - **Completed:** November 12, 2026.
+  - **Policy:** owner approved 128,000,000 UTF-8 bytes per complete cloud file;
+    local import defaults and individual scene/record/image/object limits remain
+    unchanged. One-MiB immutable parts use the current authenticated API; exports
+    use actual HTTP streaming, not an oversized ordinary JSON response.
+  - **Evidence:** [complete-file gate](./cloud-migration-preparation.md#complete-campaign-portability-and-large-file-gate).
+    **127/127** native cases and **18 suites / 131 application tests** passed,
+    zero skipped; full lint/layering had zero errors and the same 39 existing
+    warnings. A real 36,522,416-byte, 25-map, 16-character image-heavy campaign
+    round-tripped, and an actual 128,000,000-byte file succeeded while one more
+    byte failed before upload. Largest measured POST was 1,398,127 bytes.
+    Backend kill/replacement, lost replies at every transfer stage, final
+    transaction rollback, quota/UID/claim fences, both editions and browser file
+    input/reload pass without changing source data or imported authority.
 
 - [x] **M2-08 - Enforce private-pilot usage limits and abuse controls.**
   - **Depends:** `M2-01`, `M2-06`.
@@ -483,6 +497,11 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Success:** bounded maintenance preserves objects referenced by current heads
     and all retained backups, including concurrent publication/restore. Restore
     creates protected committed objects rather than reviving a deletion candidate.
+    Active import journals protect their uncommitted target prefixes. Completed,
+    failed and expired source parts become eligible only through the same safe
+    grace/fencing process; intent/receipt tombstones cannot permit old-command
+    re-execution. Storage charges are not released while any corresponding
+    generation remains billable.
   - **Verify:** commit/backup/restore/cleanup races cannot delete needed data.
     Respect seven-day soft-delete billing; do not enable retention locks or
     disable recovery protection without a separate approved decision.

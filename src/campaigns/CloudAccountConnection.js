@@ -5,6 +5,10 @@ import {
   isCloudAccessScope,
   CLOUD_ACCESS_SEAT_HEADER,
   CLOUD_ACCESS_GENERATION_HEADER,
+  CLOUD_BACKUP_BYTE_LIMIT,
+  CLOUD_BACKUP_BYTES_HEADER,
+  CLOUD_BACKUP_DIGEST_HEADER,
+  isCloudUUID,
 } from './CloudProtocol.js';
 
 const REQUEST_TIMEOUT = 60000;
@@ -26,6 +30,25 @@ const denialCodes = new Set([
   'usage-unavailable',
   'cloud-requests-busy',
   'storage-reservation-too-large',
+  'backup-too-large',
+  'backup-integrity-failed',
+  'backup-download-unavailable',
+  'invalid-campaign-backup',
+  'invalid-command-claim',
+  'invalid-import-request',
+  'invalid-import-chunk',
+  'import-chunk-too-large',
+  'import-not-found',
+  'invalid-import-state',
+  'import-unavailable',
+  'import-state-changed',
+  'import-incomplete',
+  'import-rejected',
+  'import-expired',
+  'import-storage-limit-reached',
+  'import-campaign-limit-reached',
+  'import-image-too-large',
+  'import-invalid-image',
   'authentication-required',
   'invalid-identity',
   'email-verification-required',
@@ -83,6 +106,64 @@ const denialCodes = new Set([
   'account-request-failed',
 ]);
 const denialMessages = new Map([
+  [
+    'invalid-campaign-backup',
+    'Choose a complete supported campaign JSON backup with its original edition, sources and state.',
+  ],
+  [
+    'invalid-command-claim',
+    'The original pending command could not be verified. Retain it before retrying.',
+  ],
+  ['invalid-import-request', 'Choose the original complete campaign file and import command.'],
+  [
+    'invalid-import-chunk',
+    'A file part does not match the original import. Retain the pending file.',
+  ],
+  ['import-chunk-too-large', 'Each campaign file part must not exceed 1 MiB.'],
+  ['import-not-found', 'This private import is not available to the signed-in account.'],
+  [
+    'invalid-import-state',
+    'The private import journal could not be verified. Retain the original file and command.',
+  ],
+  [
+    'import-unavailable',
+    'Private import preparation is temporarily unavailable. Retry the same pending import.',
+  ],
+  [
+    'import-state-changed',
+    'The import state changed. Retry the same pending import to recover its receipt.',
+  ],
+  ['import-incomplete', 'The complete file has not arrived yet. Retry the same pending import.'],
+  [
+    'import-rejected',
+    'The import was rejected. No new campaign was created; the original backup is unchanged.',
+  ],
+  [
+    'import-expired',
+    'The unfinished import expired without creating a campaign. Select the original backup again.',
+  ],
+  [
+    'import-storage-limit-reached',
+    'The import reached the 20 GiB allowance. No new campaign was created; the original backup is unchanged.',
+  ],
+  [
+    'import-campaign-limit-reached',
+    'The import would exceed ten owned campaigns. No new campaign was created.',
+  ],
+  [
+    'import-image-too-large',
+    'Imported images must stay within 10,000,000 bytes, 16,000,000 pixels and 8192 pixels per side. No new campaign was created.',
+  ],
+  [
+    'import-invalid-image',
+    'An imported JPEG, PNG or WebP image is incomplete or corrupt. No new campaign was created.',
+  ],
+  ['backup-too-large', 'Complete cloud campaign files must not exceed 128,000,000 UTF-8 bytes.'],
+  [
+    'backup-integrity-failed',
+    'The complete backup could not be verified. No partial file was accepted.',
+  ],
+  ['backup-download-unavailable', 'This browser cannot verify a complete backup download.'],
   ['campaign-limit-reached', 'Each account can own at most 10 private-pilot campaigns.'],
   [
     'storage-limit-reached',
@@ -227,12 +308,79 @@ export default class CloudAccountConnection {
     this.fetch = (...args) => fetch(...args);
   }
 
-  async request(resource, { method = 'GET', body, accessScope = null } = {}) {
+  async _backupText(response, credential, progress) {
+    if (
+      typeof response.headers?.get !== 'function' ||
+      typeof response.body?.getReader !== 'function' ||
+      !/^application\/json(?:;\s*charset=utf-8)?$/i.test(response.headers.get('content-type') || '')
+    )
+      throw invalidResponse();
+    const declaredBytes = response.headers.get(CLOUD_BACKUP_BYTES_HEADER);
+    const declaredHash = response.headers.get(CLOUD_BACKUP_DIGEST_HEADER);
+    if (
+      typeof declaredBytes !== 'string' ||
+      !/^[1-9][0-9]*$/.test(declaredBytes) ||
+      !Number.isSafeInteger(Number(declaredBytes)) ||
+      typeof declaredHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(declaredHash)
+    )
+      throw invalidResponse();
+    const length = Number(declaredBytes);
+    if (length > CLOUD_BACKUP_BYTE_LIMIT)
+      throw requestError(413, 'backup-too-large', 'The complete backup exceeds its byte limit.');
+    if (typeof globalThis.crypto?.subtle?.digest !== 'function')
+      throw requestError(503, 'backup-download-unavailable', 'Backup verification is unavailable.');
+    const integrityError = () =>
+      requestError(
+        503,
+        'backup-integrity-failed',
+        'The complete backup failed its integrity check.'
+      );
+    const bytes = new Uint8Array(length);
+    const reader = response.body.getReader();
+    let offset = 0;
+    try {
+      for (;;) {
+        if (!credential.isCurrent()) throw changedAccount();
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!ArrayBuffer.isView(value) || value.BYTES_PER_ELEMENT !== 1) throw integrityError();
+        if (!value.byteLength) continue;
+        if (offset + value.byteLength > length) throw integrityError();
+        bytes.set(value, offset);
+        offset += value.byteLength;
+        progress();
+      }
+      if (offset !== length) throw integrityError();
+      const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
+      const sha256 = [...digest].map((value) => value.toString(16).padStart(2, '0')).join('');
+      if (sha256 !== declaredHash) throw integrityError();
+      try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      } catch (error) {
+        if (error instanceof TypeError || error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA')
+          throw integrityError();
+        throw error;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async request(
+    resource,
+    { method = 'GET', body, accessScope = null, responseType = 'json' } = {}
+  ) {
     if (
       typeof resource !== 'string' ||
       !/^(?:account|campaigns)(?:\/[A-Za-z0-9-]+)*$/.test(resource) ||
       !['GET', 'POST'].includes(method) ||
-      (method !== 'POST' && body !== undefined)
+      (method !== 'POST' && body !== undefined) ||
+      !['json', 'backup'].includes(responseType) ||
+      (responseType === 'backup' &&
+        (method !== 'GET' ||
+          !/^campaigns\/[^/]+\/backup$/.test(resource) ||
+          !isCloudUUID(resource.split('/')[1])))
     )
       throw requestError(
         400,
@@ -265,10 +413,19 @@ export default class CloudAccountConnection {
       if (!credential.isCurrent() || (scopeUid !== null && credential.uid !== scopeUid))
         throw changedAccount();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+      let timeout;
+      let timedOut = false;
+      const progress = () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, REQUEST_TIMEOUT);
+      };
+      progress();
       let data;
       try {
-        data = await sessionJSON(this.fetch, url, {
+        const options = {
           method,
           signal: controller.signal,
           credentials: 'omit',
@@ -280,10 +437,20 @@ export default class CloudAccountConnection {
             ...scopeHeaders,
           },
           ...(encoded === undefined ? {} : { body: encoded }),
-        });
+        };
+        const response = await this.fetch(url, options);
+        if (responseType === 'backup' && response.status !== 200) {
+          await sessionJSON(async () => response, url, options);
+          throw invalidResponse();
+        }
+        data =
+          responseType === 'backup' && response.status === 200
+            ? await this._backupText(response, credential, progress)
+            : await sessionJSON(async () => response, url, options);
       } catch (error) {
+        if (responseType === 'backup') controller.abort();
         if (!credential.isCurrent()) throw changedAccount();
-        if (controller.signal.aborted)
+        if (timedOut)
           throw requestError(
             504,
             'cloud-request-timeout',
@@ -298,6 +465,7 @@ export default class CloudAccountConnection {
         clearTimeout(timeout);
       }
       if (!credential.isCurrent()) throw changedAccount();
+      if (responseType === 'backup') return data;
       if (
         !data ||
         typeof data !== 'object' ||

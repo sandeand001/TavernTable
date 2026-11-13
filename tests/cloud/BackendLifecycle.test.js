@@ -274,6 +274,64 @@ async function fixture(t) {
 }
 
 test(
+  'an interrupted multipart import resumes through a fresh backend process without exposing or duplicating a campaign',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const source = await f.store.readCharacters(f.campaign.id);
+    const text = await f.store.exportBackup(f.campaign.id);
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-publication' });
+    await armed;
+    const held = messageFrom(f.backend.child, 'publication-held');
+    const uncertain = savePhase(f.store, 'uncertain');
+    const pending = f.store.importBackup(text);
+    await held;
+    const importId = f.store.saveState.commandId;
+    const job = (
+      await f.runtime.firestore
+        .collection('accountImports')
+        .doc(pilotAccountKey(f.identity.uid))
+        .collection('transfers')
+        .doc(importId)
+        .get()
+    ).data();
+    assert.equal(job.state, 'uploading');
+    assert.equal(
+      (await f.runtime.firestore.collection('campaigns').doc(job.campaignId).get()).exists,
+      false
+    );
+    assert.equal((await f.store.list()).length, 1);
+    await terminate(f.backend.child);
+    await uncertain;
+    const replacement = await f.start(f.backend.port);
+    assert.notEqual(replacement.instance, f.backend.instance);
+    const imported = await f.store.retryPending();
+    assert.deepEqual(await pending, imported);
+    assert.equal(imported.id, job.campaignId);
+    const clean = f.client(replacement.url);
+    const state = await clean.readCharacters(imported.id);
+    assert.deepEqual(state.records, source.records);
+    assert.equal(state.scene, source.scene);
+    assert.equal((await clean.list()).length, 2);
+    const starts = f.commands
+      .map((body) => JSON.parse(body))
+      .filter((body) => body.commandId === importId && Number.isSafeInteger(body.bytes));
+    assert.equal(starts.length, 2);
+    assert.deepEqual(starts[0], starts[1]);
+    assert.equal(
+      (
+        await f.runtime.firestore
+          .collection('accountUsage')
+          .doc(pilotAccountKey(f.identity.uid))
+          .get()
+      ).data().ownedCampaigns,
+      2
+    );
+  }
+);
+
+test(
   'an acknowledged canonical scene and lost character reply survive an actual backend process kill and same-command recovery',
   { timeout: 60000 },
   async (t) => {

@@ -5,7 +5,9 @@ const { isCloudUUID } = require('../../src/campaigns/CloudProtocol.js');
 const MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024;
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const validValue = (kind, value) =>
-  kind === 'scene' ? typeof value === 'string' : kind === 'characters' && Array.isArray(value);
+  ['scene', 'import'].includes(kind)
+    ? typeof value === 'string'
+    : kind === 'characters' && Array.isArray(value);
 const integrityError = () =>
   new CloudError(
     503,
@@ -45,7 +47,7 @@ function storageFailure(error) {
 }
 
 function objectPath(campaignId, kind, sha256) {
-  if (!isCloudUUID(campaignId) || !['scene', 'characters'].includes(kind))
+  if (!isCloudUUID(campaignId) || !['scene', 'characters', 'import'].includes(kind))
     throw new CloudError(
       400,
       'invalid-snapshot-request',
@@ -71,6 +73,23 @@ function prepareSnapshot(campaignId, kind, value) {
 function snapshotCandidate(campaignId, kind, value) {
   const { path, bytes } = prepareSnapshot(campaignId, kind, value);
   return { path, bytes: bytes.length };
+}
+
+function isImmutableCloudReference(campaignId, kind, reference) {
+  return (
+    isCloudUUID(campaignId) &&
+    ['scene', 'characters', 'import'].includes(kind) &&
+    reference?.version === 1 &&
+    reference.kind === kind &&
+    typeof reference.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/.test(reference.sha256) &&
+    Number.isSafeInteger(reference.bytes) &&
+    reference.bytes > 0 &&
+    reference.bytes <= MAX_SNAPSHOT_BYTES &&
+    typeof reference.generation === 'string' &&
+    /^[1-9][0-9]*$/.test(reference.generation) &&
+    reference.path === objectPath(campaignId, kind, reference.sha256)
+  );
 }
 
 class ImmutableCloudObjects {
@@ -121,20 +140,7 @@ class ImmutableCloudObjects {
 
   async read(campaignId, kind, reference) {
     try {
-      if (
-        !reference ||
-        reference.version !== 1 ||
-        reference.kind !== kind ||
-        typeof reference.sha256 !== 'string' ||
-        !/^[a-f0-9]{64}$/.test(reference.sha256) ||
-        !Number.isSafeInteger(reference.bytes) ||
-        reference.bytes < 1 ||
-        reference.bytes > MAX_SNAPSHOT_BYTES ||
-        typeof reference.generation !== 'string' ||
-        !/^[1-9][0-9]*$/.test(reference.generation) ||
-        reference.path !== objectPath(campaignId, kind, reference.sha256)
-      )
-        throw integrityError();
+      if (!isImmutableCloudReference(campaignId, kind, reference)) throw integrityError();
       const file = this.bucket.file(reference.path, { generation: reference.generation });
       const [metadata] = await file.getMetadata();
       if (
@@ -169,4 +175,5 @@ module.exports = {
   MAX_SNAPSHOT_BYTES,
   storageUnavailable,
   snapshotCandidate,
+  isImmutableCloudReference,
 };

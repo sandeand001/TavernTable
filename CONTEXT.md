@@ -122,6 +122,20 @@
   reference when its revision advances. The client requires the captured
   settings snapshot and verifies the predicted metadata before acknowledging.
   Source controls appear only in Owned campaigns, not Joined entries.
+- **Portable cloud campaign file (M2 development slice verified)**: complete
+  versioned campaign JSON is owner-only on export and imports as a fresh private
+  authority, never over the source. Character IDs/rows, images, edition/source
+  pins and exact scene data survive; imported owner/role/key claims are ignored.
+  The approved cloud file limit is 128,000,000 UTF-8 bytes, independently of
+  unchanged scene/record/image/object limits and legacy local import defaults.
+  UID-bound immutable one-MiB parts and a durable intent claim keep retries on
+  one import. No active head exists until campaign slot, head, receipt, change
+  and completed journal publish together. Failed imports retain only private,
+  charged staging for later cleanup. Exports stream complete bytes without
+  allocating new Storage objects; the client verifies declared size/SHA-256.
+  Large previews are explicitly omitted, not truncated downloads. Pending file
+  bytes remain memory-only, not an offline upload queue. Automatic backup history
+  and restore-as-copy from it remain separate M2 tasks.
 - **Private cloud images (M2 development slice verified)**: preserve canonical
   embedded image rows while finalizing immutable, hash-addressed private bytes.
   Current JPEG/PNG/WebP files use bounded HTTP uploads and exact-byte delivery.
@@ -182,7 +196,7 @@
   approved, cleaned-up real canary proved 412 rejection. Normal tests remain
   demo-only, and production-only fault branches have explicit external-service
   fixtures. Upload completion alone is not a committed campaign save.
-- **Durable cloud command receipt (create/scene/character backend implemented)**: a UID/context-bound
+- **Durable cloud command receipt (canonical/access/import development implemented)**: a UID/context-bound
   command ID and intent fingerprint recover the original committed result after
   uncertain delivery. Prepare domain work and verify object uploads outside
   retryable transactions; publish head/receipt/change marker atomically.

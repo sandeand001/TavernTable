@@ -1,3 +1,4 @@
+import { TextEncoder } from 'node:util';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import CampaignStore from '../../../src/campaigns/CampaignStore.js';
 
@@ -6,6 +7,26 @@ const packs = [
   { id: 'srd-2024', ruleset: '2024', version: '5.2.1', core: true },
   { id: 'supplement-2014', ruleset: '2014', version: '1', core: false },
 ];
+
+test('a configured complete-file ceiling measures UTF-8 bytes without changing the legacy parser', async () => {
+  globalThis.TextEncoder ??= TextEncoder;
+  const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
+  const campaign = await store.create({ name: 'caf\u00e9 \u{1f409}', ruleset: '2014' });
+  const text = await store.exportBackup(campaign.id);
+  const bytes = new TextEncoder().encode(text).byteLength;
+  expect(bytes).toBeGreaterThan(text.length);
+  const exact = new CampaignStore({ packs, storage: store.storage, backupFileByteLimit: bytes });
+  const short = new CampaignStore({
+    packs,
+    storage: store.storage,
+    backupFileByteLimit: bytes - 1,
+  });
+  expect(exact.parseBackup(text).campaign.id).toBe(campaign.id);
+  expect(() => short.parseBackup(text)).toThrow('UTF-8');
+  expect(() => exact.parseBackup(text.replace('caf\u00e9', 'caf\uD800'))).toThrow('valid UTF-8');
+  expect(store.parseBackup(text).campaign.id).toBe(campaign.id);
+  store.close();
+});
 
 test('scene snapshots persist independently inside their own campaign and edition', async () => {
   const indexedDB = testIndexedDB();

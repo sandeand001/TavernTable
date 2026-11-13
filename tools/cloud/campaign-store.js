@@ -10,7 +10,7 @@ const stableStringify = require('fast-json-stable-stringify');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
 const { CloudUsageLimits } = require('./usage-limits.js');
-const { snapshotCandidate } = require('./immutable-objects.js');
+const { snapshotCandidate, isImmutableCloudReference } = require('./immutable-objects.js');
 const { isPrivateAssetReference } = require('./campaign-assets.js');
 const {
   CHARACTER_IMAGE_TYPES,
@@ -29,6 +29,10 @@ const {
   isCloudCampaignSettings,
   isCloudAccessScope,
   CLOUD_INVITATION_TTL_MS,
+  CLOUD_BACKUP_BYTE_LIMIT,
+  CLOUD_IMPORT_CHUNK_BYTES,
+  isCloudImportReceipt,
+  isCloudImportTicket,
 } = require('../../src/campaigns/CloudProtocol.js');
 
 const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -69,6 +73,68 @@ const unavailableInvitation = () =>
     'This invitation is invalid, expired or no longer available'
   );
 const validUid = (value) => typeof value === 'string' && value.length > 0 && value.length <= 128;
+const IMPORT_TTL_MS = 24 * 60 * 60 * 1000;
+const importFingerprint = (bytes, sha256) =>
+  createHash('sha256')
+    .update(stableStringify({ kind: 'campaign.import', bytes, sha256 }))
+    .digest('hex');
+const invalidImport = () =>
+  new CloudError(503, 'invalid-import-state', 'The private import journal could not be verified');
+const terminalImportReasons = new Set([
+  'invalid-campaign-backup',
+  'invalid-campaign-change',
+  'backup-too-large',
+  'snapshot-too-large',
+  'invalid-asset-image',
+  'asset-image-too-large',
+  'asset-too-large',
+  'storage-limit-reached',
+  'campaign-limit-reached',
+  'storage-reservation-too-large',
+]);
+function importRejection(reason) {
+  if (reason === 'storage-limit-reached')
+    return new CloudError(
+      409,
+      'import-storage-limit-reached',
+      'The import reached the 20 GiB allowance; no new campaign was created'
+    );
+  if (reason === 'campaign-limit-reached')
+    return new CloudError(
+      409,
+      'import-campaign-limit-reached',
+      'The import reached the ten-campaign allowance; no new campaign was created'
+    );
+  if (['asset-image-too-large', 'asset-too-large'].includes(reason))
+    return new CloudError(
+      413,
+      'import-image-too-large',
+      'An imported image exceeds the supported bounds; no new campaign was created'
+    );
+  if (reason === 'invalid-asset-image')
+    return new CloudError(
+      400,
+      'import-invalid-image',
+      'An imported image is incomplete or corrupt; no new campaign was created'
+    );
+  return new CloudError(
+    400,
+    'import-rejected',
+    'The backup violates its edition, source, record or scene limits; no new campaign was created'
+  );
+}
+const importTicket = (importId, job, completed = null) => ({
+  version: 1,
+  importId,
+  campaignId: job.campaignId,
+  bytes: job.bytes,
+  sha256: job.sha256,
+  parts:
+    completed === null
+      ? job.parts.map(({ index, bytes, sha256 }) => ({ index, bytes, sha256 }))
+      : [],
+  completed,
+});
 
 function principalUid(principal) {
   pilotAccountKey(principal?.uid);
@@ -94,6 +160,12 @@ function validCommandResult(previous) {
   if (kind === 'campaign.settings')
     return isCloudCampaignSettings(result) && result.campaign.id === previous.campaignId;
   if (kind === 'campaign.asset.upload') return isPrivateAssetReference(result, previous.campaignId);
+  if (kind === 'campaign.import')
+    return (
+      isCloudImportReceipt(result) &&
+      result.campaign.id === previous.campaignId &&
+      importFingerprint(result.bytes, result.sha256) === previous.fingerprint
+    );
   if (kind === 'campaign.create')
     return (
       result?.id === previous.campaignId &&
@@ -177,6 +249,7 @@ class CloudCampaignStore {
   _domain(transaction) {
     return new CampaignStore({
       packs: this.packs,
+      backupFileByteLimit: CLOUD_BACKUP_BYTE_LIMIT,
       storage: { transaction: async (_mode, operation) => operation(transaction) },
     });
   }
@@ -208,8 +281,42 @@ class CloudCampaignStore {
   }
 
   async _previousCommand(transaction, { uid, reference, fingerprint, kind, campaignId = null }) {
-    const snapshot = await transaction.get(reference);
-    if (!snapshot.exists) return null;
+    const claimReference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('claims')
+      .doc(reference.id);
+    const [snapshot, claimSnapshot] = await transaction.getAll(reference, claimReference);
+    if (!snapshot.exists) {
+      if (kind === 'campaign.import' && campaignId !== null && !claimSnapshot.exists)
+        throw invalidImport();
+      if (claimSnapshot.exists) {
+        const claim = claimSnapshot.data();
+        if (
+          claim?.version !== 1 ||
+          claim.uid !== uid ||
+          claim.kind !== 'campaign.import' ||
+          !isCloudDigest(claim.fingerprint) ||
+          !isCloudUUID(claim.campaignId)
+        )
+          throw new CloudError(
+            503,
+            'invalid-command-claim',
+            'The pending command intent could not be verified'
+          );
+        if (
+          claim.kind !== kind ||
+          claim.fingerprint !== fingerprint ||
+          (campaignId !== null && campaignId !== claim.campaignId)
+        )
+          throw new CloudError(
+            409,
+            'command-id-conflict',
+            'This command ID was already used for another intent'
+          );
+      }
+      return null;
+    }
     const previous = snapshot.data();
     if (
       previous?.version !== 1 ||
@@ -225,9 +332,11 @@ class CloudCampaignStore {
         'campaign.character.assign',
         'campaign.settings',
         'campaign.asset.upload',
+        'campaign.import',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
+      (previous.kind === 'campaign.import' && previous.result.importId !== reference.id) ||
       typeof previous.fingerprint !== 'string' ||
       !/^[a-f0-9]{64}$/.test(previous.fingerprint)
     )
@@ -246,10 +355,10 @@ class CloudCampaignStore {
         'command-id-conflict',
         'This command ID was already used for another intent'
       );
-    if (['campaign.create', 'campaign.settings'].includes(previous.kind)) {
+    if (['campaign.create', 'campaign.settings', 'campaign.import'].includes(previous.kind)) {
       try {
         const campaign =
-          previous.kind === 'campaign.settings' ? previous.result.campaign : previous.result;
+          previous.kind === 'campaign.create' ? previous.result : previous.result.campaign;
         await this._domain({ getCampaign: () => campaign }).get(previous.campaignId);
       } catch (error) {
         if (error?.constructor === Error || error instanceof SyntaxError)
@@ -273,6 +382,577 @@ class CloudCampaignStore {
       );
     }
     return previous.result;
+  }
+
+  _importReference(uid, importId) {
+    return this.firestore
+      .collection('accountImports')
+      .doc(pilotAccountKey(uid))
+      .collection('transfers')
+      .doc(importId);
+  }
+
+  _importRecord(snapshot, uid, importId) {
+    const job = snapshot.data();
+    if (!snapshot.exists || job?.uid !== uid)
+      throw new CloudError(404, 'import-not-found', 'This private import is not available');
+    if (
+      job.version !== 1 ||
+      job.importId !== importId ||
+      snapshot.id !== importId ||
+      !['uploading', 'failed', 'complete'].includes(job.state) ||
+      !validTime(job.createdAt) ||
+      !validTime(job.expiresAt) ||
+      Date.parse(job.expiresAt) <= Date.parse(job.createdAt) ||
+      !Array.isArray(job.parts) ||
+      !isCloudImportTicket(importTicket(importId, job)) ||
+      (job.state === 'failed' && !terminalImportReasons.has(job.failure)) ||
+      job.fingerprint !== importFingerprint(job.bytes, job.sha256) ||
+      job.parts.some(
+        (part) =>
+          !isImmutableCloudReference(job.campaignId, 'import', part.reference) ||
+          part.reference.bytes !==
+            4 * Math.ceil(part.bytes / 3) +
+              Buffer.byteLength(JSON.stringify({ version: 1, kind: 'import', value: '' }))
+      )
+    )
+      throw invalidImport();
+    return job;
+  }
+
+  _openImport(job) {
+    if (job.state === 'failed') throw importRejection(job.failure);
+    if (job.state !== 'uploading') throw invalidImport();
+    if (Date.parse(job.expiresAt) <= this.now())
+      throw new CloudError(
+        410,
+        'import-expired',
+        'This unfinished import expired; select the original file again'
+      );
+  }
+
+  async startImport(principal, command) {
+    const uid = principalUid(principal);
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some((key) => !['commandId', 'bytes', 'sha256'].includes(key)) ||
+      !isCloudUUID(command.commandId) ||
+      !Number.isSafeInteger(command.bytes) ||
+      command.bytes < 1 ||
+      !isCloudDigest(command.sha256)
+    )
+      throw new CloudError(
+        400,
+        'invalid-import-request',
+        'Choose a complete campaign file and an explicit import command'
+      );
+    if (command.bytes > CLOUD_BACKUP_BYTE_LIMIT)
+      throw new CloudError(
+        413,
+        'backup-too-large',
+        'Cloud campaign files must not exceed 128,000,000 UTF-8 bytes'
+      );
+    const { commandId, bytes, sha256 } = command;
+    const fingerprint = importFingerprint(bytes, sha256);
+    const account = this.firestore.collection('accountCommands').doc(pilotAccountKey(uid));
+    const reference = account.collection('receipts').doc(commandId);
+    const intent = { uid, reference, fingerprint, kind: 'campaign.import' };
+    const completedTicket = (result) => {
+      const ticket = importTicket(
+        commandId,
+        {
+          campaignId: result.campaign.id,
+          bytes,
+          sha256,
+          parts: [],
+        },
+        result
+      );
+      if (!isCloudImportTicket(ticket)) throw invalidImport();
+      return ticket;
+    };
+    const previous = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        return this._previousCommand(transaction, intent);
+      },
+      { readOnly: true }
+    );
+    if (previous !== null) return completedTicket(previous);
+    await this.usage.ensureAccount(principal);
+    const campaignId = randomUUID();
+    const jobReference = this._importReference(uid, commandId);
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, intent);
+      if (replay !== null) return completedTicket(replay);
+      const snapshot = await transaction.get(jobReference);
+      if (snapshot.exists) {
+        const job = this._importRecord(snapshot, uid, commandId);
+        const committed = await this._previousCommand(transaction, {
+          ...intent,
+          campaignId: job.campaignId,
+        });
+        if (committed !== null) return completedTicket(committed);
+        this._openImport(job);
+        return importTicket(commandId, job);
+      }
+      const claimReference = account.collection('claims').doc(commandId);
+      if ((await transaction.get(claimReference)).exists) throw invalidImport();
+      await this.usage.assertCampaignCapacity(uid, transaction);
+      if ((await transaction.get(this.firestore.collection('campaigns').doc(campaignId))).exists)
+        throw new CloudError(
+          503,
+          'import-unavailable',
+          'A new private campaign could not be allocated; retry the same import'
+        );
+      const now = this.now();
+      const job = {
+        version: 1,
+        uid,
+        importId: commandId,
+        campaignId,
+        bytes,
+        sha256,
+        fingerprint,
+        state: 'uploading',
+        parts: [],
+        createdAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + IMPORT_TTL_MS).toISOString(),
+      };
+      transaction.create(claimReference, {
+        version: 1,
+        uid,
+        kind: 'campaign.import',
+        fingerprint,
+        campaignId,
+      });
+      transaction.create(jobReference, job);
+      return importTicket(commandId, job);
+    });
+  }
+
+  async uploadImportChunk(principal, importId, command) {
+    const uid = principalUid(principal);
+    if (
+      !isCloudUUID(importId) ||
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).some((key) => !['index', 'data'].includes(key)) ||
+      !Number.isSafeInteger(command.index) ||
+      command.index < 0 ||
+      typeof command.data !== 'string' ||
+      !command.data.length
+    )
+      throw new CloudError(
+        400,
+        'invalid-import-chunk',
+        'Choose a bounded part of the original campaign file'
+      );
+    const { index, data } = command;
+    if (data.length > 4 * Math.ceil(CLOUD_IMPORT_CHUNK_BYTES / 3))
+      throw new CloudError(
+        413,
+        'import-chunk-too-large',
+        'Campaign file parts must not exceed 1 MiB'
+      );
+    if (data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data))
+      throw new CloudError(400, 'invalid-import-chunk', 'Use complete canonical base64 file bytes');
+    const bytes = Buffer.from(data, 'base64');
+    if (bytes.length > CLOUD_IMPORT_CHUNK_BYTES)
+      throw new CloudError(
+        413,
+        'import-chunk-too-large',
+        'Campaign file parts must not exceed 1 MiB'
+      );
+    if (bytes.toString('base64') !== data)
+      throw new CloudError(400, 'invalid-import-chunk', 'Use complete canonical base64 file bytes');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const reference = this._importReference(uid, importId);
+    const check = (job) => {
+      const previous = job.parts.find((part) => part.index === index);
+      if (previous) {
+        if (previous.sha256 !== sha256 || previous.bytes !== bytes.length)
+          throw new CloudError(
+            409,
+            'command-id-conflict',
+            'This file part was already staged for another intent'
+          );
+        return { version: 1, importId, index, bytes: bytes.length, sha256 };
+      }
+      this._openImport(job);
+      if (
+        index >= Math.ceil(job.bytes / CLOUD_IMPORT_CHUNK_BYTES) ||
+        bytes.length !==
+          Math.min(CLOUD_IMPORT_CHUNK_BYTES, job.bytes - index * CLOUD_IMPORT_CHUNK_BYTES)
+      )
+        throw new CloudError(
+          400,
+          'invalid-import-chunk',
+          'File part length does not match the original import'
+        );
+      return null;
+    };
+    const captured = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const job = this._importRecord(await transaction.get(reference), uid, importId);
+        return { job, replay: check(job) };
+      },
+      { readOnly: true }
+    );
+    if (captured.replay !== null) return captured.replay;
+    if (this.objects === null)
+      throw new CloudError(
+        503,
+        'cloud-save-unavailable',
+        'Private import staging is not configured'
+      );
+    const staged = await this.objects.stage(captured.job.campaignId, 'import', data, (candidate) =>
+      this.usage.reserveStorage(
+        principal,
+        captured.job.campaignId,
+        candidate,
+        this.objects.bucket,
+        { importId }
+      )
+    );
+    const expected = snapshotCandidate(captured.job.campaignId, 'import', data);
+    if (
+      !isImmutableCloudReference(captured.job.campaignId, 'import', staged) ||
+      staged.path !== expected.path ||
+      staged.bytes !== expected.bytes
+    )
+      throw new CloudError(
+        503,
+        'snapshot-integrity-failed',
+        'The staged file part failed its integrity check'
+      );
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const job = this._importRecord(await transaction.get(reference), uid, importId);
+      const replay = check(job);
+      if (replay !== null) return replay;
+      transaction.set(reference, {
+        ...job,
+        parts: [...job.parts, { index, bytes: bytes.length, sha256, reference: staged }].sort(
+          (left, right) => left.index - right.index
+        ),
+      });
+      return { version: 1, importId, index, bytes: bytes.length, sha256 };
+    });
+  }
+
+  async _recoverImport(principal, importId) {
+    const uid = principalUid(principal);
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(importId);
+    return this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const previous = await transaction.get(reference);
+        if (!previous.exists) return null;
+        return this._previousCommand(transaction, {
+          uid,
+          reference,
+          kind: 'campaign.import',
+          fingerprint: previous.data()?.fingerprint,
+        });
+      },
+      { readOnly: true }
+    );
+  }
+
+  async _rejectImport(principal, importId, reason) {
+    const uid = principalUid(principal);
+    const recovered = await this._recoverImport(principal, importId);
+    if (recovered !== null) return recovered;
+    const jobReference = this._importReference(uid, importId);
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(importId);
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const job = this._importRecord(await transaction.get(jobReference), uid, importId);
+      const replay = await this._previousCommand(transaction, {
+        uid,
+        reference,
+        kind: 'campaign.import',
+        fingerprint: job.fingerprint,
+        campaignId: job.campaignId,
+      });
+      if (replay !== null) return replay;
+      if (
+        job.state === 'complete' ||
+        (await transaction.get(this.firestore.collection('campaigns').doc(job.campaignId))).exists
+      )
+        throw invalidImport();
+      if (job.state !== 'failed')
+        transaction.set(jobReference, { ...job, state: 'failed', failure: reason });
+      return null;
+    });
+  }
+
+  async _prepareImport(job) {
+    if (this.objects === null || this.resources === null)
+      throw new CloudError(
+        503,
+        'cloud-save-unavailable',
+        'Complete private imports are not configured'
+      );
+    if (job.parts.length !== Math.ceil(job.bytes / CLOUD_IMPORT_CHUNK_BYTES))
+      throw new CloudError(
+        409,
+        'import-incomplete',
+        'Upload every part of the original file before finishing'
+      );
+    const bytes = Buffer.alloc(job.bytes);
+    for (const part of job.parts) {
+      const encoded = await this.objects.read(job.campaignId, 'import', part.reference);
+      const value = Buffer.from(encoded, 'base64');
+      if (
+        value.length !== part.bytes ||
+        value.toString('base64') !== encoded ||
+        createHash('sha256').update(value).digest('hex') !== part.sha256
+      )
+        throw new CloudError(
+          503,
+          'snapshot-integrity-failed',
+          'A staged file part failed its integrity check'
+        );
+      value.copy(bytes, part.index * CLOUD_IMPORT_CHUNK_BYTES);
+    }
+    if (createHash('sha256').update(bytes).digest('hex') !== job.sha256)
+      throw new CloudError(
+        400,
+        'invalid-campaign-backup',
+        'The complete file does not match the original import'
+      );
+    let data;
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      data = this._domain({}).parseBackup(text);
+    } catch (error) {
+      if (
+        error?.constructor === Error ||
+        error instanceof SyntaxError ||
+        error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA' ||
+        ['backup-too-large', 'invalid-campaign-backup'].includes(error?.code)
+      )
+        throw new CloudError(
+          400,
+          'invalid-campaign-backup',
+          'Choose a complete supported UTF-8 campaign JSON backup'
+        );
+      throw error;
+    }
+    const campaign = {
+      version: 1,
+      id: job.campaignId,
+      name: data.campaign.name,
+      ruleset: data.campaign.ruleset,
+      coreVersion: data.campaign.coreVersion,
+      sourcePacks: data.campaign.sourcePacks.map(({ id, version, ruleset, enabled }) => ({
+        id,
+        version,
+        ruleset,
+        enabled,
+      })),
+      charactersRevision: 0,
+      sceneRevision: 0,
+      sceneSavedAt: null,
+      createdAt: job.createdAt,
+    };
+    const { next } = await this._prepareChange(
+      {
+        campaign,
+        revision: 0,
+        records: [],
+        scene: null,
+        sceneRevision: 0,
+        sceneSavedAt: null,
+      },
+      'characters.commit',
+      {
+        ruleset: campaign.ruleset,
+        revision: 0,
+        records: data.records,
+        ...(data.scene === null ? {} : { scene: { revision: 0, value: data.scene } }),
+      }
+    );
+    return next;
+  }
+
+  async finishImport(principal, importId, command) {
+    const uid = principalUid(principal);
+    if (
+      !isCloudUUID(importId) ||
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).length !== 1 ||
+      command.commandId !== importId
+    )
+      throw new CloudError(
+        400,
+        'invalid-import-request',
+        'Finish the original explicit import command'
+      );
+    const recovered = await this._recoverImport(principal, importId);
+    if (recovered !== null) return recovered;
+    const jobReference = this._importReference(uid, importId);
+    try {
+      const job = await this._transaction(
+        async (transaction) => {
+          await this.access.assertEligibility(uid, transaction);
+          const captured = this._importRecord(await transaction.get(jobReference), uid, importId);
+          this._openImport(captured);
+          await this.usage.assertCampaignCapacity(uid, transaction);
+          return captured;
+        },
+        { readOnly: true }
+      );
+      const next = await this._prepareImport(job);
+      const images = [
+        ...new Map(this._imageEntries(next.records).map((image) => [image.sha256, image])).values(),
+      ];
+      if (images.length && this.assets === null)
+        throw new CloudError(
+          503,
+          'asset-storage-unavailable',
+          'Private imported images are not configured'
+        );
+      const candidates = [
+        snapshotCandidate(job.campaignId, 'characters', next.records),
+        ...(next.scene === null ? [] : [snapshotCandidate(job.campaignId, 'scene', next.scene)]),
+        ...images.map((image) => ({
+          path: `campaigns/${job.campaignId}/assets/${image.sha256}.bin`,
+          bytes: Buffer.byteLength(image.data, 'base64'),
+        })),
+      ];
+      for (let offset = 0; offset < candidates.length; offset += 499)
+        await this.usage.reserveStorage(
+          principal,
+          job.campaignId,
+          candidates.slice(offset, offset + 499),
+          this.objects.bucket,
+          { importId }
+        );
+      for (const image of images) {
+        const bytes = Buffer.from(image.data, 'base64');
+        const reference = await this.assets.stage(
+          job.campaignId,
+          image.mimeType,
+          bytes,
+          (candidate) =>
+            this.usage.reserveStorage(principal, job.campaignId, candidate, this.assets.bucket, {
+              importId,
+            })
+        );
+        if (
+          !isPrivateAssetReference(reference, job.campaignId) ||
+          reference.sha256 !== image.sha256 ||
+          reference.bytes !== bytes.length ||
+          reference.mimeType !== image.mimeType
+        )
+          throw new CloudError(
+            503,
+            'asset-integrity-failed',
+            'An imported image failed its integrity check'
+          );
+        await this._transaction(async (transaction) => {
+          await this.access.assertEligibility(uid, transaction);
+          this._openImport(this._importRecord(await transaction.get(jobReference), uid, importId));
+          await this._publishAsset(transaction, job.campaignId, reference);
+        });
+      }
+      const reserve = (candidate) =>
+        this.usage.reserveStorage(principal, job.campaignId, candidate, this.objects.bucket, {
+          importId,
+        });
+      const [charactersRef, sceneRef] = await Promise.all([
+        this.objects.stage(job.campaignId, 'characters', next.records, reserve),
+        next.scene === null
+          ? null
+          : this.objects.stage(job.campaignId, 'scene', next.scene, reserve),
+      ]);
+      const reference = this.firestore
+        .collection('accountCommands')
+        .doc(pilotAccountKey(uid))
+        .collection('receipts')
+        .doc(importId);
+      const intent = {
+        uid,
+        reference,
+        kind: 'campaign.import',
+        fingerprint: job.fingerprint,
+        campaignId: job.campaignId,
+      };
+      const result = {
+        version: 1,
+        importId,
+        bytes: job.bytes,
+        sha256: job.sha256,
+        campaign: next.campaign,
+      };
+      if (!isCloudImportReceipt(result)) throw invalidImport();
+      const headReference = this.firestore.collection('campaigns').doc(job.campaignId);
+      const { FieldValue } = require('firebase-admin/firestore');
+      return await this._transaction(async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return replay;
+        const current = this._importRecord(await transaction.get(jobReference), uid, importId);
+        this._openImport(current);
+        if ((await transaction.get(headReference)).exists) throw invalidImport();
+        await this.usage.claimCampaign(uid, transaction);
+        transaction.create(headReference, {
+          version: 1,
+          ownerUid: uid,
+          generation: 1,
+          campaign: next.campaign,
+          sceneRef,
+          charactersRef,
+        });
+        transaction.create(reference, {
+          version: 1,
+          uid,
+          kind: 'campaign.import',
+          fingerprint: job.fingerprint,
+          campaignId: job.campaignId,
+          result,
+        });
+        transaction.set(jobReference, { ...current, state: 'complete' });
+        transaction.create(headReference.collection('changes').doc('1'), {
+          version: 1,
+          generation: 1,
+          kind: 'campaign.import',
+          sceneRevision: next.sceneRevision,
+          charactersRevision: next.revision,
+          committedAt: FieldValue.serverTimestamp(),
+        });
+        return result;
+      });
+    } catch (error) {
+      if (error instanceof CloudError) {
+        if (terminalImportReasons.has(error.code)) {
+          const replay = await this._rejectImport(principal, importId, error.code);
+          if (replay !== null) return replay;
+          throw importRejection(error.code);
+        }
+        const replay = await this._recoverImport(principal, importId);
+        if (replay !== null) return replay;
+      }
+      throw error;
+    }
   }
 
   async create(principal, command) {
@@ -1264,6 +1944,37 @@ class CloudCampaignStore {
     );
   }
 
+  async _publishAsset(transaction, id, reference) {
+    const assetReference = this.firestore
+      .collection('campaigns')
+      .doc(id)
+      .collection('assets')
+      .doc(reference.sha256);
+    const current = await transaction.get(assetReference);
+    if (current.exists) {
+      const record = current.data();
+      if (
+        record?.version !== 1 ||
+        record.campaignId !== id ||
+        !isPrivateAssetReference(record.reference, id) ||
+        Object.keys(reference).some((key) => record.reference[key] !== reference[key])
+      )
+        throw new CloudError(
+          503,
+          'invalid-asset-record',
+          'The private asset metadata could not be verified'
+        );
+    } else {
+      const { FieldValue } = require('firebase-admin/firestore');
+      transaction.create(assetReference, {
+        version: 1,
+        campaignId: id,
+        reference,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
   async uploadAsset(principal, id, command) {
     const uid = principalUid(principal);
     if (!isCloudUUID(id)) throw unavailableCampaign();
@@ -1359,30 +2070,7 @@ class CloudCampaignStore {
       const replay = await this._previousCommand(transaction, intent);
       if (replay !== null) return replay;
       await this._metadata(await transaction.get(headReference), uid);
-      const assetReference = headReference.collection('assets').doc(reference.sha256);
-      const current = await transaction.get(assetReference);
-      if (current.exists) {
-        const record = current.data();
-        if (
-          record?.version !== 1 ||
-          record.campaignId !== id ||
-          !isPrivateAssetReference(record.reference, id) ||
-          Object.keys(reference).some((key) => record.reference[key] !== reference[key])
-        )
-          throw new CloudError(
-            503,
-            'invalid-asset-record',
-            'The private asset metadata could not be verified'
-          );
-      } else {
-        const { FieldValue } = require('firebase-admin/firestore');
-        transaction.create(assetReference, {
-          version: 1,
-          campaignId: id,
-          reference,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      }
+      await this._publishAsset(transaction, id, reference);
       transaction.create(receiptReference, {
         version: 1,
         uid,
@@ -1857,6 +2545,23 @@ class CloudCampaignStore {
     const state = await this._loadSnapshot(head);
     await this._readHead(principal, id);
     return state;
+  }
+
+  async exportBackup(principal, id) {
+    const state = await this.readCharacters(principal, id);
+    const record = structuredClone(state.campaign);
+    if (state.scene !== null) record.scene = state.scene;
+    const text = await this._domain({
+      getCampaign: () => record,
+      readCharacters: () => state.records,
+    }).exportBackup(id);
+    if (Buffer.byteLength(text, 'utf8') > CLOUD_BACKUP_BYTE_LIMIT)
+      throw new CloudError(
+        413,
+        'backup-too-large',
+        'Complete cloud campaign files must not exceed 128,000,000 UTF-8 bytes'
+      );
+    return text;
   }
 
   async _loadSnapshot(head) {

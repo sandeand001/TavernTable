@@ -141,6 +141,41 @@ test('the browser high-level cloud store uses UID-bound HTTP creation and consis
   }
 });
 
+test('complete cloud exports use the verified file transport and cannot acknowledge another campaign or a primary save', async () => {
+  const setup = fixture();
+  let wrongCampaign = false;
+  const backup = () => ({
+    format: 'taverntable-campaign',
+    version: 2,
+    campaign: { ...campaign, id: wrongCampaign ? commandId : campaignId },
+    records: [],
+    scene: null,
+  });
+  setup.fetch.mockImplementation(async () => {
+    const text = JSON.stringify(backup());
+    const bytes = new TextEncoder().encode(text);
+    return new Response(bytes, {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-TavernTable-Backup-Bytes': String(bytes.length),
+        'X-TavernTable-Backup-SHA256': createHash('sha256').update(bytes).digest('hex'),
+      },
+    });
+  });
+  const text = await setup.store.exportBackup(campaignId);
+  expect(JSON.parse(text)).toEqual(backup());
+  expect(setup.store.saveState.phase).toBe('idle');
+  wrongCampaign = true;
+  await expect(setup.store.exportBackup(campaignId)).rejects.toMatchObject({
+    status: 503,
+    code: 'invalid-cloud-response',
+  });
+  expect(setup.fetch.mock.calls[0][0]).toBe(
+    `${runtime.apiOrigin}/api/cloud/campaigns/${campaignId}/backup`
+  );
+  setup.store.close();
+});
+
 test('settings retries retain the captured generation, source choice and expected canonical metadata', async () => {
   const setup = fixture();
   const current = { version: 1, generation: 1, campaign };

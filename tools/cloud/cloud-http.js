@@ -1,4 +1,7 @@
 const { URL } = require('node:url');
+const { createHash } = require('node:crypto');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { CloudError } = require('./cloud-error.js');
 const { CloudUsageLimits } = require('./usage-limits.js');
 const { readLimitedBody, RequestBodyLimitError } = require('../http-body.js');
@@ -7,11 +10,41 @@ const {
   isCloudAccessGeneration,
   CLOUD_ACCESS_SEAT_HEADER,
   CLOUD_ACCESS_GENERATION_HEADER,
+  CLOUD_BACKUP_BYTES_HEADER,
+  CLOUD_BACKUP_DIGEST_HEADER,
 } = require('../../src/campaigns/CloudProtocol.js');
 
 const MAX_CLOUD_REQUEST_BYTES = 24 * 1024 * 1024;
 const MAX_CLOUD_WORK_REQUESTS = 4;
 let activeCloudWork = 0;
+let activeBackupWork = 0;
+
+async function streamBackup(response, id, text, headers) {
+  const bytes = Buffer.byteLength(text, 'utf8');
+  const sha256 = createHash('sha256').update(text, 'utf8').digest('hex');
+  response.writeHead(200, {
+    ...headers,
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Disposition': `attachment; filename="campaign-${id}.json"`,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Access-Control-Expose-Headers': `${CLOUD_BACKUP_BYTES_HEADER}, ${CLOUD_BACKUP_DIGEST_HEADER}`,
+    [CLOUD_BACKUP_BYTES_HEADER]: String(bytes),
+    [CLOUD_BACKUP_DIGEST_HEADER]: sha256,
+    Vary: 'Origin',
+  });
+  const chunks = function* () {
+    for (let start = 0; start < text.length; ) {
+      let end = Math.min(start + 64 * 1024, text.length);
+      const last = text.charCodeAt(end - 1);
+      // Keep UTF-16 pairs together before encoding each buffer as UTF-8.
+      if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--;
+      yield Buffer.from(text.slice(start, end), 'utf8');
+      start = end;
+    }
+  };
+  await pipeline(Readable.from(chunks()), response);
+}
 
 function requestAccessScope(request) {
   const seat = request.headers[CLOUD_ACCESS_SEAT_HEADER.toLowerCase()];
@@ -121,6 +154,10 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'assignCharacter',
       'get',
       'readCharacters',
+      'exportBackup',
+      'startImport',
+      'uploadImportChunk',
+      'finishImport',
       'readScene',
       'commitScene',
       'commitCharacters',
@@ -143,15 +180,31 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     const redeem = url.pathname === '/api/cloud/account/invitations/redeem';
     const directory = url.pathname === '/api/cloud/account/campaigns';
     const collection = url.pathname === '/api/cloud/campaigns';
+    const importStart = url.pathname === '/api/cloud/account/imports';
+    const importAction = /^\/api\/cloud\/account\/imports\/([^/]+)\/(parts|finish)$/.exec(
+      url.pathname
+    );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|scene|settings|backup|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
-    if (!account && !redeem && !directory && !collection && !campaign) return false;
+    if (
+      !account &&
+      !redeem &&
+      !directory &&
+      !collection &&
+      !campaign &&
+      !importStart &&
+      !importAction
+    )
+      return false;
     const subject = account ? 'account' : 'campaign';
     const snapshot = campaign?.[2];
+    const largeFile = snapshot === 'backup' || importAction?.[2] === 'finish';
     const postOnly =
       redeem ||
+      importStart ||
+      Boolean(importAction) ||
       ['invitations', 'invitations/revoke', 'members/remove', 'assignments', 'assets'].includes(
         snapshot
       );
@@ -162,6 +215,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     if (account) operation = 'account';
     else if (redeem) operation = 'campaign.join';
     else if (directory) operation = 'campaign.listAccess';
+    else if (importStart) operation = 'campaign.import.start';
+    else if (importAction) operation = 'campaign.import.' + importAction[2];
     else if (collection)
       operation = request.method === 'POST' ? 'campaign.create' : 'campaign.list';
     else if (snapshot === 'invitations') operation = 'campaign.invite';
@@ -169,6 +224,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot === 'settings') operation = 'campaign.settings';
+    else if (snapshot === 'backup') operation = 'campaign.backup.export';
     else if (snapshot === 'assets') operation = 'campaign.asset.upload';
     else if (snapshot === 'assets/manifest') operation = 'campaign.asset.manifest';
     else if (snapshot?.startsWith('assets/')) operation = 'campaign.asset.read';
@@ -223,14 +279,24 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       return true;
     }
     let ownsWorkSlot = false;
+    let ownsBackupSlot = false;
     try {
       const principal = redeem
         ? await access.verifyIdentity(request.headers.authorization)
         : await access.verifyAuthorization(request.headers.authorization);
       await usage.consumeRequest(principal, { invitation: redeem });
+      if (largeFile && activeBackupWork >= 1)
+        throw Object.assign(
+          new CloudError(
+            503,
+            'cloud-requests-busy',
+            'A large file transfer is already in progress; retry shortly'
+          ),
+          { retryAfter: 1 }
+        );
       if (
         request.method === 'POST' ||
-        ['scene', 'characters'].includes(snapshot) ||
+        ['scene', 'characters', 'backup'].includes(snapshot) ||
         snapshot?.startsWith('assets/')
       ) {
         if (activeCloudWork >= MAX_CLOUD_WORK_REQUESTS)
@@ -244,6 +310,10 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           );
         activeCloudWork++;
         ownsWorkSlot = true;
+      }
+      if (largeFile) {
+        activeBackupWork++;
+        ownsBackupSlot = true;
       }
       const expectedAccess = requestAccessScope(request);
       if (
@@ -266,7 +336,17 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             'cloud-campaigns-unavailable',
             'Cloud campaign persistence is not configured'
           );
-        if (redeem) {
+        if (importStart) {
+          result = await store.startImport(principal, await requestJSON(request));
+        } else if (importAction?.[2] === 'parts') {
+          result = await store.uploadImportChunk(
+            principal,
+            importAction[1],
+            await requestJSON(request)
+          );
+        } else if (importAction?.[2] === 'finish') {
+          result = await store.finishImport(principal, importAction[1], await requestJSON(request));
+        } else if (redeem) {
           result = await store.redeemInvitation(principal, await requestJSON(request));
         } else if (directory) {
           result = await store.listAccess(principal);
@@ -289,6 +369,10 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.getAccess(principal, campaign[1]);
         } else if (snapshot === 'participant-access') {
           result = await store.getParticipantAccess(principal, campaign[1], expectedAccess);
+        } else if (snapshot === 'backup') {
+          const text = await store.exportBackup(principal, campaign[1]);
+          await streamBackup(response, campaign[1], text, headers);
+          return true;
         } else if (snapshot === 'settings') {
           result =
             request.method === 'POST'
@@ -347,13 +431,26 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       }
       jsonResponse(
         response,
-        (collection || ['invitations', 'assets'].includes(snapshot)) && request.method === 'POST'
+        (collection ||
+          importStart ||
+          importAction ||
+          ['invitations', 'assets'].includes(snapshot)) &&
+          request.method === 'POST'
           ? 201
           : 200,
         { version: 1, result },
         headers
       );
     } catch (error) {
+      if (response.headersSent) {
+        console.error(`[cloud-${subject}]`, {
+          operation,
+          code: 'cloud-response-interrupted',
+          kind: error instanceof Error ? 'error' : 'non-error',
+        });
+        response.destroy();
+        return true;
+      }
       if (error instanceof CloudError) {
         jsonResponse(
           response,
@@ -400,6 +497,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       }
     } finally {
       if (ownsWorkSlot) activeCloudWork--;
+      if (ownsBackupSlot) activeBackupWork--;
     }
     return true;
   };

@@ -1,5 +1,5 @@
 import { webcrypto } from 'node:crypto';
-import { TextDecoder } from 'node:util';
+import { TextDecoder, TextEncoder } from 'node:util';
 import CampaignWorkspace from '../../../src/campaigns/CampaignWorkspace.js';
 import CampaignLauncher from '../../../src/ui/campaigns/CampaignLauncher.js';
 import { fetchBundledResource } from '../../helpers/bundledResources.js';
@@ -8,6 +8,74 @@ import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
 
 globalThis.TextDecoder ??= TextDecoder;
+globalThis.TextEncoder ??= TextEncoder;
+
+test('a large cloud export omits only the text preview and still downloads the exact complete file', async () => {
+  const text = '{"fixture":"' + 'x'.repeat(1024 * 1024) + '"}';
+  const campaign = {
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Large backup',
+    ruleset: '2014',
+    coreVersion: '5.1',
+  };
+  const workspace = {
+    manifest: { packs: [] },
+    store: {
+      storageInfo: { kind: 'cloud', label: 'Cloud-authoritative storage' },
+      capabilities: {
+        portability: true,
+        backups: false,
+        settings: false,
+        invitations: false,
+        browserImport: false,
+      },
+      connection: { account: { identity: () => ({ email: 'preview@example.invalid' }) } },
+      listAccess: async () => ({ owned: [{ campaign, role: 'owner', seatId: null }], joined: [] }),
+      get: async () => campaign,
+    },
+    exportBackup: async () => text,
+  };
+  const originalCreate = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+  const originalRevoke = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+  let downloaded;
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: jest.fn((blob) => {
+      downloaded = blob;
+      return 'blob:backup-test';
+    }),
+  });
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: jest.fn() });
+  const click = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const launcher = new CampaignLauncher({ workspace });
+  try {
+    launcher.choose();
+    await launcher.ready;
+    launcher.list.querySelector('[data-export-campaign]').click();
+    for (let step = 0; step < 20 && launcher.busy; step++) await Promise.resolve();
+    expect(launcher.busy).toBe(false);
+    expect(launcher.backupText.hidden).toBe(true);
+    expect(launcher.backupText.value).toBe('');
+    expect(launcher.status.textContent).toContain('complete');
+    launcher.root.querySelector('[data-campaign-download]').click();
+    const saved = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(downloaded);
+    });
+    expect(saved).toBe(text);
+    expect(downloaded.size).toBe(new TextEncoder().encode(text).byteLength);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    launcher.destroy();
+    click.mockRestore();
+    if (originalCreate) Object.defineProperty(URL, 'createObjectURL', originalCreate);
+    else delete URL.createObjectURL;
+    if (originalRevoke) Object.defineProperty(URL, 'revokeObjectURL', originalRevoke);
+    else delete URL.revokeObjectURL;
+  }
+});
 
 test('the picker identifies durable host storage and offers an explicit non-destructive browser copy', async () => {
   let copied = false;
@@ -210,8 +278,8 @@ test('the real cloud picker separates Owned and Joined access without opening a 
     'Cloud-authoritative'
   );
   expect(launcher.root.textContent).not.toContain('Browser-only storage:');
-  expect(launcher.root.querySelector('[data-campaign-import]').hidden).toBe(true);
-  expect(launcher.root.querySelector('[data-export-campaign]')).toBeNull();
+  expect(launcher.root.querySelector('[data-campaign-import]').hidden).toBe(false);
+  expect(launcher.root.querySelector('[data-campaign-backups]')).toBeNull();
   expect(launcher.root.querySelector('[data-cloud-account]').textContent).toContain(
     'picker@example.invalid'
   );
@@ -222,10 +290,12 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   expect(ownedGroup?.querySelector('[data-open-campaign]')).not.toBeNull();
   expect(ownedGroup?.querySelector('[data-cloud-invitations]')).not.toBeNull();
   expect(ownedGroup?.querySelector('[data-edit-campaign]')).not.toBeNull();
+  expect(ownedGroup?.querySelector('[data-export-campaign]')).not.toBeNull();
   expect(joinedGroup?.textContent).toContain('Joined campaign fixture');
   expect(joinedGroup?.querySelector('[data-open-campaign]')).toBeNull();
   expect(joinedGroup?.querySelector('[data-cloud-invitations]')).toBeNull();
   expect(joinedGroup?.querySelector('[data-edit-campaign]')).toBeNull();
+  expect(joinedGroup?.querySelector('[data-export-campaign]')).toBeNull();
   const settle = async () => {
     for (let attempt = 0; attempt < 30; attempt++) {
       if (!launcher.busy) return;

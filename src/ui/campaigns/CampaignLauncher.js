@@ -9,6 +9,8 @@ import CampaignSharingPanel from './CampaignSharingPanel.js';
 import CloudCampaignInvitations from './CloudCampaignInvitations.js';
 import { ensureSession } from '../sessions/SessionLogin.js';
 import { attachHostSessionUpdates } from '../sessions/HostSessionUpdates.js';
+import { CLOUD_BACKUP_BYTE_LIMIT } from '../../campaigns/CloudProtocol.js';
+import { campaignBackupByteLength } from '../../campaigns/CampaignBackupBytes.js';
 
 export default class CampaignLauncher {
   constructor({ workspace = null, saveFeedback = null } = {}) {
@@ -85,6 +87,7 @@ export default class CampaignLauncher {
     this.settingsBase = null;
     this.backup = this.root.querySelector('.campaign-backup');
     this.backupText = this.root.querySelector('textarea');
+    this.backupData = null;
     this.importFile = this.root.querySelector('input[type="file"]');
     this.retry = this.root.querySelector('[data-campaign-retry]');
     this.root.querySelector('[data-cloud-account-signout]').addEventListener(
@@ -174,7 +177,11 @@ export default class CampaignLauncher {
         }, 'Copying the browser campaign to the host...');
       if (button.hasAttribute('data-campaign-import')) this.importFile.click();
       if (button.hasAttribute('data-settings-cancel')) this.settings.hidden = true;
-      if (button.hasAttribute('data-backup-close')) this.backup.hidden = true;
+      if (button.hasAttribute('data-backup-close')) {
+        this.backup.hidden = true;
+        this.backupData = null;
+        this.backupText.value = '';
+      }
       if (button.hasAttribute('data-campaign-download')) this._download();
       if (button.hasAttribute('data-campaign-retry')) this.ready = this._load();
     });
@@ -182,16 +189,15 @@ export default class CampaignLauncher {
       const file = this.importFile.files?.[0];
       if (!file) return;
       void this._perform(async () => {
-        if (file.size > 32000000) throw new Error('Campaign backups must be smaller than 32 MB');
-        const text =
-          typeof file.text === 'function'
-            ? await file.text()
-            : await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = () => reject(reader.error);
-                reader.readAsText(file);
-              });
+        const cloud = this.workspace.store.storageInfo?.kind === 'cloud';
+        const maximum = cloud ? CLOUD_BACKUP_BYTE_LIMIT : 32000000;
+        if (file.size > maximum)
+          throw new Error(
+            cloud
+              ? 'Cloud campaign files must not exceed 128,000,000 UTF-8 bytes'
+              : 'Campaign backups must be smaller than 32 MB'
+          );
+        const text = await this._readBackupFile(file, cloud);
         const campaign = await this.workspace.importBackup(text);
         await this._renderSaved();
         this.status.textContent = `Imported ${campaign.name} as a separate ${campaign.ruleset} campaign.`;
@@ -199,6 +205,35 @@ export default class CampaignLauncher {
         this.importFile.value = '';
       });
     });
+  }
+
+  async _readBackupFile(file, cloud) {
+    if (!cloud) {
+      if (typeof file.text === 'function') return file.text();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file);
+      });
+    }
+    const bytes =
+      typeof file.arrayBuffer === 'function'
+        ? await file.arrayBuffer()
+        : await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.onabort = () => reject(new Error('Campaign file reading was cancelled'));
+            reader.readAsArrayBuffer(file);
+          });
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (error) {
+      if (error instanceof TypeError || error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA')
+        throw new Error('Choose a complete campaign file encoded as valid UTF-8 JSON');
+      throw error;
+    }
   }
 
   choose() {
@@ -239,10 +274,12 @@ export default class CampaignLauncher {
           ? `Signed in as ${this.workspace.store.connection.account.identity()?.email || 'your managed account'}.`
           : '';
         this.root.querySelector('[data-cloud-account-signout]').hidden = !cloud;
-        this.root.querySelector('[data-campaign-import]').hidden =
-          this.workspace.store.capabilities?.backups === false;
+        this.root.querySelector('[data-campaign-import]').hidden = !(
+          this.workspace.store.capabilities?.portability ??
+          this.workspace.store.capabilities?.backups !== false
+        );
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation only. Player invitations, assignments, membership removal and campaign settings are available; player gameplay, backups and live sessions remain gated.'
+          ? 'Private cloud preparation only. Full campaign import/export, invitations, assignments, membership removal and settings are available; player gameplay, automatic backups and live sessions remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
@@ -260,6 +297,7 @@ export default class CampaignLauncher {
   async _renderSaved() {
     const cloud = this.workspace.store.storageInfo?.kind === 'cloud';
     const capabilities = this.workspace.store.capabilities;
+    const portable = capabilities?.portability ?? capabilities?.backups !== false;
     const row = (campaign, role = null) => {
       const profile = edition(campaign.ruleset);
       const sources = cloud
@@ -272,7 +310,7 @@ export default class CampaignLauncher {
           ${role === 'member' ? '<button type="button" data-view-campaign-access>View player access</button>' : '<button type="button" data-open-campaign>Open</button>'}
           ${cloud && role === 'owner' && capabilities?.invitations === true ? '<button type="button" data-cloud-invitations>Player invitations</button>' : ''}
           ${capabilities?.settings !== false && (!cloud || role === 'owner') ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
-          ${capabilities?.backups !== false ? '<button type="button" data-export-campaign>Export</button>' : ''}
+          ${portable && (!cloud || role === 'owner') ? '<button type="button" data-export-campaign>Export</button>' : ''}
           ${capabilities?.backups !== false && this.workspace.store.listBackups ? '<button type="button" data-campaign-backups>JSON backups</button>' : ''}
         </div></article>`;
     };
@@ -364,16 +402,31 @@ export default class CampaignLauncher {
   }
 
   async _export(id) {
-    this.backupText.value = await this.workspace.exportBackup(id);
+    const text = await this.workspace.exportBackup(id);
     this.backupName = (await this.workspace.store.get(id)).name;
+    const large =
+      this.workspace.store.storageInfo?.kind === 'cloud' &&
+      campaignBackupByteLength(text) > 1024 * 1024;
+    this.backupData = text;
+    this.backupText.value = large ? '' : text;
+    this.backupText.hidden = large;
     this.backup.hidden = false;
-    this.backupText.focus();
-    this.backupText.select();
-    this.status.textContent = 'Backup ready. Download JSON or copy the text below.';
+    if (large) this.root.querySelector('[data-campaign-download]').focus();
+    else {
+      this.backupText.focus();
+      this.backupText.select();
+    }
+    this.status.textContent = large
+      ? 'Backup ready. Download the complete JSON file; large backups are not expanded in the preview.'
+      : 'Backup ready. Download JSON or copy the text below.';
   }
 
   _download() {
-    downloadCampaignJSON(this.backupText.value, this.backupName);
+    if (typeof this.backupData !== 'string') {
+      this._failure(new Error('Prepare a complete campaign backup before downloading'));
+      return;
+    }
+    downloadCampaignJSON(this.backupData, this.backupName);
   }
 
   async _perform(operation, message) {
@@ -414,6 +467,8 @@ export default class CampaignLauncher {
   }
 
   destroy() {
+    this.backupData = null;
+    this.backupText.value = '';
     for (const [element, inert] of this.previousInert || []) element.inert = inert;
     this.root.remove();
   }

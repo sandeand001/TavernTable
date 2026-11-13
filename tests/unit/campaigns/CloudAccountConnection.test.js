@@ -1,3 +1,5 @@
+/** @jest-environment node */
+import { createHash } from 'node:crypto';
 import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
 
@@ -42,6 +44,134 @@ function accountFixture() {
   };
   return { auth, user, refreshes, account: new CloudAccount({ auth, sdk }) };
 }
+
+test('complete backup downloads preserve UTF-8 across chunks and verify their declared byte count and hash', async () => {
+  const fixture = accountFixture();
+  const text = '{"name":"caf\u00e9 \u{1f409}"}';
+  const bytes = new TextEncoder().encode(text);
+  const split = bytes.indexOf(0xc3) + 1;
+  const fetch = jest.fn(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(bytes.subarray(0, split));
+            controller.enqueue(bytes.subarray(split));
+            controller.close();
+          },
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-TavernTable-Backup-Bytes': String(bytes.length),
+            'X-TavernTable-Backup-SHA256': createHash('sha256').update(bytes).digest('hex'),
+          },
+        }
+      )
+  );
+  const connection = new CloudAccountConnection({
+    account: fixture.account,
+    runtime,
+    fetch,
+    baseURL: 'http://127.0.0.1:19410/',
+  });
+  await expect(
+    connection.request('campaigns/00000000-0000-4000-8000-000000000002/backup', {
+      responseType: 'backup',
+    })
+  ).resolves.toBe(text);
+  expect(fetch.mock.calls[0][1].credentials).toBe('omit');
+  expect(fetch.mock.calls[0][1].redirect).toBe('error');
+  expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer initial-token');
+});
+
+test.each([
+  ['unexpected success status', { status: 201 }, 503, 'invalid-cloud-response'],
+  ['oversized byte declaration', { length: 128000001 }, 413, 'backup-too-large'],
+  ['truncated file', { lengthDelta: 1 }, 503, 'backup-integrity-failed'],
+  ['extra file bytes', { lengthDelta: -1 }, 503, 'backup-integrity-failed'],
+  ['wrong file hash', { sha256: '0'.repeat(64) }, 503, 'backup-integrity-failed'],
+])('a backup with %s is never accepted as a complete file', async (_name, fault, status, code) => {
+  const fixture = accountFixture();
+  const text = '{"fixture":true}';
+  const bytes = new TextEncoder().encode(text);
+  const fetch = jest.fn(
+    async () =>
+      new Response(bytes, {
+        status: fault.status || 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'X-TavernTable-Backup-Bytes': String(
+            fault.length ?? bytes.length + (fault.lengthDelta || 0)
+          ),
+          'X-TavernTable-Backup-SHA256':
+            fault.sha256 || createHash('sha256').update(bytes).digest('hex'),
+        },
+      })
+  );
+  const connection = new CloudAccountConnection({
+    account: fixture.account,
+    runtime,
+    fetch,
+    baseURL: 'http://127.0.0.1:19410/',
+  });
+  await expect(
+    connection.request('campaigns/00000000-0000-4000-8000-000000000002/backup', {
+      responseType: 'backup',
+    })
+  ).rejects.toMatchObject({ status, code });
+});
+
+test('a progressing backup download can outlive a minute without disabling the stalled-request deadline', async () => {
+  jest.useFakeTimers();
+  try {
+    const fixture = accountFixture();
+    const text = '{"fixture":"slow complete transfer"}';
+    const bytes = new TextEncoder().encode(text);
+    let controller;
+    let began;
+    const started = new Promise((resolve) => {
+      began = resolve;
+    });
+    const fetch = jest.fn(async () => {
+      const response = new Response(
+        new ReadableStream({
+          start(value) {
+            controller = value;
+          },
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-TavernTable-Backup-Bytes': String(bytes.length),
+            'X-TavernTable-Backup-SHA256': createHash('sha256').update(bytes).digest('hex'),
+          },
+        }
+      );
+      began();
+      return response;
+    });
+    const connection = new CloudAccountConnection({
+      account: fixture.account,
+      runtime,
+      fetch,
+      baseURL: 'http://127.0.0.1:19410/',
+    });
+    const pending = connection.request('campaigns/00000000-0000-4000-8000-000000000002/backup', {
+      responseType: 'backup',
+    });
+    await started;
+    await jest.advanceTimersByTimeAsync(50000);
+    controller.enqueue(bytes.subarray(0, 10));
+    await jest.advanceTimersByTimeAsync(50000);
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(false);
+    controller.enqueue(bytes.subarray(10));
+    controller.close();
+    await expect(pending).resolves.toBe(text);
+  } finally {
+    jest.useRealTimers();
+  }
+});
 
 test('one identity renewal retries the exact same command with bearer-only headers and no cookie, redirect or URL credential fallback', async () => {
   const fixture = accountFixture();

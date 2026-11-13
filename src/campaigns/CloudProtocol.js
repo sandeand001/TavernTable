@@ -7,6 +7,10 @@ import {
 
 export const CLOUD_IMAGE_PIXEL_LIMIT = 16000000;
 export const CLOUD_IMAGE_DIMENSION_LIMIT = 8192;
+export const CLOUD_BACKUP_BYTE_LIMIT = 128000000;
+export const CLOUD_BACKUP_BYTES_HEADER = 'X-TavernTable-Backup-Bytes';
+export const CLOUD_BACKUP_DIGEST_HEADER = 'X-TavernTable-Backup-SHA256';
+export const CLOUD_IMPORT_CHUNK_BYTES = 1024 * 1024;
 
 export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
@@ -20,6 +24,100 @@ const record = (value) => value !== null && typeof value === 'object' && !Array.
 const keys = (value, names) =>
   Object.keys(value).length === names.length &&
   Object.keys(value).every((key) => names.includes(key));
+
+export function isCloudImportReceipt(value) {
+  if (
+    !record(value) ||
+    !keys(value, ['version', 'importId', 'bytes', 'sha256', 'campaign']) ||
+    value.version !== 1 ||
+    !isCloudUUID(value.importId) ||
+    !Number.isSafeInteger(value.bytes) ||
+    value.bytes < 1 ||
+    value.bytes > CLOUD_BACKUP_BYTE_LIMIT ||
+    !isCloudDigest(value.sha256) ||
+    !record(value.campaign)
+  )
+    return false;
+  const campaign = value.campaign;
+  const profile = supportedEditions.find((entry) => entry.id === campaign.ruleset);
+  return (
+    keys(campaign, [
+      'version',
+      'id',
+      'name',
+      'ruleset',
+      'coreVersion',
+      'sourcePacks',
+      'charactersRevision',
+      'sceneRevision',
+      'sceneSavedAt',
+      'createdAt',
+    ]) &&
+    campaign.version === 1 &&
+    isCloudUUID(campaign.id) &&
+    typeof campaign.name === 'string' &&
+    campaign.name.trim().length > 0 &&
+    campaign.name.length <= 100 &&
+    profile !== undefined &&
+    campaign.coreVersion === profile.srd &&
+    campaign.charactersRevision === 1 &&
+    [0, 1].includes(campaign.sceneRevision) &&
+    (campaign.sceneRevision === 0
+      ? campaign.sceneSavedAt === null
+      : typeof campaign.sceneSavedAt === 'string' &&
+        Number.isFinite(Date.parse(campaign.sceneSavedAt))) &&
+    typeof campaign.createdAt === 'string' &&
+    Number.isFinite(Date.parse(campaign.createdAt)) &&
+    Array.isArray(campaign.sourcePacks) &&
+    campaign.sourcePacks.length > 0 &&
+    campaign.sourcePacks.every(
+      (source) =>
+        record(source) &&
+        keys(source, ['id', 'version', 'ruleset', 'enabled']) &&
+        typeof source.id === 'string' &&
+        source.id.length > 0 &&
+        typeof source.version === 'string' &&
+        source.version.length > 0 &&
+        source.ruleset === campaign.ruleset &&
+        typeof source.enabled === 'boolean'
+    ) &&
+    new Set(campaign.sourcePacks.map((source) => source.id)).size === campaign.sourcePacks.length
+  );
+}
+
+export function isCloudImportTicket(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'importId', 'campaignId', 'bytes', 'sha256', 'parts', 'completed']) &&
+    value.version === 1 &&
+    isCloudUUID(value.importId) &&
+    isCloudUUID(value.campaignId) &&
+    Number.isSafeInteger(value.bytes) &&
+    value.bytes > 0 &&
+    value.bytes <= CLOUD_BACKUP_BYTE_LIMIT &&
+    isCloudDigest(value.sha256) &&
+    Array.isArray(value.parts) &&
+    value.parts.length <= Math.ceil(value.bytes / CLOUD_IMPORT_CHUNK_BYTES) &&
+    value.parts.every(
+      (part) =>
+        record(part) &&
+        keys(part, ['index', 'bytes', 'sha256']) &&
+        Number.isSafeInteger(part.index) &&
+        part.index >= 0 &&
+        part.index < Math.ceil(value.bytes / CLOUD_IMPORT_CHUNK_BYTES) &&
+        part.bytes ===
+          Math.min(CLOUD_IMPORT_CHUNK_BYTES, value.bytes - part.index * CLOUD_IMPORT_CHUNK_BYTES) &&
+        isCloudDigest(part.sha256)
+    ) &&
+    new Set(value.parts.map((part) => part.index)).size === value.parts.length &&
+    (value.completed === null ||
+      (isCloudImportReceipt(value.completed) &&
+        value.completed.importId === value.importId &&
+        value.completed.bytes === value.bytes &&
+        value.completed.sha256 === value.sha256 &&
+        value.completed.campaign.id === value.campaignId))
+  );
+}
 
 export function isCloudAssetReference(value, campaignId) {
   return (

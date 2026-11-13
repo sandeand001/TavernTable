@@ -1,6 +1,7 @@
 import { edition } from '../rules/editions.js';
 import { CHARACTER_BACKUP_LIMIT } from '../config/characters/CharacterImages.js';
 import IndexedDBCampaignStorage from './IndexedDBCampaignStorage.js';
+import { campaignBackupByteLength } from './CampaignBackupBytes.js';
 
 const revisionConflict = (campaign, message) =>
   Object.assign(new Error(message), {
@@ -18,11 +19,18 @@ export default class CampaignStore {
     packs,
     name = 'taverntable.campaigns.v1',
     storage = null,
+    backupFileByteLimit = null,
   }) {
     if (!Array.isArray(packs) || new Set(packs.map((pack) => pack.id)).size !== packs.length) {
       throw new Error('The resource pack manifest is invalid or contains duplicates');
     }
     this.packs = new Map(packs.map((pack) => [pack.id, pack]));
+    if (
+      backupFileByteLimit !== null &&
+      (!Number.isSafeInteger(backupFileByteLimit) || backupFileByteLimit < 1)
+    )
+      throw new Error('Campaign file validation requires a positive byte limit');
+    this.backupFileByteLimit = backupFileByteLimit;
     this.storage = storage || new IndexedDBCampaignStorage(indexedDB, name);
     this.storageInfo = { kind: 'browser' };
     this.closed = false;
@@ -200,8 +208,22 @@ export default class CampaignStore {
   }
 
   parseBackup(text) {
-    if (typeof text !== 'string' || text.length > 32000000) {
+    if (typeof text !== 'string' || (this.backupFileByteLimit === null && text.length > 32000000)) {
       throw new Error('Choose a campaign JSON backup smaller than 32 MB');
+    }
+    if (this.backupFileByteLimit !== null) {
+      const tooLarge = () =>
+        Object.assign(new Error('Choose a campaign JSON backup within its UTF-8 byte limit'), {
+          status: 413,
+          code: 'backup-too-large',
+        });
+      if (text.length > this.backupFileByteLimit) throw tooLarge();
+      if (/[\uD800-\uDFFF]/u.test(text))
+        throw Object.assign(new Error('Campaign backup text must be valid UTF-8'), {
+          status: 400,
+          code: 'invalid-campaign-backup',
+        });
+      if (campaignBackupByteLength(text) > this.backupFileByteLimit) throw tooLarge();
     }
     const data = JSON.parse(text);
     if (data?.format !== 'taverntable-campaign' || ![1, 2].includes(data.version)) {

@@ -1220,3 +1220,98 @@ Quota handling never deletes saved data, and cleanup must not release charges
 before a generation is no longer billable. Provider linking remains deferred;
 the routine save-flash/centered-notice presentation remains untouched for
 `UX-01` after migration completion.
+
+## Complete campaign portability and large-file gate
+
+The owner approved a **cloud-only 128,000,000 UTF-8 byte limit** for complete
+campaign files. Legacy local UI/parser defaults and existing scene, character,
+image and immutable-object bounds remain unchanged. The shared domain parser
+has an explicitly configured byte ceiling for the cloud Adapter and uses a
+bounded encoding workspace; it does not allocate another complete file just
+to count bytes. Malformed UTF-16/UTF-8 is rejected rather than replaced in transit.
+
+Owner exports capture one coordinated immutable scene/character state and
+recheck current access after Storage I/O. They preserve the existing versioned
+JSON format, source pins and all canonical rows/scene bytes; they do not store
+another object or consume a campaign slot. The actual HTTP response is chunked,
+backpressured UTF-8 with exact byte-count/SHA-256 headers. This follows the
+[official Cloud Run limits](https://docs.cloud.google.com/run/quotas):
+HTTP/1 requests remain capped at 32 MiB, while the 32 MiB response limit applies
+to non-streamed responses. Hosted gateway verification remains an M4 gate.
+The browser checks the full declared count/hash and rejects truncation, extra
+bytes, unsupported success responses and corruption. Progress renews an idle
+deadline, not a short total-file duration limit.
+
+Imports use the current bearer-authenticated API in **one-MiB raw parts** rather
+than introducing browser Storage capabilities or a new credential-bearing URL.
+Canonical base64 parts are stored as scoped immutable JSON, so the resulting
+Storage byte overhead is included in the owner's ledger. A UID-scoped journal
+and an immutable command-intent claim bind the file size/hash, target and part
+indices. Reusing the command on another endpoint or for another file fails.
+Missing claims and expired journals fail closed before new Storage work.
+Different UIDs cannot use a pending transfer.
+
+No campaign head or membership is created while source parts arrive. The
+backend verifies all parts, the complete-file hash, UTF-8, rules/source schema,
+real character state and physical scene. It reuses the canonical commit domain
+to prepare a fresh authority with stable character IDs/rows and exact scene
+data, discarding imported owner/role/key claims. Verified image metadata remains
+private under the unpublished target. Normalized object reservations precede
+uploads; large sets use bounded reservation batches. The final transaction
+claims the campaign slot and publishes head, receipt, change marker and
+completed journal together. A rejection closes the intent without a visible
+partial campaign; an uncertain result retains one original caller/command.
+Staged/reserved bytes remain charged until later race-safe cleanup, not
+optimistically refunded or deleted.
+
+Measured gates:
+
+- A genuine **36,522,416-byte** image-heavy campaign contained **25 maps, 16
+  characters and 32 image fields**. Exact rows, source pins, images and scene
+  round-tripped through the real HTTP client. Its largest request was
+  **1,398,126 bytes**, and its larger-than-32-MiB response was actually chunked
+  with no `Content-Length`. The isolated case passed in **26,796.7926 ms**.
+- An actual **128,000,000-byte** valid file imported successfully; **128,000,001
+  bytes** failed before upload. The largest request was **1,398,127 bytes**.
+  This limit dataset uses JSON whitespace, separately from the real-data
+  campaign above; it is not presented as representative campaign content.
+  The isolated boundary case passed in **44,588.573 ms**.
+- Actual lost replies after start, part publication and final publication
+  recovered the original caller without duplicate campaigns or chunk uploads.
+  A real final-transaction conflict rolled back ownership count, head, receipt
+  and journal completion together. An actual process kill after Storage upload
+  resumed on a fresh backend with the same import and exact data.
+- Both 2014/2024 paths retained complete data and private image delivery.
+  Unrelated and joined-member backup requests are denied; UID-scoped staging,
+  exact raw part/file bounds, storage/campaign contention, corrupt images,
+  invalid JSON, wrong edition, hash mismatch and missing/expired intent fences
+  produce explicit outcomes without changing the source.
+- The complete native gate passed **127/127 cases**, zero skipped, in
+  **310,312.9707 ms**. The affected application/local/account/image/backup/UI gate
+  passed **18 explicit suites / 131 tests**, zero skipped, in **10.944 s**.
+  Full lint/stylelint/layering had zero errors and the same 39 existing
+  warnings. The final added joined-member and malformed-UTF regression
+  assertions also passed their focused rechecks.
+
+The managed browser restored the existing synthetic owner, exported the saved
+image-bearing campaign into its read-only JSON view and imported a **1,528-byte**
+file through the real file-control handler. The imported owner claim was ignored.
+The new private copy remained in Owned after reload. Independent SDK reads
+verified one import receipt, the same character ID/record hash and original
+95-byte PNG under the new private campaign, while the source and earlier
+member-lifecycle head stayed unchanged. Large previews are explicitly omitted
+from the textarea, while a real DOM/Blob download test verifies the complete
+original file is still supplied to the download helper.
+
+The browser-tool surface did not produce an OS-download event for its button
+click, so no successful OS-file save is claimed from that attempt. Complete
+HTTP export bytes, digest verification, the actual Blob contents and file-input
+import are verified; intended-browser/hosted download checks remain part of the
+later pilot and restore drill. Browser telemetry alone is not a new complete
+3D/live-game acceptance claim.
+
+No live Auth, Storage/IAM, deployment, push/merge or actual cutover occurred.
+No new package or production upload capability was required. Automatic backup
+history, restore from it and cleanup remain separate tasks; provider linking
+remains deferred. The routine save-flash/centered-notice presentation is
+untouched for `UX-01` after migration completion.

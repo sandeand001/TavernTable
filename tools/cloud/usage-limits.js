@@ -2,7 +2,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { CloudError, metadataUnavailable } = require('./cloud-error.js');
 const { pilotAccountKey } = require('./account-access.js');
 const { storageUnavailable } = require('./immutable-objects.js');
-const { isCloudUUID } = require('../../src/campaigns/CloudProtocol.js');
+const { isCloudUUID, isCloudDigest } = require('../../src/campaigns/CloudProtocol.js');
 
 const OWNED_CAMPAIGN_LIMIT = 10;
 const STORAGE_BYTE_LIMIT = 20 * 1024 ** 3;
@@ -119,10 +119,17 @@ class CloudUsageLimits {
     // Every new campaign writer requires this ledger before publication can begin.
     let campaigns;
     let reservations;
+    let claims;
     try {
-      [campaigns, reservations] = await Promise.all([
+      [campaigns, reservations, claims] = await Promise.all([
         this._ownedCampaigns(uid),
         reference.collection('objects').limit(1).get(),
+        this.firestore
+          .collection('accountCommands')
+          .doc(pilotAccountKey(uid))
+          .collection('claims')
+          .limit(1)
+          .get(),
       ]);
     } catch (error) {
       if (metadataUnavailable(error))
@@ -137,7 +144,7 @@ class CloudUsageLimits {
       await this.access.assertEligibility(uid, transaction);
       const snapshot = await transaction.get(reference);
       if (snapshot.exists) return this._record(snapshot, uid);
-      if (!reservations.empty) throw invalidUsage();
+      if (!reservations.empty || !claims.empty) throw invalidUsage();
       const record = {
         version: 1,
         uid,
@@ -151,16 +158,20 @@ class CloudUsageLimits {
     });
   }
 
-  async claimCampaign(uid, transaction) {
-    const reference = this._reference(uid);
-    const record = this._record(await transaction.get(reference), uid);
+  async assertCampaignCapacity(uid, transaction) {
+    const record = this._record(await transaction.get(this._reference(uid)), uid);
     if (record.ownedCampaigns >= OWNED_CAMPAIGN_LIMIT)
       throw new CloudError(
         409,
         'campaign-limit-reached',
         'Each account can own at most 10 private-pilot campaigns'
       );
-    transaction.set(reference, { ...record, ownedCampaigns: record.ownedCampaigns + 1 });
+    return record;
+  }
+
+  async claimCampaign(uid, transaction) {
+    const record = await this.assertCampaignCapacity(uid, transaction);
+    transaction.set(this._reference(uid), { ...record, ownedCampaigns: record.ownedCampaigns + 1 });
   }
 
   async consumeRequest(principal, { invitation = false } = {}) {
@@ -386,7 +397,14 @@ class CloudUsageLimits {
     return this._reserveObjects(uid, campaignId, [candidate], bucketName, inventoryToken);
   }
 
-  async _reserveObjects(uid, campaignId, candidates, bucketName, inventoryToken = null) {
+  async _reserveObjects(
+    uid,
+    campaignId,
+    candidates,
+    bucketName,
+    inventoryToken = null,
+    importId = null
+  ) {
     const reference = this._reference(uid);
     const reservations = candidates.map((candidate) =>
       reference.collection('objects').doc(objectKey(candidate.path, candidate.generation))
@@ -396,7 +414,49 @@ class CloudUsageLimits {
       const campaign = await transaction.get(
         this.firestore.collection('campaigns').doc(campaignId)
       );
-      if (!campaign.exists || campaign.data()?.ownerUid !== uid)
+      if (importId !== null) {
+        const [job, claim] = await transaction.getAll(
+          this.firestore
+            .collection('accountImports')
+            .doc(pilotAccountKey(uid))
+            .collection('transfers')
+            .doc(importId),
+          this.firestore
+            .collection('accountCommands')
+            .doc(pilotAccountKey(uid))
+            .collection('claims')
+            .doc(importId)
+        );
+        if (!job.exists || job.data()?.uid !== uid || job.data()?.campaignId !== campaignId)
+          throw new CloudError(404, 'import-not-found', 'This private import is not available');
+        const proof = claim.data();
+        if (
+          job.data().version !== 1 ||
+          job.data().importId !== importId ||
+          !isCloudDigest(job.data().fingerprint) ||
+          proof?.version !== 1 ||
+          proof.uid !== uid ||
+          proof.kind !== 'campaign.import' ||
+          proof.campaignId !== campaignId ||
+          proof.fingerprint !== job.data().fingerprint
+        )
+          throw new CloudError(
+            503,
+            'invalid-import-state',
+            'The private import intent could not be verified'
+          );
+        if (
+          campaign.exists ||
+          job.data().state !== 'uploading' ||
+          !Number.isFinite(Date.parse(job.data().expiresAt)) ||
+          Date.parse(job.data().expiresAt) <= this.now()
+        )
+          throw new CloudError(
+            409,
+            'import-state-changed',
+            'Reconcile the current private import before continuing'
+          );
+      } else if (!campaign.exists || campaign.data()?.ownerUid !== uid)
         throw new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
       const record = this._record(await transaction.get(reference), uid);
       if (record.storageBucket !== null && record.storageBucket !== bucketName)
@@ -469,9 +529,9 @@ class CloudUsageLimits {
     });
   }
 
-  async reserveStorage(principal, campaignId, input, bucket) {
+  async reserveStorage(principal, campaignId, input, bucket, { importId = null } = {}) {
     const uid = principalUid(principal);
-    if (!isCloudUUID(campaignId))
+    if (!isCloudUUID(campaignId) || (importId !== null && !isCloudUUID(importId)))
       throw new CloudError(
         400,
         'invalid-storage-reservation',
@@ -479,7 +539,7 @@ class CloudUsageLimits {
       );
     const candidates = Array.isArray(input) ? input : [input];
     const scope = new RegExp(
-      `^campaigns/${campaignId}/(?:objects/(?:scene|characters)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin)$`
+      `^campaigns/${campaignId}/(?:objects/(?:scene|characters|import)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin)$`
     );
     if (
       !candidates.length ||
@@ -508,7 +568,7 @@ class CloudUsageLimits {
         generation: null,
       });
     }
-    await this._reserveObjects(uid, campaignId, [...unique.values()], bucket.name);
+    await this._reserveObjects(uid, campaignId, [...unique.values()], bucket.name, null, importId);
   }
 }
 

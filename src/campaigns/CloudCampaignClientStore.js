@@ -14,6 +14,10 @@ import {
   isCloudMemberRemoval,
   isCloudCampaignSettings,
   isCloudAssetManifest,
+  CLOUD_BACKUP_BYTE_LIMIT,
+  CLOUD_IMPORT_CHUNK_BYTES,
+  isCloudImportReceipt,
+  isCloudImportTicket,
 } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
@@ -27,12 +31,12 @@ const invalidResponse = () =>
 const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;
 const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
 const copy = (value) => JSON.parse(JSON.stringify(value));
-const unsupported = () =>
-  failure(
-    501,
-    'cloud-feature-unavailable',
-    'This feature is not enabled for the private cloud preparation slice.'
-  );
+const base64 = (bytes) => {
+  const parts = [];
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    parts.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
+  return globalThis.btoa(parts.join(''));
+};
 const definitiveDenials = new Set([
   'invalid-campaign-request',
   'invalid-campaign-change',
@@ -92,6 +96,7 @@ export default class CloudCampaignClientStore {
     this.capabilities = Object.freeze({
       settings: true,
       backups: false,
+      portability: true,
       invitations: true,
       participantAccess: true,
       assignments: true,
@@ -130,6 +135,7 @@ export default class CloudCampaignClientStore {
     return new CampaignStore({
       indexedDB: null,
       packs: this.packs,
+      backupFileByteLimit: CLOUD_BACKUP_BYTE_LIMIT,
       storage: { transaction: async (_mode, operation) => operation(transaction) },
     });
   }
@@ -308,6 +314,32 @@ export default class CloudCampaignClientStore {
   }
 
   async _receipt(operation, result, input, id) {
+    if (operation === 'import') {
+      if (
+        !isCloudImportReceipt(result) ||
+        result.importId !== input.importId ||
+        result.bytes !== input.bytes.byteLength ||
+        result.sha256 !== input.sha256 ||
+        result.campaign.id !== input.targetId
+      )
+        throw invalidResponse();
+      const metadata = await this._metadata(result.campaign);
+      if (
+        metadata.name !== input.source.name ||
+        metadata.ruleset !== input.source.ruleset ||
+        metadata.coreVersion !== input.source.coreVersion ||
+        metadata.sceneRevision !== (input.hasScene ? 1 : 0) ||
+        metadata.sourcePacks.length !== input.source.sourcePacks.length ||
+        input.source.sourcePacks.some((source) => {
+          const actual = metadata.sourcePacks.find((entry) => entry.id === source.id);
+          return (
+            !actual || ['version', 'ruleset', 'enabled'].some((key) => actual[key] !== source[key])
+          );
+        })
+      )
+        throw invalidResponse();
+      return metadata;
+    }
     if (operation === 'settings') {
       if (!isCloudCampaignSettings(result) || result.generation !== input.generation + 1)
         throw invalidResponse();
@@ -436,12 +468,13 @@ export default class CloudCampaignClientStore {
         'cloud-offline',
         'Cloud editing requires an online connection. No change was queued.'
       );
-    const input = copy(value);
+    const input = operation === 'import' ? value : copy(value);
     const commandId = this.crypto.randomUUID();
     if (!isCloudUUID(commandId))
       throw failure(503, 'invalid-command-id', 'A secure cloud command ID could not be created.');
     let resource;
     if (operation === 'create') resource = 'campaigns';
+    else if (operation === 'import') resource = 'account/imports';
     else if (operation === 'join') resource = 'account/invitations/redeem';
     else if (operation === 'revoke') resource = this._resource(id, '/invitations/revoke');
     else if (operation === 'assign') resource = this._resource(id, '/assignments');
@@ -449,13 +482,15 @@ export default class CloudCampaignClientStore {
     else
       resource = this._resource(id, operation === 'invitation' ? '/invitations' : `/${operation}`);
     const body =
-      operation === 'settings'
-        ? { commandId, generation: input.generation, changes: input.changes }
-        : ['join', 'revoke', 'assign', 'remove'].includes(operation)
-          ? { commandId, ...input }
-          : operation === 'create' || operation === 'invitation'
-            ? { commandId, options: input }
-            : { commandId, change: input };
+      operation === 'import'
+        ? { commandId, bytes: input.bytes.byteLength, sha256: input.sha256 }
+        : operation === 'settings'
+          ? { commandId, generation: input.generation, changes: input.changes }
+          : ['join', 'revoke', 'assign', 'remove'].includes(operation)
+            ? { commandId, ...input }
+            : operation === 'create' || operation === 'invitation'
+              ? { commandId, options: input }
+              : { commandId, change: input };
     let resolve;
     let reject;
     const promise = new Promise((accepted, denied) => {
@@ -474,7 +509,9 @@ export default class CloudCampaignClientStore {
       reject,
       running: null,
       error: null,
+      importStarted: false,
     };
+    if (operation === 'import') input.importId = commandId;
     this.pending = item;
     this._saveStatus('saving');
     void this._attempt(item);
@@ -485,21 +522,28 @@ export default class CloudCampaignClientStore {
     if (item.running) return item.running;
     item.running = (async () => {
       try {
-        const result = await this._call(item.resource, { method: 'POST', body: item.body });
+        const result =
+          item.operation === 'import'
+            ? await this._importAttempt(item)
+            : await this._call(item.resource, { method: 'POST', body: item.body });
         const receipt = await this._receipt(item.operation, result, item.input, item.id);
+        this._identity();
         this.pending = null;
         this._saveStatus('saved');
         item.resolve(receipt);
       } catch (error) {
         const freshCapacityDenial =
           item.error === null &&
+          (item.operation !== 'import' || !item.importStarted) &&
           [
             'campaign-limit-reached',
             'storage-limit-reached',
             'storage-reservation-too-large',
           ].includes(error.code);
         const freshAccessDenial =
-          (item.operation === 'join' || metadataOperations.has(item.operation)) &&
+          (item.operation === 'join' ||
+            metadataOperations.has(item.operation) ||
+            (item.operation === 'import' && !item.importStarted)) &&
           item.error === null &&
           [
             'pilot-access-required',
@@ -508,12 +552,24 @@ export default class CloudCampaignClientStore {
             'authentication-required',
           ].includes(error.code);
         item.error = error;
-        if (
-          freshCapacityDenial ||
-          freshAccessDenial ||
-          definitiveDenials.has(error.code) ||
-          (metadataOperations.has(item.operation) && definitiveMetadataDenials.has(error.code))
-        ) {
+        const terminal =
+          item.operation === 'import'
+            ? [
+                'import-rejected',
+                'import-expired',
+                'command-id-conflict',
+                'import-campaign-limit-reached',
+                'import-storage-limit-reached',
+                'import-image-too-large',
+                'import-invalid-image',
+              ].includes(error.code) ||
+              freshAccessDenial ||
+              freshCapacityDenial
+            : freshCapacityDenial ||
+              freshAccessDenial ||
+              definitiveDenials.has(error.code) ||
+              (metadataOperations.has(item.operation) && definitiveMetadataDenials.has(error.code));
+        if (terminal) {
           this.pending = null;
           this._saveStatus('failed', error);
           item.reject(error);
@@ -543,6 +599,63 @@ export default class CloudCampaignClientStore {
     await this._attempt(item);
     if (this.pending === item) throw item.error;
     return item.promise;
+  }
+
+  async _fileDigest(bytes) {
+    const digest = new Uint8Array(await this.crypto.subtle.digest('SHA-256', bytes));
+    const value = [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    if (!isCloudDigest(value))
+      throw failure(503, 'cloud-unavailable', 'Complete file hashing is unavailable.');
+    return value;
+  }
+
+  async _importAttempt(item) {
+    const ticket = await this._call(item.resource, { method: 'POST', body: item.body });
+    const input = item.input;
+    if (
+      !isCloudImportTicket(ticket) ||
+      ticket.importId !== item.commandId ||
+      ticket.bytes !== input.bytes.byteLength ||
+      ticket.sha256 !== input.sha256 ||
+      (input.targetId !== null && input.targetId !== ticket.campaignId)
+    )
+      throw invalidResponse();
+    item.importStarted = true;
+    input.targetId = ticket.campaignId;
+    if (ticket.completed !== null) return ticket.completed;
+    const count = Math.ceil(input.bytes.byteLength / CLOUD_IMPORT_CHUNK_BYTES);
+    for (let index = 0; index < count; index++) {
+      const bytes = input.bytes.subarray(
+        index * CLOUD_IMPORT_CHUNK_BYTES,
+        Math.min((index + 1) * CLOUD_IMPORT_CHUNK_BYTES, input.bytes.byteLength)
+      );
+      const sha256 = await this._fileDigest(bytes);
+      this._identity();
+      const previous = ticket.parts.find((part) => part.index === index);
+      if (previous) {
+        if (previous.bytes !== bytes.byteLength || previous.sha256 !== sha256)
+          throw invalidResponse();
+        continue;
+      }
+      const result = await this._call(`${item.resource}/${item.commandId}/parts`, {
+        method: 'POST',
+        body: { index, data: base64(bytes) },
+      });
+      if (
+        !result ||
+        Object.keys(result).length !== 5 ||
+        result.version !== 1 ||
+        result.importId !== item.commandId ||
+        result.index !== index ||
+        result.bytes !== bytes.byteLength ||
+        result.sha256 !== sha256
+      )
+        throw invalidResponse();
+    }
+    return this._call(`${item.resource}/${item.commandId}/finish`, {
+      method: 'POST',
+      body: { commandId: item.commandId },
+    });
   }
 
   commitScene(id, change) {
@@ -712,14 +825,80 @@ export default class CloudCampaignClientStore {
     });
     return result.campaign;
   }
-  exportBackup() {
-    throw unsupported();
+  async exportBackup(id) {
+    const text = await this._call(this._resource(id, '/backup'), { responseType: 'backup' });
+    let data;
+    try {
+      data = this.parseBackup(text);
+    } catch (error) {
+      if (['invalid-campaign-backup', 'backup-too-large'].includes(error?.code))
+        throw invalidResponse();
+      throw error;
+    }
+    if (data.campaign.id !== id) throw invalidResponse();
+    await this._metadata(data.campaign, id);
+    this._identity();
+    return text;
   }
-  parseBackup() {
-    throw unsupported();
+  parseBackup(text) {
+    try {
+      return this._domain({}).parseBackup(text);
+    } catch (error) {
+      if (error?.code === 'backup-too-large')
+        throw failure(
+          413,
+          'backup-too-large',
+          'Cloud campaign files must not exceed 128,000,000 UTF-8 bytes.'
+        );
+      if (error?.constructor === Error || error instanceof SyntaxError)
+        throw failure(
+          400,
+          'invalid-campaign-backup',
+          'Choose a complete supported campaign JSON backup.'
+        );
+      throw error;
+    }
   }
-  importBackup() {
-    throw unsupported();
+  async importBackup(text) {
+    this._identity();
+    if (this.pending)
+      throw failure(
+        409,
+        'pending-cloud-command',
+        'Resolve the pending cloud save before importing another file.'
+      );
+    if (
+      typeof this.crypto.subtle?.digest !== 'function' ||
+      typeof globalThis.btoa !== 'function' ||
+      typeof TextEncoder !== 'function'
+    )
+      throw failure(
+        503,
+        'cloud-unavailable',
+        'This browser cannot transfer a complete campaign file.'
+      );
+    const data = this.parseBackup(text);
+    const source = {
+      name: data.campaign.name,
+      ruleset: data.campaign.ruleset,
+      coreVersion: data.campaign.coreVersion,
+      sourcePacks: data.campaign.sourcePacks.map(({ id, version, ruleset, enabled }) => ({
+        id,
+        version,
+        ruleset,
+        enabled,
+      })),
+    };
+    const bytes = new TextEncoder().encode(text);
+    const sha256 = await this._fileDigest(bytes);
+    this._identity();
+    return this._write('import', null, {
+      bytes,
+      sha256,
+      source,
+      hasScene: data.scene !== null,
+      targetId: null,
+    });
   }
 
   close() {

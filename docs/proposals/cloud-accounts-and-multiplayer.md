@@ -769,6 +769,7 @@ without treating each connection as another account or imposing a game-duration 
 | Accounts | No numeric account cap; verified, invitation/approval-controlled eligibility remains mandatory. |
 | Campaigns | At most ten owned campaigns per UID; joined campaigns do not consume ownership slots. |
 | Private storage | 20 GiB of object-body bytes per owner across campaigns, including retained backups, noncurrent/soft-deleted generations, and staged/reserved uploads. |
+| Complete cloud files | Approved cloud-only ceiling of 128,000,000 UTF-8 bytes. Transfer uses bounded parts; individual domain/object limits and legacy local import defaults stay unchanged. |
 | Custom uploads | No daily-volume cap. Existing file, encoded-image, MIME and decoded-pixel bounds still apply, as does aggregate storage admission. |
 | App requests | 300 per UID in any rolling 60 seconds, shared across authenticated cloud routes/instances. Static files, origin preflights and Firebase-managed authentication are separate. |
 | Live connections | Four renewable leases per UID, with 90-second crash expiry. Campaign authorization, stream closure on lease loss, idle expiry and hosted connection headroom are separate M3/M4 gates. |
