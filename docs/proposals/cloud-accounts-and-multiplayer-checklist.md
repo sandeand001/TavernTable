@@ -68,8 +68,9 @@ authoritative warm rejoin and session-loss safety (`M3-06` through `M3-09`)
 are verified. Ten concurrent managed clients now pass convergence/privacy/
 receipt/replay acceptance (`M3-10`), with **307 suites / 4,006 tests** passing
 the full stable gate. Safe lifecycle drain and captured final-source backups
-(`M4-04`) are verified. Complete cloud gameplay activation, forced-container
-restart and hosted performance/cost acceptance remain gated. **46 of 65** tasks are complete,
+(`M4-04`) and actual forced-container restart/overlap (`M4-05`) are verified.
+Complete cloud gameplay activation and hosted performance/cost acceptance remain gated.
+**47 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1105,22 +1106,40 @@ Revalidation in the intended environment remains part of M1 and M4.
     overlapping-instance lifecycle acceptance.
     See [drain evidence](./cloud-migration-preparation.md#m4-04-safe-pause-drain-and-exact-final-source-backups).
 
-- [ ] **M4-05 - Pass forced-restart and overlapping-instance lifecycle tests.**
+- [x] **M4-05 - Pass forced-restart and overlapping-instance lifecycle tests.**
   - **Depends:** `M4-04`, `M4-06`.
   - **Success:** runtime memory, local files and shutdown callbacks are not durability
     or lease authority. Duplicate delivery, replacement and temporary instance
     overlap cannot reset deadlines or publish conflicting state.
   - **Verify:** kill/replace the container at commit, notification, backup and
     reconnect boundaries; recover committed state and correct live status.
-  - **Blocked:** November 14, 2026. The host's loopback emulator hub responds,
-    but an exact bounded local Linux container using `--network host` receives
-    `ECONNREFUSED` for that same localhost endpoint. The probe container is
-    verified removed. Docker Desktop's persisted settings expose no verified
-    host-network boolean; its state is not inferred or changed. Owner input is
-    needed to check/enable Desktop host networking and apply its restart before
-    actual container-kill acceptance. No emulators are exposed to the LAN,
-    original services are unchanged, and process-kill tests are not substituted
-    for the required container proof.
+  - **Completed:** November 14, 2026, after the owner enabled Docker Desktop host
+    networking and restarted. **15/15 actual Linux-container cases**, zero skips/
+    cancellations, **103,020.799 ms**, cover uploads before commit, durable commit
+    before announcement, lost replies, current-only member reconnect, original
+    55/60-minute inactivity and 15-minute grace, backup publication and temporary
+    overlapping workers. **29 exact containers** are force-killed (including
+    fixture teardown), with exit **137**, no OOM and verified removal. Every
+    worker runs the existing local M4-04 runtime with **11 exact source hashes**,
+    UID 1000, read-only root, 1 CPU/1 GiB and no mounts/keys/GPU.
+    A test-only demo-emulator bootstrap does not weaken the production entry.
+    Two actual workers publish one CAS winner/one denial; two same-ID deliveries
+    return the original receipt without another revision. One captured final
+    source/file/receipt survives a killed uploader and later paused preparation;
+    its later changed-state backup remains independently pending. A real SSE
+    worker's abandoned presence remains stored after SIGKILL and expires at its
+    original lease/grace, not shutdown/restart time. Current reconnect never
+    replays missed movement. Native-process compatibility: **4/4 cases**,
+    **48,175.3215 ms**, zero skips/cancellations.
+    Container fixture objects are deleted with exact generation preconditions;
+    eight UID namespaces and synthetic Auth accounts are verified removed.
+    An initial parallel cleanup DELETE reset is recorded, not hidden by a
+    production retry. Pinned Storage SDK pipeline listener warnings remain
+    visible and recorded for the later load/memory gate; no warning-free-runtime
+    claim is made. Full lint/style/layering: zero errors / same **39 baseline
+    warnings**. No production source/dependency, real account/campaign, live
+    deployment, original-host or deferred routine-save UX change.
+    See [container acceptance](./cloud-migration-preparation.md#m4-05-actual-container-replacement-and-overlap).
 
 - [x] **M4-06 - Package the cloud entry and bounded starting runtime configuration.**
   - **Depends:** `M1-10`, `M0-03`.

@@ -487,8 +487,8 @@
   activity. Presence is not stream permission or a replacement for the global
   four-stream quota. Actual SSE now uses these callbacks; pause stops that
   campaign's streams and reconnect loops without stopping another live campaign.
-  Final-source backup scheduling/drain is verified below; actual container-kill/
-  overlap and full hosted gameplay acceptance remain separate gates.
+  Final-source backup scheduling/drain and actual container-kill/overlap are
+  verified below; full hosted gameplay/load acceptance remains separately gated.
 - **Final live backup (M4-04 development gate verified)**: every durable
   live-to-paused transition captures its exact canonical source in the same
   transaction, including permitted primary publication at an expiry boundary.
@@ -505,6 +505,17 @@
   HP, budgets and resources remain saved; another live campaign stays active.
   Automatic SSE expiry can leave the durable source pending until the next
   online wake. No always-on timer or offline edit/upload queue is introduced.
+- **Cloud lifecycle replacement (M4-05 development gate verified)**: actual
+  SIGKILL container replacement and temporary overlapping workers use the same
+  durable canonical head, receipts, pending complete-file sources and stored
+  inactivity/presence deadlines. A killed uploader cannot acknowledge an
+  unpublished point, replace its frozen source with later preparation or spend
+  gameplay costs again. One concurrent canonical winner and exact same-ID replay
+  remain distinct from a stale-revision rejection. A real abandoned SSE lease
+  expires from stored time, not shutdown/restart; current-only reconnect does not
+  replay routes. Runtime memory, local files, shutdown callbacks and the initial
+  maximum-one-instance setting are not authority. The explicit local container
+  test Adapter leaves production emulator/credential guards unchanged.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.

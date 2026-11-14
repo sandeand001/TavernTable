@@ -6,6 +6,7 @@ const os = require('node:os');
 const { spawn, execFile } = require('node:child_process');
 const { once } = require('node:events');
 const { promisify } = require('node:util');
+const { createHash, randomUUID } = require('node:crypto');
 const sdk = require('firebase/auth');
 const {
   createEmulatorRuntime,
@@ -27,9 +28,15 @@ const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCha
 const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { sceneState } = require('../helpers/sceneState.js');
+const {
+  launchContainerBackend,
+  CONTAINER_MESSAGE_PREFIX,
+  CONTAINER_RUNTIME_FILES,
+} = require('./helpers/containerBackend.js');
 
 const root = path.resolve(__dirname, '..', '..');
 const execute = promisify(execFile);
+const lifecycleImage = process.env.TAVERNTABLE_CLOUD_LIFECYCLE_IMAGE ?? null;
 
 function messageFrom(child, type) {
   return new Promise((resolve, reject) => {
@@ -57,6 +64,10 @@ function messageFrom(child, type) {
 }
 
 async function terminate(child) {
+  if (child.container) {
+    await child.container.kill();
+    return;
+  }
   if (child.exitCode !== null || child.signalCode !== null) return;
   assert.ok(Number.isInteger(child.pid) && child.pid > 0);
   const exited = once(child, 'exit');
@@ -102,15 +113,90 @@ async function fixture(t) {
   const config = readEmulatorEnvironment();
   const processes = [];
   const identities = [];
+  const clients = [];
   t.after(async () => {
     const errors = [];
-    for (const entry of processes) {
+    for (const client of clients) {
       try {
-        await terminate(entry.child);
-        await fs.rm(entry.cwd, { recursive: true, force: true });
+        client.close();
       } catch (error) {
         errors.push(error);
       }
+    }
+    for (const entry of processes) {
+      try {
+        await terminate(entry.child);
+        if (entry.child.container) await entry.child.container.remove();
+        else await fs.rm(entry.cwd, { recursive: true, force: true });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (lifecycleImage !== null) {
+      for (const identity of identities) {
+        try {
+          const campaigns = await runtime.firestore
+            .collection('campaigns')
+            .where('ownerUid', '==', identity.uid)
+            .get();
+          const transfers = await runtime.firestore
+            .collection('accountImports')
+            .doc(pilotAccountKey(identity.uid))
+            .collection('transfers')
+            .get();
+          const ids = new Set([
+            ...campaigns.docs.map((snapshot) => snapshot.id),
+            ...transfers.docs.map((snapshot) => snapshot.data().campaignId),
+          ]);
+          for (const id of ids) {
+            assert.match(id, /^[a-f0-9-]{36}$/);
+            const [files] = await runtime.bucket.getFiles({ prefix: `campaigns/${id}/` });
+            for (const file of files) {
+              const generation = file.metadata.generation;
+              assert.match(generation, /^[1-9][0-9]*$/);
+              await file.delete({ ifGenerationMatch: generation });
+            }
+            await runtime.firestore.recursiveDelete(
+              runtime.firestore.collection('campaigns').doc(id)
+            );
+            assert.equal(
+              (await runtime.bucket.getFiles({ prefix: `campaigns/${id}/` }))[0].length,
+              0
+            );
+            assert.equal(
+              (await runtime.firestore.collection('campaigns').doc(id).get()).exists,
+              false
+            );
+          }
+          for (const name of [
+            'pilotAccounts',
+            'accountCommands',
+            'campaignMemberships',
+            'accountUsage',
+            'accountStreams',
+            'accountImports',
+            'accountRequests',
+            'accountObjectMaintenance',
+          ]) {
+            const reference = runtime.firestore.collection(name).doc(pilotAccountKey(identity.uid));
+            await runtime.firestore.recursiveDelete(reference);
+            assert.equal((await reference.get()).exists, false);
+          }
+          await runtime.auth.deleteUser(identity.uid);
+          await assert.rejects(runtime.auth.getUser(identity.uid), { code: 'auth/user-not-found' });
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      t.diagnostic(
+        JSON.stringify({
+          containerImage: lifecycleImage,
+          containers: processes.length,
+          forcedKills: processes.reduce((sum, entry) => sum + entry.child.container.kills, 0),
+          matchingRuntimeHashesPerContainer: CONTAINER_RUNTIME_FILES.length,
+          ownedContainersAndPrivateFixturesRemoved: errors.length === 0,
+        })
+      );
     }
     const closed = await Promise.allSettled([
       ...identities.map((identity) => identity.close()),
@@ -143,24 +229,44 @@ async function fixture(t) {
     firestore: runtime.firestore,
     access: presenceAccess,
     packs: manifest.packs,
+    objects: new ImmutableCloudObjects({ bucket: runtime.bucket }),
+    resources,
     now: () => Date.now() + presenceOffset,
   });
 
   const start = async (port = 0) => {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'taverntable-cloud-backend-'));
+    const cwd =
+      lifecycleImage === null
+        ? await fs.mkdtemp(path.join(os.tmpdir(), 'taverntable-cloud-backend-'))
+        : null;
     const bootstrap = `
-      const { randomUUID } = require('node:crypto');
+      const { randomUUID, createHash } = require('node:crypto');
       const fs = require('node:fs/promises');
       const path = require('node:path');
-      const root = ${JSON.stringify(root)};
-      const { createEmulatorRuntime } = require(path.join(root, 'tools', 'cloud', 'emulator-runtime.js'));
+      const http = require('node:http');
+      const { once } = require('node:events');
+      const root = ${lifecycleImage === null ? JSON.stringify(root) : 'process.cwd()'};
+      ${
+        lifecycleImage === null
+          ? "const { createEmulatorRuntime } = require(path.join(root, 'tools', 'cloud', 'emulator-runtime.js'));"
+          : `
+      const { createAdminRuntime } = require(path.join(root, 'tools', 'cloud', 'admin-runtime.js'));
+      process.send = value => process.stdout.write(${JSON.stringify(CONTAINER_MESSAGE_PREFIX)} + JSON.stringify(value) + '\\n');
+      require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
+        process.emit('message', JSON.parse(line));
+      });`
+      }
       const { CloudAccountAccess } = require(path.join(root, 'tools', 'cloud', 'account-access.js'));
       const { CloudCampaignStore } = require(path.join(root, 'tools', 'cloud', 'campaign-store.js'));
       const { ImmutableCloudObjects } = require(path.join(root, 'tools', 'cloud', 'immutable-objects.js'));
       const { HostResources } = require(path.join(root, 'tools', 'host-resources.js'));
-      const { cloudApi } = require(path.join(root, 'tests', 'cloud', 'helpers', 'http.js'));
+      const { createCloudHttpHandler } = require(path.join(root, 'tools', 'cloud', 'cloud-http.js'));
       (async () => {
-        const runtime = await createEmulatorRuntime();
+        const runtime = await ${
+          lifecycleImage === null
+            ? 'createEmulatorRuntime()'
+            : `createAdminRuntime(${JSON.stringify(config)})`
+        };
         let holdPublication = false;
         let releasePublication = null;
         let holdStagedRead = false;
@@ -248,21 +354,55 @@ async function fixture(t) {
           }
           return result;
         };
-        const api = await cloudApi({ access, store, port: ${port} });
-        process.send({ type: 'ready', url: api.url, instance: randomUUID() });
-      })().catch(() => {
-        process.send({ type: 'failed' });
+        const handler = createCloudHttpHandler({ access, store, allowedOrigins: ['http://127.0.0.1:4300'] });
+        const server = http.createServer((request, response) => {
+          void handler(request, response).then(handled => {
+            if (!handled) { response.writeHead(404); response.end(); }
+          }, error => {
+            console.error('[lifecycle-http]', { code: error.code || 'fixture-http-failed' });
+            if (response.headersSent) response.destroy();
+            else { response.writeHead(500); response.end(); }
+          });
+        });
+        server.listen(${port}, ${JSON.stringify(lifecycleImage === null ? '127.0.0.1' : '0.0.0.0')});
+        await once(server, 'listening');
+        const hashes = {};
+        for (const file of ${JSON.stringify(CONTAINER_RUNTIME_FILES)})
+          hashes[file] = createHash('sha256').update(await fs.readFile(path.join(root, file))).digest('hex');
+        process.send({
+          type: 'ready', url: 'http://127.0.0.1:' + server.address().port, instance: randomUUID(),
+          platform: process.platform, node: process.version,
+          uid: process.getuid?.() ?? null, hashes,
+        });
+      })().catch(error => {
+        process.send({ type: 'failed', code: error.code || 'fixture-startup-failed' });
         process.exitCode = 1;
       });
     `;
-    const child = spawn(process.execPath, ['-e', bootstrap], {
-      cwd,
-      env: process.env,
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-      windowsHide: true,
-    });
+    const child =
+      lifecycleImage === null
+        ? spawn(process.execPath, ['-e', bootstrap], {
+            cwd,
+            env: process.env,
+            stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+            windowsHide: true,
+          })
+        : await launchContainerBackend({ image: lifecycleImage, bootstrap });
     processes.push({ child, cwd });
     const ready = await messageFrom(child, 'ready');
+    if (lifecycleImage !== null) {
+      assert.equal(ready.platform, 'linux');
+      assert.equal(ready.uid, 1000);
+      assert.match(ready.node, /^v24\./);
+    }
+    for (const file of CONTAINER_RUNTIME_FILES)
+      assert.equal(
+        ready.hashes[file],
+        createHash('sha256')
+          .update(await fs.readFile(path.join(root, file)))
+          .digest('hex'),
+        file + ' must match the tested authority'
+      );
     assert.equal((await fetch(new URL('/api/cloud/account', ready.url))).status, 401);
     return { ...ready, child, port: Number(new URL(ready.url).port) };
   };
@@ -279,8 +419,8 @@ async function fixture(t) {
     }
     return response;
   };
-  const client = (url, accountIdentity = identity) =>
-    new CloudCampaignClientStore({
+  const client = (url, accountIdentity = identity) => {
+    const value = new CloudCampaignClientStore({
       uid: accountIdentity.uid,
       packs: manifest.packs,
       connection: new CloudAccountConnection({
@@ -302,6 +442,9 @@ async function fixture(t) {
         },
       }),
     });
+    clients.push(value);
+    return value;
+  };
   const backend = await start();
   const store = client(backend.url);
   const campaign = await store.create({ name: 'Process lifecycle fixture', ruleset: '2014' });
@@ -332,6 +475,8 @@ async function fixture(t) {
     library,
     campaign,
     commands,
+    authority: presenceStore,
+    principal: presencePrincipal,
     start,
     client,
     connectPresence(sessionId, milliseconds) {
@@ -349,6 +494,224 @@ async function fixture(t) {
     },
   };
 }
+
+test(
+  'overlapping backend workers publish one canonical winner and one captured final backup despite duplicate delivery and a killed uploader',
+  { timeout: 90000 },
+  async (t) => {
+    const f = await fixture(t);
+    await f.store.finishBackupSession(f.campaign.id);
+    const source = await f.store.readCharacters(f.campaign.id);
+    const headReference = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
+    const before = (await headReference.get()).data();
+    const active = await f.store.controlLiveSession(
+      f.campaign.id,
+      'start',
+      await f.store.getLiveSession(f.campaign.id)
+    );
+    const concurrent = await f.start();
+    const other = f.client(concurrent.url);
+    const proposed = [2, 3].map((x) => {
+      const scene = JSON.parse(source.scene);
+      const actor = scene.creatures[0];
+      const map = scene.maps.find((candidate) => candidate.id === actor.mapId);
+      actor.gridX = x;
+      actor.pose.world.x = (x + 0.5) * map.grid.tileWorldSize;
+      actor.pose.world.y = map.terrain.heights[actor.gridY][x] * map.terrain.worldElevationUnit;
+      return {
+        ruleset: '2014',
+        revision: source.sceneRevision,
+        charactersRevision: source.revision,
+        scene: encodeScene(scene, { library: f.library, ruleset: '2014' }),
+      };
+    });
+    for (const backend of [f.backend, concurrent]) {
+      const armed = messageFrom(backend.child, 'armed');
+      backend.child.send({ type: 'arm-publication' });
+      await armed;
+    }
+    const held = [f.backend, concurrent].map((backend) =>
+      messageFrom(backend.child, 'publication-held')
+    );
+    const offset = f.commands.length;
+    const pending = [f.store, other].map((client, index) =>
+      client.commitScene(f.campaign.id, proposed[index]).then(
+        (result) => ({ result }),
+        (error) => ({ error })
+      )
+    );
+    await Promise.all(held);
+    assert.deepEqual((await headReference.get()).data(), before);
+    const commands = f.commands.slice(offset).map((body) => JSON.parse(body));
+    assert.equal(commands.length, 2);
+    for (const backend of [f.backend, concurrent])
+      backend.child.send({ type: 'release-publication' });
+    const outcomes = await Promise.all(pending);
+    assert.equal(outcomes.filter((outcome) => outcome.result).length, 1);
+    assert.equal(outcomes.filter((outcome) => outcome.error?.code === 'stale-revision').length, 1);
+    const winner = outcomes.findIndex((outcome) => outcome.result);
+    const applied = (await headReference.get()).data();
+    assert.equal(applied.generation, before.generation + 1);
+    assert.equal(applied.campaign.sceneRevision, source.sceneRevision + 1);
+    const winnerCommand = commands.find(
+      (command) => command.change.scene === proposed[winner].scene
+    );
+    assert.ok(winnerCommand);
+    const account = f.runtime.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(f.identity.uid));
+    for (const command of commands)
+      assert.equal(
+        (await account.collection('receipts').doc(command.commandId).get()).exists,
+        command.commandId === winnerCommand.commandId
+      );
+    const body = JSON.stringify(winnerCommand);
+    const duplicates = await Promise.all(
+      [f.backend, concurrent].map(async (backend) => {
+        const response = await fetch(`${backend.url}/api/cloud/campaigns/${f.campaign.id}/scene`, {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + f.identity.token,
+            'Content-Type': 'application/json',
+          },
+          body,
+        });
+        assert.equal(response.status, 200);
+        return (await response.json()).result;
+      })
+    );
+    assert.deepEqual(duplicates, [outcomes[winner].result, outcomes[winner].result]);
+    assert.deepEqual((await headReference.get()).data(), applied);
+    const completeSource = await f.store.exportBackup(f.campaign.id);
+    const paused = await other.controlLiveSession(f.campaign.id, 'end', active);
+    const jobs = await headReference.collection('backupJobs').where('state', '==', 'pending').get();
+    assert.equal(jobs.size, 1);
+    const finalJob = jobs.docs[0].data();
+    assert.equal(finalJob.automaticFinal, true);
+    assert.equal(finalJob.finalSessionId, active.sessionId);
+    assert.equal(finalJob.snapshot.generation, applied.generation);
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-publication' });
+    await armed;
+    const uploaded = messageFrom(f.backend.child, 'publication-held');
+    const interrupted = f.store.finishBackupSession(f.campaign.id).then(
+      (record) => ({ record }),
+      (error) => ({ error })
+    );
+    await uploaded;
+    assert.equal(
+      (await headReference.collection('backups').doc(finalJob.name).get()).exists,
+      false
+    );
+    const finished = await other.finishBackupSession(f.campaign.id);
+    assert.equal(finished.name, finalJob.name);
+    await terminate(f.backend.child);
+    assert.ok((await interrupted).error);
+    assert.equal(await other.readBackup(f.campaign.id, finalJob.name), completeSource);
+    assert.equal((await other.listBackups(f.campaign.id)).length, 2);
+    assert.equal((await other.backupStatus(f.campaign.id)).state, 'saved');
+    assert.equal(await other.finishBackupSession(f.campaign.id), null);
+    assert.deepEqual(await other.getLiveSession(f.campaign.id), paused);
+    assert.deepEqual((await headReference.get()).data(), applied);
+    const [files] = await f.runtime.bucket.getFiles({
+      prefix: `campaigns/${f.campaign.id}/backups/${finalJob.name}/`,
+    });
+    assert.equal(files.length, 1);
+    assert.equal(
+      (await account.collection('receipts').doc(finalJob.name).get()).data().kind,
+      'campaign.backup'
+    );
+    t.diagnostic(
+      'Two live workers: one CAS winner/one denial, two original receipt replays, one paused final source/file/receipt, killed uploader cannot conflict or revive live state'
+    );
+  }
+);
+
+test(
+  'an interrupted final live backup recovers its frozen source after replacement despite later permitted paused preparation',
+  { timeout: 90000 },
+  async (t) => {
+    const f = await fixture(t);
+    await f.store.finishBackupSession(f.campaign.id);
+    const active = await f.store.controlLiveSession(
+      f.campaign.id,
+      'start',
+      await f.store.getLiveSession(f.campaign.id)
+    );
+    const hero = f.library.list()[0].id;
+    await f.library.edit(hero, { notes: 'FINAL SOURCE BEFORE CONTAINER LOSS' });
+    const finalText = await f.store.exportBackup(f.campaign.id);
+    const headReference = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
+    const frozenHead = (await headReference.get()).data();
+    const paused = await f.store.controlLiveSession(f.campaign.id, 'end', active);
+    const jobs = await headReference.collection('backupJobs').where('state', '==', 'pending').get();
+    assert.equal(jobs.size, 1);
+    const name = jobs.docs[0].id;
+    const armed = messageFrom(f.backend.child, 'armed');
+    f.backend.child.send({ type: 'arm-publication' });
+    await armed;
+    const held = messageFrom(f.backend.child, 'publication-held');
+    const interrupted = f.store.finishBackupSession(f.campaign.id).then(
+      (record) => ({ record }),
+      (error) => ({ error })
+    );
+    await held;
+    const account = f.runtime.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(f.identity.uid));
+    assert.equal((await headReference.collection('backups').doc(name).get()).exists, false);
+    assert.equal((await account.collection('receipts').doc(name).get()).exists, false);
+    const [uploaded] = await f.runtime.bucket.getFiles({
+      prefix: `campaigns/${f.campaign.id}/backups/${name}/`,
+    });
+    assert.equal(uploaded.length, 1);
+    await terminate(f.backend.child);
+    assert.ok((await interrupted).error);
+    const preparing = await CampaignCharacters.open({
+      campaignId: f.campaign.id,
+      catalog: await f.resources.catalog(f.campaign),
+      store: {
+        readCharacters: (id) => f.authority.readCharacters(f.principal, id),
+        commitCharacters: (id, change) =>
+          f.authority.commitCharacters(f.principal, id, {
+            commandId: randomUUID(),
+            change,
+          }),
+      },
+    });
+    await preparing.edit(hero, { notes: 'LATER PERMITTED PAUSED PREPARATION' });
+    const laterHead = (await headReference.get()).data();
+    assert.equal(laterHead.generation, frozenHead.generation + 1);
+    const replacement = await f.start(f.backend.port);
+    const clean = f.client(replacement.url);
+    const status = await clean.getLiveStatus(f.campaign.id);
+    assert.deepEqual(status.session, paused);
+    const history = await clean.listBackups(f.campaign.id);
+    assert.equal(history.length, 2);
+    assert.equal(history[0].name, name);
+    assert.equal(history[0].generation, frozenHead.generation);
+    assert.equal(await clean.readBackup(f.campaign.id, name), finalText);
+    assert.equal((await clean.backupStatus(f.campaign.id)).state, 'pending');
+    assert.deepEqual((await headReference.get()).data(), laterHead);
+    assert.equal(
+      (await account.collection('receipts').doc(name).get()).data().kind,
+      'campaign.backup'
+    );
+    assert.equal(
+      (await headReference.collection('backupJobs').doc(name).get()).data().state,
+      'complete'
+    );
+    assert.equal(
+      (
+        await f.runtime.bucket.getFiles({ prefix: `campaigns/${f.campaign.id}/backups/${name}/` })
+      )[0].length,
+      1
+    );
+    t.diagnostic(
+      'Killed final uploader leaves no receipt; fresh worker publishes the original frozen file once, preserves later canonical preparation and leaves its separate changed backup pending'
+    );
+  }
+);
 
 test(
   'a killed streaming backend reconnects the current member to the latest checkpoint without replaying missed state',
@@ -552,8 +915,32 @@ test(
       'start',
       await f.store.getLiveSession(f.campaign.id)
     );
-    const connection = await f.connectPresence(active.sessionId, 0);
+    const grant = await f.store.getParticipantAccess(f.campaign.id);
+    const events = await f.store.openEvents(
+      f.campaign.id,
+      {
+        sessionId: active.sessionId,
+        observerTokenId: null,
+        mapId: null,
+        assetKey: null,
+      },
+      grant.access
+    );
+    t.after(() => events.close());
+    assert.equal((await events.next()).done, false);
+    const presenceReference = f.runtime.firestore
+      .collection('campaigns')
+      .doc(f.campaign.id)
+      .collection('livePresence');
+    const summaries = await presenceReference.where('sessionId', '==', active.sessionId).get();
+    assert.equal(summaries.size, 1);
+    const originalPresence = summaries.docs[0].data();
+    assert.equal(originalPresence.count, 1);
+    const disconnected = assert.rejects(events.next(), { code: 'cloud-stream-unavailable' });
     await terminate(f.backend.child);
+    await disconnected;
+    await events.close();
+    assert.deepEqual((await summaries.docs[0].ref.get()).data(), originalPresence);
     const replacement = await f.start(f.backend.port);
     const advanced = messageFrom(replacement.child, 'clock-advanced');
     replacement.child.send({ type: 'advance-clock', milliseconds: 17 * 60 * 1000 });
@@ -564,7 +951,7 @@ test(
     assert.equal(status.session.pauseReason, 'disconnected');
     assert.equal(
       status.session.pausedAt,
-      new Date(connection.expiresAt + 15 * 60 * 1000).toISOString()
+      new Date(originalPresence.expiresAt + 15 * 60 * 1000).toISOString()
     );
     assert.equal(status.session.lastMeaningfulAt, active.lastMeaningfulAt);
     assert.deepEqual(await clean.readCharacters(f.campaign.id), before);

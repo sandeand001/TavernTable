@@ -3016,3 +3016,92 @@ The original local hosts, preview, emulators and real linked/verified account re
 unchanged. No frontend, capability, dependency, live deployment/IAM/index or
 deferred routine-save UX change is made. Actual container-kill/overlap lifecycle
 acceptance remains `M4-05`.
+
+### M4-05: actual container replacement and overlap
+
+The owner enabled Docker Desktop host networking and restarted. The exact
+bounded connectivity probe then reached the original loopback emulator hub and
+its Auth/Firestore/Storage endpoints; its container was verified removed.
+Emulators were not rebound to the LAN or moved, and no existing service/key/data
+was replaced. An initial inbound test listener bound only to the container's own
+loopback and was unreachable from Windows; using `0.0.0.0` inside the test
+container, matching the production entry, fixed that fixture-only issue.
+
+The existing backend-lifecycle fixture now has two Adapters. Its default remains
+an actual native child process. An explicit existing local image selects actual
+Linux containers, without pulling or mounting source/credentials. The test-only
+bootstrap uses the image's real Admin/authority/router/immutable-object/backup
+code against the explicit demo emulators. It does not enable emulator variables
+in the production entry or weaken runtime configuration guards.
+
+Reproduction, after the usual explicit demo-emulator environment:
+
+```powershell
+$env:TAVERNTABLE_CLOUD_LIFECYCLE_IMAGE='taverntable-cloud:m404-20261114-r2'
+node --test --test-concurrency=1 tests\cloud\BackendLifecycle.test.js
+```
+
+**15/15 cases pass**, zero failures/skips/cancellations, **103,020.799 ms**.
+The runner exits naturally without forced exit. Across the cases, **29 exact
+containers** are force-killed, including fixture teardown; each actual kill
+checks exit **137**, not OOM, followed by exact-ID removal. Every worker verifies
+**11 current runtime source hashes**. Inspected configuration is local-engine,
+UID **1000**, read-only root, **1 CPU / 1 GiB**, no mounted source/data, developer
+credential file or GPU. The retained M4-04 R2 image and its prior 23-source-hash
+runtime smoke are unchanged; nothing is pushed or deployed.
+
+Acceptance covers:
+
+- Kill after immutable uploads but before canonical publication: no head/receipt
+  advances prematurely; the original body/ID recovers one committed result.
+- Kill after commit but before announcement, and after a deliberately lost
+  successful reply: the original durable receipt and one ordered journal event
+  survive replacement without a second revision or resource debit.
+- A current member reconnects through a replacement to the latest checkpoint.
+  Reconciliation contexts are initial/current-only, not missed-route playback;
+  final owner pause terminates the managed retry loop.
+- The **55-minute** warning and original **60-minute** inactivity pause survive
+  replacement and historical control replay. A real SSE worker's original
+  presence record remains after SIGKILL; abrupt stream loss is explicitly
+  consumed as `cloud-stream-unavailable`, and cold wake pauses at its stored
+  lease expiry plus the original **15-minute** grace, never restart time.
+- Two overlapping container workers prepare different changes from one head:
+  one winner and one stale-revision denial; two concurrent original-ID replays
+  return the original receipt without changing canonical authority.
+- A captured final-source uploader dies after its real file upload. A fresh
+  worker completes that same file/job/receipt even after later permitted paused
+  preparation, preserving that later canonical head and its separate pending
+  changed-state backup. An overlapping worker can also finish the same original
+  job while the first uploader is held/killed, without duplicate history/files.
+  Delayed older manual backups cannot reorder history or move the baseline back.
+- Missing intent, stalled object cleanup and interrupted multipart imports
+  remain explicit failures or same-intent recovery, never success-shaped
+  publication or a new campaign chosen by runtime memory.
+
+The default native-process Adapter also passes **4/4 focused cases**,
+**48,175.3215 ms**, zero skips/cancellations: both new overlap/final-source cases,
+real abandoned SSE presence and original lost-reply recovery. Full JS/stylelint/
+layering has zero errors and the same **39 baseline warnings**. This test-only
+milestone does not represent a new full stable-suite run.
+
+The first broad run passed all lifecycle behavior but failed one import fixture's
+parallel cleanup DELETE with `ECONNRESET`. Its exact two remaining synthetic
+campaigns, four objects, eight account namespaces and Auth UID were subsequently
+removed and verified absent. Cleanup now serializes exact-generation deletes
+and verifies absence, without adding a production retry or suppressing unknown
+errors. The transport reset's underlying cause is unproven.
+
+Container stderr also exposes pinned Storage SDK `PassThrough` listener warnings.
+A bounded trace identifies Node pipeline setup through
+`teeny-request/build/src/index.js:461`; the warnings are not suppressed and no
+dependency workaround or listener-limit increase is added. Their origin is
+recorded, not claimed fixed; sustained memory/load remains a hosted gate.
+Temporary trace instrumentation and the owned oversized-output scratch are
+removed after retaining this redacted evidence.
+
+All container-mode campaign object generations, eight UID-specific namespaces
+and synthetic Auth accounts are verified removed. Native-process fixture
+persistence otherwise retains its existing behavior. Original local hosts,
+preview and emulators remain intact; the real linked/verified account and
+campaigns are unchanged. No production code, dependency, capability, frontend
+deployment/cutover or deferred routine-save UX change is made.
