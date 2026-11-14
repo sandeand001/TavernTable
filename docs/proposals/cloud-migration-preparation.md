@@ -2593,3 +2593,52 @@ two synthetic campaigns / 17 live object generations** absent at
 No real campaign migration, hosted frontend/cutover or deferred save-notice UX
 change was introduced. Full cloud-gameplay activation remains gated until
 progressive assets, cache/lifecycle safety and complete action acceptance.
+
+### M3-06: account/view-scoped persistent cache storage
+
+The storage Module is verified without activating an offline editor or claiming
+current campaign authority from cached state. Checkpoints use the existing
+atomic IndexedDB helper in a private database, separate from the public
+2014/2024 resource databases. Keys bind UID hash, campaign/schema, member seat/
+access generation and authorized view. Each bounded UTF-8 payload retains exact
+byte length and SHA-256; reads revalidate both its bytes and participant schema.
+A transaction prevents a delayed older snapshot from replacing a newer cached
+generation.
+
+Private binary image bytes use native Cache Storage and that same scope/view
+namespace. The supplied current participant manifest must contain the reference.
+Writes and reads verify MIME type, byte length and SHA-256; cache requests use
+synthetic cache-only URLs without query credentials. Stored responses contain
+only required integrity headers, never Authorization, cookies or reusable signed
+URLs. Explicit checkpoint/image invalidation targets one exact entry rather
+than clearing another user's/view's data. Missing entries are ordinary misses;
+corruption and unavailable storage fail with typed errors for explicit online
+re-download. Cache data is not a new write grant, sole saved copy or fallback.
+
+The SHA-256 mechanism is shared with existing public resource installation and
+managed complete-file hashing instead of adding a second implementation.
+Dependency pins, public resource database identities and server contracts remain
+unchanged.
+
+Verified gates:
+
+- **4 explicit app suites / 53 tests**, zero failure/skip, **2.533 s**, including
+  open-handle detection. Five focused cache cases cover persistent reopening,
+  UID/access/view isolation, independent invalid-schema refusal despite matching
+  disk hash, corrupt binary-body rejection despite matching headers, immutable
+  verified bytes, monotonic checkpoint writes and exact entry removal.
+- Existing public edition/source installation and cloud save/import/retry/hash
+  behavior pass in that same gate. A real official SDK managed browser multipart
+  import retains its original caller and receipt (**1/1 case**, zero skips,
+  **3,636.6565 ms**).
+- An owned native browser page at the explicit demo preview writes a real
+  IndexedDB checkpoint and native Cache Storage PNG. Page reload and a fresh
+  Module instance recover the verified checkpoint and exact **88-byte** body.
+  A different UID or access generation misses. Only the owned synthetic entries
+  are deleted and confirmed absent; no account sign-in or other cache is altered.
+- Full JS/stylelint/layering: zero errors and the same **39 baseline warnings**.
+
+Progressive first join/private artwork loading, bounded eviction/cache controls,
+zero-unchanged-body network rejoin proof and logout/access-change purge remain
+`M3-07` through `M3-09`. No backend/image/IAM/index, public frontend, real campaign
+or deferred routine-save UX change was required.

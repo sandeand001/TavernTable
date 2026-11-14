@@ -1,5 +1,6 @@
 import { edition } from '../rules/editions.js';
 import ResourceStore from './ResourceStore.js';
+import { sha256 } from '../storage/sha256.js';
 
 const reference = (source) => `${source.id}@${source.version}`;
 
@@ -111,10 +112,7 @@ export default class ResourceSeeds {
     const bytes = await response.arrayBuffer();
     if (bytes.byteLength !== seed.bytes)
       throw new Error(`Resource integrity check failed: ${seed.id}`);
-    const digest = await this.crypto.subtle.digest('SHA-256', bytes);
-    const hash = [...new Uint8Array(digest)]
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join('');
+    const hash = await sha256(bytes, this.crypto);
     if (hash !== seed.hash) throw new Error(`Resource integrity check failed: ${seed.id}`);
     const pack = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
     if (

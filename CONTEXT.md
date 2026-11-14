@@ -383,6 +383,24 @@
   rules/models, scoped SDK authority, isolated Linux runtime and approved real
   HTTPS off-turn/Free Play/bidirectional motion/physical-dice/pause/rejoin gates
   passed without changing real accounts, hosted frontend or routine-save UX.
+- **Scoped participant cache (M3-06 verified storage; activation gated)**:
+  private IndexedDB checkpoint entries are separate from edition-local public
+  resource databases and are keyed by UID hash, campaign, schema, member seat/
+  access generation and authorized view key. Stored UTF-8 payloads carry exact
+  size/SHA-256; reads verify integrity and the current participant schema before
+  returning a cache candidate. A delayed older generation cannot overwrite a
+  newer entry. These candidates never prove current eligibility, live epoch or
+  write authority; online reconciliation remains required.
+  Private Cache Storage holds verified image bytes under the same account/
+  campaign/access/view namespace. Only references in the supplied authorized
+  manifest are accepted; MIME type, size and SHA-256 are checked on write/read.
+  Keys are synthetic cache-only URLs with no query credentials; responses keep
+  only required integrity metadata, not bearer headers or reusable signed URLs.
+  Typed corruption/unavailability failures and exact entry invalidation support
+  explicit re-download rather than a local/cloud fallback or offline editor.
+  Native browser page-reload persistence, UID/access isolation and exact
+  synthetic-entry cleanup are verified. Progressive join, bounded eviction,
+  cache UI/warm network reuse and logout-wide purge are later M3 gates.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its

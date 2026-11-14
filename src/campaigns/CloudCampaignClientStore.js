@@ -1,5 +1,6 @@
 import CampaignStore from './CampaignStore.js';
 import CloudLiveConnection from './CloudLiveConnection.js';
+import { sha256 } from '../storage/sha256.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import {
   isCloudUUID,
@@ -722,8 +723,7 @@ export default class CloudCampaignClientStore {
   }
 
   async _fileDigest(bytes) {
-    const digest = new Uint8Array(await this.crypto.subtle.digest('SHA-256', bytes));
-    const value = [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    const value = await sha256(bytes, this.crypto);
     if (!isCloudDigest(value))
       throw failure(503, 'cloud-unavailable', 'Complete file hashing is unavailable.');
     return value;

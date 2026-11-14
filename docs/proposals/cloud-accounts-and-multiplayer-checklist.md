@@ -811,7 +811,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     observer/door/visibility changes, stale origins, and asset-scope transitions.
     No animation-frame persistence or second terrain owner is introduced.
 
-- [ ] **M3-06 - Implement account/view-scoped, integrity-checked cache storage.**
+- [x] **M3-06 - Implement account/view-scoped, integrity-checked cache storage.**
   - **Depends:** `M3-01`, `M2-06`.
   - **Success:** IndexedDB holds participant metadata/checkpoints; Cache Storage
     holds reusable binary assets. Partition private entries by UID, campaign,
@@ -819,6 +819,22 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** validate hashes/schemas; keep 2014/2024 resource databases and pinned
     versions separate. Campaign manifests never persist bearer tokens or reusable
     signed URLs, and campaign files do not use localStorage.
+  - **Evidence:** the private cache Module uses the existing atomic IndexedDB
+    Interface and native Cache Storage, separate from public edition catalogs.
+    Exact UID/campaign/schema/seat/access/view keys, UTF-8 size/SHA-256 and
+    participant schema checks protect checkpoints and referenced binary bytes.
+    Delayed older writes cannot rewind cached generations; corrupted bodies or
+    matching-hash/invalid-schema entries fail explicitly and exact invalidation
+    leaves other namespaces intact. **4 app suites / 53 tests**, zero skips,
+    **2.533 s** with open-handle detection; a real managed multipart import
+    preserves the shared hash Interface (**1/1 SDK case**, **3,636.6565 ms**).
+    Actual native browser IndexedDB/Cache Storage survive page reload, verify
+    exact **88-byte** PNG bytes and UID/access isolation, then remove only the
+    owned synthetic entries. Full lint/stylelint/layering: zero errors / same
+    **39 baseline warnings**. No dependency/runtime deployment, public frontend,
+    real account/campaign or routine-save UX change. Cache candidates are not
+    authority; progressive use, eviction/UI, warm network proof and logout-wide
+    purge remain subsequent gates.
 
 - [ ] **M3-07 - Implement progressive first join and bounded cache management.**
   - **Depends:** `M3-06`.
