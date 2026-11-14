@@ -1173,15 +1173,23 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** inspect the actual deploy output/manifest and prohibited-path
     requests. Versioned asset/schema behavior supports deliberate compatibility
     handling and each participant still renders locally.
-  - **Status:** awaiting owner asset-provenance/distribution input. Catalog and
-    CC0 nature/forest notices are present, but no family license/README accompanies
-    the character FBX/animation files. The catalog explicitly identifies several
-    Mixamo models. Adobe permits game use but distinguishes it from redistribution
-    of raw assets; the browser package must record the permitted approach rather
-    than treating a package MIT declaration as a blanket asset license.
+  - **Status:** awaiting the remaining asset-provenance/distribution input.
+    The owner confirms every character and animation, including the mannequin,
+    came from Adobe Mixamo, and wants to retain artwork while resolving terms.
+    Adobe permits game use but distinguishes it from standalone raw-asset
+    redistribution; record game-use terms, not a blanket MIT asset license.
+    The owner-provided Remos 2D trees have **CC-BY-3.0** terms with required Bleed
+    credit; they are not the active tropical 3D pack. Quaternius/Asset Quest CC0
+    notices cover their respective kits. Current palms, banana, monstera and fern
+    entries still use a separate **MZRa_Pack_M02P.fbx** family without a matching
+    source/license record. Its provenance must be confirmed, not inferred from
+    an unrelated itch.io search or an ancestor folder's other-kit notice.
     The built-in gold d20 has an embedded author/source and **CC-BY-SA-4.0**
-    record; its source separately identifies third-party textures, so it is not
-    classified as license-free or as wholly unattributed.
+    record; its source separately identifies FreePBR textures. FreePBR's own
+    terms impose noncommercial-use/redistribution conditions, so neither the
+    mesh license nor another similarly named site's CC0 grant clears those
+    textures automatically. Matching permission or an explicit replacement
+    decision remains needed.
     No asset is removed/replaced, packaged publicly or deployed while the owner
     decides how to handle uncertain provenance. See
     [public-art review](./cloud-migration-preparation.md#m4-07-public-art-provenance-before-packaging).

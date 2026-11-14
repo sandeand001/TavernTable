@@ -3139,3 +3139,31 @@ Owner input is requested before choosing the unchanged-art allowlist versus
 rights-cleared substitutes. Existing assets, canonical save IDs, rendering,
 dependencies and all public/cloud services remain unchanged. No public rollout
 or source-of-truth approval is implied by deciding this packaging prerequisite.
+
+The owner subsequently confirms **all characters and animation clips came from
+Adobe Mixamo**, including the mannequin, and selects **keep current artwork and
+resolve permissions first**. The supplied tree source is
+[Remos isometric trees](https://remos.itch.io/isometric-tree-sprites); its creator
+page specifies **CC-BY-3.0** with credit **Bleed - remusprites.carbonmade.com/**,
+permits project use with attribution and prohibits reselling/claiming the asset
+collection. A generic older itch.io search link is not a license for unspecified
+files and is not treated as one.
+
+Runtime tracing distinguishes these old 2D sprites from the current 3D family.
+The tree palette explicitly removes the legacy image arrays and uses model keys.
+Most current OBJ trees have the Quaternius CC0 kit notice, while the separate
+forest kit has Asset Quest CC0. However, palms and tropical banana/monstera/fern
+palette and biome entries actively resolve to **MZRa_Pack_M02P.fbx** and its
+textures. No matching local notice or recognized embedded source/license URL is
+found in that **2,075,868-byte** file. Public lookup did not identify an exact
+source; licenses of merely similar tropical packs are not evidence. The Remos
+2D sprite license does not establish this 3D pack's provenance.
+
+The original [FreePBR terms](https://freepbr.com/about-free-pbr/) confirm free
+noncommercial game/3D use and prohibit redistributing source texture sets; a
+separate paid grant covers commercial use. These are not the terms of the
+different FreePBRTextures site. The die's model page itself separates mesh and
+third-party texture permissions, so the embedded mesh attribution is not used
+as an unsupported blanket texture grant. Remaining owner input is the exact
+tropical pack source and matching die-texture permission or an explicit
+rights-cleared replacement decision. No artwork or runtime code is changed.
