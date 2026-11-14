@@ -1,12 +1,15 @@
-import { webcrypto } from 'node:crypto';
-import { testIndexedDB } from './indexedDB.js';
+const { webcrypto } = require('node:crypto');
+const { serialize, deserialize } = require('node:v8');
+const { IDBFactory } = require('fake-indexeddb');
 
-export function participantStorage({ beforePut = async () => {} } = {}) {
+function participantStorage({ beforePut = async () => {} } = {}) {
+  if (!globalThis.structuredClone)
+    globalThis.structuredClone = (value) => deserialize(serialize(value));
   const entries = new Map();
   const held = new Set();
   const pending = new Map();
   return {
-    indexedDB: testIndexedDB(),
+    indexedDB: new IDBFactory(),
     crypto: webcrypto,
     entries,
     cacheStorage: {
@@ -46,3 +49,5 @@ export function participantStorage({ beforePut = async () => {} } = {}) {
     },
   };
 }
+
+module.exports = { participantStorage };

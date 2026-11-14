@@ -63,7 +63,13 @@ catalog and stable regression suite. Initial participant snapshot/manifest/delta
 and bounded real API acceptance. Ordered durable changes/shared backend
 observation (`M3-02`), direct authenticated Fetch SSE (`M3-03`) and managed
 reconciliation/gap recovery (`M3-04`) pass local and bounded real API gates.
-Gameplay/motion, browser cache and cloud player world UI remain gated.
+Native world authority/bidirectional motion (`M3-05`), progressive private cache,
+authoritative warm rejoin and session-loss safety (`M3-06` through `M3-09`)
+are verified. Ten concurrent managed clients now pass convergence/privacy/
+receipt/replay acceptance (`M3-10`), with **307 suites / 4,006 tests** passing
+the full stable gate. Complete cloud gameplay activation, lifecycle drain and
+hosted performance/cost acceptance remain gated. **45 of 65** tasks are complete,
+including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
 
@@ -929,7 +935,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     behavior. No dependency/deployment, real account/campaign or original-host
     change. Ten-client/full-stable acceptance remains `M3-10`; gameplay stays gated.
 
-- [ ] **M3-10 - Pass ten-client convergence and synchronization acceptance.**
+- [x] **M3-10 - Pass ten-client convergence and synchronization acceptance.**
   - **Depends:** `M3-05`, `M3-08`, `M3-09`.
   - **Success:** ten concurrent clients converge to the same committed authority
     with participant-specific visibility, no duplicate gameplay costs, and
@@ -937,6 +943,39 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** record convergence/reconnect tests, actual transferred bytes,
     receipt counts and replay behavior. Prepare the 200 ms RTT performance and
     idle-payload measurements for the hosted gate; run the full stable suite.
+  - **Completed:** November 14, 2026. One private owner observer and nine distinct
+    managed-UID member connections have **ten simultaneous steady-state SSE
+    transports**; cold admission opens three members at a time, not ten
+    simultaneous cold handshakes. All ten converge to canonical generation
+    **29 / scene revision 7 / character revision 21**, matching visible poses
+    and each participant's authorized native budgets without private NPC/foreign
+    sheet, ID, budget or owner-reference leakage.
+    Five durable world receipts (three moves/two rolls) debit **15 feet** once.
+    One concurrent CAS loser receives an explicit stale-revision denial and no
+    receipt, then retries under fresh authority with a new ID. Three duplicate
+    acknowledgements, including original-body lost-reply recovery, return
+    `presentation:null`; duplicate physics and missed-route replay are **zero**.
+    Current membership revocation clears state/artwork/command readiness and
+    leaves **zero private bytes**; two old puts reject `cache-invalidated`.
+    Final transports, live connections, in-flight work and waiters are zero.
+    Parent **6/6 actual SDK cases**, zero skips/cancellations, **168,610.1096 ms**
+    (ten-client case **85,670.6501 ms**). Full stable: **307/307 suites,
+    4,006/4,006 tests**, **1,908.483 s**, no skips or detected open handles.
+    Latest measured RX bodies **425,141 bytes** = graphic JSON **4,626** + PNG
+    **774** + presentations **115,562** + state/envelope **304,179**, including
+    **90,568** owner-verification bytes. Physical frames are a subset, not extra
+    traffic. TX **9,119 bytes / 52 serialized attempts** includes fault probes,
+    not confirmed wire transmission; headers/TLS/Auth/backend SDK are excluded.
+    Local state spreads and reconnect timings are recorded separately from
+    deliberate CAS barriers/admission. They do not satisfy hosted 200 ms RTT,
+    acknowledgement p95, idle payload or cost acceptance.
+    Full lint/style/layering: zero errors / same **39 baseline warnings**.
+    Test/helper changes only; production source and both gameplay capability
+    gates remain unchanged. An exploratory emulator 500 did not recur in the
+    subsequent diagnostic and independent acceptance runs; its root cause is
+    unproven, not masked by a production retry. No deployment, dependency, real
+    account/campaign, original-host or deferred routine-save UX change.
+    See [measured acceptance](./cloud-migration-preparation.md#m3-10-ten-managed-clients-and-full-stable-acceptance).
 
 ### M4 - Lifecycle, deployment, and isolated hosted pilot
 

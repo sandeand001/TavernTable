@@ -2831,3 +2831,90 @@ No real account sign-in/provider/verification/password, real campaign, dependenc
 backend/IAM/index, frontend rollout, original local-host data/key or deferred
 routine-save UX change was made. Ten-client convergence, full stable acceptance
 and the remaining world-action gates remain `M3-10` and later migration work.
+
+### M3-10: ten managed clients and full stable acceptance
+
+The actual SDK/HTTP/SSE acceptance uses one private owner observer and nine
+distinct managed-UID member connections, each with its own seat/assigned actor.
+Cold member admission is deliberately three at a time. All ten transports are
+simultaneously live during steady-state command acceptance; this does not prove
+ten simultaneous cold handshakes or change the four-stream-per-UID limit.
+
+All ten converge to owner canonical **generation 29 / scene revision 7 /
+character revision 21**, matching visible poses and each authorized native
+budget projection. Serialized public outputs exclude private NPC/foreign-sheet
+notes, foreign IDs/budgets and owner snapshot references. Five durable
+`world.command` receipts represent three moves/two rolls and one **15-foot**
+movement debit. A deliberately concurrent CAS has one winner and one explicit
+409/stale-revision loser with no rejected-ID receipt; the loser makes one
+fresh-authority/new-ID retry. Three duplicate acknowledgements, including
+lost-reply recovery, have `outcome:"duplicate", presentation:null`. Original
+lost-reply recovery uses two byte-identical body/scope attempts.
+
+Latest reconnect returns a generation-29 checkpoint, not missed movement.
+Duplicate physical frames, missed routes, replayed presentations and new offline
+world requests are **zero**; persisted `publicScene.updates` remains empty.
+One current membership removal clears state/artwork/command authority and leaves
+**zero private bytes**. Two stale cache puts reject `cache-invalidated`; two
+current-read probes reject 404/campaign-not-found. Closing all clients leaves
+zero transports, live connections, in-flight work and convergence waiters.
+
+Parent independently ran:
+
+```powershell
+node --test --test-concurrency=1 --test-name-pattern='^(ten managed SDK clients|private SDK lifecycle|authoritative cold and warm SDK rejoin|warm SDK rejoin|a cloud player retains|the cloud player connection publishes)' tests\cloud\WorldCommands.test.js
+```
+
+With the existing explicit demo-emulator settings, **6/6 cases pass**, zero
+failures/skips/cancellations, **168,610.1096 ms**; ten-client acceptance takes
+**85,670.6501 ms**. The five coupled cases retain UID-switch/logout purge, exact
+original receipt recovery, zero-body warm rejoin, explicit cache recovery,
+native acknowledgement and continuous queued movement/final combat budgets.
+
+Latest parent ten-client measurements:
+
+| Phase                                     | Canonical generation / scene / characters | Dispatch to all ready (ms) | First to last state (ms) |
+| ----------------------------------------- | ----------------------------------------- | -------------------------- | ------------------------ |
+| Cold admission, three members at a time   | 24 / 2 / 21                               | 15,730.46                  | 13,912.35                |
+| Deliberately staged concurrent CAS winner | 25 / 3 / 21                               | 8,607.97                   | 18.35                    |
+| Fresh-authority CAS retry                 | 26 / 4 / 21                               | 2,792.61                   | 807.38                   |
+| Lost-reply committed command              | 27 / 5 / 21                               | 2,301.19                   | 19.22                    |
+| Latest-only reconnect                     | 29 / 7 / 21                               | 1,025.25                   | 1,748.76                 |
+
+Admission includes batches and CAS includes a staging barrier. Reconnect's
+first-to-last spread includes peers' earlier delivery during the disconnected
+period. None is a hosted acknowledgement p95 or 200 ms RTT result.
+
+RX response bodies total **425,141 bytes**: graphic JSON **4,626**, PNG **774**,
+presentation JSON **115,562**, and state/envelope **304,179**. This includes
+**90,568** owner canonical-verification bytes; subtracting only those gives
+**334,573**. Physical-frame JSON **99,345 bytes** is a subset of presentations,
+not additional traffic. TX **9,119 bytes / 52 serialized request attempts** is
+counted before injected offline failures, not confirmed wire transmission.
+Counters cover cold join through verification, fault probes and lifecycle
+closure. HTTP headers, TLS, Auth SDK and backend SDK traffic are excluded.
+State/envelope bytes are neither metadata-only nor idle traffic. CPU dice frame
+counts make presentation byte totals vary between runs; the retained agent run
+measured 414,317 RX bytes, while the independent parent run above is the latest
+exact measurement. Hosted idle/load/cost thresholds remain `M4-12`/`M4-13`.
+
+The full existing `npm run test:stable -- --verbose=false` gate passes
+**307/307 suites / 4,006/4,006 tests**, **1,908.483 s**, exit zero, no skips,
+cancellations or detected open handles. Full JS/stylelint/layering passes with
+zero errors and the same **39 baseline warnings**. Only the SDK convergence
+test and its shared participant-storage test helper change; production source
+is unchanged.
+
+An exploratory emulator 500 during a fresh CAS retry produced only redacted
+unexpected-campaign-error/campaign-request-failed evidence. Its root cause was
+not captured or proven; a temporary diagnostic probe, the final unprobed SDK run
+and independent parent acceptance did not reproduce it. Harness corrections
+addressed CommonJS loading, batched cold admission and valid empty pre-observer
+budgets, not production retries or blanket failure suppression.
+
+Eight owned scratch logs and disposable fixtures were cleaned. Original hosts
+3002/57591, the preview and emulators remain intact. Both `sharedSessions` and
+`roomVisits` remain false: arrival/placement, cloud Undo/door/action/emote
+completion and lifecycle drain are not silently enabled by convergence proof.
+No real account/campaign, dependency, deployment/IAM/index, frontend/cutover or
+deferred routine-save UX change was made.

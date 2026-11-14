@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID, createHash, webcrypto } = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const sdk = require('firebase/auth');
@@ -23,10 +24,11 @@ const {
 const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCharacters.js');
 const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
-const { gameplayRuntime } = require('../../src/campaigns/ServerGameplay.js');
+const { gameplayRuntime, playerGameplayState } = require('../../src/campaigns/ServerGameplay.js');
 const { applyCloudParticipantDelta } = require('../../src/campaigns/CloudParticipantProtocol.js');
 const { sceneActorPlacement } = require('../../src/scene/token-adapter/SavedPlacements.js');
 const { sceneState } = require('../helpers/sceneState.js');
+const { participantStorage } = require('../helpers/participantStorage.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
 const { cloudApi } = require('./helpers/http.js');
 const { createCanvas } = require('canvas');
@@ -41,6 +43,7 @@ async function fixture(
   t,
   {
     ruleset = '2014',
+    ownerFetch = globalThis.fetch,
     memberFetch = globalThis.fetch,
     cleanup = false,
     participantCacheFactory,
@@ -136,7 +139,7 @@ async function fixture(
     });
     return { ...identity, client };
   };
-  const owner = await account();
+  const owner = await account(ownerFetch);
   const member = await account(memberFetch);
   const campaign = await owner.client.create({ name: 'Cloud native motion', ruleset });
   const catalog = await resources.catalog(campaign);
@@ -564,6 +567,884 @@ async function cleanParticipantFixture(f, storage, connections, extraAccounts = 
   assert.equal((await f.runtime.bucket.getFiles({ prefix, versions: true }))[0].length, 0);
   assert.equal((await storage.indexedDB.databases()).length, 0);
 }
+
+function measuredParticipantNetwork() {
+  const requests = [];
+  const events = [];
+  const responses = [];
+  const streams = new Map();
+  let offline = false;
+  let loseReply = false;
+  return {
+    requests,
+    events,
+    responses,
+    streams,
+    reset() {
+      requests.length = events.length = responses.length = 0;
+    },
+    loseNextCommandReply() {
+      loseReply = true;
+    },
+    measurement() {
+      const payloads = [...responses, ...events].map((entry) => entry.payload);
+      const bytes = (value) => (value ? Buffer.byteLength(JSON.stringify(value)) : 0);
+      const graphicJSONBytes = payloads.reduce(
+        (total, payload) =>
+          total +
+          bytes(
+            (payload.result || payload.checkpoint || payload.delta?.checkpoint)?.state?.publicScene
+              ?.assets
+          ),
+        0
+      );
+      const presentationJSONBytes = payloads.reduce(
+        (total, payload) =>
+          total + bytes(payload.result?.presentation) + bytes(payload.delta?.presentations),
+        0
+      );
+      const responseBodyBytes = requests.reduce(
+        (total, request) => total + request.responseBodyBytes,
+        0
+      );
+      const imageBodyBytes = requests
+        .filter((request) => /\/participant-assets\/[a-f0-9]{64}$/.test(request.pathname))
+        .reduce(
+          (total, request) => total + (request.status === 200 ? request.responseBodyBytes : 0),
+          0
+        );
+      return {
+        requests: requests.length,
+        requestBodyBytes: requests.reduce((total, request) => total + request.requestBodyBytes, 0),
+        responseBodyBytes,
+        canonicalVerificationBodyBytes: requests
+          .filter((request) => request.pathname.endsWith('/characters') && !request.body)
+          .reduce((total, request) => total + request.responseBodyBytes, 0),
+        sseBodyBytes: requests
+          .filter((request) => request.sse)
+          .reduce((total, request) => total + request.responseBodyBytes, 0),
+        graphicJSONBytes,
+        imageBodyBytes,
+        presentationJSONBytes,
+        stateAndEnvelopeBodyBytes:
+          responseBodyBytes - graphicJSONBytes - imageBodyBytes - presentationJSONBytes,
+        physicalFramesJSONBytes: payloads.reduce(
+          (total, payload) => total + bytes(payload.result?.presentation?.roll?.physics),
+          0
+        ),
+      };
+    },
+    async setOffline(value) {
+      offline = value;
+      if (!offline) return;
+      await Promise.all(
+        [...streams].map(async ([controller, reader]) => {
+          controller.error(new TypeError('Synthetic managed transport loss'));
+          await reader.cancel();
+          streams.delete(controller);
+        })
+      );
+    },
+    fetch: async (url, options) => {
+      const request = {
+        pathname: new URL(url).pathname,
+        body: options.body ?? '',
+        seatId: options.headers['X-TavernTable-Seat'],
+        accessGeneration: options.headers['X-TavernTable-Access-Generation'],
+        requestBodyBytes: Buffer.byteLength(options.body ?? ''),
+        responseBodyBytes: 0,
+      };
+      requests.push(request);
+      if (offline) throw new TypeError('Synthetic managed transport is offline');
+      const response = await fetch(url, options);
+      request.status = response.status;
+      const sse = response.headers.get('content-type')?.startsWith('text/event-stream');
+      request.sse = !!sse;
+      const json = response.headers.get('content-type')?.startsWith('application/json');
+      if (loseReply && request.pathname.endsWith('/world-commands') && response.ok) {
+        request.lostReply = true;
+        loseReply = false;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffered = '';
+      const body = new ReadableStream({
+        start(controller) {
+          if (sse) streams.set(controller, reader);
+        },
+        async pull(controller) {
+          try {
+            const step = await reader.read();
+            if (step.done) {
+              streams.delete(controller);
+              if (json)
+                responses.push({
+                  pathname: request.pathname,
+                  payload: JSON.parse(buffered + decoder.decode()),
+                  receivedAt: performance.now(),
+                });
+              if (request.lostReply)
+                throw new TypeError('Synthetic lost reply after the actual native publication');
+              controller.close();
+              reader.releaseLock();
+              return;
+            }
+            request.responseBodyBytes += step.value.byteLength;
+            if (sse || json) buffered += decoder.decode(step.value, { stream: true });
+            if (sse) {
+              let end;
+              while ((end = buffered.indexOf('\n')) !== -1) {
+                const line = buffered.slice(0, end).trimEnd();
+                buffered = buffered.slice(end + 1);
+                if (line.startsWith('data:'))
+                  events.push({
+                    payload: JSON.parse(line.slice(5).trim()),
+                    receivedAt: performance.now(),
+                  });
+              }
+            }
+            controller.enqueue(step.value);
+          } catch (error) {
+            streams.delete(controller);
+            controller.error(error);
+          }
+        },
+        async cancel(reason) {
+          await reader.cancel(reason);
+          for (const [controller, active] of streams)
+            if (active === reader) streams.delete(controller);
+          reader.releaseLock();
+        },
+      });
+      return new Response(body, { headers: response.headers, status: response.status });
+    },
+  };
+}
+
+test(
+  'ten managed SDK clients converge on current canonical authority without sharing private participant scope',
+  { timeout: 240000 },
+  async (t) => {
+    const storage = participantStorage();
+    const ownerNetwork = measuredParticipantNetwork();
+    const firstNetwork = measuredParticipantNetwork();
+    const f = await fixture(t, {
+      ownerFetch: ownerNetwork.fetch,
+      memberFetch: firstNetwork.fetch,
+      participantCacheFactory: ({ uid }) => new CloudParticipantCache({ ...storage, uid }),
+    });
+    const connections = [];
+    const extraAccounts = [];
+    const members = [
+      {
+        identity: f.member,
+        characterId: f.hero,
+        tokenId: 'token-1',
+        access: f.grant.access,
+        network: firstNetwork,
+      },
+    ];
+    let ownerObservation;
+    let ownerSnapshot;
+    let staleWriter;
+    const ownerArrivals = new Map();
+    const convergence = [];
+    const waiters = new Set();
+    const wake = () => {
+      for (const check of [...waiters]) check();
+    };
+    const until = (predicate, label) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          waiters.delete(check);
+          reject(new Error(label));
+        }, 30000);
+        const check = () => {
+          if (!predicate()) return;
+          clearTimeout(timer);
+          waiters.delete(check);
+          resolve();
+        };
+        waiters.add(check);
+        check();
+      });
+    const atGeneration = (generation, selected = members) =>
+      ownerSnapshot?.generation === generation &&
+      ownerObservation.status.phase === 'ready' &&
+      selected.every(
+        (member) =>
+          member.connection.snapshot?.generation === generation && member.connection.commandReady
+      );
+    const same = (actual, expected, label) => assert.ok(isDeepStrictEqual(actual, expected), label);
+    const poses = (actors) =>
+      actors
+        .map((actor) => ({
+          id: actor.id,
+          mapId: actor.mapId,
+          gridX: actor.gridX,
+          gridY: actor.gridY,
+          facingAngle: actor.facingAngle,
+          pose: actor.pose,
+        }))
+        .sort((first, second) => first.id.localeCompare(second.id));
+    const privateNote = 'PRIVATE ten-client NPC notes';
+    const worldReceipts = async () =>
+      (
+        await Promise.all(
+          [f.owner, ...members.map((member) => member.identity)].map((identity) =>
+            f.runtime.firestore
+              .collection('accountCommands')
+              .doc(pilotAccountKey(identity.uid))
+              .collection('receipts')
+              .get()
+          )
+        )
+      ).flatMap((snapshot) => snapshot.docs.filter((row) => row.data().kind === 'world.command'));
+    const assertPublic = (member, payload) => {
+      const text = JSON.stringify(payload);
+      for (const secret of [
+        privateNote,
+        ...members.filter((entry) => entry !== member).map((entry) => entry.privateNote),
+      ])
+        assert.equal(
+          text.includes(secret),
+          false,
+          'Public transport bytes must exclude private notes'
+        );
+      for (const foreign of [f.npc, ...members.map((entry) => entry.characterId)])
+        if (foreign !== member.characterId)
+          assert.equal(
+            text.includes(foreign),
+            false,
+            'Public bytes must exclude foreign sheet IDs'
+          );
+      for (const field of ['sceneRef', 'charactersRef', 'presentationRef', 'ownerUid'])
+        assert.equal(
+          text.includes(`"${field}"`),
+          false,
+          'Public bytes must not expose owner snapshots'
+        );
+      const visit = (value) => {
+        if (!value || typeof value !== 'object') return;
+        if (Object.hasOwn(value, 'scene')) assert.equal(value.scene, null);
+        if (value.access) {
+          assert.equal(value.access.uid, member.identity.uid);
+          assert.equal(value.access.seatId, member.access.seatId);
+          assert.equal(value.access.accessGeneration, member.access.accessGeneration);
+        }
+        if (value.ownedTokens)
+          assert.ok(
+            value.ownedTokens.every((token) => token.tokenId === member.tokenId),
+            'Foreign actors must not receive gameplay budgets'
+          );
+        if (value.budget || (value.motion && Object.hasOwn(value, 'costFeet')))
+          assert.equal(
+            value.tokenId,
+            member.tokenId,
+            'Only owned presentations expose cost/budget'
+          );
+        if (Object.hasOwn(value, 'owned')) {
+          assert.equal(value.owned, value.id === member.tokenId);
+          assert.equal(value.characterId, value.owned ? member.characterId : null);
+        }
+        for (const nested of Object.values(value)) visit(nested);
+      };
+      visit(payload);
+    };
+    const assertPublicHistory = () => {
+      for (const member of members) {
+        for (const event of member.network.events) {
+          assertPublic(member, event.payload);
+          assert.equal(JSON.stringify(event.payload).includes('"physics"'), false);
+        }
+        for (const response of member.network.responses) assertPublic(member, response.payload);
+      }
+    };
+    const recordConvergence = (phase, generation, startedAt) => {
+      const arrivals = [
+        ownerArrivals.get(generation),
+        ...members.map((member) => member.arrivals.get(generation)),
+      ];
+      assert.equal(arrivals.filter(Number.isFinite).length, 10);
+      convergence.push({
+        phase,
+        clients: arrivals.length,
+        generation,
+        sceneRevision: ownerSnapshot.state.sceneRevision,
+        charactersRevision: ownerSnapshot.state.revision,
+        dispatchToAllReadyMs: Number((performance.now() - startedAt).toFixed(2)),
+        firstToLastStateMs: Number((Math.max(...arrivals) - Math.min(...arrivals)).toFixed(2)),
+      });
+    };
+    const assertConverged = async () => {
+      const head = (
+        await f.runtime.firestore.collection('campaigns').doc(f.campaign.id).get()
+      ).data();
+      const canonical = await f.owner.client.readCharacters(f.campaign.id);
+      const scene = JSON.parse(canonical.scene);
+      const library = new CampaignCharacters({ ...canonical, catalog: f.catalog });
+      assert.equal(ownerObservation.status.phase, 'ready');
+      assert.equal(ownerSnapshot.generation, head.generation);
+      assert.equal(ownerSnapshot.access.role, 'owner');
+      assert.equal(ownerSnapshot.access.uid, f.owner.uid);
+      same(ownerSnapshot.state, canonical, 'The private owner stream must match canonical HTTP');
+      assert.equal(new Set(members.map((member) => member.connection.snapshot.viewKey)).size, 9);
+      for (const member of members) {
+        const snapshot = member.connection.snapshot;
+        assert.equal(member.connection.commandReady, true);
+        assert.equal(snapshot.generation, head.generation);
+        assert.equal(snapshot.state.sceneRevision, canonical.sceneRevision);
+        assert.equal(snapshot.state.revision, canonical.revision);
+        assert.equal(snapshot.sessionId, f.live.sessionId);
+        same(snapshot.access, member.access, 'Each player must retain its own captured grant');
+        same(
+          snapshot.state.characterIds,
+          [member.characterId],
+          'Only the assigned sheet is public'
+        );
+        same(
+          poses(snapshot.state.publicScene.actors),
+          poses(scene.creatures),
+          'Every currently visible actor must have the canonical pose'
+        );
+        same(
+          snapshot.state.gameplay,
+          playerGameplayState(scene, library, [member.characterId]),
+          'Only this participant receives its canonical native gameplay budget'
+        );
+        assertPublic(member, snapshot);
+      }
+      assertPublicHistory();
+      return { head, canonical };
+    };
+    try {
+      const scene = structuredClone(f.scene);
+      const positions = [
+        [0, 0],
+        [2, 0],
+        [4, 0],
+        [0, 2],
+        [4, 2],
+        [0, 4],
+        [2, 4],
+        [4, 4],
+      ];
+      for (const [index, [gridX, gridY]] of positions.entries()) {
+        const network = measuredParticipantNetwork();
+        const identity = await f.account(network.fetch);
+        extraAccounts.push(identity);
+        const characterId = await f.library.create(`Convergence player ${index + 2}`);
+        const invitation = await f.owner.client.createInvitation(f.campaign.id, {
+          name: `Convergence seat ${index + 2}`,
+        });
+        await identity.client.redeemInvitation(invitation);
+        const joined = await identity.client.getParticipantAccess(f.campaign.id);
+        await f.owner.client.assignCharacter(f.campaign.id, {
+          seatId: joined.access.seatId,
+          accessGeneration: joined.access.accessGeneration,
+          characterId,
+          assigned: true,
+        });
+        const grant = await identity.client.getParticipantAccess(f.campaign.id);
+        const tokenId = `token-${index + 3}`;
+        const actor = structuredClone(scene.creatures[0]);
+        Object.assign(actor, {
+          id: tokenId,
+          instanceNumber: index + 3,
+          name: `Convergence player ${index + 2}`,
+          characterId,
+          gridX,
+          gridY,
+          pose: { kind: 'ground', world: { x: gridX + 0.5, y: 0, z: gridY + 0.5 } },
+        });
+        scene.creatures.push(actor);
+        members.push({ identity, characterId, tokenId, access: grant.access, network });
+      }
+      scene.tokenCounters = { nextId: 10, types: [[scene.creatures[0].type, 10]] };
+      for (const [index, member] of members.entries()) {
+        member.privateNote = `PRIVATE ten-client assigned sheet ${index + 1}`;
+        member.arrivals = new Map();
+        await f.library.edit(member.characterId, { notes: member.privateNote });
+      }
+      const imageBytes = createCanvas(2, 2).toBuffer('image/png');
+      await f.library.edit(f.hero, {
+        portraitImage: 'data:image/png;base64,' + imageBytes.toString('base64'),
+      });
+      await f.library.edit(f.npc, { notes: privateNote });
+      const native = gameplayRuntime(scene, f.library);
+      await native.combat.startTurn(native.actors.find((actor) => actor.id === 'token-1'));
+      scene.combat = native.combat.snapshot();
+      await f.owner.client.commitScene(f.campaign.id, {
+        ruleset: '2014',
+        revision: 1,
+        charactersRevision: f.library.revision,
+        scene: encodeScene(scene, f.validation),
+      });
+      for (const network of [ownerNetwork, ...members.map((member) => member.network)])
+        network.reset();
+      const joinStartedAt = performance.now();
+      ownerObservation = await f.observeOwner({
+        onState: (snapshot) => {
+          ownerSnapshot = snapshot;
+          if (!ownerArrivals.has(snapshot.generation))
+            ownerArrivals.set(snapshot.generation, performance.now());
+          wake();
+        },
+        onStatus: wake,
+      });
+      await ownerObservation.ready;
+      for (let start = 0; start < members.length; start += 3)
+        await Promise.all(
+          members.slice(start, start + 3).map(async (member) => {
+            const connection = new CloudPlayerSessionConnection({
+              store: member.identity.client,
+              campaignId: f.campaign.id,
+              access: member.access,
+              sessionId: f.live.sessionId,
+              cache: new CloudParticipantCache({ ...storage, uid: member.identity.uid }),
+            });
+            connections.push(connection);
+            member.connection = connection;
+            connection.subscribe((event) => {
+              if (event.type === 'state' && !member.arrivals.has(event.generation))
+                member.arrivals.set(event.generation, performance.now());
+              wake();
+            });
+            await connection.open();
+          })
+        );
+      assert.equal(new Set([f.owner.uid, ...members.map(({ identity }) => identity.uid)]).size, 10);
+      for (const identity of [f.owner, ...members.map((member) => member.identity)]) {
+        assert.equal(identity.client.streams.size, 1);
+        assert.equal(identity.client.liveConnections.size, 1);
+      }
+      const baseline = await assertConverged();
+      assert.ok(
+        ownerNetwork.events.some((event) => JSON.stringify(event.payload).includes(privateNote))
+      );
+      assert.equal(
+        [ownerNetwork, ...members.map((member) => member.network)].reduce(
+          (total, network) => total + network.streams.size,
+          0
+        ),
+        10
+      );
+      recordConvergence('cold-join-three-at-a-time', baseline.head.generation, joinStartedAt);
+      const command = (member, kind, payload) => ({
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: member.connection.snapshot.state.sceneRevision,
+        charactersRevision: member.connection.snapshot.state.revision,
+        observerTokenId: member.tokenId,
+        tokenId: member.tokenId,
+        kind,
+        payload,
+        view: {
+          mapId: 'map-main',
+          assetKey: member.connection.snapshot.state.publicScene.assetKey,
+        },
+      });
+      const contenders = [
+        {
+          member: members[0],
+          command: command(members[0], 'move', {
+            target: { mapId: 'map-main', gridX: 2, gridY: 1 },
+          }),
+        },
+        {
+          member: members[1],
+          command: command(members[1], 'roll', {
+            expression: '1d20+2',
+            label: 'Ten-client physical check',
+            mode: 'normal',
+          }),
+        },
+      ];
+      const stage = f.store.objects.stage.bind(f.store.objects);
+      const release = Promise.withResolvers();
+      let staged = 0;
+      f.store.objects.stage = async (...args) => {
+        const reference = await stage(...args);
+        if (args[1] === 'scene') {
+          staged++;
+          wake();
+          await release.promise;
+        }
+        return reference;
+      };
+      const competingStartedAt = performance.now();
+      const competing = Promise.allSettled(
+        contenders.map((entry) =>
+          entry.member.connection.call('playerCommand', [f.campaign.id, entry.command])
+        )
+      );
+      let results;
+      try {
+        await until(() => staged === 2, 'Both native commands must stage before the CAS race');
+        release.resolve();
+        results = await competing;
+      } finally {
+        release.resolve();
+        f.store.objects.stage = stage;
+        await competing;
+      }
+      assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+      const stale = results.findIndex((result) => result.status === 'rejected');
+      assert.equal(results[stale].reason.status, 409);
+      assert.equal(results[stale].reason.code, 'stale-revision');
+      await until(
+        () => atGeneration(baseline.head.generation + 1),
+        'All ten live transports must reconcile the CAS winner'
+      );
+      recordConvergence('concurrent-CAS-winner', baseline.head.generation + 1, competingStartedAt);
+      const rejectedId = contenders[stale].command.commandId;
+      contenders[stale].command = command(
+        contenders[stale].member,
+        contenders[stale].command.kind,
+        contenders[stale].command.payload
+      );
+      const retryStartedAt = performance.now();
+      await contenders[stale].member.connection.call('playerCommand', [
+        f.campaign.id,
+        contenders[stale].command,
+      ]);
+      await until(
+        () => atGeneration(baseline.head.generation + 2),
+        'All ten live transports must converge after the explicit fresh-authority CAS retry'
+      );
+      recordConvergence('fresh-authority-CAS-retry', baseline.head.generation + 2, retryStartedAt);
+      const committed = await assertConverged();
+      assert.equal(committed.canonical.sceneRevision, baseline.canonical.sceneRevision + 2);
+      assert.equal(
+        JSON.parse(committed.canonical.scene).combat.states.find(
+          (state) => state.tokenId === 'token-1'
+        ).movementSpent,
+        5
+      );
+      for (const entry of contenders) {
+        const duplicate = await entry.member.identity.client.commitWorldCommand(
+          f.campaign.id,
+          { sessionId: f.live.sessionId, command: entry.command },
+          entry.member.access
+        );
+        assert.equal(duplicate.outcome, 'duplicate');
+        assert.equal(duplicate.presentation, null);
+      }
+      const unchanged = await assertConverged();
+      same(
+        unchanged.head,
+        committed.head,
+        'Exact duplicate commands cannot publish another generation'
+      );
+      same(
+        unchanged.canonical,
+        committed.canonical,
+        'Duplicate moves or dice cannot change canonical state'
+      );
+      const receipts = await worldReceipts();
+      assert.equal(receipts.length, 2);
+      same(
+        receipts.map((row) => row.id).sort(),
+        contenders.map((entry) => entry.command.commandId).sort(),
+        'Only the two accepted command IDs receive durable receipts'
+      );
+      assert.equal(
+        receipts.some((row) => row.id === rejectedId),
+        false
+      );
+      for (const receipt of receipts)
+        assert.equal(JSON.stringify(receipt.data()).includes('"physics"'), false);
+      const returning = members.at(-1);
+      const recoveredCommand = command(returning, 'roll', {
+        expression: '1d20+2',
+        label: 'Unacknowledged ten-client physical check',
+        mode: 'normal',
+      });
+      const recoveryStartedAt = performance.now();
+      returning.network.loseNextCommandReply();
+      await assert.rejects(
+        returning.connection.call('playerCommand', [f.campaign.id, recoveredCommand]),
+        { code: 'cloud-unavailable' }
+      );
+      await until(
+        () => atGeneration(baseline.head.generation + 3),
+        'All ten clients must see the committed generation even when its HTTP receipt is lost'
+      );
+      recordConvergence(
+        'lost-reply-still-committed',
+        baseline.head.generation + 3,
+        recoveryStartedAt
+      );
+      const beforeRecovery = await assertConverged();
+      const recovered = await returning.identity.client.retryWorldCommand();
+      assert.equal(recovered.outcome, 'duplicate');
+      assert.equal(recovered.presentation, null);
+      const recoveredRequests = returning.network.requests.filter((request) =>
+        request.pathname.endsWith('/world-commands')
+      );
+      assert.equal(recoveredRequests.length, 2);
+      const recoveryAttempts = recoveredRequests.map(({ body, seatId, accessGeneration }) => ({
+        body,
+        seatId,
+        accessGeneration,
+      }));
+      same(
+        recoveryAttempts[0],
+        recoveryAttempts[1],
+        'Lost-reply recovery must use the exact original body, command ID and grant'
+      );
+      same(
+        (await assertConverged()).canonical,
+        beforeRecovery.canonical,
+        'Original dice receipt recovery must neither reroll nor publish again'
+      );
+      const offlineGeneration = returning.connection.snapshot.generation;
+      const offlineSceneRevision = returning.connection.snapshot.state.sceneRevision;
+      await returning.network.setOffline(true);
+      await until(
+        () => returning.connection.phase === 'reconnecting',
+        'The actual disconnected SDK transport must lose command authority'
+      );
+      assert.equal(returning.connection.commandReady, false);
+      await assert.rejects(
+        returning.connection.call('playerCommand', [
+          f.campaign.id,
+          command(returning, 'roll', {
+            expression: '1d20+2',
+            label: 'Blocked offline command',
+            mode: 'normal',
+          }),
+        ]),
+        { code: 'world-state-unavailable' }
+      );
+      assert.equal(
+        returning.network.requests.filter((request) => request.pathname.endsWith('/world-commands'))
+          .length,
+        2
+      );
+      const missed = [];
+      for (const [index, target] of [
+        { mapId: 'map-main', gridX: 2, gridY: 2 },
+        { mapId: 'map-main', gridX: 3, gridY: 2 },
+      ].entries()) {
+        const next = command(members[0], 'move', { target });
+        missed.push(next.commandId);
+        await members[0].connection.call('playerCommand', [f.campaign.id, next]);
+        await until(
+          () => atGeneration(baseline.head.generation + 4 + index, members.slice(0, -1)),
+          'The still-connected owner and players must converge while one transport is offline'
+        );
+      }
+      assert.equal(returning.connection.snapshot.generation, offlineGeneration);
+      const reconnectEvents = returning.network.events.length;
+      const reconnectRequests = returning.network.requests.length;
+      const reconnectStartedAt = performance.now();
+      await returning.network.setOffline(false);
+      returning.connection.observation.reconnect();
+      await until(
+        () => atGeneration(baseline.head.generation + 5),
+        'The reconnected tenth SDK transport must rejoin current canonical authority'
+      );
+      recordConvergence('latest-only-reconnect', baseline.head.generation + 5, reconnectStartedAt);
+      const freshEvents = returning.network.events.slice(reconnectEvents);
+      assert.equal(freshEvents[0].payload.kind, 'checkpoint');
+      assert.equal(freshEvents[0].payload.checkpoint.generation, baseline.head.generation + 5);
+      for (const event of freshEvents) {
+        assert.equal(Object.hasOwn(event.payload, 'presentations'), false);
+        assert.equal(event.payload.delta?.presentations?.length ?? 0, 0);
+        for (const id of missed)
+          assert.equal(
+            JSON.stringify(event.payload).includes(id),
+            false,
+            'Missed routes are not replayed'
+          );
+        assert.equal(JSON.stringify(event.payload).includes('"physics"'), false);
+      }
+      assert.equal(
+        returning.network.requests
+          .slice(reconnectRequests)
+          .filter((request) => request.pathname.endsWith('/events') && request.status === 200)
+          .length,
+        1
+      );
+      same(
+        returning.connection.readLiveState(offlineSceneRevision).publicScene.updates,
+        [],
+        'Latest-state reconciliation clears all missed physical presentations'
+      );
+      const final = await assertConverged();
+      assert.equal(final.head.generation, baseline.head.generation + 5);
+      assert.equal(final.canonical.sceneRevision, baseline.canonical.sceneRevision + 5);
+      assert.equal(
+        JSON.parse(final.canonical.scene).combat.states.find((state) => state.tokenId === 'token-1')
+          .movementSpent,
+        15
+      );
+      const finalReceipts = await worldReceipts();
+      assert.equal(finalReceipts.length, 5);
+      same(
+        finalReceipts.map((row) => row.id).sort(),
+        [
+          ...contenders.map((entry) => entry.command.commandId),
+          recoveredCommand.commandId,
+          ...missed,
+        ].sort(),
+        'Five accepted commands must have exactly five receipts across all ten accounts'
+      );
+      for (const receipt of finalReceipts)
+        assert.equal(JSON.stringify(receipt.data()).includes('"physics"'), false);
+      assert.equal(final.canonical.scene.includes('"physics"'), false);
+      const duplicateBodies = members.flatMap((member) =>
+        member.network.responses
+          .map((response) => response.payload.result)
+          .filter((result) => result?.outcome === 'duplicate')
+      );
+      assert.equal(duplicateBodies.length, 3);
+      for (const body of duplicateBodies) assert.equal(body.presentation, null);
+      for (const member of members) {
+        const seen = member.network.events.flatMap(
+          (event) => event.payload.delta?.presentations?.map((entry) => entry.commandId) ?? []
+        );
+        assert.equal(
+          new Set(seen).size,
+          seen.length,
+          'A live transport must not deliver duplicate routes'
+        );
+      }
+      const saved = await returning.connection.cache.readCheckpoint(
+        returning.access,
+        returning.connection.snapshot.viewKey
+      );
+      assert.equal(saved.generation, final.head.generation);
+      same(
+        saved.state.publicScene.updates,
+        [],
+        'Persisted checkpoints must remain presentation-free'
+      );
+      const reference = saved.manifest.images.find((slot) => slot.source === 'actor').reference;
+      assert.equal(reference.bytes, imageBytes.length);
+      assert.ok((await returning.connection.cache.getUsage()).bytes > imageBytes.length);
+      staleWriter = new CloudParticipantCache({ ...storage, uid: returning.identity.uid });
+      await staleWriter.readCheckpoint(saved.access, saved.viewKey);
+      const revokeStart = returning.network.requests.length;
+      await f.owner.client.removeMember(f.campaign.id, {
+        seatId: returning.access.seatId,
+        accessGeneration: returning.access.accessGeneration,
+      });
+      await returning.connection.done;
+      await returning.connection.participantAssets.purging;
+      assert.equal(returning.connection.commandReady, false);
+      assert.equal(returning.connection.snapshot, null);
+      assert.equal(returning.connection.state, null);
+      assert.equal(returning.connection.participantAssets.images.size, 0);
+      assert.equal((await returning.connection.cache.getUsage()).bytes, 0);
+      await assert.rejects(staleWriter.writeCheckpoint(saved), { code: 'cache-invalidated' });
+      await assert.rejects(staleWriter.writeAsset(saved, reference, imageBytes), {
+        code: 'cache-invalidated',
+      });
+      assert.equal(
+        await returning.connection.cache.readCheckpointCandidate(returning.access),
+        null
+      );
+      assert.equal(await returning.connection.cache.readAuthorizedAsset(saved, reference), null);
+      await assert.rejects(
+        returning.identity.client.readParticipantSnapshot(
+          f.campaign.id,
+          {
+            sessionId: f.live.sessionId,
+            observerTokenId: returning.tokenId,
+            mapId: 'map-main',
+            assetKey: null,
+          },
+          returning.access
+        ),
+        { status: 404, code: 'campaign-not-found' }
+      );
+      await assert.rejects(
+        returning.identity.client.readParticipantAsset(f.campaign.id, saved, reference),
+        { status: 404, code: 'campaign-not-found' }
+      );
+      for (const request of returning.network.requests.slice(revokeStart))
+        assert.notEqual(request.status, 200, 'Revocation must return no successful private body');
+      for (const member of members.slice(0, -1))
+        assert.ok(
+          (await member.connection.cache.getUsage()).bytes > 0,
+          'Other UID caches survive revocation'
+        );
+      assertPublicHistory();
+      await f.owner.client.controlLiveSession(
+        f.campaign.id,
+        'end',
+        await f.owner.client.getLiveSession(f.campaign.id)
+      );
+      await Promise.all([
+        ownerObservation.done,
+        ...connections.map((connection) => connection.done),
+      ]);
+      await ownerObservation.close();
+      await Promise.all(connections.map((connection) => connection.close()));
+      for (const identity of [f.owner, ...members.map((member) => member.identity)]) {
+        assert.equal(identity.client.streams.size, 0);
+        assert.equal(identity.client.liveConnections.size, 0);
+        assert.equal(identity.client.connection.inFlight.size, 0);
+      }
+      assert.equal(
+        [ownerNetwork, ...members.map((member) => member.network)].reduce(
+          (total, network) => total + network.streams.size,
+          0
+        ),
+        0
+      );
+      assert.equal(waiters.size, 0);
+      const measurements = {
+        owner: ownerNetwork.measurement(),
+        players: members.map((member) => member.network.measurement()),
+      };
+      measurements.total = Object.fromEntries(
+        Object.keys(measurements.owner).map((key) => [
+          key,
+          [measurements.owner, ...measurements.players].reduce(
+            (total, sample) => total + sample[key],
+            0
+          ),
+        ])
+      );
+      t.diagnostic(
+        JSON.stringify({
+          managedUIDs: 10,
+          peakSimultaneousSSE: 10,
+          convergence,
+          receipts: finalReceipts.length,
+          definitiveCASRejections: 1,
+          freshAuthorityRetries: 1,
+          exactDuplicates: 2,
+          duplicateReceiptsIncludingRecovery: duplicateBodies.length,
+          lostReplyOriginalAttempts: recoveredRequests.length,
+          duplicatePhysicalFrames: 0,
+          missedRoutesReplayed: 0,
+          offlineNewWorldRequests: 0,
+          privateBytesAfterRevocation: 0,
+          stalePutsRejected: 2,
+          openTransportsAfterClose: 0,
+          measurements,
+          bytesExcludeHTTPHeadersTLSAndAuthSDK: true,
+          measurementsIncludeVerificationAndLifecycleTraffic: true,
+          coldAdmissionAndCASBarrierAreNotPropagationLatency: true,
+          stateAndEnvelopeAreNotArtworkBodiesOrIdleTraffic: true,
+          hostedLatencyCostAndIdleApproval: false,
+        })
+      );
+    } finally {
+      for (const member of members) {
+        await member.network.setOffline(false);
+        if (member.identity.client.pendingWorld) await member.identity.client.retryWorldCommand();
+      }
+      staleWriter?.close();
+      await ownerObservation?.close();
+      await cleanParticipantFixture(f, storage, connections, extraAccounts);
+    }
+  }
+);
 
 test(
   'private SDK lifecycle purges logout and switched UID caches while retaining only the original unacknowledged edit for online receipt recovery',

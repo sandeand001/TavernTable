@@ -346,7 +346,7 @@
   native world Adapters are described below, while full player activation and
   persistent account/view cache remain later work. No polling, offline writes
   or local fallback.
-- **Cloud native world authority and motion (M3-05 verified; activation gated)**:
+- **Cloud native world authority and motion (M3-05/M3-10 development verified; activation gated)**:
   member commands capture current UID/seat/access generation, live epoch, real
   assigned actor/observer and scene/character revisions. A private domain draft
   reuses native gameplay rules, geometry, budgets and CPU dice; shared canonical
@@ -375,9 +375,17 @@
   `sharedSessions` remains false until progressive assets and full-world
   acceptance are ready. Paused preparation never auto-starts a game. Explicit
   owner transitions flush pending scene/character work; manual pause treats its
-  final backup confirmation separately. Arrival grants, cloud Undo/door/action
-  matrix completion, artwork hydration, persistent cache and automatic drain
-  remain later work, not silently supported gameplay claims. The private Linux
+  final backup confirmation separately. Progressive artwork, persistent cache
+  and warm/private-loss behavior are described below. Arrival grants, cloud
+  Undo/door/action/emote completion and automatic drain remain later work, not
+  silently supported gameplay claims. Ten distinct managed principals (one owner
+  and nine members) converge to canonical poses/revisions and scoped budgets,
+  with stale-CAS retry, original lost-reply recovery, no duplicate costs/physics
+  and latest-only reconnect. Current revocation clears private state and fences
+  stale cache puts; all transports close. Cold admission is batched, while all
+  ten streams are live in steady state. Local body-byte/timing measurements and
+  the full stable gate do not prove hosted RTT/p95, idle payload or cost targets.
+  The private Linux
   authority packages exact `cannon-es` 0.20.0 and only its required native d20
   model; CPU physics remains separate from client-side GPU rendering. Native
   rules/models, scoped SDK authority, isolated Linux runtime and approved real
