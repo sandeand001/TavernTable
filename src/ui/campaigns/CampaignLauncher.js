@@ -13,6 +13,8 @@ import { CLOUD_BACKUP_BYTE_LIMIT } from '../../campaigns/CloudProtocol.js';
 import { campaignBackupByteLength } from '../../campaigns/CampaignBackupBytes.js';
 import CloudAccountMethods from '../sessions/CloudAccountMethods.js';
 import CloudAssignedCharacterSheets from '../sessions/CloudAssignedCharacterSheets.js';
+import CloudPlayerSessionConnection from '../../campaigns/CloudPlayerSessionConnection.js';
+import CloudLiveSessionControls from '../sessions/CloudLiveSessionControls.js';
 
 export default class CampaignLauncher {
   constructor({ workspace = null, saveFeedback = null } = {}) {
@@ -153,6 +155,8 @@ export default class CampaignLauncher {
       const id = button.closest('[data-campaign-id]')?.dataset.campaignId;
       if (button.hasAttribute('data-open-campaign'))
         void this._perform(() => this._open(id), 'Opening the selected campaign...');
+      if (button.hasAttribute('data-open-cloud-game'))
+        void this._perform(() => this._openJoined(id), 'Joining the current live game...');
       if (button.hasAttribute('data-open-assigned-sheets'))
         void this._perform(
           () =>
@@ -173,7 +177,9 @@ export default class CampaignLauncher {
           this.status.textContent =
             `Joined ${access.campaign.name} as a player. ` +
             `${access.characterIds.length} assigned saved character${access.characterIds.length === 1 ? '' : 's'}. ` +
-            'Cloud player gameplay is not enabled yet; no private owner data was opened.';
+            (this.workspace.store.capabilities?.sharedSessions === true
+              ? 'Use Join live game when the owner has started gameplay. No private owner data was opened.'
+              : 'Cloud player gameplay is not enabled yet; no private owner data was opened.');
         }, 'Checking current player access...');
       if (button.hasAttribute('data-edit-campaign'))
         void this._perform(() => this._edit(id), 'Loading campaign settings...');
@@ -298,7 +304,9 @@ export default class CampaignLauncher {
           this.workspace.store.capabilities?.backups !== false
         );
         this.root.querySelector('[data-campaign-storage-help]').textContent = cloud
-          ? 'Private cloud preparation and assigned online sheets are available between games. Complete rolling backups, restore-as-copy, import/export, invitations, assignments and settings are available; world gameplay and live-session transport remain gated.'
+          ? this.workspace.store.capabilities?.sharedSessions === true
+            ? 'Prepare owned campaigns or edit assigned characters between games. The owner explicitly starts live gameplay; players then join only their authorized world view.'
+            : 'Private cloud preparation and assigned online sheets are available between games. Complete rolling backups, restore-as-copy, import/export, invitations, assignments and settings are available; world gameplay and live-session transport remain gated.'
           : 'Export JSON for an independent backup. Opening a campaign restores its automatically saved board.';
         await this._renderSaved();
         this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value);
@@ -327,6 +335,7 @@ export default class CampaignLauncher {
         <p>${profile.name} rules / SRD ${profile.srd}${sources}</p>
         <div class="campaign-row-actions">
           ${role === 'member' ? '<button type="button" data-view-campaign-access>View player access</button>' : '<button type="button" data-open-campaign>Open</button>'}
+          ${role === 'member' && capabilities?.sharedSessions === true ? '<button type="button" data-open-cloud-game>Join live game</button>' : ''}
           ${role === 'member' && capabilities?.assignedSheets === true ? '<button type="button" data-open-assigned-sheets>Assigned characters</button>' : ''}
           ${cloud && role === 'owner' && capabilities?.invitations === true ? '<button type="button" data-cloud-invitations>Player invitations</button>' : ''}
           ${capabilities?.settings !== false && (!cloud || role === 'owner') ? '<button type="button" data-edit-campaign>Sources &amp; settings</button>' : ''}
@@ -401,6 +410,37 @@ export default class CampaignLauncher {
     const services = await this.workspace.open(id);
     this.resolve(services);
     this.destroy();
+  }
+
+  async _openJoined(id) {
+    const store = this.workspace.store;
+    const { access } = await store.getParticipantAccess(id);
+    if (access.role !== 'member')
+      throw new Error('Campaign access changed. Refresh the campaign picker.');
+    const session = await store.getLiveSession(id);
+    if (session.state !== 'live')
+      throw new Error(
+        'The game is paused. The campaign owner must start live gameplay before you join.'
+      );
+    const connection = new CloudPlayerSessionConnection({
+      store,
+      campaignId: id,
+      access,
+      sessionId: session.sessionId,
+    });
+    try {
+      const initialState = await connection.open();
+      this.resolve({
+        role: 'player',
+        connection,
+        identity: initialState.profile,
+        initialState,
+      });
+      this.destroy();
+    } catch (error) {
+      await connection.close();
+      throw error;
+    }
   }
 
   async _edit(id) {
@@ -571,6 +611,12 @@ export function mountCampaignControls(gameManager, services) {
     );
     bar.append(invitations);
   }
+  if (cloud && store.capabilities?.sharedSessions === true)
+    services.cloudLiveControls = new CloudLiveSessionControls({
+      gameManager,
+      services,
+      parent: bar,
+    });
   if (role === 'dm' || cloud) {
     const signout = document.createElement('button');
     signout.type = 'button';

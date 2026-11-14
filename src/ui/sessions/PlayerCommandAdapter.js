@@ -225,7 +225,11 @@ export default class PlayerCommandAdapter {
     try {
       const receipt = await this.connection.call('playerCommand', [campaignId, command]);
       validatePlayerCommandResult(receipt, { cachedAssets: this.getCachedAssets() });
-      if (receipt.receipt.kind === 'roll') validateAuthoritativeRoll(receipt.receipt.roll);
+      if (
+        receipt.receipt.kind === 'roll' &&
+        (receipt.outcome === 'applied' || receipt.receipt.roll !== undefined)
+      )
+        validateAuthoritativeRoll(receipt.receipt.roll);
       if (
         receipt?.version !== 1 ||
         receipt.commandId !== command.commandId ||
@@ -239,7 +243,10 @@ export default class PlayerCommandAdapter {
         receipt.state?.publicScene?.version !== 1
       )
         throw new Error('The host returned an invalid player command receipt');
-      const animate = receipt.outcome === 'applied' && !this.seen.has(command.commandId);
+      const animate =
+        receipt.outcome === 'applied' &&
+        !this.seen.has(command.commandId) &&
+        this.connection.canAnimateReceipt?.(receipt) !== false;
       this.seen.add(command.commandId);
       if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value);
       await this.onReceipt(receipt, { animate, command, origin });

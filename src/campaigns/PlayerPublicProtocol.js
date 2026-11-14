@@ -181,7 +181,7 @@ export function validatePlayerPlacement(placement, maps = null) {
   return placement;
 }
 
-function validateBudget(budget) {
+export function validateBudget(budget) {
   if (
     !only(budget, [
       'movementSpentFeet',
@@ -213,6 +213,21 @@ export function validatePlayerMotion(motion, maps = null) {
   validatePlayerPlacement(motion.from, maps);
   for (const step of motion.route) validatePlayerPlacement(step, maps);
   return motion;
+}
+
+export function scopePlayerReceipt(receipt, state) {
+  const maps = new Set(state.maps.map(({ id }) => id));
+  const placements = [
+    ...(receipt.motion ? [receipt.motion.from, ...receipt.motion.route] : []),
+    ...(receipt.placement ? [receipt.placement] : []),
+    ...(receipt.route || []),
+  ];
+  if (placements.every((placement) => maps.has(placement.mapId))) return structuredClone(receipt);
+  const result = structuredClone(receipt);
+  delete result.motion;
+  delete result.route;
+  delete result.placement;
+  return result;
 }
 
 export function validatePlayerCommandResult(result, options = {}) {

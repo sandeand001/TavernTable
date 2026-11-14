@@ -11,7 +11,7 @@ beforeAll(() => {
 });
 afterAll(() => restoreFiles());
 
-async function fixture() {
+async function fixture({ cloud = false } = {}) {
   const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
   const { state, source, catalog } = publicPlayerState();
@@ -48,12 +48,16 @@ async function fixture() {
   let notice;
   let fetched = accepted;
   const connection = {
+    kind: cloud ? 'cloud-player' : undefined,
+    phase: 'ready',
+    readLiveState: () => JSON.parse(JSON.stringify(fetched)),
+    acknowledgeState: jest.fn(),
     subscribe: (listener) => {
       notice = listener;
       return () => {};
     },
     close: () => {},
-    call: async (operation, [, command]) => {
+    call: jest.fn(async (operation, [, command]) => {
       if (operation === 'playerState') return fetched;
       expect(operation).toBe('playerCommand');
       return {
@@ -72,7 +76,7 @@ async function fixture() {
         },
         state: accepted,
       };
-    },
+    }),
   };
   const app = new PlayerGameApplication({
     gameManager: gm,
@@ -85,6 +89,7 @@ async function fixture() {
   gm.advanceFrame();
   return {
     app,
+    connection,
     gm,
     state: accepted,
     notify: (event) => notice(event),
@@ -130,6 +135,122 @@ test('accepted player movement interpolates the actual animated sprite and displ
   expect(gm.characterServices.combat).toBeNull();
   await cleanup();
 });
+
+test('a cloud player receiving its own route before the HTTP receipt animates exactly once and keeps one authoritative movement cost', async () => {
+  const { app, gm, connection, state, tick, notify, cleanup } = await fixture({ cloud: true });
+  const play = jest.spyOn(gm.token3DAdapter, 'playApprovedMovement');
+  const originalCall = connection.call.getMockImplementation();
+  connection.call.mockImplementation(async (operation, args) => {
+    const result = await originalCall(operation, args);
+    if (operation === 'playerCommand') {
+      const { tokenId, kind, costFeet, budget, motion } = result.receipt;
+      state.publicScene.updates = [
+        {
+          commandId: result.commandId,
+          tokenId,
+          kind,
+          costFeet,
+          budget,
+          motion,
+          sceneRevision: result.applied.sceneRevision,
+          charactersRevision: result.applied.charactersRevision,
+        },
+      ];
+      notify({ type: 'state', state, generation: 2, reconcile: false });
+    }
+    return result;
+  });
+  try {
+    const token = gm.placedTokens[0];
+    const model = token.__threeMesh;
+    const moving = app.input.requestMove(token, { gridX: 2, gridY: 1 });
+    for (let check = 0; check < 100 && !gm.token3DAdapter.isMovementInProgress(token); check++)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
+    tick(0.1);
+    expect(token.world.x).toBeGreaterThan(1.5);
+    expect(token.world.x).toBeLessThan(2.5);
+    for (let frame = 0; frame < 600 && gm.token3DAdapter.isMovementInProgress(token); frame++)
+      tick(1 / 120);
+    await moving;
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(token.__threeMesh).toBe(model);
+    expect(token.world.x).toBe(2.5);
+    expect(app.input.movementBudget(token).spentFeet).toBe(5);
+    expect(
+      connection.call.mock.calls.filter(([operation]) => operation === 'playerCommand')
+    ).toHaveLength(1);
+    expect(
+      connection.call.mock.calls.filter(([operation]) => operation === 'playerState')
+    ).toHaveLength(0);
+  } finally {
+    play.mockRestore();
+    await cleanup();
+  }
+});
+
+test.each(['walk', 'run'])(
+  'a cloud receiving player animates a streamed %s route without an HTTP scene refresh or another movement charge',
+  async (pace) => {
+    const { app, gm, connection, state, tick, notify, cleanup } = await fixture({ cloud: true });
+    try {
+      const token = gm.placedTokens[0];
+      const model = token.__threeMesh;
+      state.publicScene.actors[0].movement.mode = pace;
+      state.publicScene.updates = [
+        {
+          commandId: `cloud-shared-${pace}-0001`,
+          tokenId: token.id,
+          kind: 'move',
+          sceneRevision: state.sceneRevision,
+          charactersRevision: state.revision,
+          costFeet: 5,
+          budget: { movementSpentFeet: 5, movementRemainingFeet: 25, movementAllowanceFeet: 30 },
+          motion: {
+            kind: 'walk',
+            completed: true,
+            from: {
+              mapId: 'main',
+              gridX: 1,
+              gridY: 1,
+              facingAngle: 0,
+              pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+            },
+            route: [
+              {
+                mapId: 'main',
+                gridX: 2,
+                gridY: 1,
+                facingAngle: Math.PI / 2,
+                pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+              },
+            ],
+          },
+        },
+      ];
+      notify({ type: 'state', state, generation: 2, reconcile: false });
+      for (let check = 0; check < 100 && !gm.token3DAdapter.isMovementInProgress(token); check++)
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
+      expect(token.world.x).toBe(1.5);
+      tick(0.1);
+      expect(token.world.x).toBeGreaterThan(1.5);
+      expect(token.world.x).toBeLessThan(2.5);
+      for (let frame = 0; frame < 600 && gm.token3DAdapter.isMovementInProgress(token); frame++)
+        tick(1 / 120);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(token.__threeMesh).toBe(model);
+      expect(token.world.x).toBe(2.5);
+      expect(app.input.movementBudget(token).spentFeet).toBe(5);
+      expect(gm.characterServices.combat).toBeNull();
+      expect(
+        connection.call.mock.calls.filter(([operation]) => operation === 'playerState')
+      ).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  }
+);
 
 test.each(['walk', 'run'])(
   'multiplayer regression: a receiving player animates a shared %s route instead of teleporting',
@@ -309,33 +430,55 @@ test('a live refetch during acknowledged walking reconciles at its completed che
   await cleanup();
 });
 
-test('a newer authorized scene notice replaces old visual walking rather than replaying its obsolete destination', async () => {
-  const { app, gm, tick, cleanup, state, notify, setFetched } = await fixture();
-  const token = gm.placedTokens[0];
-  const camera = gm.threeSceneManager.snapshotView();
-  const moving = app.input.requestMove(token, { gridX: 2, gridY: 1 });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  tick(0.1);
-  const newer = JSON.parse(JSON.stringify(state));
-  newer.sceneRevision++;
-  newer.publicScene.actors[0].gridX = 4;
-  newer.publicScene.actors[0].pose.world.x = 4.5;
-  newer.gameplay.ownedTokens[0].movement = { spentFeet: 10, remainingFeet: 20, allowanceFeet: 30 };
-  setFetched(newer);
-  notify({
-    type: 'campaign',
-    version: 1,
-    campaignId: state.campaign.id,
-    kind: 'playerCommand',
-    sceneRevision: newer.sceneRevision,
-    charactersRevision: newer.revision,
-  });
-  expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(false);
-  await moving;
-  await app.refresh();
-  expect(gm.placedTokens[0]).toBe(token);
-  expect(token.world.x).toBe(4.5);
-  expect(gm.threeSceneManager.snapshotView()).toBe(camera);
-  expect(app.input.movementBudget(token).spentFeet).toBe(10);
-  await cleanup();
-});
+test.each([false, true])(
+  'a newer authorized scene notice replaces obsolete walking without replay (cloud %s)',
+  async (cloud) => {
+    const { app, gm, connection, tick, cleanup, state, notify, setFetched } = await fixture({
+      cloud,
+    });
+    try {
+      const token = gm.placedTokens[0];
+      const camera = gm.threeSceneManager.snapshotView();
+      const moving = app.input.requestMove(token, { gridX: 2, gridY: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      tick(0.1);
+      const newer = JSON.parse(JSON.stringify(state));
+      newer.sceneRevision++;
+      newer.publicScene.actors[0].gridX = 4;
+      newer.publicScene.actors[0].pose.world.x = 4.5;
+      newer.gameplay.ownedTokens[0].movement = {
+        spentFeet: 10,
+        remainingFeet: 20,
+        allowanceFeet: 30,
+      };
+      setFetched(newer);
+      notify(
+        cloud
+          ? { type: 'state', state: newer, generation: 3, reconcile: true }
+          : {
+              type: 'campaign',
+              version: 1,
+              campaignId: state.campaign.id,
+              kind: 'playerCommand',
+              sceneRevision: newer.sceneRevision,
+              charactersRevision: newer.revision,
+            }
+      );
+      expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(false);
+      await moving;
+      if (cloud) {
+        for (let check = 0; check < 100 && token.world.x !== 4.5; check++)
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(
+          connection.call.mock.calls.filter(([operation]) => operation === 'playerState')
+        ).toHaveLength(0);
+      } else await app.refresh();
+      expect(gm.placedTokens[0]).toBe(token);
+      expect(token.world.x).toBe(4.5);
+      expect(gm.threeSceneManager.snapshotView()).toBe(camera);
+      expect(app.input.movementBudget(token).spentFeet).toBe(10);
+    } finally {
+      await cleanup();
+    }
+  }
+);

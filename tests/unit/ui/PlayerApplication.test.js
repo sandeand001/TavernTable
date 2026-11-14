@@ -52,6 +52,19 @@ test('an older marker-only host fails explicitly instead of starting a simplifie
   expect(f.gameManager.playerApplication).toBeUndefined();
 });
 
+test('a verified streamed cloud join boots the native player application without a legacy cookie snapshot request', async () => {
+  const f = fixture();
+  const app = await preparePlayerApplication({ ...f, initialState: f.state });
+  try {
+    await app.start();
+    expect(f.calls).toEqual([]);
+    expect(f.gameManager.playerApplication).toBe(app);
+    expect(f.gameManager.placedTokens.some((token) => token.owned)).toBe(true);
+  } finally {
+    await app.destroy();
+  }
+});
+
 test('a versioned unplaced-player state keeps assigned sheets while disabling every world-view selector', async () => {
   const f = fixture();
   f.state.observerTokenId = null;

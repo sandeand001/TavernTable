@@ -1,6 +1,7 @@
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError } = require('./cloud-error.js');
 const { participantDelta } = require('./participant-state.js');
+const { cloudOwnerDelta } = require('../../src/campaigns/CloudOwnerProtocol.js');
 const { isCloudUUID, isCloudParticipantRequest } = require('../../src/campaigns/CloudProtocol.js');
 
 const accessDenials = new Set([
@@ -35,12 +36,13 @@ class ParticipantChanges {
     this.groups = new Map();
   }
 
-  subscribe(principal, id, command, expected, callbacks) {
+  subscribe(principal, id, command, expected, callbacks, ownerWorld = false) {
     const scope = this.store._accessExpectation(expected);
     if (
       !isCloudUUID(id) ||
       !isCloudParticipantRequest(command) ||
       !scope ||
+      (ownerWorld && scope.seatId !== null) ||
       (scope.seatId === null &&
         [command.observerTokenId, command.mapId, command.assetKey].some((value) => value !== null))
     )
@@ -59,6 +61,7 @@ class ParticipantChanges {
     });
     const viewer = {
       principal,
+      ownerWorld,
       id,
       command: structuredClone(command),
       scope,
@@ -205,7 +208,7 @@ class ParticipantChanges {
       charactersRef: head.charactersRef,
     });
     if (group.frame?.key === key) return group.frame.promise;
-    const frame = { key, promise: this.store._loadSnapshot(head) };
+    const frame = { key, head, promise: this.store._loadSnapshot(head) };
     group.frame = frame;
     void frame.promise.catch(() => {
       if (group.frame === frame) group.frame = null;
@@ -219,7 +222,7 @@ class ParticipantChanges {
       const values = await Promise.all(
         [...group.viewers].map(async (viewer) => {
           try {
-            if (viewer.scope.seatId === null) {
+            if (viewer.scope.seatId === null && !viewer.ownerWorld) {
               const owner = await this.store._ownerLiveHead(
                 viewer.principal,
                 viewer.id,
@@ -234,16 +237,24 @@ class ParticipantChanges {
                 );
               return viewer.closed ? null : { viewer, owner };
             }
-            const next = await this.store._participantSnapshot(
-              viewer.principal,
-              viewer.id,
-              {
-                ...viewer.command,
-                assetKey: viewer.previous?.state.publicScene.assetKey ?? null,
-              },
-              viewer.scope,
-              (head) => this._load(group, head)
-            );
+            const next = viewer.ownerWorld
+              ? await this.store._ownerWorldSnapshot(
+                  viewer.principal,
+                  viewer.id,
+                  { sessionId: viewer.command.sessionId },
+                  viewer.scope,
+                  (head) => this._load(group, head)
+                )
+              : await this.store._participantSnapshot(
+                  viewer.principal,
+                  viewer.id,
+                  {
+                    ...viewer.command,
+                    assetKey: viewer.previous?.state.publicScene.assetKey ?? null,
+                  },
+                  viewer.scope,
+                  (head) => this._load(group, head)
+                );
             if (viewer.previous && next.generation < viewer.previous.generation)
               throw new CloudError(
                 503,
@@ -265,7 +276,7 @@ class ParticipantChanges {
       const ready = values.filter(Boolean);
       const advancing = ready.filter(
         ({ viewer, next }) =>
-          viewer.scope.seatId !== null &&
+          (viewer.scope.seatId !== null || viewer.ownerWorld) &&
           viewer.previous &&
           next.generation > viewer.previous.generation
       );
@@ -303,6 +314,42 @@ class ParticipantChanges {
           group.dirty = true;
           continue;
         }
+        if (viewer.ownerWorld) {
+          let event;
+          if (!viewer.previous) event = { kind: 'owner-checkpoint', checkpoint: next };
+          else if (next.generation === viewer.previous.generation) continue;
+          else if (history?.resync || next.generation !== viewer.previous.generation + 1)
+            event = { kind: 'owner-resync', checkpoint: next };
+          else {
+            try {
+              const presentations = group.frame?.head.presentationRef
+                ? await this.store._ownerWorldPresentations(
+                    viewer.principal,
+                    group.id,
+                    viewer.command,
+                    viewer.scope,
+                    viewer.previous,
+                    next,
+                    group.frame
+                  )
+                : [];
+              event = {
+                kind: 'owner-delta',
+                delta: cloudOwnerDelta(viewer.previous, next, presentations),
+              };
+            } catch (error) {
+              if (error.code === 'participant-state-changed') {
+                group.dirty = true;
+                continue;
+              }
+              this._fail(viewer, error);
+              continue;
+            }
+          }
+          viewer.previous = next;
+          this._emit(viewer, event);
+          continue;
+        }
         let event;
         if (!viewer.previous) {
           const cached =
@@ -323,11 +370,33 @@ class ParticipantChanges {
         } else if (next.generation === viewer.previous.generation) continue;
         else if (history?.resync || next.generation !== viewer.previous.generation + 1)
           event = { kind: 'resync', checkpoint: next };
-        else
-          event = {
-            kind: 'delta',
-            delta: participantDelta(viewer.previous, next, { cachedAssets: viewer.cachedAssets }),
-          };
+        else {
+          const delta = participantDelta(viewer.previous, next, {
+            cachedAssets: viewer.cachedAssets,
+          });
+          if (delta.kind === 'update' && group.frame?.head.presentationRef) {
+            try {
+              const presentations = await this.store._participantPresentations(
+                viewer.principal,
+                group.id,
+                viewer.command,
+                viewer.scope,
+                viewer.previous,
+                next,
+                group.frame
+              );
+              if (presentations.length) delta.presentations = presentations;
+            } catch (error) {
+              if (error.code === 'participant-state-changed') {
+                group.dirty = true;
+                continue;
+              }
+              this._fail(viewer, error);
+              continue;
+            }
+          }
+          event = { kind: 'delta', delta };
+        }
         viewer.previous = next;
         if (next.state.publicScene.assets) viewer.cachedAssets = next.state.publicScene.assets;
         if (next.state.publicScene.assetKey === null) viewer.cachedAssets = null;

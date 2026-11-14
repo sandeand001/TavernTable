@@ -133,7 +133,17 @@ export default class CloudEventStream {
       !event ||
       typeof event !== 'object' ||
       Array.isArray(event) ||
-      !['checkpoint', 'delta', 'resync', 'closed', 'status', 'owner-head'].includes(type) ||
+      ![
+        'checkpoint',
+        'delta',
+        'resync',
+        'closed',
+        'status',
+        'owner-head',
+        'owner-checkpoint',
+        'owner-delta',
+        'owner-resync',
+      ].includes(type) ||
       event.kind !== type
     )
       throw invalid();

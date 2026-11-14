@@ -481,6 +481,10 @@ export function isCloudParticipantRequest(value) {
   );
 }
 
+export function isCloudOwnerWorldRequest(value) {
+  return record(value) && keys(value, ['sessionId']) && isCloudUUID(value.sessionId);
+}
+
 export function isCloudOwnerHeadEvent(value) {
   return (
     record(value) &&
@@ -500,6 +504,38 @@ export function isCloudOwnerHeadEvent(value) {
       ? value.head.sceneSavedAt === null
       : typeof value.head.sceneSavedAt === 'string' &&
         Number.isFinite(Date.parse(value.head.sceneSavedAt)))
+  );
+}
+
+export function isCloudWorldCommandReceipt(value) {
+  return (
+    record(value) &&
+    keys(value, [
+      'version',
+      'campaignId',
+      'commandId',
+      'access',
+      'sessionId',
+      'kind',
+      'applied',
+      'outcome',
+    ]) &&
+    value.version === 1 &&
+    isCloudUUID(value.campaignId) &&
+    isCloudUUID(value.commandId) &&
+    isCloudAccessScope(value.access) &&
+    value.access.role === 'member' &&
+    value.access.campaignId === value.campaignId &&
+    isCloudUUID(value.sessionId) &&
+    PLAYER_COMMAND_KINDS.includes(value.kind) &&
+    ['applied', 'duplicate'].includes(value.outcome) &&
+    record(value.applied) &&
+    keys(value.applied, ['generation', 'sceneRevision', 'charactersRevision']) &&
+    isCloudAccessGeneration(value.applied.generation) &&
+    value.applied.generation > 0 &&
+    isCloudAccessGeneration(value.applied.sceneRevision) &&
+    value.applied.sceneRevision > 0 &&
+    isCloudAccessGeneration(value.applied.charactersRevision)
   );
 }
 
@@ -683,3 +719,4 @@ export function isCloudPlayerSeat(value, campaignId) {
     invitation.seatId === value.id
   );
 }
+import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';

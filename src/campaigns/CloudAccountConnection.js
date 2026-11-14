@@ -25,6 +25,14 @@ const invalidResponse = () =>
 const denialCodes = new Set([
   'invalid-participant-request',
   'invalid-participant-state',
+  'invalid-scene-presentation',
+  'invalid-command',
+  'actor-forbidden',
+  'not-your-turn',
+  'unreachable',
+  'invalid-destination',
+  'unsupported-movement',
+  'world-not-ready',
   'participant-view-forbidden',
   'participant-view-changed',
   'participant-state-changed',
@@ -137,6 +145,17 @@ const denialCodes = new Set([
   'account-request-failed',
 ]);
 const denialMessages = new Map([
+  ['invalid-command', 'Choose a current canonical gameplay command.'],
+  ['actor-forbidden', 'Choose your active currently assigned real creature.'],
+  ['not-your-turn', 'Wait for your active turn, or ask the owner to set Free Play.'],
+  ['unreachable', 'That destination is blocked or beyond current movement.'],
+  ['invalid-destination', 'Choose an available destination on the active actor map.'],
+  ['unsupported-movement', 'This saved pose does not support that movement.'],
+  ['world-not-ready', 'The campaign owner must save the world before gameplay.'],
+  [
+    'invalid-scene-presentation',
+    'The native movement route does not match the current authorized scene.',
+  ],
   ['stream-limit-reached', 'This account has four live connections. Close another live tab first.'],
   ['stream-lease-expired', 'This live stream expired. Reconnect to its current state.'],
   ['invalid-stream-lease', 'The live stream lease could not be verified.'],
@@ -497,7 +516,7 @@ export default class CloudAccountConnection {
       (responseType === 'events' &&
         (method !== 'POST' ||
           accessScope === null ||
-          !/^campaigns\/[a-f0-9-]{36}\/events$/.test(resource) ||
+          !/^campaigns\/[a-f0-9-]{36}\/(?:events|owner-events)$/.test(resource) ||
           !isCloudUUID(resource.split('/')[1]))) ||
       (responseType === 'backup' &&
         (method !== 'GET' ||
@@ -524,7 +543,15 @@ export default class CloudAccountConnection {
           (method === 'POST' &&
             ((accessScope.role === 'member' &&
               resource === `campaigns/${accessScope.campaignId}/participant-state`) ||
-              resource === `campaigns/${accessScope.campaignId}/events`))
+              resource === `campaigns/${accessScope.campaignId}/events`)) ||
+          (method === 'POST' &&
+            accessScope.role === 'owner' &&
+            ['owner-events', 'owner-state'].some(
+              (suffix) => resource === `campaigns/${accessScope.campaignId}/${suffix}`
+            )) ||
+          (method === 'POST' &&
+            accessScope.role === 'member' &&
+            resource === `campaigns/${accessScope.campaignId}/world-commands`)
         ))
     )
       throw requestError(

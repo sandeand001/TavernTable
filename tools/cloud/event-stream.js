@@ -1,5 +1,8 @@
 const { CloudError } = require('./cloud-error.js');
-const { isCloudParticipantRequest } = require('../../src/campaigns/CloudProtocol.js');
+const {
+  isCloudParticipantRequest,
+  isCloudOwnerWorldRequest,
+} = require('../../src/campaigns/CloudProtocol.js');
 
 const HEARTBEAT_MS = 25000;
 const RENEW_MS = 60000;
@@ -17,15 +20,20 @@ async function openCloudEventStream({
   access,
   store,
   headers,
+  ownerWorld = false,
 }) {
   if (
-    !isCloudParticipantRequest(command) ||
+    (ownerWorld ? !isCloudOwnerWorldRequest(command) : !isCloudParticipantRequest(command)) ||
     !scope ||
-    (scope.seatId === null &&
+    (ownerWorld && scope.seatId !== null) ||
+    (!ownerWorld &&
+      scope.seatId === null &&
       [command.observerTokenId, command.mapId, command.assetKey].some((value) => value !== null))
   )
     throw new CloudError(400, 'invalid-participant-request', 'Choose current live campaign access');
-  const view = structuredClone(command);
+  const view = ownerWorld
+    ? { sessionId: command.sessionId, observerTokenId: null, mapId: null, assetKey: null }
+    : structuredClone(command);
   const expected = structuredClone(scope);
   const admit = async (identity) => {
     const granted = await store.getLiveAccess(identity, id, { sessionId: view.sessionId });
@@ -211,10 +219,13 @@ async function openCloudEventStream({
     lease = await store.usage.acquireStream(principal);
     if (stopped || response.destroyed)
       throw new CloudError(409, 'stream-closed', 'The live stream was closed');
-    observation = store.observeParticipant(principal, id, view, expected, {
+    const callbacks = {
       onEvent: enqueue,
       onError: fail,
-    });
+    };
+    observation = ownerWorld
+      ? store.observeOwnerWorld(principal, id, command, expected, callbacks)
+      : store.observeParticipant(principal, id, view, expected, callbacks);
     await observation.ready;
     if (stopped || response.destroyed)
       throw startupError || new CloudError(409, 'stream-closed', 'The live stream was closed');

@@ -10,6 +10,8 @@ tools/*
 !tools/http-body.js
 !tools/assigned-character-change.js
 !tools/published-maps.js
+!tools/movement-presentations.js
+!tools/physical-dice.js
 !tools/cloud/
 tools/cloud/*
 !tools/cloud/admin-runtime.js
@@ -35,3 +37,6 @@ assets/data/*
 !assets/data/resources/**
 !assets/data/SRD2014-NOTICE.txt
 !assets/data/SRD2014-UPSTREAM-LICENSE.txt
+!assets/Items/
+assets/Items/*
+!assets/Items/d20-gold.glb

@@ -868,7 +868,7 @@ class CloudUsageLimits {
       );
     const candidates = Array.isArray(input) ? input : [input];
     const scope = new RegExp(
-      `^campaigns/${campaignId}/(?:objects/(?:scene|characters|import)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin|backups/[a-f0-9-]{36}/[a-f0-9]{64}\\.json)$`
+      `^campaigns/${campaignId}/(?:objects/(?:scene|characters|import|presentations)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin|backups/[a-f0-9-]{36}/[a-f0-9]{64}\\.json)$`
     );
     if (
       !candidates.length ||

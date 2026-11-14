@@ -3,27 +3,13 @@ const { pathToFileURL } = require('node:url');
 const { createHash } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
 const { PhysicalDice } = require('./physical-dice.js');
+const { scopePlayerReceipt: scopedReceipt } = require('../src/campaigns/PlayerPublicProtocol.js');
 
 const denied = () =>
   Object.assign(new Error('This actor is not available to your player'), {
     status: 403,
     code: 'actor-forbidden',
   });
-
-function scopedReceipt(receipt, state) {
-  const maps = new Set(state.maps.map(({ id }) => id));
-  const placements = [
-    ...(receipt.motion ? [receipt.motion.from, ...receipt.motion.route] : []),
-    ...(receipt.placement ? [receipt.placement] : []),
-    ...(receipt.route || []),
-  ];
-  if (placements.every((placement) => maps.has(placement.mapId))) return receipt;
-  const result = { ...receipt };
-  delete result.motion;
-  delete result.route;
-  delete result.placement;
-  return result;
-}
 
 class PlayerGameplay {
   constructor({ root, players }) {

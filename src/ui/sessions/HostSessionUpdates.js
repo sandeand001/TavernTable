@@ -8,8 +8,12 @@ import {
 import { validatePlayerMotion } from '../../campaigns/PlayerPublicProtocol.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 
-export function attachHostSessionUpdates({ gameManager, services, parent }) {
-  const store = services.workspace.store;
+export function attachHostSessionUpdates({
+  gameManager,
+  services,
+  parent,
+  store = services.workspace.store,
+}) {
   const output = document.createElement('output');
   output.setAttribute('aria-label', 'Shared session status');
   parent.append(output);
@@ -213,7 +217,16 @@ export function attachHostSessionUpdates({ gameManager, services, parent }) {
       output.textContent = 'Invalid shared update. Reopen the campaign before continuing.';
       return;
     }
-    if (event.actorId === store.identity.id) return;
+    const local =
+      typeof store.isLocalChange === 'function'
+        ? store.isLocalChange(event)
+        : event.actorId === store.identity.id;
+    if (local && event.reconcile !== true) return;
+    if (event.reconcile === true) {
+      presentations = [];
+      for (const token of gameManager.placedTokens)
+        gameManager.token3DAdapter.cancelApprovedMovement(token);
+    }
     if (event.type === 'connected' || event.campaignId === services.campaign.id) {
       if (event.presentations !== undefined) {
         if (!Array.isArray(event.presentations)) {

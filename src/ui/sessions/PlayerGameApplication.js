@@ -17,9 +17,10 @@ function assertObserverSelection(state, cachedAssets) {
     state.observers.some(
       (observer) =>
         !observer ||
-        ['id', 'name', 'mapId', 'characterId'].some(
+        ['id', 'name', 'characterId'].some(
           (field) => typeof observer[field] !== 'string' || !observer[field]
-        )
+        ) ||
+        (observer.mapId !== undefined && (typeof observer.mapId !== 'string' || !observer.mapId))
     ) ||
     new Set(state.observers.map(({ id }) => id)).size !== state.observers.length
   )
@@ -34,7 +35,7 @@ function assertObserverSelection(state, cachedAssets) {
     state.publicScene.presentation.focusTokenId !== observer.id ||
     !actor?.owned ||
     actor.characterId !== observer.characterId ||
-    actor.mapId !== observer.mapId
+    actor.mapId !== (observer.mapId ?? actor.mapId)
   )
     throw new Error('The host returned an invalid or unassigned player observer');
 }
@@ -106,6 +107,49 @@ export default class PlayerGameApplication {
   async start(state = this.state) {
     await this.showState(state);
     this.unsubscribe = this.connection.subscribe((event) => {
+      if (event.type === 'state' && this.connection.kind === 'cloud-player') {
+        this.notifiedSceneRevision = Math.max(
+          this.notifiedSceneRevision ?? -1,
+          event.state.sceneRevision
+        );
+        this.notifiedCharactersRevision = Math.max(
+          this.notifiedCharactersRevision ?? -1,
+          event.state.revision
+        );
+        if (
+          event.reconcile ||
+          (this.presentationRevision !== undefined &&
+            event.state.sceneRevision > this.presentationRevision &&
+            !event.state.publicScene.updates.length)
+        ) {
+          for (const token of this.gameManager.placedTokens)
+            this.gameManager.token3DAdapter.cancelApprovedMovement(token);
+          this.dice.cancel();
+        }
+        this.cloudUpdatePending = true;
+        this.commands.setStateError(new Error('Synchronizing the current live world...'));
+        void this._drainCloudUpdates().catch((error) => this.fail(error));
+        return;
+      }
+      if (event.type === 'live-status') {
+        if (['connecting', 'synchronizing', 'reconnecting'].includes(event.status.phase)) {
+          this.commands.setStateError(
+            new Error('Wait for live world reconciliation before playing.')
+          );
+          this.controls.status.textContent = 'Synchronizing the live game...';
+        } else if (
+          event.status.phase === 'ready' &&
+          !this.cloudUpdatePending &&
+          !this.cloudUpdateTask
+        )
+          this.commands.setStateError(null);
+        return;
+      }
+      if (event.type === 'access-ended') {
+        const error = Object.assign(new Error(event.error.message), event.error);
+        void this.fail(error, { endAccess: true });
+        return;
+      }
       if (
         event.campaignId === this.state.campaign.id &&
         event.version === 1 &&
@@ -218,7 +262,29 @@ export default class PlayerGameApplication {
     return result;
   }
 
+  async _drainCloudUpdates() {
+    if (this.cloudUpdateTask) return this.cloudUpdateTask;
+    this.cloudUpdateTask = (async () => {
+      while (this.cloudUpdatePending && !this.destroyed && !this.accessEnded) {
+        this.cloudUpdatePending = false;
+        const version = this.selectionVersion;
+        const state = this.connection.readLiveState(this.runtime.revision);
+        const result = await this.showState(state, version);
+        if (result.applied && version === this.selectionVersion)
+          this.connection.acknowledgeState(state.sceneRevision);
+      }
+    })();
+    try {
+      return await this.cloudUpdateTask;
+    } finally {
+      this.cloudUpdateTask = null;
+      if (this.cloudUpdatePending && !this.destroyed && !this.accessEnded)
+        void this._drainCloudUpdates().catch((error) => this.fail(error));
+    }
+  }
+
   async receiveReceipt(receipt, { animate, command }) {
+    if (this.connection.kind === 'cloud-player') await this._drainCloudUpdates();
     if (this.observerId !== command.observerTokenId || this.destroyed)
       return { applied: false, reason: 'superseded-selection' };
     if (command.kind === 'place') this.placementGrantId = null;
@@ -485,17 +551,19 @@ export default class PlayerGameApplication {
   async signOut() {
     await this.commands.idle;
     await this.sheets.library.flush();
-    if (!this.accessEnded) await this.connection.logout();
+    if (!this.accessEnded || this.connection.kind === 'cloud-player')
+      await this.connection.logout();
     location.reload();
   }
 
-  async fail(error) {
+  async fail(error, { endAccess = false } = {}) {
     this.commands.setStateError(error);
     this.controls.status.textContent = error.message;
-    if (error.status === 401) {
+    let closing;
+    if (error.status === 401 || endAccess) {
       this.accessEnded = true;
       this.unsubscribe?.();
-      this.connection.close();
+      closing = this.connection.close();
       this.sheets.destroy();
       this.controls.endAccess();
       this.observerId = null;
@@ -503,7 +571,7 @@ export default class PlayerGameApplication {
     }
     this.input.targeting.cancel();
     this.dice.cancel();
-    await this.runtime.clear();
+    await Promise.all([this.runtime.clear(), closing]);
     GameErrors.input(error, { component: 'PlayerGameApplication', operation: 'session' });
   }
 
@@ -543,11 +611,11 @@ export default class PlayerGameApplication {
     if (this.pageHide) window.removeEventListener('pagehide', this.pageHide);
     if (this.beforeUnload) window.removeEventListener('beforeunload', this.beforeUnload);
     this.unsubscribe?.();
-    this.connection.close();
+    const closing = this.connection.close();
     this.dice.destroy();
     this.input.destroy();
     this.sheets.destroy();
-    await this.runtime.destroy();
+    await Promise.all([this.runtime.destroy(), this.cloudUpdateTask, closing]);
     this.controls.destroy();
     this.resources?.close();
     if (this.gameManager.playerApplication === this) delete this.gameManager.playerApplication;

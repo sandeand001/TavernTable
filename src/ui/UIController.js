@@ -1138,19 +1138,18 @@ async function startCampaignApplication() {
       if (!['dm', 'player'].includes(identity.role))
         throw new Error('The host returned an unsupported session role');
     }
+    const openPlayerSheet = (id) => {
+      const token = manager.placedTokens.find(
+        (entry) => entry.owned && entry.characterSheetId === id
+      );
+      return token ? openCharacterSheet(manager, token) : manager.playerApplication.sheets.open(id);
+    };
     if (identity?.role === 'player') {
       showLoading('Opening your authorized map. Please wait...');
       player = await preparePlayerApplication({
         gameManager: manager,
         identity,
-        openSheet: (id) => {
-          const token = manager.placedTokens.find(
-            (entry) => entry.owned && entry.characterSheetId === id
-          );
-          return token
-            ? openCharacterSheet(manager, token)
-            : manager.playerApplication.sheets.open(id);
-        },
+        openSheet: openPlayerSheet,
       });
     }
     let services = null;
@@ -1164,6 +1163,17 @@ async function startCampaignApplication() {
         cloudInvitations.attach(launcher);
       }
       services = await choice;
+      if (services.role === 'player') {
+        player = await preparePlayerApplication({
+          gameManager: manager,
+          identity: services.identity,
+          connection: services.connection,
+          initialState: services.initialState,
+          resources: workspace.resources,
+          openSheet: openPlayerSheet,
+        });
+        services = null;
+      }
     }
     if (!loading) showLoading('Restoring your campaign. Please wait...');
     let autosave;
@@ -1183,7 +1193,6 @@ async function startCampaignApplication() {
         services.saveFeedback = manager.cloudSaveFeedback;
         services.saveFeedback.bindAutosave(autosave);
       }
-      mountCampaignControls(manager, services);
     }
     pauseControls();
     await manager.initialize();
@@ -1195,6 +1204,7 @@ async function startCampaignApplication() {
     if (player) await player.start();
     else {
       await autosave.start(services.scene);
+      mountCampaignControls(manager, services);
       const rosterHost = document.getElementById('saved-character-roster');
       if (!rosterHost) throw new Error('The saved character roster mount is missing');
       manager.savedCharacterRoster?.destroy();

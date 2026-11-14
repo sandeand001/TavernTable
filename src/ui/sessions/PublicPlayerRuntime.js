@@ -281,9 +281,15 @@ export default class PublicPlayerRuntime {
     gm.playerVisibleMapIds = new Set();
     gm.playerSightObstacles = [];
     this.visibleIds = new Set();
-    for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
-    await gm.token3DAdapter.setSelectedToken(null);
-    this.observerId = null;
+    const release = async () => {
+      for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
+      await gm.token3DAdapter.setSelectedToken(null);
+      this.observerId = null;
+    };
+    if (!invalidate) return release();
+    // Hide immediately, but do not remove a sprite during its in-flight model restoration.
+    this.pending = this.pending.then(release, release);
+    return this.pending;
   }
 
   async destroy() {

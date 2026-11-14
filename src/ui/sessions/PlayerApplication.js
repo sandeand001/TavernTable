@@ -9,12 +9,14 @@ export async function preparePlayerApplication({
   connection = new SessionConnection({ identity }),
   resources = null,
   openSheet = null,
+  initialState = null,
 }) {
   if (identity.role !== 'player')
     throw new Error('Player gameplay requires an authenticated player session');
   let app;
   try {
-    const state = await connection.call('playerState', [{ presentationVersion: 1 }]);
+    const state =
+      initialState ?? (await connection.call('playerState', [{ presentationVersion: 1 }]));
     if (state.publicScene?.version !== 1)
       throw new Error(
         'The host does not provide the interactive player snapshot. Update the host before playing.'
@@ -38,8 +40,11 @@ export async function preparePlayerApplication({
   } catch (error) {
     if (app) await app.destroy();
     else {
-      connection.close();
-      resources?.close();
+      try {
+        await connection.close();
+      } finally {
+        resources?.close();
+      }
     }
     throw error;
   }

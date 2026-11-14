@@ -6,9 +6,90 @@ import { fetchBundledResource } from '../../helpers/bundledResources.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
+import CloudPlayerSessionConnection from '../../../src/campaigns/CloudPlayerSessionConnection.js';
 
 globalThis.TextDecoder ??= TextDecoder;
 globalThis.TextEncoder ??= TextEncoder;
+globalThis.structuredClone ??= (value) => JSON.parse(JSON.stringify(value));
+
+test('a Joined live-game choice uses only current member access and never opens the private owner workspace', async () => {
+  const campaignId = '11111111-1111-4111-8111-111111111111';
+  const access = {
+    version: 1,
+    uid: 'picker-player',
+    campaignId,
+    role: 'member',
+    seatId: '22222222-2222-4222-8222-222222222222',
+    accessGeneration: 1,
+  };
+  const campaign = {
+    id: campaignId,
+    name: 'Joined live game',
+    ruleset: '2014',
+    coreVersion: '5.1',
+  };
+  const state = { campaign, profile: { role: 'player', campaignId, characterIds: [] } };
+  let live = false;
+  const workspace = {
+    manifest: { packs: [] },
+    resources: { catalog: jest.fn(async () => ({ ruleset: '2014' })) },
+    open: jest.fn(async () => {
+      throw new Error('Member must never open owner campaign data');
+    }),
+    store: {
+      uid: access.uid,
+      storageInfo: { kind: 'cloud', label: 'Cloud-authoritative storage' },
+      capabilities: {
+        sharedSessions: true,
+        settings: false,
+        backups: false,
+        invitations: false,
+        portability: false,
+        browserImport: false,
+      },
+      connection: {
+        account: { identity: () => ({ uid: access.uid, email: 'player@example.invalid' }) },
+      },
+      listAccess: jest.fn(async () => ({
+        owned: [],
+        joined: [{ version: 1, campaign, role: 'member', seatId: access.seatId }],
+      })),
+      getParticipantAccess: jest.fn(async () => ({ access })),
+      getLiveSession: jest.fn(async () => ({
+        state: live ? 'live' : 'paused',
+        sessionId: '33333333-3333-4333-8333-333333333333',
+      })),
+      observeEvents: jest.fn(),
+      readParticipantSnapshot: jest.fn(),
+      commitWorldCommand: jest.fn(),
+    },
+  };
+  const open = jest.spyOn(CloudPlayerSessionConnection.prototype, 'open').mockResolvedValue(state);
+  const launcher = new CampaignLauncher({ workspace });
+  let choice;
+  try {
+    const picked = launcher.choose();
+    await launcher.ready;
+    const join = launcher.list.querySelector('[data-open-cloud-game]');
+    expect(join).not.toBeNull();
+    join.click();
+    for (let step = 0; step < 20 && launcher.busy; step++) await Promise.resolve();
+    expect(launcher.status.textContent).toContain('paused');
+    expect(open).not.toHaveBeenCalled();
+    live = true;
+    join.click();
+    choice = await picked;
+    expect(choice.role).toBe('player');
+    expect(choice.identity.role).toBe('player');
+    expect(choice.initialState).toBe(state);
+    expect(workspace.open).not.toHaveBeenCalled();
+    expect(workspace.store.getParticipantAccess).toHaveBeenCalledWith(campaignId);
+  } finally {
+    await choice?.connection.close();
+    launcher.destroy();
+    open.mockRestore();
+  }
+});
 
 test('a large cloud export omits only the text preview and still downloads the exact complete file', async () => {
   const text = '{"fixture":"' + 'x'.repeat(1024 * 1024) + '"}';

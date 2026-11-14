@@ -15,6 +15,8 @@ import {
   isCloudAssignedCharacterReceipt,
   isCloudParticipantRequest,
   isCloudOwnerHeadEvent,
+  isCloudOwnerWorldRequest,
+  isCloudWorldCommandReceipt,
   isCloudAccessGeneration,
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
@@ -53,6 +55,7 @@ const definitiveDenials = new Set([
   'invalid-campaign-request',
   'invalid-campaign-change',
   'invalid-assigned-change',
+  'invalid-scene-presentation',
   'stale-revision',
   'command-id-conflict',
   'request-too-large',
@@ -105,6 +108,8 @@ export default class CloudCampaignClientStore {
     this.saveListeners = new Set();
     this.streams = new Set();
     this.liveConnections = new Set();
+    this.ownerWorlds = new Map();
+    this.issuedCommands = new Set();
     this.saveState = Object.freeze({ phase: 'idle', error: null });
     this.storageInfo = Object.freeze({
       kind: 'cloud',
@@ -123,7 +128,7 @@ export default class CloudCampaignClientStore {
       browserImport: false,
       sharedSessions: false,
       roomVisits: false,
-      nativeMotion: false,
+      nativeMotion: true,
     });
   }
 
@@ -135,6 +140,32 @@ export default class CloudCampaignClientStore {
         'account-changed',
         'This workspace belongs to another signed-in account. Reopen its campaigns.'
       );
+  }
+
+  bindOwnerWorld(id, sessionId, access) {
+    this._identity();
+    if (
+      !isCloudUUID(sessionId) ||
+      !isCloudAccessScope(access) ||
+      access.role !== 'owner' ||
+      access.uid !== this.uid ||
+      access.campaignId !== id
+    )
+      throw failure(400, 'invalid-access-scope', 'Choose current live owner world access.');
+    const binding = { sessionId, access: copy(access) };
+    this.ownerWorlds.set(id, binding);
+    return () => {
+      if (this.ownerWorlds.get(id) === binding) this.ownerWorlds.delete(id);
+    };
+  }
+
+  wantsSharedPresentations(id) {
+    this._identity();
+    return this.ownerWorlds.has(id);
+  }
+
+  isLocalChange(event) {
+    return event?.origin?.uid === this.uid && this.issuedCommands.has(event.origin.commandId);
   }
 
   async _call(resource, options) {
@@ -504,6 +535,27 @@ export default class CloudCampaignClientStore {
         'Cloud editing requires an online connection. No change was queued.'
       );
     const input = operation === 'import' ? value : copy(value);
+    const ownerWorld = ['scene', 'characters'].includes(operation)
+      ? this.ownerWorlds.get(id)
+      : null;
+    let presentations = [];
+    if (['scene', 'characters'].includes(operation)) {
+      const capture = operation === 'scene' ? input : input.scene;
+      if (capture && Object.hasOwn(capture, 'presentations')) {
+        if (
+          !ownerWorld ||
+          !Array.isArray(capture.presentations) ||
+          capture.presentations.length > 256
+        )
+          throw failure(
+            400,
+            'invalid-scene-presentation',
+            'Native motion requires the current live owner world.'
+          );
+        presentations = copy(capture.presentations);
+        delete capture.presentations;
+      }
+    }
     const commandId = this.crypto.randomUUID();
     if (!isCloudUUID(commandId))
       throw failure(503, 'invalid-command-id', 'A secure cloud command ID could not be created.');
@@ -528,6 +580,13 @@ export default class CloudCampaignClientStore {
               : operation === 'assigned-characters'
                 ? { commandId, change: input.change }
                 : { commandId, change: input };
+    if (ownerWorld) {
+      body.sessionId = ownerWorld.sessionId;
+      body.presentations = presentations;
+    }
+    this.issuedCommands.add(commandId);
+    while (this.issuedCommands.size > 512)
+      this.issuedCommands.delete(this.issuedCommands.values().next().value);
     let resolve;
     let reject;
     const promise = new Promise((accepted, denied) => {
@@ -604,6 +663,12 @@ export default class CloudCampaignClientStore {
             'authentication-required',
             'account-changed',
           ].includes(error.code);
+        const freshLiveDenial =
+          item.body.sessionId !== undefined &&
+          item.error === null &&
+          ['live-session-paused', 'live-session-changed', 'campaign-access-changed'].includes(
+            error.code
+          );
         item.error = error;
         const terminal =
           item.operation === 'import'
@@ -621,6 +686,7 @@ export default class CloudCampaignClientStore {
             : freshCapacityDenial ||
               freshAccessDenial ||
               freshAssignedDenial ||
+              freshLiveDenial ||
               definitiveDenials.has(error.code) ||
               (metadataOperations.has(item.operation) && definitiveMetadataDenials.has(error.code));
         if (terminal) {
@@ -909,13 +975,52 @@ export default class CloudCampaignClientStore {
   }
 
   async openEvents(id, view, expected, { cachedAssets = null, signal = null } = {}) {
+    return this._openEvents(id, view, expected, { cachedAssets, signal }, false);
+  }
+
+  async openOwnerEvents(id, request, expected, { signal = null } = {}) {
+    return this._openEvents(id, request, expected, { cachedAssets: null, signal }, true);
+  }
+
+  observeOwnerEvents(id, request, expected, { onState, onStatus } = {}) {
     this._identity();
-    if (!isCloudAccessScope(expected) || expected.uid !== this.uid || expected.campaignId !== id)
+    if (
+      !isCloudAccessScope(expected) ||
+      expected.uid !== this.uid ||
+      expected.campaignId !== id ||
+      expected.role !== 'owner' ||
+      !isCloudOwnerWorldRequest(request)
+    )
+      throw failure(400, 'invalid-access-scope', 'Choose current live owner world access.');
+    const connection = new CloudLiveConnection({
+      store: this,
+      account: this.connection.account,
+      id,
+      view: request,
+      scope: expected,
+      onState,
+      onStatus,
+      ownerWorld: true,
+    });
+    this.liveConnections.add(connection);
+    void connection.done.then(() => this.liveConnections.delete(connection));
+    return connection;
+  }
+
+  async _openEvents(id, view, expected, { cachedAssets = null, signal = null }, ownerWorld) {
+    this._identity();
+    if (
+      !isCloudAccessScope(expected) ||
+      expected.uid !== this.uid ||
+      expected.campaignId !== id ||
+      (ownerWorld && expected.role !== 'owner')
+    )
       throw failure(400, 'invalid-access-scope', 'Choose current live campaign access.');
     if (
-      !isCloudParticipantRequest(view) ||
-      (view.assetKey !== null && cachedAssets === null) ||
-      (expected.role === 'owner' &&
+      (ownerWorld ? !isCloudOwnerWorldRequest(view) : !isCloudParticipantRequest(view)) ||
+      (!ownerWorld && view.assetKey !== null && cachedAssets === null) ||
+      (!ownerWorld &&
+        expected.role === 'owner' &&
         [view.observerTokenId, view.mapId, view.assetKey, cachedAssets].some(
           (value) => value !== null
         ))
@@ -932,14 +1037,18 @@ export default class CloudCampaignClientStore {
     let ended = false;
     let closing;
     const { applyCloudParticipantDelta } = await import('./CloudParticipantProtocol.js');
+    const ownerProtocol = ownerWorld ? await import('./CloudOwnerProtocol.js') : null;
     this._identity();
-    const source = await this.connection.request(this._resource(id, '/events'), {
-      method: 'POST',
-      body: input,
-      accessScope: scope,
-      responseType: 'events',
-      signal,
-    });
+    const source = await this.connection.request(
+      this._resource(id, ownerWorld ? '/owner-events' : '/events'),
+      {
+        method: 'POST',
+        body: input,
+        accessScope: scope,
+        responseType: 'events',
+        signal,
+      }
+    );
     const close = () => {
       if (closing) return closing;
       ended = true;
@@ -969,7 +1078,29 @@ export default class CloudCampaignClientStore {
             return step;
           }
           const event = step.value;
-          if (scope.role === 'owner') {
+          if (ownerWorld) {
+            if (
+              !['owner-checkpoint', 'owner-resync', 'owner-delta'].includes(event.kind) ||
+              Object.keys(event).length !== 2 ||
+              !Object.hasOwn(event, event.kind === 'owner-delta' ? 'delta' : 'checkpoint')
+            )
+              throw invalidResponse();
+            if (event.kind === 'owner-delta' && previous === null)
+              throw failure(409, 'owner-delta-gap', 'Read a current owner checkpoint first.');
+            const checkpoint =
+              event.kind === 'owner-delta'
+                ? ownerProtocol.applyCloudOwnerDelta(previous, event.delta)
+                : ownerProtocol.validateCloudOwnerSnapshot(event.checkpoint);
+            if (
+              checkpoint.access.uid !== scope.uid ||
+              checkpoint.access.campaignId !== id ||
+              checkpoint.sessionId !== input.sessionId ||
+              (previous && checkpoint.generation < previous.generation)
+            )
+              throw invalidResponse();
+            const campaign = await this._metadata(checkpoint.state.campaign, id);
+            previous = { ...copy(checkpoint), state: { ...copy(checkpoint.state), campaign } };
+          } else if (scope.role === 'owner') {
             if (
               !isCloudOwnerHeadEvent(event) ||
               event.access.uid !== scope.uid ||
@@ -1062,6 +1193,65 @@ export default class CloudCampaignClientStore {
       scene: result.scene,
       savedAt: result.savedAt,
     };
+  }
+
+  async commitWorldCommand(id, request, expected) {
+    this._identity();
+    if (
+      !isCloudAccessScope(expected) ||
+      expected.uid !== this.uid ||
+      expected.campaignId !== id ||
+      expected.role !== 'member' ||
+      !request ||
+      typeof request !== 'object' ||
+      Array.isArray(request) ||
+      Object.keys(request).length !== 2 ||
+      !Object.hasOwn(request, 'sessionId') ||
+      !Object.hasOwn(request, 'command') ||
+      !isCloudUUID(request.sessionId) ||
+      !isCloudUUID(request.command?.commandId)
+    )
+      throw failure(400, 'invalid-command', 'Choose current assigned live command access.');
+    const input = copy(request);
+    const scope = copy(expected);
+    const { validatePlayerCommand } = await import('./PlayerCommandProtocol.js');
+    validatePlayerCommand(input.command);
+    const result = await this._call(this._resource(id, '/world-commands'), {
+      method: 'POST',
+      body: input,
+      accessScope: scope,
+    });
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      Array.isArray(result) ||
+      !Object.hasOwn(result, 'presentation')
+    )
+      throw invalidResponse();
+    const { presentation, ...receipt } = result;
+    if (
+      !isCloudWorldCommandReceipt(receipt) ||
+      receipt.access.uid !== this.uid ||
+      receipt.campaignId !== id ||
+      receipt.access.seatId !== scope.seatId ||
+      receipt.access.accessGeneration !== scope.accessGeneration ||
+      receipt.sessionId !== input.sessionId ||
+      receipt.commandId !== input.command.commandId ||
+      receipt.kind !== input.command.kind ||
+      receipt.applied.sceneRevision !== input.command.sceneRevision + 1 ||
+      receipt.applied.charactersRevision < input.command.charactersRevision ||
+      (receipt.outcome === 'duplicate'
+        ? presentation !== null
+        : !presentation ||
+          typeof presentation !== 'object' ||
+          Array.isArray(presentation) ||
+          presentation.kind !== input.command.kind ||
+          (input.command.kind === 'place'
+            ? presentation.characterId !== input.command.payload.characterId
+            : presentation.tokenId !== input.command.tokenId))
+    )
+      throw invalidResponse();
+    return copy(result);
   }
 
   async getAssetManifest(id) {
@@ -1436,6 +1626,8 @@ export default class CloudCampaignClientStore {
   close() {
     if (this.pending) throw new Error('Resolve the pending cloud save before closing the campaign');
     this.closed = true;
+    this.ownerWorlds.clear();
+    this.issuedCommands.clear();
     this.saveListeners.clear();
     for (const connection of this.liveConnections)
       void connection.close().catch((error) => {

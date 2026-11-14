@@ -96,6 +96,85 @@ function fixture({ crypto } = {}) {
   return { auth, connection, store, fetch };
 }
 
+test('a live owner scene captures its epoch and native route separately from canonical scene data and identifies only its own command', async () => {
+  const setup = fixture();
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'owner',
+    seatId: null,
+    accessGeneration: 0,
+  };
+  const sessionId = '55555555-5555-4555-8555-555555555555';
+  const release = setup.store.bindOwnerWorld(campaignId, sessionId, access);
+  const presentations = [
+    {
+      commandId: '66666666-6666-4666-8666-666666666666',
+      tokenId: 'token-1',
+      kind: 'move',
+      motion: {
+        kind: 'walk',
+        completed: true,
+        from: {
+          mapId: 'map-main',
+          gridX: 1,
+          gridY: 1,
+          facingAngle: 0,
+          pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+        },
+        route: [
+          {
+            mapId: 'map-main',
+            gridX: 2,
+            gridY: 1,
+            facingAngle: 0,
+            pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+          },
+        ],
+      },
+    },
+  ];
+  const captured = {
+    ruleset: '2014',
+    revision: 0,
+    charactersRevision: 0,
+    scene: 'canonical-owner-scene',
+    presentations,
+  };
+  setup.fetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      version: 1,
+      result: { revision: 1, savedAt: '2026-11-14T00:00:00.000Z' },
+    }),
+  }));
+  try {
+    expect(setup.store.wantsSharedPresentations(campaignId)).toBe(true);
+    await setup.store.commitScene(campaignId, captured);
+    const body = JSON.parse(setup.fetch.mock.calls[0][1].body);
+    expect(body.sessionId).toBe(sessionId);
+    expect(body.presentations).toEqual(presentations);
+    expect(body.change).toEqual({
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: 0,
+      scene: 'canonical-owner-scene',
+    });
+    expect(setup.store.isLocalChange({ origin: { uid: 'uid-a', commandId } })).toBe(true);
+    expect(setup.store.isLocalChange({ origin: { uid: 'another-account', commandId } })).toBe(
+      false
+    );
+    expect(setup.store.isLocalChange({ origin: { uid: 'uid-a', commandId: sessionId } })).toBe(
+      false
+    );
+  } finally {
+    release();
+  }
+  expect(setup.store.wantsSharedPresentations(campaignId)).toBe(false);
+});
+
 test('live observation stays unready until its current authorized checkpoint is published and closes its idle transport', async () => {
   const setup = fixture();
   const stopped = jest.fn();

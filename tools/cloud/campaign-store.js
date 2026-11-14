@@ -5,6 +5,7 @@ const {
   campaignRecordCharacterId,
 } = require('../../src/campaigns/CampaignCharacters.js');
 const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
+const path = require('node:path');
 const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
 const { FieldPath, Timestamp } = require('firebase-admin/firestore');
 const stableStringify = require('fast-json-stable-stringify');
@@ -19,6 +20,11 @@ const {
 const { CompleteCloudBackupObjects, isCompleteBackupReference } = require('./backup-objects.js');
 const { acquireLargeFileWork } = require('./large-file-work.js');
 const { prepareAssignedCharacterChange } = require('../assigned-character-change.js');
+const { PhysicalDice } = require('../physical-dice.js');
+const {
+  validateMovementPresentations,
+  visibleMovementPresentations,
+} = require('../movement-presentations.js');
 const { isPrivateAssetReference } = require('./campaign-assets.js');
 const {
   CHARACTER_IMAGE_TYPES,
@@ -46,6 +52,8 @@ const {
   isCloudAssignedCharacterReceipt,
   isCloudParticipantRequest,
   isCloudParticipantAssetRequest,
+  isCloudWorldCommandReceipt,
+  isCloudOwnerWorldRequest,
   cloudLiveStatus,
   CLOUD_LIVE_INACTIVITY_MS,
   CLOUD_LIVE_DISCONNECT_GRACE_MS,
@@ -225,6 +233,13 @@ function validCommandResult(previous) {
       result.campaignId === previous.campaignId &&
       result.access.uid === previous.uid
     );
+  if (kind === 'world.command')
+    return (
+      isCloudWorldCommandReceipt(result) &&
+      result.outcome === 'applied' &&
+      result.campaignId === previous.campaignId &&
+      result.access.uid === previous.uid
+    );
   if (kind === 'campaign.import')
     return (
       isCloudImportReceipt(result) &&
@@ -353,12 +368,27 @@ class CloudCampaignStore {
       head.campaign.charactersRevision < 0 ||
       (head.sceneRef === null) !== (head.campaign.sceneRevision === 0) ||
       (head.charactersRef === null) !== (head.campaign.charactersRevision === 0) ||
+      (head.presentationRef !== undefined &&
+        head.presentationRef !== null &&
+        !isImmutableCloudReference(id, 'presentations', head.presentationRef)) ||
       (head.campaign.sceneRevision === 0
         ? head.campaign.sceneSavedAt !== null
         : typeof head.campaign.sceneSavedAt !== 'string' ||
           !Number.isFinite(Date.parse(head.campaign.sceneSavedAt)))
     )
       throw new CloudError(503, 'invalid-campaign-head', 'The cloud campaign head is invalid');
+    if (
+      head.lastCommand !== undefined &&
+      (!head.lastCommand ||
+        typeof head.lastCommand !== 'object' ||
+        Object.keys(head.lastCommand).length !== 4 ||
+        !validUid(head.lastCommand.uid) ||
+        !isCloudUUID(head.lastCommand.commandId) ||
+        typeof head.lastCommand.kind !== 'string' ||
+        !/^[a-z][a-z.-]+$/.test(head.lastCommand.kind) ||
+        head.lastCommand.generation !== head.generation)
+    )
+      throw new CloudError(503, 'invalid-campaign-head', 'The canonical change origin is invalid');
     const domain = this._domain({ getCampaign: () => head.campaign });
     await domain.get(id);
     return head;
@@ -420,11 +450,13 @@ class CloudCampaignStore {
         'campaign.backup',
         'campaign.live',
         'characters.assigned.commit',
+        'world.command',
       ].includes(previous.kind) ||
       !isCloudUUID(previous.campaignId) ||
       !validCommandResult(previous) ||
       (previous.kind === 'campaign.import' && previous.result.importId !== reference.id) ||
       (previous.kind === 'campaign.backup' && previous.result.name !== reference.id) ||
+      (previous.kind === 'world.command' && previous.result.commandId !== reference.id) ||
       typeof previous.fingerprint !== 'string' ||
       !/^[a-f0-9]{64}$/.test(previous.fingerprint)
     )
@@ -458,7 +490,7 @@ class CloudCampaignStore {
         throw error;
       }
     }
-    if (previous.kind === 'characters.assigned.commit') {
+    if (['characters.assigned.commit', 'world.command'].includes(previous.kind)) {
       await this.access.assertEligibility(uid, transaction);
     } else if (previous.kind === 'campaign.join') {
       await this.access.assertEligibility(uid, transaction);
@@ -1556,6 +1588,7 @@ class CloudCampaignStore {
     for (const [kind, reference] of [
       ['scene', head.sceneRef],
       ['characters', head.charactersRef],
+      ['presentations', head.presentationRef ?? null],
     ]) {
       if (reference === null) continue;
       if (!isImmutableCloudReference(id, kind, reference))
@@ -2145,7 +2178,7 @@ class CloudCampaignStore {
           'Private object inventory could not be verified'
         );
       const canonical = new RegExp(
-        `^campaigns/${id}/objects/(scene|characters|import)/[a-f0-9]{64}\\.json$`
+        `^campaigns/${id}/objects/(scene|characters|import|presentations)/[a-f0-9]{64}\\.json$`
       ).test(path);
       const complete = new RegExp(
         `^campaigns/${id}/backups/([a-f0-9-]{36})/[a-f0-9]{64}\\.json$`
@@ -4245,6 +4278,112 @@ class CloudCampaignStore {
     return checkpoint;
   }
 
+  async _readLivePresentations(head) {
+    if (head.presentationRef === undefined || head.presentationRef === null) return null;
+    if (this.objects === null)
+      throw new CloudError(
+        503,
+        'cloud-save-unavailable',
+        'Private live movement storage is unavailable'
+      );
+    const value = await this.objects.read(head.campaign.id, 'presentations', head.presentationRef);
+    const fields = [
+      'version',
+      'campaignId',
+      'generation',
+      'sessionId',
+      'sceneRevision',
+      'charactersRevision',
+      'entries',
+    ];
+    const invalid = () =>
+      new CloudError(
+        503,
+        'invalid-scene-presentation',
+        'Committed live movement metadata could not be verified'
+      );
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      Object.keys(value).length !== fields.length ||
+      fields.some((field) => !Object.hasOwn(value, field)) ||
+      value.version !== 1 ||
+      value.campaignId !== head.campaign.id ||
+      value.generation !== head.generation ||
+      !isCloudUUID(value.sessionId) ||
+      value.sceneRevision !== head.campaign.sceneRevision ||
+      value.charactersRevision !== head.campaign.charactersRevision ||
+      !Array.isArray(value.entries) ||
+      value.entries.length > 256 ||
+      new Set(value.entries.map((entry) => entry?.commandId)).size !== value.entries.length
+    )
+      throw invalid();
+    const {
+      validatePlayerMotion,
+      validateBudget,
+    } = require('../../src/campaigns/PlayerPublicProtocol.js');
+    const { PLAYER_COMMAND_KINDS } = require('../../src/campaigns/PlayerCommandProtocol.js');
+    for (const entry of value.entries) {
+      if (
+        !entry ||
+        typeof entry !== 'object' ||
+        Array.isArray(entry) ||
+        Object.keys(entry).some(
+          (field) =>
+            !['commandId', 'tokenId', 'kind', 'motion', 'costFeet', 'budget'].includes(field)
+        ) ||
+        ['commandId', 'tokenId', 'kind', 'motion'].some((field) => !Object.hasOwn(entry, field)) ||
+        typeof entry.commandId !== 'string' ||
+        !/^[a-zA-Z0-9_-]{8,100}$/.test(entry.commandId) ||
+        typeof entry.tokenId !== 'string' ||
+        !/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(entry.tokenId) ||
+        !PLAYER_COMMAND_KINDS.includes(entry.kind) ||
+        (entry.costFeet !== undefined && (!Number.isFinite(entry.costFeet) || entry.costFeet < 0))
+      )
+        throw invalid();
+      try {
+        validatePlayerMotion(entry.motion);
+        if (entry.budget !== undefined) validateBudget(entry.budget);
+      } catch (error) {
+        if (['invalid-player-state', 'invalid-saved-placement'].includes(error.code))
+          throw invalid();
+        throw error;
+      }
+    }
+    return value;
+  }
+
+  async _participantPresentations(principal, id, command, scope, previous, next, frame) {
+    if (!frame || frame.head.generation !== next.generation)
+      throw new CloudError(409, 'participant-state-changed', 'The live movement frame changed');
+    frame.presentations ??= this._readLivePresentations(frame.head);
+    const packet = await frame.presentations;
+    if (packet === null || packet.sessionId !== command.sessionId) return [];
+    const saved = await frame.promise;
+    const catalog = await this.resources.catalog(saved.campaign);
+    const library = new CampaignCharacters({ ...saved, catalog });
+    const scene = decodeScene(saved.scene, { library, ruleset: saved.campaign.ruleset });
+    const presentations = await visibleMovementPresentations({
+      root: path.resolve(__dirname, '..', '..'),
+      scene,
+      library,
+      view: next.state,
+      updates: packet.entries.map((entry) => ({
+        ...structuredClone(entry),
+        sceneRevision: packet.sceneRevision,
+        charactersRevision: packet.charactersRevision,
+      })),
+      state: saved,
+      sinceSceneRevision: previous.state.sceneRevision,
+    });
+    await this._verifyParticipantRead(principal, id, command.sessionId, scope, {
+      generation: next.generation,
+      characterIds: next.state.characterIds,
+    });
+    return presentations;
+  }
+
   async _verifyParticipantRead(principal, id, sessionId, scope, expected) {
     await this._transaction(
       async (transaction) => {
@@ -4271,6 +4410,120 @@ class CloudCampaignStore {
     const { ParticipantChanges } = require('./participant-changes.js');
     this.participantChanges ??= new ParticipantChanges(this);
     return this.participantChanges.subscribe(principal, id, command, expected, callbacks);
+  }
+
+  observeOwnerWorld(principal, id, command, expected, callbacks) {
+    if (!isCloudOwnerWorldRequest(command))
+      throw new CloudError(
+        400,
+        'invalid-participant-request',
+        'Choose the active owner world epoch'
+      );
+    const { ParticipantChanges } = require('./participant-changes.js');
+    this.participantChanges ??= new ParticipantChanges(this);
+    return this.participantChanges.subscribe(
+      principal,
+      id,
+      {
+        sessionId: command.sessionId,
+        observerTokenId: null,
+        mapId: null,
+        assetKey: null,
+      },
+      expected,
+      callbacks,
+      true
+    );
+  }
+
+  readOwnerWorldSnapshot(principal, id, command, expected) {
+    return this._ownerWorldSnapshot(principal, id, command, expected, (head) =>
+      this._loadSnapshot(head)
+    );
+  }
+
+  async _ownerWorldSnapshot(principal, id, command, expected, loadSnapshot) {
+    const uid = principalUid(principal);
+    const scope = this._accessExpectation(expected);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (!scope || scope.seatId !== null || !isCloudOwnerWorldRequest(command))
+      throw new CloudError(
+        400,
+        'invalid-access-scope',
+        'Choose current live campaign owner access'
+      );
+    await this.getLiveSession(principal, id);
+    const captured = await this._transaction(
+      async (transaction) => {
+        const admission = await this.requireLiveSession(
+          transaction,
+          principal,
+          id,
+          command.sessionId,
+          scope
+        );
+        if (admission.participant.access.role !== 'owner') throw unavailableCampaign();
+        const head = await this._metadata(
+          await transaction.get(this.firestore.collection('campaigns').doc(id)),
+          uid
+        );
+        return { head, access: admission.participant.access };
+      },
+      { readOnly: true }
+    );
+    const state = await loadSnapshot(captured.head);
+    await this._verifyOwnerWorldRead(
+      principal,
+      id,
+      command.sessionId,
+      scope,
+      captured.head.generation
+    );
+    const checkpoint = {
+      version: 1,
+      access: captured.access,
+      sessionId: command.sessionId,
+      generation: captured.head.generation,
+      origin: captured.head.lastCommand ?? null,
+      state,
+    };
+    const { validateCloudOwnerSnapshot } = require('../../src/campaigns/CloudOwnerProtocol.js');
+    validateCloudOwnerSnapshot(checkpoint);
+    return checkpoint;
+  }
+
+  async _verifyOwnerWorldRead(principal, id, sessionId, scope, generation) {
+    const uid = principalUid(principal);
+    return this._transaction(
+      async (transaction) => {
+        const current = await this.requireLiveSession(transaction, principal, id, sessionId, scope);
+        if (current.participant.access.role !== 'owner') throw unavailableCampaign();
+        const head = await transaction.get(this.firestore.collection('campaigns').doc(id));
+        if (head.data()?.ownerUid !== uid) throw unavailableCampaign();
+        if (head.data()?.generation !== generation)
+          throw new CloudError(
+            409,
+            'participant-state-changed',
+            'The owner world changed while loading'
+          );
+      },
+      { readOnly: true }
+    );
+  }
+
+  async _ownerWorldPresentations(principal, id, command, scope, previous, next, frame) {
+    if (!frame || frame.head.generation !== next.generation)
+      throw new CloudError(409, 'participant-state-changed', 'The owner movement frame changed');
+    frame.presentations ??= this._readLivePresentations(frame.head);
+    const packet = await frame.presentations;
+    if (packet === null || packet.sessionId !== command.sessionId) return [];
+    await this._verifyOwnerWorldRead(principal, id, command.sessionId, scope, next.generation);
+    if (packet.sceneRevision <= previous.state.sceneRevision) return [];
+    return packet.entries.map((entry) => ({
+      ...structuredClone(entry),
+      sceneRevision: packet.sceneRevision,
+      charactersRevision: packet.charactersRevision,
+    }));
   }
 
   async _ownerLiveHead(principal, id, command, expected) {
@@ -4317,7 +4570,8 @@ class CloudCampaignStore {
           command.sessionId,
           scope
         );
-        if (admission.participant.access.role !== 'member') throw unavailableCampaign();
+        if (admission.participant.access.role !== (scope.seatId === null ? 'owner' : 'member'))
+          throw unavailableCampaign();
         const saved = await transaction.get(this.firestore.collection('campaigns').doc(id));
         const head = await this._metadata(saved, saved.data().ownerUid);
         return this._committedChanges(transaction, id, head, afterGeneration);
@@ -5010,7 +5264,15 @@ class CloudCampaignStore {
           ],
           startedAt
         );
-      transaction.set(headReference, { ...current, campaign, charactersRef, generation });
+      const nextHead = { ...current, campaign, charactersRef, generation };
+      nextHead.lastCommand = {
+        uid,
+        commandId: reference.id,
+        kind: 'campaign.settings',
+        generation,
+      };
+      delete nextHead.presentationRef;
+      transaction.set(headReference, nextHead);
       transaction.create(reference, {
         version: 1,
         uid,
@@ -5096,6 +5358,22 @@ class CloudCampaignStore {
     };
   }
 
+  _draft(state) {
+    let record = structuredClone(state.campaign);
+    if (state.scene !== null) record.scene = state.scene;
+    let records = structuredClone(state.records);
+    return this._domain({
+      getCampaign: () => structuredClone(record),
+      writeCampaign: (value) => {
+        record = structuredClone(value);
+      },
+      readCharacters: () => structuredClone(records),
+      replaceCharacters: (_id, values) => {
+        records = structuredClone(values);
+      },
+    });
+  }
+
   async _prepareChange(state, kind, change, assignedIds = null) {
     let catalog;
     try {
@@ -5113,19 +5391,7 @@ class CloudCampaignStore {
         );
       throw error;
     }
-    let record = structuredClone(state.campaign);
-    if (state.scene !== null) record.scene = state.scene;
-    let records = structuredClone(state.records);
-    const domain = this._domain({
-      getCampaign: () => structuredClone(record),
-      writeCampaign: (value) => {
-        record = structuredClone(value);
-      },
-      readCharacters: () => structuredClone(records),
-      replaceCharacters: (_id, values) => {
-        records = structuredClone(values);
-      },
-    });
+    const domain = this._draft(state);
     try {
       if (assignedIds !== null)
         change = prepareAssignedCharacterChange({
@@ -5136,9 +5402,9 @@ class CloudCampaignStore {
         });
       const receipt =
         kind === 'scene.commit'
-          ? await domain.commitScene(record.id, change)
-          : await domain.commitCharacters(record.id, change);
-      const next = await domain.readCharacters(record.id);
+          ? await domain.commitScene(state.campaign.id, change)
+          : await domain.commitCharacters(state.campaign.id, change);
+      const next = await domain.readCharacters(state.campaign.id);
       const library = new CampaignCharacters({ ...next, catalog, store: domain });
       if (next.scene !== null) decodeScene(next.scene, { library, ruleset: next.campaign.ruleset });
       return { next, receipt, changesScene: kind === 'scene.commit' || change.scene !== undefined };
@@ -5157,6 +5423,216 @@ class CloudCampaignStore {
         );
       throw error;
     }
+  }
+
+  async _prepareWorldChange(state, command, characterIds) {
+    if (state.scene === null)
+      throw new CloudError(409, 'world-not-ready', 'The campaign owner must save the world first');
+    const catalog = await this.resources.catalog(state.campaign);
+    const domain = this._draft(state);
+    const library = new CampaignCharacters({ ...state, catalog, store: domain });
+    const scene = decodeScene(state.scene, { library, ruleset: state.campaign.ruleset });
+    const actor = scene.creatures.find((entry) => entry.id === command.tokenId);
+    if (!actor || command.observerTokenId !== actor.id || !characterIds.includes(actor.characterId))
+      throw new CloudError(
+        403,
+        'actor-forbidden',
+        'Choose the active currently assigned real creature'
+      );
+    this.worldDice ??= new PhysicalDice({ root: path.resolve(__dirname, '..', '..') });
+    const {
+      executePlayerCommand,
+      playerCommandReceipt,
+    } = require('../../src/campaigns/ServerGameplay.js');
+    try {
+      if (['roll', 'action.use'].includes(command.kind)) await this.worldDice.load();
+      const applied = await executePlayerCommand(scene, library, command, {
+        ownedIds: characterIds,
+        dice: this.worldDice,
+      });
+      await library.flush();
+      await domain.commitScene(state.campaign.id, {
+        ruleset: state.campaign.ruleset,
+        revision: state.sceneRevision,
+        charactersRevision: library.revision,
+        scene: JSON.stringify(applied.scene),
+      });
+      const next = await domain.readCharacters(state.campaign.id);
+      return { next, receipt: playerCommandReceipt(applied, scene, library) };
+    } catch (error) {
+      if (
+        [400, 403, 409, 422].includes(error.status) &&
+        typeof error.code === 'string' &&
+        /^[a-z][a-z-]+$/.test(error.code)
+      )
+        throw new CloudError(error.status, error.code, error.message);
+      throw error;
+    }
+  }
+
+  async commitWorldCommand(principal, id, request, expected) {
+    const uid = principalUid(principal);
+    const scope = this._accessExpectation(expected);
+    const startedAt = this.now();
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (!scope || scope.seatId === null)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose current live player access');
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      Array.isArray(request) ||
+      Object.keys(request).length !== 2 ||
+      !Object.hasOwn(request, 'sessionId') ||
+      !Object.hasOwn(request, 'command') ||
+      !isCloudUUID(request.sessionId) ||
+      !isCloudUUID(request.command?.commandId)
+    )
+      throw new CloudError(
+        400,
+        'invalid-command',
+        'Choose a current live epoch and canonical command ID'
+      );
+    const { validatePlayerCommand } = require('../../src/campaigns/PlayerCommandProtocol.js');
+    const command = structuredClone(request.command);
+    try {
+      validatePlayerCommand(command);
+    } catch (error) {
+      if (error.code === 'invalid-command')
+        throw new CloudError(error.status, error.code, error.message);
+      throw error;
+    }
+    const { sessionId } = request;
+    const canonical = structuredClone(command);
+    delete canonical.view;
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'world.command',
+          campaignId: id,
+          scope,
+          sessionId,
+          command: canonical,
+        })
+      )
+      .digest('hex');
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const intent = { uid, reference, fingerprint, kind: 'world.command', campaignId: id };
+    const headReference = this.firestore.collection('campaigns').doc(id);
+    const captured = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return { replay };
+        const admitted = await this.requireLiveSession(
+          transaction,
+          principal,
+          id,
+          sessionId,
+          scope
+        );
+        if (admitted.participant.access.role !== 'member') throw unavailableCampaign();
+        const snapshot = await transaction.get(headReference);
+        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
+        return { replay: null, head, grant: admitted.participant };
+      },
+      { readOnly: true }
+    );
+    if (captured.replay !== null)
+      return { ...captured.replay, outcome: 'duplicate', presentation: null };
+    if (this.objects === null || this.resources === null)
+      throw new CloudError(503, 'cloud-save-unavailable', 'Private world authority is unavailable');
+    if (captured.head.generation >= Number.MAX_SAFE_INTEGER)
+      throw new CloudError(503, 'invalid-campaign-head', 'The campaign generation cannot advance');
+    const state = await this._loadSnapshot(captured.head);
+    if (
+      command.sceneRevision !== state.sceneRevision ||
+      command.charactersRevision !== state.revision
+    )
+      throw Object.assign(
+        new CloudError(409, 'stale-revision', 'Refresh current world state before another command'),
+        {
+          current: { sceneRevision: state.sceneRevision, charactersRevision: state.revision },
+        }
+      );
+    const { next, receipt } = await this._prepareWorldChange(
+      state,
+      command,
+      captured.grant.characterIds
+    );
+    const authorize = async (transaction) => {
+      const admitted = await this.requireLiveSession(transaction, principal, id, sessionId, scope);
+      if (
+        admitted.participant.access.role !== 'member' ||
+        stableStringify(admitted.participant.characterIds) !==
+          stableStringify(captured.grant.characterIds)
+      )
+        throw new CloudError(
+          409,
+          'campaign-access-changed',
+          'Refresh current assigned world access'
+        );
+      const head = await transaction.get(headReference);
+      if (head.data()?.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
+    };
+    const result = {
+      version: 1,
+      campaignId: id,
+      commandId: command.commandId,
+      access: captured.grant.access,
+      sessionId,
+      kind: command.kind,
+      outcome: 'applied',
+      applied: {
+        generation: captured.head.generation + 1,
+        sceneRevision: next.sceneRevision,
+        charactersRevision: next.revision,
+      },
+    };
+    const entry = receipt.motion
+      ? {
+          commandId: command.commandId,
+          tokenId: receipt.tokenId,
+          kind: receipt.kind,
+          motion: receipt.motion,
+          ...(receipt.costFeet === undefined ? {} : { costFeet: receipt.costFeet }),
+          ...(receipt.budget === undefined ? {} : { budget: receipt.budget }),
+        }
+      : null;
+    const presented =
+      entry === null
+        ? null
+        : {
+            version: 1,
+            campaignId: id,
+            generation: result.applied.generation,
+            sessionId,
+            sceneRevision: next.sceneRevision,
+            charactersRevision: next.revision,
+            entries: [entry],
+          };
+    const published = await this._publishCanonical(principal, id, intent, captured, {
+      state,
+      next,
+      result,
+      authorize,
+      startedAt,
+      presented,
+      canonicalKind: 'scene.commit',
+      writesCharacters: next.revision !== state.revision,
+      changesScene: true,
+      meaningful:
+        stableStringify(state.records) !== stableStringify(next.records) ||
+        sceneActivityState(state.scene) !== sceneActivityState(next.scene),
+    });
+    return {
+      ...published.result,
+      outcome: published.duplicate ? 'duplicate' : 'applied',
+      presentation: published.duplicate ? null : receipt,
+    };
   }
 
   async commitScene(principal, id, command) {
@@ -5210,6 +5686,7 @@ class CloudCampaignStore {
   async _commit(principal, id, command, kind, expected = null) {
     const uid = principalUid(principal);
     const assigned = kind === 'characters.assigned.commit';
+    const ownerCommand = ['scene.commit', 'characters.commit'].includes(kind);
     const canonicalKind = assigned ? 'characters.commit' : kind;
     const writesCharacters = canonicalKind === 'characters.commit';
     const startedAt = this.now();
@@ -5223,7 +5700,14 @@ class CloudCampaignStore {
       !command.change ||
       typeof command.change !== 'object' ||
       Array.isArray(command.change) ||
-      Object.keys(command).some((key) => !['commandId', 'change'].includes(key)) ||
+      Object.keys(command).some(
+        (key) =>
+          !(
+            ownerCommand
+              ? ['commandId', 'change', 'sessionId', 'presentations']
+              : ['commandId', 'change']
+          ).includes(key)
+      ) ||
       Object.keys(command.change).some(
         (key) =>
           !(
@@ -5238,6 +5722,22 @@ class CloudCampaignStore {
         'invalid-campaign-request',
         'Choose an explicit canonical campaign change and command ID'
       );
+    const liveCommand =
+      ownerCommand &&
+      (Object.hasOwn(command, 'sessionId') || Object.hasOwn(command, 'presentations'));
+    if (
+      liveCommand &&
+      (!isCloudUUID(command.sessionId) ||
+        !Array.isArray(command.presentations) ||
+        command.presentations.length > 256)
+    )
+      throw new CloudError(
+        400,
+        'invalid-scene-presentation',
+        'Choose the active live epoch and bounded movement presentations'
+      );
+    const sessionId = liveCommand ? command.sessionId : null;
+    const presentations = liveCommand ? structuredClone(command.presentations) : [];
     if (assigned && Object.hasOwn(command.change, 'scene'))
       throw new CloudError(
         403,
@@ -5256,7 +5756,15 @@ class CloudCampaignStore {
         }
       : null;
     const fingerprint = createHash('sha256')
-      .update(stableStringify({ kind, campaignId: id, change, ...(assigned ? { access } : {}) }))
+      .update(
+        stableStringify({
+          kind,
+          campaignId: id,
+          change,
+          ...(assigned ? { access } : {}),
+          ...(liveCommand ? { sessionId, presentations } : {}),
+        })
+      )
       .digest('hex');
     const reference = this.firestore
       .collection('accountCommands')
@@ -5270,6 +5778,13 @@ class CloudCampaignStore {
         await this.access.assertEligibility(uid, transaction);
         const replay = await this._previousCommand(transaction, intent);
         if (replay !== null) return { replay, head: null };
+        if (liveCommand) {
+          const admitted = await this.requireLiveSession(transaction, principal, id, sessionId, {
+            seatId: null,
+            accessGeneration: 0,
+          });
+          if (admitted.participant.access.role !== 'owner') throw unavailableCampaign();
+        }
         const grant = assigned
           ? await this._participantGrant(transaction, uid, id, expected)
           : null;
@@ -5304,15 +5819,79 @@ class CloudCampaignStore {
       assigned ? captured.grant.characterIds : null
     );
     const result = assigned ? { version: 1, campaignId: id, access, ...receipt } : receipt;
-    const ownerUid = captured.head.ownerUid;
     const authorize = assigned
       ? (transaction) =>
           this._assignedPublicationAuthority(transaction, uid, id, expected, captured)
-      : null;
+      : liveCommand
+        ? async (transaction) => {
+            const admitted = await this.requireLiveSession(transaction, principal, id, sessionId, {
+              seatId: null,
+              accessGeneration: 0,
+            });
+            if (admitted.participant.access.role !== 'owner') throw unavailableCampaign();
+          }
+        : null;
+    let presented = null;
+    if (presentations.length) {
+      try {
+        await validateMovementPresentations({
+          root: path.resolve(__dirname, '..', '..'),
+          previous: state.scene === null ? null : JSON.parse(state.scene),
+          scene: JSON.parse(next.scene),
+          presentations,
+        });
+      } catch (error) {
+        if (error.code === 'invalid-scene-presentation')
+          throw new CloudError(error.status, error.code, error.message);
+        throw error;
+      }
+      presented = {
+        version: 1,
+        campaignId: id,
+        generation: captured.head.generation + 1,
+        sessionId,
+        sceneRevision: next.sceneRevision,
+        charactersRevision: next.revision,
+        entries: presentations,
+      };
+    }
     const meaningful =
       (writesCharacters && stableStringify(state.records) !== stableStringify(next.records)) ||
       (changesScene && sceneActivityState(state.scene) !== sceneActivityState(next.scene));
+    const published = await this._publishCanonical(principal, id, intent, captured, {
+      state,
+      next,
+      result,
+      authorize,
+      meaningful,
+      writesCharacters,
+      changesScene,
+      canonicalKind,
+      startedAt,
+      presented,
+    });
+    return published.result;
+  }
+
+  async _publishCanonical(principal, id, intent, captured, plan) {
+    const uid = principalUid(principal);
+    const { reference, fingerprint, kind } = intent;
+    const {
+      state,
+      next,
+      result,
+      authorize,
+      meaningful,
+      writesCharacters,
+      changesScene,
+      canonicalKind,
+      startedAt,
+      presented,
+    } = plan;
+    const ownerUid = captured.head.ownerUid;
+    const headReference = this.firestore.collection('campaigns').doc(id);
     const candidates = [];
+    if (presented !== null) candidates.push(snapshotCandidate(id, 'presentations', presented));
     if (changesScene) candidates.push(snapshotCandidate(id, 'scene', next.scene));
     if (writesCharacters) {
       candidates.push(snapshotCandidate(id, 'characters', next.records));
@@ -5339,7 +5918,7 @@ class CloudCampaignStore {
           removedCharacters.add(characterId);
       }
     }
-    const [sceneRef, charactersRef] = await Promise.all([
+    const [sceneRef, charactersRef, presentationRef] = await Promise.all([
       changesScene
         ? this.objects.stage(id, 'scene', next.scene, (candidate) =>
             this.usage.reserveOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
@@ -5354,12 +5933,19 @@ class CloudCampaignStore {
             })
           )
         : captured.head.charactersRef,
+      presented === null
+        ? null
+        : this.objects.stage(id, 'presentations', presented, (candidate) =>
+            this.usage.reserveOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
+              authorize,
+            })
+          ),
     ]);
     const { FieldValue } = require('firebase-admin/firestore');
     return this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
-      if (replay !== null) return replay;
+      if (replay !== null) return { result: replay, duplicate: true };
       if (authorize !== null) await authorize(transaction);
       const current = await this._metadata(await transaction.get(headReference), ownerUid);
       if (
@@ -5440,13 +6026,17 @@ class CloudCampaignStore {
           });
       }
       const generation = current.generation + 1;
-      transaction.set(headReference, {
+      const publishedHead = {
         ...current,
         campaign: next.campaign,
         sceneRef,
         charactersRef,
         generation,
-      });
+        lastCommand: { uid, commandId: reference.id, kind, generation },
+      };
+      if (presentationRef === null) delete publishedHead.presentationRef;
+      else publishedHead.presentationRef = presentationRef;
+      transaction.set(headReference, publishedHead);
       transaction.create(reference, {
         version: 1,
         uid,
@@ -5463,7 +6053,7 @@ class CloudCampaignStore {
         charactersRevision: next.revision,
         committedAt: FieldValue.serverTimestamp(),
       });
-      return result;
+      return { result, duplicate: false };
     });
   }
 }

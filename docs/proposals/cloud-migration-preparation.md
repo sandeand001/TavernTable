@@ -2484,3 +2484,112 @@ and image `sha256:35700bc8f98ff8b2439fd7bdc2b8fa0c71133c0911559eda59408dedf19a88
 No new API service, IAM role/key, index, real account/campaign, frontend/cutover
 or routine-save UX change was introduced. Native movement/animation, player
 world UI, persistent cache, lifecycle drain and hosted load/cost remain pending.
+
+### M3-05: native world authority and bidirectional presentation
+
+This slice is verified by the directly affected local/SDK/native/runtime gates
+and approved real HTTPS acceptance. It is not a frontend rollout or an enabled
+full cloud-gameplay claim.
+
+- Member `world-commands` accepts one native command ID/intent with its current
+  live epoch and captured UID/seat/access-generation headers. The private draft
+  reuses `executePlayerCommand`, pinned rules, physical geometry, movement/action
+  budgets and trusted CPU dice. The shared publisher owns head CAS, quota
+  reservation, immutable staging, current assignment/owner/epoch checks, journal
+  and one durable receipt. Fresh responses carry native transient presentation;
+  duplicate recovery returns only the original applied proof, never another
+  debit, roll or historical animation. That caller can recover its minimal proof
+  after membership loss without receiving a world view or triggering denied
+  membership maintenance.
+- Native owner scene/character saves can atomically publish validated FROM/route
+  metadata for an explicitly bound live epoch. Private owner-charged immutable
+  `presentations` objects store accepted routes, not animation frames. The head's
+  optional presentation reference is protected by existing fenced maintenance;
+  ordinary canonical/settings saves clear stale motion. Complete backups still
+  capture canonical campaign, scene and character state, not transient routes.
+  Owner/member pause or removal after upload prevents head/cost/receipt
+  publication.
+- Same-view member deltas carry only current authorized physical routes, omitting
+  foreign budgets. Checkpoint, resync, rejoin and changed-view replacement have
+  no historical motion. New owner-only `owner-state` and `owner-events` carry a
+  full private checkpoint and bounded sparse keyed actor/record/object patches,
+  without pretending the owner is a member. Admission is checked before and
+  after body IO. One actor/note delta stays below **2 KiB** with more than **1 MiB**
+  of unchanged portrait bytes in the full checkpoint; terrain/art is not resent.
+- Cloud owner/player renderer Adapters reuse native models, locomotion, camera
+  and one terrain owner. They consume streams rather than polling scenes.
+  The originating player animates exactly once when SSE precedes HTTP; owner
+  reconciliation cannot be suppressed as a local command echo. Player disposal
+  hides its world immediately and serializes removal after pending model
+  hydration, avoiding stale restoration of removed sprites.
+- Owner Start/Pause/Keep Active and Joined-player bootstrap are wired but
+  `sharedSessions` stays false pending progressive private artwork/assets and
+  full-world acceptance. Ordinary preparation/login never starts a paused game.
+  Explicit owner transitions flush pending scene/character work; manual pause
+  reports final backup uncertainty separately. Cloud arrival/Undo/door/action
+  matrix completion, account/view cache and automatic drain remain later gates.
+  Legacy/native paths and the deferred routine-save flash/notice are unchanged.
+
+Verified evidence:
+
+| Gate | Verified outcome |
+| --- | --- |
+| Real official SDK/API authority | Final frozen **80/80 access/world cases**, no failure/cancel/skip, **460,966.3552 ms**. Both 2014/2024 off-turn denial and Free Play admission; actual owner/member streams, sparse owner delivery, queued combat steps, competing CAS, same-ID recovery after removal, hostile actor/observer/role/cost, private owner scope/origin/epoch denial with zero body IO, and owner eligibility loss after IO. |
+| Other canonical regressions | The other six directly affected canonical store/immutable/private-assets/quota/portability/process files retain **118 passing cases** on unchanged authority source. Together the corrected/rechecked gates verify all **198 distinct native cases**; the initial two failures and exact correction/recheck are retained below rather than hidden. |
+| Native cloud flight/fall | Actual 2024 takeoff, airborne step, 10-foot raise and 15-foot fall deliver native owner `fly`/`fall` routes with canonical movement **5/10/20/20 feet**; ground/prone/fall state retained. **1/1 case**, no skips, **18,123.2109 ms**. |
+| Native/local preservation | **8 suites / 88 tests**, **119.303 s** with open-handle detection; physical sight, resize/hidden origins, queued native routes, 2014/2024 Free Play, flight/falls, physical dice, actions/Undo and existing receipt behavior preserved. |
+| Full directly affected app gate | **16 explicit suites / 209 tests**, zero failures/skips, **109.289 s** with open-handle detection. Includes transport/reconnect, saves, scoped public runtime/model teardown, commands, picker/bootstrap, native queued owner steps and both cloud sprite directions. |
+| Full JS/CSS/layering | Zero errors and the unchanged **39 baseline warnings**. |
+| Isolated Linux private runtime | Exact **23 source/model/manifest hashes**, Node **24.22.3**, UID **1000**, read-only, no network/binds/GPU/ADC, **1 CPU / 1 GiB**, actual native d20 **501 frames / settled face 3**, RSS **261,050,368 bytes**, clean exit **0** and exact owned container removed. |
+
+The production-only runtime check first failed with `ERR_MODULE_NOT_FOUND` for
+`cannon-es`. The existing exact **0.20.0** pin was promoted from development to
+runtime without changing its version/transitive graph. Only the required native
+`d20-gold.glb` was added to the private image allowlist, not a broad asset folder.
+The candidate OCI index is
+`sha256:a18b3cf98c68f4b56ce3fe7cf1aabb68d51b5156ce70bae1c0090233a55c498b`;
+its runnable manifest is
+`sha256:a3bab7a75833b6996db38c92c2ad0bab206b6cd07d4bc930bb3c9b018e009b56`.
+Only that exact verified image was published to the existing private test
+repository and deployed to the existing approved API service, revision
+`taverntable-api-test-00006-rdp`. Runtime identity, conditional bucket access,
+existing index, min **0** / max **1**, request-based **1 CPU / 1 GiB**, concurrency
+**40** and **3600-second** request timeout are unchanged. No extra IAM/API/index
+or public frontend was deployed.
+
+The broader canonical recheck exposed an old backward-head fixture that changed
+the head generation but not the newly validated command-origin generation.
+Keeping both internally consistent preserves its original
+`invalid-change-history` refusal rather than weakening production head checks.
+The corrected exact SDK case passes. The other initial failure was Firestore
+Emulator gRPC **3 INVALID_ARGUMENT: Transaction is invalid or closed** during
+four-store identical invitation/acceptance; no broad production retry was added.
+That unchanged case passes in isolation and in the final complete **80-case**
+access/world recheck. The initial eight-file run recorded **196/198 passing
+cases**, zero cancellations/skips, **1,043,504.2437 ms**; its remaining six
+files are unchanged and passed.
+
+Real acceptance passed **2026-11-14 04:36:29 UTC** against the exact approved
+API image. A managed member received an active foreign turn without the hidden
+NPC turn ID and was denied movement; an explicit owner Free Play transition
+immediately restored native assigned movement. Its accepted route reached the
+owner's private stream; a native owner route reached the authorized player
+without foreign budgets/private NPC notes or records. Same-ID recovery had no
+motion replay, the real CPU d20 returned its physical trajectory, and canonical
+state contained no physics frames. Owner pause closed both streams and released
+presence/leases; a new epoch rejoined at the current pose without historical
+motion. Existing actual 60-second renewal, interrupted-stream/warm-graphics
+reconciliation, journal/private-image/original-receipt and real managed Auth
+revocation gates also pass.
+
+Two first live fixture assertions were corrected without changing production:
+foreign active turn IDs are intentionally null in the member protocol, and a
+published map's permitted display label is not an unassigned NPC secret. The
+fixture now verifies actual off-turn availability/command refusal and exact
+private NPC note/record exclusion. Both failed runs performed exact cleanup.
+Final same-fixture cleanup verified the same **three approved disposable UIDs /
+two synthetic campaigns / 17 live object generations** absent at
+**04:36:35 UTC**, with existing soft-delete retention and real accounts unchanged.
+No real campaign migration, hosted frontend/cutover or deferred save-notice UX
+change was introduced. Full cloud-gameplay activation remains gated until
+progressive assets, cache/lifecycle safety and complete action acceptance.

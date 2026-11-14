@@ -784,8 +784,26 @@ Revalidation in the intended environment remains part of M1 and M4.
     M3-03; no new infrastructure, real account, full player UI, world/motion
     activation, browser cache or routine-save UX change.
 
-- [ ] **M3-05 - Preserve native DM/player movement and animation presentation.**
+- [x] **M3-05 - Preserve native DM/player movement and animation presentation.**
   - **Depends:** `M3-04`.
+  - **Evidence:** **16 app suites / 209 tests** pass with open-handle detection,
+    including native animated sprites, queued steps, own-command echo, current
+    reconciliation and model teardown. The final frozen access/world gate is
+    **80/80 SDK cases**, no skips, **460,966.3552 ms**; the other six directly
+    affected canonical/object/asset/quota/backup/process files retain **118
+    passing cases** on unchanged authority source. Both 2014/2024 off-turn and
+    Free Play behavior, authoritative costs, current actor/scope/epoch,
+    native flight/fall and private owner/member motion pass. The isolated
+    read-only **1 CPU / 1 GiB** Linux image verifies **23 exact source hashes**
+    and real native CPU d20 physics. Real HTTPS off-turn/Free Play, both route
+    directions, foreign-budget omission, minimal duplicate, CPU dice, pause and
+    new-epoch/no-history rejoin passed **November 14, 2026, 04:36:29 UTC** on
+    `taverntable-api-test-00006-rdp`. Exact same **three approved disposable UIDs /
+    two campaigns / 17 live object generations** were cleaned **04:36:35 UTC**.
+    No IAM/index/real account/campaign/frontend/cutover or routine-save UX change.
+    Start/Pause/Keep Active and Joined launch are wired but activation remains
+    gated for progressive private assets and full-world acceptance; later
+    arrival/Undo/door/action and automatic-drain gates are not silently enabled.
   - **Success:** Free Play and combat restrictions remain correct; approved routes
     replay Walk/Run, backward movement, flight, falls, queued continuity, and
     cancellation without recharging costs.

@@ -261,7 +261,8 @@ export default class CampaignAutosave {
     });
     if (this.sharedConflict) throw this.sharedConflict;
     const presentations =
-      this.library.store.storageInfo?.kind === 'host'
+      this.library.store.storageInfo?.kind === 'host' ||
+      this.library.store.wantsSharedPresentations?.(this.library.campaign.id) === true
         ? this.gameManager.token3DAdapter.getSharedPresentations(scene)
         : [];
     return {

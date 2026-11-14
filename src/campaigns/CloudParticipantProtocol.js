@@ -218,6 +218,7 @@ export function applyCloudParticipantDelta(previous, delta, { cachedAssets = nul
       'viewKey',
       'kind',
       delta.kind === 'replace' ? 'checkpoint' : 'changes',
+      ...(Object.hasOwn(delta, 'presentations') ? ['presentations'] : []),
     ]) ||
     delta.version !== 1 ||
     !isCloudAccessScope(delta.access) ||
@@ -233,6 +234,7 @@ export function applyCloudParticipantDelta(previous, delta, { cachedAssets = nul
     deltaFailure('participant-delta-gap');
   const assets = previous.state.publicScene.assets || cachedAssets;
   if (delta.kind === 'replace') {
+    if (Object.hasOwn(delta, 'presentations')) invalid();
     const next = delta.checkpoint;
     validateCloudParticipantSnapshot(next, {
       cachedAssets:
@@ -282,5 +284,28 @@ export function applyCloudParticipantDelta(previous, delta, { cachedAssets = nul
   for (const field of ['observers', 'doors', 'gameplay'])
     if (changes[field] !== null) next.state[field] = structuredClone(changes[field]);
   validateCloudParticipantSnapshot(next, { cachedAssets: assets });
+  if (Object.hasOwn(delta, 'presentations')) {
+    const entries = delta.presentations;
+    if (
+      !Array.isArray(entries) ||
+      entries.length > 256 ||
+      new Set(entries.map((entry) => entry?.commandId)).size !== entries.length ||
+      entries.some(
+        (entry) =>
+          !object(entry) ||
+          entry.sceneRevision !== next.state.sceneRevision ||
+          entry.charactersRevision !== next.state.revision ||
+          entry.sceneRevision <= previous.state.sceneRevision
+      )
+    )
+      invalid();
+    validatePlayerState(
+      {
+        ...next.state,
+        publicScene: { ...next.state.publicScene, updates: entries },
+      },
+      { cachedAssets: assets }
+    );
+  }
   return next;
 }

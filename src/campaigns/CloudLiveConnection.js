@@ -29,6 +29,7 @@ const retryable = new Set([
   'stream-client-too-slow',
   'stream-deadline',
   'participant-delta-gap',
+  'owner-delta-gap',
   'participant-state-changed',
   'participant-observation-unavailable',
   'eligibility-unavailable',
@@ -41,11 +42,22 @@ const retryable = new Set([
 ]);
 
 export default class CloudLiveConnection {
-  constructor({ store, account, id, view, scope, cachedAssets = null, onState, onStatus }) {
+  constructor({
+    store,
+    account,
+    id,
+    view,
+    scope,
+    cachedAssets = null,
+    onState,
+    onStatus,
+    ownerWorld = false,
+  }) {
     if (typeof onState !== 'function' || typeof onStatus !== 'function')
       throw new Error('Live observation requires state and status listeners');
     this.store = store;
     this.account = account;
+    this.ownerWorld = ownerWorld;
     this.id = id;
     this.view = copy(view);
     this.scope = copy(scope);
@@ -108,7 +120,14 @@ export default class CloudLiveConnection {
   async _apply(event) {
     let next;
     if (event.kind === 'owner-head') next = copy(event);
-    else if (['checkpoint', 'resync'].includes(event.kind)) next = copy(event.checkpoint);
+    else if (['owner-checkpoint', 'owner-resync'].includes(event.kind))
+      next = copy(event.checkpoint);
+    else if (event.kind === 'owner-delta') {
+      if (this.current === null)
+        throw failure('owner-delta-gap', 'Read a current authorized owner checkpoint first.', 409);
+      const { applyCloudOwnerDelta } = await import('./CloudOwnerProtocol.js');
+      next = applyCloudOwnerDelta(this.current, event.delta);
+    } else if (['checkpoint', 'resync'].includes(event.kind)) next = copy(event.checkpoint);
     else if (event.kind === 'delta') {
       if (this.current === null)
         throw failure('participant-delta-gap', 'Read a current authorized checkpoint first.', 409);
@@ -120,13 +139,18 @@ export default class CloudLiveConnection {
     const nextGeneration = next.head?.generation ?? next.generation;
     if (previousGeneration !== undefined && nextGeneration < previousGeneration)
       throw failure('invalid-change-history', 'The live campaign revision moved backwards.');
-    const reconcile = event.kind !== 'delta' || event.delta.kind === 'replace';
+    const reconcile =
+      !['delta', 'owner-delta'].includes(event.kind) || event.delta.kind === 'replace';
     if (reconcile) this._status('synchronizing');
-    this._notify(this.onState, copy(next), { reconcile });
+    const context = { reconcile };
+    if (!reconcile && event.delta.presentations?.length)
+      context.presentations = copy(event.delta.presentations);
+    if (this.ownerWorld && next.origin !== null) context.origin = copy(next.origin);
+    this._notify(this.onState, copy(next), context);
     if (this.stopped) return;
     this.current = next;
     this.failures = 0;
-    if (event.kind !== 'owner-head')
+    if (this.scope.role === 'member')
       this.assets =
         next.state.publicScene.assetKey === null
           ? null
@@ -219,17 +243,21 @@ export default class CloudLiveConnection {
             this.refreshIdentity = false;
             if (this.stopped) break;
           }
-          const assetKey = this.current?.state?.publicScene.assetKey ?? this.view.assetKey;
+          const assetKey = this.current?.state?.publicScene?.assetKey ?? this.view.assetKey;
           this.controller = new AbortController();
-          this.source = await this.store.openEvents(
-            this.id,
-            { ...this.view, assetKey },
-            this.scope,
-            {
-              cachedAssets: this.assets,
-              signal: this.controller.signal,
-            }
-          );
+          this.source = this.ownerWorld
+            ? await this.store.openOwnerEvents(
+                this.id,
+                { sessionId: this.view.sessionId },
+                this.scope,
+                {
+                  signal: this.controller.signal,
+                }
+              )
+            : await this.store.openEvents(this.id, { ...this.view, assetKey }, this.scope, {
+                cachedAssets: this.assets,
+                signal: this.controller.signal,
+              });
           if (this.stopped) break;
           this._rotateBeforeDeadline();
           for await (const event of this.source) {

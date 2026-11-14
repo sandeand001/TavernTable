@@ -70,6 +70,14 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     });
   assert.equal(anonymousEvents.status, 401);
   assert.equal((await anonymousEvents.json()).code, 'authentication-required');
+  for (const operation of ['owner-state', 'owner-events', 'world-commands']) {
+    const response = await fetch('http://127.0.0.1:' + port +
+      '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/' + operation, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+    assert.equal(response.status, 401, operation);
+    assert.equal((await response.json()).code, 'authentication-required', operation);
+  }
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   const forged = encode({ alg: 'none', typ: 'JWT' }) + '.' + encode({
     aud: process.env.GCLOUD_PROJECT,
@@ -124,6 +132,23 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     assert.deepEqual(projection.state.publicScene.actors, []);
     assert.deepEqual(projection.state.records, []);
   }
+  const { PhysicalDice } = require('./tools/physical-dice.js');
+  let seed = 42;
+  const dice = new PhysicalDice({
+    root: process.cwd(),
+    random: () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; },
+  });
+  const nativeD20 = await dice.d20({
+    metrics: { cols: 25, rows: 25, tileSize: 1 },
+    groundHeights: Array.from({ length: 25 }, () => Array(25).fill(0)), obstacles: [],
+  });
+  assert.equal(nativeD20.type, 'physical-d20');
+  assert.equal(nativeD20.cocked, false);
+  assert.ok(Number.isInteger(nativeD20.value) && nativeD20.value >= 1 && nativeD20.value <= 20);
+  assert.ok(nativeD20.frames.length > 20);
+  assert.notDeepEqual(nativeD20.frames[0].position, nativeD20.frames.at(-1).position);
+  assert.equal(nativeD20.geometryKey, createHash('sha256')
+    .update(fs.readFileSync('assets/Items/d20-gold.glb')).digest('hex'));
   const image = await sharp({ create: {
     width: 4000, height: 4000, channels: 4, background: '#112233',
   } }).png().toBuffer();
@@ -145,6 +170,10 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/cloud/event-stream.js',
     'src/campaigns/CloudParticipantProtocol.js',
     'src/campaigns/CloudProtocol.js',
+    'tools/cloud/immutable-objects.js', 'tools/movement-presentations.js', 'tools/physical-dice.js',
+    'src/campaigns/CloudOwnerProtocol.js', 'src/campaigns/PlayerPublicProtocol.js',
+    'src/campaigns/ServerGameplay.js', 'src/systems/dice/D20Dynamics.js',
+    'assets/Items/d20-gold.glb', 'package.json', 'package-lock.json',
   ]) {
     runtimeHashes[file] = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   }
@@ -153,6 +182,8 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     port, bindsAllInterfaces: true, readiness: 200, anonymousAccount: 401, anonymousLiveStatus: 401,
     anonymousAssignedSheets: 401,
     anonymousEvents: 401, forgedEvents: 401,
+    anonymousOwnerWorld: 401, anonymousWorldCommands: 401,
+    nativeD20Frames: nativeD20.frames.length, nativeD20Value: nativeD20.value,
     forgedIdentity: 401, privateFiles: 404,
     resourcePacks: manifest.packs.length, resourceBytes, validatedImagePixels: 16000000,
     rssBytes: process.memoryUsage().rss, runtimeHashes,

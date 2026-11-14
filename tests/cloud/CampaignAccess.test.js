@@ -1160,7 +1160,10 @@ test(
     await regression.ready;
     const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
     const currentGeneration = (await head.get()).data().generation;
-    await head.update({ generation: currentGeneration - 1 });
+    await head.update({
+      generation: currentGeneration - 1,
+      'lastCommand.generation': currentGeneration - 1,
+    });
     assert.equal((await outcome).error?.code, 'invalid-change-history');
   }
 );

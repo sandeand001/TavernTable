@@ -284,7 +284,8 @@
   Unchanged records/assets are not resent. A changed authorized view replaces
   state atomically rather than retaining revoked actors or replaying historical
   movement. Local/native and bounded real API acceptance passed.
-  Gameplay/motion, browser cache and full player UI remain gated.
+  Native world commands and live-only motion are described below; browser cache
+  and full player UI activation remain gated.
 - **Durable cloud change observation (M3 backend and transport verified)**:
   creation/import/canonical/settings publication writes a compact ordered event
   with the head/receipt transaction. Private history retains at most 1,000
@@ -323,7 +324,8 @@
   account change, malformed/stalled bodies and campaign close cancel transport.
   Local cookie transport is unchanged. Native, container and approved real
   HTTPS/renewal/revocation gates passed. Managed reconciliation is described below;
-  world commands, owner motion synchronization and player UI remain later work.
+  native world commands and owner motion synchronization are described below;
+  full player UI activation remains gated.
 - **Managed cloud live reconciliation (M3 recovery verified; UI gated)**:
   explicit `observeEvents` captures the UID/campaign/access/live epoch/view and
   publishes only verified current checkpoints or contiguous deltas. Readiness
@@ -341,8 +343,46 @@
   timers, observers and retained state. Listener failures are typed and redacted.
   Actual process-kill/latest-member recovery and approved real HTTPS interruption/
   warm-rejoin/revoked-refresh gates passed. These are data-readiness Interfaces:
-  full world input/render/motion activation remains M3-05, and persistent account/
-  view cache remains later work. No polling, offline writes or local fallback.
+  native world Adapters are described below, while full player activation and
+  persistent account/view cache remain later work. No polling, offline writes
+  or local fallback.
+- **Cloud native world authority and motion (M3-05 verified; activation gated)**:
+  member commands capture current UID/seat/access generation, live epoch, real
+  assigned actor/observer and scene/character revisions. A private domain draft
+  reuses native gameplay rules, geometry, budgets and CPU dice; shared canonical
+  publication atomically writes references, quota accounting, compact change,
+  minimal durable receipt and meaningful activity. A same-ID retry returns its
+  original applied proof, never another debit, dice result or historical motion.
+  Membership loss does not erase that caller's minimal receipt or revive its view.
+  Native owner scene/character saves may publish validated FROM/route metadata
+  for the explicitly bound live epoch. Immutable, owner-charged accepted-route
+  objects are transient presentation references, not per-frame state; complete
+  backups retain canonical campaign/scene/characters rather than route metadata.
+  Ordinary saves clear the old presentation reference. Member deltas retain
+  physical sight/map fences and remove foreign costs; checkpoints, resync and
+  changed-view recovery never replay historical routes.
+  A separate owner-authorized world feed carries its canonical checkpoint and
+  bounded sparse actor/record/object patches, avoiding unchanged terrain/art.
+  It is not a fake member view or a replacement for compact owner-head events.
+  Both feeds share canonical downloads and recheck admission after IO.
+  Owner/player renderer Adapters reuse the existing native animated models,
+  movement/camera handling and single terrain owner without scene polling or
+  spending costs again. Own command echoes do not animate twice; reconciliation
+  always cancels obsolete movement, even for an issued local command. Public
+  player disposal hides the world immediately and serializes model removal
+  after in-flight hydration, preventing stale restoration after teardown.
+  Owner Start/Pause/Keep Active and scoped Joined-game launch are wired but
+  `sharedSessions` remains false until progressive assets and full-world
+  acceptance are ready. Paused preparation never auto-starts a game. Explicit
+  owner transitions flush pending scene/character work; manual pause treats its
+  final backup confirmation separately. Arrival grants, cloud Undo/door/action
+  matrix completion, artwork hydration, persistent cache and automatic drain
+  remain later work, not silently supported gameplay claims. The private Linux
+  authority packages exact `cannon-es` 0.20.0 and only its required native d20
+  model; CPU physics remains separate from client-side GPU rendering. Native
+  rules/models, scoped SDK authority, isolated Linux runtime and approved real
+  HTTPS off-turn/Free Play/bidirectional motion/physical-dice/pause/rejoin gates
+  passed without changing real accounts, hosted frontend or routine-save UX.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its

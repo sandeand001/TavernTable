@@ -7,7 +7,12 @@ const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const validValue = (kind, value) =>
   ['scene', 'import'].includes(kind)
     ? typeof value === 'string'
-    : kind === 'characters' && Array.isArray(value);
+    : kind === 'characters'
+      ? Array.isArray(value)
+      : kind === 'presentations' &&
+        value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value);
 const integrityError = () =>
   new CloudError(
     503,
@@ -47,7 +52,10 @@ function storageFailure(error) {
 }
 
 function objectPath(campaignId, kind, sha256) {
-  if (!isCloudUUID(campaignId) || !['scene', 'characters', 'import'].includes(kind))
+  if (
+    !isCloudUUID(campaignId) ||
+    !['scene', 'characters', 'import', 'presentations'].includes(kind)
+  )
     throw new CloudError(
       400,
       'invalid-snapshot-request',
@@ -78,7 +86,7 @@ function snapshotCandidate(campaignId, kind, value) {
 function isImmutableCloudReference(campaignId, kind, reference) {
   return (
     isCloudUUID(campaignId) &&
-    ['scene', 'characters', 'import'].includes(kind) &&
+    ['scene', 'characters', 'import', 'presentations'].includes(kind) &&
     reference?.version === 1 &&
     reference.kind === kind &&
     typeof reference.sha256 === 'string' &&

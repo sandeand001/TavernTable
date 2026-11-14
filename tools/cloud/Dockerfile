@@ -12,6 +12,7 @@ COPY --chown=node:node package.json package-lock.json ./
 COPY --chown=node:node src/ ./src/
 COPY --chown=node:node tools/ ./tools/
 COPY --chown=node:node assets/data/ ./assets/data/
+COPY --chown=node:node assets/Items/d20-gold.glb ./assets/Items/d20-gold.glb
 USER node
 EXPOSE 8080
 CMD ["node", "tools/cloud/production-host.js"]
