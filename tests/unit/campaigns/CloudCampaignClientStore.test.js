@@ -50,6 +50,10 @@ function fixture({ crypto } = {}) {
     currentUser: { uid: 'uid-a', emailVerified: true, getIdToken: async () => 'fixture-token' },
   };
   const sdk = {
+    onAuthStateChanged: (_auth, notify) => {
+      notify();
+      return () => {};
+    },
     signInWithEmailAndPassword: async () => {},
     signOut: async () => {
       auth.currentUser = null;
@@ -91,6 +95,202 @@ function fixture({ crypto } = {}) {
   });
   return { auth, connection, store, fetch };
 }
+
+test('live observation stays unready until its current authorized checkpoint is published and closes its idle transport', async () => {
+  const setup = fixture();
+  const stopped = jest.fn();
+  setup.connection.account.sdk.onAuthStateChanged = (_auth, notify) => {
+    notify();
+    return stopped;
+  };
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'owner',
+    seatId: null,
+    accessGeneration: 0,
+  };
+  const view = { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null };
+  const checkpoint = {
+    kind: 'owner-head',
+    version: 1,
+    access,
+    sessionId: view.sessionId,
+    head: { generation: 1, charactersRevision: 0, sceneRevision: 0, sceneSavedAt: null },
+  };
+  const opened = Promise.withResolvers();
+  let incoming;
+  setup.fetch.mockImplementation(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            incoming = controller;
+            opened.resolve();
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } }
+      )
+  );
+  const states = [];
+  const statuses = [];
+  const observation = setup.store.observeEvents(campaignId, view, access, {
+    onState: (state, context) => {
+      expect(statuses.at(-1).phase).not.toBe('ready');
+      states.push({ state, context });
+    },
+    onStatus: (status) => statuses.push(status),
+  });
+  try {
+    await opened.promise;
+    expect(statuses.at(-1).phase).not.toBe('ready');
+    incoming.enqueue(
+      new TextEncoder().encode(`id: 1\nevent: owner-head\ndata: ${JSON.stringify(checkpoint)}\n\n`)
+    );
+    await expect(observation.ready).resolves.toEqual(checkpoint);
+    expect(states).toEqual([{ state: checkpoint, context: { reconcile: true } }]);
+    expect(statuses.at(-1).phase).toBe('ready');
+    await observation.close();
+    expect(statuses.at(-1).phase).toBe('closed');
+    expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(setup.store.saveState.phase).toBe('idle');
+  } finally {
+    await observation.close();
+  }
+});
+
+test('a lost live connection disables readiness and reconnects after jitter to a fresh latest checkpoint without replay', async () => {
+  jest.useFakeTimers();
+  const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const setup = fixture();
+  setup.connection.account.sdk.onAuthStateChanged = (_auth, notify) => {
+    notify();
+    return () => {};
+  };
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'owner',
+    seatId: null,
+    accessGeneration: 0,
+  };
+  const view = { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null };
+  const checkpoint = (generation) => ({
+    kind: 'owner-head',
+    version: 1,
+    access,
+    sessionId: view.sessionId,
+    head: { generation, charactersRevision: 0, sceneRevision: 0, sceneSavedAt: null },
+  });
+  const sources = [];
+  const opened = Promise.withResolvers();
+  setup.fetch.mockImplementation(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            sources.push(controller);
+            opened.resolve();
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } }
+      )
+  );
+  const states = [];
+  const statuses = [];
+  const observation = setup.store.observeEvents(campaignId, view, access, {
+    onState: (state, context) => states.push({ generation: state.head.generation, context }),
+    onStatus: (status) => statuses.push(status),
+  });
+  try {
+    await opened.promise;
+    sources[0].enqueue(
+      new TextEncoder().encode(
+        `id: 1\nevent: owner-head\ndata: ${JSON.stringify(checkpoint(1))}\n\n`
+      )
+    );
+    await observation.ready;
+    sources[0].error(new Error('Synthetic interrupted transport'));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(statuses.at(-1)).toEqual({ phase: 'reconnecting', reason: 'cloud-stream-unavailable' });
+    await jest.advanceTimersByTimeAsync(999);
+    expect(setup.fetch).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(setup.fetch).toHaveBeenCalledTimes(2);
+    sources[1].enqueue(
+      new TextEncoder().encode(
+        `id: 3\nevent: owner-head\ndata: ${JSON.stringify(checkpoint(3))}\n\n`
+      )
+    );
+    await jest.advanceTimersByTimeAsync(0);
+    expect(states).toEqual([
+      { generation: 1, context: { reconcile: true } },
+      { generation: 3, context: { reconcile: true } },
+    ]);
+    expect(statuses.at(-1).phase).toBe('ready');
+    await observation.close();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    await observation.close();
+    random.mockRestore();
+    log.mockRestore();
+    jest.useRealTimers();
+  }
+});
+
+test('closing a live observation during its opening request immediately aborts HTTP and cannot publish a late checkpoint', async () => {
+  const setup = fixture();
+  const request = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  setup.fetch.mockImplementation((_url, options) => {
+    options.signal.addEventListener(
+      'abort',
+      () => pending.reject(new DOMException('Aborted', 'AbortError')),
+      { once: true }
+    );
+    request.resolve(options);
+    return pending.promise;
+  });
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'owner',
+    seatId: null,
+    accessGeneration: 0,
+  };
+  const states = jest.fn();
+  const statuses = [];
+  const observation = setup.store.observeEvents(
+    campaignId,
+    {
+      sessionId: commandId,
+      observerTokenId: null,
+      mapId: null,
+      assetKey: null,
+    },
+    access,
+    { onState: states, onStatus: (status) => statuses.push(status) }
+  );
+  const readiness = expect(observation.ready).rejects.toMatchObject({ code: 'stream-closed' });
+  try {
+    const options = await request.promise;
+    const closing = observation.close();
+    await Promise.resolve();
+    expect(options.signal.aborted).toBe(true);
+    await closing;
+    await readiness;
+    expect(states).not.toHaveBeenCalled();
+    expect(statuses.at(-1).phase).toBe('closed');
+  } finally {
+    pending.reject(new DOMException('Aborted', 'AbortError'));
+    await observation.close();
+    await readiness;
+  }
+});
 
 test.each(['private head', 'foreign UID', 'foreign campaign', 'foreign epoch'])(
   'an owner event rejects a %s and releases its stream without affecting save state',

@@ -283,8 +283,8 @@
   the same account/access/epoch; gaps or scope changes require reconciliation.
   Unchanged records/assets are not resent. A changed authorized view replaces
   state atomically rather than retaining revoked actors or replaying historical
-  movement. Local/native and bounded real API acceptance passed. Reconciliation,
-  gameplay/motion, browser cache and full player UI remain gated.
+  movement. Local/native and bounded real API acceptance passed.
+  Gameplay/motion, browser cache and full player UI remain gated.
 - **Durable cloud change observation (M3 backend and transport verified)**:
   creation/import/canonical/settings publication writes a compact ordered event
   with the head/receipt transaction. Private history retains at most 1,000
@@ -322,8 +322,27 @@
   validate frames, scope, epoch, participant schemas and graphic integrity;
   account change, malformed/stalled bodies and campaign close cancel transport.
   Local cookie transport is unchanged. Native, container and approved real
-  HTTPS/renewal/revocation gates passed. Automatic reconciliation/reconnect,
+  HTTPS/renewal/revocation gates passed. Managed reconciliation is described below;
   world commands, owner motion synchronization and player UI remain later work.
+- **Managed cloud live reconciliation (M3 recovery verified; UI gated)**:
+  explicit `observeEvents` captures the UID/campaign/access/live epoch/view and
+  publishes only verified current checkpoints or contiguous deltas. Readiness
+  follows synchronous atomic state publication; gaps, duplicates, partial EOF,
+  transport loss and replacement recover a fresh latest checkpoint without
+  replaying missed movement. Changed views reconcile atomically; backwards
+  replacements fail rather than rewinding. Warm graphics stay memory-scoped and
+  integrity checked, not a browser/offline authority.
+  Transient failures use exponential jitter bounded to 1-30 seconds. An
+  intentional 50-52-minute rotation refreshes the same managed identity before
+  the 55-minute transport deadline; an expired streaming bearer also refreshes
+  before retry. Revoked managed identity, account change, paused/ended epoch or
+  lost campaign access stop retries. Current identity remains observed during
+  backoff, and explicit close aborts opening HTTP/readable bodies and releases
+  timers, observers and retained state. Listener failures are typed and redacted.
+  Actual process-kill/latest-member recovery and approved real HTTPS interruption/
+  warm-rejoin/revoked-refresh gates passed. These are data-readiness Interfaces:
+  full world input/render/motion activation remains M3-05, and persistent account/
+  view cache remains later work. No polling, offline writes or local fallback.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its

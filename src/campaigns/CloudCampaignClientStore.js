@@ -1,4 +1,5 @@
 import CampaignStore from './CampaignStore.js';
+import CloudLiveConnection from './CloudLiveConnection.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import {
   isCloudUUID,
@@ -103,6 +104,7 @@ export default class CloudCampaignClientStore {
     this.pendingLive = null;
     this.saveListeners = new Set();
     this.streams = new Set();
+    this.liveConnections = new Set();
     this.saveState = Object.freeze({ phase: 'idle', error: null });
     this.storageInfo = Object.freeze({
       kind: 'cloud',
@@ -889,7 +891,24 @@ export default class CloudCampaignClientStore {
     return { ...copy(result), state: { ...copy(result.state), campaign } };
   }
 
-  async openEvents(id, view, expected, { cachedAssets = null } = {}) {
+  observeEvents(id, view, expected, { cachedAssets = null, onState, onStatus } = {}) {
+    this._identity();
+    const connection = new CloudLiveConnection({
+      store: this,
+      account: this.connection.account,
+      id,
+      view,
+      scope: expected,
+      cachedAssets,
+      onState,
+      onStatus,
+    });
+    this.liveConnections.add(connection);
+    void connection.done.then(() => this.liveConnections.delete(connection));
+    return connection;
+  }
+
+  async openEvents(id, view, expected, { cachedAssets = null, signal = null } = {}) {
     this._identity();
     if (!isCloudAccessScope(expected) || expected.uid !== this.uid || expected.campaignId !== id)
       throw failure(400, 'invalid-access-scope', 'Choose current live campaign access.');
@@ -919,6 +938,7 @@ export default class CloudCampaignClientStore {
       body: input,
       accessScope: scope,
       responseType: 'events',
+      signal,
     });
     const close = () => {
       if (closing) return closing;
@@ -1417,6 +1437,19 @@ export default class CloudCampaignClientStore {
     if (this.pending) throw new Error('Resolve the pending cloud save before closing the campaign');
     this.closed = true;
     this.saveListeners.clear();
+    for (const connection of this.liveConnections)
+      void connection.close().catch((error) => {
+        logger.log(
+          LOG_LEVEL.ERROR,
+          'A live campaign observation could not close',
+          LOG_CATEGORY.SYSTEM,
+          {
+            component: 'CloudCampaignClientStore',
+            code: 'live-observation-close-failed',
+            kind: error instanceof Error ? 'error' : 'non-error',
+          }
+        );
+      });
     for (const stream of this.streams)
       void stream.close().catch((error) => {
         logger.log(LOG_LEVEL.ERROR, 'A cloud event stream could not close', LOG_CATEGORY.SYSTEM, {

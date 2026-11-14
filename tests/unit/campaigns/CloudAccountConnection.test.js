@@ -73,10 +73,11 @@ function eventFixture(createResponse) {
   return {
     ...setup,
     fetch,
-    open: () =>
+    open: (signal = null) =>
       connection.request(`campaigns/${campaignId}/events`, {
         method: 'POST',
         responseType: 'events',
+        signal,
         accessScope: {
           version: 1,
           uid: 'uid-a',
@@ -256,6 +257,37 @@ test('a failed identity subscription during stream opening cancels its body and 
     jest.clearAllTimers();
     jest.useRealTimers();
     log.mockRestore();
+  }
+});
+
+test('caller cancellation remains bound after the first event and aborts the active readable transport', async () => {
+  let incoming;
+  const setup = eventFixture(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            incoming = controller;
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } }
+      )
+  );
+  const controller = new AbortController();
+  const stream = await setup.open(controller.signal);
+  try {
+    incoming.enqueue(
+      new TextEncoder().encode(
+        'id: 1\nevent: checkpoint\ndata: {"kind":"checkpoint","checkpoint":{"generation":1}}\n\n'
+      )
+    );
+    expect((await stream.next()).value.kind).toBe('checkpoint');
+    controller.abort();
+    expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    await expect(stream.next()).rejects.toMatchObject({ code: 'stream-closed' });
+    expect(setup.observers.size).toBe(0);
+  } finally {
+    await stream.close();
   }
 });
 

@@ -481,7 +481,7 @@ export default class CloudAccountConnection {
 
   async request(
     resource,
-    { method = 'GET', body, accessScope = null, responseType = 'json' } = {}
+    { method = 'GET', body, accessScope = null, responseType = 'json', signal = null } = {}
   ) {
     if (
       typeof resource !== 'string' ||
@@ -489,6 +489,11 @@ export default class CloudAccountConnection {
       !['GET', 'POST'].includes(method) ||
       (method !== 'POST' && body !== undefined) ||
       !['json', 'backup', 'events'].includes(responseType) ||
+      (signal !== null &&
+        (responseType !== 'events' ||
+          typeof signal.aborted !== 'boolean' ||
+          typeof signal.addEventListener !== 'function' ||
+          typeof signal.removeEventListener !== 'function')) ||
       (responseType === 'events' &&
         (method !== 'POST' ||
           accessScope === null ||
@@ -537,9 +542,13 @@ export default class CloudAccountConnection {
           };
     let credential = await this.account.tokenContext();
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (signal?.aborted) throw requestError(409, 'stream-closed', 'The live stream was closed.');
       if (!credential.isCurrent() || (scopeUid !== null && credential.uid !== scopeUid))
         throw changedAccount();
       const controller = new AbortController();
+      const cancel = () => controller.abort();
+      signal?.addEventListener('abort', cancel, { once: true });
+      if (signal?.aborted) controller.abort();
       let timeout;
       let timedOut = false;
       const progress = () => {
@@ -579,7 +588,13 @@ export default class CloudAccountConnection {
           )
             throw invalidResponse();
           if (!credential.isCurrent()) throw changedAccount();
-          return new CloudEventStream({ response, controller, account: this.account, credential });
+          return new CloudEventStream({
+            response,
+            controller,
+            account: this.account,
+            credential,
+            signal,
+          });
         }
         if (responseType === 'backup' && response.status !== 200) {
           await sessionJSON(async () => response, url, options);
@@ -591,6 +606,8 @@ export default class CloudAccountConnection {
             : await sessionJSON(async () => response, url, options);
       } catch (error) {
         if (responseType === 'backup' || responseType === 'events') controller.abort();
+        if (signal?.aborted)
+          throw requestError(409, 'stream-closed', 'The live stream was closed.');
         if (!credential.isCurrent()) throw changedAccount();
         if (timedOut)
           throw requestError(
@@ -605,6 +622,7 @@ export default class CloudAccountConnection {
         throw safeDenial(error);
       } finally {
         clearTimeout(timeout);
+        signal?.removeEventListener('abort', cancel);
       }
       if (!credential.isCurrent()) throw changedAccount();
       if (responseType === 'backup') return data;

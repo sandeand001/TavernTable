@@ -61,9 +61,9 @@ were untouched. This is not a full frontend rollout or source-of-truth cutover.
 Complete M2 implemented-operation coverage (`M2-13`) passes the full native
 catalog and stable regression suite. Initial participant snapshot/manifest/delta privacy (`M3-01`) now passes local
 and bounded real API acceptance. Ordered durable changes/shared backend
-observation (`M3-02`) and direct authenticated Fetch SSE (`M3-03`) pass local
-and bounded real API gates. Reconciliation, gameplay/motion, browser cache and
-cloud player world UI remain gated.
+observation (`M3-02`), direct authenticated Fetch SSE (`M3-03`) and managed
+reconciliation/gap recovery (`M3-04`) pass local and bounded real API gates.
+Gameplay/motion, browser cache and cloud player world UI remain gated.
 
 ## Approved requirements: do not reopen by accident
 
@@ -760,7 +760,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     `M3-04`/`M3-05` and subsequent gates. No local transport, real account,
     frontend/cutover or routine-save UX change.
 
-- [ ] **M3-04 - Implement reconciliation, gap recovery, and intentional reconnects.**
+- [x] **M3-04 - Implement reconciliation, gap recovery, and intentional reconnects.**
   - **Depends:** `M3-03`.
   - **Success:** apply a contiguous authorized revision sequence or a fresh snapshot;
     refresh identity and reconnect with jitter before request timeout. Replacements
@@ -768,6 +768,21 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** timeout, lost event, duplicate, backend replacement, and token
     renewal tests converge. Paused/ended sessions stop retrying; world commands
     stay disabled until reconciliation completes.
+  - **Completed:** November 14, 2026. **Evidence:**
+    [managed reconciliation and recovery](./cloud-migration-preparation.md#m3-04-managed-reconciliation-and-recovery).
+    **8 app suites / 115 tests**, **2.834 s**, open-handle detection enabled;
+    **5 real SDK/HTTP/process cases**, no skips, **43,617.7534 ms**. An actual
+    backend PID kill, a separately committed assigned change and replacement at
+    the old endpoint converge through a fresh latest member checkpoint, while
+    an ordinary prior delta remains live. Exact 1-30-second backoff and
+    50-52-minute identity rotation, gaps/duplicates/partial EOF, scope/account
+    loss and callback failures pass. Real HTTPS transport interruption recovers
+    the same scope/epoch without unchanged graphic bodies or historical replay;
+    actual managed-token revocation stops retries. Acceptance passed
+    **01:36:56 UTC**; the same approved fixtures/ten object generations were
+    verified cleaned at **01:37:02 UTC**. Backend/wire deployment is unchanged
+    M3-03; no new infrastructure, real account, full player UI, world/motion
+    activation, browser cache or routine-save UX change.
 
 - [ ] **M3-05 - Preserve native DM/player movement and animation presentation.**
   - **Depends:** `M3-04`.

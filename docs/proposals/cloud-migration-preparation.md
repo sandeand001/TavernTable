@@ -2409,3 +2409,78 @@ soft-delete retention is unchanged; tiny retained fixture bytes may remain billa
 No new API service, IAM role/key, index, real account/campaign, frontend/cutover or
 routine-save UX change was introduced. Reconciliation, native animation,
 account/view cache, final lifecycle drain and hosted load/cost gates remain pending.
+
+### M3-04: managed reconciliation and recovery
+
+The explicit client `observeEvents` operation now owns the live connection
+lifecycle for a captured UID/campaign/access generation/live epoch/view. Its
+readiness promise resolves only after the current authorized state has been
+published synchronously. Status separates connecting/synchronizing/ready/
+reconnecting from paused/ended/denied/error/closed. World UI remains disabled;
+data readiness does not bypass backend world admission or finish GPU/UI loading.
+
+Contiguous same-view member deltas publish live state. View replacements and
+checkpoint/resync/rejoin events reconcile atomically, never replaying missed
+movement. Missing/duplicate generations, truncated events, stalled transport and
+network/backend loss reconnect to the latest authorized checkpoint. A backwards
+replacement is a typed failure, not a rewind. Owner notifications remain the
+separate compact authorized head protocol; full owner motion is M3-05.
+
+Transient failures use exponential jitter bounded to **1-30 seconds**. Successful
+state publication resets backoff. An intentional jittered **50-52-minute**
+rotation refreshes the same managed identity before the 55-minute SSE deadline;
+server deadline and expired-bearer controls also refresh before retry. Revoked
+managed identity is not treated as an indefinitely renewable expired token.
+Paused/ended epochs, changed account, lost campaign/eligibility access and invalid
+authoritative responses stop retries. Identity remains observed during backoff,
+not just while a readable body is open.
+
+Cancellation now binds opening HTTP and readable-body lifetime to the same caller
+signal. Close cancels retry/rotation timers, account observation and retained
+state. Synchronous callback failure/unsupported asynchronous publication is typed
+and redacted, rather than acknowledging unverified readiness. Existing local
+cookie transport is unchanged. Graphic cache reuse stays in current UID/access/
+view memory, is hash checked and omits valid unchanged graphic bodies on rejoin;
+persistent account/view browser cache remains a later task.
+
+Verification:
+
+- **8 explicit app suites / 115 tests**, **2.834 s**, with open-handle detection.
+  Exact lower/upper intentional jitter boundaries and the 30-second backoff
+  ceiling pass. Real readable-byte/strict DTO tests cover missing and duplicate
+  deltas, changed-view replacement, partial EOF, expired bearer recovery,
+  revoked managed refresh, account switch during backoff, terminal pause/epoch/
+  membership/eligibility controls and redacted callback failure.
+- **5 native SDK/HTTP/process cases**, zero failures/cancellations/skips,
+  **43,617.7534 ms**. The new actual-process test first publishes a normal member
+  delta, kills the specific owned backend PID, commits an allowed assigned notes
+  change through another backend, then starts a new process at the old endpoint.
+  The original observation receives only the latest replacement checkpoint with
+  current scope/epoch and no historical updates. Owner pause then stops retries.
+  The first fixture attempted an unbound name/world rename and was correctly
+  denied; it was corrected to the supported notes edit, not by weakening
+  production validation. Four unchanged real SSE role/quota/auth/pause/epoch/
+  membership regression cases also pass.
+- Full JS/stylelint/layering: zero errors and the same **39 baseline warnings**.
+  These changes are managed-client lifecycle behavior; backend authority/wire
+  code and the already verified M3-03 runtime image are unchanged. No dependency
+  or deployment change was needed.
+
+Real acceptance against the same approved test API passed
+**2026-11-14 01:36:56 UTC**. An actual HTTPS stream was aborted after the verified
+member checkpoint; managed observation automatically reconnected to the same
+UID/access/epoch and verified warm graphic key without retransmitting its graphic
+body or replaying historical movement. Reconnect left meaningful activity
+unchanged. Owner pause stopped retries and released lease/presence. A separate
+real Auth revocation closed the bearer stream, made managed refresh fail and
+terminated observation without publishing another state. Existing assigned-sheet,
+private-image, journal and original-receipt acceptance also pass.
+
+Only the same **three approved disposable identities / two synthetic campaigns**
+were used. Exact cleanup verified their Auth/Firestore fixtures and **ten live
+object generations** absent at **01:37:02 UTC**, with existing bucket soft-delete
+retention unchanged. The API remains M3-03 revision `taverntable-api-test-00005-8bz`
+and image `sha256:35700bc8f98ff8b2439fd7bdc2b8fa0c71133c0911559eda59408dedf19a8893`.
+No new API service, IAM role/key, index, real account/campaign, frontend/cutover
+or routine-save UX change was introduced. Native movement/animation, player
+world UI, persistent cache, lifecycle drain and hosted load/cost remain pending.

@@ -7,9 +7,11 @@ const changed = () =>
   failure('account-changed', 'The signed-in account changed. Reopen its live campaigns.', 409);
 
 export default class CloudEventStream {
-  constructor({ response, controller, account, credential }) {
+  constructor({ response, controller, account, credential, signal = null }) {
     this.reader = response.body.getReader();
     this.controller = controller;
+    this.signal = signal;
+    this.cancel = () => this._abort(failure('stream-closed', 'The live stream was closed.', 409));
     this.isCurrent = credential.isCurrent;
     this.decoder = new TextDecoder('utf-8', { fatal: true });
     this.encoder = new TextEncoder();
@@ -26,6 +28,11 @@ export default class CloudEventStream {
     this.error = null;
     this.stopIdentity = () => {};
     this._progress();
+    signal?.addEventListener('abort', this.cancel, { once: true });
+    if (signal?.aborted) {
+      this.cancel();
+      throw this.error;
+    }
     try {
       this.stopIdentity = account.subscribe(
         (identity) => {
@@ -226,6 +233,7 @@ export default class CloudEventStream {
     this.frameBytes = 0;
     this.data = [];
     clearTimeout(this.timeout);
+    this.signal?.removeEventListener('abort', this.cancel);
     this.stopIdentity();
     this.closing = (async () => {
       const cancellation = this.readFailed ? Promise.resolve() : this.reader.cancel();

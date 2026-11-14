@@ -351,6 +351,105 @@ async function fixture(t) {
 }
 
 test(
+  'a killed streaming backend reconnects the current member to the latest checkpoint without replaying missed state',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const member = await f.stranger();
+    const invite = await f.store.createInvitation(f.campaign.id, { name: 'Reconnect member' });
+    await member.redeemInvitation(invite);
+    const joined = await member.getParticipantAccess(f.campaign.id);
+    const hero = f.library.list()[0].id;
+    await f.store.assignCharacter(f.campaign.id, {
+      seatId: joined.access.seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: joined.access.accessGeneration,
+    });
+    const grant = await member.getParticipantAccess(f.campaign.id);
+    await f.store.controlLiveSession(
+      f.campaign.id,
+      'start',
+      await f.store.getLiveSession(f.campaign.id)
+    );
+    const live = await f.store.getLiveSession(f.campaign.id);
+    const standby = await f.start();
+    const standbyStore = f.client(standby.url);
+    const standbyLibrary = await CampaignCharacters.open({
+      campaignId: f.campaign.id,
+      store: standbyStore,
+      catalog: await f.resources.catalog(f.campaign),
+    });
+    const recovered = Promise.withResolvers();
+    const updated = Promise.withResolvers();
+    const states = [];
+    const statuses = [];
+    let recoverGeneration = null;
+    let updateGeneration = null;
+    const observation = member.observeEvents(
+      f.campaign.id,
+      {
+        sessionId: live.sessionId,
+        observerTokenId: null,
+        mapId: null,
+        assetKey: null,
+      },
+      grant.access,
+      {
+        onState: (checkpoint, context) => {
+          states.push({ checkpoint, context });
+          if (checkpoint.generation === updateGeneration) updated.resolve(checkpoint);
+          if (checkpoint.generation === recoverGeneration) recovered.resolve(checkpoint);
+        },
+        onStatus: (status) => statuses.push(status),
+      }
+    );
+    t.after(() => observation.close());
+    const initial = await observation.ready;
+    updateGeneration = initial.generation + 1;
+    await standbyLibrary.edit(hero, { notes: 'Current shared update before backend loss' });
+    await updated.promise;
+    assert.equal(states.at(-1).context.reconcile, false);
+    recoverGeneration = updateGeneration + 1;
+    const liveBeforeLoss = await standbyStore.getLiveSession(f.campaign.id);
+    await terminate(f.backend.child);
+    assert.deepEqual(await standbyStore.getLiveSession(f.campaign.id), liveBeforeLoss);
+    await standbyLibrary.edit(hero, { notes: 'Changed while the stream backend was absent' });
+    const replacement = await f.start(f.backend.port);
+    assert.notEqual(replacement.instance, f.backend.instance);
+    const latest = await recovered.promise;
+    assert.deepEqual(latest.access, grant.access);
+    assert.equal(latest.sessionId, live.sessionId);
+    assert.equal(latest.generation, recoverGeneration);
+    assert.equal(latest.state.scene, null);
+    assert.equal(latest.state.publicScene.updates.length, 0);
+    assert.ok(
+      latest.state.records.some((row) =>
+        row.value.includes('Changed while the stream backend was absent')
+      )
+    );
+    assert.deepEqual(
+      states.map(({ checkpoint }) => checkpoint.generation),
+      [initial.generation, updateGeneration, recoverGeneration]
+    );
+    assert.deepEqual(
+      states.map(({ context }) => context.reconcile),
+      [true, false, true]
+    );
+    assert.ok(statuses.some((status) => status.phase === 'reconnecting'));
+    assert.equal(statuses.at(-1).phase, 'ready');
+    await standbyStore.controlLiveSession(
+      f.campaign.id,
+      'end',
+      await standbyStore.getLiveSession(f.campaign.id)
+    );
+    await observation.done;
+    assert.deepEqual(statuses.at(-1), { phase: 'paused', reason: 'live-session-paused' });
+    assert.equal(member.liveConnections.size, 0);
+  }
+);
+
+test(
   'an actual backend kill after commit but before announcement preserves one ordered journal event and original receipt',
   { timeout: 60000 },
   async (t) => {
