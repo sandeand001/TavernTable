@@ -3164,6 +3164,27 @@ noncommercial game/3D use and prohibit redistributing source texture sets; a
 separate paid grant covers commercial use. These are not the terms of the
 different FreePBRTextures site. The die's model page itself separates mesh and
 third-party texture permissions, so the embedded mesh attribution is not used
-as an unsupported blanket texture grant. Remaining owner input is the exact
-tropical pack source and matching die-texture permission or an explicit
-rights-cleared replacement decision. No artwork or runtime code is changed.
+as an unsupported blanket texture grant. Commercial texture use beyond those
+terms would require matching permission; the exact tropical pack's source/license
+remains unverified. No artwork or runtime code is changed.
+
+The owner's next links identify the
+[Quaternius Stylized Nature Megakit](https://quaternius.itch.io/stylized-nature-megakit)
+for at least some 3D assets, consistent with the bundled Quaternius CC0 notice,
+and the exact older gold-die source already embedded in the current GLB.
+This confirms the die's identity, not a request to replace it with the newer
+remake or an unrestricted commercial texture grant. Retain the current file
+and its separate model/texture conditions.
+
+The owner believes the remaining art is free to use, but no exact source or
+license has yet been established for the active MZRa tropical family. Its first
+import commit identifies only tropical plants; it supplies no source URL.
+No new license is inferred from that belief, the generic itch.io catalog or a
+different kit's CC0 notice. In accordance with the owner's keep-artwork choice,
+that pack is neither removed/replaced nor publicly packaged. `M4-07` stays
+pending; the verified **47/65** milestone is unchanged.
+
+[itch.io game assets](https://itch.io/game-assets) is saved as a future-sourcing
+reference, as requested. Each future listing still needs its own specific
+source/license record; the catalog itself is not a blanket grant. No additional
+asset is downloaded or imported during this review.

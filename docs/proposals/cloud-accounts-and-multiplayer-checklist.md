@@ -1184,14 +1184,18 @@ Revalidation in the intended environment remains part of M1 and M4.
     entries still use a separate **MZRa_Pack_M02P.fbx** family without a matching
     source/license record. Its provenance must be confirmed, not inferred from
     an unrelated itch.io search or an ancestor folder's other-kit notice.
-    The built-in gold d20 has an embedded author/source and **CC-BY-SA-4.0**
+    The owner also supplies the Quaternius megakit page matching its existing
+    CC0 notice and the exact older gold-die source matching the embedded GLB
+    metadata, not permission to replace it with a different model.
+    The gold d20 has an embedded author/source and **CC-BY-SA-4.0**
     record; its source separately identifies FreePBR textures. FreePBR's own
     terms impose noncommercial-use/redistribution conditions, so neither the
     mesh license nor another similarly named site's CC0 grant clears those
-    textures automatically. Matching permission or an explicit replacement
-    decision remains needed.
+    textures automatically. Preserve those usage conditions and do not claim
+    unrestricted commercial rights.
     No asset is removed/replaced, packaged publicly or deployed while the owner
-    decides how to handle uncertain provenance. See
+    resolves the still-unverified tropical pack provenance. Existing artwork
+    remains unchanged as requested. See
     [public-art review](./cloud-migration-preparation.md#m4-07-public-art-provenance-before-packaging).
 
 - [ ] **M4-08 - Obtain isolated hosted-test and identity/IAM configuration approval.**
