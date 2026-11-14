@@ -1,8 +1,8 @@
-export function openDatabase(factory, name, upgrade) {
+export function openDatabase(factory, name, upgrade, version = 1) {
   if (!factory) return Promise.reject(new Error('IndexedDB is unavailable in this browser'));
   return new Promise((resolve, reject) => {
     let failed = false;
-    const request = factory.open(name, 1);
+    const request = factory.open(name, version);
     request.onupgradeneeded = () => upgrade(request.result);
     request.onerror = () => {
       failed = true;

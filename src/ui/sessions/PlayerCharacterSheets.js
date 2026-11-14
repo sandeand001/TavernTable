@@ -16,6 +16,7 @@ export class SavedCharacterSheets {
     library = null,
     store = null,
     gameManager = null,
+    displayImages = null,
     onChanged = () => {},
   }) {
     if (
@@ -32,6 +33,7 @@ export class SavedCharacterSheets {
       new CampaignCharacters({
         ...state,
         catalog,
+        displayImages,
         store: store ?? new AssignedCharacterStore(connection, state.campaign.id),
       });
     this.manager = {

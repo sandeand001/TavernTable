@@ -836,7 +836,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     authority; progressive use, eviction/UI, warm network proof and logout-wide
     purge remain subsequent gates.
 
-- [ ] **M3-07 - Implement progressive first join and bounded cache management.**
+- [x] **M3-07 - Implement progressive first join and bounded cache management.**
   - **Depends:** `M3-06`.
   - **Success:** load the active authorized area, assigned sheets, and required
     assets first; load other permitted areas on demand. Provide usage/clear-cache
@@ -844,6 +844,31 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** quota denial, browser eviction, corrupt bytes and stale schemas
     trigger explicit recovery/re-download. No cache becomes the only saved copy
     or an excuse to download the whole private campaign.
+  - **Evidence:** verified November 14, 2026 in the development gate. First join
+    publishes current authority synchronously, loads the active authorized area/
+    assigned sheets and required artwork, and requests other permitted views/
+    sheet artwork on demand. Protected binary requests validate captured managed
+    identity, access/view/epoch, exact MIME/bytes/hash and cancel superseded work.
+    Raw/cache checkpoints and canonical edits stay image-free; late artwork does
+    not reposition sprites or replay motion.
+    The explicitly approved **256 MiB per-account/browser** private-cache target
+    is adjustable in Settings with exact usage, UID-only clear and best-effort
+    persistence status. Bounded eviction protects active views; lower targets
+    report retained protected bytes until those views close. Missing browser-wide
+    coordination disables application cache writes instead of overrunning a
+    shared target. Typed corruption/quota/unavailability recover only through
+    currently authorized online bytes.
+    **12 app suites / 186 tests**, zero skips, **20.734 s**, open-handle detection;
+    **4 distinct actual SDK cases** retain protected raw/warm image delivery,
+    managed multipart imports, native acknowledgement and queued combat routes.
+    Native browser Settings verify 256/128 MiB, page-reload preference retention,
+    exact **95-byte PNG** accounting, current-view protection/released eviction,
+    persistence denial, and own-UID clear leaving another UID unchanged; exact
+    synthetic entries are cleared and confirmed absent. Full lint/style/layering:
+    zero errors / same **39 baseline warnings**. No dependency/backend deployment,
+    public frontend/cutover, real account/campaign or routine-save UX change.
+    Authoritative warm-rejoin network proof and logout-wide purge remain
+    `M3-08`/`M3-09`; full shared-game capability remains gated.
 
 - [ ] **M3-08 - Prove warm-cache rejoin and authoritative state recovery.**
   - **Depends:** `M3-04`, `M3-07`.

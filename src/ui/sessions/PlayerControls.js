@@ -213,7 +213,9 @@ export default class PlayerControls {
         ? 'DM-granted arrival preview only. No character vision or movement budget is created.'
         : 'Assigned sheets remain available. Ask the DM for an arrival grant before placement.';
     this.updateRoster();
-    this.status.textContent = `${state.profile.name} - Connected`;
+    this.status.textContent = this.commandPending
+      ? 'Waiting for the host command and its visual checkpoint...'
+      : this.commandStateError?.message || `${state.profile.name} - Connected`;
     this.updateDiceControls();
     this.updateDoorControls();
   }
@@ -227,7 +229,7 @@ export default class PlayerControls {
         (door) =>
           `<button type="button" data-player-door="${escape(door.id)}"
         ${disabled || door.locked ? 'disabled' : ''}
-        title="${escape(door.locked ? 'Locked by the DM. Ask the DM to unlock it.' : this.commandUncertain ? 'Resolve the uncertain host command before using a door.' : busy ? 'Wait for the current host change to finish.' : 'Use this nearby visible door.')}">
+        title="${escape(door.locked ? 'Locked by the DM. Ask the DM to unlock it.' : this.commandUncertain ? this.commandStateError?.message || 'Resolve the uncertain host command before using a door.' : busy ? 'Wait for the current host change to finish.' : 'Use this nearby visible door.')}">
         ${door.open ? 'Close' : 'Open'} ${escape(door.name)}${door.locked ? ' (locked)' : ''}
       </button>`
       )
@@ -263,13 +265,15 @@ export default class PlayerControls {
             !!appearance &&
             this.activeGrantId === grant.id &&
             state.view?.mode === 'placement-preview';
-          const reason = combat
-            ? 'Only the DM may place or retrieve sprites during combat.'
-            : !grant
-              ? 'Ask the DM for an arrival grant for this assigned character.'
-              : !appearance
-                ? 'Choose a canonical Next sprite.'
-                : 'Open the authorized arrival preview first.';
+          const reason =
+            this.commandStateError?.message ||
+            (combat
+              ? 'Only the DM may place or retrieve sprites during combat.'
+              : !grant
+                ? 'Ask the DM for an arrival grant for this assigned character.'
+                : !appearance
+                  ? 'Choose a canonical Next sprite.'
+                  : 'Open the authorized arrival preview first.');
           return `<article class="saved-character-card" data-player-character="${escape(character.id)}" data-sheet-key="player-character:${escape(character.id)}">
           <button type="button" data-assigned-character="${escape(character.id)}">${escape(character.name)}</button>
           <label>Next sprite<select data-player-appearance="${escape(character.id)}" aria-label="Appearance for ${escape(character.name)}" ${observer || busy ? 'disabled' : ''}>
@@ -309,6 +313,7 @@ export default class PlayerControls {
 
   updateCommandState(commands) {
     this.commandPending = commands.pending;
+    this.commandStateError = commands.stateError;
     this.commandUncertain = commands.canRetry || !!commands.stateError;
     this.retry.hidden = !commands.canRetry;
     this.retry.disabled = commands.pending;
@@ -348,7 +353,8 @@ export default class PlayerControls {
     const reason = this.accessEnded
       ? 'Player access ended. Reconnect before rolling.'
       : this.commandUncertain
-        ? 'Resolve the uncertain host command with same-ID retry or reconnect before rolling.'
+        ? this.commandStateError?.message ||
+          'Resolve the uncertain host command with same-ID retry or reconnect before rolling.'
         : !state?.observerTokenId
           ? 'Choose a placed assigned character before rolling.'
           : !supported || !capability

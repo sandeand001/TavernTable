@@ -12,7 +12,7 @@ import { getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
 import { characterActionOptions } from '../../../src/entities/characters/combat/actions.js';
 import { installHumanoidAssetFiles } from '../../helpers/humanoid-fixture.js';
 
-function fixture() {
+function fixture(connectionOptions = {}) {
   const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
   const { state, source, catalog, wizardId } = publicPlayerState();
@@ -26,6 +26,7 @@ function fixture() {
     },
     subscribe: () => () => {},
     close: () => {},
+    ...connectionOptions,
   };
   const app = new PlayerGameApplication({
     gameManager,
@@ -41,6 +42,230 @@ function fixture() {
 afterEach(() => {
   document.body.replaceChildren();
   delete document.body.dataset.sessionRole;
+});
+
+test('late cloud artwork refreshes the native actor without rehydrating its in-flight placement or replaying routes', async () => {
+  let notify;
+  const { app, gameManager, state } = fixture({
+    kind: 'cloud-player',
+    commandReady: true,
+    assetsStatus: { phase: 'ready' },
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+  });
+  const restoreFiles = installHumanoidAssetFiles();
+  delete gameManager.__threeTestDouble;
+  try {
+    await app.start();
+    const token = gameManager.placedTokens[0];
+    const mesh = token.__threeMesh;
+    const terrain = gameManager.terrainEngine;
+    token.world.x = 1.75;
+    mesh.position.x = 1.75;
+    const update = jest.spyOn(app.runtime, 'update');
+    const play = jest.spyOn(gameManager.token3DAdapter, 'playApprovedMovement');
+    const artwork = JSON.parse(JSON.stringify(state));
+    artwork.publicScene.actors[0].portraitImage = 'data:image/png;base64,cG9ydHJhaXQ=';
+    notify({ type: 'artwork', state: artwork });
+    await Promise.resolve();
+    expect(token.publicPortraitImage).toBe(artwork.publicScene.actors[0].portraitImage);
+    expect(gameManager.placedTokens[0]).toBe(token);
+    expect(token.__threeMesh).toBe(mesh);
+    expect(token.world.x).toBe(1.75);
+    expect(mesh.position.x).toBe(1.75);
+    expect(gameManager.terrainEngine).toBe(terrain);
+    expect(update).not.toHaveBeenCalled();
+    expect(play).not.toHaveBeenCalled();
+    const next = JSON.parse(JSON.stringify(state));
+    next.sceneRevision++;
+    next.publicScene.assets = null;
+    const showing = app.showState(next);
+    const earlyArtwork = JSON.parse(JSON.stringify(next));
+    earlyArtwork.publicScene.actors[0].portraitImage = 'data:image/png;base64,bmV4dC1wb3J0cmFpdA==';
+    notify({ type: 'artwork', state: earlyArtwork });
+    await showing;
+    expect(token.publicPortraitImage).toBe(earlyArtwork.publicScene.actors[0].portraitImage);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(play).not.toHaveBeenCalled();
+    expect(token.__threeMesh).toBe(mesh);
+  } finally {
+    await app.destroy();
+    restoreFiles();
+  }
+}, 30000);
+
+test('fresh cloud state cannot enable commands or erase the loading reason before required view artwork is ready', async () => {
+  let notify;
+  let fresh;
+  const { app, state } = fixture({
+    kind: 'cloud-player',
+    phase: 'ready',
+    commandReady: false,
+    assetsStatus: { phase: 'loading' },
+    readLiveState: () => fresh,
+    acknowledgeState: () => {},
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+  });
+  try {
+    await app.start();
+    expect(app.commands.availability('move', state.observerTokenId).allowed).toBe(false);
+    expect(app.controls.status.textContent).toMatch(/artwork/i);
+    fresh = JSON.parse(JSON.stringify(state));
+    fresh.sceneRevision++;
+    fresh.publicScene.assets = null;
+    notify({ type: 'state', state: fresh, reconcile: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(app.state.sceneRevision).toBe(fresh.sceneRevision);
+    expect(app.commands.availability('move', state.observerTokenId).allowed).toBe(false);
+    expect(app.controls.status.textContent).toMatch(/artwork/i);
+    app.connection.commandReady = true;
+    app.connection.assetsStatus = { phase: 'ready' };
+    notify({ type: 'assets-status', status: app.connection.assetsStatus });
+    expect(app.commands.availability('move', state.observerTokenId).allowed).toBe(true);
+    expect(app.controls.status.textContent).toContain('Connected');
+  } finally {
+    await app.destroy();
+  }
+});
+
+test('cloud assigned-sheet images load only on explicit open and decorate display without changing canonical records', async () => {
+  const images = new Map();
+  let release;
+  const load = jest.fn(
+    (id) =>
+      new Promise((resolve) => {
+        release = () => {
+          images.set(id, { artworkImage: 'data:image/png;base64,YXJ0d29yaw==' });
+          resolve(images.get(id));
+        };
+      })
+  );
+  const { app, wizardId, opened, state } = fixture({
+    kind: 'cloud-player',
+    commandReady: true,
+    characterImages: (id) => images.get(id) || null,
+    loadCharacterImages: load,
+  });
+  const canonical = state.records.find(
+    ({ key }) => key === `taverntable.character.v1.${wizardId}`
+  ).value;
+  let showing;
+  try {
+    await app.start();
+    expect(load).not.toHaveBeenCalled();
+    showing = app.showSheet(wizardId);
+    expect(load).toHaveBeenCalledWith(wizardId);
+    expect(opened).toEqual([]);
+    release();
+    await showing;
+    expect(opened).toEqual([wizardId]);
+    expect(app.sheets.library.get(wizardId).artworkImage).toBe(images.get(wizardId).artworkImage);
+    expect(
+      state.records.find(({ key }) => key === `taverntable.character.v1.${wizardId}`).value
+    ).toBe(canonical);
+    await expect(app.showSheet('unassigned')).rejects.toThrow(/no longer assigned/);
+    expect(load).toHaveBeenCalledTimes(1);
+  } finally {
+    release?.();
+    await showing?.catch(() => {});
+    await app.destroy();
+  }
+});
+
+test('player Settings bind the private cache, surface recovery warnings, and clear before current-authority reopen without artwork scene replay', async () => {
+  let notify;
+  let current;
+  const order = [];
+  const uid = 'cache-player';
+  const usage = {
+    bytes: 4,
+    limitBytes: 256 * 1024 * 1024,
+    assetStorageAvailable: true,
+    crossTabCoordinated: true,
+  };
+  const cache = {
+    available: true,
+    getUsage: async () => ({ ...usage }),
+    protectView: async () => async () => {},
+    clear: async () => {
+      order.push('clear');
+      usage.bytes = 0;
+    },
+  };
+  const setup = fixture({
+    kind: 'cloud-player',
+    phase: 'ready',
+    commandReady: true,
+    assetsStatus: { phase: 'ready' },
+    cache,
+    access: { uid },
+    store: { connection: { account: { identity: () => ({ uid }) } } },
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+    invalidateAssets: () => {
+      order.push('invalidate');
+      app.connection.commandReady = false;
+      app.connection.assetsStatus = { phase: 'idle' };
+      notify({ type: 'assets-status', status: app.connection.assetsStatus });
+    },
+    open: async () => {
+      order.push('open');
+      current = JSON.parse(JSON.stringify(setup.state));
+      current.sceneRevision++;
+      current.publicScene.assets = null;
+      current.publicScene.actors[0].gridX = 2;
+      current.publicScene.actors[0].pose.world.x = 2.5;
+      notify({ type: 'state', state: current, reconcile: true });
+      app.connection.commandReady = true;
+      app.connection.assetsStatus = { phase: 'ready' };
+      notify({ type: 'assets-status', status: app.connection.assetsStatus });
+      const artwork = JSON.parse(JSON.stringify(current));
+      artwork.publicScene.actors[0].portraitImage = 'data:image/png;base64,cG9ydHJhaXQ=';
+      return artwork;
+    },
+    readLiveState: () => current,
+    acknowledgeState: () => {},
+  });
+  const app = setup.app;
+  try {
+    await app.start();
+    expect(app.cacheControls).toBeDefined();
+    expect(app.cacheControls?.root.closest('#settings-panel')).not.toBeNull();
+    await app.cacheControls.ready;
+    notify({
+      type: 'assets-status',
+      status: {
+        phase: 'ready',
+        cache: {
+          phase: 'warning',
+          code: 'cache-unavailable',
+          message: 'Private artwork caching is unavailable; current online artwork is verified.',
+        },
+      },
+    });
+    expect(app.cacheControls.availabilityOutput.textContent).toContain(
+      'Private artwork caching is unavailable'
+    );
+    expect(app.commands.availability('move', setup.state.observerTokenId).allowed).toBe(true);
+    const update = jest.spyOn(app.runtime, 'update');
+    app.cacheControls.root.querySelector('[data-cache-clear]').click();
+    await app.cacheControls.idle;
+    expect(order).toEqual(['invalidate', 'clear', 'open']);
+    expect(app.state.sceneRevision).toBe(2);
+    expect(setup.gameManager.placedTokens[0].world.x).toBe(2.5);
+    expect(setup.gameManager.placedTokens[0].publicPortraitImage).toMatch(/^data:image\/png/);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(app.commands.availability('move', setup.state.observerTokenId).allowed).toBe(true);
+  } finally {
+    await app.destroy();
+  }
 });
 
 test('native nearby-door controls serialize the host mutation and reveal only its refreshed authorized snapshot', async () => {

@@ -1,6 +1,9 @@
 import { CharacterLibrary } from '../entities/characters/CharacterLibrary.js';
 import { edition } from '../rules/editions.js';
-import { CHARACTER_BACKUP_LIMIT } from '../config/characters/CharacterImages.js';
+import {
+  CHARACTER_BACKUP_LIMIT,
+  CHARACTER_IMAGE_FIELDS,
+} from '../config/characters/CharacterImages.js';
 
 class SnapshotStorage {
   constructor(records) {
@@ -95,8 +98,12 @@ export default class CampaignCharacters {
     scene = null,
     sceneRevision = 0,
     sceneSavedAt = null,
+    displayImages = null,
   }) {
+    if (displayImages !== null && typeof displayImages !== 'function')
+      throw new Error('Character display images require a current authorized provider');
     this.store = store;
+    this.displayImages = displayImages;
     this.campaign = campaign;
     this.sourceCatalog = catalog;
     this.engine = characterSnapshot(campaign, catalog, records);
@@ -171,7 +178,22 @@ export default class CampaignCharacters {
     return this.engine.list();
   }
   get(id) {
-    return this.engine.get(id);
+    const character = this.engine.get(id);
+    const images = this.displayImages?.(id) ?? null;
+    if (images === null) return character;
+    if (
+      typeof images !== 'object' ||
+      Array.isArray(images) ||
+      Object.keys(images).some(
+        (field) =>
+          !CHARACTER_IMAGE_FIELDS.includes(field) ||
+          (images[field] !== null &&
+            (typeof images[field] !== 'string' ||
+              !/^data:image\/(?:jpeg|png|webp);base64,/.test(images[field])))
+      )
+    )
+      throw new Error('The authorized character display images are invalid');
+    return { ...character, ...images };
   }
   stats(id) {
     return this.engine.stats(id);

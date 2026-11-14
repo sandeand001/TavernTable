@@ -3,6 +3,7 @@ import { webcrypto, createHash } from 'node:crypto';
 import CloudCampaignClientStore from '../../../src/campaigns/CloudCampaignClientStore.js';
 import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
+import { emptyPlayerScene } from '../../../src/campaigns/PlayerPublicProtocol.js';
 
 const campaignId = '11111111-1111-4111-8111-111111111111';
 const commandId = '22222222-2222-4222-8222-222222222222';
@@ -95,6 +96,86 @@ function fixture({ crypto } = {}) {
   });
   return { auth, connection, store, fetch };
 }
+
+test('a participant image requires its captured authorized manifest and delivers only its verified binary bytes', async () => {
+  const setup = fixture();
+  const bytes = Buffer.from('assigned portrait');
+  const reference = {
+    version: 1,
+    campaignId,
+    mimeType: 'image/png',
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    generation: '1',
+    width: 1,
+    height: 1,
+  };
+  const snapshot = {
+    version: 1,
+    access: {
+      version: 1,
+      uid: 'uid-a',
+      campaignId,
+      role: 'member',
+      seatId: '44444444-4444-4444-8444-444444444444',
+      accessGeneration: 3,
+    },
+    sessionId: commandId,
+    generation: 4,
+    viewKey: 'a'.repeat(64),
+    state: {
+      campaign,
+      revision: 0,
+      records: [
+        { key: 'taverntable.character.v1.hero', value: '{"id":"hero","portraitImage":null}' },
+      ],
+      scene: null,
+      sceneRevision: 0,
+      sceneSavedAt: null,
+      characterIds: ['hero'],
+      observerTokenId: null,
+      observers: [],
+      maps: [],
+      location: null,
+      doors: [],
+      gameplay: { version: 1, commands: [], ownedTokens: [], turn: null },
+      publicScene: emptyPlayerScene(),
+    },
+    manifest: {
+      version: 1,
+      images: [{ source: 'character', id: 'hero', field: 'portraitImage', reference }],
+    },
+  };
+  setup.fetch.mockResolvedValue(
+    new Response(bytes, {
+      headers: { 'Content-Type': reference.mimeType, 'Content-Length': String(bytes.length) },
+    })
+  );
+  expect(
+    Buffer.from(await setup.store.readParticipantAsset(campaignId, snapshot, reference))
+  ).toEqual(bytes);
+  const request = setup.fetch.mock.calls[0][1];
+  expect(JSON.parse(request.body)).toEqual({
+    sessionId: commandId,
+    observerTokenId: null,
+    mapId: null,
+    assetKey: null,
+    viewKey: snapshot.viewKey,
+  });
+  expect(request.headers['X-TavernTable-Access-Generation']).toBe('3');
+  await expect(
+    setup.store.readParticipantAsset(campaignId, snapshot, { ...reference, generation: '2' })
+  ).rejects.toMatchObject({ code: 'asset-not-found' });
+  await expect(
+    setup.store.readParticipantAsset(
+      campaignId,
+      { ...snapshot, access: { ...snapshot.access, uid: 'another-user' } },
+      reference
+    )
+  ).rejects.toMatchObject({ code: 'invalid-access-scope' });
+  expect(setup.fetch).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(snapshot.state.records[0].value).portraitImage).toBeNull();
+});
 
 test('a live owner scene captures its epoch and native route separately from canonical scene data and identifies only its own command', async () => {
   const setup = fixture();

@@ -3,6 +3,7 @@ import PublicPlayerRuntime from './PublicPlayerRuntime.js';
 import PlayerCommandAdapter from './PlayerCommandAdapter.js';
 import PlayerInputController from './PlayerInputController.js';
 import PlayerControls from './PlayerControls.js';
+import CloudCacheControls from './CloudCacheControls.js';
 import { connectCharacterServices } from '../characters/characterServices.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { validatePlayerState } from '../../campaigns/PlayerPublicProtocol.js';
@@ -55,6 +56,10 @@ export default class PlayerGameApplication {
       connection,
       catalog,
       state: initialState,
+      displayImages:
+        connection.kind === 'cloud-player' && typeof connection.characterImages === 'function'
+          ? (id) => connection.characterImages(id)
+          : null,
       onChanged: (id) => {
         this.controls?.update(this.state, { placementGrantId: this.placementGrantId });
         if (id) void this.refresh().catch((error) => this.fail(error));
@@ -102,11 +107,61 @@ export default class PlayerGameApplication {
       onRetrieve: (id) => this.commands.send('remove', id, {}),
       onDoor: (id, open) => this.changeDoor(id, open),
     });
+    if (connection.kind === 'cloud-player' && connection.cache) {
+      this.cacheControls = new CloudCacheControls({
+        cache: connection.cache,
+        uid: connection.access.uid,
+        account: connection.store.connection.account,
+        beforeClear: () => {
+          if (this.destroyed || this.accessEnded)
+            throw new Error('Reopen the current account before clearing its private cache.');
+          if (
+            this.commands.pending ||
+            this.commands.canRetry ||
+            this.presentationRevision !== undefined ||
+            gameManager.placedTokens.some((token) =>
+              gameManager.token3DAdapter.isMovementInProgress(token)
+            )
+          )
+            throw new Error(
+              'Finish the current player command or movement before clearing its private cache.'
+            );
+          this.pendingArtwork = null;
+          connection.invalidateAssets();
+        },
+        onCleared: () => this._reopenCacheAuthority(),
+      });
+      this.controls.root.insertAdjacentElement('afterend', this.cacheControls.root);
+      this.cacheControls.updateStatus(connection.assetsStatus);
+    }
   }
 
   async start(state = this.state) {
     await this.showState(state);
     this.unsubscribe = this.connection.subscribe((event) => {
+      if (event.type === 'assets-status' && this.connection.kind === 'cloud-player') {
+        if (this.destroyed || this.accessEnded) return;
+        this.cacheControls?.updateStatus(event.status);
+        void this.cacheControls?.refreshUsage().catch(() => {});
+        if (event.status.error) {
+          const error = Object.assign(new Error(event.status.error.message), event.status.error);
+          GameErrors.input(error, {
+            component: 'PlayerGameApplication',
+            operation: 'requiredArtwork',
+          });
+        }
+        if (this.connection.commandReady === false) this._updateCommandReadiness();
+        else if (!this.cloudUpdatePending && !this.cloudUpdateTask) {
+          this._updateCommandReadiness();
+          this.controls.update(this.state, { placementGrantId: this.placementGrantId });
+        }
+        return;
+      }
+      if (event.type === 'artwork' && this.connection.kind === 'cloud-player') {
+        this._applyArtwork(event.state);
+        void this.cacheControls?.refreshUsage().catch(() => {});
+        return;
+      }
       if (event.type === 'state' && this.connection.kind === 'cloud-player') {
         this.notifiedSceneRevision = Math.max(
           this.notifiedSceneRevision ?? -1,
@@ -142,7 +197,7 @@ export default class PlayerGameApplication {
           !this.cloudUpdatePending &&
           !this.cloudUpdateTask
         )
-          this.commands.setStateError(null);
+          this._updateCommandReadiness();
         return;
       }
       if (event.type === 'access-ended') {
@@ -202,6 +257,46 @@ export default class PlayerGameApplication {
     return this;
   }
 
+  _updateCommandReadiness() {
+    if (this.connection.kind === 'cloud-player' && this.connection.commandReady === false) {
+      const status = this.connection.assetsStatus;
+      const message =
+        status?.error?.message ||
+        (['idle', 'loading'].includes(status?.phase)
+          ? 'Loading authorized artwork for the current live view. Wait before playing.'
+          : 'Wait for live world reconciliation before playing.');
+      if (this.readinessError?.message !== message)
+        this.readinessError = Object.assign(new Error(message), {
+          code: status?.error?.code || 'participant-assets-loading',
+        });
+      this.commands.setStateError(this.readinessError);
+    } else this.commands.setStateError(null);
+  }
+
+  _applyArtwork(state, { defer = true } = {}) {
+    if (this.destroyed || this.accessEnded) return;
+    try {
+      if (this.runtime.updateArtwork(state).applied) {
+        this.pendingArtwork = null;
+        this.sheets.refresh(this.state);
+      } else if (
+        defer &&
+        state.sceneRevision >= this.runtime.revision &&
+        (!this.pendingArtwork ||
+          (state.sceneRevision >= this.pendingArtwork.sceneRevision &&
+            state.revision >= this.pendingArtwork.revision))
+      ) {
+        this.pendingArtwork = state;
+      }
+    } catch (error) {
+      this.controls.status.textContent = error.message;
+      GameErrors.input(error, {
+        component: 'PlayerGameApplication',
+        operation: 'artwork',
+      });
+    }
+  }
+
   async showState(state, version = this.selectionVersion, presentation = {}) {
     if (this.destroyed || this.accessEnded) return { applied: false, reason: 'application-closed' };
     if (version !== this.selectionVersion)
@@ -241,7 +336,10 @@ export default class PlayerGameApplication {
     this.state = state;
     this.observerId = state.observerTokenId;
     this.mapId = this.runtime.mapId;
-    this.commands.setStateError(null);
+    const artwork = this.pendingArtwork;
+    this.pendingArtwork = null;
+    if (artwork) this._applyArtwork(artwork, { defer: false });
+    this._updateCommandReadiness();
     this.controls.update(state, { placementGrantId: this.placementGrantId });
     if (result.sharedMovements?.length) {
       this.presentationRevision = state.sceneRevision;
@@ -441,8 +539,40 @@ export default class PlayerGameApplication {
       throw new Error('Player access ended. Reconnect before opening character data.');
     if (!this.sheets.library.list().some(({ id }) => id === characterId))
       throw new Error('This saved character is no longer assigned to the player');
+    if (this.connection.kind === 'cloud-player') {
+      const version = this.selectionVersion;
+      try {
+        await this.connection.loadCharacterImages(characterId);
+      } catch (error) {
+        if (this.destroyed || this.accessEnded || version !== this.selectionVersion)
+          return { applied: false, reason: 'superseded-selection' };
+        throw error;
+      }
+      if (this.destroyed || this.accessEnded || version !== this.selectionVersion)
+        return { applied: false, reason: 'superseded-selection' };
+      if (!this.sheets.library.list().some(({ id }) => id === characterId))
+        throw new Error('This saved character is no longer assigned to the player');
+    }
     if (this.openSheet) return this.openSheet(characterId);
     return this.sheets.open(characterId);
+  }
+
+  async _reopenCacheAuthority() {
+    if (this.destroyed || this.accessEnded)
+      throw new Error('Reopen the current live game before reloading private artwork.');
+    const version = ++this.selectionVersion;
+    const state = await this.connection.open({
+      observerTokenId: this.observerId,
+      mapId: this.mapId,
+      assetKey: this.runtime.assetKey,
+    });
+    if (this.destroyed || this.accessEnded || version !== this.selectionVersion)
+      throw new Error('The live viewpoint changed while reloading its private cache.');
+    await this._drainCloudUpdates();
+    if (this.destroyed || this.accessEnded || version !== this.selectionVersion)
+      throw new Error('The live viewpoint changed while reloading its private cache.');
+    this._applyArtwork(state);
+    this._updateCommandReadiness();
   }
 
   async changeDoor(doorId, open) {
@@ -501,6 +631,8 @@ export default class PlayerGameApplication {
     if (!this.state.observers.some((observer) => observer.id === id))
       throw new Error('This character is not an available player observer');
     const version = ++this.selectionVersion;
+    this.pendingArtwork = null;
+    if (this.connection.kind === 'cloud-player') this.connection.invalidateAssets?.();
     this.placementGrantId = null;
     this.observerId = id;
     this.mapId = null;
@@ -516,6 +648,8 @@ export default class PlayerGameApplication {
     if (!this.state.maps.some((map) => map.id === id))
       throw new Error('This area is not available to the active character');
     const version = ++this.selectionVersion;
+    this.pendingArtwork = null;
+    if (this.connection.kind === 'cloud-player') this.connection.invalidateAssets?.();
     this.mapId = id;
     this.input.targeting.cancel();
     this.dice.cancel();
@@ -533,6 +667,8 @@ export default class PlayerGameApplication {
     const grant = this.state.placementGrants?.find((entry) => entry.id === id);
     if (!grant) throw new Error('Ask the DM for an authorized arrival grant for this character');
     const version = ++this.selectionVersion;
+    this.pendingArtwork = null;
+    if (this.connection.kind === 'cloud-player') this.connection.invalidateAssets?.();
     this.placementGrantId = id;
     this.observerId = null;
     this.mapId = grant.mapId;
@@ -557,6 +693,7 @@ export default class PlayerGameApplication {
   }
 
   async fail(error, { endAccess = false } = {}) {
+    this.pendingArtwork = null;
     this.commands.setStateError(error);
     this.controls.status.textContent = error.message;
     let closing;
@@ -577,6 +714,10 @@ export default class PlayerGameApplication {
 
   async commandFailed(error, { command }) {
     if (this.destroyed || this.accessEnded) return;
+    if (error.code === 'participant-assets-loading') {
+      this._updateCommandReadiness();
+      return;
+    }
     if (error.status === 401) {
       await this.fail(error);
       return;
@@ -606,6 +747,7 @@ export default class PlayerGameApplication {
   async destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.pendingArtwork = null;
     this.refreshQueued = false;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.pageHide) window.removeEventListener('pagehide', this.pageHide);
@@ -615,7 +757,12 @@ export default class PlayerGameApplication {
     this.dice.destroy();
     this.input.destroy();
     this.sheets.destroy();
-    await Promise.all([this.runtime.destroy(), this.cloudUpdateTask, closing]);
+    await Promise.all([
+      this.runtime.destroy(),
+      this.cloudUpdateTask,
+      closing,
+      this.cacheControls?.destroy(),
+    ]);
     this.controls.destroy();
     this.resources?.close();
     if (this.gameManager.playerApplication === this) delete this.gameManager.playerApplication;

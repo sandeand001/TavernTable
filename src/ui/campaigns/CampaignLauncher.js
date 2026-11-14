@@ -1,7 +1,12 @@
 import CampaignWorkspace from '../../campaigns/CampaignWorkspace.js';
 import { edition, supportedEditions } from '../../rules/editions.js';
 import { escapeHtml as escape } from '../characters/escapeHtml.js';
-import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
+import {
+  ErrorHandler,
+  ERROR_SEVERITY,
+  ERROR_CATEGORY,
+  GameErrors,
+} from '../../utils/error/ErrorHandler.js';
 import CampaignMapControls from './CampaignMapControls.js';
 import CampaignTraversalPopup from './CampaignTraversalPopup.js';
 import CampaignBackupPanel, { downloadCampaignJSON } from './CampaignBackupPanel.js';
@@ -15,11 +20,20 @@ import CloudAccountMethods from '../sessions/CloudAccountMethods.js';
 import CloudAssignedCharacterSheets from '../sessions/CloudAssignedCharacterSheets.js';
 import CloudPlayerSessionConnection from '../../campaigns/CloudPlayerSessionConnection.js';
 import CloudLiveSessionControls from '../sessions/CloudLiveSessionControls.js';
+import CloudCacheControls from '../sessions/CloudCacheControls.js';
+import CloudParticipantCache, {
+  CloudParticipantCacheError,
+} from '../../campaigns/CloudParticipantCache.js';
 
 export default class CampaignLauncher {
-  constructor({ workspace = null, saveFeedback = null } = {}) {
+  constructor({
+    workspace = null,
+    saveFeedback = null,
+    cacheFactory = ({ uid }) => new CloudParticipantCache({ uid }),
+  } = {}) {
     this.workspace = workspace;
     this.saveFeedback = saveFeedback;
+    this.cacheFactory = cacheFactory;
     this.busy = false;
     this.root = document.createElement('section');
     this.root.className = 'campaign-picker';
@@ -36,6 +50,8 @@ export default class CampaignLauncher {
         <p data-cloud-account hidden></p>
         <button type="button" data-cloud-account-signout hidden>Sign out</button>
         <button type="button" data-cloud-account-methods hidden>Sign-in methods</button>
+        <button type="button" data-cloud-cache hidden>Private browser cache settings</button>
+        <div data-cloud-cache-settings hidden></div>
         <button type="button" data-campaign-retry hidden>Retry loading campaigns</button>
         <div class="campaign-columns">
           <section aria-label="Saved campaigns">
@@ -115,6 +131,32 @@ export default class CampaignLauncher {
         'Opening current sign-in methods...'
       );
     });
+    this.root.querySelector('[data-cloud-cache]').addEventListener(
+      'click',
+      () =>
+        void this._perform(async () => {
+          const store = this.workspace.store;
+          if (store.connection.account.identity()?.uid !== store.uid)
+            throw new CloudParticipantCacheError(
+              'cache-unavailable',
+              'Reopen private cache settings for the current signed-in account.'
+            );
+          if (!this.cacheControls) {
+            this.cacheControls = new CloudCacheControls({
+              cache: this.cacheFactory({ uid: store.uid }),
+              uid: store.uid,
+              account: store.connection.account,
+              ownsCache: true,
+            });
+            this.root.querySelector('[data-cloud-cache-settings]').append(this.cacheControls.root);
+          }
+          this.root.querySelector('[data-cloud-cache-settings]').hidden = false;
+          this.cacheControls.setBlocked(this.busy);
+          await this.cacheControls.refreshUsage();
+          this.status.textContent =
+            'Private cache settings apply only to this account in this browser, not cloud storage limits.';
+        }, 'Loading private browser cache settings...')
+    );
     this.ruleset.addEventListener('change', () =>
       this._sources(this.root.querySelector('[data-create-packs]'), this.ruleset.value)
     );
@@ -297,6 +339,7 @@ export default class CampaignLauncher {
           ? `Signed in as ${this.workspace.store.connection.account.identity()?.email || 'your managed account'}.`
           : '';
         this.root.querySelector('[data-cloud-account-signout]').hidden = !cloud;
+        this.root.querySelector('[data-cloud-cache]').hidden = !cloud;
         this.root.querySelector('[data-cloud-account-methods]').hidden =
           !cloud || typeof this.workspace.store.connection.account.linkSignInMethod !== 'function';
         this.root.querySelector('[data-campaign-import]').hidden = !(
@@ -422,14 +465,30 @@ export default class CampaignLauncher {
       throw new Error(
         'The game is paused. The campaign owner must start live gameplay before you join.'
       );
-    const connection = new CloudPlayerSessionConnection({
-      store,
-      campaignId: id,
-      access,
-      sessionId: session.sessionId,
-    });
+    let cache;
+    let connection;
     try {
+      cache = this.cacheFactory({ uid: access.uid });
+      if (cache?.available !== true)
+        throw new CloudParticipantCacheError(
+          'cache-unavailable',
+          'Private cache storage is unavailable in this browser.'
+        );
+      await cache.getUsage();
+      if (store.connection.account.identity()?.uid !== access.uid)
+        throw Object.assign(new Error('The signed-in account changed. Reopen its campaigns.'), {
+          status: 409,
+          code: 'account-changed',
+        });
+      connection = new CloudPlayerSessionConnection({
+        store,
+        campaignId: id,
+        access,
+        sessionId: session.sessionId,
+        cache,
+      });
       const initialState = await connection.open();
+      if (this.cacheControls?.cache === cache) this.cacheControls.ownsCache = false;
       this.resolve({
         role: 'player',
         connection,
@@ -438,7 +497,15 @@ export default class CampaignLauncher {
       });
       this.destroy();
     } catch (error) {
-      await connection.close();
+      try {
+        if (connection) await connection.close();
+        else await cache?.close();
+      } catch (closeError) {
+        GameErrors.input(closeError, {
+          component: 'CampaignLauncher',
+          operation: 'privateCacheClose',
+        });
+      }
       throw error;
     }
   }
@@ -512,21 +579,37 @@ export default class CampaignLauncher {
 
   _controls() {
     for (const control of this.root.querySelectorAll('input,select,button,textarea')) {
+      if (control.closest('.cloud-cache-controls')) continue;
       control.disabled = this.busy || control.hasAttribute('data-core-pack');
     }
+    this.cacheControls?.setBlocked(this.busy);
   }
 
   _failure(error) {
-    this.status.textContent = error.message;
+    const cacheError = error instanceof CloudParticipantCacheError;
+    this.status.textContent = cacheError
+      ? `Private browser cache failed: ${error.message} Cloud authority and public catalogs were not changed.`
+      : error.message;
     this.status.classList.add('sheet-error');
     this.retry.hidden = !!this.workspace;
-    new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
-      component: 'CampaignLauncher',
-      operation: 'campaign',
-    });
+    if (cacheError)
+      GameErrors.input(error, {
+        component: 'CampaignLauncher',
+        operation: 'privateCache',
+      });
+    else
+      new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+        component: 'CampaignLauncher',
+        operation: 'campaign',
+      });
   }
 
   destroy() {
+    void this.cacheControls
+      ?.destroy()
+      .catch((error) =>
+        GameErrors.input(error, { component: 'CampaignLauncher', operation: 'privateCacheClose' })
+      );
     this.backupData = null;
     this.backupText.value = '';
     for (const [element, inert] of this.previousInert || []) element.inert = inert;
@@ -739,5 +822,23 @@ export function mountCampaignControls(gameManager, services) {
     }
   });
   settingsPanel.append(bar);
+  if (cloud && store.uid) {
+    services.cloudCacheControls = new CloudCacheControls({
+      cache: new CloudParticipantCache({ uid: store.uid }),
+      uid: store.uid,
+      account: store.connection.account,
+      ownsCache: true,
+    });
+    settingsPanel.append(services.cloudCacheControls.root);
+    const closeCache = () => {
+      void services.cloudCacheControls.destroy().catch((error) => {
+        GameErrors.input(error, {
+          component: 'CampaignControls',
+          operation: 'privateCacheClose',
+        });
+      });
+    };
+    window.addEventListener('pagehide', closeCache, { once: true });
+  }
   return bar;
 }

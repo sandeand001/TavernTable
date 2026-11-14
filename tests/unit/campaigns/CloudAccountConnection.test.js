@@ -96,6 +96,221 @@ function eventFixture(createResponse) {
   };
 }
 
+function assetFixture(createResponse = null) {
+  const setup = accountFixture();
+  const campaignId = '00000000-0000-4000-8000-000000000002';
+  const bytes = Buffer.from('synthetic verified image bytes');
+  const reference = {
+    version: 1,
+    campaignId,
+    mimeType: 'image/png',
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    generation: '1',
+    width: 1,
+    height: 1,
+  };
+  const access = {
+    version: 1,
+    uid: setup.user.uid,
+    campaignId,
+    role: 'member',
+    seatId: '00000000-0000-4000-8000-000000000003',
+    accessGeneration: 1,
+  };
+  const body = {
+    sessionId: '00000000-0000-4000-8000-000000000004',
+    observerTokenId: 'actor-a',
+    mapId: 'map-main',
+    assetKey: null,
+    viewKey: 'a'.repeat(64),
+  };
+  const fetch = jest.fn(async (url, options) =>
+    createResponse
+      ? createResponse(url, options, { bytes, reference })
+      : new Response(bytes, {
+          headers: { 'Content-Type': reference.mimeType, 'Content-Length': String(bytes.length) },
+        })
+  );
+  const connection = new CloudAccountConnection({
+    account: setup.account,
+    runtime,
+    fetch,
+    baseURL: 'http://127.0.0.1:19410/',
+  });
+  return {
+    ...setup,
+    bytes,
+    reference,
+    access,
+    body,
+    fetch,
+    open: (signal = null) =>
+      connection.request(`campaigns/${campaignId}/participant-assets/${reference.sha256}`, {
+        method: 'POST',
+        body,
+        accessScope: access,
+        responseType: 'asset',
+        assetReference: reference,
+        signal,
+      }),
+  };
+}
+
+test('a participant image download uses captured managed identity and view access and verifies the exact binary reference', async () => {
+  const { open, bytes, fetch, access, body } = assetFixture();
+  const result = await open();
+  expect(Buffer.from(result)).toEqual(bytes);
+  expect(fetch.mock.calls[0][1].headers).toMatchObject({
+    Authorization: 'Bearer initial-token',
+    'X-TavernTable-Seat': access.seatId,
+    'X-TavernTable-Access-Generation': '1',
+  });
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(body);
+});
+
+test.each([
+  [
+    'wrong MIME type',
+    (bytes, reference) => ({ bytes, type: 'image/jpeg', length: reference.bytes }),
+  ],
+  ['wrong declared length', (bytes, reference) => ({ bytes, length: reference.bytes + 1 })],
+  [
+    'truncated body',
+    (bytes, reference) => ({ bytes: bytes.subarray(0, -1), length: reference.bytes }),
+  ],
+  [
+    'extra body bytes',
+    (bytes, reference) => ({
+      bytes: Buffer.concat([bytes, Buffer.from('x')]),
+      length: reference.bytes,
+    }),
+  ],
+  [
+    'wrong binary hash',
+    (bytes, reference) => ({ bytes: Buffer.alloc(bytes.length), length: reference.bytes }),
+  ],
+])(
+  'a participant image with %s is rejected without retaining its transport or exposing bytes',
+  async (_name, change) => {
+    const setup = assetFixture((_url, _options, { bytes, reference }) => {
+      const altered = change(bytes, reference);
+      return new Response(altered.bytes, {
+        headers: {
+          'Content-Type': altered.type || reference.mimeType,
+          'Content-Length': String(altered.length),
+        },
+      });
+    });
+    const result = await setup.open().then(
+      () => ({ accepted: true }),
+      (error) => ({ error })
+    );
+    expect(result.error).toMatchObject({ status: 503, code: 'asset-integrity-failed' });
+    expect(result.error.message).not.toContain(setup.bytes.toString());
+    expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(setup.observers.size).toBe(0);
+  }
+);
+
+test('an initial image 401 renews only the captured managed identity and retries its exact view and reference', async () => {
+  let attempts = 0;
+  const setup = assetFixture((_url, _options, { bytes, reference }) =>
+    attempts++ === 0
+      ? response({ error: { code: 'authentication-required' } }, 401)
+      : new Response(bytes, {
+          headers: { 'Content-Type': reference.mimeType, 'Content-Length': String(bytes.length) },
+        })
+  );
+  expect(Buffer.from(await setup.open())).toEqual(setup.bytes);
+  const first = setup.fetch.mock.calls[0][1];
+  const second = setup.fetch.mock.calls[1][1];
+  expect(second.body).toBe(first.body);
+  expect(second.headers).toEqual({ ...first.headers, Authorization: 'Bearer renewed-token' });
+  expect(second.credentials).toBe('omit');
+  expect(second.redirect).toBe('error');
+  expect(setup.refreshes).toEqual([false, true]);
+  expect(setup.observers.size).toBe(0);
+});
+
+test('an idle participant image download aborts immediately when its managed account changes', async () => {
+  let transport;
+  let finish;
+  let bodyCancelled = false;
+  const setup = assetFixture((_url, options, { bytes, reference }) => {
+    transport = options.signal;
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          finish = controller;
+          controller.enqueue(bytes.subarray(0, 5));
+        },
+        cancel() {
+          bodyCancelled = true;
+        },
+      }),
+      { headers: { 'Content-Type': reference.mimeType, 'Content-Length': String(bytes.length) } }
+    );
+  });
+  const cancelled = new AbortController();
+  const result = setup.open(cancelled.signal);
+  const settled = result.then(
+    (value) => ({ value }),
+    (error) => ({ error })
+  );
+  try {
+    for (let step = 0; step < 20 && !transport; step++) await Promise.resolve();
+    expect(transport).toBeDefined();
+    setup.auth.currentUser = { ...setup.user, uid: 'uid-b' };
+    setup.notifyIdentity();
+    expect(transport.aborted).toBe(true);
+    expect((await settled).error).toMatchObject({ code: 'account-changed' });
+  } finally {
+    cancelled.abort();
+    if (!bodyCancelled) finish.close();
+    await settled;
+  }
+});
+
+test('caller cancellation stops an idle image body and releases its account observation immediately', async () => {
+  const bodyCancelled = jest.fn();
+  const setup = assetFixture(
+    (_url, _options, { reference }) =>
+      new Response(new ReadableStream({ cancel: bodyCancelled }), {
+        headers: { 'Content-Type': reference.mimeType, 'Content-Length': String(reference.bytes) },
+      })
+  );
+  const controller = new AbortController();
+  const settled = setup.open(controller.signal).then(
+    (value) => ({ value }),
+    (error) => ({ error })
+  );
+  for (let step = 0; step < 20 && !setup.fetch.mock.calls.length; step++) await Promise.resolve();
+  controller.abort();
+  expect((await settled).error).toMatchObject({ status: 409, code: 'stream-closed' });
+  expect(bodyCancelled).toHaveBeenCalledTimes(1);
+  expect(setup.observers.size).toBe(0);
+});
+
+test('failed managed identity observation cannot start an image download or leave its deadline behind', async () => {
+  jest.useFakeTimers();
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const setup = assetFixture();
+  setup.account.sdk.onAuthStateChanged = () => {
+    throw new Error('PRIVATE IDENTITY PROVIDER DETAIL');
+  };
+  try {
+    await expect(setup.open()).rejects.toMatchObject({ status: 503, code: 'identity-unavailable' });
+    expect(setup.fetch).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+    expect(log).toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE IDENTITY PROVIDER DETAIL');
+  } finally {
+    jest.useRealTimers();
+    log.mockRestore();
+  }
+});
+
 test.each([
   [
     'mismatched cursor',

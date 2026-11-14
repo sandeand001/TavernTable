@@ -7,6 +7,7 @@ import { testIndexedDB } from '../../helpers/indexedDB.js';
 import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
 import CloudPlayerSessionConnection from '../../../src/campaigns/CloudPlayerSessionConnection.js';
+import CloudParticipantCache from '../../../src/campaigns/CloudParticipantCache.js';
 
 globalThis.TextDecoder ??= TextDecoder;
 globalThis.TextEncoder ??= TextEncoder;
@@ -61,11 +62,22 @@ test('a Joined live-game choice uses only current member access and never opens 
       })),
       observeEvents: jest.fn(),
       readParticipantSnapshot: jest.fn(),
+      readParticipantAsset: jest.fn(),
       commitWorldCommand: jest.fn(),
     },
   };
   const open = jest.spyOn(CloudPlayerSessionConnection.prototype, 'open').mockResolvedValue(state);
-  const launcher = new CampaignLauncher({ workspace });
+  const cache = new CloudParticipantCache({ uid: access.uid });
+  Object.defineProperty(cache, 'available', { configurable: true, value: true });
+  jest.spyOn(cache, 'getUsage').mockResolvedValue({
+    bytes: 0,
+    limitBytes: 256 * 1024 * 1024,
+    assetStorageAvailable: true,
+    crossTabCoordinated: true,
+  });
+  const unavailable = { available: false, close: jest.fn(async () => {}) };
+  const cacheFactory = jest.fn().mockReturnValueOnce(unavailable).mockReturnValue(cache);
+  const launcher = new CampaignLauncher({ workspace, cacheFactory });
   let choice;
   try {
     const picked = launcher.choose();
@@ -76,18 +88,87 @@ test('a Joined live-game choice uses only current member access and never opens 
     for (let step = 0; step < 20 && launcher.busy; step++) await Promise.resolve();
     expect(launcher.status.textContent).toContain('paused');
     expect(open).not.toHaveBeenCalled();
+    expect(cacheFactory).not.toHaveBeenCalled();
     live = true;
     join.click();
+    for (let step = 0; step < 20 && launcher.busy; step++) await Promise.resolve();
+    expect(launcher.status.textContent).toMatch(/private.*cache/i);
+    expect(open).not.toHaveBeenCalled();
+    expect(unavailable.close).toHaveBeenCalledTimes(1);
+    join.click();
+    for (let step = 0; step < 20 && launcher.busy; step++) await Promise.resolve();
+    if (launcher.status.classList.contains('sheet-error'))
+      throw new Error(launcher.status.textContent);
     choice = await picked;
     expect(choice.role).toBe('player');
     expect(choice.identity.role).toBe('player');
     expect(choice.initialState).toBe(state);
+    expect(choice.connection.cache).toBe(cache);
+    expect(cacheFactory).toHaveBeenLastCalledWith({ uid: access.uid });
+    expect(cache.getUsage).toHaveBeenCalledTimes(1);
     expect(workspace.open).not.toHaveBeenCalled();
     expect(workspace.store.getParticipantAccess).toHaveBeenCalledWith(campaignId);
   } finally {
     await choice?.connection.close();
     launcher.destroy();
     open.mockRestore();
+  }
+});
+
+test('account private-cache settings remain accessible while live gameplay is gated and never open a campaign workspace', async () => {
+  const uid = 'cache-account';
+  const account = { identity: () => ({ uid, email: 'cache@example.invalid' }) };
+  const workspace = {
+    manifest: { packs: [] },
+    open: jest.fn(),
+    store: {
+      uid,
+      storageInfo: { kind: 'cloud', label: 'Cloud-authoritative storage' },
+      connection: { account },
+      capabilities: {
+        sharedSessions: false,
+        settings: false,
+        backups: false,
+        invitations: false,
+        portability: false,
+        browserImport: false,
+      },
+      listAccess: async () => ({ owned: [], joined: [] }),
+      getLiveSession: jest.fn(),
+    },
+  };
+  const cache = {
+    available: true,
+    protectView: async () => async () => {},
+    getUsage: async () => ({
+      bytes: 0,
+      limitBytes: 256 * 1024 * 1024,
+      assetStorageAvailable: true,
+      crossTabCoordinated: true,
+    }),
+    close: jest.fn(async () => {}),
+  };
+  const cacheFactory = jest.fn(() => cache);
+  const launcher = new CampaignLauncher({ workspace, cacheFactory });
+  try {
+    launcher.choose();
+    await launcher.ready;
+    expect(cacheFactory).not.toHaveBeenCalled();
+    expect(launcher.root.querySelector('[data-open-cloud-game]')).toBeNull();
+    launcher.root.querySelector('[data-cloud-cache]').click();
+    for (let step = 0; step < 20 && launcher.busy; step++) await Promise.resolve();
+    expect(launcher.cacheControls).toBeDefined();
+    await launcher.cacheControls.ready;
+    expect(cacheFactory).toHaveBeenCalledWith({ uid });
+    expect(launcher.cacheControls.root.querySelector('input').value).toBe('256');
+    expect(workspace.open).not.toHaveBeenCalled();
+    expect(workspace.store.getLiveSession).not.toHaveBeenCalled();
+    expect(workspace.store.capabilities.sharedSessions).toBe(false);
+    launcher.destroy();
+    await launcher.cacheControls.destroy();
+    expect(cache.close).toHaveBeenCalledTimes(1);
+  } finally {
+    launcher.destroy();
   }
 });
 

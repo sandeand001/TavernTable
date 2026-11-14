@@ -53,6 +53,27 @@ export default class PublicPlayerRuntime {
     return result;
   }
 
+  updateArtwork(state) {
+    validatePlayerState(state, { cachedAssets: this.assets });
+    if (
+      state.sceneRevision !== this.revision ||
+      state.publicScene.assetKey !== this.assetKey ||
+      state.observerTokenId !== this.observerId ||
+      state.publicScene.presentation.mapId !== this.mapId ||
+      state.publicScene.actors.length !== this.visibleIds.size ||
+      state.publicScene.actors.some((actor) => !this.visibleIds.has(actor.id))
+    )
+      return { applied: false, reason: 'superseded-artwork' };
+    const actors = new Map(state.publicScene.actors.map((actor) => [actor.id, actor]));
+    for (const token of this.gameManager.placedTokens) {
+      const actor = actors.get(token.id);
+      if (!actor) continue;
+      token.publicPortraitImage = actor.portraitImage;
+      this.gameManager.token3DAdapter.refreshTokenAppearance(token);
+    }
+    return { applied: true };
+  }
+
   async _hydrate(state, { movement, placementGrantId }, generation) {
     const current = () => generation === this.generation;
     const superseded = { applied: false, reason: 'superseded-snapshot' };

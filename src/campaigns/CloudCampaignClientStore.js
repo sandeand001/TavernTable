@@ -1,6 +1,7 @@
 import CampaignStore from './CampaignStore.js';
 import CloudLiveConnection from './CloudLiveConnection.js';
 import { sha256 } from '../storage/sha256.js';
+import { encodeBase64 as base64 } from '../storage/base64.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import {
   isCloudUUID,
@@ -23,6 +24,7 @@ import {
   isCloudMemberRemoval,
   isCloudCampaignSettings,
   isCloudAssetManifest,
+  isCloudAssetReference,
   CLOUD_BACKUP_BYTE_LIMIT,
   CLOUD_IMPORT_CHUNK_BYTES,
   isCloudImportReceipt,
@@ -46,12 +48,6 @@ const invalidResponse = () =>
 const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;
 const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
 const copy = (value) => JSON.parse(JSON.stringify(value));
-const base64 = (bytes) => {
-  const parts = [];
-  for (let offset = 0; offset < bytes.length; offset += 0x8000)
-    parts.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
-  return globalThis.btoa(parts.join(''));
-};
 const definitiveDenials = new Set([
   'invalid-campaign-request',
   'invalid-campaign-change',
@@ -918,6 +914,47 @@ export default class CloudCampaignClientStore {
       accessScope: scope,
     });
     return this._verifiedParticipantSnapshot(id, result, input, scope, cachedAssets);
+  }
+
+  async readParticipantAsset(id, snapshot, reference, { cachedAssets = null, signal = null } = {}) {
+    this._identity();
+    if (
+      !isCloudAccessScope(snapshot?.access) ||
+      snapshot.access.uid !== this.uid ||
+      snapshot.access.campaignId !== id ||
+      snapshot.access.role !== 'member'
+    )
+      throw failure(400, 'invalid-access-scope', 'Choose the current authorized player manifest.');
+    if (!isCloudAssetReference(reference, id))
+      throw failure(400, 'invalid-participant-request', 'Choose a verified participant image.');
+    const captured = copy(snapshot);
+    const asset = copy(reference);
+    const view = {
+      sessionId: captured.sessionId,
+      observerTokenId: captured.state?.observerTokenId,
+      mapId: captured.state?.publicScene?.presentation?.mapId,
+      assetKey: captured.state?.publicScene?.assetKey,
+    };
+    const verified = await this._verifiedParticipantSnapshot(
+      id,
+      captured,
+      view,
+      captured.access,
+      cachedAssets === null ? null : copy(cachedAssets)
+    );
+    const image = verified.manifest.images.find((slot) =>
+      Object.keys(asset).every((field) => slot.reference[field] === asset[field])
+    );
+    if (!image)
+      throw failure(404, 'asset-not-found', 'This image is not in the authorized player manifest.');
+    return this._call(this._resource(id, `/participant-assets/${asset.sha256}`), {
+      method: 'POST',
+      body: { ...view, viewKey: verified.viewKey },
+      accessScope: verified.access,
+      responseType: 'asset',
+      assetReference: image.reference,
+      signal,
+    });
   }
 
   async _verifiedParticipantSnapshot(id, result, input, scope, cachedAssets) {

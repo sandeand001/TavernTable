@@ -111,6 +111,39 @@ function fixture() {
   return { library, ownedId, gameManager, runtime, state };
 }
 
+test('late authorized portraits update existing visuals without replaying placements or interrupting an in-flight route', async () => {
+  const { gameManager, runtime, state, library, ownedId } = fixture();
+  state.publicScene.actors.forEach((actor) => {
+    actor.type = 'mannequin';
+  });
+  await runtime.update(state);
+  try {
+    const token = gameManager.placedTokens[0];
+    const mesh = token.__threeMesh;
+    token.gridX = 2;
+    token.world.x = 2.5;
+    mesh.position.x = 2.5;
+    const artwork = JSON.parse(JSON.stringify(state));
+    artwork.publicScene.actors[0].portraitImage = 'data:image/png;base64,cG9ydHJhaXQ=';
+    expect(runtime.updateArtwork(artwork)).toEqual({ applied: true });
+    expect(token.publicPortraitImage).toBe(artwork.publicScene.actors[0].portraitImage);
+    expect(token.gridX).toBe(2);
+    expect(token.world.x).toBe(2.5);
+    expect(token.__threeMesh).toBe(mesh);
+    expect(mesh.position.x).toBe(2.5);
+    artwork.sceneRevision--;
+    artwork.publicScene.actors[0].portraitImage = null;
+    expect(runtime.updateArtwork(artwork)).toEqual({
+      applied: false,
+      reason: 'superseded-artwork',
+    });
+    expect(token.publicPortraitImage).not.toBeNull();
+  } finally {
+    await runtime.destroy();
+    library.delete(ownedId);
+  }
+});
+
 test('public hydration uses the real terrain engine and canonical visible models without creating foreign character records', async () => {
   const { library, ownedId, gameManager, runtime, state } = fixture();
   await runtime.update(state);

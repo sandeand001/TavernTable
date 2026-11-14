@@ -383,7 +383,7 @@
   rules/models, scoped SDK authority, isolated Linux runtime and approved real
   HTTPS off-turn/Free Play/bidirectional motion/physical-dice/pause/rejoin gates
   passed without changing real accounts, hosted frontend or routine-save UX.
-- **Scoped participant cache (M3-06 verified storage; activation gated)**:
+- **Scoped participant cache (M3-06/M3-07 development gates verified; activation gated)**:
   private IndexedDB checkpoint entries are separate from edition-local public
   resource databases and are keyed by UID hash, campaign, schema, member seat/
   access generation and authorized view key. Stored UTF-8 payloads carry exact
@@ -398,9 +398,31 @@
   only required integrity metadata, not bearer headers or reusable signed URLs.
   Typed corruption/unavailability failures and exact entry invalidation support
   explicit re-download rather than a local/cloud fallback or offline editor.
-  Native browser page-reload persistence, UID/access isolation and exact
-  synthetic-entry cleanup are verified. Progressive join, bounded eviction,
-  cache UI/warm network reuse and logout-wide purge are later M3 gates.
+  The user-approved private-cache target is 256 MiB per account/browser,
+  adjustable in Settings, independent of cloud quotas and public catalogs.
+  UID-wide accounting and least-recently-used eviction protect the active view;
+  reducing the target below protected bytes reports an explicit temporary
+  over-budget state, then evicts released views to the new target. Browser-wide
+  coordination is required for application cache writes. Missing coordination,
+  corruption, quota denial and unavailable storage produce visible recovery
+  status, not offline authority. UID-only clear fences old writes.
+  Native browser page-reload persistence, budget changes, UID/access isolation,
+  exact synthetic-entry cleanup and persistence-denial handling are verified.
+  Full authoritative warm-rejoin network proof and logout-wide purge remain
+  later M3 gates.
+- **Progressive participant artwork (M3-07 development gate verified)**:
+  the live connection publishes fresh authority synchronously while a separate
+  readiness gate loads the active authorized area and assigned sheets. Visible
+  actor/active-character images load first; other assigned-sheet artwork and
+  permitted areas load on demand, never from the owner's private workspace.
+  Managed image requests bind UID, seat/access generation, live epoch, view and
+  exact immutable reference; identity/view changes cancel late work. Cached
+  checkpoints and canonical edits remain image-reference-only and history-free.
+  Display-image providers and artwork-only renderer updates do not persist
+  downloaded bytes into sheet edits, restore actor placements or replay routes.
+  IndexedDB/Cache Storage and persistence are replaceable conveniences, not
+  an offline editor or upload queue. Complete shared gameplay remains gated
+  until the remaining world-action and migration acceptance tasks pass.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its

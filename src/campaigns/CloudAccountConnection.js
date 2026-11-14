@@ -2,8 +2,11 @@ import { validateApplicationRuntime } from './CloudRuntime.js';
 import { CloudAccountError } from './CloudAccount.js';
 import { sessionJSON } from './SessionConnection.js';
 import CloudEventStream from './CloudEventStream.js';
+import { sha256 } from '../storage/sha256.js';
 import {
   isCloudAccessScope,
+  isCloudAssetReference,
+  isCloudParticipantAssetRequest,
   CLOUD_ACCESS_SEAT_HEADER,
   CLOUD_ACCESS_GENERATION_HEADER,
   CLOUD_BACKUP_BYTE_LIMIT,
@@ -439,6 +442,64 @@ export default class CloudAccountConnection {
     this.fetch = (...args) => fetch(...args);
   }
 
+  async _readBytes(response, length, credential, progress, integrityError, signal = null) {
+    const bytes = new Uint8Array(length);
+    const reader = response.body.getReader();
+    const cancelled = () => {
+      void reader.cancel().catch(() => {
+        console.error('[cloud-asset-reader]', { code: 'asset-reader-cancel-failed' });
+      });
+    };
+    signal?.addEventListener('abort', cancelled, { once: true });
+    if (signal?.aborted) cancelled();
+    let offset = 0;
+    try {
+      for (;;) {
+        if (!credential.isCurrent()) throw changedAccount();
+        const { value, done } = await reader.read();
+        if (!credential.isCurrent()) throw changedAccount();
+        if (done) break;
+        if (!ArrayBuffer.isView(value) || value.BYTES_PER_ELEMENT !== 1) throw integrityError();
+        if (!value.byteLength) continue;
+        if (offset + value.byteLength > length) throw integrityError();
+        bytes.set(value, offset);
+        offset += value.byteLength;
+        progress();
+      }
+      if (offset !== length) throw integrityError();
+      return bytes;
+    } finally {
+      signal?.removeEventListener('abort', cancelled);
+      reader.releaseLock();
+    }
+  }
+
+  async _assetBytes(response, reference, credential, progress, signal) {
+    const integrityError = () =>
+      requestError(
+        503,
+        'asset-integrity-failed',
+        'The private image download failed integrity verification.'
+      );
+    if (
+      typeof response.headers?.get !== 'function' ||
+      typeof response.body?.getReader !== 'function' ||
+      response.headers.get('Content-Type') !== reference.mimeType ||
+      response.headers.get('Content-Length') !== String(reference.bytes)
+    )
+      throw integrityError();
+    const bytes = await this._readBytes(
+      response,
+      reference.bytes,
+      credential,
+      progress,
+      integrityError,
+      signal
+    );
+    if ((await sha256(bytes)) !== reference.sha256) throw integrityError();
+    return bytes;
+  }
+
   async _backupText(response, credential, progress) {
     if (
       typeof response.headers?.get !== 'function' ||
@@ -467,49 +528,44 @@ export default class CloudAccountConnection {
         'backup-integrity-failed',
         'The complete backup failed its integrity check.'
       );
-    const bytes = new Uint8Array(length);
-    const reader = response.body.getReader();
-    let offset = 0;
+    const bytes = await this._readBytes(response, length, credential, progress, integrityError);
+    if ((await sha256(bytes)) !== declaredHash) throw integrityError();
     try {
-      for (;;) {
-        if (!credential.isCurrent()) throw changedAccount();
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (!ArrayBuffer.isView(value) || value.BYTES_PER_ELEMENT !== 1) throw integrityError();
-        if (!value.byteLength) continue;
-        if (offset + value.byteLength > length) throw integrityError();
-        bytes.set(value, offset);
-        offset += value.byteLength;
-        progress();
-      }
-      if (offset !== length) throw integrityError();
-      const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
-      const sha256 = [...digest].map((value) => value.toString(16).padStart(2, '0')).join('');
-      if (sha256 !== declaredHash) throw integrityError();
-      try {
-        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      } catch (error) {
-        if (error instanceof TypeError || error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA')
-          throw integrityError();
-        throw error;
-      }
-    } finally {
-      reader.releaseLock();
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (error) {
+      if (error instanceof TypeError || error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA')
+        throw integrityError();
+      throw error;
     }
   }
 
   async request(
     resource,
-    { method = 'GET', body, accessScope = null, responseType = 'json', signal = null } = {}
+    {
+      method = 'GET',
+      body,
+      accessScope = null,
+      responseType = 'json',
+      assetReference = null,
+      signal = null,
+    } = {}
   ) {
     if (
       typeof resource !== 'string' ||
       !/^(?:account|campaigns)(?:\/[A-Za-z0-9-]+)*$/.test(resource) ||
       !['GET', 'POST'].includes(method) ||
       (method !== 'POST' && body !== undefined) ||
-      !['json', 'backup', 'events'].includes(responseType) ||
+      !['json', 'backup', 'events', 'asset'].includes(responseType) ||
+      (assetReference !== null && responseType !== 'asset') ||
+      (responseType === 'asset' &&
+        (method !== 'POST' ||
+          accessScope?.role !== 'member' ||
+          !isCloudAssetReference(assetReference, accessScope.campaignId) ||
+          resource !==
+            `campaigns/${accessScope.campaignId}/participant-assets/${assetReference.sha256}` ||
+          !isCloudParticipantAssetRequest(body))) ||
       (signal !== null &&
-        (responseType !== 'events' ||
+        (!['events', 'asset'].includes(responseType) ||
           typeof signal.aborted !== 'boolean' ||
           typeof signal.addEventListener !== 'function' ||
           typeof signal.removeEventListener !== 'function')) ||
@@ -529,6 +585,7 @@ export default class CloudAccountConnection {
         'invalid-cloud-request',
         'Choose an explicit cloud account or campaign operation.'
       );
+    assetReference = assetReference === null ? null : structuredClone(assetReference);
     const url = new URL(`/api/cloud/${resource}`, this.apiOrigin).href;
     const encoded = body === undefined ? undefined : JSON.stringify(body);
     if (
@@ -551,7 +608,12 @@ export default class CloudAccountConnection {
             )) ||
           (method === 'POST' &&
             accessScope.role === 'member' &&
-            resource === `campaigns/${accessScope.campaignId}/world-commands`)
+            resource === `campaigns/${accessScope.campaignId}/world-commands`) ||
+          (method === 'POST' &&
+            responseType === 'asset' &&
+            accessScope.role === 'member' &&
+            resource ===
+              `campaigns/${accessScope.campaignId}/participant-assets/${assetReference.sha256}`)
         ))
     )
       throw requestError(
@@ -587,7 +649,35 @@ export default class CloudAccountConnection {
       };
       progress();
       let data;
+      let stopIdentity = () => {};
+      let identityError = null;
+      const identityFailed = () => {
+        identityError = new CloudAccountError(
+          503,
+          'identity-unavailable',
+          'The current account could not be verified for this image.'
+        );
+        controller.abort();
+      };
       try {
+        if (responseType === 'asset') {
+          try {
+            stopIdentity = this.account.subscribe((identity) => {
+              if (identity?.uid !== credential.uid || identity.emailVerified !== true) {
+                identityError = changedAccount();
+                controller.abort();
+              }
+            }, identityFailed);
+          } catch (error) {
+            console.error('[cloud-asset-download]', {
+              code: 'identity-observation-failed',
+              kind: error instanceof Error ? 'error' : 'non-error',
+            });
+            identityFailed();
+          }
+          if (identityError) throw identityError;
+          if (!credential.isCurrent()) throw changedAccount();
+        }
         const options = {
           method,
           signal: controller.signal,
@@ -623,24 +713,35 @@ export default class CloudAccountConnection {
             signal,
           });
         }
-        if (responseType === 'backup' && response.status !== 200) {
+        if (['backup', 'asset'].includes(responseType) && response.status !== 200) {
           await sessionJSON(async () => response, url, options);
           throw invalidResponse();
         }
         data =
-          responseType === 'backup' && response.status === 200
-            ? await this._backupText(response, credential, progress)
-            : await sessionJSON(async () => response, url, options);
+          responseType === 'asset'
+            ? await this._assetBytes(
+                response,
+                assetReference,
+                credential,
+                progress,
+                controller.signal
+              )
+            : responseType === 'backup'
+              ? await this._backupText(response, credential, progress)
+              : await sessionJSON(async () => response, url, options);
       } catch (error) {
-        if (responseType === 'backup' || responseType === 'events') controller.abort();
+        if (['backup', 'events', 'asset'].includes(responseType)) controller.abort();
         if (signal?.aborted)
           throw requestError(409, 'stream-closed', 'The live stream was closed.');
         if (!credential.isCurrent()) throw changedAccount();
+        if (identityError) throw identityError;
         if (timedOut)
           throw requestError(
             504,
             'cloud-request-timeout',
-            'The cloud request timed out. Its save status is unconfirmed. Retry online using the same pending command.'
+            responseType === 'asset'
+              ? 'The private image download stalled. Reconnect online to retry its current view.'
+              : 'The cloud request timed out. Its save status is unconfirmed. Retry online using the same pending command.'
           );
         if (error.status === 401 && attempt === 0) {
           credential = await this.account.tokenContext(true);
@@ -648,11 +749,12 @@ export default class CloudAccountConnection {
         }
         throw safeDenial(error);
       } finally {
+        stopIdentity();
         clearTimeout(timeout);
         signal?.removeEventListener('abort', cancel);
       }
       if (!credential.isCurrent()) throw changedAccount();
-      if (responseType === 'backup') return data;
+      if (['backup', 'asset'].includes(responseType)) return data;
       if (
         !data ||
         typeof data !== 'object' ||

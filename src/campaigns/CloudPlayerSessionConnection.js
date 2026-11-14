@@ -1,5 +1,6 @@
 import { isCloudAccessScope, isCloudUUID } from './CloudProtocol.js';
 import { validatePlayerCommandResult, scopePlayerReceipt } from './PlayerPublicProtocol.js';
+import CloudParticipantAssets from './CloudParticipantAssets.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import {
   coalesceMovementPresentations,
@@ -13,7 +14,7 @@ const ended = () =>
 const terminal = new Set(['paused', 'ended', 'denied', 'error', 'closed']);
 
 export default class CloudPlayerSessionConnection {
-  constructor({ store, campaignId, access, sessionId }) {
+  constructor({ store, campaignId, access, sessionId, cache = null }) {
     if (
       !store ||
       store.uid !== access?.uid ||
@@ -42,12 +43,199 @@ export default class CloudPlayerSessionConnection {
     this.assetKey = null;
     this.phase = 'connecting';
     this.presentations = [];
+    this.cache = cache;
+    this.artworkVersion = 0;
+    this.assetsStatus = { phase: 'idle' };
+    this.participantAssets = new CloudParticipantAssets({
+      store,
+      cache,
+      onStatus: (progress) => {
+        if (this.closed) return;
+        if (progress.cache) {
+          this.cacheStatus = copy(progress.cache);
+          this.assetsStatus = { ...this.assetsStatus, cache: this.cacheStatus };
+        }
+        this._emit({ type: 'assets-status', status: this.assetsStatus, progress });
+      },
+      onChanged: () => {
+        if (this.closed || !this.state) return;
+        try {
+          this._identity();
+        } catch (error) {
+          return;
+        }
+        this._emit({
+          type: 'artwork',
+          state: this.participantAssets.decorate(this.state),
+          generation: this.snapshot.generation,
+          viewKey: this.snapshot.viewKey,
+        });
+      },
+    });
+    const account = this.store.connection.account;
+    if (typeof account.subscribe === 'function') {
+      try {
+        this.unsubscribeAccount = account.subscribe(
+          (identity) => {
+            if (!this.closed && identity?.uid !== this.access.uid)
+              this._endAccess(
+                failure(
+                  409,
+                  'account-changed',
+                  'This live game belongs to another signed-in account.'
+                )
+              );
+          },
+          () =>
+            this._endAccess(
+              failure(
+                503,
+                'identity-unavailable',
+                'The current account could not be verified. Reopen its campaigns before playing.'
+              )
+            )
+        );
+        if (this.accessError) {
+          this.unsubscribeAccount?.();
+          this.unsubscribeAccount = null;
+        }
+      } catch (error) {
+        this._endAccess(
+          failure(
+            503,
+            'identity-unavailable',
+            'The current account could not be verified. Reopen its campaigns before playing.'
+          )
+        );
+      }
+    }
+  }
+
+  get commandReady() {
+    return (
+      !this.closed &&
+      this.state !== null &&
+      this.phase === 'ready' &&
+      this.assetsStatus.phase === 'ready'
+    );
+  }
+
+  _assetStatus(phase, error = null) {
+    this.assetsStatus = {
+      phase,
+      ...(this.cacheStatus ? { cache: this.cacheStatus } : {}),
+      ...(error ? { error: { code: error.code, message: error.message } } : {}),
+    };
+    this._emit({ type: 'assets-status', status: this.assetsStatus });
+  }
+
+  _updateArtwork(snapshot) {
+    const version = ++this.artworkVersion;
+    this._assetStatus('loading');
+    let updating;
+    try {
+      updating = this.participantAssets.update(snapshot, { cachedAssets: this.assets });
+    } catch (error) {
+      updating = Promise.reject(error);
+    }
+    const task = Promise.resolve(updating).then(
+      () => {
+        if (this.closed || version !== this.artworkVersion) return;
+        this._identity();
+        this._assetStatus('ready');
+      },
+      (error) => {
+        if (!this.closed && version === this.artworkVersion) this._assetStatus('error', error);
+        throw error;
+      }
+    );
+    this.assetTask = task;
+    void task.catch(() => {});
+  }
+
+  characterImages(characterId) {
+    this._identity();
+    return this.participantAssets.characterImages(characterId);
+  }
+
+  loadCharacterImages(characterId) {
+    this._identity();
+    return this.participantAssets.loadCharacterImages(characterId);
+  }
+
+  _invalidateArtwork() {
+    this.artworkVersion++;
+    this.assetTask = null;
+    this.assetsStatus = {
+      phase: 'idle',
+      ...(this.cacheStatus ? { cache: this.cacheStatus } : {}),
+    };
+    this.participantAssets.invalidate();
+    this._emit({ type: 'assets-status', status: this.assetsStatus });
+  }
+
+  invalidateAssets() {
+    this._identity();
+    this._invalidateArtwork();
+  }
+
+  _endAccess(error, status = { phase: 'denied', reason: error.code }) {
+    if (this.closed || this.accessError) return;
+    this.accessError = error;
+    this.selection++;
+    this.phase = status.phase;
+    this._invalidateArtwork();
+    this.state = null;
+    this.snapshot = null;
+    this.assets = null;
+    this.assetKey = null;
+    this.presentations = [];
+    this._rejectWaiters(error);
+    this._emit({ type: 'live-status', status });
+    this._emit({
+      type: 'access-ended',
+      error: { status: error.status, code: error.code, message: error.message },
+    });
+    this.unsubscribeAccount?.();
+    this.unsubscribeAccount = null;
+    this.observationClosing = Promise.resolve(this.observation?.close());
+    void this.observationClosing.catch(() => {
+      logger.log(
+        LOG_LEVEL.ERROR,
+        'A cloud player observation failed to close',
+        LOG_CATEGORY.SYSTEM,
+        {
+          component: 'CloudPlayerSessionConnection',
+          code: 'player-observation-close-failed',
+        }
+      );
+    });
   }
 
   _identity() {
     if (this.closed) throw ended();
-    if (this.store.connection.account.identity()?.uid !== this.access.uid)
-      throw failure(409, 'account-changed', 'This live game belongs to another signed-in account.');
+    if (this.accessError) throw this.accessError;
+    let identity;
+    try {
+      identity = this.store.connection.account.identity();
+    } catch (error) {
+      const unavailable = failure(
+        503,
+        'identity-unavailable',
+        'The current account could not be verified. Reopen its campaigns before playing.'
+      );
+      this._endAccess(unavailable);
+      throw unavailable;
+    }
+    if (identity?.uid !== this.access.uid) {
+      const error = failure(
+        409,
+        'account-changed',
+        'This live game belongs to another signed-in account.'
+      );
+      this._endAccess(error);
+      throw error;
+    }
   }
 
   _public(snapshot) {
@@ -107,7 +295,7 @@ export default class CloudPlayerSessionConnection {
         clearTimeout(waiter.timer);
         this.waiters.delete(waiter);
         waiter.resolve({
-          state: copy(this.state),
+          state: this.participantAssets.decorate(this.state),
           snapshot: copy(this.snapshot),
           reconcile: this.reconciled,
         });
@@ -119,7 +307,7 @@ export default class CloudPlayerSessionConnection {
     this._identity();
     if (this.state && matches(this.snapshot))
       return Promise.resolve({
-        state: copy(this.state),
+        state: this.participantAssets.decorate(this.state),
         snapshot: copy(this.snapshot),
         reconcile: this.reconciled,
       });
@@ -143,6 +331,7 @@ export default class CloudPlayerSessionConnection {
   async open(options = {}) {
     this._identity();
     const version = ++this.selection;
+    this._invalidateArtwork();
     this.presentations = [];
     this._rejectWaiters(ended());
     await this.observation?.close();
@@ -189,6 +378,24 @@ export default class CloudPlayerSessionConnection {
         onState: (snapshot, context) => {
           if (this.closed || version !== this.selection) return;
           this._identity();
+          if (
+            ['version', 'uid', 'campaignId', 'role', 'seatId', 'accessGeneration'].some(
+              (field) => snapshot.access?.[field] !== this.access[field]
+            )
+          ) {
+            this._endAccess(
+              failure(
+                409,
+                'campaign-access-changed',
+                'Reopen the current assigned campaign access.'
+              )
+            );
+            return;
+          }
+          if (snapshot.sessionId !== this.sessionId) {
+            this._endAccess(ended());
+            return;
+          }
           this.snapshot = copy(snapshot);
           const overflow =
             !context.reconcile &&
@@ -201,6 +408,8 @@ export default class CloudPlayerSessionConnection {
           if (snapshot.state.publicScene.assetKey === null) this.assets = null;
           else this.assets = snapshot.state.publicScene.assets || this.assets;
           this.assetKey = snapshot.state.publicScene.assetKey;
+          // Artwork tasks must not delay synchronous authority publication or receipt wakeups.
+          this._updateArtwork(snapshot);
           const state = copy(this.state);
           state.publicScene.updates = this.reconciled
             ? []
@@ -217,31 +426,28 @@ export default class CloudPlayerSessionConnection {
         onStatus: (status) => {
           if (this.closed || version !== this.selection) return;
           this.phase = status.phase;
-          this._emit({ type: 'live-status', status });
           if (terminal.has(status.phase)) {
-            this.state = null;
-            this.snapshot = null;
-            this.assets = null;
-            this.assetKey = null;
-            this.presentations = [];
             const error = failure(
               status.phase === 'denied' ? 403 : 409,
               status.reason || 'live-session-changed',
               'Live world access ended. Reopen its current campaign.'
             );
-            this._rejectWaiters(error);
-            this._emit({
-              type: 'access-ended',
-              error: { status: error.status, code: error.code, message: error.message },
-            });
-          }
+            this._endAccess(error, status);
+          } else this._emit({ type: 'live-status', status });
         },
       }
     );
     await this.observation.ready;
     this._identity();
     if (version !== this.selection || this.state === null) throw ended();
-    return copy(this.state);
+    let assetTask;
+    do {
+      assetTask = this.assetTask;
+      await assetTask;
+      this._identity();
+      if (version !== this.selection || this.state === null) throw ended();
+    } while (assetTask !== this.assetTask);
+    return this.participantAssets.decorate(this.state);
   }
 
   get done() {
@@ -253,7 +459,7 @@ export default class CloudPlayerSessionConnection {
     if (this.state === null) throw ended();
     if (!Number.isSafeInteger(sinceSceneRevision) || sinceSceneRevision < 0)
       throw failure(400, 'invalid-command', 'Choose the last rendered scene revision.');
-    const state = copy(this.state);
+    const state = this.participantAssets.decorate(this.state);
     const actors = new Map(state.publicScene.actors.map((actor) => [actor.id, actor]));
     state.publicScene.updates = coalesceMovementPresentations(
       this.presentations.filter(
@@ -288,6 +494,13 @@ export default class CloudPlayerSessionConnection {
           409,
           'world-state-unavailable',
           'Wait for live world reconciliation before another command.'
+        );
+      if (!this.commandReady)
+        throw failure(
+          409,
+          'participant-assets-loading',
+          this.assetsStatus.error?.message ||
+            'Wait for authorized artwork for the current live view before playing.'
         );
       const acknowledged = await this.store.commitWorldCommand(
         this.campaignId,
@@ -351,6 +564,11 @@ export default class CloudPlayerSessionConnection {
     if (this.closing) return this.closing;
     this.closed = true;
     this.selection++;
+    this.artworkVersion++;
+    this.assetTask = null;
+    this.participantAssets.invalidate();
+    this.unsubscribeAccount?.();
+    this.unsubscribeAccount = null;
     this._rejectWaiters(ended());
     this.listeners.clear();
     this.state = null;
@@ -358,7 +576,10 @@ export default class CloudPlayerSessionConnection {
     this.assets = null;
     this.assetKey = null;
     this.presentations = [];
-    this.closing = this.observation?.close() || Promise.resolve();
+    this.closing = Promise.all([
+      this.observationClosing || this.observation?.close(),
+      this.participantAssets.close(),
+    ]).then(() => {});
     return this.closing;
   }
 }

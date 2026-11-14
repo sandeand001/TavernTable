@@ -1252,6 +1252,18 @@ test(
       'terrainKey',
     ])
       assert.ok(!encoded.includes(secret), secret + ' must not be in the participant checkpoint');
+    const image = snapshot.manifest.images[0].reference;
+    assert.deepEqual(
+      Buffer.from(await memberClient.readParticipantAsset(campaign.id, snapshot, image)),
+      bytes
+    );
+    await assert.rejects(
+      memberClient.readParticipantAsset(campaign.id, snapshot, {
+        ...image,
+        generation: String(Number(image.generation) + 1),
+      }),
+      { code: 'asset-not-found' }
+    );
     const request = {
       sessionId: live.sessionId,
       observerTokenId: 'token-1',
@@ -1267,6 +1279,12 @@ test(
     );
     assert.equal(warm.state.publicScene.assets, null);
     assert.equal(warm.viewKey, snapshot.viewKey);
+    assert.deepEqual(
+      Buffer.from(
+        await memberClient.readParticipantAsset(campaign.id, warm, image, { cachedAssets })
+      ),
+      bytes
+    );
     const cleared = await memberClient.readParticipantSnapshot(
       campaign.id,
       {

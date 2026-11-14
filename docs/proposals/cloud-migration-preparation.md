@@ -1077,14 +1077,14 @@ rollout remain separate M2/M3/M4 gates; no account-linking success is implied.
 
 ### Canonical-path acceptance
 
-| Path | Real-interface evidence |
-| --- | --- |
-| Name/source metadata | Empty-state consistency, unique winner, four-instance identical replay, stale/foreign/invalid source denial and exact captured-generation checks. |
-| Sheets, owned resources and layouts | A real cloud character owns a supplemental spell and Favorite; disabling its pack retains the same owned ID, layout and source version, but blocks new additions. A stale sheet write cannot spend or replace records after the source revision advances. |
-| Embedded image/notes records | A valid generated PNG and notes survive in byte-identical character rows; canonical image data is not silently replaced with an external URL. Participant binary delivery is still `M2-06`. |
-| Scene, doors, terrain, camera and positions | Real 2014/2024 connected-world snapshots include walls, doors/stairs, changed physical position/facing/run mode and committed movement/turn state. Settings publication and independent reopening preserve exact scene bytes and values. |
-| Atomic spending and retry | Existing joint character/scene cases and new settings faults preserve the revision/receipt contract. A real publication precondition failure rolls back; a deliberately lost successful HTTP reply recovers the same command exactly once. |
-| Local compatibility | Existing local campaign, character, SQLite storage, host Adapter, scene/world and autosave tests continue to pass. |
+| Path                                        | Real-interface evidence                                                                                                                                                                                                                                   |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Name/source metadata                        | Empty-state consistency, unique winner, four-instance identical replay, stale/foreign/invalid source denial and exact captured-generation checks.                                                                                                         |
+| Sheets, owned resources and layouts         | A real cloud character owns a supplemental spell and Favorite; disabling its pack retains the same owned ID, layout and source version, but blocks new additions. A stale sheet write cannot spend or replace records after the source revision advances. |
+| Embedded image/notes records                | A valid generated PNG and notes survive in byte-identical character rows; canonical image data is not silently replaced with an external URL. Participant binary delivery is still `M2-06`.                                                               |
+| Scene, doors, terrain, camera and positions | Real 2014/2024 connected-world snapshots include walls, doors/stairs, changed physical position/facing/run mode and committed movement/turn state. Settings publication and independent reopening preserve exact scene bytes and values.                  |
+| Atomic spending and retry                   | Existing joint character/scene cases and new settings faults preserve the revision/receipt contract. A real publication precondition failure rolls back; a deliberately lost successful HTTP reply recovers the same command exactly once.                |
+| Local compatibility                         | Existing local campaign, character, SQLite storage, host Adapter, scene/world and autosave tests continue to pass.                                                                                                                                        |
 
 The actual browser signed in the preserved synthetic owner, created a separate
 test campaign, edited its name and enabled a compatible pack through the visible
@@ -2132,18 +2132,18 @@ Scope headers are restricted to the explicit participant/assigned/image
 interfaces. No public route accepts the internal resource-owner UID helpers as
 an alternative to caller authentication or campaign authorization.
 
-| Implemented surface | Owner of this campaign | Current member | Unrelated UID | Existing evidence |
-| --- | --- | --- | --- | --- |
-| Account and Owned/Joined directory | Own verified, eligible UID and campaign-local role | Same account checks; minimal current seat/index projection | Own account/campaigns only; no foreign campaign data | [Account access](../../tests/cloud/AccountAccess.test.js), [browser account](../../tests/cloud/BrowserAccount.test.js), [campaign access](../../tests/cloud/CampaignAccess.test.js) |
-| Sign-in-method linking | Same proven UID retains ownership | Same UID retains joined assignments/access | No email/name matching or account merging | [Linking acceptance/rejection safety](../../tests/cloud/AccountLinking.test.js), M2-04 real-account proof |
-| Canonical snapshots, scene/sheet saves and settings | Explicit owned read/write, captured revisions/generation | No raw owner scene/NPC table or owner canonical/settings write | Denied before staging or delivery | [Canonical store](../../tests/cloud/CampaignStore.test.js), [access](../../tests/cloud/CampaignAccess.test.js), [process replacement](../../tests/cloud/BackendLifecycle.test.js) |
-| Invitations, assignments, sharing and removal | Current-generation owner administration | Verified single-use binding; no administration | No foreign management; one invitation race winner and no loser approval | [Lifecycle/races/faults/replay](../../tests/cloud/CampaignAccess.test.js), real invitation acceptance/removal |
-| Online assigned sheets | Existing paused preparation semantics | Current assigned rows only; scoped CAS save; minimal original receipt is not a renewed grant | No assigned data/write; foreign/private/malformed projections rejected | [Real scoped reads/writes/IO races](../../tests/cloud/CampaignAccess.test.js), [managed client](../../tests/unit/campaigns/CloudCampaignClientStore.test.js), [sheet UI](../../tests/unit/ui/CloudAssignedCharacterSheets.test.js), real API gate |
-| Private images | Validated immutable JPEG/PNG/WebP under owner ledger | Only current assigned manifest/bytes; post-IO recheck; scoped sheet image edits | No foreign manifest, image or upload authority | [Private images](../../tests/cloud/PrivateAssets.test.js), [limits](../../tests/cloud/UsageLimits.test.js), real exact-byte PNG delivery |
-| Complete export/import/retained restore | Full owned file; bounded own multipart intent; restore as fresh authority | Cannot obtain the owner's file/history; independent owned copies do not grant global DM authority | Cannot inspect/resume foreign transfers or backups | [Portability](../../tests/cloud/Portability.test.js), [process recovery](../../tests/cloud/BackendLifecycle.test.js) |
-| Independent rolling backups | Twenty complete points; captured source and separate failure/receipt state | Authorized short sheet requests can trigger private owner work, never receive owner history/files/status | No foreign backup work/file authority | [Complete history/restore/failures](../../tests/cloud/Portability.test.js), [cold recovery](../../tests/cloud/BackendLifecycle.test.js), M2-12 due member-request backup |
-| Quotas and fenced cleanup | Atomic slots/whole-checkpoint bytes; generation-specific deletion and conservative retained charge | Changes charge the campaign owner, not the member's separate allowance | No foreign accounting rewrite or prefix maintenance | [Usage/cleanup boundaries](../../tests/cloud/UsageLimits.test.js), [immutable bytes](../../tests/cloud/ImmutableObjects.test.js), [portability](../../tests/cloud/Portability.test.js) |
-| Durable live foundation | Owner-only start/end/keep-active; paused free preparation | Current status/live admission only; sign-in/presence never starts or renews meaningful activity | No foreign status/admission/control | [55/60/15-minute and lease cases](../../tests/cloud/CampaignAccess.test.js), [actual replacement](../../tests/cloud/BackendLifecycle.test.js) |
+| Implemented surface                                 | Owner of this campaign                                                                             | Current member                                                                                           | Unrelated UID                                                           | Existing evidence                                                                                                                                                                                                                                 |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account and Owned/Joined directory                  | Own verified, eligible UID and campaign-local role                                                 | Same account checks; minimal current seat/index projection                                               | Own account/campaigns only; no foreign campaign data                    | [Account access](../../tests/cloud/AccountAccess.test.js), [browser account](../../tests/cloud/BrowserAccount.test.js), [campaign access](../../tests/cloud/CampaignAccess.test.js)                                                               |
+| Sign-in-method linking                              | Same proven UID retains ownership                                                                  | Same UID retains joined assignments/access                                                               | No email/name matching or account merging                               | [Linking acceptance/rejection safety](../../tests/cloud/AccountLinking.test.js), M2-04 real-account proof                                                                                                                                         |
+| Canonical snapshots, scene/sheet saves and settings | Explicit owned read/write, captured revisions/generation                                           | No raw owner scene/NPC table or owner canonical/settings write                                           | Denied before staging or delivery                                       | [Canonical store](../../tests/cloud/CampaignStore.test.js), [access](../../tests/cloud/CampaignAccess.test.js), [process replacement](../../tests/cloud/BackendLifecycle.test.js)                                                                 |
+| Invitations, assignments, sharing and removal       | Current-generation owner administration                                                            | Verified single-use binding; no administration                                                           | No foreign management; one invitation race winner and no loser approval | [Lifecycle/races/faults/replay](../../tests/cloud/CampaignAccess.test.js), real invitation acceptance/removal                                                                                                                                     |
+| Online assigned sheets                              | Existing paused preparation semantics                                                              | Current assigned rows only; scoped CAS save; minimal original receipt is not a renewed grant             | No assigned data/write; foreign/private/malformed projections rejected  | [Real scoped reads/writes/IO races](../../tests/cloud/CampaignAccess.test.js), [managed client](../../tests/unit/campaigns/CloudCampaignClientStore.test.js), [sheet UI](../../tests/unit/ui/CloudAssignedCharacterSheets.test.js), real API gate |
+| Private images                                      | Validated immutable JPEG/PNG/WebP under owner ledger                                               | Only current assigned manifest/bytes; post-IO recheck; scoped sheet image edits                          | No foreign manifest, image or upload authority                          | [Private images](../../tests/cloud/PrivateAssets.test.js), [limits](../../tests/cloud/UsageLimits.test.js), real exact-byte PNG delivery                                                                                                          |
+| Complete export/import/retained restore             | Full owned file; bounded own multipart intent; restore as fresh authority                          | Cannot obtain the owner's file/history; independent owned copies do not grant global DM authority        | Cannot inspect/resume foreign transfers or backups                      | [Portability](../../tests/cloud/Portability.test.js), [process recovery](../../tests/cloud/BackendLifecycle.test.js)                                                                                                                              |
+| Independent rolling backups                         | Twenty complete points; captured source and separate failure/receipt state                         | Authorized short sheet requests can trigger private owner work, never receive owner history/files/status | No foreign backup work/file authority                                   | [Complete history/restore/failures](../../tests/cloud/Portability.test.js), [cold recovery](../../tests/cloud/BackendLifecycle.test.js), M2-12 due member-request backup                                                                          |
+| Quotas and fenced cleanup                           | Atomic slots/whole-checkpoint bytes; generation-specific deletion and conservative retained charge | Changes charge the campaign owner, not the member's separate allowance                                   | No foreign accounting rewrite or prefix maintenance                     | [Usage/cleanup boundaries](../../tests/cloud/UsageLimits.test.js), [immutable bytes](../../tests/cloud/ImmutableObjects.test.js), [portability](../../tests/cloud/Portability.test.js)                                                            |
+| Durable live foundation                             | Owner-only start/end/keep-active; paused free preparation                                          | Current status/live admission only; sign-in/presence never starts or renews meaningful activity          | No foreign status/admission/control                                     | [55/60/15-minute and lease cases](../../tests/cloud/CampaignAccess.test.js), [actual replacement](../../tests/cloud/BackendLifecycle.test.js)                                                                                                     |
 
 This closes implemented M2 persistence coverage, not future protocol coverage.
 Actual participant world/room snapshots and deltas, SSE transport and leases,
@@ -2532,15 +2532,15 @@ full cloud-gameplay claim.
 
 Verified evidence:
 
-| Gate | Verified outcome |
-| --- | --- |
+| Gate                            | Verified outcome                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Real official SDK/API authority | Final frozen **80/80 access/world cases**, no failure/cancel/skip, **460,966.3552 ms**. Both 2014/2024 off-turn denial and Free Play admission; actual owner/member streams, sparse owner delivery, queued combat steps, competing CAS, same-ID recovery after removal, hostile actor/observer/role/cost, private owner scope/origin/epoch denial with zero body IO, and owner eligibility loss after IO. |
-| Other canonical regressions | The other six directly affected canonical store/immutable/private-assets/quota/portability/process files retain **118 passing cases** on unchanged authority source. Together the corrected/rechecked gates verify all **198 distinct native cases**; the initial two failures and exact correction/recheck are retained below rather than hidden. |
-| Native cloud flight/fall | Actual 2024 takeoff, airborne step, 10-foot raise and 15-foot fall deliver native owner `fly`/`fall` routes with canonical movement **5/10/20/20 feet**; ground/prone/fall state retained. **1/1 case**, no skips, **18,123.2109 ms**. |
-| Native/local preservation | **8 suites / 88 tests**, **119.303 s** with open-handle detection; physical sight, resize/hidden origins, queued native routes, 2014/2024 Free Play, flight/falls, physical dice, actions/Undo and existing receipt behavior preserved. |
-| Full directly affected app gate | **16 explicit suites / 209 tests**, zero failures/skips, **109.289 s** with open-handle detection. Includes transport/reconnect, saves, scoped public runtime/model teardown, commands, picker/bootstrap, native queued owner steps and both cloud sprite directions. |
-| Full JS/CSS/layering | Zero errors and the unchanged **39 baseline warnings**. |
-| Isolated Linux private runtime | Exact **23 source/model/manifest hashes**, Node **24.22.3**, UID **1000**, read-only, no network/binds/GPU/ADC, **1 CPU / 1 GiB**, actual native d20 **501 frames / settled face 3**, RSS **261,050,368 bytes**, clean exit **0** and exact owned container removed. |
+| Other canonical regressions     | The other six directly affected canonical store/immutable/private-assets/quota/portability/process files retain **118 passing cases** on unchanged authority source. Together the corrected/rechecked gates verify all **198 distinct native cases**; the initial two failures and exact correction/recheck are retained below rather than hidden.                                                        |
+| Native cloud flight/fall        | Actual 2024 takeoff, airborne step, 10-foot raise and 15-foot fall deliver native owner `fly`/`fall` routes with canonical movement **5/10/20/20 feet**; ground/prone/fall state retained. **1/1 case**, no skips, **18,123.2109 ms**.                                                                                                                                                                    |
+| Native/local preservation       | **8 suites / 88 tests**, **119.303 s** with open-handle detection; physical sight, resize/hidden origins, queued native routes, 2014/2024 Free Play, flight/falls, physical dice, actions/Undo and existing receipt behavior preserved.                                                                                                                                                                   |
+| Full directly affected app gate | **16 explicit suites / 209 tests**, zero failures/skips, **109.289 s** with open-handle detection. Includes transport/reconnect, saves, scoped public runtime/model teardown, commands, picker/bootstrap, native queued owner steps and both cloud sprite directions.                                                                                                                                     |
+| Full JS/CSS/layering            | Zero errors and the unchanged **39 baseline warnings**.                                                                                                                                                                                                                                                                                                                                                   |
+| Isolated Linux private runtime  | Exact **23 source/model/manifest hashes**, Node **24.22.3**, UID **1000**, read-only, no network/binds/GPU/ADC, **1 CPU / 1 GiB**, actual native d20 **501 frames / settled face 3**, RSS **261,050,368 bytes**, clean exit **0** and exact owned container removed.                                                                                                                                      |
 
 The production-only runtime check first failed with `ERR_MODULE_NOT_FOUND` for
 `cannon-es`. The existing exact **0.20.0** pin was promoted from development to
@@ -2642,3 +2642,78 @@ Progressive first join/private artwork loading, bounded eviction/cache controls,
 zero-unchanged-body network rejoin proof and logout/access-change purge remain
 `M3-07` through `M3-09`. No backend/image/IAM/index, public frontend, real campaign
 or deferred routine-save UX change was required.
+
+### M3-07: progressive join and bounded private cache management
+
+The development player connection now reuses the verified private cache without
+turning a stored checkpoint into current authority. Managed state publication
+remains synchronous; required current-view artwork has separate readiness and
+command admission. The initial view contains only authorized area geometry and
+assigned-sheet records. Visible actor/active-character images load first;
+other assigned-sheet artwork and permitted areas load on request, never through
+an owner workspace or a whole-private-campaign download.
+
+Binary image HTTP binds the captured UID, seat/access generation, live epoch,
+view key and immutable image reference. Exact MIME type, length and SHA-256 are
+checked; a single initial 401 renews only the captured managed identity/body.
+Caller cancellation, account/verification changes and view replacement abort
+idle readers. Failed identity observation is typed and redacted. Late old bytes
+cannot populate a replacement view or a cleared cache.
+
+Downloaded images decorate native display state through an authorized provider;
+they do not enter raw checkpoints, canonical sheet edits or portable backups.
+Artwork-only renderer updates preserve existing meshes, physical poses and
+in-flight routes rather than rehydrating a saved placement. Existing streamed
+acknowledgement, movement coalescing and authoritative combat costs remain
+separate from binary image loading.
+
+The user approved a **256 MiB default private-cache target per account/browser**,
+adjustable in Settings. UID-wide checkpoint/binary accounting, bounded LRU
+eviction and exact UID-only clear are separate from public edition catalogs and
+cloud quotas. The active view is protected while loading/playing. Lowering a
+target below its protected bytes reports the actual retained usage and temporary
+over-budget state; release converges to the new target without evicting the
+current screen mid-operation. The application disables private cache IO when
+browser-wide coordination is unavailable. Cache schema upgrades leave public
+resource database defaults unchanged.
+
+Unavailable storage, corrupt entries, quota/target limits and browser eviction
+produce typed, visible recovery. Only current online-authorized image bytes may
+replace them. Browser persistence is best-effort and distinguishes accepted,
+denied, unavailable and failed results. There is no offline editor, durable
+upload queue or local/cloud authority fallback.
+
+Verified gates:
+
+- **12 directly affected app suites / 186 tests**, zero skips, **20.734 s** with
+  open-handle detection. The first coupled run had **185 passes / one failure**
+  because the new renderer fixture left its own Scout in localStorage. Exact
+  fixture-owned character deletion corrected isolation; production authority was
+  not changed to conceal that failure.
+- **Four distinct actual SDK cases**, zero skips: protected raw/warm image
+  delivery and unchanged managed multipart import (**14,189.0025 ms** together);
+  native player acknowledgement without another snapshot and two unrendered
+  accepted steps forming one continuous route with the final combat budget
+  (**20,740.9912 ms** together).
+- Native browser IndexedDB/Cache Storage and Settings show the 256 MiB default,
+  persist a 128 MiB choice across page reload, account for **1,567 bytes** including
+  a real **95-byte PNG**, protect the current view, defer a zero-byte target
+  truthfully, then evict to zero when that view closes. The first protection
+  probe failed before the loader acquired its current-view handle; the corrected
+  loader passes the actual protected-byte/released-eviction check.
+- Actual persistence denial reports that the cache may be evicted, without
+  retrying or claiming cloud authority changed. Settings clear invalidates active
+  work first, clears **1,567 bytes** for its UID, and leaves another synthetic
+  UID's **1,569 bytes** untouched. Both exact synthetic namespaces are then
+  cleared and verified empty; the test preference is reset to 256 MiB and the
+  owned test controls/dialog/subscription are removed.
+- Full JS/stylelint/layering: zero errors and the same **39 baseline warnings**.
+
+The owned native browser helper became unavailable when close was attempted;
+no successful close is claimed. Its synthetic entries had already been cleared
+and confirmed absent. No sign-in/provider/account verification, real campaign,
+original local host, backend/IAM/index, public frontend or deferred routine-save
+UX was changed. `M3-08` still must prove authoritative warm rejoin with exact
+network counts; `M3-09` still owns logout-wide purge and connection-loss safety.
+The shared-game capability remains off until the remaining action and migration
+acceptance gates pass.

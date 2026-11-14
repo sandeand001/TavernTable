@@ -16,6 +16,30 @@ const catalog = {
   enabledEntryIds: [],
 };
 
+test('authorized display images update sheets without entering canonical edits or portable backups', async () => {
+  const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
+  try {
+    const campaign = await store.create({ name: 'Referenced portraits', ruleset: '2014' });
+    let images = { portraitImage: 'data:image/png;base64,cG9ydHJhaXQ=' };
+    const library = new CampaignCharacters({
+      store,
+      catalog,
+      ...(await store.readCharacters(campaign.id)),
+      displayImages: () => images,
+    });
+    const id = await library.create('Assigned character');
+    expect(library.get(id).portraitImage).toBe(images.portraitImage);
+    await library.edit(id, { name: 'Acknowledged edit' });
+    const reopened = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
+    expect(reopened.get(id).portraitImage).toBeUndefined();
+    expect(JSON.parse(library.export(id)).character.portraitImage).toBeUndefined();
+    images = null;
+    expect(library.get(id).portraitImage).toBeUndefined();
+  } finally {
+    store.close();
+  }
+});
+
 test('large portrait and artwork data commit atomically and survive character and campaign backups', async () => {
   const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
   try {
