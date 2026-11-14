@@ -357,6 +357,11 @@ function hostingConfiguration(release) {
           source: '/releases/**',
           headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
         },
+        {
+          // Hosting redirects inherit their destination entry's cache policy.
+          source: '/releases/*/index.html',
+          headers: [{ key: 'Cache-Control', value: 'no-store' }],
+        },
       ],
     },
   };

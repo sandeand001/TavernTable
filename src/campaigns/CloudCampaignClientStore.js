@@ -1349,7 +1349,7 @@ export default class CloudCampaignClientStore {
         if (
           item.error === null &&
           error.code !== 'account-changed' &&
-          [400, 401, 403, 404, 409, 413].includes(error.status)
+          [400, 401, 403, 404, 409, 413, 422].includes(error.status)
         )
           this.pendingWorld = null;
         else item.error = error;

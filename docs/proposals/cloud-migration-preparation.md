@@ -3397,3 +3397,130 @@ operator approval. The actual owner authorization is this separate M4-08
 record, not a mutable build-manifest permission bit.
 Actual image rollout, public Hosting publication and fresh hosted acceptance
 are recorded only after their separate `M4-09` verification.
+
+### M4-09: published pilot, live regressions and pending owner sign-in
+
+The approved pilot is now published at
+[the default Hosting URL](https://taverntable-489d5.web.app). This is still the
+existing personal project/test service, not a new isolated Auth/database
+environment, production migration or source-of-truth cutover.
+**M4-09 remains unchecked; the checklist remains 49/65** until normal owner
+browser sign-in acceptance is completed.
+
+The exact validated `cc93b46b...26004e` OCI index was published only to the
+existing private image repository and the image-only service update succeeded:
+current ready revision **taverntable-api-test-00007-vft**, same HTTPS URI and
+100% latest traffic. The updater preserves the existing configuration and IAM
+fingerprint without silently adding/repairing invocation grants. Min 0/max 1,
+request-based CPU, region, identity, origins and other approved settings remain
+unchanged.
+
+Live acceptance found and fixed two issues before accepting the package:
+
+- A fresh **HTTP 422** off-turn movement denial remained an unconfirmed pending
+  client command, so the subsequent valid Free Play command was blocked.
+  The existing first-attempt definitive-denial list now includes 422. A denial
+  after an earlier lost reply still retains the original UID/body/ID; it cannot
+  clear uncertainty or authorize a replacement. Two focused public HTTP-store
+  regression cases reproduce the fresh-command failure before the fix and
+  protect original-only recovery afterward. The coupled client/player suites
+  pass **66/66 tests in 2 suites**, **1.575 seconds**, with open-handle detection.
+  This is a frontend SDK fix; no backend runtime behavior or privilege changed.
+- Actual Hosting **302** responses inherited the destination versioned HTML's
+  one-year cache policy, despite the broad `no-store` rule. Read-only inspection
+  confirmed correctly uploaded URL globs, not the Windows emulator glob defect.
+  The builder now puts a final `no-store` override on versioned entry HTML.
+  Stable redirects/metadata and entry HTML are uncacheable; other versioned
+  assets remain one-year immutable, with unchanged content-addressed URL bytes.
+  The original root `no-store` HTTP check fails before this correction and
+  passes after it; that acceptance check was not relaxed.
+
+An earlier unlabeled `1 !== 0` reconnect/pause assertion could not be reproduced
+by the targeted and subsequent full strict reconciliation checks. Its root
+cause remains unproven, not declared fixed. Immediate zero-lease/zero-presence
+and empty historical-update assertions were retained, with useful failure
+labels and safe source locations. No wait for lease expiry, production retry
+or suppressed assertion was introduced. Temporary diagnostic logs are removed.
+
+The complete, unfiltered current API run passes at
+**2026-11-14T22:47:59.753Z**, against the deployed `00007-vft`/`cc93...` API and
+the corrected current client SDK:
+
+- Managed identities, paused assigned sheets, private exact image bytes,
+  campaign-local access, owner billing and journal retirement.
+- Actual **65-second** stream-renewal interval, current durable UID leases/
+  presence, no meaningful-activity extension from reads or presence.
+- Deliberately interrupted real HTTPS transport, fresh same-UID/epoch/scope
+  reconciliation, unchanged graphics omitted, no historical motion replay,
+  owner pause ending retries and releasing leases/presence.
+- Real off-turn denial followed by Free Play player admission; one five-foot
+  debit, player-to-owner and owner-to-scoped-player native walk presentations,
+  same-ID replay without repeated motion, CPU physical d20 and clean new-epoch
+  checkpoint without historical routes.
+- Original assigned-sheet receipt recovery after membership removal without
+  access revival, and actual bearer revocation closing the managed stream on
+  renewal, without reconnecting or retaining leases/presence.
+
+That run's exact cleanup verifies **3 disposable accounts / 2 synthetic
+campaigns / 19 live object generations** removed at
+**2026-11-14T22:48:05.660Z**. Seven-day object soft-delete retention remains
+unchanged and can still be billable; logical deletion is not physical erasure.
+
+The final artifact is
+`build\cloud-frontend\m409-hosted-pilot-20261114-v4`, content release
+**f24257b18afd7f53684908d9e930a6728edd079a710b9b9c8647ff3fd931b664**:
+**607 versioned files / 289,219,694 bytes**, plus the
+**191,507-byte** stable manifest, for exactly **608 local public files /
+289,411,201 raw bytes**. The first published `v3` had the same public content
+but the unsafe redirect cache configuration; `v4` corrects only the generated
+Hosting configuration. Earlier candidates remain preserved, not overwritten.
+Latest native package contracts pass **5/5**, zero skips/cancellations,
+**2,535.1945 ms**; scoped existing formatting/lint and whitespace checks pass.
+The compiler still does not grant deployment approval or invent a formal
+tropical asset license.
+
+The explicit Hosting-only deployment uses the existing pinned CLI/project and
+the generated config, never the repository root or an API rewrite. Current
+finalized Hosting version is **7dc92269d2c03cf5**, release
+**1794696901322000**. Actual public verification passes:
+
+- Root and `/index.html` **302** to the correct content-addressed entry with
+  `Cache-Control: no-store`; entry HTML and stable manifest are also `no-store`.
+- **608/608** declared public HEAD routes, all `nosniff`; **606** non-HTML
+  versioned asset routes have the one-year immutable policy.
+- Six exact body length/SHA-256 comparisons: stable manifest, entry HTML,
+  corrected client SDK, gold d20 GLB, tropical FBX and an animation FBX.
+- **30** private/server/raw-config/test/database paths return **404**, with no
+  Hosting-to-API rewrite.
+- The platform reports **610** files because Firebase adds exactly
+  `/__/firebase/init.js` and `/__/firebase/init.json`. An actual bounded file
+  listing proves all 608 declared files present and no other extra paths.
+  These managed bootstrap files expose only the expected public Firebase SDK
+  configuration, matching the approved project/key/domain; no credential
+  values are logged. This is separate from the local raw-package byte count.
+- A fresh native browser reaches the sign-in dialog on the real HTTPS website,
+  loading **250 resources with zero Cloud Run API requests**, in a secure
+  context with no controlling service worker. This proves landing independence,
+  not actual scale-to-zero timing, performance or cost acceptance.
+
+A separate real managed-account action probe uses **one approved disposable
+UID / zero campaigns**. An unverified bearer gets 403, a real Firebase-generated
+verification code is checked/applied, reload/fresh token gets API 200, and real
+Firebase password reset rejects the old random password while admitting the
+replacement under the same verified UID. A consumed reset code is rejected.
+Both action links return to the exact approved Hosting origin.
+This passes at **2026-11-14T22:59:52.191Z** with verified cleanup at
+**22:59:53.484Z**. Reserved `example.invalid` fixtures mean **actual email
+delivery was not tested**. Codes/passwords stay in memory; no custom-token
+impersonation, real-user password/verification/provider change or credential
+logging is involved.
+
+The hosted Google button starts the normal sign-in flow, but this automated
+browser has no accessible owned popup and remains at "Opening Google sign-in".
+The observed cross-origin-opener polling warnings alone do not prove an
+application failure. **Normal owner Google/browser sign-in still needs user
+interaction and acceptance**; do not mark it passed by minting a real-user token,
+changing the real account, reconfiguring providers or granting new IAM.
+Original local hosts/data/keys remain untouched. Full gameplay activation,
+hosted permission/load/cost gates and real-data cutover remain separate tasks;
+routine-save flash/toast UX remains deferred until after M5-11.

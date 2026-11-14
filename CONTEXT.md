@@ -265,26 +265,31 @@
   Auth/Firestore/private object access and three-UID isolation passed using only
   disposable fixtures, then verified cleanup. The public readiness path is
   `/health`; legacy `/healthz` remains an internal/local alias because Cloud Run
-  reserves some `z`-ending public paths. No full website rollout, real account/
-  campaign migration, measured sleep/load/cost claim or spending cap is implied.
-- **Public cloud frontend release (M4-07 locally verified; M4-08 pilot approved)**:
+  reserves some `z`-ending public paths. That runtime gate alone implies no website
+  rollout, real campaign migration, measured sleep/load/cost claim or spending cap.
+- **Public cloud frontend release (bounded M4-09 pilot published; acceptance pending)**:
   a separate static-only Hosting directory contains the reachable native-ESM
   application graph, explicit runtime-art families and verified pinned catalogs/
   notices, never the repository root, server/admin tools, raw configuration,
   SQLite or campaign exports. Only validated public production-cloud runtime
   fields enter its HTML; local/emulator fallback is rejected.
   Content-addressed release URLs preserve relative asset/resource paths, and
-  the stable redirect preserves query strings/fragments. One verified previous
+  the stable redirect preserves query strings/fragments. Hosting redirects inherit
+  their destination entry's cache policy: entry HTML and stable metadata use
+  `no-store`; other versioned assets remain immutable with a one-year lifetime.
+  One verified previous
   release may be retained for open clients; schema/runtime changes require
   deliberate handling, not infinite compatibility or offline authority.
-  The website and managed sign-in UI load without an API wake. Client rendering,
+  The published website and managed sign-in UI load without API requests. Client rendering,
   progressive private artwork and existing gameplay gates remain unchanged.
-  The owner reports free use of the tropical pack and explicitly permits local
-  packaging while its formal license is unrecorded; that gap stays visible,
+  The owner reports free use of the tropical pack and explicitly permits the
+  bounded hosted pilot while its formal license is unrecorded; that gap stays visible,
   not silently relabeled CC0. The owner separately approves the first bounded
   existing-project Hosting/test-API pilot and at most ten disposable accounts/
-  two synthetic campaigns. Actual deployment/hosted acceptance and real-data
-  cutover remain separate gates; no new runtime IAM or billing change is implied.
+  two synthetic campaigns. Public route/integrity and real synthetic-account
+  API/verification/recovery checks pass; normal owner browser sign-in acceptance
+  remains pending. Real-data cutover is separate; no new runtime IAM or billing
+  change is implied.
 - **Authorized cloud participant checkpoint (M3 initial wire verified)**:
   active live-epoch and current UID/seat/generation admission precedes projection;
   membership, assigned IDs, epoch and head are checked again after Storage IO.
@@ -478,6 +483,9 @@
   recovery. Connectivity alone does not reopen editing. Recovery of an ended
   view confirms the original receipt but never restores that old world; current
   identity/authority must reconcile and the user must reopen explicitly.
+  A fresh semantic world denial (HTTP 422, such as an off-turn move) releases
+  that rejected command; the same denial cannot erase an earlier uncertain
+  submission or permit a replacement before its original receipt is recovered.
   Verification-unavailable errors are reported separately from account changes;
   unexpected errors are redacted and surfaced. There is no offline editor,
   durable queue or automatic merge. Routine-save flash/toast behavior remains

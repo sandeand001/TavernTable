@@ -583,6 +583,91 @@ test('assigned reads reject private world fields, foreign scopes and unassigned 
   setup.store.close();
 });
 
+test.each([
+  { uncertain: false, behavior: 'releases a fresh command for a new attempt' },
+  { uncertain: true, behavior: 'preserves an earlier uncertain original command' },
+])('a semantic world denial $behavior', async ({ uncertain }) => {
+  const setup = fixture();
+  const access = {
+    version: 1,
+    uid: setup.store.uid,
+    campaignId,
+    role: 'member',
+    seatId: '44444444-4444-4444-8444-444444444444',
+    accessGeneration: 3,
+  };
+  const request = {
+    sessionId: '55555555-5555-4555-8555-555555555555',
+    command: {
+      version: 1,
+      commandId,
+      sceneRevision: 0,
+      charactersRevision: 0,
+      observerTokenId: 'hero-token',
+      tokenId: 'hero-token',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+      view: { mapId: 'map-main', assetKey: 'authorized-assets' },
+    },
+  };
+  const next = {
+    ...request,
+    command: { ...request.command, commandId: '66666666-6666-4666-8666-666666666666' },
+  };
+  if (uncertain) {
+    setup.fetch.mockRejectedValueOnce(new TypeError('Synthetic lost world reply'));
+    await expect(setup.store.commitWorldCommand(campaignId, request, access)).rejects.toMatchObject(
+      {
+        code: 'cloud-unavailable',
+      }
+    );
+  }
+  setup.fetch.mockResolvedValueOnce({
+    ok: false,
+    status: 422,
+    json: async () => ({
+      version: 1,
+      code: 'not-your-turn',
+      error: 'Wait for your turn.',
+    }),
+  });
+  await expect(setup.store.commitWorldCommand(campaignId, request, access)).rejects.toMatchObject({
+    status: 422,
+    code: 'not-your-turn',
+  });
+  if (uncertain) {
+    const calls = setup.fetch.mock.calls.length;
+    await expect(setup.store.commitWorldCommand(campaignId, next, access)).rejects.toMatchObject({
+      code: 'pending-cloud-command',
+    });
+    expect(setup.fetch).toHaveBeenCalledTimes(calls);
+  }
+  const accepted = uncertain ? request : next;
+  const receipt = {
+    version: 1,
+    campaignId,
+    commandId: accepted.command.commandId,
+    access,
+    sessionId: accepted.sessionId,
+    kind: accepted.command.kind,
+    applied: { generation: 1, sceneRevision: 1, charactersRevision: 0 },
+    outcome: 'duplicate',
+    presentation: null,
+  };
+  setup.fetch.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result: receipt }),
+  });
+  const acknowledged = uncertain
+    ? setup.store.retryWorldCommand()
+    : setup.store.commitWorldCommand(campaignId, next, access);
+  await expect(acknowledged).resolves.toEqual(receipt);
+  const submitted = JSON.parse(setup.fetch.mock.calls.at(-1)[1].body);
+  expect(submitted).toEqual(accepted);
+  setup.store.close();
+});
+
 test('a submitted world command can recover only its original UID-bound receipt after view teardown without authorizing another edit', async () => {
   const setup = fixture();
   const originalUser = setup.auth.currentUser;

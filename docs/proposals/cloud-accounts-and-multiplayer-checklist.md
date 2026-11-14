@@ -1247,8 +1247,12 @@ Revalidation in the intended environment remains part of M1 and M4.
     and hosted acceptance remain `M4-09`.
 
 - [ ] **M4-09 - Deploy and smoke-test only the approved isolated environment.**
-  - **Status:** the separately approved API-only test service is deployed and
-    verified; full packaged Hosting deployment and its integrated gates remain.
+  - **Status:** the approved existing-project pilot is published at
+    [the default Hosting URL](https://taverntable-489d5.web.app). Real API,
+    scoped private assets, Free Play/native movement, reconnect/revocation,
+    managed verification/reset-code and public-package integrity gates pass
+    with disposable fixtures and verified cleanup. Normal owner Google/browser
+    sign-in acceptance remains pending; this task is not yet complete.
   - **Depends:** `M4-08`.
   - **Success:** the default Hosting URL opens independently; browsers use the
     configured Cloud Run HTTPS address with exact origins/auth domains. Platform
