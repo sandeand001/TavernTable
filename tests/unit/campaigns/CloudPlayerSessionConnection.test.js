@@ -1,7 +1,9 @@
 /** @jest-environment node */
-import { createHash } from 'node:crypto';
+import { createHash, webcrypto } from 'node:crypto';
 import CloudPlayerSessionConnection from '../../../src/campaigns/CloudPlayerSessionConnection.js';
+import CloudParticipantCache from '../../../src/campaigns/CloudParticipantCache.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { testIndexedDB } from '../../helpers/indexedDB.js';
 
 const campaignId = '11111111-1111-4111-8111-111111111111';
 const sessionId = '22222222-2222-4222-8222-222222222222';
@@ -140,7 +142,7 @@ function snapshot() {
   };
 }
 
-function fixture() {
+function fixture({ cache = null } = {}) {
   let identity = { uid: access.uid };
   const identityListeners = new Set();
   const requests = [];
@@ -199,7 +201,13 @@ function fixture() {
       return observation;
     }),
   };
-  const connection = new CloudPlayerSessionConnection({ store, campaignId, access, sessionId });
+  const connection = new CloudPlayerSessionConnection({
+    store,
+    campaignId,
+    access,
+    sessionId,
+    cache,
+  });
   const events = [];
   connection.subscribe((event) => events.push(event));
   return {
@@ -251,6 +259,131 @@ test('fresh authority publishes synchronously while first-view artwork gates gam
     for (const request of setup.requests) request.resolve();
     await setup.connection.close();
     await opening.catch(() => {});
+  }
+});
+
+test('warm rejoin sends only checkpoint view hints and admits commands only after fresh HTTP, synchronous SSE authority and verified artwork', async () => {
+  const cached = snapshot();
+  cached.state.publicScene.assetKey = createHash('sha256')
+    .update(JSON.stringify(cached.state.publicScene.assets))
+    .digest('hex');
+  const current = structuredClone(cached);
+  current.generation++;
+  current.state.sceneRevision++;
+  current.state.campaign.sceneRevision++;
+  current.state.publicScene.assets = null;
+  const cache = {
+    getUsage: jest.fn(async () => ({ crossTabCoordinated: true })),
+    readCheckpointCandidate: jest.fn(async () => cached),
+    protectView: jest.fn(async () => async () => {}),
+    readAsset: jest.fn(async () => null),
+    readAuthorizedAsset: jest.fn(async () => new Uint8Array(bytes)),
+    writeAsset: jest.fn(async () => ({ stored: true })),
+    deleteAsset: jest.fn(async () => {}),
+    writeCheckpoint: jest.fn(async () => ({ stored: true })),
+  };
+  const setup = fixture({ cache });
+  let authorize;
+  setup.store.readParticipantSnapshot.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        authorize = resolve;
+      })
+  );
+  setup.store.readParticipantAsset.mockResolvedValue(new Uint8Array(bytes));
+  const opening = setup.connection.open();
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(setup.store.readParticipantSnapshot).toHaveBeenCalledWith(
+      campaignId,
+      {
+        sessionId,
+        observerTokenId: 'hero-token',
+        mapId: 'main',
+        assetKey: cached.state.publicScene.assetKey,
+      },
+      access,
+      { cachedAssets: cached.state.publicScene.assets }
+    );
+    expect(cache.readCheckpointCandidate).toHaveBeenCalledWith(access);
+    expect(setup.events.filter(({ type }) => type === 'state')).toHaveLength(0);
+    expect(setup.connection.commandReady).toBe(false);
+    await expect(
+      setup.connection.call('playerCommand', [campaignId, { kind: 'move' }])
+    ).rejects.toMatchObject({ code: 'world-state-unavailable' });
+    authorize(current);
+    await setup.observed;
+    expect(setup.store.observeEvents.mock.calls[0][1]).toEqual({
+      sessionId,
+      observerTokenId: 'hero-token',
+      mapId: 'main',
+      assetKey: cached.state.publicScene.assetKey,
+    });
+    expect(setup.observations[0].publish(current)).toBeUndefined();
+    expect(setup.connection.readLiveState().sceneRevision).toBe(2);
+    expect(setup.connection.commandReady).toBe(false);
+    const state = await opening;
+    expect(state.sceneRevision).toBe(2);
+    expect(state.publicScene.updates).toEqual([]);
+    expect(setup.connection.commandReady).toBe(true);
+    expect(setup.store.readParticipantAsset).not.toHaveBeenCalled();
+    expect(setup.store.commitWorldCommand).not.toHaveBeenCalled();
+    expect(setup.events.filter(({ type }) => type === 'state')).toHaveLength(1);
+    expect(cache.readAuthorizedAsset.mock.calls[0][0].generation).toBe(current.generation);
+  } finally {
+    authorize?.(current);
+    await setup.connection.close();
+    await opening.catch(() => {});
+  }
+});
+
+test('clearing a UID during warm graphic verification invalidates the candidate instead of returning a stale rejoin hint', async () => {
+  const cached = snapshot();
+  const graphicBytes = Buffer.from(JSON.stringify(cached.state.publicScene.assets));
+  cached.state.publicScene.assetKey = createHash('sha256').update(graphicBytes).digest('hex');
+  const indexedDB = testIndexedDB();
+  let hashing;
+  let resume;
+  const started = new Promise((resolve) => {
+    hashing = resolve;
+  });
+  const resumed = new Promise((resolve) => {
+    resume = resolve;
+  });
+  const writer = new CloudParticipantCache({ uid: access.uid, indexedDB, crypto: webcrypto });
+  const reader = new CloudParticipantCache({
+    uid: access.uid,
+    indexedDB,
+    crypto: {
+      subtle: {
+        digest: async (algorithm, input) => {
+          if (input.byteLength === graphicBytes.length) {
+            hashing();
+            await resumed;
+          }
+          return webcrypto.subtle.digest(algorithm, input);
+        },
+      },
+    },
+  });
+  let candidate;
+  try {
+    await writer.writeCheckpoint(cached);
+    candidate = reader.readCheckpointCandidate(access).then(
+      (value) => ({ value }),
+      (error) => ({ error })
+    );
+    await started;
+    const cleared = writer.clear();
+    resume();
+    expect((await candidate).error?.code).toBe('cache-invalidated');
+    await cleared;
+    expect(await writer.readCheckpointCandidate(access)).toBeNull();
+  } finally {
+    resume();
+    await candidate;
+    writer.close();
+    reader.close();
   }
 });
 

@@ -333,6 +333,9 @@ export default class CloudPlayerSessionConnection {
     const version = ++this.selection;
     this._invalidateArtwork();
     this.presentations = [];
+    this.state = null;
+    this.snapshot = null;
+    this.phase = 'connecting';
     this._rejectWaiters(ended());
     await this.observation?.close();
     this._identity();
@@ -343,38 +346,70 @@ export default class CloudPlayerSessionConnection {
         'placement-grant-required',
         'Choose an explicitly supported live arrival grant.'
       );
+    const candidate = await this.participantAssets.readCheckpointCandidate(this.access);
+    this._identity();
+    if (version !== this.selection) throw ended();
+    const retained = options.assetKey === this.assetKey && this.assets !== null;
+    let cachedAssets = retained ? this.assets : (candidate?.state.publicScene.assets ?? null);
+    let assetKey =
+      cachedAssets === null
+        ? null
+        : retained
+          ? this.assetKey
+          : candidate.state.publicScene.assetKey;
     let observerTokenId = options.observerTokenId;
+    let mapId = options.mapId ?? null;
     if (observerTokenId === undefined) {
-      const initial = await this.store.readParticipantSnapshot(
-        this.campaignId,
-        {
-          sessionId: this.sessionId,
-          observerTokenId: null,
-          mapId: null,
-          assetKey: null,
-        },
-        this.access
-      );
+      let initial;
+      try {
+        initial = await this.store.readParticipantSnapshot(
+          this.campaignId,
+          {
+            sessionId: this.sessionId,
+            observerTokenId: candidate?.state.observerTokenId ?? null,
+            mapId: options.mapId ?? candidate?.state.publicScene.presentation.mapId ?? null,
+            assetKey,
+          },
+          this.access,
+          { cachedAssets }
+        );
+      } catch (error) {
+        this._identity();
+        if (version !== this.selection) throw ended();
+        if (!candidate || error.code !== 'participant-view-forbidden') throw error;
+        cachedAssets = null;
+        assetKey = null;
+        initial = await this.store.readParticipantSnapshot(
+          this.campaignId,
+          {
+            sessionId: this.sessionId,
+            observerTokenId: null,
+            mapId: null,
+            assetKey: null,
+          },
+          this.access
+        );
+      }
       this._identity();
       if (version !== this.selection) throw ended();
-      observerTokenId = initial.state.observers[0]?.id ?? null;
+      observerTokenId = initial.state.observerTokenId ?? initial.state.observers[0]?.id ?? null;
+      mapId = options.mapId ?? initial.state.publicScene.presentation.mapId;
+      assetKey = initial.state.publicScene.assetKey;
+      cachedAssets = assetKey === null ? null : initial.state.publicScene.assets || cachedAssets;
     }
-    const assetKey =
-      options.assetKey === this.assetKey && this.assets !== null ? this.assetKey : null;
-    this.state = null;
-    this.snapshot = null;
-    this.phase = 'connecting';
+    this.assets = cachedAssets;
+    this.assetKey = assetKey;
     this.observation = this.store.observeEvents(
       this.campaignId,
       {
         sessionId: this.sessionId,
         observerTokenId,
-        mapId: options.mapId ?? null,
+        mapId,
         assetKey,
       },
       this.access,
       {
-        cachedAssets: assetKey === null ? null : this.assets,
+        cachedAssets,
         onState: (snapshot, context) => {
           if (this.closed || version !== this.selection) return;
           this._identity();

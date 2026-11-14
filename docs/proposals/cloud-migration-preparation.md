@@ -2717,3 +2717,51 @@ UX was changed. `M3-08` still must prove authoritative warm rejoin with exact
 network counts; `M3-09` still owns logout-wide purge and connection-loss safety.
 The shared-game capability remains off until the remaining action and migration
 acceptance gates pass.
+
+### M3-08: authoritative warm rejoin and measured zero asset-body reuse
+
+Warm rejoin reads a verified checkpoint candidate from the current
+UID/campaign/member-seat/access-generation namespace. Its observer/map and
+graphic-digest values are request hints only. Candidates are ordered by
+most-recent cache use; ties retain IndexedDB enumeration order, and no canonical
+generation or live-epoch freshness is inferred. A readable corrupt/stale-schema
+candidate is removed with an explicit recovery error rather than silently
+searching older authority. Managed rejoin still obtains fresh HTTP and SSE state
+using the current constructor access/session, verifies the current view/revisions,
+and waits for required artwork before commands become ready.
+
+Currently authorized immutable images can reuse exact historical bytes within
+the same UID/campaign across old seat/access/view/session namespaces. The current
+manifest must contain the full reference, the historical checkpoint must validate,
+and MIME type, byte count and SHA-256 must match. Ordinary scoped `readAsset`
+behavior is unchanged. Reused bytes are promoted into the current namespace;
+cached grants, sheet records, actors, capabilities and historical routes are never
+returned as current authority.
+
+Actual SDK/HTTP/SSE instrumentation verifies the requirement, not a cached UI:
+
+- Cold default join: **one graphic body / 514 JSON bytes** and **one private PNG
+  body / 86 bytes**.
+- Warm default rejoin: **zero graphic/image bodies, zero asset bytes**, with
+  **two fresh HTTP/SSE authority requests**. This is not a claim of zero total
+  metadata/wire traffic.
+- Other assigned-sheet artwork loads on demand. Corrupt graphics trigger a fresh
+  graphic/image download. Corrupt or evicted binary bytes redownload one image
+  without retransferring unchanged graphics; stale schemas re-download both.
+  A changed current reference downloads its new image, while a rejected observer
+  hint triggers fresh unhinted authorized geometry and retains valid image reuse.
+- Current member-access, live-epoch and managed-UID mismatches deny readiness and
+  issue **zero commands**. Superseded selections/work and cache-clear epochs fence
+  late reads/puts. Checkpoints remain URI-free, `scene:null`, image-null and
+  history-free. Native acknowledgement without another snapshot and queued steps
+  with the final combat budget remain unchanged.
+
+The final four actual SDK cases pass with zero skips in **64,041.5513 ms**.
+The directly coupled application/public-resource/renderer gate passes **12
+suites / 192 tests**, zero skips, **21.549 s**, with open-handle detection.
+Full JS/stylelint/layering pass with zero errors and the same **39 baseline
+warnings**. No dependency/runtime/backend/IAM/index, hosted frontend, real
+account/campaign, original host or deferred routine-save UX change was made.
+Logout/access-change purge and ten-client/full-stable acceptance remain later
+gates; full shared gameplay remains disabled until they and the remaining
+world-action acceptance pass.

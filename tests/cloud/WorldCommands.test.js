@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash, webcrypto } = require('node:crypto');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const sdk = require('firebase/auth');
@@ -29,12 +29,23 @@ const { sceneActorPlacement } = require('../../src/scene/token-adapter/SavedPlac
 const { sceneState } = require('../helpers/sceneState.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
 const { cloudApi } = require('./helpers/http.js');
+const { createCanvas } = require('canvas');
+const { IDBFactory } = require('fake-indexeddb');
+const { default: CloudParticipantCache } = require('../../src/campaigns/CloudParticipantCache.js');
+const {
+  default: CloudPlayerSessionConnection,
+} = require('../../src/campaigns/CloudPlayerSessionConnection.js');
+const { openDatabase, requestResult, transact } = require('../../src/storage/indexedDB.js');
 
-async function fixture(t, { ruleset = '2014' } = {}) {
+async function fixture(
+  t,
+  { ruleset = '2014', memberFetch = globalThis.fetch, cleanup = false } = {}
+) {
   const runtime = await createEmulatorRuntime();
   const identities = [];
   const events = [];
   let api = null;
+  let participantFixture = null;
   t.after(async () => {
     const errors = [];
     for (const event of events) {
@@ -54,6 +65,13 @@ async function fixture(t, { ruleset = '2014' } = {}) {
     for (const identity of identities) {
       try {
         await identity.close();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (cleanup && participantFixture) {
+      try {
+        await cleanParticipantFixture(participantFixture, participantBrowserStorage(), []);
       } catch (error) {
         errors.push(error);
       }
@@ -81,7 +99,7 @@ async function fixture(t, { ruleset = '2014' } = {}) {
   });
   api = await cloudApi({ access, store });
   const environment = readEmulatorEnvironment();
-  const account = async () => {
+  const account = async (fetch = globalThis.fetch) => {
     const identity = await signedInIdentity(runtime);
     identities.push(identity);
     await runtime.firestore
@@ -93,6 +111,7 @@ async function fixture(t, { ruleset = '2014' } = {}) {
       packs: manifest.packs,
       connection: new CloudAccountConnection({
         account: new CloudAccount({ auth: identity.auth, sdk }),
+        fetch,
         baseURL: api.origin + '/',
         runtime: {
           version: 1,
@@ -112,7 +131,7 @@ async function fixture(t, { ruleset = '2014' } = {}) {
     return { ...identity, client };
   };
   const owner = await account();
-  const member = await account();
+  const member = await account(memberFetch);
   const campaign = await owner.client.create({ name: 'Cloud native motion', ruleset });
   const catalog = await resources.catalog(campaign);
   const library = await CampaignCharacters.open({
@@ -160,7 +179,7 @@ async function fixture(t, { ruleset = '2014' } = {}) {
     await owner.client.getLiveSession(campaign.id)
   );
   const live = await owner.client.getLiveSession(campaign.id);
-  return {
+  participantFixture = {
     runtime,
     store,
     access,
@@ -232,6 +251,7 @@ async function fixture(t, { ruleset = '2014' } = {}) {
       return observation;
     },
   };
+  return participantFixture;
 }
 
 function ownerMove(f) {
@@ -332,11 +352,551 @@ function ownerRequest(
   });
 }
 
+function participantBrowserStorage() {
+  const entries = new Map();
+  const pending = new Map();
+  const held = new Set();
+  return {
+    entries,
+    indexedDB: new IDBFactory(),
+    crypto: webcrypto,
+    cacheStorage: {
+      open: async () => ({
+        put: async (request, response) =>
+          entries.set(request.url, {
+            bytes: new Uint8Array(await response.arrayBuffer()),
+            headers: new Headers(response.headers),
+          }),
+        match: async (request) => {
+          const entry = entries.get(request.url);
+          return entry && new Response(entry.bytes.slice(), { headers: entry.headers });
+        },
+        delete: async (request) => entries.delete(request.url),
+        keys: async () => [...entries.keys()].map((url) => new Request(url)),
+      }),
+    },
+    locks: {
+      request: (name, { mode }, operation) => {
+        const run = async () => {
+          const lock = { name, mode };
+          held.add(lock);
+          try {
+            return await operation(lock);
+          } finally {
+            held.delete(lock);
+          }
+        };
+        if (mode === 'shared') return run();
+        const task = (pending.get(name) ?? Promise.resolve()).then(run, run);
+        pending.set(name, task);
+        return task;
+      },
+      query: async () => ({ held: [...held], pending: [] }),
+    },
+  };
+}
+
+function participantNetwork() {
+  const requests = [];
+  const graphics = [];
+  const images = [];
+  let hold = null;
+  const graphic = (snapshot) => {
+    const assets = snapshot?.state?.publicScene?.assets;
+    if (assets !== null && assets !== undefined) {
+      const bytes = Buffer.from(JSON.stringify(assets));
+      graphics.push({
+        bytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      });
+    }
+  };
+  return {
+    requests,
+    graphics,
+    images,
+    holdNextState() {
+      let entered;
+      let release;
+      hold = {
+        entered: new Promise((resolve) => {
+          entered = resolve;
+        }),
+        waiting: new Promise((resolve) => {
+          release = resolve;
+        }),
+        enter: () => entered(),
+        release: () => release(),
+      };
+      return hold;
+    },
+    fetch: async (url, options) => {
+      const pathname = new URL(url).pathname;
+      requests.push({
+        pathname,
+        body: options.body ? JSON.parse(options.body) : null,
+        seatId: options.headers['X-TavernTable-Seat'],
+        accessGeneration: options.headers['X-TavernTable-Access-Generation'],
+      });
+      const response = await fetch(url, options);
+      if (!response.ok) return response;
+      if (pathname.endsWith('/participant-state')) {
+        graphic((await response.clone().json()).result);
+        if (hold) {
+          const captured = hold;
+          hold = null;
+          captured.enter();
+          await captured.waiting;
+        }
+      } else if (/\/participant-assets\/[a-f0-9]{64}$/.test(pathname)) {
+        const bytes = Buffer.from(await response.clone().arrayBuffer());
+        images.push({
+          bytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        });
+      } else if (pathname.endsWith('/events')) {
+        const decoder = new TextDecoder();
+        let buffered = '';
+        const stream = response.body.pipeThrough(
+          new TransformStream({
+            transform(chunk, controller) {
+              buffered += decoder.decode(chunk, { stream: true });
+              let end;
+              while ((end = buffered.indexOf('\n')) !== -1) {
+                const line = buffered.slice(0, end).trimEnd();
+                buffered = buffered.slice(end + 1);
+                if (!line.startsWith('data:')) continue;
+                const event = JSON.parse(line.slice(5).trim());
+                graphic(event.checkpoint || event.delta?.checkpoint);
+              }
+              controller.enqueue(chunk);
+            },
+          })
+        );
+        return new Response(stream, { headers: response.headers, status: response.status });
+      }
+      return response;
+    },
+  };
+}
+
+async function cleanParticipantFixture(f, storage, connections, extraAccounts = []) {
+  for (const connection of connections) await connection.close();
+  const cache = new CloudParticipantCache({ ...storage, uid: f.member.uid });
+  try {
+    await cache.clear();
+    assert.equal((await cache.getUsage()).bytes, 0);
+  } finally {
+    cache.close();
+  }
+  for (const database of await storage.indexedDB.databases())
+    await new Promise((resolve, reject) => {
+      const request = storage.indexedDB.deleteDatabase(database.name);
+      request.onsuccess = resolve;
+      request.onerror = () => reject(request.error);
+    });
+  storage.entries.clear();
+  const prefix = `campaigns/${f.campaign.id}/`;
+  const [files] = await f.runtime.bucket.getFiles({ prefix, versions: true });
+  for (const file of files) await file.delete({ ignoreNotFound: true });
+  const invitations = await f.runtime.firestore
+    .collection('campaignInvitations')
+    .where('campaignId', '==', f.campaign.id)
+    .get();
+  for (const invitation of invitations.docs) await invitation.ref.delete();
+  await f.runtime.firestore.recursiveDelete(
+    f.runtime.firestore.collection('campaigns').doc(f.campaign.id)
+  );
+  for (const identity of [f.owner, f.member, ...extraAccounts]) {
+    identity.client.close();
+    for (const name of [
+      'pilotAccounts',
+      'accountCommands',
+      'campaignMemberships',
+      'accountImports',
+      'accountObjectMaintenance',
+    ])
+      await f.runtime.firestore.recursiveDelete(
+        f.runtime.firestore.collection(name).doc(pilotAccountKey(identity.uid))
+      );
+    await f.runtime.auth.deleteUser(identity.uid);
+    assert.equal(
+      (
+        await f.runtime.firestore
+          .collection('pilotAccounts')
+          .doc(pilotAccountKey(identity.uid))
+          .get()
+      ).exists,
+      false
+    );
+    await assert.rejects(f.runtime.auth.getUser(identity.uid), { code: 'auth/user-not-found' });
+  }
+  assert.equal(
+    (await f.runtime.firestore.collection('campaigns').doc(f.campaign.id).get()).exists,
+    false
+  );
+  assert.equal((await f.runtime.bucket.getFiles({ prefix, versions: true }))[0].length, 0);
+  assert.equal((await storage.indexedDB.databases()).length, 0);
+}
+
+test(
+  'authoritative cold and warm SDK rejoin downloads zero unchanged graphic or private image bodies and recovers a corrupt graphic candidate online',
+  { timeout: 120000 },
+  async (t) => {
+    const network = participantNetwork();
+    const f = await fixture(t, { memberFetch: network.fetch });
+    const storage = participantBrowserStorage();
+    const connections = [];
+    let gate;
+    const open = (access = f.grant.access) => {
+      const connection = new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access,
+        sessionId: f.live.sessionId,
+        cache: new CloudParticipantCache({ ...storage, uid: f.member.uid }),
+      });
+      connections.push(connection);
+      return connection;
+    };
+    try {
+      const bytes = createCanvas(2, 2).toBuffer('image/png');
+      const reserveBytes = createCanvas(3, 2).toBuffer('image/png');
+      const image = (value) => 'data:image/png;base64,' + value.toString('base64');
+      await f.library.edit(f.hero, { portraitImage: image(bytes) });
+      const reserve = await f.library.create('On-demand assigned reserve');
+      await f.library.edit(reserve, { portraitImage: image(reserveBytes) });
+      const hidden = await f.library.create('PRIVATE warm-cache unassigned');
+      await f.library.edit(hidden, {
+        portraitImage: image(createCanvas(4, 2).toBuffer('image/png')),
+      });
+      const cold = open();
+      const coldState = await cold.open();
+      assert.equal(cold.commandReady, true);
+      assert.equal(network.graphics.length, 1);
+      assert.deepEqual(network.images, [
+        {
+          bytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        },
+      ]);
+      const coldCheckpoint = await cold.cache.readCheckpoint(cold.access, cold.snapshot.viewKey);
+      assert.equal(coldCheckpoint.state.publicScene.assetKey, network.graphics[0].sha256);
+      assert.equal(coldCheckpoint.state.publicScene.actors[0].portraitImage, null);
+      assert.deepEqual(coldCheckpoint.state.publicScene.updates, []);
+      await cold.close();
+      await f.owner.client.assignCharacter(f.campaign.id, {
+        seatId: f.grant.access.seatId,
+        accessGeneration: f.grant.access.accessGeneration,
+        characterId: reserve,
+        assigned: true,
+      });
+      await f.library.edit(reserve, { notes: 'Fresh authorized reserve revision' });
+      const current = await f.member.client.getParticipantAccess(f.campaign.id);
+      const head = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
+      const before = (await head.get()).data();
+      const campaign = await f.owner.client.get(f.campaign.id);
+      const settings = await f.owner.client.getSettings(f.campaign.id);
+      const live = await f.owner.client.getLiveSession(f.campaign.id);
+      const start = {
+        images: network.images.length,
+        graphics: network.graphics.length,
+        requests: network.requests.length,
+      };
+      const warm = open(current.access);
+      gate = network.holdNextState();
+      const joining = warm.open();
+      await gate.entered;
+      assert.equal(warm.commandReady, false);
+      assert.throws(() => warm.readLiveState(), { code: 'live-session-changed' });
+      await assert.rejects(warm.call('playerCommand', [f.campaign.id, { kind: 'move' }]), {
+        code: 'world-state-unavailable',
+      });
+      gate.release();
+      const warmState = await joining;
+      assert.equal(warm.commandReady, true);
+      assert.deepEqual(warm.snapshot.access, current.access);
+      assert.equal(warm.snapshot.sessionId, f.live.sessionId);
+      assert.equal(warm.snapshot.generation, before.generation);
+      assert.equal(warmState.revision, campaign.charactersRevision);
+      assert.equal(warmState.sceneRevision, campaign.sceneRevision);
+      assert.notEqual(warm.snapshot.viewKey, coldCheckpoint.viewKey);
+      assert.equal(warmState.publicScene.assetKey, coldState.publicScene.assetKey);
+      assert.deepEqual(warmState.publicScene.updates, []);
+      assert.deepEqual(warmState.gameplay, coldState.gameplay);
+      assert.equal(network.images.length - start.images, 0);
+      assert.equal(network.graphics.length - start.graphics, 0);
+      const authority = network.requests
+        .slice(start.requests)
+        .filter(({ pathname }) => /\/(participant-state|events)$/.test(pathname));
+      assert.equal(authority.length, 2);
+      for (const request of authority) {
+        assert.equal(request.body.sessionId, f.live.sessionId);
+        assert.equal(request.body.observerTokenId, 'token-1');
+        assert.equal(request.body.assetKey, coldState.publicScene.assetKey);
+        assert.equal(request.seatId, current.access.seatId);
+        assert.equal(request.accessGeneration, String(current.access.accessGeneration));
+      }
+      assert.equal(warm.characterImages(reserve), null);
+      await warm.loadCharacterImages(reserve);
+      assert.deepEqual(network.images.slice(start.images), [
+        {
+          bytes: reserveBytes.length,
+          sha256: createHash('sha256').update(reserveBytes).digest('hex'),
+        },
+      ]);
+      assert.equal(warm.characterImages(hidden), null);
+      const saved = await warm.cache.readCheckpoint(warm.access, warm.snapshot.viewKey);
+      assert.equal(JSON.stringify(saved).includes('base64,'), false);
+      assert.equal(JSON.stringify(saved).includes('PRIVATE warm-cache unassigned'), false);
+      await warm.close();
+      const writer = new CloudParticipantCache({ ...storage, uid: f.member.uid });
+      const corrupted = structuredClone(saved);
+      corrupted.state.publicScene.assets.maps[0].terrain.heights[0][0]++;
+      try {
+        await writer.deleteCheckpoint(coldCheckpoint.access, coldCheckpoint.viewKey);
+        await writer.writeCheckpoint(corrupted);
+      } finally {
+        writer.close();
+      }
+      const recoveryStart = { images: network.images.length, graphics: network.graphics.length };
+      const recovered = open(current.access);
+      const statuses = [];
+      recovered.subscribe((event) => statuses.push(event));
+      await recovered.open();
+      assert.equal(recovered.commandReady, true);
+      assert.equal(network.graphics.length - recoveryStart.graphics, 1);
+      assert.equal(network.images.length - recoveryStart.images, 1);
+      assert.ok(
+        statuses.some(
+          (event) =>
+            event.type === 'assets-status' && event.progress?.cache?.code === 'cache-corrupt'
+        )
+      );
+      assert.deepEqual((await head.get()).data(), before);
+      assert.deepEqual(await f.owner.client.getSettings(f.campaign.id), settings);
+      assert.deepEqual(await f.owner.client.getLiveSession(f.campaign.id), live);
+      assert.equal(
+        network.requests.filter(({ pathname }) => pathname.endsWith('/world-commands')).length,
+        0
+      );
+      t.diagnostic(
+        `cold graphics=1/${network.graphics[0].bytes}B images=1/${network.images[0].bytes}B; warm graphics=0/0B images=0/0B HTTP/SSE=2; on-demand images=1; corrupt graphics=1 images=1; SHA256=${network.images[0].sha256}`
+      );
+    } finally {
+      gate?.release();
+      await cleanParticipantFixture(f, storage, connections);
+    }
+  }
+);
+
+test(
+  'warm SDK rejoin recovers corrupt or evicted bytes and stale schema while current references, access and epoch remain authoritative',
+  { timeout: 120000 },
+  async (t) => {
+    const network = participantNetwork();
+    const f = await fixture(t, { memberFetch: network.fetch });
+    const storage = participantBrowserStorage();
+    const connections = [];
+    const extraAccounts = [];
+    const measured = [];
+    const create = ({
+      access = f.grant.access,
+      sessionId = f.live.sessionId,
+      identity = f.member,
+    } = {}) => {
+      const connection = new CloudPlayerSessionConnection({
+        store: identity.client,
+        campaignId: f.campaign.id,
+        access,
+        sessionId,
+        cache: new CloudParticipantCache({ ...storage, uid: identity.uid }),
+      });
+      connections.push(connection);
+      return connection;
+    };
+    const rejoin = async (kind, expected) => {
+      const start = { graphics: network.graphics.length, images: network.images.length };
+      const connection = create();
+      const events = [];
+      connection.subscribe((event) => events.push(event));
+      await connection.open();
+      const actual = {
+        graphics: network.graphics.length - start.graphics,
+        images: network.images.length - start.images,
+      };
+      assert.deepEqual(actual, expected);
+      assert.equal(connection.commandReady, true);
+      assert.deepEqual(connection.readLiveState().publicScene.updates, []);
+      measured.push({ kind, ...actual });
+      return { connection, events };
+    };
+    try {
+      const bytes = createCanvas(2, 2).toBuffer('image/png');
+      await f.library.edit(f.hero, {
+        portraitImage: 'data:image/png;base64,' + bytes.toString('base64'),
+      });
+      const cold = create();
+      const initial = await cold.open();
+      let saved = await cold.cache.readCheckpoint(cold.access, cold.snapshot.viewKey);
+      const reference = saved.manifest.images.find((slot) => slot.source === 'actor').reference;
+      await cold.close();
+      const entry = [...storage.entries].find(([url]) => url.endsWith('/' + reference.sha256))[1];
+      entry.bytes[0] ^= 1;
+      const corrupt = await rejoin('binary-corrupt', { graphics: 0, images: 1 });
+      assert.ok(
+        corrupt.events.some(
+          (event) =>
+            event.type === 'assets-status' &&
+            event.progress?.cache?.code === 'cache-asset-integrity'
+        )
+      );
+      assert.equal(network.images.at(-1).sha256, reference.sha256);
+      saved = await corrupt.connection.cache.readCheckpoint(
+        corrupt.connection.access,
+        corrupt.connection.snapshot.viewKey
+      );
+      await corrupt.connection.close();
+      const editor = new CloudParticipantCache({ ...storage, uid: f.member.uid });
+      try {
+        await editor.deleteAsset(saved, reference);
+      } finally {
+        editor.close();
+      }
+      const evicted = await rejoin('binary-evicted', { graphics: 0, images: 1 });
+      await evicted.connection.close();
+      const database = await openDatabase(
+        storage.indexedDB,
+        'taverntable.cloud.participants.v1',
+        () => {},
+        2
+      );
+      try {
+        await transact(database, ['checkpoints'], 'readwrite', async (transaction) => {
+          const checkpoints = transaction.objectStore('checkpoints');
+          const [row] = await requestResult(checkpoints.getAll());
+          const payload = JSON.parse(row.payload);
+          payload.manifest.version = 0;
+          row.payload = JSON.stringify(payload);
+          row.bytes = Buffer.byteLength(row.payload);
+          row.sha256 = createHash('sha256').update(row.payload).digest('hex');
+          await requestResult(checkpoints.put(row));
+        });
+      } finally {
+        database.close();
+      }
+      const stale = await rejoin('schema-stale', { graphics: 1, images: 1 });
+      assert.ok(
+        stale.events.some(
+          (event) =>
+            event.type === 'assets-status' && event.progress?.cache?.code === 'cache-corrupt'
+        )
+      );
+      assert.equal(
+        (
+          await stale.connection.cache.readCheckpoint(
+            stale.connection.access,
+            stale.connection.snapshot.viewKey
+          )
+        ).manifest.version,
+        1
+      );
+      await stale.connection.close();
+      const replacementBytes = createCanvas(3, 3).toBuffer('image/png');
+      await f.library.edit(f.hero, {
+        portraitImage: 'data:image/png;base64,' + replacementBytes.toString('base64'),
+      });
+      const replaced = await rejoin('reference-changed', { graphics: 0, images: 1 });
+      assert.deepEqual(network.images.at(-1), {
+        bytes: replacementBytes.length,
+        sha256: createHash('sha256').update(replacementBytes).digest('hex'),
+      });
+      assert.deepEqual(replaced.connection.readLiveState().gameplay, initial.gameplay);
+      await replaced.connection.close();
+      await f.owner.client.assignCharacter(f.campaign.id, {
+        seatId: f.grant.access.seatId,
+        accessGeneration: f.grant.access.accessGeneration,
+        characterId: f.npc,
+        assigned: true,
+      });
+      const current = await f.member.client.getParticipantAccess(f.campaign.id);
+      const beforeDenied = { graphics: network.graphics.length, images: network.images.length };
+      const denied = create();
+      await assert.rejects(denied.open(), { code: 'campaign-access-changed' });
+      assert.equal(denied.commandReady, false);
+      const ended = create({ access: current.access, sessionId: randomUUID() });
+      await assert.rejects(ended.open(), { code: 'live-session-changed' });
+      assert.equal(ended.commandReady, false);
+      const other = await f.account(network.fetch);
+      extraAccounts.push(other);
+      const foreign = create({ access: { ...current.access, uid: other.uid }, identity: other });
+      await assert.rejects(foreign.open(), { code: 'campaign-not-found' });
+      assert.equal(foreign.commandReady, false);
+      assert.deepEqual(
+        {
+          graphics: network.graphics.length - beforeDenied.graphics,
+          images: network.images.length - beforeDenied.images,
+        },
+        { graphics: 0, images: 0 }
+      );
+      assert.equal(
+        network.requests.filter(({ pathname }) => pathname.endsWith('/world-commands')).length,
+        0
+      );
+      await f.owner.client.assignCharacter(f.campaign.id, {
+        seatId: current.access.seatId,
+        accessGeneration: current.access.accessGeneration,
+        characterId: f.hero,
+        assigned: false,
+      });
+      const reassigned = await f.member.client.getParticipantAccess(f.campaign.id);
+      const hintStart = {
+        graphics: network.graphics.length,
+        images: network.images.length,
+        requests: network.requests.length,
+      };
+      const fresh = create({ access: reassigned.access });
+      const selected = await fresh.open();
+      assert.equal(fresh.commandReady, true);
+      assert.equal(selected.observerTokenId, 'token-2');
+      assert.deepEqual(selected.profile.characterIds, [f.npc]);
+      assert.equal(fresh.characterImages(f.hero), null);
+      assert.equal(
+        network.requests
+          .slice(hintStart.requests)
+          .filter(({ pathname }) => pathname.endsWith('/participant-state')).length,
+        2
+      );
+      assert.deepEqual(
+        {
+          graphics: network.graphics.length - hintStart.graphics,
+          images: network.images.length - hintStart.images,
+        },
+        { graphics: 1, images: 0 }
+      );
+      measured.push({ kind: 'observer-hint-rejected', graphics: 1, images: 0 });
+      assert.equal(
+        (await f.owner.client.getLiveSession(f.campaign.id)).sessionId,
+        f.live.sessionId
+      );
+      t.diagnostic(
+        JSON.stringify({
+          recovery: measured,
+          denied: ['current-access', 'live-epoch', 'managed-UID'],
+          commands: 0,
+        })
+      );
+    } finally {
+      await cleanParticipantFixture(f, storage, connections, extraAccounts);
+    }
+  }
+);
+
 test(
   'the cloud player connection publishes native public state and returns an authoritative command without another snapshot request',
   { timeout: 60000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await fixture(t, { cleanup: true });
     let snapshots = 0;
     const readSnapshot = f.member.client.readParticipantSnapshot.bind(f.member.client);
     f.member.client.readParticipantSnapshot = (...args) => {
@@ -396,7 +956,7 @@ test(
   'a cloud player retains two unrendered accepted steps as one continuous route with the final combat budget',
   { timeout: 60000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await fixture(t, { cleanup: true });
     const native = gameplayRuntime(f.scene, f.library);
     await native.combat.startTurn(native.actors.find((actor) => actor.id === 'token-1'));
     const combat = structuredClone(f.scene);

@@ -383,7 +383,7 @@
   rules/models, scoped SDK authority, isolated Linux runtime and approved real
   HTTPS off-turn/Free Play/bidirectional motion/physical-dice/pause/rejoin gates
   passed without changing real accounts, hosted frontend or routine-save UX.
-- **Scoped participant cache (M3-06/M3-07 development gates verified; activation gated)**:
+- **Scoped participant cache (M3-06 through M3-08 development gates verified; activation gated)**:
   private IndexedDB checkpoint entries are separate from edition-local public
   resource databases and are keyed by UID hash, campaign, schema, member seat/
   access generation and authorized view key. Stored UTF-8 payloads carry exact
@@ -408,8 +408,8 @@
   status, not offline authority. UID-only clear fences old writes.
   Native browser page-reload persistence, budget changes, UID/access isolation,
   exact synthetic-entry cleanup and persistence-denial handling are verified.
-  Full authoritative warm-rejoin network proof and logout-wide purge remain
-  later M3 gates.
+  Authoritative warm-rejoin network reuse is verified; logout-wide purge remains
+  a later M3 gate.
 - **Progressive participant artwork (M3-07 development gate verified)**:
   the live connection publishes fresh authority synchronously while a separate
   readiness gate loads the active authorized area and assigned sheets. Visible
@@ -423,6 +423,22 @@
   IndexedDB/Cache Storage and persistence are replaceable conveniences, not
   an offline editor or upload queue. Complete shared gameplay remains gated
   until the remaining world-action and migration acceptance tasks pass.
+- **Authoritative warm rejoin (M3-08 development gate verified)**:
+  a current-access-scoped cached checkpoint supplies only observer/map and
+  verified graphic-digest hints. Candidates are most-recently-used, not proofs
+  of newest canonical generation or current live epoch. Rejoin always performs
+  fresh managed HTTP/SSE authorization using the current constructor access and
+  session; cached actors, revisions, capabilities and routes never enable
+  commands. Rejected observer hints cause a fresh unhinted authorized lookup.
+  Immutable image reuse may cross historical seat/access/view/session cache
+  namespaces only within the same UID/campaign, with a validated historical
+  checkpoint and exact full current-manifest reference/MIME/size/SHA-256.
+  Ordinary strict cache reads remain isolated; reused bytes are promoted into
+  the current namespace. Corruption, eviction, stale schemas and changed
+  references produce explicit authorized recovery. Actual SDK instrumentation
+  records zero unchanged graphic/image bodies on warm rejoin while both fresh
+  authority requests remain present. No offline editor or old motion replay is
+  introduced.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its

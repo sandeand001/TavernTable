@@ -832,6 +832,10 @@ export default class CloudParticipantCache {
   }
 
   async readCheckpoint(access, viewKey) {
+    return this._readCheckpoint(access, viewKey);
+  }
+
+  async _readCheckpoint(access, viewKey, verifyGraphics = false) {
     access = structuredClone(access);
     const ticket = this._ticket('checkpoint', access, viewKey);
     try {
@@ -880,12 +884,23 @@ export default class CloudParticipantCache {
             );
           throw error;
         }
+        if (snapshot.access.uid !== access.uid)
+          throw failure('cache-corrupt', 'The private checkpoint belongs to a different account.');
         const saved = await this._key(snapshot.access, snapshot.viewKey);
         if (saved.id !== context.id || snapshot.generation !== row.generation)
           throw failure(
             'cache-corrupt',
             'The private checkpoint cache belongs to a different view.'
           );
+        if (
+          verifyGraphics &&
+          snapshot.state.publicScene.assetKey !== null &&
+          (await this._hash(
+            new TextEncoder().encode(JSON.stringify(snapshot.state.publicScene.assets))
+          )) !== snapshot.state.publicScene.assetKey
+        )
+          throw failure('cache-corrupt', 'The cached graphic JSON failed integrity verification.');
+        this._assert(ticket);
         await this._storage(() =>
           transact(database, ['accounts', 'checkpoints'], 'readwrite', async (transaction) => {
             await this._verifyEpoch(transaction, ticket, context.uidKey);
@@ -901,6 +916,84 @@ export default class CloudParticipantCache {
     } finally {
       this.coordinator.tickets.delete(ticket);
     }
+  }
+
+  async _checkpointCandidates(access) {
+    access = structuredClone(access);
+    this._scope(access, '0'.repeat(64));
+    return this._serialize(async () => {
+      const uidKey = await this._uidKey();
+      const database = await this._database();
+      const rows = await this._storage(() =>
+        transact(database, ['checkpoints'], 'readonly', (transaction) =>
+          requestResult(transaction.objectStore('checkpoints').index('uidKey').getAll(uidKey))
+        )
+      );
+      this._active();
+      return rows
+        .filter((row) => row.campaignId === access.campaignId)
+        .sort((left, right) => (right.lastUsed ?? 0) - (left.lastUsed ?? 0))
+        .map((row) => {
+          const scope = {
+            version: 1,
+            uid: this.uid,
+            campaignId: row.campaignId,
+            role: 'member',
+            seatId: row.seatId,
+            accessGeneration: row.accessGeneration,
+          };
+          if (!isCloudAccessScope(scope) || !isCloudDigest(row.viewKey))
+            throw failure('cache-corrupt', 'The private checkpoint candidate scope is invalid.');
+          return { access: scope, viewKey: row.viewKey };
+        });
+    });
+  }
+
+  async readCheckpointCandidate(access) {
+    for (const candidate of await this._checkpointCandidates(access)) {
+      const snapshot = await this._readCheckpointCandidate(candidate);
+      if (snapshot !== null) return snapshot;
+    }
+    return null;
+  }
+
+  async _readCheckpointCandidate(candidate) {
+    try {
+      return await this._readCheckpoint(candidate.access, candidate.viewKey, true);
+    } catch (error) {
+      if (error instanceof CloudParticipantCacheError && error.code === 'cache-corrupt')
+        await this.deleteCheckpoint(candidate.access, candidate.viewKey);
+      throw error;
+    }
+  }
+
+  async readAuthorizedAsset(snapshot, reference, { cachedAssets = null } = {}) {
+    snapshot = structuredClone(snapshot);
+    reference = structuredClone(reference);
+    this._assetScope(snapshot, reference, cachedAssets);
+    // Only the fresh manifest authorizes reuse; historical scope is just a byte location.
+    for (const candidate of await this._checkpointCandidates(snapshot.access)) {
+      const saved = await this._readCheckpointCandidate(candidate);
+      if (
+        saved === null ||
+        !saved.manifest.images.some((slot) =>
+          Object.keys(reference).every((key) => slot.reference[key] === reference[key])
+        )
+      )
+        continue;
+      try {
+        const bytes = await this.readAsset(saved, reference);
+        if (bytes !== null) return bytes;
+      } catch (error) {
+        if (
+          error instanceof CloudParticipantCacheError &&
+          ['cache-corrupt', 'cache-asset-integrity'].includes(error.code)
+        )
+          await this.deleteAsset(saved, reference);
+        throw error;
+      }
+    }
+    return null;
   }
 
   _assetScope(snapshot, reference, cachedAssets) {

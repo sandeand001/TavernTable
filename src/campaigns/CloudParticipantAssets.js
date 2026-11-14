@@ -66,14 +66,17 @@ export default class CloudParticipantAssets {
   }
 
   async _cacheCall(version, method, ...args) {
+    const reading = ['readAsset', 'readAuthorizedAsset', 'readCheckpointCandidate'].includes(
+      method
+    );
     if (this.cache === null || !this._current(version))
-      return method === 'readAsset' ? null : { stored: false, reason: 'cache-unavailable' };
+      return reading ? null : { stored: false, reason: 'cache-unavailable' };
     try {
       return await this.cache[method](...args);
     } catch (error) {
       if (!(error instanceof CloudParticipantCacheError) || error.recoverable !== true) throw error;
       if (!this._current(version))
-        return method === 'readAsset' ? null : { stored: false, reason: 'superseded-assets' };
+        return reading ? null : { stored: false, reason: 'superseded-assets' };
       this.cacheIssue = {
         phase: 'unavailable',
         code: error.code,
@@ -91,7 +94,7 @@ export default class CloudParticipantAssets {
       );
       if (method === 'readAsset' && ['cache-corrupt', 'cache-asset-integrity'].includes(error.code))
         await this._cacheCall(version, 'deleteAsset', ...args);
-      return method === 'readAsset' ? null : { stored: false, reason: error.code };
+      return reading ? null : { stored: false, reason: error.code };
     }
   }
 
@@ -178,6 +181,18 @@ export default class CloudParticipantAssets {
     this.releaseView = release;
     this.protectedView = key;
     return true;
+  }
+
+  async readCheckpointCandidate(access) {
+    const version = this.sequence;
+    if (
+      !this._current(version) ||
+      typeof this.cache?.readCheckpointCandidate !== 'function' ||
+      !(await this._prepareCache(version))
+    )
+      return null;
+    const candidate = await this._cacheCall(version, 'readCheckpointCandidate', access);
+    return this._current(version) ? candidate : null;
   }
 
   update(snapshot, { cachedAssets = null } = {}) {
@@ -272,8 +287,12 @@ export default class CloudParticipantAssets {
           return { applied: false, reason: 'superseded-assets' };
         const key = referenceKey(reference);
         if (this.images.has(key)) continue;
+        const readMethod =
+          typeof this.cache?.readAuthorizedAsset === 'function'
+            ? 'readAuthorizedAsset'
+            : 'readAsset';
         let bytes = caching
-          ? await this._cacheCall(version, 'readAsset', snapshot, reference)
+          ? await this._cacheCall(version, readMethod, snapshot, reference)
           : null;
         if (!this._current(version) || controller.signal.aborted)
           return { applied: false, reason: 'superseded-assets' };
@@ -287,7 +306,8 @@ export default class CloudParticipantAssets {
           await this._cacheCall(version, 'deleteAsset', snapshot, reference);
           bytes = null;
         }
-        if (bytes === null) {
+        const downloading = bytes === null;
+        if (downloading) {
           bytes = await this.store.readParticipantAsset(
             snapshot.access.campaignId,
             snapshot,
@@ -304,8 +324,11 @@ export default class CloudParticipantAssets {
             );
           if (!this._current(version) || controller.signal.aborted)
             return { applied: false, reason: 'superseded-assets' };
-          if (caching) await this._cacheCall(version, 'writeAsset', snapshot, reference, bytes);
         }
+        if (!this._current(version) || controller.signal.aborted)
+          return { applied: false, reason: 'superseded-assets' };
+        if (caching && (downloading || readMethod === 'readAuthorizedAsset'))
+          await this._cacheCall(version, 'writeAsset', snapshot, reference, bytes);
         if (!this._current(version) || controller.signal.aborted)
           return { applied: false, reason: 'superseded-assets' };
         this.images.set(key, `data:${reference.mimeType};base64,${encodeBase64(bytes)}`);

@@ -870,7 +870,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     Authoritative warm-rejoin network proof and logout-wide purge remain
     `M3-08`/`M3-09`; full shared-game capability remains gated.
 
-- [ ] **M3-08 - Prove warm-cache rejoin and authoritative state recovery.**
+- [x] **M3-08 - Prove warm-cache rejoin and authoritative state recovery.**
   - **Depends:** `M3-04`, `M3-07`.
   - **Success:** rejoin verifies current identity/access, revisions, hashes and view
     before enabling commands. Reuse valid unchanged assets and replace stale
@@ -878,6 +878,24 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** network instrumentation shows **zero unchanged asset-body downloads**
     when valid entries remain present. Eviction/corruption causes an explicit
     download; do not count a cached UI appearance as proof of network reuse.
+  - **Evidence:** verified November 14, 2026 with actual managed SDK/HTTP/SSE
+    authority and immutable private images. A cold default join transfers one
+    **514-byte** graphic JSON body and one **86-byte** PNG; warm rejoin transfers
+    **zero graphic/image bodies and zero asset bytes**, while retaining **two
+    fresh authority requests**. Cached checkpoints are hints only; current
+    constructor UID/access/session and fresh revisions/view remain authoritative.
+    Exact current-manifest image references may reuse verified historical bytes
+    inside the same UID/campaign without weakening ordinary scope isolation.
+    Corrupt/evicted binaries, corrupt graphics, stale schema, changed references
+    and rejected observer hints recover explicitly; current UID/access/epoch
+    mismatches deny readiness and submit **zero commands**.
+    **4/4 actual SDK cases**, zero skips, **64,041.5513 ms**, preserve original
+    native acknowledgement and continuous queued movement/final combat budgets.
+    **12 coupled app suites / 192 tests**, zero skips, **21.549 s**, open-handle
+    detection; full lint/style/layering zero errors / same **39 baseline warnings**.
+    No deployment, dependency, real account/campaign, original-host or routine-save
+    UX change. Logout-wide purge and ten-client/full-stable acceptance remain
+    `M3-09`/`M3-10`; complete shared gameplay remains gated.
 
 - [ ] **M3-09 - Implement logout, access-change, and connection-loss safety.**
   - **Depends:** `M1-05`, `M3-04`, `M3-06`.

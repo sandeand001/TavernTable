@@ -652,6 +652,7 @@ test('corrupt Cache Storage bodies cannot pass a matching metadata header and ca
     crypto: webcrypto,
   });
   try {
+    await cache.writeCheckpoint(snapshot);
     await cache.writeAsset(snapshot, reference, bytes);
     const [name] = await cacheStorage.keys();
     const storage = await cacheStorage.open(name);
@@ -663,6 +664,10 @@ test('corrupt Cache Storage bodies cannot pass a matching metadata header and ca
     await expect(cache.readAsset(snapshot, reference)).rejects.toMatchObject({
       code: 'cache-asset-integrity',
     });
+    await expect(
+      cache.readAuthorizedAsset({ ...snapshot, viewKey: 'b'.repeat(64) }, reference)
+    ).rejects.toMatchObject({ code: 'cache-asset-integrity' });
+    expect(await cache.readAsset(snapshot, reference)).toBeNull();
     await cache.deleteAsset(snapshot, reference);
     expect(await cache.readAsset(snapshot, reference)).toBeNull();
   } finally {
@@ -700,19 +705,33 @@ test('cache payloads with invalid schemas are refused even when disk metadata co
   );
   const database = await openDatabase(indexedDB, name, () => {}, 2);
   try {
-    await transact(database, ['checkpoints'], 'readwrite', async (transaction) => {
-      const store = transaction.objectStore('checkpoints');
-      const [row] = await requestResult(store.getAll());
-      const payload = JSON.parse(row.payload);
-      payload.signedUrl = 'https://unrelated.example.invalid/?token=not-a-credential';
-      row.payload = JSON.stringify(payload);
-      row.bytes = new TextEncoder().encode(row.payload).byteLength;
-      row.sha256 = createHash('sha256').update(row.payload).digest('hex');
-      await requestResult(store.put(row));
-    });
-    await expect(cache.readCheckpoint(snapshot.access, snapshot.viewKey)).rejects.toMatchObject({
-      code: 'cache-corrupt',
-    });
+    for (const mutate of [
+      (payload) => {
+        payload.signedUrl = 'https://unrelated.example.invalid/?token=not-a-credential';
+      },
+      (payload) => {
+        payload.access.uid = 'cache-b';
+      },
+    ]) {
+      await cache.writeCheckpoint(snapshot);
+      await transact(database, ['checkpoints'], 'readwrite', async (transaction) => {
+        const store = transaction.objectStore('checkpoints');
+        const [row] = await requestResult(store.getAll());
+        const payload = JSON.parse(row.payload);
+        mutate(payload);
+        row.payload = JSON.stringify(payload);
+        row.bytes = new TextEncoder().encode(row.payload).byteLength;
+        row.sha256 = createHash('sha256').update(row.payload).digest('hex');
+        await requestResult(store.put(row));
+      });
+      await expect(cache.readCheckpoint(snapshot.access, snapshot.viewKey)).rejects.toMatchObject({
+        code: 'cache-corrupt',
+      });
+      await expect(cache.readCheckpointCandidate(snapshot.access)).rejects.toMatchObject({
+        code: 'cache-corrupt',
+      });
+      expect(await cache.readCheckpoint(snapshot.access, snapshot.viewKey)).toBeNull();
+    }
   } finally {
     database.close();
     cache.close();
@@ -764,6 +783,72 @@ test('verified private binary bytes persist in Cache Storage and never cross ano
     expect(await reopened.readAsset(snapshot, reference)).toBeNull();
   } finally {
     reopened.close();
+  }
+});
+
+test('a warm candidate is only a hint and exact current manifests authorize unchanged bytes across views without weakening ordinary isolation', async () => {
+  const { snapshot, reference, bytes } = await imageCheckpoint();
+  const options = {
+    indexedDB: testIndexedDB(),
+    cacheStorage: testCacheStorage(),
+    crypto: webcrypto,
+  };
+  const first = new CloudParticipantCache({ ...options, uid: snapshot.access.uid });
+  await first.writeCheckpoint(snapshot);
+  await first.writeAsset(snapshot, reference, bytes);
+  first.close();
+  const cache = new CloudParticipantCache({ ...options, uid: snapshot.access.uid });
+  const other = new CloudParticipantCache({ ...options, uid: 'cache-b' });
+  const current = structuredClone(snapshot);
+  current.access.accessGeneration++;
+  current.viewKey = 'b'.repeat(64);
+  current.generation++;
+  try {
+    expect(await cache.readCheckpointCandidate(current.access)).toEqual(snapshot);
+    expect(await cache.readCheckpoint(current.access, current.viewKey)).toBeNull();
+    expect(await cache.readAsset(current, reference)).toBeNull();
+    expect(Buffer.from(await cache.readAuthorizedAsset(current, reference))).toEqual(bytes);
+    expect(await cache.readAsset(current, reference)).toBeNull();
+    const changed = { ...reference, generation: '2' };
+    const replacement = {
+      ...current,
+      manifest: {
+        version: 1,
+        images: [
+          {
+            source: 'character',
+            id: current.state.characterIds[0],
+            field: 'portraitImage',
+            reference: changed,
+          },
+        ],
+      },
+    };
+    expect(await cache.readAuthorizedAsset(replacement, changed)).toBeNull();
+    await expect(
+      cache.readAuthorizedAsset({ ...current, manifest: { version: 1, images: [] } }, reference)
+    ).rejects.toMatchObject({ code: 'invalid-cache-asset' });
+    const differentAccount = {
+      ...current,
+      access: { ...current.access, uid: 'cache-b' },
+    };
+    expect(await other.readCheckpointCandidate(differentAccount.access)).toBeNull();
+    expect(await other.readAuthorizedAsset(differentAccount, reference)).toBeNull();
+    const differentCampaign = structuredClone(current);
+    differentCampaign.access.campaignId = '44444444-4444-4444-8444-444444444444';
+    differentCampaign.state.campaign.id = differentCampaign.access.campaignId;
+    for (const slot of differentCampaign.manifest.images)
+      slot.reference.campaignId = differentCampaign.access.campaignId;
+    expect(await cache.readCheckpointCandidate(differentCampaign.access)).toBeNull();
+    expect(
+      await cache.readAuthorizedAsset(
+        differentCampaign,
+        differentCampaign.manifest.images[0].reference
+      )
+    ).toBeNull();
+  } finally {
+    cache.close();
+    other.close();
   }
 });
 
