@@ -1186,8 +1186,10 @@ Revalidation in the intended environment remains part of M1 and M4.
     declaration.
   - **Completed locally:** November 14, 2026. A deterministic native-ESM module
     graph and explicit runtime-asset/catalog allowlist produce a separate
-    static-only Hosting package: **607 files / 289,219,649 bytes**, with **158
-    exact-case configured asset references** present. No repository root,
+    static-only Hosting package: **607 versioned files / 289,219,649 bytes**, with **158
+    exact-case configured asset references** present. Its root public manifest
+    brings the complete public payload to **608 files / 289,411,156 bytes**.
+    No repository root,
     server/admin tooling, tests, raw Firebase configuration file, credentials,
     SQLite, campaign backups, authoring archives or private campaign data enter
     the public directory. The curated public web configuration is injected into

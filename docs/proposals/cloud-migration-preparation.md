@@ -3242,7 +3242,7 @@ billing change or live API request is performed by these commands.
 The actual retained package is
 `build\cloud-frontend\m407-local-20261114-v1`, release
 **c4f0402a35145ee8e7b9b765ac6889001d7f2279618fa49a0c5e56af4aa9bee9**.
-Its **607 files / 289,219,649 bytes** are:
+Its **607 versioned release files / 289,219,649 bytes** are:
 
 | Group                                         | Files |       Bytes |
 | --------------------------------------------- | ----: | ----------: |
@@ -3252,6 +3252,11 @@ Its **607 files / 289,219,649 bytes** are:
 | Resource manifest, packs and combined notices |    18 |  15,177,150 |
 | Original gold die                             |     1 |   5,095,908 |
 | Shell, construction icons and other notices   |    19 |      36,255 |
+
+The root public manifest adds **191,507 bytes**, for an actual public-tree
+inventory of **608 files / 289,411,156 bytes**. The generated **932-byte** Hosting
+configuration is outside that public tree. The CLI's `files`/`bytes` counters
+describe the versioned manifest entries, not the extra root metadata file.
 
 All **158 exact-case configured character/clip/model/texture references** are
 present. Nine pinned CDN module URLs remain external; the package does not
