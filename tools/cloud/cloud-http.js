@@ -51,6 +51,17 @@ async function opportunisticAssignedBackupWork(store, principal, id, scope) {
   }
 }
 
+async function opportunisticLiveBackupWork(store, principal, id) {
+  try {
+    await store.runLiveBackupWork(principal, id);
+  } catch (error) {
+    console.error('[cloud-live-backup-work]', {
+      campaignId: id,
+      code: error instanceof CloudError ? error.code : 'backup-work-failed',
+    });
+  }
+}
+
 async function opportunisticChangeWork(store, principal, id, scope = null) {
   try {
     await store.runChangeMaintenance(principal, id, scope);
@@ -199,6 +210,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'readAssignedCharacters',
       'commitAssignedCharacters',
       'runAssignedBackupWork',
+      'runLiveBackupWork',
       'getLiveSession',
       'getLiveStatus',
       'getLiveAccess',
@@ -546,8 +558,16 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             request.method === 'POST'
               ? await store.controlLiveSession(principal, campaign[1], await requestJSON(request))
               : await store.getLiveSession(principal, campaign[1]);
+          if (request.method === 'GET' && result.state === 'paused') {
+            await opportunisticLiveBackupWork(store, principal, campaign[1]);
+            result = await store.getLiveSession(principal, campaign[1]);
+          }
         } else if (snapshot === 'live/status') {
           result = await store.getLiveStatus(principal, campaign[1]);
+          if (result.session.state === 'paused') {
+            await opportunisticLiveBackupWork(store, principal, campaign[1]);
+            result = await store.getLiveStatus(principal, campaign[1]);
+          }
         } else if (snapshot === 'live/access') {
           result = await store.getLiveAccess(principal, campaign[1], await requestJSON(request));
         } else if (snapshot === 'backup') {

@@ -2918,3 +2918,101 @@ Eight owned scratch logs and disposable fixtures were cleaned. Original hosts
 completion and lifecycle drain are not silently enabled by convergence proof.
 No real account/campaign, dependency, deployment/IAM/index, frontend/cutover or
 deferred routine-save UX change was made.
+
+### M4-04: safe pause drain and exact final-source backups
+
+Every durable live-to-paused transition records the captured canonical source
+as an existing private pending `backupJobs` entry in the same transaction.
+Explicit owner end, natural status/admission, presence expiry/cleanup and an
+allowed canonical publication at the deadline use that same seam. The accepted
+publication's new head, not its old head, supplies the source. Its paused epoch,
+canonical metadata and immutable scene/character references remain independent
+of later paused preparation. This schedules server-side backup work, not an
+offline client edit/upload queue or a new terrain owner.
+
+Pause needs no complete-file allocation or backup-state validation. Existing
+pending-job queries already protect captured source objects from fenced cleanup,
+so no new index or alternative protection system is added. A natural worker
+verifies the original source and promotes its owner-scoped claim before IO.
+Unchanged automatic sources skip a copy. An explicit owner final confirmation
+reuses a matching original job at the current canonical generation, preserving
+same-job recovery and clearing its original failure rather than falsely leaving
+an error behind after another copy.
+
+Permitted paused status, assigned-sheet and owner backup requests run
+bounded pending work through the existing owner-billed complete-file pipeline.
+Status membership/eligibility is rechecked after IO; a removed member receives
+404 rather than an earlier authorized result. Work does not return private backup data. Ordinary
+pause acknowledgements, canonical saves and terminal SSE closure do not wait on
+an after-response worker. Automatic SSE expiry leaves a durable pending source
+until a natural online request supplies execution time. There is no permanent
+timer, shutdown-only durability, endlessly reopening paused lobby or fixed total
+game-duration cap.
+
+The four focused actual SDK regressions cover:
+
+- Immediate owner pause before the five-minute routine interval, followed by
+  another paused sheet edit: the completed file equals the entire exact captured
+  export, including active combat and a deliberately adjusted movement budget.
+  End replay creates no extra point; an unchanged later end makes no copy.
+- A scene HTTP reply held after actual durable publication: pause happens while
+  that caller is unacknowledged, then its original receipt acknowledges once
+  with one scene submission. Two owner/member streams terminate with null views,
+  no member lease and no reopening after explicit reconnect plus **1.25 s**.
+  Another active campaign's stream accepts a generation advance.
+  Short member wake encounters both storage-preparation and file-copy failures;
+  current paused status stays successful, private failure/source status survives,
+  and original owner confirmation recovers the exact complete file.
+- An accepted sheet publication at the **60-minute** inactivity boundary and a
+  fresh-worker wake two minutes after the original **15-minute** disconnected
+  grace: both remain paused at the stored deadline, retain their final source
+  despite later permitted preparation and give members no backup export grant.
+- Membership removal while a paused-status request holds actual backup IO:
+  the removed member receives **404/campaign-not-found** after completion,
+  while the already accepted owner backup still completes with its exact source.
+
+The feedback loop first failed at the precise missing immediate final source.
+The next slice failed because paused member status did not evaluate work.
+Preparation failures then exposed `pending` instead of recorded failure status;
+the existing backup failure handler now covers preparation as well as file IO.
+Finally, explicit owner confirmation exposed a stale original error after a
+different copy succeeded; exact matching-job reuse fixes that recovery.
+These are root corrections, not retries that hide a failed lifecycle check.
+The IO race also first returned the stale authorized result; status revalidation
+closes that new seam without processing backup work on rejected world commands.
+
+Verified gates:
+
+- **34/34 directly coupled native lifecycle/paused-permission/complete-backup/
+  source-cleanup cases**, zero skips/cancellations, **259,353.0883 ms**. Twenty
+  rolling points, capacity failures, captured retries, due/cold competition,
+  owner billing, edition/source rules and canonical resources remain intact.
+- **6/6 actual managed SDK/HTTP/SSE convergence/warm-rejoin/private-loss/native
+  cases**, zero skips/cancellations, **167,650.6666 ms**. Ten simultaneous
+  steady-state UIDs still converge at generation **29 / scene 7 / characters 21**;
+  five world receipts debit once, duplicates/replay/offline commands/revoked
+  private bytes/open transports remain zero. Valid warm asset bodies remain zero
+  with two fresh authority requests.
+- **3 directly coupled application suites / 67 tests**, **2.049 s**, with
+  open-handle detection. Full JS/stylelint/layering: zero errors / the same
+  **39 baseline warnings**. The earlier M3-10 full stable gate is not represented
+  as a new full-suite run for this backend-only change.
+- Local **taverntable-cloud:m404-20261114-r2** is rebuilt and checked.
+  OCI index **5b5bf940bf5fd5b6341e7b0efc2386ed6416ac16ce70c38d4acade24818e34c3**;
+  runnable manifest **bdced8ff6f6330dd83a1116ad86a21d6ae1f043d47d8e3457e21a76ebf6ddc9d**.
+  Linux Node **24.22.3**, UID **1000**, read-only/no-network/no-mount/no-credential/
+  no-GPU, **1 CPU / 1 GiB**. All **23** actual source hashes match the worktree;
+  readiness is 200, anonymous/forged account/live/world/event requests are 401,
+  private paths are 404, sixteen packs total **15,131,548 bytes**, a 16MP image
+  validates, native d20 settles over **501 frames** at face **3**, and graceful
+  exit is zero. Its exact owned validation container is removed; image retained,
+  not pushed. This is runtime parity, not hosted load/sleep/cost acceptance.
+
+Only the authority/router and existing SDK test fixture/cases change. New
+final-acceptance disposable campaigns and their objects are verified absent;
+all eight UID-specific namespaces used by these fixtures are deleted and checked.
+Earlier snapshots and other fixtures are not swept or overwritten.
+The original local hosts, preview, emulators and real linked/verified account remain
+unchanged. No frontend, capability, dependency, live deployment/IAM/index or
+deferred routine-save UX change is made. Actual container-kill/overlap lifecycle
+acceptance remains `M4-05`.

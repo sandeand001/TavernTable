@@ -67,8 +67,9 @@ Native world authority/bidirectional motion (`M3-05`), progressive private cache
 authoritative warm rejoin and session-loss safety (`M3-06` through `M3-09`)
 are verified. Ten concurrent managed clients now pass convergence/privacy/
 receipt/replay acceptance (`M3-10`), with **307 suites / 4,006 tests** passing
-the full stable gate. Complete cloud gameplay activation, lifecycle drain and
-hosted performance/cost acceptance remain gated. **45 of 65** tasks are complete,
+the full stable gate. Safe lifecycle drain and captured final-source backups
+(`M4-04`) are verified. Complete cloud gameplay activation, forced-container
+restart and hosted performance/cost acceptance remain gated. **46 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1061,7 +1062,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     `M3-03` still must combine actual transport outcomes, current live authority
     and the global four-stream quota; `M4-04` still owns draining/final backup.
 
-- [ ] **M4-04 - Drain/pause/end safely and stop unwanted live traffic.**
+- [x] **M4-04 - Drain/pause/end safely and stop unwanted live traffic.**
   - **Depends:** `M4-03`, `M3-03`, `M2-09`.
   - **Success:** accepted work is durable; pause/end closes streams and stops
     reconnect loops. Schedule the final changed-state complete backup and retain
@@ -1069,6 +1070,40 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** pause/end/disconnect during accepted work; backup failure remains
     separate. A paused lobby has no endless stream, and pausing one campaign does
     not shut down another active campaign.
+  - **Completed:** November 14, 2026. Pause/end and natural expiry atomically
+    record the exact canonical final source as existing private pending backup
+    work, without allocating a file or depending on backup storage. Later paused
+    preparation cannot replace that source. Existing reference protection, owner
+    quota, complete-file claims and twenty-point history are reused; unchanged
+    automatic sources skip copies. Explicit owner final confirmation reuses the
+    matching original job and clears its original failure, not a second backup.
+    Bounded permitted status/sheet/backup HTTP requests run pending work;
+    status access is rechecked after IO and members receive no private backup result.
+    No always-on timer, after-response
+    worker, shutdown callback or offline edit/upload queue is introduced.
+    A held reply after durable scene publication acknowledges once after pause.
+    Owner/member streams close with terminal paused status, zero retained views/
+    member leases and no new attempts after explicit reconnect plus **1.25 s**.
+    Another campaign continues receiving an accepted generation advance.
+    Preparation and file-copy failures are logged, retain their original source/
+    failure status and do not reverse pause or accepted primary data; recovery
+    returns the exact complete scene/turn/budgets/sheets. Cold natural grace uses
+    its original **15-minute** deadline; a permitted sheet publication at the
+    **60-minute** boundary is preserved without reviving the live epoch.
+    Revocation during held backup IO returns **404**, while the accepted owner
+    backup still completes.
+    **34/34 coupled native authority/backup cases**, zero skips/cancellations,
+    **259,353.0883 ms**; **6/6 actual SDK convergence/warm/private-loss/native
+    cases**, zero skips/cancellations, **167,650.6666 ms**.
+    **3 app suites / 67 tests**, **2.049 s**, open-handle detection; full lint/
+    style/layering zero errors / same **39 baseline warnings**.
+    Rebuilt local Linux Node **24.22.3** runtime passes **23 exact source hashes**,
+    non-root/read-only/no-network/no-mount/no-credential/no-GPU, native d20 and
+    readiness/auth/exit checks. Candidate is local only, not pushed/deployed.
+    No frontend, capability, dependency, real account/campaign, original host or
+    deferred routine-save UX change. `M4-05` still owns actual container-kill/
+    overlapping-instance lifecycle acceptance.
+    See [drain evidence](./cloud-migration-preparation.md#m4-04-safe-pause-drain-and-exact-final-source-backups).
 
 - [ ] **M4-05 - Pass forced-restart and overlapping-instance lifecycle tests.**
   - **Depends:** `M4-04`, `M4-06`.

@@ -654,7 +654,10 @@ class CloudCampaignStore {
       );
       const disconnectedAt = this._presenceDisconnectedAt(current, presence, now);
       const next = this._expireLiveSession(current, now, disconnectedAt);
-      if (next !== current) transaction.set(this._liveSessionReference(id), next);
+      if (next !== current) {
+        await this._queueFinalBackup(transaction, id, next);
+        transaction.set(this._liveSessionReference(id), next);
+      }
       return cloudLiveStatus(next, now, next.state === 'live' ? disconnectedAt : null);
     });
   }
@@ -678,6 +681,27 @@ class CloudCampaignStore {
       pausedAt: new Date(deadline).toISOString(),
       pauseReason: grace < inactivity ? 'disconnected' : 'inactivity',
     };
+  }
+
+  async _queueFinalBackup(transaction, id, session, head = null) {
+    const campaign = this.firestore.collection('campaigns').doc(id);
+    if (head === null) {
+      const snapshot = await transaction.get(campaign);
+      head = await this._metadata(snapshot, snapshot.data()?.ownerUid);
+    }
+    const name = randomUUID();
+    transaction.create(campaign.collection('backupJobs').doc(name), {
+      version: 1,
+      uid: head.ownerUid,
+      campaignId: id,
+      name,
+      createdAt: session.pausedAt,
+      fingerprint: this._backupFingerprint(head),
+      snapshot: this._backupSnapshot(head),
+      state: 'pending',
+      automaticFinal: true,
+      finalSessionId: session.sessionId,
+    });
   }
 
   async requireLiveSession(transaction, principal, id, sessionId, expectedAccess = null) {
@@ -738,6 +762,7 @@ class CloudCampaignStore {
         this._presenceDisconnectedAt(current, presence, now)
       );
       if (evaluated !== current) {
+        await this._queueFinalBackup(transaction, id, evaluated);
         transaction.set(this._liveSessionReference(id), evaluated);
         return { expired: true };
       }
@@ -831,6 +856,7 @@ class CloudCampaignStore {
         this._presenceDisconnectedAt(current, presence, now)
       );
       if (evaluated !== current) {
+        await this._queueFinalBackup(transaction, id, evaluated);
         transaction.set(this._liveSessionReference(id), evaluated);
         return { expired: true };
       }
@@ -891,6 +917,7 @@ class CloudCampaignStore {
       if (nextSummary?.sessionId === current.sessionId) summaries.push(nextSummary);
       const disconnectedAt = this._presenceDisconnectedAt(current, summaries, now);
       const evaluated = this._expireLiveSession(current, now, disconnectedAt);
+      if (evaluated !== current) await this._queueFinalBackup(transaction, id, evaluated);
       transaction.delete(connectionReference);
       if (nextSummary !== summary) transaction.set(summaryReference, nextSummary);
       if (evaluated !== current) transaction.set(this._liveSessionReference(id), evaluated);
@@ -980,6 +1007,7 @@ class CloudCampaignStore {
         this._presenceDisconnectedAt(current, presence, now)
       );
       if (expired !== current) {
+        await this._queueFinalBackup(transaction, id, expired);
         transaction.set(this._liveSessionReference(id), expired);
         return { expired: true };
       }
@@ -1034,6 +1062,7 @@ class CloudCampaignStore {
           'invalid-live-session',
           'The live-game transition could not be verified'
         );
+      if (next.state === 'paused') await this._queueFinalBackup(transaction, id, next);
       transaction.set(this._liveSessionReference(id), next);
       transaction.create(reference, {
         version: 1,
@@ -1143,6 +1172,31 @@ class CloudCampaignStore {
       .digest('hex');
   }
 
+  async _pendingBackupJob(snapshot, uid, id) {
+    const job = snapshot.data();
+    if (
+      !snapshot.exists ||
+      job?.version !== 1 ||
+      job.uid !== uid ||
+      job.campaignId !== id ||
+      job.name !== snapshot.id ||
+      job.state !== 'pending' ||
+      !validTime(job.createdAt) ||
+      !isCloudDigest(job.fingerprint) ||
+      (job.automaticFinal !== undefined &&
+        (job.automaticFinal !== true || !isCloudUUID(job.finalSessionId)))
+    )
+      throw new CloudError(503, 'invalid-backup-state', 'The pending backup could not be verified');
+    await this._headMetadata(job.snapshot, id, uid);
+    if (this._backupFingerprint(job.snapshot) !== job.fingerprint)
+      throw new CloudError(
+        503,
+        'invalid-backup-state',
+        'The pending backup source could not be verified'
+      );
+    return job;
+  }
+
   _nextBackupPending(state, head) {
     if (this._backupFingerprint(head) === state.lastFingerprint) return null;
     return (
@@ -1248,17 +1302,40 @@ class CloudCampaignStore {
       );
       const fingerprint = this._backupFingerprint(head);
       const changed = fingerprint !== state.lastFingerprint;
+      const job = jobs.empty ? null : await this._pendingBackupJob(jobs.docs[0], uid, id);
+      if (
+        final &&
+        changed &&
+        job?.automaticFinal === true &&
+        job.snapshot.generation === head.generation &&
+        job.fingerprint === fingerprint
+      )
+        return job.name;
       let pending = this._nextBackupPending(state, head);
+      let error = state.error;
+      let skipped = false;
       if (final && changed) {
         const started = await transaction.get(campaign.collection('backupJobs').doc(pending.name));
         if (started.exists && started.data().fingerprint !== fingerprint)
           pending = { ...pending, name: randomUUID() };
         pending = { ...pending, dueAt: new Date(this.now()).toISOString() };
       }
-      if (stableStringify(pending) !== stableStringify(state.pending))
-        transaction.set(reference, { ...state, pending });
+      if (!(final && changed) && job !== null) {
+        if (job.automaticFinal === true && job.fingerprint === state.lastFingerprint) {
+          skipped = true;
+          transaction.set(jobs.docs[0].ref, { ...job, state: 'complete', skipped: true });
+          if (error?.name === job.name) error = null;
+          if (pending?.name === job.name)
+            pending = this._nextBackupPending({ ...state, pending: null }, head);
+        }
+      }
+      if (
+        stableStringify(pending) !== stableStringify(state.pending) ||
+        stableStringify(error) !== stableStringify(state.error)
+      )
+        transaction.set(reference, { ...state, pending, error });
       if (final && changed) return pending.name;
-      if (!jobs.empty) return jobs.docs[0].id;
+      if (!jobs.empty && !skipped) return jobs.docs[0].id;
       return pending !== null && Date.parse(pending.dueAt) <= this.now() ? pending.name : null;
     });
     return commandId === null ? null : this._backupNow(uid, id, { commandId });
@@ -1336,74 +1413,71 @@ class CloudCampaignStore {
       { readOnly: true }
     );
     if (previous !== null) return previous;
-    await this.usage.ensureOwnerAccount(uid);
-    if (this.backupObjects?.bucket)
-      await this.usage.prepareOwnerStorage(uid, this.backupObjects.bucket);
-    const prepared = await this._transaction(async (transaction) => {
-      await this.access.assertEligibility(uid, transaction);
-      const replay = await this._previousCommand(transaction, intent);
-      if (replay !== null) return { replay, job: null };
-      const head = await this._metadata(await transaction.get(campaign), uid);
-      const jobSnapshot = await transaction.get(jobReference);
-      const claim = await transaction.get(claimReference);
-      if (jobSnapshot.exists) {
-        const job = jobSnapshot.data();
-        if (
-          job?.version !== 1 ||
-          job.uid !== uid ||
-          job.campaignId !== id ||
-          job.name !== commandId ||
-          job.state !== 'pending' ||
-          !validTime(job.createdAt) ||
-          !isCloudDigest(job.fingerprint) ||
-          !claim.exists ||
-          claim.data().fingerprint !== fingerprint
-        )
-          throw new CloudError(
-            503,
-            'invalid-backup-state',
-            'The pending backup could not be verified'
-          );
-        await this._headMetadata(job.snapshot, id, uid);
-        if (this._backupFingerprint(job.snapshot) !== job.fingerprint)
-          throw new CloudError(
-            503,
-            'invalid-backup-state',
-            'The pending backup source could not be verified'
-          );
-        await this._touchBackupSources(transaction, uid, id, job.snapshot);
-        return { replay: null, job };
-      }
-      if (
-        claim.exists ||
-        (await transaction.get(campaign.collection('backups').doc(commandId))).exists
-      )
-        throw new CloudError(409, 'command-id-conflict', 'This backup identity was already used');
-      const job = {
-        version: 1,
-        uid,
-        campaignId: id,
-        name: commandId,
-        createdAt: new Date(this.now()).toISOString(),
-        fingerprint: this._backupFingerprint(head),
-        snapshot: this._backupSnapshot(head),
-        state: 'pending',
-      };
-      await this._touchBackupSources(transaction, uid, id, head);
-      transaction.create(claimReference, {
-        version: 1,
-        uid,
-        kind: 'campaign.backup',
-        fingerprint,
-        campaignId: id,
-      });
-      transaction.create(jobReference, job);
-      return { replay: null, job };
-    });
-    if (prepared.replay !== null) return prepared.replay;
     const startedAt = this.now();
     let release = null;
     try {
+      await this.usage.ensureOwnerAccount(uid);
+      if (this.backupObjects?.bucket)
+        await this.usage.prepareOwnerStorage(uid, this.backupObjects.bucket);
+      const prepared = await this._transaction(async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return { replay, job: null };
+        const head = await this._metadata(await transaction.get(campaign), uid);
+        const jobSnapshot = await transaction.get(jobReference);
+        const claim = await transaction.get(claimReference);
+        if (jobSnapshot.exists) {
+          if (jobSnapshot.data()?.state === 'complete' && jobSnapshot.data()?.skipped === true)
+            throw new CloudError(
+              409,
+              'backup-already-covered',
+              'This final checkpoint is already covered by a complete backup'
+            );
+          const job = await this._pendingBackupJob(jobSnapshot, uid, id);
+          if (claim.exists ? claim.data().fingerprint !== fingerprint : job.automaticFinal !== true)
+            throw new CloudError(
+              503,
+              'invalid-backup-state',
+              'The pending backup could not be verified'
+            );
+          await this._touchBackupSources(transaction, uid, id, job.snapshot);
+          if (!claim.exists)
+            transaction.create(claimReference, {
+              version: 1,
+              uid,
+              kind: 'campaign.backup',
+              fingerprint,
+              campaignId: id,
+            });
+          return { replay: null, job };
+        }
+        if (
+          claim.exists ||
+          (await transaction.get(campaign.collection('backups').doc(commandId))).exists
+        )
+          throw new CloudError(409, 'command-id-conflict', 'This backup identity was already used');
+        const job = {
+          version: 1,
+          uid,
+          campaignId: id,
+          name: commandId,
+          createdAt: new Date(this.now()).toISOString(),
+          fingerprint: this._backupFingerprint(head),
+          snapshot: this._backupSnapshot(head),
+          state: 'pending',
+        };
+        await this._touchBackupSources(transaction, uid, id, head);
+        transaction.create(claimReference, {
+          version: 1,
+          uid,
+          kind: 'campaign.backup',
+          fingerprint,
+          campaignId: id,
+        });
+        transaction.create(jobReference, job);
+        return { replay: null, job };
+      });
+      if (prepared.replay !== null) return prepared.replay;
       if (this.backupObjects === null)
         throw new CloudError(
           503,
@@ -5665,21 +5739,30 @@ class CloudCampaignStore {
     if (head.data()?.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
   }
 
-  async runAssignedBackupWork(principal, id, expected) {
+  async _participantBackupOwner(principal, id, scope) {
     const uid = principalUid(principal);
-    const scope = this._accessExpectation(expected);
-    if (scope === null || scope.seatId === null)
-      throw new CloudError(400, 'invalid-access-scope', 'Choose explicit current player access.');
-    const ownerUid = await this._transaction(
+    return this._transaction(
       async (transaction) => {
         const grant = await this._participantGrant(transaction, uid, id, scope);
-        if (grant.access.role !== 'member') throw unavailableCampaign();
+        if (scope !== null && grant.access.role !== 'member') throw unavailableCampaign();
         const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
         const head = await this._metadata(snapshot, snapshot.data().ownerUid);
         return head.ownerUid;
       },
       { readOnly: true }
     );
+  }
+
+  async runAssignedBackupWork(principal, id, expected) {
+    const scope = this._accessExpectation(expected);
+    if (scope === null || scope.seatId === null)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose explicit current player access.');
+    const ownerUid = await this._participantBackupOwner(principal, id, scope);
+    await this._runOwnerBackupWork(ownerUid, id);
+  }
+
+  async runLiveBackupWork(principal, id) {
+    const ownerUid = await this._participantBackupOwner(principal, id, null);
     await this._runOwnerBackupWork(ownerUid, id);
   }
 
@@ -6010,6 +6093,19 @@ class CloudCampaignStore {
         meaningful && evaluated.state === 'live' && now > Date.parse(evaluated.lastMeaningfulAt)
           ? { ...evaluated, lastMeaningfulAt: new Date(now).toISOString() }
           : evaluated;
+      const generation = current.generation + 1;
+      const publishedHead = {
+        ...current,
+        campaign: next.campaign,
+        sceneRef,
+        charactersRef,
+        generation,
+        lastCommand: { uid, commandId: reference.id, kind, generation },
+      };
+      if (presentationRef === null) delete publishedHead.presentationRef;
+      else publishedHead.presentationRef = presentationRef;
+      if (live.state === 'live' && nextLive.state === 'paused')
+        await this._queueFinalBackup(transaction, id, nextLive, publishedHead);
       if (nextLive !== live) transaction.set(this._liveSessionReference(id), nextLive);
       for (const revoked of revokedAssignments) {
         transaction.set(revoked.reference, {
@@ -6025,17 +6121,6 @@ class CloudCampaignStore {
             accessGeneration: revoked.accessGeneration,
           });
       }
-      const generation = current.generation + 1;
-      const publishedHead = {
-        ...current,
-        campaign: next.campaign,
-        sceneRef,
-        charactersRef,
-        generation,
-        lastCommand: { uid, commandId: reference.id, kind, generation },
-      };
-      if (presentationRef === null) delete publishedHead.presentationRef;
-      else publishedHead.presentationRef = presentationRef;
       transaction.set(headReference, publishedHead);
       transaction.create(reference, {
         version: 1,

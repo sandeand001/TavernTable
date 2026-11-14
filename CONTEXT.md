@@ -157,7 +157,8 @@
   Primary-save acknowledgements and canonical retry state stay independent of
   backup failures. Explicit workspace exit flushes primary data before requesting
   a final changed-state point; a backup-only error is reported without blocking
-  sign-out. Live-session lifecycle must reuse this seam in its later gate.
+  sign-out. Live-session pause/end now reuses this seam through an atomically
+  captured final-source job and bounded natural-request work.
   Large file IO shares one process-wide slot with export/import finalization.
   Retired/staged bytes stay conservatively charged through fenced cleanup;
   history retirement is not an optimistic storage refund.
@@ -377,7 +378,7 @@
   owner transitions flush pending scene/character work; manual pause treats its
   final backup confirmation separately. Progressive artwork, persistent cache
   and warm/private-loss behavior are described below. Arrival grants, cloud
-  Undo/door/action/emote completion and automatic drain remain later work, not
+  Undo/door/action/emote completion and hosted lifecycle acceptance remain later work, not
   silently supported gameplay claims. Ten distinct managed principals (one owner
   and nine members) converge to canonical poses/revisions and scoped budgets,
   with stale-CAS retry, original lost-reply recovery, no duplicate costs/physics
@@ -484,8 +485,26 @@
   wake evaluates the earlier grace/inactivity deadline. Current UID/access and
   connection generations fence renewal/cleanup; reconnect never renews meaningful
   activity. Presence is not stream permission or a replacement for the global
-  four-stream quota. Actual SSE now uses these callbacks; visible lifecycle
-  presentation and safe drain integration remain separately gated work.
+  four-stream quota. Actual SSE now uses these callbacks; pause stops that
+  campaign's streams and reconnect loops without stopping another live campaign.
+  Final-source backup scheduling/drain is verified below; actual container-kill/
+  overlap and full hosted gameplay acceptance remain separate gates.
+- **Final live backup (M4-04 development gate verified)**: every durable
+  live-to-paused transition captures its exact canonical source in the same
+  transaction, including permitted primary publication at an expiry boundary.
+  Existing private pending backup jobs preserve immutable source references
+  through later paused preparation and fenced cleanup. Complete-file IO and
+  owner claim/quota work happen on bounded natural HTTP requests, not during
+  pause, after a response or in a shutdown callback. Unchanged automatic sources
+  skip a copy; explicit owner final confirmation reuses a matching original job
+  and clears that job's original failure. Preparation/file errors remain
+  independent of successful pause and primary receipts. A current member may
+  trigger owner-billed work but receives no private file or result. Status reads
+  recheck current membership/eligibility after backup IO; removal cannot deliver
+  a stale authorized result. Active combat,
+  HP, budgets and resources remain saved; another live campaign stays active.
+  Automatic SSE expiry can leave the durable source pending until the next
+  online wake. No always-on timer or offline edit/upload queue is introduced.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.

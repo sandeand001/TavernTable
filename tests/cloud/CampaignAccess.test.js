@@ -7,6 +7,7 @@ const { createEmulatorRuntime } = require('../../tools/cloud/emulator-runtime.js
 const { CloudAccountAccess, pilotAccountKey } = require('../../tools/cloud/account-access.js');
 const { Timestamp } = require('firebase-admin/firestore');
 const { CloudCampaignStore } = require('../../tools/cloud/campaign-store.js');
+const { CloudError } = require('../../tools/cloud/cloud-error.js');
 const { ImmutableCloudObjects } = require('../../tools/cloud/immutable-objects.js');
 const { PrivateCampaignAssets } = require('../../tools/cloud/campaign-assets.js');
 const { createCanvas } = require('canvas');
@@ -38,9 +39,65 @@ const {
   structureVolumes,
 } = require('../../src/terrain/ConstructionBlueprints.js');
 
-async function fixture(t, { now, withAssets = false } = {}) {
+async function fixture(t, { now, withAssets = false, cleanup = false } = {}) {
   const runtime = await createEmulatorRuntime();
-  t.after(() => runtime.close());
+  const campaigns = [];
+  const uids = [];
+  t.after(async () => {
+    const errors = [];
+    if (cleanup) {
+      for (const id of campaigns) {
+        try {
+          assert.match(id, /^[a-f0-9-]{36}$/);
+          const [files] = await runtime.bucket.getFiles({ prefix: `campaigns/${id}/` });
+          await Promise.all(files.map((file) => file.delete()));
+          await runtime.firestore.recursiveDelete(
+            runtime.firestore.collection('campaigns').doc(id)
+          );
+          assert.equal(
+            (await runtime.bucket.getFiles({ prefix: `campaigns/${id}/` }))[0].length,
+            0
+          );
+          assert.equal(
+            (await runtime.firestore.collection('campaigns').doc(id).get()).exists,
+            false
+          );
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      for (const uid of uids) {
+        try {
+          for (const name of [
+            'pilotAccounts',
+            'accountCommands',
+            'campaignMemberships',
+            'accountUsage',
+            'accountStreams',
+            'accountImports',
+            'accountRequests',
+            'accountObjectMaintenance',
+          ]) {
+            await runtime.firestore.recursiveDelete(
+              runtime.firestore.collection(name).doc(pilotAccountKey(uid))
+            );
+            assert.equal(
+              (await runtime.firestore.collection(name).doc(pilotAccountKey(uid)).get()).exists,
+              false
+            );
+          }
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+    }
+    try {
+      await runtime.close();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length) throw new AggregateError(errors, 'Owned campaign fixtures did not close');
+  });
   const manifest = JSON.parse(
     await fs.readFile(
       path.join(__dirname, '..', '..', 'assets', 'data', 'resources', 'manifest.json'),
@@ -62,6 +119,7 @@ async function fixture(t, { now, withAssets = false } = {}) {
   const store = createStore();
   const account = async ({ eligible = true, emailVerified = true } = {}) => {
     const identity = await signedInIdentity(runtime, { emailVerified });
+    if (cleanup) uids.push(identity.uid);
     t.after(() => identity.close());
     if (eligible)
       await runtime.firestore
@@ -71,8 +129,14 @@ async function fixture(t, { now, withAssets = false } = {}) {
     const principal = await access.verifyIdentity(`Bearer ${identity.token}`);
     return { ...identity, principal };
   };
-  const create = (principal, name) =>
-    store.create(principal, { commandId: randomUUID(), options: { name, ruleset: '2014' } });
+  const create = async (principal, name) => {
+    const campaign = await store.create(principal, {
+      commandId: randomUUID(),
+      options: { name, ruleset: '2014' },
+    });
+    if (cleanup) campaigns.push(campaign.id);
+    return campaign;
+  };
   const join = async (campaignId, uid) => {
     const id = randomUUID();
     const joinedAt = new Date().toISOString();
@@ -2476,6 +2540,483 @@ test(
     });
     assert.ok(!JSON.stringify(restored).includes('PRIVATE COMPLETE BACKUP NOTE'));
     assert.equal((await ownerClient.getLiveSession(campaign.id)).generation, 0);
+  }
+);
+
+test(
+  'ending a live campaign schedules its exact changed final checkpoint before the routine backup interval and skips an unchanged end',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Final paused checkpoint');
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: {
+        readCharacters: (id) => f.store.readCharacters(owner.principal, id),
+        commitCharacters: (id, change) =>
+          f.store.commitCharacters(owner.principal, id, { commandId: randomUUID(), change }),
+      },
+    });
+    const hero = await library.create('Final resources');
+    const validation = { library, ruleset: '2014' };
+    const raw = sceneState({ characterId: hero, name: 'Final resources' });
+    raw.terrain.heights = raw.terrain.heights.map((row) => row.map(() => 0));
+    const scene = CampaignWorld.fromScene(raw, validation).save();
+    const combat = new CombatSession({ library: library.engine });
+    const actor = { ...scene.creatures[0], characterSheetId: hero };
+    combat.startTurn(actor);
+    combat.adjustMovement(actor, 20);
+    scene.combat = combat.snapshot();
+    await f.store.commitScene(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      change: {
+        ruleset: '2014',
+        revision: 0,
+        charactersRevision: library.revision,
+        scene: encodeScene(scene, validation),
+      },
+    });
+    await f.store.runBackupWork(owner.principal, campaign.id, { final: true });
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    await library.edit(hero, { notes: 'EXACT FINAL LIVE RESOURCES' });
+    const finalText = await f.store.exportBackup(owner.principal, campaign.id);
+    const end = {
+      commandId: randomUUID(),
+      action: 'end',
+      generation: active.generation,
+      sessionId: active.sessionId,
+    };
+    const paused = await f.store.controlLiveSession(owner.principal, campaign.id, end);
+    assert.equal(paused.state, 'paused');
+    await library.edit(hero, { notes: 'LATER PAUSED PREPARATION' });
+    const final = await f.createStore().runBackupWork(owner.principal, campaign.id);
+    assert.ok(final, 'Pause must enqueue its final changed source before five minutes');
+    assert.equal(await f.store.readBackup(owner.principal, campaign.id, final.name), finalText);
+    assert.equal((await f.store.backupStatus(owner.principal, campaign.id)).state, 'pending');
+    assert.deepEqual(await f.store.controlLiveSession(owner.principal, campaign.id, end), paused);
+    assert.equal(await f.store.runBackupWork(owner.principal, campaign.id), null);
+    assert.equal((await f.store.listBackups(owner.principal, campaign.id)).length, 2);
+    await f.store.runBackupWork(owner.principal, campaign.id, { final: true });
+    const before = await f.store.listBackups(owner.principal, campaign.id);
+    const restarted = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId: paused.sessionId,
+    });
+    await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'end',
+      generation: restarted.generation,
+      sessionId: restarted.sessionId,
+    });
+    assert.equal(await f.store.runBackupWork(owner.principal, campaign.id), null);
+    assert.deepEqual(await f.store.listBackups(owner.principal, campaign.id), before);
+    assert.equal((await f.store.getLiveSession(owner.principal, campaign.id)).state, 'paused');
+    t.diagnostic(
+      'Exact complete final scene/turn/budgets/sheets preserved; unchanged end makes no copy'
+    );
+  }
+);
+
+test(
+  'a paused campaign drains accepted work and owner-member streams independently of backup failure while another campaign stays live',
+  { timeout: 90000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Paused backup failure');
+    const otherCampaign = await f.create(owner.principal, 'Independent active game');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    const opens = new Map();
+    let sceneAttempts = 0;
+    const fetch = async (url, options) => {
+      const event = /\/campaigns\/([^/]+)\/events$/.exec(String(url));
+      if (event) opens.set(event[1], (opens.get(event[1]) ?? 0) + 1);
+      if (String(url).endsWith(`/campaigns/${campaign.id}/scene`) && options.method === 'POST')
+        sceneAttempts++;
+      return globalThis.fetch(url, options);
+    };
+    const controller = f.client(owner, api, fetch);
+    const memberClient = f.client(member, api, fetch);
+    const observations = [];
+    let release;
+    let published;
+    let saving;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    const committed = new Promise((resolve) => {
+      published = resolve;
+    });
+    const writer = f.client(owner, api, async (url, options) => {
+      const response = await fetch(url, options);
+      if (String(url).endsWith(`/campaigns/${campaign.id}/scene`) && options.method === 'POST') {
+        assert.equal(response.status, 200);
+        published((await response.clone().json()).result);
+        await held;
+      }
+      return response;
+    });
+    try {
+      const library = await CampaignCharacters.open({
+        campaignId: campaign.id,
+        catalog: await f.resources.catalog(campaign),
+        store: controller,
+      });
+      const hero = await library.create('Drained actor');
+      await library.edit(hero, { notes: 'PRIVATE ACCEPTED FINAL CHECKPOINT' });
+      const validation = { library, ruleset: '2014' };
+      const raw = sceneState({ characterId: hero, name: 'Drained actor' });
+      raw.terrain.heights = raw.terrain.heights.map((row) => row.map(() => 0));
+      const scene = CampaignWorld.fromScene(raw, validation).save();
+      await controller.commitScene(campaign.id, {
+        ruleset: '2014',
+        revision: 0,
+        charactersRevision: library.revision,
+        scene: encodeScene(scene, validation),
+      });
+      const otherLibrary = await CampaignCharacters.open({
+        campaignId: otherCampaign.id,
+        catalog: await f.resources.catalog(otherCampaign),
+        store: controller,
+      });
+      await otherLibrary.create('Still active');
+      await f.store.runBackupWork(owner.principal, campaign.id, { final: true });
+      await f.store.runBackupWork(owner.principal, otherCampaign.id, { final: true });
+      await controller.assignCharacter(campaign.id, {
+        seatId,
+        characterId: hero,
+        assigned: true,
+        accessGeneration: 0,
+      });
+      const active = await controller.controlLiveSession(
+        campaign.id,
+        'start',
+        await controller.getLiveSession(campaign.id)
+      );
+      const otherActive = await controller.controlLiveSession(
+        otherCampaign.id,
+        'start',
+        await controller.getLiveSession(otherCampaign.id)
+      );
+      const ownerAccess = await controller.getParticipantAccess(campaign.id);
+      const memberAccess = await memberClient.getParticipantAccess(campaign.id);
+      const otherAccess = await controller.getParticipantAccess(otherCampaign.id);
+      const view = (sessionId) => ({
+        sessionId,
+        observerTokenId: null,
+        mapId: null,
+        assetKey: null,
+      });
+      const ownerLive = controller.observeEvents(
+        campaign.id,
+        view(active.sessionId),
+        ownerAccess.access,
+        {
+          onState: () => {},
+          onStatus: () => {},
+        }
+      );
+      const memberLive = memberClient.observeEvents(
+        campaign.id,
+        { ...view(active.sessionId), observerTokenId: 'token-1', mapId: 'map-main' },
+        memberAccess.access,
+        { onState: () => {}, onStatus: () => {} }
+      );
+      let otherGeneration = Infinity;
+      let deliverOther;
+      const otherChanged = new Promise((resolve) => {
+        deliverOther = resolve;
+      });
+      const otherLive = controller.observeEvents(
+        otherCampaign.id,
+        view(otherActive.sessionId),
+        otherAccess.access,
+        {
+          onState: (state) => {
+            if ((state?.head?.generation ?? 0) > otherGeneration) deliverOther(state);
+          },
+          onStatus: () => {},
+        }
+      );
+      observations.push(ownerLive, memberLive, otherLive);
+      const [, , otherInitial] = await Promise.all(observations.map((entry) => entry.ready));
+      otherGeneration = otherInitial.head.generation;
+      const moved = structuredClone(scene);
+      moved.creatures[0].gridX = 2;
+      moved.creatures[0].pose.world.x = 2.5;
+      const attemptsBefore = sceneAttempts;
+      saving = writer
+        .commitScene(campaign.id, {
+          ruleset: '2014',
+          revision: 1,
+          charactersRevision: library.revision,
+          scene: encodeScene(moved, validation),
+        })
+        .then(
+          (result) => ({ result }),
+          (error) => ({ error })
+        );
+      assert.equal((await committed).revision, 2);
+      const finalText = await f.store.exportBackup(owner.principal, campaign.id);
+      const stage = f.store.backupObjects.stage;
+      let backupAttempts = 0;
+      f.store.backupObjects.stage = async () => {
+        backupAttempts++;
+        throw new CloudError(503, 'backup-storage-unavailable', 'Synthetic backup failure');
+      };
+      const prepare = f.store.usage.prepareOwnerStorage;
+      let preparationAttempts = 0;
+      f.store.usage.prepareOwnerStorage = async () => {
+        preparationAttempts++;
+        throw new CloudError(
+          503,
+          'storage-reservation-unavailable',
+          'Synthetic backup preparation failure'
+        );
+      };
+      const paused = await controller.controlLiveSession(campaign.id, 'end', active);
+      assert.equal(paused.state, 'paused');
+      await Promise.all([ownerLive.done, memberLive.done]);
+      assert.equal(ownerLive.status.phase, 'paused');
+      assert.equal(memberLive.status.phase, 'paused');
+      assert.equal(ownerLive.current, null);
+      assert.equal(memberLive.current, null);
+      release();
+      const acknowledged = await saving;
+      if (acknowledged.error) throw acknowledged.error;
+      assert.equal(acknowledged.result.revision, 2);
+      assert.equal(sceneAttempts - attemptsBefore, 1);
+      const wake = await memberClient.getLiveStatus(campaign.id);
+      assert.equal(wake.session.state, 'paused');
+      assert.ok(!JSON.stringify(wake).includes('PRIVATE ACCEPTED FINAL CHECKPOINT'));
+      const failed = await f.store.backupStatus(owner.principal, campaign.id);
+      assert.equal(failed.state, 'error');
+      assert.equal(preparationAttempts, 1);
+      assert.equal(backupAttempts, 0);
+      f.store.usage.prepareOwnerStorage = prepare;
+      assert.equal((await memberClient.getLiveStatus(campaign.id)).session.state, 'paused');
+      assert.equal((await f.store.backupStatus(owner.principal, campaign.id)).state, 'error');
+      assert.equal(backupAttempts, 1);
+      assert.equal((await f.store.getLiveSession(owner.principal, campaign.id)).state, 'paused');
+      f.store.backupObjects.stage = stage;
+      const finished = await controller.finishBackupSession(campaign.id);
+      assert.ok(finished);
+      assert.equal(
+        await f.store.readBackup(owner.principal, campaign.id, finished.name),
+        finalText
+      );
+      assert.equal((await f.store.backupStatus(owner.principal, campaign.id)).state, 'saved');
+      await otherLibrary.create('Accepted in the other live game');
+      assert.equal((await otherChanged).head.generation, otherGeneration + 1);
+      assert.equal(otherLive.status.phase, 'ready');
+      assert.equal((await f.store.getLiveSession(owner.principal, otherCampaign.id)).state, 'live');
+      assert.equal(f.store.participantChanges.groups.size, 1);
+      const before = opens.get(campaign.id);
+      ownerLive.reconnect();
+      memberLive.reconnect();
+      await new Promise((resolve) => setTimeout(resolve, 1250));
+      assert.equal(opens.get(campaign.id), before);
+      assert.equal(before, 2);
+      assert.equal(opens.get(otherCampaign.id), 1);
+      const usage = await f.runtime.firestore
+        .collection('accountStreams')
+        .doc(pilotAccountKey(member.uid))
+        .get();
+      assert.equal(usage.data().leases.length, 0);
+      t.diagnostic(
+        'One canonical acknowledgement survives pause; two paused streams stop without retries; private failed final backup recovers while the other stream stays ready'
+      );
+    } finally {
+      release();
+      if (saving) await saving;
+      await Promise.all(observations.map((entry) => entry.close()));
+      controller.close();
+      writer.close();
+      memberClient.close();
+      await api.close();
+    }
+  }
+);
+
+test(
+  'natural inactivity and disconnected cold wake retain exact final sources without reviving live authority or granting member backup access',
+  { timeout: 60000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now, cleanup: true });
+    const owner = await f.account();
+    const member = await f.account();
+    for (const mode of ['inactivity-publication', 'disconnected-cold-wake']) {
+      const campaign = await f.create(owner.principal, mode);
+      await f.join(campaign.id, member.uid);
+      const library = await CampaignCharacters.open({
+        campaignId: campaign.id,
+        catalog: await f.resources.catalog(campaign),
+        store: {
+          readCharacters: (id) => f.store.readCharacters(owner.principal, id),
+          commitCharacters: (id, change) =>
+            f.store.commitCharacters(owner.principal, id, { commandId: randomUUID(), change }),
+        },
+      });
+      const hero = await library.create('Natural final actor');
+      await f.store.runBackupWork(owner.principal, campaign.id, { final: true });
+      const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        action: 'start',
+        generation: 0,
+        sessionId: null,
+      });
+      let deadline;
+      if (mode === 'inactivity-publication') {
+        deadline = Date.parse(active.lastMeaningfulAt) + 60 * 60 * 1000;
+        await f.advancePresence(
+          owner.principal,
+          campaign.id,
+          active.sessionId,
+          (at) => {
+            now = at;
+          },
+          deadline - 1
+        );
+        now = deadline;
+        await library.edit(hero, { notes: 'ACCEPTED AT INACTIVITY PAUSE' });
+      } else {
+        const presence = await f.store.connectLivePresence(owner.principal, campaign.id, {
+          sessionId: active.sessionId,
+        });
+        await library.edit(hero, { notes: 'FINAL BEFORE LAST DISCONNECT' });
+        await f.store.disconnectLivePresence(owner.principal, campaign.id, {
+          sessionId: active.sessionId,
+          connectionId: presence.id,
+        });
+        deadline = now + 15 * 60 * 1000;
+        now = deadline + 2 * 60 * 1000;
+      }
+      const status = await f.createStore().getLiveStatus(member.principal, campaign.id);
+      assert.equal(status.session.state, 'paused');
+      assert.equal(
+        status.session.pauseReason,
+        mode === 'inactivity-publication' ? 'inactivity' : 'disconnected'
+      );
+      assert.equal(status.session.pausedAt, new Date(deadline).toISOString());
+      if (mode === 'inactivity-publication')
+        assert.equal(status.session.lastMeaningfulAt, active.lastMeaningfulAt);
+      const finalText = await f.store.exportBackup(owner.principal, campaign.id);
+      await library.edit(hero, { notes: 'LATER PERMITTED PAUSED PREPARATION' });
+      const replacement = f.createStore();
+      assert.equal(await replacement.runLiveBackupWork(member.principal, campaign.id), undefined);
+      const final = (await f.store.backupStatus(owner.principal, campaign.id)).latest;
+      assert.equal(await f.store.readBackup(owner.principal, campaign.id, final.name), finalText);
+      await assert.rejects(f.store.readBackup(member.principal, campaign.id, final.name), {
+        code: 'campaign-not-found',
+      });
+      assert.deepEqual(
+        await replacement.getLiveSession(member.principal, campaign.id),
+        status.session
+      );
+      await assert.rejects(
+        replacement.getLiveAccess(member.principal, campaign.id, {
+          sessionId: active.sessionId,
+        }),
+        { code: 'live-session-paused' }
+      );
+    }
+    t.diagnostic(
+      'Natural 60-minute and original 15-minute grace pauses preserve frozen sources across fresh workers and later paused edits; member wake returns no private backup data'
+    );
+  }
+);
+
+test(
+  'paused live status rechecks member access after final-backup IO while the accepted owner backup remains durable',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Final backup access race');
+    const seatId = await f.join(campaign.id, member.uid);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: {
+        readCharacters: (id) => f.store.readCharacters(owner.principal, id),
+        commitCharacters: (id, change) =>
+          f.store.commitCharacters(owner.principal, id, { commandId: randomUUID(), change }),
+      },
+    });
+    const hero = await library.create('Access-race actor');
+    await f.store.runBackupWork(owner.principal, campaign.id, { final: true });
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: 0,
+      sessionId: null,
+    });
+    await library.edit(hero, { notes: 'OWNER FINAL SOURCE DURING MEMBER REMOVAL' });
+    await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'end',
+      generation: active.generation,
+      sessionId: active.sessionId,
+    });
+    const finalText = await f.store.exportBackup(owner.principal, campaign.id);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    let release;
+    let entered;
+    let request;
+    const hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    const writing = new Promise((resolve) => {
+      entered = resolve;
+    });
+    const stage = f.store.backupObjects.stage;
+    f.store.backupObjects.stage = async (...args) => {
+      entered();
+      await hold;
+      return stage.apply(f.store.backupObjects, args);
+    };
+    try {
+      request = memberClient.getLiveStatus(campaign.id).then(
+        (result) => ({ result }),
+        (error) => ({ error })
+      );
+      await writing;
+      await ownerClient.removeMember(campaign.id, { seatId, accessGeneration: 0 });
+      release();
+      const outcome = await request;
+      assert.equal(outcome.error?.code, 'campaign-not-found');
+      assert.equal(outcome.error.status, 404);
+      const saved = await f.store.backupStatus(owner.principal, campaign.id);
+      assert.equal(saved.state, 'saved');
+      assert.equal(
+        await f.store.readBackup(owner.principal, campaign.id, saved.latest.name),
+        finalText
+      );
+      t.diagnostic(
+        'Revoked member gets 404 after held backup IO; accepted owner source still completes'
+      );
+    } finally {
+      release();
+      if (request) await request;
+      ownerClient.close();
+      memberClient.close();
+      await api.close();
+    }
   }
 );
 
