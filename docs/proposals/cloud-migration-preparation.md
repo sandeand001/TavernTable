@@ -3105,3 +3105,37 @@ persistence otherwise retains its existing behavior. Original local hosts,
 preview and emulators remain intact; the real linked/verified account and
 campaigns are unchanged. No production code, dependency, capability, frontend
 deployment/cutover or deferred routine-save UX change is made.
+
+### M4-07: public art provenance before packaging
+
+The existing Firebase configuration has no Hosting public directory, and the
+frontend remains pinned native ESM rather than a new framework/bundler. No public
+output or deployment is created by this review. Catalog notices and the existing
+CC0 nature/forest records remain available for the eventual explicit allowlist.
+
+Current character catalog paths include the mannequin, Knight, Mutant, Erika
+Archer, Paladin J Nordstrom and Yaku J Ignite. Several entries explicitly record
+Mixamo names. No license/notice/README file is present in the animated-sprites
+or Items directories. The official
+[Adobe Mixamo FAQ](https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html)
+permits royalty-free characters/animations in personal and commercial games.
+Adobe's [distribution FAQ](https://community.adobe.com/questions-696/mixamo-faq-licensing-royalties-ownership-eula-and-tos-589400)
+also distinguishes games from distributing raw assets. This is not a blanket
+permission to publish every FBX as a reusable asset package, nor proof that every
+local character/clip originated from Mixamo. Owner source confirmation and the
+intended browser distribution must be resolved without silently stripping
+animated gameplay or disguising raw assets to bypass licensing.
+
+The built-in d20 GLB actually contains attribution metadata:
+**D20-Gold Edition [FREE]**, author **Don42** (now displayed as VertexDon), source
+[Sketchfab model](https://sketchfab.com/3d-models/d20-gold-edition-free-fde4f1f7e93f4ba0bf632613188eb4bd),
+**CC-BY-SA-4.0**. Its source page identifies textures/materials from FreePBR and
+separately discusses mesh commercial use and credits. Those terms need their
+own notice/provenance treatment; the earlier broad inventory is not evidence
+that this mesh has no license. The model's NoAI notice is not bypassed: no asset
+content is uploaded to an image model, dataset or external processing service.
+
+Owner input is requested before choosing the unchanged-art allowlist versus
+rights-cleared substitutes. Existing assets, canonical save IDs, rendering,
+dependencies and all public/cloud services remain unchanged. No public rollout
+or source-of-truth approval is implied by deciding this packaging prerequisite.

@@ -1173,6 +1173,18 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** inspect the actual deploy output/manifest and prohibited-path
     requests. Versioned asset/schema behavior supports deliberate compatibility
     handling and each participant still renders locally.
+  - **Status:** awaiting owner asset-provenance/distribution input. Catalog and
+    CC0 nature/forest notices are present, but no family license/README accompanies
+    the character FBX/animation files. The catalog explicitly identifies several
+    Mixamo models. Adobe permits game use but distinguishes it from redistribution
+    of raw assets; the browser package must record the permitted approach rather
+    than treating a package MIT declaration as a blanket asset license.
+    The built-in gold d20 has an embedded author/source and **CC-BY-SA-4.0**
+    record; its source separately identifies third-party textures, so it is not
+    classified as license-free or as wholly unattributed.
+    No asset is removed/replaced, packaged publicly or deployed while the owner
+    decides how to handle uncertain provenance. See
+    [public-art review](./cloud-migration-preparation.md#m4-07-public-art-provenance-before-packaging).
 
 - [ ] **M4-08 - Obtain isolated hosted-test and identity/IAM configuration approval.**
   - **Status:** incremental API-only approval and least-required runtime IAM are
