@@ -70,7 +70,11 @@ receipt/replay acceptance (`M3-10`), with **307 suites / 4,006 tests** passing
 the full stable gate. Safe lifecycle drain and captured final-source backups
 (`M4-04`) and actual forced-container restart/overlap (`M4-05`) are verified.
 Complete cloud gameplay activation and hosted performance/cost acceptance remain gated.
-**47 of 65** tasks are complete,
+Versioned, allowlisted frontend packaging (`M4-07`) is verified locally, including
+actual Hosting HTTP and native-browser gates. The owner authorizes continuing
+local packaging with the tropical pack's formal license record still missing;
+that gap is recorded, not declared resolved. Public deployment remains `M4-08`.
+**48 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1165,7 +1169,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     unfilled image/identity/project/origin approval placeholders. Hosted IAM,
     gateway/scaling, representative load and cost remain unverified M4 gates.
 
-- [ ] **M4-07 - Produce a versioned, allowlisted public frontend package.**
+- [x] **M4-07 - Produce a versioned, allowlisted public frontend package.**
   - **Depends:** `M0-03`, `M1-04`, `M3-07`.
   - **Success:** Hosting serves only approved app/catalog assets with required
     redistribution notices. It never publishes the repository root, server/admin
@@ -1173,37 +1177,50 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** inspect the actual deploy output/manifest and prohibited-path
     requests. Versioned asset/schema behavior supports deliberate compatibility
     handling and each participant still renders locally.
-  - **Status:** awaiting the remaining asset-provenance/distribution input.
-    The owner confirms every character and animation, including the mannequin,
-    came from Adobe Mixamo, and wants to retain artwork while resolving terms.
-    Adobe permits game use but distinguishes it from standalone raw-asset
-    redistribution; record game-use terms, not a blanket MIT asset license.
-    The owner-provided Remos 2D trees have **CC-BY-3.0** terms with required Bleed
-    credit; they are not the active tropical 3D pack. Quaternius/Asset Quest CC0
-    notices cover their respective kits. Current palms, banana, monstera and fern
-    entries still use a separate **MZRa_Pack_M02P.fbx** family without a matching
-    source/license record. Its provenance must be confirmed, not inferred from
-    an unrelated itch.io search or an ancestor folder's other-kit notice.
-    The owner also supplies the Quaternius megakit page matching its existing
-    CC0 notice and the exact older gold-die source matching the embedded GLB
-    metadata, not permission to replace it with a different model.
-    The gold d20 has an embedded author/source and **CC-BY-SA-4.0**
-    record; its source separately identifies FreePBR textures. FreePBR's own
-    terms impose noncommercial-use/redistribution conditions, so neither the
-    mesh license nor another similarly named site's CC0 grant clears those
-    textures automatically. Preserve those usage conditions and do not claim
-    unrestricted commercial rights.
-    No asset is removed/replaced, packaged publicly or deployed while the owner
-    resolves the still-unverified tropical pack provenance. Existing artwork
-    remains unchanged as requested. See
-    [public-art review](./cloud-migration-preparation.md#m4-07-public-art-provenance-before-packaging).
+  - **Selected November 14, 2026:** the owner reports that the tropical family is
+    a free-use resource pack and explicitly directs continuing without the formal
+    license record for now, keeping the artwork. This authorizes local packaging,
+    not a verified CC0 declaration, unrestricted commercial texture rights or a
+    public deployment. Existing Mixamo, Quaternius, Remos, die/FreePBR and catalog
+    notices/conditions are retained rather than replaced by the application's MIT
+    declaration.
+  - **Completed locally:** November 14, 2026. A deterministic native-ESM module
+    graph and explicit runtime-asset/catalog allowlist produce a separate
+    static-only Hosting package: **607 files / 289,219,649 bytes**, with **158
+    exact-case configured asset references** present. No repository root,
+    server/admin tooling, tests, raw Firebase configuration file, credentials,
+    SQLite, campaign backups, authoring archives or private campaign data enter
+    the public directory. The curated public web configuration is injected into
+    the production-cloud shell without logging keys; emulator/local mode fails.
+    Versioned immutable URLs, schema/runtime verification, a current/one-previous
+    release policy and query/fragment-preserving entry redirects are verified.
+    There is no API rewrite, service worker, offline editor or activation change.
+    **5/5 native packaging cases**, zero skips/cancellations, **2,198.9255 ms**;
+    **6 coupled app suites / 81 tests**, **2.916 s**, open-handle detection.
+    Actual pinned Linux Firebase Hosting serves **607/607** exact HEAD routes,
+    rejects **30 prohibited HTTP paths**, and returns three binary model bodies
+    with exact lengths/SHA-256. A native browser displays managed sign-in with
+    the API deliberately blocked and **zero API requests**, loads both core
+    catalogs (**2,025 / 2,296** entries), all nine configured tropical nodes,
+    the character/die and **39 decoded textures**. Synthetic public databases
+    are cleared and owned geometry/materials/textures disposed. Five missing
+    embedded texture references are confirmed absent/404 in the original preview
+    too, not packaging omissions; no unrelated artwork fix is made.
+    Full lint/style/layering: zero errors / same **39 baseline warnings**.
+    Temporary Hosting containers/configuration are verified removed; the browser
+    helper became unavailable on close, so no successful close is claimed.
+    No live deployment, new dependency, real account/campaign, original local
+    host, gameplay capability or deferred routine-save UX change is made.
+    See [package and measured gates](./cloud-migration-preparation.md#m4-07-owner-authorized-local-frontend-package).
 
 - [ ] **M4-08 - Obtain isolated hosted-test and identity/IAM configuration approval.**
   - **Status:** incremental API-only approval and least-required runtime IAM are
     recorded in the preparation evidence. The owner selected the existing
     personal project, not a separate project. The bounded API smoke passed and
-    its synthetic fixtures were removed. This does not authorize full frontend
-    rollout or satisfy the still-pending packaged-frontend dependency below.
+    its synthetic fixtures were removed. The packaged frontend is now verified
+    locally; public Hosting, an updated test API revision and any expanded live
+    fixture/load scope still require explicit approval. No additional IAM change
+    is assumed.
   - **Depends:** `M4-06`, `M4-07`.
   - **Success:** record the approved test project, billable resources, runtime/
     deployment identities and least-required datastore/object/signing permissions.

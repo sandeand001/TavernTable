@@ -1,0 +1,63 @@
+TavernTable application and artwork notices
+
+These notices supplement, not replace, the bundled resource-pack notices.
+Application code is declared MIT in package.json. Artwork and third-party
+libraries retain their separate copyrights and terms.
+
+Browser libraries are loaded from their pinned upstream CDNs:
+- Three.js 0.170.0, MIT: https://github.com/mrdoob/three.js/blob/r170/LICENSE
+- cannon-es 0.20.0, MIT: https://github.com/pmndrs/cannon-es/blob/v0.20.0/LICENSE
+- Firebase JavaScript SDK 12.19.0, Apache-2.0:
+  https://github.com/firebase/firebase-js-sdk/blob/firebase%4012.19.0/LICENSE
+
+Characters and animations
+The project owner confirms that the built-in characters, mannequin and
+animation clips were downloaded from Adobe Mixamo. They are used as content
+in the application, not offered as a separate reusable asset library.
+Adobe retains its rights to its content. Game use is described at:
+https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html
+Distribution conditions:
+https://community.adobe.com/questions-696/mixamo-faq-licensing-royalties-ownership-eula-and-tos-589400
+No application-code license relicenses the Mixamo content.
+
+Nature models
+Stylized Nature Megakit by Quaternius, CC0 1.0:
+https://quaternius.itch.io/stylized-nature-megakit
+https://creativecommons.org/publicdomain/zero/1.0/
+The original kit notice is retained in assets/terrain/3d Assets/License_Pro.txt.
+
+The separate Asset Quest forest kit records CC0 1.0:
+https://www.assetquest.dev/
+Its notice is retained with that source kit. Unused source-kit authoring files
+and legacy sprite collections are not automatically included in this package.
+
+Legacy Remos sprites, when separately used, require CC-BY-3.0 attribution:
+Bleed - remusprites.carbonmade.com/
+https://remos.itch.io/isometric-tree-sprites
+https://creativecommons.org/licenses/by/3.0/
+The sprite collection is not a license for unrelated 3D vegetation.
+
+Tropical vegetation provenance record, November 14, 2026
+The nine current palm, banana, monstera and fern variants use the separate
+MZRa_Pack_M02P.fbx family and its textures. The project owner reports that
+this was a free-use resource pack and explicitly requests continuing local
+packaging without the formal license record for now, keeping the artwork.
+The exact creator/license remains unrecorded. This is not a verified CC0
+declaration, a new redistribution grant, or approval of a public deployment.
+
+Gold die
+D20-Gold Edition [FREE] by Don42 (VertexDon):
+https://sketchfab.com/3d-models/d20-gold-edition-free-fde4f1f7e93f4ba0bf632613188eb4bd
+The original model records CC-BY-SA-4.0:
+https://creativecommons.org/licenses/by-sa/4.0/
+The model is copied unchanged; its attribution metadata is preserved.
+The creator separately identifies FreePBR textures/materials:
+https://freepbr.com/about-free-pbr/
+Respect the stated noncommercial, commercial-permission and source-texture
+distribution conditions; the mesh notice is not an unrestricted texture grant.
+Respect the creator's stated NoAI conditions. No model content is submitted
+to an image-generation service by the packaging tool.
+
+Catalog notices, source pins and original attribution remain in the resource
+manifest and the accompanying resource notices. None of these notices grants
+rights beyond the relevant original source's terms.

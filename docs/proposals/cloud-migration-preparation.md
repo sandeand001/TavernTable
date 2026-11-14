@@ -3188,3 +3188,140 @@ pending; the verified **47/65** milestone is unchanged.
 reference, as requested. Each future listing still needs its own specific
 source/license record; the catalog itself is not a blanket grant. No additional
 asset is downloaded or imported during this review.
+
+### M4-07: owner-authorized local frontend package
+
+The owner explicitly directs continuing without the tropical family's formal
+license record for now and retaining the artwork. This supersedes the earlier
+local-packaging pause; it does not convert an unrecorded license into CC0, grant
+unrestricted FreePBR commercial rights, or approve a public deployment. The
+package records that distinction and retains the known original conditions.
+No replacement artwork or additional model download is introduced.
+
+`build:cloud:frontend` produces a new separate package, never the repository root.
+The source HTML's native-ESM entry graph is parsed, including static/dynamic
+module imports; undeclared/computed or escaping imports fail explicitly. Only
+reachable application modules/styles, explicitly selected runtime model/image
+families, pinned resource bodies and notices are copied. Source-kit authoring
+archives, raw configuration files, backend/admin code, tests, SQLite and campaign
+exports are not copied. Symlink traversal, malformed runtime/catalog metadata,
+hash/length mismatches and overwriting an existing output fail before a published
+package is acknowledged. There is no application framework rewrite.
+
+Production-cloud mode is mandatory. The input Firebase file is validated as
+public web configuration, not copied as a raw file; only that curated runtime is
+injected into the shell with safe JSON escaping. Its values are not printed.
+The generated Hosting configuration serves only its `public` directory, with
+no Cloud Run/HTTP/API rewrite, Firestore/Storage deployment settings or local
+campaign authority. Root/index redirects select a content-addressed release
+while preserving query strings and browser fragments.
+
+Every release file has an exact byte length/SHA-256 in
+`frontend-manifest.json`. Versioned paths are immutable; the stable entry and
+manifest are not cached as immutable app state. The manifest declares runtime,
+participant and private-cache compatibility versions, not write authority.
+`--previous` retains the current release from one verified preceding package;
+older releases are deliberately not copied indefinitely. Both retained shells
+must preserve the same explicit account/API runtime. Unknown schemas, missing
+shells, forged local fallback or invented deployment approval fail verification
+even if file hashes were recomputed. Deployments spanning older clients still
+need the later explicit drain/reload plan, not an unbounded-compatibility claim.
+
+Reproduction from the migration worktree:
+
+```powershell
+npm run build:cloud:frontend -- --firebase-config src\config\FirebaseConfig.json --api-origin https://taverntable-api-test-zp7b3oizna-uw.a.run.app --out build\cloud-frontend\<new-output-directory>
+npm run build:cloud:frontend -- --verify build\cloud-frontend\m407-local-20261114-v1
+node --test --test-concurrency=1 tests\cloud\FrontendPackage.test.js
+```
+
+For a subsequent local build, pass `--previous` with the preceding verified
+package directory. No dependency installation, cloud deployment, IAM/index/
+billing change or live API request is performed by these commands.
+
+The actual retained package is
+`build\cloud-frontend\m407-local-20261114-v1`, release
+**c4f0402a35145ee8e7b9b765ac6889001d7f2279618fa49a0c5e56af4aa9bee9**.
+Its **607 files / 289,219,649 bytes** are:
+
+| Group                                         | Files |       Bytes |
+| --------------------------------------------- | ----: | ----------: |
+| Reachable application modules/styles          |   311 |   3,728,968 |
+| Character models and animation clips          |    85 | 142,888,492 |
+| Vegetation runtime models/textures/notices    |   173 | 122,292,876 |
+| Resource manifest, packs and combined notices |    18 |  15,177,150 |
+| Original gold die                             |     1 |   5,095,908 |
+| Shell, construction icons and other notices   |    19 |      36,255 |
+
+All **158 exact-case configured character/clip/model/texture references** are
+present. Nine pinned CDN module URLs remain external; the package does not
+silently vendor or upgrade them. These are stored-output bytes, not a claim that
+every connecting player downloads the whole package or that hosted cost fits
+the budget. Existing progressive private images and edition-local public caches
+remain separate.
+
+Verified gates:
+
+- **5/5 native packaging cases**, no failures/skips/cancellations,
+  **2,198.9255 ms**. Deterministic output, explicit whitelist exclusions,
+  current/previous/third-release retirement, corrupt/unsupported retained
+  packages, secret-bearing/local/emulator configuration, computed/escaping
+  imports, catalog integrity, undeclared output and overwrite denial pass.
+  A focused red test exposed a verifier that trusted hashes around a local
+  fallback or missing shell; current runtime/shell/provenance validation fixes
+  that core verification gap without changing application behavior.
+- **6 coupled application suites / 81 tests**, **2.916 s**, with open-handle
+  detection: runtime configuration, account login, public Firebase settings,
+  public resource loading, native player rendering and canonical client callers.
+  Full JS/stylelint/layering: zero errors / same **39 baseline warnings**.
+  The earlier full stable gate is not represented as a new full-suite run.
+- Actual pinned **Firebase CLI 15.11.0 Hosting**, not a mock HTTP server:
+  the root redirect is **302**, query strings survive, the versioned entry is
+  **200**, **607/607** HEAD routes have the exact declared lengths/immutable
+  policy, **30 prohibited root/versioned HTTP paths return 404**, and tropical,
+  character and die body round trips match their exact size/SHA-256.
+- A native browser preserves the root fragment after redirect. With the API
+  origin deliberately blocked, production-cloud managed sign-in UI appears,
+  with **zero API requests, zero failed landing resources/page errors and no
+  local fallback**. This proves shell/sign-in availability, not completion of
+  live Google/password/provider acceptance or hosted scale-to-zero timing.
+- Native WebCrypto/IndexedDB installs the 2014/2024 core catalogs with
+  **2,025 / 2,296** actual entries. The initial fixture incorrectly supplied full
+  manifest rows instead of explicit selected-source pins and missed registering
+  an unsuccessful database for cleanup; only the fixture is corrected.
+  The exact old fixture database and both corrected synthetic databases are
+  removed, with zero synthetic databases remaining.
+- All **nine** configured tropical FBX nodes load as their own mesh; the
+  character and original die load as two meshes each, with **39 decoded
+  textures** and **zero protected API requests**. Owned geometry, materials
+  and texture caches are disposed. No canonical/private campaign data is read
+  and no real account sign-in/provider/verification/password action is performed.
+
+The Windows-native Hosting probe exposed two tooling issues rather than a
+package success: an absolute Windows public path does not behave like a relative
+project path in the pinned static server, and `glob-slasher` converts URL patterns
+to backslashes, which the Hosting matcher then fails to match. A minimal
+relative-path server serves files but still misses redirects/headers; the exact
+normalization/matcher result verifies the cause. No dependency, `node_modules`
+or production configuration workaround is applied. The actual successful gate
+uses the unchanged pinned CLI in a local Linux container with a relative
+configuration, read-only public/tool/config mounts, no home credentials/GPU,
+1 CPU/1 GiB and only a localhost-published Hosting port.
+
+The native FBX loader emits its existing unsupported-material warnings and
+requests five embedded metallic/opacity maps absent from the source pack.
+Every one is verified missing in the repository and **404 in the original
+19410 preview as well**. They are not omitted build inputs or fabricated
+placeholder successes. All selected model textures above decode; no unrelated
+model/texture repair is included, and no warning-free rendering claim is made.
+The browser's bounded resource timing buffer/early event observer alone missed
+these responses; the actual Hosting request log supplies the evidence.
+
+Both owned Hosting fixtures/containers and generated configuration directories
+are removed; the bounded Linux helper exits zero. The owned browser helper
+becomes unavailable at close, so no successful close is claimed or alternate
+route used to regain it. Its synthetic databases and owned graphics resources
+were already cleared. Original local hosts, preview, emulators, real linked
+account, canonical campaigns and both gameplay capability gates are unchanged.
+No routine-save UX change is made. Public Hosting/API test rollout, live fixture
+expansion and cost/performance acceptance still require the separate M4 gates.
