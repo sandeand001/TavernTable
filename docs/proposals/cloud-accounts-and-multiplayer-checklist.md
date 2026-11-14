@@ -1112,6 +1112,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     overlap cannot reset deadlines or publish conflicting state.
   - **Verify:** kill/replace the container at commit, notification, backup and
     reconnect boundaries; recover committed state and correct live status.
+  - **Blocked:** November 14, 2026. The host's loopback emulator hub responds,
+    but an exact bounded local Linux container using `--network host` receives
+    `ECONNREFUSED` for that same localhost endpoint. The probe container is
+    verified removed. Docker Desktop's persisted settings expose no verified
+    host-network boolean; its state is not inferred or changed. Owner input is
+    needed to check/enable Desktop host networking and apply its restart before
+    actual container-kill acceptance. No emulators are exposed to the LAN,
+    original services are unchanged, and process-kill tests are not substituted
+    for the required container proof.
 
 - [x] **M4-06 - Package the cloud entry and bounded starting runtime configuration.**
   - **Depends:** `M1-10`, `M0-03`.
