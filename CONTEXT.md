@@ -267,7 +267,7 @@
   `/health`; legacy `/healthz` remains an internal/local alias because Cloud Run
   reserves some `z`-ending public paths. No full website rollout, real account/
   campaign migration, measured sleep/load/cost claim or spending cap is implied.
-- **Public cloud frontend release (M4-07 locally verified; deployment gated)**:
+- **Public cloud frontend release (M4-07 locally verified; M4-08 pilot approved)**:
   a separate static-only Hosting directory contains the reachable native-ESM
   application graph, explicit runtime-art families and verified pinned catalogs/
   notices, never the repository root, server/admin tools, raw configuration,
@@ -281,7 +281,10 @@
   progressive private artwork and existing gameplay gates remain unchanged.
   The owner reports free use of the tropical pack and explicitly permits local
   packaging while its formal license is unrecorded; that gap stays visible,
-  not silently relabeled CC0 or turned into public deployment approval.
+  not silently relabeled CC0. The owner separately approves the first bounded
+  existing-project Hosting/test-API pilot and at most ten disposable accounts/
+  two synthetic campaigns. Actual deployment/hosted acceptance and real-data
+  cutover remain separate gates; no new runtime IAM or billing change is implied.
 - **Authorized cloud participant checkpoint (M3 initial wire verified)**:
   active live-epoch and current UID/seat/generation admission precedes projection;
   membership, assigned IDs, epoch and head are checked again after Storage IO.

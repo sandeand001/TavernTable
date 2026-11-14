@@ -37,13 +37,14 @@ https://remos.itch.io/isometric-tree-sprites
 https://creativecommons.org/licenses/by/3.0/
 The sprite collection is not a license for unrelated 3D vegetation.
 
-Tropical vegetation provenance record, November 14, 2026
+Tropical vegetation: owner-reported free use, November 14, 2026
 The nine current palm, banana, monstera and fern variants use the separate
 MZRa_Pack_M02P.fbx family and its textures. The project owner reports that
-this was a free-use resource pack and explicitly requests continuing local
-packaging without the formal license record for now, keeping the artwork.
-The exact creator/license remains unrecorded. This is not a verified CC0
-declaration, a new redistribution grant, or approval of a public deployment.
+this was a free-use resource pack and explicitly approves retaining it in the
+bounded hosted pilot without the formal license record for now.
+The exact creator/license remains unrecorded. This records the project owner's
+reported free-use status and pilot approval; it does not invent a creator's
+license, relabel the pack CC0/MIT, or grant rights beyond its original terms.
 
 Gold die
 D20-Gold Edition [FREE] by Don42 (VertexDon):

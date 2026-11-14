@@ -73,8 +73,9 @@ Complete cloud gameplay activation and hosted performance/cost acceptance remain
 Versioned, allowlisted frontend packaging (`M4-07`) is verified locally, including
 actual Hosting HTTP and native-browser gates. The owner authorizes continuing
 local packaging with the tropical pack's formal license record still missing;
-that gap is recorded, not declared resolved. Public deployment remains `M4-08`.
-**48 of 65** tasks are complete,
+that gap is recorded, not declared resolved. The owner now approves the bounded
+existing-project hosted pilot (`M4-08`); rollout/acceptance remains `M4-09`.
+**49 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1215,20 +1216,35 @@ Revalidation in the intended environment remains part of M1 and M4.
     host, gameplay capability or deferred routine-save UX change is made.
     See [package and measured gates](./cloud-migration-preparation.md#m4-07-owner-authorized-local-frontend-package).
 
-- [ ] **M4-08 - Obtain isolated hosted-test and identity/IAM configuration approval.**
-  - **Status:** incremental API-only approval and least-required runtime IAM are
-    recorded in the preparation evidence. The owner selected the existing
-    personal project, not a separate project. The bounded API smoke passed and
-    its synthetic fixtures were removed. The packaged frontend is now verified
-    locally; public Hosting, an updated test API revision and any expanded live
-    fixture/load scope still require explicit approval. No additional IAM change
-    is assumed.
+- [x] **M4-08 - Obtain isolated hosted-test and identity/IAM configuration approval.**
   - **Depends:** `M4-06`, `M4-07`.
   - **Success:** record the approved test project, billable resources, runtime/
     deployment identities and least-required datastore/object/signing permissions.
     A Hosting preview is not mistaken for a separate Auth/database environment.
   - **Verify:** explicit owner approval precedes provisioning, IAM changes, or
     live writes. No downloaded service-account key or developer ADC enters an image.
+  - **Completed:** November 14, 2026. The owner explicitly approves the first
+    Hosting website at `https://taverntable-489d5.web.app`, updating the existing
+    `taverntable-api-test` service with tested code, and up to **10 disposable
+    accounts / 2 synthetic campaigns**, with cleanup. This uses the already
+    selected personal project, not a separate Auth/database environment.
+    No real campaign migration/cutover, local-host change, existing account UID/
+    provider/password/verification change, new IAM privilege or billing-setting
+    change is included. Reported budget alerts remain non-capping; deleted object
+    retention remains seven days.
+    Read-only inspection verifies the current owned API service, **min 0/max 1,
+    1 CPU/1 GiB**, request CPU, **concurrency 40 / 3600 s**, exact Hosting origin,
+    existing platform invocation and dedicated keyless runtime. Only
+    `datastore.user`/`firebaseauth.viewer` plus the conditional campaign-object
+    role apply; the image repository is private. The exact Hosting Auth domain,
+    Google and email/password providers are already enabled; no provider
+    configuration is changed. The default public site is currently **404 / Site
+    Not Found**, not an existing TavernTable frontend being overwritten.
+    The tropical pack is labeled **owner-reported free use**, as requested,
+    without fabricating a creator's license or assigning CC0/MIT. Its formal
+    provenance gap and the other original asset conditions remain recorded.
+    The first pilot candidate is separately rebuilt/validated; actual publication
+    and hosted acceptance remain `M4-09`.
 
 - [ ] **M4-09 - Deploy and smoke-test only the approved isolated environment.**
   - **Status:** the separately approved API-only test service is deployed and

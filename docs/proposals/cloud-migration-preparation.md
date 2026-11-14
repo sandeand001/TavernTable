@@ -3330,3 +3330,70 @@ were already cleared. Original local hosts, preview, emulators, real linked
 account, canonical campaigns and both gameplay capability gates are unchanged.
 No routine-save UX change is made. Public Hosting/API test rollout, live fixture
 expansion and cost/performance acceptance still require the separate M4 gates.
+
+### M4-08: explicit first-hosted-pilot approval
+
+The owner approves the existing-project hosted pilot and up to **10 disposable
+accounts / 2 synthetic campaigns**, and asks to record the tropical assets as
+free use. Their status is accurately **owner-reported free use**: the original
+creator/license remains unrecorded, no new creator grant or CC0/MIT label is
+fabricated, and all original attribution/conditions remain intact. The notice
+now records the bounded hosted-pilot instruction rather than the earlier
+local-only packaging instruction. No artwork changes.
+
+Approved targets are the existing `taverntable-489d5` personal project, its first
+default Hosting website, the existing private `taverntable-test` image repository
+and existing `taverntable-api-test` service in `us-west1`. This is not a separate
+Auth/database environment or a source-of-truth cutover. Real campaigns and
+original local hosts remain untouched; existing real-account UID, sign-in
+providers, password and verification are preserved. No additional IAM privilege
+or billing-setting change is authorized. The reported $25 alerts are not a hard
+cap, and exact generation cleanup does not erase seven-day soft-delete billing.
+
+Read-only inspection before rollout confirms:
+
+- The owned ready service remains revision `taverntable-api-test-00006-rdp`,
+  its original image and **100% latest-revision traffic**, not a foreign/manual
+  traffic target.
+- Both service/template limits remain **min 0 / max 1**, **1 CPU / 1 GiB**,
+  request-based CPU, no startup CPU boost, **concurrency 40 / 3600 seconds**.
+  The only four runtime variables remain explicit production mode, project,
+  private bucket and the exact `https://taverntable-489d5.web.app` origin.
+- Runtime project roles remain only `datastore.user` and `firebaseauth.viewer`,
+  with conditional campaign-prefix object access. The image repository has no
+  public binding and no service-account key is downloaded.
+- Existing platform invocation already permits browser transport; protected
+  application routes still require Firebase identity/access. The image-only
+  update fence preserves the existing IAM fingerprint and never repairs/adds an
+  invocation grant implicitly.
+- The exact Hosting domain is already authorized for Auth, and Google plus
+  email/password are already enabled. No provider/domain configuration change
+  or real account mutation is performed by this inspection.
+- An anonymous public-site check returns **404 / Site Not Found**. No earlier
+  TavernTable public frontend is being replaced.
+
+The rebuilt local API candidate
+`taverntable-cloud:m409-20261114-8fcb9250` has OCI index
+**cc93b46bdf920af5c727751f427de7f43e66d91ac444d68b530d01149326004e**
+and runnable manifest
+**32b8667f196a5ff87b29703bfd4d350bfbb9577d8f0a5ca5b71d36422789a070**.
+Linux Node **24.22.3**, UID **1000**, read-only/no-network/no-mount/no-credential/
+no-GPU validation passes all **23 current source hashes**, readiness/auth/private
+file boundaries, both catalogs, 16MP decoding, native d20 **501 frames / face 3**
+and graceful exit zero. The exact validation container is removed.
+The image publisher pins only this verified digest and preserves the prior
+image/tag for rollback; it uses temporary CLI OAuth Docker configuration that
+is removed afterward, not downloaded service-account keys or global Docker
+credential changes.
+
+The updated owner-notice frontend candidate is
+`build\cloud-frontend\m409-hosted-pilot-20261114-v1`, release
+**b2c6177a01a1930c820b89240246c965f5ef21236b386183a074a8be744bac18**,
+with **607 versioned files / 289,219,817 bytes**.
+All **5 native package contracts pass**, zero skips/cancellations,
+**2,391.4253 ms**, and the prior local release still verifies. The compiler's
+`deploymentApproved:false` remains intentional: a compiler does not issue
+operator approval. The actual owner authorization is this separate M4-08
+record, not a mutable build-manifest permission bit.
+Actual image rollout, public Hosting publication and fresh hosted acceptance
+are recorded only after their separate `M4-09` verification.
