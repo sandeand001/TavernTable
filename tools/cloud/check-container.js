@@ -64,6 +64,12 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/assigned-characters');
   assert.equal(assignedSheets.status, 401);
   assert.equal((await assignedSheets.json()).code, 'authentication-required');
+  const anonymousEvents = await fetch('http://127.0.0.1:' + port +
+    '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/events', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+  assert.equal(anonymousEvents.status, 401);
+  assert.equal((await anonymousEvents.json()).code, 'authentication-required');
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   const forged = encode({ alg: 'none', typ: 'JWT' }) + '.' + encode({
     aud: process.env.GCLOUD_PROJECT,
@@ -76,6 +82,14 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   });
   assert.equal(rejected.status, 401);
   assert.equal((await rejected.json()).code, 'invalid-identity');
+  const rejectedEvents = await fetch('http://127.0.0.1:' + port +
+    '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/events', {
+      method: 'POST', headers: {
+        Authorization: 'Bearer ' + forged, 'Content-Type': 'application/json',
+      }, body: '{}',
+    });
+  assert.equal(rejectedEvents.status, 401);
+  assert.equal((await rejectedEvents.json()).code, 'invalid-identity');
   const files = await fetch('http://127.0.0.1:' + port + '/tools/cloud/account-access.js');
   assert.equal(files.status, 404);
   await files.arrayBuffer();
@@ -92,6 +106,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   const resources = new HostResources({ root: process.cwd(), manifest });
   const { participantState } = require('./tools/cloud/participant-state.js');
   assert.equal(typeof require('./tools/cloud/participant-changes.js').ParticipantChanges, 'function');
+  assert.equal(typeof require('./tools/cloud/event-stream.js').openCloudEventStream, 'function');
   for (const ruleset of ['2014', '2024']) {
     const catalog = await resources.catalog({
       ruleset,
@@ -127,6 +142,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/assigned-character-change.js',
     'tools/published-maps.js', 'tools/cloud/participant-state.js',
     'tools/cloud/participant-changes.js',
+    'tools/cloud/event-stream.js',
     'src/campaigns/CloudParticipantProtocol.js',
     'src/campaigns/CloudProtocol.js',
   ]) {
@@ -136,6 +152,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     node: process.version, platform: process.platform, architecture: process.arch, uid: process.getuid(),
     port, bindsAllInterfaces: true, readiness: 200, anonymousAccount: 401, anonymousLiveStatus: 401,
     anonymousAssignedSheets: 401,
+    anonymousEvents: 401, forgedEvents: 401,
     forgedIdentity: 401, privateFiles: 404,
     resourcePacks: manifest.packs.length, resourceBytes, validatedImagePixels: 16000000,
     rssBytes: process.memoryUsage().rss, runtimeHashes,

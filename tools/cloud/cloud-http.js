@@ -253,7 +253,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|events|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (
@@ -298,6 +298,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         'assets',
         'backups/work',
         'participant-state',
+        'events',
         'live/access',
       ].includes(snapshot);
     const writable =
@@ -321,6 +322,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
     else if (snapshot === 'settings') operation = 'campaign.settings';
     else if (snapshot === 'participant-state') operation = 'campaign.participant.read';
+    else if (snapshot === 'events') operation = 'campaign.events';
     else if (participantAsset) operation = 'campaign.participant.asset';
     else if (['live', 'live/access', 'live/status'].includes(snapshot)) operation = 'campaign.live';
     else if (snapshot === 'backup') operation = 'campaign.backup.export';
@@ -412,6 +414,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         snapshot !== 'participant-access' &&
         snapshot !== 'assigned-characters' &&
         snapshot !== 'participant-state' &&
+        snapshot !== 'events' &&
         !participantAsset &&
         !snapshot?.startsWith('assets/')
       )
@@ -480,6 +483,20 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
               : await store.readAssignedCharacters(principal, campaign[1], expectedAccess);
           await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
           await opportunisticChangeWork(store, principal, campaign[1], expectedAccess);
+        } else if (snapshot === 'events') {
+          const { openCloudEventStream } = require('./event-stream.js');
+          await openCloudEventStream({
+            request,
+            response,
+            principal,
+            id: campaign[1],
+            command: await requestJSON(request),
+            scope: expectedAccess,
+            access,
+            store,
+            headers,
+          });
+          return true;
         } else if (snapshot === 'participant-state') {
           result = await store.readParticipantSnapshot(
             principal,

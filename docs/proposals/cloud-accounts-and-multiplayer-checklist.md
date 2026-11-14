@@ -61,8 +61,9 @@ were untouched. This is not a full frontend rollout or source-of-truth cutover.
 Complete M2 implemented-operation coverage (`M2-13`) passes the full native
 catalog and stable regression suite. Initial participant snapshot/manifest/delta privacy (`M3-01`) now passes local
 and bounded real API acceptance. Ordered durable changes/shared backend
-observation (`M3-02`) are verified; direct authenticated Fetch SSE is next;
-cloud player world gameplay/streams remain gated.
+observation (`M3-02`) and direct authenticated Fetch SSE (`M3-03`) pass local
+and bounded real API gates. Reconciliation, gameplay/motion, browser cache and
+cloud player world UI remain gated.
 
 ## Approved requirements: do not reopen by accident
 
@@ -732,7 +733,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     No public private-journal endpoint, always-on watch, extra IAM/index/service,
     SSE transport or player gameplay activation is introduced.
 
-- [ ] **M3-03 - Implement direct authenticated Fetch-based SSE.**
+- [x] **M3-03 - Implement direct authenticated Fetch-based SSE.**
   - **Depends:** `M1-03`, `M3-02`, `M4-01`.
   - **Success:** verified identity travels in authorization headers; streams use
     the Cloud Run address, exact allowed origins, deliberate preflight, and
@@ -744,6 +745,20 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** no Firebase bearer token in URLs; no reliance on native EventSource
     custom headers or Hosting's long-lived rewrite. Expired/revoked/anonymous/
     cross-campaign streams fail.
+  - **Completed:** November 14, 2026. **Evidence:**
+    [direct authenticated transport](./cloud-migration-preparation.md#m3-03-direct-authenticated-fetch-sse).
+    Final affected native gate **145/145**, no skips, **596,211.1745 ms**;
+    **7 app suites / 94 tests**, **3.007 s**, open-handle detection enabled.
+    Exact four-UID-lease admission, scope/epoch/role denials, actual abort/pause/
+    membership cleanup, queued-event/UTF-8 byte bounds and renewal failure races
+    pass. The actual CPU-only runtime verifies thirteen source hashes.
+    Real Cloud Run owner/member delivery, 60-second renewal, no meaningful
+    activity renewal from presence and actual revoked-bearer stream closure
+    passed **00:52:33 UTC**; exact approved fixture cleanup passed
+    **00:52:38 UTC**. Owner events are compact owner-authorized head notifications;
+    automatic reconnect, world/motion and full player UI activation remain
+    `M3-04`/`M3-05` and subsequent gates. No local transport, real account,
+    frontend/cutover or routine-save UX change.
 
 - [ ] **M3-04 - Implement reconciliation, gap recovery, and intentional reconnects.**
   - **Depends:** `M3-03`.

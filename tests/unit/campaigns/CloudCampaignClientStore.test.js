@@ -92,6 +92,85 @@ function fixture({ crypto } = {}) {
   return { auth, connection, store, fetch };
 }
 
+test.each(['private head', 'foreign UID', 'foreign campaign', 'foreign epoch'])(
+  'an owner event rejects a %s and releases its stream without affecting save state',
+  async (kind) => {
+    const setup = fixture();
+    setup.connection.account.sdk.onAuthStateChanged = (_auth, notify) => {
+      notify();
+      return () => {};
+    };
+    const access = {
+      version: 1,
+      uid: 'uid-a',
+      campaignId,
+      role: 'owner',
+      seatId: null,
+      accessGeneration: 0,
+    };
+    const view = { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null };
+    const event = {
+      kind: 'owner-head',
+      version: 1,
+      access: { ...access },
+      sessionId: view.sessionId,
+      head: { generation: 1, charactersRevision: 0, sceneRevision: 0, sceneSavedAt: null },
+    };
+    if (kind === 'private head') event.head.charactersRef = 'PRIVATE OBJECT PATH';
+    if (kind === 'foreign UID') event.access.uid = 'other-uid';
+    if (kind === 'foreign campaign') event.access.campaignId = commandId;
+    if (kind === 'foreign epoch') event.sessionId = campaignId;
+    setup.fetch.mockImplementation(
+      async () =>
+        new Response(`id: 1\nevent: owner-head\ndata: ${JSON.stringify(event)}\n\n`, {
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+    );
+    const events = await setup.store.openEvents(campaignId, view, access);
+    try {
+      await expect(events.next()).rejects.toMatchObject({ code: 'invalid-cloud-response' });
+      expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+      expect(setup.store.streams.size).toBe(0);
+      expect(setup.store.saveState.phase).toBe('idle');
+    } finally {
+      await events.close();
+    }
+  }
+);
+
+test('closing a campaign cancels its idle owner stream without leaving an open account observer or save', async () => {
+  const setup = fixture();
+  const stopped = jest.fn();
+  setup.connection.account.sdk.onAuthStateChanged = (_auth, notify) => {
+    notify();
+    return stopped;
+  };
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'owner',
+    seatId: null,
+    accessGeneration: 0,
+  };
+  const view = { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null };
+  setup.fetch.mockImplementation(
+    async () =>
+      new Response(new ReadableStream(), {
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+  );
+  const events = await setup.store.openEvents(campaignId, view, access);
+  const reading = expect(events.next()).rejects.toThrow('cloud campaign store is closed');
+  setup.store.close();
+  await reading;
+  await events.close();
+  expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+  expect(stopped).toHaveBeenCalledTimes(1);
+  expect(setup.store.streams.size).toBe(0);
+  expect(setup.store.saveState.phase).toBe('idle');
+});
+
 test('assigned reads reject private world fields, foreign scopes and unassigned character rows', async () => {
   const setup = fixture();
   const access = {

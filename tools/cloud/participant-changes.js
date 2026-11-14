@@ -37,8 +37,18 @@ class ParticipantChanges {
 
   subscribe(principal, id, command, expected, callbacks) {
     const scope = this.store._accessExpectation(expected);
-    if (!isCloudUUID(id) || !isCloudParticipantRequest(command) || scope?.seatId === null || !scope)
-      throw new CloudError(400, 'invalid-participant-request', 'Choose current live player access');
+    if (
+      !isCloudUUID(id) ||
+      !isCloudParticipantRequest(command) ||
+      !scope ||
+      (scope.seatId === null &&
+        [command.observerTokenId, command.mapId, command.assetKey].some((value) => value !== null))
+    )
+      throw new CloudError(
+        400,
+        'invalid-participant-request',
+        'Choose current live campaign access'
+      );
     if (typeof callbacks?.onEvent !== 'function' || typeof callbacks?.onError !== 'function')
       throw new Error('Participant observation requires event and error listeners');
     let resolve;
@@ -86,7 +96,7 @@ class ParticipantChanges {
     });
     if (viewer.closed) return;
     if (
-      admitted.participant.access.role !== 'member' ||
+      admitted.participant.access.role !== (viewer.scope.seatId === null ? 'owner' : 'member') ||
       admitted.participant.access.seatId !== viewer.scope.seatId ||
       admitted.participant.access.accessGeneration !== viewer.scope.accessGeneration
     )
@@ -209,6 +219,21 @@ class ParticipantChanges {
       const values = await Promise.all(
         [...group.viewers].map(async (viewer) => {
           try {
+            if (viewer.scope.seatId === null) {
+              const owner = await this.store._ownerLiveHead(
+                viewer.principal,
+                viewer.id,
+                viewer.command,
+                viewer.scope
+              );
+              if (viewer.previous && owner.head.generation < viewer.previous.head.generation)
+                throw new CloudError(
+                  503,
+                  'invalid-change-history',
+                  'The committed campaign revision moved backwards'
+                );
+              return viewer.closed ? null : { viewer, owner };
+            }
             const next = await this.store._participantSnapshot(
               viewer.principal,
               viewer.id,
@@ -239,7 +264,10 @@ class ParticipantChanges {
       if (group.closed) return;
       const ready = values.filter(Boolean);
       const advancing = ready.filter(
-        ({ viewer, next }) => viewer.previous && next.generation > viewer.previous.generation
+        ({ viewer, next }) =>
+          viewer.scope.seatId !== null &&
+          viewer.previous &&
+          next.generation > viewer.previous.generation
       );
       let history = null;
       if (advancing.length) {
@@ -262,8 +290,15 @@ class ParticipantChanges {
           continue;
         }
       }
-      for (const { viewer, next } of ready) {
+      for (const { viewer, next, owner } of ready) {
         if (viewer.closed || group.closed) continue;
+        if (owner) {
+          if (!viewer.previous || owner.head.generation > viewer.previous.head.generation) {
+            viewer.previous = owner;
+            this._emit(viewer, owner);
+          }
+          continue;
+        }
         if (history && next.generation !== history.headGeneration) {
           group.dirty = true;
           continue;

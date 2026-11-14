@@ -20,6 +20,7 @@ const {
 const {
   default: CloudCampaignClientStore,
 } = require('../../src/campaigns/CloudCampaignClientStore.js');
+const { default: CloudEventStream } = require('../../src/campaigns/CloudEventStream.js');
 const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCharacters.js');
 const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const { default: CombatSession } = require('../../src/entities/characters/CombatSession.js');
@@ -171,6 +172,503 @@ function invitation(name = 'Invited player', seatId = null) {
     },
   };
 }
+
+test(
+  'an authenticated Fetch SSE connection delivers scoped changes and releases its resources on pause, epoch change and membership removal',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Direct authenticated SSE');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: ownerClient,
+    });
+    const hero = await library.create('Streaming observer');
+    const validation = { ruleset: '2014', library };
+    const raw = sceneState({ characterId: hero, name: 'Streaming observer' });
+    raw.terrain.heights = raw.terrain.heights.map((row) => row.map(() => 0));
+    const scene = CampaignWorld.fromScene(raw, validation).save();
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: library.revision,
+      scene: encodeScene(scene, validation),
+    });
+    await ownerClient.assignCharacter(campaign.id, {
+      seatId,
+      characterId: hero,
+      assigned: true,
+      accessGeneration: 0,
+    });
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    const events = await memberClient.openEvents(
+      campaign.id,
+      {
+        sessionId: live.sessionId,
+        observerTokenId: 'token-1',
+        mapId: 'map-main',
+        assetKey: null,
+      },
+      grant.access
+    );
+    t.after(() => events.close());
+    const next = async () => {
+      const step = await events.next();
+      return step.done ? null : step.value;
+    };
+    const initial = await next();
+    assert.equal(initial.kind, 'checkpoint');
+    assert.deepEqual(initial.checkpoint.access, grant.access);
+    assert.equal(initial.checkpoint.state.scene, null);
+    const usage = f.runtime.firestore.collection('accountStreams').doc(pilotAccountKey(member.uid));
+    assert.equal((await usage.get()).data().leases.length, 1);
+    const presence = await f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('livePresence')
+      .get();
+    assert.equal(
+      presence.docs.reduce((sum, row) => sum + row.data().count, 0),
+      1
+    );
+    const moved = structuredClone(scene);
+    moved.creatures[0].gridY = 2;
+    moved.creatures[0].pose.world.z = 2.5;
+    await ownerClient.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 1,
+      charactersRevision: library.revision,
+      scene: encodeScene(moved, validation),
+    });
+    assert.equal((await next()).kind, 'delta');
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'end',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const ended = await next();
+    assert.equal(ended.kind, 'closed');
+    assert.equal(ended.code, 'live-session-paused');
+    assert.equal(await next(), null);
+    assert.equal((await usage.get()).data().leases.length, 0);
+    const closedPresence = await f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('livePresence')
+      .get();
+    assert.equal(
+      closedPresence.docs.reduce((sum, row) => sum + row.data().count, 0),
+      0
+    );
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const restarted = await ownerClient.getLiveSession(campaign.id);
+    await assert.rejects(
+      memberClient.openEvents(
+        campaign.id,
+        {
+          sessionId: live.sessionId,
+          observerTokenId: 'token-1',
+          mapId: 'map-main',
+          assetKey: null,
+        },
+        grant.access
+      ),
+      { code: 'live-session-changed' }
+    );
+    const removed = await memberClient.openEvents(
+      campaign.id,
+      {
+        sessionId: restarted.sessionId,
+        observerTokenId: 'token-1',
+        mapId: 'map-main',
+        assetKey: null,
+      },
+      grant.access
+    );
+    t.after(() => removed.close());
+    assert.equal((await removed.next()).value.kind, 'checkpoint');
+    await ownerClient.removeMember(campaign.id, {
+      seatId,
+      accessGeneration: grant.access.accessGeneration,
+    });
+    assert.deepEqual((await removed.next()).value, { kind: 'closed', code: 'campaign-not-found' });
+    assert.equal((await removed.next()).done, true);
+    assert.equal((await usage.get()).data().leases.length, 0);
+    assert.equal(f.store.participantChanges.groups.size, 0);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'end',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+  }
+);
+
+test(
+  'real owner streams enforce four UID-global leases across campaigns and recover a slot after client transport abort',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const campaigns = await Promise.all([
+      f.create(owner.principal, 'Stream quota one'),
+      f.create(owner.principal, 'Stream quota two'),
+    ]);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const client = f.client(owner, api);
+    const views = [];
+    for (const campaign of campaigns) {
+      await client.controlLiveSession(
+        campaign.id,
+        'start',
+        await client.getLiveSession(campaign.id)
+      );
+      views.push({
+        campaign,
+        access: (await client.getParticipantAccess(campaign.id)).access,
+        view: {
+          sessionId: (await client.getLiveSession(campaign.id)).sessionId,
+          observerTokenId: null,
+          mapId: null,
+          assetKey: null,
+        },
+      });
+    }
+    const streams = [];
+    t.after(() => Promise.all(streams.map((stream) => stream.close())));
+    const open = async ({ campaign, view, access }) => {
+      const stream = await client.openEvents(campaign.id, view, access);
+      streams.push(stream);
+      assert.equal((await stream.next()).value.kind, 'owner-head');
+      return stream;
+    };
+    for (let index = 0; index < 4; index++) await open(views[index % 2]);
+    const usage = f.runtime.firestore.collection('accountStreams').doc(pilotAccountKey(owner.uid));
+    assert.equal((await usage.get()).data().leases.length, 4);
+    assert.equal(f.store.participantChanges.groups.size, 2);
+    await assert.rejects(open(views[0]), { status: 429, code: 'stream-limit-reached' });
+    assert.equal((await usage.get()).data().leases.length, 4);
+    const released = Promise.withResolvers();
+    const release = f.store.usage.releaseStream.bind(f.store.usage);
+    f.store.usage.releaseStream = async (...args) => {
+      const result = await release(...args);
+      released.resolve();
+      return result;
+    };
+    await streams.shift().close();
+    await released.promise;
+    assert.equal((await usage.get()).data().leases.length, 3);
+    await open(views[0]);
+    assert.equal((await usage.get()).data().leases.length, 4);
+    for (const { campaign } of views)
+      await client.controlLiveSession(campaign.id, 'end', await client.getLiveSession(campaign.id));
+    for (const stream of streams) {
+      assert.deepEqual((await stream.next()).value, {
+        kind: 'closed',
+        code: 'live-session-paused',
+      });
+      assert.equal((await stream.next()).done, true);
+    }
+    assert.equal((await usage.get()).data().leases.length, 0);
+    assert.equal(f.store.participantChanges.groups.size, 0);
+    for (const { campaign } of views) {
+      const presence = await f.runtime.firestore
+        .collection('campaigns')
+        .doc(campaign.id)
+        .collection('livePresence')
+        .get();
+      assert.equal(
+        presence.docs.reduce((sum, row) => sum + row.data().count, 0),
+        0
+      );
+    }
+  }
+);
+
+test(
+  'real event admission rejects anonymous, expired, revoked, foreign and stale access without a stream lease or cookie fallback',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const member = await f.account();
+    const unrelated = await f.account();
+    const campaign = await f.create(owner.principal, 'Denied event admissions');
+    const foreign = await f.create(unrelated.principal, 'Other private campaign');
+    const seatId = await f.join(campaign.id, member.uid);
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const memberClient = f.client(member, api);
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'start',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const live = await ownerClient.getLiveSession(campaign.id);
+    const grant = await memberClient.getParticipantAccess(campaign.id);
+    const body = { sessionId: live.sessionId, observerTokenId: null, mapId: null, assetKey: null };
+    const headers = {
+      Authorization: 'Bearer ' + member.token,
+      Origin: api.origin,
+      'Content-Type': 'application/json',
+      'X-TavernTable-Seat': seatId,
+      'X-TavernTable-Access-Generation': String(grant.access.accessGeneration),
+    };
+    const endpoint = `${api.url}/api/cloud/campaigns/${campaign.id}/events`;
+    const parts = member.token.split('.');
+    const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    const changedToken = (changes) =>
+      [
+        parts[0],
+        Buffer.from(JSON.stringify({ ...claims, ...changes })).toString('base64url'),
+        parts[2],
+      ].join('.');
+    const cases = [
+      [
+        'anonymous cookie',
+        401,
+        'authentication-required',
+        {
+          headers: { Authorization: '', Cookie: 'taverntable-host=not-cloud-authority' },
+        },
+      ],
+      [
+        'malformed token',
+        401,
+        'invalid-identity',
+        { headers: { Authorization: 'Bearer not-a-token' } },
+      ],
+      [
+        'expired token',
+        401,
+        'invalid-identity',
+        { headers: { Authorization: 'Bearer ' + changedToken({ exp: 1 }) } },
+      ],
+      [
+        'wrong project',
+        401,
+        'invalid-identity',
+        { headers: { Authorization: 'Bearer ' + changedToken({ aud: 'different-demo-project' }) } },
+      ],
+      [
+        'wrong UID',
+        404,
+        'campaign-not-found',
+        { headers: { Authorization: 'Bearer ' + unrelated.token } },
+      ],
+      [
+        'foreign campaign',
+        404,
+        'campaign-not-found',
+        {
+          url: `${api.url}/api/cloud/campaigns/${foreign.id}/events`,
+        },
+      ],
+      [
+        'stale seat',
+        409,
+        'campaign-access-changed',
+        { headers: { 'X-TavernTable-Seat': randomUUID() } },
+      ],
+      [
+        'stale generation',
+        409,
+        'campaign-access-changed',
+        {
+          headers: { 'X-TavernTable-Access-Generation': String(grant.access.accessGeneration + 1) },
+        },
+      ],
+      ['stale epoch', 409, 'live-session-changed', { body: { ...body, sessionId: randomUUID() } }],
+      [
+        'owner as player',
+        409,
+        'campaign-access-changed',
+        { headers: { Authorization: 'Bearer ' + owner.token } },
+      ],
+      [
+        'player as owner',
+        409,
+        'campaign-access-changed',
+        {
+          headers: { 'X-TavernTable-Seat': 'owner', 'X-TavernTable-Access-Generation': '0' },
+        },
+      ],
+      ['missing scope', 400, 'invalid-participant-request', { omitScope: true }],
+      [
+        'foreign origin',
+        403,
+        'origin-not-allowed',
+        { headers: { Origin: 'https://foreign.example.invalid' } },
+      ],
+      [
+        'query credentials',
+        400,
+        'invalid-campaign-request',
+        { url: endpoint + '?token=FORBIDDEN' },
+      ],
+      [
+        'malformed view',
+        400,
+        'invalid-participant-request',
+        { body: { ...body, privateScene: 'NOT AUTHORIZED' } },
+      ],
+      ['native GET', 405, 'method-not-allowed', { method: 'GET' }],
+    ];
+    for (const [label, status, code, options] of cases) {
+      const requestHeaders = { ...headers, ...options.headers };
+      if (options.omitScope) {
+        delete requestHeaders['X-TavernTable-Seat'];
+        delete requestHeaders['X-TavernTable-Access-Generation'];
+      }
+      const result = await fetch(options.url || endpoint, {
+        method: options.method || 'POST',
+        headers: requestHeaders,
+        ...(options.method === 'GET' ? {} : { body: JSON.stringify(options.body || body) }),
+      });
+      assert.equal(result.status, status, label);
+      const denied = await result.json();
+      assert.equal(denied.code, code, label);
+      assert.ok(!Object.hasOwn(denied, 'result'), label);
+      assert.ok(!JSON.stringify(denied).includes(member.token), label);
+    }
+    const preflight = await fetch(endpoint, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: api.origin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers':
+          'authorization,content-type,x-taverntable-seat,x-taverntable-access-generation',
+      },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), api.origin);
+    assert.equal(preflight.headers.get('access-control-allow-methods'), 'POST, OPTIONS');
+    assert.equal(preflight.headers.get('access-control-allow-credentials'), null);
+    assert.match(
+      preflight.headers.get('access-control-allow-headers'),
+      /X-TavernTable-Access-Generation/
+    );
+    await ownerClient.controlLiveSession(
+      campaign.id,
+      'end',
+      await ownerClient.getLiveSession(campaign.id)
+    );
+    const paused = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    assert.equal(paused.status, 409);
+    assert.equal((await paused.json()).code, 'live-session-paused');
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await f.runtime.auth.revokeRefreshTokens(member.uid);
+    const revoked = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    assert.equal(revoked.status, 401);
+    assert.equal((await revoked.json()).code, 'invalid-identity');
+    await f.runtime.auth.updateUser(unrelated.uid, { disabled: true });
+    const disabled = await fetch(endpoint, {
+      method: 'POST',
+      headers: { ...headers, Authorization: 'Bearer ' + unrelated.token },
+      body: JSON.stringify(body),
+    });
+    assert.equal(disabled.status, 401);
+    assert.equal((await disabled.json()).code, 'invalid-identity');
+    const streams = await f.runtime.firestore
+      .collection('accountStreams')
+      .doc(pilotAccountKey(member.uid))
+      .get();
+    assert.equal(streams.exists, false);
+    assert.equal(f.store.participantChanges?.groups.size || 0, 0);
+  }
+);
+
+test(
+  'an owner opens a real authenticated stream without a player seat and receives only bounded head notifications',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Owner event transport');
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const client = f.client(owner, api);
+    const grant = await client.getParticipantAccess(campaign.id);
+    await client.controlLiveSession(campaign.id, 'start', await client.getLiveSession(campaign.id));
+    const live = await client.getLiveSession(campaign.id);
+    const controller = new AbortController();
+    t.after(() => controller.abort());
+    const response = await fetch(`${api.url}/api/cloud/campaigns/${campaign.id}/events`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: 'Bearer ' + owner.token,
+        Origin: api.origin,
+        'Content-Type': 'application/json',
+        'X-TavernTable-Seat': 'owner',
+        'X-TavernTable-Access-Generation': '0',
+      },
+      body: JSON.stringify({
+        sessionId: live.sessionId,
+        observerTokenId: null,
+        mapId: null,
+        assetKey: null,
+      }),
+    });
+    assert.equal(response.status, 200);
+    const events = new CloudEventStream({
+      response,
+      controller,
+      account: new CloudAccount({ auth: owner.auth, sdk }),
+      credential: { uid: owner.uid, isCurrent: () => owner.auth.currentUser?.uid === owner.uid },
+    });
+    t.after(() => events.close());
+    const initial = (await events.next()).value;
+    assert.deepEqual(initial, {
+      kind: 'owner-head',
+      version: 1,
+      access: grant.access,
+      sessionId: live.sessionId,
+      head: { generation: 1, charactersRevision: 0, sceneRevision: 0, sceneSavedAt: null },
+    });
+    const library = await CampaignCharacters.open({
+      campaignId: campaign.id,
+      catalog: await f.resources.catalog(campaign),
+      store: client,
+    });
+    await library.create('PRIVATE OWNER CHARACTER');
+    const changed = (await events.next()).value;
+    assert.equal(changed.kind, 'owner-head');
+    assert.equal(changed.head.generation, 2);
+    assert.equal(changed.head.charactersRevision, 1);
+    assert.ok(!JSON.stringify(changed).includes('PRIVATE OWNER CHARACTER'));
+    assert.ok(!JSON.stringify(changed).includes('charactersRef'));
+    assert.equal(f.store.participantChanges.groups.size, 1);
+    await client.controlLiveSession(campaign.id, 'end', await client.getLiveSession(campaign.id));
+    assert.deepEqual((await events.next()).value, { kind: 'closed', code: 'live-session-paused' });
+    assert.equal((await events.next()).done, true);
+    assert.equal(f.store.participantChanges.groups.size, 0);
+    const usage = await f.runtime.firestore
+      .collection('accountStreams')
+      .doc(pilotAccountKey(owner.uid))
+      .get();
+    assert.equal(usage.data().leases.length, 0);
+  }
+);
 
 test(
   'private committed change history is ordered across backend instances and cannot become a member data endpoint',

@@ -283,9 +283,9 @@
   the same account/access/epoch; gaps or scope changes require reconciliation.
   Unchanged records/assets are not resent. A changed authorized view replaces
   state atomically rather than retaining revoked actors or replaying historical
-  movement. Local/native and bounded real API acceptance passed; durable event
-  observation, SSE, gameplay/motion, browser cache and full player UI remain gated.
-- **Durable cloud change observation (M3 backend verified; SSE pending)**:
+  movement. Local/native and bounded real API acceptance passed. Reconciliation,
+  gameplay/motion, browser cache and full player UI remain gated.
+- **Durable cloud change observation (M3 backend and transport verified)**:
   creation/import/canonical/settings publication writes a compact ordered event
   with the head/receipt transaction. Private history retains at most 1,000
   reconnect changes and no more than 24 hours; expired/pruned/legacy cursors
@@ -301,8 +301,29 @@
   Warm checkpoints omit unchanged graphics; scope revocation, owner pause and
   final subscriber close stop observation. Event listeners enqueue synchronously;
   one rejected/failed listener is isolated and logged without private details.
-  This backend callback seam does not yet grant an HTTP stream or bypass the
+  The backend callback seam alone grants no HTTP stream or bypass of the
   separate renewable per-UID stream quota.
+- **Direct cloud Fetch SSE (M3 transport verified; gameplay UI gated)**:
+  explicit POST streams use the API origin and managed bearer headers, never URL
+  tokens, cookies, native EventSource or a long-lived Hosting rewrite. Exact
+  preflight/origin policy is separate from authentication. Startup and renewable
+  admission bind current UID, campaign role/seat/generation and live epoch,
+  including a final check after presence IO. Four durable leases per UID apply
+  across campaigns; actual transport outcomes connect/renew/disconnect presence.
+  The stream emits 25-second comment heartbeats, renews identity/access/lease/
+  presence every minute, and closes at a 55-minute transport deadline, not a
+  total game-duration cap. Slow clients are bounded to sixteen queued events/
+  32 MiB UTF-8; denial drops queued data. Cleanup waits for in-flight renewal
+  and independently releases watches, presence and the final lease.
+  Members receive the existing authorized checkpoint/delta/resync protocol.
+  Owners receive a separately authorized compact head/revision notification,
+  not a fabricated member view or raw canonical body. Both share campaign
+  observation. The managed incremental UTF-8/CRLF parser and campaign Adapter
+  validate frames, scope, epoch, participant schemas and graphic integrity;
+  account change, malformed/stalled bodies and campaign close cancel transport.
+  Local cookie transport is unchanged. Native, container and approved real
+  HTTPS/renewal/revocation gates passed. Automatic reconciliation/reconnect,
+  world commands, owner motion synchronization and player UI remain later work.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its
@@ -324,8 +345,8 @@
   wake evaluates the earlier grace/inactivity deadline. Current UID/access and
   connection generations fence renewal/cleanup; reconnect never renews meaningful
   activity. Presence is not stream permission or a replacement for the global
-  four-stream quota. Player SSE, visible lifecycle presentation and safe drain
-  integration remain separately gated work.
+  four-stream quota. Actual SSE now uses these callbacks; visible lifecycle
+  presentation and safe drain integration remain separately gated work.
 - **Cloud revision head (development backend implemented; not deployed)**: compact committed metadata
   references immutable private scene/character objects by path, UTF-8 bytes and
   SHA-256, with coordinated revisions and a monotonic head generation.

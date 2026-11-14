@@ -481,6 +481,28 @@ export function isCloudParticipantRequest(value) {
   );
 }
 
+export function isCloudOwnerHeadEvent(value) {
+  return (
+    record(value) &&
+    keys(value, ['kind', 'version', 'access', 'sessionId', 'head']) &&
+    value.kind === 'owner-head' &&
+    value.version === 1 &&
+    isCloudAccessScope(value.access) &&
+    value.access.role === 'owner' &&
+    isCloudUUID(value.sessionId) &&
+    record(value.head) &&
+    keys(value.head, ['generation', 'charactersRevision', 'sceneRevision', 'sceneSavedAt']) &&
+    isCloudAccessGeneration(value.head.generation) &&
+    value.head.generation > 0 &&
+    isCloudAccessGeneration(value.head.charactersRevision) &&
+    isCloudAccessGeneration(value.head.sceneRevision) &&
+    (value.head.sceneRevision === 0
+      ? value.head.sceneSavedAt === null
+      : typeof value.head.sceneSavedAt === 'string' &&
+        Number.isFinite(Date.parse(value.head.sceneSavedAt)))
+  );
+}
+
 export function isCloudParticipantAssetRequest(value) {
   return (
     record(value) &&

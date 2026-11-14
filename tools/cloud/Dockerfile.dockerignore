@@ -21,6 +21,7 @@ tools/cloud/*
 !tools/cloud/campaign-store.js
 !tools/cloud/participant-state.js
 !tools/cloud/participant-changes.js
+!tools/cloud/event-stream.js
 !tools/cloud/usage-limits.js
 !tools/cloud/immutable-objects.js
 !tools/cloud/campaign-assets.js

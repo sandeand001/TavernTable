@@ -2322,3 +2322,90 @@ may remain billable. No real account/campaign, IAM grant, index, service,
 frontend/cutover or routine-save UX change was introduced. Shared observation
 is real SDK/component evidence; actual hosted SSE delivery, gameplay/animation,
 cache, lifecycle/load and cost gates remain pending.
+
+### M3-03: direct authenticated Fetch SSE
+
+The direct API POST `/api/cloud/campaigns/{id}/events` now admits the managed
+bearer identity and current campaign scope/live epoch before opening transport.
+Authorization and captured seat/access-generation travel in headers, never query
+strings or cookies. Exact frontend-origin/preflight checks do not replace those
+backend checks. Local cookie/CSRF transport remains unchanged; neither native
+EventSource custom headers nor a long-lived Hosting rewrite is involved.
+
+Member requests capture `{sessionId, observerTokenId, mapId, assetKey}` and receive
+the existing explicit checkpoint/delta/resync DTOs from shared campaign observation.
+Owner requests use the same active epoch with null observer/map/cache fields and
+receive an independently owner-authorized `owner-head` event: version, access,
+session ID and only generation/character revision/scene revision/save time.
+There is no synthetic member identity or canonical body in this notification.
+It is a transport notification, not completed owner gameplay/motion replication.
+
+Actual stream startup acquires one of **four UID-global renewable leases** across
+campaigns. Presence connects only after transport headers and is followed by a
+final live/access fence before any queued checkpoint is sent. Every **60 seconds**
+the original bearer is reverified, current role/scope/epoch is checked, and lease/
+presence renewals finish with another current live check. These renewals do not
+count as meaningful activity. Comment heartbeats are **three bytes every
+25 seconds**. A **55-minute transport deadline** intentionally closes the stream;
+it neither ends the game nor imposes a total game-duration cap.
+
+Backpressure is bounded to **sixteen queued events / 32 MiB UTF-8** per stream.
+Overflow, revoked access, pause or failure discards queued state instead of
+flushing old private data. Cleanup serializes in-flight renewal and independently
+attempts watcher/presence/final-lease release, even if another cleanup step fails.
+Typed close controls contain no arbitrary provider messages/codes. Unknown failures
+and unsuccessful cleanup are explicitly redacted and logged.
+
+The managed client uses Fetch's readable body, validates incremental UTF-8,
+CR/LF/CRLF and multi-line data framing, enforces event-byte/cursor/kind bounds, and
+reuses current UID/access/epoch and participant/graphic-integrity guards. Initial
+HTTP 401 retries once using renewed identity and the exact captured body/scope.
+Account changes, stalled bytes, malformed/truncated frames and campaign close
+cancel the reader and account observer, clear transport buffers and stop timers.
+No scene polling, offline queue, browser authority or implicit local fallback was
+added. World UI remains disabled; automatic reconnect/reconciliation is M3-04.
+
+Verification:
+
+- Final complete affected Auth/access/canonical/usage/process-replacement/
+  production-host gate: **145/145 native cases**, zero failures/cancellations/
+  skips, **596,211.1745 ms**. Actual HTTP cases cover scoped member changes,
+  seatless owner notifications, four UID-global streams across two campaigns,
+  fifth-stream 429, abrupt client abort/slot recovery, owner pause, epoch change
+  and membership removal. Anonymous/expired/revoked/disabled/wrong-project/
+  foreign UID/campaign/stale seat/generation/origin/query/body/GET admissions
+  fail without a stream grant.
+- **7 app suites / 94 tests**, **3.007 s**, with open-handle detection, including
+  unchanged local and non-DOM transports. Focused failures first exposed and
+  then verified fixes for close-versus-renewal races, cleanup short-circuiting,
+  a live pause during presence startup, raw body/provider diagnostics and failed
+  account-subscription cleanup. Exact queued-event and 32 MiB byte boundaries,
+  55-minute deadline, heartbeat/stall handling and invalid UTF-8/cursors pass.
+- Full JS/stylelint/layering: zero errors and the same **39 baseline warnings**.
+  Actual Linux/amd64 Node **24.22.3**, UID 1000, read-only/no-network/no-key
+  **1 CPU/1 GiB** runtime verifies **thirteen exact source hashes**, sixteen
+  resource packs, full 16 MP decoding, anonymous/forged event denial and clean
+  SIGTERM exit. The owned validation container was removed. Helper RSS
+  **217,821,184 bytes** is not peak/load proof. No dependency change was needed.
+
+The already approved single API test service now uses revision
+`taverntable-api-test-00005-8bz`, private immutable image
+`sha256:35700bc8f98ff8b2439fd7bdc2b8fa0c71133c0911559eda59408dedf19a8893`
+(runnable manifest
+`sha256:ad0609400b6cd880e4a8c4fee1fb3afccda73451c91993ba810e1d247a14d693`).
+Real HTTPS acceptance passed **2026-11-14 00:52:33 UTC**: managed owner/member
+streams delivered their authorized checkpoint/change/head events; the same durable
+lease renewed after an actual 65-second observation interval with two real presence
+connections and unchanged meaningful-activity state. Owner pause released both
+leases/presence before closed controls/EOF. A subsequent real Auth token revocation
+closed its active owner stream at bearer renewal and released lease/presence.
+Existing paused sheets, private images, journal retirement and original receipt
+recovery after membership removal also pass.
+
+The same **three approved disposable identities / two synthetic campaigns** were
+used. Cleanup verified their Auth records, exact Firestore document trees and
+**ten live object generations** absent at **00:52:38 UTC**. Existing bucket
+soft-delete retention is unchanged; tiny retained fixture bytes may remain billable.
+No new API service, IAM role/key, index, real account/campaign, frontend/cutover or
+routine-save UX change was introduced. Reconciliation, native animation,
+account/view cache, final lifecycle drain and hosted load/cost gates remain pending.

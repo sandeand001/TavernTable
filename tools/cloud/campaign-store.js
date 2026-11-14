@@ -4273,6 +4273,40 @@ class CloudCampaignStore {
     return this.participantChanges.subscribe(principal, id, command, expected, callbacks);
   }
 
+  async _ownerLiveHead(principal, id, command, expected) {
+    const uid = principalUid(principal);
+    const scope = this._accessExpectation(expected);
+    if (!scope || scope.seatId !== null)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose current campaign owner access');
+    return this._transaction(
+      async (transaction) => {
+        const admission = await this.requireLiveSession(
+          transaction,
+          principal,
+          id,
+          command.sessionId,
+          scope
+        );
+        if (admission.participant.access.role !== 'owner') throw unavailableCampaign();
+        const saved = await transaction.get(this.firestore.collection('campaigns').doc(id));
+        const head = await this._metadata(saved, uid);
+        return {
+          kind: 'owner-head',
+          version: 1,
+          access: admission.participant.access,
+          sessionId: command.sessionId,
+          head: {
+            generation: head.generation,
+            charactersRevision: head.campaign.charactersRevision,
+            sceneRevision: head.campaign.sceneRevision,
+            sceneSavedAt: head.campaign.sceneSavedAt,
+          },
+        };
+      },
+      { readOnly: true }
+    );
+  }
+
   async _participantCommittedChanges(principal, id, command, scope, afterGeneration) {
     return this._transaction(
       async (transaction) => {

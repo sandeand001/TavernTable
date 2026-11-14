@@ -13,6 +13,7 @@ import {
   isCloudAssignedCharacterState,
   isCloudAssignedCharacterReceipt,
   isCloudParticipantRequest,
+  isCloudOwnerHeadEvent,
   isCloudAccessGeneration,
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
@@ -101,6 +102,7 @@ export default class CloudCampaignClientStore {
     this.pendingBackup = null;
     this.pendingLive = null;
     this.saveListeners = new Set();
+    this.streams = new Set();
     this.saveState = Object.freeze({ phase: 'idle', error: null });
     this.storageInfo = Object.freeze({
       kind: 'cloud',
@@ -847,6 +849,10 @@ export default class CloudCampaignClientStore {
       body: input,
       accessScope: scope,
     });
+    return this._verifiedParticipantSnapshot(id, result, input, scope, cachedAssets);
+  }
+
+  async _verifiedParticipantSnapshot(id, result, input, scope, cachedAssets) {
     const { validateCloudParticipantSnapshot } = await import('./CloudParticipantProtocol.js');
     try {
       validateCloudParticipantSnapshot(result, { cachedAssets });
@@ -881,6 +887,124 @@ export default class CloudCampaignClientStore {
     const campaign = await this._metadata(result.state.campaign, id);
     this._identity();
     return { ...copy(result), state: { ...copy(result.state), campaign } };
+  }
+
+  async openEvents(id, view, expected, { cachedAssets = null } = {}) {
+    this._identity();
+    if (!isCloudAccessScope(expected) || expected.uid !== this.uid || expected.campaignId !== id)
+      throw failure(400, 'invalid-access-scope', 'Choose current live campaign access.');
+    if (
+      !isCloudParticipantRequest(view) ||
+      (view.assetKey !== null && cachedAssets === null) ||
+      (expected.role === 'owner' &&
+        [view.observerTokenId, view.mapId, view.assetKey, cachedAssets].some(
+          (value) => value !== null
+        ))
+    )
+      throw failure(
+        400,
+        'invalid-participant-request',
+        'Choose a current live view and verified cache.'
+      );
+    const scope = copy(expected);
+    const input = copy(view);
+    let assets = cachedAssets === null ? null : copy(cachedAssets);
+    let previous = null;
+    let ended = false;
+    let closing;
+    const { applyCloudParticipantDelta } = await import('./CloudParticipantProtocol.js');
+    this._identity();
+    const source = await this.connection.request(this._resource(id, '/events'), {
+      method: 'POST',
+      body: input,
+      accessScope: scope,
+      responseType: 'events',
+    });
+    const close = () => {
+      if (closing) return closing;
+      ended = true;
+      previous = null;
+      assets = null;
+      this.streams.delete(events);
+      closing = source.close();
+      return closing;
+    };
+    const events = {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      close,
+      return: async () => {
+        await close();
+        return { done: true, value: undefined };
+      },
+      next: async () => {
+        if (ended) return { done: true, value: undefined };
+        try {
+          this._identity();
+          const step = await source.next();
+          this._identity();
+          if (step.done || step.value.kind === 'closed') {
+            await close();
+            return step;
+          }
+          const event = step.value;
+          if (scope.role === 'owner') {
+            if (
+              !isCloudOwnerHeadEvent(event) ||
+              event.access.uid !== scope.uid ||
+              event.access.campaignId !== id ||
+              event.sessionId !== input.sessionId ||
+              (previous && event.head.generation < previous.head.generation)
+            )
+              throw invalidResponse();
+            previous = copy(event);
+          } else {
+            if (
+              !['checkpoint', 'delta', 'resync'].includes(event.kind) ||
+              Object.keys(event).length !== 2 ||
+              !Object.hasOwn(event, event.kind === 'delta' ? 'delta' : 'checkpoint')
+            )
+              throw invalidResponse();
+            if (event.kind === 'delta' && previous === null)
+              throw failure(
+                409,
+                'participant-delta-gap',
+                'Read a current authorized checkpoint first.'
+              );
+            const checkpoint =
+              event.kind === 'delta'
+                ? applyCloudParticipantDelta(previous, event.delta, { cachedAssets: assets })
+                : event.checkpoint;
+            previous = await this._verifiedParticipantSnapshot(
+              id,
+              checkpoint,
+              input,
+              scope,
+              assets
+            );
+            assets =
+              previous.state.publicScene.assetKey === null
+                ? null
+                : previous.state.publicScene.assets || assets;
+          }
+          this._identity();
+          if (ended) return { done: true, value: undefined };
+          return { done: false, value: copy(event) };
+        } catch (error) {
+          await close();
+          throw error;
+        }
+      },
+    };
+    try {
+      this._identity();
+      this.streams.add(events);
+      return events;
+    } catch (error) {
+      await close();
+      throw error;
+    }
   }
 
   commitAssignedCharacters(id, change, expected) {
@@ -1293,5 +1417,13 @@ export default class CloudCampaignClientStore {
     if (this.pending) throw new Error('Resolve the pending cloud save before closing the campaign');
     this.closed = true;
     this.saveListeners.clear();
+    for (const stream of this.streams)
+      void stream.close().catch((error) => {
+        logger.log(LOG_LEVEL.ERROR, 'A cloud event stream could not close', LOG_CATEGORY.SYSTEM, {
+          component: 'CloudCampaignClientStore',
+          code: 'stream-close-failed',
+          kind: error instanceof Error ? 'error' : 'non-error',
+        });
+      });
   }
 }

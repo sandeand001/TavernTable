@@ -1,6 +1,7 @@
 import { validateApplicationRuntime } from './CloudRuntime.js';
 import { CloudAccountError } from './CloudAccount.js';
 import { sessionJSON } from './SessionConnection.js';
+import CloudEventStream from './CloudEventStream.js';
 import {
   isCloudAccessScope,
   CLOUD_ACCESS_SEAT_HEADER,
@@ -38,6 +39,10 @@ const denialCodes = new Set([
   'live-session-changed',
   'live-session-paused',
   'live-session-already-started',
+  'stream-limit-reached',
+  'stream-lease-expired',
+  'invalid-stream-lease',
+  'stream-closed',
   'campaign-limit-reached',
   'storage-limit-reached',
   'request-limit-reached',
@@ -132,6 +137,10 @@ const denialCodes = new Set([
   'account-request-failed',
 ]);
 const denialMessages = new Map([
+  ['stream-limit-reached', 'This account has four live connections. Close another live tab first.'],
+  ['stream-lease-expired', 'This live stream expired. Reconnect to its current state.'],
+  ['invalid-stream-lease', 'The live stream lease could not be verified.'],
+  ['stream-closed', 'The live stream was closed.'],
   ['invalid-participant-request', 'Choose the current live session and assigned observer.'],
   ['invalid-participant-state', 'The authorized participant checkpoint could not be verified.'],
   ['participant-view-forbidden', 'This area or observer is not currently authorized.'],
@@ -479,7 +488,12 @@ export default class CloudAccountConnection {
       !/^(?:account|campaigns)(?:\/[A-Za-z0-9-]+)*$/.test(resource) ||
       !['GET', 'POST'].includes(method) ||
       (method !== 'POST' && body !== undefined) ||
-      !['json', 'backup'].includes(responseType) ||
+      !['json', 'backup', 'events'].includes(responseType) ||
+      (responseType === 'events' &&
+        (method !== 'POST' ||
+          accessScope === null ||
+          !/^campaigns\/[a-f0-9-]{36}\/events$/.test(resource) ||
+          !isCloudUUID(resource.split('/')[1]))) ||
       (responseType === 'backup' &&
         (method !== 'GET' ||
           !/^campaigns\/[^/]+\/(?:backup|backups\/[^/]+)$/.test(resource) ||
@@ -503,8 +517,9 @@ export default class CloudAccountConnection {
             accessScope.role === 'member' &&
             resource === `campaigns/${accessScope.campaignId}/assigned-characters`) ||
           (method === 'POST' &&
-            accessScope.role === 'member' &&
-            resource === `campaigns/${accessScope.campaignId}/participant-state`)
+            ((accessScope.role === 'member' &&
+              resource === `campaigns/${accessScope.campaignId}/participant-state`) ||
+              resource === `campaigns/${accessScope.campaignId}/events`))
         ))
     )
       throw requestError(
@@ -551,6 +566,21 @@ export default class CloudAccountConnection {
           ...(encoded === undefined ? {} : { body: encoded }),
         };
         const response = await this.fetch(url, options);
+        if (responseType === 'events') {
+          if (response.status !== 200) {
+            await sessionJSON(async () => response, url, options);
+            throw invalidResponse();
+          }
+          if (
+            typeof response.body?.getReader !== 'function' ||
+            !/^text\/event-stream(?:;\s*charset=utf-8)?$/i.test(
+              response.headers.get('content-type') || ''
+            )
+          )
+            throw invalidResponse();
+          if (!credential.isCurrent()) throw changedAccount();
+          return new CloudEventStream({ response, controller, account: this.account, credential });
+        }
         if (responseType === 'backup' && response.status !== 200) {
           await sessionJSON(async () => response, url, options);
           throw invalidResponse();
@@ -560,7 +590,7 @@ export default class CloudAccountConnection {
             ? await this._backupText(response, credential, progress)
             : await sessionJSON(async () => response, url, options);
       } catch (error) {
-        if (responseType === 'backup') controller.abort();
+        if (responseType === 'backup' || responseType === 'events') controller.abort();
         if (!credential.isCurrent()) throw changedAccount();
         if (timedOut)
           throw requestError(
