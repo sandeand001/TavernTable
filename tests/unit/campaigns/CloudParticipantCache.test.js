@@ -154,6 +154,77 @@ async function imageCheckpoint() {
   }
 }
 
+test('purging superseded campaign access fences delayed writes and removes every historical reuse namespace without clearing other campaigns or UIDs', async () => {
+  const { snapshot, reference, bytes } = await imageCheckpoint();
+  let gate = null;
+  const options = {
+    indexedDB: testIndexedDB(),
+    crypto: webcrypto,
+    cacheStorage: testCacheStorage({
+      beforePut: async () => {
+        if (!gate) return;
+        gate.started.resolve();
+        await gate.resume.promise;
+      },
+    }),
+  };
+  const cache = new CloudParticipantCache({ ...options, uid: snapshot.access.uid });
+  const peer = new CloudParticipantCache({ ...options, uid: snapshot.access.uid });
+  const other = new CloudParticipantCache({ ...options, uid: 'other-uid' });
+  const historical = structuredClone(snapshot);
+  historical.access.accessGeneration++;
+  historical.access.seatId = '44444444-4444-4444-8444-444444444444';
+  historical.viewKey = 'b'.repeat(64);
+  const unrelated = structuredClone(snapshot);
+  unrelated.access.campaignId = '55555555-5555-4555-8555-555555555555';
+  unrelated.state.campaign.id = unrelated.access.campaignId;
+  const unrelatedReference = { ...reference, campaignId: unrelated.access.campaignId };
+  unrelated.manifest.images[0].reference = unrelatedReference;
+  const foreign = structuredClone(snapshot);
+  foreign.access.uid = other.uid;
+  let writing;
+  let checkpointWriting;
+  try {
+    for (const raw of [snapshot, historical, unrelated]) {
+      await cache.writeCheckpoint(raw);
+      await cache.writeAsset(raw, raw.manifest.images[0].reference, bytes);
+    }
+    await other.writeCheckpoint(foreign);
+    await other.writeAsset(foreign, reference, bytes);
+    expect(await cache.readCheckpointCandidate(snapshot.access)).toEqual(snapshot);
+    gate = { started: deferred(), resume: deferred() };
+    writing = cache.writeAsset(snapshot, reference, bytes).catch((error) => error);
+    await gate.started.promise;
+    checkpointWriting = cache
+      .writeCheckpoint({ ...snapshot, generation: snapshot.generation + 1 })
+      .catch((error) => error);
+    const purging = peer.clearCampaign(snapshot.access.campaignId);
+    gate.resume.resolve();
+    expect(await writing).toMatchObject({ code: 'cache-invalidated' });
+    expect(await checkpointWriting).toMatchObject({ code: 'cache-invalidated' });
+    expect(await purging).toMatchObject({ removedCheckpoints: 2 });
+    for (const raw of [snapshot, historical]) {
+      expect(await peer.readCheckpoint(raw.access, raw.viewKey)).toBeNull();
+      expect(await peer.readAsset(raw, reference)).toBeNull();
+      expect(await peer.readCheckpointCandidate(raw.access)).toBeNull();
+      expect(await peer.readAuthorizedAsset(raw, reference)).toBeNull();
+    }
+    expect(await cache.readCheckpoint(unrelated.access, unrelated.viewKey)).toEqual(unrelated);
+    expect(Buffer.from(await cache.readAsset(unrelated, unrelatedReference))).toEqual(bytes);
+    expect(await other.readCheckpoint(foreign.access, foreign.viewKey)).toEqual(foreign);
+    expect(Buffer.from(await other.readAsset(foreign, reference))).toEqual(bytes);
+    expect(await cache.getUsage()).toMatchObject({ checkpointCount: 1, assetCount: 1 });
+    expect(await other.getUsage()).toMatchObject({ checkpointCount: 1, assetCount: 1 });
+  } finally {
+    gate?.resume.resolve();
+    await writing;
+    await checkpointWriting;
+    cache.close();
+    peer.close();
+    other.close();
+  }
+});
+
 test('private usage counts verified bodies and checkpoint replacements once, with a validated budget persisted only for that UID', async () => {
   const indexedDB = testIndexedDB();
   const cacheStorage = testCacheStorage();
@@ -327,7 +398,10 @@ test('separate browser cache contexts share active protections and wait for olde
     await pendingWrite;
     expect(await clearing).toMatchObject({ bytes: 0 });
     expect(await second.getUsage()).toMatchObject({ bytes: 0 });
-    expect(await second.readAsset(last, reference)).toBeNull();
+    await expect(second.readAsset(last, reference)).rejects.toMatchObject({
+      code: 'cache-invalidated',
+    });
+    expect(await first.readAsset(last, reference)).toBeNull();
   } finally {
     gate?.resume.resolve();
     await pendingWrite;
@@ -419,16 +493,19 @@ test('clearing one UID fences older image puts and checkpoint hashes without tou
     await clearingCheckpoint;
     expect(await lateCheckpoint).toMatchObject({ error: { code: 'cache-invalidated' } });
     expect(await cache.getUsage()).toMatchObject({ bytes: 0, limitBytes: 1024 * 1024 });
-    expect(await cache.readCheckpoint(snapshot.access, snapshot.viewKey)).toBeNull();
-    expect(await cache.readAsset(snapshot, reference)).toBeNull();
+    expect(await peer.readCheckpoint(snapshot.access, snapshot.viewKey)).toBeNull();
+    expect(await peer.readAsset(snapshot, reference)).toBeNull();
     expect(await other.readCheckpoint(otherSnapshot.access, otherSnapshot.viewKey)).toEqual(
       otherSnapshot
     );
     expect(Buffer.from(await other.readAsset(otherSnapshot, reference))).toEqual(bytes);
     for (const { store, pack } of catalogs)
       expect(await store.installed(pack)).toMatchObject({ ruleset: pack.ruleset, count: 0 });
-    await expect(cache.writeCheckpoint(snapshot)).resolves.toMatchObject({ stored: true });
-    expect(await cache.readCheckpoint(snapshot.access, snapshot.viewKey)).toEqual(snapshot);
+    await expect(cache.writeCheckpoint(snapshot)).rejects.toMatchObject({
+      code: 'cache-invalidated',
+    });
+    await expect(peer.writeCheckpoint(snapshot)).resolves.toMatchObject({ stored: true });
+    expect(await peer.readCheckpoint(snapshot.access, snapshot.viewKey)).toEqual(snapshot);
   } finally {
     gate?.resume.resolve();
     hashGate.resume.resolve();
@@ -804,7 +881,8 @@ test('a warm candidate is only a hint and exact current manifests authorize unch
   current.viewKey = 'b'.repeat(64);
   current.generation++;
   try {
-    expect(await cache.readCheckpointCandidate(current.access)).toEqual(snapshot);
+    expect(await cache.readCheckpointCandidate(snapshot.access)).toEqual(snapshot);
+    expect(await cache.readCheckpointCandidate(current.access)).toBeNull();
     expect(await cache.readCheckpoint(current.access, current.viewKey)).toBeNull();
     expect(await cache.readAsset(current, reference)).toBeNull();
     expect(Buffer.from(await cache.readAuthorizedAsset(current, reference))).toEqual(bytes);

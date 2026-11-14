@@ -153,6 +153,8 @@ export default class CloudAccount {
     this.sdk = sdk;
     this.linkVerification = null;
     this.linkBusy = false;
+    this.lastUid = auth.currentUser?.uid ?? null;
+    this.invalidators = new Set();
   }
 
   async _request(operation, request) {
@@ -184,9 +186,49 @@ export default class CloudAccount {
     );
   }
 
+  onInvalidated(listener) {
+    if (typeof listener !== 'function')
+      throw new Error('Private account cleanup requires an invalidation listener');
+    this.invalidators.add(listener);
+    return () => this.invalidators.delete(listener);
+  }
+
+  _invalidate(uid) {
+    const tasks = [];
+    for (const listener of this.invalidators) {
+      try {
+        tasks.push(listener(uid));
+      } catch (error) {
+        tasks.push(Promise.reject(error));
+      }
+    }
+    const pending = Promise.all(tasks).then(() => {});
+    void pending.catch(() => {
+      logger.log(
+        LOG_LEVEL.ERROR,
+        'Private account cleanup could not complete',
+        LOG_CATEGORY.SYSTEM,
+        {
+          component: 'CloudAccount',
+          code: 'private-account-cleanup-failed',
+        }
+      );
+    });
+    return pending;
+  }
+
+  _observeUid(uid) {
+    const previous = this.lastUid;
+    this.lastUid = uid;
+    if (previous !== null && previous !== uid) this._invalidate(previous);
+  }
+
   identity() {
     const user = this.auth.currentUser;
-    if (user === null) return null;
+    if (user === null) {
+      this._observeUid(null);
+      return null;
+    }
     if (
       !user ||
       typeof user.uid !== 'string' ||
@@ -198,6 +240,7 @@ export default class CloudAccount {
         'invalid-auth-state',
         'The managed account identity is invalid. Sign in again.'
       );
+    this._observeUid(user.uid);
     return Object.freeze({
       uid: user.uid,
       email: typeof user.email === 'string' ? user.email : null,
@@ -462,6 +505,8 @@ export default class CloudAccount {
 
   async signOut() {
     this.linkVerification = null;
+    const uid = this.identity()?.uid;
+    if (uid) await this._invalidate(uid);
     await this._request('signOut', () => this.sdk.signOut(this.auth));
     if (this.auth.currentUser !== null)
       throw new CloudAccountError(
@@ -469,6 +514,7 @@ export default class CloudAccount {
         'invalid-auth-state',
         'Sign-out did not complete. Please retry.'
       );
+    this.lastUid = null;
   }
 
   async tokenContext(forceRefresh = false) {

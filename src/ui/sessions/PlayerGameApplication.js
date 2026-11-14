@@ -7,6 +7,7 @@ import CloudCacheControls from './CloudCacheControls.js';
 import { connectCharacterServices } from '../characters/characterServices.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { validatePlayerState } from '../../campaigns/PlayerPublicProtocol.js';
+import { isCloudWorldCommandReceipt } from '../../campaigns/CloudProtocol.js';
 import AuthoritativeDiceReplay from '../../systems/dice/AuthoritativeDiceReplay.js';
 
 function assertObserverSelection(state, cachedAssets) {
@@ -100,7 +101,7 @@ export default class PlayerGameApplication {
       onArea: (id) => void this.chooseArea(id).catch((error) => this.fail(error)),
       onReconnect: () => void this.reconnect().catch((error) => this.fail(error)),
       onSignOut: () => void this.signOut().catch((error) => this.fail(error)),
-      onRetry: () => void this.commands.retry().catch((error) => this.fail(error)),
+      onRetry: () => void this.recoverPendingCommand().catch((error) => this.fail(error)),
       onDice: (sides, count) => this.input.rollDice(sides, count),
       onArrival: (id) => this.chooseArrivalGrant(id),
       onPlace: (id, appearance, grantId) => this.commands.place(id, { appearance, grantId }),
@@ -188,10 +189,16 @@ export default class PlayerGameApplication {
       }
       if (event.type === 'live-status') {
         if (['connecting', 'synchronizing', 'reconnecting'].includes(event.status.phase)) {
-          this.commands.setStateError(
-            new Error('Wait for live world reconciliation before playing.')
-          );
-          this.controls.status.textContent = 'Synchronizing the live game...';
+          const unconfirmed =
+            this.commands.pending ||
+            this.commands.canRetry ||
+            this.sheets.library.isSaving ||
+            this.connection.store?.pending;
+          const message = unconfirmed
+            ? 'The original change is unconfirmed. Keep this tab open and recover the same command online.'
+            : 'Synchronizing the live game. Editing is paused until current online state is verified.';
+          this.commands.setStateError(new Error(message));
+          this.controls.status.textContent = message;
         } else if (
           event.status.phase === 'ready' &&
           !this.cloudUpdatePending &&
@@ -247,7 +254,12 @@ export default class PlayerGameApplication {
         GameErrors.input(error, { component: 'PlayerGameApplication', operation: 'close' })
       );
     this.beforeUnload = (event) => {
-      if (!this.sheets.library.isSaving && !this.sheets.library.failure && !this.commands.pending)
+      if (
+        !this.sheets.library.isSaving &&
+        !this.sheets.library.failure &&
+        !this.commands.pending &&
+        (!this.commands.canRetry || this.pendingRecovered)
+      )
         return;
       event.preventDefault();
       event.returnValue = '';
@@ -270,7 +282,10 @@ export default class PlayerGameApplication {
           code: status?.error?.code || 'participant-assets-loading',
         });
       this.commands.setStateError(this.readinessError);
-    } else this.commands.setStateError(null);
+    } else {
+      this.commands.setStateError(null);
+      if (this.connection.kind === 'cloud-player') this.gameManager.cloudSaveFeedback?.reconciled();
+    }
   }
 
   _applyArtwork(state, { defer = true } = {}) {
@@ -627,7 +642,20 @@ export default class PlayerGameApplication {
     });
   }
 
+  _selectionReady() {
+    if (this.destroyed || this.accessEnded)
+      throw new Error('Player access ended. Reopen current account access before changing views.');
+    if (
+      this.commands.pending ||
+      this.commands.canRetry ||
+      this.sheets.library.isSaving ||
+      this.connection.store?.pending
+    )
+      throw new Error('Recover the original command online before changing player views.');
+  }
+
   async chooseObserver(id) {
+    this._selectionReady();
     if (!this.state.observers.some((observer) => observer.id === id))
       throw new Error('This character is not an available player observer');
     const version = ++this.selectionVersion;
@@ -643,6 +671,7 @@ export default class PlayerGameApplication {
   }
 
   async chooseArea(id) {
+    this._selectionReady();
     if (this.placementGrantId)
       throw new Error('The arrival preview is restricted to the DM-granted destination area');
     if (!this.state.maps.some((map) => map.id === id))
@@ -664,6 +693,7 @@ export default class PlayerGameApplication {
   }
 
   async chooseArrivalGrant(id) {
+    this._selectionReady();
     const grant = this.state.placementGrants?.find((entry) => entry.id === id);
     if (!grant) throw new Error('Ask the DM for an authorized arrival grant for this character');
     const version = ++this.selectionVersion;
@@ -679,17 +709,60 @@ export default class PlayerGameApplication {
   }
 
   async reconnect() {
+    if (this.commands.canRetry && !this.pendingRecovered)
+      throw new Error('Recover the original command online before reopening the live game.');
     await this.commands.idle;
     await this.sheets.library.flush();
     location.reload();
   }
 
   async signOut() {
+    if (this.commands.canRetry && !this.pendingRecovered)
+      throw new Error('Recover the original command online before signing out.');
     await this.commands.idle;
     await this.sheets.library.flush();
     if (!this.accessEnded || this.connection.kind === 'cloud-player')
       await this.connection.logout();
     location.reload();
+  }
+
+  async recoverPendingCommand() {
+    if (!this.accessEnded) return this.commands.retry();
+    const connection = this.connection;
+    const original = this.commands.lastRequest;
+    const account = connection.store?.connection.account;
+    if (
+      connection.kind !== 'cloud-player' ||
+      !this.commands.canRetry ||
+      this.pendingRecovered ||
+      !original
+    )
+      throw new Error('There is no original unconfirmed cloud command to recover.');
+    if (account.identity()?.uid !== connection.access.uid)
+      throw Object.assign(new Error('Sign in to the original account before command recovery.'), {
+        status: 409,
+        code: 'account-changed',
+      });
+    await account.tokenContext(true);
+    const result = await connection.store.retryWorldCommand();
+    const { presentation, ...receipt } = result;
+    if (
+      !isCloudWorldCommandReceipt(receipt) ||
+      receipt.commandId !== original.command.commandId ||
+      receipt.campaignId !== original.campaignId ||
+      receipt.sessionId !== connection.sessionId ||
+      receipt.kind !== original.command.kind ||
+      (receipt.outcome === 'duplicate' && presentation !== null) ||
+      receipt.access.uid !== connection.access.uid ||
+      receipt.access.seatId !== connection.access.seatId ||
+      receipt.access.accessGeneration !== connection.access.accessGeneration
+    )
+      throw new Error('The original cloud command receipt could not be verified.');
+    this.pendingRecovered = true;
+    this.controls.retry.hidden = true;
+    this.controls.status.textContent =
+      'Original command confirmed. Reopen the current authorized live game before editing.';
+    return result;
   }
 
   async fail(error, { endAccess = false } = {}) {
@@ -702,7 +775,8 @@ export default class PlayerGameApplication {
       this.unsubscribe?.();
       closing = this.connection.close();
       this.sheets.destroy();
-      this.controls.endAccess();
+      this.controls.endAccess({ clearPrivate: this.connection.kind === 'cloud-player' });
+      if (this.connection.kind === 'cloud-player') this.state = null;
       this.observerId = null;
       this.mapId = null;
     }

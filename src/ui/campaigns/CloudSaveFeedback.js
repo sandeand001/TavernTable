@@ -1,4 +1,6 @@
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../utils/error/ErrorHandler.js';
+import { CloudAccountError } from '../../campaigns/CloudAccount.js';
+import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 
 const INPUT_EVENTS = [
   'pointerdown',
@@ -23,11 +25,14 @@ const PHASE_MESSAGES = Object.freeze({
 });
 
 export default class CloudSaveFeedback {
-  constructor({ store }) {
+  constructor({ store, hasUnconfirmedCommand = () => false, retryUnconfirmedCommand = null }) {
     if (store?.storageInfo?.kind !== 'cloud' || typeof store.subscribeSave !== 'function')
       throw new Error('Cloud save feedback requires an explicit cloud campaign store');
     this.store = store;
+    this.hasUnconfirmedCommand = hasUnconfirmedCommand;
     this.blocked = false;
+    this.recoveryRequired = false;
+    this.identityInvalidated = false;
     this.exiting = false;
     this.previousInert = new Map();
     this.root = document.createElement('section');
@@ -44,14 +49,28 @@ export default class CloudSaveFeedback {
     this.status = this.root.querySelector('output');
     this.retry = this.root.querySelector('button');
     this.reopen = this.root.querySelector('[data-save-reopen]');
-    this.reopen.addEventListener('click', () => window.location.reload());
+    this.reopen.addEventListener('click', () => {
+      if (this.store.pending || this.hasUnconfirmedCommand()) return;
+      window.location.reload();
+    });
     this.retry.addEventListener('click', () => {
-      void this.store.retryPending().catch((error) => {
-        new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
-          component: 'CloudSaveFeedback',
-          operation: 'retrySave',
+      void Promise.resolve()
+        .then(() => {
+          if (this.state.phase === 'uncertain') return this.store.retryPending();
+          if (this.hasUnconfirmedCommand() && typeof retryUnconfirmedCommand === 'function')
+            return retryUnconfirmedCommand();
+          throw new Error('There is no original unconfirmed cloud command to recover.');
+        })
+        .then(() => {
+          this.recoveryConfirmed = true;
+          this.render();
+        })
+        .catch((error) => {
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            component: 'CloudSaveFeedback',
+            operation: 'retrySave',
+          });
         });
-      });
     });
     this.blockInput = (event) => {
       if (!this.blocked || (event.target instanceof Node && this.root.contains(event.target)))
@@ -66,7 +85,8 @@ export default class CloudSaveFeedback {
     this.leaving = (event) => {
       if (
         !['saving', 'uncertain', 'failed'].includes(this.state?.phase) &&
-        !['saving', 'error'].includes(this.autosaveState?.state)
+        !['saving', 'error'].includes(this.autosaveState?.state) &&
+        !this.hasUnconfirmedCommand()
       )
         return;
       event.preventDefault();
@@ -82,6 +102,9 @@ export default class CloudSaveFeedback {
     this.stopSave = this.store.subscribeSave((state) => {
       this.state = state;
       this.render();
+    });
+    this.stopPrivateInvalidation = this.store.connection?.subscribePrivateInvalidation?.((uid) => {
+      if (uid === this.store.uid) this.invalidateIdentity();
     });
     for (const type of INPUT_EVENTS)
       window.addEventListener(type, this.blockInput, { capture: true, passive: false });
@@ -117,6 +140,20 @@ export default class CloudSaveFeedback {
     }
   }
 
+  invalidateIdentity() {
+    this.identityInvalidated = true;
+    this.recoveryRequired = true;
+    for (const element of document.body.children) if (element !== this.root) element.hidden = true;
+    this.root.hidden = false;
+    this.render();
+  }
+
+  reconciled() {
+    if (this.identityInvalidated || navigator.onLine === false || this.store.pending) return;
+    this.recoveryRequired = false;
+    this.render();
+  }
+
   render() {
     let phase = this.state.phase;
     if (!['saving', 'uncertain', 'failed'].includes(phase) && this.autosaveState)
@@ -128,6 +165,36 @@ export default class CloudSaveFeedback {
             : this.autosaveState.state;
     if (this.exiting && ['idle', 'saved'].includes(phase)) phase = 'exiting';
     const offline = navigator.onLine === false;
+    const commandPending = this.hasUnconfirmedCommand();
+    if (offline) this.recoveryRequired = true;
+    let originalIdentity = true;
+    let identityUnavailable = false;
+    if (this.identityInvalidated) {
+      try {
+        const identity = this.store.connection.account.identity();
+        originalIdentity = identity?.uid === this.store.uid && identity.emailVerified === true;
+      } catch (error) {
+        if (!(error instanceof CloudAccountError)) {
+          logger.log(
+            LOG_LEVEL.ERROR,
+            'Cloud recovery identity checking failed',
+            LOG_CATEGORY.SYSTEM,
+            {
+              component: 'CloudSaveFeedback',
+              code: 'identity-check-failed',
+              kind: error instanceof Error ? 'error' : 'non-error',
+            }
+          );
+          throw error;
+        }
+        logger.log(LOG_LEVEL.WARN, 'Cloud recovery identity is unavailable', LOG_CATEGORY.SYSTEM, {
+          component: 'CloudSaveFeedback',
+          code: 'identity-unavailable',
+        });
+        identityUnavailable = true;
+        originalIdentity = false;
+      }
+    }
     this.status.dataset.saveState = offline ? 'offline' : phase === 'checkpoint' ? 'saving' : phase;
     let text = PHASE_MESSAGES[phase];
     if (phase === 'uncertain')
@@ -140,23 +207,43 @@ export default class CloudSaveFeedback {
     }
     if (typeof text !== 'string') throw new Error('Unsupported cloud save feedback state');
     if (offline) {
-      if (['saving', 'uncertain'].includes(phase))
+      if (['saving', 'uncertain'].includes(phase) || commandPending)
         text =
           'Offline. Cloud save unconfirmed. Keep this tab open; reconnect and retry the same save.';
       else if (['failed', 'checkpoint'].includes(phase))
         text = 'Offline. Earlier changes were not saved. Reconnect before continuing.';
       else text = 'Offline. Cloud editing paused. No offline change was queued.';
     }
+    if (identityUnavailable)
+      text =
+        'The original account could not be verified. Keep this tab open and restore verified account access before recovering the original save.';
+    else if (!originalIdentity)
+      text =
+        'Account changed. The private view is cleared. Sign in to the original account in another tab to recover any unconfirmed save.';
+    else if (this.recoveryRequired && commandPending && !offline)
+      text =
+        'The original command is unconfirmed. Keep this tab open for current online state and same-command recovery.';
+    else if (this.recoveryRequired && !offline && !this.store.pending)
+      text =
+        phase === 'saved' || this.recoveryConfirmed
+          ? 'Original save confirmed. Reopen the current cloud version before editing.'
+          : 'Reopen the current cloud version and verify account access before editing.';
     this.status.textContent = text;
-    this.retry.hidden = this.state.phase !== 'uncertain';
-    this.retry.disabled = offline;
-    this.reopen.hidden = phase !== 'failed';
-    this.reopen.disabled = offline;
+    this.retry.hidden = this.state.phase !== 'uncertain' && !commandPending;
+    this.retry.disabled = offline || !originalIdentity;
+    this.reopen.hidden =
+      commandPending || (phase !== 'failed' && !(this.recoveryRequired && !this.store.pending));
+    this.reopen.disabled = offline || !originalIdentity || !!this.store.pending || commandPending;
     this.root.setAttribute(
       'aria-busy',
       String(['saving', 'checkpoint', 'loading', 'exiting'].includes(phase))
     );
-    this.setBlocked(this.exiting || offline || ['saving', 'uncertain', 'failed'].includes(phase));
+    this.setBlocked(
+      this.exiting ||
+        offline ||
+        this.recoveryRequired ||
+        ['saving', 'uncertain', 'failed'].includes(phase)
+    );
   }
 
   setBlocked(blocked) {
@@ -188,6 +275,7 @@ export default class CloudSaveFeedback {
   dispose() {
     this.stopSave?.();
     this.stopAutosave?.();
+    this.stopPrivateInvalidation?.();
     this.stopSave = null;
     this.stopAutosave = null;
     this.setBlocked(false);

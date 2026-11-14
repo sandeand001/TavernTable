@@ -39,7 +39,12 @@ const { openDatabase, requestResult, transact } = require('../../src/storage/ind
 
 async function fixture(
   t,
-  { ruleset = '2014', memberFetch = globalThis.fetch, cleanup = false } = {}
+  {
+    ruleset = '2014',
+    memberFetch = globalThis.fetch,
+    cleanup = false,
+    participantCacheFactory,
+  } = {}
 ) {
   const runtime = await createEmulatorRuntime();
   const identities = [];
@@ -112,6 +117,7 @@ async function fixture(
       connection: new CloudAccountConnection({
         account: new CloudAccount({ auth: identity.auth, sdk }),
         fetch,
+        participantCacheFactory,
         baseURL: api.origin + '/',
         runtime: {
           version: 1,
@@ -400,6 +406,8 @@ function participantNetwork() {
   const requests = [];
   const graphics = [];
   const images = [];
+  const streams = new Set();
+  let offline = false;
   let hold = null;
   const graphic = (snapshot) => {
     const assets = snapshot?.state?.publicScene?.assets;
@@ -415,6 +423,13 @@ function participantNetwork() {
     requests,
     graphics,
     images,
+    setOffline(value) {
+      offline = value;
+      if (!offline) return;
+      for (const controller of streams)
+        controller.error(new TypeError('Synthetic participant network loss'));
+      streams.clear();
+    },
     holdNextState() {
       let entered;
       let release;
@@ -438,6 +453,7 @@ function participantNetwork() {
         seatId: options.headers['X-TavernTable-Seat'],
         accessGeneration: options.headers['X-TavernTable-Access-Generation'],
       });
+      if (offline) throw new TypeError('Synthetic participant network is offline');
       const response = await fetch(url, options);
       if (!response.ok) return response;
       if (pathname.endsWith('/participant-state')) {
@@ -459,6 +475,9 @@ function participantNetwork() {
         let buffered = '';
         const stream = response.body.pipeThrough(
           new TransformStream({
+            start(controller) {
+              streams.add(controller);
+            },
             transform(chunk, controller) {
               buffered += decoder.decode(chunk, { stream: true });
               let end;
@@ -471,6 +490,9 @@ function participantNetwork() {
               }
               controller.enqueue(chunk);
             },
+            flush(controller) {
+              streams.delete(controller);
+            },
           })
         );
         return new Response(stream, { headers: response.headers, status: response.status });
@@ -480,9 +502,8 @@ function participantNetwork() {
   };
 }
 
-async function cleanParticipantFixture(f, storage, connections, extraAccounts = []) {
-  for (const connection of connections) await connection.close();
-  const cache = new CloudParticipantCache({ ...storage, uid: f.member.uid });
+async function clearParticipantStorage(storage, uid) {
+  const cache = new CloudParticipantCache({ ...storage, uid });
   try {
     await cache.clear();
     assert.equal((await cache.getUsage()).bytes, 0);
@@ -496,6 +517,11 @@ async function cleanParticipantFixture(f, storage, connections, extraAccounts = 
       request.onerror = () => reject(request.error);
     });
   storage.entries.clear();
+}
+
+async function cleanParticipantFixture(f, storage, connections, extraAccounts = []) {
+  for (const connection of connections) await connection.close();
+  await clearParticipantStorage(storage, f.member.uid);
   const prefix = `campaigns/${f.campaign.id}/`;
   const [files] = await f.runtime.bucket.getFiles({ prefix, versions: true });
   for (const file of files) await file.delete({ ignoreNotFound: true });
@@ -540,6 +566,244 @@ async function cleanParticipantFixture(f, storage, connections, extraAccounts = 
 }
 
 test(
+  'private SDK lifecycle purges logout and switched UID caches while retaining only the original unacknowledged edit for online receipt recovery',
+  { timeout: 120000 },
+  async (t) => {
+    const storage = participantBrowserStorage();
+    const network = participantNetwork();
+    const bodies = [];
+    const worldBodies = [];
+    let loseReply = false;
+    let loseWorldReply = false;
+    const f = await fixture(t, {
+      participantCacheFactory: ({ uid }) => new CloudParticipantCache({ ...storage, uid }),
+      memberFetch: async (url, options) => {
+        const assigned = url.endsWith('/assigned-characters') && options.method === 'POST';
+        const world = url.endsWith('/world-commands') && options.method === 'POST';
+        if (assigned) bodies.push(options.body);
+        if (world) worldBodies.push(options.body);
+        const response = await network.fetch(url, options);
+        if ((assigned && loseReply) || (world && loseWorldReply)) {
+          loseReply = false;
+          loseWorldReply = false;
+          assert.equal(response.status, 200);
+          await response.clone().json();
+          throw new TypeError('Synthetic lost reply after actual assigned publication');
+        }
+        return response;
+      },
+    });
+    const connections = [];
+    const extraAccounts = [];
+    const create = () => {
+      const connection = new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+        cache: new CloudParticipantCache({ ...storage, uid: f.member.uid }),
+      });
+      connections.push(connection);
+      return connection;
+    };
+    const checking = new CloudParticipantCache({ ...storage, uid: f.member.uid });
+    let foreignCache;
+    let pending;
+    let stopSave;
+    try {
+      const bytes = createCanvas(2, 2).toBuffer('image/png');
+      await f.library.edit(f.hero, {
+        portraitImage: 'data:image/png;base64,' + bytes.toString('base64'),
+      });
+      const connection = create();
+      await connection.open();
+      const cached = await connection.cache.readCheckpoint(
+        connection.access,
+        connection.snapshot.viewKey
+      );
+      const reference = cached.manifest.images.find((slot) => slot.source === 'actor').reference;
+      const historical = structuredClone(cached);
+      historical.viewKey = 'c'.repeat(64);
+      historical.access.seatId = randomUUID();
+      historical.access.accessGeneration++;
+      await connection.cache.writeCheckpoint(historical);
+      await connection.cache.writeAsset(historical, reference, bytes);
+      const other = await f.account();
+      extraAccounts.push(other);
+      const foreign = structuredClone(cached);
+      foreign.access.uid = other.uid;
+      foreignCache = new CloudParticipantCache({ ...storage, uid: other.uid });
+      await foreignCache.writeCheckpoint(foreign);
+      await foreignCache.writeAsset(foreign, reference, bytes);
+
+      const assigned = await f.member.client.readAssignedCharacters(f.campaign.id, f.grant.access);
+      const sheet = new CampaignCharacters({
+        ...assigned,
+        catalog: f.catalog,
+        store: {
+          commitCharacters: (id, change) =>
+            f.member.client.commitAssignedCharacters(id, change, f.grant.access),
+        },
+      });
+      let unconfirmed;
+      const uncertain = new Promise((resolve) => {
+        unconfirmed = resolve;
+      });
+      stopSave = f.member.client.subscribeSave((state) => {
+        if (state.phase === 'uncertain') unconfirmed();
+      });
+      loseReply = true;
+      let acknowledged = false;
+      pending = sheet.edit(f.hero, { notes: 'Retained only for the original UID' });
+      void pending.then(() => {
+        acknowledged = true;
+      });
+      await uncertain;
+      assert.equal(acknowledged, false);
+      let disconnected;
+      const lost = new Promise((resolve) => {
+        disconnected = resolve;
+      });
+      connection.subscribe((event) => {
+        if (event.type === 'live-status' && event.status.phase === 'reconnecting') disconnected();
+      });
+      network.setOffline(true);
+      await lost;
+      assert.equal(connection.commandReady, false);
+      await assert.rejects(connection.call('playerCommand', [f.campaign.id, { kind: 'move' }]), {
+        code: 'world-state-unavailable',
+      });
+      await assert.rejects(
+        connection.call('playerCommit', [
+          f.campaign.id,
+          { ruleset: '2014', revision: assigned.revision, records: [] },
+        ]),
+        { code: 'world-state-unavailable' }
+      );
+      await sdk.signInWithCustomToken(
+        f.member.auth,
+        await f.runtime.auth.createCustomToken(other.uid)
+      );
+      f.member.client.connection.account.identity();
+      await f.member.client.connection.privateStateSettled;
+      await connection.close();
+      assert.equal((await checking.getUsage()).bytes, 0);
+      assert.equal(await checking.readCheckpointCandidate(cached.access), null);
+      assert.equal(await checking.readAuthorizedAsset(cached, reference), null);
+      assert.equal(await checking.readAuthorizedAsset(historical, reference), null);
+      assert.deepEqual(await foreignCache.readCheckpoint(foreign.access, foreign.viewKey), foreign);
+      assert.deepEqual(Buffer.from(await foreignCache.readAsset(foreign, reference)), bytes);
+      assert.throws(() => connection.readLiveState());
+      await assert.rejects(f.member.client.retryPending(), { code: 'account-changed' });
+      assert.equal(f.member.client.saveState.phase, 'uncertain');
+      assert.equal(acknowledged, false);
+      assert.equal(bodies.length, 1);
+      assert.equal(
+        network.requests.filter(({ pathname }) => pathname.endsWith('/world-commands')).length,
+        0
+      );
+
+      network.setOffline(false);
+      await sdk.signInWithCustomToken(
+        f.member.auth,
+        await f.runtime.auth.createCustomToken(f.member.uid)
+      );
+      f.member.client.connection.account.identity();
+      await f.member.client.connection.account.tokenContext(true);
+      await f.member.client.retryPending();
+      await pending;
+      assert.equal(acknowledged, true);
+      assert.equal(bodies.length, 2);
+      assert.equal(bodies[0], bodies[1]);
+      const canonical = await f.owner.client.readCharacters(f.campaign.id);
+      assert.equal(canonical.revision, assigned.revision + 1);
+      assert.equal(
+        new CampaignCharacters({ ...canonical, catalog: f.catalog, store: f.owner.client }).get(
+          f.hero
+        ).notes,
+        'Retained only for the original UID'
+      );
+      const rejoined = create();
+      await rejoined.open();
+      assert.equal(rejoined.commandReady, true);
+      const current = await rejoined.cache.readCheckpoint(
+        rejoined.access,
+        rejoined.snapshot.viewKey
+      );
+      const worldRequest = playerMove(f, current);
+      loseWorldReply = true;
+      await assert.rejects(rejoined.call('playerCommand', [f.campaign.id, worldRequest.command]), {
+        code: 'cloud-unavailable',
+      });
+      assert.equal(worldBodies.length, 1);
+      network.setOffline(true);
+      await sdk.signInWithCustomToken(
+        f.member.auth,
+        await f.runtime.auth.createCustomToken(other.uid)
+      );
+      f.member.client.connection.account.identity();
+      await f.member.client.connection.privateStateSettled;
+      await rejoined.close();
+      assert.equal((await checking.getUsage()).bytes, 0);
+      await assert.rejects(f.member.client.retryWorldCommand(), { code: 'account-changed' });
+      assert.equal(worldBodies.length, 1);
+      network.setOffline(false);
+      await sdk.signInWithCustomToken(
+        f.member.auth,
+        await f.runtime.auth.createCustomToken(f.member.uid)
+      );
+      f.member.client.connection.account.identity();
+      await f.member.client.connection.account.tokenContext(true);
+      const worldReceipt = await f.member.client.retryWorldCommand();
+      assert.equal(worldReceipt.outcome, 'duplicate');
+      assert.equal(worldReceipt.presentation, null);
+      assert.equal(worldBodies.length, 2);
+      assert.equal(worldBodies[0], worldBodies[1]);
+      assert.equal(rejoined.commandReady, false);
+      assert.throws(() => rejoined.readLiveState());
+      const acknowledgedCanonical = await f.owner.client.readCharacters(f.campaign.id);
+      assert.equal(acknowledgedCanonical.sceneRevision, canonical.sceneRevision + 1);
+      assert.equal(acknowledgedCanonical.revision, canonical.revision);
+      assert.deepEqual(acknowledgedCanonical.records, canonical.records);
+      const finalConnection = create();
+      await finalConnection.open();
+      await finalConnection.logout();
+      assert.equal(f.member.client.connection.account.identity(), null);
+      assert.equal((await checking.getUsage()).bytes, 0);
+      const preserved = await f.owner.client.readCharacters(f.campaign.id);
+      assert.deepEqual(preserved, acknowledgedCanonical);
+      t.diagnostic(
+        JSON.stringify({
+          privateBytesAfterSwitch: 0,
+          privateBytesAfterLogout: 0,
+          originalCommandAttempts: bodies.length,
+          originalWorldCommandAttempts: worldBodies.length,
+          canonicalRevisionIncrements: 1,
+          canonicalSceneIncrements: 1,
+          offlineWorldCommands: 0,
+        })
+      );
+    } finally {
+      network.setOffline(false);
+      stopSave?.();
+      if (f.member.client.pending || f.member.client.pendingWorld) {
+        await sdk.signInWithCustomToken(
+          f.member.auth,
+          await f.runtime.auth.createCustomToken(f.member.uid)
+        );
+        f.member.client.connection.account.identity();
+        if (f.member.client.pending) await f.member.client.retryPending();
+        if (f.member.client.pendingWorld) await f.member.client.retryWorldCommand();
+        await pending;
+      }
+      checking.close();
+      foreignCache?.close();
+      await cleanParticipantFixture(f, storage, connections, extraAccounts);
+    }
+  }
+);
+
+test(
   'authoritative cold and warm SDK rejoin downloads zero unchanged graphic or private image bodies and recovers a corrupt graphic candidate online',
   { timeout: 120000 },
   async (t) => {
@@ -570,7 +834,14 @@ test(
       await f.library.edit(hidden, {
         portraitImage: image(createCanvas(4, 2).toBuffer('image/png')),
       });
-      const cold = open();
+      await f.owner.client.assignCharacter(f.campaign.id, {
+        seatId: f.grant.access.seatId,
+        accessGeneration: f.grant.access.accessGeneration,
+        characterId: reserve,
+        assigned: true,
+      });
+      let current = await f.member.client.getParticipantAccess(f.campaign.id);
+      const cold = open(current.access);
       const coldState = await cold.open();
       assert.equal(cold.commandReady, true);
       assert.equal(network.graphics.length, 1);
@@ -585,14 +856,9 @@ test(
       assert.equal(coldCheckpoint.state.publicScene.actors[0].portraitImage, null);
       assert.deepEqual(coldCheckpoint.state.publicScene.updates, []);
       await cold.close();
-      await f.owner.client.assignCharacter(f.campaign.id, {
-        seatId: f.grant.access.seatId,
-        accessGeneration: f.grant.access.accessGeneration,
-        characterId: reserve,
-        assigned: true,
-      });
       await f.library.edit(reserve, { notes: 'Fresh authorized reserve revision' });
-      const current = await f.member.client.getParticipantAccess(f.campaign.id);
+      current = await f.member.client.getParticipantAccess(f.campaign.id);
+      assert.deepEqual(current.access, coldCheckpoint.access);
       const head = f.runtime.firestore.collection('campaigns').doc(f.campaign.id);
       const before = (await head.get()).data();
       const campaign = await f.owner.client.get(f.campaign.id);
@@ -620,7 +886,7 @@ test(
       assert.equal(warm.snapshot.generation, before.generation);
       assert.equal(warmState.revision, campaign.charactersRevision);
       assert.equal(warmState.sceneRevision, campaign.sceneRevision);
-      assert.notEqual(warm.snapshot.viewKey, coldCheckpoint.viewKey);
+      assert.equal(warm.snapshot.viewKey, coldCheckpoint.viewKey);
       assert.equal(warmState.publicScene.assetKey, coldState.publicScene.assetKey);
       assert.deepEqual(warmState.publicScene.updates, []);
       assert.deepEqual(warmState.gameplay, coldState.gameplay);
@@ -824,6 +1090,13 @@ test(
       const denied = create();
       await assert.rejects(denied.open(), { code: 'campaign-access-changed' });
       assert.equal(denied.commandReady, false);
+      await denied.close();
+      const purged = new CloudParticipantCache({ ...storage, uid: f.member.uid });
+      try {
+        assert.equal((await purged.getUsage()).bytes, 0);
+      } finally {
+        purged.close();
+      }
       const ended = create({ access: current.access, sessionId: randomUUID() });
       await assert.rejects(ended.open(), { code: 'live-session-changed' });
       assert.equal(ended.commandReady, false);
@@ -865,16 +1138,16 @@ test(
         network.requests
           .slice(hintStart.requests)
           .filter(({ pathname }) => pathname.endsWith('/participant-state')).length,
-        2
+        1
       );
       assert.deepEqual(
         {
           graphics: network.graphics.length - hintStart.graphics,
           images: network.images.length - hintStart.images,
         },
-        { graphics: 1, images: 0 }
+        { graphics: 1, images: 1 }
       );
-      measured.push({ kind: 'observer-hint-rejected', graphics: 1, images: 0 });
+      measured.push({ kind: 'membership-scope-purged', graphics: 1, images: 1 });
       assert.equal(
         (await f.owner.client.getLiveSession(f.campaign.id)).sessionId,
         f.live.sessionId
@@ -957,6 +1230,8 @@ test(
   { timeout: 60000 },
   async (t) => {
     const f = await fixture(t, { cleanup: true });
+    const storage = participantBrowserStorage();
+    t.after(() => clearParticipantStorage(storage, f.member.uid));
     const native = gameplayRuntime(f.scene, f.library);
     await native.combat.startTurn(native.actors.find((actor) => actor.id === 'token-1'));
     const combat = structuredClone(f.scene);
@@ -976,6 +1251,7 @@ test(
         campaignId: f.campaign.id,
         access: f.grant.access,
         sessionId: f.live.sessionId,
+        cache: new CloudParticipantCache({ ...storage, uid: f.member.uid }),
       })
     );
     const initial = await connection.open({ observerTokenId: 'token-1', mapId: 'map-main' });

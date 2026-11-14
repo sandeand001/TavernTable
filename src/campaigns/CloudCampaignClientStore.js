@@ -102,12 +102,27 @@ export default class CloudCampaignClientStore {
     this.pending = null;
     this.pendingBackup = null;
     this.pendingLive = null;
+    this.pendingWorld = null;
     this.saveListeners = new Set();
     this.streams = new Set();
     this.liveConnections = new Set();
     this.ownerWorlds = new Map();
     this.issuedCommands = new Set();
     this.saveState = Object.freeze({ phase: 'idle', error: null });
+    this.reconciliationRequired = globalThis.navigator?.onLine === false;
+    this.stopPrivateInvalidation = connection.subscribePrivateInvalidation?.((invalidatedUid) => {
+      if (invalidatedUid === this.uid) this.reconciliationRequired = true;
+    });
+    const window = globalThis.window;
+    const offline = () => {
+      this.reconciliationRequired = true;
+    };
+    this.stopConnectivity = () => {
+      window?.removeEventListener?.('offline', offline);
+      window?.removeEventListener?.('pagehide', this.stopConnectivity);
+    };
+    window?.addEventListener?.('offline', offline);
+    window?.addEventListener?.('pagehide', this.stopConnectivity, { once: true });
     this.storageInfo = Object.freeze({
       kind: 'cloud',
       label: 'Cloud-authoritative storage. Online access is required.',
@@ -136,6 +151,28 @@ export default class CloudCampaignClientStore {
         409,
         'account-changed',
         'This workspace belongs to another signed-in account. Reopen its campaigns.'
+      );
+  }
+
+  _online() {
+    if (globalThis.navigator?.onLine === false)
+      throw failure(
+        503,
+        'cloud-offline',
+        'Cloud editing requires an online connection. No change was queued.'
+      );
+  }
+
+  _editing() {
+    this._identity();
+    this._online();
+    if (this.pendingWorld)
+      throw failure(409, 'pending-cloud-command', 'Recover the original world command first.');
+    if (this.reconciliationRequired)
+      throw failure(
+        503,
+        'cloud-reconciliation-required',
+        'Reauthenticate and reopen the current cloud state before another change.'
       );
   }
 
@@ -525,12 +562,7 @@ export default class CloudCampaignClientStore {
         'pending-cloud-command',
         'Resolve the pending cloud save before making another change.'
       );
-    if (globalThis.navigator?.onLine === false)
-      throw failure(
-        503,
-        'cloud-offline',
-        'Cloud editing requires an online connection. No change was queued.'
-      );
+    this._editing();
     const input = operation === 'import' ? value : copy(value);
     const ownerWorld = ['scene', 'characters'].includes(operation)
       ? this.ownerWorlds.get(id)
@@ -658,7 +690,6 @@ export default class CloudCampaignClientStore {
             'email-verification-required',
             'invalid-identity',
             'authentication-required',
-            'account-changed',
           ].includes(error.code);
         const freshLiveDenial =
           item.body.sessionId !== undefined &&
@@ -845,6 +876,8 @@ export default class CloudCampaignClientStore {
         : typeof result.scene !== 'string' || !result.scene)
     )
       throw invalidResponse();
+    this._identity();
+    if (!this.pending && !this.pendingWorld) this.reconciliationRequired = false;
     return {
       campaign,
       revision: result.revision,
@@ -889,10 +922,12 @@ export default class CloudCampaignClientStore {
       result.sceneSavedAt !== campaign.sceneSavedAt
     )
       throw invalidResponse();
+    this._identity();
+    if (!this.pending && !this.pendingWorld) this.reconciliationRequired = false;
     return { ...copy(result), campaign };
   }
 
-  async readParticipantSnapshot(id, view, expected, { cachedAssets = null } = {}) {
+  async readParticipantSnapshot(id, view, expected, { cachedAssets = null, signal = null } = {}) {
     if (
       !isCloudAccessScope(expected) ||
       expected.uid !== this.uid ||
@@ -912,8 +947,17 @@ export default class CloudCampaignClientStore {
       method: 'POST',
       body: input,
       accessScope: scope,
+      signal,
     });
-    return this._verifiedParticipantSnapshot(id, result, input, scope, cachedAssets);
+    const snapshot = await this._verifiedParticipantSnapshot(
+      id,
+      result,
+      input,
+      scope,
+      cachedAssets
+    );
+    if (!this.pending && !this.pendingWorld) this.reconciliationRequired = false;
+    return snapshot;
   }
 
   async readParticipantAsset(id, snapshot, reference, { cachedAssets = null, signal = null } = {}) {
@@ -1178,6 +1222,12 @@ export default class CloudCampaignClientStore {
           }
           this._identity();
           if (ended) return { done: true, value: undefined };
+          if (
+            !this.pending &&
+            !this.pendingWorld &&
+            ['checkpoint', 'resync', 'owner-checkpoint', 'owner-resync'].includes(event.kind)
+          )
+            this.reconciliationRequired = false;
           return { done: false, value: copy(event) };
         } catch (error) {
           await close();
@@ -1234,6 +1284,7 @@ export default class CloudCampaignClientStore {
 
   async commitWorldCommand(id, request, expected) {
     this._identity();
+    this._online();
     if (
       !isCloudAccessScope(expected) ||
       expected.uid !== this.uid ||
@@ -1253,6 +1304,64 @@ export default class CloudCampaignClientStore {
     const scope = copy(expected);
     const { validatePlayerCommand } = await import('./PlayerCommandProtocol.js');
     validatePlayerCommand(input.command);
+    this._identity();
+    this._online();
+    const previous = this.pendingWorld;
+    if (
+      previous &&
+      (previous.id !== id ||
+        JSON.stringify(previous.input) !== JSON.stringify(input) ||
+        JSON.stringify(previous.scope) !== JSON.stringify(scope))
+    )
+      throw failure(
+        409,
+        'pending-cloud-command',
+        'Recover the original unconfirmed world command before another change.'
+      );
+    if (!previous) this._editing();
+    const item = previous ?? { id, input, scope, error: null, promise: null };
+    this.pendingWorld = item;
+    return this._worldAttempt(item);
+  }
+
+  async retryWorldCommand() {
+    this._identity();
+    this._online();
+    const item = this.pendingWorld;
+    if (!item)
+      throw failure(
+        400,
+        'no-pending-cloud-command',
+        'There is no original world command to recover.'
+      );
+    return this.commitWorldCommand(item.id, item.input, item.scope);
+  }
+
+  _worldAttempt(item) {
+    if (item.promise) return item.promise;
+    item.promise = this._worldReceipt(item)
+      .then((result) => {
+        this._identity();
+        this.pendingWorld = null;
+        return result;
+      })
+      .catch((error) => {
+        if (
+          item.error === null &&
+          error.code !== 'account-changed' &&
+          [400, 401, 403, 404, 409, 413].includes(error.status)
+        )
+          this.pendingWorld = null;
+        else item.error = error;
+        throw error;
+      })
+      .finally(() => {
+        item.promise = null;
+      });
+    return item.promise;
+  }
+
+  async _worldReceipt({ id, input, scope }) {
     const result = await this._call(this._resource(id, '/world-commands'), {
       method: 'POST',
       body: input,
@@ -1407,6 +1516,7 @@ export default class CloudCampaignClientStore {
         'live-control-pending',
         'Recover the original live-game action before starting another.'
       );
+    this._editing();
     const item = {
       id,
       snapshot: copy(snapshot),
@@ -1425,6 +1535,7 @@ export default class CloudCampaignClientStore {
 
   retryLiveSession() {
     this._identity();
+    this._online();
     if (this.pendingLive === null)
       throw failure(
         409,
@@ -1515,6 +1626,8 @@ export default class CloudCampaignClientStore {
 
   async backupNow(id) {
     this._identity();
+    if (this.pendingBackup === null) this._editing();
+    else this._online();
     const resource = this._resource(id, '/backups');
     if (this.pendingBackup !== null && this.pendingBackup.id !== id)
       throw failure(
@@ -1661,8 +1774,11 @@ export default class CloudCampaignClientStore {
   }
 
   close() {
-    if (this.pending) throw new Error('Resolve the pending cloud save before closing the campaign');
+    if (this.pending || this.pendingWorld)
+      throw new Error('Resolve the pending cloud save before closing the campaign');
     this.closed = true;
+    this.stopPrivateInvalidation?.();
+    this.stopConnectivity();
     this.ownerWorlds.clear();
     this.issuedCommands.clear();
     this.saveListeners.clear();

@@ -212,6 +212,35 @@ function fixture({ access = scope } = {}) {
   };
 }
 
+test('a browser connectivity change cancels the existing stream and renews identity before a fresh reconciled checkpoint can become ready', async () => {
+  const first = memberCheckpoint();
+  const setup = fixture({ access: first.access });
+  const observation = setup.observe();
+  try {
+    await setup.opened(0);
+    setup.send(0, { kind: 'checkpoint', checkpoint: first });
+    await observation.ready;
+    observation.reconnect();
+    expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(setup.statuses.at(-1).phase).toBe('reconnecting');
+    await setup.opened(1);
+    expect(setup.getIdToken).toHaveBeenCalledWith(true);
+    expect(setup.states).toHaveLength(1);
+    expect(setup.statuses.at(-1).phase).not.toBe('ready');
+    const current = { ...first, generation: first.generation + 1 };
+    setup.send(1, { kind: 'checkpoint', checkpoint: current });
+    for (let turn = 0; turn < 20 && setup.states.length < 2; turn++) await Promise.resolve();
+    expect(setup.states).toHaveLength(2);
+    expect(setup.states[1]).toMatchObject({
+      state: { generation: current.generation },
+      context: { reconcile: true },
+    });
+  } finally {
+    await observation.close();
+    setup.store.close();
+  }
+});
+
 test('network retries back off to a bounded thirty-second ceiling and never mark unverified state ready', async () => {
   jest.useFakeTimers();
   const random = jest.spyOn(Math, 'random').mockReturnValue(0.999999);

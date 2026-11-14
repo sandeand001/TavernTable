@@ -1,53 +1,11 @@
 /** @jest-environment node */
-import { createHash, webcrypto } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import CloudParticipantAssets from '../../../src/campaigns/CloudParticipantAssets.js';
 import CloudParticipantCache, {
   CloudParticipantCacheError,
 } from '../../../src/campaigns/CloudParticipantCache.js';
 import { emptyPlayerScene } from '../../../src/campaigns/PlayerPublicProtocol.js';
-import { testIndexedDB } from '../../helpers/indexedDB.js';
-
-function browserStorage() {
-  const entries = new Map();
-  const held = new Set();
-  let pending = Promise.resolve();
-  return {
-    indexedDB: testIndexedDB(),
-    crypto: webcrypto,
-    cacheStorage: {
-      open: async () => ({
-        put: async (request, response) =>
-          entries.set(request.url, {
-            bytes: new Uint8Array(await response.arrayBuffer()),
-            headers: new Headers(response.headers),
-          }),
-        match: async (request) => {
-          const entry = entries.get(request.url);
-          return entry && new Response(entry.bytes.slice(), { headers: entry.headers });
-        },
-        delete: async (request) => entries.delete(request.url),
-        keys: async () => [...entries.keys()].map((url) => new Request(url)),
-      }),
-    },
-    locks: {
-      request: (name, { mode }, operation) => {
-        const run = async () => {
-          const lock = { name, mode };
-          held.add(lock);
-          try {
-            return await operation(lock);
-          } finally {
-            held.delete(lock);
-          }
-        };
-        if (mode === 'shared') return run();
-        pending = pending.then(run, run);
-        return pending;
-      },
-      query: async () => ({ held: [...held], pending: [] }),
-    },
-  };
-}
+import { participantStorage } from '../../helpers/participantStorage.js';
 
 function fixture() {
   const bytes = Buffer.from('authorized participant image');
@@ -137,6 +95,134 @@ function fixture() {
   });
   return { artwork, store, cache, statuses, current, bytes, reference, snapshot };
 }
+
+test.each(['download', 'cache write'])(
+  'a replaced view fences a delayed %s before purging historical scopes without cancelling its authorized replacement',
+  async (boundary) => {
+    const setup = fixture();
+    await setup.artwork.close();
+    const historical = structuredClone(setup.snapshot);
+    historical.access.accessGeneration++;
+    historical.viewKey = 'c'.repeat(64);
+    const first = structuredClone(setup.snapshot);
+    for (const slot of first.manifest.images) slot.reference.generation = '2';
+    const next = structuredClone(first);
+    next.viewKey = 'b'.repeat(64);
+    next.generation++;
+    let downloaded;
+    let resume;
+    const started = new Promise((resolve) => {
+      downloaded = resolve;
+    });
+    const oldDownload = new Promise((resolve) => {
+      resume = () => resolve(new Uint8Array(setup.bytes));
+    });
+    let holdWrite = false;
+    const cache = new CloudParticipantCache({
+      ...participantStorage({
+        beforePut: async () => {
+          if (!holdWrite) return;
+          holdWrite = false;
+          downloaded();
+          await oldDownload;
+        },
+      }),
+      uid: setup.store.uid,
+    });
+    let oldSignal;
+    setup.store.readParticipantAsset.mockImplementationOnce((_id, _snapshot, _ref, { signal }) => {
+      oldSignal = signal;
+      if (boundary === 'cache write') return new Uint8Array(setup.bytes);
+      downloaded();
+      return oldDownload;
+    });
+    const changed = [];
+    const artwork = new CloudParticipantAssets({
+      store: setup.store,
+      cache,
+      onChanged: () => changed.push(artwork.characterImages('hero')),
+    });
+    let loading;
+    try {
+      await cache.writeCheckpoint(historical);
+      await cache.writeAsset(historical, setup.reference, setup.bytes);
+      await artwork.update(first);
+      expect(await cache.readCheckpoint(historical.access, historical.viewKey)).toBeNull();
+      holdWrite = boundary === 'cache write';
+      loading = artwork.loadCharacterImages('hero');
+      await started;
+      const replacing = artwork.update(next);
+      expect(oldSignal.aborted).toBe(true);
+      if (boundary === 'cache write') resume();
+      await replacing;
+      resume();
+      expect(await loading).toMatchObject({ applied: false });
+      expect(await cache.readCheckpoint(historical.access, historical.viewKey)).toBeNull();
+      expect(await cache.readAsset(historical, setup.reference)).toBeNull();
+      expect(await cache.readCheckpoint(first.access, first.viewKey)).toBeNull();
+      expect(await cache.getUsage()).toMatchObject({ checkpointCount: 1, assetCount: 1 });
+      expect(await cache.readCheckpointCandidate(next.access)).toEqual(next);
+      expect(changed).toHaveLength(1);
+      expect(artwork.characterImages('hero').portraitImage).toBe(
+        `data:image/png;base64,${setup.bytes.toString('base64')}`
+      );
+      expect(setup.store.readParticipantAsset).toHaveBeenCalledTimes(2);
+    } finally {
+      resume?.();
+      await loading;
+      await artwork.close();
+    }
+  }
+);
+
+test('a different browser context purging the campaign fences an already-started download even when its late cache write starts after the purge', async () => {
+  const setup = fixture();
+  await setup.artwork.close();
+  const storage = participantStorage();
+  const context = () => ({ open: storage.indexedDB.open.bind(storage.indexedDB) });
+  const cache = new CloudParticipantCache({
+    ...storage,
+    indexedDB: context(),
+    uid: setup.store.uid,
+  });
+  const peer = new CloudParticipantCache({
+    ...storage,
+    indexedDB: context(),
+    uid: setup.store.uid,
+  });
+  let downloaded;
+  let resume;
+  const started = new Promise((resolve) => {
+    downloaded = resolve;
+  });
+  setup.store.readParticipantAsset.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resume = () => resolve(new Uint8Array(setup.bytes));
+        downloaded();
+      })
+  );
+  const artwork = new CloudParticipantAssets({ store: setup.store, cache });
+  let loading;
+  try {
+    await artwork.update(setup.snapshot);
+    loading = artwork.loadCharacterImages('hero');
+    await started;
+    await peer.clearCampaign(setup.snapshot.access.campaignId);
+    expect(await peer.getUsage()).toMatchObject({ bytes: 0 });
+    resume();
+    expect(await loading).toMatchObject({ applied: false });
+    expect(artwork.characterImages('hero')).toBeNull();
+    expect(await peer.readCheckpointCandidate(setup.snapshot.access)).toBeNull();
+    expect(await peer.readAuthorizedAsset(setup.snapshot, setup.reference)).toBeNull();
+    expect(await peer.getUsage()).toMatchObject({ bytes: 0, assetCount: 0, checkpointCount: 0 });
+  } finally {
+    resume?.();
+    await loading;
+    await artwork.close();
+    peer.close();
+  }
+});
 
 test('denied browser cache storage reports an explicit warning and recovers only from authorized online image bytes', async () => {
   const setup = fixture();
@@ -262,10 +348,10 @@ test('progressive join deduplicates only authorized image references and keeps c
   }
 });
 
-test('cold then warm artwork reuses exact current-manifest bytes across access and view changes but redownloads a changed reference', async () => {
+test('cold then warm artwork reuses exact current-manifest bytes across retained-access views but redownloads a changed reference', async () => {
   const setup = fixture();
   await setup.artwork.close();
-  const options = { ...browserStorage(), uid: setup.store.uid };
+  const options = { ...participantStorage(), uid: setup.store.uid };
   const first = new CloudParticipantAssets({
     store: setup.store,
     cache: new CloudParticipantCache(options),
@@ -276,7 +362,6 @@ test('cold then warm artwork reuses exact current-manifest bytes across access a
   const cache = new CloudParticipantCache(options);
   const artwork = new CloudParticipantAssets({ store: setup.store, cache });
   const current = structuredClone(setup.snapshot);
-  current.access.accessGeneration++;
   current.viewKey = 'b'.repeat(64);
   current.generation++;
   try {
@@ -294,9 +379,10 @@ test('cold then warm artwork reuses exact current-manifest bytes across access a
     await artwork.update(replacement);
     expect(setup.store.readParticipantAsset).toHaveBeenCalledTimes(2);
     expect(setup.store.readParticipantAsset.mock.calls[1][1]).toEqual(replacement);
+    expect(await cache.readCheckpoint(current.access, current.viewKey)).toBeNull();
     expect(
       JSON.parse(
-        (await cache.readCheckpoint(current.access, current.viewKey)).state.records[0].value
+        (await cache.readCheckpoint(replacement.access, replacement.viewKey)).state.records[0].value
       ).portraitImage
     ).toBeNull();
   } finally {

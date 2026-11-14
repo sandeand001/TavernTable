@@ -2,6 +2,9 @@
 import { createHash } from 'node:crypto';
 import CloudAccount from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
+import CloudParticipantCache from '../../../src/campaigns/CloudParticipantCache.js';
+import { emptyPlayerScene } from '../../../src/campaigns/PlayerPublicProtocol.js';
+import { participantStorage } from '../../helpers/participantStorage.js';
 
 const runtime = {
   version: 1,
@@ -59,6 +62,106 @@ function accountFixture() {
     observers,
   };
 }
+
+test('managed logout cancels existing HTTP before purging its cached UID even without an active player view', async () => {
+  const setup = accountFixture();
+  const storage = participantStorage();
+  const campaignId = '00000000-0000-4000-8000-000000000002';
+  const cached = {
+    version: 1,
+    access: {
+      version: 1,
+      uid: setup.user.uid,
+      campaignId,
+      role: 'member',
+      seatId: '00000000-0000-4000-8000-000000000003',
+      accessGeneration: 1,
+    },
+    sessionId: '00000000-0000-4000-8000-000000000004',
+    generation: 1,
+    viewKey: 'a'.repeat(64),
+    state: {
+      campaign: {
+        version: 1,
+        id: campaignId,
+        name: 'Private cached view',
+        ruleset: '2014',
+        coreVersion: '5.1',
+        createdAt: '2026-11-14T00:00:00.000Z',
+        sourcePacks: [{ id: 'srd-2014', version: '5.1', ruleset: '2014', enabled: true }],
+        charactersRevision: 0,
+        sceneRevision: 0,
+        sceneSavedAt: null,
+      },
+      revision: 0,
+      records: [],
+      scene: null,
+      sceneRevision: 0,
+      sceneSavedAt: null,
+      characterIds: [],
+      observerTokenId: null,
+      observers: [],
+      maps: [],
+      location: null,
+      doors: [],
+      gameplay: { version: 1, commands: [], ownedTokens: [], turn: null },
+      publicScene: emptyPlayerScene(),
+    },
+    manifest: { version: 1, images: [] },
+  };
+  const cache = new CloudParticipantCache({ ...storage, uid: setup.user.uid });
+  const checking = new CloudParticipantCache({ ...storage, uid: setup.user.uid });
+  const foreign = structuredClone(cached);
+  foreign.access.uid = 'other-uid';
+  const other = new CloudParticipantCache({ ...storage, uid: foreign.access.uid });
+  let transport;
+  let resume;
+  let requested;
+  const started = new Promise((resolve) => {
+    requested = resolve;
+  });
+  const connection = new CloudAccountConnection({
+    account: setup.account,
+    runtime,
+    baseURL: 'http://127.0.0.1:19410/',
+    participantCacheFactory: ({ uid }) => new CloudParticipantCache({ ...storage, uid }),
+    fetch: (_url, { signal }) => {
+      transport = signal;
+      requested();
+      return new Promise((resolve) => {
+        resume = () => resolve(response({ version: 1, result: { private: 'old-view' } }));
+      });
+    },
+  });
+  let pending;
+  try {
+    await cache.writeCheckpoint(cached);
+    await other.writeCheckpoint(foreign);
+    pending = connection.request('account').then(
+      (value) => ({ value }),
+      (error) => ({ error })
+    );
+    await started;
+    const signingOut = setup.account.signOut();
+    expect(transport.aborted).toBe(true);
+    await signingOut;
+    resume();
+    expect((await pending).error).toMatchObject({ code: 'account-changed' });
+    expect(await cache.getUsage()).toMatchObject({ bytes: 0, checkpointCount: 0 });
+    await expect(cache.readCheckpointCandidate(cached.access)).rejects.toMatchObject({
+      code: 'cache-invalidated',
+    });
+    expect(await checking.readCheckpointCandidate(cached.access)).toBeNull();
+    expect(await other.readCheckpoint(foreign.access, foreign.viewKey)).toEqual(foreign);
+    expect(setup.account.identity()).toBeNull();
+  } finally {
+    resume?.();
+    await pending;
+    cache.close();
+    checking.close();
+    other.close();
+  }
+});
 
 function eventFixture(createResponse) {
   const setup = accountFixture();

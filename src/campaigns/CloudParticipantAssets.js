@@ -55,6 +55,15 @@ export default class CloudParticipantAssets {
     );
   }
 
+  get requiredReady() {
+    return (
+      !this.closed &&
+      !this.cacheInvalidated &&
+      this.snapshot !== null &&
+      this._references(this.snapshot).every((reference) => this.images.has(referenceKey(reference)))
+    );
+  }
+
   _status(status) {
     this.phase = status.phase;
     this.onStatus(
@@ -77,6 +86,16 @@ export default class CloudParticipantAssets {
       if (!(error instanceof CloudParticipantCacheError) || error.recoverable !== true) throw error;
       if (!this._current(version))
         return reading ? null : { stored: false, reason: 'superseded-assets' };
+      if (error.code === 'cache-invalidated') {
+        this.cacheInvalidated = true;
+        this.cacheIssue = {
+          phase: 'unavailable',
+          code: error.code,
+          message: 'This private scope was cleared. Reopen its current online authority.',
+        };
+        this.invalidate();
+        throw error;
+      }
       this.cacheIssue = {
         phase: 'unavailable',
         code: error.code,
@@ -99,7 +118,7 @@ export default class CloudParticipantAssets {
   }
 
   async _prepareCache(version) {
-    if (this.cache === null || this.cacheAllowed === false) return false;
+    if (this.cache === null || this.cacheAllowed === false || this.cacheInvalidated) return false;
     if (this.cacheAllowed === true) return true;
     const usage = await this._cacheCall(version, 'getUsage');
     if (!this._current(version)) return false;
@@ -129,6 +148,16 @@ export default class CloudParticipantAssets {
     }
     this.cacheAllowed = true;
     this.cacheIssue = null;
+    return true;
+  }
+
+  async _prepareAccess(version, access) {
+    if (typeof this.cache?.purgeSupersededAccess !== 'function') return true;
+    const key = JSON.stringify(access);
+    if (key === this.preparedAccess) return true;
+    const result = await this._cacheCall(version, 'purgeSupersededAccess', access);
+    if (!this._current(version) || result?.stored === false) return false;
+    this.preparedAccess = key;
     return true;
   }
 
@@ -185,6 +214,7 @@ export default class CloudParticipantAssets {
 
   async readCheckpointCandidate(access) {
     const version = this.sequence;
+    if (this.purging) await this.purging;
     if (
       !this._current(version) ||
       typeof this.cache?.readCheckpointCandidate !== 'function' ||
@@ -193,6 +223,52 @@ export default class CloudParticipantAssets {
       return null;
     const candidate = await this._cacheCall(version, 'readCheckpointCandidate', access);
     return this._current(version) ? candidate : null;
+  }
+
+  _purgeCache(campaignId, coordinated = this.cacheAllowed === true) {
+    const purge = async () => {
+      if (this.cache === null) return;
+      try {
+        if (!coordinated) {
+          const usage = await this.cache.getUsage();
+          if (usage?.crossTabCoordinated !== true)
+            throw new CloudParticipantCacheError(
+              'cache-unavailable',
+              'Private cache cleanup requires browser-wide coordination.'
+            );
+        }
+        const method = campaignId === null ? 'clear' : 'clearCampaign';
+        if (typeof this.cache[method] !== 'function')
+          throw new CloudParticipantCacheError(
+            'cache-unavailable',
+            'Private cache cleanup is unavailable.'
+          );
+        await this.cache[method](...(campaignId === null ? [] : [campaignId]));
+      } catch (error) {
+        if (!(error instanceof CloudParticipantCacheError) || error.recoverable !== true)
+          throw error;
+        this.cacheAllowed = false;
+        this.cacheIssue = {
+          phase: 'unavailable',
+          code: error.code,
+          message:
+            'Private cache cleanup could not be confirmed. Cached views cannot authorize editing.',
+        };
+        if (!this.closed) this._status({ phase: this.phase });
+      }
+    };
+    const task = purge();
+    this.purging = Promise.all([this.purging, task]).then(() => {});
+    void this.purging.catch(() => {});
+    return this.purging;
+  }
+
+  purge({ all = false, campaignId = this.snapshot?.access.campaignId } = {}) {
+    const coordinated = this.cacheAllowed === true;
+    this.invalidate();
+    return all || campaignId
+      ? this._purgeCache(all ? null : campaignId, coordinated)
+      : Promise.resolve();
   }
 
   update(snapshot, { cachedAssets = null } = {}) {
@@ -223,6 +299,8 @@ export default class CloudParticipantAssets {
       );
       if (scopeKey !== this.scopeKey) this.images.clear();
       else for (const key of this.images.keys()) if (!allowed.has(key)) this.images.delete(key);
+      if (this.snapshot && scopeKey !== this.scopeKey)
+        this._purgeCache(this.snapshot.access.campaignId);
       this.scopeKey = scopeKey;
       this.manifestKey = manifestKey;
       this.task = null;
@@ -280,8 +358,13 @@ export default class CloudParticipantAssets {
     let loaded = references.filter((reference) => this.images.has(referenceKey(reference))).length;
     this._status({ phase: 'loading', loaded, total: references.length });
     try {
+      if (this.purging) await this.purging;
+      if (!this._current(version) || controller.signal.aborted)
+        return { applied: false, reason: 'superseded-assets' };
       const caching =
-        (await this._prepareCache(version)) && (await this._protectView(version, snapshot));
+        (await this._prepareCache(version)) &&
+        (await this._prepareAccess(version, snapshot.access)) &&
+        (await this._protectView(version, snapshot));
       for (const reference of references) {
         if (!this._current(version) || controller.signal.aborted)
           return { applied: false, reason: 'superseded-assets' };
@@ -342,6 +425,8 @@ export default class CloudParticipantAssets {
       this._status({ phase: 'ready', loaded, total: references.length });
       return { applied: true };
     } catch (error) {
+      if (error instanceof CloudParticipantCacheError && error.code === 'cache-invalidated')
+        return { applied: false, reason: 'cache-invalidated' };
       if (!this._current(version) || controller.signal.aborted)
         return { applied: false, reason: 'superseded-assets' };
       logger.log(LOG_LEVEL.ERROR, 'Participant artwork could not be loaded', LOG_CATEGORY.SYSTEM, {
@@ -401,6 +486,7 @@ export default class CloudParticipantAssets {
     this.manifestKey = null;
     this.task = null;
     this.cacheAllowed = null;
+    this.preparedAccess = null;
     void this._releaseView();
     if (!this.closed) this._status({ phase: 'idle', loaded: 0, total: 0 });
   }
@@ -413,11 +499,12 @@ export default class CloudParticipantAssets {
     this.images.clear();
     this.requestedCharacters.clear();
     this.snapshot = null;
-    this.cache?.close?.();
     const released = this._releaseView();
-    this.closing = Promise.all([...this.tasks, ...this.releaseTasks, released]).then(() => {
-      if (this.releaseFailure) throw this.releaseFailure;
-    });
+    this.closing = Promise.all([...this.tasks, ...this.releaseTasks, released, this.purging])
+      .then(() => {
+        if (this.releaseFailure) throw this.releaseFailure;
+      })
+      .finally(() => this.cache?.close?.());
     return this.closing;
   }
 }

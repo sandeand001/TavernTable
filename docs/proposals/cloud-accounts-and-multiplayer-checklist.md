@@ -897,7 +897,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     UX change. Logout-wide purge and ten-client/full-stable acceptance remain
     `M3-09`/`M3-10`; complete shared gameplay remains gated.
 
-- [ ] **M3-09 - Implement logout, access-change, and connection-loss safety.**
+- [x] **M3-09 - Implement logout, access-change, and connection-loss safety.**
   - **Depends:** `M1-05`, `M3-04`, `M3-06`.
   - **Success:** logout/account switching clears private cache state; membership/
     observer changes purge superseded scope and cancel stale work. Connection loss
@@ -906,6 +906,28 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** another UID never sees the previous user's view. Reauthenticate
     and reconcile before editing; no offline editor, durable offline queue, or
     automatic local/cloud conflict merge is introduced.
+  - **Evidence:** verified November 14, 2026. Managed invalidation cancels
+    streams/HTTP, selections, display data and owned protections before UID or
+    campaign purge. Persistent account/campaign epochs remove and fence all
+    historical private checkpoints/binary namespaces, including warm hints and
+    late writes; other UIDs/public catalogs/canonical cloud state are preserved.
+    Lost connectivity blocks new edits/commands. Original submitted UID/body/ID/
+    scope remain only in memory for exact receipt recovery; ended views cannot
+    revive and online status alone cannot re-enable editing.
+    **21 directly coupled app suites / 272 tests**, zero skips, **25.161 s**,
+    open-handle detection; **5/5 actual SDK cases**, zero skips, **84,451.93 ms**.
+    Actual switched-UID/logout private bytes are **zero**; original sheet/world
+    commands retry with **two identical-body attempts** each and increment their
+    canonical revisions **once**; offline world commands are **zero**.
+    Unchanged-scope warm join still transfers zero assets with two fresh authority
+    requests; deliberately purged membership scopes re-download authorized data.
+    Native browser persistent epochs reject an older observed campaign writer
+    with `cache-invalidated`; campaign/UID purge leave **zero entries/bytes**.
+    Full lint/style/layering: zero errors / same **39 baseline warnings**.
+    Dependent identity-loss/recovery feedback is implemented without changing the
+    deferred routine-save flash, centered card, timing or normal connected-save
+    behavior. No dependency/deployment, real account/campaign or original-host
+    change. Ten-client/full-stable acceptance remains `M3-10`; gameplay stays gated.
 
 - [ ] **M3-10 - Pass ten-client convergence and synchronization acceptance.**
   - **Depends:** `M3-05`, `M3-08`, `M3-09`.

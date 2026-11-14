@@ -4,6 +4,7 @@ import CloudPlayerSessionConnection from '../../../src/campaigns/CloudPlayerSess
 import CloudParticipantCache from '../../../src/campaigns/CloudParticipantCache.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
+import { participantStorage } from '../../helpers/participantStorage.js';
 
 const campaignId = '11111111-1111-4111-8111-111111111111';
 const sessionId = '22222222-2222-4222-8222-222222222222';
@@ -180,6 +181,7 @@ function fixture({ cache = null } = {}) {
       });
     }),
     commitWorldCommand: jest.fn(),
+    commitAssignedCharacters: jest.fn(),
     observeEvents: jest.fn((_id, _view, _access, callbacks) => {
       let ready;
       const observation = {
@@ -223,6 +225,322 @@ function fixture({ cache = null } = {}) {
     },
   };
 }
+
+test.each(['logout', 'account replacement'])(
+  '%s aborts old artwork before purging all private UID namespaces and never purges another UID',
+  async (transition) => {
+    const storage = participantStorage();
+    const cached = snapshot();
+    cached.state.publicScene.assetKey = createHash('sha256')
+      .update(JSON.stringify(cached.state.publicScene.assets))
+      .digest('hex');
+    const historical = structuredClone(cached);
+    historical.viewKey = 'c'.repeat(64);
+    const foreign = structuredClone(cached);
+    foreign.access.uid = 'other-uid';
+    const cache = new CloudParticipantCache({ ...storage, uid: access.uid });
+    const other = new CloudParticipantCache({ ...storage, uid: foreign.access.uid });
+    const checking = new CloudParticipantCache({ ...storage, uid: access.uid });
+    const setup = fixture({ cache });
+    let opening;
+    try {
+      for (const raw of [cached, historical]) {
+        await cache.writeCheckpoint(raw);
+        await cache.writeAsset(raw, reference, bytes);
+      }
+      await other.writeCheckpoint(foreign);
+      await other.writeAsset(foreign, reference, bytes);
+      opening = setup.connection.open({ observerTokenId: 'hero-token' });
+      void opening.catch(() => {});
+      await setup.observed;
+      const raw = structuredClone(cached);
+      raw.manifest.images[0].reference.generation = '3';
+      setup.observations[0].publish(raw);
+      for (let step = 0; step < 100 && !setup.requests.length; step++)
+        await new Promise((resolve) => setImmediate(resolve));
+      expect(setup.requests).toHaveLength(1);
+      let loggingOut;
+      if (transition === 'logout') loggingOut = setup.connection.logout();
+      else {
+        setup.changeIdentity({ uid: foreign.access.uid });
+        loggingOut = setup.connection.close();
+      }
+      expect(setup.requests[0].signal.aborted).toBe(true);
+      expect(setup.connection.commandReady).toBe(false);
+      await loggingOut;
+      setup.requests[0].resolve();
+      expect(await checking.getUsage()).toMatchObject({
+        bytes: 0,
+        assetCount: 0,
+        checkpointCount: 0,
+      });
+      expect(await checking.readCheckpointCandidate(cached.access)).toBeNull();
+      expect(await checking.readAuthorizedAsset(cached, reference)).toBeNull();
+      expect(await checking.readAuthorizedAsset(historical, reference)).toBeNull();
+      expect(await other.readCheckpoint(foreign.access, foreign.viewKey)).toEqual(foreign);
+      expect(Buffer.from(await other.readAsset(foreign, reference))).toEqual(bytes);
+      expect(() => setup.connection.readLiveState()).toThrow();
+      expect(setup.events.filter(({ type }) => type === 'artwork')).toHaveLength(0);
+    } finally {
+      for (const request of setup.requests) request.resolve();
+      await setup.connection.close();
+      await opening?.catch(() => {});
+      checking.close();
+      other.close();
+    }
+  }
+);
+
+test('membership loss during a warm HTTP rejoin purges historical campaign views but preserves another campaign for the same UID', async () => {
+  const storage = participantStorage();
+  const cached = snapshot();
+  cached.state.publicScene.assetKey = createHash('sha256')
+    .update(JSON.stringify(cached.state.publicScene.assets))
+    .digest('hex');
+  const historical = structuredClone(cached);
+  historical.access.accessGeneration++;
+  historical.viewKey = 'c'.repeat(64);
+  const unrelated = structuredClone(cached);
+  unrelated.access.campaignId = '55555555-5555-4555-8555-555555555555';
+  unrelated.state.campaign.id = unrelated.access.campaignId;
+  for (const slot of unrelated.manifest.images)
+    slot.reference.campaignId = unrelated.access.campaignId;
+  const cache = new CloudParticipantCache({ ...storage, uid: access.uid });
+  const checking = new CloudParticipantCache({ ...storage, uid: access.uid });
+  const setup = fixture({ cache });
+  const denial = Object.assign(new Error('Current membership changed'), {
+    status: 409,
+    code: 'campaign-access-changed',
+  });
+  setup.store.readParticipantSnapshot.mockRejectedValueOnce(denial);
+  try {
+    for (const raw of [cached, historical, unrelated]) {
+      await cache.writeCheckpoint(raw);
+      await cache.writeAsset(raw, raw.manifest.images[0].reference, bytes);
+    }
+    await expect(setup.connection.open()).rejects.toBe(denial);
+    expect(setup.connection.commandReady).toBe(false);
+    await setup.connection.close();
+    expect(await checking.readCheckpointCandidate(cached.access)).toBeNull();
+    expect(await checking.readAuthorizedAsset(cached, reference)).toBeNull();
+    expect(await checking.readAuthorizedAsset(historical, reference)).toBeNull();
+    expect(await checking.readCheckpoint(unrelated.access, unrelated.viewKey)).toEqual(unrelated);
+    expect(
+      Buffer.from(await checking.readAsset(unrelated, unrelated.manifest.images[0].reference))
+    ).toEqual(bytes);
+    expect(await checking.getUsage()).toMatchObject({ checkpointCount: 1, assetCount: 1 });
+    expect(setup.store.observeEvents).not.toHaveBeenCalled();
+  } finally {
+    await setup.connection.close();
+    checking.close();
+  }
+});
+
+test('reopening a superseded observer view purges old checkpoints and historical byte reuse before admitting the replacement', async () => {
+  const storage = participantStorage();
+  const cached = snapshot();
+  cached.state.publicScene.assetKey = createHash('sha256')
+    .update(JSON.stringify(cached.state.publicScene.assets))
+    .digest('hex');
+  const historical = structuredClone(cached);
+  historical.viewKey = 'c'.repeat(64);
+  const cache = new CloudParticipantCache({ ...storage, uid: access.uid });
+  const setup = fixture({ cache });
+  setup.store.readParticipantAsset.mockResolvedValue(new Uint8Array(bytes));
+  let opening;
+  let replacing;
+  try {
+    for (const raw of [cached, historical]) {
+      await cache.writeCheckpoint(raw);
+      await cache.writeAsset(raw, reference, bytes);
+    }
+    opening = setup.connection.open({ observerTokenId: 'hero-token' });
+    await setup.observed;
+    setup.observations[0].publish(cached);
+    await opening;
+    expect(setup.connection.commandReady).toBe(true);
+    replacing = setup.connection.open({ observerTokenId: 'hero-token', mapId: 'side' });
+    for (let step = 0; step < 100 && setup.observations.length < 2; step++)
+      await new Promise((resolve) => setImmediate(resolve));
+    expect(setup.observations).toHaveLength(2);
+    expect(await cache.readCheckpoint(cached.access, cached.viewKey)).toBeNull();
+    expect(await cache.readCheckpoint(historical.access, historical.viewKey)).toBeNull();
+    const next = structuredClone(cached);
+    next.viewKey = 'b'.repeat(64);
+    next.generation++;
+    next.manifest.images[0].reference.generation = '3';
+    next.state.maps[0].id = 'side';
+    next.state.publicScene.assets.maps[0].id = 'side';
+    next.state.publicScene.presentation.mapId = 'side';
+    next.state.publicScene.actors[0].mapId = 'side';
+    next.state.gameplay.ownedTokens[0].mapId = 'side';
+    next.state.publicScene.assetKey = createHash('sha256')
+      .update(JSON.stringify(next.state.publicScene.assets))
+      .digest('hex');
+    expect(setup.observations[1].publish(next)).toBeUndefined();
+    expect(setup.connection.commandReady).toBe(false);
+    await replacing;
+    expect(await cache.readCheckpoint(cached.access, cached.viewKey)).toBeNull();
+    expect(await cache.readCheckpoint(historical.access, historical.viewKey)).toBeNull();
+    expect(await cache.readAuthorizedAsset(cached, reference)).toBeNull();
+    expect(await cache.getUsage()).toMatchObject({ checkpointCount: 1, assetCount: 1 });
+    expect(setup.store.readParticipantAsset).toHaveBeenCalledTimes(1);
+    expect(setup.connection.commandReady).toBe(true);
+  } finally {
+    await setup.connection.close();
+    await Promise.all([opening?.catch(() => {}), replacing?.catch(() => {})]);
+  }
+});
+
+test('a rejected warm observer hint is purged before the fresh unhinted authority lookup and cannot remain a historical byte source', async () => {
+  const storage = participantStorage();
+  const cached = snapshot();
+  cached.state.publicScene.assetKey = createHash('sha256')
+    .update(JSON.stringify(cached.state.publicScene.assets))
+    .digest('hex');
+  const next = structuredClone(cached);
+  next.viewKey = 'b'.repeat(64);
+  next.generation++;
+  next.state.maps[0].id = 'side';
+  next.state.publicScene.assets.maps[0].id = 'side';
+  next.state.publicScene.presentation.mapId = 'side';
+  next.state.publicScene.actors[0].mapId = 'side';
+  next.state.gameplay.ownedTokens[0].mapId = 'side';
+  next.manifest.images[0].reference.generation = '3';
+  next.state.publicScene.assetKey = createHash('sha256')
+    .update(JSON.stringify(next.state.publicScene.assets))
+    .digest('hex');
+  const cache = new CloudParticipantCache({ ...storage, uid: access.uid });
+  const checking = new CloudParticipantCache({ ...storage, uid: access.uid });
+  const setup = fixture({ cache });
+  let bytesAtRetry;
+  setup.store.readParticipantSnapshot
+    .mockRejectedValueOnce(
+      Object.assign(new Error('Old observer map is no longer authorized'), {
+        status: 403,
+        code: 'participant-view-forbidden',
+      })
+    )
+    .mockImplementationOnce(async () => {
+      bytesAtRetry = (await checking.getUsage()).bytes;
+      return next;
+    });
+  setup.store.readParticipantAsset.mockResolvedValue(new Uint8Array(bytes));
+  let opening;
+  try {
+    await cache.writeCheckpoint(cached);
+    await cache.writeAsset(cached, reference, bytes);
+    opening = setup.connection.open();
+    void opening.catch(() => {});
+    await setup.observed;
+    expect(bytesAtRetry).toBe(0);
+    setup.observations[0].publish(next);
+    await opening;
+    expect(setup.store.readParticipantSnapshot.mock.calls[1][1]).toEqual({
+      sessionId,
+      observerTokenId: null,
+      mapId: null,
+      assetKey: null,
+    });
+    expect(await checking.readCheckpoint(cached.access, cached.viewKey)).toBeNull();
+    expect(await checking.readAuthorizedAsset(cached, reference)).toBeNull();
+    expect(setup.connection.commandReady).toBe(true);
+  } finally {
+    await setup.connection.close();
+    await opening?.catch(() => {});
+    checking.close();
+  }
+});
+
+test('connection loss blocks both gameplay and sheet mutations until a fresh reconciled online checkpoint, not a ready status alone', async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const browser = new EventTarget();
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: browser });
+  const setup = fixture();
+  const opening = setup.connection.open({ observerTokenId: 'hero-token' });
+  await setup.observed;
+  try {
+    setup.observations[0].publish(snapshot());
+    await new Promise((resolve) => setImmediate(resolve));
+    setup.requests[0].resolve();
+    await opening;
+    expect(setup.connection.commandReady).toBe(true);
+    browser.dispatchEvent(new Event('offline'));
+    expect(setup.connection.commandReady).toBe(false);
+    setup.observations[0].onStatus({ phase: 'reconnecting', reason: 'cloud-stream-unavailable' });
+    expect(setup.connection.commandReady).toBe(false);
+    for (const [operation, change] of [
+      ['playerCommand', { kind: 'move' }],
+      ['playerCommit', { revision: 1, records: [] }],
+    ])
+      await expect(setup.connection.call(operation, [campaignId, change])).rejects.toMatchObject({
+        code: 'world-state-unavailable',
+      });
+    expect(setup.store.commitWorldCommand).not.toHaveBeenCalled();
+    expect(setup.store.commitAssignedCharacters).not.toHaveBeenCalled();
+    browser.dispatchEvent(new Event('online'));
+    setup.observations[0].onStatus({ phase: 'ready' });
+    expect(setup.connection.commandReady).toBe(false);
+    const artworkReady = new Promise((resolve) => {
+      const stop = setup.connection.subscribe((event) => {
+        if (event.type !== 'assets-status' || event.status.phase !== 'ready') return;
+        stop();
+        resolve();
+      });
+    });
+    setup.observations[0].publish(snapshot(), { reconcile: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(setup.connection.commandReady).toBe(false);
+    setup.requests[1].resolve();
+    await artworkReady;
+    expect(setup.connection.commandReady).toBe(true);
+  } finally {
+    for (const request of setup.requests) request.resolve();
+    await setup.connection.close();
+    await opening.catch(() => {});
+    if (previous) Object.defineProperty(globalThis, 'window', previous);
+    else delete globalThis.window;
+  }
+});
+
+test('a replacement selection cancels its in-flight HTTP authority lookup and ignores an uncooperative late old response', async () => {
+  const setup = fixture();
+  let signal;
+  let resume;
+  let requested;
+  const started = new Promise((resolve) => {
+    requested = resolve;
+  });
+  setup.store.readParticipantSnapshot.mockImplementationOnce((_id, _view, _scope, options) => {
+    signal = options.signal;
+    requested();
+    return new Promise((resolve) => {
+      resume = () => resolve(snapshot());
+    });
+  });
+  const first = setup.connection.open();
+  const outcome = first.catch((error) => error);
+  let replacing;
+  try {
+    await started;
+    replacing = setup.connection.open({ observerTokenId: 'hero-token' });
+    expect(signal?.aborted).toBe(true);
+    await setup.observed;
+    setup.observations[0].publish(snapshot());
+    await new Promise((resolve) => setImmediate(resolve));
+    resume();
+    expect(await outcome).toMatchObject({ code: 'live-session-changed' });
+    setup.requests[0].resolve();
+    await replacing;
+    expect(setup.connection.commandReady).toBe(true);
+    expect(setup.events.filter(({ type }) => type === 'state')).toHaveLength(1);
+  } finally {
+    resume?.();
+    for (const request of setup.requests) request.resolve();
+    await setup.connection.close();
+    await Promise.all([outcome, replacing?.catch(() => {})]);
+  }
+});
 
 test('fresh authority publishes synchronously while first-view artwork gates gameplay without preloading other sheets', async () => {
   const setup = fixture();
@@ -303,7 +621,7 @@ test('warm rejoin sends only checkpoint view hints and admits commands only afte
         assetKey: cached.state.publicScene.assetKey,
       },
       access,
-      { cachedAssets: cached.state.publicScene.assets }
+      expect.objectContaining({ cachedAssets: cached.state.publicScene.assets })
     );
     expect(cache.readCheckpointCandidate).toHaveBeenCalledWith(access);
     expect(setup.events.filter(({ type }) => type === 'state')).toHaveLength(0);

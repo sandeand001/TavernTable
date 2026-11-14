@@ -583,6 +583,196 @@ test('assigned reads reject private world fields, foreign scopes and unassigned 
   setup.store.close();
 });
 
+test('a submitted world command can recover only its original UID-bound receipt after view teardown without authorizing another edit', async () => {
+  const setup = fixture();
+  const originalUser = setup.auth.currentUser;
+  const access = {
+    version: 1,
+    uid: setup.store.uid,
+    campaignId,
+    role: 'member',
+    seatId: '44444444-4444-4444-8444-444444444444',
+    accessGeneration: 3,
+  };
+  const request = {
+    sessionId: '55555555-5555-4555-8555-555555555555',
+    command: {
+      version: 1,
+      commandId,
+      sceneRevision: 0,
+      charactersRevision: 0,
+      observerTokenId: 'hero-token',
+      tokenId: 'hero-token',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+      view: { mapId: 'map-main', assetKey: 'authorized-assets' },
+    },
+  };
+  const receipt = {
+    version: 1,
+    campaignId,
+    commandId,
+    access,
+    sessionId: request.sessionId,
+    kind: request.command.kind,
+    applied: { generation: 1, sceneRevision: 1, charactersRevision: 0 },
+    outcome: 'duplicate',
+    presentation: null,
+  };
+  setup.fetch.mockRejectedValueOnce(new TypeError('Synthetic lost world reply'));
+  setup.fetch.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result: receipt }),
+  });
+  await expect(setup.store.commitWorldCommand(campaignId, request, access)).rejects.toMatchObject({
+    code: 'cloud-unavailable',
+  });
+  setup.auth.currentUser = { ...originalUser, uid: 'uid-b' };
+  setup.connection.account.identity();
+  await expect(setup.store.retryWorldCommand()).rejects.toMatchObject({
+    code: 'account-changed',
+  });
+  expect(setup.fetch).toHaveBeenCalledTimes(1);
+  setup.auth.currentUser = { ...originalUser };
+  setup.connection.account.identity();
+  await setup.connection.account.tokenContext(true);
+  await expect(setup.store.retryWorldCommand()).resolves.toEqual(receipt);
+  expect(setup.fetch).toHaveBeenCalledTimes(2);
+  expect(setup.fetch.mock.calls[1][1].body).toBe(setup.fetch.mock.calls[0][1].body);
+  await expect(
+    setup.store.commitWorldCommand(
+      campaignId,
+      {
+        ...request,
+        command: { ...request.command, commandId: '66666666-6666-4666-8666-666666666666' },
+      },
+      access
+    )
+  ).rejects.toMatchObject({ code: 'cloud-reconciliation-required' });
+  setup.store.close();
+});
+
+test('switching UID after submitting a sheet edit preserves its unacknowledged original command for same-UID online recovery', async () => {
+  const setup = fixture();
+  const originalUser = setup.auth.currentUser;
+  const access = {
+    version: 1,
+    uid: setup.store.uid,
+    campaignId,
+    role: 'member',
+    seatId: '44444444-4444-4444-8444-444444444444',
+    accessGeneration: 3,
+  };
+  const receipt = {
+    version: 1,
+    campaignId,
+    access,
+    revision: 1,
+    sceneRevision: 0,
+    sceneSavedAt: null,
+  };
+  let finish;
+  let started;
+  const submitted = new Promise((resolve) => {
+    started = resolve;
+  });
+  setup.fetch.mockImplementationOnce((_url, { signal }) => {
+    started(signal);
+    return new Promise((resolve) => {
+      finish = () =>
+        resolve({ ok: true, status: 200, json: async () => ({ version: 1, result: receipt }) });
+    });
+  });
+  setup.fetch.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result: receipt }),
+  });
+  const original = setup.store.commitAssignedCharacters(
+    campaignId,
+    { ruleset: '2014', revision: 0, records: [] },
+    access
+  );
+  let settled = false;
+  void original.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    }
+  );
+  const signal = await submitted;
+  setup.auth.currentUser = { ...originalUser, uid: 'uid-b' };
+  setup.connection.account.identity();
+  expect(signal.aborted).toBe(true);
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(settled).toBe(false);
+  expect(setup.store.saveState).toMatchObject({
+    phase: 'uncertain',
+    commandId,
+    error: { code: 'account-changed' },
+  });
+  expect(() => setup.store.close()).toThrow('Resolve the pending cloud save');
+  await expect(setup.store.retryPending()).rejects.toMatchObject({ code: 'account-changed' });
+  expect(setup.fetch).toHaveBeenCalledTimes(1);
+  setup.auth.currentUser = { ...originalUser };
+  setup.connection.account.identity();
+  await setup.connection.account.tokenContext(true);
+  await setup.store.retryPending();
+  await expect(original).resolves.toMatchObject({ revision: 1 });
+  expect(setup.fetch).toHaveBeenCalledTimes(2);
+  expect(setup.fetch.mock.calls[1][1].body).toBe(setup.fetch.mock.calls[0][1].body);
+  expect(setup.fetch.mock.calls[1][1].headers['X-TavernTable-Access-Generation']).toBe('3');
+  expect(setup.store.saveState.phase).toBe('saved');
+  setup.fetch.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result: { ...receipt, revision: 2 } }),
+  });
+  await expect(
+    setup.store.commitAssignedCharacters(
+      campaignId,
+      { ruleset: '2014', revision: 1, records: [] },
+      access
+    )
+  ).rejects.toMatchObject({ code: 'cloud-reconciliation-required' });
+  setup.fetch.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      version: 1,
+      result: {
+        version: 1,
+        access,
+        campaign: { ...campaign, charactersRevision: 1 },
+        revision: 1,
+        sceneRevision: 0,
+        sceneSavedAt: null,
+        characterIds: [],
+        records: [],
+        scene: null,
+      },
+    }),
+  });
+  await setup.store.readAssignedCharacters(campaignId, access);
+  setup.fetch.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 1, result: { ...receipt, revision: 2 } }),
+  });
+  await expect(
+    setup.store.commitAssignedCharacters(
+      campaignId,
+      { ruleset: '2014', revision: 1, records: [] },
+      access
+    )
+  ).resolves.toMatchObject({ revision: 2 });
+  setup.store.close();
+});
+
 test('an uncertain assigned receipt preserves the original body and access headers until the original caller is confirmed', async () => {
   const setup = fixture();
   const access = {

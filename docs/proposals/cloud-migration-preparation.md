@@ -2765,3 +2765,69 @@ account/campaign, original host or deferred routine-save UX change was made.
 Logout/access-change purge and ten-client/full-stable acceptance remain later
 gates; full shared gameplay remains disabled until they and the remaining
 world-action acceptance pass.
+
+### M3-09: private invalidation, purge and online receipt recovery
+
+Managed account invalidation now notifies dependent private views and awaits
+their cleanup during sign-out. HTTP controllers, live transport, loader/selection
+versions, image providers and instance-owned protections are invalidated before
+private purge begins. `privateStateSettled` covers the accumulated cleanup
+promises. Missing browser storage in a Node client is explicitly detected without
+claiming a successful browser clear or reviving an old view.
+
+UID purge increments its persistent account epoch; campaign purge increments its
+persistent campaign epoch. Checkpoints, asset metadata and Cache Storage bodies
+are removed across every historical seat/access/view/session namespace in the
+selected UID/campaign. Existing instances retain their first observed epochs,
+so late IO cannot adopt a newer purge generation and repopulate it. Native
+WebLocks serialize cross-context private cache operations; ordinary close
+preserves warm copies, while logout/switch clears the entire superseded UID.
+Membership/observer/map/view changes and rejected hints purge the affected
+campaign. Public catalogs, other UIDs and acknowledged canonical backend data
+remain separate.
+
+Network loss blocks new mutations immediately. Only original already-submitted,
+unacknowledged UID/body/command IDs remain in memory. Reconnecting forces managed
+identity/current-state reconciliation, not a connectivity-only editing reset.
+Same-command receipt recovery validates the original campaign/access/session and
+canonical outcome. An ended-view recovery confirms only that receipt, marks it
+recovered and requires explicit reopening; it never restores the ended world.
+There is no offline editor, durable upload queue, auto-merge or local fallback.
+
+Necessary owner/player feedback changes hide superseded private UI, protect
+unconfirmed commands against navigation, and expose original-command recovery.
+The routine-save flash/centered card/normal phase text and positioning/timing
+remain unchanged, as requested. A new verification-error catch initially
+conflated identity unavailability with account changes. The bounded correction
+handles expected `CloudAccountError` with a generic unavailable message and
+logs/rethrows unexpected errors without private provider details.
+
+Verified gates:
+
+- **21 directly related application suites / 272 tests**, zero skips,
+  **25.161 s**, open-handle detection. Managed account/linking, owner/assigned
+  sheets, cache controls, native player/renderer, source catalogs and recovery
+  callers retain their directly coupled behavior.
+- **5/5 actual SDK/HTTP/SSE cases**, zero skips, **84,451.93 ms**. Private bytes
+  after switched UID and logout are **zero**. Original sheet/world commands make
+  **two identical-body attempts** each but increment their canonical character/
+  scene revisions **once**; offline world command count is **zero**.
+- Unchanged-scope warm rejoin still transfers zero graphic/image bodies and
+  retains two fresh authority requests. Purged membership scopes deliberately
+  re-download current authorized bodies. Native acknowledgement and queued
+  movement/final combat budgets remain unchanged.
+- A native browser uses a real **95-byte PNG**, IndexedDB and Cache Storage with
+  browser-wide coordination. After an older instance has observed its campaign
+  epoch, a peer campaign purge denies its later write with `cache-invalidated`.
+  Campaign and UID purge leave zero bytes. The initial fixture only observed
+  account usage, not that campaign, and had the wrong fence expectation; adding
+  the actual scope observation corrects the reproduction without modifying
+  production cache behavior. Exact synthetic cleanup confirms zero checkpoints
+  and assets. Its owned helper became unavailable on close; no successful close
+  is claimed, and no alternate route is used to regain it.
+- Full JS/stylelint/layering: zero errors / same **39 baseline warnings**.
+
+No real account sign-in/provider/verification/password, real campaign, dependency,
+backend/IAM/index, frontend rollout, original local-host data/key or deferred
+routine-save UX change was made. Ten-client convergence, full stable acceptance
+and the remaining world-action gates remain `M3-10` and later migration work.

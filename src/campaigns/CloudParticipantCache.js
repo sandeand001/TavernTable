@@ -1,4 +1,9 @@
-import { isCloudAccessScope, isCloudAssetReference, isCloudDigest } from './CloudProtocol.js';
+import {
+  isCloudAccessScope,
+  isCloudAssetReference,
+  isCloudDigest,
+  isCloudUUID,
+} from './CloudProtocol.js';
 import { validateCloudParticipantSnapshot } from './CloudParticipantProtocol.js';
 import { openDatabase, requestResult, transact } from '../storage/indexedDB.js';
 import { sha256 } from '../storage/sha256.js';
@@ -42,6 +47,7 @@ function coordinator(factory, uid) {
     clock: 0,
     reconciled: false,
     epoch: 0,
+    campaignEpochs: new Map(),
     tickets: new Set(),
   });
   if (!factory || typeof factory.open !== 'function') return create();
@@ -76,6 +82,8 @@ export default class CloudParticipantCache {
     this.logger = logger;
     this.coordinator = coordinator(indexedDB, uid);
     this.protections = new Set();
+    this.accountEpoch = null;
+    this.campaignEpochs = new Map();
     this.closed = false;
     this.database = null;
     this.opening = null;
@@ -142,7 +150,14 @@ export default class CloudParticipantCache {
       row.version !== 1 ||
       row.uidKey !== uidKey ||
       !isBudget(row.budgetBytes) ||
-      !isBudget(row.epoch)
+      !isBudget(row.epoch) ||
+      (row.campaignEpochs !== undefined &&
+        (!row.campaignEpochs ||
+          typeof row.campaignEpochs !== 'object' ||
+          Array.isArray(row.campaignEpochs) ||
+          Object.entries(row.campaignEpochs).some(
+            ([id, epoch]) => !isCloudUUID(id) || !isBudget(epoch)
+          )))
     )
       throw failure('cache-corrupt', 'The private cache budget preference is invalid.');
     return row;
@@ -152,19 +167,27 @@ export default class CloudParticipantCache {
     const scope = this._scope(access, viewKey);
     const ticket = {
       key: kind + ':' + scope + (kind === 'asset' ? '/' + digest : ''),
+      campaignId: access.campaignId,
       epoch: this.coordinator.epoch,
+      campaignEpoch: this.coordinator.campaignEpochs.get(access.campaignId) ?? 0,
       invalidated: false,
     };
     this.coordinator.tickets.add(ticket);
     return ticket;
   }
 
-  _assert(ticket, databaseEpoch = ticket.databaseEpoch) {
+  _assert(
+    ticket,
+    databaseEpoch = ticket.databaseEpoch,
+    databaseCampaignEpoch = ticket.databaseCampaignEpoch
+  ) {
     this._active();
     if (
       ticket.invalidated ||
       ticket.epoch !== this.coordinator.epoch ||
-      ticket.databaseEpoch !== databaseEpoch
+      ticket.campaignEpoch !== (this.coordinator.campaignEpochs.get(ticket.campaignId) ?? 0) ||
+      ticket.databaseEpoch !== databaseEpoch ||
+      ticket.databaseCampaignEpoch !== databaseCampaignEpoch
     )
       throw failure('cache-invalidated', 'This private cache operation predates an invalidation.');
   }
@@ -182,13 +205,28 @@ export default class CloudParticipantCache {
       )
     );
     this._assert(ticket);
-    ticket.databaseEpoch = this._account(row, uidKey).epoch;
+    const account = this._account(row, uidKey);
+    const campaignEpoch = account.campaignEpochs?.[ticket.campaignId] ?? 0;
+    if (
+      (this.accountEpoch !== null && this.accountEpoch !== account.epoch) ||
+      (this.campaignEpochs.has(ticket.campaignId) &&
+        this.campaignEpochs.get(ticket.campaignId) !== campaignEpoch)
+    )
+      throw failure(
+        'cache-invalidated',
+        'Reopen the current online view after this private cache scope was invalidated.'
+      );
+    this.accountEpoch = account.epoch;
+    this.campaignEpochs.set(ticket.campaignId, campaignEpoch);
+    ticket.databaseEpoch = account.epoch;
+    ticket.databaseCampaignEpoch = campaignEpoch;
     return database;
   }
 
   async _verifyEpoch(transaction, ticket, uidKey) {
     const row = await requestResult(transaction.objectStore('accounts').get(uidKey));
-    this._assert(ticket, this._account(row, uidKey).epoch);
+    const account = this._account(row, uidKey);
+    this._assert(ticket, account.epoch, account.campaignEpochs?.[ticket.campaignId] ?? 0);
   }
 
   _serialize(operation) {
@@ -614,9 +652,24 @@ export default class CloudParticipantCache {
     }
   }
 
-  async clear() {
+  clear() {
+    return this._clear();
+  }
+
+  clearCampaign(campaignId) {
+    if (!isCloudUUID(campaignId))
+      throw failure('invalid-cache-scope', 'Choose an explicit private campaign cache to purge.');
+    return this._clear(campaignId);
+  }
+
+  async _clear(campaignId = null) {
     this._active();
-    this.coordinator.epoch++;
+    if (campaignId === null) this.coordinator.epoch++;
+    else
+      this.coordinator.campaignEpochs.set(
+        campaignId,
+        (this.coordinator.campaignEpochs.get(campaignId) ?? 0) + 1
+      );
     this.coordinator.reconciled = false;
     return this._serialize(async () => {
       const uidKey = await this._uidKey();
@@ -629,15 +682,28 @@ export default class CloudParticipantCache {
           async (transaction) => {
             const accounts = transaction.objectStore('accounts');
             const previous = this._account(await requestResult(accounts.get(uidKey)), uidKey);
-            if (!isBudget(previous.epoch + 1))
+            const epoch =
+              (campaignId === null
+                ? previous.epoch
+                : (previous.campaignEpochs?.[campaignId] ?? 0)) + 1;
+            if (!isBudget(epoch))
               throw failure('cache-corrupt', 'The private cache invalidation epoch is exhausted.');
-            const account = { ...previous, epoch: previous.epoch + 1 };
+            const account =
+              campaignId === null
+                ? { ...previous, epoch }
+                : {
+                    ...previous,
+                    campaignEpochs: { ...previous.campaignEpochs, [campaignId]: epoch },
+                  };
             const checkpoints = transaction.objectStore('checkpoints');
             const assets = transaction.objectStore('assets');
-            const checkpointKeys = await requestResult(
-              checkpoints.index('uidKey').getAllKeys(uidKey)
-            );
-            const assetKeys = await requestResult(assets.index('uidKey').getAllKeys(uidKey));
+            const checkpointKeys = (await requestResult(checkpoints.index('uidKey').getAll(uidKey)))
+              .filter((row) => campaignId === null || row.campaignId === campaignId)
+              .map((row) => row.id);
+            const prefix = this._prefix(uidKey) + (campaignId === null ? '' : campaignId + '/');
+            const assetKeys = (await requestResult(assets.index('uidKey').getAll(uidKey)))
+              .filter((row) => campaignId === null || row.id.startsWith(prefix))
+              .map((row) => row.id);
             for (const key of checkpointKeys) await requestResult(checkpoints.delete(key));
             for (const key of assetKeys) await requestResult(assets.delete(key));
             await requestResult(accounts.put(account));
@@ -656,14 +722,26 @@ export default class CloudParticipantCache {
       if (assetStorageAvailable) {
         const cache = await this._storage(() => this.cacheStorage.open(NAME + '.assets'));
         for (const request of await this._storage(() => cache.keys()))
-          if (request.url.startsWith(this._prefix(uidKey))) {
+          if (
+            request.url.startsWith(
+              this._prefix(uidKey) + (campaignId === null ? '' : campaignId + '/')
+            )
+          ) {
             await this._storage(() => cache.delete(request));
             removedAssets++;
           }
       }
       this._active();
+      if (this.accountEpoch !== account.epoch) this.campaignEpochs.clear();
+      this.accountEpoch = account.epoch;
+      if (campaignId !== null)
+        this.campaignEpochs.set(campaignId, account.campaignEpochs[campaignId]);
       return {
-        ...this._usage({ account, entries: [], assetStorageAvailable }),
+        ...this._usage(
+          campaignId === null
+            ? { account, entries: [], assetStorageAvailable }
+            : await this._inventory()
+        ),
         removedCheckpoints: checkpointCount,
         removedAssets,
       };
@@ -719,10 +797,23 @@ export default class CloudParticipantCache {
   async protectView(access, viewKey) {
     access = structuredClone(access);
     this._scope(access, viewKey);
-    return this._serialize(async () => {
-      const { id } = await this._key(access, viewKey);
-      return this._protect('view:' + id);
-    });
+    const ticket = this._ticket('view', access, viewKey);
+    try {
+      return await this._serialize(async () => {
+        const context = await this._key(access, viewKey);
+        await this._capture(ticket, context);
+        const release = await this._protect('view:' + context.id);
+        try {
+          this._assert(ticket);
+          return release;
+        } catch (error) {
+          await release();
+          throw error;
+        }
+      });
+    } finally {
+      this.coordinator.tickets.delete(ticket);
+    }
   }
 
   async protect(snapshot, { cachedAssets = null } = {}) {
@@ -921,40 +1012,64 @@ export default class CloudParticipantCache {
   async _checkpointCandidates(access) {
     access = structuredClone(access);
     this._scope(access, '0'.repeat(64));
-    return this._serialize(async () => {
-      const uidKey = await this._uidKey();
-      const database = await this._database();
-      const rows = await this._storage(() =>
-        transact(database, ['checkpoints'], 'readonly', (transaction) =>
-          requestResult(transaction.objectStore('checkpoints').index('uidKey').getAll(uidKey))
-        )
-      );
-      this._active();
-      return rows
-        .filter((row) => row.campaignId === access.campaignId)
-        .sort((left, right) => (right.lastUsed ?? 0) - (left.lastUsed ?? 0))
-        .map((row) => {
-          const scope = {
-            version: 1,
-            uid: this.uid,
-            campaignId: row.campaignId,
-            role: 'member',
-            seatId: row.seatId,
-            accessGeneration: row.accessGeneration,
-          };
-          if (!isCloudAccessScope(scope) || !isCloudDigest(row.viewKey))
-            throw failure('cache-corrupt', 'The private checkpoint candidate scope is invalid.');
-          return { access: scope, viewKey: row.viewKey };
-        });
-    });
+    const ticket = this._ticket('candidate', access, '0'.repeat(64));
+    try {
+      return await this._serialize(async () => {
+        const uidKey = await this._uidKey();
+        const database = await this._capture(ticket, { uidKey });
+        const rows = await this._storage(() =>
+          transact(database, ['checkpoints'], 'readonly', (transaction) =>
+            requestResult(transaction.objectStore('checkpoints').index('uidKey').getAll(uidKey))
+          )
+        );
+        this._assert(ticket);
+        return rows
+          .filter((row) => row.campaignId === access.campaignId)
+          .sort((left, right) => (right.lastUsed ?? 0) - (left.lastUsed ?? 0))
+          .map((row) => {
+            const scope = {
+              version: 1,
+              uid: this.uid,
+              campaignId: row.campaignId,
+              role: 'member',
+              seatId: row.seatId,
+              accessGeneration: row.accessGeneration,
+            };
+            if (!isCloudAccessScope(scope) || !isCloudDigest(row.viewKey))
+              throw failure('cache-corrupt', 'The private checkpoint candidate scope is invalid.');
+            return { access: scope, viewKey: row.viewKey };
+          });
+      });
+    } finally {
+      this.coordinator.tickets.delete(ticket);
+    }
   }
 
   async readCheckpointCandidate(access) {
     for (const candidate of await this._checkpointCandidates(access)) {
+      if (
+        candidate.access.seatId !== access.seatId ||
+        candidate.access.accessGeneration !== access.accessGeneration
+      )
+        continue;
       const snapshot = await this._readCheckpointCandidate(candidate);
       if (snapshot !== null) return snapshot;
     }
     return null;
+  }
+
+  async purgeSupersededAccess(access) {
+    access = structuredClone(access);
+    const candidates = await this._checkpointCandidates(access);
+    if (
+      candidates.some(
+        (candidate) =>
+          candidate.access.seatId !== access.seatId ||
+          candidate.access.accessGeneration !== access.accessGeneration
+      )
+    )
+      return this.clearCampaign(access.campaignId);
+    return { purged: false };
   }
 
   async _readCheckpointCandidate(candidate) {

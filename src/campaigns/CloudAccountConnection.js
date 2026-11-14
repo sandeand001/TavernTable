@@ -2,6 +2,7 @@ import { validateApplicationRuntime } from './CloudRuntime.js';
 import { CloudAccountError } from './CloudAccount.js';
 import { sessionJSON } from './SessionConnection.js';
 import CloudEventStream from './CloudEventStream.js';
+import CloudParticipantCache, { CloudParticipantCacheError } from './CloudParticipantCache.js';
 import { sha256 } from '../storage/sha256.js';
 import {
   isCloudAccessScope,
@@ -427,7 +428,13 @@ function safeDenial(error) {
 }
 
 export default class CloudAccountConnection {
-  constructor({ account, runtime, fetch = globalThis.fetch, baseURL = globalThis.location?.href }) {
+  constructor({
+    account,
+    runtime,
+    fetch = globalThis.fetch,
+    baseURL = globalThis.location?.href,
+    participantCacheFactory = ({ uid }) => new CloudParticipantCache({ uid }),
+  }) {
     if (
       typeof account?.tokenContext !== 'function' ||
       typeof account.identity !== 'function' ||
@@ -440,6 +447,64 @@ export default class CloudAccountConnection {
     this.account = account;
     this.apiOrigin = this.runtime.apiOrigin;
     this.fetch = (...args) => fetch(...args);
+    this.participantCacheFactory = participantCacheFactory;
+    this.inFlight = new Set();
+    this.privateInvalidators = new Set();
+    this.privateStateSettled = Promise.resolve();
+    this.stopInvalidation = account.onInvalidated?.((uid) => this._invalidatePrivate(uid));
+  }
+
+  subscribePrivateInvalidation(listener) {
+    if (typeof listener !== 'function')
+      throw new Error('Private campaign cleanup requires an invalidation listener');
+    this.privateInvalidators.add(listener);
+    return () => this.privateInvalidators.delete(listener);
+  }
+
+  _invalidatePrivate(uid) {
+    for (const request of this.inFlight) if (request.uid === uid) request.abort();
+    const invalidated = [];
+    for (const listener of [...this.privateInvalidators]) {
+      try {
+        invalidated.push(listener(uid));
+      } catch (error) {
+        invalidated.push(Promise.reject(error));
+      }
+    }
+    const purging = this._purgePrivate(uid);
+    this.privateStateSettled = Promise.all([
+      this.privateStateSettled,
+      ...invalidated,
+      purging,
+    ]).then(() => {});
+    void this.privateStateSettled.catch(() => {});
+    return this.privateStateSettled;
+  }
+
+  async _purgePrivate(uid) {
+    const cache = this.participantCacheFactory({ uid });
+    try {
+      if (cache.available === false) return;
+      const usage = await cache.getUsage();
+      if (usage?.crossTabCoordinated !== true)
+        throw new CloudParticipantCacheError(
+          'cache-unavailable',
+          'Private cache cleanup requires browser-wide coordination.'
+        );
+      await cache.clear();
+      this.privateCacheStatus = { phase: 'cleared' };
+    } catch (error) {
+      if (!(error instanceof CloudParticipantCacheError) || error.recoverable !== true) throw error;
+      this.privateCacheStatus = {
+        phase: 'unavailable',
+        code: error.code,
+        message:
+          'Private cache cleanup could not be confirmed. Cached views cannot authorize editing.',
+      };
+      console.warn('[cloud-private-cache]', { code: error.code });
+    } finally {
+      cache.close();
+    }
   }
 
   async _readBytes(response, length, credential, progress, integrityError, signal = null) {
@@ -500,7 +565,7 @@ export default class CloudAccountConnection {
     return bytes;
   }
 
-  async _backupText(response, credential, progress) {
+  async _backupText(response, credential, progress, signal) {
     if (
       typeof response.headers?.get !== 'function' ||
       typeof response.body?.getReader !== 'function' ||
@@ -528,7 +593,14 @@ export default class CloudAccountConnection {
         'backup-integrity-failed',
         'The complete backup failed its integrity check.'
       );
-    const bytes = await this._readBytes(response, length, credential, progress, integrityError);
+    const bytes = await this._readBytes(
+      response,
+      length,
+      credential,
+      progress,
+      integrityError,
+      signal
+    );
     if ((await sha256(bytes)) !== declaredHash) throw integrityError();
     try {
       return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -565,7 +637,13 @@ export default class CloudAccountConnection {
             `campaigns/${accessScope.campaignId}/participant-assets/${assetReference.sha256}` ||
           !isCloudParticipantAssetRequest(body))) ||
       (signal !== null &&
-        (!['events', 'asset'].includes(responseType) ||
+        ((!['events', 'asset'].includes(responseType) &&
+          !(
+            responseType === 'json' &&
+            method === 'POST' &&
+            accessScope?.role === 'member' &&
+            resource === `campaigns/${accessScope.campaignId}/participant-state`
+          )) ||
           typeof signal.aborted !== 'boolean' ||
           typeof signal.addEventListener !== 'function' ||
           typeof signal.removeEventListener !== 'function')) ||
@@ -629,6 +707,8 @@ export default class CloudAccountConnection {
             [CLOUD_ACCESS_SEAT_HEADER]: accessScope.seatId === null ? 'owner' : accessScope.seatId,
             [CLOUD_ACCESS_GENERATION_HEADER]: String(accessScope.accessGeneration),
           };
+    this.account.identity();
+    await this.privateStateSettled;
     let credential = await this.account.tokenContext();
     for (let attempt = 0; attempt < 2; attempt++) {
       if (signal?.aborted) throw requestError(409, 'stream-closed', 'The live stream was closed.');
@@ -659,6 +739,14 @@ export default class CloudAccountConnection {
         );
         controller.abort();
       };
+      const running = {
+        uid: credential.uid,
+        abort: () => {
+          identityError = changedAccount();
+          controller.abort();
+        },
+      };
+      this.inFlight.add(running);
       try {
         if (responseType === 'asset') {
           try {
@@ -692,6 +780,14 @@ export default class CloudAccountConnection {
           ...(encoded === undefined ? {} : { body: encoded }),
         };
         const response = await this.fetch(url, options);
+        if (controller.signal.aborted) {
+          try {
+            await response.body?.cancel?.();
+          } catch (error) {
+            console.error('[cloud-response-cancel]', { code: 'response-cancel-failed' });
+          }
+          throw new Error('The cloud request was cancelled.');
+        }
         if (responseType === 'events') {
           if (response.status !== 200) {
             await sessionJSON(async () => response, url, options);
@@ -727,8 +823,10 @@ export default class CloudAccountConnection {
                 controller.signal
               )
             : responseType === 'backup'
-              ? await this._backupText(response, credential, progress)
+              ? await this._backupText(response, credential, progress, controller.signal)
               : await sessionJSON(async () => response, url, options);
+        if (identityError) throw identityError;
+        if (controller.signal.aborted) throw new Error('The cloud request was cancelled.');
       } catch (error) {
         if (['backup', 'events', 'asset'].includes(responseType)) controller.abort();
         if (signal?.aborted)
@@ -749,6 +847,7 @@ export default class CloudAccountConnection {
         }
         throw safeDenial(error);
       } finally {
+        this.inFlight.delete(running);
         stopIdentity();
         clearTimeout(timeout);
         signal?.removeEventListener('abort', cancel);

@@ -1,7 +1,7 @@
 import { webcrypto } from 'node:crypto';
 import CloudSaveFeedback from '../../../src/ui/campaigns/CloudSaveFeedback.js';
 import CloudCampaignClientStore from '../../../src/campaigns/CloudCampaignClientStore.js';
-import CloudAccount from '../../../src/campaigns/CloudAccount.js';
+import CloudAccount, { CloudAccountError } from '../../../src/campaigns/CloudAccount.js';
 import CloudAccountConnection from '../../../src/campaigns/CloudAccountConnection.js';
 import { mountCampaignControls } from '../../../src/ui/campaigns/CampaignLauncher.js';
 import CampaignStore from '../../../src/campaigns/CampaignStore.js';
@@ -11,6 +11,7 @@ import CampaignAutosave from '../../../src/campaigns/CampaignAutosave.js';
 import CampaignWorkspace from '../../../src/campaigns/CampaignWorkspace.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { logger } from '../../../src/utils/logger/Logger.js';
 import {
   createConnectedTravelBoard,
   disposeConnectedTravelBoard,
@@ -37,6 +38,10 @@ function fixture(fetch) {
     currentUser: { uid: 'uid-a', emailVerified: true, getIdToken: async () => 'fixture-token' },
   };
   const sdk = {
+    onAuthStateChanged: (_auth, notify) => {
+      notify();
+      return () => {};
+    },
     signInWithEmailAndPassword: async () => {},
     signOut: async () => {
       auth.currentUser = null;
@@ -75,6 +80,40 @@ afterEach(() => {
   window.dispatchEvent(new Event('pagehide'));
   document.body.replaceChildren();
   jest.restoreAllMocks();
+});
+
+test('identity verification failures stay distinct from a UID change and unexpected render errors are redacted and rethrown', () => {
+  document.body.innerHTML = '<section id="editor">PRIVATE PRIOR VIEW</section>';
+  const { store, feedback } = fixture(jest.fn());
+  feedback.invalidateIdentity();
+  const identity = jest.spyOn(store.connection.account, 'identity');
+  const log = jest.spyOn(logger, 'log').mockImplementation(() => {});
+  try {
+    identity.mockImplementation(() => {
+      throw new CloudAccountError(503, 'invalid-auth-state', 'PRIVATE PROVIDER DETAIL');
+    });
+    expect(() => feedback.render()).not.toThrow();
+    expect(feedback.status.textContent).toMatch(/account could not be verified/i);
+    expect(feedback.status.textContent).not.toMatch(/account changed/i);
+    expect(feedback.status.textContent).not.toContain('PRIVATE PROVIDER DETAIL');
+    expect(feedback.blocked).toBe(true);
+    expect(feedback.retry.disabled).toBe(true);
+    expect(feedback.reopen.disabled).toBe(true);
+    expect(document.getElementById('editor').hidden).toBe(true);
+    log.mockClear();
+    const unexpected = new TypeError('PRIVATE UNEXPECTED IDENTITY DETAIL');
+    identity.mockImplementation(() => {
+      throw unexpected;
+    });
+    expect(() => feedback.render()).toThrow(unexpected);
+    expect(log).toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE');
+    expect(document.getElementById('editor').hidden).toBe(true);
+  } finally {
+    identity.mockRestore();
+    feedback.dispose();
+    store.close();
+  }
 });
 
 test('uncertain campaign creation blocks new input until the same command is explicitly retried and durably acknowledged', async () => {
@@ -252,6 +291,49 @@ test('scene checkpoint feedback remains truthful through continued editing and t
   }
 }, 30000);
 
+test('account replacement hides the prior private view and retains only original-UID save recovery without reopening the ghost editor', async () => {
+  document.body.innerHTML =
+    '<section id="editor"><h1>PRIVATE PRIOR CAMPAIGN</h1><button>Edit campaign</button></section>';
+  const fetch = jest.fn(async () => {
+    if (fetch.mock.calls.length === 1) throw new Error('Synthetic unacknowledged reply');
+    return { ok: true, status: 200, json: async () => ({ version: 1, result: campaign }) };
+  });
+  const { store, feedback, auth } = fixture(fetch);
+  const originalUser = auth.currentUser;
+  const pending = store.create({ name: campaign.name, ruleset: '2014' });
+  await settle();
+  try {
+    auth.currentUser = { ...originalUser, uid: 'uid-b' };
+    store.connection.account.identity();
+    feedback.invalidateIdentity();
+    const root = document.querySelector('[aria-label="Cloud save feedback"]');
+    expect(document.getElementById('editor').hidden).toBe(true);
+    expect(root.hidden).toBe(false);
+    expect(root.textContent).not.toContain('PRIVATE PRIOR CAMPAIGN');
+    expect(feedback.status.textContent).toMatch(/original account/i);
+    expect(feedback.retry.disabled).toBe(true);
+    await expect(store.retryPending()).rejects.toMatchObject({ code: 'account-changed' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    auth.currentUser = { ...originalUser };
+    store.connection.account.identity();
+    feedback.render();
+    expect(feedback.retry.disabled).toBe(false);
+    await store.retryPending();
+    await pending;
+    expect(feedback.status.textContent).toMatch(/confirmed.*reopen|reopen.*cloud/i);
+    expect(feedback.reopen.hidden).toBe(false);
+    expect(feedback.blocked).toBe(true);
+    expect(document.getElementById('editor').hidden).toBe(true);
+    expect(fetch.mock.calls[0][1].body).toBe(fetch.mock.calls[1][1].body);
+  } finally {
+    auth.currentUser = originalUser;
+    if (store.pending) await store.retryPending();
+    await pending;
+    feedback.dispose();
+    store.close();
+  }
+});
+
 test('offline editing is paused without queuing a command or claiming a cloud save', async () => {
   document.body.innerHTML = '<section id="editor"><button>Edit campaign</button></section>';
   const online = jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
@@ -267,9 +349,14 @@ test('offline editing is paused without queuing a command or claiming a cloud sa
   expect(fetch).not.toHaveBeenCalled();
   online.mockReturnValue(true);
   window.dispatchEvent(new Event('online'));
-  expect(document.getElementById('editor').inert).toBe(false);
-  expect(status.textContent).toContain('No save pending');
+  expect(document.getElementById('editor').inert).toBe(true);
+  expect(status.textContent).toMatch(/reopen.*cloud/i);
   expect(status.textContent).not.toContain('Saved to cloud');
+  await expect(
+    store.create({ name: 'Cloud fixture', ruleset: '2014', packIds: [] })
+  ).rejects.toMatchObject({ code: 'cloud-reconciliation-required' });
+  expect(store.pending).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
   feedback.dispose();
 });
 

@@ -308,6 +308,18 @@ export default class CloudLiveConnection {
     }
   }
 
+  reconnect() {
+    if (this.stopped) return;
+    this.refreshIdentity = true;
+    this.rotating = true;
+    this.controller?.abort();
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.resumeRetry?.();
+    this.resumeRetry = null;
+    this._status('reconnecting', 'network-changed');
+  }
+
   async close() {
     await this._stop();
     await this.done;

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import PlayerGameApplication from '../../../src/ui/sessions/PlayerGameApplication.js';
+import CloudSaveFeedback from '../../../src/ui/campaigns/CloudSaveFeedback.js';
 import { createCampaignBoard } from '../../helpers/campaignBoard.js';
 import { publicPlayerState } from '../../helpers/publicPlayerState.js';
 import { TokenFacingGesture } from '../../../src/managers/interaction-manager/internals/facing.js';
@@ -16,6 +17,7 @@ function fixture(connectionOptions = {}) {
   const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
   const { state, source, catalog, wizardId } = publicPlayerState();
+  if (connectionOptions.access?.campaignId) state.campaign.id = connectionOptions.access.campaignId;
   const gameManager = createCampaignBoard(source);
   const opened = [];
   const requests = [];
@@ -42,6 +44,200 @@ function fixture(connectionOptions = {}) {
 afterEach(() => {
   document.body.replaceChildren();
   delete document.body.dataset.sessionRole;
+});
+
+test('a disconnected native player visibly retains an unconfirmed command and protects its same-ID online recovery from navigation', async () => {
+  let notify;
+  let recovered = false;
+  const commands = [];
+  const { app, state, gameManager } = fixture({
+    kind: 'cloud-player',
+    phase: 'ready',
+    commandReady: true,
+    assetsStatus: { phase: 'ready' },
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+    call: async (_operation, [campaignId, command]) => {
+      commands.push({ campaignId, command: JSON.parse(JSON.stringify(command)) });
+      if (!recovered) throw Object.assign(new Error('Unconfirmed network reply'), { status: 503 });
+      const next = JSON.parse(JSON.stringify(current));
+      next.sceneRevision++;
+      next.publicScene.assets = null;
+      return {
+        version: 1,
+        commandId: command.commandId,
+        outcome: 'duplicate',
+        applied: { sceneRevision: next.sceneRevision, charactersRevision: next.revision },
+        receipt: { kind: command.kind, tokenId: command.tokenId },
+        state: next,
+      };
+    },
+  });
+  const current = state;
+  const online = jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+  const feedback = new CloudSaveFeedback({
+    store: {
+      storageInfo: { kind: 'cloud' },
+      subscribeSave: (listener) => {
+        listener({ phase: 'idle', error: null });
+        return () => {};
+      },
+    },
+    hasUnconfirmedCommand: () => app.commands.pending || app.commands.canRetry,
+  }).attach();
+  gameManager.cloudSaveFeedback = feedback;
+  try {
+    await app.start();
+    const actor = state.publicScene.actors.find(({ id }) => id === state.observerTokenId);
+    await expect(
+      app.commands.move(actor.id, {
+        mapId: actor.mapId,
+        gridX: actor.gridX + 1,
+        gridY: actor.gridY,
+      })
+    ).rejects.toMatchObject({ status: 503 });
+    app.connection.phase = 'reconnecting';
+    app.connection.commandReady = false;
+    online.mockReturnValue(false);
+    window.dispatchEvent(new Event('offline'));
+    notify({ type: 'live-status', status: { phase: 'reconnecting' } });
+    expect(app.controls.status.textContent).toMatch(/unconfirmed.*original|original.*unconfirmed/i);
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(true);
+    await expect(app.reconnect()).rejects.toThrow(/original command/i);
+    await expect(app.signOut()).rejects.toThrow(/original command/i);
+    await expect(app.chooseObserver(state.observerTokenId)).rejects.toThrow(/original command/i);
+    await expect(app.chooseArea(state.maps[0].id)).rejects.toThrow(/original command/i);
+    expect(app.commands.canRetry).toBe(true);
+    expect(app.commands.availability('move', actor.id).allowed).toBe(false);
+    expect(commands).toHaveLength(1);
+    recovered = true;
+    online.mockReturnValue(true);
+    window.dispatchEvent(new Event('online'));
+    expect(feedback.blocked).toBe(true);
+    expect(feedback.reopen.hidden).toBe(true);
+    app.connection.phase = 'ready';
+    app.connection.commandReady = true;
+    notify({ type: 'live-status', status: { phase: 'ready' } });
+    expect(feedback.blocked).toBe(false);
+    await app.commands.retry();
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toEqual(commands[0]);
+    expect(app.commands.canRetry).toBe(false);
+  } finally {
+    feedback.dispose();
+    delete gameManager.cloudSaveFeedback;
+    online.mockRestore();
+    await app.destroy();
+  }
+});
+
+test('an ended private view recovers only the original account command receipt without reviving the old view or its editor', async () => {
+  let notify;
+  let identity = { uid: 'original-uid', emailVerified: true };
+  const account = {
+    identity: () => identity,
+    tokenContext: jest.fn(async () => ({})),
+  };
+  const store = {
+    uid: identity.uid,
+    storageInfo: { kind: 'cloud' },
+    connection: { account },
+    subscribeSave: (listener) => {
+      listener({ phase: 'idle', error: null });
+      return () => {};
+    },
+    retryWorldCommand: jest.fn(async () => {
+      const { command, campaignId } = app.commands.lastRequest;
+      return {
+        version: 1,
+        campaignId,
+        commandId: command.commandId,
+        sessionId: app.connection.sessionId,
+        access: app.connection.access,
+        kind: command.kind,
+        applied: {
+          generation: 1,
+          sceneRevision: command.sceneRevision + 1,
+          charactersRevision: command.charactersRevision,
+        },
+        outcome: 'duplicate',
+        presentation: null,
+      };
+    }),
+  };
+  const { app, state, gameManager } = fixture({
+    kind: 'cloud-player',
+    commandReady: true,
+    assetsStatus: { phase: 'ready' },
+    access: {
+      version: 1,
+      uid: identity.uid,
+      campaignId: '11111111-1111-4111-8111-111111111111',
+      role: 'member',
+      seatId: '22222222-2222-4222-8222-222222222222',
+      accessGeneration: 1,
+    },
+    sessionId: '33333333-3333-4333-8333-333333333333',
+    store,
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+    call: async () => {
+      throw Object.assign(new Error('Unconfirmed command reply'), { status: 503 });
+    },
+  });
+  const feedback = new CloudSaveFeedback({
+    store,
+    hasUnconfirmedCommand: () =>
+      (app.commands.pending || app.commands.canRetry) && !app.pendingRecovered,
+    retryUnconfirmedCommand: () => app.recoverPendingCommand(),
+  }).attach();
+  gameManager.cloudSaveFeedback = feedback;
+  try {
+    await app.start();
+    const actor = state.publicScene.actors.find(({ id }) => id === state.observerTokenId);
+    await expect(
+      app.commands.move(actor.id, {
+        mapId: actor.mapId,
+        gridX: actor.gridX + 1,
+        gridY: actor.gridY,
+      })
+    ).rejects.toMatchObject({ status: 503 });
+    identity = { ...identity, uid: 'other-uid' };
+    feedback.invalidateIdentity();
+    notify({
+      type: 'access-ended',
+      error: { status: 409, code: 'account-changed', message: 'Account changed' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(app.controls.root.textContent).not.toContain(state.campaign.name);
+    expect(gameManager.placedTokens).toHaveLength(0);
+    await expect(app.recoverPendingCommand()).rejects.toMatchObject({ code: 'account-changed' });
+    expect(store.retryWorldCommand).not.toHaveBeenCalled();
+    identity = { uid: store.uid, emailVerified: true };
+    feedback.render();
+    expect(feedback.retry.hidden).toBe(false);
+    feedback.retry.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.retryWorldCommand).toHaveBeenCalledTimes(1);
+    expect(account.tokenContext).toHaveBeenCalledWith(true);
+    expect(feedback.status.textContent).toMatch(/confirmed.*reopen/i);
+    expect(feedback.reopen.hidden).toBe(false);
+    expect(feedback.blocked).toBe(true);
+    expect(gameManager.placedTokens).toHaveLength(0);
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(false);
+  } finally {
+    feedback.dispose();
+    delete gameManager.cloudSaveFeedback;
+    await app.destroy();
+  }
 });
 
 test('late cloud artwork refreshes the native actor without rehydrating its in-flight placement or replaying routes', async () => {

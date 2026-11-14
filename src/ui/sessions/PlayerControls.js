@@ -297,8 +297,14 @@ export default class PlayerControls {
     reconcileContent(this.roster, markup, focused);
   }
 
-  endAccess() {
+  endAccess({ clearPrivate = false } = {}) {
     this.accessEnded = true;
+    if (clearPrivate) {
+      this.root.querySelector('[data-player-campaign]').textContent = 'Player access ended';
+      this.root.querySelector('[aria-label="Current location"]').textContent = '';
+      this.state = null;
+      this.appearanceChoices.clear();
+    }
     this.roster.textContent = 'Player access ended. Reconnect with a valid invitation.';
     this.observer.replaceChildren();
     this.area.replaceChildren();

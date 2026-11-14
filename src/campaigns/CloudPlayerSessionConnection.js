@@ -12,6 +12,14 @@ const failure = (status, code, message) => Object.assign(new Error(message), { s
 const ended = () =>
   failure(409, 'live-session-changed', 'Reopen the current live game before continuing.');
 const terminal = new Set(['paused', 'ended', 'denied', 'error', 'closed']);
+const accessDenials = new Set([
+  'campaign-access-changed',
+  'campaign-not-found',
+  'participant-view-forbidden',
+  'live-session-changed',
+  'live-session-paused',
+  'cache-invalidated',
+]);
 
 export default class CloudPlayerSessionConnection {
   constructor({ store, campaignId, access, sessionId, cache = null }) {
@@ -42,6 +50,7 @@ export default class CloudPlayerSessionConnection {
     this.assets = null;
     this.assetKey = null;
     this.phase = 'connecting';
+    this.authorityCurrent = false;
     this.presentations = [];
     this.cache = cache;
     this.artworkVersion = 0;
@@ -72,7 +81,32 @@ export default class CloudPlayerSessionConnection {
         });
       },
     });
+    const browser = globalThis.window;
+    const connectivity = () => {
+      if (this.closed || this.accessError) return;
+      this.authorityCurrent = false;
+      this.phase = 'reconnecting';
+      this.openController?.abort();
+      this._invalidateArtwork();
+      this._emit({
+        type: 'live-status',
+        status: { phase: 'reconnecting', reason: 'network-changed' },
+      });
+      this.observation?.reconnect?.();
+    };
+    browser?.addEventListener?.('offline', connectivity);
+    browser?.addEventListener?.('online', connectivity);
+    this.stopConnectivity = () => {
+      browser?.removeEventListener?.('offline', connectivity);
+      browser?.removeEventListener?.('online', connectivity);
+    };
     const account = this.store.connection.account;
+    this.unsubscribePrivate = this.store.connection.subscribePrivateInvalidation?.((uid) => {
+      if (uid === this.access.uid)
+        this._endAccess(
+          failure(409, 'account-changed', 'This live game belongs to another signed-in account.')
+        );
+    });
     if (typeof account.subscribe === 'function') {
       try {
         this.unsubscribeAccount = account.subscribe(
@@ -98,6 +132,9 @@ export default class CloudPlayerSessionConnection {
         if (this.accessError) {
           this.unsubscribeAccount?.();
           this.unsubscribeAccount = null;
+          this.unsubscribePrivate?.();
+          this.unsubscribePrivate = null;
+          this.stopConnectivity();
         }
       } catch (error) {
         this._endAccess(
@@ -116,6 +153,8 @@ export default class CloudPlayerSessionConnection {
       !this.closed &&
       this.state !== null &&
       this.phase === 'ready' &&
+      this.authorityCurrent &&
+      globalThis.navigator?.onLine !== false &&
       this.assetsStatus.phase === 'ready'
     );
   }
@@ -131,17 +170,29 @@ export default class CloudPlayerSessionConnection {
 
   _updateArtwork(snapshot) {
     const version = ++this.artworkVersion;
-    this._assetStatus('loading');
     let updating;
+    let requiredReady = false;
     try {
       updating = this.participantAssets.update(snapshot, { cachedAssets: this.assets });
+      requiredReady = this.participantAssets.requiredReady;
     } catch (error) {
       updating = Promise.reject(error);
     }
+    this._assetStatus(requiredReady ? 'ready' : 'loading');
     const task = Promise.resolve(updating).then(
-      () => {
+      (result) => {
         if (this.closed || version !== this.artworkVersion) return;
         this._identity();
+        if (result?.reason === 'cache-invalidated') {
+          this._endAccess(
+            failure(
+              503,
+              'cache-invalidated',
+              'This private scope was cleared. Reopen its current online authority.'
+            )
+          );
+          return;
+        }
         this._assetStatus('ready');
       },
       (error) => {
@@ -163,14 +214,15 @@ export default class CloudPlayerSessionConnection {
     return this.participantAssets.loadCharacterImages(characterId);
   }
 
-  _invalidateArtwork() {
+  _invalidateArtwork({ purge = false, all = false } = {}) {
     this.artworkVersion++;
     this.assetTask = null;
     this.assetsStatus = {
       phase: 'idle',
       ...(this.cacheStatus ? { cache: this.cacheStatus } : {}),
     };
-    this.participantAssets.invalidate();
+    if (purge) this.participantAssets.purge({ all, campaignId: this.campaignId });
+    else this.participantAssets.invalidate();
     this._emit({ type: 'assets-status', status: this.assetsStatus });
   }
 
@@ -183,8 +235,13 @@ export default class CloudPlayerSessionConnection {
     if (this.closed || this.accessError) return;
     this.accessError = error;
     this.selection++;
+    this.openController?.abort();
     this.phase = status.phase;
-    this._invalidateArtwork();
+    this.authorityCurrent = false;
+    this._invalidateArtwork({
+      purge: error.code !== 'cache-invalidated',
+      all: error.code === 'account-changed',
+    });
     this.state = null;
     this.snapshot = null;
     this.assets = null;
@@ -198,6 +255,9 @@ export default class CloudPlayerSessionConnection {
     });
     this.unsubscribeAccount?.();
     this.unsubscribeAccount = null;
+    this.unsubscribePrivate?.();
+    this.unsubscribePrivate = null;
+    this.stopConnectivity();
     this.observationClosing = Promise.resolve(this.observation?.close());
     void this.observationClosing.catch(() => {
       logger.log(
@@ -329,13 +389,39 @@ export default class CloudPlayerSessionConnection {
   }
 
   async open(options = {}) {
+    const opening = this._open(options);
+    const version = this.selection;
+    try {
+      return await opening;
+    } catch (error) {
+      if (
+        version === this.selection &&
+        (accessDenials.has(error.code) || [401, 403, 404].includes(error.status))
+      )
+        this._endAccess(error);
+      throw error;
+    }
+  }
+
+  async _open(options) {
     this._identity();
     const version = ++this.selection;
-    this._invalidateArtwork();
+    this.openController?.abort();
+    const controller = new AbortController();
+    this.openController = controller;
+    const replacing =
+      this.snapshot &&
+      ((options.observerTokenId !== undefined &&
+        options.observerTokenId !== this.snapshot.state.observerTokenId) ||
+        (options.mapId !== undefined &&
+          options.mapId !== this.snapshot.state.publicScene.presentation.mapId));
+    const previousViewKey = replacing ? null : this.snapshot?.viewKey;
+    this._invalidateArtwork({ purge: !!replacing });
     this.presentations = [];
     this.state = null;
     this.snapshot = null;
     this.phase = 'connecting';
+    this.authorityCurrent = false;
     this._rejectWaiters(ended());
     await this.observation?.close();
     this._identity();
@@ -346,9 +432,21 @@ export default class CloudPlayerSessionConnection {
         'placement-grant-required',
         'Choose an explicitly supported live arrival grant.'
       );
-    const candidate = await this.participantAssets.readCheckpointCandidate(this.access);
+    let candidate = await this.participantAssets.readCheckpointCandidate(this.access);
     this._identity();
     if (version !== this.selection) throw ended();
+    if (
+      candidate &&
+      ((options.observerTokenId !== undefined &&
+        options.observerTokenId !== candidate.state.observerTokenId) ||
+        (options.mapId !== undefined &&
+          options.mapId !== candidate.state.publicScene.presentation.mapId))
+    ) {
+      await this.participantAssets.purge({ campaignId: this.campaignId });
+      this._identity();
+      if (version !== this.selection) throw ended();
+      candidate = null;
+    }
     const retained = options.assetKey === this.assetKey && this.assets !== null;
     let cachedAssets = retained ? this.assets : (candidate?.state.publicScene.assets ?? null);
     let assetKey =
@@ -371,12 +469,15 @@ export default class CloudPlayerSessionConnection {
             assetKey,
           },
           this.access,
-          { cachedAssets }
+          { cachedAssets, signal: controller.signal }
         );
       } catch (error) {
         this._identity();
         if (version !== this.selection) throw ended();
         if (!candidate || error.code !== 'participant-view-forbidden') throw error;
+        await this.participantAssets.purge({ campaignId: this.campaignId });
+        this._identity();
+        if (version !== this.selection) throw ended();
         cachedAssets = null;
         assetKey = null;
         initial = await this.store.readParticipantSnapshot(
@@ -387,7 +488,8 @@ export default class CloudPlayerSessionConnection {
             mapId: null,
             assetKey: null,
           },
-          this.access
+          this.access,
+          { signal: controller.signal }
         );
       }
       this._identity();
@@ -431,7 +533,12 @@ export default class CloudPlayerSessionConnection {
             this._endAccess(ended());
             return;
           }
+          if (!this.authorityCurrent && context.reconcile !== true) return;
+          const superseded = this.snapshot?.viewKey ?? previousViewKey;
+          if (superseded && superseded !== snapshot.viewKey)
+            this._invalidateArtwork({ purge: true });
           this.snapshot = copy(snapshot);
+          this.authorityCurrent = true;
           const overflow =
             !context.reconcile &&
             this.presentations.length + (context.presentations?.length || 0) > 256;
@@ -461,6 +568,8 @@ export default class CloudPlayerSessionConnection {
         onStatus: (status) => {
           if (this.closed || version !== this.selection) return;
           this.phase = status.phase;
+          if (['connecting', 'reconnecting', 'synchronizing'].includes(status.phase))
+            this.authorityCurrent = false;
           if (terminal.has(status.phase)) {
             const error = failure(
               status.phase === 'denied' ? 403 : 409,
@@ -522,14 +631,17 @@ export default class CloudPlayerSessionConnection {
     if (operation === 'playerState') return this.open(args[0] || {});
     if (args[0] !== this.campaignId)
       throw failure(403, 'campaign-not-found', 'This live campaign is not assigned to the player.');
+    if (
+      ['playerCommand', 'playerCommit'].includes(operation) &&
+      (this.phase !== 'ready' || !this.authorityCurrent || globalThis.navigator?.onLine === false)
+    )
+      throw failure(
+        503,
+        'world-state-unavailable',
+        'Wait for online live world reconciliation before another change.'
+      );
     if (operation === 'playerCommand') {
       const command = copy(args[1]);
-      if (this.phase !== 'ready')
-        throw failure(
-          409,
-          'world-state-unavailable',
-          'Wait for live world reconciliation before another command.'
-        );
       if (!this.commandReady)
         throw failure(
           409,
@@ -591,13 +703,18 @@ export default class CloudPlayerSessionConnection {
   }
 
   async logout() {
+    this.openController?.abort();
+    const purging = this.participantAssets.purge({ all: true });
     await this.close();
+    await purging;
     await this.store.connection.account.signOut();
   }
 
   close() {
     if (this.closing) return this.closing;
     this.closed = true;
+    this.authorityCurrent = false;
+    this.openController?.abort();
     this.selection++;
     this.artworkVersion++;
     this.assetTask = null;

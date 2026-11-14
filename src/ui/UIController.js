@@ -1121,7 +1121,34 @@ async function startCampaignApplication() {
       manager.cloudAccountSession = { ...session, connection, uid: profile.uid };
       manager.stopCloudIdentityWatch = session.account.subscribe(
         (current) => {
-          if (current?.uid !== profile.uid) window.location.reload();
+          const feedback = manager.cloudSaveFeedback;
+          if (current?.uid === profile.uid) {
+            feedback?.render();
+            return;
+          }
+          feedback?.invalidateIdentity();
+          const activePlayer = manager.playerApplication;
+          if (
+            workspace?.store.pending ||
+            workspace?.store.pendingWorld ||
+            workspace?.active?.library?.pendingWrites ||
+            activePlayer?.commands.pending ||
+            (activePlayer?.commands.canRetry && !activePlayer.pendingRecovered) ||
+            activePlayer?.sheets.library.pendingWrites
+          )
+            return;
+          void connection.privateStateSettled.then(
+            () => window.location.reload(),
+            (error) => {
+              pauseControls();
+              new ErrorHandler().handle(
+                error,
+                ERROR_SEVERITY.CRITICAL,
+                ERROR_CATEGORY.INITIALIZATION,
+                { component: 'CloudAccountSession', operation: 'privateCleanup' }
+              );
+            }
+          );
         },
         (error) => {
           pauseControls();
@@ -1132,7 +1159,16 @@ async function startCampaignApplication() {
         }
       );
       workspace = await CampaignWorkspace.load({ storage: 'cloud', connection, uid: profile.uid });
-      manager.cloudSaveFeedback = new CloudSaveFeedback({ store: workspace.store });
+      manager.cloudSaveFeedback = new CloudSaveFeedback({
+        store: workspace.store,
+        hasUnconfirmedCommand: () =>
+          !!(
+            !manager.playerApplication?.pendingRecovered &&
+            (manager.playerApplication?.commands.pending ||
+              manager.playerApplication?.commands.canRetry)
+          ),
+        retryUnconfirmedCommand: () => manager.playerApplication?.recoverPendingCommand(),
+      });
     } else {
       identity = await ensureSession();
       if (!['dm', 'player'].includes(identity.role))

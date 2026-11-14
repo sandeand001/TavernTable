@@ -383,7 +383,7 @@
   rules/models, scoped SDK authority, isolated Linux runtime and approved real
   HTTPS off-turn/Free Play/bidirectional motion/physical-dice/pause/rejoin gates
   passed without changing real accounts, hosted frontend or routine-save UX.
-- **Scoped participant cache (M3-06 through M3-08 development gates verified; activation gated)**:
+- **Scoped participant cache (M3-06 through M3-09 development gates verified; activation gated)**:
   private IndexedDB checkpoint entries are separate from edition-local public
   resource databases and are keyed by UID hash, campaign, schema, member seat/
   access generation and authorized view key. Stored UTF-8 payloads carry exact
@@ -408,8 +408,9 @@
   status, not offline authority. UID-only clear fences old writes.
   Native browser page-reload persistence, budget changes, UID/access isolation,
   exact synthetic-entry cleanup and persistence-denial handling are verified.
-  Authoritative warm-rejoin network reuse is verified; logout-wide purge remains
-  a later M3 gate.
+  Authoritative warm-rejoin reuse and logout/access-loss purge are verified.
+  Persistent UID/campaign epochs fence historical hints and delayed reads/puts,
+  including writes that begin after a peer purge from an older observed scope.
 - **Progressive participant artwork (M3-07 development gate verified)**:
   the live connection publishes fresh authority synchronously while a separate
   readiness gate loads the active authorized area and assigned sheets. Visible
@@ -439,6 +440,21 @@
   records zero unchanged graphic/image bodies on warm rejoin while both fresh
   authority requests remain present. No offline editor or old motion replay is
   introduced.
+- **Private session loss (M3-09 development gate verified)**:
+  managed identity invalidation cancels HTTP/streams and clears live memory
+  before purging every private checkpoint/image namespace for the superseded UID.
+  Membership/observer/map/view changes purge the affected campaign, including
+  historical access generations; public catalogs, other UIDs and canonical cloud
+  saves remain untouched. Ordinary close preserves valid warm copies.
+  Offline/new mutations are blocked; only original, already-submitted,
+  unacknowledged UID/body/command IDs remain in memory for explicit online receipt
+  recovery. Connectivity alone does not reopen editing. Recovery of an ended
+  view confirms the original receipt but never restores that old world; current
+  identity/authority must reconcile and the user must reopen explicitly.
+  Verification-unavailable errors are reported separately from account changes;
+  unexpected errors are redacted and surfaced. There is no offline editor,
+  durable queue or automatic merge. Routine-save flash/toast behavior remains
+  deliberately deferred until after migration.
 - **Cloud live-game authority (M4 development foundation verified)**: a live game
   is distinct from managed sign-in and the saved combat turn. A private per-campaign
   state record carries a live epoch and monotonic control generation. Only its
