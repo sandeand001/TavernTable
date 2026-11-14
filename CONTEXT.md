@@ -267,7 +267,7 @@
   `/health`; legacy `/healthz` remains an internal/local alias because Cloud Run
   reserves some `z`-ending public paths. That runtime gate alone implies no website
   rollout, real campaign migration, measured sleep/load/cost claim or spending cap.
-- **Public cloud frontend release (bounded M4-09 pilot published; acceptance pending)**:
+- **Public cloud frontend release (bounded M4-09 pilot verified)**:
   a separate static-only Hosting directory contains the reachable native-ESM
   application graph, explicit runtime-art families and verified pinned catalogs/
   notices, never the repository root, server/admin tools, raw configuration,
@@ -287,8 +287,10 @@
   not silently relabeled CC0. The owner separately approves the first bounded
   existing-project Hosting/test-API pilot and at most ten disposable accounts/
   two synthetic campaigns. Public route/integrity and real synthetic-account
-  API/verification/recovery checks pass; normal owner browser sign-in acceptance
-  remains pending. Real-data cutover is separate; no new runtime IAM or billing
+  API/verification/recovery checks pass. The owner confirms normal Google sign-in
+  and campaign-home access after explicitly approving their existing account's
+  app-only pilot enrollment; UID, providers, verification, credentials and campaign
+  roles are unchanged. Real-data cutover is separate; no new runtime IAM or billing
   change is implied.
 - **Authorized cloud participant checkpoint (M3 initial wire verified)**:
   active live-epoch and current UID/seat/generation admission precedes projection;

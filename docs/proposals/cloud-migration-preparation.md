@@ -3398,14 +3398,14 @@ record, not a mutable build-manifest permission bit.
 Actual image rollout, public Hosting publication and fresh hosted acceptance
 are recorded only after their separate `M4-09` verification.
 
-### M4-09: published pilot, live regressions and pending owner sign-in
+### M4-09: published pilot, live regressions and owner sign-in
 
 The approved pilot is now published at
 [the default Hosting URL](https://taverntable-489d5.web.app). This is still the
 existing personal project/test service, not a new isolated Auth/database
 environment, production migration or source-of-truth cutover.
-**M4-09 remains unchecked; the checklist remains 49/65** until normal owner
-browser sign-in acceptance is completed.
+**M4-09 is complete; the checklist is 50/65** after the owner's normal browser
+sign-in and campaign-home confirmation below.
 
 The exact validated `cc93b46b...26004e` OCI index was published only to the
 existing private image repository and the image-only service update succeeded:
@@ -3515,12 +3515,28 @@ delivery was not tested**. Codes/passwords stay in memory; no custom-token
 impersonation, real-user password/verification/provider change or credential
 logging is involved.
 
-The hosted Google button starts the normal sign-in flow, but this automated
-browser has no accessible owned popup and remains at "Opening Google sign-in".
-The observed cross-origin-opener polling warnings alone do not prove an
-application failure. **Normal owner Google/browser sign-in still needs user
-interaction and acceptance**; do not mark it passed by minting a real-user token,
-changing the real account, reconfiguring providers or granting new IAM.
+The automated browser could not complete its inaccessible Google popup;
+cross-origin-opener polling warnings alone did not prove an application failure.
+The owner instead completes normal Google sign-in in their own Chrome and
+reports the deliberate private-pilot access restriction. With their separate
+explicit approval, a single precondition-fenced operator action at
+**2026-11-14T23:43:57.724Z** creates only the absent app eligibility record for
+that existing verified, non-disabled Google/password-linked account. Read-back
+confirms eligibility; before/after Auth identity/provider/verification
+fingerprints are unchanged. No Auth write, password change, provider linking,
+custom token, new UID, IAM change or campaign-role grant is performed. Account
+identifiers are not added to repository files or documentation.
+
+After refreshing the hosted website, the owner explicitly confirms
+**"Campaign home opens"**. Their existing email/password was not manually
+retested; the real disposable-account password, verification and reset-code
+protocol checks above remain the corresponding automated evidence, without an
+inbox-delivery claim.
+
+The owned automated verification page was unavailable when closing was attempted;
+no successful close is claimed and no alternate route is used to regain it.
+The owner's separate normal Chrome session is not closed or modified.
+
 Original local hosts/data/keys remain untouched. Full gameplay activation,
 hosted permission/load/cost gates and real-data cutover remain separate tasks;
 routine-save flash/toast UX remains deferred until after M5-11.

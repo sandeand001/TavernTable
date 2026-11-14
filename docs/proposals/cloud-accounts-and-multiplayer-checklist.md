@@ -57,7 +57,7 @@ Online assigned sheets while paused (`M2-12`) now pass local and real API gates.
 The owner approved one bounded API test deployment in the existing personal
 project; its three disposable account/two synthetic campaign fixtures and live
 object generations were verified cleaned up. The real account and campaigns
-were untouched. This is not a full frontend rollout or source-of-truth cutover.
+were untouched. That early API-only gate was not a frontend rollout or source-of-truth cutover.
 Complete M2 implemented-operation coverage (`M2-13`) passes the full native
 catalog and stable regression suite. Initial participant snapshot/manifest/delta privacy (`M3-01`) now passes local
 and bounded real API acceptance. Ordered durable changes/shared backend
@@ -73,9 +73,10 @@ Complete cloud gameplay activation and hosted performance/cost acceptance remain
 Versioned, allowlisted frontend packaging (`M4-07`) is verified locally, including
 actual Hosting HTTP and native-browser gates. The owner authorizes continuing
 local packaging with the tropical pack's formal license record still missing;
-that gap is recorded, not declared resolved. The owner now approves the bounded
-existing-project hosted pilot (`M4-08`); rollout/acceptance remains `M4-09`.
-**49 of 65** tasks are complete,
+that gap is recorded, not declared resolved. The separately approved bounded
+existing-project hosted pilot (`M4-08`) is now published and accepted (`M4-09`).
+Hosted privacy, performance, cost and real-data cutover remain separate gates.
+**50 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1246,13 +1247,18 @@ Revalidation in the intended environment remains part of M1 and M4.
     The first pilot candidate is separately rebuilt/validated; actual publication
     and hosted acceptance remain `M4-09`.
 
-- [ ] **M4-09 - Deploy and smoke-test only the approved isolated environment.**
-  - **Status:** the approved existing-project pilot is published at
+- [x] **M4-09 - Deploy and smoke-test only the approved isolated environment.**
+  - **Completed:** November 14, 2026. The approved existing-project pilot is published at
     [the default Hosting URL](https://taverntable-489d5.web.app). Real API,
     scoped private assets, Free Play/native movement, reconnect/revocation,
     managed verification/reset-code and public-package integrity gates pass
-    with disposable fixtures and verified cleanup. Normal owner Google/browser
-    sign-in acceptance remains pending; this task is not yet complete.
+    with disposable fixtures and verified cleanup. The owner confirms normal
+    Google sign-in and campaign-home access after explicitly approving app-only
+    enrollment of their existing linked account. No UID, credential, provider,
+    verification, IAM or campaign-role changes; no real campaigns migrated.
+    Existing email/password was not manually retested by the owner; real
+    disposable-account password/verification/reset protocols passed, with no
+    actual email-delivery claim.
   - **Depends:** `M4-08`.
   - **Success:** the default Hosting URL opens independently; browsers use the
     configured Cloud Run HTTPS address with exact origins/auth domains. Platform
