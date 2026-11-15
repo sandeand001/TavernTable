@@ -14,6 +14,7 @@ import {
 import { isOpeningHoldValid } from '../../campaigns/CampaignOpeningClimb.js';
 import { isSurfaceGripValid } from '../../campaigns/CampaignSurfaceClimb.js';
 import { createBoxCell, clipCell, createConvexCell } from '../../terrain/ConvexGeometry.js';
+import { planConnection } from '../../campaigns/CampaignConnections.js';
 
 export default class PublicPlayerLocation {
   constructor(assets) {
@@ -108,6 +109,12 @@ export default class PublicPlayerLocation {
     return this.connections.filter(
       (connection) => mapId === null || connection.ends.some((end) => end.mapId === mapId)
     );
+  }
+
+  planConnection(id, mapId, localWorld, options = {}) {
+    const connection = this.getConnections().find((entry) => entry.id === id);
+    if (!connection) throw new Error('The map connection no longer exists');
+    return planConnection(this, connection, mapId, localWorld, options);
   }
 
   getDoorRenderGroups(mapId) {

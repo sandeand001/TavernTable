@@ -85,6 +85,10 @@ export default class CampaignTraversalPopup {
     const option = this._refresh();
     const connection = gm.campaignWorld.getConnections().find((entry) => entry.id === connectionId);
     if (option?.approach && !(connection.kind === 'door' && connection.open !== true)) {
+      if (gm.playerInput) {
+        this.ready = this._approachPlayer(option);
+        return;
+      }
       const request = this.actor.flightActive
         ? gm.token3DAdapter.requestFlyToPoint(this.actor, option.approach.point, { closest: true })
         : gm.token3DAdapter.requestMoveToSurface(this.actor, option.approach, { closest: true });
@@ -109,6 +113,67 @@ export default class CampaignTraversalPopup {
     this.cancel.focus({ preventScroll: true });
   }
 
+  async _approachPlayer(option) {
+    const gm = this.gameManager;
+    const state = gm.playerInput.commands.getState();
+    const approach = {
+      player: true,
+      actor: this.actor,
+      connectionId: this.connectionId,
+      mapId: gm.campaignMapId,
+      point: this.point,
+      turn: state.gameplay.turn?.number,
+      active: state.gameplay.turn?.active === true,
+    };
+    this.approach = approach;
+    try {
+      if (
+        approach.actor.flightActive &&
+        Math.abs(option.approach.point.y - approach.actor.world.y) > 1e-6
+      )
+        throw new Error('Use the flight elevation controls to match this entrance first.');
+      const target = gm.spatial.worldToGrid(option.approach.point.x, option.approach.point.z);
+      await gm.playerInput.requestMove(approach.actor, target);
+      if (this.disposed || this.approach !== approach) return false;
+      this.approach = null;
+      const current = gm.playerInput.commands.getState();
+      if (
+        gm.campaignMapId !== approach.mapId ||
+        !gm.placedTokens.includes(approach.actor) ||
+        current.observerTokenId !== approach.actor.id ||
+        current.gameplay.turn?.number !== approach.turn ||
+        (current.gameplay.turn?.active === true) !== approach.active
+      )
+        return false;
+      const next = getConnectionTravelOption(gm, approach.actor, approach.connectionId);
+      if (next.allowed || (!next.approach && !next.insufficientMovement))
+        this.open(approach.connectionId, approach.point, approach.actor);
+      else
+        logger.info(
+          'Connection approach stopped before traversal',
+          {
+            tokenId: approach.actor.id,
+            connectionId: approach.connectionId,
+            reason: next.reason,
+          },
+          LOG_CATEGORY.INTERACTION
+        );
+      return next.allowed;
+    } catch (error) {
+      if (!this.disposed && this.approach === approach) {
+        this.approach = null;
+        this.error = error;
+        this.root.hidden = false;
+        this.confirm.disabled = true;
+        this.status.textContent = error.message;
+        this.status.hidden = false;
+        this.status.dataset.state = 'error';
+      }
+      GameErrors.input(error, { component: 'CampaignTraversalPopup', operation: 'approach' });
+      return false;
+    }
+  }
+
   openSurface(surface, event, actor) {
     this._cancelApproachOffer();
     this.actor = actor;
@@ -126,7 +191,7 @@ export default class CampaignTraversalPopup {
   _cancelApproachOffer() {
     const approach = this.approach;
     this.approach = null;
-    approach?.resolve(false);
+    approach?.resolve?.(false);
   }
 
   _actingCreature() {
@@ -139,7 +204,7 @@ export default class CampaignTraversalPopup {
 
   _checkApproach() {
     const approach = this.approach;
-    if (!approach) return;
+    if (!approach || approach.player) return;
     const gm = this.gameManager;
     const session = gm.characterServices.combat;
     if (
@@ -335,7 +400,8 @@ export default class CampaignTraversalPopup {
 
   _doorControls() {
     const gm = this.gameManager;
-    if (gm.characterServices?.workspace?.store.identity?.role === 'player') return;
+    if (gm.playerInput || gm.characterServices?.workspace?.store.identity?.role === 'player')
+      return;
     const door = gm.campaignWorld.getConnections().find((entry) => entry.id === this.connectionId);
     if (door?.kind !== 'door') return;
     for (const [action, label] of [

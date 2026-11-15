@@ -27,11 +27,11 @@ function assertConnectionActor(gm, token, stationary = true, openingId = null) {
     gm.sceneAutosave?.ready === false ||
     gm.campaignViewBusy ||
     gm.characterServices.library.isSaving ||
-    session.pending ||
-    session.committing ||
+    session?.pending ||
+    session?.committing ||
     gm.terrainEngine.hasPendingStroke ||
     (stationary &&
-      (session.moves.size ||
+      (session?.moves.size ||
         gm.placedTokens.some((actor) => gm.token3DAdapter.isMovementInProgress(actor))))
   )
     denied('Finish the current movement, action or map change before travelling');
@@ -43,6 +43,13 @@ function assertConnectionActor(gm, token, stationary = true, openingId = null) {
     !token.surfaceHold
   )
     denied('Finish the wall or ledge hold before travelling');
+  if (gm.playerInput) {
+    const capability = gm.playerInput.commands.availability('traverse', token.id);
+    if (gm.playerInput.commands.pending) denied('Finish the current host command first');
+    if (!capability.allowed) denied(capability.reason || capability.code);
+    return null;
+  }
+  if (!session) throw new Error('Connection travel requires a character rules service');
   if (session.active && session.activeToken !== token)
     denied('Only the creature taking its turn can travel during combat');
   if (
@@ -69,6 +76,13 @@ function assertConnectionActor(gm, token, stationary = true, openingId = null) {
   return session;
 }
 
+export function connectionTravelCost(plan, token) {
+  return (
+    plan.costFeet *
+    (getTokenTravelMode(token) === 'ground' && getTokenConditions(token).includes('prone') ? 2 : 1)
+  );
+}
+
 export function prepareConnectionTravel(gm, token, id, { action = 'cross' } = {}) {
   const session = assertConnectionActor(gm, token, true, id);
   const travelMode = getTokenTravelMode(token);
@@ -76,7 +90,9 @@ export function prepareConnectionTravel(gm, token, id, { action = 'cross' } = {}
     travelMode === 'fly'
       ? getTokenFallTraits(token).flySpeed
       : getTokenMovementSettings(token).speed;
-  if (token.characterSheetId) {
+  if (gm.playerInput) {
+    allowance = gm.playerInput.movementBudget(token).remainingFeet;
+  } else if (token.characterSheetId) {
     allowance = session.active
       ? session.movementAllowance(token, travelMode)
       : session.freeMovementAllowance(token, travelMode);
@@ -99,16 +115,21 @@ export function prepareConnectionTravel(gm, token, id, { action = 'cross' } = {}
     getTokenConditions(token).includes('prone')
   )
     denied('Stand up before climbing through an opening.');
-  const costFeet =
-    plan.costFeet *
-    (travelMode === 'ground' && getTokenConditions(token).includes('prone') ? 2 : 1);
+  const costFeet = connectionTravelCost(plan, token);
   if (costFeet > allowance + 1e-6)
     denied(
       `This route needs ${costFeet} ft; only ${allowance} ft remains`,
       'insufficient-movement',
       { costFeet, allowanceFeet: allowance }
     );
-  return { ...plan, costFeet, travelMode, free: !session.active };
+  return {
+    ...plan,
+    costFeet,
+    travelMode,
+    free: gm.playerInput
+      ? !gm.playerInput.commands.getState().gameplay.turn?.active
+      : !session.active,
+  };
 }
 
 function actionLabel(connection, token, mapId, action) {

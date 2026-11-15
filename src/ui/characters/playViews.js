@@ -348,6 +348,9 @@ export function renderPlayView(context) {
   const playerState = playerGameplay?.commands.getState();
   const publicTurn = playerState?.gameplay.turn;
   const endTurn = playerGameplay?.commands.availability('turn.end', token.id);
+  const undo = playerGameplay?.commands.availability('action.undo', token.id);
+  const canUndo =
+    playerState?.gameplay.ownedTokens.find((actor) => actor.tokenId === token.id)?.canUndo === true;
   const playContext = {
     ...context,
     choices,
@@ -383,11 +386,22 @@ export function renderPlayView(context) {
                 : 'The DM starts and advances turns. No active turn is assigned.'
           }</p>
       ${
-        combat
+        combat || canUndo
           ? `<div class="sheet-play-turn-controls">
-        <button type="button" data-sheet-action="turn-end" aria-label="End turn"
+        ${
+          combat
+            ? `<button type="button" data-sheet-action="turn-end" aria-label="End turn"
           title="${escape(endTurn.reason || endTurn.code.replaceAll('-', ' '))}"
-          ${editingLayout || playerGameplay.commands.pending || !endTurn.allowed ? 'disabled' : ''}>End Turn</button>
+          ${editingLayout || playerGameplay.commands.pending || !endTurn.allowed ? 'disabled' : ''}>End Turn</button>`
+            : ''
+        }
+        ${
+          canUndo
+            ? `<button type="button" data-sheet-action="use-undo"
+          title="${escape(undo.reason || undo.code.replaceAll('-', ' '))}"
+          ${editingLayout || playerGameplay.commands.pending || !undo.allowed ? 'disabled' : ''}>Undo last use</button>`
+            : ''
+        }
       </div>`
           : ''
       }

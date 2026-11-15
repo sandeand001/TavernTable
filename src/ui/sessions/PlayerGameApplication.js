@@ -9,6 +9,7 @@ import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { validatePlayerState } from '../../campaigns/PlayerPublicProtocol.js';
 import { isCloudWorldCommandReceipt } from '../../campaigns/CloudProtocol.js';
 import AuthoritativeDiceReplay from '../../systems/dice/AuthoritativeDiceReplay.js';
+import CampaignTraversalPopup from '../campaigns/CampaignTraversalPopup.js';
 
 function assertObserverSelection(state, cachedAssets) {
   validatePlayerState(state, { cachedAssets });
@@ -356,6 +357,12 @@ export default class PlayerGameApplication {
     if (artwork) this._applyArtwork(artwork, { defer: false });
     this._updateCommandReadiness();
     this.controls.update(state, { placementGrantId: this.placementGrantId });
+    if (this.traversalPopup && previous.observerTokenId !== state.observerTokenId) {
+      this.traversalPopup.dispose();
+      this.traversalPopup = null;
+    }
+    if (this.observerId !== null && !this.traversalPopup)
+      this.traversalPopup = new CampaignTraversalPopup({ gameManager: this.gameManager }).attach();
     if (result.sharedMovements?.length || result.sharedVisuals?.length) {
       this.presentationRevision = state.sceneRevision;
       try {
@@ -565,7 +572,7 @@ export default class PlayerGameApplication {
               'The host did not follow the relocated character into its current area'
             );
           followed = true;
-          await this.runtime.clear();
+          await this._clearWorldPresentation();
           options = { observerTokenId: observer.id };
           continue;
         }
@@ -574,7 +581,7 @@ export default class PlayerGameApplication {
         if (version !== this.selectionVersion)
           return { applied: false, reason: 'superseded-selection' };
         if (error.status !== 403 || recovery >= 2) throw error;
-        await this.runtime.clear();
+        await this._clearWorldPresentation();
         recovery++;
         this.mapId = null;
         options = recovery === 1 ? { observerTokenId: this.observerId } : {};
@@ -641,9 +648,7 @@ export default class PlayerGameApplication {
         throw new Error('Choose a nearby visible door for your active assigned character');
       if (door.locked) throw new Error('This door is locked. Ask the DM to unlock it.');
       const version = ++this.selectionVersion;
-      this.input.targeting.cancel();
-      this.dice.cancel();
-      await this.runtime.clear();
+      await this._clearWorldPresentation();
       try {
         const receipt = await this.connection.call('doorState', [
           state.campaign.id,
@@ -704,9 +709,7 @@ export default class PlayerGameApplication {
     this.placementGrantId = null;
     this.observerId = id;
     this.mapId = null;
-    this.input.targeting.cancel();
-    this.dice.cancel();
-    await this.runtime.clear();
+    await this._clearWorldPresentation();
     return this._readState({ observerTokenId: id }, version);
   }
 
@@ -720,9 +723,7 @@ export default class PlayerGameApplication {
     this.pendingArtwork = null;
     if (this.connection.kind === 'cloud-player') this.connection.invalidateAssets?.();
     this.mapId = id;
-    this.input.targeting.cancel();
-    this.dice.cancel();
-    await this.runtime.clear();
+    await this._clearWorldPresentation();
     return this._readState(
       {
         observerTokenId: this.observerId,
@@ -742,9 +743,7 @@ export default class PlayerGameApplication {
     this.placementGrantId = id;
     this.observerId = null;
     this.mapId = grant.mapId;
-    this.input.targeting.cancel();
-    this.dice.cancel();
-    await this.runtime.clear();
+    await this._clearWorldPresentation();
     return this._readState({ placementGrantId: id, observerTokenId: null }, version);
   }
 
@@ -805,6 +804,14 @@ export default class PlayerGameApplication {
     return result;
   }
 
+  _clearWorldPresentation() {
+    this.input.targeting.cancel();
+    this.dice.cancel();
+    this.traversalPopup?.dispose();
+    this.traversalPopup = null;
+    return this.runtime.clear();
+  }
+
   async fail(error, { endAccess = false } = {}) {
     this.pendingArtwork = null;
     this.commands.setStateError(error);
@@ -820,9 +827,7 @@ export default class PlayerGameApplication {
       this.observerId = null;
       this.mapId = null;
     }
-    this.input.targeting.cancel();
-    this.dice.cancel();
-    await Promise.all([this.runtime.clear(), closing]);
+    await Promise.all([this._clearWorldPresentation(), closing]);
     GameErrors.input(error, { component: 'PlayerGameApplication', operation: 'session' });
   }
 
@@ -861,6 +866,7 @@ export default class PlayerGameApplication {
   async destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.traversalPopup?.dispose();
     this.pendingArtwork = null;
     this.refreshQueued = false;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);

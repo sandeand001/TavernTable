@@ -51,6 +51,12 @@ export default class PlayerInputController {
     return this.commands.send('turn.end', token.id, {});
   }
 
+  undo(token) {
+    if (!this.gameManager.placedTokens.includes(token))
+      throw new Error('Choose the active assigned character before undoing an action use');
+    return this.commands.send('action.undo', token.id, {});
+  }
+
   requestFacing(token, angle) {
     if (!this.gameManager.placedTokens.includes(token) || !Number.isFinite(angle))
       throw new Error('Facing requires a placed assigned character and a finite angle');
@@ -119,6 +125,15 @@ export default class PlayerInputController {
     if (!this.gameManager.placedTokens.includes(token))
       throw new Error('Choose the active assigned character before standing');
     return this.commands.send('stand', token.id, {});
+  }
+
+  traverse(token, connectionId, { action = 'cross' } = {}) {
+    if (!this.gameManager.placedTokens.includes(token))
+      throw new Error('Choose the active assigned character before using a connection');
+    return this.commands.send('traverse', token.id, {
+      connectionId,
+      ...(action === 'cross' ? {} : { action }),
+    });
   }
 
   roll(token, request) {
@@ -219,13 +234,23 @@ export default class PlayerInputController {
             },
           ];
         const capability = this.commands.availability(protocolKind(action), token.id);
+        const needsElevationBudget =
+          action.flight?.feet && ['raise', 'lower'].includes(action.flight.kind);
+        const affordable =
+          !needsElevationBudget ||
+          this.ownedToken(token).movement.remainingFeet + 1e-7 >= action.flight.feet;
         return [
           action.id,
           {
-            allowed: capability.allowed && !this.commands.pending,
+            ...(action.flight && capability.visible !== undefined
+              ? { visible: capability.visible }
+              : {}),
+            allowed: capability.allowed && affordable && !this.commands.pending,
             reason: this.commands.pending
               ? 'Wait for the current host command and presentation.'
-              : capability.reason || capability.code.replaceAll('-', ' '),
+              : capability.allowed && !affordable
+                ? `Not enough flying movement remains for ${action.flight.feet} feet.`
+                : capability.reason || capability.code.replaceAll('-', ' '),
           },
         ];
       })

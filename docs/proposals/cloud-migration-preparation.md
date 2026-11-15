@@ -4787,3 +4787,66 @@ also passes its newly built isolated Linux package gate:
 
 This image records the visual/Cover slice, not the still-unfinished complete
 player-control UI gate; later runtime changes require their own exact image check.
+
+### M5 actual player-control development gate
+
+Direct successful gameplay RPCs had not proved that players could operate their
+real controls. Native input, sheet, radial-menu and dice-button tracer tests
+reproduced missing eligibility, absent Undo/traversal controls, and a local-only
+entrance-approach path. This development slice connects those existing controls
+to current server authority without creating a mutable player combat session.
+
+- Dash uses the native filtered action list, spends one action once, and exposes
+  the committed 60-foot allowance. Sheet Undo consumes only the current server
+  receipt, restores the action/allowance once, then disappears.
+- Facing, Walk/Run/style preferences and ordinary dice remain usable between
+  turns without changing base Speed or rule budgets. The actual dice button
+  displays the same result recorded by authority.
+- Stand Up displays and spends 15 feet for a 30-foot maximum Speed, clears
+  persistent Prone and spends no action. Repeating it is unavailable.
+- A real scene-granted Fly spell enables the actual radial menu even when base
+  flying speed is zero. Loaded native FBX models interpolate takeoff, elevation
+  and Drop without replacement; unaffordable elevation options disable. Drop
+  works between turns, spends no movement/action and retains concentration.
+- The player application mounts the existing traversal popup. Public geometry
+  reuses native read-only connection planning; approach and crossing submit
+  separate authoritative commands rather than mutating local scene/combat.
+  Local/server crawling costs share one rule, so a five-foot doorway costs a
+  prone actor ten feet. Escape cancels the later offer, not an already committed
+  approach. Players do not receive owner lock/unlock controls.
+- Observer/map/arrival changes and failures dispose private traversal offers
+  together with targeting, dice and world rendering. Malformed boolean flight
+  visibility and private restore fields fail closed before actor hydration.
+- Actual cloud HTTP reproduced a physical floor refusal being converted from
+  `422 flight-blocked` to an uncertain `503 invalid-cloud-response`, and a
+  non-prone Stand Up returning `500 campaign-request-failed`. Constant safe
+  native-denial mappings and the shared native standing guard now preserve
+  definitive `422` responses. Failed intents change no canonical data; subsequent
+  new commands work instead of being trapped behind the original pending intent.
+
+Validation:
+
+- **302 tests / 19 Jest suites**, **188.685 seconds**, all pass with open-handle
+  detection. Includes actual UI/input and loaded sprites, all local authoritative
+  gameplay cases, existing owner traversal/approach, native physical d20 replay,
+  sheet/context controls, scoped clients, Undo and private-state rejection.
+- The complete world-command emulator file passes **29 actual HTTP/SSE cases**,
+  zero failures/skips/cancellations, **369.397 seconds**. Its ten managed SDK
+  clients converge through CAS contention, duplicate/lost replies, reconnect and
+  revocation; private bytes and remaining transports after cleanup are zero.
+  Warm rejoin still transfers zero valid unchanged graphic/image bodies.
+- Formatting, affected-source ESLint and architecture layering pass.
+  The isolated-package hash gate now includes the shared traversal-cost source.
+
+This is not a new whole-repository stable result, hosted latency/cost acceptance,
+image acceptance, deployment or completed M5-06. The earlier exact `e970380`
+image does not contain these later changes. Both gameplay flags and the published
+R8 pilot remain unchanged; the checklist stays **59/65**, and UX-01 is untouched.
+
+One complete-world input edge remains explicit: a flying entrance approach at a
+different elevation currently asks the player to match that elevation first.
+Native automatic vertical-then-horizontal approach, including non-five-foot
+opening heights, still needs its own authoritative tracer before complete native
+acceptance. Matching final runtime/frontend packaging, the actual four-to-five-hour
+ten-client rehearsal, recovery/draining and production/cutover approvals remain
+separate gates.

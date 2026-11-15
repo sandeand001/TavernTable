@@ -206,7 +206,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'src/campaigns/CloudProtocol.js',
     'tools/cloud/immutable-objects.js', 'tools/movement-presentations.js', 'tools/physical-dice.js',
     'src/campaigns/CloudOwnerProtocol.js', 'src/campaigns/PlayerPublicProtocol.js',
-    'src/campaigns/ServerGameplay.js', 'src/systems/dice/D20Dynamics.js',
+    'src/campaigns/ServerGameplay.js', 'src/campaigns/CampaignTravel.js', 'src/systems/dice/D20Dynamics.js',
     'src/campaigns/CampaignCover.js', 'src/config/token-adapter/CoverMetrics.js',
     'assets/Items/d20-gold.glb', 'package.json', 'package-lock.json',
   ]) {

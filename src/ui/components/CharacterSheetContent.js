@@ -767,6 +767,18 @@ export default class CharacterSheetContent {
     if (!button) return;
     const action = button.dataset.sheetAction;
     if (
+      action === 'use-undo' &&
+      this.services.playerGameplay &&
+      this.services.sheetContext !== 'library'
+    ) {
+      this._run(
+        () => this.services.playerGameplay.undo(this.token),
+        'Host action and resources restored.',
+        false
+      );
+      return;
+    }
+    if (
       action === 'stand-up' &&
       this.services.playerGameplay &&
       this.services.sheetContext !== 'library'
@@ -1130,7 +1142,7 @@ export default class CharacterSheetContent {
     for (const control of this.root.querySelectorAll(
       '[data-sheet-action="new"],[data-sheet-action="delete"],[data-sheet-action="import"],' +
         '[data-sheet-action="cast"],[data-sheet-action="use-action"],[data-sheet-action="stand-up"],' +
-        '[data-sheet-action="roll"],[data-sheet-action="recent-roll"],' +
+        '[data-sheet-action="roll"],[data-sheet-action="recent-roll"],[data-sheet-action="use-undo"],' +
         (worldPlayer
           ? '[data-sheet-action="movement-mode"],[data-sheet-action="movement-style"]'
           : '[data-sheet-section="combat"],[data-sheet-section="noncombat"]') +
@@ -1164,6 +1176,14 @@ export default class CharacterSheetContent {
         'stand',
         this.token.id
       );
+      const undoCapability = this.services.playerGameplay.commands.availability(
+        'action.undo',
+        this.token.id
+      );
+      for (const control of this.root.querySelectorAll('[data-sheet-action="use-undo"]')) {
+        control.disabled = busy || editingLayout || !undoCapability.allowed;
+        control.title = undoCapability.reason || undoCapability.code.replaceAll('-', ' ');
+      }
       for (const control of this.root.querySelectorAll('[data-sheet-action="stand-up"]')) {
         control.disabled = busy || !standCapability.allowed;
         control.title = standCapability.reason || standCapability.code.replaceAll('-', ' ');

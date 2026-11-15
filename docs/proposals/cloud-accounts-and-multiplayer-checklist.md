@@ -1468,6 +1468,10 @@ Revalidation in the intended environment remains part of M1 and M4.
 - [ ] **M5-06 - Run a representative ten-client, full-session rehearsal.**
   - **Status:** in progress. Complete native cloud gameplay paths are being
     finished and regression-tested before enabling either gameplay capability.
+    Actual player controls now have a **302-test / 19-suite** native regression
+    gate and **29 actual cloud HTTP/SSE cases**, including ten managed SDK
+    participants. Remaining complete-world path acceptance and matching exact
+    packaging are still development gates, not a completed full-session rehearsal.
     The selected private campaign and returning seats are ready; a short
     technical pilot is not substituted for the required four-to-five-hour run.
   - **Depends:** `M5-05`, `M4-12`.

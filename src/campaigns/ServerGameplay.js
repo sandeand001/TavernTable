@@ -10,7 +10,12 @@ import {
 } from '../entities/creatures/TokenMovement.js';
 import { encodeScene } from './CampaignScene.js';
 import { buildSurfaceRange, getSurfaceRoute } from '../terrain/SurfaceNavigation.js';
-import { MAX_STEP_HEIGHT_FEET, FLIGHT_TAKEOFF_FEET } from '../config/TokenMovementConfig.js';
+import {
+  MAX_STEP_HEIGHT_FEET,
+  FLIGHT_TAKEOFF_FEET,
+  FLIGHT_ELEVATION_STEPS,
+} from '../config/TokenMovementConfig.js';
+import { movementSpeed } from '../rules/flight.js';
 import { boundsIntersectSolid } from '../terrain/ConvexGeometry.js';
 import { playerCreatureVisibility } from './CreatureVisibility.js';
 import { collectCollisionObstacles } from '../systems/dice/DicePhysics.js';
@@ -28,6 +33,7 @@ import { getTokenCommand } from '../config/TokenCommandConfig.js';
 import { nearbyDoors } from './CampaignDoors.js';
 import { findCoverWall, coverDestination } from './CampaignCover.js';
 import { COVER_POSES } from '../config/token-adapter/CoverMetrics.js';
+import { connectionTravelCost } from './CampaignTravel.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 
@@ -133,12 +139,46 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
         const permittedTurn = !status.active || status.isTurn;
         const saved = scene.creatures.find((entry) => entry.id === actor.id);
         const canEmote = canPlayerEmote(saved, library.get(actor.characterSheetId), library);
-        const supportedPose =
-          saved.pose.kind === 'ground' ||
-          (saved.pose.kind === 'flight' &&
-            library.rules.flightAvailability(
-              runtime.combat.movementCharacter(actor, library.get(actor.characterSheetId))
-            ).allowed);
+        const availableActions = runtime.combat.availableActions(actor);
+        const standing = runtime.combat.standingAvailability(actor);
+        const flightCharacter = runtime.combat.movementCharacter(
+          actor,
+          library.get(actor.characterSheetId)
+        );
+        const flight = library.rules.flightAvailability(flightCharacter);
+        const flying = saved.pose.kind === 'flight';
+        const flightMovement = playerMovementBudget(runtime.combat, actor, 'fly');
+        const canFly = permittedTurn && !status.busy && flight.allowed;
+        const canTakeOff =
+          saved.pose.kind === 'ground' &&
+          canFly &&
+          flightMovement.remaining + 1e-7 >= FLIGHT_TAKEOFF_FEET;
+        const canChangeElevation =
+          flying &&
+          canFly &&
+          flightMovement.remaining + 1e-7 >= Math.min(...FLIGHT_ELEVATION_STEPS);
+        const flightCode = !permittedTurn
+          ? 'not-your-turn'
+          : status.busy
+            ? 'busy'
+            : 'flight-unavailable';
+        const flightReason = !permittedTurn
+          ? 'Wait for your active turn'
+          : status.busy
+            ? 'Finish the current action or movement'
+            : flight.reason || 'Choose a supported pose with enough flying movement';
+        const elevationAvailability = {
+          visible: flying,
+          allowed: canChangeElevation,
+          code: canChangeElevation ? 'allowed' : flightCode,
+          reason: canChangeElevation ? null : flightReason,
+        };
+        const landing = flying
+          ? runtime.world.findSupportBelow(runtime.world.getCampaignPosition(actor.id), {
+              mapId: actor.mapId,
+            })
+          : null;
+        const supportedPose = saved.pose.kind === 'ground' || (flying && flight.allowed);
         const canMove =
           permittedTurn &&
           !status.busy &&
@@ -160,10 +200,66 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
           tokenId: actor.id,
           mapId: actor.mapId,
           availability: {
+            'action.undo': {
+              allowed: status.canUndo && permittedTurn,
+              code: status.canUndo && permittedTurn ? 'allowed' : 'undo-unavailable',
+              reason:
+                status.canUndo && permittedTurn
+                  ? null
+                  : 'No matching use can be undone in this sign-in and turn',
+            },
+            'action.use': {
+              allowed: availableActions.length > 0,
+              code: availableActions.length
+                ? 'allowed'
+                : permittedTurn
+                  ? 'action-unavailable'
+                  : 'not-your-turn',
+              reason: availableActions.length
+                ? null
+                : permittedTurn
+                  ? 'No current action has available costs and requirements'
+                  : 'Wait for an eligible turn or reaction',
+            },
             emote: {
               allowed: canEmote,
               code: canEmote ? 'allowed' : 'emote-unavailable',
               reason: canEmote ? null : 'Choose a grounded, standing creature able to move',
+            },
+            facing: { allowed: true, code: 'allowed' },
+            'movement.settings': { allowed: true, code: 'allowed' },
+            roll: { allowed: true, code: 'allowed' },
+            'flight.takeoff': {
+              visible: !flying && movementSpeed(flightCharacter, 'fly') > 0,
+              allowed: canTakeOff,
+              code: canTakeOff ? 'allowed' : flightCode,
+              reason: canTakeOff ? null : flightReason,
+              costFeet: FLIGHT_TAKEOFF_FEET,
+            },
+            'flight.raise': { ...elevationAvailability },
+            'flight.lower': { ...elevationAvailability },
+            'flight.drop': {
+              visible: flying,
+              allowed: flying && !!landing,
+              code:
+                flying && landing
+                  ? 'allowed'
+                  : flying
+                    ? 'landing-unavailable'
+                    : 'flight-unavailable',
+              reason:
+                flying && landing
+                  ? null
+                  : flying
+                    ? 'There is no supported landing below'
+                    : 'Only an airborne creature can drop',
+              costFeet: 0,
+            },
+            stand: {
+              allowed: standing.allowed,
+              code: standing.allowed ? 'allowed' : 'stand-unavailable',
+              reason: standing.reason || null,
+              costFeet: standing.cost,
             },
             move: {
               allowed: canMove,
@@ -177,6 +273,13 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
                     : status.busy
                       ? 'Finish the current action or movement'
                       : 'No movement is available',
+            },
+            traverse: {
+              allowed: canMove,
+              code: moveCode,
+              reason: canMove
+                ? null
+                : 'Choose a supported actor pose with available movement on an eligible turn',
             },
             'turn.end': {
               allowed: status.isTurn && !status.busy,
@@ -208,7 +311,7 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
             attacksAvailable: status.attacksAvailable,
             bonusAttacksRemaining: status.bonusAttacksRemaining,
           },
-          availableActions: copy(runtime.combat.availableActions(actor)),
+          availableActions: copy(availableActions),
           canUndo: status.canUndo,
           movement: {
             spentFeet: movement.spent,
@@ -773,8 +876,9 @@ export async function executePlayerCommand(
         'unsupported-traversal'
       );
     const target = runtime.world.getMap(plan.targetMapId);
-    const ticket = runtime.combat.beginConnectionMovement(actor, plan.costFeet, plan.travelMode);
-    runtime.combat.finishMovement(ticket, plan.costFeet);
+    const costFeet = connectionTravelCost(plan, actor);
+    const ticket = runtime.combat.beginConnectionMovement(actor, costFeet, plan.travelMode);
+    runtime.combat.finishMovement(ticket, costFeet);
     const next = copy(scene);
     const moved = next.creatures.find((entry) => entry.id === actor.id);
     moved.mapId = plan.targetMapId;
@@ -793,7 +897,7 @@ export async function executePlayerCommand(
       receipt: {
         type: 'traverse',
         tokenId: actor.id,
-        costFeet: plan.costFeet,
+        costFeet,
         routeFeet: plan.routeFeet,
         placement: {
           mapId: moved.mapId,
@@ -1112,6 +1216,8 @@ export async function executePlayerCommand(
     return { scene: next, receipt: { type: 'roll', tokenId: actor.id, roll } };
   }
   if (command.kind === 'stand') {
+    const standing = runtime.combat.standingAvailability(actor);
+    if (!standing.allowed) throw gameplayError(standing.reason, 'stand-unavailable');
     await runtime.combat.standUp(actor);
     await library.flush();
     const next = copy(scene);

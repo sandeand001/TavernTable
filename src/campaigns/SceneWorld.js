@@ -608,6 +608,7 @@ export async function finishCampaignPhysicalLanding(gm, token, landing) {
 }
 
 export async function travelCampaignConnection(gm, token, connectionId, options = {}) {
+  if (gm.playerInput) return gm.playerInput.traverse(token, connectionId, options);
   return queueCampaignOperation(gm, 'travel', () =>
     applyCampaignConnectionTravel(gm, token, connectionId, options)
   );

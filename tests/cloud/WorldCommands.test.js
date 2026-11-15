@@ -42,6 +42,7 @@ const {
   default: CloudPlayerSessionConnection,
 } = require('../../src/campaigns/CloudPlayerSessionConnection.js');
 const { openDatabase, requestResult, transact } = require('../../src/storage/indexedDB.js');
+const { default: PlayerCommandAdapter } = require('../../src/ui/sessions/PlayerCommandAdapter.js');
 
 async function fixture(
   t,
@@ -2879,6 +2880,90 @@ test(
     );
     assert(visible.state.publicScene.actors.some((actor) => actor.id === hidden.id));
     assert.deepEqual(visible.state.publicScene.updates, []);
+  }
+);
+
+test(
+  'native control refusals remain definitive through real cloud HTTP and never trap the player in uncertain-command retry',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { ruleset: '2024', cleanup: true });
+    await f.library.edit(f.hero, { fallTraits: { flySpeed: 60, hover: true } });
+    const scene = structuredClone(f.scene);
+    scene.creatures.find((actor) => actor.id === 'token-1').pose = {
+      kind: 'flight',
+      world: { x: 1.5, y: 1, z: 1.5 },
+    };
+    const native = gameplayRuntime(scene, f.library);
+    await native.combat.startTurn(native.actors.find((actor) => actor.id === 'token-1'));
+    scene.combat = native.combat.snapshot();
+    const published = await publishOwner(f, {
+      commandId: randomUUID(),
+      sessionId: f.live.sessionId,
+      presentations: [],
+      change: {
+        ruleset: '2024',
+        revision: 1,
+        charactersRevision: f.library.revision,
+        scene: encodeScene(scene, f.validation),
+      },
+    });
+    assert.equal(published.status, 200);
+    const connection = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await connection.open({ observerTokenId: 'token-1', mapId: 'map-main' });
+    const commands = new PlayerCommandAdapter({
+      connection,
+      getState: () => connection.state,
+      getCachedAssets: () => connection.assets,
+    });
+    const before = await f.owner.client.readCharacters(f.campaign.id);
+    await assert.rejects(commands.send('flight.lower', 'token-1', { feet: 10 }), {
+      status: 422,
+      code: 'flight-blocked',
+    });
+    assert.equal(commands.canRetry, false);
+    assert.deepEqual(await f.owner.client.readCharacters(f.campaign.id), before);
+    await commands.send('facing', 'token-1', { angle: Math.PI / 2 });
+    const unchanged = await f.owner.client.readCharacters(f.campaign.id);
+    const raw = (kind) => ({
+      version: 1,
+      commandId: randomUUID(),
+      kind,
+      payload: {},
+      sceneRevision: connection.state.sceneRevision,
+      charactersRevision: connection.state.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      view: {
+        mapId: connection.state.publicScene.presentation.mapId,
+        assetKey: connection.state.publicScene.assetKey,
+      },
+    });
+    for (const [kind, code] of [
+      ['stand', 'stand-unavailable'],
+      ['flight.takeoff', 'flight-unavailable'],
+    ]) {
+      await assert.rejects(connection.call('playerCommand', [f.campaign.id, raw(kind)]), {
+        status: 422,
+        code,
+      });
+      assert.deepEqual(await f.owner.client.readCharacters(f.campaign.id), unchanged);
+    }
+    await commands.send('facing', 'token-1', { angle: Math.PI });
+    assert.equal(commands.canRetry, false);
+    const saved = await f.owner.client.readCharacters(f.campaign.id);
+    assert.equal(saved.sceneRevision, before.sceneRevision + 2);
+    assert.equal(saved.revision, before.revision);
+    const final = playerGameplayState(JSON.parse(saved.scene), f.library, [f.hero]).ownedTokens[0];
+    assert.deepEqual(final.movement, { spentFeet: 0, remainingFeet: 60, allowanceFeet: 60 });
+    assert.equal(final.economy.actions, 1);
   }
 );
 

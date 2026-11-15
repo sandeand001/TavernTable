@@ -561,8 +561,9 @@ export function validatePlayerState(state, { cachedAssets = null } = {}) {
       invalid();
     for (const availability of Object.values(token.availability)) {
       if (
-        !only(availability, ['allowed', 'code', 'reason', 'costFeet']) ||
+        !only(availability, ['allowed', 'code', 'reason', 'costFeet', 'visible']) ||
         typeof availability.allowed !== 'boolean' ||
+        (availability.visible !== undefined && typeof availability.visible !== 'boolean') ||
         typeof availability.code !== 'string' ||
         !/^[a-z][a-z-]*$/.test(availability.code) ||
         (availability.reason !== undefined &&

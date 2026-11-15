@@ -795,6 +795,20 @@
   time does. Head observers wait for the matching committed transient update,
   so the first authoritative player HUD includes the correct Undo availability.
   An unavailable Undo returns its typed denial, not an invalid-response fallback.
+- **Player control eligibility (M5 development verified; activation gated)**:
+  actual input, sheets, dice buttons and the native traversal popup consume the
+  server's current assigned-actor capabilities; never substitute a local combat
+  session. Offered actions reuse native cost/requirement filtering, including
+  reactions. Undo uses only server-owned receipts. Facing, pace/style and ordinary
+  rolls do not require an active turn; movement and paid elevation still do.
+  Standing publishes its native half-maximum-Speed cost. Flight visibility uses
+  effective scene-granted speed, not just base traits; elevation choices also
+  respect remaining movement. Drop retains native no-movement-cost semantics.
+  Read-only public geometry may preview a connection, but approach and crossing
+  are authoritative commands. Local and server traversal share crawling costs.
+  Clear traversal offers with the rest of the private world presentation.
+  Known native refusals remain definitive typed responses, never uncertain
+  transport failures requiring another same-ID attempt.
 - **Cloud arrival grant (M5 development verified; gameplay activation gated)**:
   the owner chooses an assigned saved character, current seat generation and
   explicit destination cell through Players and invitations. One durable grant
