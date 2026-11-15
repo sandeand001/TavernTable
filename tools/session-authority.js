@@ -1,5 +1,6 @@
 const { DatabaseSync } = require('node:sqlite');
 const { createHash, randomBytes, randomUUID, timingSafeEqual } = require('node:crypto');
+const { playerRoomVisits } = require('./player-room-visits.js');
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const denied = (message = 'This operation requires the DM') =>
@@ -256,17 +257,14 @@ class SessionAuthority {
   }
 
   recordRoomVisits(campaignId, scene) {
-    if (scene.version !== 3) return;
-    const rooms = new Set(scene.maps.filter((map) => map.base === 'floor').map((map) => map.id));
     const insert = this.database.prepare(`
       INSERT OR IGNORE INTO player_rooms(player_id, map_id)
       SELECT players.id, ? FROM players
       JOIN assignments ON assignments.player_id = players.id
       WHERE players.campaign_id = ? AND assignments.character_id = ?
     `);
-    for (const creature of scene.creatures)
-      if (creature.characterId && rooms.has(creature.mapId))
-        insert.run(creature.mapId, campaignId, creature.characterId);
+    for (const [characterId, rooms] of playerRoomVisits(scene))
+      for (const mapId of rooms) insert.run(mapId, campaignId, characterId);
   }
 
   visitedRoomIds(session) {

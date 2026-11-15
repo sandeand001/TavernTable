@@ -4631,3 +4631,34 @@ fixed and re-tested; temporary tagged diagnostics are removed. No hosted image
 or frontend is published in this slice. Room-discovery persistence, remote
 action/emote completion and the actual full-session rehearsal remain open;
 the canonical checklist remains **59/65**.
+
+### M5 durable room-discovery development gate
+
+The actual native-cloud regression initially returned no remembered room after
+the assigned actor physically entered it. Cloud seats now retain visited floor
+IDs using the same physical-occupancy rule as the local authority. New room
+entries update only affected assigned seats in the canonical publication
+transaction, including owner relocations while players are disconnected.
+Assignment to an already placed room character records that current visit.
+Fresh verified participant reads can backfill a pre-upgrade current visit once,
+with matching live epoch, seat generation and canonical head.
+
+Ordinary steps within an already occupied room do not trigger another seat
+scan/write for discovery. Repeated reads and transport ACKs do not create visit
+writes. Room IDs are history, not render grants: the participant's active real
+observer still controls all current maps, actors, image manifests and doors.
+The portable scene/backup format and original data are unchanged.
+
+The native test proves exact discovery for only the assigned character, retains
+it after leaving and through a separate backend authority, and keeps both
+closed interior maps absent from the returned exterior artwork. Assigning an
+already placed upstairs character adds only that legitimate historical ID,
+without granting its room to the other active observer; a fresh read leaves the
+seat's actual datastore update time unchanged. The coupled discovery, arrival
+and staged-revocation gate passes **3/3**, **31.018 seconds**. The unchanged local
+door/discovery regression passes **1/1**, **2.488 seconds**, with open-handle
+detection. The new shared helper is explicitly included in the container
+allowlist and exact runtime hash gate.
+
+Full gameplay activation and the actual ten-client full-session rehearsal
+remain gated. This is not a hosted rollout or a completed M5-06 claim.

@@ -165,6 +165,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/cloud/admin-runtime.js', 'tools/cloud/production-runtime.js', 'tools/cloud/production-host.js',
     'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'tools/cloud/usage-limits.js',
     'tools/cloud/account-access.js', 'tools/player-undo-sessions.js',
+    'tools/player-room-visits.js',
     'tools/assigned-character-change.js',
     'tools/published-maps.js', 'tools/cloud/participant-state.js',
     'tools/cloud/participant-changes.js',

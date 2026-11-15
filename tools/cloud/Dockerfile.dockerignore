@@ -13,6 +13,7 @@ tools/*
 !tools/movement-presentations.js
 !tools/physical-dice.js
 !tools/player-undo-sessions.js
+!tools/player-room-visits.js
 !tools/cloud/
 tools/cloud/*
 !tools/cloud/admin-runtime.js

@@ -2320,6 +2320,134 @@ test(
 );
 
 test(
+  'cloud room discovery persists only assigned physical visits without granting later room sight',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const upper = await f.library.create('Unassigned upstairs guide');
+    const scene = createTwoFloorTravelScene({
+      ruleset: '2014',
+      characters: [f.hero, f.npc, upper].map((id) => f.library.get(id)),
+    });
+    scene.connections[0].open = false;
+    let sceneRevision = 1;
+    const publish = async () => {
+      const response = await publishOwner(f, {
+        commandId: randomUUID(),
+        sessionId: f.live.sessionId,
+        presentations: [],
+        change: {
+          ruleset: '2014',
+          revision: sceneRevision,
+          charactersRevision: f.library.revision,
+          scene: encodeScene(scene, f.validation),
+        },
+      });
+      assert.equal(response.status, 200);
+      sceneRevision++;
+    };
+    const read = (mapId) =>
+      f.member.client.readParticipantSnapshot(
+        f.campaign.id,
+        { sessionId: f.live.sessionId, observerTokenId: 'token-1', mapId, assetKey: null },
+        f.grant.access
+      );
+    await publish();
+    assert.deepEqual((await read('map-main')).state.visitedRoomIds || [], []);
+    const actor = scene.creatures.find((entry) => entry.characterId === f.hero);
+    Object.assign(actor, {
+      mapId: 'ground-floor',
+      gridX: 1,
+      gridY: 2,
+      pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 2.5 } },
+    });
+    scene.view.mapId = 'ground-floor';
+    await publish();
+    assert.deepEqual((await read('ground-floor')).state.visitedRoomIds, ['ground-floor']);
+    Object.assign(actor, {
+      mapId: 'map-main',
+      gridX: 10,
+      gridY: 10,
+      pose: { kind: 'ground', world: { x: 10.5, y: 0, z: 10.5 } },
+    });
+    scene.view.mapId = 'map-main';
+    await publish();
+    const returned = await read('map-main');
+    assert.deepEqual(returned.state.visitedRoomIds, ['ground-floor']);
+    assert(!returned.state.publicScene.assets.maps.some((map) => map.id === 'ground-floor'));
+    assert(!returned.state.publicScene.assets.maps.some((map) => map.id === 'upper-floor'));
+    const replacement = await cloudApi({
+      access: f.access,
+      store: new CloudCampaignStore({
+        firestore: f.runtime.firestore,
+        access: f.access,
+        packs: f.store.packs,
+        resources: f.store.resources,
+        objects: f.store.objects,
+        assets: f.store.assets,
+      }),
+    });
+    t.after(() => replacement.close());
+    const response = await fetch(
+      `${replacement.url}/api/cloud/campaigns/${f.campaign.id}/participant-state`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + f.member.token,
+          Origin: replacement.origin,
+          'Content-Type': 'application/json',
+          'X-TavernTable-Seat': f.grant.access.seatId,
+          'X-TavernTable-Access-Generation': String(f.grant.access.accessGeneration),
+        },
+        body: JSON.stringify({
+          sessionId: f.live.sessionId,
+          observerTokenId: 'token-1',
+          mapId: 'map-main',
+          assetKey: null,
+        }),
+      }
+    );
+    assert.equal(response.status, 200);
+    const recovered = (await response.json()).result;
+    assert.deepEqual(recovered.state.visitedRoomIds, ['ground-floor']);
+    assert.deepEqual(
+      recovered.state.publicScene.assets.maps.map((map) => map.id),
+      ['map-main']
+    );
+    const assigned = await f.owner.client.assignCharacter(f.campaign.id, {
+      seatId: f.grant.access.seatId,
+      characterId: upper,
+      assigned: true,
+      accessGeneration: f.grant.access.accessGeneration,
+    });
+    const access = await f.member.client.getParticipantAccess(f.campaign.id);
+    assert.equal(access.access.accessGeneration, assigned.accessGeneration);
+    const visitReference = f.runtime.firestore
+      .collection('campaigns')
+      .doc(f.campaign.id)
+      .collection('seats')
+      .doc(f.grant.access.seatId);
+    const beforeRead = await visitReference.get();
+    const newlyAssigned = await f.member.client.readParticipantSnapshot(
+      f.campaign.id,
+      {
+        sessionId: f.live.sessionId,
+        observerTokenId: 'token-1',
+        mapId: 'map-main',
+        assetKey: null,
+      },
+      access.access
+    );
+    assert.deepEqual(newlyAssigned.state.visitedRoomIds, ['ground-floor', 'upper-floor']);
+    assert.deepEqual(
+      newlyAssigned.state.publicScene.assets.maps.map((map) => map.id),
+      ['map-main']
+    );
+    assert((await visitReference.get()).updateTime.isEqual(beforeRead.updateTime));
+  }
+);
+
+test(
   'the cloud player opens a physically nearby door with canonical scope and no action or movement cost',
   { timeout: 60000 },
   async (t) => {

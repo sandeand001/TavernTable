@@ -438,7 +438,7 @@
   final backup confirmation separately. Progressive artwork, persistent cache
   and warm/private-loss behavior are described below. Cloud action Undo, nearby
   doors and explicit arrival grants now have focused M5 development gates.
-  Complete remote action/emote presentation and room-discovery acceptance remain
+  Complete remote action/emote presentation and full-session acceptance remain
   gated, not silently supported gameplay claims. Ten distinct managed principals (one owner
   and nine members) converge to canonical poses/revisions and scoped budgets,
   with stale-CAS retry, original lost-reply recovery, no duplicate costs/physics
@@ -803,6 +803,14 @@
   after canonical publication. Same-ID recovery retains its original actor ID
   and cannot place twice or roll a newer grant back. Fresh online access is
   required even when private preview artwork is cached.
+- **Cloud room discovery (M5 development verified; activation gated)**:
+  a seat remembers only floor-map IDs physically occupied by its assigned
+  characters. New visits publish with the canonical change or current assignment;
+  a verified read can backfill a previously unrecorded current visit once.
+  Repeated reads/ACKs do not write discovery. The local and cloud hosts share the
+  same physical-occupancy rule. Discovery survives backend replacement and
+  leaving the room, but never grants current terrain, actor, image or door sight;
+  those remain bound to the active real observer.
 - **Shared movement presentation**: receiving DM/player models replay committed
   safe routes with native locomotion variants, without spending costs again.
   Free play permits assigned movement and refreshes its per-journey allowance;

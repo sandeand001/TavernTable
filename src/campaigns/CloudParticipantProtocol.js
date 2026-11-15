@@ -60,10 +60,20 @@ export function validateCloudParticipantSnapshot(value, { cachedAssets = null } 
         ? ['placementGrants']
         : []),
       ...(object(value.state) && Object.hasOwn(value.state, 'arrival') ? ['arrival'] : []),
+      ...(object(value.state) && Object.hasOwn(value.state, 'visitedRoomIds')
+        ? ['visitedRoomIds']
+        : []),
     ])
   )
     invalid();
   const state = value.state;
+  if (
+    state.visitedRoomIds !== undefined &&
+    (!Array.isArray(state.visitedRoomIds) ||
+      state.visitedRoomIds.some((mapId) => !id(mapId)) ||
+      new Set(state.visitedRoomIds).size !== state.visitedRoomIds.length)
+  )
+    invalid();
   if (
     (state.placementGrants !== undefined &&
       (!Array.isArray(state.placementGrants) ||

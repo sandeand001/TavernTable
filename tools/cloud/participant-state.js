@@ -24,6 +24,7 @@ async function participantState({
   images,
   undo,
   placementGrants = [],
+  visitedRoomIds = [],
 }) {
   const library = new CampaignCharacters({ ...state, catalog });
   const known = new Set(library.list().map((character) => character.id));
@@ -139,6 +140,7 @@ async function participantState({
     doors: view.doors || [],
     gameplay,
     ...(placementGrants.length ? { placementGrants: structuredClone(placementGrants) } : {}),
+    ...(visitedRoomIds.length ? { visitedRoomIds: [...visitedRoomIds] } : {}),
     ...(arrival ? { arrival } : {}),
     publicScene: {
       ...render,
@@ -188,6 +190,7 @@ function participantDelta(previous, current, { cachedAssets = null } = {}) {
     same(previous.state.location, current.state.location) &&
     same(previous.state.placementGrants ?? null, current.state.placementGrants ?? null) &&
     same(previous.state.arrival ?? null, current.state.arrival ?? null) &&
+    same(previous.state.visitedRoomIds ?? null, current.state.visitedRoomIds ?? null) &&
     same(previous.manifest, current.manifest);
   let delta;
   if (!sameView) {

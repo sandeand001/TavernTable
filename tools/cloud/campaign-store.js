@@ -21,6 +21,7 @@ const { CompleteCloudBackupObjects, isCompleteBackupReference } = require('./bac
 const { acquireLargeFileWork } = require('./large-file-work.js');
 const { prepareAssignedCharacterChange } = require('../assigned-character-change.js');
 const { PhysicalDice } = require('../physical-dice.js');
+const { playerRoomVisits } = require('../player-room-visits.js');
 const {
   playerUndoFor,
   rememberPlayerUndo,
@@ -3966,6 +3967,7 @@ class CloudCampaignStore {
       { readOnly: true }
     );
     if (captured.replay !== null) return replayResult(captured.replay);
+    let assignedRooms = [];
     if (command.assigned) {
       const state = await this._loadSnapshot(captured.head);
       if (typeof this.resources?.catalog !== 'function')
@@ -4008,6 +4010,11 @@ class CloudCampaignStore {
           'unknown-assignment-character',
           'Choose a saved character from this campaign'
         );
+      assignedRooms = [
+        ...(playerRoomVisits(state.scene === null ? null : JSON.parse(state.scene)).get(
+          command.characterId
+        ) || []),
+      ];
     }
     return this._transaction(async (transaction) => {
       await this.access.assertEligibility(uid, transaction);
@@ -4054,6 +4061,9 @@ class CloudCampaignStore {
         : seat.characterIds.filter((characterId) => characterId !== command.characterId);
       const result = { version: 1, seatId: seat.id, characterIds, accessGeneration, changed };
       if (changed) {
+        const visitedRoomIds = [
+          ...new Set([...(seat.visitedRoomIds || []), ...assignedRooms]),
+        ].sort();
         transaction.set(seatReference, {
           ...seat,
           version: 2,
@@ -4061,6 +4071,7 @@ class CloudCampaignStore {
           characterIds,
           accessGeneration,
           ...(seat.placementGrants === undefined ? {} : { placementGrants: [] }),
+          ...(visitedRoomIds.length ? { visitedRoomIds } : {}),
         });
         if (seat.memberUid !== null)
           transaction.update(this._memberships(seat.memberUid).doc(id), {
@@ -4204,6 +4215,12 @@ class CloudCampaignStore {
       !Array.isArray(player.characterIds) ||
       player.characterIds.some((characterId) => typeof characterId !== 'string' || !characterId) ||
       new Set(player.characterIds).size !== player.characterIds.length ||
+      (player.visitedRoomIds !== undefined &&
+        (!Array.isArray(player.visitedRoomIds) ||
+          player.visitedRoomIds.some(
+            (id) => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(id)
+          ) ||
+          new Set(player.visitedRoomIds).size !== player.visitedRoomIds.length)) ||
       (player.placementGrants !== undefined &&
         (!Array.isArray(player.placementGrants) ||
           player.placementGrants.some(
@@ -4233,6 +4250,7 @@ class CloudCampaignStore {
             'activeInvitationId',
             'accessGeneration',
             'placementGrants',
+            'visitedRoomIds',
           ].includes(key)
       )
     )
@@ -4602,6 +4620,7 @@ class CloudCampaignStore {
           head,
           participant: admission.participant,
           placementGrants: seat.placementGrants || [],
+          visitedRoomIds: seat.visitedRoomIds || [],
         };
       },
       { readOnly: true }
@@ -4614,6 +4633,15 @@ class CloudCampaignStore {
     );
     if (pending) await pending.promise;
     const saved = await loadSnapshot(captured.head);
+    const currentRooms = playerRoomVisits(saved.scene === null ? null : JSON.parse(saved.scene));
+    const visitedRoomIds = [
+      ...new Set([
+        ...captured.visitedRoomIds,
+        ...captured.participant.characterIds.flatMap((id) => [...(currentRooms.get(id) || [])]),
+      ]),
+    ].sort();
+    const recordVisits =
+      visitedRoomIds.length > captured.visitedRoomIds.length ? visitedRoomIds : null;
     const { participantState } = require('./participant-state.js');
     const projected = await participantState({
       state: saved,
@@ -4622,6 +4650,7 @@ class CloudCampaignStore {
       characterIds: captured.participant.characterIds,
       options: input,
       placementGrants: captured.placementGrants,
+      visitedRoomIds,
       images: this._imageEntries(saved.records),
       undo: playerUndoFor(
         this.worldUndoSessions,
@@ -4651,6 +4680,7 @@ class CloudCampaignStore {
     await this._verifyParticipantRead(principal, id, input.sessionId, scope, {
       generation: captured.head.generation,
       characterIds: captured.participant.characterIds,
+      recordVisits,
     });
     const checkpoint = {
       version: 1,
@@ -4819,8 +4849,17 @@ class CloudCampaignStore {
             'participant-state-changed',
             'The authorized world changed while preparing participant data'
           );
+        if (expected.recordVisits) {
+          const reference = head.ref.collection('seats').doc(scope.seatId);
+          const seat = this._seat(await transaction.get(reference), id);
+          const visitedRoomIds = [
+            ...new Set([...(seat.visitedRoomIds || []), ...expected.recordVisits]),
+          ].sort();
+          if (visitedRoomIds.length > (seat.visitedRoomIds?.length || 0))
+            transaction.update(reference, { visitedRoomIds });
+        }
       },
-      { readOnly: true }
+      { readOnly: !expected.recordVisits }
     );
   }
 
@@ -6434,6 +6473,14 @@ class CloudCampaignStore {
     if (writesCharacters)
       await this._finalizeCharacterAssets(ownerUid, id, next.records, authorize);
     const removedCharacters = new Set();
+    const enteredRooms = new Map();
+    if (changesScene) {
+      const before = playerRoomVisits(state.scene === null ? null : JSON.parse(state.scene));
+      for (const [characterId, rooms] of playerRoomVisits(JSON.parse(next.scene))) {
+        const entered = [...rooms].filter((id) => !before.get(characterId)?.has(id));
+        if (entered.length) enteredRooms.set(characterId, entered);
+      }
+    }
     if (writesCharacters) {
       const currentIds = new Set(
         next.records.map((record) => campaignRecordCharacterId(record.key))
@@ -6493,13 +6540,22 @@ class CloudCampaignStore {
           }
         );
       const revokedAssignments = [];
-      if (removedCharacters.size) {
+      const roomUpdates = new Map();
+      if (removedCharacters.size || enteredRooms.size) {
         const seats = await transaction.get(headReference.collection('seats'));
         for (const snapshot of seats.docs) {
           const seat = this._seat(snapshot, id);
           const characterIds = seat.characterIds.filter(
             (characterId) => !removedCharacters.has(characterId)
           );
+          const visitedRoomIds = [
+            ...new Set([
+              ...(seat.visitedRoomIds || []),
+              ...characterIds.flatMap((id) => enteredRooms.get(id) || []),
+            ]),
+          ].sort();
+          if (visitedRoomIds.length > (seat.visitedRoomIds?.length || 0))
+            roomUpdates.set(seat.id, { reference: snapshot.ref, visitedRoomIds });
           if (characterIds.length === seat.characterIds.length) continue;
           const accessGeneration = seatAccessGeneration(seat) + 1;
           if (!isCloudAccessGeneration(accessGeneration))
@@ -6514,7 +6570,7 @@ class CloudCampaignStore {
           }
           revokedAssignments.push({
             reference: snapshot.ref,
-            seat,
+            seat: roomUpdates.has(seat.id) ? { ...seat, visitedRoomIds } : seat,
             characterIds,
             accessGeneration,
           });
@@ -6550,6 +6606,9 @@ class CloudCampaignStore {
       if (live.state === 'live' && nextLive.state === 'paused')
         await this._queueFinalBackup(transaction, id, nextLive, publishedHead);
       if (nextLive !== live) transaction.set(this._liveSessionReference(id), nextLive);
+      for (const [seatId, update] of roomUpdates)
+        if (!revokedAssignments.some((entry) => entry.seat.id === seatId))
+          transaction.update(update.reference, { visitedRoomIds: update.visitedRoomIds });
       for (const revoked of revokedAssignments) {
         transaction.set(revoked.reference, {
           ...revoked.seat,
