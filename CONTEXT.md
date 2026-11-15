@@ -603,7 +603,7 @@
   repeat downloads, not the need for an authoritative online save. No offline
   viewing/editor, offline update queue or automatic local/cloud merging is
   required. Existing local-host behavior is unchanged by this scope decision.
-- **Hosted budget (M4-11 alerts verified; cost acceptance pending)**:
+- **Hosted budget and observability (M4-11 verified; cost acceptance pending)**:
   read-only inspection found no existing budget on the linked USD billing
   account, including an explicit project-scoped query. The owner separately
   approved enabling only the Billing/Budgets APIs, then one project-only USD 25
@@ -613,7 +613,10 @@
   verifies one budget, no spend cap, Pub/Sub shutdown hook or IAM-role grant.
   These alerts do not prevent overspending. Forecasts must use the verified
   currency and measured regional operations/transfer/storage, without counting
-  mirrored metrics twice. Additional resources, privilege or production cutover
+  mirrored metrics twice. Isolated provider-minute saves measure actual reads/
+  writes with client/server request-count agreement; validated acknowledgement
+  and remote SDK delivery are separate observations, not animation completion
+  or performance acceptance. Additional resources, privilege or production cutover
   still require their own approval.
 - **Hosted backup history (approved design, not implemented)**: retain 20 rolling
   complete backups, targeting five-minute intervals when changed; no additional

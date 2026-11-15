@@ -3625,7 +3625,7 @@ quota policy is changed; temporary diagnostics are removed.
 Final quota cleanup verifies **1 UID / 1 campaign / 2 live object generations**
 removed at **01:50:50.468Z**. This completes M4-10; the checklist is **51/65**.
 
-### M4-11: verified alerts and measured platform observability in progress
+### M4-11: verified alerts and measured platform observability complete
 
 Both `cloudbilling.googleapis.com` and `billingbudgets.googleapis.com` were
 disabled. The owner explicitly approves enabling **only those two APIs** for
@@ -3685,14 +3685,41 @@ reports **2,622,323,836 bytes**. These are not treated as interchangeable or
 summed into a bill. Retention/rollback images remain preserved; readiness cost
 work must disclose the discrepancy and use a conservative bound if unresolved.
 
-An isolated real per-save probe is prepared but not yet run: a quiet lead-in,
-five validated paused sheet saves in one known provider minute, exact raw
-Firestore read/write counters after the documented four-minute ingestion lag,
-and matching observed client/Cloud Run request totals to reject contamination.
-It then verifies a fresh scoped reopen. Separate timestamps distinguish
-validated durable acknowledgement from remote SDK delivery, not animation
-completion or a controlled-200-ms performance result.
+The isolated real per-save probe is now verified end to end. It uses a quiet
+lead-in, API-Date-calibrated UTC measurement minute, five validated paused sheet
+saves, raw regional Firestore counters after the documented four-minute lag,
+and matching client/provider HTTP totals to reject unrelated application traffic.
+Both cohorts verify fresh scoped reopen and unchanged paused live state:
 
-M4-11 remains incomplete until those operation/timing measurements and the
-remaining observation checks pass. No production campaign migration, new
-runtime privilege, always-on service or automatic billing shutdown is authorized.
+| Provider measurement minute (November 15, UTC) | Logical saves / actual HTTP requests | Document reads / writes | Mean reads / writes per save |
+| --- | --- | --- | --- |
+| 01:53-01:54 | 5 / 5 | 433 / 37 | 86.6 / 7.4 |
+| 02:09-02:10 | 5 / 5 | 419 / 38 | 83.8 / 7.6 |
+
+These are actual operation counts for this scoped paused-edit workload,
+including its authorization/maintenance work, not assumed universal constants.
+The first prototype continued an old owner baseline after five additional member
+edits; its later live-scene change was correctly rejected as stale. The isolated
+measurement itself was already valid. The operator action now ends after that
+measurement instead of continuing the unrelated stale baseline, and its complete
+rerun exits zero at **02:14:46.437Z**, with exact cleanup of
+**3 UIDs / 2 campaigns / 14 live object generations** at **02:14:52.345Z**.
+
+Separate live SDK callback timestamps distinguish a validated durable response
+from remote authoritative delivery, not animation completion:
+
+| Ordinary movement sample | Validated SDK acknowledgement | Remote SDK publication |
+| --- | --- | --- |
+| Assigned player to owner | 2,326.32 ms | 2,239.10 ms |
+| Private owner to scoped player | 1,532.19 ms | 1,952.77 ms |
+
+The independently measured owner backup status is `saved`, with no recorded
+error. Native routes, privacy and new-epoch/no-replay checks pass; exact cleanup
+verifies **3 UIDs / 2 campaigns / 18 live generations** at **02:03:58.604Z**.
+The small samples are **not a p95, controlled-200-ms or M4-12 performance pass**;
+the player sample over two seconds is a concrete risk to test and fix, not hide.
+
+This completes M4-11; the checklist is **52/65**. No production campaign
+migration, new runtime privilege, always-on service or automatic billing shutdown
+is authorized. Hosted lifecycle/performance and the measured 30-hour cost report
+remain separate gates.

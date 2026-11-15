@@ -76,7 +76,7 @@ local packaging with the tropical pack's formal license record still missing;
 that gap is recorded, not declared resolved. The separately approved bounded
 existing-project hosted pilot (`M4-08`) is now published and accepted (`M4-09`).
 Hosted privacy, performance, cost and real-data cutover remain separate gates.
-**51 of 65** tasks are complete,
+**52 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1284,12 +1284,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     linking/switching, revocation, origin preflight, quotas and private rule/IAM
     checks pass. Logs and deployed packages disclose no credentials/private bodies.
 
-- [ ] **M4-11 - Configure observable operation/cost metrics and verify existing alerts.**
-  - **Status:** actual platform metrics, regional resources and retention are
-    inspected. No existing budget was present; separately approved Billing/
+- [x] **M4-11 - Configure observable operation/cost metrics and verify existing alerts.**
+  - **Completed:** November 15, 2026. Actual platform metrics, regional resources
+    and retention are inspected. No existing budget was present; approved Billing/
     Budgets API enablement and one USD 25 monthly project-only alerts budget
-    are verified, without IAM grants or billing-link changes. Isolated per-save
-    operation and acknowledgement-versus-delivery measurements remain.
+    are verified, without IAM grants or billing-link changes. Two isolated
+    five-save cohorts match actual provider/client request counts and measure
+    reads/writes; real SDK validated acknowledgement and remote delivery are
+    timed separately. Exact cleanup passes. This is observability, not the
+    controlled-200-ms p95, idle/performance or 30-hour cost acceptance.
   - **Depends:** `M4-09`.
   - **Success:** measure active instance time, acknowledgements vs delivery,
     reads/writes per save, transfer by delivery path, reconnects, retained/soft-deleted
