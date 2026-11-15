@@ -338,8 +338,12 @@
   admission bind current UID, campaign role/seat/generation and live epoch,
   including a final check after presence IO. Four durable leases per UID apply
   across campaigns; actual transport outcomes connect/renew/disconnect presence.
-  The stream emits 25-second comment heartbeats, renews identity/access/lease/
-  presence every minute, and closes at a 55-minute transport deadline, not a
+  The stream emits 25-second comment heartbeats and renews identity/access/
+  lease/presence no later than one minute, earlier when a coalesced presence
+  result retains an older expiry. Scheduling follows the earlier actual UID/
+  presence deadline with 30-second headroom, not just a fixed interval; this
+  does not add heartbeat writes or extend meaningful activity.
+  It closes at a 55-minute transport deadline, not a
   total game-duration cap. Slow clients are bounded to sixteen queued events/
   32 MiB UTF-8; denial drops queued data. Cleanup waits for in-flight renewal
   and independently releases watches, presence and the final lease.
@@ -621,7 +625,7 @@
   Additional resources, privilege or production cutover
   still require their own approval.
 - **Hosted command performance (M4-12 short gate verified; lifecycle pending)**:
-  ten managed UIDs and thirty ordinary moves pass a 1,822.65 ms durable-receipt
+  ten managed UIDs and thirty ordinary moves pass a 1,674.45 ms durable-receipt
   p95 at measured approximately 200 ms RTT. Already-charged immutable objects
   renew their publication fence through a fresh authorized transaction, not
   repeated full quota initialization. The complete candidate set is still

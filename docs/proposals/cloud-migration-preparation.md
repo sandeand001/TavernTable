@@ -3750,6 +3750,7 @@ with all nine local delay, streaming and cancellation cases passing.
 | Reserved-object renewal, R3 | 1,880.04 ms | 2,113.75 ms | 2,118.36 ms | Actual RTT gate passed |
 | Batched head/membership, R5 | 1,698.62 ms | 2,028.92 ms | 2,636.36 ms | Actual RTT gate passed |
 | Batched stored-seat lookup, R6 | **1,628.83 ms** | **1,822.65 ms** | **1,933.96 ms** | **203.14/202.90 ms pre/post medians** |
+| Same movement admission after lease-timer correction, R7 | **1,401.84 ms** | **1,674.45 ms** | **1,681.49 ms** | **203.82/202.49 ms pre/post medians** |
 
 R6 passes the unchanged **p95 <= 2,000 ms** target, with all thirty receipts
 below two seconds. Its public SDK operation-ready p95 is **2,677.96 ms**,
@@ -3811,11 +3812,71 @@ The first bounded lifecycle probe then added one second synthetic campaign
 and owner stream: still ten UIDs, eleven total streams across two campaigns.
 After three minutes it reached the idle byte/no-new-app-request checks, but
 failed the exact current-generation/readiness comparison before warm rejoin.
-No reason is guessed and no readiness check is relaxed: the next probe records
-safe per-role generation/phase/artwork status before and after that interval.
+The next safe-status probe proves all ten remain ready immediately after the
+second-campaign setup, then enter error during idle. Its 82 bytes per client
+include closure, not a healthy-idle payload acceptance result. No readiness
+check was relaxed.
 The complete failed probe still verifies exact cleanup at
 **04:15:59.654Z** of **10 UIDs / 2 campaigns / 83 live object generations**,
 without changing the real account.
+
+#### Coalesced presence renewal diagnosis and correction
+
+The minimized real control is one owner stream, which remains ready for
+180 seconds without another application request. Adding one different-UID
+assigned member sharing that campaign reproduces the failure at
+**179,346.05 ms**: the owner receives the explicit terminal code
+`live-presence-expired`. Both UIDs and all owned fixture bytes are cleaned.
+This identifies lease renewal, not a permission denial, immediate cross-campaign
+effect or malformed heartbeat. Heartbeats are the existing three-byte SSE comments.
+
+The transport used a fixed 60-second renewal interval while presence writes
+coalesce for 60 seconds under a 90-second lease. A peer/previous renewal can
+shift the shared timestamp so a renewal correctly skips the write just before
+the coalescing boundary, but waiting another full minute then exceeds the
+retained expiry. A public transport fake-clock regression shifts the shared
+timestamp by one millisecond: the original code closes during three minutes
+(red), despite unchanged valid identity and live authority.
+
+The correction preserves the existing cadence, coalescing and lease limits.
+It retains the **actual returned presence result** and schedules the next
+authenticated renewal from the earlier UID/presence expiry with the original
+30-second headroom and 60-second maximum delay. Clock, malformed/expired
+deadlines, identity, live epoch and current role/seat/access remain verified.
+There is no broad client retry, heartbeat-triggered write, silent fallback or
+meaningful-activity extension. In-flight-renewal cleanup and the independent
+55-minute transport deadline are preserved.
+
+The regression and coupled account/live/SSE gate pass **3 suites / 65 tests**
+in **1.395 s**, with open-handle detection. Seven actual SDK stream, owner,
+coalesced-presence, revocation, final-backup and 55-minute-warning/keep-active
+cases pass **7/7**, **43,933.4121 ms**. The unchanged isolated container gate
+passes for exact image
+`sha256:a0ffa1318f0a5002c7c5c2035efe14bb1798d4741c523919721c25d4a12f1d66`
+(runnable manifest
+`sha256:6e3b2e2a14440049c8d077fb5d4b2a0338628310225cded0559b14a6ef53f9e7`);
+the approved image-only update produces `taverntable-api-test-00014-p7g`,
+without configuration or IAM changes.
+
+The original real two-UID reproduction now remains **ready for 200,136.32 ms**
+on that exact image, with both owner and player still current and **zero new
+application HTTP requests for either UID**. Cleanup at **04:45:42.851Z** verifies
+**2 UIDs / 1 campaign / 2 live generations**, with no real-account change.
+The next real ten-UID cohort also passes the same thirty-move latency gate on
+R7, with **1,674.45 ms p95**, **1,681.49 ms maximum** and the valid measured RTT
+shown above. SDK operation-ready p95 is **2,462.39 ms**, still a separate value.
+All ten remain ready/current after **180,007.38 ms** without a new application
+request, transferring **21 heartbeat-body bytes each**, about **7 B/min** rather
+than the 2-KiB/min limit. This is measured healthy continuity, unlike the earlier
+closure-inclusive byte count.
+
+The initial warm test incorrectly required both a snapshot GET and SSE. With
+an explicit observer the existing production connection intentionally skips
+that GET; fresh authenticated SSE admission and its validated current checkpoint
+provide authority. The harness now verifies that actual requirement, exact
+current UID/epoch/generation, command readiness, no historical motion and zero
+unchanged graphic/image bodies instead of adding a gratuitous poll to satisfy a
+request-count proxy. Full warm/long-duration/cold-wake acceptance remains pending.
 
 **M4-12 remains open; the checklist remains 52/65.** The short latency pass
 does not stand in for actual idle continuity, warm zero-body rejoin, real

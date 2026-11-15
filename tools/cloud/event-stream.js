@@ -2,10 +2,12 @@ const { CloudError } = require('./cloud-error.js');
 const {
   isCloudParticipantRequest,
   isCloudOwnerWorldRequest,
+  CLOUD_STREAM_LEASE_MS,
 } = require('../../src/campaigns/CloudProtocol.js');
 
 const HEARTBEAT_MS = 25000;
 const RENEW_MS = 60000;
+const RENEW_HEADROOM_MS = CLOUD_STREAM_LEASE_MS - RENEW_MS;
 const STREAM_DEADLINE_MS = 55 * 60 * 1000;
 const MAX_QUEUED_BYTES = 32 * 1024 * 1024;
 const MAX_QUEUED_EVENTS = 16;
@@ -68,7 +70,7 @@ async function openCloudEventStream({
   const cleanup = () => {
     cleanupPromise ??= (async () => {
       clearInterval(heartbeat);
-      clearInterval(renewal);
+      clearTimeout(renewal);
       clearTimeout(deadline);
       const failures = [];
       try {
@@ -180,6 +182,37 @@ async function openCloudEventStream({
     queuedBytes += bytes;
     if (!blocked) flush();
   };
+  const scheduleRenewal = () => {
+    clearTimeout(renewal);
+    if (stopped) return;
+    const now = store.now();
+    if (
+      !Number.isSafeInteger(now) ||
+      !Number.isSafeInteger(lease.expiresAt) ||
+      !Number.isSafeInteger(presence.expiresAt)
+    )
+      throw new CloudError(
+        503,
+        'invalid-live-presence',
+        'The live stream lease deadline could not be verified'
+      );
+    if (lease.expiresAt <= now)
+      throw new CloudError(409, 'stream-lease-expired', 'Reconnect using a new live stream');
+    if (presence.expiresAt <= now)
+      throw new CloudError(
+        409,
+        'live-presence-expired',
+        'This live presence lease expired; reconnect'
+      );
+    // Coalescing can retain an earlier presence expiry; another full minute may be too late.
+    const remaining = Math.min(lease.expiresAt, presence.expiresAt) - now;
+    renewal = setTimeout(
+      () => {
+        if (!stopped && !renewing) void startRenewal();
+      },
+      Math.max(1, Math.min(RENEW_MS, remaining - RENEW_HEADROOM_MS))
+    );
+  };
   const renew = async () => {
     if (stopped) return;
     const current = await access.verifyAuthorization(request.headers.authorization);
@@ -189,11 +222,12 @@ async function openCloudEventStream({
     if (stopped) return;
     lease = await store.usage.renewStream(current, lease);
     if (stopped) return;
-    await store.renewLivePresence(current, id, {
+    presence = await store.renewLivePresence(current, id, {
       sessionId: view.sessionId,
       connectionId: presence.id,
     });
     await admit(current);
+    scheduleRenewal();
   };
   const startRenewal = () => {
     if (stopped)
@@ -248,10 +282,7 @@ async function openCloudEventStream({
       if (!stopped && !blocked && !response.destroyed && !queue.length)
         blocked = !response.write(':\n\n');
     }, HEARTBEAT_MS);
-    renewal = setInterval(() => {
-      if (stopped || renewing) return;
-      void startRenewal();
-    }, RENEW_MS);
+    scheduleRenewal();
     deadline = setTimeout(() => {
       void finish(new CloudError(409, 'stream-deadline', 'Reconnect to the current live game'));
     }, STREAM_DEADLINE_MS);

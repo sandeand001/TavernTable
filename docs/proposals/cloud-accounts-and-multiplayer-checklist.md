@@ -1316,13 +1316,16 @@ Revalidation in the intended environment remains part of M1 and M4.
     zero valid unchanged asset bodies. Exercise 55/60/15-minute boundaries.
   - **Progress:** November 15, 2026: the exact no-debug test image passes the
     short movement gate with ten managed UIDs, ten simultaneous SSEs and thirty
-    accepted commands: validated receipt **p95 1,822.65 ms**, maximum
-    **1,933.96 ms**, with measured pre/post RTT **203.14/202.90 ms**.
-    SDK operation readiness remains a separate **2,677.96 ms p95** observation.
+    accepted commands: validated receipt **p95 1,674.45 ms**, maximum
+    **1,681.49 ms**, with measured pre/post RTT **203.82/202.49 ms**.
+    SDK operation readiness remains a separate **2,462.39 ms p95** observation.
     Fresh authorization, quota, cleanup and native-state convergence are retained.
-    This is not completion: the first three-minute lifecycle probe reached its
-    idle-payload checks but failed exact current-authority/readiness comparison.
-    That condition, warm rejoin, real deadlines, sleep and cold wake remain open.
+    This is not completion: the first idle probe exposed a coalesced presence
+    lease expiring before its fixed renewal timer. Expiry-aware scheduling fixes
+    the original two-UID reproduction: both stay ready for **200.14 seconds**
+    with zero new application requests. All ten then stay ready for three
+    minutes at **21 app-body bytes each (about 7 B/min)**, with no polling.
+    Warm rejoin, real deadlines, sleep and cold wake remain open.
 
 - [ ] **M4-13 - Produce and review the measured hosted-pilot cost/readiness report.**
   - **Depends:** `M4-10`, `M4-12`, `M2-11`.

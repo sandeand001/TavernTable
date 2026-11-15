@@ -11,22 +11,32 @@ function transportFixture() {
     version: 1,
     uid: principal.uid,
     id: '33333333-3333-4333-8333-333333333333',
-    expiresAt: 90000,
+    expiresAt: Date.now() + 90000,
   };
   const observation = { ready: Promise.resolve(), close: jest.fn() };
   const store = {
+    now: () => Date.now(),
     getLiveAccess: jest.fn(async () => ({
       participant: { access: { role: 'member', seatId, accessGeneration: 1 } },
     })),
     getParticipantAccess: jest.fn(async () => ({})),
     usage: {
       acquireStream: jest.fn(async () => lease),
-      renewStream: jest.fn(async () => lease),
+      renewStream: jest.fn(async (_principal, current) => ({
+        ...current,
+        expiresAt: Date.now() + 90000,
+      })),
       releaseStream: jest.fn(async () => ({ released: true })),
     },
     observeParticipant: jest.fn(() => observation),
-    connectLivePresence: jest.fn(async () => ({ id: '44444444-4444-4444-8444-444444444444' })),
-    renewLivePresence: jest.fn(async () => ({})),
+    connectLivePresence: jest.fn(async () => ({
+      id: '44444444-4444-4444-8444-444444444444',
+      expiresAt: Date.now() + 90000,
+    })),
+    renewLivePresence: jest.fn(async () => ({
+      id: '44444444-4444-4444-8444-444444444444',
+      expiresAt: Date.now() + 90000,
+    })),
     disconnectLivePresence: jest.fn(async () => ({ closed: true })),
   };
   const request = new EventEmitter();
@@ -185,6 +195,49 @@ test('the 55-minute transport deadline closes only the stream after bounded hear
     );
     expect(setup.store.usage.releaseStream).toHaveBeenCalledTimes(1);
     expect(setup.store.disconnectLivePresence).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    await stream?.close();
+    jest.useRealTimers();
+  }
+});
+
+test('a shared coalesced presence lease stays live when another connection shifts its renewal phase', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(0);
+  let stream;
+  try {
+    const setup = transportFixture();
+    let renewedAt = Date.now();
+    let expiresAt = renewedAt + 90000;
+    const presence = () => ({
+      id: '44444444-4444-4444-8444-444444444444',
+      expiresAt,
+    });
+    setup.store.connectLivePresence.mockImplementation(async () => presence());
+    setup.store.usage.renewStream.mockImplementation(async (_principal, lease) => ({
+      ...lease,
+      expiresAt: Date.now() + 90000,
+    }));
+    setup.store.renewLivePresence.mockImplementation(async () => {
+      if (Date.now() >= expiresAt)
+        throw new CloudError(409, 'live-presence-expired', 'Reconnect after an expired lease');
+      if (Date.now() - renewedAt >= 60000) {
+        renewedAt = Date.now();
+        expiresAt = renewedAt + 90000;
+      }
+      return presence();
+    });
+    stream = await openCloudEventStream(setup);
+    await jest.advanceTimersByTimeAsync(1);
+    renewedAt = Date.now();
+    expiresAt = renewedAt + 90000;
+    await jest.advanceTimersByTimeAsync(180000);
+    expect(setup.response.end).not.toHaveBeenCalled();
+    expect(expiresAt).toBeGreaterThan(Date.now());
+    await stream.close();
+    expect(setup.store.disconnectLivePresence).toHaveBeenCalledTimes(1);
+    expect(setup.store.usage.releaseStream).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
   } finally {
     await stream?.close();
