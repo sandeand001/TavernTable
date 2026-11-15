@@ -258,8 +258,9 @@
   Production and demo adapters share SDK initialization, not authority or data.
   The pinned Node 24 image runs as a non-root CPU-only process without copied
   credentials, local campaign databases or development tools. Local validation
-  uses a read-only filesystem, isolated network and no mounts; hosted IAM,
-  scaling, load and cost remain separate acceptance gates. The owner approved
+  uses a read-only filesystem, isolated network and no mounts. Current hosted
+  identity/private-store/configuration/IAM gates pass M4-10; scaling, load and
+  cost remain separate acceptance gates. The owner approved
   one private repository and one keyless `us-west1` API test service in the
   existing Firebase project, min 0/max 1 and request-based CPU. Actual managed
   Auth/Firestore/private object access and three-UID isolation passed using only

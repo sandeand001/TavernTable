@@ -3541,7 +3541,7 @@ Original local hosts/data/keys remain untouched. Full gameplay activation,
 hosted permission/load/cost gates and real-data cutover remain separate tasks;
 routine-save flash/toast UX remains deferred until after M5-11.
 
-### M4-10: hosted permission and identity gate in progress
+### M4-10: hosted permission and identity gate complete
 
 The approved current API passes **49 actual HTTP role cases**, using only the
 three whitelisted disposable UIDs and two synthetic campaigns:
@@ -3562,10 +3562,12 @@ three whitelisted disposable UIDs and two synthetic campaigns:
 The full run also passes actual 65-second lease renewal, native Free Play/
 bidirectional routes/physical dice, interrupted rejoin, original receipt recovery
 after removal, and actual bearer revocation. A real, originally signed disposable
-ID token is held **only in memory** until its literal expiry; that check is still
-running at this update. No application traffic is scheduled during the wait.
-The registered synthetic fixtures intentionally remain until the run's automatic
-exact cleanup; another fixture run must not overlap it.
+ID token is held **only in memory** until its literal expiry, with no scheduled
+application traffic during that wait. At **2026-11-15T01:42:48.752Z**, Admin
+verification confirms `auth/id-token-expired`, the original token gets API 401,
+and a freshly managed token for the same unchanged UID gets API 200.
+Automatic exact cleanup verifies **3 UIDs / 2 campaigns / 20 live object
+generations** removed at **01:42:55.533Z**, with soft-delete retention unchanged.
 
 The earlier reconnect-count failure is now reproduced and measured. **34 ms**
 after the current connection's terminal acknowledgement, the only remaining
@@ -3600,8 +3602,28 @@ Actual current-revision stdout/stderr inspection covers **2,058 entries /
 synthetic email-body or image-data-URL matches. Raw logs are not printed.
 A prior larger read returned a transient provider 500; the smaller read-only
 query succeeds without application retry or logging configuration changes.
-The genuine expiry and declared seeded-counter/actual-stream quota checks
-must finish before M4-10 is checked complete.
+The final quota gate passes at **01:50:48.557Z**, using one whitelisted
+disposable UID and one actual synthetic campaign:
+
+- A declared 299-entry recent request-counter fixture admits the 300th request,
+  denies the next with 429 and correct `Retry-After`, and leaves its counter
+  unchanged on denial. A declared expired-window fixture recovers.
+- Exact seeded **20 GiB** storage and **10-owned-campaign** counters deny with
+  the repository's **409** state-conflict codes, not 429 throttling. The storage
+  denial cannot publish a canonical change, and no second campaign is created.
+  Original storage/ownership fields are restored with update-time preconditions.
+- **Four actual SSE transports** for one UID are admitted; the actual fifth
+  gets `stream-limit-reached`/429. Owner pause closes all four with terminal
+  frames and zero remaining leases/presence.
+
+The counter fixtures are explicitly seeded, not claims of 300 real network
+requests or ten actual campaigns. A prototype used device time for expired
+counter entries, but the device was about twelve seconds ahead of API time:
+its nominal 61-second-old entries were only about 49 seconds old for the server.
+The fixture now uses the API's actual `Date` header. No server/system clock or
+quota policy is changed; temporary diagnostics are removed.
+Final quota cleanup verifies **1 UID / 1 campaign / 2 live object generations**
+removed at **01:50:50.468Z**. This completes M4-10; the checklist is **51/65**.
 
 ### M4-11: verified alerts and measured platform observability in progress
 

@@ -76,7 +76,7 @@ local packaging with the tropical pack's formal license record still missing;
 that gap is recorded, not declared resolved. The separately approved bounded
 existing-project hosted pilot (`M4-08`) is now published and accepted (`M4-09`).
 Hosted privacy, performance, cost and real-data cutover remain separate gates.
-**50 of 65** tasks are complete,
+**51 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1268,11 +1268,14 @@ Revalidation in the intended environment remains part of M1 and M4.
     reopen and asset delivery work there. No production campaign is migrated or
     source-of-truth switch performed.
 
-- [ ] **M4-10 - Pass hosted identity, authorization, privacy, and configuration gates.**
-  - **Status:** 49 actual hosted role cases, real private-store denials, scoped
-    runtime-log privacy scan and deployed configuration/IAM matrix pass. The
-    genuine signed-token expiration check is running; seeded-counter and
-    actual concurrent-stream quota boundaries remain to be executed. Not complete.
+- [x] **M4-10 - Pass hosted identity, authorization, privacy, and configuration gates.**
+  - **Completed:** November 15, 2026. All 49 actual hosted role cases, real
+    private-store denials, scoped runtime-log privacy and deployed configuration/
+    IAM checks pass. An original real signed token is rejected after literal
+    expiry; a fresh same-UID token succeeds. Declared seeded-counter rate,
+    storage and ownership boundaries plus actual four-stream admission/
+    fifth-stream denial pass, with verified exact cleanup and no real-user
+    credential or campaign-role changes.
   - **Depends:** `M4-09`, `M2-03`, `M2-04`, `M2-08`, `M3-01`.
   - **Success:** production-intended configuration rejects emulator/forged/expired
     identity and unauthorized operations; CORS/platform reachability never
