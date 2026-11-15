@@ -114,3 +114,68 @@ test('closing during a ground route uses its most recent completed safe step, no
     fixture.adapter.disposeMovementRange();
   }
 }, 30000);
+
+test('a live cloud owner captures native committed movement while a paused cloud owner publishes no route', async () => {
+  const fixture = await createHumanoidFixture({
+    height: 0,
+    warmupFrames: 0,
+    animationKeys: animations,
+  });
+  try {
+    let live = true;
+    fixture.gm.sceneAutosave = {
+      ready: true,
+      library: {
+        campaign: { id: 'cloud-capture-fixture' },
+        store: {
+          storageInfo: { kind: 'cloud' },
+          wantsSharedPresentations: (id) => live && id === 'cloud-capture-fixture',
+        },
+      },
+      changed() {},
+    };
+    const from = fixture.adapter.getStablePlacement(fixture.token);
+    expect(
+      fixture.adapter.requestMoveToGrid(fixture.token, fixture.token.gridX + 1, fixture.token.gridY)
+    ).toBeTruthy();
+    finishHumanoid(fixture);
+    const currentScene = () => ({
+      version: 2,
+      creatures: [
+        {
+          id: fixture.token.id,
+          gridX: fixture.token.gridX,
+          gridY: fixture.token.gridY,
+          ...fixture.adapter.getStablePlacement(fixture.token),
+        },
+      ],
+    });
+    const captured = fixture.adapter.getSharedPresentations(currentScene());
+    expect(captured).toHaveLength(1);
+    expect(captured[0].motion.from.pose).toEqual(from.pose);
+    expect(captured[0].motion.route.at(-1).pose).toEqual(
+      fixture.adapter.getStablePlacement(fixture.token).pose
+    );
+    live = false;
+    expect(
+      fixture.adapter.requestMoveToGrid(fixture.token, fixture.token.gridX + 1, fixture.token.gridY)
+    ).toBeTruthy();
+    finishHumanoid(fixture);
+    expect(fixture.adapter.getSharedPresentations(currentScene())).toEqual([]);
+    const paused = fixture.adapter.getStablePlacement(fixture.token);
+    live = true;
+    expect(
+      fixture.adapter.requestMoveToGrid(fixture.token, fixture.token.gridX + 1, fixture.token.gridY)
+    ).toBeTruthy();
+    finishHumanoid(fixture);
+    const resumed = fixture.adapter.getSharedPresentations(currentScene());
+    expect(resumed).toHaveLength(1);
+    expect(resumed[0].motion.from.pose).toEqual(paused.pose);
+    expect(resumed[0].commandId).not.toBe(captured[0].commandId);
+    fixture.adapter.acknowledgeSharedPresentations(resumed);
+    expect(fixture.adapter.getSharedPresentations(currentScene())).toEqual([]);
+  } finally {
+    fixture.gm.sceneAutosave = null;
+    fixture.adapter.disposeMovementRange();
+  }
+}, 30000);

@@ -431,6 +431,10 @@
   always cancels obsolete movement, even for an issued local command. Public
   player disposal hides the world immediately and serializes model removal
   after in-flight hydration, preventing stale restoration after teardown.
+  The native owner checkpoint recorder uses the same explicit live-cloud
+  presentation binding as autosave, not a local-host-only storage check.
+  Paused/unbound cloud checkpoints discard pending presentation routes; resumed
+  movement begins at its latest safe pose rather than replaying a prior epoch.
   Owner Start/Pause/Keep Active and scoped Joined-game launch are wired but
   `sharedSessions` remains false until progressive assets and full-world
   acceptance are ready. Paused preparation never auto-starts a game. Explicit

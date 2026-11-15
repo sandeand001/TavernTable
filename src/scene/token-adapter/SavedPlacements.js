@@ -271,10 +271,18 @@ function recordStablePlacement(token) {
 
 function recordSharedPlacement(adapter, token, previous, checkpoint) {
   const autosave = adapter.gameManager.sceneAutosave;
+  const library = autosave?.library;
+  const store = library?.store;
+  if (
+    store?.storageInfo?.kind !== 'host' &&
+    store?.wantsSharedPresentations?.(library.campaign.id) !== true
+  ) {
+    adapter._sharedMovementPresentations?.delete(token);
+    return;
+  }
   if (
     !previous ||
     !autosave?.ready ||
-    autosave.library?.store?.storageInfo?.kind !== 'host' ||
     adapter.gameManager.campaignViewBusy ||
     adapter._approvedMovements?.has(token)
   )

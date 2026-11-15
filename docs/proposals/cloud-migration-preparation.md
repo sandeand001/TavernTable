@@ -4662,3 +4662,24 @@ allowlist and exact runtime hash gate.
 
 Full gameplay activation and the actual ten-client full-session rehearsal
 remain gated. This is not a hosted rollout or a completed M5-06 claim.
+
+### M5 native DM route-capture correction
+
+Full-game tracing finds a gap not exercised by manually submitted backend route
+packets: cloud autosave already requests shared movement, but the native stable
+checkpoint recorder still accepts only local-host storage. The new real
+humanoid-movement regression first produces an empty outgoing route for a live
+cloud owner.
+
+The recorder now uses the same explicit live-cloud presentation binding as
+autosave while preserving local-host behavior. An inactive/unbound cloud
+checkpoint discards obsolete pending presentation routes. A resumed native move
+starts from its latest safe paused pose under a fresh presentation ID, not an
+old route origin. This changes neither canonical movement costs nor saved poses.
+
+The native capture/pause/resume case, complete stable wall/checkpoint cases and
+actual local/cloud DM walk/run/queued/reconciliation renderer gates pass
+**12 tests / 3 suites**, **29.990 seconds**, with open-handle detection.
+This closes the actual outgoing native capture gap before full-game activation;
+it is not a claim that the earlier manually submitted hosted movement cohort
+tested this UI path. No new hosted release or gameplay capability is enabled.
