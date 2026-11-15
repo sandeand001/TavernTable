@@ -15,7 +15,7 @@ const {
   applyCloudParticipantDelta,
 } = require('../../src/campaigns/CloudParticipantProtocol.js');
 
-async function participantState({ state, catalog, campaign, characterIds, options, images }) {
+async function participantState({ state, catalog, campaign, characterIds, options, images, undo }) {
   const library = new CampaignCharacters({ ...state, catalog });
   const known = new Set(library.list().map((character) => character.id));
   if (characterIds.some((id) => !known.has(id)))
@@ -81,7 +81,7 @@ async function participantState({ state, catalog, campaign, characterIds, option
     return { ...actor, portraitImage: null };
   });
   const visible = new Set(actors.filter((actor) => actor.owned).map((actor) => actor.id));
-  const gameplay = playerGameplayState(scene, library, characterIds);
+  const gameplay = playerGameplayState(scene, library, characterIds, undo);
   gameplay.ownedTokens = gameplay.ownedTokens.filter((actor) => visible.has(actor.tokenId));
   if (gameplay.turn && !visible.has(gameplay.turn.tokenId)) gameplay.turn.tokenId = null;
   const result = {

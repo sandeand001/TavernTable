@@ -2065,6 +2065,114 @@ test(
 );
 
 test(
+  'the cloud player can undo an accepted action through current live authority',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const combat = structuredClone(f.scene);
+    const native = gameplayRuntime(f.scene, f.library);
+    await native.combat.startTurn(native.actors.find((actor) => actor.id === 'token-1'));
+    combat.combat = native.combat.snapshot();
+    const published = await publishOwner(f, {
+      commandId: randomUUID(),
+      sessionId: f.live.sessionId,
+      presentations: [],
+      change: {
+        ruleset: '2014',
+        revision: 1,
+        charactersRevision: f.library.revision,
+        scene: encodeScene(combat, f.validation),
+      },
+    });
+    assert.equal(published.status, 200);
+    const connection = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await connection.open({ observerTokenId: 'token-1', mapId: 'map-main' });
+    const command = (kind, payload, player = connection) => ({
+      version: 1,
+      commandId: randomUUID(),
+      kind,
+      payload,
+      sceneRevision: player.state.sceneRevision,
+      charactersRevision: player.state.revision,
+      tokenId: 'token-1',
+      observerTokenId: 'token-1',
+      view: {
+        mapId: player.state.publicScene.presentation.mapId,
+        assetKey: player.state.publicScene.assetKey,
+      },
+    });
+    await connection.call('playerCommand', [
+      f.campaign.id,
+      command('action.use', { actionId: 'dash', choice: {} }),
+    ]);
+    const used = connection.state.gameplay.ownedTokens.find((actor) => actor.tokenId === 'token-1');
+    assert.equal(used.economy.actions, 0);
+    assert.equal(used.canUndo, true);
+    await sdk.getIdToken(f.member.auth.currentUser, true);
+    const refreshed = await f.member.client.readParticipantSnapshot(
+      f.campaign.id,
+      {
+        sessionId: f.live.sessionId,
+        observerTokenId: 'token-1',
+        mapId: 'map-main',
+        assetKey: connection.state.publicScene.assetKey,
+      },
+      f.grant.access,
+      { cachedAssets: connection.assets }
+    );
+    assert.equal(
+      refreshed.state.gameplay.ownedTokens.find((actor) => actor.tokenId === 'token-1').canUndo,
+      true
+    );
+    await connection.call('playerCommand', [f.campaign.id, command('action.undo', {})]);
+    const undone = connection.state.gameplay.ownedTokens.find(
+      (actor) => actor.tokenId === 'token-1'
+    );
+    assert.equal(undone.economy.actions, 1);
+    assert.equal(undone.canUndo, false);
+    await connection.call('playerCommand', [
+      f.campaign.id,
+      command('action.use', { actionId: 'dash', choice: {} }),
+    ]);
+    assert.equal(
+      connection.state.gameplay.ownedTokens.find((actor) => actor.tokenId === 'token-1').canUndo,
+      true
+    );
+    const email = f.member.auth.currentUser.email;
+    const password = `Fixture-${randomUUID()}-1!`;
+    await connection.close();
+    await f.runtime.auth.updateUser(f.member.uid, { password });
+    await sdk.signOut(f.member.auth);
+    await sdk.signInWithEmailAndPassword(f.member.auth, email, password);
+    const returning = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await returning.open({ observerTokenId: 'token-1', mapId: 'map-main' });
+    const returned = returning.state.gameplay.ownedTokens.find(
+      (actor) => actor.tokenId === 'token-1'
+    );
+    assert.equal(returned.economy.actions, 0);
+    assert.equal(returned.canUndo, false);
+    await assert.rejects(
+      returning.call('playerCommand', [f.campaign.id, command('action.undo', {}, returning)]),
+      { code: 'undo-unavailable' }
+    );
+  }
+);
+
+test(
   'the cloud player connection publishes native public state and returns an authoritative command without another snapshot request',
   { timeout: 60000 },
   async (t) => {

@@ -22,6 +22,11 @@ const { acquireLargeFileWork } = require('./large-file-work.js');
 const { prepareAssignedCharacterChange } = require('../assigned-character-change.js');
 const { PhysicalDice } = require('../physical-dice.js');
 const {
+  playerUndoFor,
+  rememberPlayerUndo,
+  advancePlayerUndo,
+} = require('../player-undo-sessions.js');
+const {
   validateMovementPresentations,
   visibleMovementPresentations,
 } = require('../movement-presentations.js');
@@ -326,6 +331,26 @@ class CloudCampaignStore {
       );
     this.now = now;
     this.livePresenceInstanceId = randomUUID();
+    this.worldUndoSessions = new Map();
+    this.worldOperations = new Map();
+  }
+
+  _worldUndoProfile(principal, id, sessionId, grant) {
+    return {
+      id: stableStringify({
+        uid: principalUid(principal),
+        campaignId: id,
+        sessionId,
+        seatId: grant.access.seatId,
+        accessGeneration: grant.access.accessGeneration,
+        authSession:
+          principal.authTime === undefined
+            ? { kind: 'internal' }
+            : { kind: 'firebase', time: principal.authTime },
+      }),
+      campaignId: id,
+      characterIds: grant.characterIds,
+    };
   }
 
   async _transaction(operation, options) {
@@ -4385,6 +4410,11 @@ class CloudCampaignStore {
     );
     if (!this.resources)
       throw new CloudError(503, 'cloud-save-unavailable', 'Participant resources are unavailable');
+    // Head listeners can fire before committed transient receipts are installed.
+    const pending = this.worldOperations.get(
+      stableStringify([id, captured.head.lastCommand?.uid, captured.head.lastCommand?.commandId])
+    );
+    if (pending) await pending.promise;
     const saved = await loadSnapshot(captured.head);
     const { participantState } = require('./participant-state.js');
     const projected = await participantState({
@@ -4394,6 +4424,11 @@ class CloudCampaignStore {
       characterIds: captured.participant.characterIds,
       options: input,
       images: this._imageEntries(saved.records),
+      undo: playerUndoFor(
+        this.worldUndoSessions,
+        this._worldUndoProfile(principal, id, input.sessionId, captured.participant),
+        saved
+      ),
     });
     const images = [];
     for (const slot of projected.imageSlots) {
@@ -5608,13 +5643,15 @@ class CloudCampaignStore {
     }
   }
 
-  async _prepareWorldChange(state, command, characterIds) {
+  async _prepareWorldChange(state, command, profile) {
+    const characterIds = profile.characterIds;
     if (state.scene === null)
       throw new CloudError(409, 'world-not-ready', 'The campaign owner must save the world first');
     const catalog = await this.resources.catalog(state.campaign);
     const domain = this._draft(state);
     const library = new CampaignCharacters({ ...state, catalog, store: domain });
     const scene = decodeScene(state.scene, { library, ruleset: state.campaign.ruleset });
+    const undo = playerUndoFor(this.worldUndoSessions, profile, state);
     const actor = scene.creatures.find((entry) => entry.id === command.tokenId);
     if (!actor || command.observerTokenId !== actor.id || !characterIds.includes(actor.characterId))
       throw new CloudError(
@@ -5632,6 +5669,7 @@ class CloudCampaignStore {
       const applied = await executePlayerCommand(scene, library, command, {
         ownedIds: characterIds,
         dice: this.worldDice,
+        undo,
       });
       await library.flush();
       await domain.commitScene(state.campaign.id, {
@@ -5641,7 +5679,18 @@ class CloudCampaignStore {
         scene: JSON.stringify(applied.scene),
       });
       const next = await domain.readCharacters(state.campaign.id);
-      return { next, receipt: playerCommandReceipt(applied, scene, library) };
+      const update = advancePlayerUndo(undo, scene, applied, command);
+      return {
+        next,
+        receipt: playerCommandReceipt(applied, scene, library),
+        undo: {
+          previous: { sceneRevision: state.sceneRevision, revision: state.revision },
+          current: { sceneRevision: next.sceneRevision, revision: next.revision },
+          tokens: update.tokens,
+          tokenId: command.tokenId,
+          reset: update.reset,
+        },
+      };
     } catch (error) {
       if (
         [400, 403, 409, 422].includes(error.status) &&
@@ -5730,92 +5779,116 @@ class CloudCampaignStore {
       throw new CloudError(503, 'cloud-save-unavailable', 'Private world authority is unavailable');
     if (captured.head.generation >= Number.MAX_SAFE_INTEGER)
       throw new CloudError(503, 'invalid-campaign-head', 'The campaign generation cannot advance');
-    const state = await this._loadSnapshot(captured.head);
-    if (
-      command.sceneRevision !== state.sceneRevision ||
-      command.charactersRevision !== state.revision
-    )
-      throw Object.assign(
-        new CloudError(409, 'stale-revision', 'Refresh current world state before another command'),
-        {
-          current: { sceneRevision: state.sceneRevision, charactersRevision: state.revision },
-        }
-      );
-    const { next, receipt } = await this._prepareWorldChange(
-      state,
-      command,
-      captured.grant.characterIds
-    );
-    const authorize = async (transaction) => {
-      const admitted = await this.requireLiveSession(transaction, principal, id, sessionId, scope);
+    const operationKey = stableStringify([id, uid, command.commandId]);
+    let operation = this.worldOperations.get(operationKey);
+    if (!operation) {
+      const pending = Promise.withResolvers();
+      operation = { promise: pending.promise, resolve: pending.resolve, count: 0 };
+      this.worldOperations.set(operationKey, operation);
+    }
+    operation.count++;
+    try {
+      const state = await this._loadSnapshot(captured.head);
       if (
-        admitted.participant.access.role !== 'member' ||
-        stableStringify(admitted.participant.characterIds) !==
-          stableStringify(captured.grant.characterIds)
+        command.sceneRevision !== state.sceneRevision ||
+        command.charactersRevision !== state.revision
       )
-        throw new CloudError(
-          409,
-          'campaign-access-changed',
-          'Refresh current assigned world access'
+        throw Object.assign(
+          new CloudError(
+            409,
+            'stale-revision',
+            'Refresh current world state before another command'
+          ),
+          {
+            current: { sceneRevision: state.sceneRevision, charactersRevision: state.revision },
+          }
         );
-      const head = await transaction.get(headReference);
-      if (head.data()?.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
-    };
-    const result = {
-      version: 1,
-      campaignId: id,
-      commandId: command.commandId,
-      access: captured.grant.access,
-      sessionId,
-      kind: command.kind,
-      outcome: 'applied',
-      applied: {
-        generation: captured.head.generation + 1,
-        sceneRevision: next.sceneRevision,
-        charactersRevision: next.revision,
-      },
-    };
-    const entry = receipt.motion
-      ? {
-          commandId: command.commandId,
-          tokenId: receipt.tokenId,
-          kind: receipt.kind,
-          motion: receipt.motion,
-          ...(receipt.costFeet === undefined ? {} : { costFeet: receipt.costFeet }),
-          ...(receipt.budget === undefined ? {} : { budget: receipt.budget }),
-        }
-      : null;
-    const presented =
-      entry === null
-        ? null
-        : {
-            version: 1,
-            campaignId: id,
-            generation: result.applied.generation,
-            sessionId,
-            sceneRevision: next.sceneRevision,
-            charactersRevision: next.revision,
-            entries: [entry],
-          };
-    const published = await this._publishCanonical(principal, id, intent, captured, {
-      state,
-      next,
-      result,
-      authorize,
-      startedAt,
-      presented,
-      canonicalKind: 'scene.commit',
-      writesCharacters: next.revision !== state.revision,
-      changesScene: true,
-      meaningful:
-        stableStringify(state.records) !== stableStringify(next.records) ||
-        sceneActivityState(state.scene) !== sceneActivityState(next.scene),
-    });
-    return {
-      ...published.result,
-      outcome: published.duplicate ? 'duplicate' : 'applied',
-      presentation: published.duplicate ? null : receipt,
-    };
+      const profile = this._worldUndoProfile(principal, id, sessionId, captured.grant);
+      const { next, receipt, undo } = await this._prepareWorldChange(state, command, profile);
+      const authorize = async (transaction) => {
+        const admitted = await this.requireLiveSession(
+          transaction,
+          principal,
+          id,
+          sessionId,
+          scope
+        );
+        if (
+          admitted.participant.access.role !== 'member' ||
+          stableStringify(admitted.participant.characterIds) !==
+            stableStringify(captured.grant.characterIds)
+        )
+          throw new CloudError(
+            409,
+            'campaign-access-changed',
+            'Refresh current assigned world access'
+          );
+        const head = await transaction.get(headReference);
+        if (head.data()?.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
+      };
+      const result = {
+        version: 1,
+        campaignId: id,
+        commandId: command.commandId,
+        access: captured.grant.access,
+        sessionId,
+        kind: command.kind,
+        outcome: 'applied',
+        applied: {
+          generation: captured.head.generation + 1,
+          sceneRevision: next.sceneRevision,
+          charactersRevision: next.revision,
+        },
+      };
+      const entry = receipt.motion
+        ? {
+            commandId: command.commandId,
+            tokenId: receipt.tokenId,
+            kind: receipt.kind,
+            motion: receipt.motion,
+            ...(receipt.costFeet === undefined ? {} : { costFeet: receipt.costFeet }),
+            ...(receipt.budget === undefined ? {} : { budget: receipt.budget }),
+          }
+        : null;
+      const presented =
+        entry === null
+          ? null
+          : {
+              version: 1,
+              campaignId: id,
+              generation: result.applied.generation,
+              sessionId,
+              sceneRevision: next.sceneRevision,
+              charactersRevision: next.revision,
+              entries: [entry],
+            };
+      const published = await this._publishCanonical(principal, id, intent, captured, {
+        state,
+        next,
+        result,
+        authorize,
+        startedAt,
+        presented,
+        canonicalKind: 'scene.commit',
+        writesCharacters: next.revision !== state.revision,
+        changesScene: true,
+        meaningful:
+          stableStringify(state.records) !== stableStringify(next.records) ||
+          sceneActivityState(state.scene) !== sceneActivityState(next.scene),
+      });
+      if (!published.duplicate) rememberPlayerUndo(this.worldUndoSessions, profile, undo);
+      return {
+        ...published.result,
+        outcome: published.duplicate ? 'duplicate' : 'applied',
+        presentation: published.duplicate ? null : receipt,
+      };
+    } finally {
+      if (--operation.count === 0) {
+        if (this.worldOperations.get(operationKey) === operation)
+          this.worldOperations.delete(operationKey);
+        operation.resolve();
+      }
+    }
   }
 
   async commitScene(principal, id, command) {

@@ -436,9 +436,9 @@
   acceptance are ready. Paused preparation never auto-starts a game. Explicit
   owner transitions flush pending scene/character work; manual pause treats its
   final backup confirmation separately. Progressive artwork, persistent cache
-  and warm/private-loss behavior are described below. Arrival grants, cloud
-  Undo/door/action/emote completion and hosted lifecycle acceptance remain later work, not
-  silently supported gameplay claims. Ten distinct managed principals (one owner
+  and warm/private-loss behavior are described below. Arrival grants and cloud
+  door/action/emote completion remain later work, not silently supported gameplay
+  claims. Cloud action Undo has its M5 development gate below. Ten distinct managed principals (one owner
   and nine members) converge to canonical poses/revisions and scoped budgets,
   with stale-CAS retry, original lost-reply recovery, no duplicate costs/physics
   and latest-only reconnect. Current revocation clears private state and fences
@@ -783,6 +783,12 @@
   canonical edits, reassignment, history expiry or a new sign-in can invalidate
   them. Publish receipt-cache changes only after storage commits. Never accept
   client Undo receipts or include them in public snapshots/checkpoints.
+  Cloud development uses the same bounded policy, with current UID, campaign,
+  seat/access generation, live epoch and verified Firebase authentication time.
+  Token refresh does not change that sign-in scope; a new provider authentication
+  time does. Head observers wait for the matching committed transient update,
+  so the first authoritative player HUD includes the correct Undo availability.
+  An unavailable Undo returns its typed denial, not an invalid-response fallback.
 - **Shared movement presentation**: receiving DM/player models replay committed
   safe routes with native locomotion variants, without spending costs again.
   Free play permits assigned movement and refreshes its per-journey allowance;

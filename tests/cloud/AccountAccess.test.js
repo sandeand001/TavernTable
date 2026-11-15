@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { getIdTokenResult } = require('firebase/auth');
 const { createEmulatorRuntime } = require('../../tools/cloud/emulator-runtime.js');
 const { CloudAccountAccess, pilotAccountKey } = require('../../tools/cloud/account-access.js');
 const { signedInIdentity } = require('./helpers/accounts.js');
@@ -23,6 +24,7 @@ test(
     assert.deepEqual(await access.verifyIdentity(authorization), {
       uid: identity.uid,
       emailVerified: true,
+      authTime: (await getIdTokenResult(identity.auth.currentUser)).claims.auth_time,
     });
     await assert.rejects(access.verifyAuthorization(authorization), {
       status: 403,
@@ -58,7 +60,11 @@ test(
 
       const access = new CloudAccountAccess({ auth: runtime.auth, firestore: runtime.firestore });
       const principal = await access.verifyAuthorization(`Bearer ${identity.token}`);
-      assert.deepEqual(principal, { uid: identity.uid, emailVerified: true });
+      assert.deepEqual(principal, {
+        uid: identity.uid,
+        emailVerified: true,
+        authTime: (await getIdTokenResult(identity.auth.currentUser)).claims.auth_time,
+      });
       assert.equal(Object.hasOwn(principal, 'role'), false);
     } finally {
       try {
@@ -146,6 +152,7 @@ test(
       assert.deepEqual(await access.verifyAuthorization(authorization), {
         uid: identity.uid,
         emailVerified: true,
+        authTime: (await getIdTokenResult(identity.auth.currentUser)).claims.auth_time,
       });
       await record.update({ enabled: false });
       await assert.rejects(access.verifyAuthorization(authorization), {

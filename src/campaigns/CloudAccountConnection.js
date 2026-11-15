@@ -31,6 +31,7 @@ const denialCodes = new Set([
   'invalid-participant-state',
   'invalid-scene-presentation',
   'invalid-command',
+  'undo-unavailable',
   'actor-forbidden',
   'not-your-turn',
   'unreachable',
@@ -151,6 +152,7 @@ const denialCodes = new Set([
 ]);
 const denialMessages = new Map([
   ['invalid-command', 'Choose a current canonical gameplay command.'],
+  ['undo-unavailable', 'No matching action use can be undone in this sign-in and turn.'],
   ['actor-forbidden', 'Choose your active currently assigned real creature.'],
   ['not-your-turn', 'Wait for your active turn, or ask the owner to set Free Play.'],
   ['unreachable', 'That destination is blocked or beyond current movement.'],

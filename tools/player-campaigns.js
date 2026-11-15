@@ -3,6 +3,7 @@ const { pathToFileURL } = require('node:url');
 const { PublishedMaps } = require('./published-maps.js');
 const { isDeepStrictEqual } = require('node:util');
 const { prepareAssignedCharacterChange } = require('./assigned-character-change.js');
+const { playerUndoFor, rememberPlayerUndo } = require('./player-undo-sessions.js');
 const {
   validateMovementPresentations,
   visibleMovementPresentations,
@@ -25,52 +26,11 @@ class PlayerCampaigns {
   }
 
   undoFor(profile, state) {
-    const saved = this.undoSessions.get(profile.id);
-    if (
-      !saved ||
-      saved.campaignId !== profile.campaignId ||
-      state.campaign.id !== profile.campaignId ||
-      saved.sceneRevision !== state.sceneRevision ||
-      saved.revision !== state.revision
-    )
-      return new Map();
-    return new Map(
-      [...saved.tokens].filter(([, entries]) =>
-        entries.every((entry) => profile.characterIds.includes(entry.characterId))
-      )
-    );
+    return playerUndoFor(this.undoSessions, profile, state);
   }
 
-  rememberUndo(profile, { previous, current, tokens, tokenId, reset }) {
-    for (const [id, saved] of this.undoSessions) {
-      if (saved.campaignId !== profile.campaignId || saved.sceneRevision > current.sceneRevision)
-        continue;
-      if (
-        reset ||
-        saved.sceneRevision !== previous.sceneRevision ||
-        saved.revision !== previous.revision
-      ) {
-        this.undoSessions.delete(id);
-        continue;
-      }
-      const retained = new Map(saved.tokens);
-      retained.delete(tokenId);
-      this.undoSessions.set(id, { ...saved, ...current, tokens: retained });
-    }
-    if (this.undoSessions.get(profile.id)?.sceneRevision > current.sceneRevision) return;
-    const retained = reset
-      ? new Map()
-      : new Map([...tokens].map(([id, entries]) => [id, copy(entries.slice(-10))]));
-    while (retained.size > 64) retained.delete(retained.keys().next().value);
-    this.undoSessions.delete(profile.id);
-    if (retained.size)
-      this.undoSessions.set(profile.id, {
-        campaignId: profile.campaignId,
-        ...current,
-        tokens: retained,
-      });
-    while (this.undoSessions.size > 256)
-      this.undoSessions.delete(this.undoSessions.keys().next().value);
+  rememberUndo(profile, update) {
+    rememberPlayerUndo(this.undoSessions, profile, update);
   }
 
   async _modules() {

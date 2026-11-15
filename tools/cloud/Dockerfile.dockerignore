@@ -12,6 +12,7 @@ tools/*
 !tools/published-maps.js
 !tools/movement-presentations.js
 !tools/physical-dice.js
+!tools/player-undo-sessions.js
 !tools/cloud/
 tools/cloud/*
 !tools/cloud/admin-runtime.js

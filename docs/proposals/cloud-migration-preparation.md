@@ -4509,3 +4509,36 @@ off while missing native full-game paths are finished and tested. The actual
 ten-client four-to-five-hour rehearsal, recovery/rollback, explicit production
 approval, selected latest-data cutover and first production session remain open.
 The routine-save flash/centered notice remains deferred until `M5-11`.
+
+### M5 native Undo development gate
+
+The valid native-turn regression initially reproduced the actual cloud gap:
+Dash committed with zero remaining actions, but the first live authoritative
+player HUD reported `canUndo:false`. Cloud execution/projection omitted the
+shared engine's transient receipts; saved combat intentionally excludes them.
+
+The existing local bounded receipt policy is now shared with cloud execution
+and projection. It retains at most 256 sessions, 64 actors/session and ten
+receipts/actor, pinned to both committed revisions. Cloud scope includes the
+actual UID, campaign, seat/access generation, live epoch and server-verified
+Firebase `auth_time`, not token-refresh `iat` or a client Undo claim.
+Malformed/missing provider authentication time is rejected explicitly.
+Only successful canonical publication installs receipts; a campaign/UID/
+command-scoped completion barrier prevents the first head notification from
+publishing a stale Undo HUD. Cold replacement still drops transient receipts,
+as intended, without losing saved budgets or history.
+
+The actual SDK/HTTP/SSE regression proves accepted Dash -> Undo restores the
+action once, managed token refresh retains current availability, and a real
+returning login with a new provider authentication time has the saved spent
+budget but cannot use the former sign-in's receipt. Its unavailable command
+returns `undo-unavailable`, after correcting the client's missing safe-denial
+mapping; no server message/private body is relayed.
+Six adjacent native cloud cases pass, including original Free Play, same-ID
+recovery, concurrent CAS, post-stage membership removal and foreign-scope denial
+(**53.350 seconds**). Existing local Undo/account/store/transport tests pass
+**4 suites / 47 tests**, with open-handle detection. The native account gate
+separately passes **13/13**, retaining its minimal public account response.
+
+This is a development gameplay slice, not a new hosted release, full stable
+milestone, completed four-to-five-hour rehearsal or gameplay capability enablement.

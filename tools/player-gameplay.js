@@ -2,6 +2,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createHash } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
+const { advancePlayerUndo } = require('./player-undo-sessions.js');
 const { PhysicalDice } = require('./physical-dice.js');
 const { scopePlayerReceipt: scopedReceipt } = require('../src/campaigns/PlayerPublicProtocol.js');
 
@@ -196,28 +197,7 @@ class PlayerGameplay {
           fingerprint,
           receipt
         );
-        const nextUndo = new Map(undo);
-        if (result.undoReceipts?.length) nextUndo.set(command.tokenId, result.undoReceipts);
-        else if (result.undoReceipts || command.kind === 'remove') nextUndo.delete(command.tokenId);
-        for (const [tokenId, entries] of nextUndo) {
-          const characterId = result.scene.creatures.find(
-            (entry) => entry.id === tokenId
-          )?.characterId;
-          const history =
-            result.scene.combat.histories.find((entry) => entry.characterId === characterId)
-              ?.entries || [];
-          const retained = entries.filter(
-            (entry) =>
-              entry.characterId === characterId &&
-              history.some((row) => row.sequence === entry.sequence && !row.undone)
-          );
-          if (retained.length) nextUndo.set(tokenId, retained);
-          else nextUndo.delete(tokenId);
-        }
-        const reset = ['active', 'turn', 'activeTokenId'].some(
-          (key) => scene.combat[key] !== result.scene.combat[key]
-        );
-        if (reset) nextUndo.clear();
+        const { tokens: nextUndo, reset } = advancePlayerUndo(undo, scene, result, command);
         const state = await authorizedState(store, receipt.receipt, result.scene, nextUndo);
         return {
           response: { ...receipt, receipt: scopedReceipt(receipt.receipt, state), state },

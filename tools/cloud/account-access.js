@@ -64,7 +64,13 @@ class CloudAccountAccess {
         'email-verification-required',
         'Verify your email before using campaigns'
       );
-    return Object.freeze({ uid: identity.uid, emailVerified: true });
+    if (!Number.isSafeInteger(identity.auth_time) || identity.auth_time < 0)
+      throw accessError(401, 'invalid-identity', 'The verified sign-in session is invalid');
+    return Object.freeze({
+      uid: identity.uid,
+      emailVerified: true,
+      authTime: identity.auth_time,
+    });
   }
 
   async assertEligibility(uid, transaction = null) {
