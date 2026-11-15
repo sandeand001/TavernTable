@@ -4767,3 +4767,23 @@ exact runtime/frontend packaging, actual four-to-five-hour ten-client session,
 recovery/rollback and separate production/cutover approvals remain open.
 Both gameplay flags remain off, the published R8 pilot is unchanged, and the
 canonical checklist stays **59/65**. Deferred routine-save feedback is untouched.
+
+The exact committed development implementation `e97038089b93571ccc61cbfeb9378b445c64e6b9`
+also passes its newly built isolated Linux package gate:
+
+- Local tag `taverntable-cloud:m5-native-actions-20261115-e970380`.
+- OCI index `sha256:7a9daa8c47c97238782bce9ce6168233aa39b9c9a3e913271aae70acadd289b5`;
+  runnable manifest `sha256:f49aa4dbf5dc56b4058b3e3c6658730cc2240b1a5598b4bc8edbcfc7cbfa83b2`.
+- **28 exact runtime hashes** match the committed source. Linux Node **24.22.3**,
+  UID **1000**, read-only root, no network/mounts/GPU, **1 CPU / 1 GiB**;
+  startup, anonymous/forged denials, private-file 404s and graceful exit zero pass.
+- Both rulesets execute authoritative Cover with unchanged character/combat
+  state, without animated sprite files. Sixteen pinned resource packs,
+  **501 actual d20 frames** and the **16,000,000-pixel** native-image guard pass.
+  Final local-check RSS is **253,784,064 bytes**, not a hosted peak-memory claim.
+- The exact validation container is stopped/removed. The image remains local:
+  no registry push, test-service update, frontend publication, settings/IAM
+  mutation, production release or selected-data cutover is performed.
+
+This image records the visual/Cover slice, not the still-unfinished complete
+player-control UI gate; later runtime changes require their own exact image check.
