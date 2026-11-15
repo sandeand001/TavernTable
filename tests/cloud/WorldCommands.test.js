@@ -3508,6 +3508,79 @@ test(
 );
 
 test(
+  'a cloud flight approach publishes a paid fractional-elevation route once and same-ID recovery cannot replay it',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { ruleset: '2024', cleanup: true });
+    await f.library.edit(f.hero, { fallTraits: { flySpeed: 60, hover: true } });
+    const scene = structuredClone(f.scene);
+    scene.creatures.find((actor) => actor.id === 'token-1').pose = {
+      kind: 'flight',
+      world: { x: 1.5, y: 1, z: 1.5 },
+    };
+    const native = gameplayRuntime(scene, f.library);
+    await native.combat.startTurn(native.actors.find((actor) => actor.id === 'token-1'));
+    scene.combat = native.combat.snapshot();
+    await f.owner.client.commitScene(f.campaign.id, {
+      ruleset: '2024',
+      revision: 1,
+      charactersRevision: f.library.revision,
+      scene: encodeScene(scene, f.validation),
+    });
+    const owner = await f.openOwner();
+    assert.equal((await owner.next()).value.kind, 'owner-checkpoint');
+    const connection = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await connection.open({ observerTokenId: 'token-1', mapId: 'map-main' });
+    const command = {
+      version: 1,
+      commandId: randomUUID(),
+      kind: 'move',
+      tokenId: 'token-1',
+      observerTokenId: 'token-1',
+      sceneRevision: connection.state.sceneRevision,
+      charactersRevision: connection.state.revision,
+      view: { mapId: 'map-main', assetKey: connection.state.publicScene.assetKey },
+      payload: {
+        target: { mapId: 'map-main', gridX: 2, gridY: 1, elevationFeet: 1 },
+        closest: true,
+      },
+    };
+    const accepted = await connection.call('playerCommand', [f.campaign.id, command]);
+    assert.equal(accepted.outcome, 'applied');
+    assert.equal(accepted.receipt.costFeet, 9);
+    assert.deepEqual(connection.state.gameplay.ownedTokens[0].movement, {
+      spentFeet: 9,
+      remainingFeet: 51,
+      allowanceFeet: 60,
+    });
+    const delivered = (await owner.next()).value;
+    assert.equal(delivered.kind, 'owner-delta');
+    const motion = delivered.delta.presentations[0].motion;
+    assert.equal(motion.kind, 'fly');
+    assert.deepEqual(motion.from.pose.world, { x: 1.5, y: 1, z: 1.5 });
+    assert.deepEqual(
+      motion.route.map((point) => point.pose.world),
+      [
+        { x: 1.5, y: 0.2, z: 1.5 },
+        { x: 2.5, y: 0.2, z: 1.5 },
+      ]
+    );
+    const canonical = await f.owner.client.readCharacters(f.campaign.id);
+    const repeated = await connection.call('playerCommand', [f.campaign.id, command]);
+    assert.equal(repeated.outcome, 'duplicate');
+    assert.equal(repeated.receipt.motion, undefined);
+    assert.deepEqual(await f.owner.client.readCharacters(f.campaign.id), canonical);
+  }
+);
+
+test(
   'cloud native takeoff, airborne steps, elevation and fall deliver owner routes with one canonical movement debit',
   { timeout: 60000 },
   async (t) => {

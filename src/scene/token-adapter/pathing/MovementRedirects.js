@@ -1,4 +1,7 @@
-import { getWallMovementTarget } from '../../../entities/creatures/TokenMovement.js';
+import {
+  getWallMovementTarget,
+  closestMovementCandidate,
+} from '../../../entities/creatures/TokenMovement.js';
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
 
 const EPSILON = 1e-7;
@@ -183,19 +186,9 @@ function _closestMovementDestination(token, destination, range) {
       requested.y =
         gm.getTerrainHeight(destination.gridX, destination.gridY) * gm.spatial.elevationUnit;
   }
-  let best = null;
+  const candidates = [];
   const consider = (world, cost, target) => {
-    const distance = Math.hypot(
-      world.x - requested.x,
-      world.y - requested.y,
-      world.z - requested.z
-    );
-    if (
-      !best ||
-      distance < best.distance - EPSILON ||
-      (Math.abs(distance - best.distance) <= EPSILON && cost < best.cost - EPSILON)
-    )
-      best = { distance, cost, target };
+    candidates.push({ world, cost, target });
   };
   for (const cell of range.tiles.values()) {
     const world = cell.world || {
@@ -237,7 +230,7 @@ function _closestMovementDestination(token, destination, range) {
       }
     }
   }
-  if (!best) throw new Error('No legal movement destination remains after changing course');
+  const best = closestMovementCandidate(candidates, requested);
   if (best.distance > EPSILON) {
     logger.info(
       'Moving to the closest reachable point',

@@ -118,6 +118,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   const { executePlayerCommand } = require('./src/campaigns/ServerGameplay.js');
   assert.equal(fs.existsSync('assets/animated-sprites'), false);
   let nativeCoverRulesets = 0;
+  let nativeFlightRulesets = 0;
   assert.equal(typeof require('./tools/cloud/participant-changes.js').ParticipantChanges, 'function');
   assert.equal(typeof require('./tools/cloud/event-stream.js').openCloudEventStream, 'function');
   for (const ruleset of ['2014', '2024']) {
@@ -163,6 +164,22 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     assert.deepEqual(covered.scene.combat, board.combat);
     assert.equal(JSON.stringify(library.get(actor.characterId)), original);
     nativeCoverRulesets++;
+    await library.edit(actor.characterId, { fallTraits: { flySpeed: 60, hover: true } });
+    const airborne = structuredClone(board);
+    const flyer = airborne.creatures.find(entry => entry.id === actor.id);
+    flyer.pose = { kind: 'flight', world: { ...actor.pose.world, y: 1 } };
+    const approached = await executePlayerCommand(airborne, library, {
+      kind: 'move', tokenId: actor.id,
+      payload: {
+        target: { mapId: actor.mapId, gridX: actor.gridX - 1, gridY: actor.gridY, elevationFeet: 1 },
+        closest: true,
+      },
+    }, { ownedIds: [actor.characterId] });
+    assert.equal(approached.receipt.costFeet, 9);
+    assert.equal(approached.receipt.placement.pose.kind, 'flight');
+    assert.equal(approached.receipt.placement.pose.world.y, 0.2);
+    assert.equal(approached.receipt.routeFeet[1].y, 1);
+    nativeFlightRulesets++;
   }
   const { PhysicalDice } = require('./tools/physical-dice.js');
   let seed = 42;
@@ -207,6 +224,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/cloud/immutable-objects.js', 'tools/movement-presentations.js', 'tools/physical-dice.js',
     'src/campaigns/CloudOwnerProtocol.js', 'src/campaigns/PlayerPublicProtocol.js',
     'src/campaigns/ServerGameplay.js', 'src/campaigns/CampaignTravel.js', 'src/systems/dice/D20Dynamics.js',
+    'src/campaigns/PlayerCommandProtocol.js', 'src/entities/creatures/TokenMovement.js',
     'src/campaigns/CampaignCover.js', 'src/config/token-adapter/CoverMetrics.js',
     'assets/Items/d20-gold.glb', 'package.json', 'package-lock.json',
   ]) {
@@ -219,6 +237,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     anonymousEvents: 401, forgedEvents: 401,
     anonymousOwnerWorld: 401, anonymousWorldCommands: 401,
     nativeD20Frames: nativeD20.frames.length, nativeD20Value: nativeD20.value, nativeCoverRulesets,
+    nativeFlightRulesets,
     forgedIdentity: 401, privateFiles: 404,
     resourcePacks: manifest.packs.length, resourceBytes, validatedImagePixels: 16000000,
     rssBytes: process.memoryUsage().rss, runtimeHashes,

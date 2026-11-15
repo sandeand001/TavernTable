@@ -71,13 +71,16 @@ export function validatePlayerCommand(command) {
     invalid();
   if (
     command.kind === 'move' &&
-    (!only(command.payload, ['target', 'useSlowFall']) ||
+    (!only(command.payload, ['target', 'useSlowFall', 'closest']) ||
+      (command.payload.closest !== undefined && typeof command.payload.closest !== 'boolean') ||
       (command.payload.useSlowFall !== undefined &&
         typeof command.payload.useSlowFall !== 'boolean') ||
-      !only(command.payload.target, ['mapId', 'gridX', 'gridY']) ||
+      !only(command.payload.target, ['mapId', 'gridX', 'gridY', 'elevationFeet']) ||
+      (command.payload.target.elevationFeet !== undefined &&
+        !Number.isFinite(command.payload.target.elevationFeet)) ||
       !identifier(command.payload.target.mapId) ||
-      !Number.isInteger(command.payload.target.gridX) ||
-      !Number.isInteger(command.payload.target.gridY))
+      !Number.isSafeInteger(command.payload.target.gridX) ||
+      !Number.isSafeInteger(command.payload.target.gridY))
   )
     invalid();
   if (

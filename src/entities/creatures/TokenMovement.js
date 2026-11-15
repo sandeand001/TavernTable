@@ -27,6 +27,27 @@ export function getTokenTravelMode(token) {
   return token?.flightActive === true ? 'fly' : 'ground';
 }
 
+export function closestMovementCandidate(candidates, requested) {
+  if (!['x', 'y', 'z'].every((axis) => Number.isFinite(requested[axis])))
+    throw new Error('Choose a valid map surface for the new destination');
+  let best = null;
+  for (const { world, cost, target } of candidates) {
+    const distance = Math.hypot(
+      world.x - requested.x,
+      world.y - requested.y,
+      world.z - requested.z
+    );
+    if (
+      !best ||
+      distance < best.distance - 1e-7 ||
+      (Math.abs(distance - best.distance) <= 1e-7 && cost < best.cost - 1e-7)
+    )
+      best = { distance, cost, target };
+  }
+  if (!best) throw new Error('No legal movement destination remains after changing course');
+  return best;
+}
+
 export function facingAngleFromDirection(x, z) {
   if (!Number.isFinite(x) || !Number.isFinite(z) || (x === 0 && z === 0))
     throw new Error('Facing requires a finite, non-zero X/Z direction');

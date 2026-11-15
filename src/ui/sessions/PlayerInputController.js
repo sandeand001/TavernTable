@@ -18,14 +18,18 @@ export default class PlayerInputController {
     gameManager.playerInput = this;
   }
 
-  requestMove(token, target) {
+  requestMove(token, target, { closest = false } = {}) {
     if (!token) throw new Error('Select the active assigned character before moving');
     if (target.wallSurface && target.wallSurface.kind !== 'floor')
       throw new Error('The host has not enabled this surface movement command');
-    return this.commands.move(token.id, {
-      mapId: target.wallSurface?.mapId || this.gameManager.campaignMapId,
-      gridX: target.gridX,
-      gridY: target.gridY,
+    return this.commands.send('move', token.id, {
+      target: {
+        mapId: target.wallSurface?.mapId || this.gameManager.campaignMapId,
+        gridX: target.gridX,
+        gridY: target.gridY,
+        ...(target.elevationFeet !== undefined ? { elevationFeet: target.elevationFeet } : {}),
+      },
+      ...(closest ? { closest: true } : {}),
     });
   }
 

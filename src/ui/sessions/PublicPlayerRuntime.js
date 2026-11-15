@@ -200,6 +200,7 @@ export default class PublicPlayerRuntime {
         gridY: presented.gridY,
         world: { ...presented.pose.world },
         facingAngle: presented.facingAngle,
+        flightActive: presented.pose.kind === 'flight',
         movementSettings: { ...actor.movement },
         conditions: actor.flags.prone ? ['prone'] : [],
         publicPortraitImage: actor.portraitImage,

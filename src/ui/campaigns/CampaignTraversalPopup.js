@@ -127,13 +127,10 @@ export default class CampaignTraversalPopup {
     };
     this.approach = approach;
     try {
-      if (
-        approach.actor.flightActive &&
-        Math.abs(option.approach.point.y - approach.actor.world.y) > 1e-6
-      )
-        throw new Error('Use the flight elevation controls to match this entrance first.');
       const target = gm.spatial.worldToGrid(option.approach.point.x, option.approach.point.z);
-      await gm.playerInput.requestMove(approach.actor, target);
+      if (approach.actor.flightActive)
+        target.elevationFeet = (option.approach.point.y * 5) / gm.spatial.tileWorldSize;
+      await gm.playerInput.requestMove(approach.actor, target, { closest: true });
       if (this.disposed || this.approach !== approach) return false;
       this.approach = null;
       const current = gm.playerInput.commands.getState();

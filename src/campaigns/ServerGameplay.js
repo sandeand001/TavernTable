@@ -7,6 +7,7 @@ import {
   buildMovementRange,
   getMovementRoute,
   setTokenMovementSettings,
+  closestMovementCandidate,
 } from '../entities/creatures/TokenMovement.js';
 import { encodeScene } from './CampaignScene.js';
 import { buildSurfaceRange, getSurfaceRoute } from '../terrain/SurfaceNavigation.js';
@@ -328,7 +329,7 @@ export async function movePlayerActor(
   library,
   tokenId,
   target,
-  { dice, id, useSlowFall } = {}
+  { dice, id, useSlowFall, closest = false } = {}
 ) {
   const runtime = gameplayRuntime(scene, library);
   const actor = runtime.actors.find((entry) => entry.id === tokenId);
@@ -341,7 +342,13 @@ export async function movePlayerActor(
     !Number.isInteger(target.gridY)
   )
     throw gameplayError('Choose a valid destination on this actor map', 'invalid-destination');
-  if (saved.pose.kind === 'flight') return moveFlyingActor(scene, library, runtime, actor, target);
+  if (saved.pose.kind === 'flight')
+    return moveFlyingActor(scene, library, runtime, actor, target, { closest });
+  if (target.elevationFeet !== undefined)
+    throw gameplayError(
+      'Only a flying creature can request a destination elevation',
+      'invalid-destination'
+    );
   if (saved.pose.kind !== 'ground')
     throw gameplayError('This movement pose is not supported yet', 'unsupported-movement');
   const map = runtime.world.getMap(actor.mapId);
@@ -395,7 +402,35 @@ export async function movePlayerActor(
           other.heightFeet + 5 > height + 1e-7
       ),
   });
-  const route = getSurfaceRoute(range, target.gridX, target.gridY);
+  const goal = closest
+    ? closestMovementCandidate(
+        [...range.tiles.values()].map((cell) => ({
+          world: {
+            x: (cell.xFeet ?? (cell.gridX + 0.5) * 5) * unit,
+            y: cell.heightFeet * unit,
+            z: (cell.zFeet ?? (cell.gridY + 0.5) * 5) * unit,
+          },
+          cost: cell.cost,
+          target: cell,
+        })),
+        {
+          x: (target.gridX + 0.5) * map.grid.tileWorldSize,
+          y: actor.world.y,
+          z: (target.gridY + 0.5) * map.grid.tileWorldSize,
+        }
+      ).target
+    : target;
+  const route = getSurfaceRoute(
+    range,
+    goal.gridX,
+    goal.gridY,
+    closest
+      ? {
+          surfaceId: goal.surfaceId,
+          heightFeet: goal.heightFeet,
+        }
+      : {}
+  );
   if (!route?.length)
     throw gameplayError('That destination is blocked or beyond your movement', 'unreachable');
   let height = actor.world.y / unit;
@@ -469,7 +504,7 @@ export async function movePlayerActor(
   };
 }
 
-function moveFlyingActor(scene, library, runtime, actor, target) {
+function moveFlyingActor(scene, library, runtime, actor, target, { closest = false } = {}) {
   const character = runtime.combat.movementCharacter(actor, library.get(actor.characterSheetId));
   const permission = library.rules.flightAvailability(character);
   const status = runtime.combat.status(actor, 'fly');
@@ -478,6 +513,18 @@ function moveFlyingActor(scene, library, runtime, actor, target) {
     throw gameplayError('Movement requires your active, available turn', 'not-your-turn');
   const map = runtime.world.getMap(actor.mapId);
   const tile = map.grid.tileWorldSize;
+  const unit = tile / 5;
+  const requestedY =
+    target.elevationFeet === undefined ? actor.world.y : target.elevationFeet * unit;
+  const vertical = Math.abs(requestedY - actor.world.y) / unit;
+  const allowance = playerMovementBudget(runtime.combat, actor, 'fly').remaining;
+  if (!closest && vertical > allowance + 1e-7)
+    throw gameplayError('That elevation is beyond your flying movement', 'unreachable');
+  const verticalCost = Math.min(vertical, allowance);
+  const reachedElevation = verticalCost >= vertical - 1e-7;
+  const height = reachedElevation
+    ? requestedY
+    : actor.world.y + Math.sign(requestedY - actor.world.y) * verticalCost * unit;
   const obstacles = runtime.world.getObstacles({ mapId: actor.mapId });
   const occupied = runtime.actors
     .filter((entry) => entry !== actor && runtime.world.sharesLocation(entry.mapId, actor.mapId))
@@ -488,6 +535,35 @@ function moveFlyingActor(scene, library, runtime, actor, target) {
         max: { x: at.x + 2, y: at.y + 5 - 1e-6, z: at.z + 2 },
       };
     });
+  if (verticalCost > 1e-7) {
+    const body = runtime.world.toCampaignBounds(actor.mapId, {
+      min: {
+        x: actor.world.x - tile / 2 + 1e-6,
+        y: Math.min(actor.world.y, height) + 1e-6,
+        z: actor.world.z - tile / 2 + 1e-6,
+      },
+      max: {
+        x: actor.world.x + tile / 2 - 1e-6,
+        y: Math.max(actor.world.y, height) + tile - 1e-6,
+        z: actor.world.z + tile / 2 - 1e-6,
+      },
+    });
+    const support = runtime.world.findSupportBelow(runtime.world.getCampaignPosition(actor.id), {
+      mapId: actor.mapId,
+    });
+    const destination = runtime.world.toCampaignPosition(actor.mapId, {
+      ...actor.world,
+      y: height,
+    });
+    if (
+      (support && destination.y < support.positionFeet.y - 1e-6) ||
+      [...obstacles, ...occupied].some((entry) => boundsIntersectSolid(body, entry, 1e-6))
+    )
+      throw gameplayError(
+        'That flight approach crosses a solid or supported floor',
+        'flight-blocked'
+      );
+  }
   const blocked = new Set(
     map.terrain.placeables
       .filter((entry) => ['plant', 'structure'].includes(entry.type))
@@ -496,8 +572,8 @@ function moveFlyingActor(scene, library, runtime, actor, target) {
   for (let y = 0; y < map.grid.rows; y++)
     for (let x = 0; x < map.grid.cols; x++) {
       const body = runtime.world.toCampaignBounds(actor.mapId, {
-        min: { x: x * tile + 1e-6, y: actor.world.y + 1e-6, z: y * tile + 1e-6 },
-        max: { x: (x + 1) * tile - 1e-6, y: actor.world.y + tile - 1e-6, z: (y + 1) * tile - 1e-6 },
+        min: { x: x * tile + 1e-6, y: height + 1e-6, z: y * tile + 1e-6 },
+        max: { x: (x + 1) * tile - 1e-6, y: height + tile - 1e-6, z: (y + 1) * tile - 1e-6 },
       });
       if ([...obstacles, ...occupied].some((entry) => boundsIntersectSolid(body, entry, 1e-6)))
         blocked.add(`${x},${y}`);
@@ -507,42 +583,77 @@ function moveFlyingActor(scene, library, runtime, actor, target) {
     rows: map.grid.rows,
     startGridX: actor.gridX,
     startGridY: actor.gridY,
-    speed: playerMovementBudget(runtime.combat, actor, 'fly').remaining,
+    speed: allowance - verticalCost,
     tileWorldSize: tile,
     elevationUnit: 0,
     getHeight: () => 0,
     blocked,
   });
-  const route = getMovementRoute(range, target.gridX, target.gridY);
-  if (!route?.length)
+  const goal = !reachedElevation
+    ? actor
+    : closest
+      ? closestMovementCandidate(
+          [...range.tiles.values()].map((cell) => ({
+            world: { x: (cell.gridX + 0.5) * tile, y: height, z: (cell.gridY + 0.5) * tile },
+            cost: cell.cost,
+            target: cell,
+          })),
+          { x: (target.gridX + 0.5) * tile, y: height, z: (target.gridY + 0.5) * tile }
+        ).target
+      : target;
+  const route = getMovementRoute(range, goal.gridX, goal.gridY);
+  if (!route || (!route.length && verticalCost <= 1e-7))
     throw gameplayError('That destination is blocked or beyond your movement', 'unreachable');
-  const last = route.at(-1);
-  const position = { x: (last.gridX + 0.5) * tile, y: actor.world.y, z: (last.gridY + 0.5) * tile };
-  const ticket = runtime.combat.beginConnectionMovement(actor, last.cost, 'fly');
+  const last = route.length ? route.at(-1) : actor;
+  const costFeet = verticalCost + (route.length ? last.cost : 0);
+  const position = { x: (last.gridX + 0.5) * tile, y: height, z: (last.gridY + 0.5) * tile };
+  const ticket = runtime.combat.beginConnectionMovement(actor, costFeet, 'fly');
   const next = copy(scene);
   const moved = next.creatures.find((entry) => entry.id === actor.id);
   moved.gridX = last.gridX;
   moved.gridY = last.gridY;
-  moved.facingAngle = facingAngleFromDirection(
-    position.x - actor.world.x,
-    position.z - actor.world.z
-  );
+  moved.facingAngle = route.length
+    ? facingAngleFromDirection(position.x - actor.world.x, position.z - actor.world.z)
+    : actor.facingAngle;
   moved.pose = { kind: 'flight', world: position };
+  if (target.elevationFeet !== undefined) {
+    const goalFeet = runtime.world.toCampaignPosition(actor.mapId, position);
+    const support = runtime.world.findSupportBelow(goalFeet, { mapId: actor.mapId });
+    if (support && Math.abs(goalFeet.y - support.positionFeet.y) <= 1e-6) {
+      const transfer = campaignLandingForSupport(
+        runtime.world,
+        { ...actor, facingAngle: moved.facingAngle },
+        support
+      );
+      if (transfer) Object.assign(moved, transfer.placement, { mapId: transfer.mapId });
+      else
+        moved.pose = {
+          kind: 'ground',
+          world: { ...support.world },
+          ...(support.surfaceId !== 'terrain' ? { surfaceId: support.surfaceId } : {}),
+        };
+    }
+  }
   const routeFeet = [
     runtime.world.toCampaignPosition(actor.mapId, actor.world),
+    ...(verticalCost > 1e-7
+      ? [runtime.world.toCampaignPosition(actor.mapId, { ...actor.world, y: height })]
+      : []),
     ...route.map((step) =>
       runtime.world.toCampaignPosition(actor.mapId, {
         x: (step.gridX + 0.5) * tile,
-        y: actor.world.y,
+        y: height,
         z: (step.gridY + 0.5) * tile,
       })
     ),
   ];
-  actor.world = { ...position };
+  actor.world = { ...moved.pose.world };
+  actor.mapId = moved.mapId ?? actor.mapId;
+  actor.flightActive = moved.pose.kind === 'flight';
   actor.gridX = moved.gridX;
   actor.gridY = moved.gridY;
   actor.facingAngle = moved.facingAngle;
-  runtime.combat.finishMovement(ticket, last.cost);
+  runtime.combat.finishMovement(ticket, costFeet);
   runtime.combat.completeFreeMovement(actor);
   next.combat = runtime.combat.snapshot();
   encodeScene(next, { ruleset: library.ruleset, library });
@@ -551,7 +662,7 @@ function moveFlyingActor(scene, library, runtime, actor, target) {
     receipt: {
       type: 'move',
       tokenId: actor.id,
-      costFeet: last.cost,
+      costFeet,
       routeFeet,
       placement: {
         mapId: actor.mapId,
@@ -748,6 +859,7 @@ export async function executePlayerCommand(
       dice,
       id: command.commandId,
       useSlowFall: command.payload.useSlowFall,
+      closest: command.payload.closest,
     });
   const runtime = gameplayRuntime(scene, library, undo);
   const actor = runtime.actors.find((entry) => entry.id === command.tokenId);

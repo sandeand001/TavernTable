@@ -46,7 +46,11 @@ function assertConnectionActor(gm, token, stationary = true, openingId = null) {
   if (gm.playerInput) {
     const capability = gm.playerInput.commands.availability('traverse', token.id);
     if (gm.playerInput.commands.pending) denied('Finish the current host command first');
-    if (!capability.allowed) denied(capability.reason || capability.code);
+    if (!capability.allowed)
+      denied(
+        capability.reason || capability.code,
+        capability.code === 'movement-unavailable' ? 'insufficient-movement' : capability.code
+      );
     return null;
   }
   if (!session) throw new Error('Connection travel requires a character rules service');

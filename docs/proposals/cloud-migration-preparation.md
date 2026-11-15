@@ -4850,3 +4850,46 @@ opening heights, still needs its own authoritative tracer before complete native
 acceptance. Matching final runtime/frontend packaging, the actual four-to-five-hour
 ten-client rehearsal, recovery/draining and production/cutover approvals remain
 separate gates.
+
+### M5 airborne restore and native entrance-approach parity
+
+The preceding different-elevation entrance limitation is now removed in
+development. A real loaded-sprite tracer first exposed an earlier startup bug:
+orientation capture treated an incoming airborne actor as grounded before
+model creation, rejected its unsupported ground position and removed the model.
+Canonical flight state is now installed before that native initialization.
+
+The existing movement intent accepts an optional finite map-local
+`elevationFeet` destination and explicit boolean `closest` consent. It still
+accepts no client pose, cost, role or resource authority. Grid coordinates must
+be safe integers. Normal moves keep their old shape and altitude behavior.
+
+- Native entrance approach now pays for its vertical sweep before the horizontal
+  route, including the actual one-foot clearance of a six-foot door. The existing
+  five/ten/fifteen/twenty-foot radial choices remain unchanged.
+- Native and server closest-legal selection share the same distance/cost
+  comparator. A flyer with two feet remaining descends only those two feet;
+  it does not cross, overspend or receive a later unaffordable traversal offer.
+- Ground elevation claims, below-floor descent, solid ceilings, strict
+  over-budget destinations and malformed opt-ins are definitive refusals with
+  unchanged canonical state. Explicit closest consent cannot bypass a solid.
+- A destination exactly at real support lands normally, retains the saved
+  character and action economy, and creates no fall damage/Prone. Same-ID
+  recovery cannot debit it again.
+- Actual cloud owner SSE receives the vertical waypoint followed by the
+  horizontal waypoint and the correct nine-foot debit; same-ID recovery
+  returns no historical route or second canonical write.
+
+Current coupled validation is **434 tests / 25 Jest suites**, **237.742 seconds**,
+all passing with open-handle detection, including prior control, owner approach,
+native movement-range/redirect, sheet and private-state cases. **Three actual
+cloud HTTP/SSE cases**, **42.113 seconds**, pass for fractional approach,
+existing takeoff/elevation/fall and definitive native refusals. The earlier
+complete 29-case cloud-world gate remains separately recorded, not relabeled as
+a new whole-file run. Formatting, affected-source ESLint and layering pass.
+
+The isolated runtime gate now checks **31 exact input hashes** and exercises
+fractional flight as well as native Cover for both rulesets without sprite
+assets/GPU. That gate still requires a fresh exact image build. No new hosted
+release or full-session acceptance is implied; both gameplay flags, the R8
+service and the **59/65** canonical completion count remain unchanged.

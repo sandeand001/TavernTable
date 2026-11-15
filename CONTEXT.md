@@ -804,6 +804,12 @@
   Standing publishes its native half-maximum-Speed cost. Flight visibility uses
   effective scene-granted speed, not just base traits; elevation choices also
   respect remaining movement. Drop retains native no-movement-cost semantics.
+  An explicit map-local flight elevation is a destination intent, never a
+  supplied pose or cost. Authority validates the vertical sweep, then horizontal
+  reachability and their combined flying cost. Closest-legal movement is an
+  explicit opt-in and shares the native distance/cost selection rule; it cannot
+  cross a solid or supported floor. Exact support lands normally without a fall.
+  Hydrate canonical flight state before creating a received airborne model.
   Read-only public geometry may preview a connection, but approach and crossing
   are authoritative commands. Local and server traversal share crawling costs.
   Clear traversal offers with the rest of the private world presentation.

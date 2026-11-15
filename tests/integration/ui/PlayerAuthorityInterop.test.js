@@ -484,11 +484,31 @@ test.each([
     commands: ['move'],
     cancel: true,
   },
+  {
+    mode: 'flying through a non-five-foot opening elevation',
+    prone: false,
+    flying: true,
+    startX: 2,
+    spent: 19,
+    commands: ['move', 'traverse'],
+  },
+  {
+    mode: 'using only the last flying feet without crossing',
+    prone: false,
+    flying: true,
+    exhausted: true,
+    startX: 2,
+    spent: 60,
+    commands: ['move'],
+  },
 ])(
   'the real player traversal popup uses native costs and server authority for $mode',
-  async ({ prone, startX, spent, commands, cancel = false }) => {
+  async ({ prone, startX, spent, commands, cancel = false, flying = false, exhausted = false }) => {
     const table = await createPlayerAuthorityTable({
-      characterUpdates: { conditions: prone ? ['prone'] : [] },
+      characterUpdates: {
+        conditions: prone ? ['prone'] : [],
+        ...(flying ? { fallTraits: { flySpeed: 60, hover: true } } : {}),
+      },
     });
     const restoreFiles = installHumanoidAssetFiles();
     let milliseconds = 0;
@@ -516,8 +536,18 @@ test.each([
       Object.assign(scene.creatures[0], {
         gridX: startX,
         gridY: 2,
-        pose: { kind: 'ground', world: { x: startX + 0.5, y: 0, z: 2.5 } },
+        pose: {
+          kind: flying ? 'flight' : 'ground',
+          world: { x: startX + 0.5, y: flying ? 1 : 0, z: 2.5 },
+        },
       });
+      if (exhausted) {
+        const native = gameplayRuntime(scene, library);
+        const actor = native.actors.find((actor) => actor.id === 'token-1');
+        const ticket = native.combat.beginConnectionMovement(actor, 58, 'fly');
+        native.combat.finishMovement(ticket, 58);
+        scene.combat = native.combat.snapshot();
+      }
       const world = CampaignWorld.fromScene(scene, { ruleset: '2024', library });
       world.addMap({
         id: 'inside',
@@ -573,11 +603,13 @@ test.each([
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
       const offered = await popup.ready;
-      if (cancel) {
+      if (cancel || exhausted) {
         expect(offered).toBe(false);
         expect(popup.root.hidden).toBe(true);
         expect(token.mapId).toBe('map-main');
-        expect(token.world).toEqual({ x: 4.5, y: 0, z: 2.5 });
+        expect(token.world.x).toBe(exhausted ? 2.5 : 4.5);
+        expect(token.world.y).toBeCloseTo(exhausted ? 0.6 : 0, 6);
+        expect(token.world.z).toBe(2.5);
         expect(app.state.gameplay.ownedTokens[0].movement.spentFeet).toBe(spent);
         expect(
           table.calls
@@ -588,7 +620,7 @@ test.each([
       }
       expect(popup.root.hidden).toBe(false);
       expect(popup.confirm.disabled).toBe(false);
-      expect(popup.confirm.textContent).toContain(`(${prone ? 10 : 5} ft)`);
+      expect(popup.confirm.textContent).toContain(`(${prone || flying ? 10 : 5} ft)`);
       expect(popup.root.querySelector('[data-door-action="lock"]')).toBeNull();
       popup.confirm.click();
       for (let frame = 0; frame < 1200 && (popup.pending || app.commands.pending); frame++) {
@@ -605,9 +637,13 @@ test.each([
       });
       expect(app.state.gameplay.ownedTokens[0].movement).toEqual({
         spentFeet: spent,
-        remainingFeet: 30 - spent,
-        allowanceFeet: 30,
+        remainingFeet: (flying ? 60 : 30) - spent,
+        allowanceFeet: flying ? 60 : 30,
       });
+      if (flying) {
+        expect(token.flightActive).toBe(true);
+        expect(token.world.y).toBeCloseTo(0.2, 6);
+      }
       expect(app.state.gameplay.ownedTokens[0].economy.actions).toBe(1);
       expect(app.sheets.library.get(table.characterId).conditions.includes('prone')).toBe(prone);
       expect(

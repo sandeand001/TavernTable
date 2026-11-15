@@ -1863,6 +1863,127 @@ test('owned airborne movement uses the shared physical route and exact flying bu
   });
 }, 30000);
 
+test('a native flight destination at its exact supported floor lands normally without a fall or duplicate debit', async () => {
+  const { campaignId, player } = await table('2024', {
+    flightHeightFeet: 5,
+    characterUpdates: { fallTraits: { flySpeed: 60, hover: true } },
+  });
+  const state = (await player.request('playerState', [{ observerTokenId: 'token-1' }])).body.result;
+  const command = {
+    version: 1,
+    commandId: randomUUID(),
+    sceneRevision: state.sceneRevision,
+    charactersRevision: state.revision,
+    observerTokenId: 'token-1',
+    tokenId: 'token-1',
+    kind: 'move',
+    payload: {
+      target: { mapId: 'map-main', gridX: 1, gridY: 1, elevationFeet: 0 },
+      closest: true,
+    },
+  };
+  const landed = await player.request('playerCommand', [campaignId, command]);
+  expect(landed.status).toBe(200);
+  expect(landed.body.result.receipt).toMatchObject({
+    costFeet: 5,
+    placement: { pose: { kind: 'ground', world: { y: 0 } } },
+  });
+  const after = landed.body.result.state;
+  expect(after.gameplay.ownedTokens[0].movement).toEqual({
+    spentFeet: 5,
+    remainingFeet: 25,
+    allowanceFeet: 30,
+  });
+  expect(after.gameplay.ownedTokens[0].economy).toEqual(state.gameplay.ownedTokens[0].economy);
+  expect(after.records).toEqual(state.records);
+  const canonical = (await host.request('readCharacters', [campaignId])).body.result;
+  expect((await player.request('playerCommand', [campaignId, command])).body.result.outcome).toBe(
+    'duplicate'
+  );
+  expect((await host.request('readCharacters', [campaignId])).body.result).toEqual(canonical);
+}, 30000);
+
+test('closest flight intents reject unsafe coordinates and malformed goal opt-ins before mutation', async () => {
+  const { campaignId, player } = await table('2024', {
+    flightHeightFeet: 5,
+    characterUpdates: { fallTraits: { flySpeed: 60, hover: true } },
+  });
+  const state = (await player.request('playerState', [{ observerTokenId: 'token-1' }])).body.result;
+  const before = (await host.request('readCharacters', [campaignId])).body.result;
+  const goal = { mapId: 'map-main', gridX: 2, gridY: 1, elevationFeet: 1 };
+  for (const payload of [
+    { target: { ...goal, gridX: Number.MAX_SAFE_INTEGER + 1 }, closest: true },
+    { target: { ...goal, elevationFeet: '1' }, closest: true },
+    { target: goal, closest: 'yes' },
+  ]) {
+    const refused = await player.request('playerCommand', [
+      campaignId,
+      {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        observerTokenId: 'token-1',
+        tokenId: 'token-1',
+        kind: 'move',
+        payload,
+      },
+    ]);
+    expect(refused.status).toBe(400);
+    expect(refused.body.code).toBe('invalid-command');
+    expect((await host.request('readCharacters', [campaignId])).body.result).toEqual(before);
+  }
+}, 30000);
+
+test.each([
+  ['a ground elevation claim', false, 1, false, 'invalid-destination'],
+  ['descent below a supported floor', true, -1, false, 'flight-blocked'],
+  ['an unaffordable elevation without closest consent', true, 80, false, 'unreachable'],
+  ['a solid ceiling even with closest consent', true, 15, true, 'flight-blocked'],
+])(
+  'a native flight destination rejects %s without any canonical mutation',
+  async (_, flying, elevationFeet, ceiling, code) => {
+    const geometry = new TerrainGeometry({
+      widthFeet: 25,
+      depthFeet: 25,
+      getTerrainHeightFeet: () => 0,
+    });
+    if (ceiling)
+      geometry.addSolid({
+        id: 'approach-ceiling',
+        bounds: { min: { x: 0, y: 12, z: 0 }, max: { x: 25, y: 13, z: 25 } },
+      });
+    const { campaignId, player } = await table('2024', {
+      geometry: geometry.save(),
+      flightHeightFeet: flying ? 5 : null,
+      characterUpdates: { fallTraits: { flySpeed: 60, hover: true } },
+    });
+    const state = (await player.request('playerState', [{ observerTokenId: 'token-1' }])).body
+      .result;
+    const before = (await host.request('readCharacters', [campaignId])).body.result;
+    const refused = await player.request('playerCommand', [
+      campaignId,
+      {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        observerTokenId: 'token-1',
+        tokenId: 'token-1',
+        kind: 'move',
+        payload: {
+          target: { mapId: 'map-main', gridX: 1, gridY: 1, elevationFeet },
+          ...(ceiling ? { closest: true } : {}),
+        },
+      },
+    ]);
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe(code);
+    expect((await host.request('readCharacters', [campaignId])).body.result).toEqual(before);
+  },
+  30000
+);
+
 test('a real receipt persistence failure rolls back scene, character conditions and movement, then the same intent retries exactly once', async () => {
   const { campaignId, player } = await table('2024', { conditions: ['prone'] });
   const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
