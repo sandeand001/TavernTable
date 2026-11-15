@@ -83,9 +83,14 @@ zero, and actual 55/60/15-minute, token-rotation, zero-instance and cold-sheet
 read/save/re-sleep checks pass. The measured cold read is **5.22 seconds**;
 the conservative thirty-shared-hour forecast is **USD 15.57/month**, not a
 spending cap. The new full stable gate passes **307 suites / 4,017 tests**.
-No real campaigns are migrated or gameplay capabilities enabled; M5 requires
-the owner's exact source/rehearsal, production and selected-data approvals.
-**54 of 65** tasks are complete,
+The owner subsequently delegated selecting one original test campaign for
+private rehearsal. Independent source exports, an authenticated private import,
+an exact export/import round trip and returning account-bound player seats pass
+`M5-01` through `M5-05`. These are rehearsal copies, not production authority;
+originals remain untouched and gameplay capabilities stay gated. Complete
+gameplay and the four-to-five-hour rehearsal are in progress before the separate
+production and selected-data approvals.
+**59 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1378,7 +1383,14 @@ Revalidation in the intended environment remains part of M1 and M4.
 
 ### M5 - Selected migration, rehearsal, and production cutover
 
-- [ ] **M5-01 - Select migration sources and authorize a rehearsal copy.**
+- [x] **M5-01 - Select migration sources and authorize a rehearsal copy.**
+  - **Completed:** November 15, 2026. The owner explicitly authorized selecting
+    any original testing campaign for the existing private pilot, with the
+    verified Google owner. Fresh inventories cover both original hosts;
+    local-3002-candidate-5 was selected by saved-sheet/actor/map coverage, not
+    names or newest timestamps. Trusted loopback DM access proves the exact
+    source directory. Actual managed Google identity matches authoritative
+    imported ownership; identifiers and credentials remain private.
   - **Depends:** `M0-02`, `M4-13`.
   - **Success:** inventory both local test data sources; explicitly select
     campaigns, destination/test environment and owner UID. Prove trusted local
@@ -1387,7 +1399,14 @@ Revalidation in the intended environment remains part of M1 and M4.
     newest timestamps do not choose/merge campaigns; raw legacy keys/invitations
     are not copied to bundles, Git, chat or cloud logs.
 
-- [ ] **M5-02 - Preserve independent original exports and show a migration preview.**
+- [x] **M5-02 - Preserve independent original exports and show a migration preview.**
+  - **Completed:** November 15, 2026. Independent read-only SQLite and trusted
+    host complete exports match exactly: **653,323 UTF-8 bytes**, SHA-256
+    `d72595326b2cdbf252239c46c2f4742483f8a534fb6c5f491d6a0f264d8dcfb1`.
+    Deep shared-domain/catalog/scene validation and the owner preview confirm
+    **8 sheets / 8 actors / 42 maps / 116 connections**, 2014/core 5.1,
+    one pack, inactive combat and no embedded images. Both original databases,
+    source access records and host-key bytes remain unchanged and recoverable.
   - **Depends:** `M5-01`.
   - **Success:** make complete independent JSON exports/checksums before changes;
     preview selected records, roles/assignments, unsupported data and expected
@@ -1396,7 +1415,13 @@ Revalidation in the intended environment remains part of M1 and M4.
     approved selection/preview matches actual source versions, not an older QA
     checkout or similarly named campaign.
 
-- [ ] **M5-03 - Create non-destructive private rehearsal copies.**
+- [x] **M5-03 - Create non-destructive private rehearsal copies.**
+  - **Completed:** November 15, 2026. The current published owner UI imports the
+    selected complete file as a new private campaign under the actual verified
+    Google account. Authoritative ownership and fresh private object prefixes
+    are checked. Original IDs/data are preserved outside the new authority;
+    portable owner claims, old host keys and invitations are not imported.
+    Existing verified import-intent/CAS gates continue to cover uncertain retries.
   - **Depends:** `M5-02`.
   - **Success:** publish validated new cloud copies in the approved rehearsal
     environment under the verified UID. Existing cloud campaigns still require
@@ -1405,7 +1430,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     or duplicate costs. Portable ownership claims and legacy secrets are not
     trusted; no local original is overwritten or silently kept in writable sync.
 
-- [ ] **M5-04 - Compare all migrated data and complete the export/restore round trip.**
+- [x] **M5-04 - Compare all migrated data and complete the export/restore round trip.**
+  - **Completed:** November 15, 2026. Actual complete cloud export is
+    **653,322 bytes**; the supported complete JSON copy-text path supplies a
+    real JSON file to the authenticated importer for a second private copy.
+    Its actual export matches the original and first copy across every sheet
+    value/source pin and the whole scene, terrain, topology, placement and
+    combat state. Only fresh campaign identity/revision/time metadata differs.
+    Native browser download-event confirmation is not claimed.
+    See [private rehearsal evidence](./cloud-migration-preparation.md#m5-01-through-m5-05-selected-private-rehearsal-and-returning-accounts).
   - **Depends:** `M5-03`, `M2-10`.
   - **Success:** verify character counts/IDs, edition/source pins, scene topology,
     images/assets, terrain, combat state, resources and assignments. Document
@@ -1413,7 +1446,17 @@ Revalidation in the intended environment remains part of M1 and M4.
   - **Verify:** export the cloud copy, restore a separate private copy and compare
     canonical data/integrity again. Successful object upload alone does not pass.
 
-- [ ] **M5-05 - Bind returning players to verified account seats.**
+- [x] **M5-05 - Bind returning players to verified account seats.**
+  - **Completed:** November 15, 2026. Two approved disposable verified accounts
+    redeem fresh single-use owner-UI invitations; acceptance automatically
+    enables them without a manual pilot grant. Original legacy assignments
+    bind to their persisted seats as **4 + 2 existing character IDs**.
+    Actual managed sign-out/sign-in in isolated in-memory Auth apps preserves
+    each UID, seat, access generation and exact assigned rows, without owner
+    privileges or full-scene reads. The verified Google owner's session/settings
+    and complete campaign export remain unchanged; temporary credentials and
+    consumed invitation secrets are removed. Same-UID provider linking remains
+    covered by the earlier approved live `M2-04` gate.
   - **Depends:** `M5-04`, `M2-02`, `M2-03`, `M2-04`.
   - **Success:** existing seats/character assignments attach through account-bound
     invitations without recreated records or display-name guessing. Cloud login
@@ -1423,6 +1466,10 @@ Revalidation in the intended environment remains part of M1 and M4.
     never grants another seat's access.
 
 - [ ] **M5-06 - Run a representative ten-client, full-session rehearsal.**
+  - **Status:** in progress. Complete native cloud gameplay paths are being
+    finished and regression-tested before enabling either gameplay capability.
+    The selected private campaign and returning seats are ready; a short
+    technical pilot is not substituted for the required four-to-five-hour run.
   - **Depends:** `M5-05`, `M4-12`.
   - **Success:** exercise a representative four-to-five-hour session: Free Play,
     combat, doors/rooms, assets, sheets, animation, reconnects, backup work and

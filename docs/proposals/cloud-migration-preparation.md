@@ -4438,3 +4438,74 @@ existing `test:stable` runner. The older 4,006-test result is not reused as a
 new full-regression claim. Real-source selection/rehearsal, production
 deployment and final data cutover still require their explicit M5 approvals;
 both gameplay capability gates and deferred routine-save UX remain unchanged.
+
+### M5-01 through M5-05: selected private rehearsal and returning accounts
+
+**Completed November 15, 2026; not production cutover.** The owner explicitly
+delegated choosing one original testing campaign and authorized private
+rehearsal in the existing pilot using the verified Google owner. Names/newest
+timestamps did not select or merge source data.
+
+Fresh read-only inventories cover both preserved hosts: port 3002 has seven
+campaigns/ten records; port 57591 has two campaigns/three records. The selected
+local-3002-candidate-5 provides eight sheets, eight placed actors, 42 maps and
+116 connections, with 2014/core 5.1, one enabled pack, inactive combat and no
+embedded images. Its building-assembly value of 1 is a schema marker, not an
+assembly count. Deep shared-domain, catalog and scene validation passes.
+
+The source's existing key is used only for a fresh trusted loopback DM session.
+The returned data directory matches the selected source exactly; only that
+newly created session is logged out. Independent read-only SQLite and trusted
+host complete exports match **653,323 UTF-8 bytes**, SHA-256
+`d72595326b2cdbf252239c46c2f4742483f8a534fb6c5f491d6a0f264d8dcfb1`.
+Both original databases, the separate legacy access store and host-key bytes
+remain unchanged. Those independent files and a safe preview persist privately
+outside Git; no legacy credentials are copied into cloud ownership or bundles.
+
+The owned browser page is explicitly loaded at the current immutable published
+release. Read-only managed account UI confirms the existing Google/password
+links and verified email without changing credentials or provider settings.
+The actual authenticated file importer creates a fresh private rehearsal
+campaign. Its stored owner matches the actual managed Google UID and a fresh
+server Auth read, not a browser assertion or custom-token impersonation.
+
+| Complete export | UTF-8 bytes | SHA-256 |
+| --- | ---: | --- |
+| Original, both independent methods | 653,323 | `d72595326b2cdbf252239c46c2f4742483f8a534fb6c5f491d6a0f264d8dcfb1` |
+| First authenticated private copy | 653,322 | `ce778321ca6fe6e1614329c02dffb37c91914451b78925a11573d63b83d04248` |
+| Authenticated export/import verification copy | 653,322 | `b77a6ec9b512852a22c83f0b24b627b9124a680c25440f4ec422659681c4eabf` |
+
+The first copy's actual complete JSON export is fed as a JSON `File` into the
+real authenticated importer, creating one further private verification copy.
+Its actual complete export is compared with both predecessors. All eight sheet
+rows/values, source pins and the entire terrain/map/connection/placement/combat
+scene match exactly; only fresh campaign ID, revisions and creation/save times
+differ as intended. Fresh private object prefixes and authoritative owners are
+checked for both copies. The original complete source digest is still unchanged.
+The integrated browser did not expose a native download event, so this evidence
+uses the repository-supported complete copy-text export and actual file import;
+it does not claim a confirmed local cloud download or a product download failure.
+
+The source's separate access database contains two legacy test players with
+six assignments, grouped **4 + 2**, not 3 + 3. Two approved disposable verified
+identities redeem fresh single-use invitations created through the owner UI;
+acceptance enables them automatically, with no manual pilot grant. Owner
+assignment controls bind those exact six existing records to new account seats.
+Isolated named Firebase apps use in-memory persistence and do not sign out the
+Google owner. Actual managed sign-out/sign-in followed by a fresh cloud store
+preserves each UID, seat, access generation and exact 4/2 assigned rows. Neither
+participant receives owner privileges or the full scene. The owner's entire
+export remains byte-identical to the first-copy digest after these access changes.
+
+The private credential bridge is deleted after loading; fixture passwords and
+consumed invitation secrets are cleared after the returning-account drills.
+The two disposable identities remain exactly tracked for the upcoming session;
+the two real-owner rehearsal copies are tracked separately, not included in old
+synthetic-campaign cleanup. Raw owner identifiers/emails and credentials are not
+published in this report or Memory.
+
+This completes **59 of 65** migration tasks. Both gameplay capabilities remain
+off while missing native full-game paths are finished and tested. The actual
+ten-client four-to-five-hour rehearsal, recovery/rollback, explicit production
+approval, selected latest-data cutover and first production session remain open.
+The routine-save flash/centered notice remains deferred until `M5-11`.

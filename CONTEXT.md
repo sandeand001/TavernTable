@@ -171,6 +171,17 @@
   unchanged. An uncertain restore keeps its original import caller/ID until
   receipt recovery, never a second privileged importer or in-place overwrite.
   Joined/unrelated accounts cannot read the owner file to begin a restore.
+- **Selected private rehearsal (M5-01 through M5-05 verified; no production cutover)**:
+  the owner delegated selecting one original testing campaign for the existing
+  pilot. Independent trusted-host/read-only exports preserve the originals.
+  Actual verified-Google-owner import and a separate export/import verification
+  copy retain all eight sheets, eight actors, 42 maps and 116 connections,
+  except fresh campaign/revision/time metadata. Two approved disposable
+  returning accounts keep their new UID-bound seats and original 4 + 2 assigned
+  records through managed sign-out/sign-in. Legacy keys/invitations/ownership
+  are never migrated as authority. Private copies and fixture identities are
+  tracked separately; full gameplay/session rehearsal and production/cutover
+  approvals remain gated.
 - **Private cloud images (M2 development slice verified)**: preserve canonical
   embedded image rows while finalizing immutable, hash-addressed private bytes.
   Current JPEG/PNG/WebP files use bounded HTTP uploads and exact-byte delivery.
