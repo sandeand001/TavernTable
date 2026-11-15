@@ -436,9 +436,10 @@
   acceptance are ready. Paused preparation never auto-starts a game. Explicit
   owner transitions flush pending scene/character work; manual pause treats its
   final backup confirmation separately. Progressive artwork, persistent cache
-  and warm/private-loss behavior are described below. Arrival grants and cloud
-  door/action/emote completion remain later work, not silently supported gameplay
-  claims. Cloud action Undo has its M5 development gate below. Ten distinct managed principals (one owner
+  and warm/private-loss behavior are described below. Cloud action Undo, nearby
+  doors and explicit arrival grants now have focused M5 development gates.
+  Complete remote action/emote presentation and room-discovery acceptance remain
+  gated, not silently supported gameplay claims. Ten distinct managed principals (one owner
   and nine members) converge to canonical poses/revisions and scoped budgets,
   with stale-CAS retry, original lost-reply recovery, no duplicate costs/physics
   and latest-only reconnect. Current revocation clears private state and fences
@@ -789,6 +790,19 @@
   time does. Head observers wait for the matching committed transient update,
   so the first authoritative player HUD includes the correct Undo availability.
   An unavailable Undo returns its typed denial, not an invalid-response fallback.
+- **Cloud arrival grant (M5 development verified; gameplay activation gated)**:
+  the owner chooses an assigned saved character, current seat generation and
+  explicit destination cell through Players and invitations. One durable grant
+  per character is replaced by reissue; assignment/member/character revocation
+  clears old grants. The grant's command receipt and head/change publish together.
+  The owner approved a render-only preview of the granted area. It reuses native
+  terrain/cache without an observer, actors, nearby-door controls or movement
+  authority; no other room or location is inferred from that grant. Player
+  placement reuses native floor/occupancy/combat/model checks and preserves the
+  original character data. The accepted real actor becomes the observer only
+  after canonical publication. Same-ID recovery retains its original actor ID
+  and cannot place twice or roll a newer grant back. Fresh online access is
+  required even when private preview artwork is cached.
 - **Shared movement presentation**: receiving DM/player models replay committed
   safe routes with native locomotion variants, without spending costs again.
   Free play permits assigned movement and refreshes its per-journey allowance;

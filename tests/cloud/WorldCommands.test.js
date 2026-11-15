@@ -2068,6 +2068,258 @@ test(
 );
 
 test(
+  'a cloud DM arrival grant previews only authorized terrain and places the original assigned character once',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const unconfirmed = Promise.withResolvers();
+    t.after(
+      f.owner.client.subscribeSave((state) => {
+        if (state.phase === 'uncertain') unconfirmed.reject(state.error);
+      })
+    );
+    const unplaced = structuredClone(f.scene);
+    unplaced.creatures = unplaced.creatures.filter((actor) => actor.characterId !== f.hero);
+    unplaced.selection = null;
+    const removed = await publishOwner(f, {
+      commandId: randomUUID(),
+      sessionId: f.live.sessionId,
+      presentations: [],
+      change: {
+        ruleset: '2014',
+        revision: 1,
+        charactersRevision: f.library.revision,
+        scene: encodeScene(unplaced, f.validation),
+      },
+    });
+    assert.equal(removed.status, 200);
+    const recordsBefore = (await f.owner.client.readCharacters(f.campaign.id)).records;
+    const connection = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await connection.open({ observerTokenId: null });
+    assert.equal(connection.state.publicScene.assetKey, null);
+    const noticed = Promise.withResolvers();
+    t.after(
+      connection.subscribe((event) => {
+        if (event.type === 'state' && event.state.placementGrants?.length)
+          noticed.resolve(event.state);
+      })
+    );
+    const issued = await Promise.race([
+      f.owner.client.grantPlacement(f.campaign.id, {
+        seatId: f.grant.access.seatId,
+        accessGeneration: f.grant.access.accessGeneration,
+        characterId: f.hero,
+        destination: { mapId: 'map-main', gridX: 2, gridY: 2, surfaceId: null },
+      }),
+      unconfirmed.promise,
+    ]);
+    const grantedState = await noticed.promise;
+    assert.equal(grantedState.publicScene.assetKey, null);
+    assert.equal(grantedState.placementGrants[0].id, issued.grant.id);
+    await assert.rejects(
+      f.member.client.readParticipantSnapshot(
+        f.campaign.id,
+        {
+          sessionId: f.live.sessionId,
+          observerTokenId: null,
+          mapId: null,
+          assetKey: null,
+          placementGrantId: randomUUID(),
+        },
+        f.grant.access
+      ),
+      { status: 403, code: 'placement-forbidden' }
+    );
+    const deniedGrant = await fetch(`${f.api.url}/api/cloud/campaigns/${f.campaign.id}/arrivals`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + f.member.token,
+        Origin: f.api.origin,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        commandId: randomUUID(),
+        seatId: f.grant.access.seatId,
+        accessGeneration: f.grant.access.accessGeneration,
+        characterId: f.hero,
+        destination: { mapId: 'map-main', gridX: 2, gridY: 2, surfaceId: null },
+      }),
+    });
+    assert.equal(deniedGrant.status, 404);
+    const view = await connection.call('playerState', [
+      { placementGrantId: issued.grant.id, observerTokenId: null },
+    ]);
+    assert.equal(view.observerTokenId, null);
+    assert.deepEqual(view.observers, []);
+    assert.deepEqual(view.publicScene.actors, []);
+    assert.deepEqual(view.gameplay.ownedTokens, []);
+    assert.equal(view.view.mode, 'placement-preview');
+    assert.equal(view.view.id, 'map-main');
+    assert.deepEqual(
+      view.publicScene.assets.maps.map((map) => map.id),
+      ['map-main']
+    );
+    const request = {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: view.sceneRevision,
+      charactersRevision: view.revision,
+      observerTokenId: null,
+      tokenId: null,
+      kind: 'place',
+      payload: { characterId: f.hero, grantId: issued.grant.id, appearance: 'female-archer' },
+      view: { mapId: 'map-main', assetKey: view.publicScene.assetKey },
+    };
+    const placed = await connection.call('playerCommand', [f.campaign.id, request]);
+    assert.equal(placed.outcome, 'applied');
+    assert.equal(placed.receipt.characterId, f.hero);
+    assert.equal(placed.state.observerTokenId, placed.receipt.tokenId);
+    assert.equal(
+      placed.state.publicScene.actors.find((actor) => actor.owned).type,
+      'female-archer'
+    );
+    const repeated = await connection.call('playerCommand', [f.campaign.id, request]);
+    assert.equal(repeated.outcome, 'duplicate');
+    const saved = await f.owner.client.readCharacters(f.campaign.id);
+    assert.equal(
+      JSON.parse(saved.scene).creatures.filter((actor) => actor.characterId === f.hero).length,
+      1
+    );
+    assert.deepEqual(saved.records, recordsBefore);
+  }
+);
+
+test(
+  'cloud arrival grants survive replacement authority while reissue and reassignment fence stale destinations',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const unplaced = structuredClone(f.scene);
+    unplaced.creatures = unplaced.creatures.filter((actor) => actor.characterId !== f.hero);
+    unplaced.selection = null;
+    assert.equal(
+      (
+        await publishOwner(f, {
+          commandId: randomUUID(),
+          sessionId: f.live.sessionId,
+          presentations: [],
+          change: {
+            ruleset: '2014',
+            revision: 1,
+            charactersRevision: f.library.revision,
+            scene: encodeScene(unplaced, f.validation),
+          },
+        })
+      ).status,
+      200
+    );
+    const first = await f.owner.client.grantPlacement(f.campaign.id, {
+      seatId: f.grant.access.seatId,
+      accessGeneration: f.grant.access.accessGeneration,
+      characterId: f.hero,
+      destination: { mapId: 'map-main', gridX: 2, gridY: 2 },
+    });
+    const store = new CloudCampaignStore({
+      firestore: f.runtime.firestore,
+      access: f.access,
+      packs: f.store.packs,
+      resources: f.store.resources,
+      objects: f.store.objects,
+      assets: f.store.assets,
+    });
+    const replacement = await cloudApi({ access: f.access, store });
+    t.after(() => replacement.close());
+    const read = async (grantId, scope = f.grant.access) => {
+      const response = await fetch(
+        `${replacement.url}/api/cloud/campaigns/${f.campaign.id}/participant-state`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + f.member.token,
+            Origin: replacement.origin,
+            'Content-Type': 'application/json',
+            'X-TavernTable-Seat': scope.seatId,
+            'X-TavernTable-Access-Generation': String(scope.accessGeneration),
+          },
+          body: JSON.stringify({
+            sessionId: f.live.sessionId,
+            observerTokenId: null,
+            mapId: null,
+            assetKey: null,
+            placementGrantId: grantId,
+          }),
+        }
+      );
+      return { status: response.status, body: await response.json() };
+    };
+    const recovered = await read(first.grant.id);
+    assert.equal(recovered.status, 200);
+    assert.equal(recovered.body.result.state.arrival.grantId, first.grant.id);
+    assert.deepEqual(recovered.body.result.state.publicScene.actors, []);
+    const second = await f.owner.client.grantPlacement(f.campaign.id, {
+      seatId: f.grant.access.seatId,
+      accessGeneration: f.grant.access.accessGeneration,
+      characterId: f.hero,
+      destination: { mapId: 'map-main', gridX: 1, gridY: 2 },
+    });
+    assert.equal((await read(first.grant.id)).status, 403);
+    assert.equal((await read(second.grant.id)).status, 200);
+    const head = await f.runtime.firestore.collection('campaigns').doc(f.campaign.id).get();
+    const replay = await fetch(`${replacement.url}/api/cloud/campaigns/${f.campaign.id}/arrivals`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + f.owner.token,
+        Origin: replacement.origin,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        commandId: first.grant.id,
+        seatId: first.seatId,
+        accessGeneration: first.accessGeneration,
+        characterId: f.hero,
+        destination: { mapId: 'map-main', gridX: 2, gridY: 2, surfaceId: null },
+      }),
+    });
+    assert.equal(replay.status, 200);
+    assert.deepEqual((await replay.json()).result, first);
+    assert.equal(
+      (await f.runtime.firestore.collection('campaigns').doc(f.campaign.id).get()).data()
+        .generation,
+      head.data().generation
+    );
+    const removed = await f.owner.client.assignCharacter(f.campaign.id, {
+      seatId: first.seatId,
+      characterId: f.hero,
+      assigned: false,
+      accessGeneration: first.accessGeneration,
+    });
+    assert.equal((await read(second.grant.id)).status, 409);
+    await f.owner.client.assignCharacter(f.campaign.id, {
+      seatId: first.seatId,
+      characterId: f.hero,
+      assigned: true,
+      accessGeneration: removed.accessGeneration,
+    });
+    const fresh = await f.member.client.getParticipantAccess(f.campaign.id);
+    const expired = await read(second.grant.id, fresh.access);
+    assert.equal(expired.status, 403);
+    assert.equal(expired.body.code, 'placement-forbidden');
+    const saved = await f.owner.client.readCharacters(f.campaign.id);
+    assert.equal(
+      JSON.parse(saved.scene).creatures.some((actor) => actor.characterId === f.hero),
+      false
+    );
+  }
+);
+
+test(
   'the cloud player opens a physically nearby door with canonical scope and no action or movement cost',
   { timeout: 60000 },
   async (t) => {

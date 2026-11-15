@@ -500,8 +500,62 @@ const participantViewFields = (value) =>
 export function isCloudParticipantRequest(value) {
   return (
     record(value) &&
-    keys(value, ['sessionId', 'observerTokenId', 'mapId', 'assetKey']) &&
+    keys(value, [
+      'sessionId',
+      'observerTokenId',
+      'mapId',
+      'assetKey',
+      ...(Object.hasOwn(value, 'placementGrantId') ? ['placementGrantId'] : []),
+    ]) &&
+    (value.placementGrantId === undefined ||
+      (isCloudUUID(value.placementGrantId) && value.observerTokenId === null)) &&
     participantViewFields(value)
+  );
+}
+
+export function isCloudPlacementDestination(value) {
+  const identifier = (value) =>
+    typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(value);
+  return (
+    record(value) &&
+    keys(value, ['mapId', 'gridX', 'gridY', 'surfaceId']) &&
+    identifier(value.mapId) &&
+    Number.isSafeInteger(value.gridX) &&
+    value.gridX >= 0 &&
+    Number.isSafeInteger(value.gridY) &&
+    value.gridY >= 0 &&
+    (value.surfaceId === null || identifier(value.surfaceId))
+  );
+}
+
+export function isCloudPlacementGrant(value) {
+  if (
+    !record(value) ||
+    !keys(value, ['id', 'characterId', 'mapId', 'gridX', 'gridY', 'surfaceId']) ||
+    !isCloudUUID(value.id) ||
+    typeof value.characterId !== 'string' ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(value.characterId)
+  )
+    return false;
+  return isCloudPlacementDestination({
+    mapId: value.mapId,
+    gridX: value.gridX,
+    gridY: value.gridY,
+    surfaceId: value.surfaceId,
+  });
+}
+
+export function isCloudPlacementReceipt(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'campaignId', 'seatId', 'accessGeneration', 'generation', 'grant']) &&
+    value.version === 1 &&
+    isCloudUUID(value.campaignId) &&
+    isCloudUUID(value.seatId) &&
+    isCloudAccessGeneration(value.accessGeneration) &&
+    isCloudAccessGeneration(value.generation) &&
+    value.generation > 0 &&
+    isCloudPlacementGrant(value.grant)
   );
 }
 
@@ -583,6 +637,7 @@ export function isCloudWorldCommandReceipt(value) {
       'applied',
       'outcome',
       ...(value.kind === 'door.state' ? ['door'] : []),
+      ...(value.kind === 'place' ? ['tokenId'] : []),
     ]) &&
     value.version === 1 &&
     isCloudUUID(value.campaignId) &&
@@ -592,6 +647,9 @@ export function isCloudWorldCommandReceipt(value) {
     value.access.campaignId === value.campaignId &&
     isCloudUUID(value.sessionId) &&
     (PLAYER_COMMAND_KINDS.includes(value.kind) || value.kind === 'door.state') &&
+    (value.kind !== 'place' ||
+      (typeof value.tokenId === 'string' &&
+        /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(value.tokenId))) &&
     (value.kind !== 'door.state' ||
       (record(value.door) &&
         keys(value.door, ['id', 'open', 'locked']) &&
@@ -613,7 +671,16 @@ export function isCloudWorldCommandReceipt(value) {
 export function isCloudParticipantAssetRequest(value) {
   return (
     record(value) &&
-    keys(value, ['sessionId', 'observerTokenId', 'mapId', 'assetKey', 'viewKey']) &&
+    keys(value, [
+      'sessionId',
+      'observerTokenId',
+      'mapId',
+      'assetKey',
+      'viewKey',
+      ...(Object.hasOwn(value, 'placementGrantId') ? ['placementGrantId'] : []),
+    ]) &&
+    (value.placementGrantId === undefined ||
+      (isCloudUUID(value.placementGrantId) && value.observerTokenId === null)) &&
     participantViewFields(value) &&
     isCloudDigest(value.viewKey)
   );

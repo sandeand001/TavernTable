@@ -23,31 +23,17 @@ class PlayerGameplay {
     this.players.authority.requireDM(session);
     const state = await this.players.store.readCharacters(campaignId);
     const catalog = await this.players.resources.catalog(state.campaign);
-    const [{ default: CampaignCharacters }, { decodeScene }, { default: CampaignWorld }] =
+    const [{ default: CampaignCharacters }, { decodeScene }, { validatePlayerArrival }] =
       await Promise.all([
         import(
           pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignCharacters.js')).href
         ),
         import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignScene.js')).href),
-        import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
+        import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'ServerGameplay.js')).href),
       ]);
     const library = new CampaignCharacters({ ...state, catalog, store: this.players.store });
-    library.get(characterId);
     const scene = decodeScene(state.scene, { library, ruleset: state.campaign.ruleset });
-    const world = CampaignWorld.fromScene(scene, { library, ruleset: state.campaign.ruleset });
-    const map = world.getMap(destination?.mapId);
-    if (
-      !Number.isInteger(destination.gridX) ||
-      !Number.isInteger(destination.gridY) ||
-      destination.gridX < 0 ||
-      destination.gridY < 0 ||
-      destination.gridX >= map.grid.cols ||
-      destination.gridY >= map.grid.rows
-    )
-      throw Object.assign(new Error('Choose an explicit placement cell inside the map'), {
-        status: 400,
-        code: 'invalid-placement',
-      });
+    validatePlayerArrival(scene, library, characterId, destination);
     return this.players.authority.grantPlacement(
       session,
       campaignId,

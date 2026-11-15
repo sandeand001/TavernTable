@@ -300,6 +300,19 @@ export default class CloudPlayerSessionConnection {
 
   _public(snapshot) {
     const state = copy(snapshot.state);
+    if (state.arrival) {
+      const assets = state.publicScene.assets || this.assets;
+      const map = assets.maps.find((entry) => entry.id === state.arrival.mapId);
+      state.view = {
+        id: map.id,
+        name: map.name,
+        mode: 'placement-preview',
+        grid: copy(map.grid),
+        terrain: null,
+        tokens: [],
+        presentation: { version: 1, assetKey: state.publicScene.assetKey, assets: copy(assets) },
+      };
+    }
     state.profile = {
       id: this.access.uid,
       role: 'player',
@@ -414,7 +427,8 @@ export default class CloudPlayerSessionConnection {
       ((options.observerTokenId !== undefined &&
         options.observerTokenId !== this.snapshot.state.observerTokenId) ||
         (options.mapId !== undefined &&
-          options.mapId !== this.snapshot.state.publicScene.presentation.mapId));
+          options.mapId !== this.snapshot.state.publicScene.presentation.mapId) ||
+        (options.placementGrantId ?? null) !== (this.snapshot.state.arrival?.grantId ?? null));
     const previousViewKey = replacing ? null : this.snapshot?.viewKey;
     this._invalidateArtwork({ purge: !!replacing });
     this.presentations = [];
@@ -426,12 +440,6 @@ export default class CloudPlayerSessionConnection {
     await this.observation?.close();
     this._identity();
     if (version !== this.selection) throw ended();
-    if (options.placementGrantId !== undefined)
-      throw failure(
-        403,
-        'placement-grant-required',
-        'Choose an explicitly supported live arrival grant.'
-      );
     let candidate = await this.participantAssets.readCheckpointCandidate(this.access);
     this._identity();
     if (version !== this.selection) throw ended();
@@ -440,7 +448,8 @@ export default class CloudPlayerSessionConnection {
       ((options.observerTokenId !== undefined &&
         options.observerTokenId !== candidate.state.observerTokenId) ||
         (options.mapId !== undefined &&
-          options.mapId !== candidate.state.publicScene.presentation.mapId))
+          options.mapId !== candidate.state.publicScene.presentation.mapId) ||
+        (options.placementGrantId ?? null) !== (candidate.state.arrival?.grantId ?? null))
     ) {
       await this.participantAssets.purge({ campaignId: this.campaignId });
       this._identity();
@@ -467,6 +476,7 @@ export default class CloudPlayerSessionConnection {
             observerTokenId: candidate?.state.observerTokenId ?? null,
             mapId: options.mapId ?? candidate?.state.publicScene.presentation.mapId ?? null,
             assetKey,
+            ...(options.placementGrantId ? { placementGrantId: options.placementGrantId } : {}),
           },
           this.access,
           { cachedAssets, signal: controller.signal }
@@ -508,6 +518,7 @@ export default class CloudPlayerSessionConnection {
         observerTokenId,
         mapId,
         assetKey,
+        ...(options.placementGrantId ? { placementGrantId: options.placementGrantId } : {}),
       },
       this.access,
       {
@@ -705,7 +716,11 @@ export default class CloudPlayerSessionConnection {
         this.reconciledCommands.delete(this.reconciledCommands.values().next().value);
       const receipt =
         acknowledged.presentation === null
-          ? { kind: command.kind, tokenId: command.tokenId }
+          ? {
+              kind: command.kind,
+              tokenId: command.kind === 'place' ? acknowledged.tokenId : command.tokenId,
+              ...(command.kind === 'place' ? { characterId: command.payload.characterId } : {}),
+            }
           : scopePlayerReceipt(acknowledged.presentation, current.state);
       const result = {
         version: 1,

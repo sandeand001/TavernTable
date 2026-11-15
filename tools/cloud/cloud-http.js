@@ -228,6 +228,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       'redeemInvitation',
       'removeMember',
       'assignCharacter',
+      'grantPlacement',
       'get',
       'readCharacters',
       'exportBackup',
@@ -267,7 +268,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|events|owner-events|owner-state|world-commands|scene|settings|live(?:\/(?:access|status|presence\/(?:ack|close)))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|events|owner-events|owner-state|world-commands|scene|settings|live(?:\/(?:access|status|presence\/(?:ack|close)))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments|arrivals))?$/.exec(
         url.pathname
       );
     if (
@@ -310,6 +311,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         'invitations/revoke',
         'members/remove',
         'assignments',
+        'arrivals',
         'assets',
         'backups/work',
         'participant-state',
@@ -340,6 +342,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'invitations/revoke') operation = 'campaign.invite.revoke';
     else if (snapshot === 'members/remove') operation = 'campaign.member.remove';
     else if (snapshot === 'assignments') operation = 'campaign.character.assign';
+    else if (snapshot === 'arrivals') operation = 'campaign.arrival';
     else if (snapshot === 'settings') operation = 'campaign.settings';
     else if (snapshot === 'participant-state') operation = 'campaign.participant.read';
     else if (snapshot === 'events') operation = 'campaign.events';
@@ -497,6 +500,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.removeMember(principal, campaign[1], await requestJSON(request));
         } else if (snapshot === 'assignments') {
           result = await store.assignCharacter(principal, campaign[1], await requestJSON(request));
+        } else if (snapshot === 'arrivals') {
+          result = await store.grantPlacement(principal, campaign[1], await requestJSON(request));
         } else if (snapshot === 'access') {
           result = await store.getAccess(principal, campaign[1]);
         } else if (snapshot === 'participant-access') {

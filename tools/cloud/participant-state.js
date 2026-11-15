@@ -15,7 +15,16 @@ const {
   applyCloudParticipantDelta,
 } = require('../../src/campaigns/CloudParticipantProtocol.js');
 
-async function participantState({ state, catalog, campaign, characterIds, options, images, undo }) {
+async function participantState({
+  state,
+  catalog,
+  campaign,
+  characterIds,
+  options,
+  images,
+  undo,
+  placementGrants = [],
+}) {
   const library = new CampaignCharacters({ ...state, catalog });
   const known = new Set(library.list().map((character) => character.id));
   if (characterIds.some((id) => !known.has(id)))
@@ -27,10 +36,30 @@ async function participantState({ state, catalog, campaign, characterIds, option
   const scene = state.scene
     ? decodeScene(state.scene, { library, ruleset: campaign.ruleset })
     : null;
+  const grant =
+    options.placementGrantId === undefined
+      ? null
+      : placementGrants.find((entry) => entry.id === options.placementGrantId);
+  if (options.placementGrantId !== undefined && !grant)
+    throw new CloudError(
+      403,
+      'placement-forbidden',
+      'This arrival grant is not currently assigned to the player'
+    );
+  if (grant && options.mapId !== null && options.mapId !== grant.mapId)
+    throw new CloudError(
+      403,
+      'placement-forbidden',
+      'Use only the explicitly granted arrival area'
+    );
+  const placed = grant && scene?.creatures.find((entry) => entry.characterId === grant.characterId);
+  const observerTokenId = placed ? placed.id : options.observerTokenId;
+  const mapId = placed ? (scene.version === 3 ? placed.mapId : 'map-main') : options.mapId;
+  const arrival = grant && !placed ? { grantId: grant.id, mapId: grant.mapId } : null;
   if (
-    options.observerTokenId !== null &&
+    observerTokenId !== null &&
     !scene?.creatures.some(
-      (actor) => actor.id === options.observerTokenId && characterIds.includes(actor.characterId)
+      (actor) => actor.id === observerTokenId && characterIds.includes(actor.characterId)
     )
   )
     throw new CloudError(
@@ -43,11 +72,22 @@ async function participantState({ state, catalog, campaign, characterIds, option
     scene,
     library,
     ownedIds: characterIds,
-    observerTokenId: options.observerTokenId,
-    mapId: options.mapId,
+    observerTokenId,
+    mapId,
     presentationVersion: 1,
-    noObserver: options.observerTokenId === null,
+    placementGrant: arrival ? grant : null,
+    noObserver: observerTokenId === null,
   });
+  const render = arrival
+    ? {
+        version: 1,
+        assetKey: view.view.presentation.assetKey,
+        assets: view.view.presentation.assets,
+        presentation: { mapId: grant.mapId, focusTokenId: null },
+        actors: [],
+        updates: [],
+      }
+    : view.publicScene;
   const imageEntries = new Map(
     images.map((image) => [image.characterId + ':' + image.field, image])
   );
@@ -75,7 +115,7 @@ async function participantState({ state, catalog, campaign, characterIds, option
       }
       return { key, value: JSON.stringify(character) };
     });
-  const actors = view.publicScene.actors.map((actor) => {
+  const actors = render.actors.map((actor) => {
     const characterId = scene.creatures.find((creature) => creature.id === actor.id).characterId;
     imageSlot('actor', actor.id, characterId, 'portraitImage');
     return { ...actor, portraitImage: null };
@@ -94,18 +134,20 @@ async function participantState({ state, catalog, campaign, characterIds, option
     characterIds: [...characterIds],
     observerTokenId: view.observerTokenId,
     observers: view.observers.map(({ id, name, characterId }) => ({ id, name, characterId })),
-    maps: view.maps.map(({ id, name }) => ({ id, name })),
+    maps: (arrival ? render.assets.maps : view.maps).map(({ id, name }) => ({ id, name })),
     location: view.location ? { id: view.location.id, name: view.location.name } : null,
     doors: view.doors || [],
     gameplay,
+    ...(placementGrants.length ? { placementGrants: structuredClone(placementGrants) } : {}),
+    ...(arrival ? { arrival } : {}),
     publicScene: {
-      ...view.publicScene,
-      assets: view.publicScene.assetKey === options.assetKey ? null : view.publicScene.assets,
+      ...render,
+      assets: render.assetKey === options.assetKey ? null : render.assets,
       actors,
     },
   };
-  validatePlayerState(result, { cachedAssets: view.publicScene.assets });
-  return { state: result, imageSlots: slots, assets: view.publicScene.assets };
+  validatePlayerState(result, { cachedAssets: render.assets });
+  return { state: result, imageSlots: slots, assets: render.assets };
 }
 
 function participantDelta(previous, current, { cachedAssets = null } = {}) {
@@ -144,6 +186,8 @@ function participantDelta(previous, current, { cachedAssets = null } = {}) {
     same(previous.state.characterIds, current.state.characterIds) &&
     same(previous.state.maps, current.state.maps) &&
     same(previous.state.location, current.state.location) &&
+    same(previous.state.placementGrants ?? null, current.state.placementGrants ?? null) &&
+    same(previous.state.arrival ?? null, current.state.arrival ?? null) &&
     same(previous.manifest, current.manifest);
   let delta;
   if (!sameView) {

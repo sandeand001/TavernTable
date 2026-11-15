@@ -4573,3 +4573,61 @@ the existing cloud client/receipt/reconciliation gate passes
 This completes the basic native cloud door operation, not cloud room-discovery
 persistence, arrival grants, full-session acceptance or publication. Both
 gameplay capabilities remain off and the approved hosted R8 release is unchanged.
+
+### M5 owner-approved actorless cloud arrival development gate
+
+The owner selected **DM-granted render-only preview** in the focused privacy
+approval: only the granted area's terrain, no NPCs/other actors, no fabricated
+observer and no movement authority. This task-specific approval does not enable
+production, real-data cutover or either full-game capability.
+
+Players and invitations now exposes the existing explicit area/zero-based-cell
+workflow for assigned saved characters. The owner command validates current
+seat/access generation and actual canonical board bounds, reusing native grant
+validation. One grant per character is stored on the seat, with its secure
+command ID, destination and surface. The same transaction publishes the durable
+receipt and a new head/change generation so a connected unplaced player sees
+the grant without polling or a fake scene write. Reissue replaces the grant;
+assignment, member removal and canonical character revocation clear old grants.
+Preparation does not start a live game or renew meaningful gameplay activity.
+
+An explicitly selected current grant permits native render-only artwork for its
+area, with no actors, observers, door controls or owned-token movement budgets.
+The checkpoint carries an explicit arrival mode; generic no-observer reads still
+return no world. Normal hash verification, private UID/seat/view cache and fresh
+online authority apply. No cached grant becomes offline permission. The native
+arrival renderer receives its existing preview interface, rather than a second
+renderer or invented sheet-only world actor.
+
+Placement uses the existing native model/floor/occupancy/combat checks in a
+private canonical draft. Only its committed real actor becomes the observer.
+The durable minimal placement receipt includes the actual actor ID so a lost
+reply/same-ID retry cannot create a duplicate or return a null actor.
+Original sheet values remain exact. The matching current revision, membership,
+seat generation and live epoch are rechecked before final publication.
+
+Verification:
+
+- Actual owner/player SDK: grant notification arrives live with no automatic
+  world disclosure; unknown grants and member grant issuance are denied;
+  explicit actorless preview renders only the authorized map; native Next sprite
+  placement preserves every original sheet row and retries only once.
+- A separate backend authority over the same real emulator stores recovers the
+  grant without original process memory. Reissue denies the old destination.
+  The original receipt replays without reverting the new grant or advancing the
+  head again. Unassign/reassign cannot revive the superseded destination.
+  These two native cases pass **22.579 seconds**.
+- Existing current-membership, closed-room/observer/construction-note privacy,
+  private image-manifest and delta-replacement gates pass **5 native cases**,
+  **30.436 seconds**.
+- Owner form, existing local arrival UI and cloud lifecycle:
+  **24 tests / 3 suites**, **7.403 seconds**.
+- Existing private cache, image, cloud receipt and native public renderer:
+  **94 tests / 4 suites**, **3.390 seconds**, with open-handle detection.
+
+The first grant attempt caught a summary-map/board-map distinction and the
+replacement test caught a missing durable receipt-kind admission. Both are
+fixed and re-tested; temporary tagged diagnostics are removed. No hosted image
+or frontend is published in this slice. Room-discovery persistence, remote
+action/emote completion and the actual full-session rehearsal remain open;
+the canonical checklist remains **59/65**.

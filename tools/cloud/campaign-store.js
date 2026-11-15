@@ -59,6 +59,9 @@ const {
   isCloudParticipantAssetRequest,
   isCloudWorldCommandReceipt,
   validateCloudWorldCommand,
+  isCloudPlacementDestination,
+  isCloudPlacementGrant,
+  isCloudPlacementReceipt,
   isCloudOwnerWorldRequest,
   cloudLiveStatus,
   CLOUD_LIVE_INACTIVITY_MS,
@@ -227,6 +230,8 @@ function validCommandResult(previous) {
     return isCloudInvitationAcceptance(result) && result.access.campaign.id === previous.campaignId;
   if (kind === 'campaign.member.remove') return isCloudMemberRemoval(result);
   if (kind === 'campaign.character.assign') return isCloudCharacterAssignment(result);
+  if (kind === 'campaign.arrival')
+    return isCloudPlacementReceipt(result) && result.campaignId === previous.campaignId;
   if (kind === 'campaign.settings')
     return isCloudCampaignSettings(result) && result.campaign.id === previous.campaignId;
   if (kind === 'campaign.asset.upload') return isPrivateAssetReference(result, previous.campaignId);
@@ -470,6 +475,7 @@ class CloudCampaignStore {
         'campaign.join',
         'campaign.member.remove',
         'campaign.character.assign',
+        'campaign.arrival',
         'campaign.settings',
         'campaign.asset.upload',
         'campaign.import',
@@ -483,6 +489,7 @@ class CloudCampaignStore {
       (previous.kind === 'campaign.import' && previous.result.importId !== reference.id) ||
       (previous.kind === 'campaign.backup' && previous.result.name !== reference.id) ||
       (previous.kind === 'world.command' && previous.result.commandId !== reference.id) ||
+      (previous.kind === 'campaign.arrival' && previous.result.grant.id !== reference.id) ||
       typeof previous.fingerprint !== 'string' ||
       !/^[a-f0-9]{64}$/.test(previous.fingerprint)
     )
@@ -3216,6 +3223,7 @@ class CloudCampaignStore {
         'campaign.create',
         'campaign.import',
         'campaign.settings',
+        'campaign.arrival',
         'scene.commit',
         'characters.commit',
       ].includes(value.kind) ||
@@ -3719,6 +3727,174 @@ class CloudCampaignStore {
     return value;
   }
 
+  async grantPlacement(principal, id, command) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (
+      !command ||
+      typeof command !== 'object' ||
+      Array.isArray(command) ||
+      Object.keys(command).length !== 5 ||
+      Object.keys(command).some(
+        (key) =>
+          !['commandId', 'seatId', 'accessGeneration', 'characterId', 'destination'].includes(key)
+      ) ||
+      !isCloudUUID(command.commandId) ||
+      !isCloudUUID(command.seatId) ||
+      !isCloudAccessGeneration(command.accessGeneration) ||
+      typeof command.characterId !== 'string' ||
+      !command.characterId ||
+      !isCloudPlacementDestination(command.destination)
+    )
+      throw new CloudError(
+        400,
+        'invalid-placement',
+        'Choose an assigned character and explicit arrival cell'
+      );
+    const reference = this.firestore
+      .collection('accountCommands')
+      .doc(pilotAccountKey(uid))
+      .collection('receipts')
+      .doc(command.commandId);
+    const fingerprint = createHash('sha256')
+      .update(
+        stableStringify({
+          kind: 'campaign.arrival',
+          campaignId: id,
+          ...command,
+        })
+      )
+      .digest('hex');
+    const intent = { uid, reference, fingerprint, kind: 'campaign.arrival', campaignId: id };
+    const headReference = this.firestore.collection('campaigns').doc(id);
+    const seatReference = headReference.collection('seats').doc(command.seatId);
+    const requireSeat = async (transaction) => {
+      const seat = this._seat(await transaction.get(seatReference), id);
+      if (seatAccessGeneration(seat) !== command.accessGeneration)
+        throw new CloudError(
+          409,
+          'campaign-access-changed',
+          'Refresh current player access before granting arrival'
+        );
+      if (!seat.characterIds.includes(command.characterId))
+        throw new CloudError(
+          403,
+          'placement-forbidden',
+          'Arrival requires this seat to control the saved character'
+        );
+      return seat;
+    };
+    const captured = await this._transaction(
+      async (transaction) => {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return { replay };
+        const head = await this._metadata(await transaction.get(headReference), uid);
+        await requireSeat(transaction);
+        return { replay: null, head };
+      },
+      { readOnly: true }
+    );
+    if (captured.replay !== null) return captured.replay;
+    if (!this.resources)
+      throw new CloudError(
+        503,
+        'resource-catalog-unavailable',
+        'Arrival validation requires current campaign resources'
+      );
+    const state = await this._loadSnapshot(captured.head);
+    if (state.scene === null)
+      throw new CloudError(
+        409,
+        'world-not-ready',
+        'Save the campaign board before granting arrival'
+      );
+    const library = new CampaignCharacters({
+      ...state,
+      catalog: await this.resources.catalog(state.campaign),
+    });
+    const scene = decodeScene(state.scene, { library, ruleset: state.campaign.ruleset });
+    const { validatePlayerArrival } = require('../../src/campaigns/ServerGameplay.js');
+    try {
+      validatePlayerArrival(scene, library, command.characterId, command.destination);
+    } catch (error) {
+      if (error.code === 'invalid-placement')
+        throw new CloudError(error.status, error.code, error.message);
+      throw error;
+    }
+    return this._transaction(async (transaction) => {
+      await this.access.assertEligibility(uid, transaction);
+      const replay = await this._previousCommand(transaction, intent);
+      if (replay !== null) return replay;
+      const head = await this._metadata(await transaction.get(headReference), uid);
+      const seat = await requireSeat(transaction);
+      if (head.generation !== captured.head.generation)
+        throw new CloudError(
+          409,
+          'revision-conflict',
+          'The arrival board changed. Refresh before granting again'
+        );
+      const generation = head.generation + 1;
+      if (!isCloudAccessGeneration(generation))
+        throw new CloudError(
+          503,
+          'invalid-campaign-head',
+          'The campaign generation cannot advance'
+        );
+      const grant = {
+        id: command.commandId,
+        characterId: command.characterId,
+        ...command.destination,
+      };
+      const result = {
+        version: 1,
+        campaignId: id,
+        seatId: command.seatId,
+        accessGeneration: command.accessGeneration,
+        generation,
+        grant,
+      };
+      const next = {
+        ...head,
+        generation,
+        lastCommand: {
+          uid,
+          commandId: command.commandId,
+          kind: 'campaign.arrival',
+          generation,
+        },
+      };
+      delete next.presentationRef;
+      transaction.update(seatReference, {
+        placementGrants: [
+          ...(seat.placementGrants || []).filter(
+            (entry) => entry.characterId !== command.characterId
+          ),
+          grant,
+        ],
+      });
+      transaction.set(headReference, next);
+      transaction.create(reference, {
+        version: 1,
+        uid,
+        kind: intent.kind,
+        fingerprint,
+        campaignId: id,
+        result,
+      });
+      const { FieldValue } = require('firebase-admin/firestore');
+      transaction.create(headReference.collection('changes').doc(String(generation)), {
+        version: 1,
+        generation,
+        kind: 'campaign.arrival',
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        committedAt: FieldValue.serverTimestamp(),
+      });
+      return result;
+    });
+  }
+
   async assignCharacter(principal, id, command) {
     const uid = principalUid(principal);
     if (!isCloudUUID(id)) throw unavailableCampaign();
@@ -3884,6 +4060,7 @@ class CloudCampaignStore {
           activeInvitationId: seat.activeInvitationId ?? null,
           characterIds,
           accessGeneration,
+          ...(seat.placementGrants === undefined ? {} : { placementGrants: [] }),
         });
         if (seat.memberUid !== null)
           transaction.update(this._memberships(seat.memberUid).doc(id), {
@@ -3992,6 +4169,7 @@ class CloudCampaignStore {
         memberUid: null,
         activeInvitationId: null,
         accessGeneration,
+        ...(seat.placementGrants === undefined ? {} : { placementGrants: [] }),
       });
       transaction.delete(this._memberships(seat.memberUid).doc(id));
       transaction.create(reference, {
@@ -4026,6 +4204,16 @@ class CloudCampaignStore {
       !Array.isArray(player.characterIds) ||
       player.characterIds.some((characterId) => typeof characterId !== 'string' || !characterId) ||
       new Set(player.characterIds).size !== player.characterIds.length ||
+      (player.placementGrants !== undefined &&
+        (!Array.isArray(player.placementGrants) ||
+          player.placementGrants.some(
+            (grant) =>
+              !isCloudPlacementGrant(grant) || !player.characterIds.includes(grant.characterId)
+          ) ||
+          new Set(player.placementGrants.map((grant) => grant.characterId)).size !==
+            player.placementGrants.length ||
+          new Set(player.placementGrants.map((grant) => grant.id)).size !==
+            player.placementGrants.length)) ||
       (Object.hasOwn(player, 'activeInvitationId') &&
         player.activeInvitationId !== null &&
         !isCloudUUID(player.activeInvitationId)) ||
@@ -4044,6 +4232,7 @@ class CloudCampaignStore {
             'createdAt',
             'activeInvitationId',
             'accessGeneration',
+            'placementGrants',
           ].includes(key)
       )
     )
@@ -4405,7 +4594,15 @@ class CloudCampaignStore {
         if (admission.participant.access.role !== 'member') throw unavailableCampaign();
         const snapshot = await transaction.get(reference);
         const head = await this._metadata(snapshot, snapshot.data().ownerUid);
-        return { head, participant: admission.participant };
+        const seat = this._seat(
+          await transaction.get(reference.collection('seats').doc(scope.seatId)),
+          id
+        );
+        return {
+          head,
+          participant: admission.participant,
+          placementGrants: seat.placementGrants || [],
+        };
       },
       { readOnly: true }
     );
@@ -4424,6 +4621,7 @@ class CloudCampaignStore {
       campaign: participantCampaign(saved.campaign),
       characterIds: captured.participant.characterIds,
       options: input,
+      placementGrants: captured.placementGrants,
       images: this._imageEntries(saved.records),
       undo: playerUndoFor(
         this.worldUndoSessions,
@@ -4467,6 +4665,7 @@ class CloudCampaignStore {
             characterIds: captured.participant.characterIds,
             observerTokenId: projected.state.observerTokenId,
             presentation: projected.state.publicScene.presentation,
+            ...(projected.state.arrival ? { arrival: projected.state.arrival } : {}),
             assetKey: projected.state.publicScene.assetKey,
             actors: projected.state.publicScene.actors.map((actor) => actor.id).sort(),
             images,
@@ -5644,7 +5843,7 @@ class CloudCampaignStore {
     }
   }
 
-  async _prepareWorldChange(state, command, profile) {
+  async _prepareWorldChange(state, command, profile, placementGrants = []) {
     const characterIds = profile.characterIds;
     if (state.scene === null)
       throw new CloudError(409, 'world-not-ready', 'The campaign owner must save the world first');
@@ -5654,7 +5853,25 @@ class CloudCampaignStore {
     const scene = decodeScene(state.scene, { library, ruleset: state.campaign.ruleset });
     const undo = playerUndoFor(this.worldUndoSessions, profile, state);
     const actor = scene.creatures.find((entry) => entry.id === command.tokenId);
-    if (!actor || command.observerTokenId !== actor.id || !characterIds.includes(actor.characterId))
+    const placementGrant =
+      command.kind === 'place'
+        ? placementGrants.find(
+            (grant) =>
+              grant.id === command.payload.grantId &&
+              grant.characterId === command.payload.characterId &&
+              characterIds.includes(grant.characterId)
+          )
+        : null;
+    if (command.kind === 'place' && !placementGrant)
+      throw new CloudError(
+        403,
+        'placement-forbidden',
+        'Choose a current arrival grant for this assigned character'
+      );
+    if (
+      command.kind !== 'place' &&
+      (!actor || command.observerTokenId !== actor.id || !characterIds.includes(actor.characterId))
+    )
       throw new CloudError(
         403,
         'actor-forbidden',
@@ -5691,6 +5908,7 @@ class CloudCampaignStore {
           ownedIds: characterIds,
           dice: this.worldDice,
           undo,
+          placementGrant,
         });
       await library.flush();
       await domain.commitScene(state.campaign.id, {
@@ -5793,7 +6011,19 @@ class CloudCampaignStore {
         if (admitted.participant.access.role !== 'member') throw unavailableCampaign();
         const snapshot = await transaction.get(headReference);
         const head = await this._metadata(snapshot, snapshot.data().ownerUid);
-        return { replay: null, head, grant: admitted.participant };
+        const seat =
+          command.kind === 'place'
+            ? this._seat(
+                await transaction.get(headReference.collection('seats').doc(scope.seatId)),
+                id
+              )
+            : null;
+        return {
+          replay: null,
+          head,
+          grant: admitted.participant,
+          placementGrants: seat?.placementGrants || [],
+        };
       },
       { readOnly: true }
     );
@@ -5828,7 +6058,12 @@ class CloudCampaignStore {
           }
         );
       const profile = this._worldUndoProfile(principal, id, sessionId, captured.grant);
-      const { next, receipt, undo } = await this._prepareWorldChange(state, command, profile);
+      const { next, receipt, undo } = await this._prepareWorldChange(
+        state,
+        command,
+        profile,
+        captured.placementGrants
+      );
       const authorize = async (transaction) => {
         const admitted = await this.requireLiveSession(
           transaction,
@@ -5859,6 +6094,7 @@ class CloudCampaignStore {
         kind: command.kind,
         outcome: 'applied',
         ...(command.kind === 'door.state' ? { door: receipt.door } : {}),
+        ...(command.kind === 'place' ? { tokenId: receipt.tokenId } : {}),
         applied: {
           generation: captured.head.generation + 1,
           sceneRevision: next.sceneRevision,
@@ -6320,6 +6556,7 @@ class CloudCampaignStore {
           version: 2,
           activeInvitationId: revoked.seat.activeInvitationId ?? null,
           characterIds: revoked.characterIds,
+          ...(revoked.seat.placementGrants === undefined ? {} : { placementGrants: [] }),
           accessGeneration: revoked.accessGeneration,
         });
         if (revoked.seat.memberUid !== null)

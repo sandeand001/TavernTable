@@ -22,6 +22,7 @@ export default class CloudCampaignInvitations {
     });
     this.canAssign = source.capabilities?.assignments === true;
     this.canRemove = source.capabilities?.memberships === true;
+    this.canGrant = source.capabilities?.placementGrants === true;
     this.campaignId = campaignId;
     this.busy = false;
     this.root = document.createElement('section');
@@ -83,6 +84,43 @@ export default class CloudCampaignInvitations {
           ? 'Character access assigned. Existing shared assignments were kept.'
           : 'Character access removed from this seat. The saved character was kept.';
       }, 'Updating saved-character access...');
+    });
+    this.root.addEventListener('submit', (event) => {
+      const form = event.target.closest('[data-arrival-character]');
+      if (!form) return;
+      event.preventDefault();
+      const seatId = form.dataset.arrivalSeat;
+      const characterId = form.dataset.arrivalCharacter;
+      const mapId = form.querySelector('[data-arrival-map]').value;
+      const gridX = form.querySelector('[data-arrival-x]').valueAsNumber;
+      const gridY = form.querySelector('[data-arrival-y]').valueAsNumber;
+      void this._perform(async () => {
+        const seat = this.seats.find((entry) => entry.id === seatId);
+        const map = this.arrivalMaps.find((entry) => entry.id === mapId);
+        if (
+          !this.canGrant ||
+          !seat?.characterIds.includes(characterId) ||
+          !map ||
+          !Number.isInteger(gridX) ||
+          !Number.isInteger(gridY) ||
+          gridX < 0 ||
+          gridY < 0 ||
+          gridX >= map.grid.cols ||
+          gridY >= map.grid.rows
+        )
+          throw new Error(
+            'Choose an assigned character, arrival area and valid zero-based column/row.'
+          );
+        await this.store.grantPlacement(this.campaignId, {
+          seatId,
+          characterId,
+          accessGeneration: seat.version === 1 ? 0 : seat.accessGeneration,
+          destination: { mapId, gridX, gridY },
+        });
+        await this.render();
+        this.status.textContent =
+          'Arrival destination granted. Only its terrain can be previewed; placement still requires a clear supported cell outside combat.';
+      }, 'Granting the explicit arrival destination...');
     });
     this.root.addEventListener('keydown', (event) => event.stopPropagation());
     this.root.addEventListener('click', (event) => {
@@ -213,6 +251,26 @@ export default class CloudCampaignInvitations {
               }</fieldset>`
             : ''
         }
+        ${
+          this.canGrant && this.arrivalMaps.length
+            ? characters
+                .filter((character) => seat.characterIds.includes(character.id))
+                .map(
+                  (
+                    character
+                  ) => `<form data-arrival-seat="${escape(seat.id)}" data-arrival-character="${escape(character.id)}">
+            <h4>Arrival destination for ${escape(character.name)}</h4>
+            <label>Arrival area<select data-arrival-map aria-label="Arrival area for ${escape(character.name)}">
+              ${this.arrivalMaps.map((map) => `<option value="${escape(map.id)}">${escape(map.name)}</option>`).join('')}
+            </select></label>
+            <label>Column (zero-based)<input type="number" min="0" step="1" value="0" required data-arrival-x></label>
+            <label>Row (zero-based)<input type="number" min="0" step="1" value="0" required data-arrival-y></label>
+            <button type="submit">Grant arrival destination</button>
+          </form>`
+                )
+                .join('')
+            : ''
+        }
       </article>`
         )
         .join('') || '<p>No player seats have been invited yet.</p>';
@@ -221,6 +279,12 @@ export default class CloudCampaignInvitations {
 
   async _characters() {
     const state = await this.workspace.store.readCharacters(this.campaignId);
+    const scene = state.scene === null ? null : JSON.parse(state.scene);
+    this.arrivalMaps = !scene
+      ? []
+      : scene.version === 3
+        ? scene.maps
+        : [{ id: 'map-main', name: 'Main map', grid: scene.grid }];
     if (state.records.length === 0) return [];
     if (typeof this.workspace.resources?.catalog !== 'function')
       throw new Error(
@@ -268,7 +332,8 @@ export default class CloudCampaignInvitations {
   }
 
   _controls() {
-    for (const control of this.root.querySelectorAll('input,button')) control.disabled = this.busy;
+    for (const control of this.root.querySelectorAll('input,select,button'))
+      control.disabled = this.busy;
     const retry = this.root.querySelector('[data-retry-access]');
     retry.hidden = this.accessState?.phase !== 'uncertain';
     retry.disabled =

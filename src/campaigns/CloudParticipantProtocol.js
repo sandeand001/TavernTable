@@ -5,6 +5,7 @@ import {
   isCloudAssignedCharacterState,
   isCloudDigest,
   isCloudUUID,
+  isCloudPlacementGrant,
 } from './CloudProtocol.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import { validatePlayerState } from './PlayerPublicProtocol.js';
@@ -55,10 +56,32 @@ export function validateCloudParticipantSnapshot(value, { cachedAssets = null } 
       'doors',
       'gameplay',
       'publicScene',
+      ...(object(value.state) && Object.hasOwn(value.state, 'placementGrants')
+        ? ['placementGrants']
+        : []),
+      ...(object(value.state) && Object.hasOwn(value.state, 'arrival') ? ['arrival'] : []),
     ])
   )
     invalid();
   const state = value.state;
+  if (
+    (state.placementGrants !== undefined &&
+      (!Array.isArray(state.placementGrants) ||
+        state.placementGrants.some(
+          (grant) =>
+            !isCloudPlacementGrant(grant) || !state.characterIds?.includes(grant.characterId)
+        ) ||
+        new Set(state.placementGrants.map((grant) => grant.id)).size !==
+          state.placementGrants.length ||
+        new Set(state.placementGrants.map((grant) => grant.characterId)).size !==
+          state.placementGrants.length)) ||
+    (state.arrival !== undefined &&
+      (!keys(state.arrival, ['grantId', 'mapId']) ||
+        !state.placementGrants?.some(
+          (grant) => grant.id === state.arrival.grantId && grant.mapId === state.arrival.mapId
+        )))
+  )
+    invalid();
   if (
     !isCloudAssignedCharacterState({
       version: 1,
@@ -128,6 +151,7 @@ export function validateCloudParticipantSnapshot(value, { cachedAssets = null } 
     state.publicScene.updates.length ||
     (state.observerTokenId !== null && !assets) ||
     (state.observerTokenId === null &&
+      state.arrival === undefined &&
       (state.maps.length || state.location !== null || state.gameplay.ownedTokens.length)) ||
     state.publicScene.actors.some(
       (actor) =>

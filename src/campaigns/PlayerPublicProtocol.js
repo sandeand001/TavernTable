@@ -337,16 +337,36 @@ export function validatePlayerState(state, { cachedAssets = null } = {}) {
     ? new Map(validatePlayerAssets(assets).maps.map((map) => [map.id, map]))
     : null;
   if (state.observerTokenId === null) {
+    const arrival = state.arrival;
+    const grant =
+      arrival &&
+      state.placementGrants?.find(
+        (entry) => entry.id === arrival.grantId && entry.mapId === arrival.mapId
+      );
     if (
-      snapshot.assets !== null ||
-      snapshot.assetKey !== null ||
-      snapshot.presentation.mapId !== null ||
+      arrival &&
+      (!only(arrival, ['grantId', 'mapId']) ||
+        !grant ||
+        typeof snapshot.assetKey !== 'string' ||
+        !snapshot.assetKey.length ||
+        snapshot.presentation.mapId !== grant.mapId ||
+        !maps?.has(grant.mapId) ||
+        state.observers?.length ||
+        state.gameplay?.ownedTokens?.length)
+    )
+      invalid('The render-only arrival preview does not match an authorized destination');
+    if (
+      (!arrival &&
+        (snapshot.assets !== null ||
+          snapshot.assetKey !== null ||
+          snapshot.presentation.mapId !== null)) ||
       snapshot.presentation.focusTokenId !== null ||
       snapshot.actors.length ||
       snapshot.updates.length
     )
       invalid('A no-observer public snapshot cannot grant actor vision');
   } else if (
+    state.arrival !== undefined ||
     typeof snapshot.assetKey !== 'string' ||
     !snapshot.assetKey.length ||
     !id(snapshot.presentation.mapId) ||

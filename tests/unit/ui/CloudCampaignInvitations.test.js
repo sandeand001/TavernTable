@@ -8,6 +8,7 @@ import CampaignWorkspace from '../../../src/campaigns/CampaignWorkspace.js';
 import CloudSaveFeedback from '../../../src/ui/campaigns/CloudSaveFeedback.js';
 import { fetchBundledResource } from '../../helpers/bundledResources.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
+import { sceneState } from '../../helpers/sceneState.js';
 
 globalThis.TextEncoder ??= TextEncoder;
 globalThis.TextDecoder ??= TextDecoder;
@@ -288,6 +289,84 @@ test('owner assignment errors restore current controls, and removing access reta
     panel.destroy();
     feedback.dispose();
     workspace.close();
+    authority.close();
+  }
+}, 30000);
+
+test('the cloud owner form grants an assigned character an explicit arrival cell without changing its saved record', async () => {
+  const authority = await CampaignWorkspace.load({
+    storage: 'browser',
+    fetch: fetchBundledResource,
+    indexedDB: testIndexedDB(),
+    crypto: webcrypto,
+  });
+  let panel;
+  let workspace;
+  try {
+    const campaign = await authority.create({ name: 'Arrival owner UI fixture', ruleset: '2014' });
+    const services = await authority.open(campaign.id);
+    const characterId = await services.library.create('Original scout');
+    await authority.store.commitScene(campaign.id, {
+      ruleset: '2014',
+      revision: 0,
+      charactersRevision: services.library.revision,
+      scene: JSON.stringify(sceneState({ characterId, name: 'Original scout' })),
+    });
+    const before = await authority.store.readCharacters(campaign.id);
+    const seat = {
+      version: 2,
+      id: invitation.seatId,
+      name: 'Returning player',
+      accessGeneration: 3,
+      characterIds: [characterId],
+      joined: true,
+      invitation: null,
+    };
+    const requests = [];
+    const fetch = async (url, options) => {
+      let result;
+      if (url.endsWith('/characters')) result = before;
+      else if (url.endsWith('/seats')) result = [seat];
+      else if (url.endsWith('/arrivals')) {
+        const input = JSON.parse(options.body);
+        requests.push(input);
+        result = {
+          version: 1,
+          campaignId: campaign.id,
+          seatId: seat.id,
+          accessGeneration: seat.accessGeneration,
+          generation: 4,
+          grant: { id: input.commandId, characterId, ...input.destination },
+        };
+      } else throw new Error('Unexpected arrival UI request');
+      return { ok: true, status: 200, json: async () => ({ version: 1, result }) };
+    };
+    const store = ownerStore(fetch, authority.manifest.packs);
+    workspace = new CampaignWorkspace({
+      store,
+      manifest: authority.manifest,
+      resources: authority.resources,
+    });
+    panel = new CloudCampaignInvitations({ workspace, campaignId: campaign.id });
+    await panel.open();
+    const form = panel.root.querySelector(`[data-arrival-character="${characterId}"]`);
+    expect(form).not.toBeNull();
+    form.querySelector('[data-arrival-map]').value = 'map-main';
+    form.querySelector('[data-arrival-x]').value = '2';
+    form.querySelector('[data-arrival-y]').value = '1';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await until(() => !panel.busy && requests.length === 1);
+    expect(requests[0]).toMatchObject({
+      seatId: seat.id,
+      characterId,
+      accessGeneration: 3,
+      destination: { mapId: 'map-main', gridX: 2, gridY: 1, surfaceId: null },
+    });
+    expect(panel.status.textContent).toContain('Arrival destination granted');
+    expect(await authority.store.readCharacters(campaign.id)).toEqual(before);
+  } finally {
+    panel?.destroy();
+    workspace?.close();
     authority.close();
   }
 }, 30000);

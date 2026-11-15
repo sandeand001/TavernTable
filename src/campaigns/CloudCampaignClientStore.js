@@ -21,6 +21,8 @@ import {
   isCloudOwnerWorldRequest,
   isCloudWorldCommandReceipt,
   validateCloudWorldCommand,
+  isCloudPlacementDestination,
+  isCloudPlacementReceipt,
   isCloudAccessGeneration,
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
@@ -71,10 +73,12 @@ const definitiveDenials = new Set([
   'invalid-campaign-settings',
   'invalid-asset-request',
   'invalid-asset-image',
+  'invalid-placement',
+  'placement-forbidden',
   'asset-too-large',
   'asset-image-too-large',
 ]);
-const metadataOperations = new Set(['invitation', 'revoke', 'assign', 'remove']);
+const metadataOperations = new Set(['invitation', 'revoke', 'assign', 'remove', 'arrival']);
 const expectedPresenceCloseFailures = new Set([
   'account-changed',
   'authentication-required',
@@ -96,6 +100,7 @@ const expectedPresenceCloseFailures = new Set([
   'live-presence-changed',
 ]);
 const definitiveMetadataDenials = new Set([
+  'world-not-ready',
   'campaign-access-changed',
   'invalid-member-request',
   'invalid-assignment-request',
@@ -162,6 +167,7 @@ export default class CloudCampaignClientStore {
       assignedSheets: true,
       assignments: true,
       memberships: true,
+      placementGrants: true,
       browserImport: false,
       sharedSessions: false,
       roomVisits: false,
@@ -360,6 +366,30 @@ export default class CloudCampaignClientStore {
     return this._write('assign', id, { seatId, characterId, assigned, accessGeneration });
   }
 
+  grantPlacement(id, { seatId, characterId, accessGeneration, destination } = {}) {
+    this._identity();
+    this._resource(id);
+    const target = destination && { ...destination, surfaceId: destination.surfaceId ?? null };
+    if (
+      !isCloudUUID(seatId) ||
+      typeof characterId !== 'string' ||
+      !characterId ||
+      !isCloudAccessGeneration(accessGeneration) ||
+      !isCloudPlacementDestination(target)
+    )
+      throw failure(
+        400,
+        'invalid-placement',
+        'Choose an assigned character and explicit arrival cell.'
+      );
+    return this._write('arrival', id, {
+      seatId,
+      characterId,
+      accessGeneration,
+      destination: target,
+    });
+  }
+
   async getParticipantAccess(id, expected = null) {
     this._identity();
     const resource = this._resource(id, '/participant-access');
@@ -422,7 +452,7 @@ export default class CloudCampaignClientStore {
     }
   }
 
-  async _receipt(operation, result, input, id) {
+  async _receipt(operation, result, input, id, commandId) {
     if (operation === 'assigned-characters') {
       if (
         !isCloudAssignedCharacterReceipt(result) ||
@@ -498,6 +528,21 @@ export default class CloudCampaignClientStore {
         !isCloudMemberRemoval(result) ||
         result.seatId !== input.seatId ||
         result.accessGeneration !== input.accessGeneration + 1
+      )
+        throw invalidResponse();
+      return copy(result);
+    }
+    if (operation === 'arrival') {
+      if (
+        !isCloudPlacementReceipt(result) ||
+        result.grant.id !== commandId ||
+        result.campaignId !== id ||
+        result.seatId !== input.seatId ||
+        result.accessGeneration !== input.accessGeneration ||
+        result.grant.characterId !== input.characterId ||
+        ['mapId', 'gridX', 'gridY', 'surfaceId'].some(
+          (field) => result.grant[field] !== input.destination[field]
+        )
       )
         throw invalidResponse();
       return copy(result);
@@ -619,6 +664,7 @@ export default class CloudCampaignClientStore {
     else if (operation === 'join') resource = 'account/invitations/redeem';
     else if (operation === 'revoke') resource = this._resource(id, '/invitations/revoke');
     else if (operation === 'assign') resource = this._resource(id, '/assignments');
+    else if (operation === 'arrival') resource = this._resource(id, '/arrivals');
     else if (operation === 'remove') resource = this._resource(id, '/members/remove');
     else
       resource = this._resource(id, operation === 'invitation' ? '/invitations' : `/${operation}`);
@@ -627,7 +673,7 @@ export default class CloudCampaignClientStore {
         ? { commandId, bytes: input.bytes.byteLength, sha256: input.sha256 }
         : operation === 'settings'
           ? { commandId, generation: input.generation, changes: input.changes }
-          : ['join', 'revoke', 'assign', 'remove'].includes(operation)
+          : ['join', 'revoke', 'assign', 'remove', 'arrival'].includes(operation)
             ? { commandId, ...input }
             : operation === 'create' || operation === 'invitation'
               ? { commandId, options: input }
@@ -680,7 +726,13 @@ export default class CloudCampaignClientStore {
                 body: item.body,
                 accessScope: item.operation === 'assigned-characters' ? item.input.scope : null,
               });
-        const receipt = await this._receipt(item.operation, result, item.input, item.id);
+        const receipt = await this._receipt(
+          item.operation,
+          result,
+          item.input,
+          item.id,
+          item.commandId
+        );
         this._identity();
         this.pending = null;
         this._saveStatus('saved');
@@ -1003,6 +1055,7 @@ export default class CloudCampaignClientStore {
       observerTokenId: captured.state?.observerTokenId,
       mapId: captured.state?.publicScene?.presentation?.mapId,
       assetKey: captured.state?.publicScene?.assetKey,
+      ...(captured.state?.arrival ? { placementGrantId: captured.state.arrival.grantId } : {}),
     };
     const verified = await this._verifiedParticipantSnapshot(
       id,
@@ -1506,6 +1559,9 @@ export default class CloudCampaignClientStore {
       receipt.kind !== input.command.kind ||
       receipt.applied.sceneRevision !== input.command.sceneRevision + 1 ||
       receipt.applied.charactersRevision < input.command.charactersRevision ||
+      (input.command.kind === 'place' &&
+        presentation !== null &&
+        presentation.tokenId !== receipt.tokenId) ||
       (receipt.outcome === 'duplicate'
         ? presentation !== null
         : !presentation ||

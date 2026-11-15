@@ -560,6 +560,28 @@ export function playerCommandReceipt(result, previousScene, library) {
   return receipt;
 }
 
+export function validatePlayerArrival(scene, library, characterId, destination) {
+  library.get(characterId);
+  const world = CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library });
+  const map = world.listMaps().some((entry) => entry.id === destination?.mapId)
+    ? world.getMap(destination.mapId)
+    : null;
+  if (
+    !map ||
+    !Number.isInteger(destination.gridX) ||
+    !Number.isInteger(destination.gridY) ||
+    destination.gridX < 0 ||
+    destination.gridY < 0 ||
+    destination.gridX >= map.grid.cols ||
+    destination.gridY >= map.grid.rows
+  )
+    throw gameplayError(
+      'Choose an explicit placement cell inside the map',
+      'invalid-placement',
+      400
+    );
+}
+
 export function playerDoorState(scene, library, ownedIds, command) {
   const world = CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library });
   const door = world.getConnections().find((entry) => entry.id === command.doorId);
