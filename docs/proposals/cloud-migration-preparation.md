@@ -3436,11 +3436,11 @@ Live acceptance found and fixed two issues before accepting the package:
   passes after it; that acceptance check was not relaxed.
 
 An earlier unlabeled `1 !== 0` reconnect/pause assertion could not be reproduced
-by the targeted and subsequent full strict reconciliation checks. Its root
-cause remains unproven, not declared fixed. Immediate zero-lease/zero-presence
-and empty historical-update assertions were retained, with useful failure
-labels and safe source locations. No wait for lease expiry, production retry
-or suppressed assertion was introduced. Temporary diagnostic logs are removed.
+during the accepted M4-09 run. It was not declared fixed at that milestone.
+The later M4-10 investigation below reproduces and identifies the deliberately
+aborted sibling transport's independent cleanup, not historical replay or a
+production authority failure. Useful failure labels remain; no production retry
+or wait for lease expiry is introduced. Temporary diagnostic logs are removed.
 
 The complete, unfiltered current API run passes at
 **2026-11-14T22:47:59.753Z**, against the deployed `00007-vft`/`cc93...` API and
@@ -3540,3 +3540,137 @@ The owner's separate normal Chrome session is not closed or modified.
 Original local hosts/data/keys remain untouched. Full gameplay activation,
 hosted permission/load/cost gates and real-data cutover remain separate tasks;
 routine-save flash/toast UX remains deferred until after M5-11.
+
+### M4-10: hosted permission and identity gate in progress
+
+The approved current API passes **49 actual HTTP role cases**, using only the
+three whitelisted disposable UIDs and two synthetic campaigns:
+
+- Canonical characters/world/settings, seats, backup metadata/current export
+  and retained backup files are owner-only. A member owning another campaign
+  gains no global owner/DM privilege.
+- Assigned sheets/images exclude the private NPC; an unrelated UID cannot use
+  another seat's captured headers or request the unassigned image.
+- Originally valid captured owner scene/character/invitation/assignment/live
+  commands are rejected for other UIDs, not merely rejected as malformed input.
+- Forged/unsigned/emulator-style credentials fail; cookies and query credentials
+  are not authentication. Query tests use only a non-credential sentinel.
+- Direct Firestore and Firebase Storage requests with a valid end-user Firebase
+  token get 403; the known existing private object is also inaccessible through
+  anonymous GCS. Application access does not make the bucket/database public.
+
+The full run also passes actual 65-second lease renewal, native Free Play/
+bidirectional routes/physical dice, interrupted rejoin, original receipt recovery
+after removal, and actual bearer revocation. A real, originally signed disposable
+ID token is held **only in memory** until its literal expiry; that check is still
+running at this update. No application traffic is scheduled during the wait.
+The registered synthetic fixtures intentionally remain until the run's automatic
+exact cleanup; another fixture run must not overlap it.
+
+The earlier reconnect-count failure is now reproduced and measured. **34 ms**
+after the current connection's terminal acknowledgement, the only remaining
+lease belonged to the **original deliberately aborted transport**, with
+**73,104 ms** left before expiry. Its presence/lease explicitly clear by
+**1,728 ms**, not by expiration. The server acknowledges cleanup of its own
+stream, not a previously aborted sibling's independent cleanup. No exact claim
+is made about whether network cancellation or transaction backoff accounts for
+that measured delay.
+
+The operational gate now still requires the acknowledged **current** lease to
+be absent immediately. Any residual must be an identified old aborted lease,
+must outlive the five-second observation deadline, and **all raw leases and
+presence must clear within 5,000 ms**. Actual full runs exercise that branch at
+**1,113 ms** and **775 ms**. Empty historical updates, scope/epoch, no activity
+renewal and terminal pause assertions remain unchanged. No production code,
+retry, expiry filtering or backend delay is added.
+
+One matrix prototype also over-specified the exact cache header string.
+`private, no-store` on private downloads is correctly accepted as a stricter
+valid `no-store` policy; the gate checks the directive rather than requiring
+the absence of `private`. This is not a cache-policy relaxation.
+
+Read-only inspection verifies the current tested image/revision, only the four
+approved production variables, min 0/max 1 at both levels, 1 CPU/1 GiB,
+request-based CPU/no boost, concurrency 40/3600-second timeout, no emulator or
+credential mounts, and exactly the original runtime project roles plus the
+campaign-prefix/inventory conditional bucket grant. No IAM repair is performed.
+
+Actual current-revision stdout/stderr inspection covers **2,058 entries /
+11 bounded pages**, with zero seeded private-note, private-key, bearer/JWT,
+synthetic email-body or image-data-URL matches. Raw logs are not printed.
+A prior larger read returned a transient provider 500; the smaller read-only
+query succeeds without application retry or logging configuration changes.
+The genuine expiry and declared seeded-counter/actual-stream quota checks
+must finish before M4-10 is checked complete.
+
+### M4-11: verified alerts and measured platform observability in progress
+
+Both `cloudbilling.googleapis.com` and `billingbudgets.googleapis.com` were
+disabled. The owner explicitly approves enabling **only those two APIs** for
+inspection. They read back enabled; project IAM binding fingerprints remain
+identical. Monitoring and Logging were already enabled.
+
+The linked billing account is open, enabled and **USD**, but both its unscoped
+and explicit current-project budget listings contain **zero budgets**. The
+reported existing $25 alerts were therefore not configured for this project.
+No other financial account, recipient address or unrelated budget amount is
+printed or added to repository files.
+
+The owner separately approves one new alerts-only budget. A single POST creates
+it, followed by exact read-only recovery/verification at
+**2026-11-15T00:46:59.152Z**:
+
+- **USD 25 / calendar month**, current project only, all its services, credits
+  included.
+- **50%, 90%, 100% actual** and **100% forecast** email thresholds, with existing
+  billing-administrator/user and project-owner recipients enabled.
+- No custom email channel, Pub/Sub topic, spend cap, shutdown hook, billing-link
+  change or IAM-role grant.
+
+Current official discovery uses `notificationsRule`, not the older
+`allUpdatesRule`. The optional omitted ownership enum means unspecified, which
+the API documents as equivalent to `ALL_USERS`. An initial overly exact
+read-back assertion stops on that harmless omission; recovery lists/reads the
+original uniquely named budget and proves **exactly one**, without submitting
+another creation request. Budget alerts remain notifications, not a spending
+cap or guarantee that notification delivery is instantaneous.
+
+Existing metrics are queried rather than adding paid/custom metric resources.
+Actual historical test/operator measurements include:
+
+| Scope | Measured observation |
+| --- | --- |
+| API, 24-hour window | 1,877.48 billable instance seconds; corresponding 1 CPU and 1 GiB allocation-time metrics; 1,295 requests |
+| API network, same window | 63,106,789 sent / 41,487,809 received bytes across network kinds, not assumed to be billable internet egress |
+| Firestore, same window | 39,460 document reads; 4,103 creates/updates; 1,391 deletes |
+| Firestore RPCs | 44,377 requests mirrored in legacy/new monitored resources; **not 88,754 unique requests** |
+| Private bucket | 3,239 method/status-classified requests; 4,847,853 sent / 392,925 received bytes; region verified as US-WEST1 |
+| Soft-deleted bytes | 146,391-byte regional sample at 00:50; retained/billable categories are not declared erased by logical cleanup |
+| Logs | 2,360,447 ingested bytes in the window; default application retention 30 days, required audit retention 400 days locked; analytics disabled |
+| Hosting | 5,223,900 transfer bytes in the window; 431,678,198 storage bytes sampled separately |
+| Preserved images | 21 manifest records / 7 tags; no image deletion |
+
+These are observed historical test totals, **not per-save attribution, a
+30-hour forecast or ordinary-command p95**. Firestore API and document metrics
+have legacy/new resource mirrors; only one family may be counted. Hosting
+monthly gauges sample every eight hours with up to 70-minute ingestion delay
+and must not be summed naively across different-time domain samples.
+
+Registry accounting remains explicitly bounded rather than guessed: the
+repository API reports **266,873,454 bytes**, summed image metadata reports
+**1,135,814,229 bytes** with repeated layers, and an older Monitoring sample
+reports **2,622,323,836 bytes**. These are not treated as interchangeable or
+summed into a bill. Retention/rollback images remain preserved; readiness cost
+work must disclose the discrepancy and use a conservative bound if unresolved.
+
+An isolated real per-save probe is prepared but not yet run: a quiet lead-in,
+five validated paused sheet saves in one known provider minute, exact raw
+Firestore read/write counters after the documented four-minute ingestion lag,
+and matching observed client/Cloud Run request totals to reject contamination.
+It then verifies a fresh scoped reopen. Separate timestamps distinguish
+validated durable acknowledgement from remote SDK delivery, not animation
+completion or a controlled-200-ms performance result.
+
+M4-11 remains incomplete until those operation/timing measurements and the
+remaining observation checks pass. No production campaign migration, new
+runtime privilege, always-on service or automatic billing shutdown is authorized.

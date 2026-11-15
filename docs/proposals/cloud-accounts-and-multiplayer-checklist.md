@@ -90,7 +90,7 @@ including the four setup tasks and excluding the deferred routine-save UX task.
 | Transport    | Authenticated HTTP commands plus direct Fetch-based SSE, not a WebSocket rewrite or a long-lived Hosting rewrite.                                                                                                               |
 | Sleeping     | Warn at 55 minutes, pause at 60 minutes without meaningful accepted activity; owner keep-active; 15-minute all-disconnected grace; first applicable pause condition wins. No total session-duration cap.                        |
 | Backups      | Twenty rolling complete backups, five-minute changed-state targeting, manual download, final changed-state backup on session end, restore-as-copy. No additional daily tier.                                                    |
-| Spending     | Reuse the reported existing $25 monthly budget and alerts; verify currency, coverage, thresholds, and recipient. It is not a hard cap or permission to shut off billing.                                                        |
+| Spending     | Owner-approved project-only USD 25 monthly alerts: 50/90/100% actual and 100% forecast, with existing billing/project-owner email recipients. No spend cap or automatic billing shutdown. M4-11 records the separately approved setup after finding no existing budget.                       |
 | Migration    | Explicitly selected, non-destructive copies; verified data, restore drill, rehearsal, and separate production/cutover approvals.                                                                                                |
 | Architecture | Start with Account and Campaign Access plus a minimal Durable Campaign Commit slice. Preserve the local Adapter and [ADR-0001](../adr/ADR-0001-terrain-engine-event-seam.md); no second terrain owner or speculative framework. |
 
@@ -1269,6 +1269,10 @@ Revalidation in the intended environment remains part of M1 and M4.
     source-of-truth switch performed.
 
 - [ ] **M4-10 - Pass hosted identity, authorization, privacy, and configuration gates.**
+  - **Status:** 49 actual hosted role cases, real private-store denials, scoped
+    runtime-log privacy scan and deployed configuration/IAM matrix pass. The
+    genuine signed-token expiration check is running; seeded-counter and
+    actual concurrent-stream quota boundaries remain to be executed. Not complete.
   - **Depends:** `M4-09`, `M2-03`, `M2-04`, `M2-08`, `M3-01`.
   - **Success:** production-intended configuration rejects emulator/forged/expired
     identity and unauthorized operations; CORS/platform reachability never
@@ -1278,13 +1282,19 @@ Revalidation in the intended environment remains part of M1 and M4.
     checks pass. Logs and deployed packages disclose no credentials/private bodies.
 
 - [ ] **M4-11 - Configure observable operation/cost metrics and verify existing alerts.**
+  - **Status:** actual platform metrics, regional resources and retention are
+    inspected. No existing budget was present; separately approved Billing/
+    Budgets API enablement and one USD 25 monthly project-only alerts budget
+    are verified, without IAM grants or billing-link changes. Isolated per-save
+    operation and acknowledgement-versus-delivery measurements remain.
   - **Depends:** `M4-09`.
   - **Success:** measure active instance time, acknowledgements vs delivery,
     reads/writes per save, transfer by delivery path, reconnects, retained/soft-deleted
     bytes, backup failures, builds/images and bounded logs.
-  - **Verify:** reuse the reported $25 budget; record its actual currency, project/
-    product coverage, thresholds and recipient using redacted evidence. Review the
-    proposed 5/10/15/25 alert milestones; verify notification configuration.
+  - **Verify:** record actual currency, project/product coverage, thresholds and
+    recipient using redacted evidence. The owner-selected November 15 thresholds
+    are **50/90/100% actual ($12.50/$22.50/$25)** and **100% forecast**, replacing
+    the earlier proposed 5/10/15/25 milestones. Verify notification configuration.
     Alerts are not a hard cap, and no automatic billing shutdown is introduced.
 
 - [ ] **M4-12 - Pass hosted scale-to-zero, lifecycle, cache, and performance tests.**

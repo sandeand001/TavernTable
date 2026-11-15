@@ -602,12 +602,18 @@
   repeat downloads, not the need for an authoritative online save. No offline
   viewing/editor, offline update queue or automatic local/cloud merging is
   required. Existing local-host behavior is unchanged by this scope decision.
-- **Hosted budget (approved design, not implemented)**: reuse the reported
-  existing $25 monthly billing budget with alerts, not a hard spending cap or
-  automatic billing shutdown. Verify currency, project/product coverage,
-  notification thresholds and recipient before deployment; forecasts must use
-  the verified currency. Design approval does not authorize new infrastructure
-  or production cutover.
+- **Hosted budget (M4-11 alerts verified; cost acceptance pending)**:
+  read-only inspection found no existing budget on the linked USD billing
+  account, including an explicit project-scoped query. The owner separately
+  approved enabling only the Billing/Budgets APIs, then one project-only USD 25
+  calendar-month alerts budget. Actual-spend email thresholds are 50/90/100%;
+  forecast is 100%. Existing billing-admin/user and project-owner recipients
+  are enabled, across all project services with credits included. Exact read-back
+  verifies one budget, no spend cap, Pub/Sub shutdown hook or IAM-role grant.
+  These alerts do not prevent overspending. Forecasts must use the verified
+  currency and measured regional operations/transfer/storage, without counting
+  mirrored metrics twice. Additional resources, privilege or production cutover
+  still require their own approval.
 - **Hosted backup history (approved design, not implemented)**: retain 20 rolling
   complete backups, targeting five-minute intervals when changed; no additional
   daily restore-point tier. Full campaign backups are owner-only, support manual
