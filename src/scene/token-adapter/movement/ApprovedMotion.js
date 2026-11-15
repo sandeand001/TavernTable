@@ -1,4 +1,5 @@
-import { validateSavedPlacement } from '../SavedPlacements.js';
+import { validateSavedPlacement, samePlacement } from '../SavedPlacements.js';
+import { validatePlayerVisual } from '../../../campaigns/PlayerPublicProtocol.js';
 import {
   FLIGHT_PACE_MULTIPLIER,
   FEET_PER_GRID_SQUARE,
@@ -222,6 +223,44 @@ function advanceApprovedMovement(delta) {
   }
 }
 
+async function playApprovedVisual(token, entry) {
+  validatePlayerVisual(entry);
+  if (!this.gameManager.placedTokens.includes(token) || entry.tokenId !== token.id)
+    throw new Error('The approved visual action does not match this current creature');
+  this._playedVisuals ??= new Set();
+  if (this._playedVisuals.has(entry.commandId))
+    return { completed: false, reason: 'duplicate-presentation' };
+  const current = { ...token, mapId: token.mapId ?? 'map-main' };
+  if (
+    !samePlacement(current, entry.placement) &&
+    !(entry.from && samePlacement(current, entry.from))
+  )
+    throw new Error('The approved visual action does not match this current placement');
+  this._playedVisuals.add(entry.commandId);
+  while (this._playedVisuals.size > 256)
+    this._playedVisuals.delete(this._playedVisuals.values().next().value);
+  try {
+    await token.__threeMeshPromise;
+    if (!this.gameManager.placedTokens.includes(token))
+      return { completed: false, reason: 'presentation-replaced' };
+    if (entry.from) {
+      const state = this._ensureMovementState(token);
+      this._syncTokenAndMeshWorld(state, { ...entry.from.pose.world });
+      token.facingAngle = entry.from.facingAngle;
+      this._applyOrientationImmediate(token, entry.from.facingAngle);
+    }
+    await this.playTokenAction(token, entry.actionId, {
+      animationKey: entry.animationKey,
+      approved: true,
+      ...(entry.from ? { approvedDestination: entry.placement } : {}),
+    });
+    return { completed: true };
+  } catch (error) {
+    this._playedVisuals.delete(entry.commandId);
+    throw error;
+  }
+}
+
 function cancelApprovedMovement(token, error = null) {
   this._approvedMovementRequests?.delete(token);
   const job = this._approvedMovements?.get(token);
@@ -235,6 +274,7 @@ function cancelApprovedMovement(token, error = null) {
 }
 
 export function installApprovedMotionMethods(prototype) {
+  prototype.playApprovedVisual = playApprovedVisual;
   prototype.playApprovedMovement = playApprovedMovement;
   prototype.advanceApprovedMovement = advanceApprovedMovement;
   prototype.cancelApprovedMovement = cancelApprovedMovement;

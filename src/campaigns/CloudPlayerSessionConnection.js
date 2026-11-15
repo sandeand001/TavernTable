@@ -623,7 +623,12 @@ export default class CloudPlayerSessionConnection {
           entry.sceneRevision <= state.sceneRevision &&
           entry.charactersRevision <= state.revision
       )
-    ).filter((entry) => samePlacement(entry.motion.route.at(-1), actors.get(entry.tokenId)));
+    ).filter((entry) =>
+      samePlacement(
+        entry.kind === 'emote' ? entry.placement : entry.motion.route.at(-1),
+        actors.get(entry.tokenId)
+      )
+    );
     return state;
   }
 

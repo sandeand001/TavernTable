@@ -120,7 +120,12 @@ export function coalesceMovementPresentations(presentations) {
     ])
   );
   const actors = new Map();
+  const visuals = [];
   for (const entry of [...unique.values()].sort((a, b) => a.sceneRevision - b.sceneRevision)) {
+    if (entry.kind === 'emote') {
+      visuals.push(entry);
+      continue;
+    }
     const previous = actors.get(entry.tokenId);
     if (
       previous &&
@@ -142,7 +147,7 @@ export function coalesceMovementPresentations(presentations) {
       actors.set(entry.tokenId, combined);
     } else actors.set(entry.tokenId, entry);
   }
-  return [...actors.values()];
+  return [...actors.values(), ...visuals].sort((a, b) => a.sceneRevision - b.sceneRevision);
 }
 
 function currentPlacement(adapter, token) {
@@ -259,7 +264,8 @@ function recordStablePlacement(token) {
     ...checkpointCost(this, token, placement),
   };
   this._savedPlacements.set(token, checkpoint);
-  recordSharedPlacement(this, token, previous, checkpoint);
+  if (!this._getManualAnimationState(token)?.coverPlacement)
+    recordSharedPlacement(this, token, previous, checkpoint);
   if (
     !previous ||
     JSON.stringify(previous.placement) !== JSON.stringify(placement) ||
@@ -278,6 +284,7 @@ function recordSharedPlacement(adapter, token, previous, checkpoint) {
     store?.wantsSharedPresentations?.(library.campaign.id) !== true
   ) {
     adapter._sharedMovementPresentations?.delete(token);
+    adapter._sharedVisualPresentations?.delete(token);
     return;
   }
   if (
@@ -314,6 +321,34 @@ function recordSharedPlacement(adapter, token, previous, checkpoint) {
   if (adapter._movementStates.get(token)?.phase === 'fall-resolve') pending.motion.kind = 'fall';
 }
 
+function recordSharedVisual(token, { actionId, animationKey, cover }) {
+  const autosave = this.gameManager.sceneAutosave;
+  const library = autosave?.library;
+  if (!autosave?.ready || library?.store?.wantsSharedPresentations?.(library.campaign.id) !== true)
+    return;
+  const placement = this.getStablePlacement(token);
+  const from = { mapId: token.mapId ?? 'map-main', ...clone(placement) };
+  this._sharedVisualPresentations ??= new Map();
+  this._sharedVisualPresentations.set(token, {
+    commandId: globalThis.crypto.randomUUID(),
+    tokenId: token.id,
+    kind: 'emote',
+    actionId,
+    animationKey,
+    placement: cover
+      ? {
+          ...clone(from),
+          facingAngle: cover.finalFacing,
+          pose: { ...clone(from.pose), world: { ...cover.goal } },
+        }
+      : from,
+    ...(cover ? { from } : {}),
+  });
+  while (this._sharedVisualPresentations.size > 256)
+    this._sharedVisualPresentations.delete(this._sharedVisualPresentations.keys().next().value);
+  autosave.changed('visual action');
+}
+
 function getSharedPresentations(scene) {
   const result = [];
   for (const [token, pending] of this._sharedMovementPresentations || []) {
@@ -330,10 +365,21 @@ function getSharedPresentations(scene) {
     captured.motion.route[index] = placement;
     result.push(captured);
   }
+  for (const [token, entry] of this._sharedVisualPresentations || []) {
+    const actor = scene.creatures.find((actor) => actor.id === token.id);
+    if (!actor || !samePlacement(entry.placement, sceneActorPlacement(scene, actor))) {
+      this._sharedVisualPresentations.delete(token);
+      continue;
+    }
+    result.push(clone(entry));
+  }
   return result;
 }
 
 function acknowledgeSharedPresentations(presentations = []) {
+  for (const [token, entry] of this._sharedVisualPresentations || [])
+    if (presentations.some((captured) => captured.commandId === entry.commandId))
+      this._sharedVisualPresentations.delete(token);
   for (const [token, pending] of this._sharedMovementPresentations || []) {
     const captured = presentations.find(({ commandId }) => commandId === pending.commandId);
     if (!captured) continue;
@@ -654,9 +700,11 @@ export function installSavedPlacementMethods(prototype) {
   prototype.getStablePlacement = getStablePlacement;
   prototype.restoreStablePlacement = restoreStablePlacement;
   prototype.getSharedPresentations = getSharedPresentations;
+  prototype.recordSharedVisual = recordSharedVisual;
   prototype.acknowledgeSharedPresentations = acknowledgeSharedPresentations;
   prototype.clearSharedPresentations = function () {
     this._sharedMovementPresentations?.clear();
+    this._sharedVisualPresentations?.clear();
   };
   prototype.recordGroundCheckpoint = function (state) {
     if (state.groundTransition || state.wallMotion || state.traversal) return;

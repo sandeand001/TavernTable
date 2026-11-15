@@ -1,6 +1,10 @@
 import { isCloudAccessScope, isCloudAccessGeneration, isCloudUUID } from './CloudProtocol.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
-import { validatePlayerMotion, validateBudget } from './PlayerPublicProtocol.js';
+import {
+  validatePlayerMotion,
+  validateBudget,
+  validatePlayerVisual,
+} from './PlayerPublicProtocol.js';
 import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
 import { sceneActorPlacement, samePlacement } from '../scene/token-adapter/SavedPlacements.js';
 
@@ -218,6 +222,19 @@ function validatePresentations(previous, next, entries) {
     )
   );
   for (const entry of entries) {
+    if (entry?.kind === 'emote') {
+      validatePlayerVisual(entry, maps);
+      const actor = scene?.creatures.find((actor) => actor.id === entry.tokenId);
+      if (
+        !actor ||
+        !samePlacement(entry.placement, sceneActorPlacement(scene, actor)) ||
+        entry.sceneRevision !== next.state.sceneRevision ||
+        entry.sceneRevision <= previous.state.sceneRevision ||
+        entry.charactersRevision !== next.state.revision
+      )
+        invalid();
+      continue;
+    }
     if (
       !object(entry) ||
       Object.keys(entry).some(

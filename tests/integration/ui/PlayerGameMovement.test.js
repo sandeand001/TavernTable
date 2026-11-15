@@ -4,6 +4,11 @@ import PlayerGameApplication from '../../../src/ui/sessions/PlayerGameApplicatio
 import { publicPlayerState } from '../../helpers/publicPlayerState.js';
 import { createCampaignBoard } from '../../helpers/campaignBoard.js';
 import { installHumanoidAssetFiles } from '../../helpers/humanoid-fixture.js';
+import { sceneState } from '../../helpers/sceneState.js';
+import {
+  executePlayerCommand,
+  playerCommandReceipt,
+} from '../../../src/campaigns/ServerGameplay.js';
 
 let restoreFiles;
 beforeAll(() => {
@@ -11,10 +16,11 @@ beforeAll(() => {
 });
 afterAll(() => restoreFiles());
 
-async function fixture({ cloud = false } = {}) {
+async function fixture({ cloud = false, coverWall = false } = {}) {
   const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
   const { state, source, catalog } = publicPlayerState();
+  if (coverWall) state.publicScene.assets.maps[0].terrain.heights[1][2] = 4;
   const gm = createCampaignBoard(source);
   delete gm.__threeTestDouble;
   let milliseconds = 0;
@@ -108,6 +114,160 @@ async function fixture({ cloud = false } = {}) {
     },
   };
 }
+
+test('a cloud player renders a live cosmetic action and its own receipt echo never restarts the native clip', async () => {
+  const f = await fixture({ cloud: true });
+  try {
+    const token = f.gm.placedTokens[0];
+    const model = token.__threeMesh;
+    const before = JSON.parse(JSON.stringify(f.app.state));
+    const state = JSON.parse(JSON.stringify(before));
+    state.sceneRevision++;
+    const commandId = '00000000-0000-4000-8000-000000000501';
+    const actor = state.publicScene.actors[0];
+    const visual = {
+      commandId,
+      tokenId: token.id,
+      kind: 'emote',
+      actionId: 'action-wave',
+      animationKey: 'actionWave',
+      sceneRevision: state.sceneRevision,
+      charactersRevision: state.revision,
+      placement: {
+        mapId: actor.mapId,
+        gridX: actor.gridX,
+        gridY: actor.gridY,
+        facingAngle: actor.facingAngle,
+        pose: actor.pose,
+      },
+    };
+    state.publicScene.updates = [visual];
+    f.setFetched(state);
+    f.notify({ type: 'state', state, generation: 2, reconcile: false });
+    const data = f.gm.token3DAdapter._tokenAnimationData.get(token);
+    for (let check = 0; check < 100 && data.current !== 'actionWave'; check++)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(data.current).toBe('actionWave');
+    f.tick(0.25);
+    const time = data.actions.actionWave.time;
+    const acknowledged = JSON.parse(JSON.stringify(state));
+    acknowledged.publicScene.updates = [];
+    const receipt = {
+      version: 1,
+      commandId,
+      outcome: 'applied',
+      applied: { sceneRevision: state.sceneRevision, charactersRevision: state.revision },
+      receipt: {
+        kind: 'emote',
+        tokenId: token.id,
+        actionId: 'action-wave',
+        animationKey: 'actionWave',
+      },
+      state: acknowledged,
+    };
+    await f.app.receiveReceipt(receipt, {
+      animate: true,
+      command: { commandId, tokenId: token.id, observerTokenId: token.id, kind: 'emote' },
+    });
+    f.tick(0.1);
+    expect(data.current).toBe('actionWave');
+    expect(data.actions.actionWave.time).toBeGreaterThan(time);
+    expect(token.__threeMesh).toBe(model);
+    expect(token.world).toEqual(before.publicScene.actors[0].pose.world);
+    expect(f.app.state.gameplay.ownedTokens[0].economy).toEqual(
+      before.gameplay.ownedTokens[0].economy
+    );
+    expect(f.app.state.gameplay.ownedTokens[0].movement).toEqual(
+      before.gameplay.ownedTokens[0].movement
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a cloud player receipt echo cannot interrupt or restart an already streaming authoritative Cover', async () => {
+  const f = await fixture({ cloud: true, coverWall: true });
+  try {
+    const token = f.gm.placedTokens[0];
+    const before = JSON.parse(JSON.stringify(f.app.state));
+    const actor = before.publicScene.actors[0];
+    const scene = sceneState({ characterId: actor.characterId, name: actor.name });
+    scene.creatures[0].id = actor.id;
+    scene.selection = actor.id;
+    scene.terrain = JSON.parse(JSON.stringify(before.publicScene.assets.maps[0].terrain));
+    const accepted = await executePlayerCommand(
+      scene,
+      f.gm.characterServices.library,
+      {
+        kind: 'emote',
+        tokenId: actor.id,
+        payload: { actionId: 'action-cover' },
+      },
+      { ownedIds: [actor.characterId] }
+    );
+    const native = playerCommandReceipt(accepted, scene, f.gm.characterServices.library);
+    const from = { ...native.from, mapId: actor.mapId };
+    const placement = { ...native.placement, mapId: actor.mapId };
+    const commandId = '00000000-0000-4000-8000-000000000502';
+    const state = JSON.parse(JSON.stringify(before));
+    state.sceneRevision++;
+    Object.assign(state.publicScene.actors[0], {
+      pose: placement.pose,
+      facingAngle: placement.facingAngle,
+    });
+    state.publicScene.updates = [
+      {
+        commandId,
+        tokenId: actor.id,
+        kind: 'emote',
+        actionId: 'action-cover',
+        animationKey: native.animationKey,
+        from,
+        placement,
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+      },
+    ];
+    f.setFetched(state);
+    f.notify({ type: 'state', state, generation: 2, reconcile: false });
+    for (let check = 0; check < 100 && !f.gm.token3DAdapter.isMovementInProgress(token); check++)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(f.gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
+    for (let frame = 0; frame < 60; frame++) f.tick(1 / 120);
+    expect(token.world.x).toBeGreaterThan(from.pose.world.x);
+    expect(token.world.x).toBeLessThan(placement.pose.world.x);
+    const moving = { ...token.world };
+    const acknowledged = JSON.parse(JSON.stringify(state));
+    acknowledged.publicScene.updates = [];
+    await f.app.receiveReceipt(
+      {
+        version: 1,
+        commandId,
+        outcome: 'applied',
+        applied: { sceneRevision: state.sceneRevision, charactersRevision: state.revision },
+        receipt: { ...native, from, placement },
+        state: acknowledged,
+      },
+      {
+        animate: true,
+        command: { commandId, tokenId: actor.id, observerTokenId: actor.id, kind: 'emote' },
+      }
+    );
+    expect(token.world).toEqual(moving);
+    for (let frame = 0; frame < 3000 && f.gm.token3DAdapter.isMovementInProgress(token); frame++)
+      f.tick(1 / 120);
+    expect(token.world).toEqual(placement.pose.world);
+    expect(token.facingAngle).toBe(placement.facingAngle);
+    expect(f.app.state.gameplay.ownedTokens[0].movement).toEqual(
+      before.gameplay.ownedTokens[0].movement
+    );
+    expect(f.app.state.gameplay.ownedTokens[0].economy).toEqual(
+      before.gameplay.ownedTokens[0].economy
+    );
+  } finally {
+    await f.cleanup();
+  }
+}, 30000);
 
 test('accepted player movement interpolates the actual animated sprite and displays only the host-approved budget', async () => {
   const { app, gm, tick, cleanup } = await fixture();

@@ -329,6 +329,7 @@ async function _loadModelTemplate(typeKey, config) {
       return {
         template: templateRoot,
         rig,
+        tileWorldSize: tileSize,
         animations: Array.isArray(loaded.animations) ? loaded.animations : [],
       };
     })();

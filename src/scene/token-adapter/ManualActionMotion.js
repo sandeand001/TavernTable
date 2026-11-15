@@ -1,8 +1,9 @@
 import { getManualAction } from '../../config/HumanoidActionCatalog.js';
 import {
-  facingAngleFromDirection,
-  getTokenConditions,
-} from '../../entities/creatures/TokenMovement.js';
+  findCoverWall as physicalCoverWall,
+  coverDestination,
+} from '../../campaigns/CampaignCover.js';
+import { getTokenConditions } from '../../entities/creatures/TokenMovement.js';
 
 function rootTrack(clip, root) {
   const track = clip.tracks.find((entry) => entry.name === `${root.bone.name}.position`);
@@ -56,36 +57,44 @@ export function createOutAndBackClip(outward, recovery, root, three) {
   );
 }
 
-function findCoverWall(token, minimumHeight = 0) {
-  const gm = this.gameManager;
-  const { tileWorldSize: tile, elevationUnit } = gm.spatial;
-  const world = this._resolveTokenWorldPosition(token);
-  const grid = this._mapWorldToGrid(world);
-  let nearest = null;
-  for (const [dx, dz] of [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ]) {
-    const x = grid.gridX + dx;
-    const z = grid.gridY + dz;
-    if (x < 0 || z < 0 || x >= gm.cols || z >= gm.rows) continue;
-    const top = gm.getTerrainHeight(x, z) * elevationUnit;
-    if (top - world.y < Math.max(minimumHeight, 1e-6)) continue;
-    const plane = dx
-      ? (grid.gridX + (dx > 0 ? 1 : 0)) * tile
-      : (grid.gridY + (dz > 0 ? 1 : 0)) * tile;
-    const distance = dx ? Math.abs(plane - world.x) : Math.abs(plane - world.z);
-    if (!nearest || distance < nearest.distance) nearest = { dx, dz, plane, distance, top };
-  }
-  return nearest;
+function coverMetricScale(adapter, token) {
+  const gm = adapter.gameManager;
+  const data = adapter._tokenAnimationData.get(token);
+  const map = gm.campaignWorld?.getMap(token.mapId ?? gm.campaignMapId);
+  if (!(data?.tileWorldSize > 0) || !Number.isFinite(data.tileWorldSize))
+    throw new Error('Native Cover model normalization is unavailable');
+  return (map?.grid.tileWorldSize ?? gm.spatial.tileWorldSize) / data.tileWorldSize;
 }
 
-function getManualActionAvailability(token, commandId) {
+function findCoverWall(token, minimumHeight = 0) {
+  const gm = this.gameManager;
+  const world = this._resolveTokenWorldPosition(token);
+  const mapId = token.mapId ?? gm.campaignMapId;
+  const map =
+    gm.campaignWorld && mapId !== gm.campaignMapId ? gm.campaignWorld.getMap(mapId) : null;
+  const tile = map?.grid.tileWorldSize ?? gm.spatial.tileWorldSize;
+  return physicalCoverWall({
+    position: world,
+    gridX: Math.floor(world.x / tile),
+    gridY: Math.floor(world.z / tile),
+    cols: map?.grid.cols ?? gm.cols,
+    rows: map?.grid.rows ?? gm.rows,
+    tileWorldSize: tile,
+    minimumHeight,
+    getHeight: map
+      ? (x, z) => map.terrain.heights[z][x] * map.terrain.worldElevationUnit
+      : (x, z) => gm.getTerrainHeight(x, z) * gm.spatial.elevationUnit,
+  });
+}
+
+function getManualActionAvailability(token, commandId, { approved = false } = {}) {
   const definition = getManualAction(commandId);
   if (!definition) return { allowed: false, reason: 'Unknown creature action.' };
-  if (this.gameManager.campaignWorld && token?.mapId !== this.gameManager.campaignMapId)
+  if (
+    !approved &&
+    this.gameManager.campaignWorld &&
+    token?.mapId !== this.gameManager.campaignMapId
+  )
     return {
       allowed: false,
       reason: 'Focus this creature on its own map before playing an action.',
@@ -110,7 +119,7 @@ function getManualActionAvailability(token, commandId) {
     !findCoverWall.call(
       this,
       token,
-      data.coverMetrics?.height ?? this.gameManager.spatial.tileWorldSize * 0.5
+      (data.coverMetrics?.height ?? data.tileWorldSize * 0.5) * coverMetricScale(this, token)
     )
   )
     return {
@@ -213,15 +222,20 @@ async function _prepareManualActionMotion(token, definition, key) {
     mixer.stopAllAction();
     mixer.uncacheRoot(clone);
   }
-  const wall = findCoverWall.call(this, token, data.coverMetrics.height);
+  const scale = coverMetricScale(this, token);
+  const wall = findCoverWall.call(this, token, data.coverMetrics.height * scale);
   if (!wall)
     throw new Error('Take Cover requires an adjacent wall high enough for the crouched creature');
   const start = this._resolveTokenWorldPosition(token);
-  const goal = { ...start };
-  const inset = data.coverMetrics.back + this.gameManager.spatial.tileWorldSize * 0.02;
-  if (wall.dx) goal.x = wall.plane - wall.dx * inset;
-  else goal.z = wall.plane - wall.dz * inset;
-  const outward = facingAngleFromDirection(-wall.dx, -wall.dz);
+  const tile =
+    this.gameManager.campaignWorld?.getMap(token.mapId).grid.tileWorldSize ??
+    this.gameManager.spatial.tileWorldSize;
+  const { goal, facingAngle: outward } = coverDestination(
+    start,
+    wall,
+    data.coverMetrics.back * scale,
+    tile
+  );
   return {
     start,
     goal,
@@ -237,7 +251,7 @@ function _advanceManualActionMotion(token, manual) {
   const placement = manual.coverPlacement;
   if (!placement) return;
   const data = this._tokenAnimationData.get(token);
-  if (!findCoverWall.call(this, token, data.coverMetrics.height)) {
+  if (!findCoverWall.call(this, token, data.coverMetrics.height * coverMetricScale(this, token))) {
     this.releaseManualActionForFacing(token);
     return;
   }

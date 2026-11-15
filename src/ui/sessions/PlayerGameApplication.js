@@ -356,17 +356,24 @@ export default class PlayerGameApplication {
     if (artwork) this._applyArtwork(artwork, { defer: false });
     this._updateCommandReadiness();
     this.controls.update(state, { placementGrantId: this.placementGrantId });
-    if (result.sharedMovements?.length) {
+    if (result.sharedMovements?.length || result.sharedVisuals?.length) {
       this.presentationRevision = state.sceneRevision;
       try {
         await Promise.all(
-          result.sharedMovements.map((motion) =>
+          (result.sharedMovements || []).map((motion) =>
             this.gameManager.token3DAdapter.playApprovedMovement(
               this.gameManager.placedTokens.find(({ id }) => id === motion.tokenId),
               motion
             )
           )
         );
+        for (const entry of result.sharedVisuals || []) {
+          if (this.destroyed || this.accessEnded || version !== this.selectionVersion) break;
+          await this.gameManager.token3DAdapter.playApprovedVisual(
+            this.gameManager.placedTokens.find((token) => token.id === entry.tokenId),
+            entry
+          );
+        }
       } finally {
         if (this.presentationRevision === state.sceneRevision)
           this.presentationRevision = undefined;
@@ -414,7 +421,15 @@ export default class PlayerGameApplication {
           ...receipt.receipt.motion,
         }
       : null;
-    const result = await this.showState(receipt.state, this.selectionVersion, { movement });
+    const alreadyRenderedVisual =
+      this.connection.kind === 'cloud-player' &&
+      receipt.receipt.kind === 'emote' &&
+      this.runtime.revision === receipt.state.sceneRevision &&
+      this.state.sceneRevision === receipt.state.sceneRevision &&
+      this.state.revision === receipt.state.revision;
+    const result = alreadyRenderedVisual
+      ? { applied: true, reason: 'already-rendered' }
+      : await this.showState(receipt.state, this.selectionVersion, { movement });
     if (!result.applied) return result;
     if (movement) {
       const token = this.gameManager.placedTokens.find(({ id }) => id === command.tokenId);
@@ -425,6 +440,31 @@ export default class PlayerGameApplication {
         if (this.presentationRevision === receipt.applied.sceneRevision)
           this.presentationRevision = undefined;
       }
+    }
+    if (
+      animate &&
+      receipt.receipt.kind === 'emote' &&
+      receipt.state.sceneRevision === receipt.applied.sceneRevision
+    ) {
+      const actor = receipt.state.publicScene.actors.find((actor) => actor.id === command.tokenId);
+      return this.gameManager.token3DAdapter.playApprovedVisual(
+        this.gameManager.placedTokens.find((token) => token.id === command.tokenId),
+        {
+          commandId: command.commandId,
+          tokenId: command.tokenId,
+          kind: 'emote',
+          actionId: receipt.receipt.actionId,
+          animationKey: receipt.receipt.animationKey,
+          ...(receipt.receipt.from ? { from: receipt.receipt.from } : {}),
+          placement: receipt.receipt.placement || {
+            mapId: actor.mapId,
+            gridX: actor.gridX,
+            gridY: actor.gridY,
+            facingAngle: actor.facingAngle,
+            pose: actor.pose,
+          },
+        }
+      );
     }
     if (
       animate &&

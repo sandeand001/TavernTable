@@ -113,6 +113,11 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   }
   const resources = new HostResources({ root: process.cwd(), manifest });
   const { participantState } = require('./tools/cloud/participant-state.js');
+  const { CharacterLibrary } = require('./src/entities/characters/CharacterLibrary.js');
+  const { createTwoFloorTravelScene } = require('./src/campaigns/examples/ConnectedTravelExample.js');
+  const { executePlayerCommand } = require('./src/campaigns/ServerGameplay.js');
+  assert.equal(fs.existsSync('assets/animated-sprites'), false);
+  let nativeCoverRulesets = 0;
   assert.equal(typeof require('./tools/cloud/participant-changes.js').ParticipantChanges, 'function');
   assert.equal(typeof require('./tools/cloud/event-stream.js').openCloudEventStream, 'function');
   for (const ruleset of ['2014', '2024']) {
@@ -131,6 +136,33 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     });
     assert.deepEqual(projection.state.publicScene.actors, []);
     assert.deepEqual(projection.state.records, []);
+    const values = new Map();
+    const memory = {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, String(value)),
+      removeItem: key => values.delete(key),
+      key: index => [...values.keys()][index] ?? null,
+      get length() { return values.size; },
+    };
+    const library = new CharacterLibrary({
+      ruleset, catalog: catalog.entries, classes: catalog.classes, storage: memory,
+    });
+    const characters = ['Cover scout', 'Lower guide', 'Upper guide']
+      .map(name => library.get(library.create(name)));
+    const board = createTwoFloorTravelScene({ ruleset, characters });
+    board.maps[0].terrain.heights[10][11] = 4;
+    const actor = board.creatures[0];
+    const original = JSON.stringify(library.get(actor.characterId));
+    const covered = await executePlayerCommand(board, library, {
+      kind: 'emote', tokenId: actor.id, payload: { actionId: 'action-cover' },
+    }, { ownedIds: [actor.characterId] });
+    const placed = covered.scene.creatures.find(entry => entry.id === actor.id);
+    assert.ok(placed.pose.world.x > actor.pose.world.x && placed.pose.world.x < 11);
+    assert.deepEqual(covered.receipt.from.pose.world, actor.pose.world);
+    assert.deepEqual(covered.receipt.placement.pose, placed.pose);
+    assert.deepEqual(covered.scene.combat, board.combat);
+    assert.equal(JSON.stringify(library.get(actor.characterId)), original);
+    nativeCoverRulesets++;
   }
   const { PhysicalDice } = require('./tools/physical-dice.js');
   let seed = 42;
@@ -175,6 +207,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/cloud/immutable-objects.js', 'tools/movement-presentations.js', 'tools/physical-dice.js',
     'src/campaigns/CloudOwnerProtocol.js', 'src/campaigns/PlayerPublicProtocol.js',
     'src/campaigns/ServerGameplay.js', 'src/systems/dice/D20Dynamics.js',
+    'src/campaigns/CampaignCover.js', 'src/config/token-adapter/CoverMetrics.js',
     'assets/Items/d20-gold.glb', 'package.json', 'package-lock.json',
   ]) {
     runtimeHashes[file] = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -185,7 +218,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     anonymousAssignedSheets: 401,
     anonymousEvents: 401, forgedEvents: 401,
     anonymousOwnerWorld: 401, anonymousWorldCommands: 401,
-    nativeD20Frames: nativeD20.frames.length, nativeD20Value: nativeD20.value,
+    nativeD20Frames: nativeD20.frames.length, nativeD20Value: nativeD20.value, nativeCoverRulesets,
     forgedIdentity: 401, privateFiles: 404,
     resourcePacks: manifest.packs.length, resourceBytes, validatedImagePixels: 16000000,
     rssBytes: process.memoryUsage().rss, runtimeHashes,

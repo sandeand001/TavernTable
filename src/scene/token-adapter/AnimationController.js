@@ -83,6 +83,7 @@ async function _setupAnimationSet(tokenEntry, container, config, templateBundle)
     clipOptions,
     animationsConfig,
     templateRoot: templateBundle?.template,
+    tileWorldSize: templateBundle?.tileWorldSize,
     current: null,
   };
   animationData.traversal = this._prepareTraversalData(
@@ -519,14 +520,18 @@ function hasAnimation(tokenEntry, key) {
   return !!data?.actions?.[key];
 }
 
-async function playTokenAction(tokenEntry, commandId) {
+async function playTokenAction(tokenEntry, commandId, options = {}) {
   const definition = getManualAction(commandId);
   if (!definition) throw new Error(`Unknown manual action: ${commandId}`);
   const data = this._tokenAnimationData.get(tokenEntry);
   if (!data) throw new Error('Creature animations are not ready yet');
   if (data.loadingManualAction) throw new Error('Another creature action is still loading');
   const requireGrounded = () => {
-    if (this.gameManager.campaignWorld && tokenEntry.mapId !== this.gameManager.campaignMapId)
+    if (
+      options.approved !== true &&
+      this.gameManager.campaignWorld &&
+      tokenEntry.mapId !== this.gameManager.campaignMapId
+    )
       throw new Error('Focus this creature on its own map before playing an action');
     if (this.gameManager.campaignMapFailure) throw this.gameManager.campaignMapFailure;
     if (this.gameManager.campaignViewBusy)
@@ -543,14 +548,24 @@ async function playTokenAction(tokenEntry, commandId) {
     }
   };
   requireGrounded();
-  const availability = this.getManualActionAvailability(tokenEntry, commandId);
+  const availability = this.getManualActionAvailability(tokenEntry, commandId, {
+    approved: options.approved === true,
+  });
   if (!availability.allowed) throw new Error(availability.reason);
   data.loadingManualAction = commandId;
   try {
     const choices = definition.choices?.filter((key) => data.actions[key]);
-    const key = choices?.length
-      ? choices[Math.floor(Math.random() * choices.length)]
-      : definition.animation?.key;
+    if (
+      options.animationKey !== undefined &&
+      definition.animation?.key !== options.animationKey &&
+      !choices?.includes(options.animationKey)
+    )
+      throw new Error('The approved visual variant does not belong to this action');
+    const key =
+      options.animationKey ??
+      (choices?.length
+        ? choices[Math.floor(Math.random() * choices.length)]
+        : definition.animation?.key);
     if (!key) throw new Error(`Manual action has no available animation: ${commandId}`);
     const descriptors = [definition.animation, definition.returnAnimation].filter(Boolean);
     for (const descriptor of descriptors) {
@@ -567,6 +582,17 @@ async function playTokenAction(tokenEntry, commandId) {
     }
     const placement = await this._prepareManualActionMotion(tokenEntry, definition, key);
     requireGrounded();
+    if (options.approvedDestination) {
+      const target = options.approvedDestination;
+      if (
+        !placement ||
+        ['x', 'y', 'z'].some(
+          (axis) => Math.abs(placement.goal[axis] - target.pose.world[axis]) > 1e-6
+        ) ||
+        Math.abs(this._normalizeAngle(placement.finalFacing - target.facingAngle)) > 1e-6
+      )
+        throw new Error('The approved Cover destination does not match the loaded native pose');
+    }
     if (definition.revertTo && !data.actions[definition.revertTo]) {
       throw new Error(`Manual action recovery is unavailable: ${definition.revertTo}`);
     }
@@ -596,6 +622,12 @@ async function playTokenAction(tokenEntry, commandId) {
       this._manualAnimationStates.get(tokenEntry).onRelease = () =>
         data.mixer.removeEventListener('finished', finished);
     }
+    if (options.approved !== true)
+      this.recordSharedVisual(tokenEntry, {
+        actionId: commandId,
+        animationKey: key,
+        ...(placement ? { cover: placement } : {}),
+      });
     return true;
   } finally {
     data.loadingManualAction = null;

@@ -20,6 +20,8 @@
     "lint:layers": "node tools/check-layering.js",
     "lint:all": "npm run lint && npm run lint:layers",
     "resources:sync": "node tools/sync-resources.js",
+    "resources:cover": "node tools/measure-cover-poses.js --write",
+    "resources:cover:check": "node tools/measure-cover-poses.js --check",
     "serve": "node tools/local-host.js --port 3000",
     "serve:alt": "npm run serve:alt1",
     "serve:alt1": "node tools/local-host.js --port 3001",

@@ -20,11 +20,24 @@ import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
 import { fallingDice } from '../rules/falling.js';
 import { ConnectionUnavailableError } from './CampaignConnections.js';
 import { navigationGeometry } from '../scene/token-adapter/movement/SurfaceMotion.js';
-import { campaignLandingForSupport } from '../scene/token-adapter/SavedPlacements.js';
+import {
+  campaignLandingForSupport,
+  sceneActorPlacement,
+} from '../scene/token-adapter/SavedPlacements.js';
 import { getTokenCommand } from '../config/TokenCommandConfig.js';
 import { nearbyDoors } from './CampaignDoors.js';
+import { findCoverWall, coverDestination } from './CampaignCover.js';
+import { COVER_POSES } from '../config/token-adapter/CoverMetrics.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
+
+function canPlayerEmote(saved, character, library) {
+  return (
+    saved.pose.kind === 'ground' &&
+    !library.rules.movementImpaired(character) &&
+    !character.conditions.includes('prone')
+  );
+}
 
 export function gameplayError(message, code, status = 422) {
   return Object.assign(new Error(message), { code, status });
@@ -119,6 +132,7 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
         const movement = playerMovementBudget(runtime.combat, actor);
         const permittedTurn = !status.active || status.isTurn;
         const saved = scene.creatures.find((entry) => entry.id === actor.id);
+        const canEmote = canPlayerEmote(saved, library.get(actor.characterSheetId), library);
         const supportedPose =
           saved.pose.kind === 'ground' ||
           (saved.pose.kind === 'flight' &&
@@ -146,6 +160,11 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
           tokenId: actor.id,
           mapId: actor.mapId,
           availability: {
+            emote: {
+              allowed: canEmote,
+              code: canEmote ? 'allowed' : 'emote-unavailable',
+              reason: canEmote ? null : 'Choose a grounded, standing creature able to move',
+            },
             move: {
               allowed: canMove,
               code: moveCode,
@@ -509,7 +528,7 @@ export function playerCommandReceipt(result, previousScene, library) {
     };
   }
   const previous = previousScene.creatures.find((entry) => entry.id === receipt.tokenId);
-  if (previous && receipt.placement) {
+  if (previous && receipt.placement && receipt.kind !== 'emote') {
     const from = {
       mapId: previousScene.version === 3 ? previous.mapId : 'map-main',
       gridX: previous.gridX,
@@ -651,9 +670,7 @@ export async function executePlayerCommand(
     if (
       !action ||
       !['emotes', 'actions'].includes(action.group) ||
-      saved.pose.kind !== 'ground' ||
-      library.rules.movementImpaired(character) ||
-      character.conditions.includes('prone')
+      !canPlayerEmote(saved, character, library)
     )
       throw gameplayError(
         'Choose an available visual action for a grounded, standing creature',
@@ -663,13 +680,48 @@ export async function executePlayerCommand(
       action.animation?.key || action.choices?.find((key) => key === command.payload.animationKey);
     if (!animationKey || (action.animation && command.payload.animationKey !== undefined))
       throw gameplayError('Choose a canonical visual animation', 'invalid-emote');
+    let next = scene;
+    if (action.id === 'action-cover') {
+      const map = runtime.world.getMap(actor.mapId);
+      const tile = map.grid.tileWorldSize;
+      const metrics = COVER_POSES.metrics[getCharacterDefinition(saved.type)?.id];
+      if (!metrics)
+        throw gameplayError('This model has no verified native Cover pose', 'invalid-model', 400);
+      const wall = findCoverWall({
+        position: actor.world,
+        gridX: actor.gridX,
+        gridY: actor.gridY,
+        cols: map.grid.cols,
+        rows: map.grid.rows,
+        tileWorldSize: tile,
+        minimumHeight: metrics.height * tile,
+        getHeight: (x, z) => map.terrain.heights[z][x] * map.terrain.worldElevationUnit,
+      });
+      if (!wall)
+        throw gameplayError('Take Cover requires a supporting adjacent wall', 'cover-unavailable');
+      const placement = coverDestination(actor.world, wall, metrics.back * tile, tile);
+      next = copy(scene);
+      const covered = next.creatures.find((entry) => entry.id === actor.id);
+      covered.pose.world = placement.goal;
+      covered.facingAngle = placement.facingAngle;
+      encodeScene(next, { ruleset: library.ruleset, library });
+    }
     return {
-      scene,
+      scene: next,
       receipt: {
         type: 'emote',
         tokenId: actor.id,
         actionId: action.id,
         animationKey,
+        ...(action.id === 'action-cover'
+          ? {
+              from: sceneActorPlacement(scene, saved),
+              placement: sceneActorPlacement(
+                next,
+                next.creatures.find((entry) => entry.id === actor.id)
+              ),
+            }
+          : {}),
       },
     };
   }

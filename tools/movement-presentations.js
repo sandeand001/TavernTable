@@ -16,12 +16,13 @@ async function validateMovementPresentations({ root, previous, scene, presentati
     (scene.version === 3 && !Array.isArray(scene.maps))
   )
     throw invalid('Shared movement requires a valid scene and bounded unique presentations');
-  const [{ validatePlayerMotion }, { samePlacement, sceneActorPlacement }] = await Promise.all([
-    import(pathToFileURL(path.join(root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href),
-    import(
-      pathToFileURL(path.join(root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js')).href
-    ),
-  ]);
+  const [{ validatePlayerMotion, validatePlayerVisual }, { samePlacement, sceneActorPlacement }] =
+    await Promise.all([
+      import(pathToFileURL(path.join(root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href),
+      import(
+        pathToFileURL(path.join(root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js')).href
+      ),
+    ]);
   const published = new PublishedMaps(root);
   const currentMaps = new Map(published.maps(scene).map((map) => [map.id, map]));
   const previousMaps = new Map(published.maps(previous).map((map) => [map.id, map]));
@@ -40,6 +41,22 @@ async function validateMovementPresentations({ root, previous, scene, presentati
     });
   }
   for (const entry of presentations) {
+    if (entry?.kind === 'emote') {
+      try {
+        validatePlayerVisual(entry, currentMaps);
+      } catch (error) {
+        if (!['invalid-player-state', 'invalid-saved-placement'].includes(error.code)) throw error;
+        throw Object.assign(invalid(error.message), { cause: error });
+      }
+      const actor = scene.creatures.find(({ id }) => id === entry.tokenId);
+      if (
+        !actor ||
+        !previous?.creatures.some(({ id }) => id === entry.tokenId) ||
+        !samePlacement(entry.placement, sceneActorPlacement(scene, actor))
+      )
+        throw invalid('The visual action must match a real committed actor');
+      continue;
+    }
     if (
       !entry ||
       Object.keys(entry).some((key) => !['commandId', 'tokenId', 'kind', 'motion'].includes(key)) ||
@@ -82,6 +99,7 @@ async function visibleMovementPresentations({
   updates,
   state,
   sinceSceneRevision,
+  previousView = null,
 }) {
   if (!scene || !view.observerTokenId || !updates.length) return [];
   const [
@@ -138,6 +156,34 @@ async function visibleMovementPresentations({
       delete presented.budget;
     }
     visible.set(presented.commandId, presented);
+  }
+  const previouslyVisible = new Set(
+    previousView?.publicScene.actors.map((actor) => actor.id) || []
+  );
+  for (const entry of updates) {
+    const actor = actors.get(entry.tokenId);
+    if (
+      entry.kind !== 'emote' ||
+      entry.sceneRevision > state.sceneRevision ||
+      entry.charactersRevision > state.revision ||
+      (sinceSceneRevision !== undefined && entry.sceneRevision <= sinceSceneRevision) ||
+      !previouslyVisible.has(entry.tokenId) ||
+      !samePlacement(entry.placement, actor) ||
+      ![...(entry.from ? [entry.from] : []), entry.placement].every(
+        (point) =>
+          maps.has(point.mapId) &&
+          point.gridX < world.getMap(point.mapId).grid.cols &&
+          point.gridY < world.getMap(point.mapId).grid.rows &&
+          (actor.owned ||
+            world.hasLineOfSight(
+              origin,
+              world.toCampaignPosition(point.mapId, point.pose.world),
+              geometry
+            ))
+      )
+    )
+      continue;
+    visible.set(entry.commandId, copy(entry));
   }
   return [...visible.values()];
 }

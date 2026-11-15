@@ -149,6 +149,7 @@ export default class PublicPlayerRuntime {
     const sharedMovements = snapshot.updates
       .filter(
         (update) =>
+          update.motion &&
           this.revision >= 0 &&
           !assetsChanged &&
           update.sceneRevision > this.revision &&
@@ -166,9 +167,19 @@ export default class PublicPlayerRuntime {
     const movements = new Map(
       [...sharedMovements, ...(movement ? [movement] : [])].map((entry) => [entry.tokenId, entry])
     );
+    const sharedVisuals = snapshot.updates.filter(
+      (entry) =>
+        entry.kind === 'emote' &&
+        this.revision >= 0 &&
+        !assetsChanged &&
+        entry.sceneRevision > this.revision
+    );
     for (const actor of snapshot.actors) {
       if (!current()) return superseded;
-      const presented = movements.get(actor.id)?.from || actor;
+      const presented =
+        movements.get(actor.id)?.from ||
+        sharedVisuals.find((entry) => entry.tokenId === actor.id)?.from ||
+        actor;
       let token = gm.placedTokens.find(({ id }) => id === actor.id);
       if (!token) {
         token = {
@@ -227,7 +238,11 @@ export default class PublicPlayerRuntime {
     if (!current()) return superseded;
     this.revision = state.sceneRevision;
     gm.threeSceneManager.scene.visible = true;
-    return { applied: true, ...(sharedMovements.length ? { sharedMovements } : {}) };
+    return {
+      applied: true,
+      ...(sharedMovements.length ? { sharedMovements } : {}),
+      ...(sharedVisuals.length ? { sharedVisuals } : {}),
+    };
   }
 
   async _hydrateArrival(state, placementGrantId, generation) {

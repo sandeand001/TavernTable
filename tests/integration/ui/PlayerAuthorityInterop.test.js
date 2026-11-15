@@ -168,6 +168,48 @@ test('multiplayer regression: DM freeplay reaches real player input, sprite anim
   }
 }, 30000);
 
+test('real player radial cosmetics use authoritative availability and replay the exact accepted variant without rule costs', async () => {
+  const table = await createPlayerAuthorityTable({ activeTurn: false });
+  const restoreFiles = installHumanoidAssetFiles();
+  let app;
+  try {
+    const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
+    document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
+    const gm = createCampaignBoard(null);
+    delete gm.__threeTestDouble;
+    gm.token3DAdapter.attach();
+    app = await preparePlayerApplication({
+      gameManager: gm,
+      connection: table.connection,
+      identity: { role: 'player' },
+      resources: { catalog: async () => table.catalog, close() {} },
+    });
+    await app.start();
+    gm.advanceFrame();
+    const token = gm.placedTokens[0];
+    const model = token.__threeMesh;
+    const position = { ...token.world };
+    const before = structuredClone(app.state.gameplay.ownedTokens[0]);
+    await app.input.applyRadial(token, 'action-wave');
+    const data = gm.token3DAdapter._tokenAnimationData.get(token);
+    expect(data.current).toBe('actionWave');
+    await app.input.applyRadial(token, 'emote-idle');
+    const request = table.calls.filter((call) => call.operation === 'playerCommand').at(-1).args[1];
+    expect(request.payload.animationKey).toMatch(/^idle(?:Variant[2-5])?$/);
+    expect(data.current).toBe(request.payload.animationKey);
+    expect(token.__threeMesh).toBe(model);
+    expect(token.world).toEqual(position);
+    expect(app.state.gameplay.ownedTokens[0].economy).toEqual(before.economy);
+    expect(app.state.gameplay.ownedTokens[0].movement).toEqual(before.movement);
+  } finally {
+    if (app) await app.destroy();
+    restoreFiles();
+    await table.close();
+    document.body.replaceChildren();
+    delete document.body.dataset.sessionRole;
+  }
+}, 30000);
+
 test('private restore fields in a real player projection are rejected before changing native actors or assigned records', async () => {
   const table = await createPlayerAuthorityTable();
   let app;

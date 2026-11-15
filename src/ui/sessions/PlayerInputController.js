@@ -96,6 +96,14 @@ export default class PlayerInputController {
         canSlowFall && window.confirm('Use your available Slow Fall reaction for this fall?');
       return this.commands.send(kind, token.id, { useSlowFall });
     }
+    let animationKey;
+    if (kind === 'emote' && action.choices) {
+      const choices = action.choices.filter((key) =>
+        this.gameManager.token3DAdapter.hasAnimation(token, key)
+      );
+      if (!choices.length) throw new Error('Wait for a canonical visual variant to finish loading');
+      animationKey = choices[Math.floor(Math.random() * choices.length)];
+    }
     return this.commands.send(
       kind,
       token.id,
@@ -103,7 +111,7 @@ export default class PlayerInputController {
         ? action.flight.feet && ['raise', 'lower'].includes(action.flight.kind)
           ? { feet: action.flight.feet }
           : {}
-        : { actionId }
+        : { actionId, ...(animationKey ? { animationKey } : {}) }
     );
   }
 

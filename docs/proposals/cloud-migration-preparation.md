@@ -4683,3 +4683,87 @@ actual local/cloud DM walk/run/queued/reconciliation renderer gates pass
 This closes the actual outgoing native capture gap before full-game activation;
 it is not a claim that the earlier manually submitted hosted movement cohort
 tested this UI path. No new hosted release or gameplay capability is enabled.
+
+### M5 live visual-action and authoritative Cover development gate
+
+The actual cloud visual-action regression first finds an accepted emote with no
+live presentation packet. The real player menu then exposes a separate gap:
+canonical emote availability was not projected, and an idle action did not send
+its selected variant. These are fixed through the actual native input,
+authority, managed SDK, HTTP/SSE and renderer paths, not just manual route JSON.
+
+Visual packets contain only a bounded command ID, actor ID, canonical action/
+animation variant and committed placement. Cover additionally carries its
+authorized FROM. No arbitrary clip URL, sheet record, private target, cost or
+foreign budget is accepted into this packet. Both live directions work:
+player to owner/visible participants and DM to visible players, including a
+second owner tab. Native playback deduplicates own HTTP/SSE echoes without
+restarting the clip. Cosmetic entries remain separate from coalesced movement.
+Checkpoints, resync, duplicate receipts and later visibility do not replay them;
+the complete canonical scene/backup never stores animation command frames.
+Both FROM/end must pass current map/physical-sight filtering for another actor.
+
+#### Owner-approved physical Cover, not an in-place approximation
+
+The owner explicitly selected `authoritative_wall_alignment` after inspection
+showed that native Take Cover changes position and facing while the old server
+emote returned an unchanged scene. The cloud now preserves that native,
+wall-aligned stance within the same supported cell without spending movement,
+actions or character resources.
+
+Trusted measurements are generated from **all six actual native model and
+retargeted animation pipelines**, with **seven source-FBX SHA-256 inputs**.
+The development-only local file/DOM sampler invokes the real adapter and authored
+Cover clip; it does not guess an inset or trust client measurements. Shared wall
+selection/destination math is reused by native and server execution. The
+checked-in data is small JavaScript; production requires no FBX/texture load,
+DOM, GPU or new infrastructure.
+
+```powershell
+npm run resources:cover
+npm run resources:cover:check
+```
+
+The first command regenerates formatter-stable data after a deliberate native
+asset change. The second recomputes all measurements and fails on drift.
+Regeneration alone is not acceptance: server/native final positions and facing
+are compared to six decimals for every appearance, and the receiving native
+renderer verifies its prepared destination before playing.
+
+The canonical commit includes the accepted stance and a minimal durable command
+receipt. A live FROM/end presentation starts the same Cover animation instead
+of teleporting to the held pose or applying the alignment twice. Native owner
+capture does not turn Cover into a false walking route. Receiving DM animation
+does not schedule an echo save; an issuing player's later HTTP receipt cannot
+interrupt its already streaming Cover.
+
+Model templates retain the tile size used for normalization. Replaying a visible
+actor on a differently scaled floor converts pose measurements into that actor's
+source-map units, independent of the viewing map. Approved projected playback
+does not relax the normal off-map manual-input prohibition.
+
+#### Coupled development evidence and remaining gates
+
+- **262 tests / 12 Jest suites**, **234.622 seconds**, all pass with
+  open-handle detection: all native Cover/idle/wave/model/parity and projected
+  scale cases, local gameplay, bidirectional walk/run/queue/reconciliation,
+  actual radial input, DM/player receipt echoes, cache/transport and host updates.
+- The native Cover group includes **36 cases** over all six appearances,
+  preserving existing cover-wall removal, unsupported-cover refusal, Dodge
+  out-and-back motion and logical-position behavior.
+- **Six actual emulator HTTP/SSE cases**, **76.838 seconds**, pass for atomic
+  Cover stance/cost preservation/same-ID recovery/no-wall rollback, both visual
+  directions, hidden-actor denial and no replay after room visibility, current
+  Undo, existing native owner routes and forged-epoch/endpoint/private-field
+  rejection. The player SDK also consumes and acknowledges the non-motion entry,
+  rather than testing only a raw transport packet.
+- `resources:cover:check` passes against the actual source assets. The isolated
+  package smoke gate now also executes Cover for both rulesets and asserts that
+  animated sprite files are absent; a newly built image must pass it before use.
+
+This is a focused development gate, not a new hosted release, full stable-suite
+milestone or completed rehearsal. The remaining control-family UI acceptance,
+exact runtime/frontend packaging, actual four-to-five-hour ten-client session,
+recovery/rollback and separate production/cutover approvals remain open.
+Both gameplay flags remain off, the published R8 pilot is unchanged, and the
+canonical checklist stays **59/65**. Deferred routine-save feedback is untouched.

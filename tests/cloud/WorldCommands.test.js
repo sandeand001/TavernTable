@@ -2576,6 +2576,313 @@ test(
 );
 
 test(
+  'cloud Cover commits a native wall-aligned stance once and sends only the authorized FROM and destination',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const scene = structuredClone(f.scene);
+    const terrain =
+      scene.version === 3 ? scene.maps.find((map) => map.id === 'map-main').terrain : scene.terrain;
+    terrain.heights[1][2] = 4;
+    assert.equal(
+      (
+        await publishOwner(f, {
+          commandId: randomUUID(),
+          sessionId: f.live.sessionId,
+          presentations: [],
+          change: {
+            ruleset: '2014',
+            revision: 1,
+            charactersRevision: f.library.revision,
+            scene: encodeScene(scene, f.validation),
+          },
+        })
+      ).status,
+      200
+    );
+    const owner = await f.openOwner();
+    assert.equal((await owner.next()).value.kind, 'owner-checkpoint');
+    const connection = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await connection.open({ observerTokenId: 'token-1', mapId: 'map-main' });
+    const before = structuredClone(connection.state);
+    const original = await f.owner.client.readCharacters(f.campaign.id);
+    const command = playerMove(f, { state: before }).command;
+    command.kind = 'emote';
+    command.payload = { actionId: 'action-cover' };
+    const accepted = await connection.call('playerCommand', [f.campaign.id, command]);
+    assert.equal(accepted.receipt.actionId, 'action-cover');
+    assert.deepEqual(accepted.receipt.from.pose.world, before.publicScene.actors[0].pose.world);
+    assert(accepted.receipt.placement.pose.world.x > accepted.receipt.from.pose.world.x);
+    assert(accepted.receipt.placement.pose.world.x < 2);
+    const delivered = (await owner.next()).value;
+    assert.equal(delivered.kind, 'owner-delta');
+    const visual = delivered.delta.presentations[0];
+    assert.equal(visual.kind, 'emote');
+    assert.deepEqual(visual.from, accepted.receipt.from);
+    assert.deepEqual(visual.placement, accepted.receipt.placement);
+    assert.equal(visual.motion, undefined);
+    assert.equal(visual.costFeet, undefined);
+    assert.equal(visual.budget, undefined);
+    const ready = connection.readLiveState(before.sceneRevision);
+    assert.deepEqual(ready.publicScene.updates[0].from, visual.from);
+    assert.deepEqual(ready.gameplay.ownedTokens[0].economy, before.gameplay.ownedTokens[0].economy);
+    assert.deepEqual(
+      ready.gameplay.ownedTokens[0].movement,
+      before.gameplay.ownedTokens[0].movement
+    );
+    const saved = await f.owner.client.readCharacters(f.campaign.id);
+    const committed = JSON.parse(saved.scene).creatures.find((actor) => actor.id === 'token-1');
+    assert.deepEqual(committed.pose, accepted.receipt.placement.pose);
+    assert.equal(committed.facingAngle, accepted.receipt.placement.facingAngle);
+    assert.deepEqual(saved.records, original.records);
+    assert.deepEqual(JSON.parse(saved.scene).combat, JSON.parse(original.scene).combat);
+    assert.equal(
+      (await connection.call('playerCommand', [f.campaign.id, command])).outcome,
+      'duplicate'
+    );
+    assert.deepEqual(await f.owner.client.readCharacters(f.campaign.id), saved);
+    const clear = JSON.parse(saved.scene);
+    const board =
+      clear.version === 3 ? clear.maps.find((map) => map.id === 'map-main').terrain : clear.terrain;
+    board.heights[1][2] = 0;
+    assert.equal(
+      (
+        await publishOwner(f, {
+          commandId: randomUUID(),
+          sessionId: f.live.sessionId,
+          presentations: [],
+          change: {
+            ruleset: '2014',
+            revision: saved.sceneRevision,
+            charactersRevision: saved.revision,
+            scene: encodeScene(clear, f.validation),
+          },
+        })
+      ).status,
+      200
+    );
+    await connection.call('playerState', [{ observerTokenId: 'token-1', mapId: 'map-main' }]);
+    const unchanged = await f.owner.client.readCharacters(f.campaign.id);
+    const refused = playerMove(f, { state: connection.state }).command;
+    refused.kind = 'emote';
+    refused.payload = { actionId: 'action-cover' };
+    await assert.rejects(connection.call('playerCommand', [f.campaign.id, refused]), {
+      status: 422,
+      code: 'cover-unavailable',
+    });
+    assert.deepEqual(await f.owner.client.readCharacters(f.campaign.id), unchanged);
+  }
+);
+
+test(
+  'an accepted cloud visual action reaches live owner and player presentation feeds but never replays from a checkpoint',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const owner = await f.openOwner();
+    assert.equal((await owner.next()).value.kind, 'owner-checkpoint');
+    const member = await f.openMember();
+    const checkpoint = (await member.next()).value.checkpoint;
+    const connection = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await connection.open({ observerTokenId: 'token-1', mapId: 'map-main' });
+    const command = playerMove(f, checkpoint).command;
+    command.kind = 'emote';
+    command.payload = { actionId: 'action-wave' };
+    const before = checkpoint.state.gameplay.ownedTokens[0];
+    const accepted = await connection.call('playerCommand', [f.campaign.id, command]);
+    assert.equal(accepted.receipt.actionId, 'action-wave');
+    const renderState = connection.readLiveState(checkpoint.state.sceneRevision);
+    assert.equal(renderState.publicScene.updates[0].kind, 'emote');
+    connection.acknowledgeState(renderState.sceneRevision);
+    assert.deepEqual(
+      connection.readLiveState(checkpoint.state.sceneRevision).publicScene.updates,
+      []
+    );
+    const ownerChange = (await owner.next()).value;
+    assert.equal(ownerChange.kind, 'owner-delta');
+    assert.equal(ownerChange.delta.presentations?.[0]?.kind, 'emote');
+    const memberChange = (await member.next()).value;
+    assert.equal(memberChange.kind, 'delta');
+    assert.equal(memberChange.delta.presentations?.[0]?.kind, 'emote');
+    assert.equal(
+      memberChange.delta.presentations[0].animationKey,
+      ownerChange.delta.presentations[0].animationKey
+    );
+    const updated = applyCloudParticipantDelta(checkpoint, memberChange.delta, {
+      cachedAssets: checkpoint.state.publicScene.assets,
+    });
+    assert.deepEqual(updated.state.gameplay.ownedTokens[0].economy, before.economy);
+    assert.deepEqual(updated.state.gameplay.ownedTokens[0].movement, before.movement);
+    const canonical = await f.owner.client.readCharacters(f.campaign.id);
+    assert(!canonical.scene.includes(command.commandId));
+    assert(!canonical.scene.includes('action-wave'));
+    const repeated = await f.member.client.commitWorldCommand(
+      f.campaign.id,
+      {
+        sessionId: f.live.sessionId,
+        command,
+      },
+      f.grant.access
+    );
+    assert.equal(repeated.outcome, 'duplicate');
+    assert.equal(repeated.presentation, null);
+    await member.close();
+    const rejoined = await f.openMember();
+    const current = (await rejoined.next()).value;
+    assert.equal(current.kind, 'checkpoint');
+    assert.deepEqual(current.checkpoint.state.publicScene.updates, []);
+    assert.equal(current.presentations, undefined);
+    const scene = JSON.parse(canonical.scene);
+    const guide = scene.creatures.find((actor) => actor.id === 'token-2');
+    const ownerVisual = {
+      commandId: randomUUID(),
+      tokenId: guide.id,
+      kind: 'emote',
+      actionId: 'action-wave',
+      animationKey: 'actionWave',
+      placement: sceneActorPlacement(scene, guide),
+    };
+    assert.equal(
+      (
+        await publishOwner(f, {
+          commandId: randomUUID(),
+          sessionId: f.live.sessionId,
+          presentations: [ownerVisual],
+          change: {
+            ruleset: '2014',
+            revision: canonical.sceneRevision,
+            charactersRevision: canonical.revision,
+            scene: encodeScene(scene, f.validation),
+          },
+        })
+      ).status,
+      200
+    );
+    const mirrored = (await rejoined.next()).value;
+    assert.equal(mirrored.kind, 'delta');
+    assert.equal(mirrored.delta.presentations[0].tokenId, guide.id);
+    assert.equal(mirrored.delta.presentations[0].animationKey, ownerVisual.animationKey);
+    assert.equal(mirrored.delta.presentations[0].budget, undefined);
+    assert.equal(mirrored.delta.presentations[0].costFeet, undefined);
+  }
+);
+
+test(
+  'cloud visual actions never disclose a hidden actor or replay its action when a room becomes visible',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const upper = await f.library.create('Hidden upstairs');
+    const scene = createTwoFloorTravelScene({
+      ruleset: '2014',
+      characters: [f.hero, f.npc, upper].map((id) => f.library.get(id)),
+    });
+    scene.connections[0].open = false;
+    assert.equal(
+      (
+        await publishOwner(f, {
+          commandId: randomUUID(),
+          sessionId: f.live.sessionId,
+          presentations: [],
+          change: {
+            ruleset: '2014',
+            revision: 1,
+            charactersRevision: f.library.revision,
+            scene: encodeScene(scene, f.validation),
+          },
+        })
+      ).status,
+      200
+    );
+    const member = await f.openMember();
+    const before = (await member.next()).value.checkpoint;
+    assert(!before.state.publicScene.actors.some((actor) => actor.id === 'token-2'));
+    const hidden = scene.creatures.find((actor) => actor.id === 'token-2');
+    assert.equal(
+      (
+        await publishOwner(f, {
+          commandId: randomUUID(),
+          sessionId: f.live.sessionId,
+          presentations: [
+            {
+              commandId: randomUUID(),
+              tokenId: hidden.id,
+              kind: 'emote',
+              actionId: 'action-wave',
+              animationKey: 'actionWave',
+              placement: sceneActorPlacement(scene, hidden),
+            },
+          ],
+          change: {
+            ruleset: '2014',
+            revision: before.state.sceneRevision,
+            charactersRevision: before.state.revision,
+            scene: encodeScene(scene, f.validation),
+          },
+        })
+      ).status,
+      200
+    );
+    const notice = (await member.next()).value;
+    assert.equal(notice.kind, 'delta');
+    assert.deepEqual(notice.delta.presentations || [], []);
+    assert(!JSON.stringify(notice).includes(hidden.id));
+    assert(!JSON.stringify(notice).includes(hidden.name));
+    const hero = scene.creatures.find((actor) => actor.id === 'token-1');
+    Object.assign(hero, {
+      mapId: 'ground-floor',
+      gridX: 2,
+      gridY: 2,
+      pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 2.5 } },
+    });
+    scene.view.mapId = 'ground-floor';
+    await member.close();
+    assert.equal(
+      (
+        await publishOwner(f, {
+          commandId: randomUUID(),
+          sessionId: f.live.sessionId,
+          presentations: [],
+          change: {
+            ruleset: '2014',
+            revision: notice.delta.changes.sceneRevision,
+            charactersRevision: notice.delta.changes.revision,
+            scene: encodeScene(scene, f.validation),
+          },
+        })
+      ).status,
+      200
+    );
+    const visible = await f.member.client.readParticipantSnapshot(
+      f.campaign.id,
+      {
+        sessionId: f.live.sessionId,
+        observerTokenId: hero.id,
+        mapId: 'ground-floor',
+        assetKey: null,
+      },
+      f.grant.access
+    );
+    assert(visible.state.publicScene.actors.some((actor) => actor.id === hidden.id));
+    assert.deepEqual(visible.state.publicScene.updates, []);
+  }
+);
+
+test(
   'the cloud player can undo an accepted action through current live authority',
   { timeout: 60000 },
   async (t) => {

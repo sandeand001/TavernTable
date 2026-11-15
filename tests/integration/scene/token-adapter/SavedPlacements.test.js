@@ -115,6 +115,60 @@ test('closing during a ground route uses its most recent completed safe step, no
   }
 }, 30000);
 
+test.each([
+  ['action-wave', 'actionWave'],
+  ['action-cover', 'actionCover'],
+])(
+  'a live cloud owner captures its actual %s variant while approved remote playback never echoes it',
+  async (actionId, animationKey) => {
+    const f = await createHumanoidFixture({ height: actionId === 'action-cover' ? 4 : 0 });
+    try {
+      f.gm.sceneAutosave = {
+        ready: true,
+        library: {
+          campaign: { id: 'cloud-visual-fixture' },
+          store: {
+            storageInfo: { kind: 'cloud' },
+            wantsSharedPresentations: () => true,
+          },
+        },
+        changed() {},
+      };
+      const scene = () => ({
+        version: 2,
+        creatures: [
+          {
+            id: f.token.id,
+            gridX: f.token.gridX,
+            gridY: f.token.gridY,
+            ...f.adapter.getStablePlacement(f.token),
+          },
+        ],
+      });
+      await f.adapter.playTokenAction(f.token, actionId);
+      if (actionId === 'action-cover') finishHumanoid(f);
+      const captured = f.adapter.getSharedPresentations(scene());
+      expect(captured).toHaveLength(1);
+      expect(captured[0]).toMatchObject({
+        tokenId: f.token.id,
+        kind: 'emote',
+        actionId,
+        animationKey,
+      });
+      f.adapter.acknowledgeSharedPresentations(captured);
+      await f.adapter.playApprovedVisual(f.token, {
+        ...captured[0],
+        commandId: '00000000-0000-4000-8000-000000000401',
+      });
+      expect(f.adapter.getSharedPresentations(scene())).toEqual([]);
+    } finally {
+      f.gm.sceneAutosave = null;
+      f.adapter.disposeMovementRange();
+    }
+  },
+  30000
+);
+
 test('a live cloud owner captures native committed movement while a paused cloud owner publishes no route', async () => {
   const fixture = await createHumanoidFixture({
     height: 0,

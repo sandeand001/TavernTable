@@ -442,7 +442,8 @@
   final backup confirmation separately. Progressive artwork, persistent cache
   and warm/private-loss behavior are described below. Cloud action Undo, nearby
   doors and explicit arrival grants now have focused M5 development gates.
-  Complete remote action/emote presentation and full-session acceptance remain
+  Live visual-action replay and authoritative native Cover also have focused M5
+  development gates below. Complete control-family/full-session acceptance remains
   gated, not silently supported gameplay claims. Ten distinct managed principals (one owner
   and nine members) converge to canonical poses/revisions and scoped budgets,
   with stale-CAS retry, original lost-reply recovery, no duplicate costs/physics
@@ -825,6 +826,24 @@
   private. Asset-scope changes apply the authoritative destination rather than
   replaying against replacement or unauthorized terrain. This is checkpoint-driven
   replay, not frame-locked live networking.
+- **Live cloud visual action (M5 development verified; activation gated)**:
+  bounded, canonical action/variant IDs and the visible actor's accepted placement
+  travel only with contiguous live changes. Player and DM recipients reuse native
+  clips; same-ID retries, own HTTP/SSE echoes, checkpoints, resync and later
+  visibility never replay an old action. Hidden actors and foreign budgets do
+  not enter these packets. Approved projected-floor replay does not grant manual
+  control over an off-map creature.
+- **Authoritative cloud Cover (owner-approved M5 development)**:
+  preserve native wall alignment within the same supported cell, including
+  canonical position/facing, without spending movement, actions or resources.
+  The server uses trusted per-appearance measurements generated from actual
+  native models/retargeted clips and shared wall/destination math, never client
+  coordinates or approximate offsets. Native replay validates and interpolates
+  the authorized FROM/end once, without an echo save. Model normalization records
+  its tile basis so projected floors use their source-map units, not the viewer's
+  grid. Regenerate with `npm run resources:cover`; verify with
+  `npm run resources:cover:check`. Sampling is local build-time work; production
+  does not load FBX, textures, a DOM or a GPU for Cover.
 - **Flight**: a per-token airborne travel state using the character's effective
   flying speed. Take flight rises 5 feet. Raise/Lower offer 5, 10, 15 and 20 feet,
   spending one foot of flying movement per vertical foot. Horizontal routes retain
@@ -985,6 +1004,8 @@
   combat or consume movement. Dodge returns to its original logical position;
   cover alignment may shift within the same cell. Committed cinematic movement
   must remain protected.
+  Cloud Cover's in-cell endpoint/facing is server-authorized as described above;
+  a cosmetic clip alone never grants a client an arbitrary placement change.
 - **Facing**: one of eight grid-relative headings, independent of camera orbit.
   Changing facing does not translate the creature.
 - **Traversal**: a committed terrain transition, including stepping, mantling,

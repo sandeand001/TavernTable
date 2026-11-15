@@ -5,7 +5,10 @@ import {
   sceneActorPlacement,
   coalesceMovementPresentations,
 } from '../../scene/token-adapter/SavedPlacements.js';
-import { validatePlayerMotion } from '../../campaigns/PlayerPublicProtocol.js';
+import {
+  validatePlayerMotion,
+  validatePlayerVisual,
+} from '../../campaigns/PlayerPublicProtocol.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 
 export function attachHostSessionUpdates({
@@ -53,6 +56,7 @@ export function attachHostSessionUpdates({
       )
     );
     const movements = [];
+    const visuals = [];
     const eligible = [];
     for (const entry of presentations) {
       if (
@@ -73,6 +77,14 @@ export function attachHostSessionUpdates({
         entry.charactersRevision > state.revision
       )
         continue;
+      if (entry.kind === 'emote') {
+        validatePlayerVisual(entry, maps);
+        const actor = scene?.creatures.find((actor) => actor.id === entry.tokenId);
+        if (!actor || !samePlacement(entry.placement, sceneActorPlacement(scene, actor)))
+          throw new Error('The shared visual action does not match its committed creature');
+        visuals.push(entry);
+        continue;
+      }
       validatePlayerMotion(entry.motion, maps);
       eligible.push(entry);
     }
@@ -104,7 +116,8 @@ export function attachHostSessionUpdates({
       !options.discardLocal &&
       state.sceneRevision !== library.sceneRevision &&
       !['playerCommit', 'playerCommand', 'doorState'].includes(lastKind) &&
-      !movements.length
+      !movements.length &&
+      !visuals.length
     )
       throw new Error('The board changed in another host window. Reopen it before further edits.');
     if (
@@ -127,6 +140,13 @@ export function attachHostSessionUpdates({
         )
       )
     );
+    for (const entry of visuals) {
+      if (closed) return;
+      await gameManager.token3DAdapter.playApprovedVisual(
+        gameManager.placedTokens.find((token) => token.id === entry.tokenId),
+        entry
+      );
+    }
     output.textContent = 'Shared scene and character data are up to date.';
   };
   const refresh = async () => {

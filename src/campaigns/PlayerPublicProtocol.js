@@ -3,6 +3,7 @@ import { validateConnections } from './CampaignConnections.js';
 import { validateSavedPlacement, samePlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
 import { CONSTRUCTION_MATERIALS } from '../config/biome/ConstructionPalettes.js';
+import { getTokenCommand } from '../config/TokenCommandConfig.js';
 
 export const PLAYER_PUBLIC_VERSION = 1;
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -218,6 +219,7 @@ export function validatePlayerMotion(motion, maps = null) {
 export function scopePlayerReceipt(receipt, state) {
   const maps = new Set(state.maps.map(({ id }) => id));
   const placements = [
+    ...(receipt.from ? [receipt.from] : []),
     ...(receipt.motion ? [receipt.motion.from, ...receipt.motion.route] : []),
     ...(receipt.placement ? [receipt.placement] : []),
     ...(receipt.route || []),
@@ -227,6 +229,7 @@ export function scopePlayerReceipt(receipt, state) {
   delete result.motion;
   delete result.route;
   delete result.placement;
+  delete result.from;
   return result;
 }
 
@@ -272,6 +275,7 @@ export function validatePlayerCommandResult(result, options = {}) {
       'facingAngle',
       'movement',
       'animationKey',
+      'from',
     ]) ||
     !PLAYER_COMMAND_KINDS.includes(receipt.kind) ||
     !id(receipt.tokenId)
@@ -281,6 +285,21 @@ export function validatePlayerCommandResult(result, options = {}) {
   const maps = assets ? new Map(assets.maps.map((map) => [map.id, map])) : null;
   if (receipt.budget) validateBudget(receipt.budget);
   if (receipt.placement) validatePlayerPlacement(receipt.placement, maps);
+  if (receipt.from !== undefined) {
+    if (receipt.kind !== 'emote' || receipt.actionId !== 'action-cover') invalid();
+    validatePlayerVisual(
+      {
+        commandId: result.commandId,
+        tokenId: receipt.tokenId,
+        kind: 'emote',
+        actionId: receipt.actionId,
+        animationKey: receipt.animationKey,
+        from: receipt.from,
+        placement: receipt.placement,
+      },
+      maps
+    );
+  }
   if (receipt.motion) {
     validatePlayerMotion(receipt.motion, maps);
     if (
@@ -292,6 +311,49 @@ export function validatePlayerCommandResult(result, options = {}) {
       invalid('The approved route, destination, cost and motion do not agree');
   }
   return result;
+}
+
+export function validatePlayerVisual(entry, maps = null) {
+  const action = getTokenCommand(entry?.actionId);
+  if (
+    !only(entry, [
+      'commandId',
+      'tokenId',
+      'kind',
+      'sceneRevision',
+      'charactersRevision',
+      'actionId',
+      'animationKey',
+      'placement',
+      'from',
+    ]) ||
+    entry.kind !== 'emote' ||
+    typeof entry.commandId !== 'string' ||
+    !/^[a-zA-Z0-9_-]{8,100}$/.test(entry.commandId) ||
+    !id(entry.tokenId) ||
+    !action ||
+    !['emotes', 'actions'].includes(action.group) ||
+    (action.animation
+      ? action.animation.key !== entry.animationKey
+      : !action.choices?.includes(entry.animationKey)) ||
+    (entry.sceneRevision !== undefined && !revision(entry.sceneRevision)) ||
+    (entry.charactersRevision !== undefined && !revision(entry.charactersRevision))
+  )
+    invalid('The visual presentation is not a canonical actor action');
+  validatePlayerPlacement(entry.placement, maps);
+  if (entry.actionId === 'action-cover') {
+    validatePlayerPlacement(entry.from, maps);
+    if (
+      entry.from.mapId !== entry.placement.mapId ||
+      entry.from.gridX !== entry.placement.gridX ||
+      entry.from.gridY !== entry.placement.gridY ||
+      entry.from.pose.kind !== 'ground' ||
+      entry.placement.pose.kind !== 'ground' ||
+      entry.from.pose.world.y !== entry.placement.pose.world.y
+    )
+      invalid('An approved Cover must preserve its supported cell and elevation');
+  } else if (entry.from !== undefined) invalid();
+  return entry;
 }
 
 export function validatePlayerState(state, { cachedAssets = null } = {}) {
@@ -423,6 +485,19 @@ export function validatePlayerState(state, { cachedAssets = null } = {}) {
   if (state.observerTokenId !== null && !actors.get(state.observerTokenId)?.owned)
     invalid('The public observer must be an owned real actor');
   for (const update of snapshot.updates) {
+    if (update?.kind === 'emote') {
+      validatePlayerVisual(update, maps);
+      if (
+        !actors.has(update.tokenId) ||
+        !revision(update.sceneRevision) ||
+        update.sceneRevision > state.sceneRevision ||
+        !revision(update.charactersRevision) ||
+        update.charactersRevision > state.revision ||
+        !samePlacement(update.placement, actors.get(update.tokenId))
+      )
+        invalid('The visual action does not match the currently visible actor');
+      continue;
+    }
     if (
       !only(update, [
         'commandId',

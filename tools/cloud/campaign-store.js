@@ -4770,9 +4770,20 @@ class CloudCampaignStore {
     const {
       validatePlayerMotion,
       validateBudget,
+      validatePlayerVisual,
     } = require('../../src/campaigns/PlayerPublicProtocol.js');
     const { PLAYER_COMMAND_KINDS } = require('../../src/campaigns/PlayerCommandProtocol.js');
     for (const entry of value.entries) {
+      if (entry?.kind === 'emote') {
+        try {
+          validatePlayerVisual(entry);
+        } catch (error) {
+          if (['invalid-player-state', 'invalid-saved-placement'].includes(error.code))
+            throw invalid();
+          throw error;
+        }
+        continue;
+      }
       if (
         !entry ||
         typeof entry !== 'object' ||
@@ -4824,6 +4835,7 @@ class CloudCampaignStore {
       })),
       state: saved,
       sinceSceneRevision: previous.state.sceneRevision,
+      previousView: previous.state,
     });
     await this._verifyParticipantRead(principal, id, command.sessionId, scope, {
       generation: next.generation,
@@ -6140,16 +6152,32 @@ class CloudCampaignStore {
           charactersRevision: next.revision,
         },
       };
-      const entry = receipt.motion
-        ? {
-            commandId: command.commandId,
-            tokenId: receipt.tokenId,
-            kind: receipt.kind,
-            motion: receipt.motion,
-            ...(receipt.costFeet === undefined ? {} : { costFeet: receipt.costFeet }),
-            ...(receipt.budget === undefined ? {} : { budget: receipt.budget }),
-          }
-        : null;
+      let entry = null;
+      if (receipt.motion)
+        entry = {
+          commandId: command.commandId,
+          tokenId: receipt.tokenId,
+          kind: receipt.kind,
+          motion: receipt.motion,
+          ...(receipt.costFeet === undefined ? {} : { costFeet: receipt.costFeet }),
+          ...(receipt.budget === undefined ? {} : { budget: receipt.budget }),
+        };
+      else if (receipt.kind === 'emote') {
+        const scene = JSON.parse(next.scene);
+        const { sceneActorPlacement } = require('../../src/scene/token-adapter/SavedPlacements.js');
+        entry = {
+          commandId: command.commandId,
+          tokenId: receipt.tokenId,
+          kind: 'emote',
+          actionId: receipt.actionId,
+          animationKey: receipt.animationKey,
+          ...(receipt.from ? { from: receipt.from } : {}),
+          placement: sceneActorPlacement(
+            scene,
+            scene.creatures.find((actor) => actor.id === receipt.tokenId)
+          ),
+        };
+      }
       const presented =
         entry === null
           ? null
@@ -6422,7 +6450,8 @@ class CloudCampaignStore {
     }
     const meaningful =
       (writesCharacters && stableStringify(state.records) !== stableStringify(next.records)) ||
-      (changesScene && sceneActivityState(state.scene) !== sceneActivityState(next.scene));
+      (changesScene && sceneActivityState(state.scene) !== sceneActivityState(next.scene)) ||
+      presentations.some((entry) => entry.kind === 'emote');
     const published = await this._publishCanonical(principal, id, intent, captured, {
       state,
       next,

@@ -9,12 +9,106 @@ import {
   facingAngleFromDirection,
 } from '../../../src/entities/creatures/TokenMovement.js';
 import CombatSession from '../../../src/entities/characters/CombatSession.js';
+import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
+import { createTwoFloorTravelScene } from '../../../src/campaigns/examples/ConnectedTravelExample.js';
+import { sceneActorPlacement } from '../../../src/scene/token-adapter/SavedPlacements.js';
+import {
+  executePlayerCommand,
+  playerCommandReceipt,
+} from '../../../src/campaigns/ServerGameplay.js';
 
 let restoreFiles;
 beforeAll(() => {
   restoreFiles = installHumanoidAssetFiles();
 });
 afterAll(() => restoreFiles());
+
+test('approved visible cosmetics animate a projected floor creature without granting off-map manual control', async () => {
+  const f = await createHumanoidFixture({ height: 0 });
+  try {
+    const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
+    const characters = ['Outside', 'Inside', 'Upstairs'].map((name) =>
+      library.get(library.create(name))
+    );
+    const scene = createTwoFloorTravelScene({ ruleset: '2014', characters });
+    f.gm.campaignWorld = CampaignWorld.fromScene(scene, { ruleset: '2014', library });
+    f.gm.campaignMapId = 'map-main';
+    const actor = scene.creatures[1];
+    f.token.id = actor.id;
+    f.token.mapId = actor.mapId;
+    const placement = sceneActorPlacement(scene, actor);
+    await f.adapter.restoreStablePlacement(f.token, placement);
+    await expect(f.adapter.playTokenAction(f.token, 'action-wave')).rejects.toThrow(/own map/i);
+    await f.adapter.playApprovedVisual(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000701',
+      tokenId: actor.id,
+      kind: 'emote',
+      actionId: 'action-wave',
+      animationKey: 'actionWave',
+      placement,
+    });
+    expect(f.data.current).toBe('actionWave');
+    expect(f.token.world).toEqual(placement.pose.world);
+    expect(f.gm.campaignMapId).toBe('map-main');
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+}, 30000);
+
+test('approved Cover on a differently scaled projected floor matches canonical source-map units', async () => {
+  const f = await createHumanoidFixture({ height: 0 });
+  try {
+    const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
+    const characters = ['Outside', 'Inside', 'Upstairs'].map((name) =>
+      library.get(library.create(name))
+    );
+    const scene = createTwoFloorTravelScene({ ruleset: '2014', characters });
+    const floor = scene.maps.find((map) => map.id === 'ground-floor');
+    floor.grid.tileWorldSize = 2;
+    floor.terrain.worldElevationUnit = 0.6;
+    floor.terrain.heights = floor.terrain.heights.map((row) => row.map((_, x) => (x >= 6 ? 4 : 0)));
+    const actor = scene.creatures[1];
+    Object.assign(actor, {
+      gridX: 5,
+      gridY: 4,
+      pose: { kind: 'ground', world: { x: 11, y: 0, z: 9 } },
+    });
+    f.gm.campaignWorld = CampaignWorld.fromScene(scene, { ruleset: '2014', library });
+    f.gm.campaignMapId = 'map-main';
+    f.token.id = actor.id;
+    f.token.mapId = actor.mapId;
+    const accepted = await executePlayerCommand(
+      scene,
+      library,
+      {
+        kind: 'emote',
+        tokenId: actor.id,
+        payload: { actionId: 'action-cover' },
+      },
+      { ownedIds: [actor.characterId] }
+    );
+    const receipt = playerCommandReceipt(accepted, scene, library);
+    await f.adapter.restoreStablePlacement(f.token, receipt.placement);
+    await f.adapter.playApprovedVisual(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000702',
+      tokenId: actor.id,
+      kind: 'emote',
+      actionId: 'action-cover',
+      animationKey: receipt.animationKey,
+      from: receipt.from,
+      placement: receipt.placement,
+    });
+    for (let frame = 0; frame < 3000 && f.adapter.isMovementInProgress(f.token); frame++)
+      stepHumanoid(f, 1 / 120);
+    expect(f.adapter.isMovementInProgress(f.token)).toBe(false);
+    for (const axis of ['x', 'y', 'z'])
+      expect(f.token.world[axis]).toBeCloseTo(receipt.placement.pose.world[axis], 6);
+    expect(f.token.facingAngle).toBeCloseTo(receipt.placement.facingAngle, 6);
+    expect(f.gm.campaignMapId).toBe('map-main');
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+}, 30000);
 
 test('a server-approved ground segment animates the actual sprite without reserving or spending local combat movement', async () => {
   const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
