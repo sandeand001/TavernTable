@@ -353,7 +353,9 @@
   proof or revive it after expiry. Its actual deadline, without subtracting UID
   headroom, bounds the physical stream; legacy internal presence retains its
   original expiry-aware schedule. ACKs never poll scene state or renew meaningful
-  activity. This client-proof pilot update still requires hosted acceptance.
+  activity. Hosted client-proof and hard-loss acceptance is verified. Mandatory
+  channel/ACK support is a paired client/backend contract; retaining old static
+  asset URLs is not permission to treat an old live client as current authority.
   A bounded explicit close uses its captured UID/campaign/seat/generation/epoch.
   The physical owner stays registered until in-flight cleanup finishes, so an
   explicit close joins existing socket cleanup rather than racing another
@@ -642,9 +644,12 @@
   nor animation completion substitutes for the durable-receipt latency target.
   Additional resources, privilege or production cutover
   still require their own approval.
-- **Hosted command performance (M4-12 short gate verified; lifecycle pending)**:
-  ten managed UIDs and thirty ordinary moves pass a 1,674.45 ms durable-receipt
-  p95 at measured approximately 200 ms RTT. Already-charged immutable objects
+- **Hosted command performance (M4-12 technical acceptance verified)**:
+  the exact R8 pilot's ten managed UIDs and 105 ordinary moves, including
+  due-backup work, pass a 1,789.49 ms validated durable-receipt p95 at actual
+  approximately 200 ms RTT. All 245 retained R8 observations have 1,815.48 ms
+  p95; slow samples are not dropped, and the too-fast-network control stays
+  explicitly rejected. Already-charged immutable objects
   renew their publication fence through a fresh authorized transaction, not
   repeated full quota initialization. The complete candidate set is still
   reserved before any upload; a missing reservation must regain quota before
@@ -652,9 +657,26 @@
   publication checks are unchanged. Expected participant access is only a
   batched-read hint: stored ownership, membership, seat and access generation
   still determine authority. A stale hint cannot select another seat or bypass
-  a fresh access check. This does not complete lifecycle/cache/cold-wake acceptance
-  or enable the remaining shared-game capabilities.
-- **Hosted backup history (approved design, not implemented)**: retain 20 rolling
+  a fresh access check. ACK-inclusive healthy idle is below 600 B/min/person;
+  warm unchanged asset bodies are zero. Actual 55/60/15-minute boundaries,
+  owner Keep Active, ten managed rotations, over-hour continuity and fresh
+  current-revision active=0/idle=0 observations pass. Static HTML/managed Auth
+  do not wake the game; authorized cold-sheet read takes 5.22 seconds, saves
+  correctly without a game/stream and re-sleeps. Hosted memory sample means
+  remain below 1 GiB, not a claimed instantaneous peak. The new full stable
+  regression passes 307 suites / 4,017 tests; separate real-data/production
+  approvals still gate release;
+  neither shared-game capability nor deferred save-notice UX is enabled.
+- **Hosted cost/readiness (measured R8 report)**: one group at thirty shared
+  hours/month, 36,000 accepted moves and declared active-tail/maintenance/
+  storage/log reserves projects USD 12.43 paired / 15.57 gross-minute upper,
+  assuming shared free grants already consumed. The recommended upper leaves
+  USD 9.43 against the existing USD 25 alerts budget, not a cap or invoice.
+  ACKs and all cost categories are included without duplicate background/
+  backup/network charges. Actual provider request identities/method/path/status/
+  completion windows match one-to-one; raw Monitoring request-minute buckets
+  are reported separately, not mistaken for exact request-event timestamps.
+- **Hosted backup history (implemented; real-source cutover gated)**: retain 20 rolling
   complete backups, targeting five-minute intervals when changed; no additional
   daily restore-point tier. Full campaign backups are owner-only, support manual
   JSON download and restore as a separate private campaign. Primary save success

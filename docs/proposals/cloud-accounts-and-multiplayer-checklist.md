@@ -69,14 +69,23 @@ are verified. Ten concurrent managed clients now pass convergence/privacy/
 receipt/replay acceptance (`M3-10`), with **307 suites / 4,006 tests** passing
 the full stable gate. Safe lifecycle drain and captured final-source backups
 (`M4-04`) and actual forced-container restart/overlap (`M4-05`) are verified.
-Complete cloud gameplay activation and hosted performance/cost acceptance remain gated.
+Complete cloud gameplay activation and selected real-data/production cutover remain gated.
 Versioned, allowlisted frontend packaging (`M4-07`) is verified locally, including
 actual Hosting HTTP and native-browser gates. The owner authorizes continuing
 local packaging with the tropical pack's formal license record still missing;
 that gap is recorded, not declared resolved. The separately approved bounded
 existing-project hosted pilot (`M4-08`) is now published and accepted (`M4-09`).
-Hosted privacy, performance, cost and real-data cutover remain separate gates.
-**52 of 65** tasks are complete,
+Hosted privacy/observability and the ACK-inclusive lifecycle, performance and
+cost/readiness report (`M4-10` through `M4-13`) now pass their verified pilot
+gates. Ten managed clients pass 105 ordinary receipts at **1,789.49 ms p95**,
+healthy idle stays below **600 B/min/person**, warm unchanged asset bodies are
+zero, and actual 55/60/15-minute, token-rotation, zero-instance and cold-sheet
+read/save/re-sleep checks pass. The measured cold read is **5.22 seconds**;
+the conservative thirty-shared-hour forecast is **USD 15.57/month**, not a
+spending cap. The new full stable gate passes **307 suites / 4,017 tests**.
+No real campaigns are migrated or gameplay capabilities enabled; M5 requires
+the owner's exact source/rehearsal, production and selected-data approvals.
+**54 of 65** tasks are complete,
 including the four setup tasks and excluding the deferred routine-save UX task.
 
 ## Approved requirements: do not reopen by accident
@@ -1303,7 +1312,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     the earlier proposed 5/10/15/25 milestones. Verify notification configuration.
     Alerts are not a hard cap, and no automatic billing shutdown is introduced.
 
-- [ ] **M4-12 - Pass hosted scale-to-zero, lifecycle, cache, and performance tests.**
+- [x] **M4-12 - Pass hosted scale-to-zero, lifecycle, cache, and performance tests.**
   - **Depends:** `M4-09`, `M4-05`, `M3-10`, `M4-11`.
   - **Success:** the website/Auth work with no game instance; short authorized
     sheet work wakes the backend without starting a game/stream; inactive games
@@ -1314,20 +1323,35 @@ Revalidation in the intended environment remains part of M1 and M4.
     per participant** of app heartbeat/presence payload, excluding TLS/token renewal.
     No full-scene polling or per-heartbeat database writes; warm rejoin downloads
     zero valid unchanged asset bodies. Exercise 55/60/15-minute boundaries.
-  - **Progress:** November 15, 2026: the exact no-debug test image passes the
-    short movement gate with ten managed UIDs, ten simultaneous SSEs and thirty
-    accepted commands: validated receipt **p95 1,674.45 ms**, maximum
-    **1,681.49 ms**, with measured pre/post RTT **203.82/202.49 ms**.
-    SDK operation readiness remains a separate **2,462.39 ms p95** observation.
-    Fresh authorization, quota, cleanup and native-state convergence are retained.
-    This is not completion: the first idle probe exposed a coalesced presence
-    lease expiring before its fixed renewal timer. Expiry-aware scheduling fixes
-    the original two-UID reproduction: both stay ready for **200.14 seconds**
-    with zero new application requests. All ten then stay ready for three
-    minutes at **21 app-body bytes each (about 7 B/min)**, with no polling.
-    Warm rejoin, real deadlines, sleep and cold wake remain open.
+  - **Completed:** November 15, 2026, on exact revision `00015-rgg` and matching
+    verified retained-release frontend. The owner-approved client-proof protocol
+    fixes the reproduced proxy-held request: explicit close takes **250.31 ms**;
+    deliberately blocked ACK/close/reconnect with a genuinely held upstream
+    expires in **90,310.82 ms**, preserving the other campaign's ready stream.
+    All **105** ordinary receipts, including due-backup moves, have
+    **1,789.49 ms p95 / 2,650.85 ms maximum** at verified representative RTT;
+    public SDK operation readiness is separately **2,660.84 ms p95**.
+    All **245** retained R8 observations have **1,815.48 ms p95**; earlier
+    slow/rejected attempts are documented, not silently dropped.
+    Ten healthy idle clients measure **524.96-599.95 B/min/person**, including
+    outgoing/incoming ACK JSON and SSE, without scene polling. Warm rejoin
+    takes **1,594.08 ms** with zero unchanged image/graphic bodies and fresh
+    authenticated authority. Exact provider/client request identities match.
+    Actual Keep Active, 55/60-minute warning/pause, all ten managed rotations,
+    **3,882,799 ms** continuous play, and exact 15-minute disconnect grace pass.
+    Fifty-nine hosted memory sample means stay below 1 GiB, maximum
+    **257,257,472 bytes**, not an instantaneous peak claim.
+    Fresh current-revision **active=0/idle=0** points precede and follow static
+    website/Auth-only work, with no game request. Authorized cold-sheet read
+    takes **5,221.46 ms**; an actual save/fresh reread succeeds without starting
+    a game/stream, then another fresh **0/0** point verifies re-sleep.
+    The full stable gate passes **307 suites / 4,017 tests**, **1,762.935 s**,
+    with open-handle detection. Final exact cleanup at **10:35:39.575Z** removes
+    **10 UIDs / 2 campaigns / 220 live generations**; originals, real account,
+    settings/IAM, gameplay gates and deferred save feedback remain untouched.
+    See [accepted R8 evidence](./cloud-migration-preparation.md#r8-ack-inclusive-measured-report-accepted-technical-pilot).
 
-- [ ] **M4-13 - Produce and review the measured hosted-pilot cost/readiness report.**
+- [x] **M4-13 - Produce and review the measured hosted-pilot cost/readiness report.**
   - **Depends:** `M4-10`, `M4-12`, `M2-11`.
   - **Success:** extrapolate measured representative work to **30 shared gameplay
     hours/month**, adding wake-ups, idle tail and all storage/operation/transfer/
@@ -1337,6 +1361,20 @@ Revalidation in the intended environment remains part of M1 and M4.
     budget. If targets or forecast fail, fix/retest or obtain a revised owner
     decision; do not claim the initial $0-10 estimate as a measured guarantee.
     No convenience always-on database, connector or load balancer is added.
+  - **Completed:** November 15, 2026. The
+    [measured R8 report](./cloud-migration-preparation.md#r8-ack-inclusive-measured-report-accepted-technical-pilot)
+    uses **59** exact provider/client request identities, ACK-inclusive
+    control/five-move windows, actual document/GCS/all-kind network counters,
+    current regional USD prices and explicit storage/maintenance/log allowances.
+    Raw Monitoring HTTP buckets are retained separately, not misused as exact
+    request-event timestamps. All shared free grants are conservatively assumed
+    consumed. Thirty shared gameplay hours plus **2.25 active-tail hours**,
+    **36,000 moves**, backups/soft retention and all cost categories project
+    **USD 12.4285 paired / USD 15.5656 gross-minute upper**, leaving
+    **USD 9.4344** against the approved USD 25 alerts budget. The upper scenario
+    is recommended; the confounded raw paired write difference is not treated
+    as zero write cost. These are declared-workload estimates, not an invoice,
+    hard cap, initial $0-10 guarantee, real-source approval or production cutover.
 
 ### M5 - Selected migration, rehearsal, and production cutover
 

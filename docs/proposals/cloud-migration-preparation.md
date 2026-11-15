@@ -3952,10 +3952,124 @@ Earlier native proof/legacy/SDK selection passes **5/5**,
 **3/3**, **40,052.1702 ms**. Changed-source formatting, lint and layering pass.
 These are targeted results, not a new full-stable-suite claim.
 
-**Publication and new-runtime hosted acceptance remain pending.** R7 is still
-the live backend and the earlier M4-09 artifact is still the live frontend.
-Before accepting M4-12, repeat the original hosted disconnect reproduction and
-hard-loss/proof-expiry control, latency, warm authority and lifecycle gates.
+**Publication is complete; final hosted acceptance remains pending.** Committed
+source `5a9ceb10d18ff67818990025d3a1aece12f33466` passes normal hooks with an
+unchanged validated tree. The new exact OCI index is
+`sha256:de4bab754dfcf6083b55f6f10c918027d96eae136ec90e6ea71e0d4bfe4ee0c3`,
+runnable manifest
+`sha256:a3bbf2742cc93d4813500bf93a15845396ce9e3e04dcb660bd9fad4c70519989`.
+The original isolated non-root/read-only/no-network production check passes:
+23 runtime hashes, one CPU/1 GiB, sixteen packs, a real 16-MP image,
+501 physical-d20 frames, private/authenticated boundaries and exit zero.
+Its **260,706,304-byte RSS** is local validation, not a hosted peak.
+The approved image-only update produces `taverntable-api-test-00015-rgg`,
+with existing region/settings/origin/IAM and 100% latest traffic preserved;
+actual readiness returns 200.
+
+The approved existing default Hosting website now uses
+`build/cloud-frontend/m412-client-liveness-20261115-v2`, release
+`4217765d8a3ae47bc9b73da679e71a40ead90616e008df963040439ec9a13c42`.
+It also retains the prior compatible immutable release, so old public asset
+URLs and the old entry shell remain available. There are **1,215 files /
+578,826,850 bytes**, including the **381,812-byte** stable manifest and both
+release trees; a new browser does not download the old release as well.
+Hosting version `ef7ac3c61b967953`, release `1794727250263000`, is published at
+**07:20:50.263Z**. The previous version `7dc92269d2c03cf5` remains a rollback.
+Actual public manifest and seven critical client/HTML/notice bodies hash
+exactly; redirects, manifest and entry HTML are no-store, other versioned
+assets are immutable for a year, and four private paths return 404.
+Compiler `deploymentApproved:false`, truthful unrecorded tropical-license
+provenance and both gameplay capability gates remain unchanged.
+
+The original plain-Fetch prior-B-epoch/managed-refresh/new-B-close reproduction
+now passes on R8. Explicit close takes **250.3135 ms**. B's real summary stays
+at zero and its UID lease is absent at 0/5/10/30/95 seconds, with a stable
+disconnect timestamp and exact 15-minute grace; A remains ready.
+The hard-loss control keeps one real upstream SSE request open even after the
+local reader cancels, while blocking only B's ACK/close/reconnect traffic.
+Without fake metadata deletion, that held request terminates with
+`client-presence-expired` after **90,310.8218 ms**. One ACK, one close and five
+reconnect attempts are blocked; the server releases B's presence/quota and
+leaves A as the sole UID lease and ready stream. Meaningful activity is
+unchanged. The redacted close warning is the deliberately blocked-network
+case, not an unexplained server error. Exact cleanup at **07:26:23.413Z**
+removes **1 UID / 2 campaigns / 4 live generations**, preserving the real
+account and bucket retention.
+
+The first ACK-inclusive ten-UID probe verifies **180,006.7328 ms** of healthy
+idle continuity. Every measured A participant transfers **1,575 bytes**:
+**21 SSE + 742 outgoing ACK + 812 incoming ACK bytes**, or **524.9804 B/min**,
+with seven real ACKs each. The owner's seven additional clock-campaign ACKs
+are explicitly excluded from A's per-participant result. There is no scene
+polling. Warm rejoin takes **1,528.8485 ms**, downloads zero unchanged image
+and graphic bodies, and obtains one fresh validated SSE checkpoint without
+a redundant snapshot GET.
+
+That probe is **not accepted overall**. Its thirty-command subset has
+**1,745.6254 ms p95 / 2,218.4365 ms maximum**, but all **35** ordinary
+receipts, including the five cost-window moves, have **2,218.4365 ms p95 /
+2,894.9881 ms maximum**. Both slow receipts remain in evidence. The first
+cost-window move performs due complete-backup work; it is not relabeled as an
+excluded bulk upload. Separately, the strict provider-minute gate sees **27**
+requests versus **26** client/logged ACKs in the control minute and stops.
+The work minute has **33** actual requests, 28 ACKs plus five moves.
+The earlier warm SSE really ends at **07:32:50.182Z**, not as a ghost during
+the 07:34 control minute. The provider discrepancy is not silently rounded
+away or called successful attribution. Exact cleanup at **07:41:09.752Z**
+removes **10 UIDs / 2 campaigns / 90 live generations**.
+
+Before any retest, the fixed stronger sample is declared as **100 ordinary
+cohort moves plus five cost-window moves**, with the same **p95 <= 2,000 ms**
+bound. All prior R8 slow samples remain, and the cumulative R8 distribution
+must also pass. The sample size is not adaptively increased again on failure.
+This tests the five-percent tail over more continuous play without speculative
+production backup-scheduling changes. To isolate minute counters from ACKs
+right at their collection edges, only the cost-window ACK dispatches receive
+a three-second guard on either side of each minute boundary: at most six
+seconds of added ACK wait, bounded by the existing ten-second request deadline.
+Ordinary commands and their representative 200-ms network timing are not
+delayed or adjusted; no guard wait is subtracted from any receipt. The idle
+and warm measurements above use the unmodified normal ACK cadence.
+The strict per-minute provider/client count assertions remain unchanged,
+and future raw counter observations are persisted before checking them.
+
+The first fixed hundred-move retest has **1,871.2143 ms p95**, but is rejected:
+its final actual RTT median is **187.019 ms**, below the unchanged 190-ms
+floor. Stable physical RTT and local controls identify variable Windows timer
+overshoot, not improved network latency. An 80-ms timeout takes about 94 ms;
+`Atomics.waitAsync` has the same problem. The test-only link now uses one
+isolated worker deadline queue, waiting out only its final timer quantum
+without blocking client IO or changing global OS timer/clock settings.
+A deterministic coarse-main-loop regression is red at **196.2582 ms** of
+injection for a 160-ms budget, then green with precise header/body timing.
+All **11** streaming, cancellation, concurrent-deadline and slow-server cases
+pass. Twenty-one actual ready-endpoint probes measure **200.9888 ms median /
+194.73-204.60 ms range**, with no managed fixtures. Server processing is never
+subtracted; no application or deployed-image code changes for this correction.
+
+The precise hundred-move cohort passes its initial/final RTT and receipt
+checks, but its provider probe again fails the old metric comparison:
+raw Monitoring HTTP buckets are **28 / 31**, while client and actual Cloud Run
+request logs independently show **30 / 30**. Deferred ACK batches really arrive
+at **03.49 seconds** after the boundaries; this is not a hidden extra request or
+a failed guard. Equal calendar-event counts cannot be required of that different
+minute-counter representation. The raw metric values and failed probe remain.
+Cleanup at **08:26:16.596Z** removes **10 UIDs / 2 campaigns / 217 live generations**.
+
+The corrected verification binds every synthetic HTTP request to a unique
+noncredential User-Agent marker and its actual provider request log. It requires
+exact identity, method, path, status and completion-minute agreement, rejecting
+missing, duplicate, foreign or mismatched operations rather than merely comparing
+aggregate counts. Raw Monitoring HTTP buckets remain separately reported.
+The three public-contract tests include all those negative cases. A minimized
+two-UID/one-campaign real probe remains ready for **200,117.6676 ms** and
+verifies all **six** requests in one complete minute one-to-one; cleanup at
+**08:38:55.331Z** removes both UIDs, the campaign and two live generations.
+These are operational measurement corrections only, not a relaxed p95 target,
+source/IAM change or completed long-lifecycle gate.
+
+Before accepting M4-12, complete the stronger new-runtime latency/provider
+gate and real lifecycle/zero-instance/cold-sheet gates.
 Idle payload must include outgoing ACK JSON, incoming ACK JSON and SSE bodies,
 remaining below **2 KiB/minute/participant**, with no scene polling.
 Provider control/work windows must count ACK HTTP separately from gameplay and
@@ -4154,3 +4268,173 @@ not replace that acceptance. This worksheet does not check M4-13,
 select real migration data, enable full gameplay, authorize cutover or alter the
 budget. The original source selection/rehearsal and production approvals remain
 separate M5 gates.
+
+### R8 ACK-inclusive measured report: accepted technical pilot
+
+The exact deployed R8 backend and retained-release frontend identified above
+now pass the strengthened latency, idle, warm and provider-request measurement
+gates, complete real-clock lifecycle/zero-instance/cold-sheet checks and the
+new full stable regression below. This completes technical **M4-12/M4-13**,
+not real-data, full-game activation or production approval. Both gameplay
+capability gates and UX-01 remain unchanged.
+
+#### Current and retained command observations
+
+The fixed current cohort contains **100 ordinary commands plus all five
+cost-window moves**, including due-backup work. Its validated durable-receipt
+**p95 is 1,789.4867 ms**, maximum **2,650.8548 ms**, with **2/105** above two
+seconds. Initial/post-cohort actual RTT medians are **200.5638/201.8114 ms**;
+the post-cost guard has **200.89 ms** median, with every guard sample within
+the unchanged 180-235-ms range. No server work or ACK guard wait is subtracted.
+Public SDK operation-ready p95 is separately **2,660.8373 ms**.
+
+Earlier slow data is retained. The preregistered original-35/current-105 pool
+has **140 commands**, **1,789.4867 ms p95**, maximum **2,894.9881 ms** and four
+above two seconds. Including the earlier precise, counter-rejected cohort
+gives **245 observations**, **1,815.4767 ms p95**, maximum **3,397.0299 ms**
+and nine above two seconds. The distinct too-fast-RTT hundred-command run
+remains rejected network evidence, not silently pooled as representative
+200-ms performance. Cold ten-client admission is separately **13,487.3986 ms**,
+not ordinary receipt latency or the later cold assigned-sheet measurement.
+
+All ten remain ready for **180,015.3929 ms** without scene polling. Seven
+participants transfer **1,575 app-body bytes / 524.9551 B/min**; three transfer
+**1,800 bytes / 599.9487 B/min**, reflecting seven/eight actual ACK periods.
+Those totals include **21/24 SSE + 742/848 outgoing ACK + 812/928 incoming ACK
+bytes**. The second clock campaign's traffic is labeled/excluded from A's
+per-participant result; HTTP headers, TLS and Auth SDK renewal are excluded as
+specified. Warm rejoin takes **1,594.0787 ms**, with zero unchanged image or
+graphic bodies and one fresh validated SSE/current UID/scope/epoch/checkpoint.
+
+#### Actual matched provider windows
+
+Every one of **59** actual requests is matched one-to-one to its client marker,
+method, path, status and completion minute. The matched-identity SHA-256 is
+`25bb9020c78da8323cdd14dd932a96f1f371b8473e667654c0b63ee1a51fc998`.
+
+| November 15 UTC minute | Actual provider/client requests | ACKs / accepted moves | Firestore reads | Writes | All-kind Run sent bytes |
+| --- | ---: | --- | ---: | ---: | ---: |
+| 08:50-08:51 control | 31 | 31 / 0 | 1,470 | 72 | 920,819 |
+| 08:51-08:52 work | 28 | 23 / 5 | 1,932 | 72 | 3,389,841 |
+
+Raw Monitoring HTTP minute counters are separately **28 / 29**, not substituted
+for those verified request identities. All five accepted moves fit inside the
+work minute. The control/ingestion periods permit only scoped presence ACKs,
+not polling or reconnects; the clock campaign is included in provider totals.
+The cost-window-only ACK dispatch guard described above is disclosed, not
+applied to ordinary commands or healthy-idle measurements.
+
+Raw paired read difference is **92.4 reads/move**; the gross work minute is
+**386.4 reads / 14.4 writes per move**, including background. Equal 72-write
+minute totals do **not** mean free/zero-write moves: different ACK/coalescing
+phases confound a short paired write difference. The conservative gross
+scenario, not that zero difference, is the planning recommendation.
+
+GCS work is **7 WriteObject OK, 38 ReadObject OK, 49 metadata OK and 7 metadata
+NOT_FOUND**, conservatively **7 Class A / 94 Class B** operations. Due backup
+work is already included, not charged again. The idle GCS query has no series,
+not a measured zero; GCS operations use the gross work rate.
+
+#### Complete monthly planning projection
+
+The public regional USD tariffs and shared-free-grant treatment above remain
+unchanged. Both scenarios assume those free allowances are already consumed:
+one group, **30 shared hours**, one allocated CPU/1 GiB, **2.25 additional
+active hours**, **36,000 accepted moves**, an additional **200 document reads /
+one write per move** for unrepresented mature-history/cleanup/retry work.
+Background is included once: paired baseline plus nonnegative difference,
+or **MAX(gross work scaled by moves, background floor)**, never their sum.
+ACK HTTP reserves use the larger observed **31 ACKs/minute** over the complete
+active-time allowance, plus commands and 1,000 admission/account/sheet requests.
+
+| Gross planning cost category | USD/month |
+| --- | ---: |
+| Allocated CPU and memory | 3.0767 |
+| Firestore reads/writes/deletes, including maintenance reserve | 6.8521 |
+| Firestore combined data/index reserve, 5 GiB | 0.7500 |
+| Owner retained GCS payload, 20 GiB, and measured operations | 0.9227 |
+| All-kind API sent bytes priced as Internet upper bound | 2.3867 |
+| HTTP commands, ACKs and other admission allowance | 0.0388 |
+| Hosting cold transfer plus retained-version storage reserve | 0.5386 |
+| Registry retained storage reserve, 5 GiB | 0.5000 |
+| Default 30-day log-ingestion reserve, 1 GiB | 0.5000 |
+| Cloud Build jobs / additional log retention | 0.0000 |
+| **Gross-minute upper planning total** | **15.5656** |
+| **Paired-plus-reserves reference total** | **12.4285** |
+
+The upper scenario leaves **USD 9.4344** against the approved **USD 25/month**
+alerts budget. This is a declared-workload estimate, not an invoice, spending
+cap, initial $0-10 guarantee or permission for arbitrary bulk traffic.
+An additional 100 GiB of paid API Internet transfer adds about **$10.50**;
+three extra full static-download waves add about **$1.23**. Substantially
+larger/churning private assets, additional groups/hours or abuse require
+remeasurement and can exceed the alerts.
+
+Twenty complete backups and seven-day soft deletion are included in the
+20-GiB owner retained-payload allowance, not duplicated as separate storage.
+The 5-GiB Firestore/registry reserves retain their disclosed telemetry/accounting
+uncertainties. A new explicit **5-GiB Hosting retained-version reserve / $0.13**
+corrects that storage category's omission from the older draft. Read-only
+Hosting inventory reports three finalized versions and **863,356,467 aggregate
+version bytes**; it is not asserted to be a deduplicated billing footprint,
+and no rollback version is deleted. A new browser's full current-release
+transfer allowance is **289,607,156 bytes**, including the stable manifest,
+not the entire two-release retained package. Ten such waves receive one
+percent overhead; daily free Hosting transfer is not pooled across unused days.
+
+Local Docker/frontend builds use no Cloud Build jobs or tariff; configured
+default logging is thirty days, with no paid extra retention added. No SMS or
+Identity Platform upgrade, always-on database/connector, external load balancer,
+new IAM/billing setting or real campaign migration is introduced. The completed
+M4-12 lifecycle/cold-wake evidence is recorded below; the separate M5 owner
+approvals still gate real-data and production readiness.
+
+#### Completed R8 real-clock lifecycle and cold-work evidence
+
+The same exact R8 run subsequently completes all hosted technical checks and
+exits zero, persisting `accepted:true` at **10:35:04.570Z**:
+
+- Owner Keep Active advances meaningful activity at **09:35:25.396Z**.
+  The independent campaign's actual 55-minute warning is observed at
+  **09:40:25.914Z**, followed by natural inactivity pause at its exact stored
+  deadline **09:45:24.636Z**. ACKs, token renewal and reconnection do not reset it.
+- All **ten** managed identities and actual streams rotate. A remains live for
+  **3,882,799 ms**, beyond one hour, without a total-session-duration cap.
+  The **59** current-revision memory samples, **08:46-09:44 UTC**, have maximum
+  distribution mean **257,257,472 bytes**, below the allocated **1 GiB**;
+  this is not an instantaneous peak-memory claim.
+- B's restarted epoch explicitly disconnects, drains actual presence/quota and
+  stays live until its original **15-minute** grace deadline, then pauses
+  exactly at **10:00:29.316Z**, while A remains live. Ending A then drains all
+  actual remaining streams, presence and UID leases.
+- Current 100%-traffic revision telemetry explicitly reports **active=0 /
+  idle=0** at **10:16:00Z**, read **10:16:37.793Z**. Fetching the actual
+  **23,071-byte** website entry and forcing managed Auth renewal issues no
+  game-API request. Another fresh explicit **0/0** point at **10:17:00Z**,
+  read **10:17:38.480Z**, verifies both work without a game instance.
+  Absent telemetry is never interpreted as zero.
+- The first authorized assigned-sheet read from that genuine cold state takes
+  **5,221.4614 ms**, including the representative network link. The actual
+  permitted notes edit succeeds and a fresh read confirms the exact value.
+  The session remains paused and all stream/live-connection counts remain
+  zero; no game or permanent connection is started.
+- That short sheet work re-sleeps: explicit **0/0** at **10:34:00Z**, read
+  **10:34:49.775Z**, is fresh by **49,775 ms** with no intervening application
+  traffic. This is measured cold-read/save/re-sleep behavior, not inferred from
+  a static readiness endpoint or a configured minimum.
+
+Exact cleanup at **10:35:39.575Z** removes **10 disposable UIDs / 2 synthetic
+campaigns / 220 live object generations**; the persisted UID/campaign/invitation
+fixture lists are empty. The real account and original local stores remain
+untouched, and bucket retention is unchanged. Read-only final inspection
+confirms the exact image/revision, min0/max1, one CPU/1 GiB, request-based CPU,
+concurrency 40, 3,600-second timeout, existing origin and IAM; no permission
+repair or configuration mutation is performed.
+
+The checklist's full-stable milestone regression now passes on the
+client-proof implementation: **307/307 suites, 4,017/4,017 tests**,
+**1,762.935 seconds**, no snapshots or open-handle warnings, through the
+existing `test:stable` runner. The older 4,006-test result is not reused as a
+new full-regression claim. Real-source selection/rehearsal, production
+deployment and final data cutover still require their explicit M5 approvals;
+both gameplay capability gates and deferred routine-save UX remain unchanged.
