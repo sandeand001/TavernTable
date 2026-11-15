@@ -127,7 +127,7 @@ function requestAccessScope(request) {
   return { seatId: seat === 'owner' ? null : seat, accessGeneration: Number(generation) };
 }
 
-async function requestJSON(request) {
+async function requestJSON(request, limit = MAX_CLOUD_REQUEST_BYTES) {
   const contentType = request.headers['content-type'];
   const encoding = request.headers['content-encoding'];
   if (
@@ -142,13 +142,15 @@ async function requestJSON(request) {
     );
   let bytes;
   try {
-    bytes = await readLimitedBody(request, MAX_CLOUD_REQUEST_BYTES);
+    bytes = await readLimitedBody(request, limit);
   } catch (error) {
     if (error instanceof RequestBodyLimitError)
       throw new CloudError(
         413,
         'request-too-large',
-        'Cloud command JSON exceeds the 24 MiB request limit'
+        limit === MAX_CLOUD_REQUEST_BYTES
+          ? 'Cloud command JSON exceeds the 24 MiB request limit'
+          : 'Cloud transport control JSON exceeds its small request limit'
       );
     throw error;
   }
@@ -265,7 +267,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|events|owner-events|owner-state|world-commands|scene|settings|live(?:\/(?:access|status))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|events|owner-events|owner-state|world-commands|scene|settings|live(?:\/(?:access|status|presence\/(?:ack|close)))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments))?$/.exec(
         url.pathname
       );
     if (
@@ -280,6 +282,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       return false;
     const subject = account ? 'account' : 'campaign';
     const snapshot = campaign?.[2];
+    const presenceControl = ['live/presence/ack', 'live/presence/close'].includes(snapshot);
     const participantAsset = snapshot?.startsWith('participant-assets/');
     const retainedFile =
       snapshot?.startsWith('backups/') && isCloudUUID(snapshot.slice('backups/'.length));
@@ -315,6 +318,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         'owner-events',
         'owner-state',
         'live/access',
+        'live/presence/ack',
+        'live/presence/close',
       ].includes(snapshot);
     const writable =
       postOnly ||
@@ -340,6 +345,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'events') operation = 'campaign.events';
     else if (snapshot === 'world-commands') operation = 'campaign.world.command';
     else if (['owner-events', 'owner-state'].includes(snapshot)) operation = 'campaign.owner.world';
+    else if (presenceControl) operation = 'campaign.' + snapshot.replaceAll('/', '.');
     else if (participantAsset) operation = 'campaign.participant.asset';
     else if (['live', 'live/access', 'live/status'].includes(snapshot)) operation = 'campaign.live';
     else if (snapshot === 'backup') operation = 'campaign.backup.export';
@@ -403,10 +409,13 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       const principal = redeem
         ? await access.verifyIdentity(request.headers.authorization)
         : await access.verifyAuthorization(request.headers.authorization);
-      await usage.consumeRequest(principal, { invitation: redeem });
+      await usage.consumeRequest(principal, {
+        invitation: redeem,
+        ...(snapshot === 'live/presence/ack' ? { transport: true } : {}),
+      });
       if (largeFile) releaseLargeFile = acquireLargeFileWork();
       if (
-        request.method === 'POST' ||
+        (request.method === 'POST' && !presenceControl) ||
         maintainsObjects ||
         (request.method === 'GET' && evaluatesBackups) ||
         ['scene', 'characters', 'assigned-characters', 'backup'].includes(snapshot) ||
@@ -435,6 +444,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         snapshot !== 'world-commands' &&
         snapshot !== 'owner-events' &&
         snapshot !== 'owner-state' &&
+        !presenceControl &&
         !participantAsset &&
         !snapshot?.startsWith('assets/')
       )
@@ -521,6 +531,43 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
             await requestJSON(request),
             expectedAccess
           );
+        } else if (presenceControl) {
+          if (expectedAccess === null)
+            throw new CloudError(
+              400,
+              'invalid-access-scope',
+              'Choose the explicit live presence access scope'
+            );
+          const command = await requestJSON(request, 512);
+          if (snapshot === 'live/presence/ack')
+            result = await store.acknowledgeLivePresence(
+              principal,
+              campaign[1],
+              command,
+              expectedAccess
+            );
+          else {
+            const { closeCloudEventStream } = require('./event-stream.js');
+            const transportClosed = await closeCloudEventStream({
+              store,
+              principal,
+              id: campaign[1],
+              command,
+              scope: expectedAccess,
+            });
+            const closed = await store.disconnectLivePresence(
+              principal,
+              campaign[1],
+              command,
+              expectedAccess
+            );
+            result = {
+              version: 1,
+              connectionId: command.connectionId,
+              closed: transportClosed || closed.closed,
+              transportClosed,
+            };
+          }
         } else if (['events', 'owner-events'].includes(snapshot)) {
           const { openCloudEventStream } = require('./event-stream.js');
           await openCloudEventStream({

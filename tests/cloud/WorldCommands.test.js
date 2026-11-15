@@ -451,14 +451,16 @@ function participantNetwork() {
     },
     fetch: async (url, options) => {
       const pathname = new URL(url).pathname;
-      requests.push({
+      const request = {
         pathname,
         body: options.body ? JSON.parse(options.body) : null,
         seatId: options.headers['X-TavernTable-Seat'],
         accessGeneration: options.headers['X-TavernTable-Access-Generation'],
-      });
+      };
+      requests.push(request);
       if (offline) throw new TypeError('Synthetic participant network is offline');
       const response = await fetch(url, options);
+      request.status = response.status;
       if (!response.ok) return response;
       if (pathname.endsWith('/participant-state')) {
         graphic((await response.clone().json()).result);
@@ -1970,6 +1972,12 @@ test(
       });
       assert.deepEqual(replaced.connection.readLiveState().gameplay, initial.gameplay);
       await replaced.connection.close();
+      const closes = network.requests.filter(({ pathname }) =>
+        pathname.endsWith('/live/presence/close')
+      );
+      assert.ok(closes.length > 0, 'Actual warm-rejoin cleanup must exercise explicit close');
+      for (const close of closes)
+        assert.equal(close.status, 200, 'A healthy-network explicit close must be confirmed');
       await f.owner.client.assignCharacter(f.campaign.id, {
         seatId: f.grant.access.seatId,
         accessGeneration: f.grant.access.accessGeneration,

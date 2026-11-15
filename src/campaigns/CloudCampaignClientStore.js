@@ -1,5 +1,6 @@
 import CampaignStore from './CampaignStore.js';
 import CloudLiveConnection from './CloudLiveConnection.js';
+import { CloudAccountError } from './CloudAccount.js';
 import { sha256 } from '../storage/sha256.js';
 import { encodeBase64 as base64 } from '../storage/base64.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
@@ -35,6 +36,9 @@ import {
   isCloudLiveStatus,
   isCloudLiveAccess,
   CLOUD_BACKUP_RETAIN,
+  CLOUD_LIVE_ACK_INTERVAL_MS,
+  isCloudLivePresenceAcknowledgement,
+  isCloudLivePresenceClosure,
 } from './CloudProtocol.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 
@@ -70,6 +74,26 @@ const definitiveDenials = new Set([
   'asset-image-too-large',
 ]);
 const metadataOperations = new Set(['invitation', 'revoke', 'assign', 'remove']);
+const expectedPresenceCloseFailures = new Set([
+  'account-changed',
+  'authentication-required',
+  'invalid-identity',
+  'email-verification-required',
+  'pilot-access-required',
+  'identity-unavailable',
+  'auth-unavailable',
+  'cloud-unavailable',
+  'cloud-request-timeout',
+  'cloud-requests-busy',
+  'request-limit-reached',
+  'stream-closed',
+  'campaign-not-found',
+  'campaign-access-changed',
+  'live-session-changed',
+  'live-session-paused',
+  'client-presence-expired',
+  'live-presence-changed',
+]);
 const definitiveMetadataDenials = new Set([
   'campaign-access-changed',
   'invalid-member-request',
@@ -1117,6 +1141,11 @@ export default class CloudCampaignClientStore {
     let previous = null;
     let ended = false;
     let closing;
+    let acknowledgementTimer;
+    let acknowledgementDeadline;
+    let acknowledging = null;
+    let acknowledgementController = null;
+    let livenessFailure = null;
     const { applyCloudParticipantDelta } = await import('./CloudParticipantProtocol.js');
     const ownerProtocol = ownerWorld ? await import('./CloudOwnerProtocol.js') : null;
     this._identity();
@@ -1130,14 +1159,102 @@ export default class CloudCampaignClientStore {
         signal,
       }
     );
-    const close = () => {
+    if (!isCloudUUID(source.connectionId)) {
+      await source.close();
+      throw invalidResponse();
+    }
+    const presenceCommand = {
+      sessionId: input.sessionId,
+      connectionId: source.connectionId,
+    };
+    const releasePresence = async () => {
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(), 5000);
+      try {
+        const result = await this.connection.request(this._resource(id, '/live/presence/close'), {
+          method: 'POST',
+          body: presenceCommand,
+          accessScope: scope,
+          signal: controller.signal,
+        });
+        if (!isCloudLivePresenceClosure(result) || result.connectionId !== source.connectionId)
+          throw invalidResponse();
+      } catch (error) {
+        if (!(error instanceof CloudAccountError) && !expectedPresenceCloseFailures.has(error.code))
+          throw error;
+        logger.log(
+          LOG_LEVEL.WARN,
+          'Live presence close is unconfirmed; its client-proof deadline remains in force',
+          LOG_CATEGORY.SYSTEM,
+          { component: 'CloudCampaignClientStore', code: error.code }
+        );
+      } finally {
+        clearTimeout(deadline);
+      }
+    };
+    const close = (notify = true) => {
       if (closing) return closing;
       ended = true;
+      clearInterval(acknowledgementTimer);
+      clearTimeout(acknowledgementDeadline);
+      acknowledgementController?.abort();
       previous = null;
       assets = null;
       this.streams.delete(events);
-      closing = source.close();
+      closing = (async () => {
+        const results = await Promise.allSettled([
+          Promise.resolve().then(() => source.close()),
+          notify ? releasePresence() : Promise.resolve(),
+        ]);
+        const failures = results
+          .filter((result) => result.status === 'rejected')
+          .map((result) => result.reason);
+        if (failures.length === 1) throw failures[0];
+        if (failures.length)
+          throw new AggregateError(failures, 'Live transport and presence close failed');
+      })();
       return closing;
+    };
+    const acknowledge = () => {
+      if (ended || acknowledging) return;
+      const controller = new AbortController();
+      acknowledgementController = controller;
+      acknowledgementDeadline = setTimeout(() => controller.abort(), 10000);
+      acknowledging = (async () => {
+        try {
+          const result = await this.connection.request(this._resource(id, '/live/presence/ack'), {
+            method: 'POST',
+            body: presenceCommand,
+            accessScope: scope,
+            signal: controller.signal,
+          });
+          if (ended) return;
+          if (
+            !isCloudLivePresenceAcknowledgement(result) ||
+            result.connectionId !== source.connectionId
+          )
+            throw invalidResponse();
+        } catch (error) {
+          if (ended) return;
+          livenessFailure = error;
+          void close().catch((closingError) => {
+            logger.log(
+              LOG_LEVEL.ERROR,
+              'Live presence failure could not close cleanly',
+              LOG_CATEGORY.SYSTEM,
+              {
+                component: 'CloudCampaignClientStore',
+                code: 'presence-failure-close-failed',
+                kind: closingError instanceof Error ? 'error' : 'non-error',
+              }
+            );
+          });
+        } finally {
+          clearTimeout(acknowledgementDeadline);
+          acknowledgementController = null;
+          acknowledging = null;
+        }
+      })();
     };
     const events = {
       [Symbol.asyncIterator]() {
@@ -1149,13 +1266,15 @@ export default class CloudCampaignClientStore {
         return { done: true, value: undefined };
       },
       next: async () => {
+        if (livenessFailure) throw livenessFailure;
         if (ended) return { done: true, value: undefined };
         try {
           this._identity();
           const step = await source.next();
+          if (livenessFailure) throw livenessFailure;
           this._identity();
           if (step.done || step.value.kind === 'closed') {
-            await close();
+            await close(false);
             return step;
           }
           const event = step.value;
@@ -1231,13 +1350,14 @@ export default class CloudCampaignClientStore {
           return { done: false, value: copy(event) };
         } catch (error) {
           await close();
-          throw error;
+          throw livenessFailure ?? error;
         }
       },
     };
     try {
       this._identity();
       this.streams.add(events);
+      acknowledgementTimer = setInterval(acknowledge, CLOUD_LIVE_ACK_INTERVAL_MS);
       return events;
     } catch (error) {
       await close();

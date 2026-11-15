@@ -7,6 +7,11 @@ import { emptyPlayerScene } from '../../../src/campaigns/PlayerPublicProtocol.js
 
 const campaignId = '11111111-1111-4111-8111-111111111111';
 const commandId = '22222222-2222-4222-8222-222222222222';
+const liveConnectionId = '55555555-5555-4555-8555-555555555555';
+const liveHeaders = {
+  'Content-Type': 'text/event-stream',
+  'X-TavernTable-Live-Connection': liveConnectionId,
+};
 const packs = [{ id: 'srd-2014', ruleset: '2014', version: '5.1-seed.1' }];
 const campaign = {
   version: 1,
@@ -45,6 +50,16 @@ const accessSummary = (role, id = campaignId) => ({
   role,
   seatId: role === 'owner' ? null : '44444444-4444-4444-8444-444444444444',
 });
+
+function presenceResponse(url) {
+  if (!/\/live\/presence\/(?:ack|close)$/.test(url)) return null;
+  const result = url.endsWith('/ack')
+    ? { version: 1, connectionId: liveConnectionId, expiresAt: Date.now() + 90000 }
+    : { version: 1, connectionId: liveConnectionId, closed: true, transportClosed: true };
+  return new Response(JSON.stringify({ version: 1, result }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 function fixture({ crypto } = {}) {
   const auth = {
@@ -256,6 +271,198 @@ test('a live owner scene captures its epoch and native route separately from can
   expect(setup.store.wantsSharedPresentations(campaignId)).toBe(false);
 });
 
+test('a live client acknowledges only its captured channel and explicitly closes it without leaving idle traffic or timers', async () => {
+  jest.useFakeTimers();
+  const setup = fixture();
+  const connectionId = '55555555-5555-4555-8555-555555555555';
+  const access = {
+    version: 1,
+    uid: 'uid-a',
+    campaignId,
+    role: 'owner',
+    seatId: null,
+    accessGeneration: 0,
+  };
+  const view = { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null };
+  let incoming;
+  setup.fetch.mockImplementation(async (url) => {
+    if (url.endsWith('/live/presence/ack') || url.endsWith('/live/presence/close')) {
+      const result = url.endsWith('/ack')
+        ? { version: 1, connectionId, expiresAt: Date.now() + 90000 }
+        : { version: 1, connectionId, closed: true, transportClosed: true };
+      return new Response(JSON.stringify({ version: 1, result }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          incoming = controller;
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'X-TavernTable-Live-Connection': connectionId,
+        },
+      }
+    );
+  });
+  let events;
+  try {
+    events = await setup.store.openEvents(campaignId, view, access);
+    const reading = events.next();
+    const checkpoint = {
+      kind: 'owner-head',
+      version: 1,
+      access,
+      sessionId: commandId,
+      head: { generation: 1, charactersRevision: 0, sceneRevision: 0, sceneSavedAt: null },
+    };
+    incoming.enqueue(
+      new TextEncoder().encode(`id: 1\nevent: owner-head\ndata: ${JSON.stringify(checkpoint)}\n\n`)
+    );
+    await expect(reading).resolves.toMatchObject({ done: false, value: checkpoint });
+    await jest.advanceTimersByTimeAsync(50000);
+    const acknowledgements = setup.fetch.mock.calls.filter(([url]) =>
+      url.endsWith('/live/presence/ack')
+    );
+    expect(acknowledgements).toHaveLength(2);
+    for (const [, options] of acknowledgements) {
+      expect(JSON.parse(options.body)).toEqual({ sessionId: commandId, connectionId });
+      expect(options.headers.Authorization).toBe('Bearer fixture-token');
+      expect(options.headers['X-TavernTable-Seat']).toBe('owner');
+      expect(options.headers['X-TavernTable-Access-Generation']).toBe('0');
+      expect(options.credentials).toBe('omit');
+    }
+    await events.close();
+    const closes = setup.fetch.mock.calls.filter(([url]) => url.endsWith('/live/presence/close'));
+    expect(closes).toHaveLength(1);
+    expect(JSON.parse(closes[0][1].body)).toEqual({ sessionId: commandId, connectionId });
+    const requestsAfterClose = setup.fetch.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(60000);
+    expect(setup.fetch).toHaveBeenCalledTimes(requestsAfterClose);
+    expect(setup.store.streams.size).toBe(0);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(setup.store.saveState.phase).toBe('idle');
+  } finally {
+    await events?.close();
+    setup.store.close();
+    jest.useRealTimers();
+  }
+});
+
+test.each([null, 'not-a-live-connection'])(
+  'an invalid %s transport channel header cannot start acknowledgements or become cached authority',
+  async (connectionId) => {
+    jest.useFakeTimers();
+    const setup = fixture();
+    setup.fetch.mockImplementation(
+      async () =>
+        new Response(new ReadableStream(), {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            ...(connectionId === null ? {} : { 'X-TavernTable-Live-Connection': connectionId }),
+          },
+        })
+    );
+    try {
+      await expect(
+        setup.store.openEvents(
+          campaignId,
+          { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null },
+          { version: 1, uid: 'uid-a', campaignId, role: 'owner', seatId: null, accessGeneration: 0 }
+        )
+      ).rejects.toMatchObject({ code: 'invalid-cloud-response' });
+      expect(setup.fetch).toHaveBeenCalledTimes(1);
+      expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+      expect(setup.store.streams.size).toBe(0);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      setup.store.close();
+      jest.useRealTimers();
+    }
+  }
+);
+
+test.each(['revoked-scope', 'foreign-channel'])(
+  'a %s acknowledgement cannot keep live authority ready or leak a retry timer',
+  async (kind) => {
+    jest.useFakeTimers();
+    const setup = fixture();
+    const opened = Promise.withResolvers();
+    let incoming;
+    setup.fetch.mockImplementation(async (url) => {
+      if (url.endsWith('/live/presence/ack')) {
+        const value =
+          kind === 'revoked-scope'
+            ? { version: 1, code: 'campaign-access-changed', error: 'Access changed' }
+            : {
+                version: 1,
+                result: { version: 1, connectionId: commandId, expiresAt: Date.now() + 90000 },
+              };
+        return new Response(JSON.stringify(value), {
+          status: kind === 'revoked-scope' ? 409 : 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const control = presenceResponse(url);
+      if (control) return control;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            incoming = controller;
+            opened.resolve();
+          },
+        }),
+        { headers: liveHeaders }
+      );
+    });
+    const access = {
+      version: 1,
+      uid: 'uid-a',
+      campaignId,
+      role: 'owner',
+      seatId: null,
+      accessGeneration: 0,
+    };
+    const view = { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null };
+    const observation = setup.store.observeEvents(campaignId, view, access, {
+      onState() {},
+      onStatus() {},
+    });
+    try {
+      await opened.promise;
+      incoming.enqueue(
+        new TextEncoder().encode(
+          `id: 1\nevent: owner-head\ndata: ${JSON.stringify({
+            kind: 'owner-head',
+            version: 1,
+            access,
+            sessionId: commandId,
+            head: { generation: 1, charactersRevision: 0, sceneRevision: 0, sceneSavedAt: null },
+          })}\n\n`
+        )
+      );
+      await observation.ready;
+      await jest.advanceTimersByTimeAsync(25000);
+      await observation.done;
+      expect(observation.status.phase).toBe(kind === 'revoked-scope' ? 'denied' : 'error');
+      expect(observation.current).toBeNull();
+      expect(setup.fetch.mock.calls.filter(([url]) => url.endsWith('/events'))).toHaveLength(1);
+      expect(
+        setup.fetch.mock.calls.filter(([url]) => url.endsWith('/live/presence/close'))
+      ).toHaveLength(1);
+      expect(setup.store.streams.size).toBe(0);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      await observation.close();
+      setup.store.close();
+      jest.useRealTimers();
+    }
+  }
+);
+
 test('live observation stays unready until its current authorized checkpoint is published and closes its idle transport', async () => {
   const setup = fixture();
   const stopped = jest.fn();
@@ -282,7 +489,8 @@ test('live observation stays unready until its current authorized checkpoint is 
   const opened = Promise.withResolvers();
   let incoming;
   setup.fetch.mockImplementation(
-    async () =>
+    async (url) =>
+      presenceResponse(url) ??
       new Response(
         new ReadableStream({
           start(controller) {
@@ -290,7 +498,7 @@ test('live observation stays unready until its current authorized checkpoint is 
             opened.resolve();
           },
         }),
-        { headers: { 'Content-Type': 'text/event-stream' } }
+        { headers: liveHeaders }
       )
   );
   const states = [];
@@ -348,7 +556,8 @@ test('a lost live connection disables readiness and reconnects after jitter to a
   const sources = [];
   const opened = Promise.withResolvers();
   setup.fetch.mockImplementation(
-    async () =>
+    async (url) =>
+      presenceResponse(url) ??
       new Response(
         new ReadableStream({
           start(controller) {
@@ -356,7 +565,7 @@ test('a lost live connection disables readiness and reconnects after jitter to a
             opened.resolve();
           },
         }),
-        { headers: { 'Content-Type': 'text/event-stream' } }
+        { headers: liveHeaders }
       )
   );
   const states = [];
@@ -377,9 +586,9 @@ test('a lost live connection disables readiness and reconnects after jitter to a
     await jest.advanceTimersByTimeAsync(0);
     expect(statuses.at(-1)).toEqual({ phase: 'reconnecting', reason: 'cloud-stream-unavailable' });
     await jest.advanceTimersByTimeAsync(999);
-    expect(setup.fetch).toHaveBeenCalledTimes(1);
+    expect(setup.fetch.mock.calls.filter(([url]) => url.endsWith('/events'))).toHaveLength(1);
     await jest.advanceTimersByTimeAsync(1);
-    expect(setup.fetch).toHaveBeenCalledTimes(2);
+    expect(setup.fetch.mock.calls.filter(([url]) => url.endsWith('/events'))).toHaveLength(2);
     sources[1].enqueue(
       new TextEncoder().encode(
         `id: 3\nevent: owner-head\ndata: ${JSON.stringify(checkpoint(3))}\n\n`
@@ -481,9 +690,10 @@ test.each(['private head', 'foreign UID', 'foreign campaign', 'foreign epoch'])(
     if (kind === 'foreign campaign') event.access.campaignId = commandId;
     if (kind === 'foreign epoch') event.sessionId = campaignId;
     setup.fetch.mockImplementation(
-      async () =>
+      async (url) =>
+        presenceResponse(url) ??
         new Response(`id: 1\nevent: owner-head\ndata: ${JSON.stringify(event)}\n\n`, {
-          headers: { 'Content-Type': 'text/event-stream' },
+          headers: liveHeaders,
         })
     );
     const events = await setup.store.openEvents(campaignId, view, access);
@@ -515,9 +725,10 @@ test('closing a campaign cancels its idle owner stream without leaving an open a
   };
   const view = { sessionId: commandId, observerTokenId: null, mapId: null, assetKey: null };
   setup.fetch.mockImplementation(
-    async () =>
+    async (url) =>
+      presenceResponse(url) ??
       new Response(new ReadableStream(), {
-        headers: { 'Content-Type': 'text/event-stream' },
+        headers: liveHeaders,
       })
   );
   const events = await setup.store.openEvents(campaignId, view, access);

@@ -985,6 +985,59 @@ test(
 );
 
 test(
+  'transport acknowledgements amortize quota writes without escaping the shared rolling request limit',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const started = now;
+    const first = f.createStore(() => now);
+    const second = f.createStore(() => now);
+    const reference = f.runtime.firestore
+      .collection('accountRequests')
+      .doc(pilotAccountKey(f.identity.uid));
+    await reference.set({ version: 1, uid: f.identity.uid, timestamps: Array(285).fill(now) });
+    await first.usage.consumeRequest(f.principal, { transport: true });
+    const admitted = (await reference.get()).data();
+    await Promise.all(
+      Array.from({ length: 3 }, () => first.usage.consumeRequest(f.principal, { transport: true }))
+    );
+    assert.deepEqual((await reference.get()).data(), admitted);
+    await second.usage.consumeRequest(f.principal, { transport: true });
+    const shared = (await reference.get()).data();
+    assert.equal(
+      shared.leases.reduce((sum, lease) => sum + lease.capacity, 0),
+      15
+    );
+    await assert.rejects(
+      first.usage.consumeRequest(f.principal),
+      (error) => error.code === 'request-limit-reached'
+    );
+    now = started + 59000;
+    await first.usage.consumeRequest(f.principal, { transport: true });
+    now = started + 60001;
+    await reference.update({ timestamps: Array(285).fill(now) });
+    await assert.rejects(
+      first.usage.consumeRequest(f.principal, { transport: true }),
+      (error) => error.code === 'request-limit-reached'
+    );
+    now = started + 120002;
+    await first.usage.consumeRequest(f.principal, { transport: true });
+    const renewed = (await reference.get()).data();
+    assert.ok(renewed.leases.every((lease) => lease.reservedAt > started));
+    await f.runtime.firestore
+      .collection('pilotAccounts')
+      .doc(pilotAccountKey(f.identity.uid))
+      .update({ enabled: false });
+    await assert.rejects(
+      first.usage.consumeRequest(f.principal, { transport: true }),
+      (error) => error.code === 'pilot-access-required'
+    );
+    assert.deepEqual((await reference.get()).data(), renewed);
+  }
+);
+
+test(
   '300 authenticated requests share a rolling minute across routes and instances with explicit retry and receipt recovery',
   { timeout: 60000 },
   async (t) => {

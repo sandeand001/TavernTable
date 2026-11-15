@@ -207,7 +207,13 @@
   creation; counter/head/receipt claims and whole-checkpoint admission are atomic.
   Malformed or damaged accounting fails explicitly instead of resetting usage.
   Authenticated app requests share 300 admissions in a rolling 60 seconds across
-  routes and backend instances. Four renewable live-stream leases per UID have
+  routes and backend instances. Transport acknowledgements spend precharged
+  request-budget leases of at most eight admissions, not a quota-document write
+  per heartbeat. Capacity remains charged through its spend window plus a full
+  rolling minute, including unused capacity; cached consumption rechecks pilot
+  eligibility. These conservative reservations can temporarily reduce available
+  slots but cannot grant extra rolling-window requests.
+  Four renewable live-stream leases per UID have
   crash expiry, not a total session-duration cap; they do not grant campaign
   access, replace session lifecycle, or enable the still-gated live transport.
   Bounded heavy-request and image-decoder work protects backend memory. Quotas
@@ -338,11 +344,21 @@
   admission bind current UID, campaign role/seat/generation and live epoch,
   including a final check after presence IO. Four durable leases per UID apply
   across campaigns; actual transport outcomes connect/renew/disconnect presence.
-  The stream emits 25-second comment heartbeats and renews identity/access/
-  lease/presence no later than one minute, earlier when a coalesced presence
-  result retains an older expiry. Scheduling follows the earlier actual UID/
-  presence deadline with 30-second headroom, not just a fixed interval; this
-  does not add heartbeat writes or extend meaningful activity.
+  The stream emits 25-second comment heartbeats and renews identity/access and
+  UID leases no later than one minute, with 30-second UID-lease headroom.
+  Public streams require versioned client-originated proof: a protected response
+  header identifies the ephemeral channel, and authenticated scoped POST
+  acknowledgements every 25 seconds refresh its 90-second last-client-seen proof,
+  coalescing durable writes for 60 seconds. Server renewal cannot extend that
+  proof or revive it after expiry. Its actual deadline, without subtracting UID
+  headroom, bounds the physical stream; legacy internal presence retains its
+  original expiry-aware schedule. ACKs never poll scene state or renew meaningful
+  activity. This client-proof pilot update still requires hosted acceptance.
+  A bounded explicit close uses its captured UID/campaign/seat/generation/epoch.
+  The physical owner stays registered until in-flight cleanup finishes, so an
+  explicit close joins existing socket cleanup rather than racing another
+  presence transaction. On a different worker, durable presence can close but
+  the original owner retains its UID lease until actual transport cleanup.
   It closes at a 55-minute transport deadline, not a
   total game-duration cap. Slow clients are bounded to sixteen queued events/
   32 MiB UTF-8; denial drops queued data. Cleanup waits for in-flight renewal
@@ -513,8 +529,10 @@
   unchanged, rejected and replayed saves do not. Cold replacement cannot renew
   it. Private transport callbacks coalesce presence at campaign/runtime-instance
   level: a 90-second durable observation lease is refreshed at most once per
-  minute across participant pings. Last explicit disconnect starts a 15-minute
-  grace; unknown disappearance falls back to the stored lease expiry. Natural
+  minute across participant pings. Public SSE additionally requires the bounded
+  client-originated proof above; an orphaned proxy request is not proof of a
+  connected player. Last explicit disconnect starts a 15-minute grace; unknown
+  disappearance falls back to the stored client-proof expiry. Natural
   wake evaluates the earlier grace/inactivity deadline. Current UID/access and
   connection generations fence renewal/cleanup; reconnect never renews meaningful
   activity. Presence is not stream permission or a replacement for the global

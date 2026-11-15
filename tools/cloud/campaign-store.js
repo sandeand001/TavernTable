@@ -567,7 +567,7 @@ class CloudCampaignStore {
     if (!snapshot.exists) return null;
     const value = snapshot.data();
     if (
-      value?.version !== 1 ||
+      ![1, 2].includes(value?.version) ||
       value.id !== snapshot.id ||
       !isCloudUUID(value.id) ||
       value.campaignId !== id ||
@@ -577,7 +577,10 @@ class CloudCampaignStore {
       value.generation < 1 ||
       !isCloudAccessScope(value.access) ||
       value.access.uid !== value.uid ||
-      value.access.campaignId !== id
+      value.access.campaignId !== id ||
+      (value.version === 1
+        ? Object.hasOwn(value, 'clientSeenAt')
+        : !validMilliseconds(value.clientSeenAt))
     )
       throw invalidPresence();
     return value;
@@ -608,6 +611,9 @@ class CloudCampaignStore {
       campaignId: connection.campaignId,
       sessionId: connection.sessionId,
       expiresAt: summary.expiresAt,
+      ...(connection.version === 2
+        ? { clientExpiresAt: connection.clientSeenAt + CLOUD_STREAM_LEASE_MS }
+        : {}),
     };
   }
 
@@ -739,9 +745,11 @@ class CloudCampaignStore {
       );
   }
 
-  async connectLivePresence(principal, id, command) {
+  async connectLivePresence(principal, id, command, { clientAcknowledgements = false } = {}) {
     const uid = principalUid(principal);
     if (!isCloudUUID(id)) throw unavailableCampaign();
+    if (typeof clientAcknowledgements !== 'boolean')
+      throw new CloudError(400, 'invalid-live-command', 'Choose explicit client presence proof');
     const { sessionId } = this._presenceCommand(command, false);
     const connectionId = randomUUID();
     const reference = this._presenceSummaries(id).doc(this.livePresenceInstanceId);
@@ -785,7 +793,7 @@ class CloudCampaignStore {
       };
       transaction.set(reference, summary);
       const connection = {
-        version: 1,
+        version: clientAcknowledgements ? 2 : 1,
         id: connectionId,
         campaignId: id,
         sessionId,
@@ -793,6 +801,7 @@ class CloudCampaignStore {
         generation,
         uid,
         access: participant.access,
+        ...(clientAcknowledgements ? { clientSeenAt: now } : {}),
       };
       transaction.create(this._presenceConnections(id).doc(connectionId), connection);
       return { result: this._presenceResult(connection, summary) };
@@ -861,15 +870,26 @@ class CloudCampaignStore {
         return { expired: true };
       }
       this._assertLiveSession(current, sessionId);
-      if (summary.expiresAt <= now)
+      if (connection.version === 2 && connection.clientSeenAt + CLOUD_STREAM_LEASE_MS <= now)
+        throw new CloudError(
+          409,
+          'client-presence-expired',
+          'This client stopped acknowledging its live connection; reconnect'
+        );
+      if (connection.version === 1 && summary.expiresAt <= now)
         throw new CloudError(
           409,
           'live-presence-expired',
           'This live presence lease expired; reconnect'
         );
-      if (now - summary.renewedAt < CLOUD_LIVE_PRESENCE_COALESCE_MS)
+      const renewedAt =
+        connection.version === 2 ? Math.max(summary.renewedAt, connection.clientSeenAt) : now;
+      if (
+        renewedAt === summary.renewedAt ||
+        (now - summary.renewedAt < CLOUD_LIVE_PRESENCE_COALESCE_MS && summary.expiresAt > now)
+      )
         return { result: this._presenceResult(connection, summary) };
-      const next = { ...summary, renewedAt: now, expiresAt: now + CLOUD_STREAM_LEASE_MS };
+      const next = { ...summary, renewedAt, expiresAt: renewedAt + CLOUD_STREAM_LEASE_MS };
       transaction.set(reference, next);
       return { result: this._presenceResult(connection, next) };
     });
@@ -882,15 +902,94 @@ class CloudCampaignStore {
     return outcome.result;
   }
 
-  async disconnectLivePresence(principal, id, command) {
+  async acknowledgeLivePresence(principal, id, command, expected) {
     const uid = principalUid(principal);
     if (!isCloudUUID(id)) throw unavailableCampaign();
+    const scope = this._accessExpectation(expected);
+    if (scope === null)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose the current live presence scope');
+    const { sessionId, connectionId } = this._presenceCommand(command, true);
+    const reference = this._presenceConnections(id).doc(connectionId);
+    return this._transaction(async (transaction) => {
+      const admitted = await this.requireLiveSession(transaction, principal, id, sessionId, scope);
+      const connection = this._presenceConnection(await transaction.get(reference), id);
+      if (connection === null || connection.uid !== uid) throw unavailableCampaign();
+      if (
+        connection.sessionId !== sessionId ||
+        stableStringify(connection.access) !== stableStringify(admitted.participant.access)
+      )
+        throw new CloudError(
+          409,
+          'campaign-access-changed',
+          'This live connection no longer has its original access'
+        );
+      if (connection.version !== 2)
+        throw new CloudError(
+          400,
+          'invalid-live-command',
+          'Choose a client-acknowledged live connection'
+        );
+      const summaryReference = this._presenceSummaries(id).doc(connection.instanceId);
+      const summary = this._presenceSummary(await transaction.get(summaryReference), id);
+      if (summary === null) throw invalidPresence();
+      if (
+        summary.sessionId !== sessionId ||
+        summary.generation !== connection.generation ||
+        summary.count < 1
+      )
+        throw new CloudError(
+          409,
+          'live-presence-changed',
+          'This live connection was replaced; reconnect'
+        );
+      const now = Math.max(
+        this.now(),
+        connection.clientSeenAt,
+        summary.renewedAt,
+        Date.parse(admitted.session.lastMeaningfulAt)
+      );
+      if (connection.clientSeenAt + CLOUD_STREAM_LEASE_MS <= now)
+        throw new CloudError(
+          409,
+          'client-presence-expired',
+          'This client stopped acknowledging its live connection; reconnect'
+        );
+      const clientSeenAt =
+        now - connection.clientSeenAt >= CLOUD_LIVE_PRESENCE_COALESCE_MS
+          ? now
+          : connection.clientSeenAt;
+      if (clientSeenAt !== connection.clientSeenAt)
+        transaction.set(reference, { ...connection, clientSeenAt });
+      if (now - summary.renewedAt >= CLOUD_LIVE_PRESENCE_COALESCE_MS)
+        transaction.set(summaryReference, {
+          ...summary,
+          renewedAt: now,
+          expiresAt: now + CLOUD_STREAM_LEASE_MS,
+        });
+      return { version: 1, connectionId, expiresAt: clientSeenAt + CLOUD_STREAM_LEASE_MS };
+    });
+  }
+
+  async disconnectLivePresence(principal, id, command, expected = null) {
+    const uid = principalUid(principal);
+    if (!isCloudUUID(id)) throw unavailableCampaign();
+    const scope = this._accessExpectation(expected);
     const { sessionId, connectionId } = this._presenceCommand(command, true);
     const connectionReference = this._presenceConnections(id).doc(connectionId);
     return this._transaction(async (transaction) => {
       const connection = this._presenceConnection(await transaction.get(connectionReference), id);
       if (connection === null) return { closed: false };
       if (connection.uid !== uid) throw unavailableCampaign();
+      if (
+        scope !== null &&
+        (connection.access.seatId !== scope.seatId ||
+          connection.access.accessGeneration !== scope.accessGeneration)
+      )
+        throw new CloudError(
+          409,
+          'campaign-access-changed',
+          'Choose this connection original scope'
+        );
       if (connection.sessionId !== sessionId)
         throw new CloudError(
           409,

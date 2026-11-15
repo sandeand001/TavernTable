@@ -41,6 +41,7 @@ const denialCodes = new Set([
   'participant-view-changed',
   'participant-state-changed',
   'invalid-live-session',
+  'client-presence-expired',
   'invalid-live-presence',
   'invalid-assigned-state',
   'assigned-state-changed',
@@ -622,6 +623,13 @@ export default class CloudAccountConnection {
       signal = null,
     } = {}
   ) {
+    const presenceControl =
+      isCloudAccessScope(accessScope) &&
+      method === 'POST' &&
+      responseType === 'json' &&
+      ['ack', 'close'].some(
+        (action) => resource === `campaigns/${accessScope.campaignId}/live/presence/${action}`
+      );
     if (
       typeof resource !== 'string' ||
       !/^(?:account|campaigns)(?:\/[A-Za-z0-9-]+)*$/.test(resource) ||
@@ -641,8 +649,9 @@ export default class CloudAccountConnection {
           !(
             responseType === 'json' &&
             method === 'POST' &&
-            accessScope?.role === 'member' &&
-            resource === `campaigns/${accessScope.campaignId}/participant-state`
+            ((accessScope?.role === 'member' &&
+              resource === `campaigns/${accessScope.campaignId}/participant-state`) ||
+              presenceControl)
           )) ||
           typeof signal.aborted !== 'boolean' ||
           typeof signal.addEventListener !== 'function' ||
@@ -687,6 +696,7 @@ export default class CloudAccountConnection {
           (method === 'POST' &&
             accessScope.role === 'member' &&
             resource === `campaigns/${accessScope.campaignId}/world-commands`) ||
+          presenceControl ||
           (method === 'POST' &&
             responseType === 'asset' &&
             accessScope.role === 'member' &&

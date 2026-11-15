@@ -3,6 +3,8 @@ const {
   isCloudParticipantRequest,
   isCloudOwnerWorldRequest,
   CLOUD_STREAM_LEASE_MS,
+  CLOUD_LIVE_CONNECTION_HEADER,
+  isCloudUUID,
 } = require('../../src/campaigns/CloudProtocol.js');
 
 const HEARTBEAT_MS = 25000;
@@ -11,6 +13,28 @@ const RENEW_HEADROOM_MS = CLOUD_STREAM_LEASE_MS - RENEW_MS;
 const STREAM_DEADLINE_MS = 55 * 60 * 1000;
 const MAX_QUEUED_BYTES = 32 * 1024 * 1024;
 const MAX_QUEUED_EVENTS = 16;
+const activeStreams = new WeakMap();
+
+async function closeCloudEventStream({ store, principal, id, command, scope = null }) {
+  if (!isCloudUUID(command?.connectionId) || !isCloudUUID(command?.sessionId))
+    throw new CloudError(
+      400,
+      'invalid-live-command',
+      'Choose the current live presence connection'
+    );
+  const active = activeStreams.get(store)?.get(command.connectionId);
+  if (!active) return false;
+  if (active.uid !== principal.uid || active.id !== id || active.sessionId !== command.sessionId)
+    throw new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
+  if (
+    scope !== null &&
+    (scope.seatId !== active.scope.seatId ||
+      scope.accessGeneration !== active.scope.accessGeneration)
+  )
+    throw new CloudError(409, 'campaign-access-changed', 'Refresh current live player access');
+  await active.finish();
+  return true;
+}
 
 async function openCloudEventStream({
   request,
@@ -95,6 +119,8 @@ async function openCloudEventStream({
           failures.push(error);
         }
       }
+      if (presence && activeStreams.get(store)?.get(presence.id)?.finish === finish)
+        activeStreams.get(store).delete(presence.id);
       response.off('drain', flush);
       response.off('close', disconnected);
       request.off('aborted', disconnected);
@@ -189,7 +215,8 @@ async function openCloudEventStream({
     if (
       !Number.isSafeInteger(now) ||
       !Number.isSafeInteger(lease.expiresAt) ||
-      !Number.isSafeInteger(presence.expiresAt)
+      !Number.isSafeInteger(presence.expiresAt) ||
+      (presence.clientExpiresAt !== undefined && !Number.isSafeInteger(presence.clientExpiresAt))
     )
       throw new CloudError(
         503,
@@ -198,19 +225,27 @@ async function openCloudEventStream({
       );
     if (lease.expiresAt <= now)
       throw new CloudError(409, 'stream-lease-expired', 'Reconnect using a new live stream');
-    if (presence.expiresAt <= now)
+    if (presence.clientExpiresAt !== undefined && presence.clientExpiresAt <= now)
+      throw new CloudError(
+        409,
+        'client-presence-expired',
+        'This client stopped acknowledging its live connection'
+      );
+    if (presence.clientExpiresAt === undefined && presence.expiresAt <= now)
       throw new CloudError(
         409,
         'live-presence-expired',
         'This live presence lease expired; reconnect'
       );
-    // Coalescing can retain an earlier presence expiry; another full minute may be too late.
-    const remaining = Math.min(lease.expiresAt, presence.expiresAt) - now;
+    const presenceDelay =
+      presence.clientExpiresAt === undefined
+        ? presence.expiresAt - now - RENEW_HEADROOM_MS
+        : presence.clientExpiresAt - now;
     renewal = setTimeout(
       () => {
         if (!stopped && !renewing) void startRenewal();
       },
-      Math.max(1, Math.min(RENEW_MS, remaining - RENEW_HEADROOM_MS))
+      Math.max(1, Math.min(RENEW_MS, lease.expiresAt - now - RENEW_HEADROOM_MS, presenceDelay))
     );
   };
   const renew = async () => {
@@ -263,18 +298,37 @@ async function openCloudEventStream({
     await observation.ready;
     if (stopped || response.destroyed)
       throw startupError || new CloudError(409, 'stream-closed', 'The live stream was closed');
+    presence = await store.connectLivePresence(
+      principal,
+      id,
+      { sessionId: view.sessionId },
+      { clientAcknowledgements: true }
+    );
+    await admit(principal);
+    if (stopped || response.destroyed)
+      throw startupError || new CloudError(409, 'stream-closed', 'The live stream was closed');
+    let active = activeStreams.get(store);
+    if (!active) {
+      active = new Map();
+      activeStreams.set(store, active);
+    }
+    active.set(presence.id, {
+      uid: principal.uid,
+      id,
+      sessionId: view.sessionId,
+      scope: expected,
+      finish,
+    });
     response.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'private, no-store, no-transform',
       'X-Content-Type-Options': 'nosniff',
+      'Access-Control-Expose-Headers': CLOUD_LIVE_CONNECTION_HEADER,
+      [CLOUD_LIVE_CONNECTION_HEADER]: presence.id,
       Vary: 'Origin',
       ...headers,
     });
     response.flushHeaders();
-    presence = await store.connectLivePresence(principal, id, { sessionId: view.sessionId });
-    await admit(principal);
-    if (stopped || response.destroyed)
-      throw startupError || new CloudError(409, 'stream-closed', 'The live stream was closed');
     booting = false;
     opened = true;
     flush();
@@ -309,4 +363,4 @@ async function openCloudEventStream({
   }
 }
 
-module.exports = { openCloudEventStream };
+module.exports = { openCloudEventStream, closeCloudEventStream };

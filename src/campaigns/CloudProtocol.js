@@ -18,6 +18,8 @@ export const CLOUD_LIVE_INACTIVITY_MS = 60 * 60 * 1000;
 export const CLOUD_LIVE_DISCONNECT_GRACE_MS = 15 * 60 * 1000;
 export const CLOUD_STREAM_LEASE_MS = 90 * 1000;
 export const CLOUD_LIVE_PRESENCE_COALESCE_MS = 60 * 1000;
+export const CLOUD_LIVE_ACK_INTERVAL_MS = 25000;
+export const CLOUD_LIVE_CONNECTION_HEADER = 'X-TavernTable-Live-Connection';
 
 export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
@@ -96,6 +98,28 @@ export function isCloudLiveAccess(value) {
     value.session.state === 'live' &&
     isCloudParticipantAccess(value.participant) &&
     value.participant.access.campaignId === value.session.campaignId
+  );
+}
+
+export function isCloudLivePresenceAcknowledgement(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'connectionId', 'expiresAt']) &&
+    value.version === 1 &&
+    isCloudUUID(value.connectionId) &&
+    Number.isSafeInteger(value.expiresAt) &&
+    value.expiresAt > 0
+  );
+}
+
+export function isCloudLivePresenceClosure(value) {
+  return (
+    record(value) &&
+    keys(value, ['version', 'connectionId', 'closed', 'transportClosed']) &&
+    value.version === 1 &&
+    isCloudUUID(value.connectionId) &&
+    typeof value.closed === 'boolean' &&
+    typeof value.transportClosed === 'boolean'
   );
 }
 

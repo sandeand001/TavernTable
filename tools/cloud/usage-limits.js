@@ -12,6 +12,7 @@ const OWNED_CAMPAIGN_LIMIT = 10;
 const STORAGE_BYTE_LIMIT = 20 * 1024 ** 3;
 const REQUEST_LIMIT = 300;
 const REQUEST_WINDOW_MS = 60 * 1000;
+const TRANSPORT_REQUEST_CAPACITY = 8;
 const STREAM_LIMIT = 4;
 const INVENTORY_LEASE_MS = 5 * 60 * 1000;
 const OBJECT_PUBLICATION_WINDOW_MS = 15 * 60 * 1000;
@@ -97,6 +98,8 @@ class CloudUsageLimits {
     this.firestore = firestore;
     this.access = access;
     this.now = now;
+    this.transportRequestBudgets = new Map();
+    this.transportRequestReservations = new Map();
   }
 
   _reference(uid) {
@@ -520,37 +523,134 @@ class CloudUsageLimits {
     transaction.set(this._reference(uid), { ...record, ownedCampaigns: record.ownedCampaigns + 1 });
   }
 
-  async consumeRequest(principal, { invitation = false } = {}) {
+  _requestAdmission(snapshot, uid) {
+    const record = snapshot.exists ? snapshot.data() : { version: 1, uid, timestamps: [] };
+    if (
+      ![1, 2].includes(record?.version) ||
+      record.uid !== uid ||
+      !Array.isArray(record.timestamps) ||
+      record.timestamps.length > REQUEST_LIMIT ||
+      record.timestamps.some(
+        (value, index) => !validBytes(value) || (index > 0 && value < record.timestamps[index - 1])
+      ) ||
+      (record.version === 1
+        ? Object.hasOwn(record, 'leases')
+        : !Array.isArray(record.leases) ||
+          record.leases.length > REQUEST_LIMIT ||
+          record.leases.some(
+            (lease) =>
+              !lease ||
+              Object.keys(lease).length !== 4 ||
+              !isCloudUUID(lease.id) ||
+              !validBytes(lease.reservedAt) ||
+              !validBytes(lease.expiresAt + REQUEST_WINDOW_MS) ||
+              lease.expiresAt !== lease.reservedAt + REQUEST_WINDOW_MS ||
+              !Number.isSafeInteger(lease.capacity) ||
+              lease.capacity < 1 ||
+              lease.capacity > TRANSPORT_REQUEST_CAPACITY
+          ))
+    )
+      throw invalidUsage();
+    const savedLeases = record.version === 2 ? record.leases : [];
+    const now = Math.max(
+      this.now(),
+      record.timestamps.at(-1) ?? 0,
+      ...savedLeases.map((lease) => lease.reservedAt)
+    );
+    if (!validBytes(now)) throw invalidUsage();
+    const timestamps = record.timestamps.filter((value) => now - value < REQUEST_WINDOW_MS);
+    // A leased call may happen at the end of its lease, so retain its charge for another minute.
+    const leases = savedLeases.filter((lease) => now < lease.expiresAt + REQUEST_WINDOW_MS);
+    const used = timestamps.length + leases.reduce((sum, lease) => sum + lease.capacity, 0);
+    if (used >= REQUEST_LIMIT)
+      throw Object.assign(
+        new CloudError(
+          429,
+          'request-limit-reached',
+          'This account has reached 300 requests per minute; wait before retrying the same command'
+        ),
+        {
+          retryAfter: Math.max(
+            1,
+            Math.ceil(
+              (Math.min(
+                ...timestamps.map((value) => value + REQUEST_WINDOW_MS),
+                ...leases.map((lease) => lease.expiresAt + REQUEST_WINDOW_MS)
+              ) -
+                now) /
+                1000
+            )
+          ),
+        }
+      );
+    return { now, timestamps, leases, available: REQUEST_LIMIT - used };
+  }
+
+  async _consumeTransportRequest(uid) {
+    await this.access.assertEligibility(uid);
+    for (;;) {
+      const cached = this.transportRequestBudgets.get(uid);
+      const now = Math.max(this.now(), cached?.reservedAt ?? 0);
+      if (cached && cached.remaining > 0 && now < cached.expiresAt) {
+        cached.remaining--;
+        return;
+      }
+      this.transportRequestBudgets.delete(uid);
+      let pending = this.transportRequestReservations.get(uid);
+      if (!pending) {
+        const reference = this.firestore.collection('accountRequests').doc(pilotAccountKey(uid));
+        pending = this._transaction(async (transaction) => {
+          await this.access.assertEligibility(uid, transaction);
+          const admitted = this._requestAdmission(await transaction.get(reference), uid);
+          const lease = {
+            id: randomUUID(),
+            reservedAt: admitted.now,
+            expiresAt: admitted.now + REQUEST_WINDOW_MS,
+            capacity: Math.min(TRANSPORT_REQUEST_CAPACITY, admitted.available),
+          };
+          transaction.set(reference, {
+            version: 2,
+            uid,
+            timestamps: admitted.timestamps,
+            leases: [...admitted.leases, lease],
+          });
+          return lease;
+        }).then((lease) => {
+          for (const [key, budget] of this.transportRequestBudgets)
+            if (budget.expiresAt <= this.now()) this.transportRequestBudgets.delete(key);
+          this.transportRequestBudgets.set(uid, { ...lease, remaining: lease.capacity });
+        });
+        this.transportRequestReservations.set(uid, pending);
+      }
+      try {
+        await pending;
+      } finally {
+        if (this.transportRequestReservations.get(uid) === pending)
+          this.transportRequestReservations.delete(uid);
+      }
+    }
+  }
+
+  async consumeRequest(principal, { invitation = false, transport = false } = {}) {
     const uid = principalUid(principal);
+    if (typeof transport !== 'boolean' || (transport && invitation))
+      throw new CloudError(
+        400,
+        'invalid-live-command',
+        'Choose explicit transport request accounting'
+      );
+    if (transport) return this._consumeTransportRequest(uid);
     const reference = this.firestore.collection('accountRequests').doc(pilotAccountKey(uid));
     await this._transaction(async (transaction) => {
       if (invitation) await this.access.assertInvitationEligibility(uid, transaction);
       else await this.access.assertEligibility(uid, transaction);
-      const snapshot = await transaction.get(reference);
-      const record = snapshot.exists ? snapshot.data() : { version: 1, uid, timestamps: [] };
-      if (
-        record?.version !== 1 ||
-        record.uid !== uid ||
-        !Array.isArray(record.timestamps) ||
-        record.timestamps.length > REQUEST_LIMIT ||
-        record.timestamps.some(
-          (value, index) =>
-            !validBytes(value) || (index > 0 && value < record.timestamps[index - 1])
-        )
-      )
-        throw invalidUsage();
-      const now = Math.max(this.now(), record.timestamps.at(-1) ?? 0);
-      const timestamps = record.timestamps.filter((value) => now - value < REQUEST_WINDOW_MS);
-      if (timestamps.length >= REQUEST_LIMIT)
-        throw Object.assign(
-          new CloudError(
-            429,
-            'request-limit-reached',
-            'This account has reached 300 requests per minute; wait before retrying the same command'
-          ),
-          { retryAfter: Math.max(1, Math.ceil((timestamps[0] + REQUEST_WINDOW_MS - now) / 1000)) }
-        );
-      transaction.set(reference, { version: 1, uid, timestamps: [...timestamps, now] });
+      const admitted = this._requestAdmission(await transaction.get(reference), uid);
+      transaction.set(reference, {
+        version: admitted.leases.length ? 2 : 1,
+        uid,
+        timestamps: [...admitted.timestamps, admitted.now],
+        ...(admitted.leases.length ? { leases: admitted.leases } : {}),
+      });
     });
   }
 

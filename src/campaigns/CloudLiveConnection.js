@@ -39,6 +39,7 @@ const retryable = new Set([
   'snapshot-storage-unavailable',
   'snapshot-unavailable',
   'resource-catalog-unavailable',
+  'client-presence-expired',
 ]);
 
 export default class CloudLiveConnection {

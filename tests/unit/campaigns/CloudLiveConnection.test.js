@@ -126,6 +126,7 @@ function fixture({ access = scope } = {}) {
   const openings = new Map();
   const fetch = jest.fn(async () => {
     let heartbeat;
+    const connectionId = `44444444-4444-4444-8444-${String(sources.length).padStart(12, '0')}`;
     return new Response(
       new ReadableStream({
         start(controller) {
@@ -143,12 +144,28 @@ function fixture({ access = scope } = {}) {
           clearInterval(heartbeat);
         },
       }),
-      { headers: { 'Content-Type': 'text/event-stream' } }
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'X-TavernTable-Live-Connection': connectionId,
+        },
+      }
     );
+  });
+  // Keep reconnection assertions scoped to event opens, with control traffic tracked separately.
+  const controlFetch = jest.fn(async (url, options) => {
+    const { connectionId } = JSON.parse(options.body);
+    const result = url.endsWith('/ack')
+      ? { version: 1, connectionId, expiresAt: Date.now() + 90000 }
+      : { version: 1, connectionId, closed: true, transportClosed: true };
+    return new Response(JSON.stringify({ version: 1, result }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
   });
   const connection = new CloudAccountConnection({
     account,
-    fetch,
+    fetch: (url, options) =>
+      url.includes('/live/presence/') ? controlFetch(url, options) : fetch(url, options),
     baseURL: 'http://127.0.0.1:19410/',
     runtime: {
       version: 1,
@@ -176,6 +193,7 @@ function fixture({ access = scope } = {}) {
     auth,
     observers,
     fetch,
+    controlFetch,
     store,
     states,
     statuses,
@@ -487,7 +505,10 @@ test('an expired streaming bearer refreshes the same managed identity once befor
     expect(setup.statuses.at(-1)).toEqual({ phase: 'reconnecting', reason: 'invalid-identity' });
     await jest.advanceTimersByTimeAsync(1000);
     expect(setup.fetch).toHaveBeenCalledTimes(2);
-    expect(setup.getIdToken.mock.calls.map(([force]) => force)).toEqual([false, true, false]);
+    const renewals = setup.getIdToken.mock.calls.map(([force]) => force);
+    expect(renewals[0]).toBe(false);
+    expect(renewals.filter((force) => force)).toHaveLength(1);
+    expect(renewals.slice(-2)).toEqual([true, false]);
     setup.send(1, head(2));
     await jest.advanceTimersByTimeAsync(0);
     expect(setup.states.map(({ state }) => state.head.generation)).toEqual([1, 2]);
@@ -577,7 +598,10 @@ test.each([0, 0.999999])(
       expect(setup.fetch).toHaveBeenCalledTimes(1);
       await jest.advanceTimersByTimeAsync(1);
       expect(setup.fetch).toHaveBeenCalledTimes(2);
-      expect(setup.getIdToken.mock.calls.map(([force]) => force)).toEqual([false, true, false]);
+      const renewals = setup.getIdToken.mock.calls.map(([force]) => force);
+      expect(renewals[0]).toBe(false);
+      expect(renewals.filter((force) => force)).toHaveLength(1);
+      expect(renewals.slice(-2)).toEqual([true, false]);
       expect(setup.fetch.mock.calls[0][1].signal.aborted).toBe(true);
       expect(setup.fetch.mock.calls[1][1].headers.Authorization).toBe('Bearer renewed-token');
       expect(setup.statuses.at(-1).phase).not.toBe('ready');

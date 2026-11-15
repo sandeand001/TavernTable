@@ -1,3 +1,5 @@
+import { CLOUD_LIVE_CONNECTION_HEADER } from './CloudProtocol.js';
+
 const MAX_EVENT_BYTES = 32 * 1024 * 1024;
 const STALLED_MS = 60000;
 const failure = (code, message, status = 503) =>
@@ -9,6 +11,7 @@ const changed = () =>
 export default class CloudEventStream {
   constructor({ response, controller, account, credential, signal = null }) {
     this.reader = response.body.getReader();
+    this.connectionId = response.headers.get(CLOUD_LIVE_CONNECTION_HEADER);
     this.controller = controller;
     this.signal = signal;
     this.cancel = () => this._abort(failure('stream-closed', 'The live stream was closed.', 409));

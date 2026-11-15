@@ -3883,3 +3883,274 @@ does not stand in for actual idle continuity, warm zero-body rejoin, real
 55/60/15-minute boundaries, managed long-stream rotation, scale-to-zero or
 authorized-sheet cold wake. The online-only design, both original local hosts,
 gameplay capability gates and deferred routine-save UX remain unchanged.
+
+#### Hosted disappearance and approved client-originated liveness
+
+The actual R7 long run subsequently verifies owner Keep Active at
+**05:48:38.404Z**, the second campaign's natural warning at **05:53:39.022Z**
+and inactivity pause at **05:58:40.832Z**, with exact authoritative pause
+deadline **05:58:24.493Z**. All ten managed identities and streams rotate;
+the first campaign remains live for **3,693,320 ms**, beyond one hour.
+There are **59** hosted memory samples, 04:59-05:57 UTC, with maximum
+distribution mean **250,568,704 bytes**, below the existing 1-GiB limit.
+These are component results, not an instantaneous peak or a completed M4-12.
+
+The run stops at its restarted second-campaign disconnect check. A minimized
+plain-Fetch reproduction, without injected latency, closes locally in
+**0.4474 ms** but leaves server presence and its UID lease active after
+**95 seconds**, including another server renewal. Local cancellation therefore
+does not establish server-side disappearance on this reproduced hosted path.
+This is not a claim about every browser or proxy. Exact cleanup completes at
+**05:59:11.734Z** for the ten-UID/two-campaign run and **06:05:52.486Z**
+for the one-UID/two-campaign reproduction. No real campaign is changed.
+
+The owner approves client-originated liveness within the existing authenticated
+HTTP/Fetch-SSE design and publication of updated pilot frontend/backend packages:
+
+- Public SSE commits a version-2 presence connection before exposing its random
+  channel ID in `X-TavernTable-Live-Connection`. The ID is ephemeral, not cached
+  campaign authority.
+- Captured-UID/seat/generation/epoch POST controls use bounded 512-byte JSON
+  bodies. ACKs every **25 seconds** refresh last-client-seen proof with a
+  **90-second** lifetime and **60-second** durable-write coalescing. Server
+  renewal cannot advance proof to server time or revive an expired channel.
+  Heartbeats, ACKs and reconnects never extend meaningful activity.
+- ACK requests still share the **300 requests/rolling minute** limit.
+  Precharged per-runtime/UID budgets reserve at most eight admissions for a
+  60-second spend window. They remain durably charged for another full rolling
+  minute, so consuming late cannot escape the global limit. Cached consumption
+  rechecks eligibility without a per-ACK quota write; lost/unused capacity is
+  conservative, not silently refunded.
+- Best-effort close has an independent **five-second** bound. Same-worker close
+  waits for the physical owner and final resource cleanup; cross-worker close
+  removes owned durable presence but never prematurely frees another worker's
+  UID quota lease. Missing ACKs bound an orphaned physical request by its stored
+  client-proof deadline.
+- The client validates the exact channel/receipt and stops ACKs, deadlines and
+  authority on failure or closure. ACK requests have a ten-second bound and
+  cannot overlap. Terminal server closure does not send a redundant close RPC.
+  Expected network/authentication close failures are redacted warnings with
+  proof-expiry fallback; unexpected failures are not swallowed.
+
+Native validation exposed a concurrent-cleanup race: the transport registry
+discarded its physical owner before its asynchronous presence/lease cleanup
+finished, while the close route could start another presence transaction.
+The emulator records transaction-lock timeouts followed by an invalid/closed
+transaction for the observed close-route 500. A deterministic resource-ownership
+regression is red before retaining that owner through cleanup. Explicit close
+now first joins that scoped physical owner, then verifies durable removal.
+Wrong-scope close cannot terminate it. The original adjacent warm-rejoin cases
+now also require successful close responses on their healthy network.
+
+The final local coupled gate passes **4 suites / 122 tests**, **1.924 s**,
+with open-handle detection. A physical-stream fake-clock case verifies closure
+at the last **90-second** client-proof deadline despite successful server lease
+renewal. The actual HTTP/scoped-close and two adjacent warm SDK cases pass
+**3/3**, **49,453.1958 ms**, without the previous unknown close error.
+Earlier native proof/legacy/SDK selection passes **5/5**,
+**25,853.1943 ms**; shared-rate/new-budget/legacy-300 selection passes
+**3/3**, **40,052.1702 ms**. Changed-source formatting, lint and layering pass.
+These are targeted results, not a new full-stable-suite claim.
+
+**Publication and new-runtime hosted acceptance remain pending.** R7 is still
+the live backend and the earlier M4-09 artifact is still the live frontend.
+Before accepting M4-12, repeat the original hosted disconnect reproduction and
+hard-loss/proof-expiry control, latency, warm authority and lifecycle gates.
+Idle payload must include outgoing ACK JSON, incoming ACK JSON and SSE bodies,
+remaining below **2 KiB/minute/participant**, with no scene polling.
+Provider control/work windows must count ACK HTTP separately from gameplay and
+remeasure operations/network costs. The R7 no-ACK numbers below are historical,
+not the new protocol's acceptance measurements. No infrastructure, IAM, billing,
+real-source cutover, capability gate or deferred save-notice change is approved
+by this liveness work.
+
+### M4-13 worksheet: measured costs, acceptance pending M4-12
+
+This is a **draft cost/readiness worksheet**, not a completed M4-13 gate or a
+production approval. R7's hour-long component results are recorded above; its
+disconnect failure requires the approved client-proof update and new hosted
+measurements before acceptance. The owner-approved budget is **USD 25 per calendar month,
+alerts only**, not a spending limit.
+
+#### Actual paired live-work observations
+
+The current exact R7 revision has ten managed UIDs, one owner/nine member
+connections on the measured board, and one additional owner stream on a second
+synthetic campaign solely for the independent natural inactivity clock. The
+background measurements therefore conservatively include **eleven streams and
+two campaigns**, not ten separate billed instances.
+
+After an API-Date-calibrated quiet lead-in, five accepted assigned moves occupy
+one declared provider minute. All five client requests match the actual Cloud
+Run request counter; no application polling occurs in the control/ingestion
+wait. Raw regional document counters are read after their documented lag.
+
+| November 15 UTC minute | App HTTP requests | Firestore document reads | Document writes | Run sent bytes, all network kinds |
+| --- | --- | --- | --- | --- |
+| 05:03-05:04, unchanged control | 0 | 1,202 | 41 | 574,468 |
+| 05:04-05:05, five accepted moves | 5 | 1,747 | 64 | 3,123,657 |
+
+Paired increments are **109 reads / 4.6 writes per accepted move**; the gross
+work minute is **349.4 reads / 12.8 writes per move**, including its background
+and opportunistic work. These are measurements of this workload, not universal
+per-command constants. Tiny app heartbeats do not imply zero backend lease/watch
+traffic or zero Firestore cost.
+
+The work minute also records **7 WriteObject**, **49 successful metadata reads**,
+**7 metadata NOT_FOUND** and **38 object reads** in the exact private bucket.
+The model conservatively charges all 94 read/metadata attempts as Class B and
+the seven writes as Class A. Backup work already included in that minute is
+not added as a second operation charge. The quiet Storage minute emits no
+samples; that absence is not relabeled a measured zero.
+
+One backup-due observation is slower: the five validated receipts are
+**2,799.85 / 1,347.20 / 1,412.85 / 1,383.66 / 1,338.08 ms**. It is not discarded.
+Together with all thirty moves in the same live run, **35 accepted receipts**
+have **p95 1,758.10 ms**, maximum **2,799.85 ms**, and one value above two seconds.
+The initial thirty-move RTT gate passes; the cost slice is not presented as
+an independent controlled-network p95.
+
+The provider's `google` network kind includes responses through Google Cloud
+load balancers as well as Google API traffic. It is **not proof of free internal
+egress**. The forecast conservatively prices all observed sent bytes as Internet
+transfer; it does not add that total to the same API response bytes again.
+Static Hosting and same-region Storage-to-API delivery remain separate paths.
+
+#### Verified USD units and shared allowances
+
+The existing enabled Billing Catalog was read without changing billing or IAM.
+The relevant public SKU prices are effective **November 14, 2026**:
+
+| Category | Paid-tier unit used |
+| --- | --- |
+| Oregon request-based CPU / allocated memory | $0.000024/vCPU-second / $0.0000025/GiB-second |
+| Cloud Run requests / North America Internet transfer | $0.40/million / $0.105/GiB first paid tier |
+| Oregon Standard Firestore reads / writes / deletes | $0.03 / $0.09 / $0.01 per 100,000 documents |
+| Firestore data and indexes | $0.15/GiB-month |
+| US regional Standard GCS / Class A / Class B | $0.02/GiB-month / $0.005 per 1,000 / $0.0004 per 1,000 |
+| Static Firebase Hosting storage / transfer | $0.026/GiB-month / $0.15/GiB |
+| Artifact Registry storage | $0.10/GiB-month |
+| Default log ingestion / chargeable extra retention | $0.50/GiB / $0.01/GiB-month beyond 30 days |
+
+References: [Cloud Run](https://cloud.google.com/run/pricing),
+[Firestore](https://cloud.google.com/firestore/pricing),
+[GCS](https://cloud.google.com/storage/pricing),
+[Firebase Hosting](https://firebase.google.com/pricing),
+[Artifact Registry](https://cloud.google.com/artifact-registry/pricing) and
+[Logging](https://cloud.google.com/products/observability/pricing).
+Catalog SKU units, tiers, region taxonomy and effective dates are retained in
+the private operator evidence; some Oregon Standard Firestore SKUs encode the
+region in their description while listing the service region as global.
+
+Free usage must not be multiplied by participant or project where it is
+billing-account shared. Run's 180,000 CPU-seconds, 360,000 GiB-seconds and two
+million requests are monthly shared allowances. Firestore's 50,000/20,000/20,000
+document operations reset **daily** on the eligible database. Hosting transfer
+uses the actual project/daily **0.3515625 GiB (360 MiB)** tier, not a pooled
+monthly allowance. Its storage free tier is daily-prorated. GCS's eligible
+5-GiB storage and operation allowances, and Registry's 0.5-GiB allowance, may
+already be consumed elsewhere. None is assumed available in the gross model.
+
+The bucket is the newer `firebasestorage.app` type and uses GCS pricing, not the
+legacy `appspot.com` daily download tariff. GCS's eligible direct-download free
+tier is **not applied to bytes forwarded through Cloud Run**. Same-region
+GCS-to-Run and Registry image pulls are not charged Internet transfer again.
+There is no GPU, connector, relational server or committed-use purchase.
+
+#### Declared planning workload and conservative totals
+
+The scenario is one group of ten with **30 shared gameplay hours/month**, not
+300 billed participant-hours. It assumes **1,200 accepted moves/hour total**
+(36,000/month), a deliberately busy continuous one-every-three-seconds workload,
+not a claimed user habit. One allocated CPU/1 GiB costs **$2.862 gross** for the
+thirty active hours; an additional **2.25 active hours** is reserved for starts,
+short sheet work and unusually active tails. Idle non-minimum instances under
+the current request-based/min-zero setup are not charged as active CPU merely
+because a logical disconnect-grace deadline remains stored.
+
+Two estimates avoid adding background twice:
+
+1. **Paired plus reserves:** measured quiet background for the modeled active
+   minutes plus the measured paired per-move increment.
+2. **Gross-minute upper scenario:** the higher of the scaled gross work-minute
+   or the background-only observation, not their sum.
+
+Both reserve an additional **200 document reads and one write per move** for
+mature-history pruning, bounded cleanup, retries and maintenance not fully
+represented by the fresh five-move fixture. This is an explicit planning
+allowance, not a measured universal limit. At the 1,000-change retention
+boundary an eligible prune can read the original 100-row batch even if only
+one row retires; the fresh one-row probe does not erase that later cost.
+
+| Gross-minute upper scenario line | Gross monthly USD |
+| --- | --- |
+| Firestore reads, including maintenance reserve | 5.9335 |
+| CPU allocation, including active-tail reserve | 2.7864 |
+| All-kind API sent bytes, all priced as Internet upper estimate | 2.1993 |
+| Firestore data/index planning reserve, 5 GiB | 0.7500 |
+| Log-ingestion reserve, 1 GiB | 0.5000 |
+| Retained-registry planning reserve, 5 GiB | 0.5000 |
+| Firestore writes, including maintenance reserve | 0.4471 |
+| Ten whole static-package downloads plus 1% overhead | 0.4083 |
+| Entire owner retained GCS payload allowance, 20 GiB | 0.4000 |
+| Allocated memory, including active-tail reserve | 0.2903 |
+| GCS Class B / Class A | 0.2707 / 0.2520 |
+| Cleanup deletes / commands and 1,000 extra HTTP requests | 0.0200 / 0.0148 |
+| **Total, all shared free allowances already consumed** | **14.7725** |
+
+The paired-plus-reserves estimate is **$12.3839**. The more conservative
+**$14.7725** leaves **$10.2275** below the $25 alert budget before any available
+free usage. These are workload estimates, not an actual invoice or a hard
+upper bound on arbitrary public traffic, multiple owner datasets or bulk work.
+
+The static allowance uses the exact **289,411,201-byte** public artifact and
+assumes every browser downloads every file once, more than progressive loading
+normally requires. Unchanged immutable files/warm private assets are not charged
+as recurring complete downloads. Four full release-download waves instead of
+one add about **$1.23 gross** under the same assumptions. Large extra exports
+or higher traffic require a fresh calculation; roughly 100 additional GiB of
+API Internet delivery alone would add about $10.50 before applicable allowances.
+
+The current releases are built locally and uploaded directly: no Cloud Build
+execution is requested by this workflow. Future CI builds must be priced
+separately. Google/email managed identity for this small pilot introduces no
+phone/SMS or new Identity Platform upgrade. The default 30-day log retention
+is included in ingestion; the locked 400-day `_Required` bucket is not charged
+the extra-retention line. Retained rollback images remain preserved.
+
+#### Twenty backups, soft deletion and unresolved gauges
+
+The GCS allowance already includes live data, twenty complete backups,
+quarantined old checkpoints and billable soft-deleted generations. It is not
+added to a second copy of the same backup bytes. As an illustration only,
+twenty 40-MiB backups occupy 800 MiB; continuous changed-state work targets
+twelve per active hour plus changed session-end captures, not another daily
+tier. Pruned copies still consume their seven-day soft-delete retention before
+physical reclamation. Standard storage has no Nearline-style minimum-duration
+penalty. The 20-GiB owner payload limit can refuse further publication rather
+than making those retained bytes free; operator/test churn and metadata still
+need observation.
+
+Read-only Registry data now reports **320,710,714 repository bytes** versus
+**2,296,822,095 known logical image-metadata bytes**, with **42 retained rows**.
+Fourteen OCI indexes legitimately omit `imageSizeBytes`; they are not silently
+coerced to zero or used to claim a complete deduplicated bill. The older
+Monitoring **2,622,323,836-byte** sample remains differently aged/accounted.
+The 5-GiB planning reserve discloses that uncertainty without deleting rollback
+images.
+
+The combined Firestore data/index storage gauge returns **no samples** in the
+queried recent window, not a measured zero. Its 5-GiB reserve is a planning
+allowance, not an invented actual footprint; it must be reconciled with the
+selected import/rehearsal. Operation metrics are one document-counter family,
+not the sum of mirrored legacy/new RPC or document series. Gauge samples at
+different times are not summed into stored capacity.
+
+**Still pending:** hosted acceptance on the client-proof runtime, including
+remeasured ACK-inclusive payload/operations/costs, actual 15-minute disconnect
+grace, fresh zero-instance evidence, cold authorized sheet experience and
+re-sleep. R7's verified rotation, 55/60-minute and sampled-memory components do
+not replace that acceptance. This worksheet does not check M4-13,
+select real migration data, enable full gameplay, authorize cutover or alter the
+budget. The original source selection/rehearsal and production approvals remain
+separate M5 gates.

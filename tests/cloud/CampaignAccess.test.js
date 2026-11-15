@@ -295,6 +295,112 @@ test(
 );
 
 test(
+  'authenticated presence routes acknowledge the current channel and explicitly close its server resources',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now, cleanup: true });
+    const owner = await f.account();
+    const unrelated = await f.account();
+    const campaign = await f.create(owner.principal, 'Explicit live transport control');
+    const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId: paused.sessionId,
+    });
+    const api = await cloudApi({ access: f.access, store: f.store });
+    t.after(() => api.close());
+    const controller = new AbortController();
+    const headers = {
+      Authorization: 'Bearer ' + owner.token,
+      'Content-Type': 'application/json',
+      Origin: api.origin,
+      'X-TavernTable-Seat': 'owner',
+      'X-TavernTable-Access-Generation': '0',
+    };
+    try {
+      const response = await fetch(`${api.url}/api/cloud/campaigns/${campaign.id}/events`, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          sessionId: active.sessionId,
+          observerTokenId: null,
+          mapId: null,
+          assetKey: null,
+        }),
+      });
+      assert.equal(response.status, 200);
+      const connectionId = response.headers.get('X-TavernTable-Live-Connection');
+      assert.match(connectionId, /^[a-f0-9-]{36}$/);
+      assert.ok(
+        response.headers
+          .get('Access-Control-Expose-Headers')
+          .includes('X-TavernTable-Live-Connection')
+      );
+      const command = JSON.stringify({ sessionId: active.sessionId, connectionId });
+      const resource = `${api.url}/api/cloud/campaigns/${campaign.id}/live/presence/`;
+      const wrongScope = await fetch(resource + 'close', {
+        method: 'POST',
+        headers: { ...headers, 'X-TavernTable-Access-Generation': '1' },
+        body: command,
+      });
+      assert.equal(wrongScope.status, 409);
+      assert.equal((await wrongScope.json()).code, 'campaign-access-changed');
+      const denied = await fetch(resource + 'ack', {
+        method: 'POST',
+        headers: { ...headers, Authorization: 'Bearer ' + unrelated.token },
+        body: command,
+      });
+      assert.equal(denied.status, 404);
+      now += 75000;
+      const acknowledged = await fetch(resource + 'ack', {
+        method: 'POST',
+        headers,
+        body: command,
+      });
+      assert.equal(acknowledged.status, 200);
+      assert.deepEqual((await acknowledged.json()).result, {
+        version: 1,
+        connectionId,
+        expiresAt: now + 90000,
+      });
+      const closed = await fetch(resource + 'close', { method: 'POST', headers, body: command });
+      assert.equal(closed.status, 200);
+      assert.deepEqual((await closed.json()).result, {
+        version: 1,
+        connectionId,
+        closed: true,
+        transportClosed: true,
+      });
+      assert.ok((await response.text()).includes('"code":"stream-closed"'));
+      const lease = await f.runtime.firestore
+        .collection('accountStreams')
+        .doc(pilotAccountKey(owner.uid))
+        .get();
+      assert.deepEqual(lease.data().leases, []);
+      assert.equal(
+        (await f.store.getLiveStatus(owner.principal, campaign.id)).activity.disconnectedAt,
+        new Date(now).toISOString()
+      );
+      const stale = await fetch(resource + 'ack', { method: 'POST', headers, body: command });
+      assert.equal(stale.status, 404);
+      const repeated = await fetch(resource + 'close', { method: 'POST', headers, body: command });
+      assert.deepEqual((await repeated.json()).result, {
+        version: 1,
+        connectionId,
+        closed: false,
+        transportClosed: false,
+      });
+    } finally {
+      controller.abort();
+    }
+  }
+);
+
+test(
   'an authenticated Fetch SSE connection delivers scoped changes and releases its resources on pause, epoch change and membership removal',
   { timeout: 30000 },
   async (t) => {
@@ -3307,6 +3413,174 @@ test(
     assert.equal(paused.pausedAt, new Date(now).toISOString());
     assert.equal(paused.lastMeaningfulAt, active.lastMeaningfulAt);
     assert.deepEqual((await head.get()).data(), original);
+  }
+);
+
+test(
+  'transport presence acknowledgements coalesce durable proof and server renewal cannot keep a vanished client alive',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now, cleanup: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Client presence proof');
+    await f.join(campaign.id, member.uid);
+    const grant = await f.store.getParticipantAccess(member.principal, campaign.id);
+    const scope = {
+      seatId: grant.access.seatId,
+      accessGeneration: grant.access.accessGeneration,
+    };
+    const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId: paused.sessionId,
+    });
+    const started = now;
+    const connection = await f.store.connectLivePresence(
+      member.principal,
+      campaign.id,
+      { sessionId: active.sessionId },
+      { clientAcknowledgements: true }
+    );
+    const command = { sessionId: active.sessionId, connectionId: connection.id };
+    const reference = f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('livePresenceConnections')
+      .doc(connection.id);
+    const before = (await reference.get()).data();
+    now = started + 25000;
+    const early = await f.store.acknowledgeLivePresence(
+      member.principal,
+      campaign.id,
+      command,
+      scope
+    );
+    assert.equal(early.expiresAt, started + 90000);
+    assert.deepEqual((await reference.get()).data(), before);
+    now = started + 60000;
+    const serverRenewal = await f.store.renewLivePresence(member.principal, campaign.id, command);
+    assert.equal(serverRenewal.clientExpiresAt, started + 90000);
+    assert.equal(serverRenewal.expiresAt, started + 90000);
+    now = started + 75000;
+    const acknowledged = await f.store.acknowledgeLivePresence(
+      member.principal,
+      campaign.id,
+      command,
+      scope
+    );
+    assert.equal(acknowledged.expiresAt, started + 165000);
+    now = started + 150000;
+    const later = await f.store.renewLivePresence(member.principal, campaign.id, command);
+    assert.equal(later.clientExpiresAt, started + 165000);
+    assert.equal(later.expiresAt, started + 165000);
+    now = started + 165000;
+    await assert.rejects(
+      f.store.renewLivePresence(member.principal, campaign.id, command),
+      (error) => error.code === 'client-presence-expired'
+    );
+    await assert.rejects(
+      f.store.acknowledgeLivePresence(member.principal, campaign.id, command, scope),
+      (error) => error.code === 'client-presence-expired'
+    );
+    const disconnected = await f.store.getLiveStatus(owner.principal, campaign.id);
+    assert.equal(disconnected.activity.disconnectedAt, new Date(now).toISOString());
+    assert.equal(disconnected.session.lastMeaningfulAt, active.lastMeaningfulAt);
+    await f.store.disconnectLivePresence(member.principal, campaign.id, command, scope);
+  }
+);
+
+test(
+  'client presence proof is UID and epoch scoped across workers while revoked owners of a connection can still close it',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now, cleanup: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const unrelated = await f.account();
+    const campaign = await f.create(owner.principal, 'Scoped client acknowledgement');
+    await f.join(campaign.id, member.uid);
+    const grant = await f.store.getParticipantAccess(member.principal, campaign.id);
+    const scope = {
+      seatId: grant.access.seatId,
+      accessGeneration: grant.access.accessGeneration,
+    };
+    const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId: paused.sessionId,
+    });
+    const connection = await f.store.connectLivePresence(
+      member.principal,
+      campaign.id,
+      { sessionId: active.sessionId },
+      { clientAcknowledgements: true }
+    );
+    const command = { sessionId: active.sessionId, connectionId: connection.id };
+    const reference = f.runtime.firestore
+      .collection('campaigns')
+      .doc(campaign.id)
+      .collection('livePresenceConnections')
+      .doc(connection.id);
+    const before = (await reference.get()).data();
+    await assert.rejects(
+      f.store.acknowledgeLivePresence(unrelated.principal, campaign.id, command, scope),
+      (error) => error.status === 404
+    );
+    await assert.rejects(
+      f.store.acknowledgeLivePresence(member.principal, campaign.id, command, {
+        ...scope,
+        accessGeneration: scope.accessGeneration + 1,
+      }),
+      (error) => error.code === 'campaign-access-changed'
+    );
+    assert.deepEqual((await reference.get()).data(), before);
+    now += 75000;
+    const otherWorker = f.createStore();
+    const accepted = await otherWorker.acknowledgeLivePresence(
+      member.principal,
+      campaign.id,
+      command,
+      scope
+    );
+    assert.equal(accepted.expiresAt, now + 90000);
+    await f.runtime.firestore
+      .collection('campaignMemberships')
+      .doc(pilotAccountKey(member.uid))
+      .collection('campaigns')
+      .doc(campaign.id)
+      .delete();
+    await assert.rejects(
+      otherWorker.acknowledgeLivePresence(member.principal, campaign.id, command, scope),
+      (error) => error.status === 404
+    );
+    await assert.rejects(
+      otherWorker.disconnectLivePresence(member.principal, campaign.id, command, {
+        ...scope,
+        accessGeneration: scope.accessGeneration + 1,
+      }),
+      (error) => error.code === 'campaign-access-changed'
+    );
+    assert.equal(
+      (await otherWorker.disconnectLivePresence(member.principal, campaign.id, command, scope))
+        .closed,
+      true
+    );
+    assert.equal(
+      (await otherWorker.disconnectLivePresence(member.principal, campaign.id, command, scope))
+        .closed,
+      false
+    );
+    assert.equal(
+      (await f.store.getLiveStatus(owner.principal, campaign.id)).activity.disconnectedAt,
+      new Date(now).toISOString()
+    );
   }
 );
 

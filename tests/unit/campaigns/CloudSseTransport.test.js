@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { EventEmitter } from 'node:events';
-import { openCloudEventStream } from '../../../tools/cloud/event-stream.js';
+import { openCloudEventStream, closeCloudEventStream } from '../../../tools/cloud/event-stream.js';
 import { CloudError } from '../../../tools/cloud/cloud-error.js';
 
 function transportFixture() {
@@ -78,6 +78,15 @@ test.each(['event-count', 'utf8-bytes'])(
     try {
       const setup = transportFixture();
       stream = await openCloudEventStream(setup);
+      expect(setup.store.connectLivePresence).toHaveBeenCalledWith(
+        setup.principal,
+        setup.id,
+        { sessionId: setup.command.sessionId },
+        { clientAcknowledgements: true }
+      );
+      expect(setup.response.writeHead.mock.calls[0][1]['X-TavernTable-Live-Connection']).toBe(
+        '44444444-4444-4444-8444-444444444444'
+      );
       setup.response.write.mockReturnValue(false);
       const emit = setup.store.observeParticipant.mock.calls[0][4].onEvent;
       emit({ kind: 'checkpoint', checkpoint: { generation: 1 } });
@@ -111,26 +120,154 @@ test.each(['event-count', 'utf8-bytes'])(
   }
 );
 
-test('aborting after headers but before presence publication releases the eventual presence without sending a checkpoint', async () => {
+test('an authenticated explicit close finishes the registered transport even when the proxy never reports socket closure', async () => {
+  jest.useFakeTimers();
+  let stream;
+  try {
+    const setup = transportFixture();
+    stream = await openCloudEventStream(setup);
+    const command = {
+      sessionId: setup.command.sessionId,
+      connectionId: '44444444-4444-4444-8444-444444444444',
+    };
+    await expect(
+      closeCloudEventStream({
+        store: setup.store,
+        principal: { uid: 'another-uid' },
+        id: setup.id,
+        command,
+      })
+    ).rejects.toMatchObject({ status: 404 });
+    expect(setup.response.end).not.toHaveBeenCalled();
+    expect(
+      await closeCloudEventStream({
+        store: setup.store,
+        principal: setup.principal,
+        id: setup.id,
+        command,
+      })
+    ).toBe(true);
+    await stream.done;
+    expect(setup.response.end).toHaveBeenCalledTimes(1);
+    expect(setup.store.disconnectLivePresence).toHaveBeenCalledTimes(1);
+    expect(setup.store.usage.releaseStream).toHaveBeenCalledTimes(1);
+    expect(
+      await closeCloudEventStream({
+        store: setup.store,
+        principal: setup.principal,
+        id: setup.id,
+        command,
+      })
+    ).toBe(false);
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    await stream?.close();
+    jest.useRealTimers();
+  }
+});
+
+test('an explicit close waits for the existing socket cleanup instead of losing its registered resource owner', async () => {
+  jest.useFakeTimers();
+  let stream;
+  const pending = Promise.withResolvers();
+  const entered = Promise.withResolvers();
+  try {
+    const setup = transportFixture();
+    setup.store.disconnectLivePresence.mockImplementation(() => {
+      entered.resolve();
+      return pending.promise;
+    });
+    stream = await openCloudEventStream(setup);
+    const closing = stream.close();
+    await entered.promise;
+    let confirmed = false;
+    const explicit = closeCloudEventStream({
+      store: setup.store,
+      principal: setup.principal,
+      id: setup.id,
+      command: {
+        sessionId: setup.command.sessionId,
+        connectionId: '44444444-4444-4444-8444-444444444444',
+      },
+    }).then((result) => {
+      confirmed = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(confirmed).toBe(false);
+    pending.resolve({ closed: true });
+    expect(await explicit).toBe(true);
+    await closing;
+    expect(setup.store.disconnectLivePresence).toHaveBeenCalledTimes(1);
+    expect(setup.store.usage.releaseStream).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    pending.resolve({ closed: true });
+    await stream?.close();
+    jest.useRealTimers();
+  }
+});
+
+test('a proxy-held stream closes at its last client proof deadline even while server leases renew successfully', async () => {
+  jest.useFakeTimers();
+  let stream;
+  try {
+    const setup = transportFixture();
+    const clientExpiresAt = Date.now() + 90000;
+    const proof = () => ({
+      id: '44444444-4444-4444-8444-444444444444',
+      expiresAt: Date.now() + 90000,
+      clientExpiresAt,
+    });
+    setup.store.connectLivePresence.mockImplementation(async () => proof());
+    setup.store.renewLivePresence.mockImplementation(async () => {
+      if (Date.now() >= clientExpiresAt)
+        throw new CloudError(409, 'client-presence-expired', 'Reconnect the client');
+      return proof();
+    });
+    stream = await openCloudEventStream(setup);
+    await jest.advanceTimersByTimeAsync(89999);
+    expect(setup.response.end).not.toHaveBeenCalled();
+    expect(setup.store.usage.renewStream).toHaveBeenCalledTimes(1);
+    expect(setup.store.renewLivePresence).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    await stream.done;
+    expect(setup.response.write.mock.calls.map(([text]) => text).join('')).toContain(
+      '"code":"client-presence-expired"'
+    );
+    expect(setup.response.end).toHaveBeenCalledTimes(1);
+    expect(setup.store.disconnectLivePresence).toHaveBeenCalledTimes(1);
+    expect(setup.store.usage.releaseStream).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    await stream?.close();
+    jest.useRealTimers();
+  }
+});
+
+test('aborting while presence publication is pending releases the eventual presence without sending successful headers or a checkpoint', async () => {
   jest.useFakeTimers();
   let stream;
   let publishPresence;
   try {
     const setup = transportFixture();
-    const flushed = Promise.withResolvers();
+    const entered = Promise.withResolvers();
     const presence = Promise.withResolvers();
     publishPresence = () => presence.resolve({ id: '44444444-4444-4444-8444-444444444444' });
-    setup.response.flushHeaders.mockImplementation(() => flushed.resolve());
-    setup.store.connectLivePresence.mockReturnValue(presence.promise);
+    setup.store.connectLivePresence.mockImplementation(() => {
+      entered.resolve();
+      return presence.promise;
+    });
     const opening = openCloudEventStream(setup);
-    await flushed.promise;
+    await entered.promise;
     setup.request.emit('aborted');
     publishPresence();
-    stream = await opening;
-    await stream.done;
+    await expect(opening).rejects.toMatchObject({ code: 'stream-closed' });
     expect(setup.store.disconnectLivePresence).toHaveBeenCalledTimes(1);
     expect(setup.store.usage.releaseStream).toHaveBeenCalledTimes(1);
     expect(setup.observation.close).toHaveBeenCalledTimes(1);
+    expect(setup.response.writeHead).not.toHaveBeenCalled();
     expect(setup.response.write.mock.calls.map(([text]) => text).join('')).not.toContain(
       'checkpoint'
     );
@@ -162,11 +299,11 @@ test('a live pause committed during presence publication fences the initial queu
       );
       return { id: '44444444-4444-4444-8444-444444444444' };
     });
-    stream = await openCloudEventStream(setup);
-    expect(setup.response.end).toHaveBeenCalledTimes(1);
-    await stream.done;
+    await expect(openCloudEventStream(setup)).rejects.toMatchObject({
+      code: 'live-session-paused',
+    });
+    expect(setup.response.writeHead).not.toHaveBeenCalled();
     const wire = setup.response.write.mock.calls.map(([text]) => text).join('');
-    expect(wire).toContain('"code":"live-session-paused"');
     expect(wire).not.toContain('PRIVATE');
     expect(setup.store.usage.releaseStream).toHaveBeenCalledTimes(1);
     expect(setup.store.disconnectLivePresence).toHaveBeenCalledTimes(1);
