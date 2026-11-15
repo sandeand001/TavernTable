@@ -20,6 +20,7 @@ import {
   isCloudOwnerHeadEvent,
   isCloudOwnerWorldRequest,
   isCloudWorldCommandReceipt,
+  validateCloudWorldCommand,
   isCloudAccessGeneration,
   isCloudCharacterAssignment,
   isCloudMemberRemoval,
@@ -1422,8 +1423,7 @@ export default class CloudCampaignClientStore {
       throw failure(400, 'invalid-command', 'Choose current assigned live command access.');
     const input = copy(request);
     const scope = copy(expected);
-    const { validatePlayerCommand } = await import('./PlayerCommandProtocol.js');
-    validatePlayerCommand(input.command);
+    validateCloudWorldCommand(input.command);
     this._identity();
     this._online();
     const previous = this.pendingWorld;

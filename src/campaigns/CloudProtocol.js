@@ -531,6 +531,45 @@ export function isCloudOwnerHeadEvent(value) {
   );
 }
 
+export function validateCloudWorldCommand(command) {
+  if (command?.kind !== 'door.state') return validatePlayerCommand(command);
+  const identifier = (value) =>
+    typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(value);
+  if (
+    !record(command) ||
+    !keys(command, [
+      'version',
+      'commandId',
+      'sceneRevision',
+      'charactersRevision',
+      'observerTokenId',
+      'tokenId',
+      'kind',
+      'payload',
+      'view',
+    ]) ||
+    command.version !== 1 ||
+    !isCloudUUID(command.commandId) ||
+    !isCloudAccessGeneration(command.sceneRevision) ||
+    !isCloudAccessGeneration(command.charactersRevision) ||
+    !identifier(command.observerTokenId) ||
+    command.tokenId !== command.observerTokenId ||
+    !record(command.payload) ||
+    !keys(command.payload, ['doorId', 'open']) ||
+    !identifier(command.payload.doorId) ||
+    typeof command.payload.open !== 'boolean' ||
+    !record(command.view) ||
+    !keys(command.view, ['mapId', 'assetKey']) ||
+    (command.view.mapId !== null && !identifier(command.view.mapId)) ||
+    (command.view.assetKey !== null && !isCloudDigest(command.view.assetKey))
+  )
+    throw Object.assign(new Error('Choose an explicit current player door command'), {
+      status: 400,
+      code: 'invalid-command',
+    });
+  return command;
+}
+
 export function isCloudWorldCommandReceipt(value) {
   return (
     record(value) &&
@@ -543,6 +582,7 @@ export function isCloudWorldCommandReceipt(value) {
       'kind',
       'applied',
       'outcome',
+      ...(value.kind === 'door.state' ? ['door'] : []),
     ]) &&
     value.version === 1 &&
     isCloudUUID(value.campaignId) &&
@@ -551,7 +591,14 @@ export function isCloudWorldCommandReceipt(value) {
     value.access.role === 'member' &&
     value.access.campaignId === value.campaignId &&
     isCloudUUID(value.sessionId) &&
-    PLAYER_COMMAND_KINDS.includes(value.kind) &&
+    (PLAYER_COMMAND_KINDS.includes(value.kind) || value.kind === 'door.state') &&
+    (value.kind !== 'door.state' ||
+      (record(value.door) &&
+        keys(value.door, ['id', 'open', 'locked']) &&
+        typeof value.door.id === 'string' &&
+        /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(value.door.id) &&
+        typeof value.door.open === 'boolean' &&
+        typeof value.door.locked === 'boolean')) &&
     ['applied', 'duplicate'].includes(value.outcome) &&
     record(value.applied) &&
     keys(value.applied, ['generation', 'sceneRevision', 'charactersRevision']) &&
@@ -743,4 +790,4 @@ export function isCloudPlayerSeat(value, campaignId) {
     invitation.seatId === value.id
   );
 }
-import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
+import { PLAYER_COMMAND_KINDS, validatePlayerCommand } from './PlayerCommandProtocol.js';

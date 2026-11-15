@@ -4542,3 +4542,34 @@ separately passes **13/13**, retaining its minimal public account response.
 
 This is a development gameplay slice, not a new hosted release, full stable
 milestone, completed four-to-five-hour rehearsal or gameplay capability enablement.
+
+### M5 native player-door development gate
+
+The actual cloud SDK initially rejects `doorState` as an unwired operation on
+valid native three-map door geometry. It now uses a strictly validated
+cloud-specific `door.state` variant through the existing world-command
+reservation, UID/seat/live-epoch admission, both-revision CAS, atomic publication
+and durable same-ID receipt path. The shared gameplay command list is unchanged,
+so existing participant states retain their supported command vocabulary.
+
+The native five-foot, physical-sight and locked-door policy is shared with the
+local host rather than duplicated. Players can open/close, never lock/unlock.
+The cloud receipt retains only door ID/open/locked, not connection geometry or
+hidden map metadata. It returns the existing player application's door receipt
+shape and waits for current authoritative state. Door publication clears
+transient action Undo consistently with the local host's external scene commit.
+The separate `playerCommand` operation rejects the cloud-only door variant
+before submitting a mutation with an incompatible result shape.
+
+The real SDK regression opens a physically nearby door, verifies unchanged
+action/movement budgets and the owner's canonical saved state, then checks
+owner locks, forged lock overrides, the wrong operation and a distant relocated
+observer. Every denied request leaves exact canonical state unchanged.
+It passes in **17.627 seconds**. The existing local door geometry/locks/visits
+and camera-safe update gate passes **3 tests / 2 suites**, **3.911 seconds**;
+the existing cloud client/receipt/reconciliation gate passes
+**71 tests / 2 suites**, **1.659 seconds**, with open-handle detection.
+
+This completes the basic native cloud door operation, not cloud room-discovery
+persistence, arrival grants, full-session acceptance or publication. Both
+gameplay capabilities remain off and the approved hosted R8 release is unchanged.

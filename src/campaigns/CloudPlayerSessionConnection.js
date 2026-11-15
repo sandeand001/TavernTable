@@ -632,7 +632,7 @@ export default class CloudPlayerSessionConnection {
     if (args[0] !== this.campaignId)
       throw failure(403, 'campaign-not-found', 'This live campaign is not assigned to the player.');
     if (
-      ['playerCommand', 'playerCommit'].includes(operation) &&
+      ['playerCommand', 'playerCommit', 'doorState'].includes(operation) &&
       (this.phase !== 'ready' || !this.authorityCurrent || globalThis.navigator?.onLine === false)
     )
       throw failure(
@@ -640,8 +640,46 @@ export default class CloudPlayerSessionConnection {
         'world-state-unavailable',
         'Wait for online live world reconciliation before another change.'
       );
+    if (operation === 'doorState') {
+      const change = args[1];
+      if (
+        !change ||
+        typeof change !== 'object' ||
+        Array.isArray(change) ||
+        Object.keys(change).some(
+          (key) => !['doorId', 'observerTokenId', 'sceneRevision', 'open'].includes(key)
+        )
+      )
+        throw failure(400, 'invalid-command', 'Choose an explicit nearby player door change.');
+      const acknowledged = await this.store.commitWorldCommand(
+        this.campaignId,
+        {
+          sessionId: this.sessionId,
+          command: {
+            version: 1,
+            commandId: this.store.crypto.randomUUID(),
+            sceneRevision: change.sceneRevision,
+            charactersRevision: this.state.revision,
+            tokenId: change.observerTokenId,
+            observerTokenId: change.observerTokenId,
+            kind: 'door.state',
+            payload: { doorId: change.doorId, open: change.open },
+            view: {
+              mapId: this.state.publicScene.presentation.mapId,
+              assetKey: this.state.publicScene.assetKey,
+            },
+          },
+        },
+        this.access
+      );
+      await this._until((snapshot) => snapshot.generation >= acknowledged.applied.generation);
+      this._identity();
+      return { revision: acknowledged.applied.sceneRevision, door: acknowledged.door };
+    }
     if (operation === 'playerCommand') {
       const command = copy(args[1]);
+      if (command.kind === 'door.state')
+        throw failure(400, 'invalid-command', 'Use the explicit player door operation.');
       if (!this.commandReady)
         throw failure(
           409,

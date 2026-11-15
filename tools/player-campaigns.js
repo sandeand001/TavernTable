@@ -255,52 +255,39 @@ class PlayerCampaigns {
     const library = new CampaignCharacters({ ...state, store: this.store, catalog });
     const context = { ruleset: state.campaign.ruleset, library };
     const scene = decodeScene(state.scene, context);
-    const [{ default: CampaignWorld }, { nearbyDoors }, { playerCreatureVisibility }] =
-      await Promise.all([
-        import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
-        import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignDoors.js')).href),
-        import(
-          pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CreatureVisibility.js')).href
-        ),
-      ]);
-    const world = CampaignWorld.fromScene(scene, context);
-    const door = world.getConnections().find((entry) => entry.id === command.doorId);
-    if (!door || door.kind !== 'door') throw new Error('The campaign door no longer exists');
+    const [{ default: CampaignWorld }, { playerDoorState }] = await Promise.all([
+      import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
+      import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'ServerGameplay.js')).href),
+    ]);
+    let changed;
+    let changedScene;
     if (profile.role === 'player') {
       if (typeof command.observerTokenId !== 'string')
         throw reject('Choose your active assigned character before using a door');
-      const visibility = playerCreatureVisibility({
-        world,
-        creatures: scene.creatures,
-        ownedIds: profile.characterIds,
-        publishedIds: world.listMaps().map(({ id }) => id),
-        observerTokenId: command.observerTokenId,
-      });
-      if (
-        !nearbyDoors(
-          world,
-          { mapId: visibility.observer.mapId, world: visibility.observer.pose.world },
-          visibility.sightGeometry
-        ).some((entry) => entry.id === door.id)
-      )
-        throw reject('Move your active character within 5 feet of the visible door first');
-      if (command.open && door.locked) throw reject('This door is locked. Ask the DM to unlock it');
+      const result = playerDoorState(scene, library, profile.characterIds, command);
+      changed = result.door;
+      changedScene = result.scene;
+    } else {
+      const world = CampaignWorld.fromScene(scene, context);
+      const door = world.getConnections().find((entry) => entry.id === command.doorId);
+      if (!door || door.kind !== 'door') throw new Error('The campaign door no longer exists');
+      changed = world.setDoorState(
+        door.id,
+        Object.fromEntries(
+          ['open', 'locked']
+            .filter((key) => Object.hasOwn(command, key))
+            .map((key) => [key, command[key]])
+        )
+      );
+      changedScene = world.save();
     }
-    const changed = world.setDoorState(
-      door.id,
-      Object.fromEntries(
-        ['open', 'locked']
-          .filter((key) => Object.hasOwn(command, key))
-          .map((key) => [key, command[key]])
-      )
-    );
     const receipt = await this.store.commitScene(campaignId, {
       ruleset: state.campaign.ruleset,
       revision: state.sceneRevision,
       charactersRevision: state.revision,
-      scene: encodeScene(world.save(), context),
+      scene: encodeScene(changedScene, context),
     });
-    this.authority.recordRoomVisits(campaignId, world.save());
+    this.authority.recordRoomVisits(campaignId, changedScene);
     return { ...receipt, door: changed };
   }
 

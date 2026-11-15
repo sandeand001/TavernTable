@@ -26,6 +26,9 @@ const { default: CampaignCharacters } = require('../../src/campaigns/CampaignCha
 const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { gameplayRuntime, playerGameplayState } = require('../../src/campaigns/ServerGameplay.js');
+const {
+  createTwoFloorTravelScene,
+} = require('../../src/campaigns/examples/ConnectedTravelExample.js');
 const { applyCloudParticipantDelta } = require('../../src/campaigns/CloudParticipantProtocol.js');
 const { sceneActorPlacement } = require('../../src/scene/token-adapter/SavedPlacements.js');
 const { sceneState } = require('../helpers/sceneState.js');
@@ -2061,6 +2064,134 @@ test(
     } finally {
       await cleanParticipantFixture(f, storage, connections, extraAccounts);
     }
+  }
+);
+
+test(
+  'the cloud player opens a physically nearby door with canonical scope and no action or movement cost',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const upper = await f.library.create('Upper scoped guide');
+    const scene = createTwoFloorTravelScene({
+      ruleset: '2014',
+      characters: [f.hero, f.npc, upper].map((id) => f.library.get(id)),
+    });
+    const world = CampaignWorld.fromScene(scene, f.validation);
+    world.setDoorState('building-door', { open: false, locked: false });
+    const published = await publishOwner(f, {
+      commandId: randomUUID(),
+      sessionId: f.live.sessionId,
+      presentations: [],
+      change: {
+        ruleset: '2014',
+        revision: 1,
+        charactersRevision: f.library.revision,
+        scene: encodeScene(world.save(), f.validation),
+      },
+    });
+    assert.equal(published.status, 200);
+    const connection = f.track(
+      new CloudPlayerSessionConnection({
+        store: f.member.client,
+        campaignId: f.campaign.id,
+        access: f.grant.access,
+        sessionId: f.live.sessionId,
+      })
+    );
+    await connection.open({ observerTokenId: 'token-1', mapId: 'map-main' });
+    const before = structuredClone(connection.state.gameplay.ownedTokens[0]);
+    const sceneRevision = connection.state.sceneRevision;
+    assert.equal(connection.state.doors.find((door) => door.id === 'building-door').open, false);
+    const receipt = await connection.call('doorState', [
+      f.campaign.id,
+      {
+        doorId: 'building-door',
+        observerTokenId: 'token-1',
+        sceneRevision: connection.state.sceneRevision,
+        open: true,
+      },
+    ]);
+    assert.equal(receipt.revision, sceneRevision + 1);
+    assert.deepEqual(receipt.door, { id: 'building-door', open: true, locked: false });
+    const after = connection.state.gameplay.ownedTokens[0];
+    assert.deepEqual(after.economy, before.economy);
+    assert.deepEqual(after.movement, before.movement);
+    assert.equal(connection.state.doors.find((door) => door.id === 'building-door').open, true);
+    const saved = await f.owner.client.readScene(f.campaign.id);
+    assert.equal(JSON.parse(saved.scene).connections[0].open, true);
+    assert.equal(saved.revision, receipt.revision);
+    const locked = CampaignWorld.fromScene(JSON.parse(saved.scene), f.validation);
+    locked.setDoorState('building-door', { open: false, locked: true });
+    const lock = await publishOwner(f, {
+      commandId: randomUUID(),
+      sessionId: f.live.sessionId,
+      presentations: [],
+      change: {
+        ruleset: '2014',
+        revision: saved.revision,
+        charactersRevision: f.library.revision,
+        scene: encodeScene(locked.save(), f.validation),
+      },
+    });
+    assert.equal(lock.status, 200);
+    await connection.call('playerState', [{ observerTokenId: 'token-1', mapId: 'map-main' }]);
+    const unchanged = await f.owner.client.readScene(f.campaign.id);
+    await assert.rejects(
+      connection.call('doorState', [
+        f.campaign.id,
+        {
+          doorId: 'building-door',
+          observerTokenId: 'token-1',
+          sceneRevision: connection.state.sceneRevision,
+          open: true,
+        },
+      ]),
+      { status: 403, code: 'door-locked' }
+    );
+    const forged = playerMove(f, { state: connection.state });
+    forged.command.kind = 'door.state';
+    forged.command.payload = { doorId: 'building-door', open: true, locked: false };
+    assert.equal((await publishPlayer(f, forged)).status, 400);
+    delete forged.command.payload.locked;
+    await assert.rejects(connection.call('playerCommand', [f.campaign.id, forged.command]), {
+      status: 400,
+      code: 'invalid-command',
+    });
+    assert.deepEqual(await f.owner.client.readScene(f.campaign.id), unchanged);
+    const far = locked.save();
+    Object.assign(far.creatures[0], {
+      gridX: 0,
+      gridY: 0,
+      pose: { kind: 'ground', world: { x: 0.5, y: 0, z: 0.5 } },
+    });
+    const relocated = await publishOwner(f, {
+      commandId: randomUUID(),
+      sessionId: f.live.sessionId,
+      presentations: [],
+      change: {
+        ruleset: '2014',
+        revision: unchanged.revision,
+        charactersRevision: f.library.revision,
+        scene: encodeScene(far, f.validation),
+      },
+    });
+    assert.equal(relocated.status, 200);
+    await connection.call('playerState', [{ observerTokenId: 'token-1', mapId: 'map-main' }]);
+    const distant = await f.owner.client.readScene(f.campaign.id);
+    await assert.rejects(
+      connection.call('doorState', [
+        f.campaign.id,
+        {
+          doorId: 'building-door',
+          observerTokenId: 'token-1',
+          sceneRevision: connection.state.sceneRevision,
+          open: false,
+        },
+      ]),
+      { status: 403, code: 'door-forbidden' }
+    );
+    assert.deepEqual(await f.owner.client.readScene(f.campaign.id), distant);
   }
 );
 

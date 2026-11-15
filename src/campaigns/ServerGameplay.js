@@ -22,6 +22,7 @@ import { ConnectionUnavailableError } from './CampaignConnections.js';
 import { navigationGeometry } from '../scene/token-adapter/movement/SurfaceMotion.js';
 import { campaignLandingForSupport } from '../scene/token-adapter/SavedPlacements.js';
 import { getTokenCommand } from '../config/TokenCommandConfig.js';
+import { nearbyDoors } from './CampaignDoors.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 
@@ -557,6 +558,37 @@ export function playerCommandReceipt(result, previousScene, library) {
     if (type === 'flight.drop') receipt.costFeet = 0;
   }
   return receipt;
+}
+
+export function playerDoorState(scene, library, ownedIds, command) {
+  const world = CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library });
+  const door = world.getConnections().find((entry) => entry.id === command.doorId);
+  if (!door || door.kind !== 'door')
+    throw gameplayError('The requested door is not available', 'door-unavailable', 403);
+  const visibility = playerCreatureVisibility({
+    world,
+    creatures: scene.creatures,
+    ownedIds,
+    publishedIds: world.listMaps().map(({ id }) => id),
+    observerTokenId: command.observerTokenId,
+  });
+  if (
+    !visibility.observer ||
+    !nearbyDoors(
+      world,
+      { mapId: visibility.observer.mapId, world: visibility.observer.pose.world },
+      visibility.sightGeometry
+    ).some((entry) => entry.id === door.id)
+  )
+    throw gameplayError(
+      'Move your active assigned character within 5 feet of the visible door first',
+      'door-forbidden',
+      403
+    );
+  if (command.open && door.locked)
+    throw gameplayError('This door is locked. Ask the DM to unlock it', 'door-locked', 403);
+  const changed = world.setDoorState(door.id, { open: command.open });
+  return { scene: world.save(), door: changed };
 }
 
 export async function executePlayerCommand(

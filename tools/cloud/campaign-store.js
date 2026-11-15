@@ -58,6 +58,7 @@ const {
   isCloudParticipantRequest,
   isCloudParticipantAssetRequest,
   isCloudWorldCommandReceipt,
+  validateCloudWorldCommand,
   isCloudOwnerWorldRequest,
   cloudLiveStatus,
   CLOUD_LIVE_INACTIVITY_MS,
@@ -5663,14 +5664,34 @@ class CloudCampaignStore {
     const {
       executePlayerCommand,
       playerCommandReceipt,
+      playerDoorState,
     } = require('../../src/campaigns/ServerGameplay.js');
     try {
       if (['roll', 'action.use'].includes(command.kind)) await this.worldDice.load();
-      const applied = await executePlayerCommand(scene, library, command, {
-        ownedIds: characterIds,
-        dice: this.worldDice,
-        undo,
-      });
+      let applied;
+      if (command.kind === 'door.state') {
+        const changed = playerDoorState(scene, library, characterIds, {
+          ...command.payload,
+          observerTokenId: command.observerTokenId,
+        });
+        applied = {
+          scene: changed.scene,
+          receipt: {
+            type: 'door.state',
+            tokenId: command.tokenId,
+            door: {
+              id: changed.door.id,
+              open: changed.door.open,
+              locked: changed.door.locked,
+            },
+          },
+        };
+      } else
+        applied = await executePlayerCommand(scene, library, command, {
+          ownedIds: characterIds,
+          dice: this.worldDice,
+          undo,
+        });
       await library.flush();
       await domain.commitScene(state.campaign.id, {
         ruleset: state.campaign.ruleset,
@@ -5680,6 +5701,10 @@ class CloudCampaignStore {
       });
       const next = await domain.readCharacters(state.campaign.id);
       const update = advancePlayerUndo(undo, scene, applied, command);
+      if (command.kind === 'door.state') {
+        update.reset = true;
+        update.tokens.clear();
+      }
       return {
         next,
         receipt: playerCommandReceipt(applied, scene, library),
@@ -5724,10 +5749,9 @@ class CloudCampaignStore {
         'invalid-command',
         'Choose a current live epoch and canonical command ID'
       );
-    const { validatePlayerCommand } = require('../../src/campaigns/PlayerCommandProtocol.js');
     const command = structuredClone(request.command);
     try {
-      validatePlayerCommand(command);
+      validateCloudWorldCommand(command);
     } catch (error) {
       if (error.code === 'invalid-command')
         throw new CloudError(error.status, error.code, error.message);
@@ -5834,6 +5858,7 @@ class CloudCampaignStore {
         sessionId,
         kind: command.kind,
         outcome: 'applied',
+        ...(command.kind === 'door.state' ? { door: receipt.door } : {}),
         applied: {
           generation: captured.head.generation + 1,
           sceneRevision: next.sceneRevision,
