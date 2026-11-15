@@ -3256,14 +3256,14 @@ class CloudCampaignStore {
       const floorReference = this._changeHistoryReference(id);
       const floorSnapshot = await transaction.get(floorReference);
       const floor = this._changeHistoryFloor(floorSnapshot, id, head);
-      const rows = await transaction.get(
-        reference
-          .collection('changes')
-          .orderBy('generation', 'asc')
-          .limit(CHANGE_HISTORY_PRUNE_BATCH)
-      );
       const countFloor = Math.max(1, head.generation - CHANGE_HISTORY_RETAIN + 1);
       const cutoff = this._changeHistoryTime() - CHANGE_HISTORY_MAX_AGE_MS;
+      const retained = (change) =>
+        change.generation >= countFloor && Date.parse(change.committedAt) > cutoff;
+      const oldest = reference.collection('changes').orderBy('generation', 'asc');
+      let rows = await transaction.get(oldest.limit(1));
+      if (!rows.empty && !retained(this._committedChange(rows.docs[0], head)))
+        rows = await transaction.get(oldest.limit(CHANGE_HISTORY_PRUNE_BATCH));
       const retired = [];
       let next = floor;
       let time = -Infinity;
@@ -3276,7 +3276,7 @@ class CloudCampaignStore {
             'invalid-change-history',
             'The retiring change sequence could not be verified'
           );
-        if (change.generation >= countFloor && Date.parse(change.committedAt) > cutoff) break;
+        if (retained(change)) break;
         retired.push(snapshot.ref);
         next++;
         time = Date.parse(change.committedAt);
@@ -4050,14 +4050,23 @@ class CloudCampaignStore {
       .collection('campaigns');
   }
 
-  async _accessGrant(transaction, uid, id) {
+  async _accessGrant(transaction, uid, id, expected = null) {
     if (!isCloudUUID(id)) throw unavailableCampaign();
-    const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
+    const reference = this.firestore.collection('campaigns').doc(id);
+    const membershipReference = this._memberships(uid).doc(id);
+    // Expected scope only batches reads; stored records still determine the grant.
+    const [snapshot, savedMembership, savedSeat] = expected?.seatId
+      ? await transaction.getAll(
+          reference,
+          membershipReference,
+          reference.collection('seats').doc(expected.seatId)
+        )
+      : [await transaction.get(reference), null, null];
     if (!snapshot.exists) throw unavailableCampaign();
     const ownerUid = snapshot.data()?.ownerUid;
     if (ownerUid === uid)
       return participantSummary(uid, accessSummary(await this._metadata(snapshot, uid), 'owner'));
-    const membership = await transaction.get(this._memberships(uid).doc(id));
+    const membership = savedMembership ?? (await transaction.get(membershipReference));
     if (!membership.exists) throw unavailableCampaign();
     const record = membership.data();
     if (
@@ -4075,10 +4084,11 @@ class CloudCampaignStore {
       )
     )
       throw invalidMembership();
-    const player = this._seat(
-      await transaction.get(snapshot.ref.collection('seats').doc(record.seatId)),
-      id
-    );
+    const seat =
+      savedSeat?.id === record.seatId
+        ? savedSeat
+        : await transaction.get(snapshot.ref.collection('seats').doc(record.seatId));
+    const player = this._seat(seat, id);
     if (player.memberUid !== uid) throw unavailableCampaign();
     if (
       player.version !== record.version ||
@@ -4135,7 +4145,7 @@ class CloudCampaignStore {
 
   async _participantGrant(transaction, uid, id, expected) {
     await this.access.assertEligibility(uid, transaction);
-    const grant = await this._accessGrant(transaction, uid, id);
+    const grant = await this._accessGrant(transaction, uid, id, expected);
     if (
       expected !== null &&
       (expected.seatId !== grant.access.seatId ||
@@ -6004,14 +6014,14 @@ class CloudCampaignStore {
     const [sceneRef, charactersRef, presentationRef] = await Promise.all([
       changesScene
         ? this.objects.stage(id, 'scene', next.scene, (candidate) =>
-            this.usage.reserveOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
+            this.usage.renewOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
               authorize,
             })
           )
         : captured.head.sceneRef,
       writesCharacters
         ? this.objects.stage(id, 'characters', next.records, (candidate) =>
-            this.usage.reserveOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
+            this.usage.renewOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
               authorize,
             })
           )
@@ -6019,7 +6029,7 @@ class CloudCampaignStore {
       presented === null
         ? null
         : this.objects.stage(id, 'presentations', presented, (candidate) =>
-            this.usage.reserveOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
+            this.usage.renewOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
               authorize,
             })
           ),

@@ -53,6 +53,38 @@ function principalUid(principal) {
   return principal.uid;
 }
 
+function ownerStorageCandidates(uid, campaignId, input, importId = null) {
+  pilotAccountKey(uid);
+  if (!isCloudUUID(campaignId) || (importId !== null && !isCloudUUID(importId)))
+    throw new CloudError(
+      400,
+      'invalid-storage-reservation',
+      'Choose a private campaign object scope'
+    );
+  const candidates = Array.isArray(input) ? input : [input];
+  const scope = new RegExp(
+    `^campaigns/${campaignId}/(?:objects/(?:scene|characters|import|presentations)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin|backups/[a-f0-9-]{36}/[a-f0-9]{64}\\.json)$`
+  );
+  if (
+    !candidates.length ||
+    candidates.some(
+      (candidate) =>
+        !candidate ||
+        !validBytes(candidate.bytes) ||
+        candidate.bytes < 1 ||
+        typeof candidate.path !== 'string' ||
+        !scope.test(candidate.path) ||
+        (candidate.path.split('/')[2] === 'backups' && !isCloudUUID(candidate.path.split('/')[3]))
+    )
+  )
+    throw new CloudError(
+      400,
+      'invalid-storage-reservation',
+      'Choose a bounded private campaign object'
+    );
+  return candidates;
+}
+
 class CloudUsageLimits {
   constructor({ firestore, access, now = Date.now }) {
     if (
@@ -176,29 +208,33 @@ class CloudUsageLimits {
     return saved;
   }
 
+  _activeObjectRecord(snapshot, uid, campaignId, candidate) {
+    const record = this._objectRecord(snapshot, uid, campaignId, {
+      ...candidate,
+      generation: null,
+    });
+    if (record.cleanup !== undefined) throw objectBusy();
+    const epoch = (record.activity?.epoch ?? 0) + 1;
+    if (!Number.isSafeInteger(epoch)) throw invalidUsage();
+    return {
+      ...record,
+      activity: {
+        version: 1,
+        epoch,
+        touchedAt: this.now(),
+        writableUntil: this.now() + OBJECT_PUBLICATION_WINDOW_MS,
+      },
+    };
+  }
+
   async touchReferences(transaction, uid, campaignId, candidates) {
     const references = candidates.map((candidate) =>
       this._reference(uid).collection('objects').doc(objectKey(candidate.path))
     );
     const snapshots = references.length ? await transaction.getAll(...references) : [];
-    const prepared = snapshots.map((snapshot, index) => {
-      const record = this._objectRecord(snapshot, uid, campaignId, {
-        ...candidates[index],
-        generation: null,
-      });
-      if (record.cleanup !== undefined) throw objectBusy();
-      const epoch = (record.activity?.epoch ?? 0) + 1;
-      if (!Number.isSafeInteger(epoch)) throw invalidUsage();
-      return {
-        ...record,
-        activity: {
-          version: 1,
-          epoch,
-          touchedAt: this.now(),
-          writableUntil: this.now() + OBJECT_PUBLICATION_WINDOW_MS,
-        },
-      };
-    });
+    const prepared = snapshots.map((snapshot, index) =>
+      this._activeObjectRecord(snapshot, uid, campaignId, candidates[index])
+    );
     prepared.forEach((record, index) => transaction.set(references[index], record));
   }
 
@@ -846,6 +882,44 @@ class CloudUsageLimits {
     return this.reserveOwnerStorage(uid, campaignId, input, bucket, { importId });
   }
 
+  async renewOwnerStorage(uid, campaignId, input, bucket, { authorize = null } = {}) {
+    const candidates = ownerStorageCandidates(uid, campaignId, input);
+    if (
+      candidates.length !== 1 ||
+      typeof bucket?.name !== 'string' ||
+      (authorize !== null && typeof authorize !== 'function')
+    )
+      throw new CloudError(
+        400,
+        'invalid-storage-reservation',
+        'Choose one verified reserved campaign object'
+      );
+    const candidate = candidates[0];
+    const usage = this._reference(uid);
+    const reference = usage.collection('objects').doc(objectKey(candidate.path));
+    const renewed = await this._transaction(async (transaction) => {
+      if (authorize !== null) await authorize(transaction);
+      await this.access.assertEligibility(uid, transaction);
+      const [campaign, account, saved] = await transaction.getAll(
+        this.firestore.collection('campaigns').doc(campaignId),
+        usage,
+        reference
+      );
+      if (!campaign.exists || campaign.data()?.ownerUid !== uid)
+        throw new CloudError(404, 'campaign-not-found', 'This private campaign is not available');
+      if (!account.exists) return false;
+      const record = this._record(account, uid);
+      if (record.storageBucket !== null && record.storageBucket !== bucket.name)
+        throw invalidUsage();
+      if (!record.storageInitialized || record.storageBucket === null || !saved.exists)
+        return false;
+      transaction.set(reference, this._activeObjectRecord(saved, uid, campaignId, candidate));
+      return true;
+    });
+    // A held lookup can outlive its reservation; regain quota before recreating any object.
+    if (!renewed) await this.reserveOwnerStorage(uid, campaignId, candidate, bucket, { authorize });
+  }
+
   async reserveOwnerStorage(
     uid,
     campaignId,
@@ -853,39 +927,12 @@ class CloudUsageLimits {
     bucket,
     { importId = null, authorize = null } = {}
   ) {
-    pilotAccountKey(uid);
+    const candidates = ownerStorageCandidates(uid, campaignId, input, importId);
     if (authorize !== null && typeof authorize !== 'function')
       throw new CloudError(
         400,
         'invalid-storage-reservation',
         'Choose verified campaign publication authority'
-      );
-    if (!isCloudUUID(campaignId) || (importId !== null && !isCloudUUID(importId)))
-      throw new CloudError(
-        400,
-        'invalid-storage-reservation',
-        'Choose a private campaign object scope'
-      );
-    const candidates = Array.isArray(input) ? input : [input];
-    const scope = new RegExp(
-      `^campaigns/${campaignId}/(?:objects/(?:scene|characters|import|presentations)/[a-f0-9]{64}\\.json|assets/[a-f0-9]{64}\\.bin|backups/[a-f0-9-]{36}/[a-f0-9]{64}\\.json)$`
-    );
-    if (
-      !candidates.length ||
-      candidates.some(
-        (candidate) =>
-          !candidate ||
-          !validBytes(candidate.bytes) ||
-          candidate.bytes < 1 ||
-          typeof candidate.path !== 'string' ||
-          !scope.test(candidate.path) ||
-          (candidate.path.split('/')[2] === 'backups' && !isCloudUUID(candidate.path.split('/')[3]))
-      )
-    )
-      throw new CloudError(
-        400,
-        'invalid-storage-reservation',
-        'Choose a bounded private campaign object'
       );
     if (authorize !== null) await this._transaction(authorize, { readOnly: true });
     await this._initializeStorage(uid, bucket);

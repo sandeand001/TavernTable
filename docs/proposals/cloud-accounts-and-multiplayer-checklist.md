@@ -1290,8 +1290,8 @@ Revalidation in the intended environment remains part of M1 and M4.
     Budgets API enablement and one USD 25 monthly project-only alerts budget
     are verified, without IAM grants or billing-link changes. Two isolated
     five-save cohorts match actual provider/client request counts and measure
-    reads/writes; real SDK validated acknowledgement and remote delivery are
-    timed separately. Exact cleanup passes. This is observability, not the
+    reads/writes; owner validated receipts, player operation readiness and
+    remote SDK delivery are timed separately. Exact cleanup passes. This is observability, not the
     controlled-200-ms p95, idle/performance or 30-hour cost acceptance.
   - **Depends:** `M4-09`.
   - **Success:** measure active instance time, acknowledgements vs delivery,
@@ -1314,6 +1314,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     per participant** of app heartbeat/presence payload, excluding TLS/token renewal.
     No full-scene polling or per-heartbeat database writes; warm rejoin downloads
     zero valid unchanged asset bodies. Exercise 55/60/15-minute boundaries.
+  - **Progress:** November 15, 2026: the exact no-debug test image passes the
+    short movement gate with ten managed UIDs, ten simultaneous SSEs and thirty
+    accepted commands: validated receipt **p95 1,822.65 ms**, maximum
+    **1,933.96 ms**, with measured pre/post RTT **203.14/202.90 ms**.
+    SDK operation readiness remains a separate **2,677.96 ms p95** observation.
+    Fresh authorization, quota, cleanup and native-state convergence are retained.
+    This is not completion: the first three-minute lifecycle probe reached its
+    idle-payload checks but failed exact current-authority/readiness comparison.
+    That condition, warm rejoin, real deadlines, sleep and cold wake remain open.
 
 - [ ] **M4-13 - Produce and review the measured hosted-pilot cost/readiness report.**
   - **Depends:** `M4-10`, `M4-12`, `M2-11`.

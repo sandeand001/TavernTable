@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { createCanvas } = require('canvas');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -48,6 +48,65 @@ async function usageContext(t) {
     });
   return { runtime, identity, access, principal, manifest, createStore, store: createStore() };
 }
+
+test(
+  'an existing canonical reservation renews in one transaction without double charging, losing its cleanup fence or accepting revoked access',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await usageContext(t);
+    let now = Date.now();
+    const store = f.createStore(() => now);
+    const campaign = await store.create(f.principal, {
+      commandId: randomUUID(),
+      options: { name: 'Canonical reservation renewal', ruleset: '2014' },
+    });
+    const scene = JSON.stringify(sceneState());
+    const candidate = snapshotCandidate(campaign.id, 'scene', scene);
+    await store.usage.reserveOwnerStorage(f.identity.uid, campaign.id, candidate, f.runtime.bucket);
+    const usage = f.runtime.firestore
+      .collection('accountUsage')
+      .doc(pilotAccountKey(f.identity.uid));
+    const protection = usage
+      .collection('objects')
+      .doc(createHash('sha256').update(candidate.path).digest('hex'));
+    const charged = (await usage.get()).data().storageBytes;
+    const previous = (await protection.get()).data();
+    const transactions = t.mock.method(store.usage, '_transaction');
+    const before = transactions.mock.calls.length;
+    now += 1000;
+    await store.usage.renewOwnerStorage(f.identity.uid, campaign.id, candidate, f.runtime.bucket);
+    assert.equal(
+      transactions.mock.calls.length - before,
+      1,
+      'An already charged reservation needs one fresh authority/protection transaction'
+    );
+    assert.equal((await usage.get()).data().storageBytes, charged);
+    assert.equal((await protection.get()).data().activity.epoch, previous.activity.epoch + 1);
+    await store.objects.stage(campaign.id, 'scene', scene, (value) =>
+      store.usage.renewOwnerStorage(f.identity.uid, campaign.id, value, f.runtime.bucket)
+    );
+    assert.equal((await store.maintainObjects(f.principal, campaign.id)).quarantined, 1);
+    now += 24 * 60 * 60 * 1000;
+    await store.usage.renewOwnerStorage(f.identity.uid, campaign.id, candidate, f.runtime.bucket);
+    assert.equal(
+      (await store.maintainObjects(f.principal, campaign.id)).deleted,
+      0,
+      'Fresh publication activity must still fence an already quarantined object'
+    );
+    const protectedBeforeRevocation = (await protection.get()).data();
+    const pilot = f.runtime.firestore
+      .collection('pilotAccounts')
+      .doc(pilotAccountKey(f.identity.uid));
+    await pilot.update({ enabled: false });
+    await assert.rejects(
+      store.usage.renewOwnerStorage(f.identity.uid, campaign.id, candidate, f.runtime.bucket),
+      { code: 'pilot-access-required' }
+    );
+    assert.deepEqual((await protection.get()).data(), protectedBeforeRevocation);
+    assert.equal((await usage.get()).data().storageBytes, charged);
+    await pilot.update({ enabled: true });
+  }
+);
 
 test(
   'bounded cleanup quarantines only unreferenced objects and preserves complete backups and current checkpoints',

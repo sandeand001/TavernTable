@@ -14,6 +14,7 @@ const { CloudCampaignStore } = require('../../tools/cloud/campaign-store.js');
 const { ImmutableCloudObjects } = require('../../tools/cloud/immutable-objects.js');
 const { PrivateCampaignAssets } = require('../../tools/cloud/campaign-assets.js');
 const { HostResources } = require('../../tools/host-resources.js');
+const { PhysicalDice } = require('../../tools/physical-dice.js');
 const { default: CloudAccount } = require('../../src/campaigns/CloudAccount.js');
 const {
   default: CloudAccountConnection,
@@ -732,6 +733,15 @@ test(
       ownerFetch: ownerNetwork.fetch,
       memberFetch: firstNetwork.fetch,
       participantCacheFactory: ({ uid }) => new CloudParticipantCache({ ...storage, uid }),
+    });
+    // Exercise real physical frames without making convergence depend on a random non-settling throw.
+    let seed = 42;
+    f.store.worldDice = new PhysicalDice({
+      root: path.resolve(__dirname, '..', '..'),
+      random: () => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed / 4294967296;
+      },
     });
     const connections = [];
     const extraAccounts = [];

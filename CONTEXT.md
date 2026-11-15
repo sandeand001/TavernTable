@@ -614,10 +614,24 @@
   These alerts do not prevent overspending. Forecasts must use the verified
   currency and measured regional operations/transfer/storage, without counting
   mirrored metrics twice. Isolated provider-minute saves measure actual reads/
-  writes with client/server request-count agreement; validated acknowledgement
-  and remote SDK delivery are separate observations, not animation completion
-  or performance acceptance. Additional resources, privilege or production cutover
+  writes with client/server request-count agreement. A validated store receipt,
+  SDK operation readiness and remote SDK delivery are separate observations;
+  the public player call also waits for fresh SSE authority. Neither readiness
+  nor animation completion substitutes for the durable-receipt latency target.
+  Additional resources, privilege or production cutover
   still require their own approval.
+- **Hosted command performance (M4-12 short gate verified; lifecycle pending)**:
+  ten managed UIDs and thirty ordinary moves pass a 1,822.65 ms durable-receipt
+  p95 at measured approximately 200 ms RTT. Already-charged immutable objects
+  renew their publication fence through a fresh authorized transaction, not
+  repeated full quota initialization. The complete candidate set is still
+  reserved before any upload; a missing reservation must regain quota before
+  recreating an object. Cleanup claims, owner eligibility and final canonical
+  publication checks are unchanged. Expected participant access is only a
+  batched-read hint: stored ownership, membership, seat and access generation
+  still determine authority. A stale hint cannot select another seat or bypass
+  a fresh access check. This does not complete lifecycle/cache/cold-wake acceptance
+  or enable the remaining shared-game capabilities.
 - **Hosted backup history (approved design, not implemented)**: retain 20 rolling
   complete backups, targeting five-minute intervals when changed; no additional
   daily restore-point tier. Full campaign backups are owner-only, support manual

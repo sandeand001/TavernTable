@@ -238,6 +238,63 @@ function invitation(name = 'Invited player', seatId = null) {
 }
 
 test(
+  'current participant access uses at most two metadata round trips without trusting stale seat hints or cached membership',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Current member read budget');
+    await f.join(campaign.id, member.uid);
+    const initial = await f.store.getParticipantAccess(member.principal, campaign.id);
+    const expected = {
+      seatId: initial.access.seatId,
+      accessGeneration: initial.access.accessGeneration,
+    };
+    const transact = f.runtime.firestore.runTransaction.bind(f.runtime.firestore);
+    let roundTrips = 0;
+    t.mock.method(f.runtime.firestore, 'runTransaction', (operation, options) =>
+      transact(async (transaction) => {
+        for (const method of ['get', 'getAll']) {
+          const read = transaction[method].bind(transaction);
+          transaction[method] = (...args) => {
+            roundTrips++;
+            return read(...args);
+          };
+        }
+        return operation(transaction);
+      }, options)
+    );
+    assert.deepEqual(
+      await f.createStore().getParticipantAccess(member.principal, campaign.id, expected),
+      initial
+    );
+    assert.ok(roundTrips <= 2, `Fresh member authority used ${roundTrips} metadata round trips`);
+    await assert.rejects(
+      f.createStore().getParticipantAccess(member.principal, campaign.id, {
+        ...expected,
+        seatId: randomUUID(),
+      }),
+      (error) => error.code === 'campaign-access-changed'
+    );
+    await f.runtime.firestore
+      .collection('campaignMemberships')
+      .doc(pilotAccountKey(member.uid))
+      .collection('campaigns')
+      .doc(campaign.id)
+      .delete();
+    await assert.rejects(
+      f.createStore().getParticipantAccess(member.principal, campaign.id, expected),
+      (error) => error.status === 404
+    );
+    await assert.rejects(
+      f.createStore().getParticipantAccess(owner.principal, campaign.id, expected),
+      (error) => error.code === 'campaign-access-changed'
+    );
+  }
+);
+
+test(
   'an authenticated Fetch SSE connection delivers scoped changes and releases its resources on pause, epoch change and membership removal',
   { timeout: 30000 },
   async (t) => {
@@ -802,6 +859,61 @@ test(
       }),
       { code: 'campaign-not-found' }
     );
+  }
+);
+
+test(
+  'fresh retained change history probes only its oldest entry without reading the whole retirement batch',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now, cleanup: true });
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Recent history read budget');
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const journal = head.collection('changes');
+    const initial = (await journal.doc('1').get()).data().committedAt.toMillis();
+    now = initial + 2000;
+    const batch = f.runtime.firestore.batch();
+    for (let generation = 2; generation <= 12; generation++)
+      batch.create(journal.doc(String(generation)), {
+        version: 1,
+        generation,
+        kind: 'campaign.settings',
+        sceneRevision: 0,
+        charactersRevision: 0,
+        committedAt: Timestamp.fromMillis(initial + generation),
+      });
+    await batch.commit();
+    await head.update({ generation: 12 });
+    const before = (await head.get()).data();
+    const transact = f.runtime.firestore.runTransaction.bind(f.runtime.firestore);
+    let journalRowsRead = 0;
+    t.mock.method(f.runtime.firestore, 'runTransaction', (operation, options) =>
+      transact(async (transaction) => {
+        const get = transaction.get.bind(transaction);
+        transaction.get = async (...args) => {
+          const result = await get(...args);
+          if (
+            Array.isArray(result.docs) &&
+            result.docs.length &&
+            result.docs.every((row) => row.ref.parent.path === journal.path)
+          )
+            journalRowsRead += result.size;
+          return result;
+        };
+        return operation(transaction);
+      }, options)
+    );
+    const retired = await f.store.runChangeMaintenance(owner.principal, campaign.id);
+    assert.equal(retired.removed, 0);
+    assert.equal(
+      journalRowsRead,
+      1,
+      'No eligible retirement must cost one journal document, not a full batch'
+    );
+    assert.equal((await journal.get()).size, 12);
+    assert.deepEqual((await head.get()).data(), before);
   }
 );
 

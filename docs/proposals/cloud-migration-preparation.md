@@ -3705,21 +3705,120 @@ measurement instead of continuing the unrelated stale baseline, and its complete
 rerun exits zero at **02:14:46.437Z**, with exact cleanup of
 **3 UIDs / 2 campaigns / 14 live object generations** at **02:14:52.345Z**.
 
-Separate live SDK callback timestamps distinguish a validated durable response
-from remote authoritative delivery, not animation completion:
+Separate live SDK callback timestamps measure the owner validated durable
+response, player operation readiness and remote authoritative delivery, not
+animation completion. The public player call waits for fresh SSE authority
+after its validated store receipt; its whole duration is not a pure receipt:
 
-| Ordinary movement sample | Validated SDK acknowledgement | Remote SDK publication |
-| --- | --- | --- |
-| Assigned player to owner | 2,326.32 ms | 2,239.10 ms |
-| Private owner to scoped player | 1,532.19 ms | 1,952.77 ms |
+| Ordinary movement sample | Validated durable receipt | Player SDK operation-ready | Remote SDK publication |
+| --- | --- | --- | --- |
+| Assigned player to owner | Not separately timed | 2,326.32 ms | 2,239.10 ms |
+| Private owner to scoped player | 1,532.19 ms | Not separately timed | 1,952.77 ms |
 
 The independently measured owner backup status is `saved`, with no recorded
 error. Native routes, privacy and new-epoch/no-replay checks pass; exact cleanup
 verifies **3 UIDs / 2 campaigns / 18 live generations** at **02:03:58.604Z**.
-The small samples are **not a p95, controlled-200-ms or M4-12 performance pass**;
-the player sample over two seconds is a concrete risk to test and fix, not hide.
+The small samples are **not a p95, controlled-200-ms or M4-12 performance pass**.
+The player observation remains useful readiness evidence, but M4-12 must measure
+the validated store receipt itself before applying the two-second target.
 
 This completes M4-11; the checklist is **52/65**. No production campaign
 migration, new runtime privilege, always-on service or automatic billing shutdown
 is authorized. Hosted lifecycle/performance and the measured 30-hour cost report
 remain separate gates.
+
+### M4-12 progress: durable movement latency verified, lifecycle acceptance pending
+
+The short hosted performance loop now measures the SDK-validated **store receipt**
+before the public player call waits for current SSE authority. It reports SDK
+operation readiness and all-ten-current delivery separately. Thirty accepted
+ordinary moves use one private owner observer and nine separately authenticated,
+assigned member connections on the same small flat board. Every committed
+revision and canonical pose converges; raw member packets exclude the private
+NPC and other assigned sheets.
+
+Actual RTT is measured before and after the cohort, not inferred from a delay
+setting. Acceptance requires a 200 +/- 10 ms median and samples within
+180-235 ms at both ends. The test-only link compensates only measured **injected
+outbound wait** when calculating the return delay; it never subtracts transport
+or server processing. A slow-fake-server red/green case proves that distinction,
+with all nine local delay, streaming and cancellation cases passing.
+
+| Comparable real ten-UID cohort | Validated receipt median | Receipt p95 | Maximum | Network |
+| --- | --- | --- | --- | --- |
+| Original authority baseline | 2,520.95 ms | 2,768.99 ms | 2,819.15 ms | Actual RTT gate passed |
+| Reserved-object renewal, R3 | 1,880.04 ms | 2,113.75 ms | 2,118.36 ms | Actual RTT gate passed |
+| Batched head/membership, R5 | 1,698.62 ms | 2,028.92 ms | 2,636.36 ms | Actual RTT gate passed |
+| Batched stored-seat lookup, R6 | **1,628.83 ms** | **1,822.65 ms** | **1,933.96 ms** | **203.14/202.90 ms pre/post medians** |
+
+R6 passes the unchanged **p95 <= 2,000 ms** target, with all thirty receipts
+below two seconds. Its public SDK operation-ready p95 is **2,677.96 ms**,
+not the receipt latency and not animation completion. R1/R2/R4 attempts whose
+actual post-cohort network guard failed are not accepted performance evidence.
+An unproven concurrent-reservation-read experiment was reverted rather than
+retained on speculation.
+
+Three bounded changes remove repeated work without weakening admission:
+
+- Fresh change-history maintenance probes only the oldest retained document.
+  If it is eligible by the existing 1,000-change/24-hour rules, the same
+  authorized transaction still reads the original bounded 100-row prune batch.
+  Corruption, ordering, legacy floors and exact time/count boundaries remain
+  explicit.
+- Canonical publication still reserves its **complete** scene/character/motion
+  candidate set before uploads. The existing before-lookup and
+  after-missing-lookup/before-write callbacks now renew an already charged
+  object's activity epoch/writable window in one fresh transaction. Caller
+  scope, live epoch, owner eligibility, bucket/schema, bytes and cleanup claims
+  remain checked. Missing or uninitialized reservations use original full
+  admission; a 24-hour-held missing lookup must regain quota before recreating
+  bytes and still cannot publish its expired original command. Final CAS,
+  references and acknowledged receipt publication are unchanged.
+- Expected member scope batches the current campaign head, that UID's
+  membership and the hinted seat in one metadata read. Stored records still
+  decide ownership and access. A hinted seat is reused only when the validated
+  membership names it; otherwise the actual stored seat is read and the original
+  stale-scope denial remains. The ordinary owner path adds no membership read,
+  and no authorization result is cached across transactions.
+
+The full affected usage-limit/cleanup module passed **22/22** cases after
+reservation renewal. The wider final member/seat/assignment/privacy/native
+selection passed **46 other cases** but exposed a nondeterministic physical-d20
+timeout in its ten-client case. Test-instance-only diagnostics located the
+existing bounded non-settling throw in `D20Dynamics.advance`, not metadata
+admission. The convergence fixture now uses the existing real `PhysicalDice`
+engine with the same repeatable LCG seed used by container validation; production
+physics is unchanged and no fake frames, numerical fallback or production retry
+was added. The final fresh-grant/history/real ten-client selection passes **6/6**
+in **84,996.5373 ms**, including the ten-client case in **72,663.2398 ms**.
+The new public fresh-grant read-budget regression is red at four/three round
+trips and green at two, retaining wrong-seat-hint, removed-membership and
+stale-owner-scope denials. Earlier six coupled native SDK/movement/CAS/pause
+cases also pass. These are targeted results, not a new full-stable-suite claim.
+
+All temporary diagnostics are removed. Exact image
+`sha256:83c6558111d0d6886d479acd9784a5896396cb186ef42080038107d28b45e0a3`
+(runnable manifest
+`sha256:5367daf48c819877993c788d922021f9cc58726fe735b4d1536de1accd4dd82a`)
+passes the existing isolated non-root, read-only, no-network production check:
+23 current runtime hashes, one CPU/1 GiB, sixteen resource packs, a real 16-MP
+image, 501 physical d20 frames, authenticated/private boundaries and exit zero.
+Its measured validation RSS is **258,961,408 bytes**, not a hosted peak-memory
+claim. Only the image field of the approved test service was changed; revision
+`taverntable-api-test-00013-gbd` retains the same region, limits, origins and IAM.
+
+The first bounded lifecycle probe then added one second synthetic campaign
+and owner stream: still ten UIDs, eleven total streams across two campaigns.
+After three minutes it reached the idle byte/no-new-app-request checks, but
+failed the exact current-generation/readiness comparison before warm rejoin.
+No reason is guessed and no readiness check is relaxed: the next probe records
+safe per-role generation/phase/artwork status before and after that interval.
+The complete failed probe still verifies exact cleanup at
+**04:15:59.654Z** of **10 UIDs / 2 campaigns / 83 live object generations**,
+without changing the real account.
+
+**M4-12 remains open; the checklist remains 52/65.** The short latency pass
+does not stand in for actual idle continuity, warm zero-body rejoin, real
+55/60/15-minute boundaries, managed long-stream rotation, scale-to-zero or
+authorized-sheet cold wake. The online-only design, both original local hosts,
+gameplay capability gates and deferred routine-save UX remain unchanged.
