@@ -5869,12 +5869,21 @@ that a future retry's elapsed time is measured from the first observed attempt,
 not just the later successful attempt; incomplete evidence and a wrong source
 fail explicitly. It does not modify the active driver or API transport.
 All three sanitized role datasets and a combined summary are saved privately,
-with exact decompressed browser-to-file SHA-256 verification. The local browser
-download event was unavailable, so no download success was claimed; the normal
-tool-output export was verified instead.
+with exact decompressed browser-to-file SHA-256 verification. The browser tool
+did not forward its download-completion event; its exact generated duplicate
+download was later validated and removed. Only the verified tool-output export
+counts as retained evidence, and its temporary bundles are cleaned up.
 
 For these **93 mixed ordinary commands**, durable receipt p95 is **3,911.9 ms**,
 maximum **6,060.9 ms**, SDK-ready p95 **6,010.3 ms**, maximum **6,379.7 ms**.
 **56/93** exceed the original two-second benchmark. Cold/backup/reconnect tails
 remain in the dataset, which is partial and is not a new numeric acceptance,
 native rendered-animation measurement or a completed four-hour result.
+
+The **77m52.226s** actual checkpoint retains **124 accepted commands** (36
+primary, 88 other members), one correct off-turn refusal, the same nine member
+identities and no pending mutation, permanent access error or 503. All ten
+scopes pass bounded health at **generation348 / scene340 / character17**.
+An initial instantaneous sample catches member2 during normal renewal; the
+bounded reconciliation check passes in **1,101.8 ms**. That transient sample is
+retained, not treated as a repeat of the old permanent-denial bug.

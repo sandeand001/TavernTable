@@ -70,12 +70,13 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
-- **Latest actual checkpoint:** **53m42.636s**, all ten scopes current at
-  generation **317**, **93 accepted member commands**, no pending mutation,
-  permanent access error or 503. Two real expired-channel ACK responses are
-  retained as retryable 409s and both affected members are current without a
-  reset. Partial durable p95 is **3,911.9 ms**, maximum **6,060.9 ms**; **56/93**
-  exceed the original two-second benchmark. No new numeric pass is claimed.
+- **Latest actual checkpoint:** **77m52.226s**, all ten scopes current at
+  generation **348**, **124 accepted member commands**, original identities,
+  no pending mutation, permanent access error or 503. An ordinary member
+  reconnect passes the bounded ten-scope health check in **1,101.8 ms**.
+  At the preceding exported 93-command checkpoint, durable p95 is **3,911.9 ms**,
+  maximum **6,060.9 ms**; **56/93** exceed the original two-second benchmark.
+  No new numeric pass is claimed.
 - **Recovery preparation:** the older compatible implementation now has the
   same presence fix backported on isolated source `681c5f0...`. Its image
   `288625ba...` passes 13 lifecycle cases and the exact 38-hash Linux runtime
@@ -1569,6 +1570,10 @@ Revalidation in the intended environment remains part of M1 and M4.
     SHA-256 verification. Partial mixed-command durable p95 is **3,911.9 ms**,
     maximum **6,060.9 ms**, with **56/93** above the original two-second target;
     SDK-ready p95 is **6,010.3 ms**. These are not animation timings or a new pass.
+    At **77m52.226s**, the same ten scopes pass bounded health at generation348,
+    scene340, character17 with **124 accepted member commands**. A sampled
+    member2 reconnection reconciles normally in **1,101.8 ms**, rather than being
+    misclassified as a permanent failure. No account/seat reset is used.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
