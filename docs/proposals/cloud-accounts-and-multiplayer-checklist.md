@@ -1489,6 +1489,13 @@ Revalidation in the intended environment remains part of M1 and M4.
     control/command is pending, and test transports/workers are restored/stopped.
     Full evidence and rejected experiments are recorded in
     [the preparation log](./cloud-migration-preparation.md).
+    On 2026-11-16 the owner clarified that a short delay is acceptable; the
+    concern is disjointed live views that replace walking/running with a
+    start-to-destination teleport. Native DM-to-player and player-to-DM motion
+    is the immediate acceptance priority, not another numeric timing proposal.
+    The focused native movement gate passes **32 tests / four suites** in
+    **120.261 seconds**. This is not a completed foreground hosted visual check,
+    and no replacement numeric latency threshold has been approved.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
@@ -1497,7 +1504,12 @@ Revalidation in the intended environment remains part of M1 and M4.
     owner controls, with no divergence, disclosure or duplicate costs.
   - **Verify:** record actual latency, bytes, operations and retained storage;
     include forced replacement and quiet/forgotten/disconnected cases. Controlled
-    time proves no fixed six-hour cap. Re-run the complete acceptance matrix.
+    time proves no fixed six-hour cap. Observe native walk/run movement in both
+    directions on the initiating view and other authorized visible views:
+    intermediate positions and locomotion must render without a destination
+    snap, echo restart or duplicate movement cost. A short presentation-start
+    delay is acceptable; reconnects still restore current state rather than
+    replaying historical movement. Re-run the complete acceptance matrix.
 
 - [ ] **M5-07 - Prove recovery and release rollback, not just backup creation.**
   - **Depends:** `M5-06`.

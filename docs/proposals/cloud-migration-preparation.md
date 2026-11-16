@@ -5494,3 +5494,35 @@ M5-06 remains open at 59/65 overall. The four-to-five-hour run, restore-as-copy
 and compatible rollback proof, production approval and selected-data cutover
 are not completed or implied. No queue, background service, new IAM permission,
 CPU/limit change or relaxed latency requirement is approved by this result.
+
+### Native motion priority and focused regression recheck (2026-11-16)
+
+The owner clarified that a short delay is acceptable. The concern is a live
+participant seeing a sprite jump from start to destination while another
+participant sees normal walking/running. Immediate acceptance therefore focuses
+on continuous native movement on the initiating view and other authorized
+visible views, in both DM-to-player and player-to-DM directions. This does not
+require identical animation-start times, grant hidden actors/routes, or change
+the rule against replaying historical movement after reconnect.
+
+No replacement numeric latency threshold was selected. The proposed 5/6/10-second
+limits were not approved, and the retained two-second benchmark failures remain
+honestly recorded rather than relabeled as passes. Receipt timing and client
+readiness are not measurements of rendered animation.
+
+The unchanged current source passes the focused native movement gate:
+**32 tests / four suites, 120.261 seconds**, with open-handle detection. The gate
+covers streamed player walk/run, received DM-view walk/run, another visible
+creature without control grants, own receipt echoes, queued routes,
+reconciliation, native locomotion clips and unchanged movement costs/camera.
+Approved flight/fall and backward-motion regressions also pass.
+
+The actual foreground hosted visual check is still incomplete. Desktop setup
+did not reliably select the intended test view/control and encountered a user
+input interruption. A current-release native render fixture was loaded but not
+connected, then removed; this is neither a visual pass nor a reproduced current
+product failure. A fresh authority read confirms the game remains paused, owner
+streams are zero, no save/live/world command is pending, and the selected actor
+remains at its original test cell. Fixture connections remain closed, temporary
+render setup is removed, and no account persistence, real owner Auth, original
+host, cloud setting or deployment changed.
