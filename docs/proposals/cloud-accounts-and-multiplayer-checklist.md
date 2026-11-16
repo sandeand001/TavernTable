@@ -1472,9 +1472,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     backend-only presence fix is now privately deployed as API `00025-vt4`,
     source `f5d0d10...`, image `792fcc39...`; the unchanged frontend remains
     matching. Its exact 38-hash/native/isolation gate passes.
-    A fixed **40-command** actual managed-client preflight includes **20 moves
-    and 20 facing controls** across all nine member identities plus the native
-    owner, under recalibrated 200-ms RTT. All ten scopes remain current through
+    The retained **40-command** managed-client preflight on source `103ac90...`
+    includes **20 moves and 20 facing controls** across all nine member identities
+    plus the native owner, under recalibrated 200-ms RTT. All ten scopes remain current through
     generation 67, with zero stream errors or 503 responses. **Latency still
     fails:** durable receipt median **1,897.1 ms**, p95 **3,854.6 ms** against
     **2,000 ms**, maximum **4,473.2 ms**. Cold, automatic-backup and other slow
@@ -1492,14 +1492,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     The focused native movement gate passes **32 tests / four suites** in
     **120.261 seconds**. This is not a completed foreground hosted visual check,
     and no replacement numeric latency threshold has been approved.
-    The current complete stable gate also passes **307 suites / 4,067 tests**
-    with open-handle detection in **1,820.696 seconds**.
+    Before the presence fix, source `103ac90...` also passed the complete stable
+    gate: **307 suites / 4,067 tests** with open-handle detection in
+    **1,820.696 seconds**. The fixed-source complete gate remains in progress.
     The owner subsequently instructed continuing on an assumed-success basis
     and will perform the manual animation check after the remaining work.
     That check is **deferred, not passed**, and does not block continued private
     rehearsal/recovery work. The original timing observations remain recorded;
     no new numeric pass or production/cutover approval is implied.
-    The latest extended real-clock attempt started at client UTC
+    The preceding extended real-clock attempt started at client UTC
     **2026-11-16 18:52:20.077** on the same private release and existing nine
     fixture identities plus the native owner. It stopped after **1,173.813
     seconds**, not four hours, when an instantaneous helper assertion sampled
@@ -1549,6 +1550,10 @@ Revalidation in the intended environment remains part of M1 and M4.
     note save/restoration (character revision 15 to 17), and warm image-cache
     rejoins pass. The game is now live for this new run, not left paused; no
     earlier aborted/setup time counts toward its duration.
+    At **20m7.051s**, all ten scopes are ready/current at generation **266**,
+    with **42 accepted member world commands**, the correct off-turn refusal,
+    no pending operation, permanent access error or 503. Ordinary SSE renewals
+    and two earlier aborted observer fetches are retained, not erased.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
@@ -1565,8 +1570,8 @@ Revalidation in the intended environment remains part of M1 and M4.
     replaying historical movement. Re-run the complete acceptance matrix.
 
 - [ ] **M5-07 - Prove recovery and release rollback, not just backup creation.**
-  - **Preparation:** three current-source emulator restore cases pass in
-    **33.560 seconds**: both rulesets preserve exact sheets, private images,
+  - **Preparation:** three fixed-source emulator restore cases pass in
+    **31.549 seconds**: both rulesets preserve exact sheets, private images,
     topology and resources; an uncertain restore recovers the same copy.
     The actual real-owner restore-as-copy and hosted rollback/drain drill remain
     unperformed.

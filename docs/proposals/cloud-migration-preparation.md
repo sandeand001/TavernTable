@@ -5822,3 +5822,17 @@ execution before authentication/network work when the real completed-rehearsal
 gate is absent. Its read-only preflight passes. No fake completion gate is
 created, no actual rollback/restore has run, and the active real-clock rehearsal
 continues unchanged. M5-07 remains unchecked.
+
+The three focused restore-as-copy regressions are also rerun on fixed sourcef5:
+both rulesets' retained exact sheet/image/topology/resource restoration and the
+uncertain-reply same-copy recovery pass in **31.549 seconds**. The emulator
+Storage SDK's PassThrough listener-count warnings are retained in the output;
+all three tests finish successfully. This is a local preparation gate, not the
+actual real-owner private restore.
+
+The actual fixed-release rehearsal checkpoint at **1,207,050.7 ms** (20m7.051s)
+finds all ten scopes ready/current at generation266, scene258, character17.
+The same nine member identities retain **42 accepted world commands** (18
+primary, 24 other members), one correct off-turn refusal, no pending operation,
+permanent access error or 503. Normal SSE reconnections and the two earlier
+observer fetch aborts remain recorded. This is progress, not the four-hour gate.
