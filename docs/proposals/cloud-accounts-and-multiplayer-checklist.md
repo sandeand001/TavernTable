@@ -1484,9 +1484,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     **2,000 ms**, maximum **4,473.2 ms**. Cold, automatic-backup and other slow
     valid samples are retained. The earlier **11,347-ms** aborted-run result is
     also retained; neither run is a completed full-session pass.
-    The latest complete final backup is saved at generation 67. The private
-    game is verified paused, all nine member observations are closed, no
-    control/command is pending, and test transports/workers are restored/stopped.
+    After that fixed preflight, the complete final backup was saved at
+    generation 67, the private game was verified paused, all nine member
+    observations were closed, and test transports/workers were restored/stopped.
     Full evidence and rejected experiments are recorded in
     [the preparation log](./cloud-migration-preparation.md).
     On 2026-11-16 the owner clarified that a short delay is acceptable; the
@@ -1496,6 +1496,19 @@ Revalidation in the intended environment remains part of M1 and M4.
     The focused native movement gate passes **32 tests / four suites** in
     **120.261 seconds**. This is not a completed foreground hosted visual check,
     and no replacement numeric latency threshold has been approved.
+    The owner subsequently instructed continuing on an assumed-success basis
+    and will perform the manual animation check after the remaining work.
+    That check is **deferred, not passed**, and does not block continued private
+    rehearsal/recovery work. The original timing observations remain recorded;
+    no new numeric pass or production/cutover approval is implied.
+    A fresh extended real-clock rehearsal is now **running**, from client UTC
+    **2026-11-16 18:52:20.077**, on the same private release and existing nine
+    fixture identities plus the native owner. Setup and an earlier 67.0555-second
+    aborted harness attempt are excluded. Initial hosted checks cover a correct
+    off-turn refusal, off-turn dice, Dash/Undo, turn end, Free Play walk/run with
+    no restricted debit, an emote, exact assigned-note save/restoration and warm
+    rejoins. All ten scopes are current at the last recorded generation 111;
+    this is progress, **not a completed four-hour result**.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
@@ -1512,6 +1525,11 @@ Revalidation in the intended environment remains part of M1 and M4.
     replaying historical movement. Re-run the complete acceptance matrix.
 
 - [ ] **M5-07 - Prove recovery and release rollback, not just backup creation.**
+  - **Preparation:** three current-source emulator restore cases pass in
+    **33.560 seconds**: both rulesets preserve exact sheets, private images,
+    topology and resources; an uncertain restore recovers the same copy.
+    The actual real-owner restore-as-copy and hosted rollback/drain drill remain
+    unperformed.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of

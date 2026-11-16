@@ -5526,3 +5526,61 @@ streams are zero, no save/live/world command is pending, and the selected actor
 remains at its original test cell. Fixture connections remain closed, temporary
 render setup is removed, and no account persistence, real owner Auth, original
 host, cloud setting or deployment changed.
+
+The owner then explicitly instructed: "for now lets assume its successful and
+move on. i will check wihen everythin gis complete". The manual native animation
+check is therefore deferred to the owner rather than blocking continued private
+migration, extended rehearsal and recovery work. It is not recorded as an
+observed visual pass. The original timing observations remain unchanged, and
+this instruction does not authorize new infrastructure, production deployment
+or selected-data cutover.
+
+### Extended real-clock rehearsal started; recovery preparation (2026-11-16)
+
+The existing nine named, in-memory fixture identities and actual native owner
+are freshly admitted on the same private API `00024-2ps` / source `103ac90...`
+and frontend `57cb5484...`. No new account or infrastructure was created.
+Pre-run added-RTT calibration p95 is **205.5 ms** for the owner, **205.5 ms** for
+the primary member and **209.8 ms** for the other eight. Initial managed
+admissions are **1,868.8-5,972.9 ms**, with native owner startup **3,429.6 ms**.
+These are setup observations, not time credited to the representative session.
+
+The first extended attempt lasted **67.0555 seconds**, not four hours. Eleven
+real mixed commands applied, and an off-turn move was correctly refused without
+changing generation 69. The run then stopped because the private harness loaded
+the resource manifest relative to its deliberately retained old document instead
+of the imported current-release module. The retired asset URL correctly returned
+404; no note write had begun. All observations are retained, all ten scopes were
+current at generation 82, and no pending command or 503 remained. Only the
+private helper changed to pass the explicit current resource base URL. A focused
+actual assigned-note save/read/restore then passed, advancing character revision
+3 to 5 and reaching generation 84 without changing the original notes.
+
+The replacement actual rehearsal starts at client UTC
+**2026-11-16T18:52:20.077Z**. It does not count preparation or the aborted attempt.
+Its initial hosted sequence verifies combat refusal/off-turn dice, Dash and Undo,
+turn end, Free Play walk/run without turn-restricted movement debit, a live emote,
+another exact assigned-note roundtrip (character revision 7 to 9), and warm
+rejoins for the primary and an original returning account. The measured private
+image bodies on those rejoins are zero; that image counter alone is not a
+separate inline-graphics-body proof. All ten scopes are current at the recorded
+generation 111 (scene revision 107, character revision 9), with no pending
+operation or 503. The extended run is still in progress, not accepted as a
+four-hour or rendered-animation pass.
+
+Independent recovery readiness checks pass **three actual emulator cases /
+33.560 seconds**: 2014/2024 complete restore preserves exact sheets, private
+images, topology and resources, and uncertain restore keeps its original caller
+and recovers one copy. The shared demo cluster is not reset. Existing SDK
+PassThrough listener warnings are retained rather than suppressed. This is not
+the actual real-owner restore or hosted rollback drill.
+
+A read-only private API inspection confirms the same revision, min0/max1,
+CPU1/GiB1, request-based CPU, concurrency 40, timeout 3600, origins and unchanged
+IAM. A broad provider window including preparation and the aborted attempt has
+42 nonempty memory samples, maximum **sample mean 409,264,128 bytes** against
+1 GiB; this is not an instantaneous peak. Its coarse counters are 2,210 HTTP
+requests, 53,498 Firestore reads, 2,228 writes and 971 Storage requests. They are
+not attributed per command or falsely equated across provider windows. The
+current complete stable suite is running separately; its result is not yet
+claimed.
