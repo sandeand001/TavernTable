@@ -1468,33 +1468,29 @@ Revalidation in the intended environment remains part of M1 and M4.
 - [ ] **M5-06 - Run a representative ten-client, full-session rehearsal.**
   - **Status:** in progress. The owner approved gameplay activation and matching
     publication only to the existing private pilot; both gameplay capabilities
-    are deliberately enabled there. Normal returning-owner startup now works.
-    The first member admission exposed full-world projection latency and
-    temporarily busy processing slots; the private game is safely paused and
-    **no full-session rehearsal has started**. Local profiling reproduced the
-    selected 42-map/eight-actor projection at roughly seven seconds. Scoped
-    native reuse preserves the committed public output exactly and reduces
-    that local cold/warm read to **698/28 ms**; nine representative scoped
-    views take **843 ms**, not a hosted latency claim. A generated
-    **51-map / 134-connection / eight-actor** regression fails before the fix
-    and passes its two-second CPU gate. Current coupled gates pass **227 native
-    tests / 16 suites**, **31 real cloud HTTP/SSE cases**, and three focused
-    projection tests. The exact CPU1/GiB1 image, 36 source hashes and matching
-    two-tree frontend are now published and checked in the private pilot.
-    All ten managed clients reached the same current authority with zero busy
-    responses. The first actual rehearsal started on November 16 but was stopped
-    after a valid **11,347 ms** durable facing receipt; that slow result is
-    retained, not counted as a pass. The game is safely paused. An unshaped
-    zero-observer control command still takes **8,250 ms**, so observer CPU is not
-    the only issue. Bounded payload-free timing of the existing private API is
-    being used to distinguish publication, storage, transaction and follow-up
-    work; temporary diagnostics must be removed after the fix. No completed
-    four-to-five-hour run, production approval or selected-source cutover is
-    claimed.
-    Follow-up native scheduling/receipt/query fixes now pass **251 tests /
-    19 suites**, all **31** real HTTP/SSE world cases and the generated
-    full-world CPU gate. Their exact packages and hosted p95 verification
-    remain pending; these focused gates are not a full-session pass.
+    are deliberately enabled there. Normal returning-owner startup, ten-client
+    admission, Free Play movement and current scoped delivery work. Original
+    returning assignments remain **4 + 2**; no real owner Auth or original-host
+    changes were made. Measured projection/sight/motion and same-transaction
+    metadata fixes are committed and privately published through API
+    `00024-2ps`, source `103ac90...`, with matching frontend `57cb5484...`.
+    The CPU1/GiB1 image passes 38 exact runtime hashes and native/isolation
+    gates; temporary request/CPU diagnostics are removed.
+    A fixed **40-command** actual managed-client preflight includes **20 moves
+    and 20 facing controls** across all nine member identities plus the native
+    owner, under recalibrated 200-ms RTT. All ten scopes remain current through
+    generation 67, with zero stream errors or 503 responses. **Latency still
+    fails:** durable receipt median **1,897.1 ms**, p95 **3,854.6 ms** against
+    **2,000 ms**, maximum **4,473.2 ms**. Cold, automatic-backup and other slow
+    valid samples are retained. The earlier **11,347-ms** aborted-run result is
+    also retained; neither run is a completed full-session pass.
+    The latest complete final backup is saved at generation 67. The private
+    game is verified paused, all nine member observations are closed, no
+    control/command is pending, and test transports/workers are restored/stopped.
+    Full evidence and rejected experiments are recorded in
+    [the preparation log](./cloud-migration-preparation.md).
+    **The four-to-five-hour rehearsal, production approval and selected-source
+    cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
   - **Success:** exercise a representative four-to-five-hour session: Free Play,
     combat, doors/rooms, assets, sheets, animation, reconnects, backup work and

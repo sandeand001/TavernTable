@@ -5441,3 +5441,56 @@ both current (**8.906 seconds**) and committed (**9.164 seconds**) code.
 No production backup interval or real/provider clock is changed. The other
 150 coupled cases remain passed; this corrected isolated rerun is not claimed
 as a new whole-repository stable result.
+
+### Fixed forty-command hosted preflight: stable but latency gate failed
+
+The metadata candidate is committed as `103ac90...` and published only to the
+existing private API as `00024-2ps`, image `049eb798...`. Its exact CPU1/GiB1
+runtime again verifies 38 source hashes, both-edition native controls, 501 d20
+frames, auth/private-file denials and graceful exit. No frontend source changes
+were needed: `57cb5484...` remains the matching current package.
+
+The actual fixed sample retains **40 accepted commands**, equally split between
+**20 five-foot moves and 20 facing controls**, across all nine existing member
+identities and the actual native owner. The original returning assignments
+remain 4 + 2. Source canonical generations are contiguous **28-67**. Before/after
+actual link p95 is **206.8/209.4 ms** for the owner, **205.8/204.4 ms** for the
+primary, and **205.9/205.7 ms** for the other clients. Product/provider clocks
+are unchanged. One-second inter-command pauses are outside each measurement,
+not removed from its receipt timing. No cold, backup or other valid tail is
+discarded.
+
+Nearest-rank results:
+
+| Retained sample | Count | Durable median | Durable p95 | Durable maximum | SDK-ready p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| All accepted controls | 40 | 1,897.1 ms | **3,854.6 ms** | 4,473.2 ms | 4,591.3 ms |
+| Actual movement | 20 | 1,992.1 ms | 4,369.3 ms | 4,473.2 ms | 4,813.1 ms |
+| Facing controls | 20 | 1,804.9 ms | 2,920 ms | 3,854.6 ms | 4,064.8 ms |
+
+Fifteen of forty durable receipts exceed two seconds. The all-command p95
+therefore **does not meet the approved <= 2-second gate**. The three largest
+receipt samples coincide with independently listed complete automatic backup
+generations **28/35/50**; other ordinary valid tails also remain above target,
+so backup work is not claimed to be the only cause.
+
+All nine member SDK connections are still command-ready at generation 67 with
+no access/stream errors; the native owner remains current, and there are zero
+503 responses. Free Play movement costs are authoritative five-foot routes
+with no incorrect turn-restricted debit. This demonstrates stable current
+delivery, not a completed representative session or full rendered-animation
+acceptance.
+
+Normal owner Pause is verified after closing the nine members. Owner streams,
+pending live control and pending world commands are all zero. Transports are
+restored and all three precision workers stopped; real owner Auth and both
+original local hosts remain untouched. Owner backup status is independently
+**saved**, latest complete generation **67**. API, Firestore and the private
+bucket are all confirmed in **us-west1**, so no cross-region mismatch explains
+the result. The forty raw timing rows and prior failed preflights remain in
+private operational state outside Git.
+
+M5-06 remains open at 59/65 overall. The four-to-five-hour run, restore-as-copy
+and compatible rollback proof, production approval and selected-data cutover
+are not completed or implied. No queue, background service, new IAM permission,
+CPU/limit change or relaxed latency requirement is approved by this result.
