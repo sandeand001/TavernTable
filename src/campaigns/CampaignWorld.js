@@ -1,10 +1,6 @@
 import { validateScene, validateMapBoard, freezeSceneData } from './CampaignScene.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
-import {
-  pointInsideSolid,
-  segmentIntersectsSolid,
-  boundsIntersectSolid,
-} from '../terrain/ConvexGeometry.js';
+import { boundsIntersectSolid } from '../terrain/ConvexGeometry.js';
 import { planConnection, connectionEntryDistance } from './CampaignConnections.js';
 import {
   localWorldToCampaign,
@@ -21,6 +17,7 @@ import {
   localMapSupport,
   supportBelowMaps,
   physicalCreatureSight,
+  physicalSegmentSight,
 } from './PhysicalMapQueries.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
@@ -552,9 +549,7 @@ export default class CampaignWorld {
     );
     const obstacles = geometry.obstacles ?? this.getObstacles(geometry);
     if (!Array.isArray(obstacles)) throw new Error('Surface sight requires physical obstacles');
-    return !obstacles.some(
-      (solid) => pointInsideSolid(start, solid) || segmentIntersectsSolid(start, end, solid)
-    );
+    return physicalSegmentSight(start, end, obstacles);
   }
 
   visibleProjections(observerId, viewMapId) {

@@ -5275,3 +5275,52 @@ These are candidate gates, not a new whole-repository stable result or a
 completed M5-06. A matching existing-pilot image/frontend release, actual
 200-ms-RTT ordinary receipt distribution and the complete real four-to-five-hour
 session remain required. Production and selected-data cutover remain unapproved.
+
+### Conservative vertical sight rejection: measured follow-up
+
+The immutable candidate is published only to the existing private service as
+`00021-9g2`, source `0afdf93...`, with matching frontend `0a99c475...`.
+Its actual image passes **38** source hashes, both-edition native Cover/flight,
+501 d20 frames, authority denials, CPU1/GiB1 isolation and graceful exit.
+Published entry/native bytes and stable/retired/private-path routing match.
+The normal stable-root/picker path preserves the real Google owner. Current
+SDK classes reuse the exact nine already signed-in fixture principals without
+credential changes; original returning assignments remain **4 + 2**.
+
+All ten current observations reach generation 14 under separately recalibrated
+200-ms links, with member startup **1,316-6,789.1 ms** and zero 503 responses.
+Four valid ordinary facing commands are retained: durable receipts
+**5,029.2/2,157.9/1,985.1/1,911 ms**, and SDK readiness
+**5,031/4,250.4/4,019.1/3,976.7 ms**. All eight other member observations
+reach generation 18; the native owner remains current without its earlier
+sharing error. This is neither a twenty-sample receipt gate nor the full
+session. All nine members are closed again; normal owner Pause is confirmed,
+with zero owner streams/pending live control, restored transports and all
+three precision workers stopped.
+
+An isolated changed-generation feedback loop distinguishes repeated new heads
+from cheap unchanged-frame cache hits. On exact revision-21 source, each of
+four changed frames performs **126** geometry loads, **3,684** Add/Subtract
+operations, **42** query clones and **1,081** surface sight queries. Geometry
+cloning takes only **17-38 ms**; surface sight takes **431-544 ms** of each
+**779-791-ms** frame. That evidence rejects more geometry-cache complexity as
+the first fix.
+
+The follow-up adds one shared native segment-sight helper. A conservative
+vertical interval check rejects only solids entirely above or below the actual
+ray before running the unchanged point-inside/exact convex intersection tests.
+There is no new cache, spatial index, changed visibility rule or skipped
+canonical validation. Floors, ceilings, observer-on-boundary behavior,
+near-parallel rays and endpoint trimming remain covered.
+
+With the same read-only/networkless CPU1/GiB1 source replay, changed frames
+take **449.426/450.369/439.082/383.804 ms**; surface sight takes **57-94 ms**.
+The same 126 loads/3,684 operations/42 clones/1,081 rays still occur. The exact
+public-result hash and all eight observers match the committed unpruned
+native world, and canonical input is unchanged. The generated
+51-map/134-connection/eight-actor projection takes
+**569.884/120.487/120.762 ms**. All five focused projection cases,
+**253 native tests / 19 suites** with open-handle detection
+(**232.203 seconds**), and **31** real managed HTTP/SSE cases
+(**425.925 seconds**) pass. These local candidate results do not replace the
+still-required hosted receipt distribution or actual four-to-five-hour run.

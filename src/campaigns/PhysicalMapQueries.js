@@ -129,6 +129,15 @@ export function supportBelowMaps(
   return best;
 }
 
+export function physicalSegmentSight(start, end, obstacles) {
+  const minY = Math.min(start.y, end.y);
+  const maxY = Math.max(start.y, end.y);
+  return !obstacles.some((solid) => {
+    if (solid.max.y < minY || solid.min.y > maxY) return false;
+    return pointInsideSolid(start, solid) || segmentIntersectsSolid(start, end, solid);
+  });
+}
+
 export function physicalCreatureSight(observerFeet, targetFeet, obstacles) {
   if (!finitePoint(observerFeet) || !finitePoint(targetFeet))
     throw new Error('Campaign sight requires valid physical creature positions');
@@ -137,8 +146,6 @@ export function physicalCreatureSight(observerFeet, targetFeet, obstacles) {
   return [2.5, 4.5].some((height) => {
     const end = { ...targetFeet, y: targetFeet.y + height };
     if (Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z) < 1e-7) return true;
-    return !obstacles.some(
-      (solid) => pointInsideSolid(start, solid) || segmentIntersectsSolid(start, end, solid)
-    );
+    return physicalSegmentSight(start, end, obstacles);
   });
 }

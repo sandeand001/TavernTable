@@ -205,6 +205,9 @@
   Certification is not authorization. Receipt budgets use native
   combat/location state without rebuilding geometry merely to format a receipt;
   intermediate physical route conversions still use the native world.
+  Sight rays reject only solids wholly outside their vertical segment span
+  before the existing exact convex tests; boundary hits and true floor/ceiling
+  occlusion remain unchanged.
   This is measured CPU reuse, not an
   offline authority, historical-animation cache or relaxed admission limit.
 - **Private cloud images (M2 development slice verified)**: preserve canonical

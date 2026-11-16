@@ -169,6 +169,37 @@ function floorMap(id, originFeet, quarterTurns = 0) {
   };
 }
 
+test('physical sight preserves floor, ceiling and boundary hits when rejecting vertically irrelevant solids', () => {
+  const world = CampaignWorld.fromScene(sceneState(), context());
+  const obstacles = [
+    { min: { x: 0, y: -1000000, z: 0 }, max: { x: 25, y: 0, z: 25 } },
+    { min: { x: 0, y: 10, z: 0 }, max: { x: 25, y: 10.5, z: 25 } },
+    { min: { x: 12, y: 0, z: 0 }, max: { x: 13, y: 8, z: 25 } },
+  ];
+  const sight = { mapId: 'map-main', obstacles };
+  for (const [observerY, target, visible] of [
+    [0, { x: 7.5, y: 4, z: 2.5 }, true],
+    [0, { x: 17.5, y: 4, z: 2.5 }, false],
+    [10, { x: 17.5, y: 14, z: 2.5 }, true],
+    [0, { x: 2.5, y: 14, z: 2.5 }, false],
+    [0, { x: 2.5, y: 10, z: 2.5 }, true],
+    [10, { x: 2.5, y: 10.5, z: 2.5 }, true],
+    [10, { x: 2.5, y: 4, z: 2.5 }, false],
+    [4, { x: 17.5, y: 8, z: 2.5 }, false],
+    [4 + 1e-8, { x: 17.5, y: 8 + 1e-8, z: 2.5 }, true],
+    [-5, { x: 2.5, y: 4, z: 2.5 }, false],
+  ])
+    expect(world.hasSurfaceLineOfSight({ x: 2.5, y: observerY, z: 2.5 }, target, sight)).toBe(
+      visible
+    );
+  expect(world.hasLineOfSight({ x: 2.5, y: 0, z: 2.5 }, { x: 2.5, y: 10, z: 2.5 }, sight)).toBe(
+    false
+  );
+  expect(world.hasLineOfSight({ x: 2.5, y: 10, z: 2.5 }, { x: 17.5, y: 10, z: 2.5 }, sight)).toBe(
+    true
+  );
+});
+
 test('campaign sight retains its conservative observer-on-wall boundary rule', () => {
   const world = CampaignWorld.fromScene(sceneState(), context());
   const map = floorMap('wall', { x: 100, y: 0, z: 100 });
